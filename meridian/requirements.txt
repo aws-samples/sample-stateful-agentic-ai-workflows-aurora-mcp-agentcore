@@ -9,6 +9,13 @@ botocore>=1.34.0
 # MCP (Model Context Protocol) for Phase 2
 mcp>=0.1.0
 
+# LangGraph (Phase 5 — workflow orchestration with checkpointed state)
+langgraph>=0.2.0
+# Optional: PostgresSaver for durable LangGraph checkpoints in Aurora.
+# Requires direct Postgres connectivity (not RDS Data API).
+langgraph-checkpoint-postgres>=2.0.0
+psycopg[binary]>=3.1.0
+
 # FastAPI Backend
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0

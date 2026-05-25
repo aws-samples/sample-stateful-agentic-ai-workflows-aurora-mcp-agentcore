@@ -18,6 +18,7 @@ DATABASE = os.getenv("AURORA_DATABASE", "meridian")
 REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
 
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "backend" / "db" / "schema.sql"
+RLS_PATH = Path(__file__).resolve().parents[1] / "examples" / "rls_for_agents.sql"
 
 
 def split_sql(script: str) -> list[str]:
@@ -73,6 +74,16 @@ def initialize_database() -> None:
     for i, sql in enumerate(statements, 1):
         first_line = next((ln.strip() for ln in sql.splitlines() if ln.strip() and not ln.strip().startswith("--")), sql[:60])
         execute_sql(client, sql, f"[{i}/{len(statements)}] {first_line[:70]}")
+
+    if RLS_PATH.exists():
+        console.print("\n[cyan]Applying RLS policies + audit log[/cyan]")
+        rls_statements = split_sql(RLS_PATH.read_text())
+        for i, sql in enumerate(rls_statements, 1):
+            first_line = next(
+                (ln.strip() for ln in sql.splitlines() if ln.strip() and not ln.strip().startswith("--")),
+                sql[:60],
+            )
+            execute_sql(client, sql, f"[rls {i}/{len(rls_statements)}] {first_line[:70]}")
 
     console.print("\n[bold green]Schema ready[/bold green]")
 

@@ -8,6 +8,7 @@ Handles chat interactions with the AI travel concierge across four phases:
 - Phase 4: Strands concierge + Aurora traveler memory
 """
 
+import os
 import re
 import uuid
 from datetime import datetime
@@ -34,13 +35,21 @@ try:
 except ImportError:
     MCP_AVAILABLE = False
 
+
+# Orchestration mode controls whether the live API drives Bedrock-powered
+# Strands tool routing (`full`) or runs the procedural fallback path
+# (`fallback`). Used by Phase 3 supervisor and Phase 4 concierge.
+def strands_mode() -> str:
+    return os.getenv("STRANDS_ORCHESTRATION", "full").lower().strip()
+
+
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 class ChatRequest(BaseModel):
     """Request model for chat endpoint."""
     message: str
-    phase: Literal[1, 2, 3, 4]
+    phase: Literal[1, 2, 3, 4, 5]
     customer_id: Optional[str] = None
     conversation_id: Optional[str] = None
 
@@ -315,7 +324,7 @@ async def phase1_search(query: str, limit: int = 5) -> tuple[List[Product], List
 
     activities.append(create_activity(
         activity_type="result",
-        title=f"Found {len(results)} products",
+        title=f"Found {len(results)} trips",
         execution_time_ms=execution_time,
         agent_name="Phase1Agent",
         agent_file="agents/phase1/agent.py"
@@ -610,18 +619,18 @@ async def phase3_search(query: str, limit: int = 5) -> tuple[List[Product], List
         activities.append(create_activity(
             activity_type="search",
             title="pgvector HNSW + tsrank search",
-            details=f"Found {len(results)} products",
+            details=f"Found {len(results)} trips",
             sql_query=display_sql,
             execution_time_ms=search_time,
             agent_name="SearchAgent",
             agent_file="agents/phase3/search_agent.py"
         ))
-        
+
         # SearchAgent returns results to Supervisor
         activities.append(create_activity(
             activity_type="result",
             title=f"SearchAgent returned {len(results)} results",
-            details="Returning ranked products to SupervisorAgent",
+            details="Returning ranked trips to SupervisorAgent",
             agent_name="SupervisorAgent",
             agent_file="agents/phase3/supervisor.py"
         ))
@@ -650,6 +659,77 @@ async def phase3_search(query: str, limit: int = 5) -> tuple[List[Product], List
 
 
 # =============================================================================
+# PHASE 3 (live): Strands SupervisorAgent driving Bedrock tool delegation.
+# Falls back to procedural phase3_search on any error.
+# =============================================================================
+
+async def phase3_supervisor_search(
+    query: str,
+    limit: int = 5,
+) -> tuple[List[Product], List[ActivityEntry]]:
+    """Phase 3 via live Strands supervisor — Bedrock LLM picks the SearchAgent tool."""
+    from backend.agents.phase3 import create_phase3_system
+
+    activities: List[ActivityEntry] = []
+
+    def collect(entry: Any) -> None:
+        try:
+            activities.append(_memory_activity_to_entry(entry))
+        except Exception:
+            # Best-effort: keep going if the entry shape is unexpected.
+            pass
+
+    activities.append(create_activity(
+        activity_type="reasoning",
+        title="SupervisorAgent invoked (Strands + Bedrock)",
+        details="Bedrock will choose which specialist tool to call",
+        agent_name="SupervisorAgent",
+        agent_file="agents/phase3/supervisor.py",
+    ))
+
+    supervisor = create_phase3_system(activity_callback=collect)
+
+    try:
+        packages, _llm_reply = await supervisor.process_search(query, activity_callback=collect)
+    except Exception as exc:
+        log_error(context="phase3_supervisor_search", error=str(exc))
+        activities.append(create_activity(
+            activity_type="error",
+            title="Strands supervisor unavailable — falling back to procedural search",
+            details=str(exc)[:200],
+            agent_name="SupervisorAgent",
+            agent_file="agents/phase3/supervisor.py",
+        ))
+        fallback_products, fallback_activities = await phase3_search(query, limit)
+        activities.extend(fallback_activities)
+        return fallback_products, activities
+
+    products: List[Product] = []
+    for pkg in packages[:limit]:
+        # SearchAgent returns dicts with package_id; map to API Product shape.
+        products.append(Product(
+            product_id=pkg.get("package_id", ""),
+            name=pkg.get("name", ""),
+            brand=pkg.get("operator", ""),
+            price=float(pkg.get("price_per_person", 0.0)),
+            description=pkg.get("description", "") or "",
+            image_url=pkg.get("image_url", "") or "",
+            category=pkg.get("trip_type", "") or "",
+            similarity=pkg.get("similarity"),
+        ))
+
+    activities.append(create_activity(
+        activity_type="result",
+        title=f"Supervisor returned {len(products)} trips",
+        details="Bedrock-driven delegation completed",
+        agent_name="SupervisorAgent",
+        agent_file="agents/phase3/supervisor.py",
+    ))
+
+    return products, activities
+
+
+# =============================================================================
 # PHASE 4: Strands ConciergeOrchestrator + MemoryAgent (@tool) + Aurora memory
 # =============================================================================
 
@@ -661,6 +741,62 @@ def _memory_activity_to_entry(entry: Any) -> ActivityEntry:
     telemetry = data.pop("telemetry", None)
     return ActivityEntry(
         **data,
+        telemetry=TraceTelemetry(**telemetry) if telemetry else None,
+    )
+
+
+async def phase5_workflow(
+    query: str,
+    traveler_id: str,
+    conversation_id: Optional[str] = None,
+) -> tuple[List[Product], List[ActivityEntry], str, str]:
+    """
+    Phase 5: LangGraph StateGraph orchestrates classify → branch → synthesize.
+
+    Reuses Phase 3's hybrid search and availability check as graph nodes so the
+    workflow story is "explicit edges + checkpoints" rather than "different
+    search code."  Checkpointer is PostgresSaver when LANGGRAPH_CHECKPOINT_DSN
+    is set, otherwise MemorySaver.
+    """
+    from backend.agents.phase5.workflow import Phase5Workflow
+
+    workflow = Phase5Workflow(
+        search_fn=phase3_search,
+        availability_fn=phase3_availability_check,
+    )
+    final_state = await workflow.run(
+        query,
+        traveler_id=traveler_id,
+        conversation_id=conversation_id or "",
+    )
+
+    raw_activities = final_state.get("activities", []) or []
+    activities = [_dict_to_activity_entry(a) for a in raw_activities]
+    packages = final_state.get("packages", []) or []
+    response = final_state.get("response") or "Workflow finished."
+    conv_id = final_state.get("conversation_id") or ""
+    return packages, activities, response, conv_id
+
+
+def _dict_to_activity_entry(activity: Any) -> ActivityEntry:
+    if isinstance(activity, ActivityEntry):
+        return activity
+    if hasattr(activity, "model_dump"):
+        activity = activity.model_dump()
+    if not isinstance(activity, dict):
+        return ActivityEntry(
+            id=str(uuid.uuid4()),
+            timestamp=datetime.utcnow().isoformat() + "Z",
+            activity_type="reasoning",
+            title=str(activity),
+        )
+    telemetry = activity.pop("telemetry", None)
+    activity.setdefault("id", str(uuid.uuid4()))
+    activity.setdefault("timestamp", datetime.utcnow().isoformat() + "Z")
+    activity.setdefault("activity_type", "reasoning")
+    activity.setdefault("title", "(unnamed)")
+    return ActivityEntry(
+        **activity,
         telemetry=TraceTelemetry(**telemetry) if telemetry else None,
     )
 
@@ -679,12 +815,15 @@ async def phase4_search(
 
     tid = customer_id or DEMO_TRAVELER_ID
     runtime = create_concierge()
+    # In `full` orchestration mode the concierge calls the live Strands supervisor
+    # for search; in `fallback` mode it uses the procedural hybrid query.
+    search_fn = phase3_supervisor_search if strands_mode() == "full" else phase3_search
     products, raw_activities, message, conv_id, facts = await runtime.process_turn(
         query,
         tid,
         conversation_id,
         limit,
-        search_fn=phase3_search,
+        search_fn=search_fn,
     )
     activities = [_memory_activity_to_entry(a) for a in raw_activities]
     memory_facts = [
@@ -743,8 +882,10 @@ async def phase3_availability_check(query: str) -> tuple[List[Product], List[Act
     
     # Extract key terms from query
     search_terms = []
+    stopwords = {'is', 'the', 'in', 'available', 'do', 'you', 'have', 'check', 'what',
+                 'durations', 'duration', 'for', 'a', 'an', 'any', 'package', 'trip'}
     for word in query_lower.split():
-        if word not in ['is', 'the', 'in', 'stock', 'available', 'do', 'you', 'have', 'check', 'what', 'sizes', 'for']:
+        if word not in stopwords:
             search_terms.append(word)
     
     results = []
@@ -834,9 +975,9 @@ def is_availability_query(query: str) -> bool:
     """Check if the query is asking about availability or departure slots."""
     query_lower = query.lower()
     availability_patterns = [
-        'in stock', 'available', 'do you have', 'check availability',
+        'available', 'do you have', 'check availability',
         'availability', 'how many', 'what dates', 'dates available',
-        'departure', 'is the', 'is there', 'got any', 'slots'
+        'departure', 'departures', 'is the', 'is there', 'got any', 'slots'
     ]
     return any(pattern in query_lower for pattern in availability_patterns)
 
@@ -933,10 +1074,55 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 follow_ups=["Romantic week in Europe", "Family-friendly beach resort", "Tokyo culture trip"],
             )
 
+    # Phase 5: LangGraph workflow with explicit StateGraph + checkpointer.
+    if request.phase == 5:
+        from backend.memory.store import DEMO_TRAVELER_ID
+        try:
+            workflow_packages, workflow_activities, message, conv_id = await phase5_workflow(
+                request.message,
+                traveler_id=request.customer_id or DEMO_TRAVELER_ID,
+                conversation_id=request.conversation_id,
+            )
+            activities.extend(workflow_activities)
+            follow_ups = generate_follow_ups(request.message, workflow_packages, request.phase)
+            return ChatResponse(
+                message=message,
+                products=workflow_packages if workflow_packages else None,
+                order=None,
+                activities=activities,
+                follow_ups=follow_ups,
+                conversation_id=conv_id,
+            )
+        except Exception as e:
+            log_error("phase5_workflow", error=str(e))
+            activities.append(create_activity(
+                activity_type="error",
+                title="LangGraph workflow error",
+                details=str(e),
+                agent_name="Phase5Workflow",
+                agent_file="agents/phase5/workflow.py",
+            ))
+            return ChatResponse(
+                message="The Phase 5 workflow hit an error. Please try a Phase 3 or Phase 4 query.",
+                products=None,
+                order=None,
+                activities=activities,
+                follow_ups=["Tokyo culture trip", "Family-friendly beach resort", "Romantic week in Europe"],
+            )
+
+    # Phase 3: pick the live Strands supervisor when STRANDS_ORCHESTRATION=full;
+    # otherwise use the procedural hybrid search directly.
+    phase3_fn = phase3_supervisor_search if strands_mode() == "full" else phase3_search
+    phase3_method = (
+        "Hybrid Search via Strands Supervisor (Bedrock-driven)"
+        if strands_mode() == "full"
+        else "Hybrid Search (Semantic + Lexical, procedural)"
+    )
+
     phase_configs = {
         1: ("Phase1Agent", "Direct RDS Data API", phase1_search, "agents/phase1/agent.py"),
         2: ("Phase2Agent", "MCP (postgres-mcp-server)", phase2_search, "agents/phase2/agent.py"),
-        3: ("SupervisorAgent", "Hybrid Search (Semantic + Lexical)", phase3_search, "agents/phase3/supervisor.py"),
+        3: ("SupervisorAgent", phase3_method, phase3_fn, "agents/phase3/supervisor.py"),
     }
 
     agent_name, method, search_fn, agent_file = phase_configs[request.phase]
@@ -1039,7 +1225,9 @@ async def process_order(request: OrderRequest) -> OrderResponse:
         1: ("Phase1Agent", "agents/phase1/agent.py"),
         2: ("Phase2Agent", "agents/phase2/agent.py"),
         3: ("OrderAgent", "agents/phase3/order_agent.py"),
-        4: ("OrderAgent", "agents/phase4/order_agent.py"),
+        # Phase 4 booking is driven by the concierge orchestrator; the OrderAgent
+        # in phase 3 is reused as the booking specialist.
+        4: ("OrderAgent", "agents/phase3/order_agent.py"),
     }
     agent_name, agent_file = phase_configs[request.phase]
 
@@ -1104,33 +1292,33 @@ async def process_order(request: OrderRequest) -> OrderResponse:
 
         await asyncio.sleep(0.2)
 
-        # Mock availability check - always in stock for demo
-        in_stock = True
-        stock_qty = random.randint(5, 50)
+        # Mock availability check - always available for demo
+        departures_available = True
+        seats_available = random.randint(5, 50)
 
         availability_time = int((datetime.utcnow() - start_time).total_seconds() * 1000) - lookup_time
 
         activities.append(create_activity(
             activity_type="availability",
-            title="In Stock" if in_stock else "Out of Stock",
-            details=f"{stock_qty} departure slots available",
+            title="Departure available" if departures_available else "No departures available",
+            details=f"{seats_available} seats available on requested dates",
             execution_time_ms=availability_time,
             agent_name=agent_name,
             agent_file=agent_file
         ))
 
-        if not in_stock:
+        if not departures_available:
             return OrderResponse(
-                message=f"Sorry, {product['name']} is currently out of stock. Would you like me to notify you when it's available?",
+                message=f"Sorry, {product['name']} has no departures on your requested dates. Would you like me to notify you when seats open up?",
                 order=None,
                 activities=activities
             )
 
-        # Step 3: Payment processing (mock)
+        # Step 3: Booking authorization (mock — demo only)
         activities.append(create_activity(
             activity_type="order",
-            title="Processing payment",
-            details="Visa ****4242 (saved payment method)",
+            title="Booking authorization (demo)",
+            details="Holding seats with stored traveler profile",
             agent_name=agent_name,
             agent_file=agent_file
         ))
@@ -1147,8 +1335,8 @@ async def process_order(request: OrderRequest) -> OrderResponse:
 
         activities.append(create_activity(
             activity_type="order",
-            title="Payment authorized",
-            details=f"Charged ${total:.2f} to Visa ****4242",
+            title="Booking authorized (demo)",
+            details=f"Authorized ${total:.2f} hold on traveler profile",
             execution_time_ms=payment_time,
             agent_name=agent_name,
             agent_file=agent_file
@@ -1159,16 +1347,16 @@ async def process_order(request: OrderRequest) -> OrderResponse:
 
         activities.append(create_activity(
             activity_type="order",
-            title="Order confirmed",
-            details=f"Order #{order_id}",
+            title="Booking confirmed",
+            details=f"Booking #{order_id}",
             agent_name=agent_name,
             agent_file=agent_file
         ))
 
-        # Estimate delivery using config values
+        # Estimate departure using config values
         from datetime import timedelta
-        delivery_days = random.randint(config.order.min_delivery_days, config.order.max_delivery_days)
-        delivery_date = (datetime.utcnow() + timedelta(days=delivery_days)).strftime("%B %d, %Y")
+        days_to_departure = random.randint(config.order.min_delivery_days, config.order.max_delivery_days)
+        departure_date = (datetime.utcnow() + timedelta(days=days_to_departure)).strftime("%B %d, %Y")
 
         order = Order(
             order_id=order_id,
@@ -1186,27 +1374,28 @@ async def process_order(request: OrderRequest) -> OrderResponse:
             shipping=shipping,
             total=total,
             status="confirmed",
-            estimated_delivery=delivery_date
+            estimated_delivery=departure_date
         )
 
         total_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
 
         activities.append(create_activity(
             activity_type="result",
-            title="Order complete",
-            details=f"Estimated delivery: {delivery_date}",
+            title="Booking complete",
+            details=f"Departure: {departure_date}",
             execution_time_ms=total_time,
             agent_name=agent_name,
             agent_file=agent_file
         ))
 
+        service_fee_label = "Service fee"
         message = f"Great choice! I've placed your booking for **{pkg['name']}**.\n\n" \
-                  f"**Order #{order_id}**\n" \
+                  f"**Booking #{order_id}**\n" \
                   f"- Subtotal: ${subtotal:.2f}\n" \
                   f"- Tax: ${tax:.2f}\n" \
-                  f"- Shipping: {'FREE' if shipping == 0 else f'${shipping:.2f}'}\n" \
+                  f"- {service_fee_label}: {'FREE' if shipping == 0 else f'${shipping:.2f}'}\n" \
                   f"- **Total: ${total:.2f}**\n\n" \
-                  f"Estimated delivery: {delivery_date}"
+                  f"Departure: {departure_date}"
 
         # Log successful order
         log_order(

@@ -5,6 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from backend.db.rds_data_client import get_rds_data_client
 from backend.memory.store import DEMO_TRAVELER_ID, get_memory_store
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
@@ -26,8 +27,12 @@ class MemoryProfileResponse(BaseModel):
 @router.get("/{traveler_id}", response_model=MemoryProfileResponse)
 async def get_memory_profile(traveler_id: str = DEMO_TRAVELER_ID) -> MemoryProfileResponse:
     store = get_memory_store()
-    facts = await store.recall_preferences(traveler_id)
-    profile = await store.recall_profile(traveler_id)
+    db = get_rds_data_client()
+    # Pin RLS for the read so the API endpoint exercises the same isolation
+    # path the concierge agent uses.
+    async with db.scoped_session(traveler_id=traveler_id, agent_type="memory_agent") as tx:
+        facts = await store.recall_preferences(traveler_id, transaction_id=tx)
+        profile = await store.recall_profile(traveler_id, transaction_id=tx)
     return MemoryProfileResponse(
         traveler_id=traveler_id,
         facts=[

@@ -16,10 +16,11 @@ import { fetchMemoryProfile, sendChatMessage, processOrder } from '../api/client
 import type { ActivityEntry, LongTermMemoryFact, Message, Phase, Product } from '../types';
 
 const PHASE_LABELS: Record<Phase, string> = {
-  1: 'Filters',
+  1: 'SQL',
   2: 'MCP',
-  3: 'Intent',
-  4: 'Personal',
+  3: 'Retrieval',
+  4: 'Memory',
+  5: 'Orchestration',
 };
 
 const PHASE_INFO: Record<Phase, {
@@ -58,6 +59,15 @@ const PHASE_INFO: Record<Phase, {
       'What did we discuss last time about Iceland?',
     ],
   },
+  5: {
+    beat: 'LangGraph StateGraph — classify → search/availability/recall → synthesize, with checkpoints.',
+    capabilities: ['Explicit edges', 'Checkpointed state', 'PostgresSaver / MemorySaver'],
+    starters: [
+      'Tokyo culture trip for two',
+      'Is the Maldives package available?',
+      'Remember what we discussed about Iceland',
+    ],
+  },
 };
 
 // Phase color for the composer chip + accent dots in pill row
@@ -66,12 +76,13 @@ const PHASE_COLOR: Record<Phase, string> = {
   2: 'var(--mp-p2)',
   3: 'var(--mp-p3)',
   4: 'var(--mp-p4)',
+  5: 'var(--mp-p5, #6d28d9)',
 };
 
-interface CartItem {
+interface ItineraryItem {
   product: Product;
   quantity: number;
-  size?: string;
+  duration?: string;
 }
 
 const TRAVELER_TAGS_FALLBACK = ['Slow travel', 'Wine country', 'No red-eyes', 'Veg-friendly', 'Boutique'];
@@ -90,7 +101,7 @@ export function AgentSection() {
   const [traceId, setTraceId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [memoryFacts, setMemoryFacts] = useState<LongTermMemoryFact[]>([]);
-  const [, setCart] = useState<CartItem[]>([]);
+  const [, setItinerary] = useState<ItineraryItem[]>([]);
   const [activeTraceTab, setActiveTraceTab] = useState<'spans' | 'memory' | 'sql' | 'cost'>('spans');
 
   const chatEnd = useRef<HTMLDivElement>(null);
@@ -138,7 +149,7 @@ export function AgentSection() {
   }, []);
 
   // Phase delays
-  const phaseDelays: Record<Phase, number> = { 1: 600, 2: 450, 3: 350, 4: 300 };
+  const phaseDelays: Record<Phase, number> = { 1: 600, 2: 450, 3: 350, 4: 300, 5: 300 };
 
   // Auto-scroll on message changes
   const prevMsgCount = useRef(0);
@@ -418,8 +429,8 @@ export function AgentSection() {
     }
   };
 
-  const handleAddToCart = (product: Product) => {
-    setCart((prev) => {
+  const handleHoldTrip = (product: Product) => {
+    setItinerary((prev) => {
       const existing = prev.find((item) => item.product.product_id === product.product_id);
       if (existing) {
         return prev.map((item) =>
@@ -428,7 +439,7 @@ export function AgentSection() {
             : item,
         );
       }
-      return [...prev, { product, quantity: 1, size: product.available_sizes?.[0] }];
+      return [...prev, { product, quantity: 1, duration: product.available_sizes?.[0] }];
     });
     setMsgs((p) => [
       ...p,
@@ -508,7 +519,7 @@ export function AgentSection() {
             </div>
             <div className="right">
               <div className="mp-pill-row">
-                {([1, 2, 3, 4] as Phase[]).map((p) => (
+                {([1, 2, 3, 4, 5] as Phase[]).map((p) => (
                   <button
                     key={p}
                     type="button"
@@ -662,7 +673,7 @@ export function AgentSection() {
                                   <div className="mp-rec-actions">
                                     <button
                                       type="button"
-                                      onClick={() => handleAddToCart(pr)}
+                                      onClick={() => handleHoldTrip(pr)}
                                       disabled={typing}
                                     >
                                       Hold
@@ -702,7 +713,7 @@ export function AgentSection() {
                             <span>${m.order.tax.toFixed(2)}</span>
                           </div>
                           <div className="mp-booking-row">
-                            <span style={{ color: 'var(--mp-muted)' }}>Shipping</span>
+                            <span style={{ color: 'var(--mp-muted)' }}>Service fee</span>
                             <span>{m.order.shipping === 0 ? 'FREE' : `$${m.order.shipping.toFixed(2)}`}</span>
                           </div>
                           <div className="mp-booking-divider" />
@@ -712,7 +723,7 @@ export function AgentSection() {
                           </div>
                           {m.order.estimated_delivery && (
                             <div className="mp-booking-eta">
-                              📦 Estimated delivery: <b>{m.order.estimated_delivery}</b>
+                              ✈️ Departure: <b>{m.order.estimated_delivery}</b>
                             </div>
                           )}
                         </div>

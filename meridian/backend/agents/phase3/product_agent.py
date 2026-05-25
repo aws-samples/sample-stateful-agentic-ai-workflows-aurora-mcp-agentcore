@@ -1,11 +1,9 @@
 """
-Phase 3 Package Agent - Specialized in trip details and availability.
+Phase 3 Package Agent - Specialized in trip package details and availability.
 
-Implements product operations using:
+Implements package operations using:
 - RDS Data API for Aurora PostgreSQL access
 - Claude Opus 4.7 via Amazon Bedrock (cross-region inference)
-
-Requirements: 11.3
 """
 
 import os
@@ -33,12 +31,7 @@ class ActivityEntry(BaseModel):
 
 
 class ProductAgent:
-    """
-    Package Agent specialized in trip details and departure availability.
-    
-    Requirements:
-    - 11.3: Product_Agent specialized in product details and inventory
-    """
+    """Package Agent specialized in trip package details and departure availability."""
     
     def __init__(self, activity_callback: Optional[Callable[[ActivityEntry], Any]] = None):
         """
@@ -98,31 +91,31 @@ When helping travelers:
         self.activity_callback(entry)
     
     @tool
-    async def _get_details_tool(self, product_id: str) -> dict:
+    async def _get_details_tool(self, package_id: str) -> dict:
         """
-        Get detailed product information.
-        
+        Get detailed trip package information.
+
         Args:
-            product_id: Product identifier
-            
+            package_id: Trip package identifier
+
         Returns:
-            Product details
+            Package details
         """
-        return await self.get_product_details(product_id)
-    
+        return await self.get_product_details(package_id)
+
     @tool
-    async def _check_inventory_tool(self, product_id: str, size: Optional[str] = None) -> dict:
+    async def _check_inventory_tool(self, package_id: str, duration: Optional[str] = None) -> dict:
         """
-        Check inventory status for a product.
-        
+        Check departure availability for a trip package.
+
         Args:
-            product_id: Product identifier
-            size: Optional size to check
-            
+            package_id: Trip package identifier
+            duration: Optional duration option to check (e.g. "7 days")
+
         Returns:
-            Inventory status
+            Availability status
         """
-        return await self.check_inventory_status(product_id, size)
+        return await self.check_inventory_status(package_id, duration)
     
     async def get_product_details(self, package_id: str) -> dict:
         """Get detailed information about a trip package."""

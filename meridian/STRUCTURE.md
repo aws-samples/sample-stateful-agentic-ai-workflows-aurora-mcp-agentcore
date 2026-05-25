@@ -8,15 +8,17 @@ frontend/src/App.tsx
   → api/client.ts → backend :8000
 
 backend/main.py
-  → routers/chat.py      # Phases 1–4 (inline search + Phase 4 concierge)
+  → routers/chat.py      # Phases 1–5 (inline search + Phase 4 concierge + Phase 5 LangGraph)
   → routers/products.py  # GET /api/packages (+ legacy /api/products)
-  → routers/memory.py    # GET /api/memory/{traveler_id}
+  → routers/memory.py    # GET /api/memory/{traveler_id} (RLS-scoped)
 ```
 
-Phase 4 is the only path that imports Strands agent modules at runtime:
+Phases 4 and 5 import agent / workflow modules at runtime:
 
-- `backend/agents/phase4/concierge.py`
-- `backend/agents/phase4/memory_agent.py`
+- `backend/agents/phase4/concierge.py` — Strands concierge + Aurora memory + AgentCore mirror
+- `backend/agents/phase4/memory_agent.py` — `@tool` recall/persist methods
+- `backend/agents/phase5/workflow.py` — LangGraph `StateGraph` + `PostgresSaver`/`MemorySaver`
+- `backend/agentcore/memory.py`, `backend/agentcore/identity.py` — Bedrock AgentCore adapters
 
 Phases 1–3 execute inside `chat.py` (`phase1_search`, `phase2_search`, `phase3_search`). The matching files under `backend/agents/phase1|2|3/` are **reference Strands implementations** cited in trace `agent_file` paths — not imported by the live API.
 
@@ -24,12 +26,17 @@ Phases 1–3 execute inside `chat.py` (`phase1_search`, `phase2_search`, `phase3
 
 | Path | Role |
 | ---- | ---- |
-| `backend/db/` | RDS Data API, embeddings, `schema.sql` |
-| `backend/mcp/` | Live MCP client (Phase 2) |
-| `backend/memory/` | Aurora traveler memory store |
+| `backend/db/` | RDS Data API (incl. transaction + RLS-scoped session helpers), embeddings, `schema.sql` |
+| `backend/mcp/` | Phase 2 client → public `awslabs.postgres-mcp-server`; **custom `memory_server.py`** + its stdio client |
+| `backend/memory/` | Aurora traveler memory store + audit writer |
+| `backend/agentcore/` | Bedrock AgentCore Memory + Identity adapters (graceful no-op if unconfigured) |
 | `backend/agents/phase4/` | Live concierge + memory agents |
+| `backend/agents/phase5/` | LangGraph `Phase5Workflow` (StateGraph + PostgresSaver) |
 | `backend/agents/phase1–3/` | Reference Strands agents (workshop code samples) |
 | `backend/routers/` | FastAPI routes |
+| `examples/rls_for_agents.sql` | Aurora RLS policies + `agent_audit_log` + `agent_iam_audit` view |
+| `examples/memory_mcp_demo.py` | Stand-alone smoke test for the custom memory MCP server |
+| `scripts/provision_agentcore_memory.py` | Idempotent control-plane provisioner for AgentCore Memory |
 | `backend/catalog_compat.py` | Maps `trip_packages` rows → legacy API `Product` shape |
 | `frontend/src/sections/` | Live SPA sections |
 | `frontend/src/components/` | Shared UI (nav, trace, persona, thumbs) |

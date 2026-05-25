@@ -42,6 +42,9 @@ class MemoryAgent:
     def __init__(self, activity_callback: Optional[Callable[[ActivityEntry], Any]] = None):
         self.activity_callback = activity_callback or (lambda _: None)
         self.store = get_memory_store()
+        # When set, every memory tool routes its SQL through this RDS Data API
+        # transaction so the RLS session variables stay in scope.
+        self._transaction_id: Optional[str] = None
         self.model = BedrockModel(
             model_id="global.anthropic.claude-opus-4-7-v1",
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
@@ -95,7 +98,9 @@ class MemoryAgent:
             limit: Maximum recent turns to return
         """
         start = datetime.utcnow()
-        rows = await self.store.recall_short_term(conversation_id, limit)
+        rows = await self.store.recall_short_term(
+            conversation_id, limit, transaction_id=self._transaction_id
+        )
         items = [
             f"{r['role']}: {str(r['content'])[:100]}{'…' if len(str(r['content'])) > 100 else ''}"
             for r in reversed(rows)
@@ -131,7 +136,9 @@ class MemoryAgent:
     async def recall_traveler_preferences(self, traveler_id: str, limit: int = 8) -> Dict[str, Any]:
         """Recall long-term traveler preferences from traveler_preferences."""
         start = datetime.utcnow()
-        facts = await self.store.recall_preferences(traveler_id, limit)
+        facts = await self.store.recall_preferences(
+            traveler_id, limit, transaction_id=self._transaction_id
+        )
         elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
         self._log_tool(
             "recall_traveler_preferences",
@@ -165,7 +172,9 @@ class MemoryAgent:
             limit: Maximum interactions to return
         """
         start = datetime.utcnow()
-        rows = await self.store.recall_similar_interactions(traveler_id, query, limit)
+        rows = await self.store.recall_similar_interactions(
+            traveler_id, query, limit, transaction_id=self._transaction_id
+        )
         elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
         self._log_tool(
             "recall_similar_interactions",
@@ -209,14 +218,18 @@ class MemoryAgent:
             products_shown: Optional list of trip packages shown
         """
         start = datetime.utcnow()
-        await self.store.append_message(conversation_id, "user", user_message)
-        await self.store.append_message(conversation_id, "assistant", assistant_message)
+        tx = self._transaction_id
+        await self.store.append_message(conversation_id, "user", user_message, transaction_id=tx)
+        await self.store.append_message(
+            conversation_id, "assistant", assistant_message, transaction_id=tx
+        )
         interaction_id = await self.store.persist_interaction(
             traveler_id,
             conversation_id,
             user_message,
             assistant_message,
             packages_shown,
+            transaction_id=tx,
         )
         elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
         self._log_tool(

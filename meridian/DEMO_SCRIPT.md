@@ -58,30 +58,41 @@ python scripts/init_aurora_schema.py
 python scripts/seed_data.py
 ```
 
+**Optional — provision AgentCore Memory for Phase 4**
+
+```bash
+python scripts/provision_agentcore_memory.py --name meridian-session
+# copy the printed id into .env as AGENTCORE_MEMORY_ID
+```
+
+Without this the concierge logs an honest "AgentCore Memory unconfigured"
+in the trace and falls back to Aurora-only memory. The demo still runs.
+
 ---
 
 ## Part 1 — Introduction (5 min)
 
 ### What to say
 
-> "Meridian is an agentic **travel concierge** — not a chatbot bolted onto a search box. We climb a deliberate ladder: **filters → MCP tools → semantic search → traveler memory**. Each phase adds one capability on the same Aurora catalog."
+> "Meridian is an agentic **travel concierge** — not a chatbot bolted onto a search box. We climb a deliberate ladder: **SQL → MCP → Retrieval → Memory → Orchestration**. Each phase adds one capability on the same Aurora catalog."
 
-Point to the **Architecture** section (four phase cards):
+Point to the **Architecture** section (five phase cards):
 
 | Phase | Name | One-liner |
 | ----- | ---- | --------- |
-| 1 | Direct filters | SQL on `trip_packages` via RDS Data API |
-| 2 | MCP tools | Same queries through postgres-mcp-server |
-| 3 | Specialist agents | Hybrid pgvector + full-text; Strands supervisor |
-| 4 | Personal memory | Returning traveler — profile + preferences in Aurora |
+| 1 | SQL | Direct SQL on `trip_packages` via RDS Data API |
+| 2 | MCP | Same queries through postgres-mcp-server |
+| 3 | Retrieval | Hybrid pgvector + full-text; Strands supervisor |
+| 4 | Memory | Returning traveler — profile + preferences in Aurora |
+| 5 | Orchestration | LangGraph StateGraph with checkpointed control flow |
 
-> "Phases 1–3 teach the retrieval stack. Phase 4 is the production story: the agent **remembers** Alex and Jordan before it searches."
+> "Phases 1–3 teach the retrieval stack. Phase 4 is the production story: the agent **remembers** Alex and Jordan before it searches. Phase 5 is the workflow story: explicit, branchable, resumable orchestration."
 
 ---
 
-## Part 2 — Phase 1 · Filters (12 min)
+## Part 2 — Phase 1 · SQL (12 min)
 
-**Select:** `Phase 1 · Filters`
+**Select:** `Phase 1 · SQL`
 
 ### What to say
 
@@ -136,16 +147,44 @@ Point to the **Architecture** section (four phase cards):
 
 ### Optional code walkthrough
 
-- `backend/mcp/mcp_client.py`
+- `backend/mcp/mcp_client.py` — connects to the public `awslabs.postgres-mcp-server`
 - `backend/agents/phase2/agent.py`
+- `backend/mcp/memory_server.py` — **our own MCP server** for traveler memory
+- `backend/mcp/memory_mcp_client.py` — the symmetric stdio client
 
 > "MCP gives you portability and a standard tool surface. It does not magically add embeddings."
 
+### Custom MCP memory server (sidebar, ~3 min)
+
+The abstract specifically calls out *"MCP servers for contextual memory."*
+We ship two MCP servers in this repo:
+
+| Server | Source | Tools |
+| ------ | ------ | ----- |
+| `awslabs.postgres-mcp-server` | public, run via `uvx` | `connect_to_database`, `run_query` |
+| `meridian-memory` | this repo, `backend/mcp/memory_server.py` | `recall_traveler_profile`, `recall_preferences`, `recall_recent_turns`, `semantic_recall_interactions`, `persist_turn`, `persist_preference` |
+
+Every tool on the memory server opens a `db.scoped_session(traveler_id, agent_type='memory_agent')`
+transaction first, so Aurora RLS enforces per-traveler isolation regardless
+of what SQL the MCP client sends.
+
+Show it live:
+
+```bash
+PYTHONPATH=. python examples/memory_mcp_demo.py \
+    --traveler trv_meridian_demo \
+    --conversation conv_meridian_demo
+```
+
+You'll see the server boot over stdio, list its 7 tools, then exercise
+each one against Aurora.  The last test asks for a non-existent traveler
+and gets back `{}` — the RLS policy refuses to leak rows.
+
 ---
 
-## Part 4 — Phase 3 · Intent (15 min)
+## Part 4 — Phase 3 · Retrieval (15 min)
 
-**Select:** `Phase 3 · Intent`
+**Select:** `Phase 3 · Retrieval`
 
 ### What to say
 
@@ -182,9 +221,9 @@ Point to the **Architecture** section (four phase cards):
 
 ---
 
-## Part 5 — Phase 4 · Personal (15 min)
+## Part 5 — Phase 4 · Memory (15 min)
 
-**Select:** `Phase 4 · Personal` (or click **Chat as Alex & Jordan → Phase 4** on the persona card)
+**Select:** `Phase 4 · Memory` (or click **Chat as Alex & Jordan → Phase 4** on the persona card)
 
 ### What to say
 
@@ -214,6 +253,14 @@ Run a second query without clearing chat — show `conversation_id` continuity a
 - `backend/agents/phase4/concierge.py` → `ConciergeOrchestrator.process_turn`
 - `backend/agents/phase4/memory_agent.py` → `@tool` methods
 - `backend/memory/store.py` → Aurora reads/writes
+- `backend/agentcore/memory.py` → AgentCore Memory `create_event` / `list_memory_records`
+- `backend/agentcore/identity.py` → `sts:GetCallerIdentity` + `get_resource_api_key`
+
+> "Memory in Phase 4 has two layers. **AgentCore Memory** is the managed
+> session store — it gives us the multi-turn working set without us
+> running a Redis. **Aurora** is the durable preference and interaction
+> store, RLS-scoped per traveler. The concierge writes every turn to
+> AgentCore Memory and persists distilled signals to Aurora."
 
 > "Orchestration here is **Strands Agents** + procedural routing in `chat.py` — not LangGraph."
 
@@ -233,15 +280,140 @@ curl -s -X POST http://localhost:8000/api/chat/order \
 
 ---
 
-## Part 7 — Architecture summary (5 min)
+## Part 7 — Security: how agents talk to Aurora (5 min)
+
+> "When the abstract says 'securely connect LLM agents to Aurora,' here's what that actually means in this demo. Three concrete controls — all enforced by the database, not the agent."
+
+### 1. RLS pinned per turn
+
+`backend/agents/phase4/concierge.py` opens an RDS Data API transaction at the
+start of every Phase 4 turn and pins the session variables Aurora will
+enforce:
+
+```python
+async with self.db.scoped_session(
+    traveler_id=traveler_id, agent_type="concierge_agent"
+) as tx:
+    # every read/write inside the block runs under this transaction id
+```
+
+Internally that runs:
+
+```sql
+SELECT set_config('app.current_traveler_id', :tid,        true);
+SELECT set_config('app.agent_type',          'concierge_agent', true);
+```
+
+…and `examples/rls_for_agents.sql` has `ENABLE ROW LEVEL SECURITY` and a
+`USING (traveler_id = current_setting('app.current_traveler_id', true))`
+policy on `traveler_preferences`, `conversations`, `conversation_messages`,
+and `trip_interactions`.  Even if the agent forgot the `WHERE` clause, Aurora
+would return zero foreign rows.
+
+**Show in trace:** the new **Security · RLS scope set on Aurora session**
+span, with the IAM principal ARN, traveler id, agent type, and policy list.
+
+### 2. Agent-type scoping on bookings
+
+A second policy on `bookings` enforces that only `booking_agent`,
+`supervisor_agent`, or `concierge_agent` can read or mutate confirmed
+reservations.  A search-only agent that calls the same DB role gets nothing
+back.
+
+### 3. Audit trail
+
+Every Phase 4 turn writes one row to `agent_audit_log` from inside the same
+transaction:
+
+```sql
+SELECT * FROM agent_iam_audit ORDER BY ran_at DESC LIMIT 5;
+```
+
+Each row records the IAM principal (`sts:GetCallerIdentity`), the agent
+name, the operation, the RLS variables that were set, and how many rows the
+agent saw.  This is the answer to "prove that agent A could not read
+traveler B's data."
+
+### Demo
+
+```bash
+# The Phase 4 turn writes its own audit row.  Show the most recent one:
+aws rds-data execute-statement \
+    --resource-arn "$AURORA_CLUSTER_ARN" \
+    --secret-arn   "$AURORA_SECRET_ARN" \
+    --database     meridian \
+    --sql 'SELECT * FROM agent_iam_audit LIMIT 5'
+```
+
+> "This is the loop. RLS makes the database, not the agent, the source of
+> isolation truth.  The audit table makes it auditable.  The Strands agent
+> doesn't get to opt out."
+
+---
+
+## Part 7b — Phase 5 · Orchestration with LangGraph (8 min)
+
+> "Phases 3 and 4 use Strands for tool routing.  Phase 5 shows the *workflow*
+> pattern — an explicit StateGraph with conditional branches and a checkpointed
+> state that survives interruption."
+
+### What changed
+
+- Same Aurora data, same SearchAgent / AvailabilityAgent / MemoryAgent.
+- New orchestrator: `agents/phase5/workflow.py` builds a `StateGraph`:
+
+  ```
+  classify ─┬─→ search ─────────┐
+            ├─→ availability ───┤
+            └─→ memory_recall ──┤
+                                ▼
+                            synthesize → END
+  ```
+- `_classify_intent()` is rule-based today; swap in Claude on Bedrock for
+  an LLM router when needed.
+- Checkpointing: if `LANGGRAPH_CHECKPOINT_DSN` is set we use `PostgresSaver`
+  (durable, multi-process — state lives in Aurora).  Otherwise the workshop
+  runs with `MemorySaver` so it works without Aurora connectivity.
+
+### Demo
+
+In the UI, switch the phase pill to **Orchestration** and try the same prompts:
+
+- "Find me a Kyoto cultural trip" → classify routes to `search`
+- "What dates are available for Tokyo in October?" → classify routes to
+  `availability`
+- "Do you remember our last trip?" → classify routes to `memory_recall`
+
+In the trace, point out:
+
+- The `Workflow node: classify → <intent>` span — the StateGraph branch.
+- The `Workflow node: <branch>` delegation span calling the underlying agent.
+- The `Workflow node: synthesize` span composing the response.
+- The `checkpointer` field on the classify span — `PostgresSaver (Aurora)`
+  if wired, otherwise `MemorySaver (in-process)`.
+
+```bash
+curl -s -X POST http://localhost:8000/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"What dates are available for Tokyo in October?","phase":5}' | jq '.activities[].title'
+```
+
+> "Same trip data, different orchestration shape.  Strands is great when an
+> agent decides *which tool* to call.  LangGraph is great when *you* want to
+> own the control flow and have it be inspectable, branchable, and resumable."
+
+---
+
+## Part 8 — Architecture summary (5 min)
 
 ### Ladder recap
 
 ```
-Phase 1   Direct filters     RDS Data API → trip_packages
-Phase 2   MCP tools          Agent → MCP → Aurora
-Phase 3   Specialist agents  Embed v4 + hybrid search + supervisor
-Phase 4   Personal memory    Concierge + Aurora memory → then search
+Phase 1   SQL                RDS Data API → trip_packages
+Phase 2   MCP                Agent → MCP → Aurora
+Phase 3   Retrieval          Embed v4 + hybrid search + Strands supervisor
+Phase 4   Memory             Concierge + Aurora memory + AgentCore Memory
+Phase 5   Orchestration      LangGraph StateGraph + PostgresSaver checkpoints
 ```
 
 ### When teams use each pattern
@@ -252,6 +424,7 @@ Phase 4   Personal memory    Concierge + Aurora memory → then search
 | 2 | Standardizing DB access across agents and frameworks |
 | 3 | Customer-facing natural language search at scale |
 | 4 | Returning users, preferences, compliance, multi-turn planning |
+| 5 | Long-running workflows with branching, checkpoints, and resumability |
 
 ### Key takeaways
 

@@ -19,7 +19,7 @@ export interface ProductListResponse {
   total: number;
 }
 
-export type ActivityType = 'search' | 'embedding' | 'tool_call' | 'database' | 'error' | 'inventory' | 'order' | 'delegation' | 'mcp' | 'reasoning' | 'result';
+export type ActivityType = 'search' | 'embedding' | 'tool_call' | 'database' | 'error' | 'inventory' | 'order' | 'delegation' | 'mcp' | 'reasoning' | 'result' | 'security';
 
 export type TraceSpanCategory =
   | 'runtime'
@@ -29,7 +29,8 @@ export type TraceSpanCategory =
   | 'model'
   | 'tool'
   | 'data'
-  | 'synthesis';
+  | 'synthesis'
+  | 'security';
 
 export type TraceSpanStatus = 'ok' | 'cache_hit' | 'streaming' | 'held' | 'delegated' | 'preview';
 
@@ -98,7 +99,7 @@ export interface Order {
   estimated_delivery?: string;
 }
 
-export type Phase = 1 | 2 | 3 | 4;
+export type Phase = 1 | 2 | 3 | 4 | 5;
 
 export interface ChatRequest {
   message: string;

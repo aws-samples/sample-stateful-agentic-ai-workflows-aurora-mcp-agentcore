@@ -12,6 +12,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   tool: 'Tool / MCP',
   data: 'Data plane',
   synthesis: 'Synthesis',
+  security: 'Security',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -47,10 +48,12 @@ function activityIcon(type: string) {
       return '✅';
     case 'error':
       return '❌';
-    case 'inventory':
-      return '📦';
+    case 'availability':
+      return '📅';
     case 'order':
-      return '💳';
+      return '🧾';
+    case 'security':
+      return '🔐';
     default:
       return '⚡';
   }

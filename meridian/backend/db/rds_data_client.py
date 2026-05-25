@@ -7,6 +7,7 @@ This is used when the cluster is in a private VPC and not directly accessible.
 
 import os
 import json
+from contextlib import asynccontextmanager
 from typing import Optional, List, Any, Dict
 from decimal import Decimal
 
@@ -137,15 +138,20 @@ class RDSDataClient:
     async def execute(
         self,
         query: str,
-        params: Optional[tuple] = None
+        params: Optional[tuple] = None,
+        transaction_id: Optional[str] = None,
     ) -> List[Dict]:
         """
         Execute a query and return results.
-        
+
         Args:
             query: SQL query string with %s placeholders
             params: Optional query parameters
-            
+            transaction_id: Optional RDS Data API transaction id.  When set, the
+                statement runs inside an existing transaction so transaction-
+                local settings (e.g. ``SET LOCAL`` / ``set_config(..., true)``)
+                stay in scope across calls.
+
         Returns:
             List of result rows as dictionaries
         """
@@ -153,15 +159,18 @@ class RDSDataClient:
         param_count = query.count("%s")
         sql = self._convert_sql_placeholders(query, param_count)
         parameters = self._format_parameters(params)
-        
-        response = self.client.execute_statement(
+
+        kwargs: Dict[str, Any] = dict(
             resourceArn=self.cluster_arn,
             secretArn=self.secret_arn,
             database=self.database,
             sql=sql,
             parameters=parameters,
-            includeResultMetadata=True
+            includeResultMetadata=True,
         )
+        if transaction_id:
+            kwargs["transactionId"] = transaction_id
+        response = self.client.execute_statement(**kwargs)
         
         # Extract column names from metadata
         column_metadata = response.get("columnMetadata", [])
@@ -172,20 +181,77 @@ class RDSDataClient:
     async def execute_one(
         self,
         query: str,
-        params: Optional[tuple] = None
+        params: Optional[tuple] = None,
+        transaction_id: Optional[str] = None,
     ) -> Optional[Dict]:
-        """
-        Execute a query and return a single result.
-        
-        Args:
-            query: SQL query string
-            params: Optional query parameters
-            
-        Returns:
-            Single result row as dictionary, or None
-        """
-        results = await self.execute(query, params)
+        """Execute a query and return a single result row, or ``None``."""
+        results = await self.execute(query, params, transaction_id=transaction_id)
         return results[0] if results else None
+
+    def begin_transaction(self) -> str:
+        """Open an RDS Data API transaction and return its id."""
+        response = self.client.begin_transaction(
+            resourceArn=self.cluster_arn,
+            secretArn=self.secret_arn,
+            database=self.database,
+        )
+        return response["transactionId"]
+
+    def commit_transaction(self, transaction_id: str) -> None:
+        self.client.commit_transaction(
+            resourceArn=self.cluster_arn,
+            secretArn=self.secret_arn,
+            transactionId=transaction_id,
+        )
+
+    def rollback_transaction(self, transaction_id: str) -> None:
+        try:
+            self.client.rollback_transaction(
+                resourceArn=self.cluster_arn,
+                secretArn=self.secret_arn,
+                transactionId=transaction_id,
+            )
+        except Exception:
+            pass
+
+    @asynccontextmanager
+    async def scoped_session(
+        self,
+        traveler_id: Optional[str] = None,
+        agent_type: Optional[str] = None,
+    ):
+        """
+        Open a transaction with RLS session variables set.
+
+        Usage::
+
+            async with client.scoped_session(traveler_id="trv_x") as tx:
+                rows = await client.execute("SELECT ...", transaction_id=tx)
+
+        Inside the block, ``app.current_traveler_id`` (and optionally
+        ``app.agent_type``) are pinned for the lifetime of the transaction.
+        Aurora RLS policies on ``traveler_preferences`` and friends will
+        filter rows accordingly.
+        """
+        tx = self.begin_transaction()
+        try:
+            if traveler_id is not None:
+                await self.execute(
+                    "SELECT set_config('app.current_traveler_id', %s, true)",
+                    (traveler_id,),
+                    transaction_id=tx,
+                )
+            if agent_type is not None:
+                await self.execute(
+                    "SELECT set_config('app.agent_type', %s, true)",
+                    (agent_type,),
+                    transaction_id=tx,
+                )
+            yield tx
+            self.commit_transaction(tx)
+        except Exception:
+            self.rollback_transaction(tx)
+            raise
 
 
 # Global client instance

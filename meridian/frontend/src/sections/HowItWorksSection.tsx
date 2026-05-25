@@ -1,8 +1,8 @@
 /**
  * HowItWorksSection — Meridian Pro Journey rail
  *
- * Replaces the four phase pillars with a horizontal four-stop journey
- * (Filters → MCP → Intent → Personal) with done / live / next states.
+ * Five-stop journey (SQL → MCP → Retrieval → Memory → Orchestration)
+ * with done / live / next states.
  */
 import { FadeIn } from '../components/FadeIn';
 import { useAgentBridge } from '../context/AgentBridge';
@@ -25,7 +25,7 @@ const steps: JourneyStep[] = [
     num: '01',
     state: 'done',
     ph: 'Phase 01 · Done',
-    title: 'Filters',
+    title: 'SQL',
     serif: '',
     desc: 'Plain SQL filters on trip_packages via the RDS Data API. The fastest possible answer for an exact match.',
     chips: ['RDS Data API', 'SQL · WHERE'],
@@ -43,7 +43,7 @@ const steps: JourneyStep[] = [
     num: '03',
     state: 'live',
     ph: 'Phase 03 · Live',
-    title: 'Intent',
+    title: 'Retrieval',
     serif: '',
     desc: 'Hybrid pgvector + tsvector. Vague requests resolve to the right packages. A Strands supervisor delegates to specialists.',
     chips: ['pgvector HNSW', 'tsvector', 'Cohere v4'],
@@ -52,10 +52,19 @@ const steps: JourneyStep[] = [
     num: '04',
     state: 'next',
     ph: 'Phase 04 · Next',
-    title: 'Personal',
+    title: 'Memory',
     serif: '',
     desc: 'A ConciergeOrchestrator grounds every turn in traveler_profiles and a Strands @tool memory agent. Memory in, recommendations out.',
     chips: ['Strands @tool', 'trip_interactions', 'Aurora memory'],
+  },
+  {
+    num: '05',
+    state: 'next',
+    ph: 'Phase 05 · Next',
+    title: 'Orchestration',
+    serif: '',
+    desc: 'A LangGraph StateGraph owns control flow — classify, branch, synthesize — with checkpointed state in Aurora.',
+    chips: ['LangGraph', 'StateGraph', 'PostgresSaver'],
   },
 ];
 
@@ -64,6 +73,7 @@ const STEP_PHASE: Record<string, Phase> = {
   '02': 2,
   '03': 3,
   '04': 4,
+  '05': 5,
 };
 
 export function HowItWorksSection() {
@@ -74,14 +84,14 @@ export function HowItWorksSection() {
       <FadeIn>
         <div className="mp-section-h-row">
           <div className="mp-section-h">
-            <div className="mp-label-row">The four modes — a journey, not a toggle</div>
+            <div className="mp-label-row">The five modes — a journey, not a toggle</div>
             <h2>
-              From <em className="serif">filters</em> to <em className="serif">memory</em>.
+              From <em className="serif">SQL</em> to <em className="serif">orchestration</em>.
             </h2>
             <p>
-              Each phase climbs a rung: plain SQL filters, then MCP, then hybrid intent search,
-              finally a personalized concierge that grounds every search in Aurora-stored traveler
-              memory. The console below lets you scrub through all four on the same query.
+              Each phase climbs a rung: plain SQL, then MCP, then hybrid retrieval, then traveler
+              memory, finally an explicit LangGraph StateGraph that owns control flow. The console
+              below lets you scrub through all five on the same query.
             </p>
           </div>
           <div className="actions">

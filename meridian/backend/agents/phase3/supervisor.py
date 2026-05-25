@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Callable, Any, Optional, List
 
-from strands import Agent
+from strands import Agent, tool
 from strands.models import BedrockModel
 from pydantic import BaseModel
 
@@ -58,30 +58,34 @@ class SupervisorAgent:
         Initialize Supervisor agent.
         
         Args:
-            search_agent: Search agent for semantic/visual search
-            product_agent: Product agent for details and inventory
-            order_agent: Order agent for order processing
+            search_agent: Search agent for semantic / hybrid trip search
+            product_agent: Package agent for trip details and departure availability
+            order_agent: Booking agent for reservation processing
             activity_callback: Optional callback for reporting agent activities
         """
         self.search_agent = search_agent
         self.product_agent = product_agent
         self.order_agent = order_agent
         self.activity_callback = activity_callback or (lambda x: None)
-        
+
+        # Cache of the most-recent search result so the live API can return
+        # structured packages alongside the LLM-generated reply text.
+        self.last_search_packages: List[dict] = []
+        self.last_search_query: Optional[str] = None
+
         # Initialize Bedrock model - Claude Opus 4.7 (cross-region inference)
         self.model = BedrockModel(
             model_id="global.anthropic.claude-opus-4-7-v1",
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
         )
-        
-        # Supervisor has no direct tools - only delegation
-        # Requirement 11.5
+
+        # Supervisor delegates via @tool functions; Bedrock chooses which to call.
         self.agent = Agent(
             model=self.model,
             tools=[
                 self._delegate_to_search,
                 self._delegate_to_product,
-                self._delegate_to_order
+                self._delegate_to_order,
             ],
             system_prompt=self._get_system_prompt()
         )
@@ -129,67 +133,68 @@ Guidelines:
         )
         self.activity_callback(entry)
     
-    async def _delegate_to_search(self, query: str, use_image: bool = False, image_data: Optional[bytes] = None) -> dict:
+    @tool
+    async def _delegate_to_search(self, query: str) -> dict:
         """
-        Delegate to Search Agent for product search.
-        
+        Delegate to the Search Agent for natural-language trip discovery.
+
         Args:
-            query: Search query text
-            use_image: Whether to use visual search
-            image_data: Image bytes for visual search
-            
+            query: Natural-language search query (destination, vibe, budget, party size).
+
         Returns:
-            Search results from Search Agent
+            {"packages": [...], "query": str} — semantic search results from Aurora.
         """
         start_time = datetime.utcnow()
-        
+
         self._log_activity(
             activity_type="delegation",
             title="Delegating to Search Agent",
-            details=f"Query: {query}, Visual: {use_image}"
+            details=f"Query: {query}"
         )
-        
-        if use_image and image_data:
-            result = await self.search_agent.visual_search(image_data)
-        else:
-            result = await self.search_agent.semantic_search(query)
-        
+
+        result = await self.search_agent.semantic_search(query)
+
+        # Cache for the live API caller to read structured packages out of band.
+        self.last_search_packages = result.get("packages", [])
+        self.last_search_query = query
+
         execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
-        
+
         self._log_activity(
             activity_type="delegation",
             title="Search Agent completed",
-            details=f"Found {len(result.get('packages', result.get('products', [])))} packages",
+            details=f"Found {len(self.last_search_packages)} packages",
             execution_time_ms=execution_time,
             agent_name="SearchAgent"
         )
-        
+
         return result
     
-    async def _delegate_to_product(self, action: str, product_id: Optional[str] = None, size: Optional[str] = None) -> dict:
+    @tool
+    async def _delegate_to_product(self, action: str, package_id: Optional[str] = None, duration: Optional[str] = None) -> dict:
         """
-        Delegate to Product Agent for product operations.
-        
+        Delegate to the Package Agent for trip details or departure availability.
+
         Args:
-            action: 'details' or 'inventory'
-            product_id: Product identifier
-            size: Optional size for inventory check
-            
+            action: 'details' for package info, or 'availability' for departure slots.
+            package_id: Trip package identifier (e.g. "CTY-002").
+            duration: Optional duration option for availability check (e.g. "7 days").
+
         Returns:
-            Product information from Product Agent
+            Package information or availability data.
         """
         start_time = datetime.utcnow()
-        
+
         self._log_activity(
             activity_type="delegation",
             title="Delegating to Package Agent",
-            details=f"Action: {action}, Package: {product_id}"
+            details=f"Action: {action}, Package: {package_id}"
         )
-        
+
         if action == "details":
-            result = await self.product_agent.get_product_details(product_id)
-        elif action == "inventory":
-            result = await self.product_agent.check_inventory_status(product_id, size)
+            result = await self.product_agent.get_product_details(package_id)
+        elif action in ("availability", "inventory"):
+            result = await self.product_agent.check_inventory_status(package_id, duration)
         else:
             result = {"error": f"Unknown action: {action}"}
         
@@ -204,9 +209,10 @@ Guidelines:
         
         return result
     
+    @tool
     async def _delegate_to_order(self, action: str, customer_id: Optional[str] = None, items: Optional[List[dict]] = None) -> dict:
         """
-        Delegate to Order Agent for order operations.
+        Delegate to the Booking Agent for booking calculations or reservations.
         
         Args:
             action: 'calculate' or 'process'
@@ -242,54 +248,92 @@ Guidelines:
         
         return result
     
-    async def process_message(
+    async def process_search(
         self,
-        message: str,
-        customer_id: str,
+        query: str,
         activity_callback: Optional[Callable[[ActivityEntry], Any]] = None,
-        image_data: Optional[bytes] = None
-    ) -> AgentResponse:
+    ) -> tuple[list[dict], str]:
         """
-        Process a customer message by coordinating sub-agents.
-        
-        Args:
-            message: The customer's message
-            customer_id: Identifier for the customer
-            activity_callback: Optional callback for activity updates
-            image_data: Optional image for visual search
-            
+        Run a Bedrock-driven supervisor turn focused on trip search.
+
         Returns:
-            AgentResponse with message, optional products, and optional order
+            (packages, llm_message) — packages from the SearchAgent tool call
+            (cached on the supervisor) and the supervisor's final reply text.
         """
         if activity_callback:
             self.activity_callback = activity_callback
-        
+
+        self.last_search_packages = []
+        self.last_search_query = None
+
         self._log_activity(
             activity_type="delegation",
-            title="Supervisor processing request",
-            details=f"Message: {message[:100]}..." + (" [with image]" if image_data else "")
+            title="Supervisor processing search request",
+            details=f"Query: {query[:100]}{'…' if len(query) > 100 else ''}"
         )
-        
+
         start_time = datetime.utcnow()
-        
-        # If image provided, include it in context
-        context = {"customer_id": customer_id}
-        if image_data:
-            context["image_data"] = image_data
-        
-        # Run the supervisor agent
-        response = await self.agent.run(message, context=context)
-        
+        prompt = (
+            f"Traveler asks: {query}\n\n"
+            "Use the Search Agent to find matching trip packages, then briefly summarize the top results."
+        )
+        result = await self.agent.invoke_async(prompt)
         execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
-        
+
         self._log_activity(
             activity_type="delegation",
             title="Supervisor completed coordination",
             execution_time_ms=execution_time
         )
-        
+
+        return self.last_search_packages, str(result)
+
+    async def process_message(
+        self,
+        message: str,
+        customer_id: str,
+        activity_callback: Optional[Callable[[ActivityEntry], Any]] = None,
+    ) -> AgentResponse:
+        """
+        Process a traveler message by coordinating sub-agents through Bedrock-driven
+        Strands tool delegation.
+
+        Args:
+            message: The traveler's message
+            customer_id: Identifier for the traveler
+            activity_callback: Optional callback for activity updates
+
+        Returns:
+            AgentResponse with message, optional packages, and optional booking
+        """
+        if activity_callback:
+            self.activity_callback = activity_callback
+
+        self._log_activity(
+            activity_type="delegation",
+            title="Supervisor processing request",
+            details=f"Traveler: {customer_id} · Message: {message[:100]}{'…' if len(message) > 100 else ''}"
+        )
+
+        start_time = datetime.utcnow()
+
+        # Bedrock LLM selects which delegation tool to invoke for this turn.
+        prompt = (
+            f"Traveler {customer_id} asks: {message}\n\n"
+            "Choose the right specialist (search / package / booking) and synthesize a reply."
+        )
+        result = await self.agent.invoke_async(prompt)
+
+        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+
+        self._log_activity(
+            activity_type="delegation",
+            title="Supervisor completed coordination",
+            execution_time_ms=execution_time
+        )
+
         return AgentResponse(
-            message=str(response),
+            message=str(result),
             products=None,
             order=None
         )

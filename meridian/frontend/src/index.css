@@ -1169,6 +1169,7 @@ body {
 .trace-cat-tool { background: rgba(255, 91, 31, 0.08); color: var(--dl-accent-2); }
 .trace-cat-data { background: rgba(13, 17, 23, 0.04); color: var(--dl-muted); }
 .trace-cat-synthesis { background: rgba(16, 185, 129, 0.1); color: #059669; }
+.trace-cat-security { background: rgba(220, 38, 38, 0.08); color: #b91c1c; border-color: rgba(220, 38, 38, 0.22); }
 
 .trace-component {
   background: white;

@@ -128,13 +128,13 @@ Guidelines:
     
     async def calculate_total(self, items: List[dict]) -> dict:
         """
-        Calculate order total including tax and shipping.
-        
+        Calculate booking total including tax and service fee.
+
         Args:
-            items: List of items with product_id, quantity, optional size
-            
+            items: List of items with package_id, travelers_count, optional duration
+
         Returns:
-            Order total breakdown
+            Booking total breakdown
         """
         start_time = datetime.utcnow()
         
@@ -158,10 +158,10 @@ Guidelines:
                     "total": float(item_total)
                 })
         
-        # Calculate tax (8.5%) and shipping
+        # Calculate tax (8.5%) and service fee
         tax = subtotal * Decimal('0.085')
-        shipping = Decimal('0') if subtotal >= Decimal('100') else Decimal('9.99')
-        total = subtotal + tax + shipping
+        service_fee = Decimal('0') if subtotal >= Decimal('100') else Decimal('9.99')
+        total = subtotal + tax + service_fee
         
         execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
         
@@ -176,9 +176,11 @@ Guidelines:
             "items": item_details,
             "subtotal": float(subtotal),
             "tax": float(tax),
-            "shipping": float(shipping),
+            # NOTE: key kept as `shipping` to match the Order pydantic model on the
+            # API surface; surfaced in UI as "Service fee".
+            "shipping": float(service_fee),
             "total": float(total),
-            "free_shipping_applied": shipping == 0
+            "free_service_fee_applied": service_fee == 0
         }
     
     async def process_order(self, customer_id: str, items: List[dict]) -> dict:

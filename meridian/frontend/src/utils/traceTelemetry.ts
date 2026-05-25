@@ -41,13 +41,13 @@ function buildPhase4Preamble(
   return [
     span({
       activity_type: 'reasoning',
-      title: 'AgentCore session bootstrap',
-      agent_name: 'runtime',
-      agent_file: 'agentcore/session.py',
+      title: 'Concierge session bootstrap',
+      agent_name: 'ConciergeOrchestrator',
+      agent_file: 'agents/phase4/concierge.py',
       execution_time_ms: 18,
       telemetry: {
         category: 'runtime',
-        component: 'Bedrock AgentCore',
+        component: 'Strands + FastAPI',
         status: 'ok',
         fields: [
           { label: 'trace_id', value: traceId, mono: true },
@@ -55,18 +55,19 @@ function buildPhase4Preamble(
           { label: 'runtime', value: 'meridian-travel-v3' },
           { label: 'region', value: 'us-east-1' },
           { label: 'governance', value: 'scopes: search, availability · budget: $4,000' },
+          { label: 'isolation', value: 'Aurora RLS — see Security span below' },
         ],
       },
     }),
     span({
       activity_type: 'reasoning',
       title: 'Load short-term memory (session)',
-      agent_name: 'memory_agent',
+      agent_name: 'MemoryAgent',
       agent_file: 'agents/phase4/memory_agent.py',
       execution_time_ms: 12,
       telemetry: {
         category: 'memory_short',
-        component: 'AgentCore state',
+        component: 'Strands runtime',
         status: 'ok',
         memory: {
           shortTerm: {
@@ -76,56 +77,40 @@ function buildPhase4Preamble(
         },
         fields: [
           { label: 'window', value: 'last 6 turns + tool buffer' },
-          { label: 'store', value: 'in-memory session (AgentCore)' },
-          { label: 'ttl', value: '30 min idle' },
+          { label: 'store', value: 'conversation_messages (Aurora)' },
+          { label: 'ttl', value: 'persisted per conversation_id' },
         ],
       },
     }),
     span({
       activity_type: 'database',
       title: 'Recall long-term memory (Aurora)',
-      agent_name: 'memory_agent',
+      agent_name: 'MemoryAgent',
       agent_file: 'agents/phase4/memory_agent.py',
       execution_time_ms: 34,
       sql_query:
-        "SELECT fact_key, fact_value, source, confidence FROM memory.facts WHERE user_id = $1 ORDER BY embedding <=> embed($2) LIMIT 8",
+        "SELECT preference_key, preference_value, source, confidence FROM traveler_preferences WHERE traveler_id = :traveler_id ORDER BY confidence DESC LIMIT 8",
       telemetry: {
         category: 'memory_long',
         component: 'Aurora PostgreSQL',
         status: 'ok',
         memory: {
           longTerm: {
-            label: 'Durable facts (pgvector recall)',
+            label: 'Durable preferences (Aurora recall)',
             facts: LONG_TERM_FACTS,
           },
         },
         fields: [
-          { label: 'table', value: 'memory.facts' },
-          { label: 'recall', value: 'vector similarity + recency' },
+          { label: 'table', value: 'traveler_preferences' },
+          { label: 'recall', value: 'preference confidence + recency' },
           { label: 'facts_matched', value: String(LONG_TERM_FACTS.length) },
           { label: 'applied_filters', value: 'party size, allergy, dates, budget' },
         ],
       },
     }),
-    span({
-      activity_type: 'reasoning',
-      title: 'Supervisor routing (Strands)',
-      agent_name: 'SupervisorAgent',
-      agent_file: 'agents/phase3/supervisor.py',
-      execution_time_ms: 28,
-      telemetry: {
-        category: 'orchestration',
-        component: 'Strands supervisor',
-        status: 'delegated',
-        tokens: { input: 1240, output: 86 },
-        fields: [
-          { label: 'graph', value: 'meridian_supervisor_v2' },
-          { label: 'intent', value: inferIntent(query) },
-          { label: 'route', value: 'SearchAgent → hybrid_retrieval' },
-          { label: 'memory_injected', value: 'yes — party of 2, Tokyo Oct, shellfish' },
-        ],
-      },
-    }),
+    // Supervisor routing span is emitted by the live backend (Strands +
+    // Bedrock) when STRANDS_ORCHESTRATION=full. We intentionally don't add
+    // a fabricated routing span here.
   ];
 }
 
@@ -166,7 +151,7 @@ function buildPhase2Preamble(query: string, traceId: string, msgs: Message[]): A
         fields: [
           { label: 'server', value: 'awslabs.postgres_mcp_server' },
           { label: 'tools', value: 'execute_sql, list_tables, describe_table' },
-          { label: 'auth', value: 'IAM → RDS Data API' },
+          { label: 'auth', value: 'boto3 default credentials → RDS Data API' },
         ],
       },
     }),
@@ -195,15 +180,7 @@ function buildPhase1Preamble(_query: string, traceId: string): ActivityEntry[] {
   ];
 }
 
-function inferIntent(query: string): string {
-  const q = query.toLowerCase();
-  if (q.includes('stock') || q.includes('available') || q.includes('dates')) return 'availability_check';
-  if (q.includes('order') || q.includes('buy') || q.includes('book')) return 'booking_intent';
-  if (q.includes('romantic') || q.includes('weekend') || q.includes('family')) return 'semantic_trip_search';
-  return 'trip_discovery';
-}
-
-function enrichActivity(a: ActivityEntry, phase: 1 | 2 | 3 | 4, query: string): ActivityEntry {
+function enrichActivity(a: ActivityEntry, phase: 1 | 2 | 3 | 4 | 5, query: string): ActivityEntry {
   if (a.telemetry) return a;
 
   const base = { ...a };
@@ -311,7 +288,7 @@ function enrichActivity(a: ActivityEntry, phase: 1 | 2 | 3 | 4, query: string): 
   return base;
 }
 
-function buildSynthesisStep(phase: 1 | 2 | 3 | 4, productCount: number): ActivityEntry {
+function buildSynthesisStep(phase: 1 | 2 | 3 | 4 | 5, productCount: number): ActivityEntry {
   return span({
     activity_type: 'result',
     title: 'Compose grounded response',
@@ -341,7 +318,7 @@ function buildSynthesisStep(phase: 1 | 2 | 3 | 4, productCount: number): Activit
 }
 
 export function enrichTraceActivities(
-  phase: 1 | 2 | 3 | 4,
+  phase: 1 | 2 | 3 | 4 | 5,
   query: string,
   activities: ActivityEntry[],
   traceId: string,
