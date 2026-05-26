@@ -9,8 +9,8 @@ from backend.agents.phase4.memory_agent import (
 from backend.agents.phase4.concierge import (
     ProductionAgent,
     create_production_agent,
-    MemoryAgent,
-    create_memory_agent,
+    ConciergeAgent,
+    create_concierge_agent,
 )
 
 __all__ = [
@@ -20,6 +20,6 @@ __all__ = [
     "create_traveler_memory_agent",
     "ProductionAgent",
     "create_production_agent",
-    "MemoryAgent",
-    "create_memory_agent",
+    "ConciergeAgent",
+    "create_concierge_agent",
 ]

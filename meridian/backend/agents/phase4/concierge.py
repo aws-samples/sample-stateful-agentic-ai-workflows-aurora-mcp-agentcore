@@ -47,7 +47,7 @@ from backend.agentcore.gateway import get_agentcore_gateway
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agentcore.memory import get_agentcore_memory
 from backend.agentcore.runtime import get_agentcore_runtime
-from backend.agents.phase4.memory_agent import MemoryAgent, ActivityEntry as MemoryActivity
+from backend.agents.phase4.memory_agent import MemoryAgent as TravelerMemorySpecialist, ActivityEntry as MemoryActivity
 from backend.db.rds_data_client import get_rds_data_client
 from backend.memory.store import get_memory_store
 
@@ -66,7 +66,7 @@ class ProductionAgent:
 
     def __init__(self, activity_callback: Optional[Callable[[MemoryActivity], Any]] = None):
         self.activity_callback = activity_callback or (lambda _: None)
-        self.traveler_memory = MemoryAgent(activity_callback=self.activity_callback)
+        self.traveler_memory = TravelerMemorySpecialist(activity_callback=self.activity_callback)
         self.store = get_memory_store()
         self.db = get_rds_data_client()
         self.identity = get_agentcore_identity()
@@ -465,7 +465,7 @@ def create_production_agent(activity_callback=None) -> ProductionAgent:
     return ProductionAgent(activity_callback=activity_callback)
 
 
-# Back-compat aliases for older imports and docs
-create_memory_agent = create_production_agent
-MemoryAgent = ProductionAgent
+# Back-compat aliases for older imports and docs.
+create_concierge_agent = create_production_agent
+ConciergeAgent = ProductionAgent
 
