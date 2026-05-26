@@ -30,6 +30,12 @@ describe('proDemoData constants', () => {
     expect(names).toContain('trips.hybrid_search')
   })
 
+  it('MCP_TOOL_CATALOG marks workshop tools healthy (no fake degraded rows)', () => {
+    const availability = MCP_TOOL_CATALOG.find((t) => t.name === 'availability.lookup')
+    expect(availability?.health).toBe('healthy')
+    expect(MCP_TOOL_CATALOG.every((t) => t.health === 'healthy')).toBe(true)
+  })
+
   it('DEMO_PROMPT mentions both the wine intent and the red-eye constraint', () => {
     expect(DEMO_PROMPT.toLowerCase()).toContain('wine')
     expect(DEMO_PROMPT.toLowerCase()).toContain('red-eye')

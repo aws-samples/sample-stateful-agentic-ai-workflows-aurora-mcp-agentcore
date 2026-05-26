@@ -19,15 +19,16 @@ import {
   sumSpanLatency,
 } from '../lib/activityToStageSpan';
 import { fetchMemoryProfile, sendChatMessage, processOrder } from '../api/client';
+import { DEMO_PROMPT } from '../lib/proDemoData';
+import { PHASE_AGENT_MODE, PHASE_PILL } from '../lib/phaseLabels';
+import {
+  runConfigEmbedLabel,
+  runConfigModelLabel,
+  type BackendHealth,
+} from '../lib/runConfig';
 import type { ActivityEntry, LongTermMemoryFact, Message, Phase, Product } from '../types';
 
-const PHASE_LABELS: Record<Phase, string> = {
-  1: 'SQL Agent',
-  2: 'MCP Agent',
-  3: 'Retrieval Agent',
-  4: 'Memory Agent',
-  5: 'Orchestration Agent',
-};
+const PHASE_LABELS = PHASE_AGENT_MODE;
 
 const PHASE_INFO: Record<Phase, {
   beat: string;
@@ -69,6 +70,7 @@ const PHASE_INFO: Record<Phase, {
       'Beach escape under $2500 — remember our food allergies',
       'What did we discuss last time about Iceland?',
     ],
+    highlight: DEMO_PROMPT,
   },
   5: {
     beat: 'LangGraph StateGraph: explicit, branchable, resumable. PostgresSaver checkpoints in Aurora.',
@@ -176,8 +178,22 @@ const PHASE_SKILLS: Record<Phase, SkillSpec[]> = {
   ],
   4: [
     {
+      name: 'process_turn',
+      agent: 'ProductionAgent',
+      signature: 'process_turn(message, traveler_id, conversation_id)',
+      args: [
+        { name: 'message', type: 'str' },
+        { name: 'traveler_id', type: 'str' },
+        { name: 'conversation_id', type: 'str', note: 'optional' },
+      ],
+      returns: 'reply + products + memory_facts',
+      beat: 'AgentCore Runtime + Gateway + MemoryAgent @tools + Aurora RLS.',
+      file: 'agents/phase4/concierge.py',
+      example: 'Wine country + no red-eyes → hybrid search under RLS scope',
+    },
+    {
       name: 'recall_session',
-      agent: 'TravelerMemoryAgent',
+      agent: 'MemoryAgent',
       signature: 'recall_session_context(conversation_id, limit=6)',
       args: [
         { name: 'conversation_id', type: 'str' },
@@ -190,7 +206,7 @@ const PHASE_SKILLS: Record<Phase, SkillSpec[]> = {
     },
     {
       name: 'recall_facts',
-      agent: 'TravelerMemoryAgent',
+      agent: 'MemoryAgent',
       signature: 'recall_traveler_preferences(traveler_id, limit=8)',
       args: [
         { name: 'traveler_id', type: 'str' },
@@ -203,7 +219,7 @@ const PHASE_SKILLS: Record<Phase, SkillSpec[]> = {
     },
     {
       name: 'similar_trips',
-      agent: 'TravelerMemoryAgent',
+      agent: 'MemoryAgent',
       signature: 'recall_similar_interactions(traveler_id, query, limit=3)',
       args: [
         { name: 'traveler_id', type: 'str' },
@@ -217,7 +233,7 @@ const PHASE_SKILLS: Record<Phase, SkillSpec[]> = {
     },
     {
       name: 'persist_turn',
-      agent: 'TravelerMemoryAgent',
+      agent: 'MemoryAgent',
       signature: 'persist_turn(conversation_id, role, text, embedding)',
       args: [
         { name: 'conversation_id', type: 'str' },
@@ -287,6 +303,7 @@ export function AgentSection() {
   const [typing, setTyping] = useState(false);
   const [followUps, setFollowUps] = useState<string[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking');
+  const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
   const [traceId, setTraceId] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [memoryFacts, setMemoryFacts] = useState<LongTermMemoryFact[]>([]);
@@ -325,12 +342,18 @@ export function AgentSection() {
       .catch(() => {});
   }, []);
 
-  // Backend health
+  // Backend health (+ Bedrock model id for Run config)
   useEffect(() => {
     const check = async () => {
       try {
         const res = await fetch('http://localhost:8000/health');
-        setConnectionStatus(res.ok ? 'connected' : 'disconnected');
+        if (res.ok) {
+          setConnectionStatus('connected');
+          const data = (await res.json()) as BackendHealth;
+          setBackendHealth(data);
+        } else {
+          setConnectionStatus('disconnected');
+        }
       } catch {
         setConnectionStatus('disconnected');
       }
@@ -345,10 +368,12 @@ export function AgentSection() {
 
   // Auto-scroll the chat feed only — never the page. scrollIntoView would
   // walk every scroll ancestor and yank the whole window up, hiding the chat.
-  const scrollChatToBottom = () => {
+  const scrollChatToBottom = (behavior: ScrollBehavior = 'smooth') => {
     const feed = chatFeedRef.current;
     if (!feed) return;
-    feed.scrollTo({ top: feed.scrollHeight, behavior: 'smooth' });
+    requestAnimationFrame(() => {
+      feed.scrollTo({ top: feed.scrollHeight, behavior });
+    });
   };
   const prevMsgCount = useRef(0);
   const wasTyping = useRef(false);
@@ -364,16 +389,22 @@ export function AgentSection() {
     }
     wasTyping.current = typing;
   }, [typing, msgs.length]);
+  useEffect(() => {
+    if (typing && (acts.length > 0 || pendingActs.length > 0)) {
+      scrollChatToBottom('auto');
+    }
+  }, [typing, acts.length, pendingActs.length]);
 
   const revealActivitiesProgressively = (
     activities: ActivityEntry[],
     onComplete: () => void,
+    forPhase: Phase = phase,
   ) => {
     if (activities.length === 0) {
       onComplete();
       return;
     }
-    const delay = phaseDelays[phase];
+    const delay = phaseDelays[forPhase];
     let index = 0;
     setActs([activities[0]]);
     setCurrentStep(0);
@@ -403,9 +434,10 @@ export function AgentSection() {
     }
   };
 
-  const send = async (overrideText?: string) => {
+  const send = async (overrideText?: string, sendOpts?: { phase?: Phase }) => {
     const text = (overrideText ?? input).trim();
     if (!text || typing) return;
+    const effectivePhase = sendOpts?.phase ?? phase;
     lastUserTextRef.current = text;
     setLastQuery(text);
     setInput('');
@@ -429,8 +461,8 @@ export function AgentSection() {
     try {
       const response = await sendChatMessage({
         message: text,
-        phase,
-        ...(phase === 4
+        phase: effectivePhase,
+        ...(effectivePhase === 4
           ? {
               customer_id: DEMO_TRAVELER_ID,
               conversation_id: conversationId ?? undefined,
@@ -449,7 +481,7 @@ export function AgentSection() {
       const botResponse = response;
 
       revealActivitiesProgressively(
-        enrichTraceActivities(phase, text, response.activities, tid, history, {
+        enrichTraceActivities(effectivePhase, text, response.activities, tid, history, {
           productCount: botResponse.products?.length,
         }),
         () => {
@@ -483,6 +515,7 @@ export function AgentSection() {
           }
           setTyping(false);
         },
+        effectivePhase,
       );
     } catch (error) {
       console.error('Chat error:', error);
@@ -541,8 +574,8 @@ export function AgentSection() {
       setPhase: applyPhase,
       setInput,
       focusComposer: () => composerRef.current?.focus(),
-      sendMessage: (text) => {
-        void sendRef.current(text);
+      sendMessage: (text, options) => {
+        void sendRef.current(text, options);
       },
       clearChat,
       replayLast: () => {
@@ -720,7 +753,7 @@ export function AgentSection() {
   const activeSkillSpec = skills.find((s) => s.name === activeSkill) ?? null;
 
   return (
-    <section id="agent" className="mp-section">
+    <section id="agent" className="mp-section mp-section--workspace">
       <FadeIn>
         <div className="mp-section-h-row">
           <div className="mp-section-h">
@@ -778,7 +811,7 @@ export function AgentSection() {
                     data-p={String(p)}
                     onClick={() => switchPhase(p - 1)}
                   >
-                    <span className="pdot" /> {PHASE_LABELS[p]}
+                    <span className="pdot" /> {PHASE_PILL[p]}
                   </button>
                 ))}
               </div>
@@ -879,7 +912,7 @@ export function AgentSection() {
             {/* LEFT RAIL */}
             <aside className="mp-ws-side">
               <div className="mp-side-h">Traveler</div>
-              <div className="mp-traveler-card">
+              <div className="mp-traveler-card mp-fancy-panel">
                 <div className="mp-tv-head">
                   <div className="mp-tv-avatar">A·J</div>
                   <div className="mp-tv-meta">
@@ -913,9 +946,18 @@ export function AgentSection() {
               </div>
 
               <div className="mp-side-h">Run config</div>
-              <div className="mp-side-card">
+              <div className="mp-side-card mp-fancy-panel">
                 <div className="row"><span>Mode</span><b>{PHASE_LABELS[phase]}</b></div>
-                <div className="row"><span>Model</span><b>claude-sonnet</b></div>
+                <div className="row">
+                  <span>Model</span>
+                  <b>{runConfigModelLabel(phase, backendHealth)}</b>
+                </div>
+                {phase >= 3 && (
+                  <div className="row">
+                    <span>Embed</span>
+                    <b>{runConfigEmbedLabel(phase, backendHealth)}</b>
+                  </div>
+                )}
                 <div className="row">
                   <span>Stack</span>
                   <b>
@@ -984,7 +1026,8 @@ export function AgentSection() {
                     <div className="mp-bubble">
                       <p style={{ margin: 0 }}>
                         Hi — pick a starter on the left, or describe the trip you have in mind. In
-                        Phase 4 I'll ground every reply in your stored traveler memory.
+                        Phase 4 is production mode — AgentCore Runtime, Gateway, Memory, and Aurora
+                        RLS ground every reply in your stored traveler facts.
                       </p>
                     </div>
                   </div>
@@ -1007,8 +1050,8 @@ export function AgentSection() {
                                     imageUrl={pr.image_url}
                                     category={pr.category}
                                     alt={pr.name}
-                                    style={{ width: '100%', height: '100%', borderRadius: 10 }}
-                                    emojiSize={22}
+                                    style={{ width: '100%', height: '100%', borderRadius: 12 }}
+                                    emojiSize={40}
                                   />
                                 </div>
                                 <div className="mp-rec-meta">
@@ -1091,7 +1134,10 @@ export function AgentSection() {
                         !typing &&
                         acts.length > 0 && (
                           <div className="reasoning">
-                            <span className="tag">▸ supervisor</span> →{' '}
+                            <span className="tag">
+                              ▸ {phase >= 3 ? 'supervisor' : PHASE_LABELS[phase].toLowerCase()}
+                            </span>{' '}
+                            →{' '}
                             {acts
                               .slice(0, 4)
                               .map((a) => a.title.replace(/\s+/g, ' '))
@@ -1357,7 +1403,16 @@ export function AgentSection() {
                       <b style={{ color: 'var(--mp-ink)' }}>{totalMs}ms</b> total
                     </div>
                     <div>
-                      Bedrock <code>claude-sonnet</code> · pgvector HNSW · pricing approximate
+                      {phase >= 3 ? (
+                        <>
+                          Bedrock <code>{runConfigModelLabel(phase, backendHealth)}</code>
+                          {' · '}
+                          {runConfigEmbedLabel(phase, backendHealth)} · pgvector HNSW
+                        </>
+                      ) : (
+                        <>No LLM this phase · SQL/MCP only · pricing N/A</>
+                      )}
+                      {' · '}approximate
                     </div>
                   </div>
                 )}

@@ -13,7 +13,7 @@ describe('activityToStageSpan', () => {
       timestamp: '2026-01-01T00:00:00Z',
       activity_type: 'reasoning',
       title: 'Recall traveler preferences',
-      agent_name: 'TravelerMemoryAgent',
+      agent_name: 'MemoryAgent',
       execution_time_ms: 42,
       telemetry: { category: 'memory_long', component: 'Aurora PostgreSQL', status: 'ok' },
     };

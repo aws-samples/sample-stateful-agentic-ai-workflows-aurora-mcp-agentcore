@@ -4,7 +4,10 @@
  * Trace spans, recommendations, and assistant replies come from live
  * `POST /api/chat` responses via `traceAdapter.ts`.
  */
+import { PHASE_EYEBROW } from '../../lib/phaseLabels';
 import type { StageScenario } from '../types';
+
+const PHASE_4_LABEL = PHASE_EYEBROW[4];
 
 const GOVERNANCE = {
   scope: 'traveler_preferences · RLS-scoped',
@@ -16,9 +19,9 @@ const GOVERNANCE = {
 export const STAGE_SCENARIOS: StageScenario[] = [
   {
     id: 'wine',
-    phaseLabel: 'Phase 4 · Personal',
+    phaseLabel: PHASE_4_LABEL,
     traceId: '',
-    prompt: "A slow week somewhere we can drink good wine — Jordan can't do red-eyes.",
+    prompt: "A slow week somewhere we can drink good wine – Jordan can't do red-eyes.",
     assistantReply: '',
     reasoning: '',
     traveler: {
@@ -35,7 +38,7 @@ export const STAGE_SCENARIOS: StageScenario[] = [
   },
   {
     id: 'family',
-    phaseLabel: 'Phase 4 · Personal',
+    phaseLabel: PHASE_4_LABEL,
     traceId: '',
     prompt: 'Family beach trip under $2,500 — kids need shallow water and a kids club.',
     assistantReply: '',
@@ -54,7 +57,7 @@ export const STAGE_SCENARIOS: StageScenario[] = [
   },
   {
     id: 'business',
-    phaseLabel: 'Phase 4 · Personal',
+    phaseLabel: PHASE_4_LABEL,
     traceId: '',
     prompt: 'One-night business stopover in Singapore with lounge access and late checkout.',
     assistantReply: '',

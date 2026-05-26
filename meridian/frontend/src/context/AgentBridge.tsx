@@ -25,7 +25,7 @@ export interface AgentHandlers {
   setPhase: (phase: Phase) => void;
   setInput: (text: string) => void;
   focusComposer: () => void;
-  sendMessage: (text: string) => void;
+  sendMessage: (text: string, options?: { phase?: Phase }) => void;
   clearChat: () => void;
   replayLast: () => void;
 }
@@ -68,7 +68,7 @@ export function AgentBridgeProvider({ children }: { children: ReactNode }) {
     }
     if (opts?.prompt != null) h?.setInput(opts.prompt);
     if (opts?.send && opts.prompt?.trim()) {
-      h?.sendMessage(opts.prompt.trim());
+      h?.sendMessage(opts.prompt.trim(), { phase: opts.phase });
     } else if (opts?.focus !== false) {
       h?.focusComposer();
     }

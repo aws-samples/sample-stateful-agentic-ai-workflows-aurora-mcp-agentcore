@@ -1,12 +1,12 @@
 """
-Phase 4 — Memory Agent (Strands + full AgentCore stack + Aurora RLS).
+Phase 4 — Production Agent (Strands + full AgentCore stack + Aurora RLS).
 
 Presenter walkthrough — AgentCore on one turn
 ---------------------------------------------
   1. AgentCore Runtime   — session envelope (runtimeSessionId · microVM isolation)
   2. AgentCore Identity  — workload / IAM envelope (security span)
   3. AgentCore Memory    — list + semantic recall + create_event mirror
-  4. Aurora RLS tx       — scoped_session + TravelerMemoryAgent @tools
+  4. Aurora RLS tx       — scoped_session + MemoryAgent @tools
   5. AgentCore Gateway   — managed MCP tools/list + tools/call for trip search
   6. persist_turn        — Aurora write + AgentCore Memory write-back
 
@@ -47,18 +47,18 @@ from backend.agentcore.gateway import get_agentcore_gateway
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agentcore.memory import get_agentcore_memory
 from backend.agentcore.runtime import get_agentcore_runtime
-from backend.agents.phase4.memory_agent import TravelerMemoryAgent, ActivityEntry as MemoryActivity
+from backend.agents.phase4.memory_agent import MemoryAgent, ActivityEntry as MemoryActivity
 from backend.db.rds_data_client import get_rds_data_client
 from backend.memory.store import get_memory_store
 
 logger = logging.getLogger(__name__)
 
 
-class MemoryAgent:
+class ProductionAgent:
     """
     Phase 4 concierge orchestrator.
 
-    Composes TravelerMemoryAgent @tools into a Strands Agent, searches trips
+    Composes MemoryAgent @tools into a Strands Agent, searches trips
     via AgentCore Gateway MCP, and persists every turn under RLS.
     """
 
@@ -66,7 +66,7 @@ class MemoryAgent:
 
     def __init__(self, activity_callback: Optional[Callable[[MemoryActivity], Any]] = None):
         self.activity_callback = activity_callback or (lambda _: None)
-        self.traveler_memory = TravelerMemoryAgent(activity_callback=self.activity_callback)
+        self.traveler_memory = MemoryAgent(activity_callback=self.activity_callback)
         self.store = get_memory_store()
         self.db = get_rds_data_client()
         self.identity = get_agentcore_identity()
@@ -77,7 +77,7 @@ class MemoryAgent:
             model_id=config.bedrock.model_id,
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
         )
-        # Concierge Agent — memory @tools are bound methods from TravelerMemoryAgent.
+        # Concierge Agent — memory @tools are bound methods from MemoryAgent.
         self.agent = Agent(
             model=self.model,
             tools=[
@@ -97,7 +97,7 @@ class MemoryAgent:
                 activity_type=activity_type,
                 title=title,
                 details=details,
-                agent_name=kwargs.get("agent_name", "MemoryAgent"),
+                agent_name=kwargs.get("agent_name", "ProductionAgent"),
                 agent_file=self.AGENT_FILE,
                 telemetry=kwargs.get("telemetry"),
             )
@@ -112,7 +112,7 @@ class MemoryAgent:
         """
         Ask Bedrock (via Strands) to choose which memory tools to call this turn.
 
-        Returns True if the LLM successfully drove tool selection. The TravelerMemoryAgent
+        Returns True if the LLM successfully drove tool selection. The MemoryAgent
         callbacks emit trace spans naturally as tools fire; the supervisor here
         only needs to know success vs failure to decide on fallback.
         """
@@ -440,7 +440,7 @@ class MemoryAgent:
             )
 
             await self.store.write_audit(
-                agent_name="MemoryAgent",
+                agent_name="ProductionAgent",
                 operation="phase4_turn",
                 traveler_id=traveler_id,
                 rls_traveler=traveler_id,
@@ -454,13 +454,18 @@ class MemoryAgent:
                 "result",
                 "Memory-grounded reply ready",
                 details=f"{len(packages)} packages · Aurora memory updated",
-                telemetry={"category": "synthesis", "component": "MemoryAgent", "status": "ok"},
+                telemetry={"category": "synthesis", "component": "ProductionAgent", "status": "ok"},
             )
 
         self.traveler_memory._transaction_id = None
         return packages, activities, response_message, conv_id, memory_facts
 
 
-def create_memory_agent(activity_callback=None) -> MemoryAgent:
-    return MemoryAgent(activity_callback=activity_callback)
+def create_production_agent(activity_callback=None) -> ProductionAgent:
+    return ProductionAgent(activity_callback=activity_callback)
+
+
+# Back-compat aliases for older imports and docs
+create_memory_agent = create_production_agent
+MemoryAgent = ProductionAgent
 

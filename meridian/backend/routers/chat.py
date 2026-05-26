@@ -641,7 +641,7 @@ async def phase3_supervisor_search(
 
 
 # =============================================================================
-# PHASE 4: Strands MemoryAgent + AgentCore (Runtime/Gateway/Memory/Identity) + Aurora RLS
+# PHASE 4: ProductionAgent + AgentCore (Runtime/Gateway/Memory/Identity) + Aurora RLS
 #
 # AWS docs:
 #   AgentCore overview:
@@ -653,7 +653,7 @@ async def phase3_supervisor_search(
 # =============================================================================
 
 def _memory_activity_to_entry(entry: Any) -> ActivityEntry:
-    """Convert TravelerMemoryAgent/MemoryAgent activity to API ActivityEntry."""
+    """Convert MemoryAgent/ProductionAgent activity to API ActivityEntry."""
     if isinstance(entry, ActivityEntry):
         return entry
     data = entry.model_dump() if hasattr(entry, "model_dump") else dict(entry)
@@ -688,7 +688,7 @@ async def phase5_memory_recall(
         activity_type="tool_call",
         title="Aurora recall: traveler_preferences",
         details=f"{len(prefs)} durable preference facts",
-        agent_name="TravelerMemoryAgent",
+        agent_name="MemoryAgent",
         agent_file="agents/phase4/memory_agent.py",
     ))
 
@@ -698,7 +698,7 @@ async def phase5_memory_recall(
             activity_type="tool_call",
             title="Aurora recall: conversation_messages",
             details=f"{len(session)} recent session turns",
-            agent_name="TravelerMemoryAgent",
+            agent_name="MemoryAgent",
             agent_file="agents/phase4/memory_agent.py",
         ))
 
@@ -707,7 +707,7 @@ async def phase5_memory_recall(
         activity_type="tool_call",
         title="Aurora recall: trip_interactions (pgvector)",
         details=f"{len(similar)} semantically similar past interactions",
-        agent_name="TravelerMemoryAgent",
+        agent_name="MemoryAgent",
         agent_file="agents/phase4/memory_agent.py",
     ))
 
@@ -786,11 +786,11 @@ async def phase4_search(
 
     Requires deployed AgentCore Runtime, Gateway, and Memory — see ``agentcore/README.md``.
     """
-    from backend.agents.phase4.concierge import create_memory_agent
+    from backend.agents.phase4.concierge import create_production_agent
     from backend.memory.store import DEMO_TRAVELER_ID
 
     tid = customer_id or DEMO_TRAVELER_ID
-    runtime = create_memory_agent()
+    runtime = create_production_agent()
     products, raw_activities, message, conv_id, facts = await runtime.process_turn(
         query,
         tid,
@@ -1012,7 +1012,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             ))
             # Fall through to regular search
 
-    # Phase 4: Strands MemoryAgent + Aurora memory (@tool)
+    # Phase 4: ProductionAgent + Aurora memory (@tool)
     if request.phase == 4:
         from backend.memory.store import DEMO_TRAVELER_ID
 
@@ -1020,7 +1020,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             activity_type="reasoning",
             title="Processing with personal concierge (Strands + Aurora memory)",
             details=f"Query: {request.message[:80]}{'...' if len(request.message) > 80 else ''}",
-            agent_name="MemoryAgent",
+            agent_name="ProductionAgent",
             agent_file="agents/phase4/concierge.py",
         ))
         try:
@@ -1051,7 +1051,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 activity_type="error",
                 title="Concierge error",
                 details=str(e),
-                agent_name="MemoryAgent",
+                agent_name="ProductionAgent",
                 agent_file="agents/phase4/concierge.py",
             ))
             return _complete_chat_turn(

@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAgentBridge } from '../context/AgentBridge';
 import { fetchProducts } from '../api/client';
+import { DEMO_PROMPT } from '../lib/proDemoData';
 import type { Product } from '../types';
 
 interface HeroSectionProps {
@@ -12,6 +13,13 @@ interface HeroSectionProps {
 
 const FEATURE_IDS = ['CTY-001', 'BCH-001', 'ADV-001', 'WEL-001', 'CTY-002', 'BCH-004'];
 const ROTATE_MS = 6000;
+
+/** Request a wider Unsplash crop so the hero banner stays sharp at 16:10. */
+function heroImageSrc(url: string): string {
+  return url
+    .replace(/w=\d+/i, 'w=1600')
+    .replace(/h=\d+/i, 'h=1000');
+}
 
 const matchLines: Record<string, string> = {
   'City Breaks':
@@ -64,21 +72,22 @@ export function HeroSection({ scrollY: _scrollY }: HeroSectionProps) {
   return (
     <section className="mp-hero">
       <div>
-        <div className="mp-label-row">Meridian — agentic travel concierge</div>
+        <div className="mp-label-row">Meridian – agentic travel concierge</div>
         <h1>
           Plan. <em className="serif">Fly.</em> Land.
         </h1>
         <p className="lede">
-          A travel concierge that understands what you actually mean. Built on Aurora PostgreSQL,
-          MCP, and Cohere Embed v4 — so &ldquo;a slow week somewhere we can drink good wine&rdquo;
-          returns the right hotel, the right flight, the right neighborhood. Every step traced.
-          Every fact remembered.
+          An agentic travel concierge that understands intent – not keywords. Ask{' '}
+          &ldquo;{DEMO_PROMPT}&rdquo; and a Strands supervisor routes through AgentCore Memory,
+          MCP Gateway tools, and Cohere Embed&nbsp;v4 hybrid search on Aurora PostgreSQL – so you
+          get the right hotel, flight, and neighborhood. Every tool span traced. Every traveler
+          fact remembered.
         </p>
         <div className="mp-hero-cta">
           <button
             type="button"
             className="mp-btn primary"
-            onClick={() => openConcierge({ phase: 4, focus: true })}
+            onClick={() => openConcierge({ phase: 4, focus: true, prompt: DEMO_PROMPT })}
           >
             Talk to concierge
           </button>
@@ -90,13 +99,24 @@ export function HeroSection({ scrollY: _scrollY }: HeroSectionProps) {
             Browse trips
           </button>
         </div>
-        <div className="mp-hero-scale">
-          <span className="mp-hero-scale-eyebrow">Same two founders. Same vibe.</span>
-          <span className="mp-hero-scale-arc">
-            <b>50</b> <span className="arrow">→</span> <b>500,000</b>
-            <em>trips/day</em>
-          </span>
-          <span className="mp-hero-scale-tail">10,000× the scale · five phases, one Aurora</span>
+        <div className="mp-hero-scale mp-fancy-panel">
+          <p className="mp-hero-scale-eyebrow">Same two founders. Same vibe.</p>
+          <div className="mp-hero-scale-metric" aria-label="Scale from 50 to 500,000 trips per day">
+            <div className="mp-hero-scale-end">
+              <span className="mp-hero-scale-num">50</span>
+            </div>
+            <div className="mp-hero-scale-bridge" aria-hidden="true">
+              <span className="mp-hero-scale-bridge-line" />
+              <span className="mp-hero-scale-arrow">→</span>
+            </div>
+            <div className="mp-hero-scale-end is-to">
+              <span className="mp-hero-scale-num">500,000</span>
+              <span className="mp-hero-scale-unit">trips/day</span>
+            </div>
+          </div>
+          <p className="mp-hero-scale-tail">
+            10,000× the trip volume – every recommendation still feels hand-picked
+          </p>
         </div>
         <div className="mp-hero-stats">
           <div className="mp-stat"><b>30</b>curated packages</div>
@@ -139,7 +159,7 @@ export function HeroSection({ scrollY: _scrollY }: HeroSectionProps) {
         </div>
         <div className="mp-feature-scene">
           {current?.image_url ? (
-            <img src={current.image_url} alt={current.name} />
+            <img src={heroImageSrc(current.image_url)} alt={current.name} />
           ) : null}
           <div className="mp-feature-ribbon">
             <div>

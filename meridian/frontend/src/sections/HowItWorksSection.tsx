@@ -6,6 +6,7 @@
  */
 import { FadeIn } from '../components/FadeIn';
 import { useAgentBridge } from '../context/AgentBridge';
+import { PHASE_JOURNEY_SUB } from '../lib/phaseLabels';
 import type { Phase } from '../types';
 
 interface JourneyStep {
@@ -23,7 +24,7 @@ interface JourneyStep {
 const steps: JourneyStep[] = [
   {
     num: '01',
-    ph: 'Phase 01 · Filters',
+    ph: PHASE_JOURNEY_SUB[1],
     title: 'SQL',
     serif: '',
     desc: 'The lab. Direct RDS Data API. Fast for exact matches — and it breaks on "romantic week in Europe."',
@@ -34,7 +35,7 @@ const steps: JourneyStep[] = [
   },
   {
     num: '02',
-    ph: 'Phase 02 · MCP',
+    ph: PHASE_JOURNEY_SUB[2],
     title: 'MCP',
     serif: '',
     desc: 'MCP changes the interface, not the intelligence. Typed tool, IAM auth — same gap on natural language.',
@@ -45,7 +46,7 @@ const steps: JourneyStep[] = [
   },
   {
     num: '03',
-    ph: 'Phase 03 · Intent',
+    ph: PHASE_JOURNEY_SUB[3],
     title: 'Retrieval',
     serif: '',
     desc: 'Where natural language works. Cohere Embed v4 + hybrid pgvector + tsvector. Strands supervisor delegates to specialists.',
@@ -56,10 +57,10 @@ const steps: JourneyStep[] = [
   },
   {
     num: '04',
-    ph: 'Phase 04 · Personal',
-    title: 'Memory',
+    ph: PHASE_JOURNEY_SUB[4],
+    title: 'Production',
     serif: '',
-    desc: 'The concierge knows Alex & Jordan, their Tokyo trip Oct 12–19, the shellfish allergy. None of that\'s in the prompt — it\'s in Aurora. RLS pins per-traveler scope inside an RDS Data API transaction; every turn writes one audit row; AgentCore Memory mirrors session events.',
+    desc: 'The production concierge: AgentCore Runtime hosts the session, Gateway serves MCP tools, Memory mirrors events, and Aurora RLS scopes every query. Alex & Jordan\'s Tokyo dates and shellfish allergy live in traveler_preferences — not in the prompt.',
     chips: ['AgentCore Runtime', 'AgentCore Gateway', 'AgentCore Memory', 'Aurora RLS'],
     scale: '~50,000 trips/day · returning travelers expect to be known',
     persona: 'Alex returns: "Tokyo for two in October." Party size, allergy, budget — already known.',
@@ -67,7 +68,7 @@ const steps: JourneyStep[] = [
   },
   {
     num: '05',
-    ph: 'Phase 05 · Orchestration',
+    ph: PHASE_JOURNEY_SUB[5],
     title: 'Orchestration',
     serif: '',
     desc: 'LangGraph owns control flow when we want it inspectable, branchable, resumable. Explicit StateGraph + conditional edges + PostgresSaver checkpoints in Aurora. Strands routes tools when the agent picks the call. Together: AgentCore + LangGraph + Strands.',
@@ -100,14 +101,13 @@ export function HowItWorksSection() {
       <FadeIn>
         <div className="mp-section-h-row">
           <div className="mp-section-h">
-            <div className="mp-label-row">Three acts · five phases</div>
-            <h2>The retrieval stack, then production, then orchestration.</h2>
+            <div className="mp-label-row">Five phases</div>
+            <h2>SQL → MCP → retrieval → production → orchestration.</h2>
             <p>
-              Phases 1–3 are the <em>retrieval stack</em>: SQL is the lab, MCP changes the interface,
-              retrieval is where natural language actually works. Phase 4 is the <em>production
-              story</em> — the concierge knows the traveler because Aurora does. Phase 5 is{' '}
-              <em>orchestration</em> — LangGraph for inspectable control flow, Strands for tool
-              routing, AgentCore for the runtime.
+              Five steps on one Aurora catalog — each phase adds capability without throwing away
+              the last. Filters and MCP for structured access, hybrid search for intent, a production
+              concierge on AgentCore with Aurora memory and RLS, then LangGraph when workflows need
+              to branch and resume.
             </p>
           </div>
           <div className="actions">
@@ -139,7 +139,7 @@ export function HowItWorksSection() {
               <button
                 key={s.num}
                 type="button"
-                className={`mp-journey-step ${state}`}
+                className={`mp-journey-step mp-fancy-panel ${state}`}
                 aria-current={state === 'live' ? 'step' : undefined}
                 onClick={() =>
                   openConcierge({ phase: stepPhase, focus: true })
@@ -149,7 +149,7 @@ export function HowItWorksSection() {
                 <div className="node">{s.num.slice(-1)}</div>
                 <div className="ttl">{s.title}</div>
                 <div className="desc">{s.desc}</div>
-                <div className="mp-journey-arc">
+                <div className="mp-journey-arc mp-fancy-inset">
                   <div className="arc-row">
                     <span className="arc-label">At this scale</span>
                     <span className="arc-text">{s.scale}</span>

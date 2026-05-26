@@ -1,8 +1,7 @@
 /**
  * Meridian Pro — light, professional single-page application.
  *
- * Section order is intentional: hero → journey → workspace → memory → trips → system → vision.
- * The agent workspace is the centerpiece; everything else supports it.
+ * Section order: hero → journey → workspace → phase 3 trips → phase 4 production → substrate → vision.
  */
 import { AgentBridgeProvider } from './context/AgentBridge';
 import { useScrollY } from './hooks/useScrollY';
@@ -14,6 +13,7 @@ import { MemorySection } from './sections/MemorySection';
 import { ProductsSection } from './sections/ProductsSection';
 import { SystemSection } from './sections/SystemSection';
 import { Vision2026Section } from './sections/Vision2026Section';
+import { PhaseMatrixSection } from './sections/PhaseMatrixSection';
 import { Footer } from './components/Footer';
 
 export default function App() {
@@ -26,10 +26,11 @@ export default function App() {
         <HeroSection scrollY={scrollY} />
         <HowItWorksSection />
         <AgentSection />
-        <MemorySection />
         <ProductsSection />
+        <MemorySection />
         <SystemSection />
         <Vision2026Section />
+        <PhaseMatrixSection />
         <Footer />
       </div>
     </AgentBridgeProvider>

@@ -22,6 +22,6 @@ def test_phase3_has_retrieval_specialists_and_skills() -> None:
 def test_phase4_memory_agent_catalog() -> None:
     spec = get_phase_spec(4)
     assert spec is not None
-    assert spec.primary_agent == "MemoryAgent"
-    assert "TravelerMemoryAgent" in spec.specialists
+    assert spec.primary_agent == "ProductionAgent"
+    assert "MemoryAgent" in spec.specialists
     assert any(s.name == "recall_session_context" for s in spec.skills)

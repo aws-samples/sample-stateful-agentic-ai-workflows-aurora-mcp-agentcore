@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FadeIn } from '../components/FadeIn';
 import { fetchMemoryProfile } from '../api/client';
 import { DEMO_PERSONA_FALLBACK, DEMO_TRAVELER_ID } from '../components/TravelerPersona';
+import { PHASE_EYEBROW } from '../lib/phaseLabels';
 import type { LongTermMemoryFact, TravelerProfile } from '../types';
 
 export function MemorySection() {
@@ -55,14 +56,13 @@ export function MemorySection() {
       <FadeIn>
         <div className="mp-section-h-row">
           <div className="mp-section-h">
-            <div className="mp-label-row">Phase 4 · production memory</div>
-            <h2>The concierge knows you. Aurora makes it safe.</h2>
+            <div className="mp-label-row">{PHASE_EYEBROW[4]}</div>
+            <h2>Traveler memory inside the production stack.</h2>
             <p>
-              Alex &amp; Jordan, Tokyo Oct 12–19, the shellfish allergy — none of that&apos;s in
-              the prompt. It&apos;s in <code>traveler_preferences</code>. RLS pins per-traveler
-              scope inside an RDS Data API transaction; every turn writes one row to the audit
-              log; AgentCore Memory mirrors session events. That&apos;s the concrete answer to
-              &ldquo;securely connect LLM agents to Aurora.&rdquo;
+              Phase 4 is the production concierge — AgentCore Runtime, Gateway, Memory, and Aurora
+              RLS together. This inspector is the durable layer: Alex &amp; Jordan, Tokyo Oct
+              12–19, the shellfish allergy in <code>traveler_preferences</code>, scoped per
+              traveler, audited every turn, mirrored in AgentCore Memory.
             </p>
           </div>
           <div className="actions">

@@ -1,5 +1,5 @@
 """
-Phase 4 — Traveler Memory Agent (Strands @tool memory specialist).
+Phase 4 — Memory Agent (Strands @tool memory specialist).
 
 Presenter walkthrough
 ---------------------
@@ -50,7 +50,7 @@ class ActivityEntry(BaseModel):
     telemetry: Optional[Dict[str, Any]] = None
 
 
-class TravelerMemoryAgent:
+class MemoryAgent:
     """
     Memory specialist with Strands @tool methods for Aurora-backed recall and persistence.
     """
@@ -76,7 +76,7 @@ class TravelerMemoryAgent:
                 self.persist_turn,
             ],
             system_prompt=(
-                "You are the Traveler Memory Agent for Meridian concierge. "
+                "You are the Memory Agent for Meridian concierge. "
                 "Use @tool methods to load session context and traveler preferences "
                 "from Aurora before search, and persist turns after responding."
             ),
@@ -100,7 +100,7 @@ class TravelerMemoryAgent:
                 details=details or f"Invoked {tool_name} via strands-agents",
                 sql_query=sql_query,
                 execution_time_ms=execution_time_ms,
-                agent_name="TravelerMemoryAgent",
+                agent_name="MemoryAgent",
                 agent_file=self.AGENT_FILE,
                 telemetry=telemetry,
             )
@@ -271,7 +271,12 @@ class TravelerMemoryAgent:
         return {"interaction_id": interaction_id, "status": "persisted"}
 
 
-def create_traveler_memory_agent(
+def create_memory_agent(
     activity_callback: Optional[Callable[[ActivityEntry], Any]] = None,
-) -> TravelerMemoryAgent:
-    return TravelerMemoryAgent(activity_callback=activity_callback)
+) -> MemoryAgent:
+    return MemoryAgent(activity_callback=activity_callback)
+
+
+# Backward-compatible aliases for older imports.
+TravelerMemoryAgent = MemoryAgent
+create_traveler_memory_agent = create_memory_agent

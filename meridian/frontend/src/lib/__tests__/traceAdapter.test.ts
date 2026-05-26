@@ -26,7 +26,7 @@ describe('activityTraceToSpans', () => {
       baseActivity({
         id: 'span-a',
         title: 'supervisor.plan',
-        agent_name: 'MemoryAgent',
+        agent_name: 'ProductionAgent',
         execution_time_ms: 28,
       }),
     ])
@@ -34,7 +34,7 @@ describe('activityTraceToSpans', () => {
     expect(spans[0]).toMatchObject({
       id: 'span-a',
       title: 'supervisor.plan',
-      agent: 'MemoryAgent',
+      agent: 'ProductionAgent',
       latencyMs: 28,
       category: 'runtime',
       status: 'ok',

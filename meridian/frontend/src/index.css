@@ -763,16 +763,14 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
-  padding: 16px;
-  border-radius: 16px;
-  background: white;
-  border: 1px solid var(--dl-line);
+  padding: 18px 20px 18px 24px;
 }
 
 .runtime-strip-row {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 12px 14px;
 }
 
 .runtime-strip-label {
@@ -780,7 +778,7 @@ body {
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--dl-dim);
+  color: var(--mp-accent, var(--dl-accent));
 }
 
 .runtime-strip-value {
@@ -795,10 +793,7 @@ body {
   gap: 20px;
   align-items: center;
   margin-top: 20px;
-  padding: 20px 22px;
-  border-radius: 16px;
-  background: var(--dl-paper);
-  border: 1px solid var(--dl-line);
+  padding: 20px 22px 20px 26px;
 }
 
 .memory-preview-eyebrow {
@@ -806,7 +801,7 @@ body {
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--dl-leaf);
+  color: var(--mp-accent, var(--dl-accent));
   margin-bottom: 8px;
 }
 
@@ -819,11 +814,27 @@ body {
 }
 
 .vision-pillar {
-  background: white;
-  border: 1px solid var(--dl-line);
-  border-radius: 16px;
-  padding: 20px;
+  padding: 20px 18px 20px 24px;
   height: 100%;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.vision-pillar:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 14px 32px -16px rgba(255, 91, 31, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.75);
+}
+
+.vision-pillar:focus-visible {
+  outline: 2px solid var(--mp-accent, var(--dl-accent));
+  outline-offset: 2px;
 }
 
 .vision-pillar-num {
@@ -831,7 +842,7 @@ body {
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--dl-accent);
+  color: var(--mp-accent, var(--dl-accent));
 }
 
 .vision-pillar-title {
@@ -840,6 +851,10 @@ body {
   letter-spacing: -0.02em;
   margin: 8px 0 10px;
   color: var(--dl-ink);
+}
+
+.vision-pillar-title em.serif {
+  color: var(--mp-accent, var(--dl-accent));
 }
 
 .vision-pillar-desc {

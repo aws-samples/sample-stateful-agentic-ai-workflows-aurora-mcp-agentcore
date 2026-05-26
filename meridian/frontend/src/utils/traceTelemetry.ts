@@ -42,7 +42,7 @@ function buildPhase4Preamble(
     span({
       activity_type: 'reasoning',
       title: 'Concierge session bootstrap',
-      agent_name: 'MemoryAgent',
+      agent_name: 'ProductionAgent',
       agent_file: 'agents/phase4/concierge.py',
       execution_time_ms: 18,
       telemetry: {
@@ -62,7 +62,7 @@ function buildPhase4Preamble(
     span({
       activity_type: 'reasoning',
       title: 'Load short-term memory (session)',
-      agent_name: 'TravelerMemoryAgent',
+      agent_name: 'MemoryAgent',
       agent_file: 'agents/phase4/memory_agent.py',
       execution_time_ms: 12,
       telemetry: {
@@ -85,7 +85,7 @@ function buildPhase4Preamble(
     span({
       activity_type: 'database',
       title: 'Recall long-term memory (Aurora)',
-      agent_name: 'TravelerMemoryAgent',
+      agent_name: 'MemoryAgent',
       agent_file: 'agents/phase4/memory_agent.py',
       execution_time_ms: 34,
       sql_query:
@@ -292,7 +292,7 @@ function buildSynthesisStep(phase: 1 | 2 | 3 | 4 | 5, productCount: number): Act
   return span({
     activity_type: 'result',
     title: 'Compose grounded response',
-    agent_name: phase >= 3 ? (phase === 4 ? 'MemoryAgent' : phase === 5 ? 'OrchestrationAgent' : 'RetrievalAgent') : phase === 2 ? 'MCPAgent' : 'SQLAgent',
+    agent_name: phase >= 3 ? (phase === 4 ? 'ProductionAgent' : phase === 5 ? 'OrchestrationAgent' : 'RetrievalAgent') : phase === 2 ? 'MCPAgent' : 'SQLAgent',
     agent_file:
       phase === 4
         ? 'agents/phase4/concierge.py'

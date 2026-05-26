@@ -48,6 +48,27 @@ const pillars = [
     desc: 'Plans surface before commit — budgets, scopes, confirm-before-charge. Autonomy with guardrails on real money and inventory.',
     tags: ['Plan → confirm', 'Scopes', 'Policy agent'],
   },
+  {
+    num: '07',
+    title: 'Identity',
+    serif: 'guardrails',
+    desc: 'AgentCore Identity scopes each turn with workload credentials so memory, tools, and writes run under explicit least-privilege envelopes.',
+    tags: ['Workload identity', 'IAM scoped', 'Least privilege'],
+  },
+  {
+    num: '08',
+    title: 'Cost-aware',
+    serif: 'execution',
+    desc: 'Trace-level token and latency metrics keep each turn explainable and budgetable, with policy gates before expensive downstream actions.',
+    tags: ['Token telemetry', 'Latency budget', 'Policy gates'],
+  },
+  {
+    num: '09',
+    title: 'Human-in',
+    serif: 'the-loop',
+    desc: 'Critical actions stay reviewable: plans, holds, and confirmations are surfaced in plain language before any irreversible booking step.',
+    tags: ['Review first', 'Confirm before charge', 'Safe automation'],
+  },
 ];
 
 const runtimeStack = [
@@ -74,9 +95,9 @@ export function Vision2026Section() {
       </FadeIn>
 
       <FadeIn delay={0.05}>
-        <div className="runtime-strip">
+        <div className="runtime-strip mp-fancy-panel">
           {runtimeStack.map((row) => (
-            <div key={row.label} className="runtime-strip-row">
+            <div key={row.label} className="runtime-strip-row mp-fancy-inset">
               <span className="runtime-strip-label">{row.label}</span>
               <span className="runtime-strip-value">{row.value}</span>
             </div>
@@ -85,7 +106,7 @@ export function Vision2026Section() {
       </FadeIn>
 
       <FadeIn delay={0.1}>
-        <div className="memory-preview-card">
+        <div className="memory-preview-card mp-fancy-panel">
           <div>
             <div className="memory-preview-eyebrow">Wave 01 · Memory of me</div>
             <p className="memory-preview-copy">
@@ -107,18 +128,11 @@ export function Vision2026Section() {
         </div>
       </FadeIn>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: 16,
-          marginTop: 28,
-        }}
-      >
+      <div className="mp-vision-grid">
         {pillars.map((p, i) => (
           <FadeIn key={p.num} delay={0.12 + i * 0.04}>
             <article
-              className="vision-pillar"
+              className="vision-pillar mp-fancy-panel"
               role="button"
               tabIndex={0}
               onClick={() => {

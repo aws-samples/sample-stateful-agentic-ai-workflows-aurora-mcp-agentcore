@@ -29,7 +29,7 @@ export const DEMO_TRAVELER_TAGS = [
 
 /** Default prompt used by hero + workspace starter. */
 export const DEMO_PROMPT =
-  "A slow week somewhere we can drink good wine — Jordan can't do red-eyes.";
+  "A slow week somewhere we can drink good wine – Jordan can't do red-eyes.";
 
 /** MCP tool catalog displayed in the System section. */
 export interface McpToolEntry {
@@ -89,9 +89,9 @@ export const MCP_TOOL_CATALOG: McpToolEntry[] = [
   {
     name: 'availability.lookup',
     sub: 'aurora · live',
-    ver: 'v0.9',
+    ver: 'v1.0',
     p50: '62ms',
-    health: 'warn',
+    health: 'healthy',
     sampleInput:
       '{ "package_ids": ["CTY-001"], "window": ["2026-05-14", "2026-05-21"] }',
     sampleOutput:
@@ -111,11 +111,11 @@ export const MCP_TOOL_CATALOG: McpToolEntry[] = [
   {
     name: 'claude.compose',
     sub: 'bedrock',
-    ver: 'sonnet-4.5',
+    ver: 'opus-4.7',
     p50: '132ms',
     health: 'healthy',
     sampleInput:
-      '{\n  "system": "Meridian concierge — ground replies in trip_cards + memory facts",\n  "user": "A slow week somewhere we can drink good wine — Jordan can\'t do red-eyes."\n}',
+      '{\n  "system": "Meridian concierge — ground replies in trip_cards + memory facts",\n  "user": "A slow week somewhere we can drink good wine – Jordan can\'t do red-eyes."\n}',
     sampleOutput:
       '"Tuscany fits both of you. Florence + Chianti, May 14–21 — boutique, refundable, no red-eye out of BOS…"',
   },

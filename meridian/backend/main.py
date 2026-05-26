@@ -24,6 +24,7 @@ setup_logging()
 log_startup_banner()
 
 # Import routers
+from backend.config import EMBEDDING_MODEL_ID, bedrock_model_label, config
 from backend.routers import chat_router, products_router, packages_router, memory_router
 
 
@@ -32,6 +33,9 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     environment: str
+    bedrock_model_id: str
+    bedrock_model_label: str
+    embedding_model_id: str
 
 
 class ErrorResponse(BaseModel):
@@ -103,16 +107,24 @@ app.include_router(products_router)
 app.include_router(memory_router)
 
 
+def _health_payload() -> HealthResponse:
+    model_id = config.bedrock.model_id
+    return HealthResponse(
+        status="healthy",
+        version="1.0.0",
+        environment=os.getenv("ENVIRONMENT", "development"),
+        bedrock_model_id=model_id,
+        bedrock_model_label=bedrock_model_label(model_id),
+        embedding_model_id=EMBEDDING_MODEL_ID,
+    )
+
+
 @app.get("/", response_model=HealthResponse)
 async def root() -> HealthResponse:
     """
     Root endpoint - returns basic service information.
     """
-    return HealthResponse(
-        status="healthy",
-        version="1.0.0",
-        environment=os.getenv("ENVIRONMENT", "development")
-    )
+    return _health_payload()
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -123,11 +135,7 @@ async def health_check() -> HealthResponse:
     Returns:
         HealthResponse with service status, version, and environment
     """
-    return HealthResponse(
-        status="healthy",
-        version="1.0.0",
-        environment=os.getenv("ENVIRONMENT", "development")
-    )
+    return _health_payload()
 
 
 @app.get("/api/health", response_model=HealthResponse)
@@ -138,11 +146,7 @@ async def api_health_check() -> HealthResponse:
     Returns:
         HealthResponse with service status, version, and environment
     """
-    return HealthResponse(
-        status="healthy",
-        version="1.0.0",
-        environment=os.getenv("ENVIRONMENT", "development")
-    )
+    return _health_payload()
 
 
 # Exception handlers for consistent error responses

@@ -2,6 +2,7 @@
  * StickyNav — Meridian Pro top bar with brand mark, segmented nav, status dot
  */
 import { useEffect, useState } from 'react';
+import { MeridianMark } from './MeridianMark';
 
 interface StickyNavProps {
   scrollY: number;
@@ -87,7 +88,7 @@ export function StickyNav({ scrollY: _scrollY }: StickyNavProps) {
     <nav className="mp-topnav">
       <div className="mp-topnav-inner">
         <div className="mp-brand">
-          <span className="mp-brand-glyph" />
+          <MeridianMark variant="nav" />
           Meridian
           <span className="mp-brand-build">Pro · 2026.1</span>
         </div>

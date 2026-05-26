@@ -92,7 +92,7 @@ export function TravelerPersona({
         <div className="traveler-persona-head">
           <div>
             <div className="traveler-persona-eyebrow">
-              {active ? 'Demo traveler · Phase 4 memory' : 'Demo traveler · switch to Phase 4'}
+              {active ? 'Demo traveler · Phase 4 production' : 'Demo traveler · switch to Phase 4'}
             </div>
             <div className="traveler-persona-name">{name}</div>
           </div>

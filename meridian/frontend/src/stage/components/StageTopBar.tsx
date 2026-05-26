@@ -1,6 +1,7 @@
 /**
  * StageTopBar — keynote brand bar, live system badges, phase + trace id.
  */
+import { MeridianMark } from '../../components/MeridianMark';
 import type { StageSystemId } from '../types';
 
 const SYSTEMS: { id: StageSystemId | 'aurora_pg' | 'pgvector' | 'bedrock' | 'strands' | 'langgraph'; label: string; matches: StageSystemId | null }[] = [
@@ -22,7 +23,7 @@ export function StageTopBar({ phaseLabel, traceId, activeSystem }: StageTopBarPr
   return (
     <header className="ds-topbar" role="banner">
       <div className="ds-brand">
-        <span className="ds-mark" aria-hidden="true" />
+        <MeridianMark variant="stage" />
         <div className="ds-brand-text">
           <span className="ds-brand-name">Meridian Demo Stage</span>
           <span className="ds-brand-sub">Build agentic workflows with Aurora and MCP</span>

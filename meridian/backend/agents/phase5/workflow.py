@@ -277,7 +277,7 @@ class OrchestrationAgent:
                 execution_time_ms=elapsed,
                 telemetry={
                     "category": "orchestration",
-                    "component": "LangGraph → MemoryAgent",
+                    "component": "LangGraph → ProductionAgent",
                     "status": "ok",
                     "fields": [{"label": "node", "value": "memory_recall"}],
                 },

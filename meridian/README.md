@@ -101,7 +101,7 @@ Sections, in order:
 
 #### Switching phases
 
-Phase 4 (Personal) is the default and is the most impressive working mode for a demo. To change phases:
+Phase 4 (Production — AgentCore Runtime + Gateway + Memory + Aurora RLS) is the default and is the most impressive working mode for a demo. To change phases:
 
 - Click any step in the **phase journey** rail.
 - Click any phase pill in the **workspace top bar**.
@@ -144,7 +144,7 @@ See `meridian/frontend/src/stage/DemoStage.tsx` for the full keyboard map and sc
 | **1** | SQL Agent | Direct SQL filters on `trip_packages` via RDS Data API (trip type, operator, price) |
 | **2** | MCP Agent | Same catalog queries through `postgres-mcp-server` / MCP `run_query` |
 | **3** | Retrieval Agent | Cohere Embed v4 (1024d) + hybrid pgvector + `tsvector` search; Retrieval Agent delegates to specialist agents |
-| **4** | Memory Agent | `MemoryAgent` + `TravelerMemoryAgent` (`@tool`) recall and persist traveler context in Aurora; mirrors session events to Bedrock AgentCore Memory; per-turn audit row + Aurora RLS |
+| **4** | Production Agent | `ProductionAgent` + `TravelerMemoryAgent` (`@tool`) on AgentCore Runtime/Gateway/Memory; Aurora RLS + per-turn audit |
 | **5** | Orchestration Agent | LangGraph `StateGraph` (classify → search/availability/recall → synthesize) with `PostgresSaver` checkpointing in Aurora |
 
 **Phase 1 example:** `City breaks`, `Beach & Resort`, `Business travel under $1500`
@@ -205,7 +205,7 @@ meridian/
 │   │   ├── phase1/       # Direct RDS filters
 │   │   ├── phase2/       # MCP agent
 │   │   ├── phase3/       # Supervisor + search/package/booking specialists
-│   │   ├── phase4/       # MemoryAgent + TravelerMemoryAgent
+│   │   ├── phase4/       # ProductionAgent + TravelerMemoryAgent
 │   │   └── phase5/       # LangGraph StateGraph workflow
 │   ├── agentcore/        # Bedrock AgentCore Memory + Identity adapters
 │   ├── memory/           # Aurora memory store

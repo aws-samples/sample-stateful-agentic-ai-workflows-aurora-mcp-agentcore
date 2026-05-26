@@ -13,7 +13,7 @@ A four-phase ladder on one Aurora catalog (`trip_packages`):
 | 1 · Filters | Direct SQL via RDS Data API |
 | 2 · MCP | Same queries through postgres-mcp-server |
 | 3 · Intent | Cohere Embed v4 + hybrid pgvector / full-text search |
-| 4 · Personal | Traveler memory in Aurora + Strands `@tool` concierge |
+| 4 · Production | AgentCore Runtime + Gateway + Memory + Aurora RLS · Strands concierge |
 
 Demo traveler: **Alex & Jordan Chen** (`trv_meridian_demo`) — profile and preferences load before every Phase 4 search.
 

@@ -122,27 +122,16 @@
   gap: 14px;
   min-width: 0;
 }
-.ds-mark {
+.ds-mark-img {
   width: 36px;
   height: 36px;
   border-radius: 12px;
-  position: relative;
+  object-fit: cover;
   flex-shrink: 0;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.32) 0 18%, transparent 19%),
-    linear-gradient(135deg, #ffb94a, #ff9900 48%, #1a1f2c 49% 100%);
-  box-shadow: 0 0 26px rgba(255, 153, 0, 0.32), inset 0 0 0 1px rgba(255, 255, 255, 0.22);
-}
-.ds-mark::after {
-  content: '';
-  position: absolute;
-  left: 14px;
-  top: 6px;
-  width: 7px;
-  height: 22px;
-  border-radius: 99px;
-  background: rgba(4, 6, 10, 0.85);
-  transform: rotate(35deg);
+  display: block;
+  box-shadow:
+    0 0 26px rgba(255, 153, 0, 0.28),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 .ds-brand-text { display: flex; flex-direction: column; min-width: 0; }
 .ds-brand-name {
