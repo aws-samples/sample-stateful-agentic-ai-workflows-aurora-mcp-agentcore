@@ -8,14 +8,15 @@ Phase 3, but routed through Gateway instead of inline Python.
 
 Configuration (preferred — @aws/agentcore CLI):
 
-    cd meridian/agentcore
+    cd meridian/meridian_agentcore
     agentcore add gateway --name meridian-aurora --authorizer-type AWS_IAM
     agentcore add gateway-target --name AuroraSearch --type mcp-server ...
     agentcore deploy -y
     agentcore fetch access --name meridian-aurora --type gateway --json
     python ../scripts/sync_agentcore_env.py --write --fetch-gateway-token
 
-Gateway URL is loaded from ``agentcore/.cli/deployed-state.json`` or env override:
+Gateway URL is loaded from ``meridian_agentcore/agentcore/.cli/deployed-state.json``
+or env override:
 
     AGENTCORE_GATEWAY_URL=https://{id}.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp
     AGENTCORE_GATEWAY_SEARCH_TOOL=meridian-aurora___semantic_trip_search
@@ -48,7 +49,7 @@ logger = logging.getLogger(__name__)
 class AgentCoreGatewayAdapter:
     """MCP client for an AgentCore Gateway endpoint (tools/list + tools/call)."""
 
-    DEFAULT_SEARCH_TOOL = "meridian-aurora___semantic_trip_search"
+    DEFAULT_SEARCH_TOOL = "SemanticTripSearchLambda___semantic_trip_search"
 
     def __init__(
         self,

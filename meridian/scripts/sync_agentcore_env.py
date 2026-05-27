@@ -5,7 +5,7 @@ Sync AgentCore resource IDs from the @aws/agentcore CLI into meridian/.env.
 Preferred workflow (Node-based CLI):
 
     npm install -g @aws/agentcore
-    cd meridian/agentcore
+    cd meridian/meridian_agentcore
     agentcore add memory --name meridian-session --strategies SEMANTIC
     agentcore add gateway --name meridian-aurora --authorizer-type AWS_IAM
     agentcore add gateway-target --name AuroraSearch --type mcp-server ...
@@ -132,7 +132,7 @@ def main() -> int:
 
     if not cfg.configured_any:
         print("\n# No deployed AgentCore resources found.", file=sys.stderr)
-        print("# Run: cd meridian/agentcore && agentcore deploy -y", file=sys.stderr)
+        print("# Run: cd meridian/meridian_agentcore && agentcore deploy -y", file=sys.stderr)
         return 1
 
     if args.write:

@@ -33,7 +33,11 @@ def test_runtime_configured_invoke_live():
 
     session = adapter.session_for_turn("conv-2", "trv_demo")
     assert session.invoke_status == "live"
+    assert len(session.runtime_session_id) >= 33
+    assert session.runtime_session_id.startswith("rt-")
     mock_client.invoke_agent_runtime.assert_called_once()
+    kwargs = mock_client.invoke_agent_runtime.call_args.kwargs
+    assert kwargs["runtimeSessionId"] == session.runtime_session_id
 
 
 def test_gateway_unconfigured_raises():

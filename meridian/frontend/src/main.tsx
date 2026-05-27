@@ -1,7 +1,10 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import ConciergeApp from './ConciergeApp'
 import { DemoStage } from './stage/DemoStage'
+import { MeridianDeviceShowcase } from './showcase/MeridianDeviceShowcase'
+import { MeridianProChalkTalk } from './pro/MeridianProChalkTalk'
 import './index.css'
 
 /**
@@ -21,7 +24,26 @@ function pickRoot() {
   if (path === '/demo-stage' || path === '/stage') {
     return <DemoStage />
   }
-  return <App />
+  // `/` mounts only the dark ConciergeStudio — single full-page surface.
+  if (path === '' || path === '/' || path === '/app') {
+    return <ConciergeApp />
+  }
+  // Marketing scroll (Hero, Journey, Trips, Memory, System, Vision) lives here.
+  if (path === '/marketing') {
+    return <App />
+  }
+  // Old chalk-talk surface still reachable for the workshop walkthrough.
+  if (path === '/chalk-talk' || path === '/pro' || path === '/classic') {
+    return <MeridianProChalkTalk />
+  }
+  if (
+    path === '/showcase' ||
+    path === '/device-showcase' ||
+    path === '/slides/meridian-device-showcase'
+  ) {
+    return <MeridianDeviceShowcase />
+  }
+  return <ConciergeApp />
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

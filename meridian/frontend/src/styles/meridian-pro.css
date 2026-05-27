@@ -63,6 +63,41 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
   --mp-fancy-accent: linear-gradient(180deg, var(--mp-accent) 0%, #e85a24 100%);
   --mp-fancy-inset-bg: rgba(255, 255, 255, 0.55);
+  --mp-topnav-bg: rgba(247, 246, 242, 0.85);
+}
+
+:root[data-theme='dark'] {
+  --mp-bg: #090f1a;
+  --mp-paper: #111a2b;
+  --mp-paper-2: #0d1727;
+  --mp-rail: #0e1726;
+
+  --mp-line: rgba(219, 233, 255, 0.12);
+  --mp-line-2: rgba(219, 233, 255, 0.2);
+  --mp-line-strong: rgba(219, 233, 255, 0.28);
+
+  --mp-ink: #eaf1ff;
+  --mp-ink-2: #d5e2ff;
+  --mp-muted: #9db0d9;
+  --mp-dim: #8699c2;
+  --mp-soft: #7488b0;
+
+  --mp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 1px rgba(0, 0, 0, 0.28);
+  --mp-shadow-md: 0 14px 32px -16px rgba(0, 0, 0, 0.52);
+  --mp-shadow-lg: 0 30px 60px -28px rgba(0, 0, 0, 0.64);
+
+  --mp-fancy-gradient: linear-gradient(
+    145deg,
+    rgba(255, 91, 31, 0.2) 0%,
+    rgba(16, 26, 45, 0.9) 42%,
+    rgba(99, 158, 255, 0.16) 100%
+  );
+  --mp-fancy-border: 1px solid rgba(145, 175, 246, 0.28);
+  --mp-fancy-shadow:
+    0 14px 30px -16px rgba(0, 0, 0, 0.66),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --mp-fancy-inset-bg: rgba(6, 12, 23, 0.45);
+  --mp-topnav-bg: rgba(9, 15, 26, 0.86);
 }
 
 /* Use cooler ground site-wide so existing Daylight components inherit */
@@ -78,7 +113,7 @@ body {
   top: 0;
   z-index: 100;
   backdrop-filter: blur(16px);
-  background: rgba(247, 246, 242, 0.85);
+  background: var(--mp-topnav-bg);
   border-bottom: 1px solid var(--mp-line);
 }
 .mp-topnav-inner {
@@ -148,6 +183,17 @@ body {
   display: flex;
   gap: 10px;
   align-items: center;
+}
+.mp-theme-toggle {
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--mp-line-2);
+  background: color-mix(in srgb, var(--mp-paper) 84%, transparent);
+  color: var(--mp-ink);
+  cursor: pointer;
+  font-weight: 600;
+  font-family: inherit;
 }
 .mp-nav-meta {
   font-size: 13px;
@@ -324,6 +370,216 @@ body {
   margin: 0 auto;
   box-sizing: border-box;
   margin: 0 auto;
+}
+
+/* Signature experience concept — screenshot-inspired dark glass layout */
+.mp-signature {
+  margin: 0 auto;
+  width: min(var(--mp-content), 100% - 48px);
+  padding: 22px 0 10px;
+}
+
+.mp-signature-head h2 {
+  margin: 8px 0 10px;
+  font-size: clamp(32px, 4.2vw, 48px);
+  line-height: 1.03;
+  letter-spacing: -0.03em;
+  color: #eef3ff;
+}
+
+.mp-signature-head p {
+  margin: 0;
+  max-width: 70ch;
+  color: #b8c1d8;
+}
+
+.mp-signature-stage {
+  margin-top: 18px;
+  border-radius: 26px;
+  border: 1px solid rgba(151, 176, 255, 0.24);
+  background:
+    radial-gradient(circle at 20% 20%, rgba(102, 167, 255, 0.25), transparent 40%),
+    radial-gradient(circle at 82% 80%, rgba(255, 170, 106, 0.26), transparent 42%),
+    linear-gradient(160deg, #070d1b 0%, #0a1324 52%, #111b2d 100%);
+  box-shadow:
+    0 30px 70px rgba(5, 9, 18, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  padding: 26px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: end;
+}
+
+.mp-device-laptop {
+  border-radius: 22px;
+  border: 1px solid rgba(173, 201, 255, 0.22);
+  background: linear-gradient(180deg, rgba(7, 14, 28, 0.95), rgba(8, 15, 30, 0.84));
+  box-shadow:
+    0 20px 56px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.mp-device-top {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(170, 195, 255, 0.17);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #dce7ff;
+  font-size: 12px;
+}
+
+.mp-device-brand { font-weight: 700; }
+.mp-device-meta { color: #8aa0cf; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.mp-device-shell {
+  display: grid;
+  grid-template-columns: 130px 1fr 220px;
+  min-height: 360px;
+}
+
+.mp-device-nav {
+  border-right: 1px solid rgba(170, 195, 255, 0.13);
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mp-device-nav span {
+  color: #8ea2cc;
+  font-size: 12px;
+  padding: 7px 10px;
+  border-radius: 10px;
+}
+
+.mp-device-nav span.is-on {
+  color: #e9f1ff;
+  background: rgba(94, 147, 255, 0.22);
+}
+
+.mp-device-main {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mp-device-greeting h3 {
+  margin: 0;
+  color: #f3f7ff;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.mp-device-greeting p {
+  margin: 4px 0 0;
+  color: #93a7cf;
+  font-size: 13px;
+}
+
+.mp-device-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mp-device-card {
+  border: 1px solid rgba(157, 183, 246, 0.24);
+  background: rgba(12, 22, 42, 0.7);
+  border-radius: 12px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mp-device-card-art {
+  height: 66px;
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 218, 158, 0.55), transparent 46%),
+    linear-gradient(120deg, #354f7a, #5f7faa 50%, #345346);
+}
+
+.mp-device-card strong {
+  font-size: 11.5px;
+  line-height: 1.25;
+  color: #f0f5ff;
+}
+
+.mp-device-card span {
+  color: #9caed4;
+  font-size: 11px;
+}
+
+.mp-device-chat {
+  margin-top: auto;
+  border: 1px solid rgba(150, 176, 236, 0.25);
+  background: rgba(8, 14, 28, 0.72);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #869ac2;
+  font-size: 12px;
+}
+
+.mp-device-rail {
+  border-left: 1px solid rgba(170, 195, 255, 0.13);
+  padding: 16px 12px;
+  color: #cfdcf8;
+}
+
+.mp-device-rail h4 {
+  margin: 0;
+  font-size: 13px;
+  color: #eef4ff;
+}
+
+.mp-device-rail-user {
+  margin-top: 6px;
+  color: #93a8d3;
+  font-size: 12px;
+}
+
+.mp-device-rail ul {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mp-device-rail li {
+  color: #a8b8da;
+  font-size: 11px;
+  padding-left: 12px;
+  position: relative;
+}
+
+.mp-device-rail li::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #6ff2cf;
+  position: absolute;
+  left: 0;
+  top: 6px;
+  box-shadow: 0 0 10px rgba(111, 242, 207, 0.7);
+}
+
+@media (max-width: 1180px) {
+  .mp-device-shell {
+    grid-template-columns: 108px 1fr;
+  }
+
+  .mp-device-rail {
+    display: none;
+  }
+
 }
 @media (max-width: 960px) {
   .mp-hero {

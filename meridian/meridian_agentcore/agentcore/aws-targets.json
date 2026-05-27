@@ -1,0 +1,8 @@
+[
+  {
+    "name": "default",
+    "description": "Meridian demo deployment target",
+    "account": "619763002613",
+    "region": "us-east-1"
+  }
+]

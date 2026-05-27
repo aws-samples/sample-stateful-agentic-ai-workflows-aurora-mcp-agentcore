@@ -1,5 +1,6 @@
 @import './styles/daylight.css';
 @import './styles/meridian-pro.css';
+@import './styles/concierge-studio.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

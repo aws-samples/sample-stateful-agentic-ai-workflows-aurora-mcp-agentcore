@@ -1,0 +1,31 @@
+{
+  "targets": {
+    "default": {
+      "resources": {
+        "runtimes": {
+          "MeridianConcierge": {
+            "runtimeId": "meridianv2_MeridianConcierge-LpDBbFBjsc",
+            "runtimeArn": "arn:aws:bedrock-agentcore:us-east-1:619763002613:runtime/meridianv2_MeridianConcierge-LpDBbFBjsc",
+            "roleArn": "arn:aws:iam::619763002613:role/AgentCore-meridianv2-defa-ApplicationAgentMeridianC-fIf0vfpOTitA"
+          }
+        },
+        "memories": {
+          "meridian_session": {
+            "memoryId": "meridianv2_meridian_session-2Q67fcE5yO",
+            "memoryArn": "arn:aws:bedrock-agentcore:us-east-1:619763002613:memory/meridianv2_meridian_session-2Q67fcE5yO"
+          }
+        },
+        "mcp": {
+          "gateways": {
+            "meridian-aurora": {
+              "gatewayId": "meridianv2-meridian-aurora-temzt21jg0",
+              "gatewayArn": "arn:aws:bedrock-agentcore:us-east-1:619763002613:gateway/meridianv2-meridian-aurora-temzt21jg0",
+              "gatewayUrl": "https://meridianv2-meridian-aurora-temzt21jg0.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+            }
+          }
+        },
+        "stackName": "AgentCore-meridianv2-default"
+      }
+    }
+  }
+}

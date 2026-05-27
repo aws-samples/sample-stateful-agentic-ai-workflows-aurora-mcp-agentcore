@@ -275,7 +275,7 @@ client.invoke_agent_runtime(
 
 ```bash
 npm install -g @aws/agentcore
-cd meridian/agentcore
+cd meridian/meridian_agentcore
 agentcore add memory --name meridian-session --strategies SEMANTIC
 agentcore add gateway --name meridian-aurora --authorizer-type AWS_IAM
 agentcore deploy -y

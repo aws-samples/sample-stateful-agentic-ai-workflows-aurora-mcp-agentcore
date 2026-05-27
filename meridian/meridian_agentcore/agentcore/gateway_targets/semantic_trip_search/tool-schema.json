@@ -1,0 +1,26 @@
+[
+  {
+    "name": "semantic_trip_search",
+    "description": "Search Meridian trip packages semantically using query embedding and pgvector.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Natural language travel query."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 5,
+          "description": "Maximum packages to return."
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

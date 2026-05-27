@@ -4,10 +4,11 @@ Bedrock AgentCore adapters for Phase 4 (Memory Agent).
 Provision and deploy with the **Node-based @aws/agentcore CLI** (preferred):
 
     npm install -g @aws/agentcore
-    cd meridian/agentcore && agentcore deploy -y
+    cd meridian/meridian_agentcore && agentcore deploy -y
 
 Resource ARNs/URLs resolve via ``backend/agentcore/cli_config.py`` from
-``agentcore/.cli/deployed-state.json`` or ``agentcore status --json``.
+``meridian_agentcore/agentcore/.cli/deployed-state.json`` or
+``agentcore status --json``.
 
 Phase 4 platform story:
   Runtime  — session-isolated agent hosting

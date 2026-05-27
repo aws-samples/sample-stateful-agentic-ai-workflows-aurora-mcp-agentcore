@@ -5,7 +5,8 @@ The Node-based AgentCore CLI (`npm install -g @aws/agentcore`) is the supported
 way to provision Runtime, Gateway, Memory, and Identity.  After ``agentcore
 deploy``, resource ARNs and URLs land in:
 
-  meridian/agentcore/.cli/deployed-state.json   (auto-managed — do not edit)
+  meridian/meridian_agentcore/agentcore/.cli/deployed-state.json
+  (auto-managed — do not edit)
 
 This module merges CLI state with optional ``.env`` overrides so the FastAPI
 workshop app and Phase 4 adapters stay in sync with what you deployed.
@@ -35,8 +36,15 @@ from typing import Any, Dict, Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
-# meridian/agentcore/ (CLI project root)
-_DEFAULT_PROJECT_DIR = Path(__file__).resolve().parents[2] / "agentcore"
+# Preferred CLI project root:
+#   meridian/meridian_agentcore/agentcore
+# Legacy fallback:
+#   meridian/agentcore
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_PREFERRED_PROJECT_DIR = _PROJECT_ROOT / "meridian_agentcore" / "agentcore"
+_LEGACY_PROJECT_DIRS = (
+    _PROJECT_ROOT / "agentcore",
+)
 
 
 @dataclass(frozen=True)
@@ -73,7 +81,12 @@ def agentcore_project_dir() -> Path:
     raw = os.getenv("AGENTCORE_PROJECT_DIR")
     if raw:
         return Path(raw).expanduser().resolve()
-    return _DEFAULT_PROJECT_DIR
+    if _PREFERRED_PROJECT_DIR.is_dir():
+        return _PREFERRED_PROJECT_DIR
+    for candidate in _LEGACY_PROJECT_DIRS:
+        if candidate.is_dir():
+            return candidate
+    return _PREFERRED_PROJECT_DIR
 
 
 def deployed_state_path() -> Path:
@@ -309,7 +322,7 @@ def resolve_agentcore_config() -> AgentCoreDeployedConfig:
         gateway_name=merged["gateway_name"],
         gateway_search_tool=os.getenv(
             "AGENTCORE_GATEWAY_SEARCH_TOOL",
-            "meridian-aurora___semantic_trip_search",
+            "SemanticTripSearchLambda___semantic_trip_search",
         ),
         memory_id=merged["memory_id"],
         memory_name=merged["memory_name"],

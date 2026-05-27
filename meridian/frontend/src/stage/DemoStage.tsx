@@ -44,6 +44,10 @@ import type { Phase } from '../types';
 
 const KIOSK_SCENARIO_ORDER: StageScenario['id'][] = ['wine', 'family', 'business'];
 const KIOSK_DWELL_MS = 6500;
+const KIOSK_GITHUB_REPO = 'https://github.com/aws-samples/sample-dat309-agentic-workflows-aurora-mcp';
+const ARCHITECTURE_IMAGE_SRC = '/kiosk/architecture-board.png';
+const TRY_QR_IMAGE_SRC = '/kiosk/try-meridian-qr.png';
+type KioskTab = 'demo' | 'architecture' | 'try';
 
 function readUrlFlags() {
   if (typeof window === 'undefined') return { kiosk: false, view: 'audience' as StageView, phase: 4 as Phase };
@@ -64,6 +68,9 @@ export function DemoStage() {
   const [view, setView] = useState<StageView>(flags.view);
   const [selectedSpanIdx, setSelectedSpanIdx] = useState<number | null>(null);
   const [kiosk] = useState(flags.kiosk);
+  const [activeTab, setActiveTab] = useState<KioskTab>('demo');
+  const [architectureMissing, setArchitectureMissing] = useState(false);
+  const [qrMissing, setQrMissing] = useState(false);
   const phaseRef = useRef<Phase>(flags.phase);
 
   const totalLatency = useMemo(() => sumLatency(scenarioData.spans), [scenarioData]);
@@ -146,7 +153,7 @@ export function DemoStage() {
   // Kiosk loop: when the trace finishes, advance to the next scenario.
   const kioskTimerRef = useRef<number | null>(null);
   useEffect(() => {
-    if (!kiosk) return;
+    if (!kiosk || activeTab !== 'demo') return;
     if (!isComplete) return;
     if (kioskTimerRef.current != null) window.clearTimeout(kioskTimerRef.current);
     kioskTimerRef.current = window.setTimeout(() => {
@@ -160,7 +167,7 @@ export function DemoStage() {
         kioskTimerRef.current = null;
       }
     };
-  }, [isComplete, kiosk, scenarioId]);
+  }, [activeTab, isComplete, kiosk, scenarioId]);
 
   // Keyboard shortcuts. Disabled while typing in an input (defensive, even
   // though we don't expose any here).
@@ -171,26 +178,40 @@ export function DemoStage() {
         return;
       }
       switch (e.key) {
+        case '1':
+          if (kiosk) setActiveTab('demo');
+          break;
+        case '2':
+          if (kiosk) setActiveTab('architecture');
+          break;
+        case '3':
+          if (kiosk) setActiveTab('try');
+          break;
         case ' ':
         case 'Spacebar':
+          if (activeTab !== 'demo') break;
           e.preventDefault();
           toggle();
           break;
         case 'ArrowRight':
+          if (activeTab !== 'demo') break;
           e.preventDefault();
           next();
           break;
         case 'ArrowLeft':
+          if (activeTab !== 'demo') break;
           e.preventDefault();
           prev();
           break;
         case 'r':
         case 'R':
+          if (activeTab !== 'demo') break;
           e.preventDefault();
           replay();
           break;
         case 'b':
         case 'B':
+          if (activeTab !== 'demo') break;
           e.preventDefault();
           setView((v) => (v === 'audience' ? 'builder' : 'audience'));
           break;
@@ -203,7 +224,7 @@ export function DemoStage() {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [toggle, next, prev, replay, selectedSpanIdx]);
+  }, [activeTab, kiosk, toggle, next, prev, replay, selectedSpanIdx]);
 
   // Title for the browser tab — small touch but presenters appreciate it.
   useEffect(() => {
@@ -224,6 +245,10 @@ export function DemoStage() {
     setSelectedSpanIdx(null);
   }, []);
 
+  useEffect(() => {
+    if (activeTab !== 'demo') setSelectedSpanIdx(null);
+  }, [activeTab]);
+
   return (
     <div className={`ds-root${kiosk ? ' is-kiosk' : ''}`} data-view={view}>
       <div className="ds-shell">
@@ -232,60 +257,202 @@ export function DemoStage() {
           traceId={scenarioData.traceId}
           activeSystem={activeSystem}
         />
+        {kiosk && (
+          <div className="ds-kiosk-tabs" role="tablist" aria-label="Kiosk screens">
+            <button
+              type="button"
+              className={`ds-kiosk-tab${activeTab === 'demo' ? ' is-on' : ''}`}
+              onClick={() => setActiveTab('demo')}
+              role="tab"
+              aria-selected={activeTab === 'demo'}
+            >
+              Demo experience
+            </button>
+            <button
+              type="button"
+              className={`ds-kiosk-tab${activeTab === 'architecture' ? ' is-on' : ''}`}
+              onClick={() => setActiveTab('architecture')}
+              role="tab"
+              aria-selected={activeTab === 'architecture'}
+            >
+              Architecture
+            </button>
+            <button
+              type="button"
+              className={`ds-kiosk-tab${activeTab === 'try' ? ' is-on' : ''}`}
+              onClick={() => setActiveTab('try')}
+              role="tab"
+              aria-selected={activeTab === 'try'}
+            >
+              Try it live
+            </button>
+          </div>
+        )}
 
-        <main className="ds-stage">
-          {loadError && (
-            <div className="ds-load-error" role="alert">
-              {loadError}
+        {activeTab === 'demo' ? (
+          <>
+            <main className="ds-stage">
+              {loadError && (
+                <div className="ds-load-error" role="alert">
+                  {loadError}
+                </div>
+              )}
+              {loading && !loadError && (
+                <div className="ds-load-status" aria-live="polite">
+                  Loading live trace from backend…
+                </div>
+              )}
+              <TravelerIntentCard
+                traveler={scenarioData.traveler}
+                prompt={scenarioData.prompt}
+                memoryActive={activeSpan?.kind === 'memory'}
+              />
+
+              <TraceHero
+                spans={scenarioData.spans}
+                activeIndex={activeIndex}
+                selectedIndex={selectedSpanIdx}
+                totalLatencyMs={totalLatency}
+                onSelect={onSelectSpan}
+                view={view}
+                assistantReply={scenarioData.assistantReply}
+                reasoning={scenarioData.reasoning}
+                replyPhase={replyPhase}
+                primaryRecommendation={primaryRecommendation}
+              />
+
+              <SystemProofRail
+                scenario={scenarioData}
+                activeSpan={activeSpan}
+                activeSystem={activeSystem}
+              />
+            </main>
+
+            <RecommendationDeck recommendations={scenarioData.recommendations} />
+
+            <PresenterControls
+              isPlaying={isPlaying}
+              isComplete={isComplete}
+              canStep={activeIndex < scenarioData.spans.length - 1}
+              view={view}
+              scenarios={STAGE_SCENARIOS}
+              scenarioId={scenarioId}
+              onScenario={onChangeScenario}
+              onTogglePlay={isPlaying ? pause : play}
+              onStep={next}
+              onPrev={prev}
+              onReplay={replay}
+              onView={setView}
+            />
+          </>
+        ) : activeTab === 'architecture' ? (
+          <section className="ds-kiosk-pane">
+            <div className="ds-kiosk-pane-head">
+              <h2>Meridian architecture map</h2>
+              <p>
+                End-to-end stack: booth UX, Strands orchestration, AgentCore runtime/gateway/memory,
+                and Aurora PostgreSQL + pgvector retrieval.
+              </p>
             </div>
-          )}
-          {loading && !loadError && (
-            <div className="ds-load-status" aria-live="polite">
-              Loading live trace from backend…
+            <div className="ds-kiosk-architecture">
+              <img
+                src={ARCHITECTURE_IMAGE_SRC}
+                alt="Meridian architecture diagram"
+                className="ds-kiosk-architecture-img"
+                onLoad={() => setArchitectureMissing(false)}
+                onError={() => setArchitectureMissing(true)}
+              />
+              {architectureMissing && (
+                <div className="ds-kiosk-missing">
+                  <b>Add your architecture board image</b>
+                  <span>
+                    Drop it at <code>meridian/frontend/public/kiosk/architecture-board.png</code>.
+                    PNG, JPG, or WEBP all work (just keep the filename aligned).
+                  </span>
+                </div>
+              )}
             </div>
-          )}
-          <TravelerIntentCard
-            traveler={scenarioData.traveler}
-            prompt={scenarioData.prompt}
-            memoryActive={activeSpan?.kind === 'memory'}
-          />
+          </section>
+        ) : (
+          <section className="ds-kiosk-pane">
+            <div className="ds-kiosk-pane-head">
+              <h2>Try Meridian yourself</h2>
+              <p>Scan to open the repo and run this booth locally in minutes.</p>
+            </div>
+            <div className="ds-kiosk-try">
+              <div className="ds-kiosk-try-hero">
+                <div className="ds-kiosk-rollup-label">Live at the booth</div>
+                <h3>
+                  Build agentic workflows with <em>Aurora and MCP</em>
+                </h3>
+                <p>
+                  Built on Aurora + MCP + Strands + AgentCore. One scan gets attendees straight into
+                  the repo and setup path.
+                </p>
+              </div>
+              <div className="ds-kiosk-try-grid">
+                <div className="ds-kiosk-qr-card">
+                  <div className="ds-kiosk-qr-frame">
+                    <img
+                      src={TRY_QR_IMAGE_SRC}
+                      alt="QR code to Meridian repository"
+                      className="ds-kiosk-qr-img"
+                      onLoad={() => setQrMissing(false)}
+                      onError={() => setQrMissing(true)}
+                    />
+                  </div>
+                </div>
+                <div className="ds-kiosk-try-meta">
+                  <div className="ds-kiosk-meta-block">
+                    <div className="ds-kiosk-link-label">GitHub repository</div>
+                    <a href={KIOSK_GITHUB_REPO} target="_blank" rel="noreferrer" className="ds-kiosk-link">
+                      {KIOSK_GITHUB_REPO}
+                    </a>
+                  </div>
+                  <div className="ds-kiosk-meta-block">
+                    <div className="ds-kiosk-link-label">Booth shortcut</div>
+                    <div className="ds-kiosk-shortcuts">
+                      <code>/demo-stage?kiosk=1</code>
+                      <code>/demo-stage?kiosk=1&amp;phase=3</code>
+                    </div>
+                  </div>
+                  <div className="ds-kiosk-meta-grid">
+                    <div className="ds-kiosk-meta-block">
+                      <div className="ds-kiosk-link-label">Run locally</div>
+                      <pre className="ds-kiosk-snippet">
+{`cd meridian
+source venv/bin/activate
+uvicorn backend.main:app --reload --port 8000`}
+                      </pre>
+                    </div>
+                    <div className="ds-kiosk-meta-block">
+                      <div className="ds-kiosk-link-label">Strands + LangGraph</div>
+                      <pre className="ds-kiosk-snippet">
+{`# Retrieval (Phase 3)
+supervisor -> SearchAgent._semantic_search_tool(...)
 
-          <TraceHero
-            spans={scenarioData.spans}
-            activeIndex={activeIndex}
-            selectedIndex={selectedSpanIdx}
-            totalLatencyMs={totalLatency}
-            onSelect={onSelectSpan}
-            view={view}
-            assistantReply={scenarioData.assistantReply}
-            reasoning={scenarioData.reasoning}
-            replyPhase={replyPhase}
-            primaryRecommendation={primaryRecommendation}
-          />
-
-          <SystemProofRail
-            scenario={scenarioData}
-            activeSpan={activeSpan}
-            activeSystem={activeSystem}
-          />
-        </main>
-
-        <RecommendationDeck recommendations={scenarioData.recommendations} />
-
-        <PresenterControls
-          isPlaying={isPlaying}
-          isComplete={isComplete}
-          canStep={activeIndex < scenarioData.spans.length - 1}
-          view={view}
-          scenarios={STAGE_SCENARIOS}
-          scenarioId={scenarioId}
-          onScenario={onChangeScenario}
-          onTogglePlay={isPlaying ? pause : play}
-          onStep={next}
-          onPrev={prev}
-          onReplay={replay}
-          onView={setView}
-        />
+# Orchestration (Phase 5)
+StateGraph: classify -> branch -> synthesize`}
+                      </pre>
+                    </div>
+                  </div>
+                  <div className="ds-kiosk-meta-note">
+                    Live stack: Aurora PostgreSQL · MCP · Strands · AgentCore · LangGraph
+                  </div>
+                </div>
+              </div>
+            </div>
+            {qrMissing && (
+              <div className="ds-kiosk-missing">
+                <b>Add a QR image asset</b>
+                <span>
+                  Save one at <code>meridian/frontend/public/kiosk/try-meridian-qr.png</code> and it
+                  will render here instantly.
+                </span>
+              </div>
+            )}
+          </section>
+        )}
       </div>
 
       <SpanInspector
