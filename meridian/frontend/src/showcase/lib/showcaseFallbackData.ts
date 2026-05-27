@@ -25,7 +25,7 @@ export const SHOWCASE_FALLBACK_RECOMMENDATIONS: Product[] = [
     brand: 'Florence + Chianti',
     price: 2840,
     description: 'A slow wine-country week with a Florence landing, Chianti villages, spa afternoons, and walkable dinners.',
-    image_url: '',
+    image_url: 'https://images.unsplash.com/photo-1491555103944-7c647fd857e6?auto=format&fit=crop&w=1200&q=80',
     category: 'City Breaks',
     available_sizes: ['7 nights', '5 nights'],
     similarity: 0.96,
@@ -36,7 +36,7 @@ export const SHOWCASE_FALLBACK_RECOMMENDATIONS: Product[] = [
     brand: 'Porto + river hotel',
     price: 2460,
     description: 'Port tastings, river-view rooms, rail transfers, and calm lunches along terraced vineyards.',
-    image_url: '',
+    image_url: 'https://images.unsplash.com/photo-1523906834658-6e24ef2386f9?auto=format&fit=crop&w=1200&q=80',
     category: 'Wellness & Luxury',
     available_sizes: ['6 nights', '8 nights'],
     similarity: 0.91,
@@ -47,7 +47,7 @@ export const SHOWCASE_FALLBACK_RECOMMENDATIONS: Product[] = [
     brand: 'Strasbourg base',
     price: 2610,
     description: 'Half-timbered towns, Riesling producers, market dinners, spa access, and gentle rail hops.',
-    image_url: '',
+    image_url: 'https://images.unsplash.com/photo-1499696010180-025ef6e1a8f9?auto=format&fit=crop&w=1200&q=80',
     category: 'City Breaks',
     available_sizes: ['5 nights'],
     similarity: 0.88,
@@ -55,7 +55,7 @@ export const SHOWCASE_FALLBACK_RECOMMENDATIONS: Product[] = [
 ];
 
 export const SHOWCASE_INITIAL_PROMPT =
-  "A slow week somewhere we can drink good wine - Jordan can't do red-eyes.";
+  "A slow week somewhere with great wine, and I prefer to avoid red-eye flights.";
 
 const FIXTURE_TIMESTAMP = '2026-05-27T12:05:11.000Z';
 
@@ -94,12 +94,14 @@ function activity(
     agent_name: phase >= 4 ? 'ProductionAgent' : phase >= 3 ? 'RetrievalAgent' : 'CatalogAgent',
     agent_file:
       phase === 1
-        ? 'backend/agents/phase1/agent.py'
+        ? 'backend/agents/sql_01/agent.py'
         : phase === 2
-          ? 'backend/agents/phase2/agent.py'
+          ? 'backend/agents/mcp_02/agent.py'
           : phase === 3
-            ? 'backend/agents/phase3/supervisor.py'
-            : 'backend/agents/phase4/concierge.py',
+            ? 'backend/agents/retrieval_03/supervisor.py'
+            : phase === 4
+              ? 'backend/agents/production_04/concierge.py'
+              : 'backend/agents/orchestration_05/workflow.py',
     telemetry: {
       category: categoryByType[activity_type],
       component:
@@ -124,7 +126,7 @@ function activity(
 
 export function buildShowcaseFallbackActivities(message: string, phase: Phase): ActivityEntry[] {
   const phaseName =
-    phase === 1 ? 'Filters' : phase === 2 ? 'MCP' : phase === 3 ? 'Intent' : phase === 4 ? 'Personal' : 'Orchestration';
+    phase === 1 ? 'SQL' : phase === 2 ? 'MCP' : phase === 3 ? 'Retrieval' : phase === 4 ? 'Production' : 'Workflow';
 
   return [
     activity(

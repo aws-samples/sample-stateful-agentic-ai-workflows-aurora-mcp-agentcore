@@ -4,6 +4,7 @@ import type { ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 export function TracePanel({ state, compact = false }: { state: MeridianShowcaseState; compact?: boolean }) {
   const sqlSpans = state.traceSpans.filter((span) => span.sql);
   const memoryFacts = state.memoryFacts;
+  const agentCount = new Set(state.traceSpans.map((span) => span.agent).filter(Boolean)).size;
   const activeSpans = compact ? state.traceSpans.slice(0, 4) : state.traceSpans;
 
   return (
@@ -15,6 +16,14 @@ export function TracePanel({ state, compact = false }: { state: MeridianShowcase
         </span>
       </div>
       {!compact && (
+        <div className="mds-trace-summary">
+          <span>{state.phaseLabel}</span>
+          <span>{state.traceSpans.length} spans</span>
+          <span>{agentCount} agents</span>
+          <span>{state.totalLatencyMs}ms</span>
+        </div>
+      )}
+      {!compact && (
         <div className="mds-trace-tabs" role="tablist" aria-label="Trace filters">
           {(['spans', 'memory', 'sql', 'cost'] as const).map((tab) => (
             <button
@@ -23,7 +32,7 @@ export function TracePanel({ state, compact = false }: { state: MeridianShowcase
               className={state.traceTab === tab ? 'is-active' : ''}
               onClick={() => state.setTraceTab(tab)}
             >
-              {tab}
+              {tab === 'spans' ? 'Timeline' : tab === 'memory' ? 'Memory' : tab === 'sql' ? 'SQL' : 'Cost'}
             </button>
           ))}
         </div>
@@ -58,7 +67,12 @@ export function TracePanel({ state, compact = false }: { state: MeridianShowcase
       ) : state.traceTab === 'sql' ? (
         <div className="mds-sql-list">
           {sqlSpans.length ? (
-            sqlSpans.map((span) => <pre key={span.id}>{span.sql}</pre>)
+            sqlSpans.map((span) => (
+              <div key={span.id}>
+                <small>{span.file ?? span.agent ?? 'SQL span'}</small>
+                <pre>{span.sql}</pre>
+              </div>
+            ))
           ) : (
             <div className="mds-empty">No SQL snippet on this turn.</div>
           )}
@@ -106,6 +120,11 @@ function TraceSpanRow({
           {span.category} · {span.status} · {span.latencyMs}ms
           {span.component ? ` · ${span.component}` : ''}
         </span>
+          {(span.agent || span.file) && (
+            <span className="mds-span-source">
+              {span.agent ?? 'Agent'}{span.file ? ` · ${span.file}` : ''}
+            </span>
+          )}
         {expanded && (
           <span className="mds-span-detail">
             {span.details || span.output || 'No output payload on this span.'}

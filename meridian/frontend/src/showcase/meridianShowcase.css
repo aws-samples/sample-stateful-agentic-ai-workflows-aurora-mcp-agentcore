@@ -27,9 +27,10 @@
   width: 100%;
   overflow: hidden;
   background:
-    radial-gradient(circle at 12% 90%, rgba(34, 147, 206, 0.28), transparent 28%),
-    radial-gradient(circle at 88% 18%, rgba(227, 164, 94, 0.17), transparent 32%),
-    linear-gradient(135deg, #04070b 0%, #07111b 48%, #120d0a 100%);
+    radial-gradient(circle at 10% 16%, rgba(0, 152, 255, 0.2), transparent 42%),
+    radial-gradient(circle at 92% 46%, rgba(255, 124, 43, 0.16), transparent 34%),
+    radial-gradient(circle at 85% 8%, rgba(255, 176, 75, 0.1), transparent 38%),
+    linear-gradient(140deg, #030812 0%, #061323 44%, #0a111f 70%, #130c10 100%);
 }
 
 .mds-debug-banner {
@@ -79,9 +80,9 @@
   border: 0;
   border-radius: 0;
   background:
-    radial-gradient(circle at 72% -4%, rgba(49, 212, 228, 0.1), transparent 38%),
-    radial-gradient(circle at 100% 18%, rgba(227, 164, 94, 0.07), transparent 32%),
-    linear-gradient(180deg, var(--mds-shell) 0%, #050c14 52%, #060a10 100%);
+    radial-gradient(circle at 0% 14%, rgba(0, 182, 255, 0.12), transparent 40%),
+    radial-gradient(circle at 98% 40%, rgba(255, 144, 54, 0.12), transparent 34%),
+    linear-gradient(180deg, #040a13 0%, #06101b 52%, #080f18 100%);
   box-shadow: none;
 }
 
@@ -102,8 +103,8 @@
   padding: 28px 18px;
   border-right: 1px solid var(--mds-line);
   background:
-    radial-gradient(circle at 0% 22%, rgba(49, 212, 228, 0.1), transparent 52%),
-    linear-gradient(180deg, rgba(2, 6, 10, 0.98), rgba(3, 8, 13, 0.88));
+    radial-gradient(circle at 0% 22%, rgba(0, 194, 255, 0.14), transparent 54%),
+    linear-gradient(180deg, rgba(3, 10, 17, 0.98), rgba(4, 12, 19, 0.9));
 }
 
 .mds-brand {
@@ -193,12 +194,19 @@
 }
 
 .mds-nav-icon {
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
   flex: 0 0 auto;
-  border: 1.4px solid currentColor;
-  border-radius: 4px;
-  opacity: 0.78;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.92;
+}
+
+.mds-nav-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .mds-sidebar-spacer {
@@ -224,6 +232,41 @@
     radial-gradient(circle at 52% 30%, #ffd7c4 0 13%, transparent 14%),
     radial-gradient(circle at 50% 47%, #c87a59 0 20%, transparent 21%),
     linear-gradient(160deg, #193d55, #e7a07b 62%, #1a2735);
+}
+
+.mds-avatar.is-photo {
+  overflow: hidden;
+  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mds-avatar.is-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mds-avatar-stack {
+  position: relative;
+  width: 52px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.mds-avatar-stack .mds-avatar {
+  position: absolute;
+}
+
+.mds-avatar-stack .mds-avatar:first-child {
+  left: 0;
+  z-index: 2;
+}
+
+.mds-avatar-stack .mds-avatar:last-child {
+  left: 18px;
+  z-index: 1;
 }
 
 .mds-account-copy strong,
@@ -294,12 +337,13 @@
 
 .mds-phase-selector {
   display: inline-grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
   padding: 4px;
-  border: 0;
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 14px;
-  background: rgba(0, 0, 0, 0.22);
+  background: rgba(4, 12, 20, 0.58);
+  box-shadow: inset 0 0 0 1px rgba(0, 165, 255, 0.08);
 }
 
 .mds-phase-selector button {
@@ -316,7 +360,7 @@
 .mds-phase-selector button.is-active {
   color: #06232a;
   background: var(--mds-cyan);
-  box-shadow: 0 0 20px rgba(49, 212, 228, 0.28);
+  box-shadow: 0 0 24px rgba(49, 212, 228, 0.36);
 }
 
 .mds-error-banner {
@@ -419,12 +463,12 @@
 .mds-rec-card {
   overflow: hidden;
   display: grid;
-  grid-template-rows: 132px minmax(0, 1fr) auto;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  grid-template-rows: 168px minmax(0, 1fr) auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
-  background: rgba(7, 12, 18, 0.72);
+  background: linear-gradient(180deg, rgba(8, 14, 21, 0.82), rgba(6, 11, 18, 0.94));
   text-align: left;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.32);
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
 }
 
@@ -441,9 +485,25 @@
 .mds-trip-visual {
   position: relative;
   overflow: hidden;
-  min-height: 124px;
+  min-height: 160px;
   background:
     linear-gradient(180deg, #6f9fc0 0 32%, #c7b277 33% 48%, #425f40 49% 100%);
+}
+
+.mds-trip-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(1.04) contrast(1.03);
+}
+
+.mds-trip-visual::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(7, 14, 22, 0.06) 0%, rgba(4, 8, 14, 0.55) 78%, rgba(3, 6, 10, 0.82) 100%);
 }
 
 .mds-trip-visual-douro {
@@ -456,6 +516,12 @@
 
 .mds-trip-visual-coast {
   background: linear-gradient(180deg, #5e9bb8 0 42%, #d7bd82 43% 55%, #1e5a64 56% 100%);
+}
+
+.mds-trip-sun,
+.mds-trip-ridge,
+.mds-trip-field {
+  display: none;
 }
 
 .mds-trip-visual::before,
@@ -614,11 +680,12 @@
 .mds-chat-quick-actions button {
   min-height: 30px;
   padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 999px;
   color: #b8c5d0;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(9, 17, 27, 0.68);
   font-size: 11px;
+  text-align: center;
 }
 
 .mds-chat-quick-actions button:hover {
@@ -629,10 +696,10 @@
 .mds-chat-composer input {
   min-width: 0;
   height: 48px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 17px;
   color: #edf6ff;
-  background: rgba(255, 255, 255, 0.04);
+  background: linear-gradient(180deg, rgba(11, 20, 31, 0.8), rgba(7, 14, 22, 0.84));
   padding: 0 16px;
   outline: none;
 }
@@ -648,8 +715,9 @@
   border: 0;
   border-radius: 15px;
   color: #06232a;
-  background: var(--mds-cyan);
+  background: linear-gradient(180deg, #58e8f2, #29c8db);
   font-weight: 800;
+  box-shadow: 0 8px 24px rgba(49, 212, 228, 0.34);
 }
 
 .mds-desktop-right {
@@ -659,17 +727,18 @@
   padding: 34px 22px;
   border-left: 1px solid var(--mds-line);
   background:
-    radial-gradient(circle at 100% 8%, rgba(227, 164, 94, 0.08), transparent 44%),
-    linear-gradient(180deg, rgba(3, 7, 11, 0.55), rgba(4, 8, 13, 0.2));
+    radial-gradient(circle at 100% 8%, rgba(255, 151, 68, 0.16), transparent 46%),
+    radial-gradient(circle at 72% 34%, rgba(255, 108, 32, 0.12), transparent 40%),
+    linear-gradient(180deg, rgba(4, 9, 15, 0.62), rgba(4, 8, 13, 0.22));
   overflow: hidden;
 }
 
 .mds-panel {
   min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
-  background: rgba(6, 11, 17, 0.42);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+  background: linear-gradient(180deg, rgba(10, 16, 24, 0.72), rgba(7, 12, 19, 0.8));
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
 }
 
 .mds-traveler-panel {
@@ -770,6 +839,22 @@
   display: flex;
   flex-direction: column;
   padding: 16px;
+}
+
+.mds-trace-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.mds-trace-summary span {
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  color: #c4d2dd;
+  font-size: 10px;
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .mds-live-state {
@@ -877,6 +962,15 @@
   font-size: 10px;
 }
 
+.mds-span-source {
+  display: block;
+  margin-top: 2px;
+  color: #8093a4;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  word-break: break-word;
+}
+
 .mds-span-detail {
   display: grid;
   gap: 6px;
@@ -900,6 +994,11 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 10px;
   white-space: pre-wrap;
+}
+
+.mds-sql-list small {
+  color: #7f90a0;
+  font-size: 10px;
 }
 
 .mds-span-detail small {
@@ -1215,11 +1314,11 @@
   }
 
   .mds-rec-card {
-    grid-template-rows: 150px minmax(0, 1fr) auto;
+    grid-template-rows: 182px minmax(0, 1fr) auto;
   }
 
   .mds-trip-visual {
-    min-height: 150px;
+    min-height: 182px;
   }
 
   .mds-rec-actions {

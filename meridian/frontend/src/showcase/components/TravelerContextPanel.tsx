@@ -1,4 +1,5 @@
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import { ALEX_IMAGE_URL, ALEX_NAME } from '../lib/personas';
 
 export function TravelerContextPanel({
   state,
@@ -20,7 +21,9 @@ export function TravelerContextPanel({
         </button>
       </div>
       <div className="mds-profile-line">
-        <span className="mds-avatar" aria-hidden="true" />
+        <span className="mds-avatar is-photo" aria-hidden="true">
+          <img src={ALEX_IMAGE_URL} alt={ALEX_NAME} loading="lazy" />
+        </span>
         <div>
           <strong>Alex Morgan</strong>
           <small>{state.travelerId}</small>

@@ -3,8 +3,33 @@
  */
 import type { Product, ProductListResponse, ChatRequest, ChatResponse, OrderRequest, OrderResponse, MemoryProfileResponse } from '../types';
 
-const API_BASE = 'http://localhost:8000/api';
-const HEALTH_URL = 'http://localhost:8000/health';
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+function resolveBackendOrigin(): string {
+  const explicit = import.meta.env.VITE_API_ORIGIN as string | undefined;
+  if (explicit?.trim()) return trimTrailingSlash(explicit.trim());
+
+  // In local dev we always run FastAPI on localhost:8000.
+  // Using the page host can break when the frontend is opened via a proxy/domain.
+  if (import.meta.env.DEV || typeof window === 'undefined') return 'http://localhost:8000';
+
+  const { protocol, hostname } = window.location;
+  return `${protocol}//${hostname}`;
+}
+
+const explicitApiBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
+const API_BASE = explicitApiBase?.trim()
+  ? trimTrailingSlash(explicitApiBase.trim())
+  : `${resolveBackendOrigin()}/api`;
+
+const HEALTH_URL_CANDIDATES = [
+  `${resolveBackendOrigin()}/health`,
+  `${resolveBackendOrigin()}/api/health`,
+  'http://127.0.0.1:8000/health',
+  'http://127.0.0.1:8000/api/health',
+];
 
 /**
  * Fetch all products from the backend
@@ -69,11 +94,21 @@ export async function fetchMemoryProfile(travelerId = 'trv_meridian_demo'): Prom
  * Fetch backend health from the FastAPI root health endpoint.
  */
 export async function fetchHealth<THealth = unknown>(): Promise<THealth> {
-  const response = await fetch(HEALTH_URL);
-  if (!response.ok) {
-    throw new Error(`Health request failed: ${response.statusText}`);
+  let lastError: Error | null = null;
+
+  for (const url of HEALTH_URL_CANDIDATES) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Health request failed: ${response.status} ${response.statusText}`);
+      }
+      return response.json();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Unknown health request error');
+    }
   }
-  return response.json();
+
+  throw lastError ?? new Error('Health request failed for all candidates');
 }
 
 /**

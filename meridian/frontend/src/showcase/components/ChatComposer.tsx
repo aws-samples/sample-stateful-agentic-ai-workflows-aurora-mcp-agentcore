@@ -7,14 +7,7 @@ export function ChatComposer({ state, compact = false }: { state: MeridianShowca
     void state.submitPrompt();
   };
 
-  const quickActions = compact
-    ? []
-    : [
-        { label: 'Add travelers', prompt: 'Add two travelers to this itinerary.' },
-        { label: 'Change dates', prompt: 'Shift the trip dates by one week.' },
-        { label: 'Add spa', prompt: 'Add a spa day to the itinerary.' },
-        { label: 'Direct flights', prompt: 'Prefer direct flights only.' },
-      ];
+  const quickActions = compact ? [] : state.phaseExamples.slice(0, 3);
 
   return (
     <div className={`mds-chat-composer-wrap${compact ? ' is-compact' : ''}`}>
@@ -22,7 +15,7 @@ export function ChatComposer({ state, compact = false }: { state: MeridianShowca
         <input
           value={state.currentPrompt}
           onChange={(event) => state.setCurrentPrompt(event.target.value)}
-          placeholder="Ask Meridian anything..."
+          placeholder={`Ask Meridian (${state.phaseLabel})...`}
           disabled={state.isLoading}
           aria-label="Ask Meridian anything"
         />
@@ -32,14 +25,15 @@ export function ChatComposer({ state, compact = false }: { state: MeridianShowca
       </form>
       {quickActions.length > 0 && (
         <div className="mds-chat-quick-actions" aria-label="Quick concierge actions">
-          {quickActions.map((action) => (
+          {quickActions.map((prompt) => (
             <button
-              key={action.label}
+              key={prompt}
               type="button"
               disabled={state.isLoading}
-              onClick={() => state.setCurrentPrompt(action.prompt)}
+              onClick={() => void state.applyPhaseExample(prompt)}
+              title={prompt}
             >
-              {action.label}
+              {prompt}
             </button>
           ))}
         </div>

@@ -3,6 +3,7 @@ import { fetchHealth, fetchMemoryProfile, fetchProducts, processOrder, sendChatM
 import type { LongTermMemoryFact, Message, OrderResponse, Phase, Product } from '../../types';
 import { runConfigEmbedLabel, runConfigModelLabel, type BackendHealth } from '../../lib/runConfig';
 import {
+  SHOWCASE_EXAMPLE_PROMPTS,
   SHOWCASE_PHASES,
   chatResponseToMessages,
   chatResponseToTraceSpans,
@@ -59,12 +60,14 @@ export interface MeridianShowcaseState {
   embedLabel: string;
   totalLatencyMs: number;
   estimatedCostUsd: number;
+  phaseExamples: string[];
   setCurrentPrompt: (value: string) => void;
   setTraceTab: (tab: ShowcaseTraceTab) => void;
   setExpandedSpanId: (id: string | null) => void;
   setSelectedTrip: (product: Product | null) => void;
   setSelectedPhase: (phase: Phase) => void;
   submitPrompt: (prompt?: string) => Promise<void>;
+  applyPhaseExample: (prompt: string, runImmediately?: boolean) => Promise<void>;
   replayLastPrompt: () => Promise<void>;
   replayTrace: () => void;
   selectTrip: (product: Product) => void;
@@ -80,7 +83,7 @@ const INITIAL_MESSAGES: Message[] = [
   {
     role: 'bot',
     type: 'text',
-    text: 'Good morning, Alex. Tell me the trip you want, then watch Meridian route the request through live tools, memory, and trace.',
+    text: 'Good morning, Alex. Tell me the trip you want, then watch Meridian route the request through SQL, MCP, Retrieval, Production, and Workflow traces.',
   },
 ];
 
@@ -129,6 +132,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (!mounted.current) return;
         setBackendHealth(health);
         setBackendStatus(healthResponseToStatus(health));
+        if (healthResponseToStatus(health) === 'online') {
+          setIsFallbackMode(false);
+        }
       } catch {
         if (!mounted.current) return;
         setBackendStatus('offline');
@@ -226,7 +232,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         const response = await sendChatMessage({
           message: prompt,
           phase: selectedPhase,
-          ...(selectedPhase === 4
+          ...(selectedPhase >= 4
             ? {
                 customer_id: SHOWCASE_TRAVELER_ID,
                 conversation_id: conversationId ?? undefined,
@@ -238,7 +244,6 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         applyChatResponse(prompt, response);
       } catch {
         if (!mounted.current) return;
-        setBackendStatus('offline');
         setIsFallbackMode(true);
         const response = buildShowcaseFallbackChatResponse(prompt, selectedPhase);
         applyChatResponse(prompt, response);
@@ -250,12 +255,27 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     [applyChatResponse, clearReplayTimers, conversationId, currentPrompt, isLoading, selectedPhase],
   );
 
+  const applyPhaseExample = useCallback(
+    async (prompt: string, runImmediately = false) => {
+      setCurrentPrompt(prompt);
+      if (runImmediately) {
+        await submitPrompt(prompt);
+      }
+    },
+    [submitPrompt],
+  );
+
   const replayLastPrompt = useCallback(async () => {
     if (lastPrompt) await submitPrompt(lastPrompt);
   }, [lastPrompt, submitPrompt]);
 
   const setSelectedPhase = useCallback((phase: Phase) => {
     setSelectedPhaseState(phase);
+    if (phase < 4 && conversationId) {
+      setConversationId(null);
+    }
+    const suggested = SHOWCASE_EXAMPLE_PROMPTS[phase]?.[0];
+    if (suggested) setCurrentPrompt(suggested);
     setTraceSpans((spans) =>
       spans.map((span, index) =>
         index === 0
@@ -267,7 +287,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           : span,
       ),
     );
-  }, []);
+  }, [conversationId]);
 
   const selectTrip = useCallback((product: Product) => {
     setSelectedTrip(product);
@@ -327,7 +347,6 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       } catch {
         if (!mounted.current) return;
         setIsFallbackMode(true);
-        setBackendStatus('offline');
         const response = buildShowcaseFallbackOrder(product, selectedPhase);
         setMessages((prior) => [
           ...prior,
@@ -415,12 +434,14 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     embedLabel: runConfigEmbedLabel(selectedPhase, backendHealth),
     totalLatencyMs,
     estimatedCostUsd,
+    phaseExamples: SHOWCASE_EXAMPLE_PROMPTS[selectedPhase] ?? [],
     setCurrentPrompt,
     setTraceTab,
     setExpandedSpanId,
     setSelectedTrip,
     setSelectedPhase,
     submitPrompt,
+    applyPhaseExample,
     replayLastPrompt,
     replayTrace,
     selectTrip,

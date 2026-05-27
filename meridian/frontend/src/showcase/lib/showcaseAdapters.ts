@@ -9,7 +9,7 @@ import type {
 } from '../../types';
 import { SHOWCASE_FALLBACK_FACTS, SHOWCASE_FALLBACK_RECOMMENDATIONS } from './showcaseFallbackData';
 
-export type ShowcasePhaseLabel = 'Filters' | 'MCP' | 'Intent' | 'Personal';
+export type ShowcasePhaseLabel = 'SQL' | 'MCP' | 'Retrieval' | 'Production' | 'Workflow';
 export type ShowcaseTraceTab = 'spans' | 'memory' | 'sql' | 'cost';
 export type BackendStatus = 'checking' | 'online' | 'offline';
 
@@ -18,6 +18,34 @@ export interface ShowcasePhaseOption {
   phase: Phase;
   description: string;
 }
+
+export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
+  1: [
+    'City breaks under $2000',
+    'Beach & Resort trips with direct flights',
+    'Business travel under $1500',
+  ],
+  2: [
+    'Adventure & Outdoors in Europe',
+    'Tokyo culture trip with flexible dates',
+    'Wellness trips under $2500',
+  ],
+  3: [
+    'Romantic week in Europe',
+    'Family-friendly beach resort with snorkeling',
+    'Weekend in Paris under $2k',
+  ],
+  4: [
+    'Tokyo trip for me in October, remember my preferences',
+    'What did we discuss last time about Iceland planning?',
+    'Beach escape under $2500 and avoid shellfish options',
+  ],
+  5: [
+    'Find me a Kyoto cultural trip and show available dates',
+    'Do you remember our last Italy plan and can we refine it?',
+    'Plan a two-stop itinerary: Lisbon then Porto in September',
+  ],
+};
 
 export interface ShowcaseTraceSpan {
   id: string;
@@ -38,14 +66,15 @@ export interface ShowcaseTraceSpan {
 }
 
 export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
-  { label: 'Filters', phase: 1, description: 'SQL filters over trip_packages' },
+  { label: 'SQL', phase: 1, description: 'Direct SQL filters over trip_packages' },
   { label: 'MCP', phase: 2, description: 'Catalog access through MCP tools' },
-  { label: 'Intent', phase: 3, description: 'Hybrid retrieval and specialist routing' },
-  { label: 'Personal', phase: 4, description: 'Traveler memory, RLS, and AgentCore' },
+  { label: 'Retrieval', phase: 3, description: 'Hybrid retrieval and specialist routing' },
+  { label: 'Production', phase: 4, description: 'Traveler memory, RLS, and AgentCore' },
+  { label: 'Workflow', phase: 5, description: 'LangGraph orchestration with checkpointing' },
 ];
 
 export function phaseLabelFor(phase: Phase): ShowcasePhaseLabel {
-  return SHOWCASE_PHASES.find((p) => p.phase === phase)?.label ?? 'Personal';
+  return SHOWCASE_PHASES.find((p) => p.phase === phase)?.label ?? 'Workflow';
 }
 
 type TripPackageLike = {
