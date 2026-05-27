@@ -58,7 +58,7 @@ const steps: JourneyStep[] = [
   {
     num: '04',
     ph: PHASE_JOURNEY_SUB[4],
-    title: 'Production',
+    title: 'Memory',
     serif: '',
     desc: 'The production concierge: AgentCore Runtime hosts the session, Gateway serves MCP tools, Memory mirrors events, and Aurora RLS scopes every query. Alex & Jordan\'s Tokyo dates and shellfish allergy live in traveler_preferences — not in the prompt.',
     chips: ['AgentCore Runtime', 'AgentCore Gateway', 'AgentCore Memory', 'Aurora RLS'],
@@ -102,7 +102,7 @@ export function HowItWorksSection() {
         <div className="mp-section-h-row">
           <div className="mp-section-h">
             <div className="mp-label-row">Five phases</div>
-            <h2>SQL → MCP → retrieval → production → orchestration.</h2>
+            <h2>SQL → MCP → retrieval → memory → orchestration.</h2>
             <p>
               Five steps on one Aurora catalog — each phase adds capability without throwing away
               the last. Filters and MCP for structured access, hybrid search for intent, a production

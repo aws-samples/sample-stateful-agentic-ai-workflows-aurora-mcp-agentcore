@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAgentBridge } from '../context/AgentBridge';
 import { fetchProducts } from '../api/client';
-import { DEMO_PROMPT } from '../lib/proDemoData';
+import { DEMO_PRODUCTS, DEMO_PROMPT } from '../lib/proDemoData';
 import type { Product } from '../types';
 
 interface HeroSectionProps {
@@ -48,7 +48,10 @@ export function HeroSection({ scrollY: _scrollY }: HeroSectionProps) {
         setItems(picks.length > 0 ? picks : all.slice(0, 6));
       })
       .catch(() => {
-        // Backend offline — surface a graceful empty state with the placeholder card
+        const fallbackPicks = FEATURE_IDS.map((id) => DEMO_PRODUCTS.find((p) => p.product_id === id)).filter(
+          (p): p is Product => Boolean(p),
+        );
+        setItems(fallbackPicks.length > 0 ? fallbackPicks : DEMO_PRODUCTS.slice(0, 6));
       });
   }, []);
 

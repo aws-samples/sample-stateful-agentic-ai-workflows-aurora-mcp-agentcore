@@ -1,14 +1,14 @@
 /**
  * ProductsSection — Meridian Pro trip catalog (browse, not ranked search).
  *
- * Cards load from GET /api/products?featured=true: up to two packages per trip type,
+ * Cards load from GET /api/packages?featured=true: up to two packages per trip type,
  * ordered by price within each type. Hybrid match % and "match because" copy appear
  * only after a Phase 3+ concierge search — not on this grid.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { FadeIn } from '../components/FadeIn';
 import { useAgentBridge } from '../context/AgentBridge';
-import { DEMO_PROMPT } from '../lib/proDemoData';
+import { DEMO_PRODUCTS, DEMO_PROMPT } from '../lib/proDemoData';
 import { fetchProducts } from '../api/client';
 import type { Product } from '../types';
 
@@ -48,7 +48,8 @@ export function ProductsSection() {
         setError(null);
       })
       .catch(() => {
-        setError('Backend offline — start FastAPI on localhost:8000 to load live trips.');
+        setProducts(DEMO_PRODUCTS.slice(0, CATALOG_LIMIT));
+        setError('Backend offline — showing fixture trips until FastAPI is available.');
       })
       .finally(() => setLoading(false));
   }, []);
@@ -153,7 +154,7 @@ export function ProductsSection() {
         </div>
       )}
 
-      {!loading && !error && products.length > 0 && (
+      {!loading && products.length > 0 && (
         <p className="mp-catalog-note" role="status">
           Showing {visible.length} catalog picks · sorted by{' '}
           {sort === 'catalog' ? 'trip type, then price within type' : sort === 'price-asc' ? 'price ↑' : 'price ↓'}

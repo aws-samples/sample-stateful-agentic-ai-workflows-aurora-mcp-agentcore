@@ -1,0 +1,1140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Meridian — Cinematic Device Showcase</title>
+<style>
+  /*
+    Meridian cinematic device showcase
+    Goal: mimic the generated slide image as real HTML/CSS.
+    Canvas: 16:9, slide-ready, no external assets.
+  */
+  :root {
+    --bg-0: #05080d;
+    --bg-1: #0a1017;
+    --bg-2: #101923;
+    --panel: rgba(12, 19, 28, 0.86);
+    --panel-2: rgba(18, 28, 40, 0.82);
+    --panel-3: rgba(25, 37, 52, 0.78);
+    --line: rgba(255,255,255,.08);
+    --line-2: rgba(255,255,255,.14);
+    --line-3: rgba(255,255,255,.22);
+    --ink: #f5f8fb;
+    --ink-2: #d7e1ea;
+    --muted: #8c9aa8;
+    --dim: #607080;
+    --cyan: #28d7e6;
+    --cyan-2: #65f4ff;
+    --amber: #dca15a;
+    --gold: #f3c779;
+    --green: #35d49c;
+    --blue: #5ca8ff;
+    --violet: #a68cff;
+    --danger: #ff776b;
+    --radius: 18px;
+    --shadow: 0 30px 90px rgba(0,0,0,.45);
+    --screen-glow: 0 0 0 1px rgba(255,255,255,.08), 0 0 80px rgba(32, 211, 232, .10);
+  }
+
+  * { box-sizing: border-box; }
+
+  html,
+  body {
+    margin: 0;
+    min-height: 100%;
+    background: #04070b;
+    color: var(--ink);
+    font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+
+  body {
+    display: grid;
+    place-items: center;
+    overflow-x: hidden;
+  }
+
+  .slide-stage {
+    position: relative;
+    width: min(100vw, 1920px);
+    aspect-ratio: 16 / 9;
+    min-height: 720px;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 12% 92%, rgba(24, 112, 170, .36), transparent 26%),
+      radial-gradient(circle at 78% 82%, rgba(235, 143, 63, .34), transparent 28%),
+      radial-gradient(circle at 58% 18%, rgba(39, 215, 230, .10), transparent 35%),
+      linear-gradient(115deg, #05070c 0%, #07101a 48%, #17100c 100%);
+    isolation: isolate;
+  }
+
+  .slide-stage::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(to bottom, rgba(255,255,255,.07), transparent 10%, transparent 72%, rgba(0,0,0,.58)),
+      radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.42) 100%);
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .slide-stage::after {
+    content: "";
+    position: absolute;
+    left: -8%;
+    right: -8%;
+    bottom: -8%;
+    height: 38%;
+    background:
+      linear-gradient(to bottom, rgba(255,255,255,.08), rgba(255,255,255,.02) 3%, rgba(2,4,7,.72) 34%, rgba(1,2,3,.94)),
+      radial-gradient(ellipse at 22% 26%, rgba(42, 156, 214,.25), transparent 30%),
+      radial-gradient(ellipse at 82% 10%, rgba(219, 134, 62,.23), transparent 32%);
+    transform: perspective(980px) rotateX(61deg);
+    transform-origin: bottom;
+    filter: blur(.1px);
+    z-index: 0;
+  }
+
+  .grain {
+    position: absolute;
+    inset: 0;
+    opacity: .12;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(255,255,255,.5) 0 1px, transparent 1px),
+      radial-gradient(circle at 60% 40%, rgba(255,255,255,.28) 0 1px, transparent 1px),
+      radial-gradient(circle at 80% 80%, rgba(255,255,255,.18) 0 1px, transparent 1px);
+    background-size: 74px 74px, 112px 112px, 147px 147px;
+    z-index: 3;
+  }
+
+  .ambient-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 23.4%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(92, 168, 255, .38), rgba(255,255,255,.15), rgba(224, 144, 79, .36), transparent);
+    box-shadow: 0 0 30px rgba(255,255,255,.10);
+    z-index: 2;
+  }
+
+  .device-row {
+    position: absolute;
+    inset: 8.2% 6.2% 11.4% 5.8%;
+    display: flex;
+    align-items: flex-end;
+    gap: 5.2%;
+    z-index: 5;
+  }
+
+  /* ================================
+     MacBook-like device
+     ================================ */
+  .laptop-wrap {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+    filter: drop-shadow(0 50px 60px rgba(0,0,0,.42));
+  }
+
+  .laptop {
+    position: relative;
+    width: 100%;
+    max-width: 1120px;
+    margin-bottom: 3.2%;
+    perspective: 1200px;
+  }
+
+  .laptop-lid {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10.2;
+    padding: 1.6% 1.55% 2.05%;
+    border-radius: 28px 28px 17px 17px;
+    background:
+      linear-gradient(135deg, rgba(232,241,255,.22), rgba(255,255,255,.03) 8%, rgba(0,0,0,.12) 45%, rgba(255,255,255,.11) 100%),
+      #11161d;
+    border: 1px solid rgba(255,255,255,.22);
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,.05),
+      inset 0 -12px 18px rgba(0,0,0,.36),
+      0 30px 80px rgba(0,0,0,.55),
+      0 0 80px rgba(41, 216, 230, .12);
+    transform: rotateX(1deg) rotateY(-3.8deg) rotateZ(.2deg);
+    transform-origin: bottom center;
+  }
+
+  .laptop-lid::before {
+    content: "";
+    position: absolute;
+    inset: 8px 10px auto;
+    height: 48%;
+    border-radius: inherit;
+    background: linear-gradient(105deg, rgba(255,255,255,.16), transparent 16%, transparent 76%, rgba(255,255,255,.08));
+    pointer-events: none;
+    z-index: 3;
+    mix-blend-mode: screen;
+  }
+
+  .laptop-screen {
+    position: relative;
+    height: 100%;
+    overflow: hidden;
+    border-radius: 18px 18px 11px 11px;
+    background:
+      radial-gradient(circle at 58% 4%, rgba(51, 210, 226,.14), transparent 34%),
+      linear-gradient(120deg, rgba(18, 31, 44, .98), rgba(3, 8, 13, .98));
+    border: 1px solid rgba(255,255,255,.10);
+    box-shadow: var(--screen-glow), inset 0 0 24px rgba(0,0,0,.54);
+  }
+
+  .screen-notch {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 92px;
+    height: 25px;
+    transform: translateX(-50%);
+    background: #030507;
+    border-radius: 0 0 16px 16px;
+    z-index: 9;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.04);
+  }
+
+  .screen-notch::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 7px;
+    width: 6px;
+    height: 6px;
+    transform: translateX(-50%);
+    border-radius: 50%;
+    background: #141c25;
+    box-shadow: inset 0 0 2px #000;
+  }
+
+  .laptop-base {
+    position: relative;
+    width: 92%;
+    height: 34px;
+    margin: -3px auto 0;
+    border-radius: 3px 3px 22px 22px;
+    background:
+      linear-gradient(90deg, rgba(255,255,255,.16), rgba(138,154,169,.55) 12%, rgba(36,45,54,.93) 34%, rgba(217,225,234,.62) 64%, rgba(85,93,102,.76) 88%, rgba(255,255,255,.12)),
+      #4f5862;
+    transform: perspective(580px) rotateX(64deg) rotateY(-4deg);
+    transform-origin: top center;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.38),
+      inset 0 -8px 18px rgba(0,0,0,.35),
+      0 24px 44px rgba(0,0,0,.42);
+    z-index: -1;
+  }
+
+  .laptop-base::before {
+    content: "";
+    position: absolute;
+    top: 1px;
+    left: 44%;
+    width: 16%;
+    height: 8px;
+    border-radius: 0 0 8px 8px;
+    background: rgba(12, 16, 20, .36);
+    box-shadow: inset 0 -1px 2px rgba(255,255,255,.14);
+  }
+
+  .ports {
+    position: absolute;
+    left: 3.6%;
+    bottom: -7px;
+    display: flex;
+    gap: 5px;
+    opacity: .8;
+    transform: skewX(-8deg);
+  }
+
+  .ports span {
+    display: block;
+    width: 9px;
+    height: 15px;
+    border-radius: 2px;
+    background: #05070a;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.14);
+  }
+
+  /* Desktop app in laptop */
+  .desktop-app {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: 18% 1fr 31%;
+    color: var(--ink);
+  }
+
+  .desktop-sidebar {
+    background: rgba(2, 7, 12, .50);
+    border-right: 1px solid rgba(255,255,255,.06);
+    padding: 5.4% 6.2% 4.8%;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: clamp(12px, 1.3vw, 24px);
+    font-weight: 720;
+    letter-spacing: -.02em;
+    margin-bottom: 16%;
+    white-space: nowrap;
+  }
+
+  .brand-mark {
+    position: relative;
+    width: 24px;
+    height: 24px;
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+  }
+
+  .brand-mark::before,
+  .brand-mark::after {
+    content: "";
+    position: absolute;
+    inset: 4px;
+    border: 1.5px solid var(--cyan);
+    transform: rotate(45deg);
+    border-radius: 4px;
+    box-shadow: 0 0 18px rgba(40, 215, 230, .35);
+  }
+
+  .brand-mark::after {
+    inset: 9px;
+    background: var(--cyan);
+    border: 0;
+    border-radius: 2px;
+  }
+
+  .nav-items {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-height: 38px;
+    padding: 0 12px;
+    border-radius: 9px;
+    color: #aab5c0;
+    font-size: clamp(9px, .7vw, 15px);
+    white-space: nowrap;
+  }
+
+  .nav-item.active {
+    color: white;
+    background: rgba(255,255,255,.075);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.035);
+  }
+
+  .nav-icon {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    border: 1.4px solid currentColor;
+    border-radius: 4px;
+    opacity: .75;
+    position: relative;
+  }
+
+  .nav-icon.pin { border-radius: 50% 50% 50% 0; transform: rotate(-45deg) scale(.82); }
+  .nav-icon.user { border-radius: 50%; }
+  .nav-icon.gear { border-radius: 50%; border-style: dashed; }
+  .nav-icon.msg { border-radius: 3px; }
+  .nav-icon.msg::after { content: "2"; position: absolute; right: -22px; top: 0; min-width: 16px; height: 16px; border-radius: 999px; background: #176fb7; color: white; font-size: 9px; display: grid; place-items: center; transform: rotate(0); }
+
+  .sidebar-spacer { flex: 1; }
+
+  .account-mini {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    border-top: 1px solid rgba(255,255,255,.06);
+    padding-top: 14px;
+    min-width: 0;
+  }
+
+  .avatar {
+    width: 31px;
+    height: 31px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 52% 30%, #ffd7c4 0 13%, transparent 14%),
+      radial-gradient(circle at 50% 47%, #c87a59 0 20%, transparent 21%),
+      linear-gradient(160deg, #193d55, #e7a07b 62%, #1a2735);
+    border: 1px solid rgba(255,255,255,.25);
+    box-shadow: inset 0 -7px 13px rgba(0,0,0,.24);
+    flex: 0 0 auto;
+  }
+
+  .account-copy { min-width: 0; line-height: 1.15; }
+  .account-copy strong { display: block; font-size: clamp(8px,.66vw,13px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .account-copy span { display: block; color: var(--muted); font-size: clamp(7px,.55vw,11px); margin-top: 2px; }
+
+  .desktop-main {
+    position: relative;
+    padding: 7% 4.6% 3.3%;
+    min-width: 0;
+  }
+
+  .desktop-main::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 90% 0%, rgba(30, 171, 196,.09), transparent 34%),
+      radial-gradient(circle at 15% 92%, rgba(92, 168, 255,.07), transparent 30%);
+    pointer-events: none;
+  }
+
+  .top-actions {
+    position: absolute;
+    right: 3.8%;
+    top: 4.2%;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    color: #a9b5c0;
+    font-size: clamp(8px,.62vw,12px);
+    z-index: 2;
+  }
+
+  .desktop-main h1 {
+    margin: 0;
+    font-size: clamp(18px, 1.7vw, 31px);
+    line-height: 1.05;
+    letter-spacing: -.032em;
+    font-weight: 630;
+  }
+
+  .desktop-main .subhead {
+    color: var(--muted);
+    font-size: clamp(10px, .78vw, 14px);
+    margin-top: 7px;
+  }
+
+  .chat-prompt {
+    width: 48%;
+    margin: 6.2% 1.5% 0 auto;
+    padding: 13px 15px;
+    border-radius: 10px 10px 3px 10px;
+    background: rgba(255,255,255,.075);
+    color: #dbe5ee;
+    font-size: clamp(9px, .7vw, 14px);
+    line-height: 1.45;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+  }
+
+  .assistant-line {
+    margin-top: 4.5%;
+    color: #d0dae4;
+    font-size: clamp(9px, .8vw, 15px);
+  }
+
+  .rec-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0,1fr));
+    gap: 12px;
+    margin-top: 3%;
+  }
+
+  .trip-card {
+    overflow: hidden;
+    border-radius: 10px;
+    background: rgba(255,255,255,.048);
+    border: 1px solid rgba(255,255,255,.09);
+    box-shadow: 0 10px 26px rgba(0,0,0,.16);
+  }
+
+  .trip-art {
+    position: relative;
+    height: 92px;
+    background: var(--art);
+    overflow: hidden;
+  }
+
+  .trip-art::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(to bottom, transparent 40%, rgba(0,0,0,.35)),
+      radial-gradient(ellipse at 50% 84%, rgba(255,255,255,.20), transparent 38%);
+  }
+
+  .trip-art::after {
+    content: "";
+    position: absolute;
+    left: -4%;
+    right: -4%;
+    bottom: -10%;
+    height: 42%;
+    background:
+      radial-gradient(ellipse at 10% 80%, #234e2b 0 18%, transparent 19%),
+      radial-gradient(ellipse at 50% 82%, #2a6b31 0 20%, transparent 21%),
+      linear-gradient(8deg, #204728, #5d7b35 52%, transparent 53%);
+    opacity: .88;
+  }
+
+  .trip-art.vineyard {
+    --art:
+      radial-gradient(circle at 75% 25%, #ffd8a3 0 7%, transparent 8%),
+      linear-gradient(180deg, rgba(255,244,210,.78), rgba(147,196,205,.40) 42%, transparent 43%),
+      repeating-linear-gradient(170deg, rgba(244,202,120,.25) 0 4px, rgba(37,92,45,.28) 5px 10px),
+      linear-gradient(135deg, #2d5a39, #96a758 46%, #463823);
+  }
+
+  .trip-art.napa {
+    --art:
+      radial-gradient(circle at 78% 16%, #ffe0a0 0 8%, transparent 9%),
+      linear-gradient(35deg, transparent 0 46%, rgba(87,56,38,.94) 47% 58%, transparent 59%),
+      linear-gradient(150deg, #476b39, #d0a45e 44%, #3a281f 45% 46%, #c99b69 47% 63%, #203640 64%);
+  }
+
+  .trip-art.mendoza {
+    --art:
+      linear-gradient(180deg, #8fc6e7, #e8d09d 45%, transparent 46%),
+      radial-gradient(ellipse at 70% 55%, #506c7e 0 20%, transparent 21%),
+      linear-gradient(150deg, #394d5e, #7a916f 54%, #203440 55%);
+  }
+
+  .trip-body { padding: 11px 12px 12px; }
+  .trip-title { font-weight: 640; color: #f3f7fb; font-size: clamp(8px,.66vw,13px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trip-meta { color: var(--muted); font-size: clamp(7px,.56vw,11px); margin-top: 5px; }
+  .trip-price { display: flex; align-items: center; justify-content: space-between; color: #d6e0e9; font-size: clamp(7px,.58vw,11px); margin-top: 8px; }
+  .circle-arrow { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.085); color: #dce9f2; }
+
+  .more-button {
+    display: block;
+    width: fit-content;
+    margin: 16px auto 0;
+    padding: 10px 34px;
+    border-radius: 9px;
+    color: #dfe8ef;
+    background: rgba(255,255,255,.075);
+    border: 1px solid rgba(255,255,255,.06);
+    font-weight: 600;
+    font-size: clamp(8px,.68vw,13px);
+  }
+
+  .composer-desktop {
+    position: absolute;
+    left: 4.5%;
+    right: 4.5%;
+    bottom: 3.2%;
+  }
+
+  .input-shell {
+    height: 48px;
+    border-radius: 18px;
+    background: rgba(255,255,255,.055);
+    border: 1px solid rgba(255,255,255,.09);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px 0 18px;
+    color: var(--muted);
+    font-size: clamp(9px,.72vw,14px);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+  }
+
+  .send-dot {
+    width: 29px;
+    height: 29px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: rgba(255,255,255,.12);
+    color: white;
+    font-weight: 800;
+  }
+
+  .quick-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .quick-actions span {
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.044);
+    border: 1px solid rgba(255,255,255,.06);
+    color: #b0bdc9;
+    font-size: clamp(7px,.56vw,11px);
+    white-space: nowrap;
+  }
+
+  .desktop-right {
+    padding: 7% 7% 4%;
+    border-left: 1px solid rgba(255,255,255,.055);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+  }
+
+  .info-panel {
+    border-radius: 14px;
+    background: rgba(4, 10, 16, .34);
+    border: 1px solid rgba(255,255,255,.105);
+    padding: 16px 16px 14px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+  }
+
+  .panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding-bottom: 12px;
+    margin-bottom: 13px;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+  }
+
+  .panel-head strong { font-size: clamp(10px,.78vw,15px); }
+  .panel-head span { color: var(--muted); font-size: clamp(7px,.56vw,11px); }
+
+  .profile-line {
+    display: grid;
+    grid-template-columns: 38px 1fr;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .profile-line strong { display: block; font-size: clamp(9px,.7vw,13px); }
+  .profile-line small { color: var(--muted); font-size: clamp(7px,.55vw,11px); }
+
+  .facts {
+    display: grid;
+    gap: 9px;
+  }
+
+  .fact-row {
+    display: grid;
+    grid-template-columns: 34% 1fr;
+    gap: 10px;
+    color: #c5d0da;
+    font-size: clamp(7px,.57vw,11px);
+  }
+
+  .fact-row span:first-child { color: var(--muted); }
+
+  .linkish { color: var(--cyan-2); margin-top: 12px; font-size: clamp(7px,.57vw,11px); }
+
+  .activity {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .activity-item {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    gap: 10px;
+    align-items: center;
+    padding: 7px 0;
+    color: #b8c5d0;
+    font-size: clamp(7px,.58vw,11px);
+  }
+
+  .check {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(53, 212, 156, .16);
+    border: 1px solid rgba(53, 212, 156, .26);
+    display: grid;
+    place-items: center;
+    color: var(--green);
+    font-size: 11px;
+  }
+
+  .check.live {
+    background: transparent;
+    border-color: rgba(255,255,255,.22);
+    color: var(--muted);
+    animation: pulse 1.7s ease-in-out infinite;
+  }
+
+  .live-dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #b6c5ce;
+  }
+  .live-dot::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 0 4px rgba(40,215,230,.12); }
+
+  /* ================================
+     Smartphone device
+     ================================ */
+  .phone-wrap {
+    position: relative;
+    flex: 0 0 23.5%;
+    height: 82.5%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    margin-bottom: 3.7%;
+    filter: drop-shadow(0 50px 70px rgba(0,0,0,.58));
+  }
+
+  .phone {
+    position: relative;
+    width: min(100%, 330px);
+    aspect-ratio: 9 / 19.2;
+    border-radius: 42px;
+    padding: 10px;
+    background:
+      linear-gradient(115deg, rgba(255,255,255,.50), rgba(255,255,255,.03) 9%, rgba(0,0,0,.20) 40%, rgba(241,197,137,.62) 97%),
+      #12151a;
+    border: 1px solid rgba(255,255,255,.24);
+    box-shadow:
+      inset 0 0 0 1px rgba(255,255,255,.06),
+      14px 0 24px rgba(232, 157, 83, .14),
+      -16px 0 34px rgba(42, 186, 229, .10),
+      0 26px 80px rgba(0,0,0,.65);
+    transform: rotateY(-5deg) rotateZ(.4deg);
+  }
+
+  .phone::before {
+    content: "";
+    position: absolute;
+    right: -4px;
+    top: 25%;
+    width: 4px;
+    height: 64px;
+    border-radius: 0 5px 5px 0;
+    background: linear-gradient(to bottom, #d9a56b, #7a5134);
+    box-shadow: inset 1px 0 0 rgba(255,255,255,.22);
+  }
+
+  .phone-screen {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border-radius: 34px;
+    background:
+      radial-gradient(circle at 76% 10%, rgba(40, 215, 230,.11), transparent 26%),
+      linear-gradient(180deg, #0d1520, #071017 76%, #081019);
+    border: 1px solid rgba(255,255,255,.12);
+    box-shadow: inset 0 0 22px rgba(0,0,0,.52);
+  }
+
+  .dynamic-island {
+    position: absolute;
+    z-index: 10;
+    top: 12px;
+    left: 50%;
+    width: 92px;
+    height: 28px;
+    transform: translateX(-50%);
+    background: #030507;
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+  }
+
+  .phone-status {
+    position: absolute;
+    z-index: 9;
+    top: 17px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    justify-content: space-between;
+    color: white;
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .phone-app {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 54px 15px 14px;
+  }
+
+  .phone-top {
+    display: grid;
+    grid-template-columns: 22px 1fr 22px;
+    align-items: center;
+    padding: 0 0 15px;
+    border-bottom: 1px solid rgba(255,255,255,.055);
+  }
+
+  .hamburger,
+  .bell {
+    width: 22px;
+    height: 22px;
+    position: relative;
+    opacity: .8;
+  }
+  .hamburger::before { content: ""; position: absolute; left: 3px; right: 3px; top: 6px; height: 1px; background: #d7e1ea; box-shadow: 0 6px 0 #d7e1ea, 0 12px 0 #d7e1ea; }
+  .bell::before { content: ""; position: absolute; inset: 3px 5px 5px; border: 1.5px solid #d7e1ea; border-radius: 8px 8px 5px 5px; }
+  .bell::after { content: "1"; position: absolute; right: 0; top: 0; width: 12px; height: 12px; border-radius: 50%; background: var(--cyan); color: #042027; font-size: 7px; display: grid; place-items: center; font-weight: 800; }
+
+  .phone-title { text-align: center; font-size: 16px; font-weight: 720; }
+
+  .mobile-profile {
+    display: grid;
+    grid-template-columns: 34px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    margin-top: 18px;
+  }
+
+  .mobile-profile strong { display: block; font-size: 13px; }
+  .mobile-profile span { display: block; color: var(--muted); font-size: 10px; margin-top: 1px; }
+  .profile-button { padding: 9px 12px; border-radius: 999px; background: rgba(255,255,255,.075); border: 1px solid rgba(255,255,255,.08); color: #d9e3ed; font-size: 10px; }
+
+  .mobile-user-bubble {
+    align-self: flex-end;
+    width: 80%;
+    margin-top: 21px;
+    padding: 12px 13px;
+    border-radius: 13px 13px 3px 13px;
+    background: rgba(255,255,255,.075);
+    color: #dbe5ee;
+    font-size: 11px;
+    line-height: 1.45;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+  }
+
+  .mobile-copy {
+    margin: 20px 0 10px;
+    color: #c9d3de;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .mobile-cards {
+    display: grid;
+    gap: 10px;
+    min-height: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .mobile-trip {
+    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(255,255,255,.044);
+  }
+
+  .mobile-trip.hero .mobile-art { height: 122px; }
+  .mobile-art {
+    position: relative;
+    height: 82px;
+    background: var(--art);
+    overflow: hidden;
+  }
+  .mobile-art::before { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, transparent 38%, rgba(0,0,0,.56)); }
+  .mobile-art::after { content: ""; position: absolute; left: -5%; right: -5%; bottom: -12%; height: 42%; background: linear-gradient(9deg, #18391f, #607636 52%, transparent 53%); opacity: .94; }
+
+  .mobile-trip-copy {
+    position: relative;
+    padding: 10px 12px 12px;
+    margin-top: -58px;
+    z-index: 1;
+    min-height: 72px;
+    display: grid;
+    align-content: end;
+  }
+  .mobile-trip:not(.hero) .mobile-trip-copy { margin-top: -50px; min-height: 66px; }
+  .trend {
+    display: inline-block;
+    width: fit-content;
+    margin-bottom: 6px;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: rgba(0,0,0,.32);
+    color: #f3ddb1;
+    font-size: 9px;
+  }
+  .mobile-trip-copy strong { font-size: 12px; display: block; }
+  .mobile-trip-copy span { font-size: 10px; color: rgba(255,255,255,.78); display: block; margin-top: 3px; }
+  .mobile-trip-copy .chev { position: absolute; right: 10px; bottom: 12px; width: 26px; height: 26px; border-radius: 50%; background: rgba(0,0,0,.25); display: grid; place-items: center; }
+
+  .mobile-composer {
+    height: 42px;
+    border-radius: 17px;
+    margin-top: 10px;
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.075);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px 0 15px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .mic { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(255,255,255,.38); position: relative; }
+  .mic::before { content: ""; position: absolute; left: 7px; top: 4px; width: 4px; height: 8px; border: 1px solid #dce5ef; border-radius: 99px; }
+
+  .bottom-nav {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+    padding-top: 10px;
+    color: var(--muted);
+    font-size: 9px;
+    text-align: center;
+  }
+
+  .bottom-nav .active { color: var(--cyan); }
+  .nav-dot { display: block; width: 14px; height: 14px; border: 1px solid currentColor; border-radius: 4px; margin: 0 auto 3px; opacity: .85; }
+
+  /* Reflections */
+  .reflection-laptop,
+  .reflection-phone {
+    position: absolute;
+    pointer-events: none;
+    z-index: 1;
+    opacity: .22;
+    filter: blur(10px);
+    transform-origin: top;
+  }
+
+  .reflection-laptop {
+    left: 5%;
+    bottom: 5%;
+    width: 62%;
+    height: 15%;
+    background: radial-gradient(ellipse at center, rgba(60,153,205,.42), transparent 69%);
+    transform: skewX(-8deg);
+  }
+
+  .reflection-phone {
+    right: 9%;
+    bottom: 5%;
+    width: 22%;
+    height: 17%;
+    background: radial-gradient(ellipse at center, rgba(226,139,71,.40), transparent 69%);
+  }
+
+  .art-willamette { --art:
+    radial-gradient(circle at 82% 28%, rgba(255,218,148,.96) 0 7%, transparent 8%),
+    linear-gradient(180deg, #46677a 0 34%, transparent 35%),
+    repeating-linear-gradient(170deg, rgba(244,205,118,.28) 0 5px, rgba(39,102,45,.34) 6px 12px),
+    linear-gradient(135deg, #15342c, #8b8c47 48%, #221815);
+  }
+
+  .art-napa { --art:
+    radial-gradient(circle at 78% 16%, #ffe0a0 0 8%, transparent 9%),
+    linear-gradient(35deg, transparent 0 46%, rgba(87,56,38,.94) 47% 58%, transparent 59%),
+    linear-gradient(150deg, #476b39, #d0a45e 44%, #3a281f 45% 46%, #c99b69 47% 63%, #203640 64%);
+  }
+
+  .art-mendoza { --art:
+    linear-gradient(180deg, #79b2d7, #e8d09d 45%, transparent 46%),
+    radial-gradient(ellipse at 70% 55%, #506c7e 0 20%, transparent 21%),
+    linear-gradient(150deg, #394d5e, #7a916f 54%, #203440 55%);
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: .5; transform: scale(.96); }
+    50% { opacity: 1; transform: scale(1.04); }
+  }
+
+  @media (max-width: 1100px) {
+    .slide-stage { min-height: 620px; }
+    .device-row { inset: 9% 4% 11% 4%; gap: 3%; }
+    .phone-wrap { flex-basis: 25%; }
+    .desktop-right { padding-right: 5%; }
+    .rec-grid { gap: 8px; }
+    .trip-art { height: 76px; }
+  }
+
+  @media (max-width: 860px) {
+    .slide-stage { width: 100vw; min-height: 920px; aspect-ratio: auto; }
+    .device-row { inset: 50px 18px 70px; flex-direction: column; justify-content: center; gap: 28px; }
+    .laptop-wrap { width: 100%; height: auto; flex: 0 0 auto; }
+    .laptop { margin-bottom: 0; }
+    .phone-wrap { width: 48%; min-width: 230px; height: auto; flex: 0 0 auto; margin-bottom: 0; }
+    .desktop-app { grid-template-columns: 18% 1fr 28%; }
+    .desktop-sidebar { padding-top: 4.2%; }
+    .nav-items { gap: 5px; }
+    .nav-item { min-height: 24px; padding: 0 7px; }
+    .info-panel { padding: 9px; }
+    .desktop-right { gap: 8px; }
+    .trip-art { height: 54px; }
+    .more-button { margin-top: 9px; padding: 7px 22px; }
+    .input-shell { height: 36px; border-radius: 12px; }
+    .quick-actions { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+  <main class="slide-stage" aria-label="Cinematic Meridian app showcase with laptop and mobile app side by side">
+    <div class="grain"></div>
+    <div class="ambient-line"></div>
+    <div class="reflection-laptop"></div>
+    <div class="reflection-phone"></div>
+
+    <section class="device-row">
+      <div class="laptop-wrap">
+        <div class="laptop" aria-label="MacBook style desktop app mockup">
+          <div class="laptop-lid">
+            <div class="laptop-screen">
+              <div class="screen-notch"></div>
+              <div class="desktop-app">
+                <aside class="desktop-sidebar">
+                  <div class="brand"><span class="brand-mark"></span> Meridian</div>
+                  <nav class="nav-items" aria-label="Desktop navigation">
+                    <div class="nav-item active"><span class="nav-icon"></span> Concierge</div>
+                    <div class="nav-item"><span class="nav-icon"></span> Trips</div>
+                    <div class="nav-item"><span class="nav-icon pin"></span> Discover</div>
+                    <div class="nav-item"><span class="nav-icon user"></span> Profile</div>
+                    <div class="nav-item"><span class="nav-icon gear"></span> Preferences</div>
+                    <div class="nav-item"><span class="nav-icon msg"></span> Messages</div>
+                  </nav>
+                  <div class="sidebar-spacer"></div>
+                  <div class="nav-item"><span class="nav-icon gear"></span> Settings</div>
+                  <div class="account-mini">
+                    <div class="avatar"></div>
+                    <div class="account-copy"><strong>Alex Morgan</strong><span>Explorer</span></div>
+                  </div>
+                </aside>
+
+                <main class="desktop-main">
+                  <div class="top-actions"><span>🏅 VIP</span><span>◎ USD</span><span>•••</span></div>
+                  <h1>Good morning, Alex.</h1>
+                  <div class="subhead">Where would you like to go next?</div>
+                  <div class="chat-prompt">I’m looking for a long weekend in wine country in November. Boutique, walkable towns, great food, and relaxing spa options.</div>
+                  <div class="assistant-line">Perfect. I’ve found a few places that match your style.</div>
+
+                  <div class="rec-grid">
+                    <article class="trip-card">
+                      <div class="trip-art vineyard art-willamette"></div>
+                      <div class="trip-body">
+                        <div class="trip-title">Willamette Valley, Oregon</div>
+                        <div class="trip-meta">Nov 7 – 10</div>
+                        <div class="trip-price"><span>From $1,950</span><span class="circle-arrow">›</span></div>
+                      </div>
+                    </article>
+                    <article class="trip-card">
+                      <div class="trip-art napa art-napa"></div>
+                      <div class="trip-body">
+                        <div class="trip-title">Napa Valley, California</div>
+                        <div class="trip-meta">Nov 14 – 17</div>
+                        <div class="trip-price"><span>From $2,450</span><span class="circle-arrow">›</span></div>
+                      </div>
+                    </article>
+                    <article class="trip-card">
+                      <div class="trip-art mendoza art-mendoza"></div>
+                      <div class="trip-body">
+                        <div class="trip-title">Mendoza, Argentina</div>
+                        <div class="trip-meta">Nov 21 – 24</div>
+                        <div class="trip-price"><span>From $1,850</span><span class="circle-arrow">›</span></div>
+                      </div>
+                    </article>
+                  </div>
+                  <button class="more-button">View more recommendations</button>
+
+                  <div class="composer-desktop">
+                    <div class="input-shell"><span>Ask Meridian anything...</span><span class="send-dot">↗</span></div>
+                    <div class="quick-actions"><span>Add travelers</span><span>Change dates</span><span>Add spa</span><span>Direct flights</span></div>
+                  </div>
+                </main>
+
+                <aside class="desktop-right">
+                  <section class="info-panel">
+                    <div class="panel-head"><strong>Traveler context</strong><span>Edit</span></div>
+                    <div class="profile-line"><div class="avatar"></div><div><strong>Alex Morgan</strong><small>alex.morgan@gmail.com</small></div></div>
+                    <div class="facts">
+                      <div class="fact-row"><span>Profile</span><span>Explorer</span></div>
+                      <div class="fact-row"><span>Travel style</span><span>Boutique, immersive, relaxed</span></div>
+                      <div class="fact-row"><span>Interests</span><span>Wine, food, architecture, wellness</span></div>
+                      <div class="fact-row"><span>Loyalty programs</span><span>Marriott Bonvoy, Delta SkyMiles</span></div>
+                      <div class="fact-row"><span>Recent trips</span><span>Tuscany, Kyoto, Palm Springs</span></div>
+                    </div>
+                    <div class="linkish">View all</div>
+                  </section>
+
+                  <section class="info-panel activity">
+                    <div class="panel-head"><strong>Meridian activity</strong><span class="live-dot">Live</span></div>
+                    <div class="activity-item"><span class="check">✓</span><span>Understanding your request</span></div>
+                    <div class="activity-item"><span class="check">✓</span><span>Searching preference-matched destinations</span></div>
+                    <div class="activity-item"><span class="check">✓</span><span>Checking availability & pricing</span></div>
+                    <div class="activity-item"><span class="check">✓</span><span>Curating personalized recommendations</span></div>
+                    <div class="activity-item"><span class="check live">◌</span><span>Optimizing your itinerary</span></div>
+                  </section>
+                </aside>
+              </div>
+            </div>
+          </div>
+          <div class="laptop-base"><div class="ports"><span></span><span></span><span></span></div></div>
+        </div>
+      </div>
+
+      <div class="phone-wrap">
+        <div class="phone" aria-label="Mobile app mockup">
+          <div class="phone-screen">
+            <div class="dynamic-island"></div>
+            <div class="phone-status"><span>9:41</span><span>▴ 5G ▱</span></div>
+            <div class="phone-app">
+              <div class="phone-top"><span class="hamburger"></span><div class="phone-title">Meridian</div><span class="bell"></span></div>
+              <div class="mobile-profile">
+                <div class="avatar"></div>
+                <div><strong>Alex Morgan</strong><span>Explorer</span></div>
+                <button class="profile-button">View profile</button>
+              </div>
+              <div class="mobile-user-bubble">I’m looking for a long weekend in wine country in November. Boutique, walkable towns, great food, and relaxing spa options.</div>
+              <div class="mobile-copy">Here are a few recommendations I think you’ll love.</div>
+              <div class="mobile-cards">
+                <article class="mobile-trip hero">
+                  <div class="mobile-art art-willamette"></div>
+                  <div class="mobile-trip-copy"><span class="trend">Trending</span><strong>Willamette Valley, Oregon</strong><span>Nov 7 – 10 · 3 nights<br>From $1,950</span><span class="chev">›</span></div>
+                </article>
+                <article class="mobile-trip">
+                  <div class="mobile-art art-napa"></div>
+                  <div class="mobile-trip-copy"><strong>Napa Valley, California</strong><span>Nov 14 – 17 · 3 nights<br>From $2,450</span><span class="chev">›</span></div>
+                </article>
+              </div>
+              <div class="mobile-composer"><span>Ask Meridian anything...</span><span class="mic"></span></div>
+              <nav class="bottom-nav" aria-label="Mobile navigation">
+                <div class="active"><span class="nav-dot"></span>Concierge</div>
+                <div><span class="nav-dot"></span>Trips</div>
+                <div><span class="nav-dot"></span>Discover</div>
+                <div><span class="nav-dot"></span>Messages</div>
+                <div><span class="nav-dot"></span>Profile</div>
+              </nav>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

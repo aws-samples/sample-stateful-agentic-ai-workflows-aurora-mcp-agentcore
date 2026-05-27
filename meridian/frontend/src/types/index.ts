@@ -19,6 +19,27 @@ export interface ProductListResponse {
   total: number;
 }
 
+export interface TripPackage {
+  package_id: string;
+  name: string;
+  trip_type: string;
+  destination: string;
+  region: string;
+  price_per_person: number;
+  operator: string;
+  description: string;
+  image_url: string;
+  durations?: string[] | null;
+  availability?: Record<string, unknown> | null;
+  highlights?: string[] | null;
+  similarity?: number;
+}
+
+export interface PackageListResponse {
+  packages: TripPackage[];
+  total: number;
+}
+
 export type ActivityType = 'search' | 'embedding' | 'tool_call' | 'database' | 'error' | 'inventory' | 'order' | 'delegation' | 'mcp' | 'reasoning' | 'result' | 'security';
 
 export type TraceSpanCategory =

@@ -19,7 +19,12 @@ import {
   sumSpanLatency,
 } from '../lib/activityToStageSpan';
 import { fetchMemoryProfile, sendChatMessage, processOrder } from '../api/client';
-import { DEMO_PROMPT } from '../lib/proDemoData';
+import {
+  DEMO_MEMORY_FACTS,
+  DEMO_PROMPT,
+  buildFallbackChatResponse,
+  buildFallbackOrderResponse,
+} from '../lib/proDemoData';
 import { PHASE_AGENT_MODE, PHASE_PILL } from '../lib/phaseLabels';
 import {
   runConfigEmbedLabel,
@@ -339,7 +344,14 @@ export function AgentSection() {
           if (tags.length) setTravelerTags(tags);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        setMemoryFacts(DEMO_MEMORY_FACTS);
+        setTravelerTags(
+          DEMO_MEMORY_FACTS.slice(0, 5).map((f) =>
+            f.value.length > 28 ? `${f.value.slice(0, 26)}…` : f.value,
+          ),
+        );
+      });
   }, []);
 
   // Backend health (+ Bedrock model id for Run config)
@@ -520,15 +532,42 @@ export function AgentSection() {
     } catch (error) {
       console.error('Chat error:', error);
       setConnectionStatus('disconnected');
-      setMsgs((p) => [
-        ...p,
-        {
-          role: 'bot',
-          type: 'text',
-          text: 'Unable to reach the backend. Make sure FastAPI is running on localhost:8000.',
+      const fallback = buildFallbackChatResponse(text, effectivePhase);
+      if (fallback.conversation_id) setConversationId(fallback.conversation_id);
+      if (fallback.memory_facts?.length) {
+        setMemoryFacts(fallback.memory_facts);
+        window.dispatchEvent(
+          new CustomEvent('meridian-memory-update', { detail: fallback.memory_facts }),
+        );
+      }
+
+      revealActivitiesProgressively(
+        enrichTraceActivities(effectivePhase, text, fallback.activities, tid, history, {
+          productCount: fallback.products?.length,
+        }),
+        () => {
+          if (fallback.follow_ups) setFollowUps(fallback.follow_ups);
+
+          if (fallback.products && fallback.products.length > 0) {
+            setMsgs((p) => [
+              ...p,
+              {
+                role: 'bot',
+                type: 'products',
+                text: fallback.message,
+                products: fallback.products,
+              },
+            ]);
+          } else {
+            setMsgs((p) => [
+              ...p,
+              { role: 'bot', type: 'text', text: fallback.message },
+            ]);
+          }
+          setTyping(false);
         },
-      ]);
-      setTyping(false);
+        effectivePhase,
+      );
     }
   };
 
@@ -655,15 +694,29 @@ export function AgentSection() {
       );
     } catch (error) {
       console.error('Order error:', error);
-      setMsgs((p) => [
-        ...p,
-        {
-          role: 'bot',
-          type: 'text',
-          text: 'Sorry, I could not process the booking. Try again in a moment.',
+      setConnectionStatus('disconnected');
+      const fallback = buildFallbackOrderResponse(product, phase);
+      revealActivitiesProgressively(
+        enrichTraceActivities(phase, orderQuery, fallback.activities, tid, orderHistory, {
+          productCount: 0,
+        }),
+        () => {
+          if (fallback.order) {
+            setMsgs((p) => [
+              ...p,
+              {
+                role: 'bot',
+                type: 'order',
+                text: fallback.message,
+                order: fallback.order,
+              },
+            ]);
+          } else {
+            setMsgs((p) => [...p, { role: 'bot', type: 'text', text: fallback.message }]);
+          }
+          setTyping(false);
         },
-      ]);
-      setTyping(false);
+      );
     }
   };
 
