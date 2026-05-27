@@ -9,11 +9,12 @@ import { FadeIn } from '../components/FadeIn';
 import { fetchMemoryProfile } from '../api/client';
 import { DEMO_PERSONA_FALLBACK, DEMO_TRAVELER_ID } from '../components/TravelerPersona';
 import { PHASE_EYEBROW } from '../lib/phaseLabels';
+import { DEMO_MEMORY_FACTS, DEMO_TRAVELER } from '../lib/proDemoData';
 import type { LongTermMemoryFact, TravelerProfile } from '../types';
 
 export function MemorySection() {
-  const [facts, setFacts] = useState<LongTermMemoryFact[]>([]);
-  const [profile, setProfile] = useState<TravelerProfile>({});
+  const [facts, setFacts] = useState<LongTermMemoryFact[]>(DEMO_MEMORY_FACTS);
+  const [profile, setProfile] = useState<TravelerProfile>({ ...DEMO_PERSONA_FALLBACK, ...DEMO_TRAVELER });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,8 +26,10 @@ export function MemorySection() {
       if (res.facts?.length) setFacts(res.facts);
       else setFacts([]);
       if (res.profile) setProfile({ ...DEMO_PERSONA_FALLBACK, ...res.profile });
-    } catch (err) {
-      setError('Could not load memory from backend — ensure Aurora is seeded and the API is running.');
+    } catch {
+      setFacts(DEMO_MEMORY_FACTS);
+      setProfile({ ...DEMO_PERSONA_FALLBACK, ...DEMO_TRAVELER });
+      setError('Backend offline — showing fixture traveler memory until Aurora is available.');
     } finally {
       setLoading(false);
     }

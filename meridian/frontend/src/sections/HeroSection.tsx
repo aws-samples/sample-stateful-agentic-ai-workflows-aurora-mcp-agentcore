@@ -142,12 +142,13 @@ export function HeroSection({ scrollY: _scrollY }: HeroSectionProps) {
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            current &&
+            if (current) {
               openConcierge({
                 phase: 4,
                 prompt: `We're planning ${current.name}. What should we know before booking?`,
                 send: true,
               });
+            }
           }
         }}
       >

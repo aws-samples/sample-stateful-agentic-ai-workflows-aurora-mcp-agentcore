@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 /**
  * TravelerPersona — demo traveler identity + Aurora-backed memory (Phase 4)
  */

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 /**
  * Cross-section bridge into the concierge workspace.
  *

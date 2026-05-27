@@ -1,24 +1,13 @@
-import { LaptopFrame } from './LaptopFrame';
-import { PhoneFrame } from './PhoneFrame';
+import { DesktopMeridianApp } from './DesktopMeridianApp';
+import { useMeridianShowcase } from './hooks/useMeridianShowcase';
 import './meridianShowcase.css';
 
 export function MeridianDeviceShowcase() {
-  return (
-    <main
-      className="mds-root"
-      aria-label="Cinematic Meridian app showcase with laptop and mobile app side by side"
-    >
-      <div className="mds-stage">
-        <div className="mds-grain" />
-        <div className="mds-ambient-line" />
-        <div className="mds-reflection-laptop" />
-        <div className="mds-reflection-phone" />
+  const state = useMeridianShowcase();
 
-        <section className="mds-device-row" aria-label="Meridian device showcase">
-          <LaptopFrame />
-          <PhoneFrame />
-        </section>
-      </div>
+  return (
+    <main className="mds-root mds-fullbleed-route" aria-label="Meridian product showcase">
+      <DesktopMeridianApp state={state} />
     </main>
   );
 }
