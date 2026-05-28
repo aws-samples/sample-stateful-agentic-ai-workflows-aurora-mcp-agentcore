@@ -9,12 +9,12 @@ describe('Demo Stage scenario prompts', () => {
   it('defines three keynote scenarios', () => {
     expect(STAGE_SCENARIOS).toHaveLength(3)
     const ids = STAGE_SCENARIOS.map((s) => s.id)
-    expect(ids).toEqual(['beach', 'recall', 'plan'])
+    expect(ids).toEqual(['tokyo', 'recall', 'plan'])
   })
 
-  it('getStageScenarioById returns beach by default for unknown ids', () => {
-    const scenario = getStageScenarioById('does-not-exist' as 'beach')
-    expect(scenario.id).toBe('beach')
+  it('getStageScenarioById returns tokyo by default for unknown ids', () => {
+    const scenario = getStageScenarioById('does-not-exist' as 'tokyo')
+    expect(scenario.id).toBe('tokyo')
   })
 
   it('each scenario has a prompt and traveler id but no pre-baked trace', () => {
@@ -26,7 +26,7 @@ describe('Demo Stage scenario prompts', () => {
     }
   })
 
-  it('DEFAULT_SCENARIO_ID is beach', () => {
-    expect(DEFAULT_SCENARIO_ID).toBe('beach')
+  it('DEFAULT_SCENARIO_ID is tokyo', () => {
+    expect(DEFAULT_SCENARIO_ID).toBe('tokyo')
   })
 })

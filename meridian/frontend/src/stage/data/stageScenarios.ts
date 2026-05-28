@@ -3,18 +3,20 @@
  *
  * Trace spans, recommendations, and assistant replies come from live
  * `POST /api/chat` responses via `traceAdapter.ts`. The three prompts
- * below mirror the Phase 4 pills in /showcase and are ordered to tell
- * the same narrative arc on stage:
+ * below mirror the Phase 4 (Production) pills in /showcase EXACTLY and
+ * are ordered to tell the same Tokyo storyline arc — so the kiosk and
+ * the showcase narrate one consistent demo:
  *
- *   1. beach   — concrete trip query that persists into Aurora via
- *                AgentCore Memory; sets up the recall punchline.
- *   2. recall  — "what did we discuss last time" — depends on the
- *                prior turn being in conversation_messages, so this
- *                only lands AFTER scenario 1.
- *   3. plan    — multi-intent prompt (find dates + Marriott pick +
+ *   1. tokyo   — concrete Tokyo culture query that persists into Aurora
+ *                via AgentCore Memory; seeds the thread the recall picks
+ *                up. Matches showcase Production pill #1.
+ *   2. recall  — "what did we discuss last time" — depends on the prior
+ *                Tokyo turn being in conversation_messages, so it only
+ *                lands AFTER scenario 1. Matches showcase pill #2.
+ *   3. plan    — multi-intent Tokyo prompt (find dates + Marriott pick +
  *                Kyoto hold) that Strands chains implicitly in one
  *                Bedrock turn; motivates the upgrade to Phase 5
- *                LangGraph (named nodes, checkpoints, resumability).
+ *                LangGraph. Matches showcase pill #3.
  */
 import { PHASE_EYEBROW } from '../../lib/phaseLabels';
 import type { StageScenario } from '../types';
@@ -38,13 +40,13 @@ const ALEX_TRAVELER = {
 
 export const STAGE_SCENARIOS: StageScenario[] = [
   {
-    id: 'beach',
+    id: 'tokyo',
     phaseLabel: PHASE_4_LABEL,
     traceId: '',
-    prompt: 'Family-friendly beach resort with snorkeling',
+    prompt: 'Tokyo culture trip for two — boutique stays, local food, walkable neighborhoods',
     assistantReply: '',
     reasoning: '',
-    traveler: { ...ALEX_TRAVELER, budgetCapUsd: 2500 },
+    traveler: { ...ALEX_TRAVELER, budgetCapUsd: 4500 },
     spans: [],
     recommendations: [],
     governance: GOVERNANCE,
@@ -76,7 +78,7 @@ export const STAGE_SCENARIOS: StageScenario[] = [
   },
 ];
 
-export const DEFAULT_SCENARIO_ID: StageScenario['id'] = 'beach';
+export const DEFAULT_SCENARIO_ID: StageScenario['id'] = 'tokyo';
 
 export function getStageScenarioById(id: StageScenario['id']): StageScenario {
   return STAGE_SCENARIOS.find((s) => s.id === id) ?? STAGE_SCENARIOS[0];

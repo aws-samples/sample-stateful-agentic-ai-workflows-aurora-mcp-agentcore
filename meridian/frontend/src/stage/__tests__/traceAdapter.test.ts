@@ -3,7 +3,7 @@ import { adaptChatResponseToScenario, sumLatency } from '../utils/traceAdapter'
 import { getStageScenarioById } from '../data/stageScenarios'
 import type { ChatResponse } from '../../types'
 
-const beach = getStageScenarioById('beach')
+const tokyo = getStageScenarioById('tokyo')
 
 describe('sumLatency', () => {
   it('returns 0 for an empty span list', () => {
@@ -21,13 +21,13 @@ describe('sumLatency', () => {
 
 describe('adaptChatResponseToScenario', () => {
   it('returns null for a null response', () => {
-    expect(adaptChatResponseToScenario(null, beach)).toBeNull()
-    expect(adaptChatResponseToScenario(undefined, beach)).toBeNull()
+    expect(adaptChatResponseToScenario(null, tokyo)).toBeNull()
+    expect(adaptChatResponseToScenario(undefined, tokyo)).toBeNull()
   })
 
   it('returns null when the response has no activities and no products', () => {
     const empty: ChatResponse = { message: '', activities: [] }
-    expect(adaptChatResponseToScenario(empty, beach)).toBeNull()
+    expect(adaptChatResponseToScenario(empty, tokyo)).toBeNull()
   })
 
   it('uses response.message for assistantReply', () => {
@@ -43,7 +43,7 @@ describe('adaptChatResponseToScenario', () => {
         },
       ],
     }
-    const merged = adaptChatResponseToScenario(live, beach)
+    const merged = adaptChatResponseToScenario(live, tokyo)
     expect(merged!.assistantReply).toBe('Tuscany is held — three options under cap.')
   })
 
@@ -61,7 +61,7 @@ describe('adaptChatResponseToScenario', () => {
         },
       ],
     }
-    const merged = adaptChatResponseToScenario(activitiesOnly, beach)!
+    const merged = adaptChatResponseToScenario(activitiesOnly, tokyo)!
     expect(merged.spans).toHaveLength(1)
     expect(merged.spans[0].kind).toBe('tool')
     expect(merged.spans[0].system).toBe('mcp')
@@ -84,7 +84,7 @@ describe('adaptChatResponseToScenario', () => {
         },
       ],
     }
-    const merged = adaptChatResponseToScenario(productsOnly, beach)!
+    const merged = adaptChatResponseToScenario(productsOnly, tokyo)!
     expect(merged.recommendations).toHaveLength(1)
     expect(merged.recommendations[0].matchPct).toBe(96)
     expect(merged.recommendations[0].primary).toBe(true)

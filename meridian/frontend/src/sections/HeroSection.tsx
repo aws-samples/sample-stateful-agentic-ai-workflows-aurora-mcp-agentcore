@@ -100,7 +100,7 @@ export function HeroSection({ scrollY: _scrollY }: HeroSectionProps) {
           </button>
         </div>
         <div className="mp-hero-scale mp-fancy-panel">
-          <p className="mp-hero-scale-eyebrow">Same two founders. Same vibe.</p>
+          <p className="mp-hero-scale-eyebrow">Same small team. Same vibe.</p>
           <div className="mp-hero-scale-metric" aria-label="Scale from 50 to 500,000 trips per day">
             <div className="mp-hero-scale-end">
               <span className="mp-hero-scale-num">50</span>

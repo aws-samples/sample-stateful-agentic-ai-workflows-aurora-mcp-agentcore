@@ -25,8 +25,10 @@ Run it stand-alone (e.g. for Claude Desktop):
     AURORA_CLUSTER_ARN=... AURORA_SECRET_ARN=... \
         python -m backend.mcp.memory_server
 
-Or wire it into Phase 4 alongside the postgres MCP server:
-the demo loads it through `backend.mcp.memory_mcp_client`.
+In the live app, Phase 4 (Production) reaches memory directly through
+`backend.memory.store` inside the Aurora RLS transaction — this stand-alone
+server exists for external MCP hosts (e.g. Claude Desktop) that want the
+same tools over the wire.
 
 Security notes
 ==============

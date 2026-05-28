@@ -1638,3 +1638,51 @@
   .ds-kiosk-tab { flex: 1 1 auto; text-align: center; }
   .ds-kiosk-pane-head h2 { font-size: clamp(28px, 10vw, 36px); }
 }
+
+/* ---- Scenario load + kiosk reconnect states -------------------------- */
+.ds-load-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 14px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--ds-text-2);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.ds-load-error {
+  padding: 9px 14px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: rgba(220, 80, 60, 0.1);
+  border: 1px solid rgba(220, 80, 60, 0.28);
+  color: #ffb4a6;
+  font-size: 13px;
+}
+/* Calm "Reconnecting to Aurora…" pill for the unattended kiosk. The dot
+   pulses so the booth reads as alive (retrying) rather than frozen. */
+.ds-load-reconnect {
+  background: rgba(49, 130, 206, 0.12);
+  border-color: rgba(49, 130, 206, 0.3);
+  color: var(--ds-aurora, #7cc4ff);
+}
+.ds-reconnect-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ds-aurora, #7cc4ff);
+  box-shadow: 0 0 0 0 rgba(124, 196, 255, 0.6);
+  animation: ds-reconnect-pulse 1.4s ease-out infinite;
+}
+@keyframes ds-reconnect-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(124, 196, 255, 0.55); opacity: 1; }
+  70% { box-shadow: 0 0 0 7px rgba(124, 196, 255, 0); opacity: 0.7; }
+  100% { box-shadow: 0 0 0 0 rgba(124, 196, 255, 0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-reconnect-dot { animation: none; }
+}

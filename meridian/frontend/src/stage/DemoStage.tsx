@@ -42,7 +42,7 @@ import { sendChatMessage } from '../api/client';
 import type { StageScenario, StageSpan, StageSystemId, StageView } from './types';
 import type { Phase } from '../types';
 
-const KIOSK_SCENARIO_ORDER: StageScenario['id'][] = ['beach', 'recall', 'plan'];
+const KIOSK_SCENARIO_ORDER: StageScenario['id'][] = ['tokyo', 'recall', 'plan'];
 const KIOSK_DWELL_MS = 6500;
 const KIOSK_GITHUB_REPO = 'https://github.com/aws-samples/sample-dat309-agentic-workflows-aurora-mcp';
 const ARCHITECTURE_IMAGE_SRC = '/kiosk/architecture-board.png';
@@ -68,6 +68,10 @@ export function DemoStage() {
   const [view, setView] = useState<StageView>(flags.view);
   const [selectedSpanIdx, setSelectedSpanIdx] = useState<number | null>(null);
   const [kiosk] = useState(flags.kiosk);
+  // Bumped to re-trigger the scenario-load effect. In kiosk mode a failed
+  // fetch schedules an auto-retry that increments this, so an unattended
+  // booth quietly reconnects instead of parking on an error string.
+  const [retryTick, setRetryTick] = useState(0);
   const [activeTab, setActiveTab] = useState<KioskTab>('demo');
   const [architectureMissing, setArchitectureMissing] = useState(false);
   const [qrMissing, setQrMissing] = useState(false);
@@ -148,7 +152,27 @@ export function DemoStage() {
     return () => {
       cancelled = true;
     };
-  }, [scenarioId]);
+  }, [scenarioId, retryTick]);
+
+  // Kiosk reconnect loop: if a scenario fetch fails (backend blip, Aurora
+  // reconnect, deploy in progress), don't strand the booth on an error.
+  // Quietly retry every few seconds until it comes back. The demo pane
+  // shows a calm "Reconnecting to Aurora…" state in the meantime, and the
+  // Architecture / Try-it-live tabs stay fully usable with no backend.
+  const reconnectTimerRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!kiosk || !loadError) return;
+    if (reconnectTimerRef.current != null) window.clearTimeout(reconnectTimerRef.current);
+    reconnectTimerRef.current = window.setTimeout(() => {
+      setRetryTick((t) => t + 1);
+    }, 4000);
+    return () => {
+      if (reconnectTimerRef.current != null) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    };
+  }, [kiosk, loadError, retryTick]);
 
   // Kiosk loop: when the trace finishes, advance to the next scenario.
   const kioskTimerRef = useRef<number | null>(null);
@@ -292,7 +316,16 @@ export function DemoStage() {
         {activeTab === 'demo' ? (
           <>
             <main className="ds-stage">
-              {loadError && (
+              {loadError && kiosk && (
+                // Unattended booth: never show a raw fetch error to a
+                // passerby. Calm, branded "reconnecting" state; the
+                // reconnect loop above retries every 4s automatically.
+                <div className="ds-load-status ds-load-reconnect" aria-live="polite">
+                  <span className="ds-reconnect-dot" aria-hidden="true" />
+                  Reconnecting to Aurora…
+                </div>
+              )}
+              {loadError && !kiosk && (
                 <div className="ds-load-error" role="alert">
                   {loadError}
                 </div>

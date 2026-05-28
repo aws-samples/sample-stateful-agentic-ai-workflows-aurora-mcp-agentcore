@@ -34,7 +34,7 @@ function PlayIcon({ playing }: { playing: boolean }) {
 }
 
 const SCENARIO_LABEL: Record<StageScenario['id'], string> = {
-  beach: 'Family beach',
+  tokyo: 'Tokyo culture',
   recall: 'Recall',
   plan: 'Plan trip',
 };

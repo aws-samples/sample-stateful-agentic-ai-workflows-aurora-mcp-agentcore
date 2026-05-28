@@ -65,7 +65,7 @@ export interface StageTraveler {
 }
 
 export interface StageScenario {
-  id: 'beach' | 'recall' | 'plan';
+  id: 'tokyo' | 'recall' | 'plan';
   phaseLabel: string;
   traceId: string;
   prompt: string;

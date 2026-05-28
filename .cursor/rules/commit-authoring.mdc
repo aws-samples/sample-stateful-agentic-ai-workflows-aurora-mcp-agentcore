@@ -1,0 +1,55 @@
+---
+description: How to author git commits in this repo (clean author, no Cursor co-author)
+alwaysApply: true
+---
+
+# Commit authoring
+
+Commits in this repo must be authored as **`Shayon Sanyal <shayons@amazon.com>`**
+with **no `Co-authored-by: Cursor` trailer**.
+
+Cursor's commit integration auto-injects a `Co-authored-by: Cursor <cursoragent@cursor.com>`
+trailer on every `git commit` (including `--amend`), so a normal commit cannot stay
+clean. Create commits via git plumbing (`git commit-tree`), which bypasses that
+injection.
+
+## Make a commit (clean)
+
+```bash
+# 1. Stage as usual (do NOT stage .claude/settings.local.json)
+git add <paths>
+
+# 2. Build a tree from the index and commit it via plumbing
+TREE=$(git write-tree)
+PARENT=$(git rev-parse HEAD)
+NEW=$(GIT_AUTHOR_NAME="Shayon Sanyal" GIT_AUTHOR_EMAIL="shayons@amazon.com" \
+      GIT_COMMITTER_NAME="Shayon Sanyal" GIT_COMMITTER_EMAIL="shayons@amazon.com" \
+      git commit-tree "$TREE" -p "$PARENT" <<'EOF'
+<commit subject>
+
+<commit body>
+EOF
+)
+git reset --soft "$NEW"   # move branch to the new commit, keep index/worktree
+```
+
+## Amend the latest commit message (clean)
+
+```bash
+TREE=$(git rev-parse HEAD^{tree})
+PARENT=$(git rev-parse HEAD^)
+ADATE=$(git show -s --format=%aI HEAD)
+NEW=$(GIT_AUTHOR_NAME="Shayon Sanyal" GIT_AUTHOR_EMAIL="shayons@amazon.com" \
+      GIT_AUTHOR_DATE="$ADATE" \
+      GIT_COMMITTER_NAME="Shayon Sanyal" GIT_COMMITTER_EMAIL="shayons@amazon.com" \
+      git commit-tree "$TREE" -p "$PARENT" <<'EOF'
+<new message>
+EOF
+)
+git reset --soft "$NEW"
+```
+
+After creating/amending, verify: `git log -1 --format='%an <%ae>%n%B'` shows the
+correct author and **no** `Co-authored-by` line. Force-pushing `main` (needed after
+amending an already-pushed commit) requires explicit user approval; prefer
+`--force-with-lease`.

@@ -1008,8 +1008,12 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         agent_file="agents/retrieval_03/search_agent.py"
     ))
     candidate_limit = max(limit * config.search.rerank_candidate_multiplier, 25)
+    # Cast the limit to ::integer — the function signature is
+    # semantic_trip_search(vector, integer); Python ints arrive over the
+    # RDS Data API as bigint and Postgres can't resolve the overload
+    # otherwise ("function semantic_trip_search(vector, bigint) does not exist").
     semantic_sql = """
-        SELECT * FROM semantic_trip_search(%s::vector, %s)
+        SELECT * FROM semantic_trip_search(%s::vector, %s::integer)
     """
     semantic_rows = await db.execute(semantic_sql, (embedding_str, candidate_limit))
     if price_filter is not None:

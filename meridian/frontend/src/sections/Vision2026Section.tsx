@@ -175,7 +175,7 @@ export function Vision2026Section() {
       <FadeIn delay={0.35}>
         <p className="vision-footnote">
           From 50 trips/day to 500,000 — same Aurora, same agent, five rungs higher. Each rung
-          composes onto the last; nothing is rewritten. 10,000× the throughput, two founders, no
+          composes onto the last; nothing is rewritten. 10,000× the throughput, same small team, no
           new database. The ladder, not a separate product.
         </p>
       </FadeIn>

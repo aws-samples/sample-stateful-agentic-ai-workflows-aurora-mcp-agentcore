@@ -153,16 +153,19 @@ class BedrockConfig:
 
 
 def bedrock_model_label(model_id: str) -> str:
-    """Human-readable label for Run config / health (from BEDROCK_MODEL_ID)."""
+    """Human-readable label for Run config / health (from BEDROCK_MODEL_ID).
+
+    Covers the live fallback chain: Opus 4.8 -> Sonnet 4.6 -> Haiku 4.5.
+    """
     mid = model_id.lower()
     if "opus-4-8" in mid or "opus-4.8" in mid:
         return "Claude Opus 4.8"
-    if "opus-4-7" in mid or "opus-4.7" in mid:
-        return "Claude Opus 4.7"
+    if "sonnet-4-6" in mid or "sonnet-4.6" in mid:
+        return "Claude Sonnet 4.6"
     if "sonnet-4-5" in mid or "sonnet-4.5" in mid:
         return "Claude Sonnet 4.5"
     if "haiku" in mid:
-        return "Claude Haiku"
+        return "Claude Haiku 4.5"
     if "anthropic" in mid and "claude" in mid:
         return "Claude (Bedrock)"
     return model_id.rsplit("/", 1)[-1] if "/" in model_id else model_id
