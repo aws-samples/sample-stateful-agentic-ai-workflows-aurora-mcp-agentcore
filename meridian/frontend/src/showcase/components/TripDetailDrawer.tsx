@@ -24,7 +24,7 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
           </div>
         </div>
         <div className="mds-trip-confirm">
-          <b>{state.actionDrawer.live ? 'Live action' : 'Demo fallback'}</b>
+          <b>{state.actionDrawer.live ? 'Live action' : 'Action status'}</b>
           <span>{state.actionDrawer.message}</span>
           {state.actionDrawer.order && <code>{state.actionDrawer.order.order_id}</code>}
           <button type="button" onClick={state.closeActionDrawer}>

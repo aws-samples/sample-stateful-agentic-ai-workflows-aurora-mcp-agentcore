@@ -14,12 +14,25 @@
   --mds-amber: #e3a45e;
   --mds-green: #37d29d;
   --mds-danger: #ff815f;
-  --mds-font: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+  --mds-font: "Geist", "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+  --mds-font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   color: var(--mds-ink);
   font-family: var(--mds-font);
+  font-feature-settings: "ss01", "ss03", "cv11"; /* Geist stylistic sets */
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: geometricPrecision;
+}
+
+/* Tabular numerals for any pill / chip / metric displaying counts so
+   "12 spans" / "427ms" / "$1,950" don't shimmer when values change. */
+.mds-trace-summary span,
+.mds-rec-price b,
+.mds-cost-card b,
+.mds-span-meta {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "ss01";
 }
 
 .mds-fullbleed-route {
@@ -44,7 +57,7 @@
 
 .mds-debug-banner code {
   color: #d7e6f0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--mds-font-mono);
   font-size: 11px;
 }
 
@@ -75,15 +88,45 @@
   width: 100%;
   margin: 0;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 360px;
+  grid-template-columns: 220px minmax(0, 1fr) 410px;
   overflow: hidden;
   border: 0;
   border-radius: 0;
+  /* All glow gradients live on the parent only — the sidebar and the
+     right rail use transparent backgrounds so the wash flows under both
+     columns without a vertical seam.
+     - cool cyan halo bleeds in from the bottom-left corner
+     - warm golden-hour sunlight wraps around the upper-right + right
+       edge with multiple stacked ellipses for a smooth falloff. */
   background:
-    radial-gradient(circle at 0% 14%, rgba(0, 182, 255, 0.12), transparent 40%),
-    radial-gradient(circle at 98% 40%, rgba(255, 144, 54, 0.12), transparent 34%),
+    radial-gradient(ellipse 60% 75% at -8% 100%, rgba(0, 198, 255, 0.32), transparent 65%),
+    radial-gradient(ellipse 45% 60% at -3% 35%, rgba(0, 168, 220, 0.16), transparent 65%),
+    radial-gradient(ellipse 70% 80% at 108% -10%, rgba(255, 188, 108, 0.40), transparent 70%),
+    radial-gradient(ellipse 60% 80% at 110% 40%, rgba(255, 152, 76, 0.28), transparent 70%),
+    radial-gradient(ellipse 55% 80% at 110% 90%, rgba(220, 124, 80, 0.18), transparent 75%),
     linear-gradient(180deg, #040a13 0%, #06101b 52%, #080f18 100%);
   box-shadow: none;
+}
+
+/* Soft top-corner halo overlay — very subtle, just lifts the warm and
+   cool corners. Painted with screen blend so it never produces a hard
+   panel/body boundary. */
+.mds-desktop-app::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 50% 50% at 100% 0%, rgba(255, 214, 140, 0.22), transparent 70%),
+    radial-gradient(ellipse 38% 42% at 0% 100%, rgba(78, 220, 255, 0.16), transparent 70%);
+  mix-blend-mode: screen;
+}
+
+/* Make sure the column children render above the halo overlay. */
+.mds-desktop-app > * {
+  position: relative;
+  z-index: 1;
 }
 
 .mds-fullbleed-route .mds-desktop-app {
@@ -97,14 +140,19 @@
 }
 
 .mds-desktop-sidebar {
+  height: 100vh;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 28px 18px;
   border-right: 1px solid var(--mds-line);
+  /* Translucent so the bottom-left cyan halo from .mds-desktop-app is
+     visible behind the rail (matches target's glowing left edge). */
   background:
-    radial-gradient(circle at 0% 22%, rgba(0, 194, 255, 0.14), transparent 54%),
-    linear-gradient(180deg, rgba(3, 10, 17, 0.98), rgba(4, 12, 19, 0.9));
+    radial-gradient(ellipse 90% 60% at 0% 95%, rgba(0, 200, 255, 0.18), transparent 65%),
+    radial-gradient(circle at 0% 22%, rgba(0, 194, 255, 0.10), transparent 60%),
+    linear-gradient(180deg, rgba(3, 10, 17, 0.78), rgba(4, 12, 19, 0.62));
+  overflow: hidden;
 }
 
 .mds-brand {
@@ -113,8 +161,10 @@
   gap: 11px;
   margin-bottom: 14px;
   color: #fff;
+  /* Tight-tracked Geist Display feel for the wordmark. */
   font-size: 25px;
-  font-weight: 760;
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
 
 .mds-brand-mark {
@@ -273,27 +323,67 @@
 .mds-profile-line strong {
   display: block;
   color: #fff;
-  font-size: 13px;
+  font-size: 15px;
+  font-weight: 660;
 }
 
 .mds-account-copy span,
 .mds-profile-line small {
   display: block;
-  margin-top: 2px;
+  margin-top: 3px;
   overflow: hidden;
-  color: var(--mds-muted);
-  font-size: 11px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .mds-desktop-main {
+  /* Two-row layout: scrollable history above, sticky composer dock below.
+     The main column is exactly viewport-tall so the dock can stay pinned
+     to its bottom while everything else flows. */
+  position: relative;
   min-width: 0;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.mds-desktop-scroll {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 34px;
-  overflow: auto;
+  padding: 34px 34px 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+.mds-desktop-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.mds-desktop-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mds-desktop-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.mds-desktop-dock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 34px 22px;
+  background: linear-gradient(180deg, transparent 0%, rgba(4, 9, 15, 0.45) 30%, rgba(4, 9, 15, 0.78) 100%);
+  /* Subtle hairline so the dock visually separates from scrolling content
+     without feeling boxed-in. */
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(10px);
 }
 
 .mds-top-actions {
@@ -324,15 +414,24 @@
 .mds-headline-row h1 {
   margin: 0;
   color: #fff;
+  /* Geist headline: tight tracking, slightly heavier than the body so the
+     "Good morning, Alex." reads with the premium SaaS hierarchy of the
+     target screenshot. font-feature-settings turns on stylistic alts and
+     contextual ligatures Geist ships with. */
+  font-family: var(--mds-font);
   font-size: clamp(34px, 4vw, 56px);
-  font-weight: 720;
-  letter-spacing: 0;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.04;
+  font-feature-settings: "ss01", "ss03", "cv11";
 }
 
 .mds-headline-row p {
-  margin: 8px 0 0;
-  color: var(--mds-muted);
+  margin: 10px 0 0;
+  color: rgba(255, 255, 255, 0.72);
   font-size: 16px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
 }
 
 .mds-phase-selector {
@@ -374,19 +473,35 @@
 }
 
 .mds-chat-transcript {
-  min-height: 160px;
-  max-height: 260px;
+  /* Unified scroll: the chat transcript no longer owns its own scrollbar.
+     The whole main column scrolls as one surface, so chat history and the
+     recommendation grid below flow together (Claude / ChatGPT pattern).
+     Older turns simply scroll up off-screen as new turns arrive. */
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  overflow: auto;
-  padding-right: 4px;
+  gap: 14px;
 }
 
 .mds-message {
   display: grid;
-  max-width: 76%;
+  /* Bubbles cap at ~70% so dialogue reads like Claude / ChatGPT — wide
+     enough for substantive replies, short enough to feel conversational. */
+  max-width: min(680px, 72%);
   gap: 4px;
+  /* Slide + fade in for every new bubble — gives the abrupt "snap" of a
+     React re-render the natural feel of a streaming chat. */
+  animation: mds-msg-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes mds-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .mds-message.user {
@@ -394,9 +509,10 @@
 }
 
 .mds-message-role {
-  color: var(--mds-dim);
-  font-size: 10px;
-  font-weight: 800;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -405,35 +521,115 @@
 }
 
 .mds-message-bubble {
-  padding: 12px 14px;
+  padding: 13px 16px;
   border: 0;
-  border-radius: 14px;
-  color: #dce6ef;
-  background: rgba(255, 255, 255, 0.045);
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.mds-message.bot:first-child .mds-message-role {
-  display: none;
-}
-
-.mds-message.bot:first-child .mds-message-bubble {
-  max-width: none;
-  width: 100%;
-  padding: 16px 18px;
   border-radius: 16px;
-  background: rgba(8, 14, 22, 0.72);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+  color: #f0f5fa;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 14.5px;
+  font-weight: 460;
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+  /* Subtle shadow + transition so live-typing edits don't pop. */
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  transition: box-shadow 220ms ease, background 220ms ease;
 }
 
 .mds-message.user .mds-message-bubble {
-  border-radius: 14px 14px 3px 14px;
-  background: rgba(49, 70, 82, 0.76);
+  border-radius: 16px 16px 4px 16px;
+  background: rgba(49, 90, 110, 0.62);
+  color: #ffffff;
 }
 
 .mds-message.bot .mds-message-bubble {
-  border-radius: 14px 14px 14px 3px;
+  border-radius: 16px 16px 16px 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #f0f5fa;
+}
+
+/* Bot bubbles that carry products stack their summary chip below the
+   reply text. Same width cap as a regular bubble - the chip is small. */
+.mds-message.bot.has-products .mds-message-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px 16px 11px;
+}
+
+.mds-message-text {
+  display: block;
+}
+
+/* Compact result chip baked into bot bubbles that returned products.
+   Acts like Claude Desktop's "tool result" badge - one tappable line that
+   summarizes count + price range so prior-turn results stay attached to
+   their chat message without painting full thumbnails. */
+.mds-msg-result-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 6px 12px 6px 10px;
+  border: 1px solid rgba(49, 212, 228, 0.32);
+  border-radius: 999px;
+  color: #e7faff;
+  background: rgba(13, 38, 46, 0.78);
+  font-size: 12.5px;
+  font-weight: 540;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.005em;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.mds-msg-result-chip:hover,
+.mds-msg-result-chip:focus-visible {
+  border-color: rgba(49, 212, 228, 0.7);
+  background: rgba(20, 56, 68, 0.88);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.mds-msg-result-chip.is-active {
+  border-color: rgba(55, 210, 157, 0.55);
+  color: #d2fbe7;
+  background: rgba(14, 42, 32, 0.85);
+}
+
+.mds-msg-result-chip-icon {
+  display: inline-flex;
+  color: var(--mds-cyan);
+}
+
+.mds-msg-result-chip.is-active .mds-msg-result-chip-icon {
+  color: var(--mds-green);
+}
+
+.mds-msg-result-chip-text b {
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.mds-msg-result-chip.is-active .mds-msg-result-chip-text b {
+  color: #ffffff;
+}
+
+.mds-msg-result-chip-text span {
+  color: rgba(231, 250, 255, 0.78);
+}
+
+.mds-msg-result-chip.is-active .mds-msg-result-chip-text span {
+  color: rgba(210, 251, 231, 0.82);
+}
+
+.mds-msg-result-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mds-green);
+  box-shadow: 0 0 0 4px rgba(55, 210, 157, 0.16);
+  animation: mds-pulse 1.4s ease-in-out infinite;
 }
 
 .mds-running-dot {
@@ -446,6 +642,10 @@
   box-shadow: 0 0 0 5px rgba(49, 212, 228, 0.12);
   animation: mds-pulse 1.15s ease-in-out infinite;
 }
+
+/* Streaming caret was removed - the typewriter reveal is smooth enough
+   on its own and a blinking cursor at the end of finished turns felt
+   abrupt on stage demos. */
 
 .mds-assistant-line {
   margin-top: 2px;
@@ -461,25 +661,198 @@
 }
 
 .mds-rec-card {
+  position: relative;
+  isolation: isolate;
   overflow: hidden;
-  display: grid;
-  grid-template-rows: 168px minmax(0, 1fr) auto;
+  display: block;
+  height: 320px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
+  border-radius: 18px;
   background: linear-gradient(180deg, rgba(8, 14, 21, 0.82), rgba(6, 11, 18, 0.94));
   text-align: left;
-  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.32);
-  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.38);
+  cursor: pointer;
+  transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
 }
 
 .mds-rec-card:hover {
-  transform: translateY(-1px);
-  border-color: rgba(255, 255, 255, 0.08);
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 30px 58px rgba(0, 0, 0, 0.46);
 }
 
 .mds-rec-card.is-selected {
-  border-color: rgba(49, 212, 228, 0.35);
-  box-shadow: 0 0 0 1px rgba(49, 212, 228, 0.12), 0 18px 40px rgba(0, 0, 0, 0.3);
+  border-color: rgba(49, 212, 228, 0.55);
+  box-shadow: 0 0 0 1px rgba(49, 212, 228, 0.32), 0 26px 60px rgba(0, 0, 0, 0.5);
+}
+
+.mds-rec-card .mds-trip-visual {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  border-radius: inherit;
+}
+
+.mds-rec-card .mds-trip-visual::after {
+  display: none;
+}
+
+.mds-rec-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg,
+      rgba(3, 8, 14, 0.0) 0%,
+      rgba(3, 8, 14, 0.0) 38%,
+      rgba(3, 8, 14, 0.32) 60%,
+      rgba(3, 8, 14, 0.78) 82%,
+      rgba(2, 6, 10, 0.94) 100%);
+}
+
+.mds-rec-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 16px 16px 14px;
+  color: #fff;
+}
+
+.mds-rec-match-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 8px;
+  border: 1px solid rgba(55, 210, 157, 0.45);
+  border-radius: 999px;
+  background: rgba(8, 24, 18, 0.78);
+  backdrop-filter: blur(8px);
+  color: #b9f3d8;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mds-rec-match-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mds-green);
+  box-shadow: 0 0 8px rgba(55, 210, 157, 0.7);
+}
+
+.mds-rec-overlay-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  color: #cfdbe6;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.mds-rec-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(8, 14, 21, 0.5);
+  backdrop-filter: blur(6px);
+  color: #e2ecf3;
+}
+
+.mds-rec-title {
+  display: block;
+  margin-top: 2px;
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  line-height: 1.15;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+.mds-rec-sub {
+  display: block;
+  color: #c9d4de;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+}
+
+.mds-rec-overlay-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.mds-rec-overlay .mds-rec-price {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0;
+  line-height: 1.05;
+}
+
+.mds-rec-overlay .mds-rec-price span {
+  display: block;
+  margin-bottom: 2px;
+  color: rgba(220, 232, 240, 0.7);
+  font-size: 10px;
+  font-weight: 580;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mds-rec-overlay .mds-rec-price b {
+  font-size: 20px;
+  font-weight: 760;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+.mds-rec-overlay .mds-rec-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  padding: 0;
+  width: auto;
+  flex: 1;
+  max-width: 240px;
+}
+
+.mds-rec-overlay .mds-rec-actions button {
+  min-height: 28px;
+  padding: 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: #f3f9ff;
+  background: rgba(10, 18, 26, 0.62);
+  backdrop-filter: blur(8px);
+  font-size: 10px;
+  font-weight: 640;
+  letter-spacing: 0.02em;
+}
+
+.mds-rec-overlay .mds-rec-actions button:hover {
+  border-color: rgba(49, 212, 228, 0.55);
+  background: rgba(15, 36, 44, 0.78);
 }
 
 .mds-trip-visual {
@@ -573,6 +946,7 @@
   transform: rotate(-2deg);
 }
 
+/* Legacy non-overlay card layout — kept for the trip drawer. */
 .mds-rec-copy {
   padding: 12px 14px 10px;
 }
@@ -631,6 +1005,18 @@
   font-size: 11px;
 }
 
+/* Larger trace-action buttons (Replay trace / Rerun query) so they read
+   from across the room on stage screens. */
+.mds-trace-actions button {
+  min-height: 38px;
+  padding: 0 14px;
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  background: rgba(15, 26, 36, 0.82);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .mds-main-actions {
   display: flex;
   gap: 14px;
@@ -677,20 +1063,364 @@
   gap: 8px;
 }
 
-.mds-chat-quick-actions button {
-  min-height: 30px;
-  padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  color: #b8c5d0;
-  background: rgba(9, 17, 27, 0.68);
-  font-size: 11px;
-  text-align: center;
+/* Query starters above the composer - phase-specific seed prompts that
+   replace the composer text in one tap. The "Try" label gives them a
+   light hint role so they read as suggestions, not actions. */
+.mds-chat-query-starters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
-.mds-chat-quick-actions button:hover {
-  border-color: rgba(49, 212, 228, 0.28);
-  color: #e8f2f8;
+.mds-chat-starter-label {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mds-chat-starter-chip {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px dashed rgba(49, 212, 228, 0.32);
+  border-radius: 999px;
+  color: rgba(231, 250, 255, 0.92);
+  background: rgba(13, 38, 46, 0.42);
+  font-size: 13px;
+  font-weight: 540;
+  letter-spacing: 0.005em;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.mds-chat-starter-chip:hover,
+.mds-chat-starter-chip:focus-visible {
+  border-style: solid;
+  border-color: rgba(49, 212, 228, 0.7);
+  color: #ffffff;
+  background: rgba(20, 56, 68, 0.78);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.mds-chat-starter-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Stretch query: third pill in each phase that exposes the phase's
+   limit. Amber dashed border + a leading arrow so it's visually distinct
+   from the two known-good queries. */
+.mds-chat-starter-chip.is-stretch {
+  border-color: rgba(227, 164, 94, 0.45);
+  color: rgba(255, 226, 192, 0.95);
+  background: rgba(38, 24, 14, 0.42);
+}
+
+.mds-chat-starter-chip.is-stretch::before {
+  content: "→";
+  margin-right: 6px;
+  color: var(--mds-amber);
+  font-weight: 700;
+}
+
+.mds-chat-starter-chip.is-stretch:hover,
+.mds-chat-starter-chip.is-stretch:focus-visible {
+  border-style: solid;
+  border-color: rgba(227, 164, 94, 0.78);
+  color: #fff5e6;
+  background: rgba(56, 36, 18, 0.78);
+  outline: none;
+}
+
+/* Action chips below the composer - each one has a leading icon and
+   appends its prompt fragment when tapped. */
+.mds-chat-action-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 16px 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  color: #ffffff;
+  background: rgba(9, 17, 27, 0.78);
+  font-size: 13.5px;
+  font-weight: 580;
+  letter-spacing: 0.005em;
+  text-align: center;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.mds-chat-action-chip:hover,
+.mds-chat-action-chip:focus-visible {
+  border-color: rgba(49, 212, 228, 0.55);
+  color: #ffffff;
+  background: rgba(15, 32, 44, 0.88);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.mds-chat-action-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.mds-chat-action-chip-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(49, 212, 228, 0.95);
+}
+
+.mds-chat-action-chip:hover .mds-chat-action-chip-icon,
+.mds-chat-action-chip:focus-visible .mds-chat-action-chip-icon {
+  color: var(--mds-cyan);
+}
+
+.mds-chat-action-chip-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Active state - chip lights up cyan when its filter is set. */
+.mds-chat-action-chip.is-active {
+  border-color: rgba(49, 212, 228, 0.7);
+  background: rgba(20, 56, 68, 0.85);
+  color: #ffffff;
+}
+
+.mds-chat-action-chip.is-active .mds-chat-action-chip-icon {
+  color: var(--mds-cyan);
+}
+
+.mds-chat-action-chip-dot {
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: var(--mds-cyan);
+  box-shadow: 0 0 0 4px rgba(49, 212, 228, 0.18);
+}
+
+/* Clear-all chip - dimmer than the others, with an X icon. */
+.mds-chat-action-chip.is-clear {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.78);
+  background: transparent;
+}
+
+.mds-chat-action-chip.is-clear:hover {
+  border-color: rgba(255, 129, 95, 0.55);
+  color: var(--mds-danger);
+}
+
+.mds-chat-action-chip.is-clear .mds-chat-action-chip-icon {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.mds-chat-action-chip.is-clear:hover .mds-chat-action-chip-icon {
+  color: var(--mds-danger);
+}
+
+/* Popover shell - anchored above the chip. */
+.mds-chip-pop-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.mds-chip-pop {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 50;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 14px 12px;
+  border: 1px solid rgba(49, 212, 228, 0.28);
+  border-radius: 14px;
+  background: rgba(8, 14, 22, 0.96);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(14px);
+  animation: mds-msg-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Tail anchor pointing down at the chip. */
+.mds-chip-pop::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 24px;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  border-right: 1px solid rgba(49, 212, 228, 0.28);
+  border-bottom: 1px solid rgba(49, 212, 228, 0.28);
+  background: rgba(8, 14, 22, 0.96);
+  transform: rotate(45deg);
+}
+
+.mds-popover-title {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Stepper for travelers count. */
+.mds-popover-stepper {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  align-items: center;
+  gap: 12px;
+}
+
+.mds-popover-step-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  color: #ffffff;
+  background: rgba(15, 26, 36, 0.6);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.mds-popover-step-btn:hover:not(:disabled) {
+  border-color: rgba(49, 212, 228, 0.55);
+  background: rgba(20, 56, 68, 0.78);
+}
+
+.mds-popover-step-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mds-popover-step-value {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.mds-popover-step-value b {
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.mds-popover-step-value em {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 540;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Date pickers. */
+.mds-popover-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.mds-popover-dates label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mds-popover-dates label span {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mds-popover-dates input[type="date"] {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  color: #ffffff;
+  background: rgba(11, 20, 31, 0.78);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 540;
+  outline: none;
+  color-scheme: dark;
+}
+
+.mds-popover-dates input[type="date"]:focus {
+  border-color: rgba(49, 212, 228, 0.6);
+  box-shadow: 0 0 0 3px rgba(49, 212, 228, 0.14);
+}
+
+/* Popover footer (link + primary). */
+.mds-popover-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.mds-popover-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12.5px;
+  font-weight: 540;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.18);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.mds-popover-link:hover:not(:disabled) {
+  color: var(--mds-danger);
+}
+
+.mds-popover-link:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.mds-popover-primary {
+  min-height: 32px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  color: #06232a;
+  background: linear-gradient(180deg, #58e8f2, #29c8db);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(49, 212, 228, 0.32);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.mds-popover-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(49, 212, 228, 0.45);
 }
 
 .mds-chat-composer input {
@@ -721,16 +1451,30 @@
 }
 
 .mds-desktop-right {
+  height: 100vh;
   display: flex;
   flex-direction: column;
   gap: 14px;
   padding: 34px 22px;
   border-left: 1px solid var(--mds-line);
-  background:
-    radial-gradient(circle at 100% 8%, rgba(255, 151, 68, 0.16), transparent 46%),
-    radial-gradient(circle at 72% 34%, rgba(255, 108, 32, 0.12), transparent 40%),
-    linear-gradient(180deg, rgba(4, 9, 15, 0.62), rgba(4, 8, 13, 0.22));
-  overflow: hidden;
+  /* Fully transparent — the parent .mds-desktop-app background paints the
+     entire warm/cool halo across all three columns. */
+  background: transparent;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.mds-desktop-right::-webkit-scrollbar {
+  width: 8px;
+}
+
+.mds-desktop-right::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mds-desktop-right::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .mds-panel {
@@ -756,7 +1500,9 @@
 
 .mds-panel-head strong {
   color: #fff;
-  font-size: 15px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
 }
 
 .mds-panel-head span,
@@ -764,7 +1510,8 @@
   border: 0;
   color: var(--mds-cyan);
   background: transparent;
-  font-size: 11px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .mds-profile-line {
@@ -785,9 +1532,10 @@
 .mds-memory-mini div {
   display: grid;
   grid-template-columns: 44% minmax(0, 1fr);
-  gap: 8px;
-  color: #c5d0da;
-  font-size: 12px;
+  gap: 10px;
+  color: #ffffff;
+  font-size: 13.5px;
+  line-height: 1.35;
 }
 
 .mds-fact-row span,
@@ -795,7 +1543,9 @@
 .mds-run-config span {
   min-width: 0;
   overflow: hidden;
-  color: var(--mds-muted);
+  /* Brighter "label" colour so even the secondary column reads at a glance
+     on big stage displays. */
+  color: rgba(255, 255, 255, 0.78);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -803,7 +1553,8 @@
 .mds-fact-row b,
 .mds-memory-mini b {
   overflow: hidden;
-  font-weight: 600;
+  color: #ffffff;
+  font-weight: 660;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -820,14 +1571,15 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font-size: 12px;
+  font-size: 13.5px;
 }
 
 .mds-run-config b {
   min-width: 0;
   overflow: hidden;
   color: #fff;
-  font-weight: 650;
+  font-weight: 680;
+  font-size: 13.5px;
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -841,6 +1593,136 @@
   padding: 16px;
 }
 
+/* ============================================================
+   Claude Desktop-style "thinking phases" progress block.
+   Phases light up top→bottom as trace spans land or replay.
+   ============================================================ */
+.mds-thinking {
+  position: relative;
+  margin: 4px 0 12px;
+  padding: 12px 12px 10px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(13, 30, 38, 0.42), rgba(8, 16, 24, 0.55));
+  border: 1px solid rgba(49, 212, 228, 0.12);
+}
+
+.mds-thinking-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.mds-thinking-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 9px 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 14.5px;
+  font-weight: 580;
+  letter-spacing: 0.005em;
+  transition: color 220ms ease;
+}
+
+.mds-thinking-rail {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+}
+
+.mds-thinking-rail::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -7px;
+  bottom: -7px;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 2px;
+  transition: background 240ms ease;
+}
+
+.mds-thinking-item:first-child .mds-thinking-rail::before {
+  top: 50%;
+}
+
+.mds-thinking-item:last-child .mds-thinking-rail::before {
+  bottom: 50%;
+}
+
+.mds-thinking-dot {
+  position: relative;
+  z-index: 2;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 0 0 0 rgba(49, 212, 228, 0);
+  transition: background 220ms ease, box-shadow 220ms ease, transform 220ms ease;
+}
+
+/* Phases that are already complete: solid green dot, fully bright copy. */
+.mds-thinking-item.is-done {
+  color: #e6f4f9;
+}
+
+.mds-thinking-item.is-done .mds-thinking-dot {
+  background: var(--mds-green);
+  box-shadow: 0 0 8px rgba(55, 210, 157, 0.55);
+}
+
+.mds-thinking-item.is-done .mds-thinking-rail::before {
+  background: linear-gradient(180deg, rgba(55, 210, 157, 0.85), rgba(49, 212, 228, 0.55));
+}
+
+/* Currently-active phase: cyan dot, pulsing glow, copy at full brightness. */
+.mds-thinking-item.is-active {
+  color: #ffffff;
+}
+
+.mds-thinking-item.is-active .mds-thinking-dot {
+  background: var(--mds-cyan);
+  box-shadow: 0 0 0 5px rgba(49, 212, 228, 0.18);
+  animation: mds-thinking-pulse 1.1s ease-in-out infinite;
+}
+
+.mds-thinking-item.is-active .mds-thinking-rail::before {
+  background: linear-gradient(180deg, var(--mds-cyan), rgba(49, 212, 228, 0.18));
+}
+
+/* Pending phases sit muted until their turn arrives. */
+.mds-thinking-item.is-pending {
+  color: rgba(220, 232, 240, 0.62);
+}
+
+.mds-thinking-copy {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes mds-thinking-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px rgba(49, 212, 228, 0.16),
+                0 0 12px rgba(49, 212, 228, 0.55);
+  }
+
+  50% {
+    box-shadow: 0 0 0 8px rgba(49, 212, 228, 0.06),
+                0 0 18px rgba(49, 212, 228, 0.85);
+  }
+}
+
 .mds-trace-summary {
   display: flex;
   flex-wrap: wrap;
@@ -849,18 +1731,22 @@
 }
 
 .mds-trace-summary span {
-  padding: 3px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
-  color: #c4d2dd;
-  font-size: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .mds-live-state {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 600;
 }
 
 .mds-live-state::before {
@@ -884,12 +1770,13 @@
 }
 
 .mds-trace-tabs button {
-  min-height: 30px;
+  min-height: 34px;
   border: 0;
   border-radius: 8px;
-  color: var(--mds-muted);
+  color: rgba(255, 255, 255, 0.78);
   background: transparent;
-  font-size: 11px;
+  font-size: 13px;
+  font-weight: 600;
   text-transform: capitalize;
 }
 
@@ -911,15 +1798,20 @@
 .mds-span-row {
   position: relative;
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  gap: 9px;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 10px;
   align-items: start;
   width: 100%;
-  padding: 9px 0 9px 4px;
+  padding: 10px 0 10px 4px;
   border: 0;
-  color: #b8c5d0;
+  color: #ffffff;
   background: transparent;
   text-align: left;
+  /* Smooth opacity transition lets pending → visible flips fade in
+     gracefully during replay. */
+  transition: opacity 280ms cubic-bezier(0.22, 1, 0.36, 1),
+              filter 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: mds-msg-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .mds-span-row:not(:last-child)::after {
@@ -936,73 +1828,90 @@
   color: #fff;
 }
 
+.mds-span-row.is-pending {
+  opacity: 0.42;
+  filter: grayscale(0.2);
+}
+
+.mds-span-row.is-pending .mds-span-check {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.45);
+}
+
 .mds-span-check {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(55, 210, 157, 0.27);
+  border: 1px solid rgba(55, 210, 157, 0.45);
   border-radius: 50%;
   color: var(--mds-green);
-  background: rgba(55, 210, 157, 0.13);
-  font-size: 10px;
+  background: rgba(55, 210, 157, 0.18);
+  font-size: 11.5px;
+  font-weight: 700;
 }
 
 .mds-span-title {
   display: block;
-  color: inherit;
-  font-size: 12px;
+  color: #ffffff;
+  font-size: 13.5px;
   font-weight: 680;
+  letter-spacing: -0.005em;
 }
 
 .mds-span-meta {
   display: block;
-  margin-top: 3px;
-  color: var(--mds-muted);
-  font-size: 10px;
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11.5px;
+  font-weight: 500;
 }
 
 .mds-span-source {
   display: block;
-  margin-top: 2px;
-  color: #8093a4;
-  font-size: 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11.5px;
+  font-family: var(--mds-font-mono);
   word-break: break-word;
 }
 
 .mds-span-detail {
   display: grid;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 9px;
-  border-radius: 9px;
-  color: #dbe5ee;
-  background: rgba(255, 255, 255, 0.052);
-  font-size: 11px;
-  line-height: 1.45;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 11px;
+  border-radius: 10px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .mds-span-detail code,
 .mds-sql-list pre {
   display: block;
   overflow: auto;
-  padding: 8px;
+  padding: 10px;
   border-radius: 8px;
-  color: #caf7ff;
-  background: rgba(0, 0, 0, 0.32);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 10px;
+  color: #d4f9ff;
+  background: rgba(0, 0, 0, 0.42);
+  font-family: var(--mds-font-mono);
+  font-size: 12px;
+  line-height: 1.45;
   white-space: pre-wrap;
 }
 
 .mds-sql-list small {
-  color: #7f90a0;
-  font-size: 10px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .mds-span-detail small {
-  color: var(--mds-muted);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
 }
 
 .mds-trace-actions {
@@ -1019,19 +1928,22 @@
 
 .mds-cost-card b {
   color: #fff;
-  font-size: 22px;
+  font-size: 26px;
+  font-weight: 720;
 }
 
 .mds-cost-card span {
-  color: var(--mds-muted);
-  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13.5px;
+  font-weight: 540;
 }
 
 .mds-empty {
   padding: 16px;
   border: 0;
   border-radius: 12px;
-  color: var(--mds-muted);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
   background: rgba(255, 255, 255, 0.02);
   font-size: 12px;
 }
@@ -1232,7 +2144,7 @@
   }
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1240px) {
   .mds-fullbleed-route .mds-desktop-app {
     min-height: 100vh;
     grid-template-columns: 190px minmax(0, 1fr);
@@ -1314,15 +2226,21 @@
   }
 
   .mds-rec-card {
-    grid-template-rows: 182px minmax(0, 1fr) auto;
+    height: 280px;
   }
 
   .mds-trip-visual {
     min-height: 182px;
   }
 
-  .mds-rec-actions {
+  .mds-rec-overlay .mds-rec-actions {
     grid-template-columns: repeat(2, 1fr);
+    max-width: none;
+  }
+
+  .mds-rec-overlay-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .mds-trip-drawer {

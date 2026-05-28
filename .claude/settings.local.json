@@ -44,7 +44,16 @@
       "Bash(\"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\" --headless=new --disable-gpu --hide-scrollbars --no-sandbox --window-size=1440,1100 --virtual-time-budget=4500 --screenshot=/tmp/meridian-shots/agent-final.png http://localhost:5173/#agent)",
       "Bash(\"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\" --headless=new --disable-gpu --hide-scrollbars --no-sandbox --window-size=1440,1100 --virtual-time-budget=4500 --screenshot=/tmp/meridian-shots/system-final.png http://localhost:5173/#system)",
       "Bash(md5 agent-final.png system-final.png)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' --headless --disable-gpu --hide-scrollbars --window-size=1600,1000 --screenshot=/tmp/meridian-redesign-v3.png http://127.0.0.1:5175/)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(/Users/shayons/Desktop/Workshops/sample-dat309-agentic-workflows-aurora-mcp/meridian/frontend/node_modules/.bin/tsc --project /Users/shayons/Desktop/Workshops/sample-dat309-agentic-workflows-aurora-mcp/meridian/frontend/tsconfig.json --noEmit)",
+      "Bash(echo \"tsc=$?\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('/Users/shayons/Desktop/Workshops/sample-dat309-agentic-workflows-aurora-mcp/meridian/backend/routers/chat.py'\\).read\\(\\)\\)\")",
+      "Bash(echo \"py=$?\")",
+      "Bash(python3 -c \"import ast; [ast.parse\\(open\\(p\\).read\\(\\)\\) for p in ['/Users/shayons/Desktop/Workshops/sample-dat309-agentic-workflows-aurora-mcp/meridian/backend/routers/chat.py', '/Users/shayons/Desktop/Workshops/sample-dat309-agentic-workflows-aurora-mcp/meridian/backend/llm_polish.py']]\")",
+      "Bash(python3 -c \"import ast; [ast.parse\\(open\\(p\\).read\\(\\)\\) for p in ['/Users/shayons/Desktop/Workshops/sample-dat309-agentic-workflows-aurora-mcp/meridian/scripts/travel_catalog.py', '/Users/shayons/Desktop/Workshops/sample-dat309-agentic-workflows-aurora-mcp/meridian/backend/routers/chat.py']]\")"
     ]
   }
 }

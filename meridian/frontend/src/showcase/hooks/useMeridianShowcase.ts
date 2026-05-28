@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchHealth, fetchMemoryProfile, fetchProducts, processOrder, sendChatMessage } from '../../api/client';
-import type { LongTermMemoryFact, Message, OrderResponse, Phase, Product } from '../../types';
+import { fetchHealth, processOrder, sendChatMessage } from '../../api/client';
+import type { ChatResponse, LongTermMemoryFact, Message, OrderResponse, Phase, Product } from '../../types';
 import { runConfigEmbedLabel, runConfigModelLabel, type BackendHealth } from '../../lib/runConfig';
 import {
   SHOWCASE_EXAMPLE_PROMPTS,
@@ -8,22 +8,13 @@ import {
   chatResponseToMessages,
   chatResponseToTraceSpans,
   healthResponseToStatus,
-  memoryResponseToFacts,
-  packagesResponseToRecommendations,
   phaseLabelFor,
   productsFromChatResponse,
   type BackendStatus,
   type ShowcaseTraceSpan,
   type ShowcaseTraceTab,
 } from '../lib/showcaseAdapters';
-import {
-  SHOWCASE_FALLBACK_FACTS,
-  SHOWCASE_FALLBACK_RECOMMENDATIONS,
-  SHOWCASE_INITIAL_PROMPT,
-  SHOWCASE_TRAVELER_ID,
-  buildShowcaseFallbackChatResponse,
-  buildShowcaseFallbackOrder,
-} from '../lib/showcaseFallbackData';
+import { SHOWCASE_INITIAL_PROMPT, SHOWCASE_TRAVELER_ID } from '../lib/showcaseFallbackData';
 
 export interface ActionDrawerState {
   kind: 'hold' | 'plan' | 'compare' | 'save';
@@ -32,6 +23,26 @@ export interface ActionDrawerState {
   order?: OrderResponse['order'];
   live: boolean;
 }
+
+// Refinement filters captured by the action-chip popovers below the
+// composer. They get appended to whatever prompt the presenter types
+// when submitPrompt fires, so the agent sees the full traveler intent
+// without the composer text getting noisy.
+export interface ChatFilters {
+  travelers: number; // 0 = unset
+  startDate: string | null; // YYYY-MM-DD
+  endDate: string | null;
+  spa: boolean;
+  directFlights: boolean;
+}
+
+export const EMPTY_FILTERS: ChatFilters = {
+  travelers: 0,
+  startDate: null,
+  endDate: null,
+  spa: false,
+  directFlights: false,
+};
 
 export interface MeridianShowcaseState {
   selectedPhase: Phase;
@@ -61,6 +72,9 @@ export interface MeridianShowcaseState {
   totalLatencyMs: number;
   estimatedCostUsd: number;
   phaseExamples: string[];
+  chatFilters: ChatFilters;
+  setChatFilters: (next: ChatFilters) => void;
+  resetChatFilters: () => void;
   setCurrentPrompt: (value: string) => void;
   setTraceTab: (tab: ShowcaseTraceTab) => void;
   setExpandedSpanId: (id: string | null) => void;
@@ -77,26 +91,57 @@ export interface MeridianShowcaseState {
   compareTrip: (product: Product) => void;
   closeActionDrawer: () => void;
   clearError: () => void;
+  clearChat: () => void;
 }
 
-const INITIAL_MESSAGES: Message[] = [
-  {
-    role: 'bot',
-    type: 'text',
-    text: 'Good morning, Alex. Tell me the trip you want, then watch Meridian route the request through SQL, MCP, Retrieval, Production, and Workflow traces.',
-  },
-];
+// Clean slate by design — the chat transcript stays empty until the
+// presenter types a real prompt and Aurora streams the first turn back.
+const INITIAL_MESSAGES: Message[] = [];
+
+function formatDateLabel(iso: string): string {
+  // ISO YYYY-MM-DD into "Sep 14" — readable inside the prompt text.
+  const [, m, d] = iso.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthIdx = Math.max(0, Math.min(11, Number(m) - 1));
+  return `${months[monthIdx]} ${Number(d)}`;
+}
+
+export function decoratePromptWithFilters(prompt: string, filters: ChatFilters): string {
+  const fragments: string[] = [];
+  if (filters.travelers > 0) {
+    fragments.push(filters.travelers === 1 ? 'for 1 traveler' : `for ${filters.travelers} travelers`);
+  }
+  if (filters.startDate && filters.endDate) {
+    fragments.push(`between ${formatDateLabel(filters.startDate)} and ${formatDateLabel(filters.endDate)}`);
+  } else if (filters.startDate) {
+    fragments.push(`starting ${formatDateLabel(filters.startDate)}`);
+  }
+  if (filters.spa) fragments.push('with spa access included');
+  if (filters.directFlights) fragments.push('with direct flights only');
+
+  if (fragments.length === 0) return prompt;
+  // Use commas + Oxford-style "and" for the final fragment so the
+  // composed sentence reads naturally for the agent.
+  const tail =
+    fragments.length === 1
+      ? fragments[0]
+      : `${fragments.slice(0, -1).join(', ')}, ${fragments[fragments.length - 1]}`;
+  return `${prompt} (${tail})`;
+}
 
 const PHASE_DELAYS: Record<Phase, number> = { 1: 420, 2: 360, 3: 300, 4: 280, 5: 260 };
 
 export function useMeridianShowcase(): MeridianShowcaseState {
-  const [selectedPhase, setSelectedPhaseState] = useState<Phase>(4);
+  // Start the showcase at Phase 1 (SQL) so a stage walk-through can begin
+  // with the simplest data path — direct SQL filters over Aurora — and
+  // progressively introduce MCP, Retrieval, Production, and Workflow.
+  const [selectedPhase, setSelectedPhaseState] = useState<Phase>(1);
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [currentPrompt, setCurrentPrompt] = useState(SHOWCASE_INITIAL_PROMPT);
-  const [recommendations, setRecommendations] = useState<Product[]>(SHOWCASE_FALLBACK_RECOMMENDATIONS);
-  const [selectedTrip, setSelectedTrip] = useState<Product | null>(SHOWCASE_FALLBACK_RECOMMENDATIONS[0]);
+  const [recommendations, setRecommendations] = useState<Product[]>([]);
+  const [selectedTrip, setSelectedTrip] = useState<Product | null>(null);
   const [savedTripIds, setSavedTripIds] = useState<Set<string>>(new Set());
-  const [memoryFacts, setMemoryFacts] = useState<LongTermMemoryFact[]>(SHOWCASE_FALLBACK_FACTS);
+  const [memoryFacts, setMemoryFacts] = useState<LongTermMemoryFact[]>([]);
   const [traceSpans, setTraceSpans] = useState<ShowcaseTraceSpan[]>([]);
   const [traceTab, setTraceTab] = useState<ShowcaseTraceTab>('spans');
   const [expandedSpanId, setExpandedSpanId] = useState<string | null>(null);
@@ -106,10 +151,14 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [error, setError] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
   const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
-  const [isFallbackMode, setIsFallbackMode] = useState(false);
+  // No fallback mode — /showcase is live-Aurora-only. The flag remains in
+  // state so existing consumers that read it still type-check, but it stays
+  // false for the lifetime of the session.
+  const [isFallbackMode] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [lastPrompt, setLastPrompt] = useState<string | null>(null);
   const [actionDrawer, setActionDrawer] = useState<ActionDrawerState | null>(null);
+  const [chatFilters, setChatFiltersState] = useState<ChatFilters>(EMPTY_FILTERS);
   const replayTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const mounted = useRef(true);
 
@@ -119,6 +168,11 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, []);
 
   useEffect(() => {
+    // React 18 StrictMode runs the effect+cleanup pair twice in dev. We must
+    // re-arm `mounted` at the start of every mount, otherwise the first
+    // cleanup permanently flips it to false and async catch handlers bail
+    // out before they can set fallback state on the surviving instance.
+    mounted.current = true;
     return () => {
       mounted.current = false;
       clearReplayTimers();
@@ -132,13 +186,11 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (!mounted.current) return;
         setBackendHealth(health);
         setBackendStatus(healthResponseToStatus(health));
-        if (healthResponseToStatus(health) === 'online') {
-          setIsFallbackMode(false);
-        }
       } catch {
         if (!mounted.current) return;
         setBackendStatus('offline');
-        setIsFallbackMode(true);
+        // The "Backend offline" badge in the top bar is enough on its own —
+        // no banner needed unless the user actively tries to chat or plan.
       }
     };
 
@@ -148,35 +200,14 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, []);
 
   useEffect(() => {
-    const loadMemory = async () => {
-      try {
-        const response = await fetchMemoryProfile(SHOWCASE_TRAVELER_ID);
-        if (!mounted.current) return;
-        setMemoryFacts(memoryResponseToFacts(response));
-      } catch {
-        if (!mounted.current) return;
-        setMemoryFacts(SHOWCASE_FALLBACK_FACTS);
-        setIsFallbackMode(true);
-      }
-    };
-
-    const loadPackages = async () => {
-      try {
-        const products = await fetchProducts(undefined, 9, true);
-        if (!mounted.current) return;
-        const next = packagesResponseToRecommendations(products);
-        setRecommendations(next);
-        setSelectedTrip((current) => current ?? next[0] ?? null);
-      } catch {
-        if (!mounted.current) return;
-        setRecommendations(SHOWCASE_FALLBACK_RECOMMENDATIONS);
-        setSelectedTrip((current) => current ?? SHOWCASE_FALLBACK_RECOMMENDATIONS[0]);
-        setIsFallbackMode(true);
-      }
-    };
-
-    void loadMemory();
-    void loadPackages();
+    // Clean-slate showcase: do NOT prefetch featured packages on mount —
+    // we want the recommendation grid to stay empty until the presenter
+    // submits a real prompt and Aurora streams back the matching trips.
+    //
+    // Traveler memory is also left empty by default; once the presenter
+    // graduates to Phase 4/5 the chat response carries `memory_facts`
+    // that populate the right rail naturally.
+    return undefined;
   }, []);
 
   const replayTrace = useCallback(() => {
@@ -200,7 +231,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     });
   }, [clearReplayTimers, traceSpans]);
 
-  const applyChatResponse = useCallback((prompt: string, response: ReturnType<typeof buildShowcaseFallbackChatResponse>) => {
+  const applyChatResponse = useCallback((prompt: string, response: ChatResponse) => {
     setMessages((prior) => chatResponseToMessages(prior, prompt, response));
     const nextTrace = chatResponseToTraceSpans(response, prompt);
     setTraceSpans(nextTrace);
@@ -209,28 +240,37 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     if (response.conversation_id) setConversationId(response.conversation_id);
     if (response.memory_facts?.length) setMemoryFacts(response.memory_facts);
     const products = productsFromChatResponse(response);
-    if (products.length) {
-      setRecommendations(products);
-      setSelectedTrip(products[0]);
-    }
+    // Always sync the recommendation grid to THIS turn's products. If the
+    // turn returned 0 (a zero-result query, like SQL keyword search
+    // failing on an intent prompt), clear the grid so the previous turn's
+    // cards don't appear to be the latest result.
+    setRecommendations(products);
+    setSelectedTrip(products.length ? products[0] : null);
   }, []);
 
   const submitPrompt = useCallback(
     async (overridePrompt?: string) => {
-      const prompt = (overridePrompt ?? currentPrompt).trim();
-      if (!prompt || isLoading) return;
+      const baseRaw = (overridePrompt ?? currentPrompt).trim();
+      if (!baseRaw || isLoading) return;
+
+      // Decorate the user's prompt with the active action-chip filters so
+      // the backend agent sees the full traveler intent. The decorated
+      // string is what we send to /api/chat AND what we record as the
+      // turn's user-facing message — that way the chat transcript shows
+      // exactly what was searched.
+      const decorated = decoratePromptWithFilters(baseRaw, chatFilters);
 
       clearReplayTimers();
       setReplayIndex(-1);
       setIsReplaying(false);
       setIsLoading(true);
       setError(null);
-      setLastPrompt(prompt);
+      setLastPrompt(decorated);
       setCurrentPrompt('');
 
       try {
         const response = await sendChatMessage({
-          message: prompt,
+          message: decorated,
           phase: selectedPhase,
           ...(selectedPhase >= 4
             ? {
@@ -241,18 +281,22 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         });
         if (!mounted.current) return;
         setBackendStatus('online');
-        applyChatResponse(prompt, response);
+        applyChatResponse(decorated, response);
+        // Filters are per-turn - clear them after a successful submit so
+        // the next prompt starts clean (matches the intuition of every
+        // major chat product).
+        setChatFiltersState(EMPTY_FILTERS);
       } catch {
         if (!mounted.current) return;
-        setIsFallbackMode(true);
-        const response = buildShowcaseFallbackChatResponse(prompt, selectedPhase);
-        applyChatResponse(prompt, response);
-        setError('Backend unavailable. Running the showcase with deterministic fixture data.');
+        setBackendStatus('offline');
+        setError(
+          'Live chat request failed. Confirm Aurora + FastAPI are running on localhost:8000 — the showcase only renders real Aurora data.',
+        );
       } finally {
         if (mounted.current) setIsLoading(false);
       }
     },
-    [applyChatResponse, clearReplayTimers, conversationId, currentPrompt, isLoading, selectedPhase],
+    [applyChatResponse, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, selectedPhase],
   );
 
   const applyPhaseExample = useCallback(
@@ -274,19 +318,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     if (phase < 4 && conversationId) {
       setConversationId(null);
     }
-    const suggested = SHOWCASE_EXAMPLE_PROMPTS[phase]?.[0];
-    if (suggested) setCurrentPrompt(suggested);
-    setTraceSpans((spans) =>
-      spans.map((span, index) =>
-        index === 0
-          ? {
-              ...span,
-              name: `${phaseLabelFor(phase)} mode selected`,
-              details: `Subsequent requests will use phase ${phase}.`,
-            }
-          : span,
-      ),
-    );
+    // No auto-prompt: leave the composer empty so the presenter types
+    // intent freshly for each phase walkthrough.
   }, [conversationId]);
 
   const selectTrip = useCallback((product: Product) => {
@@ -346,26 +379,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         });
       } catch {
         if (!mounted.current) return;
-        setIsFallbackMode(true);
-        const response = buildShowcaseFallbackOrder(product, selectedPhase);
-        setMessages((prior) => [
-          ...prior,
-          { role: 'bot', type: response.order ? 'order' : 'text', text: response.message, order: response.order },
-        ]);
-        const nextTrace = chatResponseToTraceSpans(
-          { message: response.message, activities: response.activities, order: response.order },
-          prompt,
+        setBackendStatus('offline');
+        setError(
+          `Unable to plan ${product.name}: live booking endpoint is unavailable. Restart the FastAPI backend.`,
         );
-        setTraceSpans(nextTrace);
-        setExpandedSpanId(nextTrace[0]?.id ?? null);
-        setActionDrawer({
-          kind: 'plan',
-          product,
-          message: response.message,
-          order: response.order,
-          live: false,
-        });
-        setError('Booking backend unavailable. Created a local demo hold instead.');
       } finally {
         if (mounted.current) setIsLoading(false);
       }
@@ -397,6 +414,29 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       live: false,
     });
   }, [recommendations]);
+
+  const clearChat = useCallback(() => {
+    // Reset every per-conversation surface back to its empty state. The
+    // Phase selector, traveler memory facts (those come from Aurora), and
+    // saved trip set are intentionally preserved - the presenter usually
+    // wants to keep their phase choice + remembered preferences when
+    // wiping the visible conversation.
+    clearReplayTimers();
+    setMessages([]);
+    setCurrentPrompt('');
+    setLastPrompt(null);
+    setRecommendations([]);
+    setSelectedTrip(null);
+    setTraceSpans([]);
+    setExpandedSpanId(null);
+    setTraceTab('spans');
+    setReplayIndex(-1);
+    setIsReplaying(false);
+    setConversationId(null);
+    setActionDrawer(null);
+    setError(null);
+    setChatFiltersState(EMPTY_FILTERS);
+  }, [clearReplayTimers]);
 
   const totalLatencyMs = useMemo(
     () => traceSpans.reduce((total, span) => total + span.latencyMs, 0),
@@ -435,6 +475,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     totalLatencyMs,
     estimatedCostUsd,
     phaseExamples: SHOWCASE_EXAMPLE_PROMPTS[selectedPhase] ?? [],
+    chatFilters,
+    setChatFilters: setChatFiltersState,
+    resetChatFilters: () => setChatFiltersState(EMPTY_FILTERS),
     setCurrentPrompt,
     setTraceTab,
     setExpandedSpanId,
@@ -451,6 +494,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     compareTrip,
     closeActionDrawer: () => setActionDrawer(null),
     clearError: () => setError(null),
+    clearChat,
   };
 }
 

@@ -8,6 +8,7 @@ interface StickyNavProps {
   scrollY: number;
   themeMode: 'light' | 'dark';
   onToggleTheme: () => void;
+  showThemeToggle?: boolean;
 }
 
 interface NavLink {
@@ -18,7 +19,7 @@ interface NavLink {
 }
 
 const navLinks: NavLink[] = [
-  { label: 'Concierge', target: 'agent' },
+  { label: 'Architecture', target: 'howitworks' },
   { label: 'Trips', target: 'products' },
   { label: 'Memory', target: 'memory' },
   { label: 'System', target: 'system' },
@@ -32,7 +33,7 @@ const navLinks: NavLink[] = [
 
 type Health = 'healthy' | 'checking' | 'down';
 
-export function StickyNav({ scrollY: _scrollY, themeMode, onToggleTheme }: StickyNavProps) {
+export function StickyNav({ scrollY: _scrollY, themeMode, onToggleTheme, showThemeToggle = true }: StickyNavProps) {
   const [active, setActive] = useState<string>('howitworks');
   const [health, setHealth] = useState<Health>('checking');
 
@@ -121,19 +122,21 @@ export function StickyNav({ scrollY: _scrollY, themeMode, onToggleTheme }: Stick
         </div>
 
         <div className="mp-nav-right">
-          <button
-            type="button"
-            className="mp-theme-toggle"
-            onClick={onToggleTheme}
-            aria-label={`Switch to ${themeMode === 'light' ? 'dark' : 'light'} mode`}
-          >
-            {themeMode === 'light' ? 'Dark' : 'Light'}
-          </button>
+          {showThemeToggle && (
+            <button
+              type="button"
+              className="mp-theme-toggle"
+              onClick={onToggleTheme}
+              aria-label={`Switch to ${themeMode === 'light' ? 'dark' : 'light'} mode`}
+            >
+              {themeMode === 'light' ? 'Dark' : 'Light'}
+            </button>
+          )}
           <div className="mp-nav-meta" title={statusLabel}>
             <span className={`mp-nav-status-dot ${statusClass}`.trim()} /> {statusLabel}
           </div>
-          <button className="mp-cta" onClick={() => scrollTo('agent')}>
-            Talk to concierge →
+          <button className="mp-cta" onClick={() => window.location.assign('/showcase')}>
+            Open showcase →
           </button>
         </div>
       </div>

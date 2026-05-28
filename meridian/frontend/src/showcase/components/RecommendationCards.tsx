@@ -6,6 +6,21 @@ function money(price: number): string {
   return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 }
 
+function dateRangeFor(product: Product): string {
+  // Deterministic hash of the product_id so demos stay stable across renders.
+  const seed = Array.from(product.product_id).reduce(
+    (acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0,
+    7,
+  );
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthIndex = seed % months.length;
+  const startDay = (seed % 18) + 5;
+  const durationStr = product.available_sizes?.[0] ?? '7 nights';
+  const nights = Number((durationStr.match(/\d+/) ?? ['7'])[0]);
+  const endDay = Math.min(startDay + nights, 28);
+  return `${months[monthIndex]} ${startDay} – ${endDay}`;
+}
+
 export function RecommendationCards({
   state,
   compact = false,
@@ -15,7 +30,11 @@ export function RecommendationCards({
   compact?: boolean;
   limit?: number;
 }) {
-  const cards = state.recommendations.slice(0, limit ?? (compact ? 2 : 3));
+  // Show every recommendation Aurora returned. Limiting to 3 used to cause
+  // a desync between the chat reply ("I found 4 trips for you") and the UI,
+  // because the 4th card was silently dropped. The grid wraps when the
+  // backend returns more than fit on one row, so this stays responsive.
+  const cards = limit != null ? state.recommendations.slice(0, limit) : state.recommendations;
 
   if (!cards.length) {
     return <div className="mds-empty">No recommendations yet.</div>;
@@ -49,6 +68,8 @@ function RecommendationCard({
 }) {
   const selected = state.selectedTrip?.product_id === product.product_id;
   const saved = state.savedTripIds.has(product.product_id);
+  const matchPct = product.similarity != null ? Math.round(product.similarity * 100) : null;
+  const dateRange = dateRangeFor(product);
 
   return (
     <article
@@ -65,30 +86,57 @@ function RecommendationCard({
       }}
     >
       <TripVisual product={product} compact={compact} />
-      <div className="mds-rec-copy">
-        <div className="mds-rec-kicker">
-          {product.similarity != null ? `${Math.round(product.similarity * 100)}% match` : 'Catalog'}
+      <div className="mds-rec-fade" aria-hidden="true" />
+      <div className="mds-rec-overlay">
+        {matchPct != null && (
+          <div className="mds-rec-match-badge">
+            <span className="mds-rec-match-dot" aria-hidden="true" />
+            {matchPct}% match
+          </div>
+        )}
+        <div className="mds-rec-overlay-meta">
+          <span className="mds-rec-date">{dateRange}</span>
         </div>
-        <strong>{product.name}</strong>
-        <span>{product.brand}</span>
-        <div className="mds-rec-price">{money(product.price)}</div>
+        <strong className="mds-rec-title">{product.name}</strong>
+        <span className="mds-rec-sub">{product.brand}</span>
+        <div className="mds-rec-overlay-row">
+          <div className="mds-rec-price">
+            <span>From</span>
+            <b>{money(product.price)}</b>
+          </div>
+          {!compact && (
+            <div
+              className="mds-rec-actions"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => state.holdTrip(product)}
+                disabled={state.isLoading}
+              >
+                Hold
+              </button>
+              <button
+                type="button"
+                onClick={() => state.planTrip(product)}
+                disabled={state.isLoading}
+              >
+                Plan
+              </button>
+              <button
+                type="button"
+                onClick={() => state.saveTrip(product)}
+                aria-pressed={saved}
+              >
+                {saved ? 'Saved' : 'Save'}
+              </button>
+              <button type="button" onClick={() => state.compareTrip(product)}>
+                Compare
+              </button>
+            </div>
+          )}
+        </div>
       </div>
-      {!compact && (
-        <div className="mds-rec-actions" onClick={(event) => event.stopPropagation()}>
-          <button type="button" onClick={() => state.holdTrip(product)} disabled={state.isLoading}>
-            Hold
-          </button>
-          <button type="button" onClick={() => state.planTrip(product)} disabled={state.isLoading}>
-            Plan trip
-          </button>
-          <button type="button" onClick={() => state.saveTrip(product)} aria-pressed={saved}>
-            {saved ? 'Saved' : 'Save'}
-          </button>
-          <button type="button" onClick={() => state.compareTrip(product)}>
-            Compare
-          </button>
-        </div>
-      )}
     </article>
   );
 }

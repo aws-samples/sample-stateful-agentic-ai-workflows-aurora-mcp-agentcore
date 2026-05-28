@@ -219,16 +219,60 @@ TRAVELER_PROFILES = [
 ]
 
 TRAVELER_PREFERENCES = [
+    # Logistics — flight and seat preferences the Production concierge
+    # agent uses to filter recommendations.
+    {"preference_type": "logistics", "preference_key": "no_red_eye", "preference_value": "true",
+     "confidence": 0.99, "source": "support_ticket"},
+    {"preference_type": "logistics", "preference_key": "home_airport", "preference_value": "BOS",
+     "confidence": 1.0, "source": "profile"},
+    {"preference_type": "logistics", "preference_key": "avoid_connections", "preference_value": "LHR, JFK",
+     "confidence": 0.87, "source": "booking_history"},
     {"preference_type": "logistics", "preference_key": "party_size", "preference_value": "2 travelers",
      "confidence": 0.98, "source": "booking_history"},
-    {"preference_type": "destination", "preference_key": "tokyo_culture", "preference_value": "Tokyo culture trip — Oct 12–19",
-     "confidence": 0.95, "source": "profile"},
-    {"preference_type": "logistics", "preference_key": "seat_pref", "preference_value": "Window seat · aisle on long-haul",
+    {"preference_type": "logistics", "preference_key": "seat_pref", "preference_value": "Window · aisle on long-haul",
      "confidence": 0.91, "source": "browse_session"},
-    {"preference_type": "dining", "preference_key": "shellfish_allergy", "preference_value": "Shellfish — exclude seafood dining",
+
+    # Dining
+    {"preference_type": "dining", "preference_key": "vegetarian_friendly", "preference_value": "true",
+     "confidence": 0.94, "source": "past_trips"},
+    {"preference_type": "dining", "preference_key": "shellfish_allergy", "preference_value": "Exclude shellfish",
      "confidence": 1.0, "source": "support_ticket"},
-    {"preference_type": "budget", "preference_key": "per_person_range", "preference_value": "Prefers $2k–3.5k per person",
+
+    # Style + pace
+    {"preference_type": "style", "preference_key": "lodging_style", "preference_value": "boutique > chain",
+     "confidence": 0.96, "source": "search_analytics"},
+    {"preference_type": "style", "preference_key": "pace", "preference_value": "slow",
+     "confidence": 0.91, "source": "past_trips"},
+
+    # Budget
+    {"preference_type": "budget", "preference_key": "budget_cap", "preference_value": "$3,200",
+     "confidence": 0.88, "source": "search_analytics"},
+    {"preference_type": "budget", "preference_key": "per_person_range", "preference_value": "Prefers $2k-3.5k per person",
      "confidence": 0.87, "source": "search_analytics"},
-    {"preference_type": "activity", "preference_key": "culture_food", "preference_value": "Food tours and museums over nightlife",
+
+    # Interests
+    {"preference_type": "activity", "preference_key": "interests",
+     "preference_value": "wine country, walkable old towns",
+     "confidence": 0.9, "source": "past_trips"},
+    {"preference_type": "activity", "preference_key": "culture_food",
+     "preference_value": "Food tours and museums over nightlife",
      "confidence": 0.84, "source": "past_trips"},
+
+    # Loyalty programs (used by meridian-concierge MCP loyalty_balance tool)
+    {"preference_type": "loyalty", "preference_key": "loyalty_programs",
+     "preference_value": "Marriott Bonvoy, Delta SkyMiles",
+     "confidence": 0.96, "source": "profile"},
+
+    # Recent trips (gives Phase 4/5 something to recall + refine on)
+    {"preference_type": "history", "preference_key": "recent_trips",
+     "preference_value": "Tuscany, Kyoto, Palm Springs",
+     "confidence": 0.99, "source": "booking_history"},
+
+    # Soft destination signals (so semantic recall has something to ground in)
+    {"preference_type": "destination", "preference_key": "tokyo_culture",
+     "preference_value": "Tokyo culture trip Oct 12-19",
+     "confidence": 0.95, "source": "profile"},
+    {"preference_type": "destination", "preference_key": "iceland_planning",
+     "preference_value": "Iceland ring road, prefers winter aurora viewing",
+     "confidence": 0.82, "source": "browse_session"},
 ]

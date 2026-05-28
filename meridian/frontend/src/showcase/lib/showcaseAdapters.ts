@@ -7,7 +7,6 @@ import type {
   Phase,
   Product,
 } from '../../types';
-import { SHOWCASE_FALLBACK_FACTS, SHOWCASE_FALLBACK_RECOMMENDATIONS } from './showcaseFallbackData';
 
 export type ShowcasePhaseLabel = 'SQL' | 'MCP' | 'Retrieval' | 'Production' | 'Workflow';
 export type ShowcaseTraceTab = 'spans' | 'memory' | 'sql' | 'cost';
@@ -19,31 +18,69 @@ export interface ShowcasePhaseOption {
   description: string;
 }
 
+// Each phase has three example prompts in a deliberate order:
+//   1. A query the phase handles cleanly.
+//   2. A second query the phase handles cleanly (so the presenter has
+//      two known-good demos for the same mode).
+//   3. A query that exposes the phase's limit and motivates the next
+//      phase. The walk-through narrative becomes:
+//        SQL solved keyword filters... but couldn't read natural-language
+//        intent. Watch what MCP changes (and doesn't). Now Retrieval.
+//        Now memory. Now multi-step workflow.
+//
+// Wording is kept consistent across phases so a presenter can run the
+// SAME prompt across all five modes to compare behaviors live.
 export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
+  // SQL: trip_type + price keyword filter. Fails on intent words.
   1: [
     'City breaks under $2000',
-    'Beach & Resort trips with direct flights',
-    'Business travel under $1500',
+    'Beach & Resort trips under $2500',
+    'A romantic slow week somewhere with great wine',
   ],
+  // MCP: two MCP servers in one agent turn — both pills exercise the
+  // CUSTOM meridian-concierge server (something postgres-mcp can't
+  // answer), so the contrast is "generic SQL transport" vs "domain
+  // tools" — not "with vs without filters".
+  //   - Compare top trips ... → compare_packages + currency_convert.
+  //   - Cheapest month for Tokyo → seasonal_price_band (pure domain,
+  //     no SQL search needed).
+  //   - Romantic slow week (stretch) → tooling can't fix the intent
+  //     gap; motivates Phase 3 retrieval.
   2: [
-    'Adventure & Outdoors in Europe',
-    'Tokyo culture trip with flexible dates',
-    'Wellness trips under $2500',
+    'Compare our top trips and show prices in EUR',
+    'What is the cheapest month to visit Tokyo?',
+    'A romantic slow week somewhere with great wine',
   ],
+  // Retrieval: pgvector + Cohere rerank handle intent. No memory.
+  // Stretch is now a query that explicitly probes for memory - Phase 3
+  // genuinely cannot answer "what did we discuss last time" so the gap
+  // is visible, not subtle.
   3: [
-    'Romantic week in Europe',
+    'A romantic slow week somewhere with great wine',
     'Family-friendly beach resort with snorkeling',
-    'Weekend in Paris under $2k',
+    'What did we discuss last time? Pick up where we left off.',
   ],
+  // Production: AgentCore + Aurora RLS + traveler memory. First pill
+  // demos the conversation-memory recall that Phase 3 just failed.
+  // Second exercises traveler-preference recall (no_red_eye, etc.).
+  // Stretch hits availability checking which Production handles in a
+  // single shot - the LangGraph StateGraph in Phase 5 wraps it with
+  // explicit intent routing + checkpointing.
   4: [
-    'Tokyo trip for me in October, remember my preferences',
-    'What did we discuss last time about Iceland planning?',
-    'Beach escape under $2500 and avoid shellfish options',
+    'What did we discuss last time? Pick up where we left off.',
+    'Beach escape under $2500 — apply my saved preferences',
+    'What dates are open for the Tokyo trip in October?',
   ],
+  // Workflow: LangGraph StateGraph classifies intent and branches to
+  // search / availability / memory_recall, checkpointing each step to
+  // Aurora. Pills exercise each branch so the trace shows the routing
+  // explicitly. Stretch crosses two destinations - even LangGraph runs
+  // a single search node, so this exposes "branching ≠ multi-step
+  // tool composition" honestly.
   5: [
-    'Find me a Kyoto cultural trip and show available dates',
-    'Do you remember our last Italy plan and can we refine it?',
-    'Plan a two-stop itinerary: Lisbon then Porto in September',
+    'What dates are open for Kyoto in November? Show the slots.',
+    'Refine our last Iceland conversation with a winter focus',
+    'Compare Kyoto and Tokyo for a 10-day cultural trip',
   ],
 };
 
@@ -106,7 +143,7 @@ function tripPackageToProduct(pkg: TripPackageLike): Product {
 }
 
 export function packagesResponseToRecommendations(input: Product[] | TripPackageLike[] | null | undefined): Product[] {
-  if (!input?.length) return SHOWCASE_FALLBACK_RECOMMENDATIONS;
+  if (!input?.length) return [];
   const normalized = input.map((item) =>
     'package_id' in item ? tripPackageToProduct(item) : item,
   );
@@ -114,7 +151,7 @@ export function packagesResponseToRecommendations(input: Product[] | TripPackage
 }
 
 export function memoryResponseToFacts(response: MemoryProfileResponse | null | undefined): LongTermMemoryFact[] {
-  return response?.facts?.length ? response.facts : SHOWCASE_FALLBACK_FACTS;
+  return response?.facts?.length ? response.facts : [];
 }
 
 export function chatResponseToMessages(prior: Message[], userText: string, response: ChatResponse): Message[] {

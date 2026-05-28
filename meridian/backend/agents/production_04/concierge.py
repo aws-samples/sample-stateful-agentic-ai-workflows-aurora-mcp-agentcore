@@ -411,8 +411,21 @@ class ProductionAgent:
             ]
 
             if packages:
-                hint = f" for {memory_facts[0]['value']}" if memory_facts else ""
-                response_message = f"Welcome back — here are {len(packages)} trips that fit your profile{hint}:"
+                # Pull the most-confident traveler fact for the reply hint, but
+                # render it as "key: value" so it never reads as a money-or
+                # date assertion the LLM didn't make. Previously we injected
+                # just the value (e.g. " for $3,200"), which misleadingly
+                # framed the budget cap as the search criterion.
+                hint = ""
+                if memory_facts:
+                    fact = memory_facts[0]
+                    fact_key = str(fact.get("key", "")).replace("_", " ").strip()
+                    fact_value = str(fact.get("value", "")).strip()
+                    if fact_key and fact_value:
+                        hint = f" (matched on {fact_key}: {fact_value})"
+                response_message = (
+                    f"Welcome back — I found {len(packages)} trips that fit your profile{hint}:"
+                )
             else:
                 response_message = "No exact matches yet; I've saved this search to your history."
 

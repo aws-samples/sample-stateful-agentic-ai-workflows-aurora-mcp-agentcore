@@ -5,6 +5,19 @@
     <link rel="icon" href="/brand/meridian-mark.jpg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Meridian — Plan. Fly. Land.</title>
+    <!-- Premium typography stack:
+         - Geist: Vercel's geometric sans (display + body) — crisp,
+           high-contrast, tight kerning. Closest open match to the target
+           screenshot's headline feel.
+         - Geist Mono: paired monospace for trace/SQL snippets.
+         - Inter: kept as a graceful fallback for clients that haven't
+           cached Geist yet. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Geist+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
   </head>
   <body class="bg-app">
     <div id="root"></div>

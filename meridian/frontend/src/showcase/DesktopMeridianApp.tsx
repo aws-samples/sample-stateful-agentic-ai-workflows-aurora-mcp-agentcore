@@ -124,45 +124,60 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
       </aside>
 
       <main className="mds-desktop-main">
-        <div className="mds-top-actions">
-          <span>{state.backendStatus === 'online' ? 'Live backend' : 'Backend offline'}</span>
-          {state.isFallbackMode && <span className="mds-fallback-badge">Demo fallback</span>}
-          <span>USD</span>
-        </div>
-        <div className="mds-headline-row">
-          <div>
-            <h1>Good morning, Alex.</h1>
-            <p>Where would you like to go next?</p>
+        {/* Single scroll surface - everything before the sticky composer
+            (header, chat, grid) scrolls together so the conversation flows
+            naturally into the result cards below it. */}
+        <div className="mds-desktop-scroll">
+          <div className="mds-top-actions">
+            <span>{state.backendStatus === 'online' ? 'Live backend' : 'Backend offline'}</span>
+            <span>USD</span>
           </div>
-          <PhaseSelector state={state} />
+          <div className="mds-headline-row">
+            <div>
+              <h1>Good morning, Alex.</h1>
+              <p>Where would you like to go next?</p>
+            </div>
+            <PhaseSelector state={state} />
+          </div>
+
+          {state.error && (
+            <button type="button" className="mds-error-banner" onClick={state.clearError}>
+              {state.error}
+            </button>
+          )}
+
+          <ChatTranscript state={state} />
+
+          {/* Only show the empty-state hint before any chat happens. */}
+          {!state.recommendations.length && state.messages.length === 0 && (
+            <div className="mds-assistant-line">
+              Recommendations will appear after your first request.
+            </div>
+          )}
+
+          <RecommendationCards state={state} />
+
+          <div className="mds-main-actions">
+            <button type="button" onClick={() => state.replayLastPrompt()} disabled={!state.lastPrompt || state.isLoading}>
+              Rerun across {state.phaseLabel}
+            </button>
+            <button type="button" onClick={() => setMemoryOpen(true)}>
+              Inspect memory
+            </button>
+            <button
+              type="button"
+              onClick={() => state.clearChat()}
+              disabled={state.isLoading || (state.messages.length === 0 && state.traceSpans.length === 0)}
+            >
+              Clear chat
+            </button>
+          </div>
         </div>
 
-        {state.error && (
-          <button type="button" className="mds-error-banner" onClick={state.clearError}>
-            {state.error}
-          </button>
-        )}
-
-        <ChatTranscript state={state} />
-
-        <div className="mds-assistant-line">
-          {state.recommendations.length
-            ? 'Here are the strongest recommendations for this traveler.'
-            : 'Recommendations will appear after your first request.'}
+        {/* Sticky composer dock - always reachable while history scrolls. */}
+        <div className="mds-desktop-dock">
+          <ChatComposer state={state} />
         </div>
-
-        <RecommendationCards state={state} />
-
-        <div className="mds-main-actions">
-          <button type="button" onClick={() => state.replayLastPrompt()} disabled={!state.lastPrompt || state.isLoading}>
-            Rerun across {state.phaseLabel}
-          </button>
-          <button type="button" onClick={() => setMemoryOpen(true)}>
-            Inspect memory
-          </button>
-        </div>
-
-        <ChatComposer state={state} />
       </main>
 
       <aside className="mds-desktop-right">

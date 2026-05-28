@@ -27,7 +27,7 @@ import os
 import re
 import uuid
 from datetime import datetime
-from typing import Literal, Optional, List, Any
+from typing import Literal, Optional, List, Any, Dict
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -43,8 +43,17 @@ from backend.search_utils import (
 )
 from backend.catalog_compat import row_to_api_product, rows_to_api_products
 
-# MCP client — Phase 2 requires the real postgres-mcp-server path.
+# MCP clients — Phase 2 demos two distinct MCP servers side-by-side:
+#   1. awslabs.postgres-mcp-server (generic SQL transport, public AWS server)
+#   2. backend.mcp.concierge_server (custom domain tools - compare,
+#      seasonal pricing, region inventory, FX, loyalty)
+#
+# Memory tools live in Phase 4 by design (Aurora RLS + AgentCore) - the
+# Phase 2 narrative is "what does a CUSTOM MCP get you that the public
+# one can't?" so domain logic, not memory, is what we showcase here.
 from backend.mcp.mcp_client import mcp_session
+from backend.mcp.concierge_mcp_client import concierge_mcp_session
+from backend.llm_polish import polish_concierge_reply
 
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -371,33 +380,302 @@ async def sql_search(query: str, limit: int = 5) -> tuple[List[Product], List[Ac
 # Phase 2 requires MCP — no RDS Data API substitute.
 # =============================================================================
 
-async def mcp_search(query: str, limit: int = 5) -> tuple[List[Product], List[ActivityEntry]]:
+# Keywords that trigger the CUSTOM meridian-concierge MCP server.
+# When the prompt asks for things you can't get from a generic SQL
+# transport (compare these / what's the off-season price / how many
+# trips do you sell in Europe / convert to EUR / loyalty status), we
+# layer the custom server on top so the trace shows both in action.
+_DOMAIN_INTENT_KEYWORDS = (
+    "compare",
+    "comparison",
+    "side by side",
+    "in eur",
+    "in euro",
+    "in euros",
+    "in gbp",
+    "in pounds",
+    "convert",
+    "loyalty",
+    "bonvoy",
+    "skymiles",
+    "off-season",
+    "off season",
+    "shoulder season",
+    "peak season",
+    "cheapest month",
+    "best month",
+    "how many",
+    "inventory",
+)
+
+
+def _wants_domain_tool(query: str) -> bool:
+    q = query.lower()
+    return any(k in q for k in _DOMAIN_INTENT_KEYWORDS)
+
+
+async def _call_domain_tool(query: str) -> Optional[Dict[str, Any]]:
+    """Pick the most relevant custom-MCP tool(s) for a domain-flavored
+    prompt and call them. Returns a single dict (legacy single-call path)
+    OR a dict with `tool='multi'` and a `calls` list when more than one
+    tool intent was detected (e.g. "compare ... in EUR" fires BOTH
+    compare_packages and currency_convert)."""
+    q = query.lower()
+    calls: List[Dict[str, Any]] = []
+
+    async with concierge_mcp_session() as cli:
+        if any(k in q for k in ("compare", "comparison", "side by side")):
+            # Pick 3 packages to compare. Prefer "top trips" (highest-priced
+            # on the assumption they're flagship offerings); if that returns
+            # nothing fall back to ANY 3 rows. The tool should always have
+            # something to compare or it confuses the LLM polish step.
+            ids: List[str] = []
+            try:
+                row_sql = (
+                    "SELECT package_id FROM trip_packages "
+                    "ORDER BY price_per_person DESC LIMIT 3"
+                )
+                rows = await get_rds_data_client().execute(row_sql)
+                ids = [r["package_id"] for r in rows if r.get("package_id")]
+                if not ids:
+                    rows = await get_rds_data_client().execute(
+                        "SELECT package_id FROM trip_packages LIMIT 3"
+                    )
+                    ids = [r["package_id"] for r in rows if r.get("package_id")]
+            except Exception as exc:
+                log_error("compare_packages_row_pull", error=str(exc))
+            if ids:
+                result = await cli.call("compare_packages", {"package_ids": ids})
+                calls.append({"tool": "compare_packages", "args": {"package_ids": ids}, "result": result})
+
+        if any(k in q for k in ("convert", "in eur", "in euro", "in gbp", "in pounds", "in jpy", "in yen")):
+            target = (
+                "EUR" if "eur" in q
+                else "GBP" if "gbp" in q or "pound" in q
+                else "JPY" if "jpy" in q or "yen" in q
+                else "EUR"
+            )
+            result = await cli.call(
+                "currency_convert",
+                {"amount": 2500.0, "from_ccy": "USD", "to_ccy": target},
+            )
+            calls.append({
+                "tool": "currency_convert",
+                "args": {"amount": 2500.0, "to": target},
+                "result": result,
+            })
+
+        if any(k in q for k in ("loyalty", "bonvoy", "skymiles")):
+            program = "Marriott Bonvoy" if "bonvoy" in q else "Delta SkyMiles" if "skymiles" in q else "Marriott Bonvoy"
+            result = await cli.call(
+                "loyalty_balance",
+                {"traveler_id": "trv_meridian_demo", "program": program},
+            )
+            calls.append({
+                "tool": "loyalty_balance",
+                "args": {"program": program},
+                "result": result,
+            })
+
+        if any(k in q for k in ("off-season", "off season", "shoulder season", "peak season", "cheapest month", "best month")):
+            destination = "Europe"
+            for d in ("Tokyo", "Paris", "Bali", "Lisbon", "Porto", "Iceland", "Rome", "Kyoto"):
+                if d.lower() in q:
+                    destination = d
+                    break
+            month = 11 if "off" in q or "cheapest" in q else 5 if "shoulder" in q else 7
+            result = await cli.call(
+                "seasonal_price_band",
+                {"destination": destination, "month": month},
+            )
+            calls.append({
+                "tool": "seasonal_price_band",
+                "args": {"destination": destination, "month": month},
+                "result": result,
+            })
+
+        if any(k in q for k in ("how many", "inventory")):
+            region = "Europe"
+            for r in ("Asia", "Europe", "Americas", "Africa", "Oceania"):
+                if r.lower() in q:
+                    region = r
+                    break
+            result = await cli.call("region_inventory", {"region": region})
+            calls.append({
+                "tool": "region_inventory",
+                "args": {"region": region},
+                "result": result,
+            })
+
+    if not calls:
+        return None
+    if len(calls) == 1:
+        return calls[0]
+    return {"tool": "multi", "calls": calls}
+
+
+async def mcp_search(
+    query: str, limit: int = 5
+) -> tuple[List[Product], List[ActivityEntry], Optional[str]]:
     """
-    Phase 2: Search via MCP abstraction layer (postgres-mcp-server → Aurora).
+    Phase 2: Search via MCP abstraction layer.
+
+    Routes through TWO MCP servers in one agent turn:
+      - awslabs.postgres-mcp-server  → generic SQL transport
+      - meridian-concierge (custom)  → travel-domain tools
+
+    Returns (products, activities, domain_text). When the prompt is a
+    pure domain query (compare/FX/seasonal/inventory/loyalty), the
+    domain_text contains a markdown-style readout that the caller uses
+    as the bot reply instead of the generic "I found N trips" message.
     """
-    activities = []
+    activities: List[ActivityEntry] = []
     start_time = datetime.utcnow()
 
     params = parse_search_query(query)
-    sql, display_sql, search_title = build_search_sql(params, limit)
+    use_custom_mcp = _wants_domain_tool(query)
+    # Pure domain queries (no recognized trip_type AND no price filter
+    # AND a domain intent) skip the SQL search entirely - ILIKE-ing on
+    # "compare top trips and show prices in EUR" matches nothing useful
+    # and the user only cares about the domain tool's answer anyway.
+    pure_domain = (
+        use_custom_mcp
+        and not params.matched_trip_type
+        and params.price_filter is None
+    )
 
+    # ----- Generic MCP server (awslabs.postgres-mcp-server) -----
     activities.append(create_activity(
         activity_type="mcp",
-        title="MCP: connect_to_database",
-        details="Connecting to Aurora PostgreSQL via postgres-mcp-server",
+        title="MCP server discovered: awslabs.postgres-mcp-server",
+        details=(
+            "Generic SQL transport · tools/list returned "
+            "run_query, connect_to_database, get_table_schema"
+        ),
         agent_name="MCPAgent",
-        agent_file="agents/mcp_02/agent.py"
+        agent_file="agents/mcp_02/agent.py",
     ))
-    async with mcp_session() as client:
-        results = await client.run_query(sql)
     activities.append(create_activity(
         activity_type="mcp",
-        title="MCP: run_query",
-        details=f"Executing via MCP: {search_title}",
-        sql_query=display_sql,
+        title="postgres-mcp · connect_to_database",
+        details="Aurora PostgreSQL via RDS Data API (rdsapi)",
         agent_name="MCPAgent",
-        agent_file="agents/mcp_02/agent.py"
+        agent_file="agents/mcp_02/agent.py",
     ))
+
+    results: List[Dict[str, Any]] = []
+    if not pure_domain:
+        sql, display_sql, search_title = build_search_sql(params, limit)
+        async with mcp_session() as client:
+            results = await client.run_query(sql)
+        activities.append(create_activity(
+            activity_type="mcp",
+            title="postgres-mcp · run_query",
+            details=f"Generic SQL tool: {search_title}",
+            sql_query=display_sql,
+            agent_name="MCPAgent",
+            agent_file="agents/mcp_02/agent.py",
+        ))
+
+    # ----- Custom MCP server (meridian-concierge) -----
+    domain_text: Optional[str] = None
+    if use_custom_mcp:
+        activities.append(create_activity(
+            activity_type="mcp",
+            title="MCP server discovered: meridian-concierge (custom)",
+            details=(
+                "Custom domain server · tools/list returned "
+                "compare_packages, seasonal_price_band, region_inventory, "
+                "currency_convert, loyalty_balance"
+            ),
+            agent_name="MCPAgent",
+            agent_file="backend/mcp/concierge_server.py",
+        ))
+        try:
+            domain_call = await _call_domain_tool(query)
+            if domain_call:
+                # Normalize single-call and multi-call shapes into a list
+                # so we can log + format both uniformly.
+                if domain_call.get("tool") == "multi":
+                    sub_calls = domain_call["calls"]
+                else:
+                    sub_calls = [domain_call]
+
+                reply_parts: List[str] = []
+                for sub in sub_calls:
+                    tool_name = sub["tool"]
+                    tool_args = sub["args"]
+                    tool_result = sub["result"]
+                    summary = _summarize_domain_result(tool_name, tool_result)
+                    activities.append(create_activity(
+                        activity_type="mcp",
+                        title=f"meridian-concierge · {tool_name}",
+                        details=f"args={tool_args} · {summary}",
+                        agent_name="MCPAgent",
+                        agent_file="backend/mcp/concierge_server.py",
+                    ))
+                    reply = _format_domain_reply(tool_name, tool_result)
+                    if reply:
+                        reply_parts.append(reply)
+                if reply_parts:
+                    raw_text = "\n\n".join(reply_parts)
+                    # Polish the deterministic readout through Opus 4.7
+                    # (with a Sonnet/Haiku fallback chain) so the user
+                    # sees a longer, narrative concierge reply instead
+                    # of a dry one-liner. The polish never invents facts
+                    # (system prompt forbids it) - it just adds context.
+                    polish = await polish_concierge_reply(query, raw_text)
+                    if polish.model_id:
+                        activities.append(create_activity(
+                            activity_type="reasoning",
+                            title=f"Bedrock · concierge polish ({polish.model_id})",
+                            details="Wrapping deterministic tool output in concierge tone",
+                            agent_name="MCPAgent",
+                            agent_file="backend/llm_polish.py",
+                        ))
+                    else:
+                        # Every model in the fallback chain failed - tell
+                        # the user what blocked us instead of pretending
+                        # the dry deterministic text was the polished one.
+                        activities.append(create_activity(
+                            activity_type="error",
+                            title="Bedrock polish unavailable",
+                            details=polish.note or "unknown",
+                            agent_name="MCPAgent",
+                            agent_file="backend/llm_polish.py",
+                        ))
+                    domain_text = polish.text
+                    if not polish.model_id and polish.note:
+                        domain_text = (
+                            f"{polish.text}\n\n"
+                            f"_(Concierge polish unavailable: {polish.note}. "
+                            f"Showing raw tool output above.)_"
+                        )
+            else:
+                # The intent matched but no tool branch picked it up.
+                domain_text = (
+                    "I recognized this as a domain-tool query but couldn't pick a "
+                    "matching meridian-concierge tool. Try keywords like 'compare', "
+                    "'in EUR', 'cheapest month', 'inventory', or 'loyalty'."
+                )
+        except Exception as exc:
+            err_msg = str(exc)[:200] or repr(exc)
+            activities.append(create_activity(
+                activity_type="error",
+                title="meridian-concierge MCP error",
+                details=err_msg,
+                agent_name="MCPAgent",
+                agent_file="backend/mcp/concierge_server.py",
+            ))
+            # Surface the failure to the user instead of letting the
+            # generic "Phase 1/2 keyword filters" message take over.
+            domain_text = (
+                "Custom MCP server (meridian-concierge) failed to execute the "
+                f"domain tool: {err_msg}\n\n"
+                "Confirm the FastAPI process can spawn the server "
+                "(`python -m backend.mcp.concierge_server`) and that "
+                "AURORA_CLUSTER_ARN/AURORA_SECRET_ARN/AWS creds are set."
+            )
 
     execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
 
@@ -406,17 +684,106 @@ async def mcp_search(query: str, limit: int = 5) -> tuple[List[Product], List[Ac
 
     activities.append(create_activity(
         activity_type="mcp",
-        title="MCP: Query completed",
-        details=f"Retrieved {len(results)} rows",
+        title=(
+            "MCP turn complete · 2 servers"
+            if use_custom_mcp
+            else "MCP turn complete · 1 server"
+        ),
+        details=f"Retrieved {len(results)} rows in {execution_time}ms",
         execution_time_ms=execution_time,
         agent_name="MCPAgent",
-        agent_file="agents/mcp_02/agent.py"
+        agent_file="agents/mcp_02/agent.py",
     ))
 
     product_dicts = results_to_packages(results)
     products = [Product(**row_to_api_product(p)) for p in product_dicts]
 
-    return products, activities
+    return products, activities, domain_text
+
+
+def _format_domain_reply(tool: str, result: Any) -> str:
+    """Format a custom-MCP tool result as a human-readable bot reply."""
+    if not isinstance(result, (list, dict)):
+        return ""
+    try:
+        if tool == "compare_packages" and isinstance(result, list):
+            if not result:
+                return "No packages to compare."
+            lines = [f"Compared {len(result)} packages via meridian-concierge MCP:"]
+            for p in result:
+                price = p.get("price_per_person")
+                price_s = f"${price:,.0f}" if isinstance(price, (int, float)) else "—"
+                lines.append(
+                    f"• {p.get('name')} — {p.get('destination') or p.get('region') or ''} "
+                    f"· {p.get('trip_type', '')} · {price_s}"
+                )
+            return "\n".join(lines)
+        if tool == "currency_convert" and isinstance(result, dict):
+            amt = result.get("amount")
+            converted = result.get("converted")
+            rate = result.get("rate")
+            return (
+                f"FX via meridian-concierge MCP: "
+                f"{amt} {result.get('from')} ≈ {converted} {result.get('to')} "
+                f"(rate {rate})."
+            )
+        if tool == "loyalty_balance" and isinstance(result, dict):
+            pts = result.get("points_balance", 0)
+            tier = result.get("tier", "—")
+            program = result.get("program", "")
+            to_next = result.get("points_to_next_tier", 0) or 0
+            tail = f" · {to_next:,} pts to next tier" if to_next else ""
+            return (
+                f"Loyalty (via meridian-concierge MCP): "
+                f"{pts:,} pts on {program} · tier {tier}{tail}."
+            )
+        if tool == "seasonal_price_band" and isinstance(result, dict):
+            dest = result.get("destination", "—")
+            month = result.get("month", "—")
+            season = result.get("season", "—")
+            low = result.get("low")
+            med = result.get("median")
+            high = result.get("high")
+            n = result.get("sample_size", 0)
+            if not n:
+                return f"No pricing data for {dest} in month {month}."
+            return (
+                f"Seasonal price band for {dest} (month {month}, {season}, "
+                f"sample={n}): low ${low:,.0f} · median ${med:,.0f} · high ${high:,.0f}."
+            )
+        if tool == "region_inventory" and isinstance(result, dict):
+            region = result.get("region", "—")
+            count = result.get("package_count", 0)
+            slots = result.get("total_departure_slots", 0)
+            by_type = result.get("package_count_by_trip_type") or {}
+            by_type_s = ", ".join(f"{k}: {v}" for k, v in by_type.items()) if by_type else "—"
+            return (
+                f"Inventory in {region} (via meridian-concierge MCP): "
+                f"{count} packages · {slots} departure slots · by trip type — {by_type_s}."
+            )
+    except Exception:
+        pass
+    return ""
+
+
+def _summarize_domain_result(tool: str, result: Any) -> str:
+    """One-line summary of a custom MCP tool call for the trace span."""
+    if not isinstance(result, (list, dict)):
+        return "ok"
+    try:
+        if tool == "compare_packages" and isinstance(result, list):
+            return f"compared {len(result)} packages"
+        if tool == "currency_convert" and isinstance(result, dict):
+            return f"{result.get('amount')} {result.get('from')} = {result.get('converted')} {result.get('to')}"
+        if tool == "loyalty_balance" and isinstance(result, dict):
+            return f"{result.get('points_balance'):,} pts · tier={result.get('tier')}"
+        if tool == "seasonal_price_band" and isinstance(result, dict):
+            return f"{result.get('season')} band · low={result.get('low')} · high={result.get('high')}"
+        if tool == "region_inventory" and isinstance(result, dict):
+            return f"{result.get('package_count')} packages · {result.get('total_departure_slots')} slots"
+    except Exception:
+        pass
+    return "ok"
 
 
 # =============================================================================
@@ -1165,11 +1532,25 @@ async def chat(request: ChatRequest) -> ChatResponse:
     ))
     
     try:
-        products, search_activities = await search_fn(request.message, limit=5)
+        # Phase 2 returns a 3-tuple (products, activities, domain_text)
+        # because its custom MCP path can produce a non-product reply.
+        # All other phases stay on the 2-tuple shape.
+        domain_text: Optional[str] = None
+        if request.phase == 2:
+            products, search_activities, domain_text = await mcp_search(request.message, limit=5)
+        else:
+            products, search_activities = await search_fn(request.message, limit=5)
         activities.extend(search_activities)
-        
+
         # Generate personalized response message
-        if products:
+        if domain_text:
+            # Custom MCP produced a domain readout (compare / FX / loyalty
+            # / seasonal pricing / inventory) - that IS the answer.
+            if products:
+                message = f"{domain_text}\n\nI also found {len(products)} matching trips:"
+            else:
+                message = domain_text
+        elif products:
             if request.phase in (3, 4):
                 top_similarity = products[0].similarity
                 if top_similarity and top_similarity > 0.8:
@@ -1179,8 +1560,53 @@ async def chat(request: ChatRequest) -> ChatResponse:
             else:
                 message = f"I found {len(products)} trips for you:"
         else:
-            if request.phase in [1, 2]:
-                message = "No results found. Phase 1/2 uses keyword filters only. Try destination or operator names like 'Tokyo' or 'ANA Holidays', or switch to Phase 3 for natural language search."
+            if request.phase == 2:
+                # Phase 2 fallback - SQL came up empty AND no domain tool
+                # matched. Polish the explanation through Opus so the
+                # stretch-query narrative reads naturally.
+                raw = (
+                    "Search summary:\n"
+                    "- postgres-mcp ran a keyword ILIKE on name/description/destination "
+                    "  and returned 0 rows.\n"
+                    "- meridian-concierge (custom MCP) was loaded but no domain tool "
+                    "  matched the query.\n"
+                    "- Reason: the prompt expresses intent (vibe, mood, openness) "
+                    "  rather than a literal keyword that lives in trip_packages.\n"
+                    "- Next step the system supports: switch to Phase 3 (Retrieval) "
+                    "  which uses pgvector + Cohere Rerank to read intent."
+                )
+                polish = await polish_concierge_reply(request.message, raw)
+                if polish.model_id:
+                    activities.append(create_activity(
+                        activity_type="reasoning",
+                        title=f"Bedrock · concierge polish ({polish.model_id})",
+                        details="Explaining the stretch-query miss in concierge tone",
+                        agent_name="MCPAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+                    message = polish.text
+                else:
+                    activities.append(create_activity(
+                        activity_type="error",
+                        title="Bedrock polish unavailable",
+                        details=polish.note or "unknown",
+                        agent_name="MCPAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+                    message = (
+                        f"{polish.text}\n\n"
+                        f"_(Concierge polish unavailable: {polish.note}. "
+                        f"Check Bedrock model access for "
+                        f"`global.anthropic.claude-opus-4-7` "
+                        f"and `global.anthropic.claude-sonnet-4-6` "
+                        f"in this region.)_"
+                    )
+            elif request.phase == 1:
+                message = (
+                    "No results found. Phase 1 uses keyword filters only. Try "
+                    "destination or operator names like 'Tokyo' or 'ANA Holidays', "
+                    "or switch to Phase 3 for natural language search."
+                )
             else:
                 message = "I couldn't find exact matches. Try different destinations, trip types, or travel dates."
 
