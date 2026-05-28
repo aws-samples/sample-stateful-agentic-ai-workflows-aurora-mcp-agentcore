@@ -145,7 +145,7 @@ const DRY_RUN_PROMPTS: Record<string, string> = {
   'memory.write_fact': 'Dry-run: remember we prefer boutique hotels over chains',
   'availability.lookup': 'Dry-run availability for Maldives package next month',
   'bookings.hold': 'Dry-run hold on Tuscan Vineyards package for two travelers',
-  'claude.compose': 'Dry-run compose a short trip summary for Alex & Jordan',
+  'claude.compose': 'Dry-run compose a short Tokyo trip summary for Alex Morgan',
 };
 
 function DryRunDrawer({

@@ -36,9 +36,9 @@ export function RecommendationCards({
   // backend returns more than fit on one row, so this stays responsive.
   const cards = limit != null ? state.recommendations.slice(0, limit) : state.recommendations;
 
-  if (!cards.length) {
-    return <div className="mds-empty">No recommendations yet.</div>;
-  }
+  // True clean slate: render nothing when there are no recommendations.
+  // The chat surface above speaks for itself; no extra empty-state copy.
+  if (!cards.length) return null;
 
   return (
     <div className={`mds-recommendations${compact ? ' is-compact' : ''}`}>

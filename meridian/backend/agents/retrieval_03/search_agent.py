@@ -155,8 +155,11 @@ When searching:
         search_start = datetime.utcnow()
         candidate_limit = max(limit * config.search.rerank_candidate_multiplier, 25)
 
+        # Cast both args explicitly. Without ::integer, Python ints arrive as
+        # bigint and Postgres can't find a matching overload (the function is
+        # declared as semantic_trip_search(vector, integer)).
         sql = """
-            SELECT * FROM semantic_trip_search(%s::vector, %s)
+            SELECT * FROM semantic_trip_search(%s::vector, %s::integer)
         """
 
         embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'

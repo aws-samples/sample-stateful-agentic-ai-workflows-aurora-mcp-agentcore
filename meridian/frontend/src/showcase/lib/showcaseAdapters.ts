@@ -60,16 +60,26 @@ export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
     'Family-friendly beach resort with snorkeling',
     'What did we discuss last time? Pick up where we left off.',
   ],
-  // Production: AgentCore + Aurora RLS + traveler memory. First pill
-  // demos the conversation-memory recall that Phase 3 just failed.
-  // Second exercises traveler-preference recall (no_red_eye, etc.).
-  // Stretch hits availability checking which Production handles in a
-  // single shot - the LangGraph StateGraph in Phase 5 wraps it with
-  // explicit intent routing + checkpointing.
+  // Production: AgentCore + Aurora RLS + traveler memory. The pills are
+  // ordered as a single Tokyo-themed storyline so each turn builds on
+  // the last AND lines up with the seeded preferences (tokyo_culture
+  // = "Tokyo culture trip Oct 12-19", recent_trips = "Kyoto (held)").
+  //   1. Concrete Tokyo query — Phase 4 persists "Tokyo culture trip"
+  //      into conversation_messages + trip_interactions, where the
+  //      embeddings will favor Tokyo packages on subsequent searches.
+  //   2. Recall query — pgvector + persisted thread + seeded
+  //      tokyo_culture preference all converge on Tokyo Culture &
+  //      Cuisine, Tokyo Indie Walk, etc. The recall punchline lands
+  //      because Aurora has Tokyo to point at — not generic stopovers.
+  //   3. Multi-intent stretch — same Tokyo thread, now with three
+  //      jobs Strands chains implicitly in one Bedrock turn. Phase 5's
+  //      LangGraph routes the same prompt through named classify /
+  //      search / availability / memory nodes with checkpoints, which
+  //      is what makes the upgrade legible.
   4: [
+    'Tokyo culture trip for two — boutique stays, local food, walkable neighborhoods',
     'What did we discuss last time? Pick up where we left off.',
-    'Beach escape under $2500 — apply my saved preferences',
-    'What dates are open for the Tokyo trip in October?',
+    'Plan our October Tokyo trip — find open dates, pick a Marriott property, and hold a Kyoto side trip',
   ],
   // Workflow: LangGraph StateGraph classifies intent and branches to
   // search / availability / memory_recall, checkpointing each step to

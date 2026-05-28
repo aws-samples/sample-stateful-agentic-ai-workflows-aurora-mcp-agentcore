@@ -59,7 +59,7 @@ class SQLAgent:
     """
     Phase 1 travel concierge with direct database access.
     
-    Uses Strands SDK with Claude Opus 4.7 via Bedrock (cross-region inference).
+    Uses Strands SDK with Claude Opus 4.8 via Bedrock (cross-region inference).
     Connects to Aurora PostgreSQL using RDS Data API.
     
     """
@@ -74,7 +74,7 @@ class SQLAgent:
         self.activity_callback = activity_callback or (lambda x: None)
         self.db = get_rds_data_client()
         
-        # Initialize Bedrock model - Claude Opus 4.7 (cross-region inference)
+        # Initialize Bedrock model - Claude Opus 4.8 (cross-region inference)
         self.model = BedrockModel(
             model_id=config.bedrock.model_id,
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")

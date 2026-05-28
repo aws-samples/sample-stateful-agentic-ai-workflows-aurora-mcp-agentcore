@@ -36,6 +36,7 @@ from backend.db.embedding_service import get_embedding_service
 from backend.config import config
 from backend.logging_config import log_search, log_order, log_error, log_turn_start, log_turn_complete, log_activity_entry
 from backend.search_utils import (
+    PACKAGE_COLUMNS,
     parse_search_query,
     execute_keyword_search,
     build_search_sql,
@@ -425,17 +426,30 @@ async def _call_domain_tool(query: str) -> Optional[Dict[str, Any]]:
 
     async with concierge_mcp_session() as cli:
         if any(k in q for k in ("compare", "comparison", "side by side")):
-            # Pick 3 packages to compare. Prefer "top trips" (highest-priced
-            # on the assumption they're flagship offerings); if that returns
-            # nothing fall back to ANY 3 rows. The tool should always have
-            # something to compare or it confuses the LLM polish step.
+            # Stratified pick: one flagship per trip_type so the comparison
+            # spans diverse experiences (City Breaks vs Beach vs Wellness
+            # vs Adventure...) instead of three of the same kind. Within
+            # each trip_type we pick the highest-priced row as that
+            # type's "flagship" representative, capped at 3 total.
+            #
+            # Falls through to any 3 rows if the stratified query comes
+            # back empty (defensive).
             ids: List[str] = []
             try:
-                row_sql = (
-                    "SELECT package_id FROM trip_packages "
-                    "ORDER BY price_per_person DESC LIMIT 3"
+                stratified_sql = (
+                    "SELECT package_id FROM ("
+                    "  SELECT package_id, trip_type, price_per_person, "
+                    "         ROW_NUMBER() OVER ("
+                    "           PARTITION BY trip_type "
+                    "           ORDER BY price_per_person DESC, package_id"
+                    "         ) AS rn "
+                    "  FROM trip_packages"
+                    ") flagship "
+                    "WHERE rn = 1 "
+                    "ORDER BY price_per_person DESC "
+                    "LIMIT 3"
                 )
-                rows = await get_rds_data_client().execute(row_sql)
+                rows = await get_rds_data_client().execute(stratified_sql)
                 ids = [r["package_id"] for r in rows if r.get("package_id")]
                 if not ids:
                     rows = await get_rds_data_client().execute(
@@ -602,6 +616,10 @@ async def mcp_search(
                     sub_calls = [domain_call]
 
                 reply_parts: List[str] = []
+                # Package_ids surfaced by compare_packages get hydrated
+                # back into full Product rows below so the recommendation
+                # grid renders alongside the polished bubble.
+                compared_ids: List[str] = []
                 for sub in sub_calls:
                     tool_name = sub["tool"]
                     tool_args = sub["args"]
@@ -617,9 +635,44 @@ async def mcp_search(
                     reply = _format_domain_reply(tool_name, tool_result)
                     if reply:
                         reply_parts.append(reply)
+                    if tool_name == "compare_packages":
+                        compared_ids = list(tool_args.get("package_ids") or [])
+
+                # Hydrate compare_packages IDs into full catalog rows so
+                # the recommendation grid in the UI shows the trips the
+                # tool just compared. Only do this when the SQL search
+                # itself returned zero rows (a pure-domain query) so we
+                # don't override a real keyword match.
+                if compared_ids and not results:
+                    placeholders = ",".join(["%s"] * len(compared_ids))
+                    hydrate_sql = f"""
+                        SELECT {PACKAGE_COLUMNS}
+                        FROM trip_packages
+                        WHERE package_id IN ({placeholders})
+                    """
+                    try:
+                        results = await get_rds_data_client().execute(
+                            hydrate_sql, tuple(compared_ids)
+                        )
+                        # Preserve the order returned by compare_packages.
+                        order = {pid: i for i, pid in enumerate(compared_ids)}
+                        results.sort(key=lambda r: order.get(r["package_id"], 99))
+                        activities.append(create_activity(
+                            activity_type="database",
+                            title="Hydrated compared packages into product cards",
+                            details=f"{len(results)} rows joined from trip_packages",
+                            sql_query=(
+                                f"SELECT … FROM trip_packages WHERE package_id IN "
+                                f"({', '.join(repr(p) for p in compared_ids)})"
+                            ),
+                            agent_name="MCPAgent",
+                            agent_file="agents/mcp_02/agent.py",
+                        ))
+                    except Exception as exc:
+                        log_error("compare_hydrate", error=str(exc))
                 if reply_parts:
                     raw_text = "\n\n".join(reply_parts)
-                    # Polish the deterministic readout through Opus 4.7
+                    # Polish the deterministic readout through Opus 4.8
                     # (with a Sonnet/Haiku fallback chain) so the user
                     # sees a longer, narrative concierge reply instead
                     # of a dry one-liner. The polish never invents facts
@@ -767,27 +820,133 @@ def _format_domain_reply(tool: str, result: Any) -> str:
 
 
 def _summarize_domain_result(tool: str, result: Any) -> str:
-    """One-line summary of a custom MCP tool call for the trace span."""
-    if not isinstance(result, (list, dict)):
-        return "ok"
+    """One-line summary of a custom MCP tool call for the trace span.
+
+    Falls back to `type(result).__name__` when the shape doesn't match
+    the expected tool contract - that immediately surfaces decode bugs
+    in the activity panel instead of silently saying 'ok'.
+    """
     try:
-        if tool == "compare_packages" and isinstance(result, list):
-            return f"compared {len(result)} packages"
+        if tool == "compare_packages":
+            if isinstance(result, list):
+                return f"compared {len(result)} packages"
+            return f"unexpected shape: {type(result).__name__}"
         if tool == "currency_convert" and isinstance(result, dict):
             return f"{result.get('amount')} {result.get('from')} = {result.get('converted')} {result.get('to')}"
         if tool == "loyalty_balance" and isinstance(result, dict):
-            return f"{result.get('points_balance'):,} pts · tier={result.get('tier')}"
+            pts = result.get("points_balance", 0) or 0
+            return f"{pts:,} pts · tier={result.get('tier')}"
         if tool == "seasonal_price_band" and isinstance(result, dict):
             return f"{result.get('season')} band · low={result.get('low')} · high={result.get('high')}"
         if tool == "region_inventory" and isinstance(result, dict):
             return f"{result.get('package_count')} packages · {result.get('total_departure_slots')} slots"
-    except Exception:
-        pass
-    return "ok"
+    except Exception as exc:
+        return f"summarize failed: {exc.__class__.__name__}"
+    return f"shape={type(result).__name__}"
 
 
 # =============================================================================
-# PHASE 3: Retrieval - semantic + lexical candidates + Cohere rerank
+# Concierge polish wrapper for Phase 3 / 4 / 5 turns.
+#
+# The deterministic agents already produce a usable `raw_message` ("I
+# found 5 trips that closely match...") but that reads thin on stage.
+# We hand the raw message + structured product/memory context to the
+# Bedrock polish helper so the user-facing reply is a warm, narrative
+# concierge response that names specific trips and explains *why* they
+# fit (similarity scores for Phase 3, recalled preferences for Phase
+# 4, classified intent + node path for Phase 5). The polish model is
+# explicitly told to use only the facts in the context block - no
+# fabricated prices or destinations.
+# =============================================================================
+
+
+async def _polish_phase_reply(
+    phase: int,
+    user_query: str,
+    raw_message: str,
+    products: List[Product],
+    activities: List[ActivityEntry],
+    memory_facts: Optional[List[Any]] = None,  # MemoryFact pydantic OR dict
+) -> tuple[str, Optional[str], Optional[str]]:
+    """Run the Bedrock polish over a Phase 3/4/5 reply.
+
+    Returns (final_message, model_id_or_none, note_or_none). On failure
+    (no model access, all fallbacks blocked) the raw_message is returned
+    verbatim as a graceful fallback.
+    """
+    if not products and not raw_message:
+        return raw_message, None, "no content to polish"
+
+    # Build a deterministic, fact-only context block. The system prompt
+    # in llm_polish forbids inventing anything outside this block.
+    lines: List[str] = [f"Mode: phase {phase}", f"Tool reply: {raw_message}"]
+
+    if products:
+        lines.append("")
+        lines.append(f"Top {len(products)} trips returned by the agent:")
+        for p in products[:5]:
+            sim = getattr(p, "similarity", None)
+            sim_str = f" · semantic_match={round(sim * 100)}%" if sim else ""
+            lines.append(
+                f"- {p.name} ({p.category}) — {p.brand} — ${p.price:,.0f}{sim_str}"
+            )
+
+    if memory_facts:
+        lines.append("")
+        # Pass the full For-you fact set (the same one the right-rail panel
+        # shows) so the polish has the widest material to weave from. The
+        # system prompt caps how many it actually mentions so this stays
+        # natural — but giving the model 12 facts beats giving it 2 and
+        # forcing it to repeat shellfish + no_red_eye in every reply.
+        lines.append("Traveler preferences applied to this turn:")
+        for fact in memory_facts[:12]:
+            # Phase 4 passes Pydantic MemoryFact objects; the SearchAgent /
+            # legacy paths pass plain dicts. Support both shapes.
+            if hasattr(fact, "key"):
+                key = str(getattr(fact, "key", "") or "").strip()
+                val = str(getattr(fact, "value", "") or "").strip()
+            else:
+                key = str(fact.get("key", "") if isinstance(fact, dict) else "").strip()
+                val = str(fact.get("value", "") if isinstance(fact, dict) else "").strip()
+            if key and val:
+                lines.append(f"- {key}: {val}")
+
+    # Surface a couple of distinctive trace spans so the polish can mention
+    # what the agent actually did (rerank, RLS scope, LangGraph node, etc.).
+    # Filter to *successful* spans only — we never want the concierge to
+    # narrate degraded paths ("our reranker was unavailable") at the user.
+    # If a step failed, fall back silently and let the model talk about
+    # results, not infrastructure hiccups. We also drop the "unavailable"
+    # / "failed" / "fallback" titles explicitly so a span without a
+    # status field still can't leak.
+    def _is_healthy_span(a: ActivityEntry) -> bool:
+        title = (a.title or "").lower()
+        if any(k in title for k in ("unavailable", "failed", "fallback", "error")):
+            return False
+        status = (getattr(a, "status", None) or "").lower()
+        if status and status != "ok":
+            return False
+        return True
+
+    notable_spans = [
+        a for a in activities
+        if a.title
+        and _is_healthy_span(a)
+        and any(
+            k in a.title.lower()
+            for k in ("rerank applied", "rls", "agentcore", "langgraph", "memory-grounded", "checkpoint", "node:")
+        )
+    ]
+    if notable_spans:
+        lines.append("")
+        lines.append("Notable trace spans for this turn:")
+        for a in notable_spans[:5]:
+            lines.append(f"- {a.title}")
+
+    raw = "\n".join(lines)
+
+    polish = await polish_concierge_reply(user_query, raw)
+    return polish.text, polish.model_id, polish.note
 #
 # AWS docs:
 #   Cohere Embed v4: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed-v4.html
@@ -961,6 +1120,40 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
 # PHASE 3 (live): Strands RetrievalAgent driving Bedrock tool delegation.
 # =============================================================================
 
+_MEMORY_RECALL_PATTERNS = re.compile(
+    r"\b(what did we (discuss|talk about|cover|see|look at)|"
+    r"pick up where we left off|"
+    r"continue our (conversation|chat|discussion)|"
+    r"last time|previous (chat|turn|session|conversation)|"
+    r"remind me (what|of|about) (we|i|you)|"
+    r"earlier (you|we|i) (said|told|mentioned|discussed)|"
+    r"as (we|i) (discussed|talked|mentioned) (earlier|before|previously)|"
+    r"my (saved|past|prior|previous|earlier) (trips?|searches?|preferences?|favorites?)|"
+    r"what (have|did) (we|i) (look|check|search|browse)ed?|"
+    r"do you remember|recall (our|my|the))\b",
+    re.IGNORECASE,
+)
+
+
+def _is_memory_recall_query(query: str) -> bool:
+    """Phase 3 has no persistent memory — detect prompts that depend on it.
+
+    Phase 3 is pure retrieval: pgvector + Cohere rerank on a fresh query.
+    There's no conversation store, no traveler profile, no prior-turn
+    awareness. When a user asks "what did we discuss" or "pick up where
+    we left off", embedding-and-searching is exactly the wrong thing to
+    do — it pulls whatever's vector-closest to that phrase (which tends
+    to be City Breaks at ~37% match because "discuss" + "look at" land
+    near generic exploration packages). That dilutes the demo punchline.
+
+    The honest answer is "I can't see prior turns from here." Phase 4
+    (Production — AgentCore Memory + Aurora RLS over conversation_messages
+    and trip_interactions) is exactly the fix. So we short-circuit, return
+    zero products, and let the polish reply explain the gap.
+    """
+    return bool(_MEMORY_RECALL_PATTERNS.search(query or ""))
+
+
 async def retrieval_supervisor_search(
     query: str,
     limit: int = 5,
@@ -979,6 +1172,33 @@ async def retrieval_supervisor_search(
             # Best-effort: keep going if the entry shape is unexpected.
             pass
 
+    # Memory-recall short-circuit. We deliberately do not embed-and-search
+    # these prompts — Phase 3 has no conversation history, so any pgvector
+    # match would be coincidental. Surface the limitation in the trace so
+    # the polish reply can name the gap and point at Phase 4 as the fix.
+    if _is_memory_recall_query(query):
+        activities.append(create_activity(
+            activity_type="reasoning",
+            title="Memory-recall prompt detected — Retrieval mode has no conversation store",
+            details=(
+                "Retrieval mode is pure search (pgvector + Cohere rerank). "
+                "Prior-turn memory is intentionally not in scope — that's "
+                "Production mode (AgentCore Memory + Aurora RLS over "
+                "conversation_messages / trip_interactions). Returning "
+                "zero results so the concierge can explain the gap."
+            ),
+            agent_name="RetrievalAgent",
+            agent_file="agents/retrieval_03/supervisor.py",
+        ))
+        activities.append(create_activity(
+            activity_type="result",
+            title="Retrieval mode cannot resolve memory-recall queries",
+            details="Routed to honest-failure path; Production mode is the upgrade.",
+            agent_name="RetrievalAgent",
+            agent_file="agents/retrieval_03/supervisor.py",
+        ))
+        return [], activities
+
     activities.append(create_activity(
         activity_type="reasoning",
         title="RetrievalAgent invoked (Strands + Bedrock)",
@@ -990,6 +1210,29 @@ async def retrieval_supervisor_search(
     supervisor = create_retrieval_system(activity_callback=collect)
 
     packages, _llm_reply = await supervisor.process_search(query, activity_callback=collect)
+
+    # Belt-and-suspenders: if Bedrock chose to answer conversationally
+    # without calling the SearchAgent tool, we'd have an empty package
+    # list even though the user clearly asked for a trip. Fall back to
+    # calling SearchAgent.semantic_search() directly so Phase 3 always
+    # surfaces pgvector results for product-shaped prompts.
+    if not packages:
+        activities.append(create_activity(
+            activity_type="reasoning",
+            title="Supervisor returned no packages — fallback to direct semantic search",
+            details=(
+                "Bedrock did not invoke _delegate_to_search; calling "
+                "SearchAgent.semantic_search directly to guarantee "
+                "pgvector + Cohere rerank coverage."
+            ),
+            agent_name="RetrievalAgent",
+            agent_file="agents/retrieval_03/supervisor.py",
+        ))
+        try:
+            direct = await supervisor.search_agent.semantic_search(query, limit=limit)
+            packages = direct.get("packages", [])
+        except Exception as exc:
+            log_error("retrieval_direct_fallback", error=str(exc))
 
     products: List[Product] = []
     for pkg in packages[:limit]:
@@ -1009,7 +1252,7 @@ async def retrieval_supervisor_search(
         activities.append(create_activity(
             activity_type="result",
             title="Supervisor search returned no trips",
-            details="Strands delegation completed without package results",
+            details="Strands delegation + direct fallback both empty",
             agent_name="RetrievalAgent",
             agent_file="agents/retrieval_03/supervisor.py",
         ))
@@ -1383,20 +1626,68 @@ async def chat(request: ChatRequest) -> ChatResponse:
             agent_name="RetrievalAgent",
             agent_file="agents/retrieval_03/supervisor.py"
         ))
-        
+
         try:
             products, availability_activities, message = await retrieval_availability_search(request.message)
             activities.extend(availability_activities)
-            
+
+            # Phase 4: hydrate the availability reply with traveler memory so
+            # it reads in the same concierge tone as the other Phase 4 turns.
+            # Phase 3 keeps the dry deterministic readout — that's part of
+            # what motivates the upgrade to Production.
+            polish_memory_facts: Optional[List[Any]] = None
+            if request.phase == 4:
+                try:
+                    from backend.memory.store import (
+                        DEMO_TRAVELER_ID,
+                        get_memory_store,
+                    )
+
+                    store = get_memory_store()
+                    facts = await store.recall_preferences(
+                        request.customer_id or DEMO_TRAVELER_ID,
+                        limit=12,
+                    )
+                    polish_memory_facts = facts or None
+                except Exception as exc:
+                    log_error("availability_memory_fetch", error=str(exc))
+
+                polished, polish_model, polish_note = await _polish_phase_reply(
+                    phase=4,
+                    user_query=request.message,
+                    raw_message=message,
+                    products=products,
+                    activities=activities,
+                    memory_facts=polish_memory_facts,
+                )
+                if polish_model:
+                    activities.append(create_activity(
+                        activity_type="reasoning",
+                        title=f"Bedrock · concierge polish ({polish_model})",
+                        details="Wrapping availability reply in concierge tone",
+                        agent_name="ProductionAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+                    message = polished
+                else:
+                    activities.append(create_activity(
+                        activity_type="error",
+                        title="Bedrock polish unavailable",
+                        details=polish_note or "unknown",
+                        agent_name="ProductionAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+
             follow_ups = ["Show similar trips", "What other durations are available?", "Find alternatives"]
-            
+
             return _complete_chat_turn(
                 ChatResponse(
                 message=message,
                 products=products if products else None,
                 order=None,
                 activities=activities,
-                follow_ups=follow_ups
+                follow_ups=follow_ups,
+                memory_facts=polish_memory_facts,
             ),
                 request.phase,
                 turn_started,
@@ -1423,13 +1714,39 @@ async def chat(request: ChatRequest) -> ChatResponse:
             agent_file="agents/production_04/concierge.py",
         ))
         try:
-            products, search_activities, message, conv_id, memory_facts = await production_search(
+            products, search_activities, raw_message, conv_id, memory_facts = await production_search(
                 request.message,
                 customer_id=request.customer_id or DEMO_TRAVELER_ID,
                 conversation_id=request.conversation_id,
                 limit=5,
             )
             activities.extend(search_activities)
+            polished, polish_model, polish_note = await _polish_phase_reply(
+                phase=4,
+                user_query=request.message,
+                raw_message=raw_message,
+                products=products,
+                activities=activities,
+                memory_facts=memory_facts,
+            )
+            if polish_model:
+                activities.append(create_activity(
+                    activity_type="reasoning",
+                    title=f"Bedrock · concierge polish ({polish_model})",
+                    details="Wrapping Production reply in concierge tone",
+                    agent_name="ProductionAgent",
+                    agent_file="backend/llm_polish.py",
+                ))
+                message = polished
+            else:
+                activities.append(create_activity(
+                    activity_type="error",
+                    title="Bedrock polish unavailable",
+                    details=polish_note or "unknown",
+                    agent_name="ProductionAgent",
+                    agent_file="backend/llm_polish.py",
+                ))
+                message = raw_message
             follow_ups = generate_follow_ups(request.message, products, request.phase)
             return _complete_chat_turn(
                 ChatResponse(
@@ -1470,12 +1787,38 @@ async def chat(request: ChatRequest) -> ChatResponse:
     if request.phase == 5:
         from backend.memory.store import DEMO_TRAVELER_ID
         try:
-            workflow_packages, workflow_activities, message, conv_id = await orchestration_workflow(
+            workflow_packages, workflow_activities, raw_message, conv_id = await orchestration_workflow(
                 request.message,
                 traveler_id=request.customer_id or DEMO_TRAVELER_ID,
                 conversation_id=request.conversation_id,
             )
             activities.extend(workflow_activities)
+            polished, polish_model, polish_note = await _polish_phase_reply(
+                phase=5,
+                user_query=request.message,
+                raw_message=raw_message,
+                products=workflow_packages,
+                activities=activities,
+                memory_facts=None,
+            )
+            if polish_model:
+                activities.append(create_activity(
+                    activity_type="reasoning",
+                    title=f"Bedrock · concierge polish ({polish_model})",
+                    details="Wrapping Workflow reply in concierge tone",
+                    agent_name="OrchestrationAgent",
+                    agent_file="backend/llm_polish.py",
+                ))
+                message = polished
+            else:
+                activities.append(create_activity(
+                    activity_type="error",
+                    title="Bedrock polish unavailable",
+                    details=polish_note or "unknown",
+                    agent_name="OrchestrationAgent",
+                    agent_file="backend/llm_polish.py",
+                ))
+                message = raw_message
             follow_ups = generate_follow_ups(request.message, workflow_packages, request.phase)
             return _complete_chat_turn(
                 ChatResponse(
@@ -1500,7 +1843,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             ))
             return _complete_chat_turn(
                 ChatResponse(
-                message="The Phase 5 workflow hit an error. Please try a Phase 3 or Phase 4 query.",
+                message="The Workflow run hit an error. Please try a Retrieval or Production query.",
                 products=None,
                 order=None,
                 activities=activities,
@@ -1545,20 +1888,53 @@ async def chat(request: ChatRequest) -> ChatResponse:
         # Generate personalized response message
         if domain_text:
             # Custom MCP produced a domain readout (compare / FX / loyalty
-            # / seasonal pricing / inventory) - that IS the answer.
-            if products:
-                message = f"{domain_text}\n\nI also found {len(products)} matching trips:"
-            else:
-                message = domain_text
+            # / seasonal pricing / inventory) - that IS the answer. The
+            # polished domain_text already names the specific trips it
+            # surfaced, so we don't tack on a generic "I also found N
+            # trips" suffix; the recommendation grid speaks for itself.
+            message = domain_text
         elif products:
             if request.phase in (3, 4):
                 top_similarity = products[0].similarity
                 if top_similarity and top_similarity > 0.8:
-                    message = f"Great match! I found {len(products)} trips that closely match what you're looking for:"
+                    raw_message = f"Great match! I found {len(products)} trips that closely match what you're looking for:"
                 else:
-                    message = f"Here are {len(products)} trips that might interest you:"
+                    raw_message = f"Here are {len(products)} trips that might interest you:"
             else:
-                message = f"I found {len(products)} trips for you:"
+                raw_message = f"I found {len(products)} trips for you:"
+
+            # Phase 3 specifically benefits from polish: similarity scores
+            # in the product list let the model name *why* each trip
+            # matched (intent, vibe, dates) instead of just listing.
+            if request.phase == 3:
+                polished, polish_model, polish_note = await _polish_phase_reply(
+                    phase=3,
+                    user_query=request.message,
+                    raw_message=raw_message,
+                    products=products,
+                    activities=activities,
+                    memory_facts=None,
+                )
+                if polish_model:
+                    activities.append(create_activity(
+                        activity_type="reasoning",
+                        title=f"Bedrock · concierge polish ({polish_model})",
+                        details="Wrapping Retrieval reply in concierge tone",
+                        agent_name="RetrievalAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+                    message = polished
+                else:
+                    activities.append(create_activity(
+                        activity_type="error",
+                        title="Bedrock polish unavailable",
+                        details=polish_note or "unknown",
+                        agent_name="RetrievalAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+                    message = raw_message
+            else:
+                message = raw_message
         else:
             if request.phase == 2:
                 # Phase 2 fallback - SQL came up empty AND no domain tool
@@ -1572,7 +1948,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                     "  matched the query.\n"
                     "- Reason: the prompt expresses intent (vibe, mood, openness) "
                     "  rather than a literal keyword that lives in trip_packages.\n"
-                    "- Next step the system supports: switch to Phase 3 (Retrieval) "
+                    "- Next step the system supports: switch to Retrieval mode "
                     "  which uses pgvector + Cohere Rerank to read intent."
                 )
                 polish = await polish_concierge_reply(request.message, raw)
@@ -1597,16 +1973,99 @@ async def chat(request: ChatRequest) -> ChatResponse:
                         f"{polish.text}\n\n"
                         f"_(Concierge polish unavailable: {polish.note}. "
                         f"Check Bedrock model access for "
-                        f"`global.anthropic.claude-opus-4-7` "
+                        f"`global.anthropic.claude-opus-4-8` "
                         f"and `global.anthropic.claude-sonnet-4-6` "
                         f"in this region.)_"
                     )
             elif request.phase == 1:
-                message = (
-                    "No results found. Phase 1 uses keyword filters only. Try "
-                    "destination or operator names like 'Tokyo' or 'ANA Holidays', "
-                    "or switch to Phase 3 for natural language search."
+                # SQL keyword filters found nothing. Polish the explanation
+                # through Opus so the "keyword search can't read intent"
+                # teaching beat reads like a concierge, not an error string.
+                raw = (
+                    "Search summary:\n"
+                    "- SQLAgent ran a keyword ILIKE on name/description/"
+                    "  destination/operator in trip_packages and returned 0 rows.\n"
+                    "- The prompt expresses intent (a mood: 'romantic', 'slow', "
+                    "  a theme: 'great wine') rather than a literal keyword that "
+                    "  lives in a trip_packages column.\n"
+                    "- SQL filters match exact tokens, not meaning, so a "
+                    "  natural-language wish slips straight through.\n"
+                    "- What still works here: concrete destination or operator "
+                    "  names like 'Tokyo' or 'ANA Holidays'.\n"
+                    "- Next step the system supports: switch to Retrieval mode, "
+                    "  which uses Cohere Embed v4 + pgvector + Cohere Rerank to "
+                    "  read intent and surface wine-country trips."
                 )
+                polish = await polish_concierge_reply(request.message, raw)
+                if polish.model_id:
+                    activities.append(create_activity(
+                        activity_type="reasoning",
+                        title=f"Bedrock · concierge polish ({polish.model_id})",
+                        details="Explaining the keyword-search miss in concierge tone",
+                        agent_name="SQLAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+                    message = polish.text
+                else:
+                    activities.append(create_activity(
+                        activity_type="error",
+                        title="Bedrock polish unavailable",
+                        details=polish.note or "unknown",
+                        agent_name="SQLAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+                    message = (
+                        "No matches yet — SQL mode searches exact keywords in the "
+                        "catalog, so an intent-led request like this slips through. "
+                        "Try a destination or operator name like 'Tokyo' or "
+                        "'ANA Holidays', or switch to Retrieval mode for natural-"
+                        "language search."
+                    )
+            elif request.phase == 3 and _is_memory_recall_query(request.message):
+                # Phase 3 has no conversation store. We routed this query to
+                # the honest-failure path on purpose — surface the gap to
+                # the user and point them at Phase 4 (AgentCore Memory +
+                # Aurora RLS), which is exactly the upgrade that fixes it.
+                raw = (
+                    "Retrieval mode status: cannot resolve memory-recall queries.\n"
+                    "- This mode is pure search: pgvector + Cohere Rerank "
+                    "on the current prompt only.\n"
+                    "- There is no conversation store, no traveler profile, "
+                    "no prior-turn awareness in scope here.\n"
+                    "- Embedding 'what did we discuss' would just match "
+                    "whatever is vector-closest to that phrase, which is "
+                    "noise — not actual recall.\n"
+                    "- The fix is Production mode: AgentCore Memory + "
+                    "Aurora RLS reads conversation_messages and "
+                    "trip_interactions for this traveler and answers the "
+                    "question correctly.\n"
+                    "- Suggested next step: switch the mode selector to "
+                    "Production and resubmit."
+                )
+                polish = await polish_concierge_reply(request.message, raw)
+                if polish.model_id:
+                    activities.append(create_activity(
+                        activity_type="reasoning",
+                        title=f"Bedrock · concierge polish ({polish.model_id})",
+                        details="Explaining the Retrieval-mode memory gap in concierge tone",
+                        agent_name="RetrievalAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+                    message = polish.text
+                else:
+                    activities.append(create_activity(
+                        activity_type="error",
+                        title="Bedrock polish unavailable",
+                        details=polish.note or "unknown",
+                        agent_name="RetrievalAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+                    message = (
+                        "I can't pick up where we left off in this mode — Retrieval "
+                        "is pure search and has no memory of prior turns. "
+                        "Switch to Production mode and I'll read your "
+                        "conversation history from AgentCore Memory + Aurora RLS."
+                    )
             else:
                 message = "I couldn't find exact matches. Try different destinations, trip types, or travel dates."
 

@@ -44,8 +44,8 @@ const PHASE_MATRIX: PhaseMatrixRow[] = [
       'runtime_session, gateway_search, recall_session_context, recall_traveler_preferences, recall_similar_interactions, persist_turn',
   },
   {
-    modeLabel: 'Orchestration',
-    mode: 'Orchestration',
+    modeLabel: 'Workflow',
+    mode: 'Workflow',
     primaryAgent: 'OrchestrationAgent',
     specialists: 'SearchAgent, PackageAgent',
     tools: 'LangGraph StateGraph + PostgresSaver checkpoints',

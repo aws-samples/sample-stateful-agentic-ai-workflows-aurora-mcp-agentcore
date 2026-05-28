@@ -83,21 +83,62 @@ class MeridianMemoryMCPClient:
         logger.info("connected to meridian-memory MCP — tools: %s", [t["name"] for t in self._tools])
 
     async def disconnect(self) -> None:
-        if not self._connected:
-            return
-        try:
-            if self._session_context:
-                await self._session_context.__aexit__(None, None, None)
-        finally:
-            if self._stdio_context:
-                await self._stdio_context.__aexit__(None, None, None)
-            self._connected = False
-            self.session = None
+        """Idempotent teardown - see concierge_mcp_client for rationale."""
+        import asyncio
 
-    async def call(self, tool: str, arguments: Dict[str, Any]) -> Any:
+        session_ctx = self._session_context
+        stdio_ctx = self._stdio_context
+        self._connected = False
+        self.session = None
+        self._session_context = None
+        self._stdio_context = None
+
+        async def _close_session():
+            if session_ctx is not None:
+                try:
+                    await session_ctx.__aexit__(None, None, None)
+                except Exception:
+                    pass
+
+        async def _close_stdio():
+            if stdio_ctx is not None:
+                try:
+                    await stdio_ctx.__aexit__(None, None, None)
+                except Exception:
+                    pass
+
+        try:
+            await asyncio.wait_for(_close_session(), timeout=3.0)
+        except asyncio.TimeoutError:
+            pass
+        try:
+            await asyncio.wait_for(_close_stdio(), timeout=3.0)
+        except asyncio.TimeoutError:
+            pass
+
+    async def call(self, tool: str, arguments: Dict[str, Any], timeout: float = 15.0) -> Any:
+        """Call a tool with a hard timeout (see concierge_mcp_client._call docs)."""
+        import asyncio
+
         if not self._connected:
             await self.connect()
-        result = await self.session.call_tool(tool, arguments)
+        try:
+            result = await asyncio.wait_for(
+                self.session.call_tool(tool, arguments),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "meridian-memory tool %s timed out after %.1fs - resetting client",
+                tool,
+                timeout,
+            )
+            try:
+                await self.disconnect()
+            except Exception:
+                self._connected = False
+                self.session = None
+            raise
         return _decode(result)
 
     @property
@@ -106,36 +147,63 @@ class MeridianMemoryMCPClient:
 
 
 def _decode(result: Any) -> Any:
-    """Decode an MCP tool result into a python value (list/dict/str)."""
+    """Decode an MCP tool result into a python value.
+
+    Handles three FastMCP shapes:
+      - structuredContent (newer servers, richest)
+      - single TextContent block with full JSON payload (most common)
+      - multiple TextContent blocks, one per list element
+    """
     import json
+
+    structured = getattr(result, "structuredContent", None)
+    if structured is not None:
+        if isinstance(structured, dict) and "result" in structured and len(structured) == 1:
+            return structured["result"]
+        return structured
 
     if not hasattr(result, "content") or not result.content:
         return None
+
+    text_blocks: list[str] = []
     for content in result.content:
-        if hasattr(content, "text"):
-            try:
-                return json.loads(content.text)
-            except json.JSONDecodeError:
-                return content.text
-    return None
+        if hasattr(content, "text") and content.text:
+            text_blocks.append(content.text)
+
+    if not text_blocks:
+        return None
+
+    joined = "".join(text_blocks)
+    try:
+        return json.loads(joined)
+    except json.JSONDecodeError:
+        pass
+
+    decoded: list[Any] = []
+    for block in text_blocks:
+        try:
+            decoded.append(json.loads(block))
+        except json.JSONDecodeError:
+            decoded.append(block)
+    if len(decoded) == 1:
+        return decoded[0]
+    return decoded
 
 
-_client: Optional[MeridianMemoryMCPClient] = None
-
-
-def get_memory_mcp_client() -> MeridianMemoryMCPClient:
-    global _client
-    if _client is None:
-        _client = MeridianMemoryMCPClient()
-    return _client
-
-
+# Per-turn subprocess (see concierge_mcp_client.py for rationale).
 @asynccontextmanager
 async def memory_mcp_session():
-    client = get_memory_mcp_client()
+    client = MeridianMemoryMCPClient()
     try:
         await client.connect()
         yield client
     finally:
-        # keep alive for reuse — the demo is single-process
-        pass
+        try:
+            await client.disconnect()
+        except Exception as exc:
+            logger.warning("memory MCP disconnect raised: %s", exc)
+
+
+def get_memory_mcp_client() -> MeridianMemoryMCPClient:
+    """Backward-compat shim - new code should use `memory_mcp_session()`."""
+    return MeridianMemoryMCPClient()

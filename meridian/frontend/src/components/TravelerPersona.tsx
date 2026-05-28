@@ -1,10 +1,13 @@
 /* eslint-disable react-refresh/only-export-components */
 /**
- * TravelerPersona — demo traveler identity + Aurora-backed memory (Phase 4)
+ * TravelerPersona — traveler identity + Aurora-backed memory (Production mode).
+ *
+ * Facts and profile load live from GET /api/memory/{traveler_id}. No fixture
+ * memory data — the identity label below is the seeded traveler (Alex Morgan),
+ * everything else renders from Aurora.
  */
 import { useEffect, useState } from 'react';
 import { fetchMemoryProfile } from '../api/client';
-import { DEMO_MEMORY_FACTS, DEMO_TRAVELER } from '../lib/proDemoData';
 import type { LongTermMemoryFact, TravelerProfile } from '../types';
 
 export const DEMO_TRAVELER_ID = 'trv_meridian_demo';
@@ -18,10 +21,13 @@ export function personaInitials(fullName: string): string {
     .join('');
 }
 
-export const DEMO_PERSONA_INITIALS = personaInitials('Alex & Jordan Chen');
+export const DEMO_PERSONA_INITIALS = personaInitials('Alex Morgan');
 
+/** Seeded traveler identity shown before live `/api/memory` resolves.
+ *  Identity only — preference facts always come from Aurora. */
 export const DEMO_PERSONA_FALLBACK: TravelerProfile = {
-  ...DEMO_TRAVELER,
+  full_name: 'Alex Morgan',
+  home_airport: 'BOS',
   party_size: 2,
   seat_preference: 'Window on short-haul · aisle on long-haul',
 };
@@ -46,7 +52,7 @@ export function TravelerPersona({
   const [profile, setProfile] = useState<TravelerProfile>(
     profileProp ?? DEMO_PERSONA_FALLBACK,
   );
-  const [facts, setFacts] = useState<LongTermMemoryFact[]>(factsProp ?? DEMO_MEMORY_FACTS);
+  const [facts, setFacts] = useState<LongTermMemoryFact[]>(factsProp ?? []);
 
   useEffect(() => {
     if (profileProp) setProfile(profileProp);
@@ -62,7 +68,7 @@ export function TravelerPersona({
       })
       .catch(() => {
         setProfile(DEMO_PERSONA_FALLBACK);
-        setFacts(DEMO_MEMORY_FACTS);
+        setFacts([]);
       });
   }, [travelerId, profileProp, factsProp]);
 
@@ -90,7 +96,7 @@ export function TravelerPersona({
         <div className="traveler-persona-head">
           <div>
             <div className="traveler-persona-eyebrow">
-              {active ? 'Demo traveler · Phase 4 production' : 'Demo traveler · switch to Phase 4'}
+              {active ? 'Traveler · Production mode' : 'Traveler · switch to Production'}
             </div>
             <div className="traveler-persona-name">{name}</div>
           </div>
@@ -119,7 +125,7 @@ export function TravelerPersona({
         )}
         {!active && onActivate && (
           <button type="button" className="traveler-persona-cta" onClick={onActivate}>
-            Chat as Alex & Jordan → Phase 4
+            Chat as Alex Morgan → Production
           </button>
         )}
       </div>

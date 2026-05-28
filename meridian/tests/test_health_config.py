@@ -7,7 +7,7 @@ from backend.main import app
 
 
 def test_bedrock_model_label_opus():
-    assert bedrock_model_label("global.anthropic.claude-opus-4-7") == "Claude Opus 4.7"
+    assert bedrock_model_label("global.anthropic.claude-opus-4-8") == "Claude Opus 4.8"
 
 
 def test_bedrock_model_label_sonnet():

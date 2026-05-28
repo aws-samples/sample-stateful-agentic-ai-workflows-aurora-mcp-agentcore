@@ -35,6 +35,74 @@
   font-feature-settings: "tnum", "ss01";
 }
 
+/* Page-level error boundary fallback. Shown when a render crash would
+   otherwise blank the showcase. */
+.mds-error-screen {
+  min-height: 100vh;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: linear-gradient(140deg, #030812 0%, #061323 44%, #0a111f 70%, #130c10 100%);
+  color: var(--mds-ink);
+  font-family: var(--mds-font);
+}
+
+.mds-error-card {
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 28px 30px;
+  border: 1px solid rgba(255, 129, 95, 0.32);
+  border-radius: 16px;
+  background: rgba(8, 14, 22, 0.92);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+}
+
+.mds-error-card h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+}
+
+.mds-error-card p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.mds-error-card pre {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.42);
+  color: #ffd1c6;
+  font-family: var(--mds-font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.mds-error-card button {
+  align-self: flex-start;
+  min-height: 38px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  color: #06232a;
+  background: linear-gradient(180deg, #58e8f2, #29c8db);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(49, 212, 228, 0.32);
+}
+
 .mds-fullbleed-route {
   min-height: 100vh;
   width: 100%;
@@ -484,13 +552,24 @@
 
 .mds-message {
   display: grid;
-  /* Bubbles cap at ~70% so dialogue reads like Claude / ChatGPT — wide
-     enough for substantive replies, short enough to feel conversational. */
+  /* User chips stay capped so right-aligned questions read like a
+     concise prompt rather than a banner. Bot turns widen below — see
+     `.mds-message.bot` — so reply text and any inline product grid
+     share the same left/right edge. */
   max-width: min(680px, 72%);
   gap: 4px;
   /* Slide + fade in for every new bubble — gives the abrupt "snap" of a
      React re-render the natural feel of a streaming chat. */
   animation: mds-msg-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Bot turns always take the full transcript width — text-only and
+   product turns share the same edge so the conversation column never
+   appears half-width on plain replies and full-width on product replies.
+   Inside the bubble, react-markdown content keeps its own padding/line
+   length so paragraphs still read at conversational measure. */
+.mds-message.bot {
+  max-width: 100%;
 }
 
 @keyframes mds-msg-in {
@@ -558,6 +637,148 @@
 
 .mds-message-text {
   display: block;
+}
+
+/* react-markdown output for bot replies. Tight vertical rhythm, cyan
+   bullet markers, white-bold emphasis - matches the rest of the
+   showcase typography. */
+.mds-md > * {
+  margin: 0;
+}
+
+.mds-md > * + * {
+  margin-top: 10px;
+}
+
+.mds-md p {
+  line-height: 1.55;
+}
+
+.mds-md ul,
+.mds-md ol {
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Custom-styled bullets: small cyan dot via ::marker so they stay
+   aligned with the line-height even on multi-line list items. */
+.mds-md ul {
+  list-style: none;
+}
+
+.mds-md ul > li {
+  position: relative;
+  padding-left: 4px;
+  line-height: 1.55;
+}
+
+.mds-md ul > li::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: 0.65em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(49, 212, 228, 0.78);
+}
+
+.mds-md ol {
+  list-style-position: outside;
+}
+
+.mds-md ol > li {
+  line-height: 1.55;
+}
+
+.mds-md ol > li::marker {
+  color: rgba(49, 212, 228, 0.78);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.mds-md strong {
+  color: #ffffff;
+  font-weight: 680;
+}
+
+.mds-md em {
+  color: rgba(255, 255, 255, 0.82);
+  font-style: italic;
+}
+
+.mds-md code {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d4f9ff;
+  font-family: var(--mds-font-mono);
+  font-size: 0.92em;
+}
+
+.mds-md pre {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.42);
+  overflow-x: auto;
+}
+
+.mds-md pre code {
+  padding: 0;
+  background: transparent;
+  color: #d4f9ff;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+.mds-md a {
+  color: var(--mds-cyan);
+  text-decoration: underline;
+  text-decoration-color: rgba(49, 212, 228, 0.5);
+  text-underline-offset: 3px;
+}
+
+.mds-md a:hover {
+  text-decoration-color: var(--mds-cyan);
+}
+
+.mds-md blockquote {
+  margin: 0;
+  padding: 6px 12px;
+  border-left: 3px solid rgba(49, 212, 228, 0.5);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.85);
+  border-radius: 0 8px 8px 0;
+}
+
+.mds-md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.mds-md th,
+.mds-md td {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.mds-md th {
+  color: rgba(255, 255, 255, 0.72);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 11.5px;
+}
+
+.mds-md hr {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 /* Compact result chip baked into bot bubbles that returned products.
@@ -632,6 +853,222 @@
   animation: mds-pulse 1.4s ease-in-out infinite;
 }
 
+.mds-msg-result-chip-caret {
+  display: inline-flex;
+  margin-left: 2px;
+  color: rgba(231, 250, 255, 0.7);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mds-msg-result-chip.is-active .mds-msg-result-chip-caret {
+  transform: rotate(180deg);
+  color: #ffffff;
+}
+
+/* Inline product grid revealed when the per-turn chip is expanded.
+   Slides out below the chip with a stagger so the cards feel like
+   they're flowing out of the chip itself. */
+.mds-msg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+  animation: mds-msg-grid-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes mds-msg-grid-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mds-msg-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: block;
+  height: 220px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(8, 14, 21, 0.82), rgba(6, 11, 18, 0.94));
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
+  animation: mds-msg-card-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.mds-msg-card:hover,
+.mds-msg-card:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.42);
+  outline: none;
+}
+
+.mds-msg-card.is-selected {
+  border-color: rgba(49, 212, 228, 0.55);
+  box-shadow: 0 0 0 1px rgba(49, 212, 228, 0.32),
+              0 18px 40px rgba(0, 0, 0, 0.5);
+}
+
+@keyframes mds-msg-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mds-msg-card-img {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.mds-msg-card-img .mds-trip-visual {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.mds-msg-card-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(3, 8, 14, 0) 0%,
+    rgba(3, 8, 14, 0) 36%,
+    rgba(3, 8, 14, 0.36) 58%,
+    rgba(3, 8, 14, 0.82) 84%,
+    rgba(2, 6, 10, 0.94) 100%
+  );
+}
+
+.mds-msg-card-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 12px 12px 11px;
+  color: #ffffff;
+}
+
+.mds-msg-card-match {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 7px;
+  border: 1px solid rgba(55, 210, 157, 0.4);
+  border-radius: 999px;
+  background: rgba(8, 24, 18, 0.78);
+  backdrop-filter: blur(6px);
+  color: #b9f3d8;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mds-msg-card-match-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mds-green);
+  box-shadow: 0 0 6px rgba(55, 210, 157, 0.7);
+}
+
+.mds-msg-card-title {
+  display: block;
+  margin-top: 2px;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.018em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+.mds-msg-card-sub {
+  display: block;
+  color: #c9d4de;
+  font-size: 11.5px;
+  font-weight: 500;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+}
+
+.mds-msg-card-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.mds-msg-card-price {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+}
+
+.mds-msg-card-price span {
+  display: block;
+  margin-bottom: 1px;
+  color: rgba(220, 232, 240, 0.7);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mds-msg-card-price b {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+.mds-msg-card-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.mds-msg-card-actions button {
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 7px;
+  color: #f3f9ff;
+  background: rgba(10, 18, 26, 0.62);
+  backdrop-filter: blur(6px);
+  font-size: 10.5px;
+  font-weight: 620;
+}
+
+.mds-msg-card-actions button:hover:not(:disabled) {
+  border-color: rgba(49, 212, 228, 0.55);
+  background: rgba(15, 36, 44, 0.78);
+}
+
 .mds-running-dot {
   width: 7px;
   height: 7px;
@@ -658,6 +1095,32 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+  /* Cards fade up gently after the chat reply finishes streaming, so
+     they don't pop in alongside half-typed text. */
+  animation: mds-rec-in 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mds-rec-card {
+  /* Stagger each card by ~70ms via animation-delay so they cascade
+     instead of all sliding up at once. */
+  animation: mds-rec-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mds-rec-card:nth-child(2) { animation-delay: 70ms; }
+.mds-rec-card:nth-child(3) { animation-delay: 140ms; }
+.mds-rec-card:nth-child(4) { animation-delay: 200ms; }
+.mds-rec-card:nth-child(5) { animation-delay: 260ms; }
+.mds-rec-card:nth-child(6) { animation-delay: 320ms; }
+
+@keyframes mds-rec-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .mds-rec-card {
@@ -1487,6 +1950,86 @@
 
 .mds-traveler-panel {
   padding: 16px;
+  /* Smooth resize so the trace panel below visibly grows when the user
+     collapses For-you. The bottom margin / border transition makes it
+     feel like the strip is settling into the rail rather than popping. */
+  transition: padding 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Collapsed state: only the header strip is rendered (the children below
+   `.mds-panel-head` are conditionally unmounted by the React component).
+   We tighten the padding so the strip reads as a single row, and remove
+   the bottom border on the head so it visually fuses with the trace
+   panel beneath. */
+.mds-traveler-panel.is-collapsed {
+  padding: 12px 16px;
+  flex: 0 0 auto;
+}
+
+.mds-traveler-panel.is-collapsed .mds-panel-head {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* Inline header button that wraps the title + chevron. Click anywhere
+   on it to toggle. The chevron rotates 180° in the collapsed state so
+   the affordance reads as "click to expand" / "click to collapse". */
+.mds-collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mds-collapse-toggle:hover .mds-collapse-chevron,
+.mds-collapse-toggle:focus-visible .mds-collapse-chevron {
+  color: #fff;
+}
+
+.mds-collapse-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.04);
+  /* Animate color/background only. The rotate is driven by the SVG's
+     own transform on .mds-collapse-chevron-inner so the wrapping span's
+     layout never animates — that was confusing the engine into snapping
+     the rotate back to identity at the end of the transition. */
+  transition: color 180ms ease, background 180ms ease;
+}
+
+/* Inner wrapper for the SVG so we can rotate WITHOUT touching the span's
+   layout transform. Inline-block + transition on this child gives a
+   smooth, reliable rotate without the span-level glitch. */
+.mds-collapse-chevron-inner {
+  display: inline-flex;
+  transform-origin: 50% 50%;
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mds-traveler-panel.is-collapsed .mds-collapse-chevron-inner {
+  transform: rotate(-90deg);
+}
+
+/* (Rotation now lives on .mds-collapse-chevron-inner — see above.) */
+
+.mds-collapse-hint {
+  margin-left: 4px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
 }
 
 .mds-panel-head {

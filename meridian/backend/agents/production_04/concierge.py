@@ -100,6 +100,9 @@ class ProductionAgent:
                 activity_type=activity_type,
                 title=title,
                 details=details,
+                # Pass the SQL through so the showcase's SQL tab can pick
+                # it up. Defaults to None when the span isn't a DB call.
+                sql_query=kwargs.get("sql_query"),
                 agent_name=kwargs.get("agent_name", "ProductionAgent"),
                 agent_file=self.AGENT_FILE,
                 telemetry=kwargs.get("telemetry"),
@@ -262,6 +265,11 @@ class ProductionAgent:
                 details=(
                     f"app.current_traveler_id={traveler_id} · "
                     f"app.agent_type=concierge_agent"
+                ),
+                sql_query=(
+                    f"-- RLS scope GUCs set inside the transaction\n"
+                    f"SET LOCAL app.current_traveler_id = '{traveler_id}';\n"
+                    f"SET LOCAL app.agent_type = 'concierge_agent';"
                 ),
                 telemetry={
                     "category": "security",
@@ -431,6 +439,36 @@ class ProductionAgent:
 
             await self.traveler_memory.persist_turn(
                 traveler_id, conv_id, message, response_message, shown
+            )
+            self._log(
+                "tool_call",
+                "Strands @tool persist_turn",
+                details=(
+                    f"Wrote 2 messages + 1 trip_interaction inside RLS "
+                    f"transaction · {len(shown)} packages shown"
+                ),
+                sql_query=(
+                    "-- Inside the same RLS transaction:\n"
+                    "INSERT INTO conversation_messages "
+                    "(message_id, conversation_id, role, content, embedding)\n"
+                    "  VALUES (..., ..., 'user', $1, $2::vector);\n"
+                    "INSERT INTO conversation_messages "
+                    "(message_id, conversation_id, role, content, embedding)\n"
+                    "  VALUES (..., ..., 'assistant', $3, $4::vector);\n"
+                    "INSERT INTO trip_interactions "
+                    "(interaction_id, traveler_id, conversation_id,\n"
+                    " query_text, response_summary, packages_shown, embedding)\n"
+                    "  VALUES (..., $5, ..., $1, $3, $6::jsonb, $2::vector);"
+                ),
+                telemetry={
+                    "category": "memory_short",
+                    "component": "Aurora write path · scoped_session",
+                    "status": "ok",
+                    "fields": [
+                        {"label": "table", "value": "conversation_messages + trip_interactions"},
+                        {"label": "rls.traveler_id", "value": traveler_id, "mono": True},
+                    ],
+                },
             )
 
             # Mirror the turn into AgentCore Memory so the managed service has

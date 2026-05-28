@@ -42,7 +42,7 @@ import { sendChatMessage } from '../api/client';
 import type { StageScenario, StageSpan, StageSystemId, StageView } from './types';
 import type { Phase } from '../types';
 
-const KIOSK_SCENARIO_ORDER: StageScenario['id'][] = ['wine', 'family', 'business'];
+const KIOSK_SCENARIO_ORDER: StageScenario['id'][] = ['beach', 'recall', 'plan'];
 const KIOSK_DWELL_MS = 6500;
 const KIOSK_GITHUB_REPO = 'https://github.com/aws-samples/sample-dat309-agentic-workflows-aurora-mcp';
 const ARCHITECTURE_IMAGE_SRC = '/kiosk/architecture-board.png';
@@ -428,10 +428,10 @@ uvicorn backend.main:app --reload --port 8000`}
                     <div className="ds-kiosk-meta-block">
                       <div className="ds-kiosk-link-label">Strands + LangGraph</div>
                       <pre className="ds-kiosk-snippet">
-{`# Retrieval (Phase 3)
+{`# Retrieval
 supervisor -> SearchAgent._semantic_search_tool(...)
 
-# Orchestration (Phase 5)
+# Workflow (LangGraph)
 StateGraph: classify -> branch -> synthesize`}
                       </pre>
                     </div>

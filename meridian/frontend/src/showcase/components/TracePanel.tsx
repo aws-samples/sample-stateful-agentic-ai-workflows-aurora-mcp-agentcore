@@ -162,9 +162,78 @@ export function TracePanel({ state, compact = false }: { state: MeridianShowcase
           <button type="button" onClick={state.replayLastPrompt} disabled={!state.lastPrompt || state.isLoading}>
             Rerun query
           </button>
+          <CopyTraceButton state={state} />
         </div>
       )}
     </section>
+  );
+}
+
+// Copies the active turn's trace as pretty-printed JSON to the clipboard.
+// Hugely useful when a presenter wants to paste a trace into a debugging
+// thread or back into a chat for analysis. Shows a 2-second "Copied"
+// confirmation so the user knows the action took.
+function CopyTraceButton({ state }: { state: MeridianShowcaseState }) {
+  const [copied, setCopied] = useState(false);
+  const disabled = !state.traceSpans.length;
+
+  const onCopy = async () => {
+    if (disabled) return;
+    const payload = {
+      prompt: state.lastPrompt,
+      phase: state.phaseLabel,
+      model: state.modelLabel,
+      embed: state.embedLabel,
+      total_latency_ms: state.totalLatencyMs,
+      estimated_cost_usd: Number(state.estimatedCostUsd.toFixed(6)),
+      span_count: state.traceSpans.length,
+      spans: state.traceSpans.map((span) => ({
+        index: state.traceSpans.indexOf(span) + 1,
+        name: span.name,
+        category: span.category,
+        type: span.type,
+        status: span.status,
+        latency_ms: span.latencyMs,
+        agent: span.agent,
+        file: span.file,
+        component: span.component,
+        sql: span.sql,
+        details: span.details,
+        fields: span.fields,
+        cost_usd: span.costUsd,
+      })),
+    };
+    const text = JSON.stringify(payload, null, 2);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for browsers that don't expose the async clipboard API.
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      disabled={disabled}
+      title="Copy this turn's trace as JSON"
+    >
+      {copied ? 'Copied' : 'Copy trace'}
+    </button>
   );
 }
 

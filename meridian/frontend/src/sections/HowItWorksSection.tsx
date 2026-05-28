@@ -1,7 +1,7 @@
 /**
  * HowItWorksSection — Meridian Pro Journey rail
  *
- * Five-stop journey (SQL → MCP → Retrieval → Memory → Orchestration)
+ * Five-stop journey (SQL → MCP → Retrieval → Production → Workflow)
  * with done / live / next states.
  */
 import { FadeIn } from '../components/FadeIn';
@@ -30,7 +30,7 @@ const steps: JourneyStep[] = [
     desc: 'The lab. Direct RDS Data API. Fast for exact matches — and it breaks on "romantic week in Europe."',
     chips: ['RDS Data API', 'SQL · WHERE'],
     scale: '~50 trips/day · two founders, one ops console',
-    persona: 'Alex types "Beach & Resort under $1500" — a SQL WHERE clause returns 3 packages.',
+    persona: 'Alex types "Beach & Resort under $1500" — a SQL WHERE clause returns 3 packages. "Romantic slow week with great wine" returns zero.',
     skills: ['sql_filter'],
   },
   {
@@ -38,44 +38,44 @@ const steps: JourneyStep[] = [
     ph: PHASE_JOURNEY_SUB[2],
     title: 'MCP',
     serif: '',
-    desc: 'MCP changes the interface, not the intelligence. Typed tool, IAM auth — same gap on natural language.',
-    chips: ['postgres-mcp-server', 'tool registry'],
+    desc: 'Two MCP servers in one turn. postgres-mcp wraps the catalog; meridian-concierge adds domain tools (compare_packages, currency_convert, seasonal_price_band). Typed schemas, IAM auth — but intent still loses.',
+    chips: ['postgres-mcp', 'meridian-concierge', 'tool registry'],
     scale: '~500 trips/day · booking, pricing, and support agents share one catalog',
-    persona: 'Three agents, one Aurora. None of them re-implement the SQL — but "romantic" still misses.',
-    skills: ['run_query'],
+    persona: '"Compare top trips in EUR" routes to compare_packages + currency_convert. "Cheapest month for Tokyo" hits seasonal_price_band. Same Bedrock turn calls both servers — but a romantic-wine prompt still has nothing to keyword on.',
+    skills: ['run_query', 'compare_packages', 'currency_convert', 'seasonal_price_band'],
   },
   {
     num: '03',
     ph: PHASE_JOURNEY_SUB[3],
     title: 'Retrieval',
     serif: '',
-    desc: 'Where natural language works. Cohere Embed v4 + hybrid pgvector + tsvector. Strands supervisor delegates to specialists.',
-    chips: ['pgvector HNSW', 'tsvector', 'Cohere v4', 'Strands supervisor'],
+    desc: 'Where intent finally lands. Cohere Embed v4 + hybrid pgvector + tsvector + Cohere Rerank 3.5. Strands supervisor delegates to SearchAgent / PackageAgent. Memory recall remains out of scope — that gap motivates Production.',
+    chips: ['pgvector HNSW', 'tsvector', 'Cohere v4', 'Cohere Rerank', 'Strands supervisor'],
     scale: '~5,000 trips/day · customer-facing natural language',
-    persona: 'Alex: "romantic week in Europe." Keywords would miss; embeddings find Tuscany.',
-    skills: ['search', 'availability', 'booking'],
+    persona: 'Alex: "A romantic slow week somewhere with great wine." pgvector + Cohere Rerank surface Tuscany Wine & Wellness. Then Alex asks "Pick up where we left off" — Retrieval honestly says no.',
+    skills: ['semantic_search', 'availability', 'rerank'],
   },
   {
     num: '04',
     ph: PHASE_JOURNEY_SUB[4],
-    title: 'Memory',
+    title: 'Production',
     serif: '',
-    desc: 'The production concierge: AgentCore Runtime hosts the session, Gateway serves MCP tools, Memory mirrors events, and Aurora RLS scopes every query. Alex & Jordan\'s Tokyo dates and shellfish allergy live in traveler_preferences — not in the prompt.',
+    desc: 'The production concierge: AgentCore Runtime hosts the session, Gateway serves MCP tools, Memory mirrors events, and Aurora RLS scopes every query. Alex\'s Tokyo Oct 12-19 thread, shellfish allergy, and boutique-over-chain preference live in traveler_preferences — not in the prompt.',
     chips: ['AgentCore Runtime', 'AgentCore Gateway', 'AgentCore Memory', 'Aurora RLS'],
     scale: '~50,000 trips/day · returning travelers expect to be known',
-    persona: 'Alex returns: "Tokyo for two in October." Party size, allergy, budget — already known.',
-    skills: ['recall_session', 'recall_facts', 'similar_trips', 'persist_turn'],
+    persona: 'Alex asks "Family-friendly beach + snorkeling," then "Pick up where we left off." The recall lands because conversation_messages and trip_interactions sit behind Aurora RLS for trv_meridian_demo.',
+    skills: ['recall_session', 'recall_preferences', 'recall_similar_interactions', 'persist_turn'],
   },
   {
     num: '05',
     ph: PHASE_JOURNEY_SUB[5],
-    title: 'Orchestration',
+    title: 'Workflow',
     serif: '',
-    desc: 'LangGraph owns control flow when we want it inspectable, branchable, resumable. Explicit StateGraph + conditional edges + PostgresSaver checkpoints in Aurora. Strands routes tools when the agent picks the call. Together: AgentCore + LangGraph + Strands.',
+    desc: 'LangGraph owns control flow when we want it inspectable, branchable, resumable. Explicit StateGraph (classify → search → availability → memory_recall → synthesize) with PostgresSaver checkpoints in Aurora. Production chained three jobs implicitly inside one Bedrock turn — Workflow routes the same query through named nodes so each step is debuggable and resumable.',
     chips: ['LangGraph', 'StateGraph', 'PostgresSaver', 'AgentCore'],
     scale: '~500,000 trips/day · multi-step workflows that span weeks',
-    persona: 'Alex: "Watch our Tokyo dates and rebook the hotel if we slip a week." Checkpointed in Aurora.',
-    skills: ['classify', 'checkpoint', 'synthesize'],
+    persona: 'Alex: "Plan our October Tokyo trip — find dates, pick a Marriott property, hold a Kyoto side trip." Same intent as Production, but each step lands in its own checkpointed node.',
+    skills: ['classify', 'search', 'availability', 'memory_recall', 'synthesize'],
   },
 ];
 
@@ -101,8 +101,8 @@ export function HowItWorksSection() {
       <FadeIn>
         <div className="mp-section-h-row">
           <div className="mp-section-h">
-            <div className="mp-label-row">Five phases</div>
-            <h2>SQL → MCP → retrieval → memory → orchestration.</h2>
+            <div className="mp-label-row">Five modes</div>
+            <h2>SQL → MCP → Retrieval → Production → Workflow.</h2>
             <p>
               Five steps on one Aurora catalog — each phase adds capability without throwing away
               the last. Filters and MCP for structured access, hybrid search for intent, a production
@@ -155,7 +155,7 @@ export function HowItWorksSection() {
                     <span className="arc-text">{s.scale}</span>
                   </div>
                   <div className="arc-row">
-                    <span className="arc-label">Alex &amp; Jordan</span>
+                    <span className="arc-label">Alex Morgan</span>
                     <span className="arc-text">{s.persona}</span>
                   </div>
                   <div className="arc-row">

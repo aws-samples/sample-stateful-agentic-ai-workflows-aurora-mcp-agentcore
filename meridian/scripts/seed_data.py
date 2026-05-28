@@ -12,6 +12,7 @@ AWS docs:
 import json
 import os
 import uuid
+from urllib.parse import urlparse
 
 import boto3
 from dotenv import load_dotenv
@@ -19,13 +20,32 @@ from rich.console import Console
 from rich.progress import track
 from rich.table import Table
 
-from travel_catalog import (
-    TRIP_PACKAGES,
-    TRAVELERS,
-    TRAVELER_PROFILES,
-    TRAVELER_PREFERENCES,
-    DEMO_TRAVELER_ID,
-)
+try:
+    # Preferred when executed as a module: python -m scripts.seed_data
+    from .travel_catalog import (
+        TRIP_PACKAGES,
+        TRAVELERS,
+        TRAVELER_PROFILES,
+        TRAVELER_PREFERENCES,
+        DEMO_TRAVELER_ID,
+        DEMO_CONVERSATIONS,
+        DEMO_CONVERSATION_MESSAGES,
+        DEMO_TRIP_INTERACTIONS,
+        DEMO_BOOKINGS,
+    )
+except ImportError:
+    # Backward-compatible path when executed as a script: python scripts/seed_data.py
+    from travel_catalog import (
+        TRIP_PACKAGES,
+        TRAVELERS,
+        TRAVELER_PROFILES,
+        TRAVELER_PREFERENCES,
+        DEMO_TRAVELER_ID,
+        DEMO_CONVERSATIONS,
+        DEMO_CONVERSATION_MESSAGES,
+        DEMO_TRIP_INTERACTIONS,
+        DEMO_BOOKINGS,
+    )
 
 load_dotenv()
 console = Console()
@@ -37,6 +57,33 @@ AURORA_REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
 CLUSTER_ARN = os.getenv("AURORA_CLUSTER_ARN")
 SECRET_ARN = os.getenv("AURORA_SECRET_ARN")
 DATABASE = os.getenv("AURORA_DATABASE", "meridian")
+
+
+def _sanitize_loopback_proxy_env() -> None:
+    """
+    Remove stale loopback proxy settings (common in IDE/sandbox shells).
+
+    These values often look like http://127.0.0.1:56xxx and can cause
+    ProxyConnectionError for boto3 calls if the local proxy process is gone.
+    We only clear loopback proxies; non-loopback corporate proxies are preserved.
+    """
+    proxy_keys = [
+        "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+        "http_proxy", "https_proxy", "all_proxy",
+    ]
+    for key in proxy_keys:
+        value = os.environ.get(key)
+        if not value:
+            continue
+        try:
+            host = (urlparse(value).hostname or "").lower()
+        except Exception:
+            host = ""
+        if host in {"127.0.0.1", "localhost", "::1"}:
+            os.environ.pop(key, None)
+
+
+_sanitize_loopback_proxy_env()
 
 
 def bedrock():
@@ -235,6 +282,184 @@ def seed_travelers():
         )
 
 
+def _embed_search_query(client, text: str) -> list[float]:
+    """Embed conversational text. Use input_type='search_query' so the
+    vector lives in the same space as trip_packages.embedding (which use
+    search_document). Cohere Embed v4 separates these two."""
+    body = {
+        "texts": [text],
+        "input_type": "search_query",
+        "embedding_types": ["float"],
+        "truncate": "RIGHT",
+        "output_dimension": EMBEDDING_DIMENSION,
+    }
+    resp = client.invoke_model(
+        modelId=EMBEDDING_MODEL_ID,
+        body=json.dumps(body),
+        contentType="application/json",
+        accept="application/json",
+    )
+    return json.loads(resp["body"].read())["embeddings"]["float"][0]
+
+
+def _vec_str(vec: list[float]) -> str:
+    return "[" + ",".join(str(x) for x in vec) + "]"
+
+
+def seed_conversations(bedrock_client):
+    # Parent rows first.
+    for conv in DEMO_CONVERSATIONS:
+        run_sql(
+            """
+            INSERT INTO conversations (
+                conversation_id, traveler_id, started_at, last_message_at,
+                message_count, summary
+            ) VALUES (
+                :conversation_id, :traveler_id, :started_at::timestamp,
+                :last_message_at::timestamp, :message_count, :summary
+            )
+            ON CONFLICT (conversation_id) DO UPDATE SET
+                last_message_at = EXCLUDED.last_message_at,
+                message_count = EXCLUDED.message_count,
+                summary = EXCLUDED.summary
+            """,
+            [
+                {"name": "conversation_id", "value": {"stringValue": conv["conversation_id"]}},
+                {"name": "traveler_id", "value": {"stringValue": DEMO_TRAVELER_ID}},
+                {"name": "started_at", "value": {"stringValue": conv["started_at"]}},
+                {"name": "last_message_at", "value": {"stringValue": conv["last_message_at"]}},
+                {
+                    "name": "message_count",
+                    "value": {
+                        "longValue": sum(
+                            1 for m in DEMO_CONVERSATION_MESSAGES
+                            if m["conversation_id"] == conv["conversation_id"]
+                        )
+                    },
+                },
+                {"name": "summary", "value": {"stringValue": conv["summary"]}},
+            ],
+        )
+
+    # Messages, with embeddings so semantic recall works on first turn.
+    for i, msg in enumerate(track(
+        DEMO_CONVERSATION_MESSAGES, description="Conversation messages",
+    )):
+        msg_id = f"msg_{i:03d}_{uuid.uuid4().hex[:6]}"
+        vec = _embed_search_query(bedrock_client, msg["content"])
+        # Compute timestamp as conversation.started_at + offset_minutes
+        # so the messages within a thread are correctly ordered by time.
+        conv = next(c for c in DEMO_CONVERSATIONS if c["conversation_id"] == msg["conversation_id"])
+        run_sql(
+            """
+            INSERT INTO conversation_messages (
+                message_id, conversation_id, role, content, embedding, created_at
+            ) VALUES (
+                :message_id, :conversation_id, :role, :content,
+                :embedding::vector,
+                (:base::timestamp + (:offset_min || ' minutes')::interval)
+            )
+            """,
+            [
+                {"name": "message_id", "value": {"stringValue": msg_id}},
+                {"name": "conversation_id", "value": {"stringValue": msg["conversation_id"]}},
+                {"name": "role", "value": {"stringValue": msg["role"]}},
+                {"name": "content", "value": {"stringValue": msg["content"]}},
+                {"name": "embedding", "value": {"stringValue": _vec_str(vec)}},
+                {"name": "base", "value": {"stringValue": conv["started_at"]}},
+                {"name": "offset_min", "value": {"stringValue": str(msg["offset_minutes"])}},
+            ],
+        )
+
+
+def seed_trip_interactions(bedrock_client):
+    for it in track(DEMO_TRIP_INTERACTIONS, description="Trip interactions"):
+        # Embed the query_text so semantic_recall_interactions can match
+        # new prompts to past intents by meaning.
+        vec = _embed_search_query(bedrock_client, it["query_text"])
+        params = [
+            {"name": "interaction_id", "value": {"stringValue": it["interaction_id"]}},
+            {"name": "traveler_id", "value": {"stringValue": DEMO_TRAVELER_ID}},
+            {"name": "query_text", "value": {"stringValue": it["query_text"]}},
+            {"name": "response_summary", "value": {"stringValue": it["response_summary"]}},
+            {"name": "packages_shown", "value": {"stringValue": json.dumps(it["packages_shown"])}},
+            {"name": "embedding", "value": {"stringValue": _vec_str(vec)}},
+        ]
+        if it.get("conversation_id"):
+            params.append({"name": "conversation_id", "value": {"stringValue": it["conversation_id"]}})
+            run_sql(
+                """
+                INSERT INTO trip_interactions (
+                    interaction_id, traveler_id, conversation_id,
+                    query_text, response_summary, packages_shown, embedding
+                ) VALUES (
+                    :interaction_id, :traveler_id, :conversation_id,
+                    :query_text, :response_summary, :packages_shown::jsonb,
+                    :embedding::vector
+                )
+                """,
+                params,
+            )
+        else:
+            run_sql(
+                """
+                INSERT INTO trip_interactions (
+                    interaction_id, traveler_id,
+                    query_text, response_summary, packages_shown, embedding
+                ) VALUES (
+                    :interaction_id, :traveler_id,
+                    :query_text, :response_summary, :packages_shown::jsonb,
+                    :embedding::vector
+                )
+                """,
+                params,
+            )
+
+
+def seed_bookings():
+    for bk in DEMO_BOOKINGS:
+        run_sql(
+            """
+            INSERT INTO bookings (
+                booking_id, traveler_id, status, total_amount, created_at, confirmed_at
+            ) VALUES (
+                :booking_id, :traveler_id, :status, :total_amount,
+                :created_at::timestamp,
+                CASE WHEN :confirmed_at = '' THEN NULL ELSE :confirmed_at::timestamp END
+            )
+            ON CONFLICT (booking_id) DO UPDATE SET
+                status = EXCLUDED.status,
+                total_amount = EXCLUDED.total_amount,
+                confirmed_at = EXCLUDED.confirmed_at
+            """,
+            [
+                {"name": "booking_id", "value": {"stringValue": bk["booking_id"]}},
+                {"name": "traveler_id", "value": {"stringValue": DEMO_TRAVELER_ID}},
+                {"name": "status", "value": {"stringValue": bk["status"]}},
+                {"name": "total_amount", "value": {"doubleValue": float(bk["total_amount"])}},
+                {"name": "created_at", "value": {"stringValue": bk["created_at"]}},
+                {"name": "confirmed_at", "value": {"stringValue": bk.get("confirmed_at") or ""}},
+            ],
+        )
+        for ln in bk["lines"]:
+            run_sql(
+                """
+                INSERT INTO booking_lines (
+                    booking_id, package_id, duration, travelers_count, unit_price
+                ) VALUES (
+                    :booking_id, :package_id, :duration, :travelers_count, :unit_price
+                )
+                """,
+                [
+                    {"name": "booking_id", "value": {"stringValue": bk["booking_id"]}},
+                    {"name": "package_id", "value": {"stringValue": ln["package_id"]}},
+                    {"name": "duration", "value": {"stringValue": ln["duration"]}},
+                    {"name": "travelers_count", "value": {"longValue": int(ln["travelers_count"])}},
+                    {"name": "unit_price", "value": {"doubleValue": float(ln["unit_price"])}},
+                ],
+            )
+
+
 def main():
     if not CLUSTER_ARN or not SECRET_ARN:
         console.print("[red]Missing Aurora credentials in .env[/red]")
@@ -244,6 +469,9 @@ def main():
     bc = bedrock()
     n = seed_packages(bc)
     seed_travelers()
+    seed_conversations(bc)
+    seed_trip_interactions(bc)
+    seed_bookings()
     table = Table(title="Seed summary")
     table.add_column("Entity")
     table.add_column("Count")
@@ -251,6 +479,13 @@ def main():
     table.add_row("travelers", str(len(TRAVELERS)))
     table.add_row("traveler_profiles", str(len(TRAVELER_PROFILES)))
     table.add_row("traveler_preferences", str(len(TRAVELER_PREFERENCES)))
+    table.add_row("conversations", str(len(DEMO_CONVERSATIONS)))
+    table.add_row("conversation_messages", str(len(DEMO_CONVERSATION_MESSAGES)))
+    table.add_row("trip_interactions", str(len(DEMO_TRIP_INTERACTIONS)))
+    table.add_row(
+        "bookings",
+        f"{len(DEMO_BOOKINGS)} ({sum(len(b['lines']) for b in DEMO_BOOKINGS)} lines)",
+    )
     console.print(table)
 
 

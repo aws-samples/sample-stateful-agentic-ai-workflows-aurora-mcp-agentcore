@@ -24,9 +24,9 @@
       "eventExpiryDuration": 30,
       "strategies": [
         {
-          "type": "SEMANTIC",
+          "type": "SHORT_TERM",
           "namespaceTemplates": [
-            "/users/{actorId}/facts"
+            "/users/{actorId}/sessions/{sessionId}"
           ]
         }
       ]

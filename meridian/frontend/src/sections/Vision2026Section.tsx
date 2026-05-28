@@ -85,7 +85,7 @@ export function Vision2026Section() {
     <section id="vision2026" className="mp-section">
       <FadeIn>
         <div className="mp-section-h" style={{ marginBottom: 40 }}>
-          <div className="mp-label-row">Beyond Phase 5 · what's next</div>
+          <div className="mp-label-row">Beyond Workflow · what's next</div>
           <h2>Memory, runtime, and orchestration.</h2>
           <p style={{ maxWidth: 680 }}>
             Build agentic workflows with Aurora and MCP — contextual memory, multi-turn queries,
@@ -110,8 +110,10 @@ export function Vision2026Section() {
           <div>
             <div className="memory-preview-eyebrow">Wave 01 · Memory of me</div>
             <p className="memory-preview-copy">
-              Meet <strong>Alex & Jordan Chen</strong> — demo travelers from SFO planning a Tokyo culture
-              trip. Agents recall their party size, dates, and dietary needs from Aurora before routing.
+              Meet <strong>Alex Morgan</strong> — a demo traveler from BOS with a held Tokyo culture
+              trip (Oct 12-19) and a booked Tuscany week in Feb 2026. AgentCore Memory recalls the
+              shellfish allergy, no-red-eye rule, boutique-over-chain lodging style, and active
+              loyalty programs from Aurora before routing.
             </p>
           </div>
           <TravelerPersona
@@ -120,7 +122,7 @@ export function Vision2026Section() {
             onActivate={() =>
               openConcierge({
                 phase: 4,
-                prompt: 'Tokyo trip for two in October — use everything you know about us.',
+                prompt: 'What did we discuss last time? Pick up where we left off.',
                 send: true,
               })
             }

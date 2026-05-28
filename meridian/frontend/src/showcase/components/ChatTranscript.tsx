@@ -1,6 +1,29 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { Component, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Message, Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import { TripVisual } from './TripVisual';
+
+// Tiny error boundary so a markdown render crash doesn't take down the
+// whole transcript. Falls back to plain text when react-markdown chokes
+// on a malformed input from the model.
+class MarkdownBoundary extends Component<
+  { children: ReactNode; fallback: ReactNode },
+  { error: boolean }
+> {
+  state = { error: false };
+  static getDerivedStateFromError() {
+    return { error: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.warn('[ChatTranscript] markdown render failed', error);
+  }
+  render() {
+    return this.state.error ? this.props.fallback : this.props.children;
+  }
+}
 
 // Visible turn cap. The transcript supports unlimited history (we keep
 // every turn in state), but at any moment we only render the most recent
@@ -89,14 +112,71 @@ function ChatMessage({
 }) {
   // Only the most-recent bot turn typewriter-streams; older turns render
   // their full text immediately so revisiting history is fast.
+  // RULES OF HOOKS: useTypewriterReveal must be called on every render
+  // (you can't conditionally skip a hook). We always call it; the
+  // `useTypewriter` flag decides whether to *show* the streaming output
+  // or the static text. The hook itself runs unconditionally so React
+  // sees the same hook order every render and never throws
+  // "Cannot read properties of undefined (reading 'length')".
   const text = message.text ?? '';
-  const useTypewriter = isLatestBot && text.length > 0 && text.length < 800;
-  const visible = useTypewriter ? useTypewriterReveal(text) : text;
+  // Stream every latest bot turn regardless of length. The reveal hook
+  // self-caps the duration internally, so even a 2000-char reply lands
+  // in roughly 4-6 seconds — closer to ChatGPT's perceived cadence than
+  // a hard pop. Older turns render their full text immediately so
+  // scrolling history stays fast.
+  const useTypewriter = isLatestBot && text.length > 0;
+  const streamed = useTypewriterReveal(text);
+  const visible = useTypewriter ? streamed : text;
   // Only show the streaming caret once a few characters are revealed AND
   // the stream still has more to go - a caret floating in an empty bubble
   // looks abrupt.
   const isEmptyStream = useTypewriter && visible.length === 0;
+
+  // Notify the hook when the latest bot turn finishes revealing so the
+  // recommendation grid can fade in once the message reads as complete.
+  // Non-typewriter messages are considered complete immediately.
+  const { markLatestStreamComplete } = state;
+  useEffect(() => {
+    if (!isLatestBot) return;
+    if (message.role !== 'bot') return;
+    if (!useTypewriter) {
+      markLatestStreamComplete();
+      return;
+    }
+    if (visible.length >= text.length && text.length > 0) {
+      markLatestStreamComplete();
+    }
+  }, [
+    isLatestBot,
+    message.role,
+    useTypewriter,
+    visible.length,
+    text.length,
+    markLatestStreamComplete,
+  ]);
   const hasInlineProducts = message.role === 'bot' && (message.products?.length ?? 0) > 0;
+  // Per-turn expand state. Each bot bubble owns whether its product
+  // cards are expanded inline - so old turn results stay attached to
+  // the message that produced them and don't vanish when a later turn
+  // arrives. Default expanded for the most recent bot turn (so the
+  // first thing the user sees on a fresh reply is the cards), and
+  // collapsed for older history (so the transcript stays scannable).
+  const [expanded, setExpanded] = useState<boolean>(isLatestBot);
+  // When a turn becomes the latest (e.g. the current latest just got
+  // bumped by a newer bot reply), default older turns to collapsed so
+  // the chat history doesn't become a wall of cards.
+  useEffect(() => {
+    if (!isLatestBot) setExpanded(false);
+  }, [isLatestBot]);
+
+  // Gate the summary chip + inline grid for THIS turn until either:
+  //   (a) it's an older turn (already revealed),
+  //   (b) the typewriter on this latest turn has fully revealed the text.
+  // Without this gate, the cards animate in alongside (or even before)
+  // the streaming text, making the images feel ahead of the reply.
+  // For older turns we always show the chip — they've long since streamed.
+  const productsRevealed = !isLatestBot || state.latestStreamComplete;
+
   const bubbleClass = `mds-message-bubble${hasInlineProducts ? ' has-products' : ''}`;
   const wrapperClass = `mds-message ${message.role}${hasInlineProducts ? ' has-products' : ''}`;
 
@@ -105,14 +185,81 @@ function ChatMessage({
       <div className="mds-message-role">{message.role === 'user' ? 'Alex' : 'Meridian'}</div>
       {!isEmptyStream && (
         <div className={bubbleClass}>
-          <span className="mds-message-text">{visible || ' '}</span>
-          {hasInlineProducts && message.products && (
-            <ProductSummaryChip products={message.products} state={state} />
+          {message.role === 'bot' ? (
+            <MarkdownText source={visible || ' '} />
+          ) : (
+            <span className="mds-message-text">{visible || ' '}</span>
+          )}
+          {hasInlineProducts && message.products && productsRevealed && (
+            <>
+              <ProductSummaryChip
+                products={message.products}
+                state={state}
+                expanded={expanded}
+                onToggle={() => setExpanded((prev) => !prev)}
+              />
+              {expanded && (
+                <InlineProductGrid products={message.products} state={state} />
+              )}
+            </>
           )}
         </div>
       )}
     </div>
   );
+}
+
+// Bot replies render through react-markdown + remark-gfm so the
+// concierge's `**bold**`, bullet lists, ordered lists, blockquotes,
+// inline code, and tables all parse to real DOM nodes - the same
+// stack ChatGPT / Claude.ai / Linear use.
+//
+// We strip emoji codepoints from the source on the way in: the
+// system prompt asks the LLM not to emit them, this is a final
+// safety net so any emoji that slipped through never reaches the DOM.
+function MarkdownText({ source }: { source: string }) {
+  const cleaned = stripEmojis(source);
+  return (
+    <div className="mds-message-text mds-md">
+      <MarkdownBoundary
+        fallback={<p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{cleaned}</p>}
+      >
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          // Disallow raw HTML so an LLM-injected <script> can't reach
+          // the DOM. react-markdown defaults to escaping it, but we
+          // make the contract explicit here.
+          skipHtml
+        >
+          {cleaned}
+        </ReactMarkdown>
+      </MarkdownBoundary>
+    </div>
+  );
+}
+
+// Strip emoji + pictograph characters from the markdown source. The
+// system prompt asks the LLM not to emit them; this is a final safety
+// net so any that slip through never reach the DOM. Uses the standard
+// Unicode "Emoji" property (\p{Emoji}) plus ZWJ and variation selectors
+// that combine multi-char emoji sequences.
+//
+// Some "Emoji" code points are also normal punctuation (#, *, digits,
+// etc.) - the {Emoji_Presentation} property excludes those, so a literal
+// '#' in a markdown heading isn't accidentally stripped. We OR in the
+// extended pictographic set to catch newer / less-common pictographs.
+function stripEmojis(source: string): string {
+  try {
+    return source
+      .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}]/gu, '')
+      .replace(/\u200D/g, '') // zero-width joiner
+      .replace(/\uFE0F/g, '') // variation selector-16
+      .replace(/  +/g, ' ');
+  } catch {
+    // Older runtimes without Unicode property escape support fall back
+    // to a no-op rather than crashing the whole component tree.
+    return source;
+  }
 }
 
 function money(price: number): string {
@@ -126,9 +273,13 @@ function money(price: number): string {
 function ProductSummaryChip({
   products,
   state,
+  expanded,
+  onToggle,
 }: {
   products: Product[];
   state: MeridianShowcaseState;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   const prices = products.map((p) => p.price).filter((n) => Number.isFinite(n));
   const minPrice = prices.length ? Math.min(...prices) : null;
@@ -139,14 +290,19 @@ function ProductSummaryChip({
         ? money(minPrice)
         : `${money(minPrice)} – ${money(maxPrice)}`
       : null;
-  const isActive = state.recommendations[0]?.product_id === products[0]?.product_id;
 
   return (
     <button
       type="button"
-      className={`mds-msg-result-chip${isActive ? ' is-active' : ''}`}
-      onClick={() => state.setSelectedTrip(products[0] ?? null)}
-      title={isActive ? 'These results are showing below' : 'Pin this turn back to focus'}
+      className={`mds-msg-result-chip${expanded ? ' is-active' : ''}`}
+      onClick={() => {
+        // Pin the first product on expand so the right-rail trip
+        // detail drawer reflects this turn's results, then toggle.
+        if (!expanded && products[0]) state.setSelectedTrip(products[0]);
+        onToggle();
+      }}
+      title={expanded ? 'Hide these trips' : 'Show these trips'}
+      aria-expanded={expanded}
     >
       <span className="mds-msg-result-chip-icon" aria-hidden="true">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -159,20 +315,134 @@ function ProductSummaryChip({
         <b>{products.length} {products.length === 1 ? 'trip' : 'trips'}</b>
         {priceRange && <span> · {priceRange}</span>}
       </span>
-      {isActive && <span className="mds-msg-result-chip-dot" aria-hidden="true" />}
+      <span className="mds-msg-result-chip-caret" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </span>
     </button>
   );
 }
 
-// Reveal the text one character (or grapheme-ish chunk) at a time so the
-// chat reads as a flowing stream rather than a hard pop. Always reveals
-// to completion - never gets stuck at the seed even under StrictMode's
-// double-mount-and-cleanup in dev (the previous lastTextRef short-circuit
-// would skip the second mount and leave the bubble stuck at "I f").
+// Inline product grid that slides out below the summary chip when the
+// user expands the bubble. Renders the per-turn products attached to
+// THIS bot message - independent of state.recommendations - so older
+// turns retain their cards even after later turns swap the active set.
+function InlineProductGrid({
+  products,
+  state,
+}: {
+  products: Product[];
+  state: MeridianShowcaseState;
+}) {
+  return (
+    <div className="mds-msg-grid" role="region" aria-label="Trips for this turn">
+      {products.map((product, index) => (
+        <InlineProductCard
+          key={product.product_id}
+          product={product}
+          state={state}
+          index={index}
+        />
+      ))}
+    </div>
+  );
+}
+
+function InlineProductCard({
+  product,
+  state,
+  index,
+}: {
+  product: Product;
+  state: MeridianShowcaseState;
+  index: number;
+}) {
+  const matchPct =
+    product.similarity != null ? Math.round(product.similarity * 100) : null;
+  const saved = state.savedTripIds.has(product.product_id);
+  const selected = state.selectedTrip?.product_id === product.product_id;
+  return (
+    <article
+      className={`mds-msg-card${selected ? ' is-selected' : ''}`}
+      style={{ animationDelay: `${Math.min(index * 60, 360)}ms` }}
+      tabIndex={0}
+      role="button"
+      onClick={() => state.selectTrip(product)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          state.selectTrip(product);
+        }
+      }}
+    >
+      <span className="mds-msg-card-img" aria-hidden="true">
+        <TripVisual product={product} compact />
+      </span>
+      <span className="mds-msg-card-fade" aria-hidden="true" />
+      <span className="mds-msg-card-overlay">
+        {matchPct != null && (
+          <span className="mds-msg-card-match">
+            <span className="mds-msg-card-match-dot" aria-hidden="true" />
+            {matchPct}% match
+          </span>
+        )}
+        <span className="mds-msg-card-title">{product.name}</span>
+        <span className="mds-msg-card-sub">{product.brand}</span>
+        <span className="mds-msg-card-row">
+          <span className="mds-msg-card-price">
+            <span>From</span>
+            <b>{money(product.price)}</b>
+          </span>
+          <span
+            className="mds-msg-card-actions"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => state.holdTrip(product)}
+              disabled={state.isLoading}
+            >
+              Hold
+            </button>
+            <button
+              type="button"
+              onClick={() => state.planTrip(product)}
+              disabled={state.isLoading}
+            >
+              Plan
+            </button>
+            <button
+              type="button"
+              onClick={() => state.saveTrip(product)}
+              aria-pressed={saved}
+            >
+              {saved ? 'Saved' : 'Save'}
+            </button>
+          </span>
+        </span>
+      </span>
+    </article>
+  );
+}
+
+// Reveal the text one character (or small chunk) at a time so the chat
+// reads as a left-to-right stream rather than a hard pop. Cadence is
+// tuned to match ChatGPT / Claude.ai's perceived feel: ~3 chars per
+// 30ms tick → ~100 chars/sec, which is fast enough for a 600-char
+// reply to finish in ~6 seconds without dragging on a 2000-char one.
+//
+// We deliberately do NOT clamp duration to a fixed budget — that's what
+// produced the old "long replies just block-paint" behavior. Instead we
+// keep the per-tick rate constant so longer replies stream proportionally
+// longer (and shorter replies finish quickly). A 6-second hard ceiling
+// catches edge cases (3000+ char replies) so the animation can't drag
+// the demo to a halt.
 function useTypewriterReveal(text: string): string {
-  // Start with the first 3 chars already revealed so the bubble pops in
-  // *with content*, not as an empty rectangle.
-  const initial = text.slice(0, Math.min(3, text.length));
+  // Start with the first 2 chars already revealed so the bubble pops in
+  // *with content*, not as an empty rectangle. The first chunk arriving
+  // immediately is what makes the stream feel alive on slow renders.
+  const initial = text.slice(0, Math.min(2, text.length));
   const [visible, setVisible] = useState(initial);
 
   useEffect(() => {
@@ -181,14 +451,15 @@ function useTypewriterReveal(text: string): string {
       return undefined;
     }
 
-    const seed = text.slice(0, Math.min(3, text.length));
+    const seed = text.slice(0, Math.min(2, text.length));
     setVisible(seed);
     if (seed.length >= text.length) return undefined;
 
-    const totalDurationMs = Math.min(1700, Math.max(420, text.length * 18));
-    const stepMs = 28;
-    const steps = Math.max(1, Math.floor(totalDurationMs / stepMs));
-    const charsPerStep = Math.max(1, Math.ceil(text.length / steps));
+    // ChatGPT-ish cadence: 3 chars per 30ms tick = ~100 cps perceived.
+    // Hard ceiling at 6s so a wildly long reply doesn't drag forever.
+    const stepMs = 30;
+    const charsPerStep = 3;
+    const ceilingMs = 6000;
 
     let cursor = seed.length;
     const id = window.setInterval(() => {
@@ -200,12 +471,15 @@ function useTypewriterReveal(text: string): string {
     }, stepMs);
 
     // Failsafe: even if the interval is interrupted (StrictMode cleanup,
-    // tab backgrounding, etc.), the full text lands within the animation
-    // budget + a small grace period.
+    // tab backgrounding, very long text), the full text lands within
+    // the ceiling. Calculate the natural finish time for this length
+    // first, then take the smaller of (natural, ceiling).
+    const naturalDurationMs = Math.ceil(text.length / charsPerStep) * stepMs;
+    const failsafeMs = Math.min(naturalDurationMs + 200, ceilingMs);
     const failsafe = window.setTimeout(() => {
       setVisible(text);
       window.clearInterval(id);
-    }, totalDurationMs + 200);
+    }, failsafeMs);
 
     return () => {
       window.clearInterval(id);

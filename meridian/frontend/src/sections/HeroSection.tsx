@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAgentBridge } from '../context/AgentBridge';
 import { fetchProducts } from '../api/client';
-import { DEMO_PRODUCTS, DEMO_PROMPT } from '../lib/proDemoData';
+import { DEMO_PROMPT } from '../lib/proDemoData';
 import type { Product } from '../types';
 
 interface HeroSectionProps {
@@ -48,10 +48,7 @@ export function HeroSection({ scrollY: _scrollY }: HeroSectionProps) {
         setItems(picks.length > 0 ? picks : all.slice(0, 6));
       })
       .catch(() => {
-        const fallbackPicks = FEATURE_IDS.map((id) => DEMO_PRODUCTS.find((p) => p.product_id === id)).filter(
-          (p): p is Product => Boolean(p),
-        );
-        setItems(fallbackPicks.length > 0 ? fallbackPicks : DEMO_PRODUCTS.slice(0, 6));
+        setItems([]);
       });
   }, []);
 
@@ -64,13 +61,13 @@ export function HeroSection({ scrollY: _scrollY }: HeroSectionProps) {
   const current = items[index];
   const matchBecause = useMemo(() => {
     if (!current) {
-      return 'Match because: matches "slow + wine country", refundable, veg dinners reservable 4 of 6 nights.';
+      return 'Match because: grounded in your live Aurora memory facts.';
     }
     const tail = matchLines[current.category] ?? 'matches your stored memory facts.';
     return `Match because: ${tail}`;
   }, [current]);
 
-  const tripId = current ? current.product_id.toLowerCase() : 'trip_2614';
+  const tripId = current ? current.product_id.toLowerCase() : '—';
 
   return (
     <section className="mp-hero">
@@ -167,14 +164,12 @@ export function HeroSection({ scrollY: _scrollY }: HeroSectionProps) {
           ) : null}
           <div className="mp-feature-ribbon">
             <div>
-              <strong>{current?.name ?? 'Tuscan Vineyards · 7 nights'}</strong>
+              <strong>{current?.name ?? 'Loading live trips…'}</strong>
               <span>
-                {current
-                  ? `${current.brand} · ${current.category}`
-                  : 'Florence + Chianti · May 14–21 · two travelers'}
+                {current ? `${current.brand} · ${current.category}` : 'From Aurora trip_packages'}
               </span>
             </div>
-            <div className="price">${(current?.price ?? 2840).toFixed(0)}</div>
+            {current && <div className="price">${current.price.toFixed(0)}</div>}
           </div>
         </div>
         <div className="mp-feature-meta">
@@ -182,7 +177,7 @@ export function HeroSection({ scrollY: _scrollY }: HeroSectionProps) {
             From<b>BOS</b>
           </div>
           <div className="cell">
-            Hotel<b>{current?.brand ?? 'Borgo San Felice'}</b>
+            Hotel<b>{current?.brand ?? '—'}</b>
           </div>
           <div className="cell">
             Refundable<b>Until May 11</b>

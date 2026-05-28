@@ -111,7 +111,7 @@ class BedrockConfig:
     variable (``BEDROCK_MODEL_ID``) without editing eight files.
 
     Default is the Global cross-Region inference profile for Anthropic Claude
-    Opus 4.7 (``global.anthropic.claude-opus-4-7``). If you see::
+    Opus 4.8 (``global.anthropic.claude-opus-4-8``). If you see::
 
         ValidationException: The provided model identifier is invalid
 
@@ -136,7 +136,7 @@ class BedrockConfig:
             --query "inferenceProfileSummaries[?contains(inferenceProfileId, 'anthropic')].inferenceProfileId"
     """
 
-    DEFAULT_MODEL_ID: str = "global.anthropic.claude-opus-4-7"
+    DEFAULT_MODEL_ID: str = "global.anthropic.claude-opus-4-8"
 
     model_id: str = field(
         default_factory=lambda: os.getenv(
@@ -155,6 +155,8 @@ class BedrockConfig:
 def bedrock_model_label(model_id: str) -> str:
     """Human-readable label for Run config / health (from BEDROCK_MODEL_ID)."""
     mid = model_id.lower()
+    if "opus-4-8" in mid or "opus-4.8" in mid:
+        return "Claude Opus 4.8"
     if "opus-4-7" in mid or "opus-4.7" in mid:
         return "Claude Opus 4.7"
     if "sonnet-4-5" in mid or "sonnet-4.5" in mid:

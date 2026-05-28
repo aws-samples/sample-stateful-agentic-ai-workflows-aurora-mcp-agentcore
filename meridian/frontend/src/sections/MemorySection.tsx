@@ -9,12 +9,11 @@ import { FadeIn } from '../components/FadeIn';
 import { fetchMemoryProfile } from '../api/client';
 import { DEMO_PERSONA_FALLBACK, DEMO_TRAVELER_ID } from '../components/TravelerPersona';
 import { PHASE_EYEBROW } from '../lib/phaseLabels';
-import { DEMO_TRAVELER } from '../lib/proDemoData';
 import type { LongTermMemoryFact, TravelerProfile } from '../types';
 
 export function MemorySection() {
   const [facts, setFacts] = useState<LongTermMemoryFact[]>([]);
-  const [profile, setProfile] = useState<TravelerProfile>({ ...DEMO_PERSONA_FALLBACK, ...DEMO_TRAVELER });
+  const [profile, setProfile] = useState<TravelerProfile>({ ...DEMO_PERSONA_FALLBACK });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,8 +27,8 @@ export function MemorySection() {
       if (res.profile) setProfile({ ...DEMO_PERSONA_FALLBACK, ...res.profile });
     } catch {
       setFacts([]);
-      setProfile({ ...DEMO_PERSONA_FALLBACK, ...DEMO_TRAVELER });
-      setError('Backend offline — showing fixture traveler memory until Aurora is available.');
+      setProfile({ ...DEMO_PERSONA_FALLBACK });
+      setError('Live memory unavailable — start the backend to load Aurora traveler memory.');
     } finally {
       setLoading(false);
     }
@@ -62,8 +61,8 @@ export function MemorySection() {
             <div className="mp-label-row">{PHASE_EYEBROW[4]}</div>
             <h2>Traveler memory inside the production stack.</h2>
             <p>
-              Phase 4 is the production concierge — AgentCore Runtime, Gateway, Memory, and Aurora
-              RLS together. This inspector is the durable layer: Alex &amp; Jordan, Tokyo Oct
+              Production mode is the live concierge — AgentCore Runtime, Gateway, Memory, and Aurora
+              RLS together. This inspector is the durable layer: Alex Morgan, Tokyo Oct
               12–19, the shellfish allergy in <code>traveler_preferences</code>, scoped per
               traveler, audited every turn, mirrored in AgentCore Memory.
             </p>
@@ -86,7 +85,7 @@ export function MemorySection() {
       <FadeIn delay={0.1}>
         <div className="mp-memory">
           <aside className="mp-memory-side">
-            <div className="who">{profile.full_name ?? 'Alex & Jordan Chen'}</div>
+            <div className="who">{profile.full_name ?? 'Alex Morgan'}</div>
             <div className="role">Traveler · {DEMO_TRAVELER_ID}</div>
 
             <div className="biglabel">Memory health</div>

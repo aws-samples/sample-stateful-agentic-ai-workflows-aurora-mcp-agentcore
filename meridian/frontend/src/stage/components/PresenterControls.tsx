@@ -34,9 +34,9 @@ function PlayIcon({ playing }: { playing: boolean }) {
 }
 
 const SCENARIO_LABEL: Record<StageScenario['id'], string> = {
-  wine: 'Wine country',
-  family: 'Family beach',
-  business: 'Business stopover',
+  beach: 'Family beach',
+  recall: 'Recall',
+  plan: 'Plan trip',
 };
 
 export function PresenterControls({

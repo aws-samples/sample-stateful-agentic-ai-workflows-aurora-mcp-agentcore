@@ -223,6 +223,31 @@ class OrchestrationAgent:
         )
         for sa in search_activities:
             activities.append(_coerce_activity(sa))
+        # PostgresSaver checkpoint after the node returns. Surface the
+        # SQL so the SQL tab shows what LangGraph writes between nodes.
+        activities.append(
+            _activity(
+                "tool_call",
+                "Checkpoint · PostgresSaver.put",
+                details=f"Workflow state serialized after search node ({elapsed}ms)",
+                sql_query=(
+                    "INSERT INTO langgraph_checkpoints\n"
+                    "  (thread_id, checkpoint_ns, checkpoint_id,\n"
+                    "   parent_id, type, checkpoint, metadata)\n"
+                    "VALUES ($1, $2, $3, $4, 'msgpack', $5, $6)\n"
+                    "ON CONFLICT (thread_id, checkpoint_ns, checkpoint_id)\n"
+                    "DO UPDATE SET checkpoint = EXCLUDED.checkpoint;"
+                ),
+                telemetry={
+                    "category": "memory_short",
+                    "component": "Aurora · langgraph_checkpoints",
+                    "status": "ok",
+                    "fields": [
+                        {"label": "checkpointer", "value": self.checkpointer_kind},
+                    ],
+                },
+            )
+        )
         return {"packages": packages, "activities": activities}
 
     async def _node_availability(self, state: WorkflowState) -> WorkflowState:
@@ -249,6 +274,29 @@ class OrchestrationAgent:
         )
         for sa in sub_activities:
             activities.append(_coerce_activity(sa))
+        activities.append(
+            _activity(
+                "tool_call",
+                "Checkpoint · PostgresSaver.put",
+                details=f"Workflow state serialized after availability node ({elapsed}ms)",
+                sql_query=(
+                    "INSERT INTO langgraph_checkpoints\n"
+                    "  (thread_id, checkpoint_ns, checkpoint_id,\n"
+                    "   parent_id, type, checkpoint, metadata)\n"
+                    "VALUES ($1, $2, $3, $4, 'msgpack', $5, $6)\n"
+                    "ON CONFLICT (thread_id, checkpoint_ns, checkpoint_id)\n"
+                    "DO UPDATE SET checkpoint = EXCLUDED.checkpoint;"
+                ),
+                telemetry={
+                    "category": "memory_short",
+                    "component": "Aurora · langgraph_checkpoints",
+                    "status": "ok",
+                    "fields": [
+                        {"label": "checkpointer", "value": self.checkpointer_kind},
+                    ],
+                },
+            )
+        )
         return {"packages": packages, "activities": activities}
 
     async def _node_memory_recall(self, state: WorkflowState) -> WorkflowState:

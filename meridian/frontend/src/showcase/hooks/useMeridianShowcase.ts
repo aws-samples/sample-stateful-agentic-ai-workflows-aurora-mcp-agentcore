@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchHealth, processOrder, sendChatMessage } from '../../api/client';
+import {
+  fetchHealth,
+  fetchMemoryProfile,
+  processOrder,
+  sendChatMessage,
+} from '../../api/client';
 import type { ChatResponse, LongTermMemoryFact, Message, OrderResponse, Phase, Product } from '../../types';
 import { runConfigEmbedLabel, runConfigModelLabel, type BackendHealth } from '../../lib/runConfig';
 import {
@@ -8,6 +13,7 @@ import {
   chatResponseToMessages,
   chatResponseToTraceSpans,
   healthResponseToStatus,
+  memoryResponseToFacts,
   phaseLabelFor,
   productsFromChatResponse,
   type BackendStatus,
@@ -92,6 +98,11 @@ export interface MeridianShowcaseState {
   closeActionDrawer: () => void;
   clearError: () => void;
   clearChat: () => void;
+  // True only when the latest bot reply's typewriter has finished
+  // revealing. While false, downstream surfaces (recommendation grid)
+  // wait so they don't appear before the message reads as complete.
+  latestStreamComplete: boolean;
+  markLatestStreamComplete: () => void;
 }
 
 // Clean slate by design — the chat transcript stays empty until the
@@ -148,6 +159,11 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [replayIndex, setReplayIndex] = useState(-1);
   const [isReplaying, setIsReplaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  // True once the latest bot reply's typewriter has finished revealing.
+  // Reset to false at the moment a new chat request fires; flipped back
+  // to true by ChatMessage when its typewriter reaches the end of the
+  // text. Initially true so the empty state isn't held back.
+  const [latestStreamComplete, setLatestStreamComplete] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
   const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
@@ -161,6 +177,23 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [chatFilters, setChatFiltersState] = useState<ChatFilters>(EMPTY_FILTERS);
   const replayTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const mounted = useRef(true);
+
+  // Safety net: force-mark the latest reply as complete if it has been
+  // streaming for too long. Without this, a typewriter that fails to
+  // notify completion (component unmount mid-stream, regex crash in the
+  // markdown source, etc.) leaves the UI permanently hiding the
+  // recommendation grid and any other gated surface.
+  //
+  // The window starts when isLoading flips false (chat response arrived)
+  // and lasts 6 seconds - longer than any typewriter run (max ~1.7s).
+  useEffect(() => {
+    if (latestStreamComplete) return;
+    if (isLoading) return; // still waiting on the backend; don't time out yet
+    const id = window.setTimeout(() => {
+      setLatestStreamComplete(true);
+    }, 6000);
+    return () => window.clearTimeout(id);
+  }, [latestStreamComplete, isLoading]);
 
   const clearReplayTimers = useCallback(() => {
     replayTimers.current.forEach((timer) => clearTimeout(timer));
@@ -199,6 +232,32 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     return () => clearInterval(interval);
   }, []);
 
+  // Aurora-only memory prefetch on mount: pulls the seeded
+  // traveler_preferences for SHOWCASE_TRAVELER_ID so the "For you"
+  // panel shows real facts (no_red_eye, vegetarian_friendly, boutique
+  // style, $3,200 cap, ...) regardless of which phase is active. No
+  // fixture fallback - if Aurora is offline the panel stays empty,
+  // which honestly matches the "live data only" philosophy.
+  useEffect(() => {
+    let cancelled = false;
+    const loadMemory = async () => {
+      try {
+        const profile = await fetchMemoryProfile(SHOWCASE_TRAVELER_ID);
+        if (cancelled || !mounted.current) return;
+        const facts = memoryResponseToFacts(profile);
+        if (facts.length) setMemoryFacts(facts);
+      } catch {
+        if (cancelled || !mounted.current) return;
+        // Quietly leave the panel empty - the "Backend offline" badge
+        // already tells the user why.
+      }
+    };
+    void loadMemory();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     // Clean-slate showcase: do NOT prefetch featured packages on mount —
     // we want the recommendation grid to stay empty until the presenter
@@ -232,7 +291,21 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, [clearReplayTimers, traceSpans]);
 
   const applyChatResponse = useCallback((prompt: string, response: ChatResponse) => {
-    setMessages((prior) => chatResponseToMessages(prior, prompt, response));
+    // The user-side bubble was already appended optimistically when they
+    // hit Send (see submitPrompt). Drop any pre-existing user bubble for
+    // THIS prompt before re-applying the full pair so we don't get a
+    // double-render. chatResponseToMessages always appends [user, bot];
+    // we trim the trailing optimistic user bubble first to keep history
+    // clean.
+    setMessages((prior) => {
+      const trimmed =
+        prior.length > 0 &&
+        prior[prior.length - 1].role === 'user' &&
+        prior[prior.length - 1].text === prompt
+          ? prior.slice(0, -1)
+          : prior;
+      return chatResponseToMessages(trimmed, prompt, response);
+    });
     const nextTrace = chatResponseToTraceSpans(response, prompt);
     setTraceSpans(nextTrace);
     setExpandedSpanId(nextTrace[0]?.id ?? null);
@@ -264,9 +337,21 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setReplayIndex(-1);
       setIsReplaying(false);
       setIsLoading(true);
+      // Reset stream-complete so downstream surfaces (recommendation
+      // grid) wait until the typewriter finishes revealing this turn.
+      setLatestStreamComplete(false);
       setError(null);
       setLastPrompt(decorated);
       setCurrentPrompt('');
+
+      // Echo the user's prompt into the transcript IMMEDIATELY so the
+      // question doesn't disappear into a 5-12s dark hole while the
+      // backend works. The "Running tools and composing..." bubble
+      // (rendered by ChatTranscript when isLoading is true) sits below
+      // it, giving the user a visible pulse from prompt → response.
+      // applyChatResponse trims this optimistic bubble before re-applying
+      // the full pair so we don't double-render.
+      setMessages((prior) => [...prior, { role: 'user', text: decorated }]);
 
       try {
         const response = await sendChatMessage({
@@ -349,6 +434,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       if (isLoading) return;
       setSelectedTrip(product);
       setIsLoading(true);
+      setLatestStreamComplete(false);
       setError(null);
       const prompt = `Plan trip: ${product.name}`;
       setMessages((prior) => [...prior, { role: 'user', text: prompt }]);
@@ -436,7 +522,14 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setActionDrawer(null);
     setError(null);
     setChatFiltersState(EMPTY_FILTERS);
+    setLatestStreamComplete(true);
   }, [clearReplayTimers]);
+
+  // Lifted by ChatMessage when its typewriter reaches the end of the
+  // text (or whenever a non-streaming render path completes).
+  const markLatestStreamComplete = useCallback(() => {
+    setLatestStreamComplete(true);
+  }, []);
 
   const totalLatencyMs = useMemo(
     () => traceSpans.reduce((total, span) => total + span.latencyMs, 0),
@@ -495,6 +588,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     closeActionDrawer: () => setActionDrawer(null),
     clearError: () => setError(null),
     clearChat,
+    latestStreamComplete,
+    markLatestStreamComplete,
   };
 }
 

@@ -4,7 +4,7 @@ Concierge-tone polish over deterministic tool outputs.
 The MCP path produces precise but dry readouts ("FX via meridian-concierge
 MCP: 2500 USD ≈ 2300 EUR"). On stage we want longer, narrative replies
 that read like a real travel concierge. This module wraps a Bedrock
-Converse call (Claude Opus 4.7 by default, with fallback to Sonnet 4.5
+Converse call (Claude Opus 4.8 by default, with fallback to Sonnet 4.5
 and Haiku) around the deterministic facts so the user sees a richer
 answer without the agent hallucinating numbers - all factual content
 comes from the tool result that we feed verbatim into the system prompt.
@@ -34,26 +34,50 @@ logger = logging.getLogger(__name__)
 _CONCIERGE_SYSTEM = (
     "You are Meridian, a high-end travel concierge speaking directly to the "
     "traveler. Your job RIGHT NOW is to turn raw tool output from our internal "
-    "MCP servers into a warm, helpful, well-structured reply.\n\n"
+    "agent into a warm, helpful, well-structured reply.\n\n"
     "Hard rules:\n"
     "- Use ONLY the facts in the TOOL OUTPUT. Do not invent prices, dates, "
-    "destinations, points balances, or rates. If a number is in the output, "
-    "reuse it verbatim. If something is unknown, say so honestly.\n"
-    "- Keep the response between 3 and 6 sentences (about 70-150 words).\n"
+    "destinations, points balances, rates, similarity scores, or "
+    "preferences. If a number or product name is in the output, reuse it "
+    "verbatim. If something is unknown, say so honestly.\n"
+    "- Keep the response between 3 and 7 sentences (about 70-180 words).\n"
     "- Open with the direct answer to the traveler's question, not preamble.\n"
-    "- Use light markdown: bullet lists for comparisons, **bold** for key "
-    "numbers, and a final 1-line follow-up suggestion when natural.\n"
-    "- Never mention 'tool output', 'system prompt', or 'MCP' explicitly - "
-    "speak as the concierge, not the engine.\n"
+    "- When the TOOL OUTPUT lists products, lead with the most relevant ones "
+    "by name, briefly explain the fit using the structured fields provided "
+    "(price, semantic_match, trip_type, etc.), and end with a focused "
+    "follow-up question.\n"
+    "- When the TOOL OUTPUT lists 'Traveler preferences applied to this turn', "
+    "weave 3-5 of them naturally into the reply, prioritizing whichever "
+    "preferences actually shape THIS recommendation. Examples: 'your "
+    "no_red_eye rule out of BOS', 'within the boutique-over-chain lodging "
+    "style you favor', 'I noted your shellfish allergy on dining picks', "
+    "'we'll route on Marriott Bonvoy / Delta SkyMiles where it earns', "
+    "'kept the Tokyo Oct 12-19 thread alive', 'sized for a 2-traveler party'. "
+    "Vary which facts you cite turn-to-turn so the relationship feels "
+    "lived-in - never repeat the same 1-2 facts every time. If the "
+    "traveler is explicitly asking about prior turns or what was discussed, "
+    "you may also briefly cite recent recalled trips. Do NOT enumerate "
+    "the full list as bullets - integrate the facts into the prose.\n"
+    "- When the TOOL OUTPUT mentions LangGraph nodes / classify / "
+    "memory_recall / availability, you can briefly note that the workflow "
+    "routed to that path - in plain language, not jargon.\n"
+    "- Use markdown formatting: bullet lists for comparisons (one item per "
+    "line, hyphen + space), **bold** for key numbers and product names, and "
+    "a final 1-line follow-up suggestion when natural.\n"
+    "- DO NOT use emojis or pictographs of any kind. No flags, weather "
+    "symbols, food, transportation, or decorative icons. The product is "
+    "premium and minimalist; emojis read as unprofessional.\n"
+    "- Never mention 'tool output', 'system prompt', 'MCP', 'phase', or "
+    "internal mode names explicitly - speak as the concierge, not the engine.\n"
 )
 
 
-# Model fallback chain. Opus 4.7 is the headline; if the AWS account
+# Model fallback chain. Opus 4.8 is the headline; if the AWS account
 # doesn't have access to that cross-region profile (very common in
 # fresh accounts), we try Sonnet 4.6 and finally Haiku 4.5. The first
 # success wins; if all three fail we surface the last error.
 _DEFAULT_FALLBACK_CHAIN: List[str] = [
-    "global.anthropic.claude-opus-4-7",
+    "global.anthropic.claude-opus-4-8",
     "global.anthropic.claude-sonnet-4-6",
     "global.anthropic.claude-haiku-4-5-20251001-v1:0",
 ]
@@ -132,17 +156,28 @@ def _polish_sync(user_query: str, tool_output: str) -> PolishResult:
                     }
                 ],
                 inferenceConfig={
+                    # Just maxTokens. Opus 4.8 deprecates `temperature`
+                    # ("temperature is deprecated for this model"), and
+                    # Haiku 4.5 rejects `temperature + topP` together.
+                    # Letting the model pick its own sampling defaults
+                    # is the only setting compatible across the entire
+                    # Opus / Sonnet / Haiku fallback chain.
                     "maxTokens": 600,
-                    "temperature": 0.6,
-                    "topP": 0.9,
                 },
             )
             blocks = resp.get("output", {}).get("message", {}).get("content", [])
             for b in blocks:
                 text = b.get("text")
                 if text:
+                    polished = text.strip()
+                    logger.info(
+                        "[polish] %s ok len=%d preview=%r",
+                        model_id,
+                        len(polished),
+                        polished[:200],
+                    )
                     return PolishResult(
-                        text=text.strip(),
+                        text=polished,
                         model_id=model_id,
                         note=None,
                     )

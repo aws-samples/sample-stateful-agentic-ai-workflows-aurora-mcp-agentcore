@@ -3,7 +3,7 @@ import { adaptChatResponseToScenario, sumLatency } from '../utils/traceAdapter'
 import { getStageScenarioById } from '../data/stageScenarios'
 import type { ChatResponse } from '../../types'
 
-const wine = getStageScenarioById('wine')
+const beach = getStageScenarioById('beach')
 
 describe('sumLatency', () => {
   it('returns 0 for an empty span list', () => {
@@ -21,13 +21,13 @@ describe('sumLatency', () => {
 
 describe('adaptChatResponseToScenario', () => {
   it('returns null for a null response', () => {
-    expect(adaptChatResponseToScenario(null, wine)).toBeNull()
-    expect(adaptChatResponseToScenario(undefined, wine)).toBeNull()
+    expect(adaptChatResponseToScenario(null, beach)).toBeNull()
+    expect(adaptChatResponseToScenario(undefined, beach)).toBeNull()
   })
 
   it('returns null when the response has no activities and no products', () => {
     const empty: ChatResponse = { message: '', activities: [] }
-    expect(adaptChatResponseToScenario(empty, wine)).toBeNull()
+    expect(adaptChatResponseToScenario(empty, beach)).toBeNull()
   })
 
   it('uses response.message for assistantReply', () => {
@@ -43,7 +43,7 @@ describe('adaptChatResponseToScenario', () => {
         },
       ],
     }
-    const merged = adaptChatResponseToScenario(live, wine)
+    const merged = adaptChatResponseToScenario(live, beach)
     expect(merged!.assistantReply).toBe('Tuscany is held — three options under cap.')
   })
 
@@ -61,7 +61,7 @@ describe('adaptChatResponseToScenario', () => {
         },
       ],
     }
-    const merged = adaptChatResponseToScenario(activitiesOnly, wine)!
+    const merged = adaptChatResponseToScenario(activitiesOnly, beach)!
     expect(merged.spans).toHaveLength(1)
     expect(merged.spans[0].kind).toBe('tool')
     expect(merged.spans[0].system).toBe('mcp')
@@ -84,7 +84,7 @@ describe('adaptChatResponseToScenario', () => {
         },
       ],
     }
-    const merged = adaptChatResponseToScenario(productsOnly, wine)!
+    const merged = adaptChatResponseToScenario(productsOnly, beach)!
     expect(merged.recommendations).toHaveLength(1)
     expect(merged.recommendations[0].matchPct).toBe(96)
     expect(merged.recommendations[0].primary).toBe(true)

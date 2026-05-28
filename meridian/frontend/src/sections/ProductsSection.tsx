@@ -3,12 +3,12 @@
  *
  * Cards load from GET /api/packages?featured=true: up to two packages per trip type,
  * ordered by price within each type. Hybrid match % and "match because" copy appear
- * only after a Phase 3+ concierge search — not on this grid.
+ * only after a Retrieval concierge search — not on this grid.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { FadeIn } from '../components/FadeIn';
 import { useAgentBridge } from '../context/AgentBridge';
-import { DEMO_PRODUCTS, DEMO_PROMPT } from '../lib/proDemoData';
+import { DEMO_PROMPT } from '../lib/proDemoData';
 import { fetchProducts } from '../api/client';
 import type { Product } from '../types';
 
@@ -48,8 +48,8 @@ export function ProductsSection() {
         setError(null);
       })
       .catch(() => {
-        setProducts(DEMO_PRODUCTS.slice(0, CATALOG_LIMIT));
-        setError('Backend offline — showing fixture trips until FastAPI is available.');
+        setProducts([]);
+        setError('Live catalog unavailable — start the backend to load trips from Aurora.');
       })
       .finally(() => setLoading(false));
   }, []);
@@ -98,13 +98,13 @@ export function ProductsSection() {
       <FadeIn>
         <div className="mp-section-h-row">
           <div className="mp-section-h">
-            <div className="mp-label-row">Phase 3 · semantic retrieval</div>
+            <div className="mp-label-row">Retrieval · semantic search</div>
             <h2>Trip catalog in Aurora.</h2>
             <p>
               This grid is a <strong>browse view</strong> — not a ranked search. We show up to two
               packages per trip type (highest price in each category) from the seeded catalog. Every
               package is indexed with Cohere Embed&nbsp;v4 + tsvector for hybrid search. Ask the
-              concierge in Phase&nbsp;3+ to see <em>match %</em> and a <em>match because</em> line
+              concierge in Retrieval mode to see <em>match %</em> and a <em>match because</em> line
               per result — those need a live query, not a persona on this page.
             </p>
           </div>

@@ -65,7 +65,7 @@ export interface StageTraveler {
 }
 
 export interface StageScenario {
-  id: 'wine' | 'family' | 'business';
+  id: 'beach' | 'recall' | 'plan';
   phaseLabel: string;
   traceId: string;
   prompt: string;

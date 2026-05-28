@@ -85,7 +85,7 @@ class RetrievalAgent:
         self.last_search_packages: List[dict] = []
         self.last_search_query: Optional[str] = None
 
-        # Initialize Bedrock model - Claude Opus 4.7 (cross-region inference)
+        # Initialize Bedrock model - Claude Opus 4.8 (cross-region inference)
         self.model = BedrockModel(
             model_id=config.bedrock.model_id,
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")

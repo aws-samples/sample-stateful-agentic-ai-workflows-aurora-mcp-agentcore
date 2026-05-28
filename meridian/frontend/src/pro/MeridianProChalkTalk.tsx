@@ -14,7 +14,7 @@ const PHASES: { id: Phase; title: string; subtitle: string }[] = [
 ];
 
 const STARTER_PROMPT =
-  'A slow week somewhere we can drink good wine. Jordan cannot do red-eyes.';
+  'Plan our October Tokyo trip — find open dates, pick a Marriott property, and hold a Kyoto side trip';
 
 const INITIAL_LINES: ChatLine[] = [
   { role: 'assistant', text: 'Good morning, Alex. Where should Meridian take you next?' },
@@ -65,10 +65,10 @@ export function MeridianProChalkTalk() {
 
   const quickPrompts = useMemo(
     () => [
-      'Boutique hotels with spa options',
-      'No red-eye flights from BOS',
-      'One-week wine + wellness itinerary',
-      'Direct flight only',
+      'Family-friendly beach resort with snorkeling',
+      'What did we discuss last time? Pick up where we left off.',
+      'Compare our top trips and show prices in EUR',
+      'A romantic slow week somewhere with great wine',
     ],
     [],
   );
@@ -136,11 +136,11 @@ export function MeridianProChalkTalk() {
           <div className="mpc-left-persona">
             <img
               src="https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=320&q=80"
-              alt="Companion profile"
+              alt="Conversation memory"
             />
             <div>
-              <strong>Jordan Chen</strong>
-              <span>Companion persona</span>
+              <strong>AgentCore Memory</strong>
+              <span>Aurora · RLS-scoped recall</span>
             </div>
           </div>
         </aside>
@@ -199,14 +199,14 @@ export function MeridianProChalkTalk() {
               </div>
             </div>
             <dl>
-              <dt>Travel style</dt>
-              <dd>Boutique, immersive, relaxed</dd>
-              <dt>Preferences</dt>
-              <dd>Wine, wellness, walkable towns, premium food</dd>
+              <dt>Lodging style</dt>
+              <dd>Boutique &gt; chain</dd>
+              <dt>Departure rule</dt>
+              <dd>BOS · no red-eyes</dd>
               <dt>Loyalty</dt>
               <dd>Marriott Bonvoy · Delta SkyMiles</dd>
-              <dt>Companion</dt>
-              <dd>Jordan · avoids red-eye flights</dd>
+              <dt>Dining</dt>
+              <dd>Shellfish allergy · party of 2</dd>
             </dl>
           </section>
 

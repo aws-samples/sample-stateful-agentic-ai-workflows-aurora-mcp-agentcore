@@ -3,7 +3,6 @@ import { ChatComposer } from './components/ChatComposer';
 import { ChatTranscript } from './components/ChatTranscript';
 import { MemoryDrawer } from './components/MemoryDrawer';
 import { PhaseSelector } from './components/PhaseSelector';
-import { RecommendationCards } from './components/RecommendationCards';
 import { TracePanel } from './components/TracePanel';
 import { TravelerContextPanel } from './components/TravelerContextPanel';
 import { TripDetailDrawer } from './components/TripDetailDrawer';
@@ -78,6 +77,26 @@ function NavIcon({ id }: { id: NavItemId | 'settings' }) {
 
 export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) {
   const [memoryOpen, setMemoryOpen] = useState(false);
+  // Collapsing the For-you panel hands its vertical space back to the
+  // Meridian activity (trace) panel — the trace is the live demo
+  // payoff, so audiences in zoomed / tall-screen views appreciate
+  // being able to give it the full right rail.
+  const [forYouCollapsed, setForYouCollapsed] = useState(false);
+
+  // Time-of-day greeting word for the headline ("Good morning, Alex." /
+  // "Good evening, Alex.") — keeps the demo feeling personal regardless
+  // of when audiences open it. Computed inline so Vite's Fast Refresh
+  // doesn't lose the binding when the file hot-reloads.
+  //   05:00–11:59 → morning
+  //   12:00–16:59 → afternoon
+  //   17:00–04:59 → evening
+  const greetingHour = new Date().getHours();
+  const greetingPart =
+    greetingHour >= 5 && greetingHour < 12
+      ? 'morning'
+      : greetingHour >= 12 && greetingHour < 17
+        ? 'afternoon'
+        : 'evening';
 
   return (
     <div className="mds-desktop-app">
@@ -134,7 +153,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
           </div>
           <div className="mds-headline-row">
             <div>
-              <h1>Good morning, Alex.</h1>
+              <h1>{`Good ${greetingPart}, Alex.`}</h1>
               <p>Where would you like to go next?</p>
             </div>
             <PhaseSelector state={state} />
@@ -148,14 +167,9 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
 
           <ChatTranscript state={state} />
 
-          {/* Only show the empty-state hint before any chat happens. */}
-          {!state.recommendations.length && state.messages.length === 0 && (
-            <div className="mds-assistant-line">
-              Recommendations will appear after your first request.
-            </div>
-          )}
-
-          <RecommendationCards state={state} />
+          {/* Per-turn product cards now live INSIDE each bot bubble,
+              expanded via the summary chip click. No standalone grid
+              below the chat - the chat owns its results. */}
 
           <div className="mds-main-actions">
             <button type="button" onClick={() => state.replayLastPrompt()} disabled={!state.lastPrompt || state.isLoading}>
@@ -181,7 +195,12 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
       </main>
 
       <aside className="mds-desktop-right">
-        <TravelerContextPanel state={state} onOpenMemory={() => setMemoryOpen(true)} />
+        <TravelerContextPanel
+          state={state}
+          onOpenMemory={() => setMemoryOpen(true)}
+          collapsed={forYouCollapsed}
+          onToggleCollapsed={() => setForYouCollapsed((prev) => !prev)}
+        />
         <TracePanel state={state} />
       </aside>
 

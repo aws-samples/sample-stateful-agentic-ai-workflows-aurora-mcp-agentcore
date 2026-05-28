@@ -191,6 +191,38 @@ TRIP_PACKAGES = [
          "Messe-connected hotel, fair shuttle pass, early breakfast, rail pass to city center.",
          "1488646953014-85cb44e25828", ["3 nights", "4 nights"],
          {"3 nights": 16, "4 nights": 10}),
+
+    # ---- Extra Tokyo coverage ----------------------------------------
+    # Lets seasonal_price_band("Tokyo", ...) return a real low/median/high
+    # spread instead of three identical numbers, and gives the stratified
+    # compare a Tokyo entry in multiple trip_types if the demo focuses
+    # there.
+    _pkg("TKY-001", "Tokyo Indie Neighborhood Walk", "City Breaks", "Tokyo", "Asia-Pacific", 1599.0,
+         "JAL Tours",
+         "Yanaka and Shimokitazawa boutique stays, late-morning starts, indie coffee bars,"
+         " vintage shops, no group tours. Rail pass included.",
+         "1542051841857-5f90071e7989", ["4 nights", "6 nights"],
+         {"4 nights": 9, "6 nights": 6}, ["rail pass", "self-guided"]),
+    _pkg("TKY-002", "Tokyo Family Discovery Week", "Family Trips", "Tokyo", "Asia-Pacific", 2899.0,
+         "ANA Holidays",
+         "Family-friendly Asakusa hotel, teamLab Planets, Ueno Zoo, Ghibli Museum tickets,"
+         " Pokémon Center half-day, day trip to Yokohama Cup Noodles Museum.",
+         "1492571350019-22de08371fd3", ["5 nights", "7 nights"],
+         {"5 nights": 7, "7 nights": 5}, ["family rooms", "Ghibli", "kid passes"]),
+    _pkg("TKY-003", "Tokyo Executive Stopover", "Business Travel", "Tokyo", "Asia-Pacific", 1949.0,
+         "JAL Premium",
+         "Marunouchi business hotel, Haneda lounge access, car service to Otemachi,"
+         " late check-out, fast Wi-Fi, same-day laundry, optional teamLab evening.",
+         "1503899036084-c55cdd92da26", ["2 nights", "3 nights", "4 nights"],
+         {"2 nights": 14, "3 nights": 11, "4 nights": 8},
+         ["lounge access", "car service", "quiet floor"]),
+    _pkg("TKY-004", "Tokyo Ryokan & Onsen Slow Week", "Wellness & Luxury", "Tokyo", "Asia-Pacific", 3899.0,
+         "Hoshino Resorts",
+         "Hoshinoya ryokan in central Tokyo with private onsen, kaiseki dinners,"
+         " day trip to Hakone hot springs, Shinjuku garden tea ceremony, slow pace.",
+         "1480796927426-f609979314bd", ["6 nights", "8 nights"],
+         {"6 nights": 4, "8 nights": 3},
+         ["private onsen", "kaiseki", "tea ceremony"]),
 ]
 
 DEMO_TRAVELER_ID = "trv_meridian_demo"
@@ -265,7 +297,7 @@ TRAVELER_PREFERENCES = [
 
     # Recent trips (gives Phase 4/5 something to recall + refine on)
     {"preference_type": "history", "preference_key": "recent_trips",
-     "preference_value": "Tuscany, Kyoto, Palm Springs",
+     "preference_value": "Tuscany (Feb 2026), Kyoto (held)",
      "confidence": 0.99, "source": "booking_history"},
 
     # Soft destination signals (so semantic recall has something to ground in)
@@ -276,3 +308,210 @@ TRAVELER_PREFERENCES = [
      "preference_value": "Iceland ring road, prefers winter aurora viewing",
      "confidence": 0.82, "source": "browse_session"},
 ]
+
+
+# =============================================================================
+# Conversation history (Phase 4/5 short-term memory + semantic recall demos).
+#
+# Three demo threads scoped to DEMO_TRAVELER_ID. Each thread is a real
+# multi-turn back-and-forth so "what did we discuss last time?" returns
+# something coherent on the very first stage demo run, before any new
+# turn has been written.
+#
+# Topics map onto destinations the traveler_preferences seed already
+# mentions (Iceland, Tokyo, Tuscany), so memory recall feels grounded.
+# =============================================================================
+
+DEMO_CONVERSATIONS = [
+    {
+        "conversation_id": "conv_iceland_winter",
+        "started_at": "2026-04-12 10:08:00",
+        "last_message_at": "2026-04-12 10:21:00",
+        "summary": "Iceland ring road in winter — aurora viewing, Reykjavik base, "
+                   "concerned about red-eye connections.",
+    },
+    {
+        "conversation_id": "conv_tokyo_october",
+        "started_at": "2026-05-02 09:14:00",
+        "last_message_at": "2026-05-02 09:33:00",
+        "summary": "Tokyo culture trip in October — Shibuya base, vegetarian dining, "
+                   "Hakone day trip, prefers boutique over chain.",
+    },
+    {
+        "conversation_id": "conv_tuscany_anniversary",
+        "started_at": "2026-02-19 18:42:00",
+        "last_message_at": "2026-02-19 19:01:00",
+        "summary": "Tuscany wine + wellness anniversary trip — Chianti base, "
+                   "slow-pace boutique stay, capped at $3.5k per person.",
+    },
+]
+
+
+def _msg(conv_id: str, role: str, content: str, offset_minutes: int) -> dict:
+    return {
+        "conversation_id": conv_id,
+        "role": role,
+        "content": content,
+        "offset_minutes": offset_minutes,
+    }
+
+
+# Realistic dialogue. Phase 4's recall_recent_turns will surface these
+# verbatim; the embedding column lets semantic_recall_interactions match
+# new prompts to past topics by meaning, not keyword.
+DEMO_CONVERSATION_MESSAGES = [
+    # ---- Iceland winter thread ----
+    _msg("conv_iceland_winter", "user",
+         "We are thinking about Iceland in late January — mainly to chase the aurora. "
+         "Anything that avoids long red-eye connections from Boston?", 0),
+    _msg("conv_iceland_winter", "assistant",
+         "Iceland in late January is excellent for aurora — clear nights, lower crowds. "
+         "I would anchor on Reykjavik for the first three nights with a Golden Circle day, "
+         "then a Vik south-coast night, and a final night near Thingvellir for darker skies. "
+         "From BOS, Icelandair runs a daytime nonstop most days; I will avoid red-eye "
+         "options per your saved preference.", 4),
+    _msg("conv_iceland_winter", "user",
+         "Sounds great. Can you keep it under $3,200 per person?", 9),
+    _msg("conv_iceland_winter", "assistant",
+         "The Iceland Ring Road package fits at $2,799 per person for 7 nights with the "
+         "winter add-on, including aurora hunts, Blue Lagoon entry, and the daytime BOS "
+         "flight. Let me know if you want me to hold a slot.", 13),
+
+    # ---- Tokyo October thread ----
+    _msg("conv_tokyo_october", "user",
+         "Help me plan a Tokyo culture trip in October. Just for me. "
+         "Vegetarian-friendly dining and somewhere walkable.", 0),
+    _msg("conv_tokyo_october", "assistant",
+         "October is one of the best windows for Tokyo — clear skies, autumn leaves "
+         "starting in Hakone. I will base you in Shibuya at a boutique ryokan-style "
+         "stay (matching your boutique-over-chain preference), book a vegetarian "
+         "kaiseki experience in Yanaka, and add a Hakone day trip with the rail pass. "
+         "Direct ANA flight from BOS keeps you off red-eyes.", 5),
+    _msg("conv_tokyo_october", "user",
+         "Perfect. What dates have availability?", 12),
+    _msg("conv_tokyo_october", "assistant",
+         "The Tokyo Culture & Cuisine package shows 10 slots for the 5-night option "
+         "and 7 slots for the 7-night option in October. October 12 to 19 is the "
+         "shoulder-week we have been holding for you.", 18),
+
+    # ---- Tuscany anniversary thread ----
+    _msg("conv_tuscany_anniversary", "user",
+         "Anniversary trip — slow week in Tuscany. Wine country, "
+         "good food, no rushing. Cap around $3.5k each.", 0),
+    _msg("conv_tuscany_anniversary", "assistant",
+         "Tuscany in late spring is exactly your slow-pace, wine-country style. "
+         "I have a Chianti boutique villa with cellar tastings, a private cooking "
+         "afternoon in Greve, and a wellness half-day at a thermal spa near Bagno "
+         "Vignoni. Comes in at $3,699 per person for the 7-night version — slightly "
+         "above your cap, but I can move to the 5-night format at $2,899 if "
+         "preferred.", 6),
+    _msg("conv_tuscany_anniversary", "user",
+         "Let us hold the 5-night version for now and revisit closer to the date.", 14),
+    _msg("conv_tuscany_anniversary", "assistant",
+         "Held the 5-night Tuscany Wine & Wellness slot for 14 days under your "
+         "Bonvoy account. I will keep watching for a Chianti-region upgrade if "
+         "anything opens up.", 19),
+]
+
+
+# Past trip interactions — the embedding-backed table that powers
+# `semantic_recall_interactions` in Phase 4. These give the agent
+# fragments of past searches it can recall semantically: when the user
+# now asks about "winter aurora trips" the embedding match lights up
+# the Iceland row even if no exact keyword appears.
+DEMO_TRIP_INTERACTIONS = [
+    {
+        "interaction_id": "int_iceland_aurora",
+        "conversation_id": "conv_iceland_winter",
+        "query_text": "Winter aurora trip from Boston, no red-eyes, "
+                      "ring road style with Reykjavik base.",
+        "response_summary": "Suggested Iceland Ring Road (ADV-002), 7 nights, "
+                            "Icelandair daytime BOS-KEF, aurora hunts plus Blue Lagoon. "
+                            "Held a slot for late January.",
+        "packages_shown": [
+            {"package_id": "ADV-002", "name": "Iceland Ring Road", "was_selected": True},
+        ],
+    },
+    {
+        "interaction_id": "int_tokyo_culture",
+        "conversation_id": "conv_tokyo_october",
+        "query_text": "Tokyo culture week in October, vegetarian-friendly, "
+                      "walkable, boutique not chain.",
+        "response_summary": "Recommended Tokyo Culture & Cuisine (CTY-002) with "
+                            "Shibuya boutique base and Hakone day trip. October 12-19 "
+                            "shoulder week pinned.",
+        "packages_shown": [
+            {"package_id": "CTY-002", "name": "Tokyo Culture & Cuisine", "was_selected": True},
+        ],
+    },
+    {
+        "interaction_id": "int_tuscany_anniversary",
+        "conversation_id": "conv_tuscany_anniversary",
+        "query_text": "Slow anniversary week in Tuscany wine country under $3.5k.",
+        "response_summary": "Suggested Tuscany Wine & Wellness (WEL-005) — 5-night "
+                            "Chianti format at $2,899 to stay under cap. Held for "
+                            "14 days under Marriott Bonvoy account.",
+        "packages_shown": [
+            {"package_id": "WEL-005", "name": "Tuscany Wine & Wellness", "was_selected": True},
+        ],
+    },
+    {
+        "interaction_id": "int_kyoto_browse",
+        "conversation_id": None,
+        "query_text": "Kyoto ryokan onsen experience, slow pace, autumn leaves.",
+        "response_summary": "Browsed Kyoto Ryokan & Onsen (WEL-004). No booking yet — "
+                            "saved to wishlist for later.",
+        "packages_shown": [
+            {"package_id": "WEL-004", "name": "Kyoto Ryokan & Onsen", "was_selected": False},
+        ],
+    },
+    {
+        "interaction_id": "int_dubai_stopover",
+        "conversation_id": None,
+        "query_text": "Quick wellness stopover with spa access between flights.",
+        "response_summary": "Surfaced Dubai Luxury Stopover (WEL-003) as a 2-3 night "
+                            "spa transit option. Saved to wishlist.",
+        "packages_shown": [
+            {"package_id": "WEL-003", "name": "Dubai Luxury Stopover", "was_selected": False},
+        ],
+    },
+]
+
+
+# Historical bookings + lines. The Plan-trip flow appends to these
+# tables in real time, but seeding two prior bookings means the
+# System panel and Phase 4 booking-history tools have something to
+# show on first run.
+DEMO_BOOKINGS = [
+    {
+        "booking_id": "bkg_tuscany_2025",
+        "status": "completed",
+        "total_amount": 5798.00,  # 2 travelers x 2899
+        "created_at": "2026-02-19 19:02:00",
+        "confirmed_at": "2026-02-21 10:15:00",
+        "lines": [
+            {
+                "package_id": "WEL-005",  # Tuscany Wine & Wellness
+                "duration": "5 nights",
+                "travelers_count": 2,
+                "unit_price": 2899.00,
+            },
+        ],
+    },
+    {
+        "booking_id": "bkg_kyoto_browse_held",
+        "status": "held",
+        "total_amount": 3299.00,
+        "created_at": "2026-03-04 16:08:00",
+        "confirmed_at": None,
+        "lines": [
+            {
+                "package_id": "WEL-004",  # Kyoto Ryokan & Onsen
+                "duration": "5 nights",
+                "travelers_count": 1,
+                "unit_price": 3299.00,
+            },
+        ],
+    },
+]
+
