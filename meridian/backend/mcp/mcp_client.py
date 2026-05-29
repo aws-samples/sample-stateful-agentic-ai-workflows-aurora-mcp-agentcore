@@ -44,6 +44,15 @@ class MCPConnectionConfig:
     # Database endpoint (for pgwire methods)
     database_endpoint: Optional[str] = None
 
+    # Aurora cluster ARN + Secrets Manager ARN for the RDS Data API.
+    # postgres-mcp-server@1.0.9 takes these as server-start CLI flags
+    # (--resource_arn / --secret_arn). These mirror the same env vars the
+    # Phase 1 RDS Data API path (db/rds_data_client.py) and the custom
+    # concierge MCP client already rely on, so a single .env populates all
+    # three paths.
+    cluster_arn: Optional[str] = None
+    secret_arn: Optional[str] = None
+
     # Database name
     database_name: str = "meridian"
 
@@ -64,6 +73,8 @@ class MCPConnectionConfig:
             database_type=os.getenv("MCP_DATABASE_TYPE", "APG"),
             cluster_identifier=os.getenv("AURORA_CLUSTER_IDENTIFIER"),
             database_endpoint=os.getenv("AURORA_DATABASE_ENDPOINT"),
+            cluster_arn=os.getenv("AURORA_CLUSTER_ARN"),
+            secret_arn=os.getenv("AURORA_SECRET_ARN"),
             database_name=os.getenv("AURORA_DATABASE", "meridian"),
             aws_region=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
             aws_profile=os.getenv("AWS_PROFILE"),
@@ -92,10 +103,31 @@ class MCPPostgresClient:
         self._available_tools: List[Dict] = []
 
     def _get_server_params(self) -> StdioServerParameters:
-        """Build server parameters for stdio transport."""
-        args = ["awslabs.postgres-mcp-server@latest"]
+        """Build server parameters for stdio transport.
 
-        if self.config.allow_write_query:
+        Pinned to @1.0.9: this version takes the connection config once, at
+        server start, via CLI flags (--resource_arn / --secret_arn / etc.) —
+        matching the DAT403 workshop's known-good pin. @latest drifted to a
+        shape that requires db_endpoint and auto-discovers the secret, and
+        that auto-discovery resolves secretArn to None for a Serverless v2
+        cluster whose secret name carries a random suffix
+        (e.g. meridian-demo-credentials-gThG49) — which is the root cause of
+        the Phase 2 `ParamValidationError: Invalid length for parameter
+        secretArn, value: 4` (the literal string "None").
+        """
+        args = ["awslabs.postgres-mcp-server@1.0.9"]
+
+        # Pass the connection config as server-start flags. With these set,
+        # run_query sends only {sql} and there is no per-call ambiguity.
+        if self.config.cluster_arn and self.config.secret_arn:
+            args += [
+                f"--resource_arn={self.config.cluster_arn}",
+                f"--secret_arn={self.config.secret_arn}",
+                f"--database={self.config.database_name}",
+                f"--region={self.config.aws_region}",
+                f"--readonly={'False' if self.config.allow_write_query else 'True'}",
+            ]
+        elif self.config.allow_write_query:
             args.append("--allow_write_query")
 
         env = {
@@ -168,6 +200,12 @@ class MCPPostgresClient:
         self._connected = False
         self.session = None
 
+    def _uses_startup_flags(self) -> bool:
+        """True when the server was started with --resource_arn/--secret_arn
+        flags (1.0.9 path), meaning the DB connection is already established
+        at startup and there is no separate connect_to_database step."""
+        return bool(self.config.cluster_arn and self.config.secret_arn)
+
     async def connect_to_database(self) -> Dict[str, Any]:
         """
         Connect to the Aurora PostgreSQL database via MCP.
@@ -179,6 +217,12 @@ class MCPPostgresClient:
         """
         if not self._connected:
             await self.connect()
+
+        # 1.0.9 with startup flags is already connected — there is no
+        # connect_to_database tool to call. No-op so the session context
+        # manager (which always calls this) stays compatible.
+        if self._uses_startup_flags():
+            return {"message": "connected via server-start flags"}
 
         # Build connection arguments - all parameters required by postgres-mcp-server
         args = {
@@ -218,9 +262,17 @@ class MCPPostgresClient:
             await self.connect()
             await self.connect_to_database()
 
-        # Build query arguments - MCP server requires connection params with each query
+        # On the 1.0.9 startup-flag path the server already holds the
+        # connection, so run_query takes only the SQL. (The legacy per-call
+        # connection shape below is kept for the non-flag fallback.)
+        if self._uses_startup_flags():
+            result = await self.session.call_tool("run_query", {"sql": sql})
+            return self._parse_query_result(result)
+
+        # Build query arguments - legacy MCP server required connection params
+        # with each query.
         args = {"sql": sql}
-        
+
         # Add connection parameters based on method
         if self.config.connection_method == "rdsapi":
             args["connection_method"] = "rdsapi"
@@ -250,31 +302,66 @@ class MCPPostgresClient:
                         return {"message": content.text}
         return {"message": str(result)}
 
-    def _parse_query_result(self, result) -> List[Dict]:
-        """Parse a query result into list of dictionaries."""
-        if hasattr(result, 'content') and result.content:
-            for content in result.content:
-                if hasattr(content, 'text'):
+    @staticmethod
+    def _decode_json_columns(row: Dict) -> Dict:
+        """Postgres ``json``/array columns arrive from postgres-mcp-server as
+        JSON-encoded *strings* (e.g. ``durations = '["3 nights"]'``). Decode
+        any string value that looks like a JSON array or object so callers
+        get real lists/dicts (the product hydration downstream expects
+        ``durations`` to be a list, not a string)."""
+        if not isinstance(row, dict):
+            return row
+        decoded = {}
+        for key, value in row.items():
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped[:1] in ("[", "{"):
                     try:
-                        data = json.loads(content.text)
-                        # Handle different result formats
-                        if isinstance(data, list):
-                            return data
-                        elif isinstance(data, dict) and "rows" in data:
-                            return data["rows"]
-                        elif isinstance(data, dict) and "data" in data:
-                            return data["data"]
-                        elif isinstance(data, dict) and "result" in data:
-                            # Handle result wrapper format
-                            inner = data["result"]
-                            if isinstance(inner, list):
-                                return inner
-                            elif isinstance(inner, dict) and "rows" in inner:
-                                return inner["rows"]
-                        return [data] if data else []
+                        decoded[key] = json.loads(stripped)
+                        continue
                     except json.JSONDecodeError:
-                        return []
-        return []
+                        pass
+            decoded[key] = value
+        return decoded
+
+    def _parse_query_result(self, result) -> List[Dict]:
+        """Parse a query result into list of dictionaries.
+
+        Handles two server contracts:
+          - 1.0.9: one ``TextContent`` block *per row*, each a JSON object,
+            with ``json``/array columns JSON-encoded as strings.
+          - legacy/@latest: a single block holding the whole result set as a
+            list or a ``{rows|data|result}`` wrapper.
+        """
+        if not (hasattr(result, "content") and result.content):
+            return []
+
+        rows: List[Dict] = []
+        for content in result.content:
+            if not hasattr(content, "text"):
+                continue
+            try:
+                data = json.loads(content.text)
+            except json.JSONDecodeError:
+                continue
+
+            # Unwrap the known single-block container shapes.
+            if isinstance(data, dict):
+                if "rows" in data and isinstance(data["rows"], list):
+                    data = data["rows"]
+                elif "data" in data and isinstance(data["data"], list):
+                    data = data["data"]
+                elif "result" in data:
+                    inner = data["result"]
+                    data = inner.get("rows", []) if isinstance(inner, dict) else inner
+
+            if isinstance(data, list):
+                rows.extend(d for d in data if isinstance(d, dict))
+            elif isinstance(data, dict):
+                # 1.0.9 per-row block (one object per TextContent).
+                rows.append(data)
+
+        return [self._decode_json_columns(r) for r in rows]
 
     @property
     def available_tools(self) -> List[Dict]:
