@@ -6,6 +6,7 @@
  * monitor. `traceAdapter.ts` is responsible for converting whatever the
  * backend returns into this shape.
  */
+import type { Product } from '../types';
 
 export type StageSpanKind =
   | 'orchestration'
@@ -53,6 +54,9 @@ export interface StageRecommendation {
   rationale: string[];
   hero?: 'wine' | 'beach' | 'river' | 'mountain' | 'city';
   primary?: boolean;
+  /** The live Product, carried through so the deck can render the same
+   *  full-bleed TripVisual photo card the showcase uses. */
+  product?: Product;
 }
 
 export interface StageTraveler {

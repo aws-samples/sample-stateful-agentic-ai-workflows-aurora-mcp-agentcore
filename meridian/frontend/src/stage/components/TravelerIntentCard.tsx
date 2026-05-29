@@ -5,7 +5,13 @@
  * preferences, and the prompt that triggered the agent. Highlights when a
  * memory span is active.
  */
+import { useState } from 'react';
 import type { StageTraveler } from '../types';
+import { ALEX_IMAGE_URL, ALEX_NAME } from '../../showcase/lib/personas';
+
+// "Build on AWS" booth mark. Drop the sticker art at this path; if it's
+// missing we fall back to a clean text wordmark so the footer never breaks.
+const BUILD_ON_AWS_SRC = '/kiosk/build-on-aws.png';
 
 interface TravelerIntentCardProps {
   traveler: StageTraveler;
@@ -14,6 +20,7 @@ interface TravelerIntentCardProps {
 }
 
 export function TravelerIntentCard({ traveler, prompt, memoryActive }: TravelerIntentCardProps) {
+  const [awsMarkMissing, setAwsMarkMissing] = useState(false);
   return (
     <aside className="ds-panel" aria-label="Traveler intent">
       <div className="ds-panel-head">
@@ -29,7 +36,9 @@ export function TravelerIntentCard({ traveler, prompt, memoryActive }: TravelerI
         </div>
 
         <div className="ds-traveler-profile">
-          <div className="ds-traveler-avatar" aria-hidden="true">{traveler.initials}</div>
+          <div className="ds-traveler-avatar is-photo" aria-hidden="true">
+            <img src={ALEX_IMAGE_URL} alt={ALEX_NAME} loading="lazy" />
+          </div>
           <div>
             <div className="ds-traveler-name">{traveler.name}</div>
             <div className="ds-traveler-id">{traveler.id}</div>
@@ -57,6 +66,22 @@ export function TravelerIntentCard({ traveler, prompt, memoryActive }: TravelerI
             <span>Cap</span>
             <b>${traveler.budgetCapUsd.toLocaleString()}</b>
           </div>
+        </div>
+
+        {/* Booth brand footer — anchors the left pane with the AWS mark. */}
+        <div className="ds-aws-mark" aria-label="Build on AWS">
+          {awsMarkMissing ? (
+            <span className="ds-aws-mark-text">
+              Build on <b>aws</b>
+            </span>
+          ) : (
+            <img
+              src={BUILD_ON_AWS_SRC}
+              alt="Build on AWS"
+              loading="lazy"
+              onError={() => setAwsMarkMissing(true)}
+            />
+          )}
         </div>
       </div>
     </aside>

@@ -36,7 +36,32 @@ function adaptProducts(products: Product[] | undefined): StageRecommendation[] {
     hero: heroForProduct(p, idx),
     primary: idx === 0,
     rationale: (p.description ?? '').split(/[.,]/).slice(0, 3).map((s) => s.trim()).filter(Boolean),
+    // Carry the live Product so the deck can render the showcase TripVisual.
+    product: p,
   }));
+}
+
+// Turn a snake_case preference key into a human tag word: "no_red_eye" →
+// "no red eye", "shellfish allergy" stays as-is. Kept short so the fact
+// chips read cleanly in the traveler card.
+function humanizeFactKey(key: string): string {
+  return key.replace(/_/g, ' ').trim();
+}
+
+// Map the live Aurora memory facts (traveler_preferences) into compact
+// "key · value" tag strings for the traveler card. Falls back to the
+// scenario's hardcoded facts only when the response carries none.
+function factsFromResponse(response: ChatResponse, fallback: string[]): string[] {
+  const facts = response.memory_facts ?? [];
+  if (!facts.length) return fallback;
+  return facts
+    .map((f) => {
+      const k = humanizeFactKey(f.key ?? '');
+      const v = (f.value ?? '').trim();
+      if (k && v) return `${k} · ${v}`;
+      return v || k;
+    })
+    .filter(Boolean);
 }
 
 /**
@@ -54,9 +79,11 @@ export function adaptChatResponseToScenario(
   const spans = rawActivities.map(activityToStageSpan);
   const recommendations = adaptProducts(response.products);
   const assistantReply = response.message?.trim() ?? '';
+  const facts = factsFromResponse(response, baseScenario.traveler.facts);
 
   return {
     ...baseScenario,
+    traveler: { ...baseScenario.traveler, facts },
     traceId: response.conversation_id ?? baseScenario.traceId,
     spans,
     recommendations,

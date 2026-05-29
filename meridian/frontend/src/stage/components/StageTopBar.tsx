@@ -16,10 +16,9 @@ const SYSTEMS: { id: StageSystemId | 'aurora_pg' | 'pgvector' | 'bedrock' | 'str
 interface StageTopBarProps {
   phaseLabel: string;
   traceId: string;
-  activeSystem: StageSystemId | null;
 }
 
-export function StageTopBar({ phaseLabel, traceId, activeSystem }: StageTopBarProps) {
+export function StageTopBar({ phaseLabel, traceId }: StageTopBarProps) {
   return (
     <header className="ds-topbar" role="banner">
       <div className="ds-brand">
@@ -30,21 +29,16 @@ export function StageTopBar({ phaseLabel, traceId, activeSystem }: StageTopBarPr
         </div>
       </div>
 
-      <nav className="ds-systems" aria-label="Live system stack">
-        {SYSTEMS.map((s) => {
-          const active = s.matches != null && s.matches === activeSystem;
-          return (
-            <span
-              key={s.id}
-              className={`ds-system-chip${active ? ' is-active' : ''}`}
-              data-system={s.matches ?? ''}
-              role="status"
-            >
-              <span className="ds-system-dot" aria-hidden="true" />
-              {s.label}
-            </span>
-          );
-        })}
+      {/* The stack this demo is built on. These are context, not a live
+          readout — kept calm and uniform so a single span-driven chip never
+          "dances" alone. The live signal is the phase pill + the trace. */}
+      <nav className="ds-systems" aria-label="System stack">
+        {SYSTEMS.map((s) => (
+          <span key={s.id} className="ds-system-chip" data-system={s.matches ?? ''}>
+            <span className="ds-system-dot" aria-hidden="true" />
+            {s.label}
+          </span>
+        ))}
       </nav>
 
       <div className="ds-status-bar">

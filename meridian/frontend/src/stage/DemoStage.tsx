@@ -28,7 +28,6 @@ import { StageTopBar } from './components/StageTopBar';
 import { TravelerIntentCard } from './components/TravelerIntentCard';
 import { TraceHero } from './components/TraceHero';
 import { SystemProofRail } from './components/SystemProofRail';
-import { RecommendationDeck } from './components/RecommendationDeck';
 import { PresenterControls } from './components/PresenterControls';
 import { SpanInspector } from './components/SpanInspector';
 import { useStagePlayer } from './hooks/useStagePlayer';
@@ -49,6 +48,23 @@ const ARCHITECTURE_IMAGE_SRC = '/kiosk/architecture-board.png';
 const TRY_QR_IMAGE_SRC = '/kiosk/try-meridian-qr.png';
 type KioskTab = 'demo' | 'architecture' | 'try';
 
+// Chalk-talk session — shown on the "Try it live" pane to drive folks to
+// the deeper session. Keep in one place so the date/room is easy to edit.
+const CHALK_TALK = {
+  code: 'DAT301-R',
+  title: 'Build agentic workflows with Aurora and MCP',
+  time: '4:15 – 5:15 PM · Chalk talk',
+  room: 'Room 716A',
+  speakers: 'Shayon Sanyal & Aditya Samant',
+} as const;
+
+// The three Meridian surfaces, so booth visitors can jump straight to any.
+const MERIDIAN_SURFACES: { label: string; path: string; blurb: string }[] = [
+  { label: 'Showcase', path: '/showcase', blurb: 'Full concierge — chat, trace, memory' },
+  { label: 'Pro', path: '/', blurb: 'Chalk-talk deep dive · five modes' },
+  { label: 'Kiosk', path: '/demo-stage?kiosk=1', blurb: 'This auto-playing booth' },
+];
+
 function readUrlFlags() {
   if (typeof window === 'undefined') return { kiosk: false, view: 'audience' as StageView, phase: 4 as Phase };
   const sp = new URLSearchParams(window.location.search);
@@ -68,6 +84,12 @@ export function DemoStage() {
   const [view, setView] = useState<StageView>(flags.view);
   const [selectedSpanIdx, setSelectedSpanIdx] = useState<number | null>(null);
   const [kiosk] = useState(flags.kiosk);
+  // True once the reply typewriter finishes — gates the product deck so
+  // cards fan in right after the stream lands (not before).
+  const [replyStreamDone, setReplyStreamDone] = useState(false);
+  // Collapses the center trace panel after completion so the reply +
+  // product cards rise into view without scrolling. User can re-expand.
+  const [traceCollapsed, setTraceCollapsed] = useState(false);
   // Bumped to re-trigger the scenario-load effect. In kiosk mode a failed
   // fetch schedules an auto-retry that increments this, so an unattended
   // booth quietly reconnects instead of parking on an error string.
@@ -76,6 +98,14 @@ export function DemoStage() {
   const [architectureMissing, setArchitectureMissing] = useState(false);
   const [qrMissing, setQrMissing] = useState(false);
   const phaseRef = useRef<Phase>(flags.phase);
+
+  // Session cache of adapted scenarios, keyed by scenarioId. The kiosk
+  // loops the same 3 scenarios forever, so after the first pass every
+  // turn serves instantly from here — no recurring "Loading live trace…"
+  // dead air. Still 100% live data; we just fetch each scenario once and
+  // prefetch the NEXT one while the current plays.
+  const scenarioCache = useRef<Map<StageScenario['id'], StageScenario>>(new Map());
+  const inFlight = useRef<Set<StageScenario['id']>>(new Set());
 
   const totalLatency = useMemo(() => sumLatency(scenarioData.spans), [scenarioData]);
 
@@ -108,6 +138,11 @@ export function DemoStage() {
     [scenarioData.spans],
   );
   const replyPhase: 'pending' | 'composing' | 'composed' = (() => {
+    // Once the trace player finishes, the reply is fully composed — this
+    // also covers the common case where the model span is the LAST span,
+    // so activeIndex sits AT modelSpanIdx and never exceeds it (which
+    // otherwise leaves the card stuck in "composing" and hides the cards).
+    if (isComplete) return 'composed';
     if (modelSpanIdx === -1) {
       return activeIndex >= scenarioData.spans.length - 1 ? 'composed' : 'pending';
     }
@@ -118,26 +153,69 @@ export function DemoStage() {
   const primaryRecommendation =
     scenarioData.recommendations.find((r) => r.primary) ?? scenarioData.recommendations[0] ?? null;
 
-  // Pull live trace data when scenario changes — no offline fixtures.
+  // Fetch + adapt one scenario, populating the session cache. Dedupes
+  // concurrent requests for the same id (via inFlight) so a preload and a
+  // direct view don't double-fetch. Returns the adapted scenario or throws.
+  const fetchScenario = useCallback(async (id: StageScenario['id']): Promise<StageScenario> => {
+    const cached = scenarioCache.current.get(id);
+    if (cached) return cached;
+    const template = getStageScenarioById(id);
+    const res = await sendChatMessage({
+      message: template.prompt,
+      phase: phaseRef.current,
+      customer_id: template.traveler.id,
+    });
+    const merged = adaptChatResponseToScenario(res, template);
+    if (!merged) {
+      throw new Error('Backend returned an empty trace — check AgentCore + Aurora configuration.');
+    }
+    scenarioCache.current.set(id, merged);
+    return merged;
+  }, []);
+
+  // Reset the per-scenario reveal flags whenever the scenario changes, so
+  // a new turn re-collapses the deck and re-expands the trace for replay.
+  useEffect(() => {
+    setReplyStreamDone(false);
+    setTraceCollapsed(false);
+  }, [scenarioId, retryTick]);
+
+  // Auto-collapse the trace once the player finishes walking the spans, so
+  // the answer and product cards rise into view without scrolling. We key
+  // off `isComplete` (the player's own deterministic "trace done" signal)
+  // rather than the reply typewriter — the deck still waits for the stream
+  // (replyStreamDone), but the fold is the trace's beat, not the reply's.
+  // (Earlier this rode on replyStreamDone, which got starved on the live
+  // path once the typewriter stopped firing onComplete in the pending
+  // phase — so the panel stopped collapsing.) A short delay lets the
+  // audience register the completed trace before it folds. The presenter
+  // can re-expand with the arrow at any time.
+  useEffect(() => {
+    if (!isComplete) return;
+    const t = window.setTimeout(() => setTraceCollapsed(true), 1100);
+    return () => window.clearTimeout(t);
+  }, [isComplete]);
+
+  // Pull trace data when scenario changes. Cache-first: a revisited
+  // scenario renders instantly; a fresh one shows the trace building once.
   useEffect(() => {
     const template = getStageScenarioById(scenarioId);
+    const cached = scenarioCache.current.get(scenarioId);
+    if (cached) {
+      // Instant: serve from cache, no loading state, no dead air.
+      setScenarioData(cached);
+      setLoadError(null);
+      setLoading(false);
+      return;
+    }
     setScenarioData(template);
     setLoadError(null);
     setLoading(true);
     let cancelled = false;
     (async () => {
       try {
-        const res = await sendChatMessage({
-          message: template.prompt,
-          phase: phaseRef.current,
-          customer_id: template.traveler.id,
-        });
+        const merged = await fetchScenario(scenarioId);
         if (cancelled) return;
-        const merged = adaptChatResponseToScenario(res, template);
-        if (!merged) {
-          setLoadError('Backend returned an empty trace — check AgentCore + Aurora configuration.');
-          return;
-        }
         setScenarioData(merged);
       } catch (err) {
         if (!cancelled) {
@@ -152,7 +230,27 @@ export function DemoStage() {
     return () => {
       cancelled = true;
     };
-  }, [scenarioId, retryTick]);
+  }, [scenarioId, retryTick, fetchScenario]);
+
+  // Prefetch the NEXT kiosk scenario while the current one plays, so the
+  // autoplay advance lands on an already-cached (instant) turn. Fire-and-
+  // forget; failures are silently ignored (the direct load will surface
+  // any real error when that scenario becomes active).
+  useEffect(() => {
+    if (!kiosk) return;
+    const idx = KIOSK_SCENARIO_ORDER.indexOf(scenarioId);
+    if (idx === -1) return;
+    const nextId = KIOSK_SCENARIO_ORDER[(idx + 1) % KIOSK_SCENARIO_ORDER.length];
+    if (scenarioCache.current.has(nextId) || inFlight.current.has(nextId)) return;
+    inFlight.current.add(nextId);
+    fetchScenario(nextId)
+      .catch(() => {
+        /* preload is best-effort; ignore */
+      })
+      .finally(() => {
+        inFlight.current.delete(nextId);
+      });
+  }, [scenarioId, kiosk, fetchScenario]);
 
   // Kiosk reconnect loop: if a scenario fetch fails (backend blip, Aurora
   // reconnect, deploy in progress), don't strand the booth on an error.
@@ -279,7 +377,6 @@ export function DemoStage() {
         <StageTopBar
           phaseLabel={scenarioData.phaseLabel}
           traceId={scenarioData.traceId}
-          activeSystem={activeSystem}
         />
         {kiosk && (
           <div className="ds-kiosk-tabs" role="tablist" aria-label="Kiosk screens">
@@ -352,6 +449,11 @@ export function DemoStage() {
                 reasoning={scenarioData.reasoning}
                 replyPhase={replyPhase}
                 primaryRecommendation={primaryRecommendation}
+                recommendations={scenarioData.recommendations}
+                showDeck={replyStreamDone}
+                onReplyStreamComplete={() => setReplyStreamDone(true)}
+                collapsed={traceCollapsed}
+                onToggleCollapsed={() => setTraceCollapsed((c) => !c)}
               />
 
               <SystemProofRail
@@ -360,8 +462,6 @@ export function DemoStage() {
                 activeSystem={activeSystem}
               />
             </main>
-
-            <RecommendationDeck recommendations={scenarioData.recommendations} />
 
             <PresenterControls
               isPlaying={isPlaying}
@@ -410,8 +510,40 @@ export function DemoStage() {
           <section className="ds-kiosk-pane">
             <div className="ds-kiosk-pane-head">
               <h2>Try Meridian yourself</h2>
-              <p>Scan to open the repo and run this booth locally in minutes.</p>
+              <p>Scan for the repo, explore the three surfaces, or join our chalk talk.</p>
             </div>
+
+            {/* Chalk-talk invite — the deeper session this booth previews. */}
+            <a
+              className="ds-kiosk-session"
+              href={KIOSK_GITHUB_REPO}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <div className="ds-kiosk-session-badge">{CHALK_TALK.code}</div>
+              <div className="ds-kiosk-session-body">
+                <div className="ds-kiosk-session-title">{CHALK_TALK.title}</div>
+                <div className="ds-kiosk-session-meta">
+                  <span>{CHALK_TALK.time}</span>
+                  <span>·</span>
+                  <span>{CHALK_TALK.room}</span>
+                </div>
+                <div className="ds-kiosk-session-speakers">{CHALK_TALK.speakers}</div>
+              </div>
+              <div className="ds-kiosk-session-cta">Join us →</div>
+            </a>
+
+            {/* Jump to any of the three Meridian surfaces. */}
+            <div className="ds-kiosk-surfaces">
+              {MERIDIAN_SURFACES.map((s) => (
+                <a key={s.path} className="ds-kiosk-surface" href={s.path}>
+                  <div className="ds-kiosk-surface-label">{s.label}</div>
+                  <div className="ds-kiosk-surface-blurb">{s.blurb}</div>
+                  <code className="ds-kiosk-surface-path">{s.path}</code>
+                </a>
+              ))}
+            </div>
+
             <div className="ds-kiosk-try">
               <div className="ds-kiosk-try-hero">
                 <div className="ds-kiosk-rollup-label">Live at the booth</div>
@@ -419,8 +551,9 @@ export function DemoStage() {
                   Build agentic workflows with <em>Aurora and MCP</em>
                 </h3>
                 <p>
-                  Built on Aurora + MCP + Strands + AgentCore. One scan gets attendees straight into
-                  the repo and setup path.
+                  Aurora PostgreSQL + pgvector, MCP tool servers, Strands orchestration, and
+                  AgentCore runtime/gateway/memory. Scan to clone the repo and run all three
+                  surfaces locally in minutes.
                 </p>
               </div>
               <div className="ds-kiosk-try-grid">

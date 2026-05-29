@@ -177,36 +177,7 @@
   height: 6px;
   border-radius: 999px;
   background: currentColor;
-  opacity: 0.6;
-}
-.ds-system-chip.is-active {
-  background: rgba(255, 153, 0, 0.10);
-  border-color: var(--ds-line-hot);
-  color: var(--ds-aws-soft);
-  box-shadow: var(--ds-shadow-hot);
-}
-.ds-system-chip[data-system='memory'].is-active {
-  background: rgba(99, 245, 214, 0.10);
-  border-color: rgba(99, 245, 214, 0.5);
-  color: var(--ds-aurora);
-  box-shadow: 0 0 32px rgba(99, 245, 214, 0.22);
-}
-.ds-system-chip[data-system='aurora'].is-active {
-  background: rgba(115, 167, 255, 0.10);
-  border-color: rgba(115, 167, 255, 0.46);
-  color: var(--ds-blue);
-  box-shadow: 0 0 32px rgba(115, 167, 255, 0.18);
-}
-.ds-system-chip[data-system='mcp'].is-active {
-  background: rgba(195, 153, 255, 0.10);
-  border-color: rgba(195, 153, 255, 0.46);
-  color: var(--ds-violet);
-  box-shadow: 0 0 32px rgba(195, 153, 255, 0.18);
-}
-.ds-system-chip[data-system='model'].is-active {
-  background: rgba(123, 242, 124, 0.10);
-  border-color: rgba(123, 242, 124, 0.42);
-  color: var(--ds-mint);
+  opacity: 0.55;
 }
 .ds-status-bar {
   display: flex;
@@ -346,6 +317,19 @@
   background: linear-gradient(135deg, #fff2c9, #ff9900);
   box-shadow: 0 0 26px rgba(255, 153, 0, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
+/* Photo variant: real traveler portrait (matches the showcase avatar) so
+   the kiosk feels like a person, not an initials chip. */
+.ds-traveler-avatar.is-photo {
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 0 22px rgba(255, 153, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+.ds-traveler-avatar.is-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 .ds-traveler-name { font-size: 14px; font-weight: 800; }
 .ds-traveler-id { color: var(--ds-muted); font-family: var(--ds-mono); font-size: 11px; margin-top: 2px; }
 .ds-fact-section {
@@ -385,7 +369,13 @@
   color: #bff5e8;
   font-size: 11.5px;
   font-weight: 600;
-  white-space: nowrap;
+  /* Long facts ("loyalty programs · Marriott Bonvoy, Delta SkyMiles")
+     wrap inside the chip and stay within the panel instead of bleeding
+     past its right edge. max-width caps a single chip at the column. */
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
 }
 .ds-traveler-meta {
   display: grid;
@@ -440,12 +430,46 @@
 }
 .ds-trace-stats {
   display: flex;
+  align-items: center;
   gap: 18px;
   color: var(--ds-muted);
   font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   font-weight: 820;
+}
+/* Collapse/expand arrow in the trace header. */
+.ds-trace-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--ds-line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ds-text-2);
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+.ds-trace-collapse:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--ds-line-2);
+  color: var(--ds-text);
+}
+.ds-trace-collapse-chevron {
+  display: inline-flex;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Collapsed → chevron points up (expand affordance). Expanded → points
+   down (collapse affordance). */
+.ds-trace-hero.is-collapsed .ds-trace-collapse-chevron {
+  transform: rotate(180deg);
+}
+/* When collapsed the hero shrinks to just its header + the completed
+   reply, so the deck below rises into view without scrolling. */
+.ds-trace-hero.is-collapsed {
+  flex: 0 0 auto;
 }
 .ds-trace-stats b {
   display: block;
@@ -742,6 +766,30 @@
   animation: dsResponseFade 0.42s ease both;
 }
 .ds-response.phase-composing .ds-response-text { color: var(--ds-text-2); }
+
+/* Markdown-rendered reply: tighten the rhythm so react-markdown's default
+   <p>/<ul> margins don't blow the card out. Bold + list markers match the
+   premium concierge tone. */
+.ds-response-md > * { margin: 0; }
+.ds-response-md > * + * { margin-top: 8px; }
+.ds-response-md p { line-height: 1.42; }
+.ds-response-md strong { color: var(--ds-text); font-weight: 680; }
+.ds-response-md ul,
+.ds-response-md ol {
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ds-response-md li { line-height: 1.4; }
+.ds-response-md code {
+  font-family: var(--ds-mono);
+  font-size: 0.88em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .ds-response-caret {
   display: inline-block;
   width: 2px;
@@ -914,6 +962,13 @@
   border-color: rgba(115, 167, 255, 0.5);
   background: rgba(115, 167, 255, 0.08);
 }
+/* Dimmer state: this table was used somewhere in the turn but isn't the
+   span firing right now. Keeps the "what ran" context without the whole
+   spine looking lit at once. */
+.ds-aurora-table.is-used {
+  border-color: rgba(115, 167, 255, 0.22);
+  background: rgba(115, 167, 255, 0.03);
+}
 
 .ds-mcp-tool {
   display: grid;
@@ -936,12 +991,19 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
+/* Dim: this tool ran somewhere in the turn. */
 .ds-mcp-tool.is-called {
-  border-color: rgba(195, 153, 255, 0.5);
-  background: rgba(195, 153, 255, 0.08);
+  border-color: rgba(195, 153, 255, 0.28);
+  background: rgba(195, 153, 255, 0.04);
+  color: var(--ds-text-2);
+}
+/* Bright: this tool is the span firing right NOW. */
+.ds-mcp-tool.is-calling {
+  border-color: rgba(195, 153, 255, 0.6);
+  background: rgba(195, 153, 255, 0.12);
   color: var(--ds-violet);
 }
-.ds-mcp-tool.is-called span:last-child { color: var(--ds-violet); }
+.ds-mcp-tool.is-calling span:last-child { color: var(--ds-violet); }
 
 .ds-gov {
   display: flex;
@@ -969,6 +1031,39 @@
   grid-template-columns: 1.4fr 1fr 1fr;
   gap: 12px;
 }
+/* Inline deck — lives INSIDE the trace-hero panel, right under the
+   concierge reply, so the trace visibly produces the cards. Separated
+   from the reply by a hairline, and revealed with a soft rise once the
+   typewriter lands. Within the narrower center column the three cards
+   read better as even thirds than the headline-weighted deck layout. */
+.ds-trace-hero-deck {
+  margin: 0 22px 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ds-line);
+  animation: ds-deck-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.ds-trace-hero-deck .ds-rec-deck {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+.ds-trace-hero-deck .ds-rec {
+  min-height: 210px;
+}
+.ds-trace-hero-deck .ds-rec-hero {
+  height: 118px;
+}
+@keyframes ds-deck-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-trace-hero-deck { animation: none; }
+}
 .ds-rec {
   position: relative;
   border: 1px solid var(--ds-line);
@@ -977,14 +1072,17 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-height: 168px;
+  min-height: 240px;
 }
 .ds-rec.is-primary {
   border-color: rgba(255, 153, 0, 0.45);
   box-shadow: 0 0 0 1px rgba(255, 153, 0, 0.22), var(--ds-shadow-hot);
 }
 .ds-rec-hero {
-  height: 78px;
+  /* Full-bleed photo header — tall enough to read as a real image, not a
+     strip. The gradient below is the fallback when no TripVisual photo is
+     attached. */
+  height: 150px;
   position: relative;
   overflow: hidden;
   background:
@@ -992,6 +1090,33 @@
     radial-gradient(circle at 30% 30%, rgba(255, 234, 195, 0.6), transparent 40%),
     linear-gradient(135deg, #5b3a14, #a8672d 38%, #243a30 60%, #101722);
 }
+/* The showcase TripVisual fills the hero. Only the photo + its dark fade
+   matter (the decorative ridges are display:none in the showcase too), so
+   we replicate just those two rules here scoped to the deck — no need to
+   import the whole showcase stylesheet. */
+.ds-rec-hero .mds-trip-visual {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.ds-rec-hero .mds-trip-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(1.04) contrast(1.03);
+}
+/* Bottom-to-top dark fade so the pill + title stay legible over the photo. */
+.ds-rec-hero-fade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(4, 8, 14, 0.05) 0%, rgba(4, 8, 14, 0.5) 72%, rgba(3, 6, 10, 0.82) 100%);
+  pointer-events: none;
+}
+/* Pill sits above the photo + fade. */
+.ds-rec-hero .ds-rec-pill { position: relative; z-index: 2; }
 .ds-rec-hero[data-hero='beach'] {
   background:
     linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.55)),
@@ -1685,4 +1810,168 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .ds-reconnect-dot { animation: none; }
+}
+
+/* ---- Try pane: chalk-talk invite + surface links -------------------- */
+/* Space the new sections within the Try pane. */
+.ds-kiosk-pane > .ds-kiosk-session,
+.ds-kiosk-pane > .ds-kiosk-surfaces {
+  margin-top: 16px;
+}
+
+/* Chalk-talk session card — a warm, clickable invite to the deeper talk. */
+.ds-kiosk-session {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 153, 0, 0.32);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(255, 153, 0, 0.12), transparent 46%),
+    rgba(0, 0, 0, 0.24);
+  text-decoration: none;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+.ds-kiosk-session:hover {
+  border-color: rgba(255, 153, 0, 0.55);
+  transform: translateY(-1px);
+}
+.ds-kiosk-session-badge {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #fff2c9, #ff9900);
+  color: #1a1207;
+  font-family: var(--ds-mono);
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: -0.01em;
+}
+.ds-kiosk-session-body { flex: 1 1 auto; min-width: 0; }
+.ds-kiosk-session-title {
+  color: var(--ds-text);
+  font-size: 15px;
+  font-weight: 720;
+  letter-spacing: -0.01em;
+}
+.ds-kiosk-session-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--ds-aws-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.ds-kiosk-session-speakers {
+  margin-top: 3px;
+  color: var(--ds-text-2);
+  font-size: 12.5px;
+}
+.ds-kiosk-session-cta {
+  flex: 0 0 auto;
+  color: var(--ds-aws-soft);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Three surface links — Showcase / Pro / Kiosk. */
+.ds-kiosk-surfaces {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.ds-kiosk-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 13px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--ds-line);
+  background: rgba(0, 0, 0, 0.2);
+  text-decoration: none;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+.ds-kiosk-surface:hover {
+  border-color: rgba(99, 245, 214, 0.4);
+  background: rgba(99, 245, 214, 0.05);
+  transform: translateY(-1px);
+}
+.ds-kiosk-surface-label {
+  color: var(--ds-text);
+  font-size: 14.5px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+.ds-kiosk-surface-blurb {
+  color: var(--ds-text-2);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.ds-kiosk-surface-path {
+  margin-top: 2px;
+  color: var(--ds-aurora);
+  font-family: var(--ds-mono);
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .ds-kiosk-surfaces { grid-template-columns: 1fr; }
+  .ds-kiosk-session { flex-wrap: wrap; }
+  .ds-kiosk-session-cta { width: 100%; }
+}
+
+/* ---- "Build on AWS" booth mark — footer of the left pane ------------- */
+.ds-aws-mark {
+  position: relative;
+  margin-top: 6px;
+  padding-top: 18px;
+  padding-bottom: 4px;
+  border-top: 1px solid var(--ds-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Soft radial halo sitting BEHIND the logo so the sticker pops off the
+   dark panel — a diffuse orange glow rather than a hard edge. */
+.ds-aws-mark::before {
+  content: '';
+  position: absolute;
+  top: 52%;
+  left: 50%;
+  width: 200px;
+  height: 200px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 153, 0, 0.28) 0%,
+    rgba(255, 153, 0, 0.14) 38%,
+    transparent 70%
+  );
+  filter: blur(10px);
+  pointer-events: none;
+  z-index: 0;
+}
+.ds-aws-mark img {
+  position: relative;
+  z-index: 1;
+  width: 132px;
+  height: auto;
+  display: block;
+  opacity: 0.98;
+  /* Tight edge glow on top of the radial halo for crisp definition. */
+  filter: drop-shadow(0 3px 12px rgba(255, 153, 0, 0.24));
+}
+/* Text fallback if the sticker asset isn't present. */
+.ds-aws-mark-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ds-text-2);
+  letter-spacing: -0.01em;
+}
+.ds-aws-mark-text b {
+  color: var(--ds-aws-soft, #ff9900);
+  font-weight: 800;
 }
