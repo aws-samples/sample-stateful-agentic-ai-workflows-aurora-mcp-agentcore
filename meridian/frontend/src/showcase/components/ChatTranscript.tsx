@@ -73,7 +73,22 @@ export function ChatTranscript({ state, compact = false }: { state: MeridianShow
   return (
     <div ref={containerRef} className={`mds-chat-transcript${compact ? ' is-compact' : ''}`} aria-live="polite">
       {visibleMessages.length === 0 && !state.isLoading ? (
-        <div className="mds-empty">Start with a trip idea to wake up the concierge.</div>
+        <div className="mds-empty-state">
+          <div className="mds-empty-title">Ask me about your next trip.</div>
+          <div className="mds-empty-sub">
+            I'm running in <b>{state.phaseLabel}</b> mode. Try a starter below, or type your own.
+          </div>
+          {state.phaseExamples.length > 0 && (
+            <button
+              type="button"
+              className="mds-empty-starter"
+              onClick={() => void state.applyPhaseExample(state.phaseExamples[0], true)}
+              disabled={state.isLoading}
+            >
+              {state.phaseExamples[0]}
+            </button>
+          )}
+        </div>
       ) : (
         visibleMessages.map((message, index) => (
           <ChatMessage

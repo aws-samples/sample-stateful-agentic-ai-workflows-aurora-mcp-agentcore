@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { ChatComposer } from './components/ChatComposer';
 import { ChatTranscript } from './components/ChatTranscript';
 import { MemoryDrawer } from './components/MemoryDrawer';
+import { NavPanelDrawer } from './components/NavPanelDrawer';
+import type { NavPanelId } from './components/NavPanelDrawer';
 import { PhaseSelector } from './components/PhaseSelector';
 import { TracePanel } from './components/TracePanel';
 import { TravelerContextPanel } from './components/TravelerContextPanel';
@@ -82,6 +84,9 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
   // payoff, so audiences in zoomed / tall-screen views appreciate
   // being able to give it the full right rail.
   const [forYouCollapsed, setForYouCollapsed] = useState(false);
+  // Which sidebar nav panel is open (null = Concierge, the default view).
+  // Drives both the lightweight drawer and the active-nav highlight.
+  const [navPanel, setNavPanel] = useState<NavPanelId | null>(null);
 
   // Time-of-day greeting word for the headline ("Good morning, Alex." /
   // "Good evening, Alex.") — keeps the demo feeling personal regardless
@@ -106,23 +111,42 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
           Meridian
         </div>
         <nav className="mds-nav-items" aria-label="Desktop navigation">
-          {navItems.map((item, index) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`mds-nav-item${index === 0 ? ' is-active' : ''}`}
-              onClick={() => {
-                if (item.id === 'preferences') setMemoryOpen(true);
-                if (item.id === 'trips' && state.recommendations[0]) state.selectTrip(state.recommendations[0]);
-              }}
-            >
-              <span className="mds-nav-icon" aria-hidden="true">
-                <NavIcon id={item.id} />
-              </span>
-              {item.label}
-              {item.id === 'messages' && <b>{state.messages.length}</b>}
-            </button>
-          ))}
+          {navItems.map((item) => {
+            // Active when: Concierge and no panel/drawer open, OR this item's
+            // panel is the open one, OR Preferences and the memory drawer is open.
+            const isActive =
+              (item.id === 'concierge' && navPanel === null && !memoryOpen) ||
+              (item.id === 'preferences' && memoryOpen) ||
+              navPanel === (item.id as NavPanelId);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`mds-nav-item${isActive ? ' is-active' : ''}`}
+                aria-current={isActive ? 'page' : undefined}
+                onClick={() => {
+                  if (item.id === 'concierge') {
+                    setNavPanel(null);
+                    setMemoryOpen(false);
+                  } else if (item.id === 'preferences') {
+                    setNavPanel(null);
+                    setMemoryOpen(true);
+                  } else {
+                    setMemoryOpen(false);
+                    setNavPanel(item.id as NavPanelId);
+                  }
+                }}
+              >
+                <span className="mds-nav-icon" aria-hidden="true">
+                  <NavIcon id={item.id} />
+                </span>
+                {item.label}
+                {item.id === 'messages' && state.messages.length > 0 && (
+                  <b>{state.messages.length}</b>
+                )}
+              </button>
+            );
+          })}
         </nav>
         <div className="mds-sidebar-spacer" />
         <button type="button" className="mds-nav-item" onClick={() => setMemoryOpen(true)}>
@@ -159,10 +183,53 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
             <PhaseSelector state={state} />
           </div>
 
+          {/* Phase-diff callout: when the presenter advances a rung, name
+              what this mode ADDS over the last one. Reinforces the core
+              "each mode composes onto the last" narrative. Auto-dismisses. */}
+          {state.phaseHint && (
+            <div className="mds-phase-hint" role="status" aria-live="polite">
+              <span className="mds-phase-hint-badge">{state.phaseHint.label}</span>
+              <span className="mds-phase-hint-copy">{state.phaseHint.adds}</span>
+              {state.phaseHint.tech && (
+                <span className="mds-phase-hint-tech">{state.phaseHint.tech}</span>
+              )}
+              <button
+                type="button"
+                className="mds-phase-hint-dismiss"
+                onClick={state.dismissPhaseHint}
+                aria-label="Dismiss"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </div>
+          )}
+
           {state.error && (
-            <button type="button" className="mds-error-banner" onClick={state.clearError}>
-              {state.error}
-            </button>
+            <div className="mds-error-banner" role="alert">
+              <span className="mds-error-banner-copy">
+                Couldn't reach the concierge. Aurora + FastAPI may be reconnecting.
+              </span>
+              <span className="mds-error-banner-actions">
+                {state.lastPrompt && (
+                  <button
+                    type="button"
+                    className="mds-error-retry"
+                    onClick={() => {
+                      state.clearError();
+                      void state.replayLastPrompt();
+                    }}
+                    disabled={state.isLoading}
+                  >
+                    Retry
+                  </button>
+                )}
+                <button type="button" className="mds-error-dismiss" onClick={state.clearError}>
+                  Dismiss
+                </button>
+              </span>
+            </div>
           )}
 
           <ChatTranscript state={state} />
@@ -206,6 +273,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
 
       <TripDetailDrawer state={state} />
       <MemoryDrawer state={state} open={memoryOpen} onClose={() => setMemoryOpen(false)} />
+      <NavPanelDrawer state={state} panel={navPanel} onClose={() => setNavPanel(null)} />
     </div>
   );
 }

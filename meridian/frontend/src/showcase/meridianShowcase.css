@@ -540,6 +540,83 @@
   text-align: left;
 }
 
+/* Phase-diff callout — slides in when the presenter advances a rung and
+   names what this mode ADDS over the last. Cyan-tinted to read as a
+   "capability unlocked" beat, distinct from the warm error banner. */
+.mds-phase-hint {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1px solid rgba(49, 212, 228, 0.26);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(49, 212, 228, 0.1), rgba(49, 212, 228, 0.05));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  animation: mds-phase-hint-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes mds-phase-hint-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.mds-phase-hint-badge {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(49, 212, 228, 0.92);
+  color: #04222a;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.mds-phase-hint-copy {
+  flex: 1 1 auto;
+  color: #e8fbff;
+  font-size: 13.5px;
+  line-height: 1.45;
+  letter-spacing: -0.003em;
+}
+
+.mds-phase-hint-tech {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.78);
+  font-family: var(--mds-mono, ui-monospace, monospace);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.mds-phase-hint-dismiss {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.mds-phase-hint-dismiss:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 900px) {
+  .mds-phase-hint-tech { display: none; }
+}
+
 .mds-chat-transcript {
   /* Unified scroll: the chat transcript no longer owns its own scrollbar.
      The whole main column scrolls as one surface, so chat history and the
@@ -2802,3 +2879,247 @@
     transition: none !important;
   }
 }
+
+/* ============================================================
+   Nav panel drawer (Trips / Discover / Profile / Messages)
+   Reuses .mds-drawer chrome; these are the panel-specific bits.
+   ============================================================ */
+.mds-navpanel-section { margin-bottom: 16px; }
+.mds-navpanel-section:last-child { margin-bottom: 0; }
+
+.mds-navpanel-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mds-navpanel-section-head em {
+  font-style: normal;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 11.5px;
+}
+
+.mds-navpanel-hint {
+  margin-bottom: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.mds-navpanel-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 28px 4px;
+  text-align: center;
+}
+.mds-navpanel-empty b { color: #fff; font-size: 14.5px; }
+.mds-navpanel-empty span { color: rgba(255, 255, 255, 0.5); font-size: 12.5px; line-height: 1.5; }
+
+/* Trip rows */
+.mds-navpanel-trip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--mds-line);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.mds-navpanel-trip:hover {
+  border-color: var(--mds-line-strong);
+  background: rgba(255, 255, 255, 0.06);
+}
+.mds-navpanel-trip-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mds-navpanel-trip-main strong { color: #f0f5fa; font-size: 13.5px; }
+.mds-navpanel-trip-main small { color: rgba(255, 255, 255, 0.45); font-size: 11.5px; }
+.mds-navpanel-trip-meta { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.mds-navpanel-trip-meta b { color: #fff; font-size: 13px; }
+.mds-navpanel-trip-meta span { color: var(--mds-cyan); font-size: 11px; }
+.mds-navpanel-saved-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--mds-cyan);
+}
+
+/* Discover prompts */
+.mds-navpanel-prompt {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--mds-line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #e8eef4;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.mds-navpanel-prompt:hover {
+  border-color: rgba(49, 212, 228, 0.4);
+  background: rgba(49, 212, 228, 0.07);
+}
+
+/* Profile */
+.mds-navpanel-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--mds-line);
+}
+.mds-navpanel-profile-head strong { display: block; color: #fff; font-size: 15px; }
+.mds-navpanel-profile-head small { color: rgba(255, 255, 255, 0.45); font-size: 11.5px; }
+
+.mds-navpanel-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.mds-navpanel-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid var(--mds-line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
+}
+.mds-navpanel-stats b { color: #fff; font-size: 15px; }
+.mds-navpanel-stats span {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mds-navpanel-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--mds-line);
+}
+.mds-navpanel-fact:last-child { border-bottom: 0; }
+.mds-navpanel-fact span { color: rgba(255, 255, 255, 0.5); font-size: 12px; }
+.mds-navpanel-fact b { color: #f0f5fa; font-size: 12.5px; text-align: right; }
+
+/* Messages transcript */
+.mds-navpanel-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  margin-bottom: 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.mds-navpanel-msg.is-user { background: rgba(49, 90, 110, 0.32); }
+.mds-navpanel-msg-role {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mds-navpanel-msg-text {
+  color: #e8eef4;
+  font-size: 12.5px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ============================================================
+   Graceful error banner with retry
+   ============================================================ */
+.mds-error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.mds-error-banner-copy { flex: 1 1 auto; }
+.mds-error-banner-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.mds-error-retry,
+.mds-error-dismiss {
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(255, 129, 95, 0.3);
+  background: transparent;
+  color: #ffd1c2;
+  transition: background 160ms ease;
+}
+.mds-error-retry {
+  border-color: rgba(255, 129, 95, 0.55);
+  background: rgba(255, 129, 95, 0.16);
+}
+.mds-error-retry:hover:not(:disabled) { background: rgba(255, 129, 95, 0.26); }
+.mds-error-dismiss:hover { background: rgba(255, 255, 255, 0.06); }
+.mds-error-retry:disabled { opacity: 0.5; cursor: default; }
+
+/* ============================================================
+   Warmer empty state
+   ============================================================ */
+.mds-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 2px;
+}
+.mds-empty-title {
+  color: #fff;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.mds-empty-sub {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.mds-empty-sub b { color: var(--mds-cyan); font-weight: 600; }
+.mds-empty-starter {
+  margin-top: 4px;
+  padding: 9px 14px;
+  border: 1px solid rgba(49, 212, 228, 0.32);
+  border-radius: 10px;
+  background: rgba(49, 212, 228, 0.08);
+  color: #e8fbff;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.mds-empty-starter:hover:not(:disabled) {
+  border-color: rgba(49, 212, 228, 0.5);
+  background: rgba(49, 212, 228, 0.14);
+}
+.mds-empty-starter:disabled { opacity: 0.5; cursor: default; }

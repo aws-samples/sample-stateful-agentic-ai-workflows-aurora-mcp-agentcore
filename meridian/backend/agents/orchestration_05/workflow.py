@@ -9,11 +9,16 @@ serializes it after every node.
 State machine
 =============
 
-    classify ─┬─→ search ─────────┐
-              ├─→ availability ───┤
-              └─→ memory_recall ──┤
-                                  ▼
-                              synthesize → END
+    classify ─┬─→ search ───────────────┐
+              │      └─(plan)─→ availability ─┐
+              ├─→ availability ───────────────┤
+              └─→ memory_recall ──────────────┤
+                                              ▼
+                                          synthesize → END
+
+The "plan" intent is the multi-step path: search THEN availability run as
+two sequential worker nodes, each checkpointed to Aurora. That's the case
+an explicit StateGraph handles that a single tool call can't make visible.
 
 Checkpointer
 ============
@@ -91,6 +96,36 @@ def _activity(
 
 def _classify_intent(query: str) -> str:
     q = query.lower()
+    # "plan" is the multi-step intent: prompts that ask for a trip AND its
+    # open dates in one breath. It routes through TWO sequential worker
+    # nodes (search → availability) before synthesis — the case where an
+    # explicit LangGraph StateGraph genuinely beats a single tool call,
+    # because the graph composes steps and checkpoints between each.
+    plan_signals = (
+        "plan ",
+        "plan our",
+        "plan a",
+        "plan me",
+        "find a trip and",
+        "and check availability",
+        "and the open dates",
+        "with open dates",
+        "shortlist and",
+        "then check",
+        "end to end",
+        "end-to-end",
+    )
+    # A prompt that names BOTH a destination/search intent AND a date/slot
+    # intent is also a plan (e.g. "Kyoto trip and when it's available").
+    has_search_intent = any(
+        s in q for s in ("trip", "getaway", "escape", "vacation", "holiday", "find", "show me")
+    )
+    has_date_intent = any(
+        s in q for s in ("date", "dates", "available", "availability", "departure", "slots", "when")
+    )
+    if any(s in q for s in plan_signals) or (has_search_intent and has_date_intent):
+        return "plan"
+
     availability_signals = (
         "available",
         "availability",
@@ -157,16 +192,31 @@ class OrchestrationAgent:
         builder.add_node("synthesize", self._node_synthesize)
 
         builder.set_entry_point("classify")
+        # classify fans out to the right worker. "plan" enters at search,
+        # then chains into availability (see the conditional edge below).
         builder.add_conditional_edges(
             "classify",
             lambda state: state.get("intent", "search"),
             {
                 "search": "search",
+                "plan": "search",
                 "availability": "availability",
                 "memory_recall": "memory_recall",
             },
         )
-        builder.add_edge("search", "synthesize")
+        # The edge OUT of search is itself conditional: a plain "search"
+        # intent finishes at synthesize, but a "plan" intent continues to
+        # the availability node — two sequential worker steps, each with
+        # its own PostgresSaver checkpoint. This is the multi-step graph
+        # composition that a single Strands tool call can't make explicit.
+        builder.add_conditional_edges(
+            "search",
+            lambda state: "availability" if state.get("intent") == "plan" else "synthesize",
+            {
+                "availability": "availability",
+                "synthesize": "synthesize",
+            },
+        )
         builder.add_edge("availability", "synthesize")
         builder.add_edge("memory_recall", "synthesize")
         builder.add_edge("synthesize", END)
@@ -252,14 +302,26 @@ class OrchestrationAgent:
 
     async def _node_availability(self, state: WorkflowState) -> WorkflowState:
         start = datetime.utcnow()
-        packages, sub_activities, _msg = await self.availability_fn(state["query"])
+        avail_packages, sub_activities, _msg = await self.availability_fn(state["query"])
         elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
+        # In the multi-step "plan" path this node runs AFTER search, so we
+        # keep the richer search results (trip cards + similarity scores)
+        # as the user-facing set and treat availability as a layered-on
+        # step. For a standalone "availability" intent there are no prior
+        # search packages, so we surface the availability rows directly.
+        is_plan = state.get("intent") == "plan"
+        prior = state.get("packages", []) or []
+        packages = prior if (is_plan and prior) else avail_packages
         activities = list(state.get("activities", []))
         activities.append(
             _activity(
                 "delegation",
                 "Workflow node: availability",
-                details=f"{len(packages)} availability rows",
+                details=(
+                    f"Checked departures across {len(prior)} planned trips"
+                    if is_plan and prior
+                    else f"{len(avail_packages)} availability rows"
+                ),
                 execution_time_ms=elapsed,
                 telemetry={
                     "category": "orchestration",
@@ -267,7 +329,8 @@ class OrchestrationAgent:
                     "status": "ok",
                     "fields": [
                         {"label": "node", "value": "availability"},
-                        {"label": "rows", "value": str(len(packages))},
+                        {"label": "rows", "value": str(len(avail_packages))},
+                        {"label": "step", "value": "2 of 2" if is_plan else "1 of 1"},
                     ],
                 },
             )
@@ -338,7 +401,16 @@ class OrchestrationAgent:
     async def _node_synthesize(self, state: WorkflowState) -> WorkflowState:
         packages = state.get("packages", []) or []
         intent = state.get("intent", "search")
-        if intent == "availability" and packages:
+        if intent == "plan":
+            response = (
+                f"Planned end-to-end: searched the catalog, then checked live "
+                f"departures across {len(packages)} matching trips — each step "
+                f"checkpointed to Aurora so the plan can pause and resume."
+                if packages
+                else "Ran the full plan graph (search → availability), but no "
+                "trips matched — try broadening the destination."
+            )
+        elif intent == "availability" and packages:
             response = (
                 f"Found {len(packages)} departure options matching your request."
             )

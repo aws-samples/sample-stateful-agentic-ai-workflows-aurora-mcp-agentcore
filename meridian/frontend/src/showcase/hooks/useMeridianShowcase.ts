@@ -53,6 +53,11 @@ export const EMPTY_FILTERS: ChatFilters = {
 export interface MeridianShowcaseState {
   selectedPhase: Phase;
   phaseLabel: string;
+  /** Transient "what this rung adds" callout, set when the presenter
+   *  advances to a higher phase. Null when dismissed or on a backward
+   *  switch. Drives the phase-diff banner. */
+  phaseHint: { label: string; adds: string; tech?: string } | null;
+  dismissPhaseHint: () => void;
   travelerId: string;
   messages: Message[];
   currentPrompt: string;
@@ -147,6 +152,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   // with the simplest data path — direct SQL filters over Aurora — and
   // progressively introduce MCP, Retrieval, Production, and Workflow.
   const [selectedPhase, setSelectedPhaseState] = useState<Phase>(1);
+  const [phaseHint, setPhaseHint] = useState<MeridianShowcaseState['phaseHint']>(null);
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [currentPrompt, setCurrentPrompt] = useState(SHOWCASE_INITIAL_PROMPT);
   const [recommendations, setRecommendations] = useState<Product[]>([]);
@@ -399,13 +405,32 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, [lastPrompt, submitPrompt]);
 
   const setSelectedPhase = useCallback((phase: Phase) => {
-    setSelectedPhaseState(phase);
+    setSelectedPhaseState((prev) => {
+      // Surface the "what this rung adds" callout only when advancing to a
+      // higher phase — that's the narrative beat (each mode composes onto
+      // the last). Backward switches stay quiet so re-demoing an earlier
+      // mode doesn't spam the banner.
+      const meta = SHOWCASE_PHASES.find((p) => p.phase === phase);
+      if (phase > prev && meta?.adds) {
+        // Sticky: the callout stays until the presenter clicks Close.
+        // These are deliberate talking points — auto-dismissing them
+        // mid-sentence would undercut the narrative beat.
+        setPhaseHint({ label: meta.label, adds: meta.adds, tech: meta.tech });
+      } else {
+        setPhaseHint(null);
+      }
+      return phase;
+    });
     if (phase < 4 && conversationId) {
       setConversationId(null);
     }
     // No auto-prompt: leave the composer empty so the presenter types
     // intent freshly for each phase walkthrough.
   }, [conversationId]);
+
+  const dismissPhaseHint = useCallback(() => {
+    setPhaseHint(null);
+  }, []);
 
   const selectTrip = useCallback((product: Product) => {
     setSelectedTrip(product);
@@ -543,6 +568,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   return {
     selectedPhase,
     phaseLabel: phaseLabelFor(selectedPhase),
+    phaseHint,
+    dismissPhaseHint,
     travelerId: SHOWCASE_TRAVELER_ID,
     messages,
     currentPrompt,

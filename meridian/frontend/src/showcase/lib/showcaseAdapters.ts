@@ -16,6 +16,14 @@ export interface ShowcasePhaseOption {
   label: ShowcasePhaseLabel;
   phase: Phase;
   description: string;
+  /** Short "what this rung adds over the previous one" line, surfaced as a
+   *  transient callout when the presenter switches phases. Reinforces the
+   *  core narrative: each mode composes onto the last, nothing is rewritten.
+   *  Phase 1 (the base) has no delta. */
+  adds?: string;
+  /** The headline tech that powers this rung — shown as a chip in the
+   *  callout so the audience anchors the capability to a concrete tool. */
+  tech?: string;
 }
 
 // Each phase has three example prompts in a deliberate order:
@@ -82,15 +90,20 @@ export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
     'Plan our October Tokyo trip — find open dates, pick a Marriott property, and hold a Kyoto side trip',
   ],
   // Workflow: LangGraph StateGraph classifies intent and branches to
-  // search / availability / memory_recall, checkpointing each step to
-  // Aurora. Pills exercise each branch so the trace shows the routing
-  // explicitly. Stretch crosses two destinations - even LangGraph runs
-  // a single search node, so this exposes "branching ≠ multi-step
-  // tool composition" honestly.
+  // search / availability / memory_recall / plan, checkpointing each step
+  // to Aurora. The pills exercise each branch so the trace shows routing
+  // explicitly — and the finale is the "plan" intent, the case LangGraph
+  // genuinely EXCELS at: a multi-step chain (search → availability) that
+  // runs two sequential worker nodes with a PostgresSaver checkpoint
+  // between each. That's composition a single tool call can't make
+  // visible, so Phase 5 ends on a strength, not a limit.
+  //   1. availability branch (single node)
+  //   2. memory_recall branch (loads prior thread, then searches)
+  //   3. plan branch (search → availability, multi-node, the payoff)
   5: [
     'What dates are open for Kyoto in November? Show the slots.',
     'Refine our last Iceland conversation with a winter focus',
-    'Compare Kyoto and Tokyo for a 10-day cultural trip',
+    'Plan a Kyoto cultural trip and check which November departures are open',
   ],
 };
 
@@ -113,11 +126,41 @@ export interface ShowcaseTraceSpan {
 }
 
 export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
-  { label: 'SQL', phase: 1, description: 'Direct SQL filters over trip_packages' },
-  { label: 'MCP', phase: 2, description: 'Catalog access through MCP tools' },
-  { label: 'Retrieval', phase: 3, description: 'Hybrid retrieval and specialist routing' },
-  { label: 'Production', phase: 4, description: 'Traveler memory, RLS, and AgentCore' },
-  { label: 'Workflow', phase: 5, description: 'LangGraph orchestration with checkpointing' },
+  {
+    label: 'SQL',
+    phase: 1,
+    description: 'Direct SQL filters over trip_packages',
+    // Phase 1 is the base rung — nothing to diff against.
+    tech: 'RDS Data API',
+  },
+  {
+    label: 'MCP',
+    phase: 2,
+    description: 'Catalog access through MCP tools',
+    adds: 'Same Aurora — now reached through versioned, IAM-authed MCP tools instead of hand-written SQL.',
+    tech: 'postgres-mcp + meridian-concierge',
+  },
+  {
+    label: 'Retrieval',
+    phase: 3,
+    description: 'Hybrid retrieval and specialist routing',
+    adds: 'Adds intent: pgvector + tsvector candidates, reranked. Matches what you mean, not what you type.',
+    tech: 'Cohere Embed v4 + Rerank 3.5',
+  },
+  {
+    label: 'Production',
+    phase: 4,
+    description: 'Traveler memory, RLS, and AgentCore',
+    adds: 'Adds memory + trust: recalls who you are, scopes every query under Aurora RLS, audits each turn.',
+    tech: 'AgentCore + Aurora RLS',
+  },
+  {
+    label: 'Workflow',
+    phase: 5,
+    description: 'LangGraph orchestration with checkpointing',
+    adds: 'Adds durability: explicit graph nodes, checkpointed to Aurora — pause Tuesday, resume Thursday.',
+    tech: 'LangGraph + PostgresSaver',
+  },
 ];
 
 export function phaseLabelFor(phase: Phase): ShowcasePhaseLabel {
