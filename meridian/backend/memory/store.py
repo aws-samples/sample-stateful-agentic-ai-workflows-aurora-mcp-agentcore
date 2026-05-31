@@ -21,6 +21,16 @@ DEMO_TRAVELER_ID = "trv_meridian_demo"
 
 
 class MemoryStore:
+    """Aurora-backed data access for Phase 4 traveler memory.
+
+    One place for every memory read/write the MemoryAgent tools delegate to:
+    short-term turns (``conversation_messages``), long-term preferences
+    (``traveler_preferences``), semantic recall (``trip_interactions``,
+    pgvector), and the per-turn audit row. Every method accepts a
+    ``transaction_id`` so it runs inside the concierge's per-traveler RLS
+    transaction.
+    """
+
     def __init__(self) -> None:
         self.db = get_rds_data_client()
         self.embeddings = get_embedding_service()
@@ -98,6 +108,12 @@ class MemoryStore:
         limit: int = 6,
         transaction_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
+        """Return the most recent turns for a conversation (short-term memory).
+
+        Backs the ``recall_session_context`` memory tool. Reads
+        ``conversation_messages``; pass ``transaction_id`` so the read runs
+        inside the per-traveler RLS transaction.
+        """
         return await self.db.execute(
             """
             SELECT role, content, created_at FROM conversation_messages
@@ -113,6 +129,12 @@ class MemoryStore:
         limit: int = 8,
         transaction_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
+        """Return long-term traveler facts, highest-confidence first.
+
+        Backs the ``recall_traveler_preferences`` memory tool. Reads
+        ``traveler_preferences`` (e.g. shellfish allergy, boutique-over-chain).
+        These facts live in Aurora, never in the prompt.
+        """
         rows = await self.db.execute(
             """
             SELECT preference_type, preference_key, preference_value, confidence, source
@@ -139,6 +161,11 @@ class MemoryStore:
         traveler_id: str,
         transaction_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
+        """Return the traveler's core profile (name, home airport, party size…).
+
+        Joins ``travelers`` with ``traveler_profiles``. Used to ground a turn
+        before search — e.g. defaulting departures to BOS for Alex Morgan.
+        """
         rows = await self.db.execute(
             """
             SELECT t.full_name, t.home_airport,
@@ -160,6 +187,13 @@ class MemoryStore:
         limit: int = 3,
         transaction_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
+        """Semantic recall of the traveler's past interactions (pgvector).
+
+        Backs the ``recall_similar_interactions`` memory tool. Embeds the
+        query, then cosine-ranks ``trip_interactions`` for this traveler via
+        the ``embedding <=> query`` operator (HNSW index). Returns [] if the
+        embedding call fails — recall is best-effort, never blocks the turn.
+        """
         try:
             embedding = self.embeddings.generate_text_embedding(query, input_type="search_query")
         except Exception:
@@ -186,6 +220,11 @@ class MemoryStore:
         with_embedding: bool = True,
         transaction_id: Optional[str] = None,
     ) -> str:
+        """Append one message to ``conversation_messages`` (part of persist_turn).
+
+        Embeds the content for later semantic recall; falls back to a plain
+        insert if the embedding call fails so a turn is never lost.
+        """
         message_id = f"msg_{uuid.uuid4().hex[:12]}"
         if with_embedding and content.strip():
             try:
@@ -237,6 +276,12 @@ class MemoryStore:
         packages_shown: Optional[List[Dict[str, Any]]] = None,
         transaction_id: Optional[str] = None,
     ) -> str:
+        """Persist one full interaction with its embedding (part of persist_turn).
+
+        Writes ``trip_interactions`` so future turns can semantically recall it.
+        Stores the embedding when available; degrades to a no-vector insert
+        otherwise.
+        """
         interaction_id = f"int_{uuid.uuid4().hex[:12]}"
         combined = f"User: {query_text}\nAssistant: {response_summary}"
         try:
@@ -284,6 +329,12 @@ class MemoryStore:
         rows_returned: int,
         transaction_id: Optional[str] = None,
     ) -> str:
+        """Write one row to ``agent_audit_log`` — the per-turn governance record.
+
+        Captures who (IAM identity), in what scope (RLS traveler + agent type),
+        did what (operation), and how much they saw (rows_returned). This is the
+        concrete "every turn is audited" claim in the Phase 4 trust pitch.
+        """
         audit_id = f"aud_{uuid.uuid4().hex[:12]}"
         await self.db.execute(
             """

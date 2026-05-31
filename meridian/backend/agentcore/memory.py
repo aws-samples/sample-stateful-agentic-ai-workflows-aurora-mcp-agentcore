@@ -45,7 +45,14 @@ logger = logging.getLogger(__name__)
 
 
 class AgentCoreMemoryAdapter:
-    """AgentCore Memory data-plane client — real create_event / retrieve APIs only."""
+    """AgentCore Memory data-plane client — the managed session layer.
+
+    Mirrors each turn to AgentCore Memory (``create_event``) and reads it back
+    (``list_memory_records`` / ``retrieve_memory_records``), scoped by a
+    traveler/conversation namespace. This is the short-term session store;
+    Aurora remains the durable system of record for preferences and embeddings.
+    Real Bedrock AgentCore APIs only — no stubs.
+    """
 
     def __init__(
         self,

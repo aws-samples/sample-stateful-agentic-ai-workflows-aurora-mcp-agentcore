@@ -104,6 +104,14 @@ class EmbeddingService:
         return self._parse_response(model_id, response_body)
 
     def generate_text_embedding(self, text: str, input_type: str = "search_document") -> List[float]:
+        """Embed text with Cohere Embed v4 (1024-dim) via Bedrock.
+
+        The query arm of hybrid search and the write path for semantic recall
+        both call this. Tries the configured model then the fallback chain,
+        and rejects any result whose dimension count doesn't match the
+        pgvector column. ``input_type`` is "search_query" for queries,
+        "search_document" for stored content (Cohere asymmetric embeddings).
+        """
         if len(text) > self.MAX_TEXT_LENGTH:
             text = text[: self.MAX_TEXT_LENGTH]
 

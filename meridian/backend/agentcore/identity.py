@@ -59,6 +59,14 @@ class IdentityScope:
 
 
 class AgentCoreIdentityAdapter:
+    """Resolves the identity envelope for each Phase 4 turn.
+
+    Produces the ``IdentityScope`` that feeds both the Security trace span and
+    the per-turn audit row: the IAM principal always, plus the AgentCore
+    workload identity and resource credential when provisioned. Falls back to
+    the IAM principal alone when AgentCore Identity isn't configured.
+    """
+
     def __init__(
         self,
         workload_identity: Optional[str] = None,

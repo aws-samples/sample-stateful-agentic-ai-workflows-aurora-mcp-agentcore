@@ -143,15 +143,15 @@ See `meridian/frontend/src/stage/DemoStage.tsx` for the full keyboard map and sc
 | ----- | -------- | ------------ |
 | **1** | SQL Agent | Direct SQL filters on `trip_packages` via RDS Data API (trip type, operator, price) |
 | **2** | MCP Agent | Same catalog queries through `postgres-mcp-server` / MCP `run_query` |
-| **3** | Retrieval Agent | Cohere Embed v4 (1024d) + hybrid pgvector + `tsvector` search; Retrieval Agent delegates to specialist agents |
-| **4** | Production Agent | `ProductionAgent` + `TravelerMemoryAgent` (`@tool`) on AgentCore Runtime/Gateway/Memory; Aurora RLS + per-turn audit |
+| **3** | Retrieval Agent | Cohere Embed v4 (1024d) hybrid pgvector + `tsvector` candidates, reranked by **Cohere Rerank 3.5**; Retrieval Agent (supervisor) delegates to specialist agents. The Search Agent exposes one `_hybrid_search_tool` that runs the full pipeline |
+| **4** | Production Agent | `ProductionAgent` + `MemoryAgent` (`@tool`) on AgentCore Runtime/Gateway/Memory/Identity; Aurora RLS + per-turn audit |
 | **5** | Orchestration Agent | LangGraph `StateGraph` (classify → search/availability/recall → synthesize) with `PostgresSaver` checkpointing in Aurora |
 
 **Phase 1 example:** `City breaks`, `Beach & Resort`, `Business travel under $1500`
 
-**Phase 3+ example:** `Romantic week in Europe`, `Tokyo trip for two in October`
+**Phase 3+ example:** `A romantic slow week somewhere with great wine`, `Tokyo trip for two in October`
 
-**Phase 4** uses demo traveler **Alex & Jordan Chen** (`trv_meridian_demo`) — profile, preferences, session messages, and `trip_interactions` are loaded from Aurora on every turn.
+**Phase 4** uses demo traveler **Alex Morgan** (`trv_meridian_demo`) — profile, preferences, session messages, and `trip_interactions` are loaded from Aurora on every turn.
 
 ## Aurora schema (travel-native)
 
@@ -187,9 +187,9 @@ Activity traces are returned inline on each `POST /api/chat` response (no separa
 | Agents | **Strands Agents** (`strands-agents`) — supervisor delegation, `@tool` memory |
 | Orchestration | **LangGraph** `StateGraph` with `PostgresSaver` checkpoints (Phase 5) |
 | Database | Aurora PostgreSQL 17, RDS Data API, pgvector HNSW, Row-Level Security |
-| Embeddings | **Cohere Embed v4** on Bedrock (`cohere.embed-v4:0`, 1024 dimensions) |
-| LLM | Claude on Amazon Bedrock |
-| MCP | `awslabs.postgres-mcp-server` (Phase 2) **and** `meridian-memory` (Phase 4 — `backend/mcp/memory_server.py`) |
+| Embeddings & rerank | **Cohere Embed v4** (`cohere.embed-v4:0`, 1024d) + **Cohere Rerank 3.5** (`us.cohere.rerank-v3-5:0`) on Bedrock |
+| LLM | **Claude Opus 4.8** on Amazon Bedrock (`global.anthropic.claude-opus-4-8`), fallback Opus 4.8 → Sonnet 4.6 → Haiku 4.5 |
+| MCP | `awslabs.postgres-mcp-server` (generic SQL) **and** custom `meridian-concierge` FastMCP server (domain tools); plus `meridian-memory` (`backend/mcp/memory_server.py`) |
 | Memory & Identity | **Bedrock AgentCore Memory** + **AgentCore Identity** (Phase 4) |
 
 Orchestration is **Strands** for Phases 3 and 4 (LLM-driven tool routing) and **LangGraph** for Phase 5 (explicit StateGraph with checkpointed state).
@@ -202,11 +202,11 @@ meridian/
 │   ├── main.py
 │   ├── routers/          # chat, packages, memory
 │   ├── agents/
-│   │   ├── phase1/       # Direct RDS filters
-│   │   ├── phase2/       # MCP agent
-│   │   ├── phase3/       # Supervisor + search/package/booking specialists
-│   │   ├── phase4/       # ProductionAgent + TravelerMemoryAgent
-│   │   └── phase5/       # LangGraph StateGraph workflow
+│   │   ├── sql_01/          # Direct RDS filters
+│   │   ├── mcp_02/          # MCP agent
+│   │   ├── retrieval_03/    # Supervisor + search/package/booking specialists
+│   │   ├── production_04/   # ProductionAgent + MemoryAgent
+│   │   └── orchestration_05/ # LangGraph StateGraph workflow
 │   ├── agentcore/        # Bedrock AgentCore Memory + Identity adapters
 │   ├── memory/           # Aurora memory store
 │   ├── db/               # RDS client, embeddings, schema.sql
@@ -233,6 +233,6 @@ Key environment variables (see `.env.example`):
 - `AGENTCORE_WORKLOAD_IDENTITY`, `AGENTCORE_RESOURCE_PROVIDER` — opt-in to AgentCore Identity
 - `LANGGRAPH_CHECKPOINT_DSN` — Phase 5 uses `PostgresSaver` when set, otherwise `MemorySaver`
 
-## Demo script
+## Presenting
 
-See [DEMO_SCRIPT.md](DEMO_SCRIPT.md) for a 60-minute workshop walkthrough. See [STRUCTURE.md](STRUCTURE.md) for what code is live vs reference-only.
+See [docs/PRESENTER_GUIDE.md](docs/PRESENTER_GUIDE.md) — the single presenter guide: narration script (what to say, per phase) + code reference (files, snippets, env knobs, FAQ) + a dry-run checklist. See [STRUCTURE.md](STRUCTURE.md) for what code is live vs reference-only.
