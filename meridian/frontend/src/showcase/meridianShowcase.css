@@ -40,6 +40,12 @@
   --mds-font: "Geist", "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
   --mds-font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
+  /* Global type scale for the showcase. Every font-size below is
+     calc(<base>px * var(--mds-fs)), so this one knob lifts the whole
+     app for big-room legibility without touching layout/spacing
+     (the 100vh columns stay put). 1 = original; 1.15 ≈ +two notches. */
+  --mds-fs: 1.15;
+
   color: var(--mds-ink);
   font-family: var(--mds-font);
   font-feature-settings: "ss01", "ss03", "cv11"; /* Geist stylistic sets */
@@ -484,7 +490,7 @@
 .mds-error-card h2 {
   margin: 0;
   color: var(--mds-on-surface);
-  font-size: 22px;
+  font-size: calc(22px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: -0.018em;
 }
@@ -492,7 +498,7 @@
 .mds-error-card p {
   margin: 0;
   color: var(--mds-on-surface-soft);
-  font-size: 14.5px;
+  font-size: calc(14.5px * var(--mds-fs));
   line-height: 1.55;
 }
 
@@ -503,7 +509,7 @@
   background: rgba(0, 0, 0, 0.42);
   color: #ffd1c6;
   font-family: var(--mds-font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-x: auto;
@@ -518,7 +524,7 @@
   color: #06232a;
   background: linear-gradient(180deg, #58e8f2, #29c8db);
   font-family: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 6px 16px rgba(49, 212, 228, 0.32);
@@ -541,13 +547,13 @@
   border-bottom: 1px solid var(--mds-line);
   color: var(--mds-muted);
   background: rgba(0, 0, 0, 0.28);
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
 }
 
 .mds-debug-banner code {
   color: #d7e6f0;
   font-family: var(--mds-font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--mds-fs));
 }
 
 .mds-root *,
@@ -651,7 +657,7 @@
   margin-bottom: 14px;
   color: var(--mds-on-surface);
   /* Tight-tracked Geist Display feel for the wordmark. */
-  font-size: 25px;
+  font-size: calc(25px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: -0.025em;
 }
@@ -697,7 +703,7 @@
   border-radius: 10px;
   color: #aeb9c4;
   background: transparent;
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   text-align: left;
   white-space: nowrap;
 }
@@ -729,7 +735,7 @@
   border-radius: 999px;
   background: #176fb7;
   color: var(--mds-on-surface);
-  font-size: 9px;
+  font-size: calc(9px * var(--mds-fs));
 }
 
 .mds-nav-icon {
@@ -812,7 +818,7 @@
 .mds-profile-line strong {
   display: block;
   color: var(--mds-on-surface);
-  font-size: 15px;
+  font-size: calc(15px * var(--mds-fs));
   font-weight: 660;
 }
 
@@ -822,7 +828,7 @@
   margin-top: 3px;
   overflow: hidden;
   color: var(--mds-on-surface-soft);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--mds-fs));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -881,7 +887,7 @@
   justify-content: space-between;
   gap: 10px;
   color: var(--mds-dim);
-  font-size: 11px;
+  font-size: calc(11px * var(--mds-fs));
   letter-spacing: 0.02em;
 }
 
@@ -890,7 +896,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   font-weight: 600;
   color: var(--mds-on-surface);
   letter-spacing: -0.01em;
@@ -911,7 +917,7 @@
   gap: 7px;
   padding: 5px 12px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
   font-weight: 500;
   letter-spacing: 0;
   color: var(--mds-on-surface-soft);
@@ -971,7 +977,7 @@
      target screenshot. font-feature-settings turns on stylistic alts and
      contextual ligatures Geist ships with. */
   font-family: var(--mds-font);
-  font-size: clamp(34px, 4vw, 56px);
+  font-size: clamp(calc(34px * var(--mds-fs)), 4vw, calc(56px * var(--mds-fs)));
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1.04;
@@ -981,7 +987,7 @@
 .mds-headline-row p {
   margin: 10px 0 0;
   color: rgba(255, 255, 255, 0.72);
-  font-size: 16px;
+  font-size: calc(16px * var(--mds-fs));
   font-weight: 500;
   letter-spacing: -0.005em;
 }
@@ -1004,7 +1010,7 @@
   border-radius: 10px;
   color: #aeb9c4;
   background: transparent;
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
   font-weight: 700;
 }
 
@@ -1020,7 +1026,7 @@
   border-radius: 11px;
   color: #ffd1c2;
   background: rgba(255, 129, 95, 0.08);
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   text-align: left;
 }
 
@@ -1050,7 +1056,7 @@
   border-radius: 999px;
   background: rgba(49, 212, 228, 0.92);
   color: #04222a;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--mds-fs));
   font-weight: 800;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -1059,7 +1065,7 @@
 .mds-phase-hint-copy {
   flex: 1 1 auto;
   color: #e8fbff;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--mds-fs));
   line-height: 1.45;
   letter-spacing: -0.003em;
 }
@@ -1072,7 +1078,7 @@
   background: rgba(255, 255, 255, 0.05);
   color: var(--mds-on-surface-soft);
   font-family: var(--mds-mono, ui-monospace, monospace);
-  font-size: 11px;
+  font-size: calc(11px * var(--mds-fs));
   white-space: nowrap;
 }
 
@@ -1150,7 +1156,7 @@
 
 .mds-message-role {
   color: var(--mds-on-surface-faint);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1166,7 +1172,7 @@
   border-radius: 16px;
   color: #f0f5fa;
   background: rgba(255, 255, 255, 0.06);
-  font-size: 14.5px;
+  font-size: calc(14.5px * var(--mds-fs));
   font-weight: 460;
   line-height: 1.55;
   letter-spacing: -0.005em;
@@ -1210,7 +1216,7 @@
   gap: 5px;
   padding: 4px 10px;
   border-radius: 999px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--mds-fs));
   font-weight: 500;
   letter-spacing: 0;
   color: var(--mds-cyan);
@@ -1342,7 +1348,7 @@
 .mds-md table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--mds-fs));
 }
 
 .mds-md th,
@@ -1358,7 +1364,7 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--mds-fs));
 }
 
 .mds-md hr {
@@ -1382,7 +1388,7 @@
   border-radius: 999px;
   color: #e7faff;
   background: rgba(13, 38, 46, 0.78);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--mds-fs));
   font-weight: 540;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.005em;
@@ -1572,7 +1578,7 @@
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(6px);
   color: #15803d;
-  font-size: 10px;
+  font-size: calc(10px * var(--mds-fs));
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1591,7 +1597,7 @@
   display: block;
   margin-top: 2px;
   color: var(--mds-on-surface);
-  font-size: 16px;
+  font-size: calc(16px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: -0.018em;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
@@ -1600,7 +1606,7 @@
 .mds-msg-card-sub {
   display: block;
   color: #c9d4de;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--mds-fs));
   font-weight: 500;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
 }
@@ -1623,14 +1629,14 @@
   display: block;
   margin-bottom: 1px;
   color: rgba(220, 232, 240, 0.7);
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--mds-fs));
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .mds-msg-card-price b {
-  font-size: 16px;
+  font-size: calc(16px * var(--mds-fs));
   font-weight: 700;
   color: var(--mds-on-surface);
   font-variant-numeric: tabular-nums;
@@ -1650,7 +1656,7 @@
   color: #f3f9ff;
   background: rgba(10, 18, 26, 0.62);
   backdrop-filter: blur(6px);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--mds-fs));
   font-weight: 620;
 }
 
@@ -1677,7 +1683,7 @@
 .mds-assistant-line {
   margin-top: 2px;
   color: #9eaeb9;
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   letter-spacing: 0.01em;
 }
 
@@ -1797,7 +1803,7 @@
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(8px);
   color: #15803d;
-  font-size: 10px;
+  font-size: calc(10px * var(--mds-fs));
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1818,7 +1824,7 @@
   gap: 8px;
   margin-bottom: 2px;
   color: #cfdbe6;
-  font-size: 11px;
+  font-size: calc(11px * var(--mds-fs));
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -1839,7 +1845,7 @@
   display: block;
   margin-top: 2px;
   color: var(--mds-on-surface);
-  font-size: 20px;
+  font-size: calc(20px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: -0.022em;
   line-height: 1.15;
@@ -1849,7 +1855,7 @@
 .mds-rec-sub {
   display: block;
   color: #c9d4de;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--mds-fs));
   font-weight: 500;
   letter-spacing: -0.005em;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
@@ -1874,14 +1880,14 @@
   display: block;
   margin-bottom: 2px;
   color: rgba(220, 232, 240, 0.7);
-  font-size: 10px;
+  font-size: calc(10px * var(--mds-fs));
   font-weight: 580;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .mds-rec-overlay .mds-rec-price b {
-  font-size: 20px;
+  font-size: calc(20px * var(--mds-fs));
   font-weight: 760;
   color: var(--mds-on-surface);
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
@@ -1905,7 +1911,7 @@
   color: #f3f9ff;
   background: rgba(10, 18, 26, 0.62);
   backdrop-filter: blur(8px);
-  font-size: 10px;
+  font-size: calc(10px * var(--mds-fs));
   font-weight: 640;
   letter-spacing: 0.02em;
 }
@@ -2040,7 +2046,7 @@
   border-radius: 999px;
   color: #ffe0a3;
   background: rgba(0, 0, 0, 0.26);
-  font-size: 10px;
+  font-size: calc(10px * var(--mds-fs));
   font-weight: 800;
 }
 
@@ -2048,7 +2054,7 @@
   display: block;
   overflow: hidden;
   color: var(--mds-on-surface);
-  font-size: 14px;
+  font-size: calc(14px * var(--mds-fs));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2058,7 +2064,7 @@
   margin-top: 4px;
   overflow: hidden;
   color: var(--mds-muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2066,7 +2072,7 @@
 .mds-rec-price {
   margin-top: 9px;
   color: #edf6ff;
-  font-size: 14px;
+  font-size: calc(14px * var(--mds-fs));
   font-weight: 760;
 }
 
@@ -2084,7 +2090,7 @@
   border-radius: 9px;
   color: #d8e4ed;
   background: rgba(255, 255, 255, 0.04);
-  font-size: 11px;
+  font-size: calc(11px * var(--mds-fs));
 }
 
 /* Larger trace-action buttons (Replay trace / Rerun query) so they read
@@ -2095,7 +2101,7 @@
   border-color: rgba(255, 255, 255, 0.18);
   color: var(--mds-on-surface);
   background: rgba(15, 26, 36, 0.82);
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   font-weight: 600;
 }
 
@@ -2111,7 +2117,7 @@
   border-radius: 0;
   color: var(--mds-muted);
   background: transparent;
-  font-size: 11px;
+  font-size: calc(11px * var(--mds-fs));
   text-decoration: underline;
   text-decoration-color: rgba(255, 255, 255, 0.18);
   text-underline-offset: 3px;
@@ -2158,7 +2164,7 @@
 
 .mds-chat-starter-label {
   color: var(--mds-on-surface-faint);
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -2171,7 +2177,7 @@
   border-radius: 999px;
   color: rgba(231, 250, 255, 0.92);
   background: rgba(13, 38, 46, 0.42);
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   font-weight: 540;
   letter-spacing: 0.005em;
   transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
@@ -2230,7 +2236,7 @@
   border-radius: 999px;
   color: var(--mds-on-surface);
   background: rgba(9, 17, 27, 0.78);
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--mds-fs));
   font-weight: 580;
   letter-spacing: 0.005em;
   text-align: center;
@@ -2353,7 +2359,7 @@
 
 .mds-popover-title {
   color: rgba(255, 255, 255, 0.72);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--mds-fs));
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -2374,7 +2380,7 @@
   border-radius: 50%;
   color: var(--mds-on-surface);
   background: rgba(15, 26, 36, 0.6);
-  font-size: 18px;
+  font-size: calc(18px * var(--mds-fs));
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
@@ -2401,14 +2407,14 @@
 
 .mds-popover-step-value b {
   color: var(--mds-on-surface);
-  font-size: 22px;
+  font-size: calc(22px * var(--mds-fs));
   font-weight: 700;
   line-height: 1.1;
 }
 
 .mds-popover-step-value em {
   color: rgba(255, 255, 255, 0.6);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--mds-fs));
   font-style: normal;
   font-weight: 540;
   letter-spacing: 0.04em;
@@ -2430,7 +2436,7 @@
 
 .mds-popover-dates label span {
   color: rgba(255, 255, 255, 0.62);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--mds-fs));
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -2444,7 +2450,7 @@
   color: var(--mds-on-surface);
   background: rgba(11, 20, 31, 0.78);
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--mds-fs));
   font-weight: 540;
   outline: none;
   color-scheme: dark;
@@ -2468,7 +2474,7 @@
   padding: 0;
   background: transparent;
   color: rgba(255, 255, 255, 0.6);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--mds-fs));
   font-weight: 540;
   text-decoration: underline;
   text-decoration-color: rgba(255, 255, 255, 0.18);
@@ -2494,7 +2500,7 @@
   color: #06232a;
   background: linear-gradient(180deg, #58e8f2, #29c8db);
   font-family: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 6px 16px rgba(49, 212, 228, 0.32);
@@ -2695,7 +2701,7 @@
 .mds-collapse-hint {
   margin-left: 4px;
   color: var(--mds-on-surface-faint);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--mds-fs));
   font-weight: 500;
   letter-spacing: 0.01em;
 }
@@ -2711,7 +2717,7 @@
 
 .mds-panel-head strong {
   color: var(--mds-on-surface);
-  font-size: 17px;
+  font-size: calc(17px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: -0.005em;
 }
@@ -2721,7 +2727,7 @@
   border: 0;
   color: var(--mds-cyan);
   background: transparent;
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   font-weight: 600;
 }
 
@@ -2746,7 +2752,7 @@
   gap: 10px;
   align-items: start;
   color: var(--mds-on-surface);
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--mds-fs));
   line-height: 1.35;
 }
 
@@ -2785,7 +2791,7 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--mds-fs));
 }
 
 .mds-run-config b {
@@ -2793,7 +2799,7 @@
   overflow: hidden;
   color: var(--mds-on-surface);
   font-weight: 680;
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--mds-fs));
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2837,7 +2843,7 @@
   align-items: center;
   padding: 9px 0;
   color: var(--mds-on-surface-faint);
-  font-size: 14.5px;
+  font-size: calc(14.5px * var(--mds-fs));
   font-weight: 580;
   letter-spacing: 0.005em;
   transition: color 220ms ease;
@@ -2949,7 +2955,7 @@
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
   color: var(--mds-on-surface);
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
   font-weight: 600;
   background: rgba(255, 255, 255, 0.06);
 }
@@ -2959,7 +2965,7 @@
   align-items: center;
   gap: 7px;
   color: var(--mds-on-surface);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--mds-fs));
   font-weight: 600;
 }
 
@@ -2989,7 +2995,7 @@
   border-radius: 8px;
   color: var(--mds-on-surface-soft);
   background: transparent;
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   font-weight: 600;
   text-transform: capitalize;
 }
@@ -3062,14 +3068,14 @@
   border-radius: 50%;
   color: var(--mds-green);
   background: rgba(55, 210, 157, 0.18);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--mds-fs));
   font-weight: 700;
 }
 
 .mds-span-title {
   display: block;
   color: var(--mds-on-surface);
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--mds-fs));
   font-weight: 680;
   letter-spacing: -0.005em;
 }
@@ -3078,7 +3084,7 @@
   display: block;
   margin-top: 4px;
   color: rgba(255, 255, 255, 0.72);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--mds-fs));
   font-weight: 500;
 }
 
@@ -3086,7 +3092,7 @@
   display: block;
   margin-top: 3px;
   color: rgba(255, 255, 255, 0.62);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--mds-fs));
   font-family: var(--mds-font-mono);
   word-break: break-word;
 }
@@ -3099,7 +3105,7 @@
   border-radius: 10px;
   color: var(--mds-on-surface);
   background: rgba(255, 255, 255, 0.07);
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   line-height: 1.5;
 }
 
@@ -3112,20 +3118,20 @@
   color: #d4f9ff;
   background: rgba(0, 0, 0, 0.42);
   font-family: var(--mds-font-mono);
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
   line-height: 1.45;
   white-space: pre-wrap;
 }
 
 .mds-sql-list small {
   color: rgba(255, 255, 255, 0.72);
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
   font-weight: 600;
 }
 
 .mds-span-detail small {
   color: var(--mds-on-surface-soft);
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
 }
 
 .mds-trace-actions {
@@ -3144,9 +3150,9 @@
   border: 0;
   border-radius: 12px;
   color: rgba(255, 255, 255, 0.72);
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   background: rgba(255, 255, 255, 0.02);
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
 }
 
 .mds-trip-drawer {
@@ -3179,7 +3185,7 @@
 
 .mds-trip-drawer-copy > span {
   color: var(--mds-cyan);
-  font-size: 11px;
+  font-size: calc(11px * var(--mds-fs));
 }
 
 .mds-trip-drawer-copy strong {
@@ -3191,7 +3197,7 @@
 .mds-trip-drawer-copy p {
   margin: 8px 0;
   color: #c5d0da;
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
   line-height: 1.45;
 }
 
@@ -3213,13 +3219,13 @@
 .mds-trip-confirm span {
   display: block;
   color: var(--mds-muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--mds-fs));
 }
 
 .mds-trip-drawer-grid b,
 .mds-trip-confirm b {
   color: var(--mds-on-surface);
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
 }
 
 .mds-trip-confirm {
@@ -3230,7 +3236,7 @@
 
 .mds-trip-confirm code {
   color: #caf7ff;
-  font-size: 11px;
+  font-size: calc(11px * var(--mds-fs));
 }
 
 .mds-trip-confirm button {
@@ -3239,7 +3245,7 @@
   border-radius: 8px;
   color: #06232a;
   background: var(--mds-cyan);
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
   font-weight: 800;
 }
 
@@ -3271,12 +3277,12 @@
 .mds-drawer header span {
   display: block;
   color: var(--mds-cyan);
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
 }
 
 .mds-drawer header strong {
   color: var(--mds-on-surface);
-  font-size: 20px;
+  font-size: calc(20px * var(--mds-fs));
 }
 
 .mds-drawer header button {
@@ -3307,14 +3313,14 @@
 .mds-drawer-row small {
   display: block;
   color: var(--mds-muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--mds-fs));
 }
 
 .mds-drawer-row b {
   display: block;
   margin: 3px 0;
   color: var(--mds-on-surface);
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
 }
 
 .mds-drawer-row div:last-child {
@@ -3329,7 +3335,7 @@
   border-radius: 7px;
   color: var(--mds-muted);
   background: rgba(255, 255, 255, 0.04);
-  font-size: 11px;
+  font-size: calc(11px * var(--mds-fs));
 }
 
 @keyframes mds-pulse {
@@ -3415,7 +3421,7 @@
   .mds-phase-selector button {
     min-width: 0;
     padding: 8px 4px;
-    font-size: 11px;
+    font-size: calc(11px * var(--mds-fs));
   }
 
   .mds-message {
@@ -3474,7 +3480,7 @@
   gap: 8px;
   margin-bottom: 8px;
   color: rgba(255, 255, 255, 0.92);
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -3485,13 +3491,13 @@
   text-transform: none;
   letter-spacing: 0;
   color: rgba(255, 255, 255, 0.4);
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--mds-fs));
 }
 
 .mds-navpanel-hint {
   margin-bottom: 12px;
   color: rgba(255, 255, 255, 0.5);
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--mds-fs));
   line-height: 1.5;
 }
 
@@ -3502,8 +3508,8 @@
   padding: 28px 4px;
   text-align: center;
 }
-.mds-navpanel-empty b { color: var(--mds-on-surface); font-size: 14.5px; }
-.mds-navpanel-empty span { color: rgba(255, 255, 255, 0.5); font-size: 12.5px; line-height: 1.5; }
+.mds-navpanel-empty b { color: var(--mds-on-surface); font-size: calc(14.5px * var(--mds-fs)); }
+.mds-navpanel-empty span { color: rgba(255, 255, 255, 0.5); font-size: calc(12.5px * var(--mds-fs)); line-height: 1.5; }
 
 /* Trip rows */
 .mds-navpanel-trip {
@@ -3526,11 +3532,11 @@
   background: rgba(255, 255, 255, 0.06);
 }
 .mds-navpanel-trip-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.mds-navpanel-trip-main strong { color: #f0f5fa; font-size: 13.5px; }
-.mds-navpanel-trip-main small { color: var(--mds-on-surface-faint); font-size: 11.5px; }
+.mds-navpanel-trip-main strong { color: #f0f5fa; font-size: calc(13.5px * var(--mds-fs)); }
+.mds-navpanel-trip-main small { color: var(--mds-on-surface-faint); font-size: calc(11.5px * var(--mds-fs)); }
 .mds-navpanel-trip-meta { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-.mds-navpanel-trip-meta b { color: var(--mds-on-surface); font-size: 13px; }
-.mds-navpanel-trip-meta span { color: var(--mds-cyan); font-size: 11px; }
+.mds-navpanel-trip-meta b { color: var(--mds-on-surface); font-size: calc(13px * var(--mds-fs)); }
+.mds-navpanel-trip-meta span { color: var(--mds-cyan); font-size: calc(11px * var(--mds-fs)); }
 .mds-navpanel-saved-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--mds-cyan);
@@ -3546,7 +3552,7 @@
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.03);
   color: #e8eef4;
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   line-height: 1.4;
   text-align: left;
   cursor: pointer;
@@ -3566,8 +3572,8 @@
   margin-bottom: 14px;
   border-bottom: 1px solid var(--mds-line);
 }
-.mds-navpanel-profile-head strong { display: block; color: var(--mds-on-surface); font-size: 15px; }
-.mds-navpanel-profile-head small { color: var(--mds-on-surface-faint); font-size: 11.5px; }
+.mds-navpanel-profile-head strong { display: block; color: var(--mds-on-surface); font-size: calc(15px * var(--mds-fs)); }
+.mds-navpanel-profile-head small { color: var(--mds-on-surface-faint); font-size: calc(11.5px * var(--mds-fs)); }
 
 .mds-navpanel-stats {
   display: grid;
@@ -3585,10 +3591,10 @@
   background: rgba(255, 255, 255, 0.03);
   text-align: center;
 }
-.mds-navpanel-stats b { color: var(--mds-on-surface); font-size: 15px; }
+.mds-navpanel-stats b { color: var(--mds-on-surface); font-size: calc(15px * var(--mds-fs)); }
 .mds-navpanel-stats span {
   color: var(--mds-on-surface-faint);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--mds-fs));
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -3602,8 +3608,8 @@
   border-bottom: 1px solid var(--mds-line);
 }
 .mds-navpanel-fact:last-child { border-bottom: 0; }
-.mds-navpanel-fact span { color: rgba(255, 255, 255, 0.5); font-size: 12px; }
-.mds-navpanel-fact b { color: #f0f5fa; font-size: 12.5px; text-align: right; }
+.mds-navpanel-fact span { color: rgba(255, 255, 255, 0.5); font-size: calc(12px * var(--mds-fs)); }
+.mds-navpanel-fact b { color: #f0f5fa; font-size: calc(12.5px * var(--mds-fs)); text-align: right; }
 
 /* Messages transcript */
 .mds-navpanel-msg {
@@ -3618,14 +3624,14 @@
 .mds-navpanel-msg.is-user { background: rgba(49, 90, 110, 0.32); }
 .mds-navpanel-msg-role {
   color: rgba(255, 255, 255, 0.5);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .mds-navpanel-msg-text {
   color: #e8eef4;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--mds-fs));
   line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -3649,7 +3655,7 @@
 .mds-error-dismiss {
   padding: 5px 12px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--mds-fs));
   font-weight: 600;
   cursor: pointer;
   border: 1px solid rgba(255, 129, 95, 0.3);
@@ -3677,13 +3683,13 @@
 }
 .mds-empty-title {
   color: var(--mds-on-surface);
-  font-size: 17px;
+  font-size: calc(17px * var(--mds-fs));
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 .mds-empty-sub {
   color: rgba(255, 255, 255, 0.5);
-  font-size: 13.5px;
+  font-size: calc(13.5px * var(--mds-fs));
   line-height: 1.5;
 }
 .mds-empty-sub b { color: var(--mds-cyan); font-weight: 600; }
@@ -3694,7 +3700,7 @@
   border-radius: 10px;
   background: rgba(49, 212, 228, 0.08);
   color: #e8fbff;
-  font-size: 13px;
+  font-size: calc(13px * var(--mds-fs));
   text-align: left;
   cursor: pointer;
   transition: border-color 160ms ease, background 160ms ease;
