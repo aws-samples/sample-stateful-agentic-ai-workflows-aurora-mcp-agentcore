@@ -1158,6 +1158,27 @@ def _is_memory_recall_query(query: str) -> bool:
     return bool(_MEMORY_RECALL_PATTERNS.search(query or ""))
 
 
+# Availability-intent: the supervisor should delegate these to the PackageAgent
+# specialist (departure slots / open dates on a *named* package), not run a
+# fresh hybrid search. This is what makes "supervised multi-agent" visible in
+# the demo — a different specialist, a different tool, a different trace.
+_AVAILABILITY_PATTERNS = re.compile(
+    r"\b(availability|available|open dates?|departure dates?|departures?|"
+    r"what dates?|when can (we|i)|free dates?|open slots?|slots?)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_availability_query(query: str) -> bool:
+    """Detect departure/availability questions that belong to the PackageAgent.
+
+    Guard against overlap with memory-recall ("what did we discuss") — those
+    are handled separately and must take precedence, so callers check
+    _is_memory_recall_query first.
+    """
+    return bool(_AVAILABILITY_PATTERNS.search(query or ""))
+
+
 async def retrieval_supervisor_search(
     query: str,
     limit: int = 5,
@@ -1885,6 +1906,20 @@ async def chat(request: ChatRequest) -> ChatResponse:
         domain_text: Optional[str] = None
         if request.phase == 2:
             products, search_activities, domain_text = await mcp_search(request.message, limit=5)
+        elif (
+            request.phase == 3
+            and not _is_memory_recall_query(request.message)
+            and _is_availability_query(request.message)
+        ):
+            # Supervised multi-agent: an availability question routes to the
+            # PackageAgent specialist (departure slots on a named package),
+            # not a fresh hybrid search. Different specialist, different tool,
+            # different trace — this is where "supervised multi-agent search"
+            # becomes visible. Memory-recall is checked first so it keeps
+            # precedence (its honest-failure path handles those prompts).
+            products, search_activities, domain_text = await retrieval_availability_search(
+                request.message
+            )
         else:
             products, search_activities = await search_fn(request.message, limit=5)
         activities.extend(search_activities)

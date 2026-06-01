@@ -1,9 +1,0 @@
-{
-  "name": "meridian",
-  "description": "Meridian Phase 4 — AgentCore Runtime + Gateway + Memory for the travel concierge demo",
-  "runtimes": [],
-  "memories": [],
-  "credentials": [],
-  "evaluators": [],
-  "onlineEvals": []
-}

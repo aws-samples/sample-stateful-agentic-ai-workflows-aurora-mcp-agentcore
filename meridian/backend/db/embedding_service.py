@@ -148,11 +148,14 @@ class EmbeddingService:
         if not documents:
             return []
 
+        # Cohere Rerank on Bedrock expects `documents` as an array of plain
+        # strings. Sending objects ({"text": ...}) triggers a ValidationException:
+        #   "#/documents/0: expected type: String, found: JSONObject".
         request_body = {
+            "api_version": 2,
             "query": query,
-            "documents": [{"text": d[: self.MAX_TEXT_LENGTH]} for d in documents],
+            "documents": [d[: self.MAX_TEXT_LENGTH] for d in documents],
             "top_n": max(1, min(top_n, len(documents))),
-            "return_documents": False,
         }
         response = self.bedrock_client.invoke_model(
             modelId=self.rerank_model_id,

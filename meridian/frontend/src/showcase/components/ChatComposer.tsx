@@ -60,12 +60,23 @@ export function ChatComposer({ state, compact = false }: { state: MeridianShowca
         <input
           value={state.currentPrompt}
           onChange={(event) => state.setCurrentPrompt(event.target.value)}
-          placeholder={`Ask Meridian (${state.phaseLabel})...`}
+          placeholder={'Ask Meridian anything — "a calm wine trip in October, under $2,500"…'}
           disabled={state.isLoading}
           aria-label="Ask Meridian anything"
         />
-        <button type="submit" disabled={state.isLoading || !state.currentPrompt.trim()} aria-label="Send message">
-          {state.isLoading ? '...' : 'Send'}
+        <button
+          type="submit"
+          className="mds-chat-send"
+          disabled={state.isLoading || !state.currentPrompt.trim()}
+          aria-label="Send message"
+        >
+          {state.isLoading ? (
+            <span className="mds-chat-send-spinner" aria-hidden="true" />
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
+          )}
         </button>
       </form>
       {!compact && (

@@ -1,4 +1,4 @@
-bin/dotenv,sha256=a6_HO7ryvGwgRAx3WFajEcAFRzC8MPnGww-4aJ--oR8,366
+bin/dotenv,sha256=gNUFWoAnwTWAOPVX_0rpnWAMyp3Hig4k2aTSb3NOGIc,380
 dotenv/__init__.py,sha256=bhY-iK6wwHZamWII6eSCuCAWXUNdn2TQFmEOuXSU7SM,1230
 dotenv/__main__.py,sha256=N0RhLG7nHIqtlJHwwepIo-zbJPNx9sewCCRGY528h_4,129
 dotenv/cli.py,sha256=tiUqzTj1QfFqrn3SG0acZ7nckI_0T6oIf76Plg8hHHM,6542

@@ -233,6 +233,12 @@ Key environment variables (see `.env.example`):
 - `AGENTCORE_WORKLOAD_IDENTITY`, `AGENTCORE_RESOURCE_PROVIDER` — opt-in to AgentCore Identity
 - `LANGGRAPH_CHECKPOINT_DSN` — Phase 5 uses `PostgresSaver` when set, otherwise `MemorySaver`
 
-## Presenting
+## Documentation
 
-See [docs/PRESENTER_GUIDE.md](docs/PRESENTER_GUIDE.md) — the single presenter guide: narration script (what to say, per phase) + code reference (files, snippets, env knobs, FAQ) + a dry-run checklist. See [STRUCTURE.md](STRUCTURE.md) for what code is live vs reference-only.
+All docs live in [`docs/`](docs/):
+
+| Doc | Purpose |
+| --- | ------- |
+| [PRESENTER_GUIDE.md](docs/PRESENTER_GUIDE.md) | The single presenter guide — narration script (what to say, per phase) + code reference (files, snippets, env knobs, FAQ) + dry-run checklist |
+| [OPERATIONS.md](docs/OPERATIONS.md) | Deploy AgentCore (day-before) + kiosk/booth runbook (day-of) + learnings & gotchas |
+| [STRUCTURE.md](docs/STRUCTURE.md) | Repository layout — what code is live vs reference-only |

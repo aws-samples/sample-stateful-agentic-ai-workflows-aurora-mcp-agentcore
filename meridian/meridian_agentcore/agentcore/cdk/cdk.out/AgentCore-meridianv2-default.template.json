@@ -47,7 +47,7 @@
       "SemanticMemoryStrategy": {
        "Name": "meridian_session_Semantic",
        "NamespaceTemplates": [
-        "/users/{actorId}/facts"
+        "/users/{actorId}/sessions/{sessionId}"
        ]
       }
      }
@@ -152,7 +152,7 @@
        "Condition": {
         "StringLike": {
          "bedrock-agentcore:namespace": [
-          "/users/*/facts"
+          "/users/*/sessions/*"
          ]
         }
        },
@@ -216,7 +216,7 @@
       "Code": {
        "S3": {
         "Bucket": "cdk-hnb659fds-assets-619763002613-us-east-1",
-        "Prefix": "11aec311680d4268cb115d6ae7144b9fc276dafd4b32b294d9759effaf1df30d.zip"
+        "Prefix": "a3d7a5f769b1dc8e9cca2356e6246c4387344b111902f232de0ef7fb20215898.zip"
        }
       },
       "EntryPoint": [

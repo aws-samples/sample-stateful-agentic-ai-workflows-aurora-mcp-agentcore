@@ -266,15 +266,27 @@ When searching:
         rerank_time = int((datetime.utcnow() - rerank_start).total_seconds() * 1000)
         if ranked:
             # rerank_documents returns [{index, score}] pointing back into
-            # `results`; reorder the merged pool by the reranker's verdict.
+            # `results`; reorder the merged pool by the reranker's verdict AND
+            # carry the reranker's relevance score onto each row as `similarity`.
+            # Without this, cards would display the stale pgvector cosine value
+            # (or 0.0 for lexical-only hits) while being ordered by the
+            # reranker — so the shown % wouldn't match the card order.
             self._log_activity(
                 activity_type="search",
                 title="Cohere rerank applied",
                 details=f"Top {min(limit, len(results))} hybrid candidates reranked",
                 execution_time_ms=rerank_time,
             )
-            ordered_rows = [results[item["index"]] for item in ranked if item["index"] < len(results)]
+            ordered_rows = []
+            for item in ranked:
+                idx = item["index"]
+                if idx < len(results):
+                    row = dict(results[idx])
+                    row["similarity"] = float(item.get("score", 0.0))
+                    ordered_rows.append(row)
         else:
+            # Fallback: no reranker — keep the merged hybrid order and the
+            # pgvector cosine similarity already on each row.
             ordered_rows = results[:limit]
 
         packages = []
@@ -290,6 +302,12 @@ When searching:
                 "destination": r.get('destination'),
                 "similarity": float(r.get('similarity', 0.0))
             })
+
+        # Guarantee descending similarity so the UI cards always read top-down
+        # by match strength, matching the order the prose describes. (Cohere
+        # already returns sorted; this is belt-and-suspenders for the fallback
+        # path and any future API change.)
+        packages.sort(key=lambda p: p["similarity"], reverse=True)
 
         return {"packages": packages, "query": query}
     

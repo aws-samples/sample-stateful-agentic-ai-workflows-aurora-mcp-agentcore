@@ -36,15 +36,11 @@ from typing import Any, Dict, Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
-# Preferred CLI project root:
+# CLI project root (single source of truth):
 #   meridian/meridian_agentcore/agentcore
-# Legacy fallback:
-#   meridian/agentcore
+# Override with AGENTCORE_PROJECT_DIR if needed.
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _PREFERRED_PROJECT_DIR = _PROJECT_ROOT / "meridian_agentcore" / "agentcore"
-_LEGACY_PROJECT_DIRS = (
-    _PROJECT_ROOT / "agentcore",
-)
 
 
 @dataclass(frozen=True)
@@ -81,11 +77,6 @@ def agentcore_project_dir() -> Path:
     raw = os.getenv("AGENTCORE_PROJECT_DIR")
     if raw:
         return Path(raw).expanduser().resolve()
-    if _PREFERRED_PROJECT_DIR.is_dir():
-        return _PREFERRED_PROJECT_DIR
-    for candidate in _LEGACY_PROJECT_DIRS:
-        if candidate.is_dir():
-            return candidate
     return _PREFERRED_PROJECT_DIR
 
 

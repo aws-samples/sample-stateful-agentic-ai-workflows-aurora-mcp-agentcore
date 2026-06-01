@@ -26,7 +26,7 @@ Five orchestration phases, each teaching a different builder pattern on the **sa
 
 **Presenter note:** Phases 1–2 agent modules are the **canonical Strands structure** to show on screen; the live API uses the same SQL/MCP mechanics without the LLM loop so demos stay reliable. Phases 3–5 import agent modules at runtime.
 
-See **`docs/PRESENTER_CODE_WALKTHROUGH.md`** for annotated snippets and talk tracks.
+See **`docs/PRESENTER_GUIDE.md`** (Part 2 — Code Reference) for annotated snippets and talk tracks.
 
 ## Environment
 

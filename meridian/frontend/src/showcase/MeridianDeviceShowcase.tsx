@@ -1,8 +1,10 @@
-import { Component } from 'react';
+import { Component, useState } from 'react';
 import type { ReactNode } from 'react';
 import { DesktopMeridianApp } from './DesktopMeridianApp';
 import { useMeridianShowcase } from './hooks/useMeridianShowcase';
 import './meridianShowcase.css';
+
+type ShowcaseTheme = 'dark' | 'light';
 
 // Page-level error boundary. If anything below the showcase root throws
 // during render, show a recovery card instead of blanking the entire page
@@ -46,9 +48,38 @@ class ShowcaseErrorBoundary extends Component<
 
 export function MeridianDeviceShowcase() {
   const state = useMeridianShowcase();
+  // Local theme state — dark by default. Scoped to .mds-root via data-theme,
+  // so the whole showcase re-skins from CSS tokens. No persistence (the
+  // codebase forbids localStorage); a presenter sets it per session.
+  const [theme, setTheme] = useState<ShowcaseTheme>('dark');
+  const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 
   return (
-    <main className="mds-root mds-fullbleed-route" aria-label="Meridian product showcase">
+    <main
+      className="mds-root mds-fullbleed-route"
+      data-theme={theme}
+      aria-label="Meridian product showcase"
+    >
+      <button
+        type="button"
+        className="mds-theme-toggle"
+        onClick={toggleTheme}
+        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      >
+        {theme === 'dark' ? (
+          /* sun — click for light */
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+          </svg>
+        ) : (
+          /* moon — click for dark */
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+          </svg>
+        )}
+      </button>
       <ShowcaseErrorBoundary>
         <DesktopMeridianApp state={state} />
       </ShowcaseErrorBoundary>

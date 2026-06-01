@@ -1,4 +1,5 @@
 .mds-root {
+  /* ---- Dark theme (default) ---- */
   --mds-bg: #05080d;
   --mds-bg-2: #0a111a;
   --mds-shell: #04080d;
@@ -14,6 +15,28 @@
   --mds-amber: #e3a45e;
   --mds-green: #37d29d;
   --mds-danger: #ff815f;
+
+  /* Semantic surface tokens — these flip in light mode. In dark they equal
+     the white-on-dark values they replace, so the default look is unchanged.
+       --mds-on-surface       : primary text on a panel (was #fff/#ffffff)
+       --mds-on-surface-soft  : secondary text (was rgba(255,255,255,.7-.78))
+       --mds-on-surface-faint : tertiary/labels (was rgba(255,255,255,.45-.55))
+       --mds-fill-*           : subtle white overlays used for chips/insets
+       --mds-card             : opaque card/inset background
+       --mds-scrim            : dark scrims over imagery */
+  --mds-on-surface: #ffffff;
+  --mds-on-surface-soft: rgba(255, 255, 255, 0.78);
+  --mds-on-surface-faint: rgba(255, 255, 255, 0.5);
+  --mds-fill-1: rgba(255, 255, 255, 0.03);
+  --mds-fill-2: rgba(255, 255, 255, 0.06);
+  --mds-fill-3: rgba(255, 255, 255, 0.12);
+  --mds-card: #06232a;
+  --mds-scrim: rgba(0, 0, 0, 0.5);
+  --mds-cyan-soft: rgba(49, 212, 228, 0.12);
+  --mds-cyan-line: rgba(49, 212, 228, 0.32);
+  --mds-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --mds-shadow-2: 0 8px 30px rgba(0, 0, 0, 0.45);
+
   --mds-font: "Geist", "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
   --mds-font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
@@ -23,6 +46,368 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: geometricPrecision;
+}
+
+/* ============================================================================
+   LIGHT THEME — "Daylight" (break-glass for low-contrast rooms / projectors)
+   Overrides only the token values; every component re-skins automatically.
+   Palette from docs/design/meridian-daylight-mockup.html, with --mds-muted
+   darkened vs the mockup for projector legibility.
+   ========================================================================== */
+.mds-root[data-theme="light"] {
+  --mds-bg: #e9eef4;
+  --mds-bg-2: #dde5ee;
+  --mds-shell: #eef2f7;
+  --mds-shell-elevated: #ffffff;
+  --mds-panel: rgba(255, 255, 255, 0.72);
+  --mds-panel-2: rgba(255, 255, 255, 0.85);
+  --mds-line: rgba(15, 23, 42, 0.10);
+  --mds-line-strong: rgba(15, 23, 42, 0.16);
+  --mds-ink: #0f172a;
+  --mds-muted: #475569;   /* darkened from mockup #64748b for projector contrast */
+  --mds-dim: #6b7a8d;     /* darkened from #94a3b8 */
+  --mds-cyan: #0891b2;
+  --mds-amber: #b45309;
+  --mds-green: #15803d;
+  --mds-danger: #dc2626;
+
+  --mds-on-surface: #0f172a;
+  --mds-on-surface-soft: #334155;
+  --mds-on-surface-faint: #64748b;
+  --mds-fill-1: rgba(15, 23, 42, 0.03);
+  --mds-fill-2: rgba(15, 23, 42, 0.06);
+  --mds-fill-3: rgba(15, 23, 42, 0.10);
+  --mds-card: #ffffff;
+  --mds-scrim: rgba(15, 23, 42, 0.32);
+  --mds-cyan-soft: rgba(8, 145, 178, 0.10);
+  --mds-cyan-line: rgba(8, 145, 178, 0.35);
+  --mds-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --mds-shadow-2: 0 8px 30px rgba(15, 23, 42, 0.12);
+}
+
+/* If the browser/projector can't do backdrop-filter, glass panels would
+   render as flat translucent gray — make them solid near-white in light mode. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .mds-root[data-theme="light"] {
+    --mds-panel: #ffffff;
+    --mds-panel-2: #ffffff;
+  }
+}
+
+/* Theme toggle — fixed top-right, token-driven so it reads in both themes. */
+.mds-theme-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 60;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--mds-on-surface-soft);
+  background: var(--mds-panel-2);
+  border: 1px solid var(--mds-line-strong);
+  box-shadow: var(--mds-shadow-1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+  transition: color 150ms, background 150ms, transform 150ms;
+}
+.mds-theme-toggle:hover {
+  color: var(--mds-on-surface);
+  transform: translateY(-1px);
+}
+
+/* ----------------------------------------------------------------------------
+   LIGHT THEME — surface overrides.
+   The major surfaces use hardcoded dark gradients (page shell, panels, cards,
+   composer) that don't read tokens. Token swaps fixed the TEXT; these rules
+   repaint the BACKGROUNDS for light mode so it's not dark-on-light. Scoped to
+   [data-theme="light"] so dark mode is untouched.
+   -------------------------------------------------------------------------- */
+.mds-root[data-theme="light"].mds-fullbleed-route,
+.mds-root[data-theme="light"] .mds-fullbleed-route {
+  background:
+    radial-gradient(circle at 10% 16%, rgba(8, 145, 178, 0.12), transparent 42%),
+    radial-gradient(circle at 92% 46%, rgba(180, 83, 9, 0.08), transparent 34%),
+    linear-gradient(160deg, #eef2f7 0%, #e9eef4 60%, #dde5ee 100%);
+}
+/* When .mds-fullbleed-route IS the root element itself */
+.mds-root[data-theme="light"] {
+  background:
+    radial-gradient(circle at 10% 16%, rgba(8, 145, 178, 0.12), transparent 42%),
+    radial-gradient(circle at 92% 46%, rgba(180, 83, 9, 0.08), transparent 34%),
+    linear-gradient(160deg, #eef2f7 0%, #e9eef4 60%, #dde5ee 100%);
+}
+.mds-root[data-theme="light"] .mds-panel {
+  background: var(--mds-panel);
+  border-color: var(--mds-line);
+  box-shadow: var(--mds-shadow-2);
+}
+.mds-root[data-theme="light"] .mds-msg-card {
+  background: var(--mds-card);
+  border-color: var(--mds-line);
+  box-shadow: var(--mds-shadow-2);
+}
+/* Card title/sub/price sit on the OVERLAY, over a dark photo + scrim — so
+   they must stay light in BOTH themes (same as .mds-rec-overlay text). The
+   title's base color is var(--mds-on-surface), which flips to slate in light
+   and goes dark-on-dark; pin the overlay text back to white here. The dark
+   text-shadow already baked into these elements keeps them legible on the
+   photo. */
+.mds-root[data-theme="light"] .mds-msg-card-title,
+.mds-root[data-theme="light"] .mds-msg-card-price b {
+  color: #ffffff;
+}
+.mds-root[data-theme="light"] .mds-msg-card-sub {
+  color: #dbe4ec;
+}
+.mds-root[data-theme="light"] .mds-msg-card-price span {
+  color: rgba(219, 228, 236, 0.82);
+}
+.mds-root[data-theme="light"] .mds-rec-card {
+  background: var(--mds-card);
+  border-color: var(--mds-line);
+  box-shadow: var(--mds-shadow-2);
+}
+.mds-root[data-theme="light"] .mds-chat-composer,
+.mds-root[data-theme="light"] .mds-chat-composer input {
+  background: var(--mds-card);
+}
+/* Subtle white overlays read as near-invisible on a light bg — darken them so
+   chips/insets/dividers stay perceptible in light mode. */
+.mds-root[data-theme="light"] .mds-debug-banner {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+/* ---- Light theme: remaining dark chrome (chips, popovers, drawers, buttons,
+   badges). Each maps a dark surface to a light one. Whites become faint slate
+   fills; cyan-tinted "active" states use the light cyan-soft token. ---- */
+.mds-root[data-theme="light"] .mds-phase-selector {
+  background: var(--mds-fill-2);
+  border-color: var(--mds-line);
+}
+.mds-root[data-theme="light"] .mds-chat-action-chip,
+.mds-root[data-theme="light"] .mds-chat-starter-chip,
+.mds-root[data-theme="light"] .mds-msg-result-chip,
+.mds-root[data-theme="light"] .mds-popover-step-btn,
+.mds-root[data-theme="light"] .mds-trace-actions button,
+.mds-root[data-theme="light"] .mds-msg-card-actions button,
+.mds-root[data-theme="light"] .mds-rec-overlay .mds-rec-actions button,
+.mds-root[data-theme="light"] .mds-popover-dates input[type="date"] {
+  background: var(--mds-card);
+  border-color: var(--mds-line);
+  color: var(--mds-on-surface-soft);
+}
+.mds-root[data-theme="light"] .mds-chat-action-chip.is-active,
+.mds-root[data-theme="light"] .mds-msg-result-chip.is-active,
+.mds-root[data-theme="light"] .mds-chat-action-chip:focus-visible,
+.mds-root[data-theme="light"] .mds-msg-result-chip:focus-visible,
+.mds-root[data-theme="light"] .mds-chat-starter-chip:focus-visible,
+.mds-root[data-theme="light"] .mds-popover-step-btn:hover:not(:disabled),
+.mds-root[data-theme="light"] .mds-msg-card-actions button:hover:not(:disabled),
+.mds-root[data-theme="light"] .mds-rec-overlay .mds-rec-actions button:hover {
+  background: var(--mds-cyan-soft);
+  border-color: var(--mds-cyan-line);
+  color: var(--mds-cyan);
+}
+.mds-root[data-theme="light"] .mds-chat-starter-chip.is-stretch {
+  background: rgba(180, 83, 9, 0.08);
+  border-color: rgba(180, 83, 9, 0.30);
+  color: var(--mds-amber);
+}
+.mds-root[data-theme="light"] .mds-msg-card-match,
+.mds-root[data-theme="light"] .mds-rec-match-badge {
+  background: rgba(22, 128, 61, 0.12);
+  color: var(--mds-green);
+}
+.mds-root[data-theme="light"] .mds-rec-date,
+.mds-root[data-theme="light"] .mds-rec-kicker {
+  background: var(--mds-fill-2);
+  color: var(--mds-on-surface-soft);
+}
+.mds-root[data-theme="light"] .mds-chip-pop,
+.mds-root[data-theme="light"] .mds-chip-pop::after,
+.mds-root[data-theme="light"] .mds-drawer,
+.mds-root[data-theme="light"] .mds-trip-drawer {
+  background: var(--mds-shell-elevated);
+  border-color: var(--mds-line);
+  color: var(--mds-on-surface);
+}
+.mds-root[data-theme="light"] .mds-drawer-backdrop {
+  background: var(--mds-scrim);
+}
+/* Code blocks stay dark-on-light by convention (a "console" look), so give them
+   the mockup's console treatment rather than washing them out. */
+.mds-root[data-theme="light"] .mds-md pre,
+.mds-root[data-theme="light"] .mds-sql-list pre,
+.mds-root[data-theme="light"] .mds-error-card pre {
+  background: #080d1c;
+  color: #e2e8f0;
+}
+/* Nav active state (sidebar is transparent; only its active item is tinted). */
+.mds-root[data-theme="light"] .mds-nav-item.is-active,
+.mds-root[data-theme="light"] .mds-desktop-nav .is-active {
+  background: var(--mds-cyan-soft);
+  color: var(--mds-cyan);
+}
+
+/* THE MAIN STAGE BACKGROUND. .mds-desktop-app carries the dark base gradient
+   (#040a13…) with warm/cool halos, and a ::before screen-blend overlay. This
+   is the big dark region (sidebar + main are transparent grid columns over it).
+   Repaint it as the pale daylight wash and neutralize the screen-blend halo. */
+.mds-root[data-theme="light"] .mds-desktop-app {
+  background:
+    radial-gradient(ellipse 60% 75% at -8% 100%, rgba(8, 145, 178, 0.10), transparent 65%),
+    radial-gradient(ellipse 70% 80% at 108% -10%, rgba(217, 119, 6, 0.10), transparent 70%),
+    linear-gradient(160deg, #eef2f7 0%, #e9eef4 55%, #dde5ee 100%);
+}
+.mds-root[data-theme="light"] .mds-desktop-app::before {
+  /* screen-blend halos go invisible/muddy on light — replace with a faint
+     multiply tint so the corners still warm slightly without darkening. */
+  background:
+    radial-gradient(ellipse 50% 50% at 100% 0%, rgba(217, 119, 6, 0.06), transparent 70%),
+    radial-gradient(ellipse 38% 42% at 0% 100%, rgba(8, 145, 178, 0.06), transparent 70%);
+  mix-blend-mode: multiply;
+}
+
+/* Sidebar nav item text is a hardcoded light-gray (#aeb9c4) that vanishes on a
+   light wash — use the slate token so nav labels stay legible. */
+.mds-root[data-theme="light"] .mds-nav-item {
+  color: var(--mds-on-surface-soft);
+}
+.mds-root[data-theme="light"] .mds-nav-item:hover {
+  color: var(--mds-on-surface);
+  background: var(--mds-fill-2);
+}
+
+/* The sidebar paints its OWN dark gradient (radial cyan halos over a
+   rgba(3,10,17,…) slab) that the token swap can't reach — so it stayed dark
+   over the now-light app base. Repaint it as the mockup's frosted near-white
+   glass rail: translucent white + blur, hairline right border. */
+.mds-root[data-theme="light"] .mds-desktop-sidebar {
+  background: var(--mds-panel);
+  border-right: 1px solid var(--mds-line);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
+  backdrop-filter: blur(18px) saturate(1.2);
+}
+
+/* The bottom dock fades to a hardcoded dark (rgba(4,9,15,…)) with a white
+   hairline — that's the murky band under the starter pills + quick-actions.
+   In light mode fade to the daylight wash instead, with a slate hairline. */
+.mds-root[data-theme="light"] .mds-desktop-dock {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(233, 238, 244, 0.55) 30%,
+    rgba(233, 238, 244, 0.92) 100%
+  );
+  border-top: 1px solid var(--mds-line);
+}
+
+/* "Meridian activity" reasoning timeline — dark gradient slab → solid white
+   card. --mds-fill-2 (rgba slate .06) was almost invisible on the light wash;
+   the mockup renders this as a proper white panel with a hairline + soft
+   shadow, so the live trace reads as a distinct surface. */
+.mds-root[data-theme="light"] .mds-thinking {
+  background: var(--mds-card);
+  border-color: var(--mds-line);
+  box-shadow: var(--mds-shadow-1);
+}
+/* Step labels are a hardcoded near-white (#e6f4f9) — invisible on the white
+   panel. Flip to slate ink so the live trace steps read. */
+.mds-root[data-theme="light"] .mds-thinking-copy {
+  color: var(--mds-on-surface-soft);
+}
+
+/* Phase tabs (SQL · MCP · Retrieval · Production · Workflow): inactive label is
+   a hardcoded #aeb9c4 that's far too faint on light. Darken to the soft slate
+   ink; keep the active tab on its own (cyan/ink) treatment. */
+.mds-root[data-theme="light"] .mds-phase-selector button {
+  color: var(--mds-on-surface-soft);
+}
+
+/* Sent (user) query bubble: background was rgba(49,90,110,.62) — a dark teal
+   that reads as a muddy grey slab on light. Repaint as the soft cyan tint so
+   it's clearly the traveler's turn, with legible slate ink. */
+.mds-root[data-theme="light"] .mds-message.user .mds-message-bubble {
+  background: var(--mds-cyan-soft);
+  border: 1px solid var(--mds-cyan-line);
+  color: var(--mds-on-surface);
+  box-shadow: none;
+}
+.mds-root[data-theme="light"] .mds-navpanel-msg.is-user {
+  background: var(--mds-cyan-soft);
+}
+
+/* "N trips" collapsible summary chip: the soft cyan-on-cyan fill was too low
+   contrast to spot. Add a defining border + a touch more fill so it reads as
+   a tappable control. */
+.mds-root[data-theme="light"] .mds-msg-result-chip {
+  background: var(--mds-cyan-soft);
+  border: 1px solid var(--mds-cyan-line);
+}
+/* The "· $1,599 – $1,899" price range was a near-white (and an active pale
+   green) tuned for the dark chip — both vanish on the light cyan fill. Use
+   readable slate/cyan in light mode. */
+.mds-root[data-theme="light"] .mds-msg-result-chip-text span,
+.mds-root[data-theme="light"] .mds-msg-result-chip.is-active .mds-msg-result-chip-text span {
+  color: var(--mds-on-surface-soft);
+}
+
+/* ---- Light theme: text that was hardcoded near-white (won't flip via tokens)
+   and goes invisible on a light surface. Force to the slate ink tokens. ---- */
+.mds-root[data-theme="light"] .mds-chat-composer input,
+.mds-root[data-theme="light"] .mds-message-bubble,
+.mds-root[data-theme="light"] .mds-message.bot .mds-message-bubble,
+.mds-root[data-theme="light"] .mds-msg-card-actions button,
+.mds-root[data-theme="light"] .mds-msg-result-chip,
+.mds-root[data-theme="light"] .mds-navpanel-fact b,
+.mds-root[data-theme="light"] .mds-navpanel-trip-main strong,
+.mds-root[data-theme="light"] .mds-navpanel-msg-text,
+.mds-root[data-theme="light"] .mds-navpanel-prompt,
+.mds-root[data-theme="light"] .mds-md em,
+.mds-root[data-theme="light"] .mds-md blockquote,
+.mds-root[data-theme="light"] .mds-md th,
+.mds-root[data-theme="light"] .mds-empty-starter,
+.mds-root[data-theme="light"] .mds-phase-hint-copy,
+.mds-root[data-theme="light"] .mds-main-actions button:hover {
+  color: var(--mds-on-surface);
+}
+.mds-root[data-theme="light"] .mds-empty,
+.mds-root[data-theme="light"] .mds-empty-sub,
+.mds-root[data-theme="light"] .mds-headline-row p,
+.mds-root[data-theme="light"] .mds-navpanel-fact span,
+.mds-root[data-theme="light"] .mds-navpanel-hint,
+.mds-root[data-theme="light"] .mds-navpanel-msg-role,
+.mds-root[data-theme="light"] .mds-navpanel-empty span,
+.mds-root[data-theme="light"] .mds-navpanel-section-head,
+.mds-root[data-theme="light"] .mds-phase-hint-dismiss,
+.mds-root[data-theme="light"] .mds-main-actions button {
+  color: var(--mds-on-surface-soft);
+}
+.mds-root[data-theme="light"] .mds-navpanel-section-head em {
+  color: var(--mds-on-surface-faint);
+}
+/* Code spans stay on the dark console treatment, so their light cyan text is
+   correct — leave .mds-md code / pre code as-is. */
+/* Semantic warm text (errors, fallback badge) — darken for light contrast. */
+.mds-root[data-theme="light"] .mds-error-banner,
+.mds-root[data-theme="light"] .mds-error-dismiss {
+  color: #b91c1c;
+}
+.mds-root[data-theme="light"] .mds-fallback-badge {
+  color: #b45309;
+}
+/* Popovers + trace span source sit on light surfaces in light mode → dark text.
+   (Rec-card overlay text like .mds-rec-sub/.mds-rec-overlay-meta stays light —
+   it sits over a photo, so white is correct in both themes.) */
+.mds-root[data-theme="light"] .mds-popover-title {
+  color: var(--mds-on-surface);
+}
+.mds-root[data-theme="light"] .mds-popover-link,
+.mds-root[data-theme="light"] .mds-span-source {
+  color: var(--mds-on-surface-soft);
 }
 
 /* Tabular numerals for any pill / chip / metric displaying counts so
@@ -61,7 +446,7 @@
 
 .mds-error-card h2 {
   margin: 0;
-  color: #ffffff;
+  color: var(--mds-on-surface);
   font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.018em;
@@ -69,7 +454,7 @@
 
 .mds-error-card p {
   margin: 0;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--mds-on-surface-soft);
   font-size: 14.5px;
   line-height: 1.55;
 }
@@ -227,7 +612,7 @@
   align-items: center;
   gap: 11px;
   margin-bottom: 14px;
-  color: #fff;
+  color: var(--mds-on-surface);
   /* Tight-tracked Geist Display feel for the wordmark. */
   font-size: 25px;
   font-weight: 700;
@@ -282,7 +667,7 @@
 
 .mds-nav-item.is-active,
 .mds-nav-item:hover {
-  color: #fff;
+  color: var(--mds-on-surface);
   background: rgba(255, 255, 255, 0.055);
 }
 
@@ -306,7 +691,7 @@
   margin-left: auto;
   border-radius: 999px;
   background: #176fb7;
-  color: #fff;
+  color: var(--mds-on-surface);
   font-size: 9px;
 }
 
@@ -389,7 +774,7 @@
 .mds-account-copy strong,
 .mds-profile-line strong {
   display: block;
-  color: #fff;
+  color: var(--mds-on-surface);
   font-size: 15px;
   font-weight: 660;
 }
@@ -399,7 +784,7 @@
   display: block;
   margin-top: 3px;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--mds-on-surface-soft);
   font-size: 12.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -456,11 +841,74 @@
 .mds-top-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 10px;
   color: var(--mds-dim);
   font-size: 11px;
   letter-spacing: 0.02em;
+}
+
+/* Breadcrumb (left) — orients the surface. */
+.mds-breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mds-on-surface);
+  letter-spacing: -0.01em;
+}
+.mds-breadcrumb-sep {
+  color: var(--mds-on-surface-faint);
+  font-weight: 500;
+}
+.mds-breadcrumb-current {
+  color: var(--mds-on-surface-faint);
+  font-weight: 500;
+}
+
+/* Live status pill (right) — bordered pill with a pulsing dot. */
+.mds-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--mds-on-surface-soft);
+  background: var(--mds-panel-2);
+  border: 1px solid var(--mds-line-strong);
+  box-shadow: var(--mds-shadow-1);
+}
+.mds-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mds-green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mds-green) 22%, transparent);
+}
+.mds-status-pill.is-live .mds-status-dot {
+  animation: mds-status-pulse 2.4s ease-in-out infinite;
+}
+.mds-status-pill.is-off .mds-status-dot {
+  background: var(--mds-danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mds-danger) 22%, transparent);
+}
+.mds-status-sep {
+  color: var(--mds-on-surface-faint);
+}
+.mds-status-unit {
+  color: var(--mds-on-surface-faint);
+  font-variant-numeric: tabular-nums;
+}
+@keyframes mds-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mds-status-pill.is-live .mds-status-dot { animation: none; }
 }
 
 .mds-fallback-badge {
@@ -480,7 +928,7 @@
 
 .mds-headline-row h1 {
   margin: 0;
-  color: #fff;
+  color: var(--mds-on-surface);
   /* Geist headline: tight tracking, slightly heavier than the body so the
      "Good morning, Alex." reads with the premium SaaS hierarchy of the
      target screenshot. font-feature-settings turns on stylistic alts and
@@ -585,7 +1033,7 @@
   border-radius: 7px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--mds-on-surface-soft);
   font-family: var(--mds-mono, ui-monospace, monospace);
   font-size: 11px;
   white-space: nowrap;
@@ -608,7 +1056,7 @@
 }
 
 .mds-phase-hint-dismiss:hover {
-  color: #fff;
+  color: var(--mds-on-surface);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -664,7 +1112,7 @@
 }
 
 .mds-message-role {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--mds-on-surface-faint);
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -693,7 +1141,7 @@
 .mds-message.user .mds-message-bubble {
   border-radius: 16px 16px 4px 16px;
   background: rgba(49, 90, 110, 0.62);
-  color: #ffffff;
+  color: var(--mds-on-surface);
 }
 
 .mds-message.bot .mds-message-bubble {
@@ -709,6 +1157,31 @@
   flex-direction: column;
   gap: 8px;
   padding: 13px 16px 11px;
+}
+
+/* Inline trace receipt under the reply (tools called · memory prefs · ms).
+   Token-driven cyan pills — read in both themes. */
+.mds-msg-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 2px;
+}
+.mds-msg-meta-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--mds-cyan);
+  background: var(--mds-cyan-soft);
+  border: 1px solid var(--mds-cyan-line);
+}
+.mds-msg-meta-tag svg {
+  opacity: 0.9;
 }
 
 .mds-message-text {
@@ -776,7 +1249,7 @@
 }
 
 .mds-md strong {
-  color: #ffffff;
+  color: var(--mds-on-surface);
   font-weight: 680;
 }
 
@@ -905,11 +1378,11 @@
 
 .mds-msg-result-chip-text b {
   font-weight: 700;
-  color: #ffffff;
+  color: var(--mds-on-surface);
 }
 
 .mds-msg-result-chip.is-active .mds-msg-result-chip-text b {
-  color: #ffffff;
+  color: var(--mds-on-surface);
 }
 
 .mds-msg-result-chip-text span {
@@ -938,7 +1411,7 @@
 
 .mds-msg-result-chip.is-active .mds-msg-result-chip-caret {
   transform: rotate(180deg);
-  color: #ffffff;
+  color: var(--mds-on-surface);
 }
 
 /* Inline product grid revealed when the per-turn chip is expanded.
@@ -1043,7 +1516,7 @@
   justify-content: flex-end;
   gap: 4px;
   padding: 12px 12px 11px;
-  color: #ffffff;
+  color: var(--mds-on-surface);
 }
 
 .mds-msg-card-match {
@@ -1076,7 +1549,7 @@
 .mds-msg-card-title {
   display: block;
   margin-top: 2px;
-  color: #ffffff;
+  color: var(--mds-on-surface);
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.018em;
@@ -1118,7 +1591,7 @@
 .mds-msg-card-price b {
   font-size: 16px;
   font-weight: 700;
-  color: #ffffff;
+  color: var(--mds-on-surface);
   font-variant-numeric: tabular-nums;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
 }
@@ -1243,13 +1716,17 @@
   inset: 0;
   z-index: 1;
   pointer-events: none;
+  /* Cinematic two-part scrim: a faint top vignette anchors the match badge,
+     and a deep bottom ramp seats the title/price over any photo. Reads the
+     same in both themes — the photo + scrim are theme-independent. */
   background:
+    linear-gradient(180deg, rgba(3, 8, 14, 0.28) 0%, rgba(3, 8, 14, 0) 22%),
     linear-gradient(180deg,
       rgba(3, 8, 14, 0.0) 0%,
-      rgba(3, 8, 14, 0.0) 38%,
-      rgba(3, 8, 14, 0.32) 60%,
-      rgba(3, 8, 14, 0.78) 82%,
-      rgba(2, 6, 10, 0.94) 100%);
+      rgba(3, 8, 14, 0.0) 34%,
+      rgba(3, 8, 14, 0.38) 58%,
+      rgba(3, 8, 14, 0.82) 82%,
+      rgba(2, 6, 10, 0.96) 100%);
 }
 
 .mds-rec-overlay {
@@ -1261,7 +1738,7 @@
   justify-content: flex-end;
   gap: 6px;
   padding: 16px 16px 14px;
-  color: #fff;
+  color: var(--mds-on-surface);
 }
 
 .mds-rec-match-badge {
@@ -1317,7 +1794,7 @@
 .mds-rec-title {
   display: block;
   margin-top: 2px;
-  color: #ffffff;
+  color: var(--mds-on-surface);
   font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.022em;
@@ -1362,7 +1839,7 @@
 .mds-rec-overlay .mds-rec-price b {
   font-size: 20px;
   font-weight: 760;
-  color: #ffffff;
+  color: var(--mds-on-surface);
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
 }
 
@@ -1408,7 +1885,29 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: saturate(1.04) contrast(1.03);
+  /* Cinematic colour grade — a touch more saturation + contrast and a hair
+     of warmth so the travel photography reads like a film still, not a stock
+     thumbnail. */
+  filter: saturate(1.12) contrast(1.06) brightness(1.02);
+  /* Ever-so-slightly overscaled so the Ken Burns zoom has room to move
+     without exposing card edges. */
+  transform: scale(1.04);
+  transition: transform 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+/* Ken Burns — a slow push-in on hover/focus makes the full-bleed card feel
+   alive and cinematic. Scoped to the rec cards (not chat thumbnails). */
+.mds-rec-card:hover .mds-trip-photo,
+.mds-rec-card:focus-visible .mds-trip-photo,
+.mds-rec-card.is-selected .mds-trip-photo {
+  transform: scale(1.1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mds-trip-photo { transition: none; transform: none; }
+  .mds-rec-card:hover .mds-trip-photo,
+  .mds-rec-card:focus-visible .mds-trip-photo,
+  .mds-rec-card.is-selected .mds-trip-photo { transform: none; }
 }
 
 .mds-trip-visual::after {
@@ -1504,7 +2003,7 @@
 .mds-rec-copy strong {
   display: block;
   overflow: hidden;
-  color: #fff;
+  color: var(--mds-on-surface);
   font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1550,7 +2049,7 @@
   min-height: 38px;
   padding: 0 14px;
   border-color: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
+  color: var(--mds-on-surface);
   background: rgba(15, 26, 36, 0.82);
   font-size: 13px;
   font-weight: 600;
@@ -1585,9 +2084,10 @@
 }
 
 .mds-chat-composer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  /* The send button lives INSIDE the input pill (mockup parity): the input
+     fills the full width with right-padding reserved, and the button is
+     absolutely positioned against the right edge. */
+  position: relative;
 }
 
 .mds-chat-composer-wrap {
@@ -1613,7 +2113,7 @@
 }
 
 .mds-chat-starter-label {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--mds-on-surface-faint);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -1637,7 +2137,7 @@
 .mds-chat-starter-chip:focus-visible {
   border-style: solid;
   border-color: rgba(49, 212, 228, 0.7);
-  color: #ffffff;
+  color: var(--mds-on-surface);
   background: rgba(20, 56, 68, 0.78);
   transform: translateY(-1px);
   outline: none;
@@ -1684,7 +2184,7 @@
   padding: 0 16px 0 12px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
-  color: #ffffff;
+  color: var(--mds-on-surface);
   background: rgba(9, 17, 27, 0.78);
   font-size: 13.5px;
   font-weight: 580;
@@ -1696,7 +2196,7 @@
 .mds-chat-action-chip:hover,
 .mds-chat-action-chip:focus-visible {
   border-color: rgba(49, 212, 228, 0.55);
-  color: #ffffff;
+  color: var(--mds-on-surface);
   background: rgba(15, 32, 44, 0.88);
   transform: translateY(-1px);
   outline: none;
@@ -1731,7 +2231,7 @@
 .mds-chat-action-chip.is-active {
   border-color: rgba(49, 212, 228, 0.7);
   background: rgba(20, 56, 68, 0.85);
-  color: #ffffff;
+  color: var(--mds-on-surface);
 }
 
 .mds-chat-action-chip.is-active .mds-chat-action-chip-icon {
@@ -1751,7 +2251,7 @@
 .mds-chat-action-chip.is-clear {
   border-style: dashed;
   border-color: rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--mds-on-surface-soft);
   background: transparent;
 }
 
@@ -1828,7 +2328,7 @@
   height: 36px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 50%;
-  color: #ffffff;
+  color: var(--mds-on-surface);
   background: rgba(15, 26, 36, 0.6);
   font-size: 18px;
   font-weight: 600;
@@ -1856,7 +2356,7 @@
 }
 
 .mds-popover-step-value b {
-  color: #ffffff;
+  color: var(--mds-on-surface);
   font-size: 22px;
   font-weight: 700;
   line-height: 1.1;
@@ -1897,7 +2397,7 @@
   padding: 0 12px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
-  color: #ffffff;
+  color: var(--mds-on-surface);
   background: rgba(11, 20, 31, 0.78);
   font-family: inherit;
   font-size: 13.5px;
@@ -1963,13 +2463,15 @@
 }
 
 .mds-chat-composer input {
+  width: 100%;
   min-width: 0;
-  height: 48px;
+  height: 56px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 17px;
   color: #edf6ff;
   background: linear-gradient(180deg, rgba(11, 20, 31, 0.8), rgba(7, 14, 22, 0.84));
-  padding: 0 16px;
+  /* Right padding reserves room for the inset send button (40px + insets). */
+  padding: 0 60px 0 16px;
   outline: none;
 }
 
@@ -1978,15 +2480,61 @@
   box-shadow: 0 0 0 3px rgba(49, 212, 228, 0.12);
 }
 
-.mds-chat-composer button {
-  height: 48px;
-  padding: 0 18px;
+/* Send button — a rounded-square icon button (arrow), per the daylight
+   mockup, instead of a wide "Send" text pill. Dark slate in light mode
+   (mockup), cyan brand fill in dark mode so it never sinks into the dark
+   composer. Square so the arrow centers cleanly. */
+.mds-chat-send {
+  /* Inset against the right edge of the input pill, vertically centered. */
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
   border: 0;
-  border-radius: 15px;
+  border-radius: 12px;
   color: #06232a;
   background: linear-gradient(180deg, #58e8f2, #29c8db);
-  font-weight: 800;
-  box-shadow: 0 8px 24px rgba(49, 212, 228, 0.34);
+  box-shadow: 0 6px 18px rgba(49, 212, 228, 0.34);
+  transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease, background 150ms ease;
+}
+.mds-chat-send:hover:not(:disabled) {
+  /* Keep the -50% vertical centering; nudge up a hair on top of it. */
+  transform: translateY(calc(-50% - 1px));
+}
+.mds-chat-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.mds-root[data-theme="light"] .mds-chat-send {
+  /* Mockup: dark slate square with a white arrow. */
+  color: #ffffff;
+  background: var(--mds-ink);
+  box-shadow: var(--mds-shadow-1);
+}
+.mds-root[data-theme="light"] .mds-chat-send:hover:not(:disabled) {
+  background: #1e293b;
+}
+/* Loading spinner that replaces the arrow while a turn is in flight. */
+.mds-chat-send-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: mds-send-spin 0.7s linear infinite;
+}
+@keyframes mds-send-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mds-chat-send-spinner { animation: none; }
+  /* Preserve vertical centering even with motion disabled. */
+  .mds-chat-send:hover:not(:disabled) { transform: translateY(-50%); }
 }
 
 .mds-desktop-right {
@@ -2066,7 +2614,7 @@
 
 .mds-collapse-toggle:hover .mds-collapse-chevron,
 .mds-collapse-toggle:focus-visible .mds-collapse-chevron {
-  color: #fff;
+  color: var(--mds-on-surface);
 }
 
 .mds-collapse-chevron {
@@ -2076,7 +2624,7 @@
   width: 18px;
   height: 18px;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--mds-on-surface-faint);
   background: rgba(255, 255, 255, 0.04);
   /* Animate color/background only. The rotate is driven by the SVG's
      own transform on .mds-collapse-chevron-inner so the wrapping span's
@@ -2102,7 +2650,7 @@
 
 .mds-collapse-hint {
   margin-left: 4px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--mds-on-surface-faint);
   font-size: 11.5px;
   font-weight: 500;
   letter-spacing: 0.01em;
@@ -2118,7 +2666,7 @@
 }
 
 .mds-panel-head strong {
-  color: #fff;
+  color: var(--mds-on-surface);
   font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.005em;
@@ -2150,9 +2698,10 @@
 .mds-fact-row,
 .mds-memory-mini div {
   display: grid;
-  grid-template-columns: 44% minmax(0, 1fr);
+  grid-template-columns: 40% minmax(0, 1fr);
   gap: 10px;
-  color: #ffffff;
+  align-items: start;
+  color: var(--mds-on-surface);
   font-size: 13.5px;
   line-height: 1.35;
 }
@@ -2164,18 +2713,20 @@
   overflow: hidden;
   /* Brighter "label" colour so even the secondary column reads at a glance
      on big stage displays. */
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--mds-on-surface-soft);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .mds-fact-row b,
 .mds-memory-mini b {
-  overflow: hidden;
-  color: #ffffff;
+  min-width: 0;
+  color: var(--mds-on-surface);
   font-weight: 660;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Let multi-value facts (loyalty_programs, recent_trips, tokyo_culture)
+     wrap onto a second line instead of truncating with an ellipsis. */
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .mds-run-config {
@@ -2196,7 +2747,7 @@
 .mds-run-config b {
   min-width: 0;
   overflow: hidden;
-  color: #fff;
+  color: var(--mds-on-surface);
   font-weight: 680;
   font-size: 13.5px;
   text-align: right;
@@ -2241,7 +2792,7 @@
   gap: 12px;
   align-items: center;
   padding: 9px 0;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--mds-on-surface-faint);
   font-size: 14.5px;
   font-weight: 580;
   letter-spacing: 0.005em;
@@ -2304,7 +2855,7 @@
 
 /* Currently-active phase: cyan dot, pulsing glow, copy at full brightness. */
 .mds-thinking-item.is-active {
-  color: #ffffff;
+  color: var(--mds-on-surface);
 }
 
 .mds-thinking-item.is-active .mds-thinking-dot {
@@ -2353,7 +2904,7 @@
   padding: 4px 10px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
-  color: #ffffff;
+  color: var(--mds-on-surface);
   font-size: 12px;
   font-weight: 600;
   background: rgba(255, 255, 255, 0.06);
@@ -2363,7 +2914,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: #ffffff;
+  color: var(--mds-on-surface);
   font-size: 12.5px;
   font-weight: 600;
 }
@@ -2392,7 +2943,7 @@
   min-height: 34px;
   border: 0;
   border-radius: 8px;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--mds-on-surface-soft);
   background: transparent;
   font-size: 13px;
   font-weight: 600;
@@ -2423,7 +2974,7 @@
   width: 100%;
   padding: 10px 0 10px 4px;
   border: 0;
-  color: #ffffff;
+  color: var(--mds-on-surface);
   background: transparent;
   text-align: left;
   /* Smooth opacity transition lets pending → visible flips fade in
@@ -2444,7 +2995,7 @@
 }
 
 .mds-span-row.is-active {
-  color: #fff;
+  color: var(--mds-on-surface);
 }
 
 .mds-span-row.is-pending {
@@ -2455,7 +3006,7 @@
 .mds-span-row.is-pending .mds-span-check {
   border-color: rgba(255, 255, 255, 0.16);
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--mds-on-surface-faint);
 }
 
 .mds-span-check {
@@ -2473,7 +3024,7 @@
 
 .mds-span-title {
   display: block;
-  color: #ffffff;
+  color: var(--mds-on-surface);
   font-size: 13.5px;
   font-weight: 680;
   letter-spacing: -0.005em;
@@ -2502,7 +3053,7 @@
   margin-top: 10px;
   padding: 11px;
   border-radius: 10px;
-  color: #ffffff;
+  color: var(--mds-on-surface);
   background: rgba(255, 255, 255, 0.07);
   font-size: 13px;
   line-height: 1.5;
@@ -2529,7 +3080,7 @@
 }
 
 .mds-span-detail small {
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--mds-on-surface-soft);
   font-size: 12px;
 }
 
@@ -2590,7 +3141,7 @@
 .mds-trip-drawer-copy strong {
   display: block;
   margin-top: 3px;
-  color: #fff;
+  color: var(--mds-on-surface);
 }
 
 .mds-trip-drawer-copy p {
@@ -2623,7 +3174,7 @@
 
 .mds-trip-drawer-grid b,
 .mds-trip-confirm b {
-  color: #fff;
+  color: var(--mds-on-surface);
   font-size: 13px;
 }
 
@@ -2680,7 +3231,7 @@
 }
 
 .mds-drawer header strong {
-  color: #fff;
+  color: var(--mds-on-surface);
   font-size: 20px;
 }
 
@@ -2689,7 +3240,7 @@
   height: 32px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 10px;
-  color: #fff;
+  color: var(--mds-on-surface);
   background: rgba(255, 255, 255, 0.06);
 }
 
@@ -2718,7 +3269,7 @@
 .mds-drawer-row b {
   display: block;
   margin: 3px 0;
-  color: #fff;
+  color: var(--mds-on-surface);
   font-size: 13px;
 }
 
@@ -2907,7 +3458,7 @@
   padding: 28px 4px;
   text-align: center;
 }
-.mds-navpanel-empty b { color: #fff; font-size: 14.5px; }
+.mds-navpanel-empty b { color: var(--mds-on-surface); font-size: 14.5px; }
 .mds-navpanel-empty span { color: rgba(255, 255, 255, 0.5); font-size: 12.5px; line-height: 1.5; }
 
 /* Trip rows */
@@ -2932,9 +3483,9 @@
 }
 .mds-navpanel-trip-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mds-navpanel-trip-main strong { color: #f0f5fa; font-size: 13.5px; }
-.mds-navpanel-trip-main small { color: rgba(255, 255, 255, 0.45); font-size: 11.5px; }
+.mds-navpanel-trip-main small { color: var(--mds-on-surface-faint); font-size: 11.5px; }
 .mds-navpanel-trip-meta { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-.mds-navpanel-trip-meta b { color: #fff; font-size: 13px; }
+.mds-navpanel-trip-meta b { color: var(--mds-on-surface); font-size: 13px; }
 .mds-navpanel-trip-meta span { color: var(--mds-cyan); font-size: 11px; }
 .mds-navpanel-saved-dot {
   width: 7px; height: 7px; border-radius: 50%;
@@ -2971,8 +3522,8 @@
   margin-bottom: 14px;
   border-bottom: 1px solid var(--mds-line);
 }
-.mds-navpanel-profile-head strong { display: block; color: #fff; font-size: 15px; }
-.mds-navpanel-profile-head small { color: rgba(255, 255, 255, 0.45); font-size: 11.5px; }
+.mds-navpanel-profile-head strong { display: block; color: var(--mds-on-surface); font-size: 15px; }
+.mds-navpanel-profile-head small { color: var(--mds-on-surface-faint); font-size: 11.5px; }
 
 .mds-navpanel-stats {
   display: grid;
@@ -2990,9 +3541,9 @@
   background: rgba(255, 255, 255, 0.03);
   text-align: center;
 }
-.mds-navpanel-stats b { color: #fff; font-size: 15px; }
+.mds-navpanel-stats b { color: var(--mds-on-surface); font-size: 15px; }
 .mds-navpanel-stats span {
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--mds-on-surface-faint);
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -3081,7 +3632,7 @@
   padding: 8px 2px;
 }
 .mds-empty-title {
-  color: #fff;
+  color: var(--mds-on-surface);
   font-size: 17px;
   font-weight: 600;
   letter-spacing: -0.01em;

@@ -80,7 +80,13 @@ class ProductionAgent:
             model_id=config.bedrock.model_id,
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
         )
-        # Concierge Agent — memory @tools are bound methods from MemoryAgent.
+        # Concierge Agent — the four memory @tools (bound MemoryAgent methods)
+        # registered as a Strands Agent. NOTE: process_turn() drives the turn
+        # deterministically (calls each tool once, in order), so this Agent is
+        # not invoked per-turn; it documents the available toolset and is kept
+        # for an optional LLM-driven path. Driving the turn through it caused
+        # each tool to fire twice (once by the LLM, once by the direct calls),
+        # including a duplicate persist_turn write — so the turn path is direct.
         self.agent = Agent(
             model=self.model,
             tools=[
@@ -108,41 +114,6 @@ class ProductionAgent:
                 telemetry=kwargs.get("telemetry"),
             )
         )
-
-    async def _llm_driven_memory_recall(
-        self,
-        traveler_id: str,
-        conv_id: str,
-        message: str,
-    ) -> bool:
-        """
-        Ask Bedrock (via Strands) to choose which memory tools to call this turn.
-
-        Returns True if the LLM successfully drove tool selection. The MemoryAgent
-        callbacks emit trace spans naturally as tools fire; the supervisor here
-        only needs to know success vs failure to decide on fallback.
-        """
-        prompt = (
-            f"Active traveler: {traveler_id}\n"
-            f"Active conversation: {conv_id}\n"
-            f"User said: {message}\n\n"
-            "Before searching, recall what we know:\n"
-            f"- Call recall_session_context with conversation_id='{conv_id}' to load recent turns.\n"
-            f"- Call recall_traveler_preferences with traveler_id='{traveler_id}' for durable preferences.\n"
-            f"- Call recall_similar_interactions with traveler_id='{traveler_id}' and the user query.\n"
-            "Then briefly summarize the memory you loaded."
-        )
-        try:
-            await self.agent.invoke_async(prompt)
-            return True
-        except Exception as exc:
-            logger.error("Strands memory recall failed: %s", exc)
-            self._log(
-                "error",
-                "Bedrock memory orchestration failed",
-                details=str(exc)[:200],
-            )
-            raise
 
     async def _search_packages(
         self,
@@ -411,11 +382,10 @@ class ProductionAgent:
                 },
             )
 
-            llm_ok = await self._llm_driven_memory_recall(traveler_id, conv_id, message)
-
-            # Materialize structured memory state for the search step.  If the
-            # LLM already invoked the tools, these hit the same Aurora tables
-            # a second time and return identical data; cost is negligible.
+            # Load traveler memory once, deterministically. Each @tool fires
+            # exactly once here and emits its own trace span — there is no
+            # separate LLM-driven recall pass, so the trace shows each memory
+            # tool a single time (no duplicate Aurora reads/writes).
             session = await self.traveler_memory.recall_session_context(conv_id)
             prefs = await self.traveler_memory.recall_traveler_preferences(traveler_id)
             similar = await self.traveler_memory.recall_similar_interactions(traveler_id, message)
@@ -427,7 +397,7 @@ class ProductionAgent:
             self._log(
                 "reasoning",
                 "Apply traveler context to search",
-                details=f"orchestration={'llm' if llm_ok else 'direct'} · {memory_context[:240]}",
+                details=f"orchestration=deterministic · {memory_context[:240]}",
             )
 
             packages, search_activities = await self._search_packages(message, limit)

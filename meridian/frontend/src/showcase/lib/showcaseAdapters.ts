@@ -59,13 +59,19 @@ export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
     'What is the cheapest month to visit Tokyo?',
     'A romantic slow week somewhere with great wine',
   ],
-  // Retrieval: pgvector + Cohere rerank handle intent. No memory.
-  // Stretch is now a query that explicitly probes for memory - Phase 3
-  // genuinely cannot answer "what did we discuss last time" so the gap
-  // is visible, not subtle.
+  // Retrieval: supervised multi-agent search. The three pills now show
+  // THREE distinct behaviours so the trace differs each time (not three
+  // identical hybrid searches):
+  //   1. SearchAgent — hybrid pgvector + tsvector + Cohere rerank on intent.
+  //   2. PackageAgent — the supervisor DELEGATES an availability question to
+  //      a different specialist, drilling into the Tuscany result from pill 1.
+  //      Different specialist, different tool, different trace = the
+  //      "supervised multi-agent" payoff made visible.
+  //   3. Stretch — a memory-recall prompt Phase 3 genuinely cannot answer
+  //      (no conversation store); the honest failure motivates Production.
   3: [
     'A romantic slow week somewhere with great wine',
-    'Family-friendly beach resort with snorkeling',
+    'Check availability for the Tuscany Wine & Wellness week',
     'What did we discuss last time? Pick up where we left off.',
   ],
   // Production: AgentCore + Aurora RLS + traveler memory. The pills are

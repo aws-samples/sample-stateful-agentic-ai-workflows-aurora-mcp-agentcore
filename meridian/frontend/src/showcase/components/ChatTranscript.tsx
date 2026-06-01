@@ -207,6 +207,7 @@ function ChatMessage({
           )}
           {hasInlineProducts && message.products && productsRevealed && (
             <>
+              <ResponseMetaTags state={state} />
               <ProductSummaryChip
                 products={message.products}
                 state={state}
@@ -284,6 +285,57 @@ function money(price: number): string {
 // Compact summary chip - "4 trips · $1,599 to $1,899 · jump to results".
 // Anchored inside the bot bubble so prior-turn results stay attached to
 // chat history without re-painting full thumbnails (the rich grid below
+// Inline "trace receipt" under the concierge reply (mockup parity). Every tag
+// is phase-aware so the receipt names exactly what the current phase's
+// architecture does — the demo's whole thesis is that each phase composes a
+// new capability onto the last, and the receipt must never over-claim:
+//
+//   Phase 1 SQL        → "Direct SQL"            (RDS Data API; no tools, no memory)
+//   Phase 2 MCP        → "MCP tools"             (catalog reached through MCP)
+//   Phase 3 Retrieval  → "Hybrid retrieval · reranked" (pgvector + Cohere) —
+//                        STILL no memory; that gap is the motivator for Phase 4
+//   Phase 4 Production  → "memory: N prefs"       (AgentCore memory invoked here)
+//   Phase 5 Workflow    → "LangGraph · checkpointed" + memory (recall node)
+//
+// The capability label is keyed to phase (not parsed from span categories,
+// which vary by query path); the prefs count + latency are read from live
+// state. memory only appears at phase >= 4 — never before the phase that
+// introduces it, even though memoryFacts may already be loaded in the rail.
+const PHASE_CAPABILITY: Record<number, string> = {
+  1: 'Direct SQL',
+  2: 'MCP tools',
+  3: 'Hybrid retrieval · reranked',
+  4: 'AgentCore memory',
+  5: 'LangGraph · checkpointed',
+};
+
+function ResponseMetaTags({ state }: { state: MeridianShowcaseState }) {
+  const phase = state.selectedPhase;
+  const capability = PHASE_CAPABILITY[phase];
+  const prefs = phase >= 4 ? state.memoryFacts.length : 0;
+  const latency = state.totalLatencyMs;
+  const showMemory = phase >= 4 && prefs > 0;
+
+  if (!capability && !showMemory && !latency) return null;
+
+  return (
+    <div className="mds-msg-meta" aria-label="Trace summary">
+      {capability && (
+        <span className="mds-msg-meta-tag">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 2 4 7v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V7l-8-5Z" />
+          </svg>
+          {capability}
+        </span>
+      )}
+      {showMemory && (
+        <span className="mds-msg-meta-tag">memory: {prefs} {prefs === 1 ? 'pref' : 'prefs'}</span>
+      )}
+      {!!latency && <span className="mds-msg-meta-tag">{latency}ms</span>}
+    </div>
+  );
+}
+
 // the chat already shows the active turn's products).
 function ProductSummaryChip({
   products,

@@ -1,4 +1,4 @@
-bin/uvicorn,sha256=eyVXWjj0P8VchuEIvTSuQcTq8IrLgzwCRffBB0o5jxM,365
+bin/uvicorn,sha256=HkkR2G5lGi18Van0UnxtuDpBkjiZNoYazgpuSS1FOHc,379
 uvicorn-0.48.0.dist-info/INSTALLER,sha256=5hhM4Q4mYTT9z6QB6PGpUAW81PGNFrYrdXMj4oM_6ak,2
 uvicorn-0.48.0.dist-info/METADATA,sha256=S-WvCCXA2ZhdoAlxUDblsUBgO9DevtJyx_bMgqldh-Q,6738
 uvicorn-0.48.0.dist-info/RECORD,,

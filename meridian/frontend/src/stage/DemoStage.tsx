@@ -44,7 +44,7 @@ import type { Phase } from '../types';
 const KIOSK_SCENARIO_ORDER: StageScenario['id'][] = ['tokyo', 'recall', 'plan'];
 const KIOSK_DWELL_MS = 6500;
 const KIOSK_GITHUB_REPO = 'https://github.com/aws-samples/sample-dat309-agentic-workflows-aurora-mcp';
-const ARCHITECTURE_IMAGE_SRC = '/kiosk/architecture-board.png';
+const ARCHITECTURE_IMAGE_SRC = '/kiosk/architecture.png';
 const TRY_QR_IMAGE_SRC = '/kiosk/try-meridian-qr.png';
 type KioskTab = 'demo' | 'architecture' | 'try';
 

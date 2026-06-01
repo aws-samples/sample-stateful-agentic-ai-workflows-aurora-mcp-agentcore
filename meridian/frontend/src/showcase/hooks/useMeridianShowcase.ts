@@ -404,7 +404,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, [lastPrompt, submitPrompt]);
 
   const setSelectedPhase = useCallback((phase: Phase) => {
+    let phaseChanged = false;
     setSelectedPhaseState((prev) => {
+      phaseChanged = phase !== prev;
       // Surface the "what this rung adds" callout only when advancing to a
       // higher phase — that's the narrative beat (each mode composes onto
       // the last). Backward switches stay quiet so re-demoing an earlier
@@ -420,12 +422,32 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       }
       return phase;
     });
-    if (phase < 4 && conversationId) {
+    // Switching to a different phase auto-clears the conversation so each
+    // mode starts from a clean slate — the presenter doesn't want Phase 2's
+    // transcript bleeding into the Retrieval demo. Re-clicking the active
+    // pill is a no-op (don't wipe an in-progress conversation). Phase choice
+    // and Aurora-backed memory facts are preserved.
+    if (phaseChanged) {
+      clearReplayTimers();
+      setMessages([]);
+      setCurrentPrompt('');
+      setLastPrompt(null);
+      setRecommendations([]);
+      setSelectedTrip(null);
+      setTraceSpans([]);
+      setExpandedSpanId(null);
+      setTraceTab('spans');
+      setReplayIndex(-1);
+      setIsReplaying(false);
       setConversationId(null);
+      setActionDrawer(null);
+      setError(null);
+      setChatFiltersState(EMPTY_FILTERS);
+      setLatestStreamComplete(true);
     }
     // No auto-prompt: leave the composer empty so the presenter types
     // intent freshly for each phase walkthrough.
-  }, [conversationId]);
+  }, [clearReplayTimers]);
 
   const dismissPhaseHint = useCallback(() => {
     setPhaseHint(null);

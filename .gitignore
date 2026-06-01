@@ -54,3 +54,4 @@ logs/
 
 # Kiro specs (local development)
 .kiro/
+.claude/

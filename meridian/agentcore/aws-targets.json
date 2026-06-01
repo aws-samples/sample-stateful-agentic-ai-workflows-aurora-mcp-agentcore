@@ -1,8 +1,0 @@
-{
-  "targets": {
-    "default": {
-      "account": "",
-      "region": "us-east-1"
-    }
-  }
-}

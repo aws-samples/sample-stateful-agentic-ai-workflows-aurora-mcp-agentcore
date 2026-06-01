@@ -1,4 +1,4 @@
-#!/Users/shayons/.local/share/uv/python/cpython-3.10.18-macos-aarch64-none/bin/python3.10
+#!/Users/shayons/Desktop/Workshops/sample-dat309-agentic-workflows-aurora-mcp/meridian/venv/bin/python3
 # -*- coding: utf-8 -*-
 import sys
 from uvicorn.main import main

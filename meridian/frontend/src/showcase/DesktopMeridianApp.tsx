@@ -172,7 +172,21 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
             naturally into the result cards below it. */}
         <div className="mds-desktop-scroll">
           <div className="mds-top-actions">
-            <span>{state.backendStatus === 'online' ? 'Live backend' : 'Backend offline'}</span>
+            {/* Breadcrumb — orients the surface (mockup parity). */}
+            <nav className="mds-breadcrumb" aria-label="Breadcrumb">
+              <span>Concierge</span>
+              <span className="mds-breadcrumb-sep" aria-hidden="true">/</span>
+              <span className="mds-breadcrumb-current">Recommendations</span>
+            </nav>
+            {/* Live status pill — pulsing dot + reasoning/offline state. */}
+            <span
+              className={`mds-status-pill${state.backendStatus === 'online' ? ' is-live' : ' is-off'}`}
+            >
+              <span className="mds-status-dot" aria-hidden="true" />
+              {state.backendStatus === 'online' ? 'Reasoning live' : 'Backend offline'}
+              <span className="mds-status-sep" aria-hidden="true">·</span>
+              <span className="mds-status-unit">USD</span>
+            </span>
           </div>
           <div className="mds-headline-row">
             <div>
