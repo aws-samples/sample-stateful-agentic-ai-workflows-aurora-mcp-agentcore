@@ -24,7 +24,8 @@
             }
           }
         },
-        "stackName": "AgentCore-meridianv2-default"
+        "stackName": "AgentCore-meridianv2-default",
+        "deployHash": "45060215c3b5c37a"
       }
     }
   }

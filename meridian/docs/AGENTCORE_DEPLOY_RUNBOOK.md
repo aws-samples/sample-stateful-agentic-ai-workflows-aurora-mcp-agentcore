@@ -14,8 +14,9 @@ demo. Designed to be runnable in one sitting (~15 min hands-on,
 
 All three are declared in
 [`meridian_agentcore/agentcore/agentcore.json`](../meridian_agentcore/agentcore/agentcore.json).
-Memory uses `SHORT_TERM` strategy so `create_event` writes are
-immediately visible on `list_events` (best fit for a live demo).
+Memory uses the `SEMANTIC` strategy: `create_event` writes are mirrored into
+the session namespace and surfaced via `retrieve_memory_records` /
+`list_memory_records` (the recall path the Phase 4 trace shows).
 
 ## Prerequisites
 

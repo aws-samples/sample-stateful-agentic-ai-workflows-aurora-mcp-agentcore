@@ -1,11 +1,11 @@
 {
   "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
-  "name": "meridian_agentcore",
+  "name": "meridianv2",
   "version": 1,
   "managedBy": "CDK",
   "tags": {
     "agentcore:created-by": "agentcore-cli",
-    "agentcore:project-name": "meridian_agentcore"
+    "agentcore:project-name": "meridianv2"
   },
   "runtimes": [
     {
@@ -24,7 +24,7 @@
       "eventExpiryDuration": 30,
       "strategies": [
         {
-          "type": "SHORT_TERM",
+          "type": "SEMANTIC",
           "namespaceTemplates": [
             "/users/{actorId}/sessions/{sessionId}"
           ]

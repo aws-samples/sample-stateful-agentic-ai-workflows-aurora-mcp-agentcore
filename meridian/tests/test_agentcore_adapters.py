@@ -14,9 +14,28 @@ from backend.agentcore.gateway import (
     get_agentcore_gateway,
 )
 from backend.agentcore.runtime import AgentCoreRuntimeAdapter, get_agentcore_runtime
+from backend.agentcore import cli_config
 
 
-def test_runtime_unconfigured_raises():
+@pytest.fixture
+def unconfigured_agentcore(tmp_path, monkeypatch):
+    """Force the genuinely-unconfigured path regardless of any local deploy.
+
+    Points AGENTCORE_PROJECT_DIR at an empty temp dir (so no deployed-state.json
+    is found), skips the live `agentcore status` subprocess, clears the env-var
+    overrides, and resets the resolve_agentcore_config lru_cache — so a developer's
+    real deploy in the repo doesn't leak into tests of the unconfigured path.
+    """
+    monkeypatch.setenv("AGENTCORE_PROJECT_DIR", str(tmp_path / "agentcore"))
+    monkeypatch.setenv("AGENTCORE_SKIP_CLI_SYNC", "1")
+    for var in ("AGENTCORE_RUNTIME_ARN", "AGENTCORE_GATEWAY_URL", "AGENTCORE_MEMORY_ID"):
+        monkeypatch.delenv(var, raising=False)
+    cli_config.resolve_agentcore_config.cache_clear()
+    yield
+    cli_config.resolve_agentcore_config.cache_clear()
+
+
+def test_runtime_unconfigured_raises(unconfigured_agentcore):
     adapter = AgentCoreRuntimeAdapter(runtime_arn=None)
     with pytest.raises(AgentCoreNotConfiguredError):
         adapter.session_for_turn("conv-1", "trv_demo")
@@ -40,7 +59,7 @@ def test_runtime_configured_invoke_live():
     assert kwargs["runtimeSessionId"] == session.runtime_session_id
 
 
-def test_gateway_unconfigured_raises():
+def test_gateway_unconfigured_raises(unconfigured_agentcore):
     adapter = AgentCoreGatewayAdapter(gateway_url="")
     with pytest.raises(AgentCoreNotConfiguredError):
         adapter.list_tools()

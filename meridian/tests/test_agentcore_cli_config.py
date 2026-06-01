@@ -86,7 +86,11 @@ def test_env_overrides_deployed_state(tmp_path: Path, monkeypatch):
     assert "env" in cfg.sources
 
 
-def test_require_agentcore_platform_missing(monkeypatch):
+def test_require_agentcore_platform_missing(tmp_path, monkeypatch):
+    # Point at an empty project dir so no real deployed-state.json is found —
+    # otherwise a developer's local `agentcore deploy` would configure the path
+    # this test asserts is unconfigured.
+    monkeypatch.setenv("AGENTCORE_PROJECT_DIR", str(tmp_path / "agentcore"))
     monkeypatch.setenv("AGENTCORE_SKIP_CLI_SYNC", "1")
     monkeypatch.delenv("AGENTCORE_RUNTIME_ARN", raising=False)
     monkeypatch.delenv("AGENTCORE_GATEWAY_URL", raising=False)
