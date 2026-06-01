@@ -390,7 +390,7 @@ async def mcp_session():
 
     Usage:
         async with mcp_session() as client:
-            results = await client.run_query("SELECT * FROM products")
+            results = await client.run_query("SELECT * FROM trip_packages LIMIT 5")
     """
     client = get_mcp_client()
     try:

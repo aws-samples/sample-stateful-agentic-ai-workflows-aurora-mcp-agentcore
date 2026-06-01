@@ -404,50 +404,55 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, [lastPrompt, submitPrompt]);
 
   const setSelectedPhase = useCallback((phase: Phase) => {
-    let phaseChanged = false;
-    setSelectedPhaseState((prev) => {
-      phaseChanged = phase !== prev;
-      // Surface the "what this rung adds" callout only when advancing to a
-      // higher phase — that's the narrative beat (each mode composes onto
-      // the last). Backward switches stay quiet so re-demoing an earlier
-      // mode doesn't spam the banner.
-      const meta = SHOWCASE_PHASES.find((p) => p.phase === phase);
-      if (phase > prev && meta?.adds) {
-        // Sticky: the callout stays until the presenter clicks Close.
-        // These are deliberate talking points — auto-dismissing them
-        // mid-sentence would undercut the narrative beat.
-        setPhaseHint({ label: meta.label, adds: meta.adds, tech: meta.tech });
-      } else {
-        setPhaseHint(null);
-      }
-      return phase;
-    });
+    // Compute the transition from the CURRENT phase directly — never from a
+    // side-effect written inside a setState updater. The updater can run
+    // asynchronously (and twice under StrictMode), so reading a flag it sets
+    // is a race: the clear below sometimes fired and sometimes didn't. This
+    // is deterministic.
+    const prev = selectedPhase;
+    const phaseChanged = phase !== prev;
+    if (!phaseChanged) {
+      // Re-clicking the active pill is a no-op — don't wipe an in-progress
+      // conversation or re-trigger the hint.
+      return;
+    }
+
+    setSelectedPhaseState(phase);
+
+    // Surface the "what this rung adds" callout only when advancing to a
+    // higher phase — that's the narrative beat (each mode composes onto the
+    // last). Backward switches stay quiet so re-demoing an earlier mode
+    // doesn't spam the banner. Sticky: stays until the presenter clicks Close.
+    const meta = SHOWCASE_PHASES.find((p) => p.phase === phase);
+    if (phase > prev && meta?.adds) {
+      setPhaseHint({ label: meta.label, adds: meta.adds, tech: meta.tech });
+    } else {
+      setPhaseHint(null);
+    }
+
     // Switching to a different phase auto-clears the conversation so each
     // mode starts from a clean slate — the presenter doesn't want Phase 2's
-    // transcript bleeding into the Retrieval demo. Re-clicking the active
-    // pill is a no-op (don't wipe an in-progress conversation). Phase choice
-    // and Aurora-backed memory facts are preserved.
-    if (phaseChanged) {
-      clearReplayTimers();
-      setMessages([]);
-      setCurrentPrompt('');
-      setLastPrompt(null);
-      setRecommendations([]);
-      setSelectedTrip(null);
-      setTraceSpans([]);
-      setExpandedSpanId(null);
-      setTraceTab('spans');
-      setReplayIndex(-1);
-      setIsReplaying(false);
-      setConversationId(null);
-      setActionDrawer(null);
-      setError(null);
-      setChatFiltersState(EMPTY_FILTERS);
-      setLatestStreamComplete(true);
-    }
+    // transcript bleeding into the Retrieval demo. Phase choice and
+    // Aurora-backed memory facts are preserved.
+    clearReplayTimers();
+    setMessages([]);
+    setCurrentPrompt('');
+    setLastPrompt(null);
+    setRecommendations([]);
+    setSelectedTrip(null);
+    setTraceSpans([]);
+    setExpandedSpanId(null);
+    setTraceTab('spans');
+    setReplayIndex(-1);
+    setIsReplaying(false);
+    setConversationId(null);
+    setActionDrawer(null);
+    setError(null);
+    setChatFiltersState(EMPTY_FILTERS);
+    setLatestStreamComplete(true);
     // No auto-prompt: leave the composer empty so the presenter types
     // intent freshly for each phase walkthrough.
-  }, [clearReplayTimers]);
+  }, [selectedPhase, clearReplayTimers]);
 
   const dismissPhaseHint = useCallback(() => {
     setPhaseHint(null);

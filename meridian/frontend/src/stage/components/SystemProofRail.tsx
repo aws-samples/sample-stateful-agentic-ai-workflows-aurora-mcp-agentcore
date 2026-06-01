@@ -140,7 +140,7 @@ export function SystemProofRail({ scenario, activeSpan, activeSystem }: SystemPr
             <ShieldIcon />
             <div>
               <b>{scenario.governance.budgetCap}</b>
-              <span>RLS enforcement (pattern)</span>
+              <span>RLS enforcement (live)</span>
             </div>
           </div>
           <div className="ds-gov-row">
