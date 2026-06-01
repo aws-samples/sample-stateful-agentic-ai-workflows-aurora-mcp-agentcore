@@ -6,16 +6,17 @@ The application lives entirely in **[`meridian/`](meridian/)**. Everything else 
 
 ## What it demonstrates
 
-A four-phase ladder on one Aurora catalog (`trip_packages`):
+A five-phase ladder on one Aurora catalog (`trip_packages`) — each phase composes a new capability onto the last:
 
 | Phase | Capability |
 | ----- | ------------ |
-| 1 · Filters | Direct SQL via RDS Data API |
-| 2 · MCP | Same queries through postgres-mcp-server |
-| 3 · Intent | Cohere Embed v4 + hybrid pgvector / full-text search |
+| 1 · SQL | Direct SQL via RDS Data API |
+| 2 · MCP | Same queries through postgres-mcp-server + a custom domain MCP server |
+| 3 · Retrieval | Cohere Embed v4 hybrid pgvector / full-text search, reranked by Cohere Rerank 3.5 |
 | 4 · Production | AgentCore Runtime + Gateway + Memory + Aurora RLS · Strands concierge |
+| 5 · Workflow | LangGraph `StateGraph` with `PostgresSaver` checkpoints in Aurora |
 
-Demo traveler: **Alex & Jordan Chen** (`trv_meridian_demo`) — profile and preferences load before every Phase 4 search.
+Demo traveler: **Alex Morgan** (`trv_meridian_demo`) — profile and preferences load from Aurora before every Phase 4–5 turn.
 
 ## Quick start
 
@@ -51,8 +52,9 @@ Or run the full setup script: `meridian/scripts/setup.sh`
 ## Tech stack
 
 - **Frontend:** React, Vite, TypeScript
-- **Backend:** FastAPI, Strands Agents, Amazon Bedrock (Claude + Cohere Embed v4)
+- **Backend:** FastAPI, Strands Agents, Amazon Bedrock (Claude Opus 4.8 + Cohere Embed v4 / Rerank 3.5)
 - **Data:** Aurora PostgreSQL 17, pgvector, RDS Data API
 - **Protocol:** Model Context Protocol (Phase 2)
+- **Orchestration:** Strands (Phases 1–4) · LangGraph `StateGraph` (Phase 5)
 
 > Educational demo — not production-hardened.
