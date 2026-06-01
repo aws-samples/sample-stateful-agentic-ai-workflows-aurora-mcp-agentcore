@@ -94,6 +94,33 @@
   }
 }
 
+/* Animated theme flip — a ~220ms cross-fade on the properties that change
+   between light and dark, so the swap reads as a smooth transition rather
+   than an instant pop. Scoped to the common skinnable surfaces (not "*",
+   which would jank on a large tree) and disabled under reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .mds-root,
+  .mds-root .mds-panel,
+  .mds-root .mds-desktop-sidebar,
+  .mds-root .mds-desktop-dock,
+  .mds-root .mds-msg-card,
+  .mds-root .mds-rec-card,
+  .mds-root .mds-thinking,
+  .mds-root .mds-chat-composer input,
+  .mds-root .mds-chat-send,
+  .mds-root .mds-phase-selector,
+  .mds-root .mds-phase-selector button,
+  .mds-root .mds-status-pill,
+  .mds-root .mds-msg-meta-tag,
+  .mds-root .mds-msg-result-chip,
+  .mds-root .mds-nav-item,
+  .mds-root .mds-breadcrumb,
+  .mds-root .mds-message-bubble {
+    transition: background-color 220ms ease, color 220ms ease,
+      border-color 220ms ease, box-shadow 220ms ease;
+  }
+}
+
 /* Theme toggle — fixed top-right, token-driven so it reads in both themes. */
 .mds-theme-toggle {
   position: fixed;
@@ -216,11 +243,8 @@
   border-color: rgba(180, 83, 9, 0.30);
   color: var(--mds-amber);
 }
-.mds-root[data-theme="light"] .mds-msg-card-match,
-.mds-root[data-theme="light"] .mds-rec-match-badge {
-  background: rgba(22, 128, 61, 0.12);
-  color: var(--mds-green);
-}
+/* Match badge intentionally has NO light-mode override — it's a white pill
+   over a photo and stays identical in both themes (see base rules). */
 .mds-root[data-theme="light"] .mds-rec-date,
 .mds-root[data-theme="light"] .mds-rec-kicker {
   background: var(--mds-fill-2);
@@ -233,6 +257,19 @@
   background: var(--mds-shell-elevated);
   border-color: var(--mds-line);
   color: var(--mds-on-surface);
+}
+/* Drawer body text was tuned for the dark drawer (near-white #c5d0da) and
+   washes out on the now-white surface — flip to slate ink. */
+.mds-root[data-theme="light"] .mds-trip-drawer-copy p,
+.mds-root[data-theme="light"] .mds-trip-drawer-copy strong,
+.mds-root[data-theme="light"] .mds-trip-drawer-grid b,
+.mds-root[data-theme="light"] .mds-trip-confirm b {
+  color: var(--mds-on-surface);
+}
+.mds-root[data-theme="light"] .mds-trip-drawer-copy > span,
+.mds-root[data-theme="light"] .mds-trip-drawer-grid span,
+.mds-root[data-theme="light"] .mds-trip-confirm span {
+  color: var(--mds-on-surface-soft);
 }
 .mds-root[data-theme="light"] .mds-drawer-backdrop {
   background: var(--mds-scrim);
@@ -1526,16 +1563,20 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px 4px 7px;
-  border: 1px solid rgba(55, 210, 157, 0.4);
+  padding: 4px 9px 4px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 999px;
-  background: rgba(8, 24, 18, 0.78);
+  /* Near-opaque white pill with dark-green ink — reads on ANY photo in both
+     themes (the badge always sits over imagery, so it must not follow the
+     light/dark token). Mirrors the daylight mockup's match badge. */
+  background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(6px);
-  color: #b9f3d8;
+  color: #15803d;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
 }
 
 .mds-msg-card-match-dot {
@@ -1748,16 +1789,19 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px 5px 8px;
-  border: 1px solid rgba(55, 210, 157, 0.45);
+  padding: 5px 11px 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 999px;
-  background: rgba(8, 24, 18, 0.78);
+  /* Near-opaque white pill + dark-green ink — legible over any photo, both
+     themes (see .mds-msg-card-match note). */
+  background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(8px);
-  color: #b9f3d8;
+  color: #15803d;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
 }
 
 .mds-rec-match-dot {

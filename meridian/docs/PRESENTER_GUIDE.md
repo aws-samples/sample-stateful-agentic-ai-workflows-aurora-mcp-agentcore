@@ -61,6 +61,11 @@ Phase 2 they should know what an agent is, what tools are, and that it all runs 
 through RDS Data API — holding one question: *"fine for keyword filters — what about real
 language?"*
 
+> **Theme:** `/showcase` ships dark and light ("Daylight"). It auto-picks from the OS,
+> and the top-right toggle flips it live. **In a bright room or on a washed-out projector,
+> switch to light** — every phase, panel, and the trace stay legible. Dark is the default
+> for a dim stage.
+
 ## Phase 1 · SQL — the foundation (≈ 5 min) · `agents/sql_01/agent.py`
 
 **Open with:** *"The smallest possible agent that talks to Aurora. A Strands `Agent`,
@@ -179,15 +184,30 @@ classify ──┼─→ availability ────┤
                                 synthesize → END
 ```
 
-**Demo:**
-1. *"What dates are open for Kyoto in November? Show the slots."* → classify → availability → synthesize, a `PostgresSaver.put` between every node.
-2. *"Refine our last Iceland conversation with a winter focus."* → classify → memory_recall → search.
-3. *"Compare Kyoto and Tokyo for a 10-day cultural trip."* → honest teaching moment: even LangGraph runs a single search node — *branching ≠ multi-step composition.* Name it; it's a credibility builder.
+**Callback — the limitation you planted in Phase 4.** That multi-intent prompt
+(*"find open dates, pick a Marriott, hold a Kyoto side trip"*) — Production answered it
+in **one model turn**, then *asked permission*: "Would you like me to lock the dates and
+hunt down a Marriott next?" It planned in its head and handed the work back. Three things
+it couldn't do: (1) **run** the steps as inspectable steps, (2) **branch** deterministically
+when one fails its constraint — the catalog had **zero** Marriott properties, so it punted,
+(3) **resume** if you walked away mid-plan. Phase 5 fixes all three.
 
-**Talking points:** *"PostgresSaver writes the entire `WorkflowState` to Aurora after
-every node. Threads scope by `traveler_id`; checkpoints by `thread_id`. Pause Tuesday,
-resume Thursday — same state. Together: AgentCore + LangGraph + Strands, all on one
-Aurora cluster."*
+**Demo (live pills, in order):**
+1. *"What dates are open for Kyoto in November? Show the slots."* → classify → **availability** → synthesize; a `PostgresSaver.put` between every node.
+2. *"Remember our last Tokyo conversation? Pick it up with a culture focus."* → classify → **memory_recall** → synthesize.
+3. *"Plan a Kyoto cultural trip and check which November departures are open."* → the payoff: classify → **search → availability** → synthesize. **Two sequential worker nodes, a checkpoint between each.** This is composition a single tool call can't make visible — Phase 5 ends on a strength.
+
+**Talking points:** *"Same Aurora, same tools — what changed is the **orchestration**. An
+explicit StateGraph: classify fans out by intent, and the edge out of `search`
+conditionally continues to `availability` for a 'plan'. PostgresSaver writes the entire
+`WorkflowState` to Aurora after every node — threads scope by `traveler_id`, checkpoints
+by `thread_id`. Pause Tuesday, resume Thursday, same state. Phase 4 planned the trip in
+its head and asked to proceed; Phase 5 writes the plan down as steps it can run, branch
+on, and resume."*
+
+**If asked "so did it book the Marriott?"** Be candid: *"No — it composes the durable
+workflow a production system hangs that booking step on. The agent can plan it in one
+turn; the graph makes it survivable and auditable."* That honesty is on-brand.
 
 ---
 
@@ -207,7 +227,7 @@ Aurora cluster."*
 1. *"Three teams want this catalog. They shouldn't all hand-write SQL. Who owns the tools?"* → **Phase 2**
 2. *"The interface is portable. But every query is still keyword-based. We need the agent to understand what we **mean**."* → **Phase 3**
 3. *"It understands what you mean — it just failed to remember, because it has nowhere to. And we can't ship this reading any traveler's data."* → **Phase 4**
-4. *"Three things in one breath. Strands chained them, but the routing was invisible. What if we want it explicit and resumable?"* → **Phase 5**
+4. *"Production planned all three in its head, then asked permission to proceed. What if we want each step run, branchable, and resumable — not just described?"* → **Phase 5**
 5. *"Same Aurora throughout. Five phases, one substrate."* → **Close**
 
 ---
@@ -276,7 +296,7 @@ from strands.tools.mcp import MCPClient
 self.mcp_client = MCPClient(
     server_name="postgres-mcp-server",
     command="uvx",
-    args=["awslabs.postgres-mcp-server@latest"],
+    args=["awslabs.postgres-mcp-server@1.0.9"],   # pinned: takes conn config via CLI flags
 )
 await self.mcp_client.connect()
 mcp_tools = await self.mcp_client.list_tools()   # discovered at runtime
@@ -284,6 +304,10 @@ mcp_tools = await self.mcp_client.list_tools()   # discovered at runtime
 **Say:** "Phase 2 swaps the wire protocol. The agent discovers MCP tools at runtime;
 IAM + RDS Data API auth stays the same underneath. Plus a custom `meridian-concierge`
 FastMCP server for domain tools SQL can't express."
+**Pin note:** the live client (`backend/mcp/mcp_client.py`) pins `@1.0.9` and passes the
+cluster/secret ARNs as **server-start CLI flags** (`--resource_arn` / `--secret_arn`).
+`@latest` drifted to auto-discovering the secret, which resolves to `None` for a
+Serverless v2 secret with a random suffix — pinning avoids that on stage.
 **Live path:** `backend/mcp/mcp_client.py` + `chat.py` → `phase2_search()`.
 
 ## Phase 3 — Retrieval · `retrieval_03/supervisor.py` + `search_agent.py`
