@@ -19,7 +19,7 @@ backend/agents/orchestration_05/workflow.py:187
 ```
 
 **The three "land the point" lines to bookmark** (jump-to-line is `Cmd/Ctrl-G`):
-`search_agent.py:215` (rerank fusion) · `concierge.py:248` (RLS scope) · `workflow.py:212` (the plan branch).
+`search_agent.py:264` (rerank fusion) · `concierge.py:258` (RLS scope) · `workflow.py:212` (the plan branch).
 
 ---
 
@@ -43,7 +43,7 @@ The five tools live at lines **142, 180, 230, 285, 342** if someone wants to see
 | Lines | Show | Say |
 |---|---|---|
 | **82–90** | `MCPClient(... args=["awslabs.postgres-mcp-server@1.0.9"])` | "Same Aurora — now reached through a versioned, IAM-authed MCP server instead of hand-written SQL." |
-| **108–109** | `connect()` + `list_tools()` | "Tools are discovered at runtime, not hard-coded." |
+| **112–113** | `connect()` + `list_tools()` | "Tools are discovered at runtime, not hard-coded." |
 
 > The server is pinned to `@1.0.9` (matches the live runtime client at
 > `backend/mcp/mcp_client.py:118`). `@latest` drifted to auto-discovering the
@@ -77,10 +77,10 @@ The five tools live at lines **142, 180, 230, 285, 342** if someone wants to see
 | **139–156** | embed step (Cohere Embed v4, 1024d) | "Embed the query." |
 | **161–187** | `candidate_limit = max(limit * multiplier, 25)` + `semantic_trip_search(%s::vector, %s::integer)` | "pgvector semantic arm — about 25 candidates." |
 | **192–214** | `websearch_to_tsquery` + `ts_rank` lexical arm | "Full-text precision arm, in parallel." |
-| **215–256** | merge/dedup → `rerank_documents(...)` (Cohere Rerank 3.5) | "Fuse both pools, then the cross-encoder reranks to top K." |
+| **219–266** | merge/dedup → `rerank_documents(...)` (Cohere Rerank 3.5) | "Fuse both pools, then the cross-encoder reranks to top K." |
 
 The reranker model id isn't in this file — the call delegates to
-`embedding_service.rerank_documents()` at line **256**; the id lives in config.
+`embedding_service.rerank_documents()` at line **264**; the id lives in config.
 
 ---
 
@@ -102,8 +102,8 @@ The reranker model id isn't in this file — the call delegates to
 
 | Lines | Show | Say |
 |---|---|---|
-| **282** | `set_config('app.current_traveler_id', …, true)` | "Pin the traveler into a transaction-local GUC — the RLS policy's input." |
-| **298** | `SET LOCAL ROLE meridian_app` | "**The catch:** our Data API secret maps to the master role, which on this cluster isn't subject to RLS (row_security_active() = false — not superuser/BYPASSRLS, just the master). We step down to a least-privilege role so the policy bites. (Production: give the app its own non-master secret.)" |
+| **285** | `set_config('app.current_traveler_id', …, true)` | "Pin the traveler into a transaction-local GUC — the RLS policy's input." |
+| **302** | `SET LOCAL ROLE meridian_app` | "**The catch:** our Data API secret maps to the master role, which on this cluster isn't subject to RLS (row_security_active() = false — not superuser/BYPASSRLS, just the master). We step down to a least-privilege role so the policy bites. (Production: give the app its own non-master secret.)" |
 
 ### D. RLS probe — `backend/routers/diagnostics.py` (`/api/diagnostics/rls-probe`)
 

@@ -265,12 +265,13 @@ class ProductionAgent:
                 "RLS scope set on Aurora session",
                 details=(
                     f"app.current_traveler_id={traveler_id} · "
-                    f"app.agent_type=concierge_agent"
+                    f"app.agent_type=concierge_agent · role=meridian_app"
                 ),
                 sql_query=(
-                    f"-- RLS scope GUCs set inside the transaction\n"
+                    f"-- RLS scope for this transaction (SET LOCAL — reverts on commit)\n"
                     f"SET LOCAL app.current_traveler_id = '{traveler_id}';\n"
-                    f"SET LOCAL app.agent_type = 'concierge_agent';"
+                    f"SET LOCAL app.agent_type = 'concierge_agent';\n"
+                    f"SET LOCAL ROLE meridian_app;  -- step off the master role so RLS applies"
                 ),
                 telemetry={
                     "category": "security",
@@ -280,6 +281,7 @@ class ProductionAgent:
                         {"label": "iam_identity", "value": scope.iam_identity, "mono": True},
                         {"label": "rls.traveler_id", "value": traveler_id, "mono": True},
                         {"label": "rls.agent_type", "value": "concierge_agent"},
+                        {"label": "rls.role", "value": "meridian_app", "mono": True},
                         {"label": "policies", "value": "traveler_preferences, conversation_messages, trip_interactions"},
                     ],
                 },
