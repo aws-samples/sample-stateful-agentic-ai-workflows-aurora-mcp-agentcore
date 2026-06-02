@@ -207,10 +207,20 @@ class ProductionAgent:
         require_agentcore_platform()
         activities: List[Any] = []
 
+        # Route BOTH the Strands MemoryAgent spans (Aurora recall/persist tools)
+        # AND this concierge's own self._log spans (AgentCore Identity / Runtime
+        # / Gateway / Memory) into the same `activities` list that process_turn
+        # returns. Without repointing self.activity_callback, the AgentCore
+        # spans went to the constructor's no-op default and never reached the
+        # trace panel — so the UI showed only the Aurora tools even though the
+        # AgentCore data-plane calls really ran.
+        outer_callback = self.activity_callback
+
         def collect(entry: MemoryActivity) -> None:
             activities.append(entry)
-            self.activity_callback(entry)
+            outer_callback(entry)
 
+        self.activity_callback = collect
         self.traveler_memory.activity_callback = collect
 
         # Resolve the identity envelope first so it can land in both the
