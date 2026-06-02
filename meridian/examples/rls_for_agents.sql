@@ -1,6 +1,6 @@
 -- =============================================================================
 -- Row-Level Security for Meridian agents — how per-traveler isolation is
--- ACTUALLY enforced, and the BYPASSRLS gotcha that nearly made it a no-op.
+-- ACTUALLY enforced, and the privileged-role gotcha that nearly made it a no-op.
 -- =============================================================================
 --
 -- ┌──────────────────────────┬───────────────────────────┬──────────────────────────────────┐
@@ -30,37 +30,44 @@
 --     app.current_traveler_id. The policy says "only return rows where
 --     traveler_id = that variable."
 --
--- THE ENFORCEMENT CHAIN — all FOUR must hold, or RLS silently does NOTHING ------
+-- THE ENFORCEMENT CHAIN — all of these must hold, or RLS does NOTHING ---------
 --
 --   1. ENABLE ROW LEVEL SECURITY   → the table's policies get consulted
---   2. FORCE  ROW LEVEL SECURITY   → policies apply even to the table OWNER
---   3. a policy with a USING (...) → defines which rows pass
---   4. the connecting role is NOT exempt from RLS   ← THE GOTCHA (below)
+--   2. a policy with a USING (...) → defines which rows pass
+--   3. the connecting role is one RLS actually applies to — i.e. NOT the
+--      cluster master role, which stays exempt here   ← THE GOTCHA (below)
+--   (We also set FORCE ROW LEVEL SECURITY as defense-in-depth.)
 --
--- THE GOTCHA WE HIT (why FORCE alone was not enough) --------------------------
+-- THE GOTCHA WE HIT (why the policies alone weren't enough) -------------------
 --
 --   The RDS Data API connects as whatever DB user the secret in secretArn
---   maps to — it is NOT inherently privileged. OUR secret happens to be the
---   cluster MASTER user (meridian_admin), and on Aurora the master user
---   inherits the BYPASSRLS privilege (via the rds_superuser role). A BYPASSRLS
---   role skips Row-Level Security ENTIRELY — even with ENABLE + FORCE + a
---   correct policy + the GUC set. So the cause is the SECRET we chose, not the
---   Data API. Proven live on this cluster:
+--   maps to — it is NOT inherently privileged. OUR secret maps to the cluster
+--   MASTER user (meridian_admin). That privileged role is NOT getting RLS
+--   applied to it — PostgreSQL's own row_security_active() returns false for
+--   it — even though the tables have RLS both ENABLED and FORCED, and the
+--   master user is neither a superuser nor BYPASSRLS (\du and pg_roles confirm
+--   both). The exact reason the Aurora master role stays exempt under FORCE is
+--   an Aurora-specific behavior we don't assert a mechanism for; what matters
+--   is the OBSERVABLE, demonstrable fact:
 --
---       as meridian_admin  (BYPASSRLS) : row_security_active = false, 22 rows
---       as meridian_app    (NOBYPASSRLS): row_security_active = true,  17 rows
+--       as meridian_admin  (master)     : row_security_active = false, 22 rows
+--       as meridian_app    (non-priv)   : row_security_active = true,  17 rows
+--                                          (same GUC, same policy)
 --
---   FORCE overrides the *owner* exemption; it does NOT override the *BYPASSRLS*
---   privilege. The fix is therefore not another table flag — the app must run
---   its scoped reads/writes as a role that does not bypass RLS.
+--   So the lesson is not to debug why the master role is special — it's to
+--   NOT run as it. We step down to a dedicated non-privileged role, and
+--   row_security_active() flips to true and the policy filters.
 --
 --   => scoped_session() (backend/db/rds_data_client.py) does, per transaction:
---        SET LOCAL row_security = on;
 --        SELECT set_config('app.current_traveler_id', :tid, true);  -- the GUC
---        SET LOCAL ROLE meridian_app;       -- drop BYPASSRLS for THIS TX only
---      Then every query runs as meridian_app and the policy truly filters.
---      The least-privilege role + grants live in examples/rls_app_role.sql —
---      RUN IT, or RLS will not filter no matter what this file sets.
+--        SET LOCAL ROLE meridian_app;       -- step off the privileged role
+--      Then every query runs as the non-privileged meridian_app and the policy
+--      filters. The least-privilege role + grants live in
+--      examples/rls_app_role.sql — RUN IT, or RLS will not filter.
+--
+--   Production best practice: give the app its OWN restricted DB user with its
+--   OWN secret, so it never holds master credentials. We keep the master
+--   secret and step down per-transaction so the role switch is visible live.
 --
 -- WHY TRANSACTION-SCOPED (set_config(..., true) and SET LOCAL) ----------------
 --   • Agent crashes mid-turn → the GUC and the role both revert with the
@@ -115,11 +122,10 @@ ALTER TABLE traveler_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conversation_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trip_interactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
--- FORCE so the policies apply even to the table OWNER (Postgres exempts the
--- owner from RLS otherwise). NOTE: FORCE is necessary but NOT sufficient here —
--- our Data API secret maps to the master user, which has BYPASSRLS and skips
--- RLS regardless. The real fix is running queries as the NOBYPASSRLS
--- meridian_app role; see the header "THE GOTCHA" section and examples/rls_app_role.sql.
+-- FORCE is set as defense-in-depth. NOTE: on this cluster the master role is
+-- still not subject to RLS even with FORCE (see header "THE GOTCHA") — the
+-- real guarantee comes from running queries as the non-privileged meridian_app
+-- role via SET LOCAL ROLE in scoped_session(). See examples/rls_app_role.sql.
 ALTER TABLE traveler_preferences FORCE ROW LEVEL SECURITY;
 ALTER TABLE conversation_messages FORCE ROW LEVEL SECURITY;
 ALTER TABLE trip_interactions FORCE ROW LEVEL SECURITY;

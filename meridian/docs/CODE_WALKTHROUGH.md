@@ -103,7 +103,7 @@ The reranker model id isn't in this file — the call delegates to
 | Lines | Show | Say |
 |---|---|---|
 | **282** | `set_config('app.current_traveler_id', …, true)` | "Pin the traveler into a transaction-local GUC — the RLS policy's input." |
-| **298** | `SET LOCAL ROLE meridian_app` | "**The catch:** our Data API secret maps to the master user, which has BYPASSRLS. We drop into a least-privilege role so the policy actually bites. (Could also just use a non-master secret.)" |
+| **298** | `SET LOCAL ROLE meridian_app` | "**The catch:** our Data API secret maps to the master role, which on this cluster isn't subject to RLS (row_security_active() = false — not superuser/BYPASSRLS, just the master). We step down to a least-privilege role so the policy bites. (Production: give the app its own non-master secret.)" |
 
 ### D. RLS probe — `backend/routers/diagnostics.py` (`/api/diagnostics/rls-probe`)
 

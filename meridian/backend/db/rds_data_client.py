@@ -257,11 +257,13 @@ class RDSDataClient:
 
         IMPORTANT — why we SET LOCAL ROLE: the RDS Data API connects as the
         DB user its secret maps to. Ours is the cluster master user
-        (meridian_admin), which inherits BYPASSRLS via rds_superuser. BYPASSRLS
-        skips RLS *even with* ENABLE + FORCE, so this connection never gets
-        filtered (proven live: master sees 22 rows, a NOBYPASSRLS role sees
-        17). We therefore drop into the
-        least-privilege ``meridian_app`` role (NOBYPASSRLS) for the lifetime of
+        (meridian_admin), and on this Aurora cluster the master role is NOT
+        subject to RLS — row_security_active() returns false for it — even
+        though the tables are ENABLE + FORCE'd and the role is neither
+        superuser nor BYPASSRLS. (We don't assert the exact Aurora internal;
+        the observable fact is what matters: master sees 22 rows, a
+        non-privileged role sees 17, same GUC and policy.) We therefore step
+        down into the least-privilege ``meridian_app`` role for the lifetime of
         this transaction — AFTER setting the GUCs — so the policies engage for
         the queries that run inside the block. See examples/rls_app_role.sql.
 
@@ -290,9 +292,10 @@ class RDSDataClient:
                     (agent_type,),
                     transaction_id=tx,
                 )
-            # Drop the BYPASSRLS privilege for the rest of this transaction by
-            # switching to the least-privilege app role. SET LOCAL ROLE is
-            # transaction-scoped and reverts on commit/rollback.
+            # Step off the privileged master role for the rest of this
+            # transaction by switching to the least-privilege app role (which
+            # IS subject to RLS). SET LOCAL ROLE is transaction-scoped and
+            # reverts on commit/rollback.
             if app_role:
                 try:
                     await self.execute(

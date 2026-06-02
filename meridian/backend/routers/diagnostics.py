@@ -72,7 +72,7 @@ class RlsProbeResponse(BaseModel):
     tables: List[RlsTableResult]
     policies: List[RlsPolicy]
     # Proof RLS is engaged: the effective role inside the scoped txn (the
-    # least-privilege app role, not the BYPASSRLS master user) + PostgreSQL's
+    # least-privilege app role, not the privileged master user) + PostgreSQL's
     # own row_security_active() verdict + the active traveler scope.
     debug: Optional[dict] = None
 
@@ -139,9 +139,9 @@ async def rls_probe(request: RlsProbeRequest = RlsProbeRequest()) -> RlsProbeRes
 
     # Proof, inside the scoped transaction, that RLS is genuinely engaged:
     # the effective role (should be the least-privilege app role, NOT the
-    # BYPASSRLS master user) and PostgreSQL's own row_security_active() verdict.
-    # On Aurora the master user inherits BYPASSRLS and skips RLS even with
-    # ENABLE+FORCE — scoped_session() drops into meridian_app so the policies
+    # privileged master user) and PostgreSQL's own row_security_active() verdict.
+    # On this Aurora cluster the master role isn't subject to RLS even with
+    # ENABLE+FORCE — scoped_session() steps down to meridian_app so the policies
     # actually apply (see backend/db/rds_data_client.py + examples/rls_app_role.sql).
     debug: Optional[dict] = None
     try:

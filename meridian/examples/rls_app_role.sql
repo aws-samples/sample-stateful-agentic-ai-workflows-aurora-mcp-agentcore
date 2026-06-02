@@ -2,16 +2,19 @@
 -- meridian_app — a least-privilege role so Aurora RLS actually engages.
 --
 -- WHY: the RDS Data API connects as the user its secretArn maps to. OUR secret
--- is the cluster MASTER user (meridian_admin), and on Aurora the master user
--- inherits BYPASSRLS (through rds_superuser); BYPASSRLS skips row-level security
--- *even with* ENABLE + FORCE on the table. (Pointing the secret at this role
--- instead would also fix it — SET LOCAL ROLE keeps the master secret but drops
--- the privilege per-transaction.) Proven live:
+-- is the cluster MASTER user (meridian_admin). On this Aurora cluster the master
+-- role is NOT subject to RLS — PostgreSQL's row_security_active() returns false
+-- for it — even though the tables are ENABLE + FORCE'd and the role is neither
+-- superuser nor BYPASSRLS (\du confirms). We don't assert the exact Aurora
+-- internal; the fix is simply to run as a non-privileged role, which IS subject
+-- to RLS. (Pointing the secret at this role would also fix it — SET LOCAL ROLE
+-- keeps the master secret and steps down per-transaction so it's visible live.)
+-- Proven live:
 --     as meridian_admin, GUC set : row_security_active = false, 22 rows
 --     as a NOBYPASSRLS role, same : row_security_active = true,  17 rows
 -- So the fix is NOT another table flag — the app must run scoped reads/writes
 -- as a role that does NOT bypass RLS. scoped_session() does:
---     SET LOCAL ROLE meridian_app;   -- drops the BYPASSRLS privilege for the txn
+--     SET LOCAL ROLE meridian_app;   -- step off the master role for the txn
 --     set_config('app.current_traveler_id', :tid, true);
 -- and RLS filters for real, for both the /rls-probe AND the Phase 4 concierge
 -- memory reads/writes.

@@ -185,11 +185,15 @@ Open the **RLS tab** in the activity panel and hit **Re-run probe**. It runs the
   to filter out. The preferences table is where you see the cut, because that's where the
   decoy lives."*
 - **If asked "how does the count actually drop?" (ties to the RLS slide):** *"The Data API
-  uses whatever DB user its secret maps to — ours is the master user, which has BYPASSRLS.
-  So inside the transaction we `SET LOCAL ROLE` to a least-privilege role and set the
-  traveler GUC — then the policy bites. That role switch is the whole trick."*
-  (If pushed: *"You could instead point the secret at a non-privileged user — same effect.
-  We keep the master secret and drop the privilege per-transaction."*)
+  uses whatever DB user its secret maps to — ours is the cluster master role, and on this
+  Aurora cluster that role isn't subject to RLS (Postgres's own row_security_active()
+  returns false for it — it's not superuser or BYPASSRLS, just the master role). So inside
+  the transaction we `SET LOCAL ROLE` to a least-privilege role and set the traveler GUC —
+  now the policy bites."*
+  (If pushed on the exact mechanism: *"I don't over-claim the Aurora internal — the
+  observable fact is master sees all rows, the non-privileged role sees only the
+  traveler's. The lesson is run least-privilege, which production would do with its own
+  secret anyway."*)
 - **If asked about the `OR … = ''` branch (only if asked):** *"That empty-string branch is
   the admin/seed path; the app always sets the GUC, so it never hits it."* Don't volunteer
   this unprompted — it invites a "so it's not secure?" tangent.
