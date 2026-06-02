@@ -4054,3 +4054,21 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ============================================================================
+   Thinking ticker — phase-aware reasoning phrases that cycle while a turn is
+   in flight (replaces the static "Running tools and composing…"). A short
+   fade-in on each phrase swap so the text changes gently.
+   ========================================================================== */
+.mds-thinking-ticker {
+  display: inline-block;
+  color: var(--mds-on-surface-soft);
+  animation: mds-ticker-fade 320ms ease;
+}
+@keyframes mds-ticker-fade {
+  from { opacity: 0.35; }
+  to   { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mds-thinking-ticker { animation: none; }
+}

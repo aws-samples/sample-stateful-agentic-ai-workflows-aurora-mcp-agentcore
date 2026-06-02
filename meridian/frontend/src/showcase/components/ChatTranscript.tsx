@@ -117,12 +117,41 @@ export function ChatTranscript({ state, compact = false }: { state: MeridianShow
           <div className="mds-message-role">Meridian</div>
           <div className="mds-message-bubble">
             <span className="mds-running-dot" />
-            Running tools and composing...
+            <ThinkingTicker phase={state.phaseLabel} />
           </div>
         </div>
       )}
     </div>
   );
+}
+
+// Concise, phase-aware "reasoning" phrases that cycle while a turn is in
+// flight — a thinking-style loop instead of one static "Running tools…".
+// Each list narrates what THAT phase actually does (kept honest: these mirror
+// the real span sequence), and the lines advance ~every 1.6s.
+const THINKING_PHRASES: Record<string, string[]> = {
+  SQL: ['Reading your request', 'Querying Aurora over the Data API', 'Filtering trips', 'Shaping results'],
+  MCP: ['Reading your request', 'Connecting MCP servers', 'Calling domain tools', 'Composing the reply'],
+  Retrieval: ['Reading your request', 'Embedding the query', 'Searching pgvector + keyword', 'Reranking with Cohere', 'Composing the reply'],
+  Production: ['Resolving identity & scope', 'Recalling your preferences', 'Searching trips', 'Applying RLS scope', 'Composing the reply'],
+  Workflow: ['Classifying intent', 'Routing the graph', 'Running the worker nodes', 'Checkpointing state', 'Composing the reply'],
+};
+const THINKING_FALLBACK = ['Reading your request', 'Reasoning over your data', 'Composing the reply'];
+
+function ThinkingTicker({ phase }: { phase: string }) {
+  const phrases = THINKING_PHRASES[phase] ?? THINKING_FALLBACK;
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    setIdx(0);
+    if (prefersReducedMotion) return; // hold the first phrase, no cycling
+    const t = setInterval(() => {
+      // Advance but hold on the last ("Composing…") until the reply lands.
+      setIdx((i) => Math.min(i + 1, phrases.length - 1));
+    }, 1600);
+    return () => clearInterval(t);
+  }, [phase]);
+  // key on idx so the span remounts each swap, re-triggering the fade.
+  return <span key={idx} className="mds-thinking-ticker">{phrases[idx]}…</span>;
 }
 
 function ChatMessage({
