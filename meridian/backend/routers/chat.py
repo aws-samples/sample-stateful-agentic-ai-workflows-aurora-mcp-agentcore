@@ -103,6 +103,11 @@ class Product(BaseModel):
     category: str
     available_sizes: Optional[List[str]] = None
     similarity: Optional[float] = None
+    # Phase 3 rerank-visualization metadata (optional; only the Retrieval
+    # path populates these). Lets the UI animate the hybrid→reranked reorder.
+    pre_rerank_position: Optional[int] = None
+    pre_rerank_similarity: Optional[float] = None
+    rank_delta: Optional[int] = None
 
 
 class OrderItem(BaseModel):
@@ -1271,6 +1276,9 @@ async def retrieval_supervisor_search(
             image_url=pkg.get("image_url", "") or "",
             category=pkg.get("trip_type", "") or "",
             similarity=pkg.get("similarity"),
+            pre_rerank_position=pkg.get("pre_rerank_position"),
+            pre_rerank_similarity=pkg.get("pre_rerank_similarity"),
+            rank_delta=pkg.get("rank_delta"),
         ))
 
     if not products:

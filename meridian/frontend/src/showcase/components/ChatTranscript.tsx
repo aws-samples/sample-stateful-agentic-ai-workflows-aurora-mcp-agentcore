@@ -1,10 +1,19 @@
 import type { ReactNode } from 'react';
-import { Component, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Message, Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import { RankDeltaBadge } from './RankDeltaBadge';
 import { TripVisual } from './TripVisual';
+
+// Respect the OS reduced-motion setting: the FLIP reorder collapses to an
+// instant swap rather than a spring slide.
+const prefersReducedMotion =
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Tiny error boundary so a markdown render crash doesn't take down the
 // whole transcript. Falls back to plain text when react-markdown chokes
@@ -215,7 +224,11 @@ function ChatMessage({
                 onToggle={() => setExpanded((prev) => !prev)}
               />
               {expanded && (
-                <InlineProductGrid products={message.products} state={state} />
+                <InlineProductGrid
+                  products={message.products}
+                  state={state}
+                  isLatestBot={isLatestBot}
+                />
               )}
             </>
           )}
@@ -398,21 +411,83 @@ function ProductSummaryChip({
 function InlineProductGrid({
   products,
   state,
+  isLatestBot,
 }: {
   products: Product[];
   state: MeridianShowcaseState;
+  isLatestBot: boolean;
 }) {
+  // Phase 3 "watch the reranker reorder": the backend ships each card's
+  // pre-rerank (hybrid pgvector+tsvector) position plus the delta the Cohere
+  // reranker applied. When that data is present we first render the cards in
+  // their PRE-rerank order, then animate them into the reranked order so the
+  // audience literally sees the cross-encoder change the ranking.
+  const rerankArmed =
+    state.selectedPhase === 3 &&
+    products.length > 1 &&
+    products.every((p) => p.rank_delta != null) &&
+    products.some((p) => (p.rank_delta ?? 0) !== 0);
+
+  const [reranked, setReranked] = useState(!rerankArmed);
+  const autoPlayed = useRef(false);
+
+  // Auto-play once after the reply finishes streaming, on the latest turn
+  // only. Older turns keep whatever state they settled into.
+  useEffect(() => {
+    if (!rerankArmed || !isLatestBot || autoPlayed.current) return;
+    if (!state.latestStreamComplete) return;
+    const t = setTimeout(() => {
+      autoPlayed.current = true;
+      setReranked(true);
+    }, 520);
+    return () => clearTimeout(t);
+  }, [rerankArmed, isLatestBot, state.latestStreamComplete]);
+
+  // Order shown: pre-rerank (by pre_rerank_position asc) until the reorder
+  // plays, then the natural array order (which is already post-rerank, sorted
+  // by reranker score desc on the backend).
+  const ordered = useMemo(() => {
+    if (!rerankArmed || reranked) return products;
+    return [...products].sort(
+      (a, b) => (a.pre_rerank_position ?? 0) - (b.pre_rerank_position ?? 0),
+    );
+  }, [products, rerankArmed, reranked]);
+
   return (
-    <div className="mds-msg-grid" role="region" aria-label="Trips for this turn">
-      {products.map((product, index) => (
-        <InlineProductCard
-          key={product.product_id}
-          product={product}
-          state={state}
-          index={index}
-        />
-      ))}
-    </div>
+    <>
+      {rerankArmed && (
+        <div className="mds-rerank-controls">
+          <span className="mds-rerank-caption">
+            {reranked ? 'Cohere Rerank 3.5 · final order' : 'Hybrid candidates · pre-rerank'}
+          </span>
+          <button
+            type="button"
+            className="mds-rerank-replay"
+            onClick={() => {
+              // Snap back to pre-rerank, then replay the reorder.
+              setReranked(false);
+              window.setTimeout(() => setReranked(true), 480);
+            }}
+          >
+            {reranked ? 'Replay rerank' : 'Show rerank'}
+          </button>
+        </div>
+      )}
+      <LayoutGroup>
+        <div className="mds-msg-grid" role="region" aria-label="Trips for this turn">
+          {ordered.map((product, index) => (
+            <InlineProductCard
+              key={product.product_id}
+              product={product}
+              state={state}
+              index={index}
+              rerankArmed={rerankArmed}
+              reranked={reranked}
+            />
+          ))}
+        </div>
+      </LayoutGroup>
+    </>
   );
 }
 
@@ -420,17 +495,35 @@ function InlineProductCard({
   product,
   state,
   index,
+  rerankArmed,
+  reranked,
 }: {
   product: Product;
   state: MeridianShowcaseState;
   index: number;
+  rerankArmed: boolean;
+  reranked: boolean;
 }) {
+  // Before the reorder plays we show the pgvector cosine the hybrid arms
+  // produced; after, the reranker's relevance score. The number visibly
+  // changing alongside the reorder is extra proof the reranker re-judged it.
+  const shownSimilarity =
+    rerankArmed && !reranked && product.pre_rerank_similarity != null
+      ? product.pre_rerank_similarity
+      : product.similarity;
   const matchPct =
-    product.similarity != null ? Math.round(product.similarity * 100) : null;
+    shownSimilarity != null ? Math.round(shownSimilarity * 100) : null;
   const saved = state.savedTripIds.has(product.product_id);
   const selected = state.selectedTrip?.product_id === product.product_id;
+  const showDelta = rerankArmed && reranked && product.rank_delta != null;
   return (
-    <article
+    <motion.article
+      layout={rerankArmed && !prefersReducedMotion ? 'position' : false}
+      transition={
+        prefersReducedMotion
+          ? { duration: 0 }
+          : { type: 'spring', stiffness: 420, damping: 34 }
+      }
       className={`mds-msg-card${selected ? ' is-selected' : ''}`}
       style={{ animationDelay: `${Math.min(index * 60, 360)}ms` }}
       tabIndex={0}
@@ -452,6 +545,18 @@ function InlineProductCard({
           <span className="mds-msg-card-match">
             <span className="mds-msg-card-match-dot" aria-hidden="true" />
             {matchPct}% match
+            <AnimatePresence>
+              {showDelta && (
+                <motion.span
+                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.6 }}
+                  animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, transition: { duration: 0.12 } }}
+                  transition={prefersReducedMotion ? { duration: 0 } : { delay: 0.25 }}
+                >
+                  <RankDeltaBadge delta={product.rank_delta ?? 0} />
+                </motion.span>
+              )}
+            </AnimatePresence>
           </span>
         )}
         <span className="mds-msg-card-title">{product.name}</span>
@@ -489,7 +594,7 @@ function InlineProductCard({
           </span>
         </span>
       </span>
-    </article>
+    </motion.article>
   );
 }
 

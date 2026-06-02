@@ -186,6 +186,9 @@ type TripPackageLike = {
   trip_type?: string;
   durations?: string[] | null;
   similarity?: number;
+  pre_rerank_position?: number | null;
+  pre_rerank_similarity?: number | null;
+  rank_delta?: number | null;
 };
 
 function tripPackageToProduct(pkg: TripPackageLike): Product {
@@ -199,6 +202,9 @@ function tripPackageToProduct(pkg: TripPackageLike): Product {
     category: pkg.trip_type ?? 'Trip',
     available_sizes: pkg.durations,
     similarity: pkg.similarity,
+    pre_rerank_position: pkg.pre_rerank_position,
+    pre_rerank_similarity: pkg.pre_rerank_similarity,
+    rank_delta: pkg.rank_delta,
   };
 }
 

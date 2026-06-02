@@ -226,6 +226,14 @@ When searching:
             else:
                 merged_by_package[row["package_id"]] = dict(row)
         results = list(merged_by_package.values())
+        # Stamp each candidate's PRE-RERANK position + the pgvector cosine it
+        # had at this point, BEFORE the reorder loop overwrites `similarity`
+        # with the cross-encoder score. This lets the UI show the hybrid order
+        # the two retrieval arms produced, then animate the reranker's verdict
+        # on top of it (rank_delta) — making "what reranking does" visible.
+        for pos, row in enumerate(results):
+            row["pre_rerank_position"] = pos
+            row["pre_rerank_similarity"] = float(row.get("similarity", 0.0))
         self._log_activity(
             activity_type="search",
             title="Lexical candidates merged",
@@ -278,16 +286,24 @@ When searching:
                 execution_time_ms=rerank_time,
             )
             ordered_rows = []
-            for item in ranked:
+            for post_pos, item in enumerate(ranked):
                 idx = item["index"]
                 if idx < len(results):
                     row = dict(results[idx])
                     row["similarity"] = float(item.get("score", 0.0))
+                    # rank_delta = how far the reranker moved this candidate.
+                    # +ve = promoted (moved UP toward the top), -ve = demoted.
+                    pre_pos = row.get("pre_rerank_position", idx)
+                    row["rank_delta"] = pre_pos - post_pos
                     ordered_rows.append(row)
         else:
             # Fallback: no reranker — keep the merged hybrid order and the
-            # pgvector cosine similarity already on each row.
+            # pgvector cosine similarity already on each row. Nothing moved,
+            # so rank_delta is 0 and the UI shows no (misleading) motion.
             ordered_rows = results[:limit]
+            for post_pos, row in enumerate(ordered_rows):
+                row["pre_rerank_position"] = post_pos
+                row["rank_delta"] = 0
 
         packages = []
         for r in ordered_rows[:limit]:
@@ -300,7 +316,11 @@ When searching:
                 "image_url": r['image_url'],
                 "trip_type": r['trip_type'],
                 "destination": r.get('destination'),
-                "similarity": float(r.get('similarity', 0.0))
+                "similarity": float(r.get('similarity', 0.0)),
+                # Rerank-visualization metadata (Phase 3 UI):
+                "pre_rerank_position": r.get('pre_rerank_position'),
+                "pre_rerank_similarity": float(r.get('pre_rerank_similarity', 0.0)),
+                "rank_delta": r.get('rank_delta', 0),
             })
 
         # Guarantee descending similarity so the UI cards always read top-down

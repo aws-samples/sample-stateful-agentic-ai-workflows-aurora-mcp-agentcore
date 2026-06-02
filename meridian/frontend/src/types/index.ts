@@ -12,6 +12,10 @@ export interface Product {
   category: string;
   available_sizes?: string[] | null;
   similarity?: number;
+  // Phase 3 rerank-visualization metadata (Retrieval path only).
+  pre_rerank_position?: number | null;
+  pre_rerank_similarity?: number | null;
+  rank_delta?: number | null;
 }
 
 export interface ProductListResponse {

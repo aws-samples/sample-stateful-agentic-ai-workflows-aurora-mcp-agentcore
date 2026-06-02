@@ -3748,3 +3748,65 @@
     animation: none;
   }
 }
+
+/* ============================================================================
+   FEATURE 1 — Phase 3 reranker reorder
+   Controls above the trip grid (caption + replay button) and the per-card
+   rank-delta badge. The badge sits INSIDE the white match pill (which is
+   intentionally theme-agnostic — always white over imagery), so its colors
+   are fixed to read on white rather than following the light/dark tokens.
+   ========================================================================== */
+.mds-rerank-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 2px 0 8px;
+}
+.mds-rerank-caption {
+  font-size: calc(11px * var(--mds-fs));
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--mds-on-surface-soft);
+}
+.mds-rerank-replay {
+  flex: none;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: calc(11px * var(--mds-fs));
+  font-weight: 600;
+  color: var(--mds-cyan);
+  background: var(--mds-cyan-soft);
+  border: 1px solid var(--mds-cyan-line);
+  cursor: pointer;
+  transition: background 150ms ease, transform 150ms ease;
+}
+.mds-rerank-replay:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--mds-cyan) 18%, transparent);
+}
+
+/* Rank-delta pill inside the white match badge: green=promoted,
+   amber=demoted, grey=unchanged. Fixed colors (reads on the white pill in
+   both themes). */
+.mds-rerank-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: 5px;
+  padding-left: 5px;
+  border-left: 1px solid rgba(15, 23, 42, 0.18);
+  font-size: calc(9.5px * var(--mds-fs));
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1;
+}
+.mds-rerank-badge.is-up {
+  color: #15803d;
+}
+.mds-rerank-badge.is-down {
+  color: #b45309;
+}
+.mds-rerank-badge.is-flat {
+  color: #64748b;
+}
