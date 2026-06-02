@@ -139,3 +139,40 @@ export async function processOrder(request: OrderRequest): Promise<OrderResponse
 
   return response.json();
 }
+
+/**
+ * RLS probe (Phase 4): runs the same COUNT(*) scoped vs unscoped per table and
+ * returns the live CREATE POLICY USING clauses. Proves Aurora RLS is enforced.
+ */
+export interface RlsTableResult {
+  table: string;
+  scoped_count: number;
+  unscoped_count: number;
+  error?: string | null;
+}
+
+export interface RlsPolicy {
+  table: string;
+  policy: string;
+  using_clause?: string | null;
+}
+
+export interface RlsProbeResponse {
+  traveler_id: string;
+  tables: RlsTableResult[];
+  policies: RlsPolicy[];
+}
+
+export async function fetchRlsProbe(
+  travelerId = 'trv_meridian_demo',
+): Promise<RlsProbeResponse> {
+  const response = await fetch(`${API_BASE}/diagnostics/rls-probe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ traveler_id: travelerId }),
+  });
+  if (!response.ok) {
+    throw new Error(`RLS probe failed: ${response.statusText}`);
+  }
+  return response.json();
+}

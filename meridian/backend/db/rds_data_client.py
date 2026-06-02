@@ -17,9 +17,12 @@ AWS docs:
 
 import os
 import json
+import logging
 from contextlib import asynccontextmanager
 from typing import Optional, List, Any, Dict
 from decimal import Decimal
+
+logger = logging.getLogger(__name__)
 
 import boto3
 
@@ -251,9 +254,29 @@ class RDSDataClient:
         ``app.agent_type``) are pinned for the lifetime of the transaction.
         Aurora RLS policies on ``traveler_preferences`` and friends will
         filter rows accordingly.
+
+        IMPORTANT — why we SET LOCAL ROLE: the RDS Data API connects as the
+        cluster master user (meridian_admin), which inherits BYPASSRLS via
+        rds_superuser. BYPASSRLS skips RLS *even with* ENABLE + FORCE, so a
+        master-user connection never gets filtered (proven live: master sees
+        22 rows, a NOBYPASSRLS role sees 17). We therefore drop into the
+        least-privilege ``meridian_app`` role (NOBYPASSRLS) for the lifetime of
+        this transaction — AFTER setting the GUCs — so the policies engage for
+        the queries that run inside the block. See examples/rls_app_role.sql.
+
+        The role switch is best-effort: if ``meridian_app`` is not present
+        (e.g. the migration hasn't been applied in some environment), we log
+        and continue on the master connection rather than breaking the turn —
+        disable entirely with ``RLS_APP_ROLE=`` (empty).
         """
+        app_role = os.getenv("RLS_APP_ROLE", "meridian_app").strip()
         tx = self.begin_transaction()
         try:
+            # Force row_security ON for this transaction (belt-and-suspenders;
+            # harmless once the role switch below does the real work).
+            await self.execute("SET LOCAL row_security = on", transaction_id=tx)
+            # Set the GUCs FIRST, while still on the privileged connection, so
+            # set_config is guaranteed to succeed.
             if traveler_id is not None:
                 await self.execute(
                     "SELECT set_config('app.current_traveler_id', %s, true)",
@@ -266,6 +289,22 @@ class RDSDataClient:
                     (agent_type,),
                     transaction_id=tx,
                 )
+            # Drop the BYPASSRLS privilege for the rest of this transaction by
+            # switching to the least-privilege app role. SET LOCAL ROLE is
+            # transaction-scoped and reverts on commit/rollback.
+            if app_role:
+                try:
+                    await self.execute(
+                        f"SET LOCAL ROLE {app_role}", transaction_id=tx
+                    )
+                except Exception as exc:  # role missing / not granted
+                    logger.warning(
+                        "scoped_session: could not SET LOCAL ROLE %s (%s); "
+                        "continuing on master connection — RLS will NOT filter. "
+                        "Apply examples/rls_app_role.sql to fix.",
+                        app_role,
+                        str(exc)[:120],
+                    )
             yield tx
             self.commit_transaction(tx)
         except Exception:

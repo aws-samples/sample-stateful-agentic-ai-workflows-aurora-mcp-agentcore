@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import type { ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 import { WorkflowGraph } from './WorkflowGraph';
+import { RlsProbeCard } from './RlsProbeCard';
 
 // The five "thinking phases" Meridian narrates while a turn is in flight.
 // Each phase maps onto a contiguous slice of the trace span timeline so the
@@ -95,14 +96,25 @@ export function TracePanel({ state, compact = false }: { state: MeridianShowcase
       )}
       {!compact && (
         <div className="mds-trace-tabs" role="tablist" aria-label="Trace filters">
-          {(['spans', 'memory', 'sql'] as const).map((tab) => (
+          {/* The RLS tab only appears in Phase 4 (Production), where Aurora
+              RLS is the story. Other phases keep the 3-tab layout. */}
+          {(state.selectedPhase === 4
+            ? (['spans', 'memory', 'sql', 'rls'] as const)
+            : (['spans', 'memory', 'sql'] as const)
+          ).map((tab) => (
             <button
               key={tab}
               type="button"
               className={state.traceTab === tab ? 'is-active' : ''}
               onClick={() => state.setTraceTab(tab)}
             >
-              {tab === 'spans' ? 'Trace' : tab === 'memory' ? 'Memory' : 'SQL'}
+              {tab === 'spans'
+                ? 'Trace'
+                : tab === 'memory'
+                  ? 'Memory'
+                  : tab === 'sql'
+                    ? 'SQL'
+                    : 'RLS'}
             </button>
           ))}
         </div>
@@ -142,6 +154,8 @@ export function TracePanel({ state, compact = false }: { state: MeridianShowcase
             </div>
           ))}
         </div>
+      ) : state.traceTab === 'rls' ? (
+        <RlsProbeCard travelerId={state.travelerId} />
       ) : (
         <div className="mds-sql-list">
           {sqlSpans.length ? (

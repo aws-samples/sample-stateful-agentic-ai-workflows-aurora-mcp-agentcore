@@ -25,7 +25,13 @@ log_startup_banner()
 
 # Import routers
 from backend.config import EMBEDDING_MODEL_ID, bedrock_model_label, config
-from backend.routers import chat_router, products_router, packages_router, memory_router
+from backend.routers import (
+    chat_router,
+    products_router,
+    packages_router,
+    memory_router,
+    diagnostics_router,
+)
 
 
 class HealthResponse(BaseModel):
@@ -112,6 +118,7 @@ app.include_router(chat_router)
 app.include_router(packages_router)
 app.include_router(products_router)
 app.include_router(memory_router)
+app.include_router(diagnostics_router)
 
 
 def _health_payload() -> HealthResponse:

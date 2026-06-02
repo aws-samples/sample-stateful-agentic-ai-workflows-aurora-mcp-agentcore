@@ -460,6 +460,61 @@ def seed_bookings():
             )
 
 
+# A second, decoy traveler so the RLS probe (Phase 4) shows a real diff:
+# unscoped reads see Alex + decoy rows, scoped reads see only the active
+# traveler's. Without this there is exactly one traveler and scoped==unscoped,
+# which makes "watch RLS filter the rows" invisible. Preferences only (no
+# embedding needed) — that's the table the probe defaults to.
+DECOY_TRAVELER_ID = "trv_demo_decoy"
+DECOY_PREFERENCES = [
+    {"preference_type": "lodging", "preference_key": "style", "preference_value": "budget hostels"},
+    {"preference_type": "trip", "preference_key": "pace", "preference_value": "fast-paced backpacking"},
+    {"preference_type": "dietary", "preference_key": "vegan", "preference_value": "strict vegan"},
+    {"preference_type": "flight", "preference_key": "cabin", "preference_value": "economy only"},
+    {"preference_type": "region", "preference_key": "interest", "preference_value": "Southeast Asia"},
+]
+
+
+def seed_decoy_traveler():
+    """Insert a second traveler with a few preferences so the RLS probe shows
+    unscoped > scoped (per-traveler isolation made visible)."""
+    run_sql(
+        """
+        INSERT INTO travelers (traveler_id, full_name, email, home_airport)
+        VALUES (:traveler_id, :full_name, :email, :home_airport)
+        ON CONFLICT (traveler_id) DO UPDATE SET full_name = EXCLUDED.full_name
+        """,
+        [
+            {"name": "traveler_id", "value": {"stringValue": DECOY_TRAVELER_ID}},
+            {"name": "full_name", "value": {"stringValue": "Jordan Lee"}},
+            {"name": "email", "value": {"stringValue": "jordan.lee@example.com"}},
+            {"name": "home_airport", "value": {"stringValue": "SFO"}},
+        ],
+    )
+    for pref in DECOY_PREFERENCES:
+        pref_id = f"pref_{uuid.uuid4().hex[:10]}"
+        run_sql(
+            """
+            INSERT INTO traveler_preferences (
+                preference_id, traveler_id, preference_type, preference_key,
+                preference_value, confidence, signal_count, source
+            ) VALUES (
+                :preference_id, :traveler_id, :preference_type, :preference_key,
+                :preference_value, 0.9, 1, 'decoy_seed'
+            )
+            ON CONFLICT (traveler_id, preference_type, preference_key) DO UPDATE SET
+                preference_value = EXCLUDED.preference_value
+            """,
+            [
+                {"name": "preference_id", "value": {"stringValue": pref_id}},
+                {"name": "traveler_id", "value": {"stringValue": DECOY_TRAVELER_ID}},
+                {"name": "preference_type", "value": {"stringValue": pref["preference_type"]}},
+                {"name": "preference_key", "value": {"stringValue": pref["preference_key"]}},
+                {"name": "preference_value", "value": {"stringValue": pref["preference_value"]}},
+            ],
+        )
+
+
 def main():
     if not CLUSTER_ARN or not SECRET_ARN:
         console.print("[red]Missing Aurora credentials in .env[/red]")
@@ -469,6 +524,7 @@ def main():
     bc = bedrock()
     n = seed_packages(bc)
     seed_travelers()
+    seed_decoy_traveler()
     seed_conversations(bc)
     seed_trip_interactions(bc)
     seed_bookings()
@@ -476,7 +532,8 @@ def main():
     table.add_column("Entity")
     table.add_column("Count")
     table.add_row("trip_packages", str(n))
-    table.add_row("travelers", str(len(TRAVELERS)))
+    table.add_row("travelers", f"{len(TRAVELERS)} + 1 decoy")
+    table.add_row("decoy_preferences", str(len(DECOY_PREFERENCES)))
     table.add_row("traveler_profiles", str(len(TRAVELER_PROFILES)))
     table.add_row("traveler_preferences", str(len(TRAVELER_PREFERENCES)))
     table.add_row("conversations", str(len(DEMO_CONVERSATIONS)))

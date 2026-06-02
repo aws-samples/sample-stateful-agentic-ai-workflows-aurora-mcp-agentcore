@@ -1,5 +1,6 @@
 -- =============================================================================
--- Row-Level Security for Meridian agents
+-- Row-Level Security for Meridian agents — how per-traveler isolation is
+-- ACTUALLY enforced, and the BYPASSRLS gotcha that nearly made it a no-op.
 -- =============================================================================
 --
 -- ┌──────────────────────────┬───────────────────────────┬──────────────────────────────────┐
@@ -12,63 +13,98 @@
 -- │ bookings                 │ rls_bookings_agent_type   │ app.agent_type ∈ agent_access[]  │
 -- └──────────────────────────┴───────────────────────────┴──────────────────────────────────┘
 --
--- How GUC + RLS enforcement works (transaction-scoped):
+-- READ THIS IF YOU'RE STRONG ON ONE SIDE AND NEW TO THE OTHER ------------------
 --
---   1. BEGIN transaction
---   2. set_config('app.current_traveler_id', 'trv_xxx', true)
---                                                        ^^^^
---                                          third arg = true → SET LOCAL (transaction-scoped)
---   3. All queries in this TX see only rows matching that traveler_id
---   4. COMMIT → GUC vanishes automatically, zero leakage risk
+--   • You know Postgres, new to agents: an "agent turn" is one user prompt
+--     handled by an LLM that may emit several tool calls (search, recall
+--     memory, book). Each turn runs in ONE short DB transaction. We pin the
+--     traveler's id into a session variable for that transaction so the LLM
+--     physically cannot read another traveler's rows — even if the SQL it
+--     generates forgets a WHERE clause. RLS is the backstop for code whose
+--     output you can't fully predict.
 --
---   Why transaction-scoped?
---   • If the agent crashes mid-turn, the GUC dies with the aborted TX
---   • Connections returned to a pool carry no residual identity
---   • No explicit cleanup needed — Postgres handles it
+--   • You build agents, new to RLS: Row-Level Security is a PostgreSQL feature
+--     where the DATABASE filters rows per query from a policy attached to the
+--     table — enforcement lives in the engine, not your app code. A GUC (a
+--     session config variable) is the policy's input; we use a custom one,
+--     app.current_traveler_id. The policy says "only return rows where
+--     traveler_id = that variable."
 --
--- Relationship to AgentCore Identity (FAQ):
+-- THE ENFORCEMENT CHAIN — all FOUR must hold, or RLS silently does NOTHING ------
 --
---   AgentCore Identity and Aurora RLS are complementary but independent:
+--   1. ENABLE ROW LEVEL SECURITY   → the table's policies get consulted
+--   2. FORCE  ROW LEVEL SECURITY   → policies apply even to the table OWNER
+--   3. a policy with a USING (...) → defines which rows pass
+--   4. the connecting role is NOT exempt from RLS   ← THE GOTCHA (below)
 --
---   ┌─────────────────────┬──────────────────────────────────────────────────┐
---   │ AgentCore Identity  │ Resolves WHO is calling (IAM + workload identity)│
---   │                     │ → lives in the application layer (client-side)   │
---   ├─────────────────────┼──────────────────────────────────────────────────┤
---   │ Aurora RLS + GUC    │ Enforces WHAT rows they can see                  │
---   │                     │ → lives in the PostgreSQL engine (server-side)   │
---   └─────────────────────┴──────────────────────────────────────────────────┘
+-- THE GOTCHA WE HIT (why FORCE alone was not enough) --------------------------
 --
---   Flow: Identity resolves principal → app maps it to traveler_id →
---         app calls set_config() → Aurora RLS filters rows.
---   If Identity were removed, RLS still works. You'd just lose the audit
---   trail of which IAM principal triggered the turn.
+--   The app reaches Aurora through the RDS Data API, which connects as the
+--   cluster MASTER user (meridian_admin). On Aurora the master user inherits
+--   the BYPASSRLS privilege (via the rds_superuser role). A BYPASSRLS role
+--   skips Row-Level Security ENTIRELY — even with ENABLE + FORCE + a correct
+--   policy + the GUC set. Proven live on this cluster:
 --
--- Two RLS patterns the demo enforces against Aurora:
+--       as meridian_admin  (BYPASSRLS) : row_security_active = false, 22 rows
+--       as meridian_app    (NOBYPASSRLS): row_security_active = true,  17 rows
 --
---   A) Per-traveler memory isolation (Phase 4)
---      App: SELECT set_config('app.current_traveler_id', :tid, true)
---      RLS: USING (traveler_id = current_setting('app.current_traveler_id', true))
+--   FORCE overrides the *owner* exemption; it does NOT override the *BYPASSRLS*
+--   privilege. The fix is therefore not another table flag — the app must run
+--   its scoped reads/writes as a role that does not bypass RLS.
 --
---      The Strands MemoryAgent sets this GUC inside the same transaction as the
---      memory SELECT.  Even if the agent forgets the WHERE clause, Aurora will
---      not return another traveler's preferences, messages, or interactions.
+--   => scoped_session() (backend/db/rds_data_client.py) does, per transaction:
+--        SET LOCAL row_security = on;
+--        SELECT set_config('app.current_traveler_id', :tid, true);  -- the GUC
+--        SET LOCAL ROLE meridian_app;       -- drop BYPASSRLS for THIS TX only
+--      Then every query runs as meridian_app and the policy truly filters.
+--      The least-privilege role + grants live in examples/rls_app_role.sql —
+--      RUN IT, or RLS will not filter no matter what this file sets.
 --
---   B) Agent-type scoping for booking writes (booking flow)
---      App: SELECT set_config('app.agent_type', 'booking_agent', true)
---      RLS: USING (current_setting('app.agent_type', true) = ANY(agent_access))
+-- WHY TRANSACTION-SCOPED (set_config(..., true) and SET LOCAL) ----------------
+--   • Agent crashes mid-turn → the GUC and the role both revert with the
+--     aborted transaction.
+--   • Pooled connections carry no residual identity → no cross-request leakage.
+--   • No cleanup code; Postgres reverts everything on COMMIT/ROLLBACK.
 --
---      Search-only agents cannot read or mutate confirmed bookings even though
---      they share the same DB role.
+-- FAIL-OPEN ESCAPE HATCH ----------------------
+--   Each policy also passes rows when the GUC is empty:
+--       OR current_setting('app.current_traveler_id', true) = ''
+--   This lets seed scripts and admin tooling (master user, no GUC) read across
+--   travelers. So an UNSET GUC is fail-OPEN, not fail-closed. The app stays
+--   safe two ways: it ALWAYS sets the GUC, AND it runs as the non-BYPASSRLS
+--   meridian_app role. For a stricter production posture, drop the '' branch
+--   (fail-closed) and give seed/admin tooling its own privileged path.
 --
--- Both are deployed by `python scripts/init_aurora_schema.py`.
+-- RELATIONSHIP TO AGENTCORE IDENTITY (common question) -----------------------
+--   Identity and RLS are complementary and independent:
+--     • AgentCore Identity resolves WHO is calling (IAM + workload identity),
+--       in the application layer.
+--     • Aurora RLS enforces WHAT rows they may see, in the database engine.
+--   Flow: Identity resolves the principal → app maps it to a traveler_id →
+--   app sets the GUC + switches role → Aurora filters. Remove Identity and RLS
+--   still works; you only lose the audit trail of which IAM principal ran the
+--   turn.
 --
--- AWS docs:
---   RDS Data API (app sets GUCs via ExecuteStatement inside a transaction):
+-- TWO PATTERNS THIS FILE DEPLOYS ---------------------------------------------
+--   A) Per-traveler memory isolation (Phase 4): traveler_preferences,
+--      trip_interactions, conversations, conversation_messages — scoped by
+--      app.current_traveler_id.
+--   B) Agent-type scoping on booking writes: search-only agents cannot read or
+--      mutate confirmed bookings even though they share one DB role — scoped by
+--      app.agent_type against the row's agent_access[] allow-list.
+--
+-- COMPANION FILES -------------------------------------------------------------
+--   examples/rls_app_role.sql      — meridian_app role + grants   (REQUIRED)
+--   backend/db/rds_data_client.py  — scoped_session(): GUC + SET LOCAL ROLE
+--   scripts/init_aurora_schema.py  — runs THIS file at schema init
+--
+-- AWS / PostgreSQL docs:
+--   RDS Data API transactions:
 --     https://docs.aws.amazon.com/rdsdataservice/latest/APIReference/API_BeginTransaction.html
---   Aurora PostgreSQL:
---     https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Aurora.AuroraPostgreSQL.html
---   PostgreSQL RLS (Aurora PostgreSQL compatible):
+--   PostgreSQL RLS:
 --     https://www.postgresql.org/docs/current/ddl-rowsecurity.html
+--   PostgreSQL roles & BYPASSRLS:
+--     https://www.postgresql.org/docs/current/sql-createrole.html
 -- =============================================================================
 -- ----------------------------------------------------------------------------
 -- A. Per-traveler isolation on Phase 4 memory tables
@@ -77,6 +113,15 @@ ALTER TABLE traveler_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conversation_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE trip_interactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
+-- FORCE so the policies apply even to the table OWNER (Postgres exempts the
+-- owner from RLS otherwise). NOTE: FORCE is necessary but NOT sufficient here —
+-- the app also connects as a BYPASSRLS master user, which skips RLS regardless.
+-- The real fix is running queries as the NOBYPASSRLS meridian_app role; see the
+-- header "THE GOTCHA" section and examples/rls_app_role.sql.
+ALTER TABLE traveler_preferences FORCE ROW LEVEL SECURITY;
+ALTER TABLE conversation_messages FORCE ROW LEVEL SECURITY;
+ALTER TABLE trip_interactions FORCE ROW LEVEL SECURITY;
+ALTER TABLE conversations FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS rls_prefs_traveler ON traveler_preferences;
 DROP POLICY IF EXISTS rls_messages_traveler ON conversation_messages;
 DROP POLICY IF EXISTS rls_interactions_traveler ON trip_interactions;
@@ -102,8 +147,10 @@ CREATE POLICY rls_messages_traveler ON conversation_messages FOR ALL USING (
         WHERE traveler_id = current_setting('app.current_traveler_id', true)
     )
 );
--- The empty-string fallback above lets seed scripts and admin tooling read
--- without a session variable set.  Production code paths always set it.
+-- The empty-string branch above is FAIL-OPEN: an unset GUC sees all rows, so
+-- seed scripts / admin tooling (master user, no GUC) can read across travelers.
+-- The app stays scoped because it always sets the GUC AND runs as the
+-- non-BYPASSRLS meridian_app role. Drop this branch for a fail-closed posture.
 -- ----------------------------------------------------------------------------
 -- B. Agent-type scoping on bookings
 -- ----------------------------------------------------------------------------
@@ -118,6 +165,7 @@ CREATE POLICY rls_bookings_agent_type ON bookings FOR ALL USING (
     OR current_setting('app.agent_type', true) = ANY(agent_access)
 );
 ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bookings FORCE ROW LEVEL SECURITY;
 -- ----------------------------------------------------------------------------
 -- C. Lightweight audit log written by the agent runtime
 -- ----------------------------------------------------------------------------

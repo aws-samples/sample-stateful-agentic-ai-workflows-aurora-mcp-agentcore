@@ -3913,3 +3913,144 @@
     animation: none;
   }
 }
+
+/* ============================================================================
+   FEATURE 2 — Phase 4 "prove RLS is live" probe panel
+   Scoped vs unscoped row counts as an animated bar (the cyan scoped bar
+   shrinks from the full unscoped width), plus the real CREATE POLICY USING
+   clause. Token-driven for both themes.
+   ========================================================================== */
+.mds-rls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mds-rls-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mds-rls-title {
+  font-size: calc(11px * var(--mds-fs));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mds-on-surface-faint);
+}
+.mds-rls-run {
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: calc(11px * var(--mds-fs));
+  font-weight: 600;
+  color: var(--mds-cyan);
+  background: var(--mds-cyan-soft);
+  border: 1px solid var(--mds-cyan-line);
+  cursor: pointer;
+}
+.mds-rls-run:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.mds-rls-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mds-rls-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mds-rls-row-head code {
+  font-family: var(--mds-font-mono);
+  font-size: calc(12px * var(--mds-fs));
+  color: var(--mds-on-surface);
+}
+.mds-rls-counts {
+  font-size: calc(11.5px * var(--mds-fs));
+  color: var(--mds-on-surface-soft);
+}
+.mds-rls-counts b {
+  color: var(--mds-cyan);
+  font-weight: 700;
+}
+.mds-rls-err {
+  font-size: calc(11px * var(--mds-fs));
+  color: var(--mds-danger);
+}
+
+/* The full track = unscoped (all rows); the cyan fill = scoped (RLS-filtered). */
+.mds-rls-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--mds-fill-2);
+  overflow: hidden;
+}
+.mds-rls-bar-scoped {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--mds-cyan);
+}
+.mds-rls-legend {
+  display: flex;
+  gap: 14px;
+  font-size: calc(10.5px * var(--mds-fs));
+  color: var(--mds-on-surface-soft);
+}
+.mds-rls-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.mds-rls-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+.mds-rls-dot.is-scoped {
+  background: var(--mds-cyan);
+}
+.mds-rls-dot.is-hidden {
+  background: var(--mds-fill-3);
+}
+
+.mds-rls-policies {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--mds-line);
+}
+.mds-rls-policies-title {
+  font-size: calc(10.5px * var(--mds-fs));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mds-on-surface-faint);
+}
+.mds-rls-policy small {
+  display: block;
+  font-size: calc(11px * var(--mds-fs));
+  font-weight: 600;
+  color: var(--mds-cyan);
+  margin-bottom: 2px;
+}
+.mds-rls-policy pre {
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--mds-fill-1);
+  border: 1px solid var(--mds-line);
+  font-family: var(--mds-font-mono);
+  font-size: calc(10.5px * var(--mds-fs));
+  line-height: 1.5;
+  color: var(--mds-on-surface-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
