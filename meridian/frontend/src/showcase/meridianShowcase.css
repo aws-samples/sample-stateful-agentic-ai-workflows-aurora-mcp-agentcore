@@ -3710,3 +3710,41 @@
   background: rgba(49, 212, 228, 0.14);
 }
 .mds-empty-starter:disabled { opacity: 0.5; cursor: default; }
+
+/* ============================================================================
+   FEATURE 4 — Phase 4 "writeback you can watch"
+   A transient badge on the For-you panel header that pulses when the
+   concierge persists a turn to Aurora (persist_turn span). Token-driven so
+   it reads in both themes. Sits between the title cluster and the Memory
+   button; margin-right:auto keeps "Memory" pinned to the right edge.
+   ========================================================================== */
+/* Scoped under .mds-panel-head to beat `.mds-panel-head span` (0-2-0),
+   which would otherwise force the badge cyan + transparent. */
+.mds-panel-head .mds-writeback-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  margin-left: 10px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: calc(11px * var(--mds-fs));
+  font-weight: 600;
+  letter-spacing: 0;
+  white-space: nowrap;
+  color: var(--mds-green);
+  background: var(--mds-fill-2);
+  border: 1px solid color-mix(in srgb, var(--mds-green) 32%, transparent);
+}
+.mds-panel-head .mds-writeback-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--mds-green);
+  animation: mds-pulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mds-writeback-dot {
+    animation: none;
+  }
+}

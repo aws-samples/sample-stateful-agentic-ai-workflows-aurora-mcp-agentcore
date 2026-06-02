@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { ALEX_IMAGE_URL, ALEX_NAME } from '../lib/personas';
 
@@ -17,6 +19,12 @@ function formatFactKey(key: string): string {
   if (VERBATIM_KEYS.has(key)) return key;
   return key.replace(/_/g, ' ');
 }
+
+// Respect the OS reduced-motion setting: spring pops become plain fades.
+const prefersReducedMotion =
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function TravelerContextPanel({
   state,
@@ -39,6 +47,36 @@ export function TravelerContextPanel({
   // schema renders them snake_case which reads as authentic data, but
   // multi-word slugs like "travel_style" get a single space for clarity.
   const facts = state.memoryFacts.slice(0, compact ? 6 : 14);
+
+  // "Writeback you can watch": Phase 4's concierge persists each turn to
+  // Aurora inside the RLS transaction, emitting a "Strands @tool persist_turn"
+  // span. When that span appears on a turn we pulse a "+N written to Aurora"
+  // badge on the header so the audience FEELS the write actually happen.
+  // The row count is the persist_turn write shape: 2 conversation_messages +
+  // 1 trip_interaction = 3 rows (backend/agents/production_04/memory_agent.py
+  // persist_turn, ~lines 220-271). If a span ever exposes an explicit count
+  // we prefer that.
+  const persistSpan =
+    state.selectedPhase >= 4
+      ? state.traceSpans.find((s) => /persist[_ ]turn/i.test(s.name))
+      : undefined;
+  const writebackRows = (() => {
+    if (!persistSpan) return 3;
+    const rowsField = persistSpan.fields?.find((f) => /rows|count/i.test(f.label));
+    const parsed = rowsField ? parseInt(rowsField.value, 10) : NaN;
+    return Number.isFinite(parsed) ? parsed : 3;
+  })();
+
+  const [justWrote, setJustWrote] = useState(false);
+  const lastPersistId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!persistSpan) return;
+    if (persistSpan.id === lastPersistId.current) return;
+    lastPersistId.current = persistSpan.id;
+    setJustWrote(true);
+    const timer = setTimeout(() => setJustWrote(false), 2500);
+    return () => clearTimeout(timer);
+  }, [persistSpan]);
 
   const className = [
     'mds-panel',
@@ -76,6 +114,21 @@ export function TravelerContextPanel({
         ) : (
           <strong>For you</strong>
         )}
+        <AnimatePresence>
+          {justWrote && (
+            <motion.span
+              className="mds-writeback-badge"
+              initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.7, y: -2 }}
+              animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
+              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8 }}
+              transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 500, damping: 30 }}
+              aria-live="polite"
+            >
+              <span className="mds-writeback-dot" aria-hidden="true" />
+              +{writebackRows} written to Aurora
+            </motion.span>
+          )}
+        </AnimatePresence>
         <button type="button" onClick={onOpenMemory}>
           Memory
         </button>
