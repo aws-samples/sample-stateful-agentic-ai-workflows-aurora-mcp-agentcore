@@ -269,7 +269,7 @@ function enrichActivity(a: ActivityEntry, phase: 1 | 2 | 3 | 4 | 5, query: strin
       status: 'ok',
       tokens: { input: 890, output: 210 },
       fields: [
-        { label: 'model', value: 'global.anthropic.claude-opus-4-8' },
+        { label: 'model', value: 'global.anthropic.claude-sonnet-4-6' },
         { label: 'format', value: 'trip_cards + natural language' },
         { label: 'grounding', value: 'Aurora rows + memory facts' },
       ],

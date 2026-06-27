@@ -23,8 +23,8 @@ class AgentCoreNotConfiguredError(RuntimeError):
         return (
             "AgentCore platform is not fully configured. Deploy with the CLI:\n"
             "  npm install -g @aws/agentcore\n"
-            "  cd meridian/meridian_agentcore && agentcore deploy -y\n"
-            "  python scripts/sync_agentcore_env.py --write\n\n"
+            "  cd meridian/meridian_agentcore/agentcore && agentcore deploy -y\n"
+            "  cd ../.. && python scripts/sync_agentcore_env.py --write\n\n"
             f"Missing:\n  - {items}\n"
             f"Config sources: {', '.join(self.sources) or 'none'}\n"
             f"Project dir: {self.project_dir}"

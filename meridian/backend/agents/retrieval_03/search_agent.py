@@ -21,7 +21,7 @@ AWS docs:
 
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Any, Optional, List
 
 from strands import Agent, tool
@@ -98,7 +98,7 @@ When searching:
         """Log an activity entry."""
         entry = ActivityEntry(
             id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             activity_type=activity_type,
             title=title,
             details=details,
@@ -134,7 +134,7 @@ When searching:
         Returns:
             Dict with packages list and similarity scores
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         
         # Generate query embedding
         self._log_activity(
@@ -147,7 +147,7 @@ When searching:
             query, input_type="search_query"
         )
 
-        embedding_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        embedding_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         self._log_activity(
             activity_type="embedding",
@@ -156,7 +156,7 @@ When searching:
             execution_time_ms=embedding_time
         )
 
-        search_start = datetime.utcnow()
+        search_start = datetime.now(timezone.utc)
         # Pull a WIDER pool than we'll return (limit*5, floored at 25). The
         # reranker needs candidates to choose from — feeding it only `limit`
         # rows would leave it nothing to reorder. This is the recall step;
@@ -178,7 +178,7 @@ When searching:
 
         semantic_rows = await self.db.execute(sql, (embedding_str, candidate_limit))
         
-        search_time = int((datetime.utcnow() - search_start).total_seconds() * 1000)
+        search_time = int((datetime.now(timezone.utc) - search_start).total_seconds() * 1000)
         
         self._log_activity(
             activity_type="search",
@@ -246,7 +246,7 @@ When searching:
         # candidate *together* and scores true relevance, fixing the ordering
         # that the two retrieval arms can only approximate. We flatten each
         # candidate to a single text block for scoring.
-        rerank_start = datetime.utcnow()
+        rerank_start = datetime.now(timezone.utc)
         docs = [
             " | ".join(
                 [
@@ -271,7 +271,7 @@ When searching:
                 details=str(exc)[:160],
             )
 
-        rerank_time = int((datetime.utcnow() - rerank_start).total_seconds() * 1000)
+        rerank_time = int((datetime.now(timezone.utc) - rerank_start).total_seconds() * 1000)
         if ranked:
             # rerank_documents returns [{index, score}] pointing back into
             # `results`; reorder the merged pool by the reranker's verdict AND

@@ -936,6 +936,32 @@
   letter-spacing: 0.08em;
 }
 
+.ds-proof-point {
+  border-color: rgba(99, 245, 214, 0.24);
+  background: rgba(99, 245, 214, 0.04);
+}
+.ds-proof-point-body {
+  display: grid;
+  gap: 8px;
+}
+.ds-proof-point-body span {
+  width: fit-content;
+  padding: 5px 9px;
+  border: 1px solid rgba(99, 245, 214, 0.3);
+  border-radius: 999px;
+  color: var(--ds-mint);
+  background: rgba(99, 245, 214, 0.08);
+  font-family: var(--ds-mono);
+  font-size: 11px;
+  font-weight: 760;
+}
+.ds-proof-point-body p {
+  margin: 0;
+  color: var(--ds-text-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .ds-aurora-spine {
   display: flex;
   flex-direction: column;

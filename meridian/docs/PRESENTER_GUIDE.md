@@ -11,11 +11,11 @@ snippets, env knobs, FAQ). The dry-run checklist is at the end.
 > (`global.anthropic.claude-sonnet-4-6`), fallback chain Sonnet 4.6 → Haiku 4.5 → Opus 4.8.
 > Retrieval ranks with **Cohere Embed v4** + **Cohere Rerank 3.5** (`us.cohere.rerank-v3-5:0`).
 
-**Shape of the talk:** build the agent (Phases 1–2), make it intelligent and personal
-(Phases 3–4), make it durable (Phase 5). The spine is one query — *"a romantic slow week
-somewhere with great wine"* — that fails twice then lands; and a second beat — *"what did
-we discuss last time?"* — that fails once then is remembered. ~60 minutes plus intro and
-close.
+**Shape of the talk:** climb the capability ladder: **Query → Tool → Intent → Trust →
+Durable Workflow**. The technical modes are SQL, MCP, Retrieval, Production, and Workflow.
+The spine is three clear failures that each motivate the next rung: SQL cannot compose
+domain tools, MCP cannot infer intent, Retrieval cannot remember prior turns. ~60 minutes
+plus intro and close.
 
 ---
 
@@ -35,31 +35,37 @@ the prompt. They're what the "For you" panel shows.
 - **Recent trips:** Tuscany (booked, Feb 2026), Kyoto (held)
 - **Tokyo culture trip** Oct 12–19 in motion
 
-## The two recurring beats
+## The three recurring beats
 
-**Beat 1 — the intent query (spine of Phases 1–3):**
+**Beat 1 — the tool-contract query (hinge of Phases 1–2):**
+> *"Compare our top trips and show prices in EUR."*
+- **SQL:** awkward / not owned by the SQL filter path. It can return rows, but it has no
+  reusable `compare_packages` + `currency_convert` contract.
+- **MCP:** lands — the custom `meridian-concierge` MCP server exposes comparison and
+  currency tools that a Bedrock turn can call.
+
+**Beat 2 — the intent query (hinge of Phases 2–3):**
 > *"A romantic slow week somewhere with great wine."*
-- **SQL:** nothing. `ILIKE '%romantic%'` matches no row.
-- **MCP:** nothing. Same gap, different delivery.
+- **MCP:** nothing. Better tools, same intent gap.
 - **Retrieval:** Tuscany Wine & Wellness / Amalfi / Douro. *The moment of release.*
 
-**Beat 2 — the memory query (hinge of Phases 3–4):**
+**Beat 3 — the memory query (hinge of Phases 3–4):**
 > *"What did we discuss last time? Pick up where we left off."*
 - **Retrieval:** fails *honestly* — "I can't recall prior turns; that's the next phase." Zero products, a reasoning span naming the limitation. **Intentional, not a bug.**
 - **Production:** lands — recalls the Tokyo thread from AgentCore Memory + Aurora.
 
-Rehearse Beat 1's first failure: type it in SQL, hit enter, watch nothing come back.
-Shrug. Say *"this is going to matter in fifteen minutes."* Don't promise the fix — the
-audience holds the tension for you.
+Rehearse Beat 1's first failure: type it in SQL, hit enter, point at the missing tool
+contract. Say *"this is why the next phase exists."* The audience should feel each rung
+earn its place.
 
 ---
 
 **Setup (before Phase 1).** Open the live concierge `/showcase`. Say: *"Same Aurora,
 same Strands SDK, same `@tool` pattern across all five phases. The only thing changing
-is **how** the agent reaches the data and **how much state** it carries."* By the end of
-Phase 2 they should know what an agent is, what tools are, and that it all runs on Aurora
-through RDS Data API — holding one question: *"fine for keyword filters — what about real
-language?"*
+is the capability we add: Query, Tool, Intent, Trust, then Durable Workflow."* By the end
+of Phase 2 they should know what an agent is, what tools are, and that it all runs on
+Aurora through RDS Data API — holding one question: *"fine for keyword filters — what
+about real language?"*
 
 > **Theme:** `/showcase` ships dark and light ("Daylight"). It auto-picks from the OS,
 > and the top-right toggle flips it live. **In a bright room or on a washed-out projector,
@@ -77,12 +83,12 @@ Tools (all `@tool`, async, hit `trip_packages`): `_search_trip_packages`,
 
 **Demo (live pills, in order):**
 1. **Works** — *"City breaks under $2000."* Trace shows `WHERE trip_type = :t AND price_per_person <= :p`.
-2. **First failure** — *Beat 1.* Same ILIKE search; nothing matches. **Pause.** *"Hold this. We'll come back to it."*
+2. **First failure** — *Beat 1.* *"Compare our top trips and show prices in EUR."* **Pause.** *"This is not a better WHERE clause. It is a tool-contract problem."*
 
 **Talking points:** *"Strands gives the LLM the schema for each `@tool`. Bedrock picks
 which to call. RDS Data API is how we reach Aurora — no pool, IAM-auth, the path every
-later phase reuses. The tools are keyword-only, so the agent finds what we **name**, not
-what we **mean**."*
+later phase reuses. The SQL tools are narrow filters; they do not own business operations
+like compare, convert, seasonality, or loyalty lookups."*
 
 **Bridge → Phase 2:** *"Three teams want this catalog. They shouldn't all hand-write SQL. Who owns the tools?"*
 
@@ -96,7 +102,7 @@ Custom tools: `compare_packages`, `currency_convert`, `seasonal_price_band`,
 **Demo:**
 1. *"Compare our top trips and show prices in EUR."* → `compare_packages` + `currency_convert`. *Pause — a single SQL query doesn't do this cleanly.*
 2. *"What is the cheapest month to visit Tokyo?"* → `seasonal_price_band` (low/median/high).
-3. **Beat 1, second take.** Still nothing. *"Better tools, richer domain logic — intent gap untouched. The interface got better. The intelligence didn't."*
+3. **Beat 2.** *"A romantic slow week somewhere with great wine."* Still nothing. *"Better tools, richer domain logic — intent gap untouched. The interface got better. The intelligence didn't."*
 
 **Talking points:** *"MCP changes the **interface**, not the **intelligence**. Tools are
 versioned and IAM-authed; teams share them without rebuilding. But matching a **mood**
@@ -362,8 +368,8 @@ self.agent = Agent(
 )
 ```
 **Say:** "One agent, five tools, direct RDS Data API. Bedrock picks the tool; each runs
-SQL and logs the query for the trace. The limitation is lexical: 'romantic week in
-Europe' doesn't map to a column."
+SQL and logs the query for the trace. The limitation is ownership: 'compare top trips
+in EUR' is not a better WHERE clause, it's a reusable tool-contract problem."
 **Live path:** `chat.py` → `phase1_search()` (same SQL, no LLM loop).
 
 ## Phase 2 — MCP Agent · `backend/agents/mcp_02/agent.py`

@@ -9,6 +9,7 @@ import { TracePanel } from './components/TracePanel';
 import { TravelerContextPanel } from './components/TravelerContextPanel';
 import { TripDetailDrawer } from './components/TripDetailDrawer';
 import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
+import { SHOWCASE_PHASES } from './lib/showcaseAdapters';
 import { ALEX_IMAGE_URL, ALEX_NAME } from './lib/personas';
 
 type NavItemId = 'concierge' | 'trips' | 'discover' | 'profile' | 'preferences' | 'messages';
@@ -79,19 +80,14 @@ function NavIcon({ id }: { id: NavItemId | 'settings' }) {
 
 export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) {
   const [memoryOpen, setMemoryOpen] = useState(false);
-  // Collapsing the For-you panel hands its vertical space back to the
-  // Meridian activity (trace) panel — the trace is the live demo
-  // payoff, so audiences in zoomed / tall-screen views appreciate
-  // being able to give it the full right rail.
+  // Let presenters free right-rail space without losing traveler context.
   const [forYouCollapsed, setForYouCollapsed] = useState(false);
-  // Which sidebar nav panel is open (null = Concierge, the default view).
-  // Drives both the lightweight drawer and the active-nav highlight.
+  // Same affordance for traces, useful when the traveler panel is the focus.
+  const [activityCollapsed, setActivityCollapsed] = useState(false);
+  // Null means the default Concierge surface is active.
   const [navPanel, setNavPanel] = useState<NavPanelId | null>(null);
 
-  // Time-of-day greeting word for the headline ("Good morning, Alex." /
-  // "Good evening, Alex.") — keeps the demo feeling personal regardless
-  // of when audiences open it. Computed inline so Vite's Fast Refresh
-  // doesn't lose the binding when the file hot-reloads.
+  // Time-of-day greeting keeps the demo personal without storing state.
   //   05:00–11:59 → morning
   //   12:00–16:59 → afternoon
   //   17:00–04:59 → evening
@@ -112,8 +108,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
         </div>
         <nav className="mds-nav-items" aria-label="Desktop navigation">
           {navItems.map((item) => {
-            // Active when: Concierge and no panel/drawer open, OR this item's
-            // panel is the open one, OR Preferences and the memory drawer is open.
+            // Keep sidebar selection aligned with drawers as well as pages.
             const isActive =
               (item.id === 'concierge' && navPanel === null && !memoryOpen) ||
               (item.id === 'preferences' && memoryOpen) ||
@@ -167,18 +162,16 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
       </aside>
 
       <main className="mds-desktop-main">
-        {/* Single scroll surface - everything before the sticky composer
-            (header, chat, grid) scrolls together so the conversation flows
-            naturally into the result cards below it. */}
+        {/* One scroll surface keeps history and inline results moving together. */}
         <div className="mds-desktop-scroll">
           <div className="mds-top-actions">
-            {/* Breadcrumb — orients the surface (mockup parity). */}
+            {/* Breadcrumb orients the current surface. */}
             <nav className="mds-breadcrumb" aria-label="Breadcrumb">
               <span>Concierge</span>
               <span className="mds-breadcrumb-sep" aria-hidden="true">/</span>
               <span className="mds-breadcrumb-current">Recommendations</span>
             </nav>
-            {/* Live status pill — pulsing dot + reasoning/offline state. */}
+            {/* Live status: backend reachability plus currency context. */}
             <span
               className={`mds-status-pill${state.backendStatus === 'online' ? ' is-live' : ' is-off'}`}
             >
@@ -196,9 +189,20 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
             <PhaseSelector state={state} />
           </div>
 
-          {/* Phase-diff callout: when the presenter advances a rung, name
-              what this mode ADDS over the last one. Reinforces the core
-              "each mode composes onto the last" narrative. Auto-dismisses. */}
+          <div className="mds-capability-ladder" aria-label="Five phase capability ladder">
+            {SHOWCASE_PHASES.map((phase) => (
+              <div
+                key={phase.label}
+                className={`mds-capability-step${state.selectedPhase === phase.phase ? ' is-active' : ''}`}
+              >
+                <span>{phase.label}</span>
+                <b>{phase.capability}</b>
+                <small>{phase.proofPoint}</small>
+              </div>
+            ))}
+          </div>
+
+          {/* Phase callout names the new capability added at this rung. */}
           {state.phaseHint && (
             <div className="mds-phase-hint" role="status" aria-live="polite">
               <span className="mds-phase-hint-badge">{state.phaseHint.label}</span>
@@ -247,9 +251,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
 
           <ChatTranscript state={state} />
 
-          {/* Per-turn product cards now live INSIDE each bot bubble,
-              expanded via the summary chip click. No standalone grid
-              below the chat - the chat owns its results. */}
+          {/* Product cards stay attached to the bot turn that produced them. */}
 
           <div className="mds-main-actions">
             <button type="button" onClick={() => state.replayLastPrompt()} disabled={!state.lastPrompt || state.isLoading}>
@@ -268,7 +270,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
           </div>
         </div>
 
-        {/* Sticky composer dock - always reachable while history scrolls. */}
+        {/* Sticky composer stays reachable while history scrolls. */}
         <div className="mds-desktop-dock">
           <ChatComposer state={state} />
         </div>
@@ -281,7 +283,11 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
           collapsed={forYouCollapsed}
           onToggleCollapsed={() => setForYouCollapsed((prev) => !prev)}
         />
-        <TracePanel state={state} />
+        <TracePanel
+          state={state}
+          collapsed={activityCollapsed}
+          onToggleCollapsed={() => setActivityCollapsed((prev) => !prev)}
+        />
       </aside>
 
       <TripDetailDrawer state={state} />

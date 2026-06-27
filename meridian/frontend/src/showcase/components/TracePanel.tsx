@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
-import type { ShowcaseTraceSpan } from '../lib/showcaseAdapters';
+import { SHOWCASE_PHASES, type ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 import { WorkflowGraph } from './WorkflowGraph';
 import { RlsProbeCard } from './RlsProbeCard';
 
-// The five "thinking phases" Meridian narrates while a turn is in flight.
-// Each phase maps onto a contiguous slice of the trace span timeline so the
-// progress bar stays in sync with what the agent is actually doing.
+// Maps raw trace spans into five audience-readable progress steps.
 const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTraceSpan) => boolean }[] = [
   {
     id: 'understand',
@@ -52,8 +50,7 @@ interface PhaseProgress {
 }
 
 function classifySpansToPhases(spans: ShowcaseTraceSpan[]): Map<string, string> {
-  // Each span gets routed to the first matching phase. Spans we can't classify
-  // anchor to whichever phase is currently "filling" so the bar still advances.
+  // Unmatched spans stay with the last known phase so progress never jumps backward.
   const map = new Map<string, string>();
   let lastPhaseIndex = 0;
   spans.forEach((span) => {
@@ -68,128 +65,178 @@ function classifySpansToPhases(spans: ShowcaseTraceSpan[]): Map<string, string> 
   return map;
 }
 
-export function TracePanel({ state, compact = false }: { state: MeridianShowcaseState; compact?: boolean }) {
+export function TracePanel({
+  state,
+  compact = false,
+  collapsed = false,
+  onToggleCollapsed,
+}: {
+  state: MeridianShowcaseState;
+  compact?: boolean;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
+}) {
   const sqlSpans = state.traceSpans.filter((span) => span.sql);
   const memoryFacts = state.memoryFacts;
   const agentCount = new Set(state.traceSpans.map((span) => span.agent).filter(Boolean)).size;
   const activeSpans = compact ? state.traceSpans.slice(0, 4) : state.traceSpans;
+  const phaseMeta = SHOWCASE_PHASES.find((phase) => phase.phase === state.selectedPhase);
+  const className = [
+    'mds-panel',
+    'mds-trace-panel',
+    compact ? 'is-compact' : '',
+    collapsed ? 'is-collapsed' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
-    <section className={`mds-panel mds-trace-panel${compact ? ' is-compact' : ''}`}>
+    <section className={className}>
       <div className="mds-panel-head">
-        <strong>Meridian activity</strong>
+        {onToggleCollapsed ? (
+          <button
+            type="button"
+            className="mds-collapse-toggle"
+            onClick={onToggleCollapsed}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? 'Expand Meridian activity panel' : 'Collapse Meridian activity panel'}
+            title={collapsed ? 'Expand Meridian activity' : 'Collapse Meridian activity'}
+          >
+            <span className="mds-collapse-chevron" aria-hidden="true">
+              <span className="mds-collapse-chevron-inner">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </span>
+            </span>
+            <strong>Meridian activity</strong>
+            {collapsed && (
+              <span className="mds-collapse-hint">
+                {state.traceSpans.length} spans
+              </span>
+            )}
+          </button>
+        ) : (
+          <strong>Meridian activity</strong>
+        )}
         <span className={`mds-live-state ${state.isLoading || state.isReplaying ? 'is-live' : ''}`}>
           {state.isLoading ? 'Running' : state.isReplaying ? 'Replay' : 'Live'}
         </span>
       </div>
 
-      {/* Claude Desktop-style progress bar — fills top→bottom as spans land. */}
-      <ThinkingPhases state={state} />
+      {!collapsed && (
+        <>
+          {/* Progress rail fills top-to-bottom as spans land. */}
+          <ThinkingPhases state={state} />
 
-      {!compact && (
-        <div className="mds-trace-summary">
-          <span>{state.phaseLabel}</span>
-          <span>{state.traceSpans.length} spans</span>
-          <span>{agentCount} agents</span>
-          <span>{state.totalLatencyMs}ms</span>
-        </div>
-      )}
-      {!compact && (
-        <div className="mds-trace-tabs" role="tablist" aria-label="Trace filters">
-          {/* The RLS tab only appears in Phase 4 (Production), where Aurora
-              RLS is the story. Other phases keep the 3-tab layout. */}
-          {(state.selectedPhase === 4
-            ? (['spans', 'memory', 'sql', 'rls'] as const)
-            : (['spans', 'memory', 'sql'] as const)
-          ).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              className={state.traceTab === tab ? 'is-active' : ''}
-              onClick={() => state.setTraceTab(tab)}
-            >
-              {tab === 'spans'
-                ? 'Trace'
-                : tab === 'memory'
-                  ? 'Memory'
-                  : tab === 'sql'
-                    ? 'SQL'
-                    : 'RLS'}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Phase 5 only: a StateGraph diagram that lights the executed path
-          (classify → branch → synthesize) from the real workflow spans. Sits
-          above the span list as a header diagram; spans remain the detail. */}
-      {(state.traceTab === 'spans' || compact) &&
-        state.selectedPhase === 5 &&
-        state.traceSpans.length > 0 && <WorkflowGraph state={state} />}
-
-      {state.traceTab === 'spans' || compact ? (
-        <div className="mds-span-list">
-          {activeSpans.length === 0 ? (
-            <div className="mds-empty">Submit a prompt to generate trace spans.</div>
-          ) : (
-            activeSpans.map((span, index) => (
-              <TraceSpanRow
-                key={span.id}
-                span={span}
-                index={index}
-                active={state.replayIndex === index || (!state.isReplaying && state.expandedSpanId === span.id)}
-                visible={!state.isReplaying || state.replayIndex >= index}
-                expanded={!compact && state.expandedSpanId === span.id}
-                onToggle={() => state.setExpandedSpanId(state.expandedSpanId === span.id ? null : span.id)}
-              />
-            ))
-          )}
-        </div>
-      ) : state.traceTab === 'memory' ? (
-        <div className="mds-memory-mini">
-          {memoryFacts.map((fact) => (
-            <div key={fact.key}>
-              <span>{fact.key}</span>
-              <b>{fact.value}</b>
+          {!compact && (
+            <div className="mds-trace-summary">
+              <span>{state.phaseLabel}</span>
+              {phaseMeta && <span className="mds-proof-pill">{phaseMeta.proofPoint}</span>}
+              <span>{state.traceSpans.length} spans</span>
+              <span>{agentCount} agents</span>
+              <span>{state.totalLatencyMs}ms</span>
             </div>
-          ))}
-        </div>
-      ) : state.traceTab === 'rls' ? (
-        <RlsProbeCard travelerId={state.travelerId} />
-      ) : (
-        <div className="mds-sql-list">
-          {sqlSpans.length ? (
-            sqlSpans.map((span) => (
-              <div key={span.id}>
-                <small>{span.file ?? span.agent ?? 'SQL span'}</small>
-                <pre>{span.sql}</pre>
-              </div>
-            ))
-          ) : (
-            <div className="mds-empty">No SQL snippet on this turn.</div>
           )}
-        </div>
-      )}
+          {!compact && phaseMeta && (
+            <div className="mds-phase-proof" aria-label="Active phase proof point">
+              <span>Proof point</span>
+              <b>{phaseMeta.proofPoint}</b>
+              <small>{phaseMeta.takeaway}</small>
+            </div>
+          )}
+          {!compact && (
+            <div className="mds-trace-tabs" role="tablist" aria-label="Trace filters">
+              {/* RLS is a Phase 4 proof point, so other phases keep the lean tab set. */}
+              {(state.selectedPhase === 4
+                ? (['spans', 'memory', 'sql', 'rls'] as const)
+                : (['spans', 'memory', 'sql'] as const)
+              ).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  className={state.traceTab === tab ? 'is-active' : ''}
+                  onClick={() => state.setTraceTab(tab)}
+                >
+                  {tab === 'spans'
+                    ? 'Trace'
+                    : tab === 'memory'
+                      ? 'Memory'
+                      : tab === 'sql'
+                        ? 'SQL'
+                        : 'RLS'}
+                </button>
+              ))}
+            </div>
+          )}
 
-      {!compact && (
-        <div className="mds-trace-actions">
-          <button type="button" onClick={state.replayTrace} disabled={!state.traceSpans.length || state.isLoading}>
-            Replay trace
-          </button>
-          <button type="button" onClick={state.replayLastPrompt} disabled={!state.lastPrompt || state.isLoading}>
-            Rerun query
-          </button>
-          <CopyTraceButton state={state} />
-        </div>
+          {/* Phase 5 shows the executed graph path; spans remain the detail view. */}
+          {(state.traceTab === 'spans' || compact) &&
+            state.selectedPhase === 5 &&
+            state.traceSpans.length > 0 && <WorkflowGraph state={state} />}
+
+          {state.traceTab === 'spans' || compact ? (
+            <div className="mds-span-list">
+              {activeSpans.length === 0 ? (
+                <div className="mds-empty">Submit a prompt to generate trace spans.</div>
+              ) : (
+                activeSpans.map((span, index) => (
+                  <TraceSpanRow
+                    key={span.id}
+                    span={span}
+                    index={index}
+                    active={state.replayIndex === index || (!state.isReplaying && state.expandedSpanId === span.id)}
+                    visible={!state.isReplaying || state.replayIndex >= index}
+                    expanded={!compact && state.expandedSpanId === span.id}
+                    onToggle={() => state.setExpandedSpanId(state.expandedSpanId === span.id ? null : span.id)}
+                  />
+                ))
+              )}
+            </div>
+          ) : state.traceTab === 'memory' ? (
+            <div className="mds-memory-mini">
+              {memoryFacts.map((fact) => (
+                <div key={fact.key}>
+                  <span>{fact.key}</span>
+                  <b>{fact.value}</b>
+                </div>
+              ))}
+            </div>
+          ) : state.traceTab === 'rls' ? (
+            <RlsProbeCard travelerId={state.travelerId} />
+          ) : (
+            <div className="mds-sql-list">
+              {sqlSpans.length ? (
+                sqlSpans.map((span) => (
+                  <div key={span.id}>
+                    <small>{span.file ?? span.agent ?? 'SQL span'}</small>
+                    <pre>{span.sql}</pre>
+                  </div>
+                ))
+              ) : (
+                <div className="mds-empty">No SQL snippet on this turn.</div>
+              )}
+            </div>
+          )}
+
+          {!compact && (
+            <div className="mds-trace-actions">
+              <button type="button" onClick={state.replayTrace} disabled={!state.traceSpans.length || state.isLoading}>
+                Replay trace
+              </button>
+              <button type="button" onClick={state.replayLastPrompt} disabled={!state.lastPrompt || state.isLoading}>
+                Rerun query
+              </button>
+              <CopyTraceButton state={state} />
+            </div>
+          )}
+        </>
       )}
     </section>
   );
 }
 
-// Copies the active turn's trace as pretty-printed JSON to the clipboard.
-// Hugely useful when a presenter wants to paste a trace into a debugging
-// thread or back into a chat for analysis. Shows a 2-second "Copied"
-// confirmation so the user knows the action took.
+// Copy active trace JSON for debugging or post-demo review.
 function CopyTraceButton({ state }: { state: MeridianShowcaseState }) {
   const [copied, setCopied] = useState(false);
   const disabled = !state.traceSpans.length;
@@ -257,8 +304,7 @@ function ThinkingPhases({ state }: { state: MeridianShowcaseState }) {
   const phaseBySpan = classifySpansToPhases(spans);
   const isStreaming = state.isLoading || state.isReplaying;
 
-  // While loading without trace spans yet, drive a synthetic progressive bar so
-  // the user sees motion the moment they hit submit.
+  // Show immediate progress before the first real span arrives.
   const [syntheticTick, setSyntheticTick] = useState(0);
   const tickRef = useRef<number | null>(null);
   useEffect(() => {
@@ -297,7 +343,7 @@ function ThinkingPhases({ state }: { state: MeridianShowcaseState }) {
         else p.status = 'pending';
       });
     } else if (state.isLoading) {
-      // Streaming new turn: phase is active iff at least one span landed in it.
+      // Streaming turn: mark landed phases done and keep the next phase active.
       progress.forEach((p) => {
         p.status = p.spanIds.length ? 'done' : 'pending';
       });
@@ -350,9 +396,7 @@ function TraceSpanRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  // Stagger the fan-in animation by index so 12 spans don't pop at once.
-  // The CSS keyframe takes 320ms; delaying each subsequent row by 35ms
-  // gives the bottom row a 380ms head-start without feeling sluggish.
+  // Stagger row entry so dense traces read as a sequence, not a flash.
   const animationDelay = `${Math.min(index * 35, 480)}ms`;
 
   return (

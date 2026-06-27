@@ -6,18 +6,13 @@ import './meridianShowcase.css';
 
 type ShowcaseTheme = 'dark' | 'light';
 
-// Initial theme follows the OS preference so opening /showcase in a bright
-// room lands in light without a manual toggle; defaults to dark otherwise
-// (and on SSR / no matchMedia). The presenter can still flip it any time.
+// Start from the OS theme; presenters can still toggle per session.
 function initialTheme(): ShowcaseTheme {
   if (typeof window === 'undefined' || !window.matchMedia) return 'dark';
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
-// Page-level error boundary. If anything below the showcase root throws
-// during render, show a recovery card instead of blanking the entire page
-// (default React 18 behaviour on unhandled child errors). The error and
-// stack are written to the console so the presenter can copy them out.
+// Keep a render error from blanking the live showcase.
 class ShowcaseErrorBoundary extends Component<
   { children: ReactNode },
   { error: Error | null }
@@ -56,10 +51,7 @@ class ShowcaseErrorBoundary extends Component<
 
 export function MeridianDeviceShowcase() {
   const state = useMeridianShowcase();
-  // Local theme state — initialized from the OS preference. Scoped to
-  // .mds-root via data-theme, so the whole showcase re-skins from CSS tokens.
-  // No persistence (the codebase forbids localStorage); a presenter sets it
-  // per session.
+  // Theme is session-local and scoped through CSS tokens.
   const [theme, setTheme] = useState<ShowcaseTheme>(initialTheme);
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
 

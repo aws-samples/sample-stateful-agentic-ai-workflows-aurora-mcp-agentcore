@@ -52,7 +52,7 @@ node --version
 ## Deploy
 
 ```bash
-cd meridian/meridian_agentcore
+cd meridian/meridian_agentcore/agentcore
 
 # Validate the config against the current CLI schema first:
 agentcore status --json     # also shows whether resources already exist
@@ -93,20 +93,19 @@ In the showcase trace panel you should see (real, not faked):
 > Transaction-search trace indexing takes **~10 min** after deploy to fully
 > activate. Don't judge missing trace spans in the first few minutes.
 
-## Graceful-degradation note (what to say if AgentCore fails on stage)
+## If AgentCore fails on stage
 
-The Phase 4 code path falls back to **Aurora-direct** when AgentCore calls fail.
-The trace shows the failure with `category=error`, the bot still answers from
-Aurora, and you narrate: *"Production-grade fallback — when the managed plane is
-degraded, we degrade gracefully to the underlying data plane."* That's truthful:
-[`production_04/concierge.py`](../backend/agents/production_04/concierge.py)
-catches AgentCore exceptions and continues with direct Aurora reads.
+The Phase 4 code path does **not** pretend to run Production mode without
+AgentCore. If Runtime, Gateway, or Memory are missing, the chat response shows
+`AgentCore platform not configured` and the trace carries the concrete missing
+resource list. Narrate it plainly: *"Production mode is the managed AgentCore
+path. We fail closed instead of silently swapping in a different architecture."*
 
 ## Teardown (after the event)
 
 Resources bill while they exist. When done:
 ```bash
-cd meridian/meridian_agentcore
+cd meridian/meridian_agentcore/agentcore
 agentcore destroy           # Memory, Gateway, Runtime, Lambda target
 ```
 
@@ -121,10 +120,10 @@ Keep this open in one tab while operating the booth.
 ```bash
 aws sts get-caller-identity                 # AWS auth works
 
-cd meridian/meridian_agentcore
+cd meridian/meridian_agentcore/agentcore
 agentcore status --json                     # resources healthy
 
-cd ../ && rg "AGENTCORE_" .env              # env has the 4 keys below
+cd ../.. && grep "AGENTCORE_" .env          # env has the 4 keys below
 ```
 Expected `.env` keys: `AGENTCORE_RUNTIME_ARN`, `AGENTCORE_GATEWAY_URL`,
 `AGENTCORE_GATEWAY_SEARCH_TOOL`, `AGENTCORE_MEMORY_ID`.
@@ -141,11 +140,13 @@ cd meridian/frontend
 npm run dev -- --host --port 5173
 ```
 
-Surfaces (see README "Two surfaces, one app" for the full map):
+Primary surface:
+- **Device Showcase:** `http://localhost:5173/showcase`
+
+Internal legacy surfaces:
 - **Kiosk loop:** `http://localhost:5173/demo-stage?kiosk=1`
 - **Demo Stage (presenter):** `http://localhost:5173/demo-stage` (Space=play/pause, ←/→=step, R=replay, B=builder)
-- **Device Showcase:** `http://localhost:5173/showcase`
-- **Meridian Pro:** `http://localhost:5173/`
+- **Legacy Pro overview:** `http://localhost:5173/pro`
 
 ## 3) Health checks (must pass)
 
@@ -181,11 +182,11 @@ PY
 
 **Gateway `no targets were configured`** — re-attach the Lambda target and redeploy:
 ```bash
-cd meridian/meridian_agentcore
+cd meridian/meridian_agentcore/agentcore
 agentcore add gateway-target --name SemanticTripSearchLambda --gateway meridian-aurora \
   --type lambda-function-arn \
   --lambda-arn arn:aws:lambda:us-east-1:619763002613:function:meridian-semantic-trip-search \
-  --tool-schema-file ./agentcore/gateway_targets/semantic_trip_search/tool-schema.json
+  --tool-schema-file ./gateway_targets/semantic_trip_search/tool-schema.json
 agentcore deploy -y
 ```
 

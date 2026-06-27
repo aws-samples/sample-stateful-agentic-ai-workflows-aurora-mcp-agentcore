@@ -9,23 +9,31 @@ import './index.css'
  * Lightweight path-based router.
  *
  * We deliberately avoid adding react-router (or any new dep) for the booth
- * demo — each presentation surface is self-contained and the rest of the
- * marketing app is a single-page composition. The `/demo-stage` and `/stage`
- * paths mount the cinematic Demo Stage; `/showcase` and `/device-showcase`
- * mount the device showcase; anything else mounts the existing App.
+ * demo. `/` redirects to the live showcase because the Summit talk only needs
+ * that surface. `/demo-stage` and `/stage` still mount the cinematic Demo
+ * Stage for kiosk use; `/pro` keeps the old overview available for local
+ * builder walkthroughs without making it the public entry point.
  *
  * Kiosk loop:           open /demo-stage?kiosk=1
  * Builder (technical):  press B once on the stage, or append ?view=builder
  */
 function pickRoot() {
   const path = window.location.pathname.replace(/\/+$/, '')
+  if (path === '') {
+    window.location.replace('/showcase')
+    return null
+  }
   if (path === '/demo-stage' || path === '/stage') {
     return <DemoStage />
   }
   if (path === '/showcase' || path === '/device-showcase') {
     return <MeridianDeviceShowcase />
   }
-  return <App />
+  if (path === '/pro') {
+    return <App />
+  }
+  window.location.replace('/showcase')
+  return null
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

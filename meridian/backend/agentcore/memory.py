@@ -7,10 +7,10 @@ traveler preferences and interaction embeddings (RLS-scoped).
 
 Configuration (preferred — @aws/agentcore CLI):
 
-    cd meridian/meridian_agentcore
+    cd meridian/meridian_agentcore/agentcore
     agentcore add memory --name meridian-session --strategies SEMANTIC --expiry 30
     agentcore deploy -y
-    python ../scripts/sync_agentcore_env.py --write
+    cd ../.. && python scripts/sync_agentcore_env.py --write
 
 Memory ID is loaded from ``meridian_agentcore/agentcore/.cli/deployed-state.json``
 or env override:
@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import boto3
@@ -107,7 +107,7 @@ class AgentCoreMemoryAdapter:
                 memoryId=memory_id,
                 actorId=traveler_id,
                 sessionId=conversation_id,
-                eventTimestamp=datetime.utcnow(),
+                eventTimestamp=datetime.now(timezone.utc),
                 payload=[
                     {"conversational": {"role": "USER", "content": {"text": user_message}}},
                     {

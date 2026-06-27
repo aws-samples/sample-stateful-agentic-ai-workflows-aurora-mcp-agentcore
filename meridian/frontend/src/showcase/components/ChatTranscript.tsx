@@ -8,16 +8,13 @@ import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { RankDeltaBadge } from './RankDeltaBadge';
 import { TripVisual } from './TripVisual';
 
-// Respect the OS reduced-motion setting: the FLIP reorder collapses to an
-// instant swap rather than a spring slide.
+// Respect reduced motion by disabling spring-style reorder animations.
 const prefersReducedMotion =
   typeof window !== 'undefined' &&
   typeof window.matchMedia === 'function' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// Tiny error boundary so a markdown render crash doesn't take down the
-// whole transcript. Falls back to plain text when react-markdown chokes
-// on a malformed input from the model.
+// Keep a malformed markdown response from taking down the transcript.
 class MarkdownBoundary extends Component<
   { children: ReactNode; fallback: ReactNode },
   { error: boolean }
@@ -34,10 +31,7 @@ class MarkdownBoundary extends Component<
   }
 }
 
-// Visible turn cap. The transcript supports unlimited history (we keep
-// every turn in state), but at any moment we only render the most recent
-// N pairs so the chat stays performant during long stage walk-throughs.
-// Older turns simply scroll up off-screen as the user adds new turns.
+// Keep rendering bounded during long stage walkthroughs.
 const VISIBLE_TURN_LIMIT = 24;
 
 function findScrollParent(node: HTMLElement | null): HTMLElement | null {
@@ -60,10 +54,7 @@ export function ChatTranscript({ state, compact = false }: { state: MeridianShow
   const containerRef = useRef<HTMLDivElement>(null);
   const lastMessageCountRef = useRef(visibleMessages.length);
 
-  // Smooth auto-scroll whenever a new turn arrives. Since the chat
-  // transcript no longer owns its own scrollbar (the whole main column
-  // scrolls as one), walk up to find the nearest scrollable ancestor and
-  // scroll *that* to the bottom.
+  // Scroll the nearest scrollable parent so the unified main column stays in sync.
   useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -125,10 +116,7 @@ export function ChatTranscript({ state, compact = false }: { state: MeridianShow
   );
 }
 
-// Concise, phase-aware "reasoning" phrases that cycle while a turn is in
-// flight — a thinking-style loop instead of one static "Running tools…".
-// Each list narrates what THAT phase actually does (kept honest: these mirror
-// the real span sequence), and the lines advance ~every 1.6s.
+// Phase-aware loading phrases mirror the span sequence for the selected mode.
 const THINKING_PHRASES: Record<string, string[]> = {
   SQL: ['Reading your request', 'Querying Aurora over the Data API', 'Filtering trips', 'Shaping results'],
   MCP: ['Reading your request', 'Connecting MCP servers', 'Calling domain tools', 'Composing the reply'],
@@ -143,14 +131,14 @@ function ThinkingTicker({ phase }: { phase: string }) {
   const [idx, setIdx] = useState(0);
   useEffect(() => {
     setIdx(0);
-    if (prefersReducedMotion) return; // hold the first phrase, no cycling
+    if (prefersReducedMotion) return; // Hold the first phrase, no cycling.
     const t = setInterval(() => {
-      // Advance but hold on the last ("Composing…") until the reply lands.
+      // Hold on the final phrase until the reply lands.
       setIdx((i) => Math.min(i + 1, phrases.length - 1));
     }, 1600);
     return () => clearInterval(t);
-  }, [phase]);
-  // key on idx so the span remounts each swap, re-triggering the fade.
+  }, [phase, phrases.length]);
+  // Key on idx so each phrase swap replays the fade.
   return <span key={idx} className="mds-thinking-ticker">{phrases[idx]}…</span>;
 }
 
@@ -163,31 +151,16 @@ function ChatMessage({
   isLatestBot: boolean;
   state: MeridianShowcaseState;
 }) {
-  // Only the most-recent bot turn typewriter-streams; older turns render
-  // their full text immediately so revisiting history is fast.
-  // RULES OF HOOKS: useTypewriterReveal must be called on every render
-  // (you can't conditionally skip a hook). We always call it; the
-  // `useTypewriter` flag decides whether to *show* the streaming output
-  // or the static text. The hook itself runs unconditionally so React
-  // sees the same hook order every render and never throws
-  // "Cannot read properties of undefined (reading 'length')".
+  // Always call the hook; decide below whether to show streamed or static text.
   const text = message.text ?? '';
-  // Stream every latest bot turn regardless of length. The reveal hook
-  // self-caps the duration internally, so even a 2000-char reply lands
-  // in roughly 4-6 seconds — closer to ChatGPT's perceived cadence than
-  // a hard pop. Older turns render their full text immediately so
-  // scrolling history stays fast.
+  // Latest bot turns stream; older turns render immediately for fast history review.
   const useTypewriter = isLatestBot && text.length > 0;
   const streamed = useTypewriterReveal(text);
   const visible = useTypewriter ? streamed : text;
-  // Only show the streaming caret once a few characters are revealed AND
-  // the stream still has more to go - a caret floating in an empty bubble
-  // looks abrupt.
+  // Avoid showing an empty streaming bubble before the first characters arrive.
   const isEmptyStream = useTypewriter && visible.length === 0;
 
-  // Notify the hook when the latest bot turn finishes revealing so the
-  // recommendation grid can fade in once the message reads as complete.
-  // Non-typewriter messages are considered complete immediately.
+  // Reveal product cards only after the latest bot text has finished streaming.
   const { markLatestStreamComplete } = state;
   useEffect(() => {
     if (!isLatestBot) return;
@@ -208,26 +181,14 @@ function ChatMessage({
     markLatestStreamComplete,
   ]);
   const hasInlineProducts = message.role === 'bot' && (message.products?.length ?? 0) > 0;
-  // Per-turn expand state. Each bot bubble owns whether its product
-  // cards are expanded inline - so old turn results stay attached to
-  // the message that produced them and don't vanish when a later turn
-  // arrives. Default expanded for the most recent bot turn (so the
-  // first thing the user sees on a fresh reply is the cards), and
-  // collapsed for older history (so the transcript stays scannable).
+  // Each bot turn owns its product-card expansion state.
   const [expanded, setExpanded] = useState<boolean>(isLatestBot);
-  // When a turn becomes the latest (e.g. the current latest just got
-  // bumped by a newer bot reply), default older turns to collapsed so
-  // the chat history doesn't become a wall of cards.
+  // Collapse older results so history stays scannable.
   useEffect(() => {
     if (!isLatestBot) setExpanded(false);
   }, [isLatestBot]);
 
-  // Gate the summary chip + inline grid for THIS turn until either:
-  //   (a) it's an older turn (already revealed),
-  //   (b) the typewriter on this latest turn has fully revealed the text.
-  // Without this gate, the cards animate in alongside (or even before)
-  // the streaming text, making the images feel ahead of the reply.
-  // For older turns we always show the chip — they've long since streamed.
+  // Older turns can show products immediately; the latest waits for text reveal.
   const productsRevealed = !isLatestBot || state.latestStreamComplete;
 
   const bubbleClass = `mds-message-bubble${hasInlineProducts ? ' has-products' : ''}`;
@@ -267,14 +228,7 @@ function ChatMessage({
   );
 }
 
-// Bot replies render through react-markdown + remark-gfm so the
-// concierge's `**bold**`, bullet lists, ordered lists, blockquotes,
-// inline code, and tables all parse to real DOM nodes - the same
-// stack ChatGPT / Claude.ai / Linear use.
-//
-// We strip emoji codepoints from the source on the way in: the
-// system prompt asks the LLM not to emit them, this is a final
-// safety net so any emoji that slipped through never reaches the DOM.
+// Render safe markdown while enforcing the no-emoji presentation contract.
 function MarkdownText({ source }: { source: string }) {
   const cleaned = stripEmojis(source);
   return (
@@ -284,9 +238,7 @@ function MarkdownText({ source }: { source: string }) {
       >
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
-          // Disallow raw HTML so an LLM-injected <script> can't reach
-          // the DOM. react-markdown defaults to escaping it, but we
-          // make the contract explicit here.
+          // Make raw-HTML rejection explicit at the renderer boundary.
           skipHtml
         >
           {cleaned}
@@ -296,16 +248,7 @@ function MarkdownText({ source }: { source: string }) {
   );
 }
 
-// Strip emoji + pictograph characters from the markdown source. The
-// system prompt asks the LLM not to emit them; this is a final safety
-// net so any that slip through never reach the DOM. Uses the standard
-// Unicode "Emoji" property (\p{Emoji}) plus ZWJ and variation selectors
-// that combine multi-char emoji sequences.
-//
-// Some "Emoji" code points are also normal punctuation (#, *, digits,
-// etc.) - the {Emoji_Presentation} property excludes those, so a literal
-// '#' in a markdown heading isn't accidentally stripped. We OR in the
-// extended pictographic set to catch newer / less-common pictographs.
+// Strip pictographs without removing ordinary markdown punctuation.
 function stripEmojis(source: string): string {
   try {
     return source
@@ -314,8 +257,7 @@ function stripEmojis(source: string): string {
       .replace(/\uFE0F/g, '') // variation selector-16
       .replace(/  +/g, ' ');
   } catch {
-    // Older runtimes without Unicode property escape support fall back
-    // to a no-op rather than crashing the whole component tree.
+    // Older runtimes without Unicode property escapes should not crash rendering.
     return source;
   }
 }
@@ -324,25 +266,7 @@ function money(price: number): string {
   return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 }
 
-// Compact summary chip - "4 trips · $1,599 to $1,899 · jump to results".
-// Anchored inside the bot bubble so prior-turn results stay attached to
-// chat history without re-painting full thumbnails (the rich grid below
-// Inline "trace receipt" under the concierge reply (mockup parity). Every tag
-// is phase-aware so the receipt names exactly what the current phase's
-// architecture does — the demo's whole thesis is that each phase composes a
-// new capability onto the last, and the receipt must never over-claim:
-//
-//   Phase 1 SQL        → "Direct SQL"            (RDS Data API; no tools, no memory)
-//   Phase 2 MCP        → "MCP tools"             (catalog reached through MCP)
-//   Phase 3 Retrieval  → "Hybrid retrieval · reranked" (pgvector + Cohere) —
-//                        STILL no memory; that gap is the motivator for Phase 4
-//   Phase 4 Production  → "memory: N prefs"       (AgentCore memory invoked here)
-//   Phase 5 Workflow    → "LangGraph · checkpointed" + memory (recall node)
-//
-// The capability label is keyed to phase (not parsed from span categories,
-// which vary by query path); the prefs count + latency are read from live
-// state. memory only appears at phase >= 4 — never before the phase that
-// introduces it, even though memoryFacts may already be loaded in the rail.
+// Trace receipt labels are keyed to phase so the UI never over-claims capability.
 const PHASE_CAPABILITY: Record<number, string> = {
   1: 'Direct SQL',
   2: 'MCP tools',
@@ -378,7 +302,7 @@ function ResponseMetaTags({ state }: { state: MeridianShowcaseState }) {
   );
 }
 
-// the chat already shows the active turn's products).
+// Compact summary chip keeps result cards attached to the turn that produced them.
 function ProductSummaryChip({
   products,
   state,

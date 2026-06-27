@@ -26,7 +26,7 @@ AWS docs:
 
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from strands import Agent, tool
@@ -94,7 +94,7 @@ class MemoryAgent:
         self.activity_callback(
             ActivityEntry(
                 id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow().isoformat() + "Z",
+                timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 activity_type="tool_call",
                 title=f"Strands @tool {tool_name}",
                 details=details or f"Invoked {tool_name} via strands-agents",
@@ -115,7 +115,7 @@ class MemoryAgent:
             conversation_id: Active conversation identifier
             limit: Maximum recent turns to return
         """
-        start = datetime.utcnow()
+        start = datetime.now(timezone.utc)
         rows = await self.store.recall_short_term(
             conversation_id, limit, transaction_id=self._transaction_id
         )
@@ -123,7 +123,7 @@ class MemoryAgent:
             f"{r['role']}: {str(r['content'])[:100]}{'…' if len(str(r['content'])) > 100 else ''}"
             for r in reversed(rows)
         ]
-        elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
+        elapsed = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
         self._log_tool(
             "recall_session_context",
             "Load short-term memory",
@@ -153,11 +153,11 @@ class MemoryAgent:
     @tool
     async def recall_traveler_preferences(self, traveler_id: str, limit: int = 8) -> Dict[str, Any]:
         """Recall long-term traveler preferences from traveler_preferences."""
-        start = datetime.utcnow()
+        start = datetime.now(timezone.utc)
         facts = await self.store.recall_preferences(
             traveler_id, limit, transaction_id=self._transaction_id
         )
-        elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
+        elapsed = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
         self._log_tool(
             "recall_traveler_preferences",
             "Recall traveler preferences",
@@ -189,11 +189,11 @@ class MemoryAgent:
             query: Current user query for embedding similarity
             limit: Maximum interactions to return
         """
-        start = datetime.utcnow()
+        start = datetime.now(timezone.utc)
         rows = await self.store.recall_similar_interactions(
             traveler_id, query, limit, transaction_id=self._transaction_id
         )
-        elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
+        elapsed = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
         self._log_tool(
             "recall_similar_interactions",
             "Semantic interaction recall",
@@ -235,7 +235,7 @@ class MemoryAgent:
             assistant_message: Assistant response summary
             packages_shown: Optional list of trip packages shown this turn
         """
-        start = datetime.utcnow()
+        start = datetime.now(timezone.utc)
         tx = self._transaction_id
         await self.store.append_message(conversation_id, "user", user_message, transaction_id=tx)
         await self.store.append_message(
@@ -249,7 +249,7 @@ class MemoryAgent:
             packages_shown,
             transaction_id=tx,
         )
-        elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
+        elapsed = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
         self._log_tool(
             "persist_turn",
             "Persist turn to Aurora memory",

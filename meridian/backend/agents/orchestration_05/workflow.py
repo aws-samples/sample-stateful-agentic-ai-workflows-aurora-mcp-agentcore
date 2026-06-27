@@ -39,7 +39,7 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, TypedDict
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,14 @@ except ImportError:  # pragma: no cover - optional extra
 
 
 AGENT_FILE = "agents/orchestration_05/workflow.py"
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _utc_timestamp() -> str:
+    return _utc_now().isoformat().replace("+00:00", "Z")
 
 
 class WorkflowState(TypedDict, total=False):
@@ -82,7 +90,7 @@ def _activity(
 ) -> Dict[str, Any]:
     return {
         "id": str(uuid.uuid4()),
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": _utc_timestamp(),
         "activity_type": activity_type,
         "title": title,
         "details": details,
@@ -231,9 +239,9 @@ class OrchestrationAgent:
         it to fan out to search / availability / memory_recall (or the 'plan'
         path, which enters at search and chains into availability).
         """
-        start = datetime.utcnow()
+        start = _utc_now()
         intent = _classify_intent(state["query"])
-        elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
+        elapsed = int((_utc_now() - start).total_seconds() * 1000)
         activities = list(state.get("activities", []))
         activities.append(
             _activity(
@@ -261,9 +269,9 @@ class OrchestrationAgent:
         Checkpoints state to Aurora after returning. On the 'plan' path this is
         step 1 of 2 — the conditional edge then routes to the availability node.
         """
-        start = datetime.utcnow()
+        start = _utc_now()
         packages, search_activities = await self.search_fn(state["query"], limit=5)
-        elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
+        elapsed = int((_utc_now() - start).total_seconds() * 1000)
         activities = list(state.get("activities", []))
         activities.append(
             _activity(
@@ -318,9 +326,9 @@ class OrchestrationAgent:
         availability onto the prior trip results; for a standalone 'availability'
         intent it surfaces the availability rows directly. Checkpoints after return.
         """
-        start = datetime.utcnow()
+        start = _utc_now()
         avail_packages, sub_activities, _msg = await self.availability_fn(state["query"])
-        elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
+        elapsed = int((_utc_now() - start).total_seconds() * 1000)
         # In the multi-step "plan" path this node runs AFTER search, so we
         # keep the richer search results (trip cards + similarity scores)
         # as the user-facing set and treat availability as a layered-on
@@ -385,7 +393,7 @@ class OrchestrationAgent:
         Skips gracefully if no memory function is wired. Checkpoints after return,
         matching the search and availability nodes.
         """
-        start = datetime.utcnow()
+        start = _utc_now()
         activities = list(state.get("activities", []))
         if self.memory_recall_fn is None:
             activities.append(
@@ -401,7 +409,7 @@ class OrchestrationAgent:
             traveler_id=state.get("traveler_id", ""),
             conversation_id=state.get("conversation_id", ""),
         )
-        elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
+        elapsed = int((_utc_now() - start).total_seconds() * 1000)
         activities.append(
             _activity(
                 "delegation",

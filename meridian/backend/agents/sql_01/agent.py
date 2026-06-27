@@ -24,7 +24,7 @@ AWS docs:
 import os
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Any, Optional, List
 from decimal import Decimal
 
@@ -59,7 +59,7 @@ class SQLAgent:
     """
     Phase 1 travel concierge with direct database access.
     
-    Uses Strands SDK with Claude Opus 4.8 via Bedrock (cross-region inference).
+    Uses Strands SDK with the configured Bedrock model (Sonnet 4.6 by default).
     Connects to Aurora PostgreSQL using RDS Data API.
     
     """
@@ -74,7 +74,7 @@ class SQLAgent:
         self.activity_callback = activity_callback or (lambda x: None)
         self.db = get_rds_data_client()
         
-        # Initialize Bedrock model - Claude Opus 4.8 (cross-region inference)
+        # Initialize Bedrock model - Sonnet 4.6 by default (cross-region inference)
         self.model = BedrockModel(
             model_id=config.bedrock.model_id,
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
@@ -129,7 +129,7 @@ Trip types in the catalog:
         """Log an activity entry."""
         entry = ActivityEntry(
             id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             activity_type=activity_type,
             title=title,
             details=details,
@@ -150,7 +150,7 @@ Trip types in the catalog:
         Args:
             package_id: Package identifier (e.g., 'CTY-002')
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         query = """
             SELECT package_id, name, operator, price_per_person, description,
@@ -161,7 +161,7 @@ Trip types in the catalog:
 
         result = await self.db.execute_one(query, (package_id,))
 
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         self._log_activity(
             activity_type="search",
@@ -192,7 +192,7 @@ Trip types in the catalog:
             trip_type: Optional trip type filter
             limit: Maximum number of results (default 5)
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         sql = """
             SELECT package_id, name, operator, price_per_person, description,
@@ -212,7 +212,7 @@ Trip types in the catalog:
 
         results = await self.db.execute(sql, tuple(params))
 
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         self._log_activity(
             activity_type="search",
@@ -240,7 +240,7 @@ Trip types in the catalog:
             package_id: Package identifier
             duration: Optional duration key (e.g., '7 nights')
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         query = """
             SELECT package_id, name, durations, availability
@@ -250,7 +250,7 @@ Trip types in the catalog:
 
         result = await self.db.execute_one(query, (package_id,))
 
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         self._log_activity(
             activity_type="availability",
@@ -294,7 +294,7 @@ Trip types in the catalog:
         Returns:
             Booking total breakdown with subtotal, tax, fees, and total
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         
         subtotal = Decimal('0')
         item_details = []
@@ -321,7 +321,7 @@ Trip types in the catalog:
         shipping = Decimal('0') if subtotal >= Decimal('100') else Decimal('9.99')
         total = subtotal + tax + shipping
         
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
         
         self._log_activity(
             activity_type="booking",
@@ -352,7 +352,7 @@ Trip types in the catalog:
             traveler_id: Traveler identifier
             items: List of items with package_id, travelers_count, optional duration
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         totals = await self._calculate_booking_total(items)
 
@@ -377,7 +377,7 @@ Trip types in the catalog:
                 item['unit_price']
             ))
 
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         self._log_activity(
             activity_type="booking",
@@ -388,7 +388,7 @@ Trip types in the catalog:
         )
 
         from datetime import timedelta
-        departure_window = datetime.utcnow() + timedelta(days=30)
+        departure_window = datetime.now(timezone.utc) + timedelta(days=30)
 
         return {
             "booking_id": booking_id,

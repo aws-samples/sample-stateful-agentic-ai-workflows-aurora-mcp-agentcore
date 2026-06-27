@@ -21,7 +21,7 @@ AWS docs:
 
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Any, Optional, List
 
 from strands import Agent, tool
@@ -85,7 +85,7 @@ class RetrievalAgent:
         self.last_search_packages: List[dict] = []
         self.last_search_query: Optional[str] = None
 
-        # Initialize Bedrock model - Claude Opus 4.8 (cross-region inference)
+        # Initialize Bedrock model - Sonnet 4.6 by default (cross-region inference)
         self.model = BedrockModel(
             model_id=config.bedrock.model_id,
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
@@ -135,7 +135,7 @@ Guidelines:
         """Log an activity entry."""
         entry = ActivityEntry(
             id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             activity_type=activity_type,
             title=title,
             details=details,
@@ -156,7 +156,7 @@ Guidelines:
         Returns:
             {"packages": [...], "query": str} — semantic search results from Aurora.
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         self._log_activity(
             activity_type="delegation",
@@ -170,7 +170,7 @@ Guidelines:
         self.last_search_packages = result.get("packages", [])
         self.last_search_query = query
 
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         self._log_activity(
             activity_type="delegation",
@@ -195,7 +195,7 @@ Guidelines:
         Returns:
             Package information or availability data.
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         self._log_activity(
             activity_type="delegation",
@@ -210,7 +210,7 @@ Guidelines:
         else:
             result = {"error": f"Unknown action: {action}"}
         
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
         
         self._log_activity(
             activity_type="delegation",
@@ -234,7 +234,7 @@ Guidelines:
         Returns:
             Booking information from Booking Agent
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         
         self._log_activity(
             activity_type="delegation",
@@ -249,7 +249,7 @@ Guidelines:
         else:
             result = {"error": f"Unknown action: {action}"}
         
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
         
         self._log_activity(
             activity_type="delegation",
@@ -284,13 +284,13 @@ Guidelines:
             details=f"Query: {query[:100]}{'…' if len(query) > 100 else ''}"
         )
 
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         prompt = (
             f"Traveler asks: {query}\n\n"
             "Use the Search Agent to find matching trip packages, then briefly summarize the top results."
         )
         result = await self.agent.invoke_async(prompt)
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         self._log_activity(
             activity_type="delegation",
@@ -327,7 +327,7 @@ Guidelines:
             details=f"Traveler: {customer_id} · Message: {message[:100]}{'…' if len(message) > 100 else ''}"
         )
 
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         # Bedrock LLM selects which delegation tool to invoke for this turn.
         prompt = (
@@ -336,7 +336,7 @@ Guidelines:
         )
         result = await self.agent.invoke_async(prompt)
 
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         self._log_activity(
             activity_type="delegation",

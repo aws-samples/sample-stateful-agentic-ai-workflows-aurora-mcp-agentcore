@@ -4,8 +4,8 @@ Concierge-tone polish over deterministic tool outputs.
 The MCP path produces precise but dry readouts ("FX via meridian-concierge
 MCP: 2500 USD ≈ 2300 EUR"). On stage we want longer, narrative replies
 that read like a real travel concierge. This module wraps a Bedrock
-Converse call (Claude Opus 4.8 by default, with fallback to Sonnet 4.5
-and Haiku) around the deterministic facts so the user sees a richer
+Converse call (Claude Sonnet 4.6 by default, with fallback to Haiku 4.5
+and Opus 4.8) around the deterministic facts so the user sees a richer
 answer without the agent hallucinating numbers - all factual content
 comes from the tool result that we feed verbatim into the system prompt.
 

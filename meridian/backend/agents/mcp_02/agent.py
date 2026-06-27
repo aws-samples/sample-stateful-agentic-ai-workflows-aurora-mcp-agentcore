@@ -23,7 +23,7 @@ MCP server (awslabs):
 
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Any, Optional, List
 
 from strands import Agent
@@ -70,7 +70,7 @@ class MCPAgent:
         """
         self.activity_callback = activity_callback or (lambda x: None)
         
-        # Initialize Bedrock model - Claude Opus 4.8 (cross-region inference)
+        # Initialize Bedrock model - Sonnet 4.6 by default (cross-region inference)
         self.model = BedrockModel(
             model_id=config.bedrock.model_id,
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
@@ -172,7 +172,7 @@ Trip types:
         """Log an activity entry."""
         entry = ActivityEntry(
             id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             activity_type=activity_type,
             title=title,
             details=details,
@@ -185,7 +185,7 @@ Trip types:
     def _wrap_mcp_tool(self, tool_func, tool_name: str):
         """Wrap an MCP tool to add activity logging."""
         async def wrapped(*args, **kwargs):
-            start_time = datetime.utcnow()
+            start_time = datetime.now(timezone.utc)
             
             self._log_activity(
                 activity_type="mcp",
@@ -195,7 +195,7 @@ Trip types:
             
             result = await tool_func(*args, **kwargs)
             
-            execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+            execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
             
             self._log_activity(
                 activity_type="mcp",
@@ -237,12 +237,12 @@ Trip types:
             details=f"Message: {message[:100]}..."
         )
         
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         
         # Run the agent
         response = await self.agent.run(message)
         
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
         
         self._log_activity(
             activity_type="mcp",

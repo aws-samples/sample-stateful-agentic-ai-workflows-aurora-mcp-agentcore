@@ -21,8 +21,8 @@
 | `backend/agents/production_04/concierge.py` | `MemoryAgent` (Production mode) |
 | `backend/agents/production_04/memory_agent.py` | Strands `@tool` memory recall/persist |
 | `backend/memory/store.py` | Aurora memory CRUD |
-| `frontend/src/sections/AgentSection.tsx` | Live demo UI (chat + trace) |
-| `frontend/src/components/TravelerPersona.tsx` | Alex Morgan persona card |
+| `frontend/src/showcase/MeridianDeviceShowcase.tsx` | Live demo surface (`/showcase`) |
+| `frontend/src/showcase/components/TravelerContextPanel.tsx` | Alex Morgan persona and memory rail |
 | `scripts/travel_catalog.py` | 30 trip packages + demo traveler seed |
 
 ---
@@ -46,10 +46,10 @@ npm run dev
 
 **Verify**
 
-- http://localhost:5173 loads Meridian
-- http://localhost:8000/health returns `healthy`
+- http://localhost:5173/showcase loads the live concierge
+- http://localhost:8000/health returns `"status":"healthy"`
 - `GET /api/memory/trv_meridian_demo` returns Alex Morgan profile facts
-- Scroll to **Live demo** — persona card and phase pills visible
+- Phase pills, trace panel, and Alex Morgan context are visible
 
 **If Aurora was reset**
 
@@ -62,16 +62,18 @@ python scripts/seed_data.py
 
 ```bash
 npm install -g @aws/agentcore
-cd agentcore
+cd meridian_agentcore/agentcore
 agentcore add memory --name meridian-session --strategies SEMANTIC --expiry 30
 agentcore add gateway --name meridian-aurora --authorizer-type AWS_IAM
 # agentcore add gateway-target ...  # Aurora MCP / Lambda / OpenAPI target
 agentcore deploy -y
-cd .. && python scripts/sync_agentcore_env.py --write
+cd ../.. && python scripts/sync_agentcore_env.py --write
 ```
 
-See `agentcore/README.md`. Without deploy, the concierge logs honest "not deployed"
-spans and falls back to Aurora + in-process Strands. The demo still runs.
+See `meridian_agentcore/README.md`. Phase 4 requires deployed AgentCore Runtime,
+Gateway, and Memory resources; without them, the app surfaces an explicit
+"AgentCore platform not configured" message instead of pretending to run
+Production mode.
 
 ---
 
@@ -79,17 +81,17 @@ spans and falls back to Aurora + in-process Strands. The demo still runs.
 
 ### What to say
 
-> "Meridian is an agentic **travel concierge** — not a chatbot bolted onto a search box. We climb a deliberate ladder: **SQL → MCP → Retrieval → Memory → Orchestration**. Each phase adds one capability on the same Aurora catalog."
+> "Meridian is an agentic **travel concierge** — not a chatbot bolted onto a search box. We climb a deliberate ladder: **Query → Tool → Intent → Trust → Durable Workflow**. The technical phases are SQL, MCP, Retrieval, Production, and Workflow — each one adds one capability on the same Aurora catalog."
 
 Point to the **Architecture** section (five phase cards):
 
-| Phase | Name | One-liner |
-| ----- | ---- | --------- |
-| 1 | SQL | Direct SQL on `trip_packages` via RDS Data API |
-| 2 | MCP | Same queries through postgres-mcp-server |
-| 3 | Retrieval | Hybrid pgvector + full-text; Strands supervisor |
-| 4 | Memory | Returning traveler — profile + preferences in Aurora |
-| 5 | Orchestration | LangGraph StateGraph with checkpointed control flow |
+| Phase | Capability | Technical mode | Proof point |
+| ----- | ---------- | -------------- | ----------- |
+| 1 | Query | SQL | SQL executed |
+| 2 | Tool | MCP | MCP tool invoked |
+| 3 | Intent | Retrieval | pgvector + rerank |
+| 4 | Trust | Production | RLS scoped + audited |
+| 5 | Durable Workflow | Workflow | Checkpoint written |
 
 > "Phases 1–3 teach the retrieval stack. Phase 4 is the production story: the agent **remembers** Alex Morgan before it searches. Phase 5 is the workflow story: explicit, branchable, resumable orchestration."
 
@@ -101,7 +103,7 @@ Point to the **Architecture** section (five phase cards):
 
 ### What to say
 
-> "Phase 1 is the lab. One Strands agent, hardcoded tools, direct RDS Data API. Fast, debuggable — but it only understands **exact filters**, not intent."
+> "Phase 1 is the lab. One Strands agent, hardcoded tools, direct RDS Data API. Fast, debuggable — but it only owns **exact filters**, not reusable business tools."
 
 ### Demo queries that work
 
@@ -117,9 +119,9 @@ Point to the **Architecture** section (five phase cards):
 
 | Query | What happens |
 | ----- | ------------ |
-| `Romantic week in Europe` | **0 results** — no semantic understanding |
+| `Compare our top trips and show prices in EUR` | **Wrong abstraction** — SQL can return rows, but compare + currency conversion belongs in a tool contract |
 
-> "The user didn't say the wrong thing — Phase 1 did. That's the hook for Phase 3."
+> "The user didn't ask a bad SQL question — they asked for a business operation. That's the hook for MCP."
 
 ### Optional code walkthrough
 
@@ -134,21 +136,20 @@ Point to the **Architecture** section (five phase cards):
 
 ### What to say
 
-> "Phase 2 changes the **interface**, not the intelligence. The agent still does filter search underneath — but the database is reached through **MCP** instead of hardcoded SQL in the agent."
+> "Phase 2 changes the **interface**. The agent can now discover and invoke reusable MCP tools — generic SQL transport plus our custom travel-domain server."
 
 ### Demo queries
 
 | Query | Notes |
 | ----- | ----- |
-| `Adventure & Outdoors` | Same filter logic, MCP path in trace |
-| `Wellness & Luxury` | Show `MCP tools connected` span |
-| `Tokyo culture trip` | May partial-match; still not true semantic search |
+| `Compare our top trips and show prices in EUR` | `compare_packages` + `currency_convert` |
+| `What is the cheapest month to visit Tokyo?` | `seasonal_price_band` |
 
 ### Demo query that still breaks
 
 | Query | Notes |
 | ----- | ----- |
-| `Beach vacation with snorkeling` | Vague intent — Phase 3 needed |
+| `A romantic slow week somewhere with great wine` | Mood/intent query — Phase 3 needed |
 
 ### Optional code walkthrough
 
@@ -206,14 +207,14 @@ and gets back `{}` — the RLS policy refuses to leak rows.
 
 | Query | Expected |
 | ----- | -------- |
-| `Romantic week in Europe` | Packages in EU / romance-themed (Phase 1 returned 0) |
+| `A romantic slow week somewhere with great wine` | Tuscany / Amalfi / Douro-style matches (MCP could not infer intent) |
 | `Weekend in Paris under $2k` | Price-aware semantic match |
 | `Family-friendly beach resort` | Intent-based matches |
 | `Is the Maldives package available?` | Routes to PackageAgent availability path |
 
 ### The money shot — cross-phase comparison
 
-1. Phase 1: `Romantic week in Europe` → 0 results  
+1. Phase 2: `A romantic slow week somewhere with great wine` → no intent match
 2. Phase 3: same query → ranked trips  
 
 > "Same database. Same catalog. Different retrieval architecture."
@@ -226,9 +227,9 @@ and gets back `{}` — the RLS policy refuses to leak rows.
 
 ---
 
-## Part 5 — Phase 4 · Memory (15 min)
+## Part 5 — Phase 4 · Production trust + memory (15 min)
 
-**Select:** `Phase 4 · Memory` (or click **Chat as Alex Morgan → Phase 4** on the persona card)
+**Select:** `Phase 4 · Production` (or click **Chat as Alex Morgan → Phase 4** on the persona card)
 
 ### What to say
 
@@ -356,7 +357,7 @@ aws rds-data execute-statement \
 
 ---
 
-## Part 7b — Phase 5 · Orchestration with LangGraph (8 min)
+## Part 7b — Phase 5 · Workflow with LangGraph (8 min)
 
 > "Phases 3 and 4 use Strands for tool routing.  Phase 5 shows the *workflow*
 > pattern — an explicit StateGraph with conditional branches and a checkpointed
@@ -382,7 +383,7 @@ aws rds-data execute-statement \
 
 ### Demo
 
-In the UI, switch the phase pill to **Orchestration** and try the same prompts:
+In the UI, switch the phase pill to **Workflow** and try the same prompts:
 
 - "Find me a Kyoto cultural trip" → classify routes to `search`
 - "What dates are available for Tokyo in October?" → classify routes to
@@ -414,11 +415,11 @@ curl -s -X POST http://localhost:8000/api/chat \
 ### Ladder recap
 
 ```
-Phase 1   SQL                RDS Data API → trip_packages
-Phase 2   MCP                Agent → MCP → Aurora
-Phase 3   Retrieval          Embed v4 + hybrid search + Strands supervisor
-Phase 4   Memory             Concierge + Aurora memory + AgentCore Memory
-Phase 5   Orchestration      LangGraph StateGraph + PostgresSaver checkpoints
+Phase 1   Query              SQL executed against trip_packages
+Phase 2   Tool               MCP tool invoked against Aurora
+Phase 3   Intent             pgvector + tsvector + rerank
+Phase 4   Trust              RLS scoped + audited memory
+Phase 5   Durable Workflow   checkpoint written between graph nodes
 ```
 
 ### When teams use each pattern
@@ -446,24 +447,22 @@ Phase 5   Orchestration      LangGraph StateGraph + PostgresSaver checkpoints
 
 | Works | Breaks |
 | ----- | ------ |
-| City breaks | Romantic week in Europe |
-| Beach & Resort | Family trip with kids who love theme parks |
-| Business travel under $1500 | |
+| City breaks under $2000 | Compare our top trips and show prices in EUR |
+| Beach & Resort trips under $2500 | |
 
 ### Phase 2 — works / breaks
 
 | Works | Breaks |
 | ----- | ------ |
-| Adventure & Outdoors | Beach vacation with snorkeling |
-| Wellness & Luxury | Quick conference stopover in Singapore |
-| Tokyo culture trip | |
+| Compare our top trips and show prices in EUR | A romantic slow week somewhere with great wine |
+| What is the cheapest month to visit Tokyo? | |
 
 ### Phase 3 — suggested
 
 - Weekend in Paris under $2k  
 - Family-friendly beach resort  
 - Is the Maldives package available?  
-- Romantic week in Europe *(compare to Phase 1)*  
+- A romantic slow week somewhere with great wine *(compare to Phase 2)*
 
 ### Phase 4 — suggested (as Alex Morgan)
 
@@ -490,7 +489,7 @@ curl -s -X POST http://localhost:8000/api/chat \
 # Phase 3 — semantic
 curl -s -X POST http://localhost:8000/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"message":"Romantic week in Europe","phase":3}' | jq '.message, (.products | length)'
+  -d '{"message":"A romantic slow week somewhere with great wine","phase":3}' | jq '.message, (.products | length)'
 
 # Phase 4 — memory + search
 curl -s -X POST http://localhost:8000/api/chat \

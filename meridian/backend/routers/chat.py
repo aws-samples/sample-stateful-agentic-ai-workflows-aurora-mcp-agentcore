@@ -26,7 +26,7 @@ AWS docs (by phase):
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal, Optional, List, Any, Dict
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -162,7 +162,7 @@ def create_activity(
     """Create an activity entry."""
     entry = ActivityEntry(
         id=str(uuid.uuid4()),
-        timestamp=datetime.utcnow().isoformat() + "Z",
+        timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         activity_type=activity_type,
         title=title,
         details=details,
@@ -330,7 +330,7 @@ async def sql_search(query: str, limit: int = 5) -> tuple[List[Product], List[Ac
     Simple trip_type matching and LIKE queries.
     """
     activities = []
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
 
     db = get_rds_data_client()
 
@@ -354,7 +354,7 @@ async def sql_search(query: str, limit: int = 5) -> tuple[List[Product], List[Ac
         agent_file="agents/sql_01/agent.py"
     ))
 
-    execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+    execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
     # Log for monitoring
     log_search(phase=1, query=query, results_count=len(results),
@@ -549,7 +549,7 @@ async def mcp_search(
     as the bot reply instead of the generic "I found N trips" message.
     """
     activities: List[ActivityEntry] = []
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
 
     params = parse_search_query(query)
     use_custom_mcp = _wants_domain_tool(query)
@@ -677,11 +677,8 @@ async def mcp_search(
                         log_error("compare_hydrate", error=str(exc))
                 if reply_parts:
                     raw_text = "\n\n".join(reply_parts)
-                    # Polish the deterministic readout through Opus 4.8
-                    # (with a Sonnet/Haiku fallback chain) so the user
-                    # sees a longer, narrative concierge reply instead
-                    # of a dry one-liner. The polish never invents facts
-                    # (system prompt forbids it) - it just adds context.
+                    # Polish deterministic tool output into concierge tone.
+                    # Facts stay locked to the tool payload.
                     polish = await polish_concierge_reply(query, raw_text)
                     if polish.model_id:
                         activities.append(create_activity(
@@ -735,7 +732,7 @@ async def mcp_search(
                 "AURORA_CLUSTER_ARN/AURORA_SECRET_ARN/AWS creds are set."
             )
 
-    execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+    execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
     log_search(phase=2, query=query, results_count=len(results),
                execution_time_ms=execution_time, search_type="mcp")
@@ -965,7 +962,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     - Ranking: Cohere Rerank on Bedrock
     """
     activities = []
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
 
     db = get_rds_data_client()
 
@@ -995,7 +992,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     query_embedding = embedding_service.generate_text_embedding(query)
     embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
 
-    embedding_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+    embedding_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
     activities.append(create_activity(
         activity_type="embedding",
         title="Embedding generated",
@@ -1060,7 +1057,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
             merged_by_package[row["package_id"]] = dict(row)
     candidate_rows = list(merged_by_package.values())
 
-    search_time = int((datetime.utcnow() - start_time).total_seconds() * 1000) - embedding_time
+    search_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000) - embedding_time
     activities.append(create_activity(
         activity_type="search",
         title="Hybrid candidates fetched",
@@ -1078,7 +1075,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     ))
 
     # Step 3: Cohere rerank over semantic candidates.
-    rerank_start = datetime.utcnow()
+    rerank_start = datetime.now(timezone.utc)
     embedding_service = get_embedding_service()
     docs = [
         " | ".join([
@@ -1099,7 +1096,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         rerank_failed = True
         ranked_rows = candidate_rows[:limit]
 
-    rerank_time = int((datetime.utcnow() - rerank_start).total_seconds() * 1000)
+    rerank_time = int((datetime.now(timezone.utc) - rerank_start).total_seconds() * 1000)
     activities.append(create_activity(
         activity_type="search",
         title="Cohere rerank applied" if not rerank_failed else "Cohere rerank unavailable",
@@ -1345,33 +1342,40 @@ async def workflow_memory_recall(
     store = get_memory_store()
     activities: List[ActivityEntry] = []
 
-    prefs = await store.recall_preferences(tid)
-    activities.append(create_activity(
-        activity_type="tool_call",
-        title="Aurora recall: traveler_preferences",
-        details=f"{len(prefs)} durable preference facts",
-        agent_name="MemoryAgent",
-        agent_file="agents/production_04/memory_agent.py",
-    ))
-
-    if conversation_id:
-        session = await store.recall_short_term(conversation_id, limit=6)
+    async with store.db.scoped_session(
+        traveler_id=tid, agent_type="workflow_agent"
+    ) as tx:
+        prefs = await store.recall_preferences(tid, transaction_id=tx)
         activities.append(create_activity(
             activity_type="tool_call",
-            title="Aurora recall: conversation_messages",
-            details=f"{len(session)} recent session turns",
+            title="Aurora recall: traveler_preferences",
+            details=f"{len(prefs)} durable preference facts",
             agent_name="MemoryAgent",
             agent_file="agents/production_04/memory_agent.py",
         ))
 
-    similar = await store.recall_similar_interactions(tid, query, limit=3)
-    activities.append(create_activity(
-        activity_type="tool_call",
-        title="Aurora recall: trip_interactions (pgvector)",
-        details=f"{len(similar)} semantically similar past interactions",
-        agent_name="MemoryAgent",
-        agent_file="agents/production_04/memory_agent.py",
-    ))
+        if conversation_id:
+            session = await store.recall_short_term(
+                conversation_id, limit=6, transaction_id=tx
+            )
+            activities.append(create_activity(
+                activity_type="tool_call",
+                title="Aurora recall: conversation_messages",
+                details=f"{len(session)} recent session turns",
+                agent_name="MemoryAgent",
+                agent_file="agents/production_04/memory_agent.py",
+            ))
+
+        similar = await store.recall_similar_interactions(
+            tid, query, limit=3, transaction_id=tx
+        )
+        activities.append(create_activity(
+            activity_type="tool_call",
+            title="Aurora recall: trip_interactions (pgvector)",
+            details=f"{len(similar)} semantically similar past interactions",
+            agent_name="MemoryAgent",
+            agent_file="agents/production_04/memory_agent.py",
+        ))
 
     products, search_activities = await retrieval_search(query, limit=5)
     activities.extend(search_activities)
@@ -1422,13 +1426,13 @@ def _dict_to_activity_entry(activity: Any) -> ActivityEntry:
     if not isinstance(activity, dict):
         return ActivityEntry(
             id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             activity_type="reasoning",
             title=str(activity),
         )
     telemetry = activity.pop("telemetry", None)
     activity.setdefault("id", str(uuid.uuid4()))
-    activity.setdefault("timestamp", datetime.utcnow().isoformat() + "Z")
+    activity.setdefault("timestamp", datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
     activity.setdefault("activity_type", "reasoning")
     activity.setdefault("title", "(unnamed)")
     return ActivityEntry(
@@ -1499,7 +1503,7 @@ async def retrieval_availability_search(query: str) -> tuple[List[Product], List
     Returns: (products, activities, message)
     """
     activities = []
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
 
     db = get_rds_data_client()
 
@@ -1543,7 +1547,7 @@ async def retrieval_availability_search(query: str) -> tuple[List[Product], List
         if results:
             break
     
-    search_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+    search_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
     
     if not results:
         activities.append(create_activity(
@@ -1585,7 +1589,7 @@ async def retrieval_availability_search(query: str) -> tuple[List[Product], List
     else:
         total_stock = 0
     
-    availability_time = int((datetime.utcnow() - start_time).total_seconds() * 1000) - search_time
+    availability_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000) - search_time
     
     activities.append(create_activity(
         activity_type="result",
@@ -1677,10 +1681,15 @@ async def chat(request: ChatRequest) -> ChatResponse:
                     )
 
                     store = get_memory_store()
-                    facts = await store.recall_preferences(
-                        request.customer_id or DEMO_TRAVELER_ID,
-                        limit=12,
-                    )
+                    traveler_id = request.customer_id or DEMO_TRAVELER_ID
+                    async with store.db.scoped_session(
+                        traveler_id=traveler_id, agent_type="concierge_agent"
+                    ) as tx:
+                        facts = await store.recall_preferences(
+                            traveler_id,
+                            limit=12,
+                            transaction_id=tx,
+                        )
                     polish_memory_facts = facts or None
                 except Exception as exc:
                     log_error("availability_memory_fetch", error=str(exc))
@@ -1796,16 +1805,30 @@ async def chat(request: ChatRequest) -> ChatResponse:
             )
         except Exception as e:
             log_error("production_search", error=str(e))
+            from backend.agentcore.errors import AgentCoreNotConfiguredError
+
+            is_agentcore_config_error = isinstance(e, AgentCoreNotConfiguredError)
             activities.append(create_activity(
                 activity_type="error",
-                title="Concierge error",
+                title=(
+                    "AgentCore platform not configured"
+                    if is_agentcore_config_error
+                    else "Concierge error"
+                ),
                 details=str(e),
                 agent_name="ProductionAgent",
                 agent_file="agents/production_04/concierge.py",
             ))
             return _complete_chat_turn(
                 ChatResponse(
-                message="I encountered an error in Production mode. Please try again.",
+                message=(
+                    "Production mode requires deployed AgentCore Runtime, Gateway, "
+                    "and Memory resources. Run `agentcore deploy -y` from "
+                    "`meridian/meridian_agentcore/agentcore`, then run "
+                    "`python scripts/sync_agentcore_env.py --write` from `meridian`."
+                    if is_agentcore_config_error
+                    else "I encountered an error in Production mode. Please try again."
+                ),
                 products=None,
                 order=None,
                 activities=activities,
@@ -2020,8 +2043,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
                         f"{polish.text}\n\n"
                         f"_(Concierge polish unavailable: {polish.note}. "
                         f"Check Bedrock model access for "
-                        f"`global.anthropic.claude-opus-4-8` "
-                        f"and `global.anthropic.claude-sonnet-4-6` "
+                        f"`global.anthropic.claude-sonnet-4-6`, "
+                        f"`global.anthropic.claude-haiku-4-5-20251001-v1:0`, "
+                        f"and `global.anthropic.claude-opus-4-8` "
                         f"in this region.)_"
                     )
             elif request.phase == 1:
@@ -2188,7 +2212,7 @@ async def process_order(request: OrderRequest) -> OrderResponse:
     import random
 
     activities = []
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
 
     # Determine agent config based on phase
     phase_configs = {
@@ -2240,7 +2264,7 @@ async def process_order(request: OrderRequest) -> OrderResponse:
 
         product = results[0]
         pkg = row_to_api_product(product)
-        lookup_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        lookup_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         activities.append(create_activity(
             activity_type="result",
@@ -2266,7 +2290,7 @@ async def process_order(request: OrderRequest) -> OrderResponse:
         departures_available = True
         seats_available = random.randint(5, 50)
 
-        availability_time = int((datetime.utcnow() - start_time).total_seconds() * 1000) - lookup_time
+        availability_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000) - lookup_time
 
         activities.append(create_activity(
             activity_type="availability",
@@ -2301,7 +2325,7 @@ async def process_order(request: OrderRequest) -> OrderResponse:
         shipping = 0.0 if subtotal >= config.order.free_shipping_threshold else config.order.shipping_fee
         total = round(subtotal + tax + shipping, 2)
 
-        payment_time = int((datetime.utcnow() - start_time).total_seconds() * 1000) - lookup_time - availability_time
+        payment_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000) - lookup_time - availability_time
 
         activities.append(create_activity(
             activity_type="order",
@@ -2326,7 +2350,7 @@ async def process_order(request: OrderRequest) -> OrderResponse:
         # Estimate departure using config values
         from datetime import timedelta
         days_to_departure = random.randint(config.order.min_delivery_days, config.order.max_delivery_days)
-        departure_date = (datetime.utcnow() + timedelta(days=days_to_departure)).strftime("%B %d, %Y")
+        departure_date = (datetime.now(timezone.utc) + timedelta(days=days_to_departure)).strftime("%B %d, %Y")
 
         order = Order(
             order_id=order_id,
@@ -2347,7 +2371,7 @@ async def process_order(request: OrderRequest) -> OrderResponse:
             estimated_delivery=departure_date
         )
 
-        total_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        total_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         activities.append(create_activity(
             activity_type="result",

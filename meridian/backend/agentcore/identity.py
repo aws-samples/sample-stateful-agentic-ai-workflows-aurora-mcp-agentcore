@@ -8,7 +8,7 @@ credential before each turn.
 
 Configuration (preferred — @aws/agentcore CLI):
 
-    cd meridian/meridian_agentcore
+    cd meridian/meridian_agentcore/agentcore
     agentcore add identity --name meridian-workload   # when available in your CLI version
     agentcore deploy -y
 

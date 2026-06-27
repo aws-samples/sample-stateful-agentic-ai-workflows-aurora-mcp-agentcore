@@ -14,7 +14,7 @@ AWS docs:
 
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Callable, Any, Optional, List
 
@@ -79,7 +79,7 @@ Guidelines:
     ):
         entry = ActivityEntry(
             id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             activity_type=activity_type,
             title=title,
             details=details,
@@ -101,7 +101,7 @@ Guidelines:
 
     async def calculate_booking_total(self, items: List[dict]) -> dict:
         """Calculate booking total including tax and service fee."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         subtotal = Decimal('0')
         item_details = []
@@ -127,7 +127,7 @@ Guidelines:
         service_fee = Decimal('0') if subtotal >= Decimal('100') else Decimal('9.99')
         total = subtotal + tax + service_fee
 
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         self._log_activity(
             activity_type="booking",
@@ -149,7 +149,7 @@ Guidelines:
 
     async def process_booking(self, customer_id: str, items: List[dict]) -> dict:
         """Process a new trip booking."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         totals = await self.calculate_booking_total(items)
 
@@ -174,7 +174,7 @@ Guidelines:
                 item['unit_price']
             ))
 
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         self._log_activity(
             activity_type="booking",
@@ -184,7 +184,7 @@ Guidelines:
             execution_time_ms=execution_time
         )
 
-        departure_date = datetime.utcnow() + timedelta(days=30)
+        departure_date = datetime.now(timezone.utc) + timedelta(days=30)
 
         return {
             "booking_id": booking_id,

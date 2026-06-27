@@ -35,7 +35,7 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from strands import Agent
@@ -102,7 +102,7 @@ class ProductionAgent:
         self.activity_callback(
             MemoryActivity(
                 id=str(uuid.uuid4()),
-                timestamp=datetime.utcnow().isoformat() + "Z",
+                timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 activity_type=activity_type,
                 title=title,
                 details=details,

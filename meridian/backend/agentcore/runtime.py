@@ -20,7 +20,7 @@ import logging
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import boto3
@@ -30,6 +30,10 @@ from backend.agentcore.cli_config import resolve_agentcore_config
 from backend.agentcore.errors import AgentCoreNotConfiguredError
 
 logger = logging.getLogger(__name__)
+
+
+def _utc_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 @dataclass
@@ -111,7 +115,7 @@ class AgentCoreRuntimeAdapter:
             {
                 "event": "concierge_session_start",
                 "traveler_id": traveler_id,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "timestamp": _utc_timestamp(),
             }
         ).encode()
         client = self._get_client()

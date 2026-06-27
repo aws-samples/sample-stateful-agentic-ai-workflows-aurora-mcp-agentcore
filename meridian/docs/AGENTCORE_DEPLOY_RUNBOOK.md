@@ -43,7 +43,7 @@ node --version
 ## One-time bootstrap (CDK)
 
 ```bash
-cd meridian/meridian_agentcore
+cd meridian/meridian_agentcore/agentcore
 
 # CDK bootstrap stamps the account+region with the assets bucket /
 # image repo / IAM roles needed for any AgentCore deploy. Idempotent —
@@ -54,7 +54,7 @@ npx cdk bootstrap aws://$(aws sts get-caller-identity --query Account --output t
 ## Deploy
 
 ```bash
-cd meridian/meridian_agentcore
+cd meridian/meridian_agentcore/agentcore
 
 # Validate the spec first so we catch typos before CDK spins up:
 agentcore validate
@@ -67,7 +67,7 @@ agentcore deploy
 ```
 
 `agentcore deploy` writes the live ARNs back into
-`meridian_agentcore/agentcore/.deployed.json`. The Meridian backend
+`meridian_agentcore/agentcore/.cli/deployed-state.json`. The Meridian backend
 reads them via the existing CLI-config loader at
 [`backend/agentcore/cli_config.py`](../backend/agentcore/cli_config.py)
 (`AGENTCORE_RUNTIME_ARN`, `AGENTCORE_GATEWAY_URL`, `AGENTCORE_MEMORY_ID`).
@@ -79,7 +79,7 @@ There's already a sync script in the repo:
 ```bash
 cd meridian
 python scripts/sync_agentcore_env.py
-# This reads .deployed.json and updates .env with:
+# This reads .cli/deployed-state.json and updates .env with:
 #   AGENTCORE_RUNTIME_ARN=...
 #   AGENTCORE_GATEWAY_URL=https://....gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp
 #   AGENTCORE_MEMORY_ID=mem-...
@@ -117,12 +117,8 @@ agentcore destroy
 
 ## What to say if something fails on stage
 
-The Phase 4 code path falls back to **Aurora-direct** when AgentCore
-calls fail (Memory, Gateway, or Identity). Trace will show the failure
-explicitly with category=`error`, the bot still answers from Aurora, and
-you can narrate: *"Production-grade fallback — when the managed plane
-is degraded, we degrade gracefully to the underlying data plane."*
-
-That's truthful: the code at
-[`backend/agents/production_04/concierge.py`](../backend/agents/production_04/concierge.py)
-catches AgentCore exceptions and continues with direct Aurora reads.
+The Phase 4 code path does **not** fall back to Aurora-direct when AgentCore
+Runtime, Gateway, or Memory are missing. Trace will show the failure explicitly
+with category=`error`, and the bot says `AgentCore platform not configured`.
+Narrate it plainly: *"Production mode is the managed AgentCore path. We fail
+closed instead of silently swapping in a different architecture."*

@@ -3,6 +3,7 @@
  * governance gates. Each card highlights when the relevant span is active.
  */
 import type { StageScenario, StageSpan, StageSystemId } from '../types';
+import type { ShowcasePhaseOption } from '../../showcase/lib/showcaseAdapters';
 
 // Real Aurora tables (backend/db/schema.sql). `match` lists substrings we
 // look for in the active span's title/detail to decide when a table lights.
@@ -25,13 +26,14 @@ const MCP_TOOLS: { name: string; meta: string; match: string[] }[] = [
   { name: 'recall_traveler_preferences', meta: 'Strands · long-term', match: ['recall_traveler_preferences'] },
   { name: 'recall_similar_interactions', meta: 'Strands · semantic', match: ['recall_similar_interactions'] },
   { name: 'persist_turn', meta: 'Strands · write-back', match: ['persist_turn'] },
-  { name: 'claude.compose', meta: 'Bedrock Opus', match: ['compose', 'claude', 'bedrock', 'concierge polish'] },
+  { name: 'claude.compose', meta: 'Bedrock Sonnet', match: ['compose', 'claude', 'bedrock', 'concierge polish'] },
 ];
 
 interface SystemProofRailProps {
   scenario: StageScenario;
   activeSpan: StageSpan | null;
   activeSystem: StageSystemId | null;
+  phase?: ShowcasePhaseOption;
 }
 
 function ShieldIcon() {
@@ -43,7 +45,7 @@ function ShieldIcon() {
   );
 }
 
-export function SystemProofRail({ scenario, activeSpan, activeSystem }: SystemProofRailProps) {
+export function SystemProofRail({ scenario, activeSpan, activeSystem, phase }: SystemProofRailProps) {
   // Build a searchable haystack from each span (title + detail), so the
   // rail can match the REAL operations the backend emitted rather than
   // guessing from coarse span "kind". A tool/table lights only when its
@@ -66,6 +68,19 @@ export function SystemProofRail({ scenario, activeSpan, activeSystem }: SystemPr
 
   return (
     <aside className="ds-rail" aria-label="System proof">
+      {phase && (
+        <section className="ds-rail-card ds-proof-point" aria-label="Phase proof point">
+          <header className="ds-rail-card-head">
+            <div className="ds-rail-card-title">{phase.capability}</div>
+            <div className="ds-rail-card-sub">{phase.label}</div>
+          </header>
+          <div className="ds-proof-point-body">
+            <span>{phase.proofPoint}</span>
+            <p>{phase.takeaway}</p>
+          </div>
+        </section>
+      )}
+
       <section
         className={`ds-rail-card${activeSystem === 'aurora' || activeSystem === 'memory' ? ' is-active' : ''}`}
         data-system={activeSystem === 'memory' ? 'memory' : 'aurora'}

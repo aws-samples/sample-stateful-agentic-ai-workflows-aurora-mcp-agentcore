@@ -38,6 +38,7 @@ import {
 } from './data/stageScenarios';
 import { adaptChatResponseToScenario, sumLatency } from './utils/traceAdapter';
 import { sendChatMessage } from '../api/client';
+import { SHOWCASE_PHASES } from '../showcase/lib/showcaseAdapters';
 import type { StageScenario, StageSpan, StageSystemId, StageView } from './types';
 import type { Phase } from '../types';
 
@@ -58,11 +59,12 @@ const CHALK_TALK = {
   speakers: 'Shayon Sanyal & Aditya Samant',
 } as const;
 
-// The three Meridian surfaces, so booth visitors can jump straight to any.
+// Showcase is the Summit participant surface. The stage remains available for
+// kiosk loops; the Pro overview is legacy-only at /pro.
 const MERIDIAN_SURFACES: { label: string; path: string; blurb: string }[] = [
   { label: 'Showcase', path: '/showcase', blurb: 'Full concierge — chat, trace, memory' },
-  { label: 'Pro', path: '/', blurb: 'Chalk-talk deep dive · five modes' },
   { label: 'Kiosk', path: '/demo-stage?kiosk=1', blurb: 'This auto-playing booth' },
+  { label: 'Legacy Pro', path: '/pro', blurb: 'Builder overview · internal' },
 ];
 
 function readUrlFlags() {
@@ -98,6 +100,11 @@ export function DemoStage() {
   const [architectureMissing, setArchitectureMissing] = useState(false);
   const [qrMissing, setQrMissing] = useState(false);
   const phaseRef = useRef<Phase>(flags.phase);
+  const conversationIdRef = useRef<string | null>(null);
+  const phaseMeta = useMemo(
+    () => SHOWCASE_PHASES.find((phase) => phase.phase === flags.phase),
+    [flags.phase],
+  );
 
   // Session cache of adapted scenarios, keyed by scenarioId. The kiosk
   // loops the same 3 scenarios forever, so after the first pass every
@@ -105,7 +112,7 @@ export function DemoStage() {
   // dead air. Still 100% live data; we just fetch each scenario once and
   // prefetch the NEXT one while the current plays.
   const scenarioCache = useRef<Map<StageScenario['id'], StageScenario>>(new Map());
-  const inFlight = useRef<Set<StageScenario['id']>>(new Set());
+  const inFlight = useRef<Map<StageScenario['id'], Promise<StageScenario>>>(new Map());
 
   const totalLatency = useMemo(() => sumLatency(scenarioData.spans), [scenarioData]);
 
@@ -153,25 +160,59 @@ export function DemoStage() {
   const primaryRecommendation =
     scenarioData.recommendations.find((r) => r.primary) ?? scenarioData.recommendations[0] ?? null;
 
-  // Fetch + adapt one scenario, populating the session cache. Dedupes
-  // concurrent requests for the same id (via inFlight) so a preload and a
-  // direct view don't double-fetch. Returns the adapted scenario or throws.
+  // Fetch + adapt one scenario, populating the session cache. All Phase 4+
+  // scenarios share one conversation id so the "what did we discuss last
+  // time?" beat has a real prior Tokyo turn to recall.
+  const fetchScenarioFromBackend = useCallback(async (id: StageScenario['id']): Promise<StageScenario> => {
+    const existing = inFlight.current.get(id);
+    if (existing) return existing;
+
+    const request = (async () => {
+      const template = getStageScenarioById(id);
+      const res = await sendChatMessage({
+        message: template.prompt,
+        phase: phaseRef.current,
+        customer_id: template.traveler.id,
+        ...(phaseRef.current >= 4 && conversationIdRef.current
+          ? { conversation_id: conversationIdRef.current }
+          : {}),
+      });
+      if (res.conversation_id) {
+        conversationIdRef.current = res.conversation_id;
+      }
+      const merged = adaptChatResponseToScenario(res, template);
+      if (!merged) {
+        throw new Error('Backend returned an empty trace — check AgentCore + Aurora configuration.');
+      }
+      scenarioCache.current.set(id, merged);
+      return merged;
+    })();
+
+    inFlight.current.set(id, request);
+    try {
+      return await request;
+    } finally {
+      inFlight.current.delete(id);
+    }
+  }, []);
+
   const fetchScenario = useCallback(async (id: StageScenario['id']): Promise<StageScenario> => {
     const cached = scenarioCache.current.get(id);
-    if (cached) return cached;
-    const template = getStageScenarioById(id);
-    const res = await sendChatMessage({
-      message: template.prompt,
-      phase: phaseRef.current,
-      customer_id: template.traveler.id,
-    });
-    const merged = adaptChatResponseToScenario(res, template);
-    if (!merged) {
-      throw new Error('Backend returned an empty trace — check AgentCore + Aurora configuration.');
+    if (cached) {
+      if (!conversationIdRef.current && cached.traceId) {
+        conversationIdRef.current = cached.traceId;
+      }
+      return cached;
     }
-    scenarioCache.current.set(id, merged);
-    return merged;
-  }, []);
+
+    if (phaseRef.current >= 4 && id !== DEFAULT_SCENARIO_ID && !conversationIdRef.current) {
+      await fetchScenarioFromBackend(DEFAULT_SCENARIO_ID);
+    }
+
+    const seededCached = scenarioCache.current.get(id);
+    if (seededCached) return seededCached;
+    return fetchScenarioFromBackend(id);
+  }, [fetchScenarioFromBackend]);
 
   // Reset the per-scenario reveal flags whenever the scenario changes, so
   // a new turn re-collapses the deck and re-expands the trace for replay.
@@ -238,19 +279,16 @@ export function DemoStage() {
   // any real error when that scenario becomes active).
   useEffect(() => {
     if (!kiosk) return;
+    if (loading || loadError) return;
     const idx = KIOSK_SCENARIO_ORDER.indexOf(scenarioId);
     if (idx === -1) return;
     const nextId = KIOSK_SCENARIO_ORDER[(idx + 1) % KIOSK_SCENARIO_ORDER.length];
     if (scenarioCache.current.has(nextId) || inFlight.current.has(nextId)) return;
-    inFlight.current.add(nextId);
     fetchScenario(nextId)
       .catch(() => {
         /* preload is best-effort; ignore */
-      })
-      .finally(() => {
-        inFlight.current.delete(nextId);
       });
-  }, [scenarioId, kiosk, fetchScenario]);
+  }, [scenarioId, kiosk, loading, loadError, fetchScenario]);
 
   // Kiosk reconnect loop: if a scenario fetch fails (backend blip, Aurora
   // reconnect, deploy in progress), don't strand the booth on an error.
@@ -460,6 +498,7 @@ export function DemoStage() {
                 scenario={scenarioData}
                 activeSpan={activeSpan}
                 activeSystem={activeSystem}
+                phase={phaseMeta}
               />
             </main>
 
@@ -510,7 +549,7 @@ export function DemoStage() {
           <section className="ds-kiosk-pane">
             <div className="ds-kiosk-pane-head">
               <h2>Try Meridian yourself</h2>
-              <p>Scan for the repo, explore the three surfaces, or join our chalk talk.</p>
+              <p>Open the showcase, scan the repo, or join our chalk talk.</p>
             </div>
 
             {/* Chalk-talk invite — the deeper session this booth previews. */}

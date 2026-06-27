@@ -2,14 +2,14 @@
 
 > Agentic travel concierge on Aurora PostgreSQL, MCP, and Strands Agents.
 
-Meridian is a workshop demo that climbs a five-phase ladder: SQL → MCP → Retrieval → Memory → Orchestration. The live UI talks to a real FastAPI backend backed by Aurora (RDS Data API + pgvector), not a client-side mock.
+Meridian is a workshop demo that climbs a five-phase capability ladder: Query → Tool → Intent → Trust → Durable Workflow. The technical modes are SQL → MCP → Retrieval → Production → Workflow, and the live UI talks to a real FastAPI backend backed by Aurora (RDS Data API + pgvector), not a client-side mock.
 
 ## Quick start
 
 ### Prerequisites
 
 - Python 3.11+
-- Node.js 18+
+- Node.js 20.19+ (or 22.12+)
 - AWS credentials with Bedrock and RDS Data API access
 - Aurora PostgreSQL 17 cluster with pgvector (or provision via `scripts/create_cluster.sh`)
 
@@ -38,18 +38,17 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173 — the agent demo calls `http://localhost:8000`.
+Open http://localhost:5173/showcase — the agent demo calls `http://localhost:8000`.
 
-## Two surfaces, one app
+## Primary live surface
 
-The frontend ships **two surfaces** that share the same React/Vite/TypeScript bundle and the same backend API. Pick one based on the audience.
+The Summit chalk talk uses **Device Showcase** as the primary surface. The root route redirects to `/showcase` so attendees and presenters land in the right experience automatically.
 
 | Surface | Route | Audience | Visual direction |
 | ------- | ----- | -------- | ---------------- |
-| **Meridian Pro** | `/` | 60-minute chalk talk, builders, internal demos | Polished light enterprise UI — Linear + Stripe dashboard. Top nav, hero, phase journey, three-pane concierge workspace, memory inspector, trip catalog, Aurora schema + MCP catalog. |
-| **Demo Stage** | `/demo-stage`, `/stage` | AWS Summit Village booth, keynote / kiosk | Cinematic dark control-room aesthetic for 16:9 monitors. Trace is the hero; auto-loops in kiosk mode. |
+| **Device Showcase** | `/showcase`, `/device-showcase` | 300-level chalk talk live demo | Full concierge workspace — chat, phase selector, trace, traveler memory, RLS proof, trip cards. |
 
-The Demo Stage is **separate** — it does not inherit the light Pro styles, and the Pro app does not inherit the dark cinematic ones. Both surfaces use the same `/api/chat`, `/api/memory/{traveler_id}`, and `/api/packages` endpoints.
+The legacy overview remains available at `/pro` for local builder walkthroughs, and the cinematic stage remains available at `/demo-stage` for kiosk use. Neither is the primary participant URL.
 
 ### Run
 
@@ -70,41 +69,32 @@ python scripts/seed_data.py            # one time — 30 curated packages + demo
 uvicorn backend.main:app --reload --port 8000
 ```
 
-Health check: `curl http://localhost:8000/health` → `{"status":"ok"}`.
+Health check: `curl http://localhost:8000/health` → `{"status":"healthy", ...}`.
 
 **Terminal 2 — frontend (Vite on :5173)**
 
 ```bash
 cd meridian/frontend
 npm install        # one time
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:5173/showcase
 npm run build      # tsc && vite build — gates on TypeScript + production bundle
 ```
 
-Both surfaces require the backend and Aurora. Memory facts, traces, and trip results come from live API calls — there are no offline fixture fallbacks.
+Device Showcase requires the backend and Aurora. Memory facts, traces, and trip results come from live API calls — there are no offline fixture fallbacks.
 
-### Meridian Pro — open `/`
+### Device Showcase — open `/showcase`
 
 ```text
-http://localhost:5173/
+http://localhost:5173/showcase
 ```
 
-Sections, in order:
-
-1. **Top nav** — `Concierge · Trips · Memory · System · Docs`. The status pill probes `GET /health` every 30 s.
-2. **Hero** — “Plan. Fly. Land.” + 5 stats (packages · modes · 1024d Cohere v4 · ~340 ms p50 · 99.8 % MCP tool uptime) + live featured trip card.
-3. **Phase journey** — five-step rail (SQL → MCP → Retrieval → Memory → Orchestration). The active step is highlighted from the shared `AgentBridge` phase; clicking a step jumps the concierge into that phase.
-4. **Concierge workspace** — three panes (traveler context · chat · trace), live to `POST /api/chat`. Trace tabs: `Spans · Memory · SQL · Cost`.
-5. **Memory inspector** — fetches `GET /api/memory/{traveler_id}`. `edit` and `forget` mutate the in-page view only (clearly labelled demo-only); the real flow goes through the `memory.write_fact` tool.
-6. **Trip catalog** — pulls from `GET /api/products`. Each card opens the concierge with a pre-filled prompt.
-7. **System · Aurora + MCP** — Aurora schema map + MCP tool catalog. Each tool has a `dry-run` button that opens a local drawer with sample input/output (no backend round-trip) and a "Run live in concierge" button that does.
+Use this surface for the Summit chalk talk. It starts at Phase 1 so you can walk the audience through Query → Tool → Intent → Trust → Durable Workflow with one visible chat, trace, proof badge, and memory rail.
 
 #### Switching phases
 
-Phase 4 (Production — AgentCore Runtime + Gateway + Memory + Aurora RLS) is the default and is the most impressive working mode for a demo. To change phases:
+The showcase starts at Phase 1 so the audience can climb the ladder live. To change phases:
 
-- Click any step in the **phase journey** rail.
-- Click any phase pill in the **workspace top bar**.
+- Click any phase pill in the showcase top bar.
 - Or call the bridge programmatically from elsewhere: `openConcierge({ phase: 5, focus: true })`.
 
 The shared `AgentBridge` (`src/context/AgentBridge.tsx`) holds `phase` as React state, so any section that calls `useAgentBridge()` re-renders when the phase changes.
@@ -117,6 +107,7 @@ The shared `AgentBridge` (`src/context/AgentBridge.tsx`) holds `phase` as React 
 | Traveler profile | `GET /api/memory/{traveler_id}` |
 | Trip catalog | `GET /api/products` |
 | Trace spans | `POST /api/chat` → `ChatResponse.activities` |
+| Device Showcase | `POST /api/chat` from `/showcase` |
 | Demo Stage scenarios | `POST /api/chat` (prompts in `src/stage/data/stageScenarios.ts`) |
 
 MCP tool catalog labels in the System section are static reference copy; latencies are inferred from live trace activities when available.
@@ -145,7 +136,7 @@ See `meridian/frontend/src/stage/DemoStage.tsx` for the full keyboard map and sc
 | **2** | MCP Agent | Same catalog queries through `postgres-mcp-server` / MCP `run_query` |
 | **3** | Retrieval Agent | Cohere Embed v4 (1024d) hybrid pgvector + `tsvector` candidates, reranked by **Cohere Rerank 3.5**; Retrieval Agent (supervisor) delegates to specialist agents. The Search Agent exposes one `_hybrid_search_tool` that runs the full pipeline |
 | **4** | Production Agent | `ProductionAgent` + `MemoryAgent` (`@tool`) on AgentCore Runtime/Gateway/Memory/Identity; Aurora RLS + per-turn audit |
-| **5** | Orchestration Agent | LangGraph `StateGraph` (classify → search/availability/recall → synthesize) with `PostgresSaver` checkpointing in Aurora |
+| **5** | Workflow Agent | LangGraph `StateGraph` (classify → search/availability/recall → synthesize) with `PostgresSaver` checkpointing in Aurora |
 
 **Phase 1 example:** `City breaks`, `Beach & Resort`, `Business travel under $1500`
 

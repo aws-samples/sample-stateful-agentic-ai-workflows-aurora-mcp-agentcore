@@ -8,12 +8,12 @@ Phase 3, but routed through Gateway instead of inline Python.
 
 Configuration (preferred — @aws/agentcore CLI):
 
-    cd meridian/meridian_agentcore
+    cd meridian/meridian_agentcore/agentcore
     agentcore add gateway --name meridian-aurora --authorizer-type AWS_IAM
     agentcore add gateway-target --name AuroraSearch --type mcp-server ...
     agentcore deploy -y
     agentcore fetch access --name meridian-aurora --type gateway --json
-    python ../scripts/sync_agentcore_env.py --write --fetch-gateway-token
+    cd ../.. && python scripts/sync_agentcore_env.py --write --fetch-gateway-token
 
 Gateway URL is loaded from ``meridian_agentcore/agentcore/.cli/deployed-state.json``
 or env override:

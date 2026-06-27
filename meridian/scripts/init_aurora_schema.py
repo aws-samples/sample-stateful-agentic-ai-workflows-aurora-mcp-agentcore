@@ -25,6 +25,7 @@ REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
 
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "backend" / "db" / "schema.sql"
 RLS_PATH = Path(__file__).resolve().parents[1] / "examples" / "rls_for_agents.sql"
+RLS_APP_ROLE_PATH = Path(__file__).resolve().parents[1] / "examples" / "rls_app_role.sql"
 
 
 def split_sql(script: str) -> list[str]:
@@ -90,6 +91,16 @@ def initialize_database() -> None:
                 sql[:60],
             )
             execute_sql(client, sql, f"[rls {i}/{len(rls_statements)}] {first_line[:70]}")
+
+    if RLS_APP_ROLE_PATH.exists():
+        console.print("\n[cyan]Applying least-privilege RLS app role[/cyan]")
+        role_statements = split_sql(RLS_APP_ROLE_PATH.read_text())
+        for i, sql in enumerate(role_statements, 1):
+            first_line = next(
+                (ln.strip() for ln in sql.splitlines() if ln.strip() and not ln.strip().startswith("--")),
+                sql[:60],
+            )
+            execute_sql(client, sql, f"[rls-role {i}/{len(role_statements)}] {first_line[:70]}")
 
     console.print("\n[bold green]Schema ready[/bold green]")
 

@@ -16,106 +16,49 @@ export interface ShowcasePhaseOption {
   label: ShowcasePhaseLabel;
   phase: Phase;
   description: string;
-  /** Short "what this rung adds over the previous one" line, surfaced as a
-   *  transient callout when the presenter switches phases. Reinforces the
-   *  core narrative: each mode composes onto the last, nothing is rewritten.
-   *  Phase 1 (the base) has no delta. */
+  /** Presenter ladder shorthand: Query -> Tool -> Intent -> Trust -> Durable Workflow. */
+  capability: string;
+  /** The message the audience should retain after this phase. */
+  takeaway: string;
+  /** Concrete evidence to look for in the live trace. */
+  proofPoint: string;
+  /** Short line explaining what this phase adds over the previous one. */
   adds?: string;
-  /** The headline tech that powers this rung — shown as a chip in the
-   *  callout so the audience anchors the capability to a concrete tool. */
+  /** Headline technology shown in the phase callout. */
   tech?: string;
 }
 
-// Each phase has three example prompts in a deliberate order:
-//   1. A query the phase handles cleanly.
-//   2. A second query the phase handles cleanly (so the presenter has
-//      two known-good demos for the same mode).
-//   3. A query that exposes the phase's limit and motivates the next
-//      phase. The walk-through narrative becomes:
-//        SQL solved keyword filters... but couldn't read natural-language
-//        intent. Watch what MCP changes (and doesn't). Now Retrieval.
-//        Now memory. Now multi-step workflow.
-//
-// Wording is kept consistent across phases so a presenter can run the
-// SAME prompt across all five modes to compare behaviors live.
+// Prompt design:
+// - the first two prompts are known-good phase wins.
+// - the third prompt exposes the limit that the next phase fixes.
+// Adjacent phases intentionally pair: SQL stretch -> MCP success,
+// MCP stretch -> Retrieval success, Retrieval stretch -> Production success.
 export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
-  // SQL: trip_type + price keyword filter. Fails on intent words.
+  // Direct filters work; comparison plus FX needs a domain tool contract.
   1: [
     'City breaks under $2000',
     'Beach & Resort trips under $2500',
-    'A romantic slow week somewhere with great wine',
+    'Compare our top trips and show prices in EUR',
   ],
-  // MCP: two MCP servers in one agent turn — both pills exercise the
-  // CUSTOM meridian-concierge server (something postgres-mcp can't
-  // answer), so the contrast is "generic SQL transport" vs "domain
-  // tools" — not "with vs without filters".
-  //   - Compare top trips ... → compare_packages + currency_convert.
-  //   - Cheapest month for Tokyo → seasonal_price_band (pure domain,
-  //     no SQL search needed).
-  //   - Romantic slow week (stretch) → tooling can't fix the intent
-  //     gap; motivates Phase 3 retrieval.
+  // Custom MCP tools solve comparison, FX, and seasonality; mood intent remains retrieval's job.
   2: [
     'Compare our top trips and show prices in EUR',
     'What is the cheapest month to visit Tokyo?',
     'A romantic slow week somewhere with great wine',
   ],
-  // Retrieval: supervised multi-agent search. The three pills now show
-  // THREE distinct behaviours so the trace differs each time (not three
-  // identical hybrid searches):
-  //   1. SearchAgent — hybrid pgvector + tsvector + Cohere rerank on intent.
-  //   2. PackageAgent — the supervisor DELEGATES an availability question to
-  //      a different specialist, drilling into the Tuscany result from pill 1.
-  //      Different specialist, different tool, different trace = the
-  //      "supervised multi-agent" payoff made visible.
-  //   3. Stretch — a memory-recall prompt Phase 3 genuinely cannot answer
-  //      (no conversation store); the honest failure motivates Production.
+  // Intent routing works; persisted conversation memory is still out of scope.
   3: [
     'A romantic slow week somewhere with great wine',
     'Check availability for the Tuscany Wine & Wellness week',
     'What did we discuss last time? Pick up where we left off.',
   ],
-  // Production: AgentCore + Aurora RLS + traveler memory. The pills are
-  // ordered as a single Tokyo-themed storyline so each turn builds on
-  // the last AND lines up with the seeded preferences (tokyo_culture
-  // = "Tokyo culture trip Oct 12-19", recent_trips = "Kyoto (held)").
-  //   1. Concrete Tokyo query — Phase 4 persists "Tokyo culture trip"
-  //      into conversation_messages + trip_interactions, where the
-  //      embeddings will favor Tokyo packages on subsequent searches.
-  //   2. Recall query — pgvector + persisted thread + seeded
-  //      tokyo_culture preference all converge on Tokyo Culture &
-  //      Cuisine, Tokyo Indie Walk, etc. The recall punchline lands
-  //      because Aurora has Tokyo to point at — not generic stopovers.
-  //   3. Multi-intent stretch — same Tokyo thread, now with three
-  //      jobs Strands chains implicitly in one Bedrock turn. Phase 5's
-  //      LangGraph routes the same prompt through named classify /
-  //      search / availability / memory nodes with checkpoints, which
-  //      is what makes the upgrade legible.
+  // Tokyo storyline proves memory and RLS; the multi-step prompt tees up Workflow.
   4: [
     'Tokyo culture trip for two — boutique stays, local food, walkable neighborhoods',
     'What did we discuss last time? Pick up where we left off.',
     'Plan our October Tokyo trip — find open dates, pick a Marriott property, and hold a Kyoto side trip',
   ],
-  // Workflow: LangGraph StateGraph classifies intent and branches to
-  // search / availability / memory_recall / plan, checkpointing each step
-  // to Aurora. Phase 5 is the FINALE — there's no next phase to motivate,
-  // so all three pills are solid successes (no stretch/amber). Each one
-  // lands on a distinct branch so the trace shows routing explicitly, and
-  // the deck ends on the "plan" intent — the case LangGraph genuinely
-  // EXCELS at: a multi-step chain (search → availability) that runs two
-  // sequential worker nodes with a PostgresSaver checkpoint between each.
-  // That's composition a single tool call can't make visible.
-  // The three pills are deliberately NON-overlapping so the routing is
-  // legible: each lands on a different branch, and the third is visibly a
-  // SUPERSET of work (two worker nodes + two checkpoints), not a reworded
-  // version of the first. Different destinations (Amalfi vs Kyoto) keep #1
-  // and #3 from sounding like the same question.
-  //   1. availability branch — single node, 1 checkpoint, lists open slots.
-  //      (classify → availability)
-  //   2. memory_recall branch — "what did we discuss" loads the prior thread.
-  //      (classify → memory_recall)
-  //   3. plan branch — THE PAYOFF. "end-to-end: find trips, then check
-  //      departures" maps 1:1 to two nodes lighting up with a PostgresSaver
-  //      checkpoint between each. (classify → search → availability)
+  // Each prompt lands on a distinct branch: availability, memory_recall, plan.
   5: [
     'What dates are open for the Amalfi Coast Villa Week?',
     'What did we discuss last time? Pick up where we left off.',
@@ -145,6 +88,9 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     label: 'SQL',
     phase: 1,
     description: 'Direct SQL filters over trip_packages',
+    capability: 'Query',
+    takeaway: 'Ground the assistant in live Aurora rows before adding agent abstractions.',
+    proofPoint: 'SQL executed',
     // Phase 1 is the base rung — nothing to diff against.
     tech: 'RDS Data API',
   },
@@ -152,6 +98,9 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     label: 'MCP',
     phase: 2,
     description: 'Catalog access through MCP tools',
+    capability: 'Tool',
+    takeaway: 'Expose Aurora through governed tool contracts that agents can call safely.',
+    proofPoint: 'MCP tool invoked',
     adds: 'Same Aurora — now reached through versioned, IAM-authed MCP tools instead of hand-written SQL.',
     tech: 'postgres-mcp + meridian-concierge',
   },
@@ -159,6 +108,9 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     label: 'Retrieval',
     phase: 3,
     description: 'Hybrid retrieval and specialist routing',
+    capability: 'Intent',
+    takeaway: 'Match traveler intent with vectors, text search, reranking, and specialist routing.',
+    proofPoint: 'pgvector + rerank',
     adds: 'Adds intent: pgvector + tsvector candidates, reranked. Matches what you mean, not what you type.',
     tech: 'Cohere Embed v4 + Rerank 3.5',
   },
@@ -166,6 +118,9 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     label: 'Production',
     phase: 4,
     description: 'Traveler memory, RLS, and AgentCore',
+    capability: 'Trust',
+    takeaway: 'Add memory, isolation, RLS, and auditability so personalization is governable.',
+    proofPoint: 'RLS scoped + audited',
     adds: 'Adds memory + trust: recalls who you are, scopes every query under Aurora RLS, audits each turn.',
     tech: 'AgentCore + Aurora RLS',
   },
@@ -173,6 +128,9 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     label: 'Workflow',
     phase: 5,
     description: 'LangGraph orchestration with checkpointing',
+    capability: 'Durable Workflow',
+    takeaway: 'Make multi-step work explicit, inspectable, checkpointed, and resumable.',
+    proofPoint: 'Checkpoint written',
     adds: 'Adds durability: explicit graph nodes, checkpointed to Aurora — pause Tuesday, resume Thursday.',
     tech: 'LangGraph + PostgresSaver',
   },

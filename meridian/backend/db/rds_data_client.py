@@ -18,6 +18,7 @@ AWS docs:
 import os
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 from typing import Optional, List, Any, Dict
 from decimal import Decimal
@@ -267,12 +268,17 @@ class RDSDataClient:
         this transaction — AFTER setting the GUCs — so the policies engage for
         the queries that run inside the block. See examples/rls_app_role.sql.
 
-        The role switch is best-effort: if ``meridian_app`` is not present
-        (e.g. the migration hasn't been applied in some environment), we log
-        and continue on the master connection rather than breaking the turn —
-        disable entirely with ``RLS_APP_ROLE=`` (empty).
+        The role switch is required by default. If ``meridian_app`` is not
+        present (e.g. the migration hasn't been applied), scoped reads/writes
+        fail closed instead of continuing on the master connection. For one-off
+        local admin diagnostics only, set ``RLS_ALLOW_UNSCOPED_FALLBACK=1``.
         """
         app_role = os.getenv("RLS_APP_ROLE", "meridian_app").strip()
+        allow_unscoped = os.getenv("RLS_ALLOW_UNSCOPED_FALLBACK", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
         tx = self.begin_transaction()
         try:
             # Force row_security ON for this transaction (belt-and-suspenders;
@@ -296,19 +302,35 @@ class RDSDataClient:
             # transaction by switching to the least-privilege app role (which
             # IS subject to RLS). SET LOCAL ROLE is transaction-scoped and
             # reverts on commit/rollback.
-            if app_role:
+            if not app_role:
+                msg = (
+                    "RLS_APP_ROLE is empty; refusing to run scoped_session "
+                    "without a least-privilege role."
+                )
+                if allow_unscoped:
+                    logger.warning("%s RLS will NOT filter.", msg)
+                else:
+                    raise RuntimeError(
+                        f"{msg} Set RLS_APP_ROLE=meridian_app or apply "
+                        "examples/rls_app_role.sql."
+                    )
+            else:
+                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", app_role):
+                    raise RuntimeError(
+                        f"Invalid RLS_APP_ROLE {app_role!r}; expected an unquoted "
+                        "PostgreSQL identifier such as meridian_app."
+                    )
                 try:
-                    await self.execute(
-                        f"SET LOCAL ROLE {app_role}", transaction_id=tx
-                    )
+                    await self.execute(f"SET LOCAL ROLE {app_role}", transaction_id=tx)
                 except Exception as exc:  # role missing / not granted
-                    logger.warning(
-                        "scoped_session: could not SET LOCAL ROLE %s (%s); "
-                        "continuing on master connection — RLS will NOT filter. "
-                        "Apply examples/rls_app_role.sql to fix.",
-                        app_role,
-                        str(exc)[:120],
+                    msg = (
+                        f"scoped_session: could not SET LOCAL ROLE {app_role} "
+                        f"({str(exc)[:120]}). Apply examples/rls_app_role.sql."
                     )
+                    if allow_unscoped:
+                        logger.warning("%s Continuing on master connection; RLS will NOT filter.", msg)
+                    else:
+                        raise RuntimeError(msg) from exc
             yield tx
             self.commit_transaction(tx)
         except Exception:

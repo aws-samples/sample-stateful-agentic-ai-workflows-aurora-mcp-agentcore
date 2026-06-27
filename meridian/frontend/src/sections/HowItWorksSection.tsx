@@ -1,7 +1,7 @@
 /**
  * HowItWorksSection — Meridian Pro Journey rail
  *
- * Five-stop journey (SQL → MCP → Retrieval → Production → Workflow)
+ * Five-stop journey (Query → Tool → Intent → Trust → Durable Workflow)
  * with done / live / next states.
  */
 import { FadeIn } from '../components/FadeIn';
@@ -27,10 +27,10 @@ const steps: JourneyStep[] = [
     ph: PHASE_JOURNEY_SUB[1],
     title: 'SQL',
     serif: '',
-    desc: 'The lab. Direct RDS Data API. Fast for exact matches — and it breaks on "a romantic slow week somewhere with great wine."',
+    desc: 'The lab. Direct RDS Data API. Fast for exact matches — and it breaks when the user asks for comparison plus currency conversion.',
     chips: ['RDS Data API', 'SQL · WHERE'],
     scale: '~50 trips/day · small team, one ops console',
-    persona: 'Alex types "Beach & Resort under $1500" — a SQL WHERE clause returns 3 packages. "Romantic slow week with great wine" returns zero.',
+    persona: 'Alex types "Beach & Resort under $1500" — a SQL WHERE clause returns 3 packages. "Compare top trips in EUR" needs domain tools SQL does not own.',
     skills: ['sql_filter'],
   },
   {
@@ -101,13 +101,12 @@ export function HowItWorksSection() {
       <FadeIn>
         <div className="mp-section-h-row">
           <div className="mp-section-h">
-            <div className="mp-label-row">Five modes</div>
-            <h2>SQL → MCP → Retrieval → Production → Workflow.</h2>
+            <div className="mp-label-row">Five phases</div>
+            <h2>Query → Tool → Intent → Trust → Durable Workflow.</h2>
             <p>
               Five steps on one Aurora catalog — each phase adds capability without throwing away
-              the last. Filters and MCP for structured access, hybrid search for intent, a production
-              concierge on AgentCore with Aurora memory and RLS, then LangGraph when workflows need
-              to branch and resume.
+              the last. SQL grounds the query, MCP standardizes the tool contract, retrieval captures
+              intent, production adds memory and trust, and LangGraph makes multi-step work durable.
             </p>
           </div>
           <div className="actions">

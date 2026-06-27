@@ -14,7 +14,7 @@ AWS docs:
 
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Callable, Any, Optional
 
 from strands import Agent, tool
@@ -77,7 +77,7 @@ When helping travelers:
     ):
         entry = ActivityEntry(
             id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             activity_type=activity_type,
             title=title,
             details=details,
@@ -99,7 +99,7 @@ When helping travelers:
 
     async def get_package_details(self, package_id: str) -> dict:
         """Get detailed information about a trip package."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         query = """
             SELECT package_id, name, operator, price_per_person, description,
@@ -110,7 +110,7 @@ When helping travelers:
 
         result = await self.db.execute_one(query, (package_id,))
 
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         self._log_activity(
             activity_type="search",
@@ -128,7 +128,7 @@ When helping travelers:
 
     async def check_departure_availability(self, package_id: str, duration: Optional[str] = None) -> dict:
         """Check departure availability for a trip package."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         query = """
             SELECT package_id, name, durations, availability
@@ -138,7 +138,7 @@ When helping travelers:
 
         result = await self.db.execute_one(query, (package_id,))
 
-        execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         self._log_activity(
             activity_type="availability",
