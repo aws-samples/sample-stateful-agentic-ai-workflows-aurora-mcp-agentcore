@@ -1,60 +1,80 @@
 # Meridian — Plan. Fly. Land.
 
-Agentic travel concierge workshop for **DAT309** — *Build agentic workflows with Aurora and MCP*.
+Agentic travel concierge sample for **DAT309: Build agentic workflows with Aurora and MCP**.
 
-The application lives entirely in **[`meridian/`](meridian/)**. Everything else in this repo supports that demo.
+The runnable application lives in [`meridian/`](meridian/). The primary live-demo URL is:
 
-## What it demonstrates
+```text
+http://localhost:5173/showcase
+```
 
-A five-phase ladder on one Aurora catalog (`trip_packages`) — each phase composes a new capability onto the last:
+## What It Demonstrates
 
-| Phase | Capability |
-| ----- | ------------ |
-| 1 · SQL | Direct SQL via RDS Data API |
-| 2 · MCP | Same queries through postgres-mcp-server + a custom domain MCP server |
-| 3 · Retrieval | Cohere Embed v4 hybrid pgvector / full-text search, reranked by Cohere Rerank 3.5 |
-| 4 · Production | AgentCore Runtime + Gateway + Memory + Aurora RLS · Strands concierge |
-| 5 · Workflow | LangGraph `StateGraph` with `PostgresSaver` checkpoints in Aurora |
+Meridian walks one travel domain through five increasingly capable agent patterns on Aurora PostgreSQL:
 
-Demo traveler: **Alex Morgan** (`trv_meridian_demo`) — profile and preferences load from Aurora before every Phase 4–5 turn.
+| Phase | Capability | Implementation proof |
+| ----- | ---------- | -------------------- |
+| 1 · SQL | Query | Direct SQL filters through the RDS Data API |
+| 2 · MCP | Tool | Generic PostgreSQL MCP plus custom `meridian-concierge` domain tools |
+| 3 · Retrieval | Intent | Cohere Embed v4, pgvector, full-text search, and Cohere Rerank 3.5 |
+| 4 · Production | Trust | Bedrock AgentCore, traveler memory, Aurora RLS, and audit logging |
+| 5 · Workflow | Durable Workflow | LangGraph `StateGraph` with Aurora-backed checkpoints |
 
-## Quick start
+The demo traveler is **Alex Morgan** (`trv_meridian_demo`). Phase 4 and Phase 5 use Alex's Aurora-backed profile, preferences, memory, and RLS scope.
+
+## Quick Start
+
+### Backend
 
 ```bash
 cd meridian
-python -m venv venv && source venv/bin/activate
+python -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # Aurora ARNs + region
+
+cp .env.example .env
+# Fill in Aurora cluster ARN, secret ARN, database, and AWS region.
 
 python scripts/init_aurora_schema.py
 python scripts/seed_data.py
+
 uvicorn backend.main:app --reload --port 8000
 ```
 
+### Frontend
+
 ```bash
 cd meridian/frontend
-npm install && npm run dev
+npm install
+npm run dev
 ```
 
-Open http://localhost:5173
+Open [`http://localhost:5173/showcase`](http://localhost:5173/showcase). The root route redirects to `/showcase`.
 
-Or run the full setup script: `meridian/scripts/setup.sh`
+## Demo Surfaces
+
+| Surface | Route | Purpose |
+| ------- | ----- | ------- |
+| Device Showcase | `/showcase` | Primary AWS Summit chalk-talk surface |
+| Demo Stage | `/demo-stage` | Kiosk or cinematic playback mode |
+| Legacy Pro | `/pro` | Local builder walkthrough and older overview |
 
 ## Documentation
 
 | Doc | Purpose |
 | --- | ------- |
-| [meridian/README.md](meridian/README.md) | Setup, API, schema, tech stack |
-| [meridian/DEMO_SCRIPT.md](meridian/DEMO_SCRIPT.md) | 60-minute workshop script |
-| [meridian/STRUCTURE.md](meridian/STRUCTURE.md) | Live code vs reference agents |
+| [meridian/README.md](meridian/README.md) | Full setup, architecture, API, phase prompts, and validation |
+| [meridian/DEMO_SCRIPT.md](meridian/DEMO_SCRIPT.md) | Presenter flow and live-demo talk track |
+| [meridian/docs/PRESENTER_GUIDE.md](meridian/docs/PRESENTER_GUIDE.md) | Detailed narration, code references, and dry-run checklist |
+| [meridian/docs/OPERATIONS.md](meridian/docs/OPERATIONS.md) | AgentCore deployment and day-of operations |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
 
-## Tech stack
+## Tech Stack
 
 - **Frontend:** React, Vite, TypeScript
-- **Backend:** FastAPI, Strands Agents, Amazon Bedrock (Claude Sonnet 4.6 + Cohere Embed v4 / Rerank 3.5)
-- **Data:** Aurora PostgreSQL 17, pgvector, RDS Data API
-- **Protocol:** Model Context Protocol (Phase 2)
-- **Orchestration:** Strands (Phases 1–4) · LangGraph `StateGraph` (Phase 5)
+- **Backend:** FastAPI, Strands Agents, LangGraph
+- **Models:** Claude Sonnet 4.6 on Amazon Bedrock, Cohere Embed v4, Cohere Rerank 3.5
+- **Data:** Aurora PostgreSQL 17, pgvector, RDS Data API, Row-Level Security
+- **Protocols and services:** Model Context Protocol, Bedrock AgentCore Runtime, Gateway, Memory, and Identity
 
-> Educational demo — not production-hardened.
+This is an educational sample, not production-hardened application code.
