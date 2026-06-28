@@ -2,7 +2,7 @@
 
 Agentic travel concierge sample for **DAT309: Build agentic workflows with Aurora and MCP**.
 
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue?style=flat-square)](LICENSE)
+[![License: MIT-0](https://img.shields.io/badge/License-MIT--0-blue?style=flat-square)](LICENSE)
 ![AWS Aurora PostgreSQL](https://img.shields.io/badge/AWS-Aurora%20PostgreSQL-232F3E?style=flat-square&logo=amazonaws&logoColor=white)
 ![Amazon Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Claude%20Sonnet%204.6-232F3E?style=flat-square&logo=amazonaws&logoColor=white)
 ![Model Context Protocol](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-5B5FC7?style=flat-square)
