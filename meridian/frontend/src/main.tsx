@@ -10,12 +10,8 @@ import './index.css'
  *
  * We deliberately avoid adding react-router (or any new dep) for the booth
  * demo. `/` redirects to the live showcase because the Summit talk only needs
- * that surface. `/demo-stage` and `/stage` still mount the cinematic Demo
- * Stage for kiosk use; `/pro` keeps the old overview available for local
- * builder walkthroughs without making it the public entry point.
- *
- * Kiosk loop:           open /demo-stage?kiosk=1
- * Builder (technical):  press B once on the stage, or append ?view=builder
+ * that surface. Legacy `/demo-stage`, `/stage`, and `/pro` routes remain for
+ * older local walkthrough links without becoming the public entry point.
  */
 function pickRoot() {
   const path = window.location.pathname.replace(/\/+$/, '')

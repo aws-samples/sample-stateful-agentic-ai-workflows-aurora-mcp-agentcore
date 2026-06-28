@@ -7,7 +7,8 @@ booth/kiosk** (day-of), and the **gotchas** we hit getting Phase 4 live.
 - Booth / kiosk operation → [Part 2](#part-2--kiosk--booth-runbook-day-of)
 - Lessons & gotchas → [Part 3](#part-3--learnings--gotchas)
 
-Account/region for this demo: **`us-east-1`**, account `619763002613`.
+Default region for this demo: **`us-east-1`**. Replace sample account
+placeholders such as `123456789012` with the AWS account running the workshop.
 Resources are named with the `meridianv2` project prefix.
 
 ---
@@ -143,11 +144,6 @@ npm run dev -- --host --port 5173
 Primary surface:
 - **Device Showcase:** `http://localhost:5173/showcase`
 
-Internal legacy surfaces:
-- **Kiosk loop:** `http://localhost:5173/demo-stage?kiosk=1`
-- **Demo Stage (presenter):** `http://localhost:5173/demo-stage` (Space=play/pause, ←/→=step, R=replay, B=builder)
-- **Legacy Pro overview:** `http://localhost:5173/pro`
-
 ## 3) Health checks (must pass)
 
 ```bash
@@ -185,7 +181,7 @@ PY
 cd meridian/meridian_agentcore/agentcore
 agentcore add gateway-target --name SemanticTripSearchLambda --gateway meridian-aurora \
   --type lambda-function-arn \
-  --lambda-arn arn:aws:lambda:us-east-1:619763002613:function:meridian-semantic-trip-search \
+  --lambda-arn arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search \
   --tool-schema-file ./gateway_targets/semantic_trip_search/tool-schema.json
 agentcore deploy -y
 ```

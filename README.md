@@ -56,7 +56,6 @@ Open [`http://localhost:5173/showcase`](http://localhost:5173/showcase). The roo
 | Surface | Route | Purpose |
 | ------- | ----- | ------- |
 | Device Showcase | `/showcase` | Primary AWS Summit chalk-talk surface |
-| Demo Stage | `/demo-stage` | Kiosk or cinematic playback mode |
 | Legacy Pro | `/pro` | Local builder walkthrough and older overview |
 
 ## Documentation

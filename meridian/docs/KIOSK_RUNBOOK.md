@@ -47,9 +47,9 @@ cd meridian/frontend
 npm run dev -- --host --port 5173
 ```
 
-Kiosk URL:
+Presenter URL:
 
-- `http://localhost:5173/demo-stage?kiosk=1`
+- `http://localhost:5173/showcase`
 
 ## 3) Health checks (must pass)
 
@@ -111,7 +111,8 @@ rg "_build_runtime_session_id" backend/agentcore/runtime.py
 
 ### B) Gateway error: `no targets were configured`
 
-- Re-attach target and deploy:
+- Re-attach target and deploy. Replace `123456789012` with the AWS account
+  running the workshop:
 
 ```bash
 cd meridian/meridian_agentcore
@@ -119,7 +120,7 @@ agentcore add gateway-target \
   --name SemanticTripSearchLambda \
   --gateway meridian-aurora \
   --type lambda-function-arn \
-  --lambda-arn arn:aws:lambda:us-east-1:619763002613:function:meridian-semantic-trip-search \
+  --lambda-arn arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search \
   --tool-schema-file ./agentcore/gateway_targets/semantic_trip_search/tool-schema.json
 agentcore deploy -y
 ```

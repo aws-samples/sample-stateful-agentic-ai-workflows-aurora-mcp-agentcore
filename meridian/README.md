@@ -68,16 +68,7 @@ The showcase requires the backend and Aurora. Memory facts, trace spans, RLS pro
 | Surface | Route | Use |
 | ------- | ----- | --- |
 | **Device Showcase** | `/showcase`, `/device-showcase` | Primary AWS Summit chalk-talk experience: chat, phase selector, trace, traveler memory, RLS proof, and trip cards |
-| **Demo Stage** | `/demo-stage` | Kiosk or presenter playback mode |
 | **Legacy Pro** | `/pro` | Local builder walkthrough and older overview surface |
-
-Useful Demo Stage variants:
-
-```text
-http://localhost:5173/demo-stage
-http://localhost:5173/demo-stage?kiosk=1
-http://localhost:5173/demo-stage?view=builder
-```
 
 ## Five-Phase Demo Ladder
 
@@ -120,7 +111,7 @@ meridian/
 │   └── mcp/                  # MCP clients and custom memory server
 ├── frontend/src/
 │   ├── showcase/             # Primary /showcase experience
-│   ├── stage/                # /demo-stage playback surface
+│   ├── stage/                # Legacy presenter playback surface
 │   ├── sections/             # Legacy /pro sections
 │   └── lib/                  # Shared adapters and run config
 ├── examples/                 # RLS and setup SQL

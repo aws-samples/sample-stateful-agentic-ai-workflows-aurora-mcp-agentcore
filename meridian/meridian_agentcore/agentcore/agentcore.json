@@ -44,7 +44,7 @@
           "name": "SemanticTripSearchLambda",
           "targetType": "lambdaFunctionArn",
           "lambdaFunctionArn": {
-            "lambdaArn": "arn:aws:lambda:us-east-1:619763002613:function:meridian-semantic-trip-search",
+            "lambdaArn": "arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search",
             "toolSchemaFile": "./agentcore/gateway_targets/semantic_trip_search/tool-schema.json"
           }
         }

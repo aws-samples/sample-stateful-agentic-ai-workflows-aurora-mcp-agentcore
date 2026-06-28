@@ -52,6 +52,11 @@ Thumbs.db
 *.sqlite3
 logs/
 
+# Generated deployment artifacts
+.cache/
+cdk.out/
+.cli/
+
 # Kiro specs (local development)
 .kiro/
 .claude/

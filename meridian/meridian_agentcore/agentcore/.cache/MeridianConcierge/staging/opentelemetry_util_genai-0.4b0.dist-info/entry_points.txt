@@ -1,2 +1,0 @@
-[opentelemetry_genai_completion_hook]
-upload = opentelemetry.util.genai._upload:upload_completion_hook
