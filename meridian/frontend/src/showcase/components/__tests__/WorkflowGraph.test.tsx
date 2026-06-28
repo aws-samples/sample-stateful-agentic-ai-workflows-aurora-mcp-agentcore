@@ -98,6 +98,6 @@ describe('WorkflowGraph', () => {
       />,
     );
 
-    expect(container.querySelector('.mds-wfgraph-node.is-current')).toBeTruthy();
+    expect(container.querySelector('.mds-wfgraph-route-node.is-current')).toBeTruthy();
   });
 });
