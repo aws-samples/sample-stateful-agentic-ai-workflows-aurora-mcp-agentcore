@@ -4469,7 +4469,7 @@
    ========================================================================== */
 .mds-wfgraph {
   margin: 0 0 12px;
-  padding: 10px 12px;
+  padding: 12px;
   border-radius: 12px;
   background: var(--mds-fill-1);
   border: 1px solid var(--mds-line);
@@ -4501,18 +4501,44 @@
   display: block;
   width: 100%;
   height: auto;
+  margin-top: 2px;
+  overflow: visible;
 }
 
 /* Edges: idle faint line, active cyan glow. */
 .mds-wfgraph-edge {
   stroke: var(--mds-on-surface-faint);
-  stroke-width: 1.4;
+  stroke-width: 1.2;
   stroke-linecap: round;
 }
 .mds-wfgraph-edge.is-active {
   stroke: var(--mds-cyan);
-  stroke-width: 2;
+  stroke-width: 2.7;
   filter: drop-shadow(0 0 3px color-mix(in srgb, var(--mds-cyan) 55%, transparent));
+}
+
+.mds-wfgraph-edge-label rect {
+  fill: color-mix(in srgb, var(--mds-card) 82%, transparent);
+  stroke: var(--mds-line);
+  stroke-width: 0.8;
+}
+
+.mds-wfgraph-edge-label text {
+  fill: var(--mds-on-surface-faint);
+  font-family: var(--mds-font-mono);
+  font-size: calc(7.5px * var(--mds-fs));
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.mds-wfgraph-edge-label.is-active rect {
+  fill: var(--mds-cyan-soft);
+  stroke: var(--mds-cyan-line);
+}
+
+.mds-wfgraph-edge-label.is-active text {
+  fill: var(--mds-cyan);
 }
 
 /* Nodes: rounded rect + centered label. */
@@ -4525,11 +4551,21 @@
   fill: var(--mds-cyan-soft);
   stroke: var(--mds-cyan-line);
 }
+.mds-wfgraph-node.is-current rect {
+  stroke: var(--mds-green);
+  stroke-width: 1.8;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--mds-green) 52%, transparent));
+  animation: mds-wfgraph-current 1.1s ease-in-out infinite;
+}
+.mds-wfgraph-node.is-next rect {
+  stroke: rgba(227, 164, 94, 0.62);
+  stroke-dasharray: 4 3;
+}
 .mds-wfgraph-node-label {
   fill: var(--mds-on-surface-faint);
   font-family: var(--mds-font);
-  font-size: calc(10px * var(--mds-fs));
-  font-weight: 600;
+  font-size: calc(9.5px * var(--mds-fs));
+  font-weight: 720;
   text-anchor: middle;
   dominant-baseline: middle;
 }
@@ -4537,10 +4573,49 @@
   fill: var(--mds-on-surface);
 }
 
-/* Checkpoint marker on the node's trailing edge. */
+.mds-wfgraph-node-fact {
+  fill: var(--mds-on-surface-soft);
+  font-family: var(--mds-font-mono);
+  font-size: calc(6.8px * var(--mds-fs));
+  font-weight: 650;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.mds-wfgraph-step {
+  fill: var(--mds-green);
+  stroke: color-mix(in srgb, var(--mds-green) 40%, #ffffff);
+  stroke-width: 0.7;
+}
+
+.mds-wfgraph-step-label {
+  fill: #03120d;
+  font-family: var(--mds-font-mono);
+  font-size: calc(6.5px * var(--mds-fs));
+  font-weight: 900;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+/* Checkpoint marker tied to the node that just persisted workflow state. */
 .mds-wfgraph-ckpt {
   fill: var(--mds-amber);
   animation: mds-pulse 1.6s ease-in-out infinite;
+}
+
+.mds-wfgraph-ckpt-badge rect {
+  fill: rgba(227, 164, 94, 0.16);
+  stroke: rgba(227, 164, 94, 0.38);
+  stroke-width: 0.8;
+}
+
+.mds-wfgraph-ckpt-badge text {
+  fill: var(--mds-amber);
+  font-family: var(--mds-font-mono);
+  font-size: calc(6.4px * var(--mds-fs));
+  font-weight: 800;
+  text-anchor: middle;
+  dominant-baseline: middle;
 }
 
 .mds-wfgraph-foot {
@@ -4559,8 +4634,20 @@
   background: var(--mds-amber);
 }
 @media (prefers-reduced-motion: reduce) {
-  .mds-wfgraph-ckpt {
+  .mds-wfgraph-ckpt,
+  .mds-wfgraph-node.is-current rect {
     animation: none;
+  }
+}
+
+@keyframes mds-wfgraph-current {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--mds-green) 42%, transparent));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 9px color-mix(in srgb, var(--mds-green) 68%, transparent));
   }
 }
 
