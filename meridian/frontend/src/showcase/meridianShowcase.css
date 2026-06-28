@@ -222,12 +222,17 @@
 }
 .mds-root[data-theme="light"] .mds-phase-active-copy,
 .mds-root[data-theme="light"] .mds-capability-step,
-.mds-root[data-theme="light"] .mds-phase-proof {
+.mds-root[data-theme="light"] .mds-phase-proof,
+.mds-root[data-theme="light"] .mds-phase-proof-panel,
+.mds-root[data-theme="light"] .mds-aurora-strip,
+.mds-root[data-theme="light"] .mds-contract-panel,
+.mds-root[data-theme="light"] .mds-workflow-state {
   background: var(--mds-card);
   border-color: var(--mds-line);
 }
 .mds-root[data-theme="light"] .mds-capability-step.is-active,
-.mds-root[data-theme="light"] .mds-phase-proof {
+.mds-root[data-theme="light"] .mds-phase-proof,
+.mds-root[data-theme="light"] .mds-phase-proof-panel {
   background: var(--mds-cyan-soft);
   border-color: var(--mds-cyan-line);
   box-shadow: none;
@@ -260,6 +265,20 @@
   background: rgba(180, 83, 9, 0.08);
   border-color: rgba(180, 83, 9, 0.30);
   color: var(--mds-amber);
+}
+.mds-root[data-theme="light"] .mds-aurora-chip,
+.mds-root[data-theme="light"] .mds-contract-row,
+.mds-root[data-theme="light"] .mds-workflow-kv div,
+.mds-root[data-theme="light"] .mds-workflow-path,
+.mds-root[data-theme="light"] .mds-workflow-checkpoint {
+  background: var(--mds-fill-1);
+  border-color: var(--mds-line);
+}
+.mds-root[data-theme="light"] .mds-aurora-chip.is-observed,
+.mds-root[data-theme="light"] .mds-contract-row.is-observed,
+.mds-root[data-theme="light"] .mds-workflow-state.is-checkpointed {
+  background: rgba(21, 128, 61, 0.08);
+  border-color: rgba(21, 128, 61, 0.24);
 }
 /* Match badge intentionally has NO light-mode override — it's a white pill
    over a photo and stays identical in both themes (see base rules). */
@@ -1131,6 +1150,248 @@
   font-family: var(--mds-font-mono);
   font-size: calc(10.5px * var(--mds-fs));
   line-height: 1.3;
+}
+
+.mds-phase-proof-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(49, 212, 228, 0.22);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(49, 212, 228, 0.08), rgba(7, 14, 22, 0.58));
+}
+
+.mds-phase-proof-panel.is-collapsed,
+.mds-aurora-strip.is-collapsed {
+  gap: 0;
+  padding: 10px 12px;
+}
+
+.mds-phase-proof-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.mds-phase-proof-panel-head div {
+  min-width: 0;
+}
+
+.mds-proof-toggle {
+  min-width: 0;
+  display: inline-grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+
+.mds-proof-toggle > svg {
+  color: var(--mds-cyan);
+  transform: rotate(0deg);
+  transition: transform 180ms ease;
+}
+
+.mds-phase-proof-panel.is-collapsed .mds-proof-toggle > svg,
+.mds-aurora-strip.is-collapsed .mds-proof-toggle > svg {
+  transform: rotate(-90deg);
+}
+
+.mds-proof-toggle span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mds-proof-toggle em,
+.mds-phase-proof-panel-head span {
+  display: block;
+  color: var(--mds-cyan);
+  font-size: calc(11px * var(--mds-fs));
+  font-style: normal;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.mds-proof-toggle strong,
+.mds-phase-proof-panel-head strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--mds-on-surface);
+  font-size: calc(19px * var(--mds-fs));
+  font-weight: 760;
+  line-height: 1.18;
+}
+
+.mds-phase-proof-panel.is-collapsed .mds-proof-toggle strong,
+.mds-aurora-strip.is-collapsed .mds-proof-toggle strong {
+  overflow: hidden;
+  color: var(--mds-on-surface-soft);
+  font-size: calc(13px * var(--mds-fs));
+  font-weight: 680;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mds-phase-proof-panel-head code {
+  max-width: 42%;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: var(--mds-on-surface-soft);
+  background: rgba(0, 0, 0, 0.16);
+  font-family: var(--mds-font-mono);
+  font-size: calc(10.5px * var(--mds-fs));
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.mds-phase-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.mds-phase-proof-cell {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.mds-proof-icon {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--mds-cyan);
+  background: rgba(49, 212, 228, 0.11);
+}
+
+.mds-phase-proof-cell span:not(.mds-proof-icon) {
+  display: block;
+  color: var(--mds-on-surface-soft);
+  font-size: calc(10.5px * var(--mds-fs));
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.mds-phase-proof-cell b {
+  display: block;
+  margin-top: 5px;
+  color: var(--mds-on-surface);
+  font-size: calc(12.5px * var(--mds-fs));
+  font-weight: 650;
+  line-height: 1.38;
+}
+
+.mds-aurora-strip {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.mds-aurora-strip-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mds-aurora-strip-title span {
+  color: var(--mds-on-surface);
+  font-size: calc(13px * var(--mds-fs));
+  font-weight: 760;
+}
+
+.mds-aurora-strip-title .mds-proof-toggle span {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.mds-aurora-strip-title b {
+  color: var(--mds-on-surface-soft);
+  font-size: calc(11.5px * var(--mds-fs));
+  font-weight: 650;
+}
+
+.mds-aurora-strip-items {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.mds-aurora-chip {
+  min-width: 0;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 11px;
+  color: var(--mds-on-surface-soft);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mds-aurora-chip.is-observed {
+  border-color: rgba(55, 210, 157, 0.32);
+  color: var(--mds-green);
+  background: rgba(55, 210, 157, 0.09);
+}
+
+.mds-aurora-chip.is-ready {
+  border-color: rgba(49, 212, 228, 0.2);
+  color: var(--mds-cyan);
+}
+
+.mds-aurora-chip.is-locked {
+  opacity: 0.55;
+}
+
+.mds-aurora-chip-icon {
+  display: inline-flex;
+}
+
+.mds-aurora-chip-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mds-aurora-chip-copy b {
+  overflow: hidden;
+  color: var(--mds-on-surface);
+  font-size: calc(11px * var(--mds-fs));
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mds-aurora-chip-copy em {
+  overflow: hidden;
+  color: currentColor;
+  font-size: calc(10.5px * var(--mds-fs));
+  font-style: normal;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mds-error-banner {
@@ -3110,6 +3371,206 @@
   line-height: 1.4;
 }
 
+.mds-contract-panel,
+.mds-workflow-state {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 11px;
+  padding: 11px;
+  border: 1px solid rgba(49, 212, 228, 0.16);
+  border-radius: 12px;
+  background: rgba(49, 212, 228, 0.055);
+}
+
+.mds-contract-head,
+.mds-workflow-state-head {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+}
+
+.mds-contract-icon,
+.mds-workflow-state-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--mds-cyan);
+  background: rgba(49, 212, 228, 0.12);
+}
+
+.mds-contract-head strong,
+.mds-workflow-state-head strong {
+  display: block;
+  color: var(--mds-on-surface);
+  font-size: calc(14px * var(--mds-fs));
+  font-weight: 760;
+}
+
+.mds-contract-head small,
+.mds-workflow-state-head small {
+  display: block;
+  margin-top: 2px;
+  color: var(--mds-on-surface-soft);
+  font-size: calc(11.5px * var(--mds-fs));
+  line-height: 1.3;
+}
+
+.mds-contract-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mds-contract-row {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mds-contract-row.is-observed {
+  border-color: rgba(55, 210, 157, 0.24);
+  background: rgba(55, 210, 157, 0.07);
+}
+
+.mds-contract-row-head {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+}
+
+.mds-contract-row-head span {
+  color: var(--mds-green);
+}
+
+.mds-contract-row-head b {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--mds-on-surface);
+  font-size: calc(12.5px * var(--mds-fs));
+  font-weight: 740;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mds-contract-row-head code {
+  grid-column: 2;
+  color: var(--mds-cyan);
+  font-family: var(--mds-font-mono);
+  font-size: calc(10.5px * var(--mds-fs));
+  overflow-wrap: anywhere;
+}
+
+.mds-contract-row dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.mds-contract-row dl div {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.mds-contract-row dt {
+  color: var(--mds-on-surface-soft);
+  font-size: calc(10.5px * var(--mds-fs));
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.mds-contract-row dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--mds-on-surface);
+  font-size: calc(11.5px * var(--mds-fs));
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.mds-workflow-state.is-checkpointed {
+  border-color: rgba(55, 210, 157, 0.28);
+  background: rgba(55, 210, 157, 0.07);
+}
+
+.mds-workflow-kv {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.mds-workflow-kv div {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mds-workflow-kv span {
+  display: block;
+  color: var(--mds-on-surface-soft);
+  font-size: calc(10px * var(--mds-fs));
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.mds-workflow-kv b {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--mds-on-surface);
+  font-size: calc(11.5px * var(--mds-fs));
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mds-workflow-path,
+.mds-workflow-checkpoint {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  color: var(--mds-on-surface-soft);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: calc(11.5px * var(--mds-fs));
+  line-height: 1.35;
+}
+
+.mds-workflow-path span {
+  padding: 3px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  color: var(--mds-on-surface-soft);
+  background: rgba(255, 255, 255, 0.04);
+  font-family: var(--mds-font-mono);
+  font-size: calc(10px * var(--mds-fs));
+}
+
+.mds-workflow-path span.is-visited {
+  border-color: rgba(55, 210, 157, 0.34);
+  color: var(--mds-green);
+  background: rgba(55, 210, 157, 0.1);
+}
+
+.mds-workflow-checkpoint svg,
+.mds-workflow-path svg {
+  flex: 0 0 auto;
+  color: var(--mds-cyan);
+}
+
 .mds-live-state {
   display: inline-flex;
   align-items: center;
@@ -3511,6 +3972,14 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .mds-phase-proof-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mds-aurora-strip-items {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .mds-fullbleed-route .mds-desktop-right {
     grid-column: 1 / -1;
     display: grid;
@@ -3583,6 +4052,20 @@
 
   .mds-capability-step {
     min-height: 0;
+  }
+
+  .mds-phase-proof-panel-head {
+    display: grid;
+  }
+
+  .mds-phase-proof-panel-head code {
+    max-width: none;
+  }
+
+  .mds-phase-proof-grid,
+  .mds-aurora-strip-items,
+  .mds-workflow-kv {
+    grid-template-columns: 1fr;
   }
 
   .mds-phase-selector button {

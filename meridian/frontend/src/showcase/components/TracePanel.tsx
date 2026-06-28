@@ -3,6 +3,8 @@ import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { SHOWCASE_PHASES, type ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 import { WorkflowGraph } from './WorkflowGraph';
 import { RlsProbeCard } from './RlsProbeCard';
+import { McpToolContractPanel } from './McpToolContractPanel';
+import { WorkflowStateInspector } from './WorkflowStateInspector';
 
 // Maps raw trace spans into five audience-readable progress steps.
 const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTraceSpan) => boolean }[] = [
@@ -145,6 +147,8 @@ export function TracePanel({
               <small>{phaseMeta.takeaway}</small>
             </div>
           )}
+          {!compact && state.selectedPhase === 2 && <McpToolContractPanel state={state} />}
+          {!compact && state.selectedPhase === 5 && <WorkflowStateInspector state={state} />}
           {!compact && (
             <div className="mds-trace-tabs" role="tablist" aria-label="Trace filters">
               {/* RLS is a Phase 4 proof point, so other phases keep the lean tab set. */}
