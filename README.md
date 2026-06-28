@@ -2,6 +2,12 @@
 
 Agentic travel concierge sample for **DAT309: Build agentic workflows with Aurora and MCP**.
 
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue?style=flat-square)](LICENSE)
+![AWS Aurora PostgreSQL](https://img.shields.io/badge/AWS-Aurora%20PostgreSQL-232F3E?style=flat-square&logo=amazonaws&logoColor=white)
+![Amazon Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Claude%20Sonnet%204.6-232F3E?style=flat-square&logo=amazonaws&logoColor=white)
+![Model Context Protocol](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-5B5FC7?style=flat-square)
+![LangGraph](https://img.shields.io/badge/LangGraph-StateGraph-1F6F8B?style=flat-square)
+
 The runnable application lives in [`meridian/`](meridian/). The primary live-demo URL is:
 
 ```text
@@ -14,11 +20,11 @@ Meridian walks one travel domain through five increasingly capable agent pattern
 
 | Phase | Capability | Implementation proof |
 | ----- | ---------- | -------------------- |
-| 1 · SQL | Query | Direct SQL filters through the RDS Data API |
-| 2 · MCP | Tool | Generic PostgreSQL MCP plus custom `meridian-concierge` domain tools |
-| 3 · Retrieval | Intent | Cohere Embed v4, pgvector, full-text search, and Cohere Rerank 3.5 |
-| 4 · Production | Trust | Bedrock AgentCore, traveler memory, Aurora RLS, and audit logging |
-| 5 · Workflow | Durable Workflow | LangGraph `StateGraph` with Aurora-backed checkpoints |
+| Phase 1: SQL | Query | Direct SQL filters through the RDS Data API |
+| Phase 2: MCP | Tool | Generic PostgreSQL MCP plus custom `meridian-concierge` domain tools |
+| Phase 3: Retrieval | Intent | Cohere Embed v4, pgvector, full-text search, and Cohere Rerank 3.5 |
+| Phase 4: Production | Trust | Bedrock AgentCore, traveler memory, Aurora RLS, and audit logging |
+| Phase 5: Workflow | Durable Workflow | LangGraph `StateGraph` with Aurora-backed checkpoints |
 
 The demo traveler is **Alex Morgan** (`trv_meridian_demo`). Phase 4 and Phase 5 use Alex's Aurora-backed profile, preferences, memory, and RLS scope.
 

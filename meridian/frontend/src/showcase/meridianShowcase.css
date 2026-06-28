@@ -3417,9 +3417,41 @@
 .mds-contract-head,
 .mds-workflow-state-head {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
   gap: 9px;
   align-items: center;
+}
+
+.mds-contract-head {
+  grid-template-columns: 28px minmax(0, 1fr);
+}
+
+.mds-workflow-state-head {
+  grid-template-columns: 16px 28px minmax(0, 1fr);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+
+.mds-workflow-state-head {
+  cursor: pointer;
+}
+
+.mds-workflow-state-chevron {
+  color: var(--mds-cyan);
+  transition: transform 180ms ease;
+}
+
+.mds-workflow-state.is-collapsed {
+  gap: 0;
+  margin-bottom: 8px;
+  padding: 10px 11px;
+}
+
+.mds-workflow-state.is-collapsed .mds-workflow-state-chevron {
+  transform: rotate(-90deg);
 }
 
 .mds-contract-icon,
@@ -4613,7 +4645,7 @@
   z-index: -1;
   top: 18px;
   bottom: 18px;
-  left: 14px;
+  left: 21px;
   width: 2px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--mds-cyan) 34%, var(--mds-line));
@@ -4651,6 +4683,8 @@
   border-style: dashed;
 }
 .mds-wfgraph-route-step {
+  position: relative;
+  z-index: 1;
   display: inline-grid;
   place-items: center;
   width: 28px;
