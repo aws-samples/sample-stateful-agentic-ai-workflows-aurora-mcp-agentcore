@@ -54,6 +54,12 @@ export function ChatComposer({ state, compact = false }: { state: MeridianShowca
               </button>
             );
           })}
+          {state.selectedPhase === 4 && (
+            <span className="mds-chat-phase-framing" role="note">
+              <span>Trace beat</span>
+              <b>AgentCore memory/search stays traced end to end; Workflow checkpoints the dependent plan.</b>
+            </span>
+          )}
         </div>
       )}
       <form className={`mds-chat-composer${compact ? ' is-compact' : ''}`} onSubmit={onSubmit}>

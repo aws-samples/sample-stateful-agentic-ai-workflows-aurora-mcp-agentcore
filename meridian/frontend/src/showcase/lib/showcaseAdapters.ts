@@ -56,7 +56,7 @@ export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
   4: [
     'Tokyo culture trip for two — boutique stays, local food, walkable neighborhoods',
     'What did we discuss last time? Pick up where we left off.',
-    'Plan our October Tokyo trip — find open dates, pick a Marriott property, and hold a Kyoto side trip',
+    'Plan our October Tokyo trip — find open dates, pick a Marriott property, and stage a Kyoto side trip',
   ],
   // Each prompt lands on a distinct branch: availability, memory_recall, plan.
   5: [

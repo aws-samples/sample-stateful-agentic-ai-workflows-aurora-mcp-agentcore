@@ -23,6 +23,9 @@ export function AuroraEvidenceStrip({
     recommendations: state.recommendations,
   });
   const observedCount = evidence.filter((item) => item.status === 'observed').length;
+  const observedLabel = observedCount
+    ? `${observedCount} observed this turn`
+    : 'waiting for first run';
 
   return (
     <section
@@ -41,7 +44,8 @@ export function AuroraEvidenceStrip({
             <ChevronDown size={16} strokeWidth={2.4} aria-hidden="true" />
             <span>
               <em>Aurora evidence</em>
-              <strong>{observedCount ? `${observedCount} of ${evidence.length} observed` : 'waiting for first run'}</strong>
+              <strong>{observedLabel}</strong>
+              <small>Latest trace only, not cumulative</small>
             </span>
           </button>
         ) : (

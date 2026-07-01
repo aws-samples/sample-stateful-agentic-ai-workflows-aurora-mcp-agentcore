@@ -1181,6 +1181,63 @@ def _is_availability_query(query: str) -> bool:
     return bool(_AVAILABILITY_PATTERNS.search(query or ""))
 
 
+_PHASE4_WORKFLOW_TRANSITION_MESSAGE = (
+    "I can recall your Tokyo context and find candidate trips, but this request "
+    "has multiple dependent steps: shortlist Tokyo, verify October availability, "
+    "choose a Bonvoy-aligned stay, and stage Kyoto. I need a workflow to "
+    "checkpoint each step before committing the plan."
+)
+
+
+def _needs_checkpointed_workflow(query: str) -> bool:
+    """Detect Phase 4 prompts that should bridge to the LangGraph workflow.
+
+    Production mode can recall memory, search, and persist a turn, but a prompt
+    that asks for multiple dependent travel-planning steps should not be framed
+    as completed in one fluent paragraph. Phase 5 owns that story because the
+    graph can checkpoint search -> availability -> synthesis/resume.
+    """
+    q = (query or "").lower()
+    if not q:
+        return False
+
+    has_plan_intent = any(
+        marker in q
+        for marker in (
+            "plan ",
+            "plan our",
+            "plan a",
+            "plan me",
+            "end to end",
+            "end-to-end",
+        )
+    )
+    has_availability_step = any(
+        marker in q
+        for marker in (
+            "open date",
+            "open dates",
+            "availability",
+            "available",
+            "departure",
+            "departures",
+            "what dates",
+            "when can",
+        )
+    )
+    dependent_steps = sum(
+        bool(any(marker in q for marker in markers))
+        for markers in (
+            ("shortlist", "candidate", "find "),
+            ("pick ", "choose ", "select "),
+            ("marriott", "bonvoy"),
+            ("kyoto", "side trip", "extension"),
+            ("hold", "stage", "reserve", "book"),
+        )
+    )
+    return has_plan_intent and has_availability_step and dependent_steps >= 2
+
+
 async def retrieval_supervisor_search(
     query: str,
     limit: int = 5,
@@ -1654,8 +1711,15 @@ async def chat(request: ChatRequest) -> ChatResponse:
     )
     activities = []
 
-    # Phase 3/4: availability query -> route to PackageAgent
-    if request.phase in (3, 4) and is_availability_query(request.message):
+    # Phase 3/4: availability query -> route to PackageAgent. Multi-step
+    # planning prompts that also ask for availability should NOT be collapsed
+    # into this single specialist path; Phase 4 uses them as the bridge to the
+    # checkpointed Workflow mode.
+    if (
+        request.phase in (3, 4)
+        and is_availability_query(request.message)
+        and not _needs_checkpointed_workflow(request.message)
+    ):
         activities.append(create_activity(
             activity_type="reasoning",
             title="Processing with Multi-Agent Orchestration",
@@ -1763,33 +1827,53 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 limit=5,
             )
             activities.extend(search_activities)
-            polished, polish_model, polish_note = await _polish_phase_reply(
-                phase=4,
-                user_query=request.message,
-                raw_message=raw_message,
-                products=products,
-                activities=activities,
-                memory_facts=memory_facts,
-            )
-            if polish_model:
+            needs_workflow = _needs_checkpointed_workflow(request.message)
+            if needs_workflow:
                 activities.append(create_activity(
                     activity_type="reasoning",
-                    title=f"Bedrock · concierge polish ({polish_model})",
-                    details="Wrapping Production reply in concierge tone",
+                    title="Checkpointed workflow required",
+                    details=(
+                        "Production mode recalled traveler context and found candidate "
+                        "trips, but this prompt has dependent planning steps. "
+                        "Hand off to Workflow mode so search, availability, and "
+                        "side-trip staging can checkpoint separately."
+                    ),
                     agent_name="ProductionAgent",
-                    agent_file="backend/llm_polish.py",
+                    agent_file="agents/production_04/concierge.py",
                 ))
-                message = polished
+                message = _PHASE4_WORKFLOW_TRANSITION_MESSAGE
             else:
-                activities.append(create_activity(
-                    activity_type="error",
-                    title="Bedrock polish unavailable",
-                    details=polish_note or "unknown",
-                    agent_name="ProductionAgent",
-                    agent_file="backend/llm_polish.py",
-                ))
-                message = raw_message
-            follow_ups = generate_follow_ups(request.message, products, request.phase)
+                polished, polish_model, polish_note = await _polish_phase_reply(
+                    phase=4,
+                    user_query=request.message,
+                    raw_message=raw_message,
+                    products=products,
+                    activities=activities,
+                    memory_facts=memory_facts,
+                )
+                if polish_model:
+                    activities.append(create_activity(
+                        activity_type="reasoning",
+                        title=f"Bedrock · concierge polish ({polish_model})",
+                        details="Wrapping Production reply in concierge tone",
+                        agent_name="ProductionAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+                    message = polished
+                else:
+                    activities.append(create_activity(
+                        activity_type="error",
+                        title="Bedrock polish unavailable",
+                        details=polish_note or "unknown",
+                        agent_name="ProductionAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+                    message = raw_message
+            follow_ups = (
+                ["Run this in Workflow", "Show Tokyo open dates", "Stage the Kyoto side trip"]
+                if needs_workflow
+                else generate_follow_ups(request.message, products, request.phase)
+            )
             return _complete_chat_turn(
                 ChatResponse(
                 message=message,

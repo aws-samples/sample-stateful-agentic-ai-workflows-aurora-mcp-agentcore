@@ -6,7 +6,6 @@ import { NavPanelDrawer } from './components/NavPanelDrawer';
 import type { NavPanelId } from './components/NavPanelDrawer';
 import { PhaseSelector } from './components/PhaseSelector';
 import { AuroraEvidenceStrip } from './components/AuroraEvidenceStrip';
-import { PhaseProofPanel } from './components/PhaseProofPanel';
 import { TracePanel } from './components/TracePanel';
 import { TravelerContextPanel } from './components/TravelerContextPanel';
 import { TripDetailDrawer } from './components/TripDetailDrawer';
@@ -86,8 +85,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
   const [forYouCollapsed, setForYouCollapsed] = useState(false);
   // Same affordance for traces, useful when the traveler panel is the focus.
   const [activityCollapsed, setActivityCollapsed] = useState(false);
-  // Keep architecture proof available without crowding the chat surface.
-  const [buildProofCollapsed, setBuildProofCollapsed] = useState(true);
+  // Keep the trust proof available without crowding the chat surface.
   const [auroraEvidenceCollapsed, setAuroraEvidenceCollapsed] = useState(true);
   // Null means the default Concierge surface is active.
   const [navPanel, setNavPanel] = useState<NavPanelId | null>(null);
@@ -207,11 +205,6 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
             ))}
           </div>
 
-          <PhaseProofPanel
-            state={state}
-            collapsed={buildProofCollapsed}
-            onToggleCollapsed={() => setBuildProofCollapsed((prev) => !prev)}
-          />
           <AuroraEvidenceStrip
             state={state}
             collapsed={auroraEvidenceCollapsed}
