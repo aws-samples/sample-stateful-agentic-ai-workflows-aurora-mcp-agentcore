@@ -114,7 +114,7 @@ def _slide_chrome(slide, *, slide_num: int, total: int, eyebrow: str) -> None:
     # Bottom rule + footer
     _add_rule(slide, 0.5, 7.05, 12.5)
     _add_text(
-        slide, "Meridian — DAT309 workshop demo", 0.5, 7.18, 8.0, 0.3,
+        slide, "Meridian — stateful agentic workflows", 0.5, 7.18, 8.0, 0.3,
         size=9, color=MUTED,
     )
     _add_text(
@@ -135,7 +135,7 @@ def build_slide_one(prs: Presentation) -> None:
     )
     _add_text(
         slide,
-        "Why we pivoted the DAT309 demo",
+        "Why we evolved the Meridian demo",
         0.5, 1.55, 12.5, 0.4,
         size=16, color=INK_SOFT,
     )

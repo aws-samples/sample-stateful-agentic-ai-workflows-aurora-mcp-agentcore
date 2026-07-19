@@ -136,7 +136,7 @@ const tables: SchemaTable[] = [
 const tools = MCP_TOOL_CATALOG;
 
 const SCHEMA_URL =
-  'https://github.com/aws-samples/sample-dat309-agentic-workflows-aurora-mcp/blob/main/meridian/backend/db/schema.sql';
+  'https://github.com/aws-samples/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/blob/main/meridian/backend/db/schema.sql';
 
 const DRY_RUN_PROMPTS: Record<string, string> = {
   'postgres.run_query': 'Dry-run: list 3 city trip packages under $3,000',

@@ -26,7 +26,7 @@ const navLinks: NavLink[] = [
   {
     label: 'Docs',
     target: 'docs',
-    href: 'https://github.com/aws-samples/sample-dat309-agentic-workflows-aurora-mcp#readme',
+    href: 'https://github.com/aws-samples/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore#readme',
     external: true,
   },
 ];
