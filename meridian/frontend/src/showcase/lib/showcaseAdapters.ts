@@ -117,12 +117,12 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
   {
     label: 'Production',
     phase: 4,
-    description: 'Traveler memory, RLS, and AgentCore',
+    description: 'Workload grants, traveler memory, and RLS',
     capability: 'Trust',
-    takeaway: 'Add memory, isolation, RLS, and auditability so personalization is governable.',
-    proofPoint: 'RLS scoped + audited',
-    adds: 'Adds memory + trust: recalls who you are, scopes every query under Aurora RLS, audits each turn.',
-    tech: 'AgentCore + Aurora RLS',
+    takeaway: 'Authenticate the workload, authorize Alex, then apply RLS and audit every turn.',
+    proofPoint: 'Workload grant + RLS',
+    adds: 'Adds trust + memory: authenticates the workload, grants access to Alex, then scopes Aurora rows.',
+    tech: 'AgentCore + Aurora authz + RLS',
   },
   {
     label: 'Workflow',

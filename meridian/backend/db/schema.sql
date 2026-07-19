@@ -17,6 +17,8 @@ DROP TABLE IF EXISTS conversation_messages CASCADE;
 DROP TABLE IF EXISTS traveler_preferences CASCADE;
 DROP TABLE IF EXISTS conversations CASCADE;
 DROP TABLE IF EXISTS traveler_profiles CASCADE;
+DROP TABLE IF EXISTS traveler_access_audit CASCADE;
+DROP TABLE IF EXISTS traveler_identity_bindings CASCADE;
 DROP TABLE IF EXISTS travelers CASCADE;
 DROP TABLE IF EXISTS agent_traces CASCADE;
 DROP TABLE IF EXISTS trip_packages CASCADE;
@@ -106,6 +108,38 @@ CREATE TABLE travelers (
     home_airport VARCHAR(10),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Application authorization boundary. RLS consumes a traveler_id; this table
+-- proves the authenticated workload is allowed to claim that traveler first.
+CREATE TABLE traveler_identity_bindings (
+    binding_id VARCHAR(50) PRIMARY KEY,
+    identity_provider VARCHAR(50) NOT NULL,
+    subject_id VARCHAR(255) NOT NULL,
+    traveler_id VARCHAR(50) NOT NULL REFERENCES travelers(traveler_id),
+    status VARCHAR(20) NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'revoked')),
+    granted_by VARCHAR(255),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMPTZ,
+    UNIQUE(identity_provider, subject_id, traveler_id)
+);
+
+CREATE INDEX idx_identity_bindings_subject
+    ON traveler_identity_bindings(identity_provider, subject_id, status);
+
+CREATE TABLE traveler_access_audit (
+    audit_id VARCHAR(50) PRIMARY KEY,
+    identity_provider VARCHAR(50) NOT NULL,
+    subject_id VARCHAR(255) NOT NULL,
+    principal TEXT,
+    requested_traveler_id VARCHAR(50) NOT NULL,
+    decision VARCHAR(10) NOT NULL CHECK (decision IN ('allow', 'deny')),
+    reason TEXT,
+    decided_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_traveler_access_audit_subject
+    ON traveler_access_audit(identity_provider, subject_id, decided_at DESC);
 
 CREATE TABLE traveler_profiles (
     traveler_id VARCHAR(50) PRIMARY KEY REFERENCES travelers(traveler_id),
@@ -225,6 +259,8 @@ CREATE INDEX IF NOT EXISTS idx_traces_phase ON agent_traces(phase, created_at DE
 
 COMMENT ON TABLE trip_packages IS 'Curated trip catalog with hybrid search vectors';
 COMMENT ON TABLE travelers IS 'Registered travelers for bookings and personalization';
+COMMENT ON TABLE traveler_identity_bindings IS 'Authorization grants from authenticated workload subjects to traveler records';
+COMMENT ON TABLE traveler_access_audit IS 'Allow and deny decisions recorded before an RLS traveler scope is accepted';
 COMMENT ON TABLE traveler_profiles IS 'Structured travel context used in Phase 4';
 COMMENT ON TABLE traveler_preferences IS 'Learned preference signals for memory recall';
 COMMENT ON TABLE trip_interactions IS 'Semantic memory of past concierge turns';

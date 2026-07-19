@@ -24,18 +24,17 @@ const PHASE_4_LABEL = PHASE_EYEBROW[4];
 
 // Governance values shown in the SystemProofRail. Worded to match what
 // the backend ACTUALLY does today vs. what's the documented pattern:
-//   - scope:  REAL — scoped_session() sets the app.current_traveler_id
-//             GUC in a transaction (backend/db/rds_data_client.py).
-//   - rls:    PATTERN — RLS policies live in examples/rls_for_agents.sql;
-//             the GUC is set so policies WOULD filter. Labeled honestly.
-//   - identity: REAL — AgentCore Identity resolves the IAM/workload
-//             principal per turn (concierge.py).
-//   - audit:  REAL — every turn's spans persist to the trace store.
+//   - identity: REAL — AgentCore Identity / STS resolves the workload.
+//   - grant: REAL — traveler_identity_bindings authorizes Alex and rejects
+//            an unbound traveler before the RLS GUC is set.
+//   - rls: REAL — scoped_session() switches to meridian_app and Aurora
+//          filters rows using app.current_traveler_id.
+//   - audit: REAL — allow/deny and completed-turn evidence persist in Aurora.
 const GOVERNANCE = {
-  scope: 'set_config(app.current_traveler_id)',
-  budgetCap: 'RLS policy pattern · examples/rls_for_agents.sql',
-  confirmation: 'AgentCore Identity · IAM principal',
-  audit: 'per-turn trace spans',
+  scope: 'Identity → traveler grant → RLS',
+  budgetCap: 'Aurora RLS · least-privilege role',
+  confirmation: 'ALLOW Alex · DENY unbound traveler',
+  audit: 'authorization + turn audit rows',
 } as const;
 
 const ALEX_TRAVELER = {

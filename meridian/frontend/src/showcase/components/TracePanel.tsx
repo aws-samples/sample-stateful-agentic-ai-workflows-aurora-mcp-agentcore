@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Check, Copy, RefreshCw, RotateCcw } from 'lucide-react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { SHOWCASE_PHASES, type ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 import { WorkflowGraph } from './WorkflowGraph';
@@ -83,6 +84,8 @@ export function TracePanel({
   const agentCount = new Set(state.traceSpans.map((span) => span.agent).filter(Boolean)).size;
   const activeSpans = compact ? state.traceSpans.slice(0, 4) : state.traceSpans;
   const phaseMeta = SHOWCASE_PHASES.find((phase) => phase.phase === state.selectedPhase);
+  const hasTraceActivity =
+    state.traceSpans.length > 0 || state.isLoading || state.isReplaying;
   const className = [
     'mds-panel',
     'mds-trace-panel',
@@ -130,22 +133,15 @@ export function TracePanel({
         <>
           <div className="mds-trace-scroll">
             {/* Progress rail fills top-to-bottom as spans land. */}
-            <ThinkingPhases state={state} />
+            {hasTraceActivity && <ThinkingPhases state={state} />}
 
             {!compact && (
               <div className="mds-trace-summary">
                 <span>{state.phaseLabel}</span>
                 {phaseMeta && <span className="mds-proof-pill">{phaseMeta.proofPoint}</span>}
-                <span>{state.traceSpans.length} spans</span>
-                <span>{agentCount} agents</span>
-                <span>{state.totalLatencyMs}ms</span>
-              </div>
-            )}
-            {!compact && phaseMeta && (
-              <div className="mds-phase-proof" aria-label="Active phase proof point">
-                <span>Proof point</span>
-                <b>{phaseMeta.proofPoint}</b>
-                <small>{phaseMeta.takeaway}</small>
+                {state.traceSpans.length > 0 && <span>{state.traceSpans.length} spans</span>}
+                {agentCount > 0 && <span>{agentCount} agents</span>}
+                {state.totalLatencyMs > 0 && <span>{state.totalLatencyMs}ms</span>}
               </div>
             )}
             {!compact && state.selectedPhase === 2 && <McpToolContractPanel state={state} />}
@@ -227,11 +223,23 @@ export function TracePanel({
 
           {!compact && (
             <div className="mds-trace-actions">
-              <button type="button" onClick={state.replayTrace} disabled={!state.traceSpans.length || state.isLoading}>
-                Replay trace
+              <button
+                type="button"
+                onClick={state.replayTrace}
+                disabled={!state.traceSpans.length || state.isLoading}
+                aria-label="Replay trace"
+                title="Replay trace"
+              >
+                <RotateCcw size={16} aria-hidden="true" />
               </button>
-              <button type="button" onClick={state.replayLastPrompt} disabled={!state.lastPrompt || state.isLoading}>
-                Rerun query
+              <button
+                type="button"
+                onClick={state.replayLastPrompt}
+                disabled={!state.lastPrompt || state.isLoading}
+                aria-label="Rerun query"
+                title="Rerun query"
+              >
+                <RefreshCw size={16} aria-hidden="true" />
               </button>
               <CopyTraceButton state={state} />
             </div>
@@ -298,9 +306,12 @@ function CopyTraceButton({ state }: { state: MeridianShowcaseState }) {
       type="button"
       onClick={onCopy}
       disabled={disabled}
-      title="Copy this turn's trace as JSON"
+      aria-label={copied ? 'Trace copied' : 'Copy trace'}
+      title={copied ? 'Trace copied' : "Copy this turn's trace as JSON"}
     >
-      {copied ? 'Copied' : 'Copy trace'}
+      {copied
+        ? <Check size={16} aria-hidden="true" />
+        : <Copy size={16} aria-hidden="true" />}
     </button>
   );
 }

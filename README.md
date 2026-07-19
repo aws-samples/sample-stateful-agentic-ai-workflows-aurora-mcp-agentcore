@@ -31,19 +31,21 @@ without hiding the implementation behind a generic chat interface:
 | **1 · SQL** | Query | Parameterized filters over Aurora through the RDS Data API |
 | **2 · MCP** | Governed tools | PostgreSQL MCP plus typed comparison, FX, loyalty, and availability tools |
 | **3 · Retrieval** | Intent | Cohere Embed v4, pgvector, full-text search, and Cohere Rerank 3.5 |
-| **4 · Production** | Trust | AgentCore memory and identity, traveler-scoped RLS, and audit trails |
+| **4 · Production** | Trust | Workload identity, workload-to-traveler grants, RLS, and audit trails |
 | **5 · Workflow** | Durability | Explicit LangGraph routing with Aurora-backed checkpoints and resume |
 
 The demo traveler is **Alex Morgan** (`trv_meridian_demo`), a JFK-based
 Marriott Bonvoy Platinum Elite traveler. Production and Workflow use Alex's
-Aurora-backed profile, preferences, conversational memory, and RLS scope.
+Aurora-backed profile, preferences, conversational memory, and RLS scope only
+after the authenticated workload has an active grant to Alex's traveler record.
 
 The showcase exposes two synchronized views:
 
 - **Experience** presents the personalized concierge, realistic recommendations,
   comparison, holds, saved trips, and a persistent journey workspace.
 - **System proof** exposes tool spans, generated SQL, hybrid retrieval,
-  memory reads and writes, RLS evidence, audit records, and checkpoints.
+  memory reads and writes, authorization ALLOW/DENY decisions, RLS evidence,
+  audit records, and checkpoints.
 
 ## Quick Start
 
@@ -99,9 +101,11 @@ root route redirects to the showcase.
 - **Frontend:** React, Vite, TypeScript
 - **Backend:** FastAPI, Strands Agents, LangGraph
 - **Models:** Claude Sonnet 5 on Amazon Bedrock, Cohere Embed v4, Cohere Rerank 3.5
-- **Data:** Aurora PostgreSQL 17, pgvector, RDS Data API, Row-Level Security
+- **Data:** Aurora PostgreSQL 17, pgvector, RDS Data API, identity bindings, Row-Level Security
 - **Protocols and services:** Model Context Protocol, Bedrock AgentCore Runtime, Gateway, Memory, and Identity
 
-This repository is an educational reference implementation. Before production
-use, apply your organization's authentication, networking, observability,
-availability, and data-governance requirements.
+This sample authorizes AWS or AgentCore workload identities. A shared hosted
+application must also authenticate its end users and bind the verified user
+subject, such as a Cognito `sub`, to the traveler record. Apply your
+organization's networking, observability, availability, and governance
+requirements before production use.

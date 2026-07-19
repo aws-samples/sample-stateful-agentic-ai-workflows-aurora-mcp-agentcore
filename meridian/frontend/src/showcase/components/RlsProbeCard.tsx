@@ -1,5 +1,5 @@
 /**
- * RlsProbeCard — Phase 4 "prove RLS is live" panel.
+ * RlsProbeCard — Phase 4 workload authorization and RLS proof panel.
  *
  * Calls POST /api/diagnostics/rls-probe, which runs the SAME COUNT(*) twice
  * per table — once scoped (app.current_traveler_id set → RLS filters to the
@@ -13,6 +13,7 @@
  */
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { BadgeCheck, Database, Fingerprint, RefreshCw, ShieldX } from 'lucide-react';
 import { fetchRlsProbe, type RlsProbeResponse } from '../../api/client';
 
 const prefersReducedMotion =
@@ -42,13 +43,20 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
   return (
     <div className="mds-rls">
       <div className="mds-rls-head">
-        <span className="mds-rls-title">Row-Level Security · live</span>
-        <button type="button" className="mds-rls-run" onClick={run} disabled={loading}>
-          {loading ? 'Probing…' : 'Re-run probe'}
+        <span className="mds-rls-title">Workload authorization + RLS · live</span>
+        <button
+          type="button"
+          className="mds-rls-run"
+          onClick={run}
+          disabled={loading}
+          aria-label={loading ? 'Running governance probe' : 'Re-run governance probe'}
+          title={loading ? 'Running governance probe' : 'Re-run governance probe'}
+        >
+          <RefreshCw size={15} aria-hidden="true" />
         </button>
       </div>
 
-      {error && <div className="mds-empty">RLS probe unavailable: {error}</div>}
+      {error && <div className="mds-empty">Governance probe unavailable: {error}</div>}
 
       {!error && !data && loading && (
         <div className="mds-empty">Running scoped vs unscoped counts…</div>
@@ -56,6 +64,38 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
 
       {!error && data && (
         <>
+          <div className="mds-authz-chain" aria-label="Identity and authorization proof">
+            <div className="mds-authz-step">
+              <span className="mds-authz-icon"><Fingerprint size={16} aria-hidden="true" /></span>
+              <div>
+                <small>1 · Authenticated workload</small>
+                <strong>{data.authorization.provider}</strong>
+                <code>{data.authorization.subject_id}</code>
+              </div>
+            </div>
+            <div className="mds-authz-step is-allow">
+              <span className="mds-authz-icon"><BadgeCheck size={16} aria-hidden="true" /></span>
+              <div>
+                <small>2 · Traveler grant</small>
+                <strong>ALLOW · Alex Morgan</strong>
+                <code>{data.authorization.binding_id ?? 'traveler_identity_bindings'}</code>
+              </div>
+            </div>
+            <div className="mds-authz-step is-deny">
+              <span className="mds-authz-icon"><ShieldX size={16} aria-hidden="true" /></span>
+              <div>
+                <small>Negative control</small>
+                <strong>{data.negative_control.decision.toUpperCase()} · Jordan Lee</strong>
+                <code>{data.negative_control.reason ?? 'no active identity binding'}</code>
+              </div>
+            </div>
+          </div>
+
+          <div className="mds-rls-layer-label">
+            <Database size={14} aria-hidden="true" />
+            <span>3 · Aurora RLS filters the authorized traveler scope</span>
+          </div>
+
           {data.tables.map((t) => {
             const denom = Math.max(t.unscoped_count, 1);
             const scopedPct = Math.round((t.scoped_count / denom) * 100);

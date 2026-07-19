@@ -31,6 +31,8 @@ from typing import Literal, Optional, List, Any, Dict
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from backend.agentcore.identity import get_agentcore_identity
+from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.db.embedding_service import get_embedding_service
 from backend.config import config
@@ -1471,10 +1473,13 @@ async def workflow_memory_recall(
 
     tid = traveler_id or DEMO_TRAVELER_ID
     store = get_memory_store()
+    authorization = get_agentcore_identity().authorization_context()
     activities: List[ActivityEntry] = []
 
     async with store.db.scoped_session(
-        traveler_id=tid, agent_type="workflow_agent"
+        traveler_id=tid,
+        agent_type="workflow_agent",
+        authorization=authorization,
     ) as tx:
         prefs = await store.recall_preferences(tid, transaction_id=tx)
         activities.append(create_activity(
@@ -1825,7 +1830,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
                     store = get_memory_store()
                     traveler_id = request.customer_id or DEMO_TRAVELER_ID
                     async with store.db.scoped_session(
-                        traveler_id=traveler_id, agent_type="concierge_agent"
+                        traveler_id=traveler_id,
+                        agent_type="concierge_agent",
+                        authorization=get_agentcore_identity().authorization_context(),
                     ) as tx:
                         facts = await store.recall_preferences(
                             traveler_id,
@@ -1876,6 +1883,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 request.phase,
                 turn_started,
             )
+        except TravelerAuthorizationError as e:
+            log_error("production_authorization", error=str(e))
+            raise HTTPException(status_code=403, detail=str(e)) from e
         except Exception as e:
             activities.append(create_activity(
                 activity_type="error",
@@ -1969,6 +1979,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 request.phase,
                 turn_started,
             )
+        except TravelerAuthorizationError as e:
+            log_error("production_authorization", error=str(e))
+            raise HTTPException(status_code=403, detail=str(e)) from e
         except Exception as e:
             log_error("production_search", error=str(e))
             from backend.agentcore.errors import AgentCoreNotConfiguredError
@@ -2054,6 +2067,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 request.phase,
                 turn_started,
             )
+        except TravelerAuthorizationError as e:
+            log_error("workflow_authorization", error=str(e))
+            raise HTTPException(status_code=403, detail=str(e)) from e
         except Exception as e:
             log_error("orchestration_workflow", error=str(e))
             activities.append(create_activity(
@@ -2329,6 +2345,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
             turn_started,
         )
         
+    except TravelerAuthorizationError as e:
+        log_error(context="traveler_authorization", error=str(e), phase=request.phase)
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
         activities.append(create_activity(
             activity_type="error",
@@ -2537,6 +2556,7 @@ async def process_order(request: OrderRequest) -> OrderResponse:
         async with db.scoped_session(
             traveler_id=request.traveler_id,
             agent_type="booking_agent",
+            authorization=get_agentcore_identity().authorization_context(),
         ) as transaction_id:
             await db.execute(
                 """
@@ -2642,6 +2662,9 @@ async def process_order(request: OrderRequest) -> OrderResponse:
             activities=activities
         )
 
+    except TravelerAuthorizationError as e:
+        log_error(context="order_authorization", error=str(e), phase=request.phase)
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
         log_error(context="order_processing", error=str(e), phase=request.phase)
         raise HTTPException(

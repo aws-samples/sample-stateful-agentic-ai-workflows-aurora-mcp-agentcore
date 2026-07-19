@@ -33,12 +33,12 @@ same tools over the wire.
 Security notes
 ==============
 
-Every tool wraps its DB work in `db.scoped_session(traveler_id, agent_type)`,
-which sets the same RLS GUCs Phase 4 uses (`app.current_traveler_id` /
-`app.agent_type`).  An MCP client that asks for traveler A cannot read
-traveler B's rows even if it crafts the SQL itself — Aurora policies kick
-the foreign rows out at the row level.  That's the whole point of the
-"securely connect LLM agents to Aurora" claim.
+Every tool wraps its DB work in `db.scoped_session(...)`. The session first
+checks that the authenticated AWS workload has an active grant for the
+requested traveler. Only then does it set the Phase 4 RLS GUCs
+(`app.current_traveler_id` / `app.agent_type`). The MCP server workload cannot
+expand itself to an unbound traveler; that request is rejected before SQL
+runs. RLS then filters every query to the workload's granted traveler.
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from backend.agentcore.identity import get_agentcore_identity
 from backend.memory.store import get_memory_store
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,10 @@ def _store():
     return get_memory_store()
 
 
+def _authorization():
+    return get_agentcore_identity().authorization_context()
+
+
 @mcp.tool()
 async def recall_traveler_profile(traveler_id: str) -> Dict[str, Any]:
     """Return the traveler's profile row (name, home airport, party size, budget, dietary notes).
@@ -72,7 +77,9 @@ async def recall_traveler_profile(traveler_id: str) -> Dict[str, Any]:
     """
     store = _store()
     async with store.db.scoped_session(
-        traveler_id=traveler_id, agent_type=DEFAULT_AGENT_TYPE
+        traveler_id=traveler_id,
+        agent_type=DEFAULT_AGENT_TYPE,
+        authorization=_authorization(),
     ) as tx:
         profile = await store.recall_profile(traveler_id, transaction_id=tx)
     return profile or {}
@@ -83,7 +90,9 @@ async def recall_preferences(traveler_id: str, limit: int = 8) -> List[Dict[str,
     """Return durable preference facts for the traveler, ordered by confidence."""
     store = _store()
     async with store.db.scoped_session(
-        traveler_id=traveler_id, agent_type=DEFAULT_AGENT_TYPE
+        traveler_id=traveler_id,
+        agent_type=DEFAULT_AGENT_TYPE,
+        authorization=_authorization(),
     ) as tx:
         return await store.recall_preferences(traveler_id, limit=limit, transaction_id=tx)
 
@@ -101,7 +110,9 @@ async def recall_recent_turns(
     """
     store = _store()
     async with store.db.scoped_session(
-        traveler_id=traveler_id, agent_type=DEFAULT_AGENT_TYPE
+        traveler_id=traveler_id,
+        agent_type=DEFAULT_AGENT_TYPE,
+        authorization=_authorization(),
     ) as tx:
         rows = await store.recall_short_term(conversation_id, limit=limit, transaction_id=tx)
     return [
@@ -122,7 +133,9 @@ async def semantic_recall_interactions(
     """
     store = _store()
     async with store.db.scoped_session(
-        traveler_id=traveler_id, agent_type=DEFAULT_AGENT_TYPE
+        traveler_id=traveler_id,
+        agent_type=DEFAULT_AGENT_TYPE,
+        authorization=_authorization(),
     ) as tx:
         rows = await store.recall_similar_interactions(
             traveler_id, query, limit=limit, transaction_id=tx
@@ -149,7 +162,9 @@ async def persist_turn(
         raise ValueError("role must be one of: user, assistant, system")
     store = _store()
     async with store.db.scoped_session(
-        traveler_id=traveler_id, agent_type=DEFAULT_AGENT_TYPE
+        traveler_id=traveler_id,
+        agent_type=DEFAULT_AGENT_TYPE,
+        authorization=_authorization(),
     ) as tx:
         # ensure conversation row exists under RLS
         await store.get_or_create_conversation(
@@ -179,7 +194,9 @@ async def persist_preference(
     """Upsert a single durable preference fact for the traveler."""
     store = _store()
     async with store.db.scoped_session(
-        traveler_id=traveler_id, agent_type=DEFAULT_AGENT_TYPE
+        traveler_id=traveler_id,
+        agent_type=DEFAULT_AGENT_TYPE,
+        authorization=_authorization(),
     ) as tx:
         await store.db.execute(
             """

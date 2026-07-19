@@ -12,7 +12,6 @@ import { TripDetailDrawer } from './components/TripDetailDrawer';
 import { ComparisonDialog } from './components/ComparisonDialog';
 import { JourneyPanel } from './components/JourneyPanel';
 import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
-import { SHOWCASE_PHASES } from './lib/showcaseAdapters';
 import { ALEX_IMAGE_URL, ALEX_NAME } from './lib/personas';
 
 type NavItemId = 'concierge' | 'trips' | 'discover' | 'profile' | 'preferences' | 'messages';
@@ -85,7 +84,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
   const [surfaceMode, setSurfaceMode] = useState<'experience' | 'proof'>('experience');
   const [memoryOpen, setMemoryOpen] = useState(false);
   // Let presenters free right-rail space without losing traveler context.
-  const [forYouCollapsed, setForYouCollapsed] = useState(false);
+  const [forYouCollapsed, setForYouCollapsed] = useState(true);
   // Same affordance for traces, useful when the traveler panel is the focus.
   const [activityCollapsed, setActivityCollapsed] = useState(false);
   // Keep the trust proof available without crowding the chat surface.
@@ -183,7 +182,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
           </div>
           <div className="mds-surface-switch" role="tablist" aria-label="Showcase view">
             <button type="button" role="tab" aria-selected={surfaceMode === 'experience'} className={surfaceMode === 'experience' ? 'is-active' : ''} onClick={() => setSurfaceMode('experience')}>Experience</button>
-            <button type="button" role="tab" aria-selected={surfaceMode === 'proof'} className={surfaceMode === 'proof' ? 'is-active' : ''} onClick={() => { setSurfaceMode('proof'); setAuroraEvidenceCollapsed(false); }}>System proof</button>
+            <button type="button" role="tab" aria-selected={surfaceMode === 'proof'} className={surfaceMode === 'proof' ? 'is-active' : ''} onClick={() => setSurfaceMode('proof')}>System proof</button>
           </div>
           <div className="mds-headline-row">
             <div>
@@ -193,19 +192,6 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
             {surfaceMode === 'proof' && <PhaseSelector state={state} />}
           </div>
 
-          {surfaceMode === 'proof' && <div className="mds-capability-ladder" aria-label="Five phase capability ladder">
-            {SHOWCASE_PHASES.map((phase) => (
-              <div
-                key={phase.label}
-                className={`mds-capability-step${state.selectedPhase === phase.phase ? ' is-active' : ''}`}
-              >
-                <span>{phase.label}</span>
-                <b>{phase.capability}</b>
-                <small>{phase.proofPoint}</small>
-              </div>
-            ))}
-          </div>}
-
           {surfaceMode === 'proof' && <AuroraEvidenceStrip
             state={state}
             collapsed={auroraEvidenceCollapsed}
@@ -213,7 +199,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
           />}
 
           {/* Phase callout names the new capability added at this rung. */}
-          {state.phaseHint && (
+          {state.phaseHint && surfaceMode === 'experience' && (
             <div className="mds-phase-hint" role="status" aria-live="polite">
               <span className="mds-phase-hint-badge">{state.phaseHint.label}</span>
               <span className="mds-phase-hint-copy">{state.phaseHint.adds}</span>
@@ -284,7 +270,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
 
         {/* Sticky composer stays reachable while history scrolls. */}
         <div className="mds-desktop-dock">
-          <ChatComposer state={state} />
+          <ChatComposer state={state} proofMode={surfaceMode === 'proof'} />
         </div>
       </main>
 

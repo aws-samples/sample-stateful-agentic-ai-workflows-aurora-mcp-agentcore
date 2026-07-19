@@ -11,8 +11,7 @@ to prove that:
 
     1. the custom MCP server actually starts up,
     2. it speaks Model Context Protocol like any other server, and
-    3. its tools enforce Aurora RLS — recall_traveler_profile for a
-       different traveler returns nothing.
+    3. its tools authorize the workload for a traveler before Aurora RLS.
 
 Usage
 =====
@@ -37,7 +36,11 @@ import asyncio
 import json
 from typing import Any
 
+from dotenv import load_dotenv
+
 from backend.mcp.memory_mcp_client import MeridianMemoryMCPClient
+
+load_dotenv()
 
 
 def _show(label: str, value: Any) -> None:
@@ -76,11 +79,18 @@ async def run(traveler_id: str, conversation_id: str) -> None:
     )
     _show("semantic_recall_interactions(query='Tokyo culture trip')", similar)
 
-    # RLS check: ask for a non-existent traveler — server should return {}/[]
-    bogus = await client.call(
-        "recall_traveler_profile", {"traveler_id": "trv_does_not_exist"}
-    )
-    _show("RLS check — recall_traveler_profile(trv_does_not_exist)", bogus)
+    # Negative control: this workload has no binding to Jordan, so the MCP
+    # server rejects the claim before setting an RLS scope.
+    try:
+        await client.call(
+            "recall_traveler_profile", {"traveler_id": "trv_demo_decoy"}
+        )
+        _show("Authorization negative control", {"unexpected": "allowed"})
+    except PermissionError as exc:
+        _show(
+            "Authorization negative control — DENY trv_demo_decoy",
+            {"decision": "deny", "error": str(exc)},
+        )
 
     await client.disconnect()
     print("\nDone — memory MCP server exercised end-to-end.")

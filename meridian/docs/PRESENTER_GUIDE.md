@@ -147,17 +147,18 @@ understands the request, and still has no idea who **you** are."*
 
 ## Phase 4 · Production — the trust + memory layer (≈ 7 min) · `agents/production_04/`
 
-**Open with:** *"Retrieval was intelligence. Production is trust and memory — AgentCore
-Runtime, Gateway, Memory, Identity, with Aurora RLS scoping every query."*
+**Open with:** *"Retrieval was intelligence. Production is trust and memory.
+We authenticate the workload, authorize it for Alex, then let Aurora RLS scope
+every query."*
 
-**The AgentCore stack on every turn (claim Runtime + Gateway + Memory):**
-1. **Runtime** — session envelope (`runtimeSessionId`, microVM isolation)
-2. **Memory** — `list_recent_turns` (session recall) + semantic recall + `create_event` mirror
-3. **Aurora RLS tx** — `scoped_session(traveler_id=…)` pins per-traveler scope + `SET LOCAL ROLE`; memory `@tools` run inside it
-4. **Gateway** — managed MCP `tools/list` + `tools/call` for trip search
-5. **persist_turn** — Aurora write + AgentCore Memory write-back
-
-*(Identity resolves the IAM principal per turn but is **not** part of the talk's claim.)*
+**The production envelope on every turn:**
+1. **Identity** — live AgentCore workload identity, or authenticated IAM workload fallback
+2. **Authorization** — `traveler_identity_bindings` must ALLOW that subject for Alex
+3. **Runtime** — session envelope (`runtimeSessionId`, microVM isolation)
+4. **Memory** — session recall + semantic recall + `create_event` mirror
+5. **Aurora RLS tx** — authorized traveler scope + `SET LOCAL ROLE`; memory `@tools` run inside it
+6. **Gateway** — managed MCP `tools/list` + `tools/call` for trip search
+7. **persist_turn** — Aurora write + AgentCore Memory write-back
 
 **The four memory `@tools`:** `recall_session_context`, `recall_traveler_preferences`,
 `recall_similar_interactions`, `persist_turn`. All read/write Aurora; `persist_turn` is
@@ -171,9 +172,11 @@ over pgvector HNSW, traveler preferences for facts like the shellfish allergy an
 programs, and a durable copy of the session. Four MemoryAgent tools — three read, and
 `persist_turn` is the only writer — but it writes Aurora only; the AgentCore write-back is
 a separate call from the orchestrator. Every read, and that write, runs in one transaction
-that pins the traveler with `set_config('app.current_traveler_id', …)` and then `SET LOCAL
-ROLE` into a least-privilege role — so the RLS policy denies anything outside that
-traveler's scope. That role switch is the catch: our connection is the Aurora master user,
+that first authorizes the workload for Alex, pins Alex with
+`set_config('app.current_traveler_id', …)`, and then `SET LOCAL ROLE` into a
+least-privilege role. The authorization lookup rejects arbitrary traveler IDs;
+RLS denies rows outside the authorized scope. That role switch is the catch:
+our connection is the Aurora master user,
 which isn't subject to RLS otherwise — step down, and the policy applies. We'll watch it in
 the demo — asking what was decided about Tokyo last time. This time it remembers the thread,
 grounded in Alex's stored preferences. The grounding is all in Aurora — none of it's in the
@@ -198,24 +201,28 @@ prompt."*
 2. **Beat 2, second take — it lands.** Same prompt that failed a phase ago; now `recall_session_context` + `recall_similar_interactions` return the Tokyo thread. *Point back to that failure.*
 3. **Multi-step boundary** — *"Plan the Kyoto extension: find matching packages, then verify available duration options."* Production can reason about the request, but hands it to Workflow so the dependent steps are explicit and resumable. *Sets up Phase 5.*
 
-**Talking points (trust pitch):** *"AgentCore Runtime isolates every session in a
-microVM. AgentCore Memory mirrors every turn. Aurora RLS wraps every query in a tx with
-`scoped_session(traveler_id=…)` — even a tool reading outside scope is denied by policy.
-Every turn writes one audit row: RLS scope, rows returned. That's the
-concrete answer to 'how do I securely connect LLM agents to my database.'"*
+**Talking points (trust pitch):** *"Authentication, authorization, and row
+filtering are different controls. AgentCore Identity or STS tells us which
+workload called. Aurora maps that subject to Alex. Only then does RLS scope the
+transaction. We audit both the authorization decision and rows returned."*
 
-### The RLS probe — proving isolation live (the "answer before they ask it" beat)
+### The governance probe — proving identity, authorization, and RLS live
 
-Open the **RLS tab** in the activity panel and hit **Re-run probe**. It runs the SAME
-`COUNT(*)` twice — scoped vs unscoped — and shows the real `pg_policies` USING clause.
+Open the **RLS tab** and hit **Re-run probe**. It shows the authenticated
+subject, `ALLOW · Alex Morgan`, and a live `DENY · Jordan Lee` negative
+control before running the same `COUNT(*)` scoped vs unscoped.
 
-- **15-sec narration (say it as the bar collapses):** *"Same query, run twice. Without the
-  traveler's scope the database returns all 22 preference rows — every traveler's data.
-  With Row-Level Security and the traveler pinned, Aurora returns 17 — only Alex's. Those
-  5 hidden rows belong to a decoy traveler. The agent's SQL had no WHERE traveler_id — the
-  database refused to return them. That USING clause is the live policy, not a slide claim."*
+- **20-sec narration:** *"First, this AWS or AgentCore subject is authenticated.
+  Second, Aurora's binding table allows it to claim Alex and denies the same
+  subject when it claims Jordan. Only then do we set the RLS scope. Now watch
+  the same query collapse from all preference rows to Alex's rows. The binding
+  prevents this workload from expanding to an ungranted traveler; RLS prevents
+  cross-traveler rows."*
 - **The teaching beat (point at 17 of 22):** *"Even if the LLM writes a query that forgets
   to filter, it physically cannot leak another traveler's data."*
+- **The distinction to state explicitly:** *"RLS does not authenticate Alex.
+  It trusts the traveler scope supplied by the app. The binding makes that
+  scope legitimate for this workload, not for a human caller."*
 - **Handle `trip_interactions: 90 of 90` before they ask:** *"No hidden rows there because
   every interaction in this dataset is Alex's — RLS is still active, there's just nothing
   to filter out. The preferences table is where you see the cut, because that's where the
@@ -247,9 +254,14 @@ Open the **RLS tab** in the activity panel and hit **Re-run probe**. It runs the
 - **If asked about the `OR … = ''` branch (only if asked):** *"That empty-string branch is
   the admin/seed path; the app always sets the GUC, so it never hits it."* Don't volunteer
   this unprompted — it invites a "so it's not secure?" tangent.
+- **If asked about end users:** *"This sample binds an authenticated workload.
+  A shared hosted app also verifies the end-user token and stores that user
+  subject, for example Cognito `sub`, in the same traveler binding boundary.
+  This demo does not authenticate Alex as a human user."*
 
-> Identity: **not featured in this talk.** The code resolves the IAM principal per turn, but
-> we're claiming Runtime + Gateway + Memory only — cleaner and fully defensible.
+> Keep the claim precise: the live proof is workload authentication and
+> workload-to-traveler authorization. End-user authentication is the production
+> extension, not something this demo silently claims.
 
 **Bridge → Phase 5:** *"That last prompt asked for three things in one breath. Strands chained them, but the routing was invisible. What if we want each step explicit, branchable, and resumable weeks later?"*
 
@@ -449,18 +461,21 @@ class MemoryAgent:
         return {"facts": facts}
 ```
 ```python
-# concierge.py — process_turn() runs the 6-step envelope
+# concierge.py — authorization precedes RLS
 scope = self.identity.scope_for_turn()                    # Identity
-async with self.db.scoped_session(traveler_id=...) as tx: # Aurora RLS pinned
+async with self.db.scoped_session(
+    traveler_id=...,
+    authorization=scope.authorization,
+) as tx:                                                   # Grant, then RLS
     runtime_session = self.agentcore_runtime.session_for_turn(...)  # Runtime
     self.agentcore_memory.list_recent_turns(...)          # Memory (read)
     packages, _ = await self._search_packages(...)        # Gateway MCP
     await self.traveler_memory.persist_turn(...)          # Aurora write
     self.agentcore_memory.record_turn(...)                # AgentCore mirror
 ```
-**Say:** "Strands owns the reasoning loop. AgentCore Runtime isolates the session,
-Gateway exposes Aurora as managed MCP tools, Memory mirrors multi-turn context, Identity
-scopes credentials. Aurora stays durable truth with per-traveler RLS."
+**Say:** "Strands owns the reasoning loop. AgentCore isolates, remembers, and
+exposes tools. Aurora authorizes the workload-to-traveler claim, stores durable
+truth, applies RLS, and keeps the audit trail."
 
 **Optional live AgentCore provisioning (@aws/agentcore CLI):**
 ```bash
@@ -526,7 +541,7 @@ layer; Aurora is the durable system of record (preferences + embeddings, RLS-sco
 
 - [ ] Spine query fails in Phase 1 & 2, lands in Phase 3 (Tuscany / Amalfi / Douro + scores)
 - [ ] The October Tokyo recall prompt fails honestly in Phase 3, then lands in Phase 4
-- [ ] Phase 4 trace shows the RLS span + AgentCore Memory + per-turn audit row
+- [ ] Phase 4 shows ALLOW Alex, DENY Jordan, RLS filtering, AgentCore Memory, and audit rows
 - [ ] Phase 5 "plan" prompt shows search → availability with a checkpoint between nodes
 - [ ] Tool name reads `hybrid_search_tool` everywhere (no stale `semantic_search_tool`)
 - [ ] Seeded facts (Alex Morgan: allergy, JFK, boutique) appear from Aurora, not the prompt

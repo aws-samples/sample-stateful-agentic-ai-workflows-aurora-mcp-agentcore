@@ -12,6 +12,7 @@ AWS docs:
 import json
 import os
 import uuid
+import hashlib
 from urllib.parse import urlparse
 
 import boto3
@@ -143,6 +144,7 @@ def clear_data():
         "DELETE FROM conversations",
         "DELETE FROM traveler_preferences",
         "DELETE FROM traveler_profiles",
+        "DELETE FROM traveler_identity_bindings",
         "DELETE FROM travelers",
         "DELETE FROM trip_packages",
     ]:
@@ -280,6 +282,62 @@ def seed_travelers():
                 {"name": "source", "value": {"stringValue": pref["source"]}},
             ],
         )
+
+
+def _upsert_identity_binding(provider: str, subject_id: str, principal: str) -> str:
+    """Create one stable identity-to-Alex authorization grant."""
+    digest = hashlib.sha256(
+        f"{provider}:{subject_id}:{DEMO_TRAVELER_ID}".encode()
+    ).hexdigest()[:16]
+    run_sql(
+        """
+        INSERT INTO traveler_identity_bindings (
+            binding_id, identity_provider, subject_id, traveler_id,
+            status, granted_by
+        ) VALUES (
+            :binding_id, :provider, :subject_id, :traveler_id,
+            'active', :granted_by
+        )
+        ON CONFLICT (identity_provider, subject_id, traveler_id) DO UPDATE SET
+            status = 'active',
+            granted_by = EXCLUDED.granted_by,
+            expires_at = NULL
+        """,
+        [
+            {"name": "binding_id", "value": {"stringValue": f"bind_{digest}"}},
+            {"name": "provider", "value": {"stringValue": provider}},
+            {"name": "subject_id", "value": {"stringValue": subject_id}},
+            {"name": "traveler_id", "value": {"stringValue": DEMO_TRAVELER_ID}},
+            {"name": "granted_by", "value": {"stringValue": principal}},
+        ],
+    )
+    return f"{provider}:{subject_id}"
+
+
+def seed_identity_bindings():
+    """Authorize the current IAM and configured AgentCore workloads for Alex."""
+    caller = boto3.client("sts").get_caller_identity()
+    principal = caller.get("Arn", "unknown")
+    subject_id = caller.get("UserId", "").split(":", 1)[0]
+    if not subject_id:
+        raise RuntimeError("STS GetCallerIdentity did not return a stable UserId")
+    bindings = [_upsert_identity_binding("aws_iam", subject_id, principal)]
+
+    try:
+        from backend.agentcore.cli_config import resolve_agentcore_config
+
+        workload_identity = resolve_agentcore_config().workload_identity
+    except Exception:
+        workload_identity = os.getenv("AGENTCORE_WORKLOAD_IDENTITY")
+    if workload_identity:
+        bindings.append(
+            _upsert_identity_binding(
+                "agentcore_workload",
+                workload_identity,
+                principal,
+            )
+        )
+    return bindings
 
 
 def _embed_search_query(client, text: str) -> list[float]:
@@ -524,6 +582,7 @@ def main():
     bc = bedrock()
     n = seed_packages(bc)
     seed_travelers()
+    identity_bindings = seed_identity_bindings()
     seed_decoy_traveler()
     seed_conversations(bc)
     seed_trip_interactions(bc)
@@ -533,6 +592,10 @@ def main():
     table.add_column("Count")
     table.add_row("trip_packages", str(n))
     table.add_row("travelers", f"{len(TRAVELERS)} + 1 decoy")
+    table.add_row(
+        "identity_bindings",
+        f"{', '.join(identity_bindings)} -> {DEMO_TRAVELER_ID}",
+    )
     table.add_row("decoy_preferences", str(len(DECOY_PREFERENCES)))
     table.add_row("traveler_profiles", str(len(TRAVELER_PROFILES)))
     table.add_row("traveler_preferences", str(len(TRAVELER_PREFERENCES)))

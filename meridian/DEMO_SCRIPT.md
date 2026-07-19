@@ -90,7 +90,7 @@ Point to the **Architecture** section (five phase cards):
 | 1 | Query | SQL | SQL executed |
 | 2 | Tool | MCP | MCP tool invoked |
 | 3 | Intent | Retrieval | pgvector + rerank |
-| 4 | Trust | Production | RLS scoped + audited |
+| 4 | Trust | Production | Workload grant + RLS |
 | 5 | Durable Workflow | Workflow | Checkpoint written |
 
 > "Phases 1–3 teach the retrieval stack. Phase 4 is the production story: the agent **remembers** Alex Morgan before it searches. Phase 5 is the workflow story: explicit, branchable, resumable orchestration."
@@ -171,8 +171,9 @@ We ship two MCP servers in this repo:
 | `meridian-memory` | this repo, `backend/mcp/memory_server.py` | `recall_traveler_profile`, `recall_preferences`, `recall_recent_turns`, `semantic_recall_interactions`, `persist_turn`, `persist_preference` |
 
 Every tool on the memory server opens a `db.scoped_session(traveler_id, agent_type='memory_agent')`
-transaction first, so Aurora RLS enforces per-traveler isolation regardless
-of what SQL the MCP client sends.
+transaction. The session first verifies the authenticated workload has a
+`traveler_identity_bindings` grant, then Aurora RLS enforces row isolation
+regardless of what SQL the MCP client sends.
 
 Show it live:
 
@@ -183,8 +184,8 @@ PYTHONPATH=. python examples/memory_mcp_demo.py \
 ```
 
 You'll see the server boot over stdio, list its 7 tools, then exercise
-each one against Aurora.  The last test asks for a non-existent traveler
-and gets back `{}` — the RLS policy refuses to leak rows.
+each one against Aurora. The negative test asks for an unbound traveler and
+is rejected before an RLS scope can be established; the DENY is audited.
 
 ---
 
@@ -288,17 +289,42 @@ curl -s -X POST http://localhost:8000/api/chat/order \
 
 ## Part 7 — Security: how agents talk to Aurora (5 min)
 
-> "When the abstract says 'securely connect LLM agents to Aurora,' here's what that actually means in this demo. Three concrete controls — all enforced by the database, not the agent."
+> "Governance is a chain, not one feature: authenticate the workload,
+> authorize its traveler claim, then let Aurora RLS filter rows."
 
-### 1. RLS pinned per turn
+### 1. Authenticate and authorize the traveler claim
+
+`AgentCoreIdentityAdapter` resolves a live AgentCore workload identity when
+its credential exchange succeeds; otherwise it uses the authenticated AWS IAM
+subject from STS. Before any traveler GUC is set, `scoped_session()` requires
+an active row in `traveler_identity_bindings`:
+
+```sql
+SELECT binding_id
+FROM traveler_identity_bindings
+WHERE identity_provider = :provider
+  AND subject_id = :subject
+  AND traveler_id = :traveler
+  AND status = 'active';
+```
+
+No binding means DENY before traveler-scoped SQL runs. Both ALLOW and DENY
+decisions are written to `traveler_access_audit`.
+
+**Show in the RLS tab:** the current workload gets `ALLOW · Alex Morgan`; the
+same workload gets `DENY · Jordan Lee`.
+
+### 2. RLS pinned per authorized turn
 
 `backend/agents/production_04/concierge.py` opens an RDS Data API transaction at the
-start of every Phase 4 turn and pins the session variables Aurora will
-enforce:
+start of every Phase 4 turn. Authorization is checked first; only an allowed
+request reaches the RLS scope:
 
 ```python
 async with self.db.scoped_session(
-    traveler_id=traveler_id, agent_type="concierge_agent"
+    traveler_id=traveler_id,
+    agent_type="concierge_agent",
+    authorization=scope.authorization,
 ) as tx:
     # every read/write inside the block runs under this transaction id
 ```
@@ -317,28 +343,20 @@ and `trip_interactions`.  Even if the agent forgot the `WHERE` clause, Aurora
 would return zero foreign rows.
 
 **Show in trace:** the new **Security · RLS scope set on Aurora session**
-span, with the IAM principal ARN, traveler id, agent type, and policy list.
+span, after **Traveler authorization allowed**.
 
-### 2. Agent-type scoping on bookings
+### 3. Audit the complete decision chain
 
-A second policy on `bookings` enforces that only `booking_agent`,
-`supervisor_agent`, or `concierge_agent` can read or mutate confirmed
-reservations.  A search-only agent that calls the same DB role gets nothing
-back.
-
-### 3. Audit trail
-
-Every Phase 4 turn writes one row to `agent_audit_log` from inside the same
-transaction:
+Authorization attempts land in `traveler_access_audit`. Every completed Phase
+4 turn also writes one row to `agent_audit_log` from inside the RLS transaction:
 
 ```sql
 SELECT * FROM agent_iam_audit ORDER BY ran_at DESC LIMIT 5;
+SELECT * FROM traveler_access_audit ORDER BY decided_at DESC LIMIT 5;
 ```
 
-Each row records the IAM principal (`sts:GetCallerIdentity`), the agent
-name, the operation, the RLS variables that were set, and how many rows the
-agent saw.  This is the answer to "prove that agent A could not read
-traveler B's data."
+Together they link authenticated subject → authorization decision → RLS
+traveler scope → rows returned.
 
 ### Demo
 
@@ -351,9 +369,14 @@ aws rds-data execute-statement \
     --sql 'SELECT * FROM agent_iam_audit LIMIT 5'
 ```
 
-> "This is the loop. RLS makes the database, not the agent, the source of
-> isolation truth.  The audit table makes it auditable.  The Strands agent
-> doesn't get to opt out."
+> "RLS does not decide who Alex is. The binding authorizes this workload for
+> Alex; RLS enforces the resulting row scope. The negative control proves the
+> workload cannot expand itself to an ungranted traveler before RLS runs."
+
+This sample authorizes AWS or AgentCore workloads. In a shared hosted
+application, authenticate the end user separately and bind the verified user
+subject, such as a Cognito `sub`, to the traveler record. This demo does not
+authenticate Alex as a human user.
 
 ---
 
@@ -420,7 +443,7 @@ curl -s -X POST http://localhost:8000/api/chat \
 Phase 1   Query              SQL executed against trip_packages
 Phase 2   Tool               MCP tool invoked against Aurora
 Phase 3   Intent             pgvector + tsvector + rerank
-Phase 4   Trust              RLS scoped + audited memory
+Phase 4   Trust              identity grant + RLS + audited memory
 Phase 5   Durable Workflow   checkpoint written between graph nodes
 ```
 

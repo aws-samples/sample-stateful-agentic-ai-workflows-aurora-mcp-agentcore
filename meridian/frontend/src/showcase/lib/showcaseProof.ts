@@ -72,10 +72,10 @@ export const PHASE_PROOFS: Record<Phase, PhaseProof> = {
   4: {
     phase: 4,
     headline: 'Production trust boundary',
-    dataPath: 'Identity -> memory recall -> RLS-scoped Aurora transaction',
-    auroraCapability: 'RLS isolates traveler data and records audit context.',
+    dataPath: 'Identity -> traveler grant -> RLS-scoped Aurora transaction',
+    auroraCapability: 'Aurora grants the workload access to Alex, then RLS isolates rows.',
     agentBoundary: 'AgentCore runtime, gateway, memory, and identity adapters.',
-    proof: 'RLS probe and memory writeback prove scoped persistence.',
+    proof: 'ALLOW Alex, DENY Jordan, then scoped row counts and audit records.',
     source: 'backend/memory/store.py',
   },
   5: {
@@ -174,8 +174,8 @@ export function deriveAuroraEvidence({
     {
       key: 'rls',
       label: 'Governance',
-      value: rlsSpans.length ? 'scoped' : selectedPhase >= 4 ? 'ready' : 'later',
-      detail: rlsSpans.length ? 'RLS scope and audit context enforced during data access' : 'RLS and audit proof unlock at Production',
+      value: rlsSpans.length ? 'workload granted + scoped' : selectedPhase >= 4 ? 'ready' : 'later',
+      detail: rlsSpans.length ? 'Workload grant, RLS scope, and audit context enforced' : 'Workload authorization, RLS, and audit proof unlock at Production',
       status: statusFor(selectedPhase >= 4, rlsSpans.length > 0),
     },
     {

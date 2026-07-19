@@ -19,6 +19,7 @@ import os
 import json
 import logging
 import re
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional, List, Any, Dict
 from decimal import Decimal
@@ -26,6 +27,12 @@ from decimal import Decimal
 logger = logging.getLogger(__name__)
 
 import boto3
+
+from backend.authorization import (
+    AuthorizationContext,
+    AuthorizationDecision,
+    TravelerAuthorizationError,
+)
 
 
 class RDSDataClient:
@@ -228,11 +235,71 @@ class RDSDataClient:
         except Exception:
             pass
 
+    async def check_traveler_authorization(
+        self,
+        traveler_id: str,
+        authorization: AuthorizationContext,
+        *,
+        transaction_id: Optional[str] = None,
+        write_audit: bool = True,
+    ) -> AuthorizationDecision:
+        """Authorize a workload subject before accepting its traveler claim."""
+        binding = await self.execute_one(
+            """
+            SELECT binding_id
+            FROM traveler_identity_bindings
+            WHERE identity_provider = %s
+              AND subject_id = %s
+              AND traveler_id = %s
+              AND status = 'active'
+              AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+            LIMIT 1
+            """,
+            (authorization.provider, authorization.subject_id, traveler_id),
+            transaction_id=transaction_id,
+        )
+        allowed = binding is not None
+        audit_id = f"authz_{uuid.uuid4().hex[:12]}" if write_audit else None
+        reason = "active identity binding" if allowed else "no active identity binding"
+
+        if audit_id:
+            await self.execute(
+                """
+                INSERT INTO traveler_access_audit (
+                    audit_id, identity_provider, subject_id, principal,
+                    requested_traveler_id, decision, reason
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    audit_id,
+                    authorization.provider,
+                    authorization.subject_id,
+                    authorization.principal,
+                    traveler_id,
+                    "allow" if allowed else "deny",
+                    reason,
+                ),
+                transaction_id=transaction_id,
+            )
+
+        return AuthorizationDecision(
+            allowed=allowed,
+            decision="allow" if allowed else "deny",
+            traveler_id=traveler_id,
+            provider=authorization.provider,
+            subject_id=authorization.subject_id,
+            principal=authorization.principal,
+            binding_id=binding.get("binding_id") if binding else None,
+            audit_id=audit_id,
+            reason=reason,
+        )
+
     @asynccontextmanager
     async def scoped_session(
         self,
         traveler_id: Optional[str] = None,
         agent_type: Optional[str] = None,
+        authorization: Optional[AuthorizationContext] = None,
     ):
         """
         Open a transaction with RLS session variables set.
@@ -248,11 +315,15 @@ class RDSDataClient:
 
         Usage::
 
-            async with client.scoped_session(traveler_id="trv_x") as tx:
+            async with client.scoped_session(
+                traveler_id="trv_x", authorization=caller
+            ) as tx:
                 rows = await client.execute("SELECT ...", transaction_id=tx)
 
-        Inside the block, ``app.current_traveler_id`` (and optionally
-        ``app.agent_type``) are pinned for the lifetime of the transaction.
+        Before setting scope, the authenticated subject must have an active
+        ``traveler_identity_bindings`` grant for ``traveler_id``. Inside the
+        block, ``app.current_traveler_id`` (and optionally ``app.agent_type``)
+        are pinned for the lifetime of the transaction.
         Aurora RLS policies on ``traveler_preferences`` and friends will
         filter rows accordingly.
 
@@ -281,6 +352,25 @@ class RDSDataClient:
         }
         tx = self.begin_transaction()
         try:
+            if traveler_id is not None:
+                if authorization is None:
+                    raise RuntimeError(
+                        "Traveler-scoped access requires an authenticated "
+                        "AuthorizationContext."
+                    )
+                decision = await self.check_traveler_authorization(
+                    traveler_id,
+                    authorization,
+                    transaction_id=tx,
+                    write_audit=True,
+                )
+                if not decision.allowed:
+                    # Preserve the DENY evidence. Rolling the transaction back
+                    # would erase the audit row together with the rejected
+                    # request, so commit this audit-only transaction first.
+                    self.commit_transaction(tx)
+                    raise TravelerAuthorizationError(decision)
+
             # Force row_security ON for this transaction (belt-and-suspenders;
             # harmless once the role switch below does the real work).
             await self.execute("SET LOCAL row_security = on", transaction_id=tx)
@@ -296,6 +386,17 @@ class RDSDataClient:
                 await self.execute(
                     "SELECT set_config('app.agent_type', %s, true)",
                     (agent_type,),
+                    transaction_id=tx,
+                )
+            if authorization is not None:
+                await self.execute(
+                    "SELECT set_config('app.authorization_provider', %s, true)",
+                    (authorization.provider,),
+                    transaction_id=tx,
+                )
+                await self.execute(
+                    "SELECT set_config('app.authorization_subject', %s, true)",
+                    (authorization.subject_id,),
                     transaction_id=tx,
                 )
             # Step off the privileged master role for the rest of this

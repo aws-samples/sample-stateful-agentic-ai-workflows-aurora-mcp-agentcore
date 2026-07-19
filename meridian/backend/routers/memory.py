@@ -10,6 +10,8 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from backend.agentcore.identity import get_agentcore_identity
+from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.memory.store import DEMO_TRAVELER_ID, get_memory_store
 
@@ -39,9 +41,16 @@ async def get_memory_profile(traveler_id: str = DEMO_TRAVELER_ID) -> MemoryProfi
     db = get_rds_data_client()
     # Pin RLS for the read so the API endpoint exercises the same isolation
     # path the concierge agent uses.
-    async with db.scoped_session(traveler_id=traveler_id, agent_type="memory_agent") as tx:
-        facts = await store.recall_preferences(traveler_id, transaction_id=tx)
-        profile = await store.recall_profile(traveler_id, transaction_id=tx)
+    try:
+        async with db.scoped_session(
+            traveler_id=traveler_id,
+            agent_type="memory_agent",
+            authorization=get_agentcore_identity().authorization_context(),
+        ) as tx:
+            facts = await store.recall_preferences(traveler_id, transaction_id=tx)
+            profile = await store.recall_profile(traveler_id, transaction_id=tx)
+    except TravelerAuthorizationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return MemoryProfileResponse(
         traveler_id=traveler_id,
         facts=[
@@ -78,6 +87,7 @@ async def update_memory_fact(
         async with db.scoped_session(
             traveler_id=traveler_id,
             agent_type="memory_agent",
+            authorization=get_agentcore_identity().authorization_context(),
         ) as tx:
             fact = await store.update_preference(
                 traveler_id,
@@ -88,6 +98,8 @@ async def update_memory_fact(
         return MemoryFactResponse(**fact)
     except HTTPException:
         raise
+    except TravelerAuthorizationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Traveler memory is unavailable") from exc
 
@@ -100,6 +112,7 @@ async def delete_memory_fact(traveler_id: str, preference_key: str) -> dict:
         async with db.scoped_session(
             traveler_id=traveler_id,
             agent_type="memory_agent",
+            authorization=get_agentcore_identity().authorization_context(),
         ) as tx:
             await store.delete_preference(
                 traveler_id,
@@ -107,5 +120,7 @@ async def delete_memory_fact(traveler_id: str, preference_key: str) -> dict:
                 transaction_id=tx,
             )
         return {"deleted": True, "key": preference_key}
+    except TravelerAuthorizationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Traveler memory is unavailable") from exc

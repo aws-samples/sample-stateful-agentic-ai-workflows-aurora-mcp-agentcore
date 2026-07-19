@@ -188,7 +188,8 @@ class ProductionAgent:
 
         The turn is the Phase 4 story end to end — each step emits a trace span:
           1. AgentCore Identity   — resolve the IAM/workload envelope (security span)
-          2. Aurora RLS           — open one transaction, pin app.current_traveler_id
+          2. Traveler grant       — authorize the workload for traveler_id
+          3. Aurora RLS           — open one transaction, pin app.current_traveler_id
                                      so every read/write is per-traveler isolated
           3. AgentCore Runtime    — session envelope (runtimeSessionId, microVM isolation)
           4. AgentCore Memory     — recall recent session events + semantic recall
@@ -256,9 +257,50 @@ class ProductionAgent:
         # transaction id, so traveler_preferences / conversation_messages /
         # trip_interactions enforce per-traveler isolation in Postgres itself.
         async with self.db.scoped_session(
-            traveler_id=traveler_id, agent_type="concierge_agent"
+            traveler_id=traveler_id,
+            agent_type="concierge_agent",
+            authorization=scope.authorization,
         ) as tx:
             self.traveler_memory._transaction_id = tx
+
+            self._log(
+                "security",
+                "Workload traveler grant allowed",
+                details=(
+                    f"{scope.authorization.provider}:{scope.authorization.subject_id} "
+                    f"-> {traveler_id}"
+                ),
+                telemetry={
+                    "category": "security",
+                    "component": "Aurora identity binding",
+                    "status": "ok",
+                    "fields": [
+                        {
+                            "label": "authorization.provider",
+                            "value": scope.authorization.provider,
+                        },
+                        {
+                            "label": "authorization.subject",
+                            "value": scope.authorization.subject_id,
+                            "mono": True,
+                        },
+                        {
+                            "label": "authorization.decision",
+                            "value": "allow",
+                        },
+                        {
+                            "label": "traveler_id",
+                            "value": traveler_id,
+                            "mono": True,
+                        },
+                        {
+                            "label": "binding_table",
+                            "value": "traveler_identity_bindings",
+                            "mono": True,
+                        },
+                    ],
+                },
+            )
 
             self._log(
                 "security",
@@ -279,6 +321,11 @@ class ProductionAgent:
                     "status": "ok",
                     "fields": [
                         {"label": "iam_identity", "value": scope.iam_identity, "mono": True},
+                        {
+                            "label": "authorization.subject",
+                            "value": scope.authorization.subject_id,
+                            "mono": True,
+                        },
                         {"label": "rls.traveler_id", "value": traveler_id, "mono": True},
                         {"label": "rls.agent_type", "value": "concierge_agent"},
                         {"label": "rls.role", "value": "meridian_app", "mono": True},
@@ -503,6 +550,9 @@ class ProductionAgent:
                 rls_traveler=traveler_id,
                 rls_agent_type="concierge_agent",
                 iam_identity=scope.iam_identity,
+                authorization_provider=scope.authorization.provider,
+                authorization_subject=scope.authorization.subject_id,
+                authorization_decision="allow",
                 rows_returned=len(packages),
                 transaction_id=tx,
             )

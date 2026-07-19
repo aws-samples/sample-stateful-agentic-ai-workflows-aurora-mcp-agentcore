@@ -1,10 +1,10 @@
 """
 Bedrock AgentCore Identity adapter for Phase 4.
 
-Identity is what lets us tell the audit trail "this turn ran as workload
-identity X under IAM principal Y."  In a fully provisioned setup the
-adapter exchanges the workload identity token for a scoped resource
-credential before each turn.
+Identity authenticates the workload that is asking to act for a traveler.
+When AgentCore credential exchange succeeds, that workload identity becomes
+the subject checked against Aurora ``traveler_identity_bindings``. Otherwise,
+the stable AWS IAM principal id from STS is the authorization subject.
 
 Configuration (preferred — @aws/agentcore CLI):
 
@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from backend.agentcore.cli_config import resolve_agentcore_config
+from backend.authorization import AuthorizationContext
 
 import boto3
 from botocore.exceptions import ClientError
@@ -56,15 +57,15 @@ class IdentityScope:
     workload_identity: Optional[str]  # AgentCore workload identity ARN, if any
     resource_provider: Optional[str]  # AgentCore resource credential provider name
     token_status: str          # 'live', 'unconfigured', or short error message
+    authorization: AuthorizationContext  # stable AWS subject used for traveler grants
 
 
 class AgentCoreIdentityAdapter:
     """Resolves the identity envelope for each Phase 4 turn.
 
-    Produces the ``IdentityScope`` that feeds both the Security trace span and
-    the per-turn audit row: the IAM principal always, plus the AgentCore
-    workload identity and resource credential when provisioned. Falls back to
-    the IAM principal alone when AgentCore Identity isn't configured.
+    Produces the ``IdentityScope`` used by the Security trace, traveler
+    authorization lookup, and per-turn audit row. A live AgentCore workload
+    identity is preferred; authenticated IAM is the fail-closed fallback.
     """
 
     def __init__(
@@ -81,21 +82,40 @@ class AgentCoreIdentityAdapter:
         self._sts = None
         self._runtime = None
         self._iam_identity_cache: Optional[str] = None
+        self._iam_subject_cache: Optional[str] = None
 
     # ----------------------------------------------------------- IAM identity
 
-    def iam_identity(self) -> str:
-        """sts:GetCallerIdentity Arn (cached for the process lifetime)."""
-        if self._iam_identity_cache is not None:
-            return self._iam_identity_cache
+    def _resolve_iam_caller(self) -> tuple[str, str]:
+        """Return the caller ARN and stable IAM principal id."""
+        if self._iam_identity_cache is not None and self._iam_subject_cache is not None:
+            return self._iam_identity_cache, self._iam_subject_cache
         try:
             if self._sts is None:
                 self._sts = boto3.client("sts")
-            self._iam_identity_cache = self._sts.get_caller_identity().get("Arn", "unknown")
+            caller = self._sts.get_caller_identity()
+            self._iam_identity_cache = caller.get("Arn", "unknown")
+            user_id = caller.get("UserId", "")
+            # Assumed-role UserIds are "stable-role-id:ephemeral-session".
+            self._iam_subject_cache = user_id.split(":", 1)[0] or "unresolved"
         except Exception as exc:  # pragma: no cover
             logger.warning("sts:GetCallerIdentity failed: %s", exc)
             self._iam_identity_cache = "unresolved"
-        return self._iam_identity_cache
+            self._iam_subject_cache = "unresolved"
+        return self._iam_identity_cache, self._iam_subject_cache
+
+    def iam_identity(self) -> str:
+        """sts:GetCallerIdentity Arn (cached for the process lifetime)."""
+        return self._resolve_iam_caller()[0]
+
+    def authorization_context(self) -> AuthorizationContext:
+        """Return the authenticated AWS workload subject used for grants."""
+        arn, subject_id = self._resolve_iam_caller()
+        return AuthorizationContext(
+            provider="aws_iam",
+            subject_id=subject_id,
+            principal=arn,
+        )
 
     # ---------------------------------------------------------- per-turn scope
 
@@ -107,7 +127,8 @@ class AgentCoreIdentityAdapter:
         otherwise we surface only the IAM principal so the trace and audit
         log still reflect reality.
         """
-        iam = self.iam_identity()
+        iam_authorization = self.authorization_context()
+        iam = iam_authorization.principal
 
         if not (self.workload_identity and self.resource_provider):
             return IdentityScope(
@@ -115,6 +136,7 @@ class AgentCoreIdentityAdapter:
                 workload_identity=None,
                 resource_provider=None,
                 token_status="unconfigured",
+                authorization=iam_authorization,
             )
 
         try:
@@ -138,11 +160,22 @@ class AgentCoreIdentityAdapter:
             status = f"error:{type(exc).__name__}"
             logger.warning("AgentCore Identity unavailable: %s", exc)
 
+        authorization = (
+            AuthorizationContext(
+                provider="agentcore_workload",
+                subject_id=self.workload_identity,
+                principal=iam,
+            )
+            if status == "live"
+            else iam_authorization
+        )
+
         return IdentityScope(
             iam_identity=iam,
             workload_identity=self.workload_identity,
             resource_provider=self.resource_provider,
             token_status=status,
+            authorization=authorization,
         )
 
 

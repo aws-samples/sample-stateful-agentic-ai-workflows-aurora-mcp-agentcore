@@ -379,6 +379,9 @@ class MemoryStore:
         rls_traveler: Optional[str],
         rls_agent_type: Optional[str],
         iam_identity: Optional[str],
+        authorization_provider: Optional[str],
+        authorization_subject: Optional[str],
+        authorization_decision: Optional[str],
         rows_returned: int,
         transaction_id: Optional[str] = None,
     ) -> str:
@@ -393,14 +396,19 @@ class MemoryStore:
             """
             INSERT INTO agent_audit_log (
                 audit_id, traveler_id, agent_name, operation,
-                rls_traveler, rls_agent_type, iam_identity, rows_returned
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                authorization_provider, authorization_subject,
+                authorization_decision, rls_traveler, rls_agent_type,
+                iam_identity, rows_returned
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 audit_id,
                 traveler_id,
                 agent_name,
                 operation,
+                authorization_provider,
+                authorization_subject,
+                authorization_decision,
                 rls_traveler,
                 rls_agent_type,
                 iam_identity,

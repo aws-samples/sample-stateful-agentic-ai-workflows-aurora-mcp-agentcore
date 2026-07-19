@@ -60,7 +60,7 @@ const steps: JourneyStep[] = [
     ph: PHASE_JOURNEY_SUB[4],
     title: 'Production',
     serif: '',
-    desc: 'The production concierge: AgentCore Runtime hosts the session, Gateway serves MCP tools, Memory mirrors events, and Aurora RLS scopes every query. Alex\'s Tokyo Oct 12-19 thread, shellfish allergy, and boutique-over-chain preference live in traveler_preferences — not in the prompt.',
+    desc: 'The production concierge: AgentCore authenticates the workload, Aurora authorizes it for Alex, and RLS scopes every query. Alex\'s Tokyo Oct 12-19 thread, shellfish allergy, and boutique-over-chain preference live in traveler_preferences — not in the prompt.',
     chips: ['AgentCore Runtime', 'AgentCore Gateway', 'AgentCore Memory', 'Aurora RLS'],
     scale: '~50,000 trips/day · returning travelers expect to be known',
     persona: 'Alex asks "Family-friendly beach + snorkeling," then "Pick up where we left off." The recall lands because conversation_messages and trip_interactions sit behind Aurora RLS for trv_meridian_demo.',

@@ -84,15 +84,17 @@
 --   meridian_app role. For a stricter production posture, drop the '' branch
 --   (fail-closed) and give seed/admin tooling its own privileged path.
 --
--- RELATIONSHIP TO AGENTCORE IDENTITY (common question) -----------------------
---   Identity and RLS are complementary and independent:
---     • AgentCore Identity resolves WHO is calling (IAM + workload identity),
---       in the application layer.
---     • Aurora RLS enforces WHAT rows they may see, in the database engine.
---   Flow: Identity resolves the principal → app maps it to a traveler_id →
---   app sets the GUC + switches role → Aurora filters. Remove Identity and RLS
---   still works; you only lose the audit trail of which IAM principal ran the
---   turn.
+-- IDENTITY, AUTHORIZATION, AND RLS ARE THREE DISTINCT CONTROLS ---------------
+--   1. AgentCore Identity / AWS STS authenticates WHO the workload is.
+--   2. traveler_identity_bindings authorizes WHICH traveler that subject may
+--      claim. scoped_session() fails before setting the GUC when no active
+--      binding exists, and writes the allow/deny to traveler_access_audit.
+--   3. Aurora RLS enforces WHAT rows the authorized traveler scope may see.
+--
+--   This is workload authorization. A multi-user hosted application should
+--   additionally authenticate the end user (for example with Cognito) and map
+--   that user subject to a traveler rather than treating one workload as all
+--   users.
 --
 -- TWO PATTERNS THIS FILE DEPLOYS ---------------------------------------------
 --   A) Per-traveler memory isolation (Phase 4): traveler_preferences,
@@ -185,21 +187,32 @@ CREATE TABLE IF NOT EXISTS agent_audit_log (
     rls_traveler TEXT,
     rls_agent_type TEXT,
     iam_identity TEXT,
+    authorization_provider VARCHAR(50),
+    authorization_subject VARCHAR(255),
+    authorization_decision VARCHAR(10),
     rows_returned INTEGER,
     ran_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE agent_audit_log
+    ADD COLUMN IF NOT EXISTS authorization_provider VARCHAR(50),
+    ADD COLUMN IF NOT EXISTS authorization_subject VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS authorization_decision VARCHAR(10);
 CREATE INDEX IF NOT EXISTS idx_audit_traveler ON agent_audit_log(traveler_id, ran_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_agent ON agent_audit_log(agent_name, ran_at DESC);
-CREATE OR REPLACE VIEW agent_iam_audit AS
+DROP VIEW IF EXISTS agent_iam_audit;
+CREATE VIEW agent_iam_audit AS
 SELECT audit_id,
     ran_at,
     agent_name,
     operation,
     traveler_id,
+    authorization_provider,
+    authorization_subject,
+    authorization_decision,
     rls_traveler,
     rls_agent_type,
     iam_identity,
     rows_returned
 FROM agent_audit_log
 ORDER BY ran_at DESC;
-COMMENT ON VIEW agent_iam_audit IS 'Per-turn record of which agent ran which operation under which IAM identity ' 'and RLS session variables.  Operators query this to verify scoping.';
+COMMENT ON VIEW agent_iam_audit IS 'Per-turn record linking workload identity, traveler authorization, and RLS session scope.';

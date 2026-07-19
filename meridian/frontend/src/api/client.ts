@@ -179,8 +179,8 @@ export async function processOrder(request: OrderRequest): Promise<OrderResponse
 }
 
 /**
- * RLS probe (Phase 4): runs the same COUNT(*) scoped vs unscoped per table and
- * returns the live CREATE POLICY USING clauses. Proves Aurora RLS is enforced.
+ * Governance probe (Phase 4): proves the workload grant, runs the same COUNT(*)
+ * scoped vs unscoped, and returns live CREATE POLICY USING clauses.
  */
 export interface RlsTableResult {
   table: string;
@@ -197,8 +197,31 @@ export interface RlsPolicy {
 
 export interface RlsProbeResponse {
   traveler_id: string;
+  authorization: {
+    provider: string;
+    subject_id: string;
+    principal: string;
+    requested_traveler_id: string;
+    decision: 'allow' | 'deny';
+    binding_id?: string | null;
+    audit_id?: string | null;
+  };
+  negative_control: {
+    requested_traveler_id: string;
+    decision: 'allow' | 'deny';
+    reason?: string | null;
+    audit_id?: string | null;
+  };
   tables: RlsTableResult[];
   policies: RlsPolicy[];
+  debug?: {
+    effective_role?: string | null;
+    rls_active?: boolean | null;
+    scope?: string | null;
+    authorization_provider?: string | null;
+    authorization_subject?: string | null;
+    error?: string | null;
+  } | null;
 }
 
 export async function fetchRlsProbe(

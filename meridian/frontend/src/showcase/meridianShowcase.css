@@ -217,8 +217,6 @@
   background: var(--mds-fill-2);
   border-color: var(--mds-line);
 }
-.mds-root[data-theme="light"] .mds-capability-step,
-.mds-root[data-theme="light"] .mds-phase-proof,
 .mds-root[data-theme="light"] .mds-phase-proof-panel,
 .mds-root[data-theme="light"] .mds-aurora-strip,
 .mds-root[data-theme="light"] .mds-contract-panel,
@@ -226,8 +224,6 @@
   background: var(--mds-card);
   border-color: var(--mds-line);
 }
-.mds-root[data-theme="light"] .mds-capability-step.is-active,
-.mds-root[data-theme="light"] .mds-phase-proof,
 .mds-root[data-theme="light"] .mds-phase-proof-panel {
   background: var(--mds-cyan-soft);
   border-color: var(--mds-cyan-line);
@@ -404,13 +400,6 @@
 .mds-root[data-theme="light"] .mds-phase-selector button {
   color: var(--mds-on-surface-soft);
 }
-.mds-root[data-theme="light"] .mds-capability-step span,
-.mds-root[data-theme="light"] .mds-capability-step small,
-.mds-root[data-theme="light"] .mds-phase-proof span,
-.mds-root[data-theme="light"] .mds-phase-proof small {
-  color: var(--mds-on-surface-soft);
-}
-
 /* Sent (user) query bubble: background was rgba(49,90,110,.62) — a dark teal
    that reads as a muddy grey slab on light. Repaint as the soft cyan tint so
    it's clearly the traveler's turn, with legible slate ink. */
@@ -924,6 +913,26 @@
   backdrop-filter: blur(10px);
 }
 
+.mds-desktop-app.is-proof .mds-desktop-scroll {
+  gap: 12px;
+  padding-top: 26px;
+}
+
+.mds-desktop-app.is-proof .mds-headline-row h1 {
+  font-size: calc(36px * var(--mds-fs));
+  line-height: 1.08;
+}
+
+.mds-desktop-app.is-proof .mds-headline-row p {
+  margin-top: 5px;
+  font-size: calc(14px * var(--mds-fs));
+}
+
+.mds-desktop-app.is-proof .mds-desktop-dock {
+  padding-top: 11px;
+  padding-bottom: 16px;
+}
+
 .mds-top-actions {
   display: flex;
   align-items: center;
@@ -1068,64 +1077,6 @@
   color: #06232a;
   background: var(--mds-cyan);
   box-shadow: 0 0 24px rgba(49, 212, 228, 0.36);
-}
-
-.mds-capability-ladder {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.mds-capability-step {
-  position: relative;
-  min-height: 86px;
-  padding: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.035);
-  overflow: hidden;
-}
-
-.mds-capability-step::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.mds-capability-step.is-active {
-  border-color: rgba(49, 212, 228, 0.42);
-  background: rgba(49, 212, 228, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(49, 212, 228, 0.16);
-}
-
-.mds-capability-step.is-active::before {
-  background: var(--mds-cyan);
-}
-
-.mds-capability-step span,
-.mds-capability-step small {
-  display: block;
-  color: var(--mds-on-surface-soft);
-  font-size: calc(11px * var(--mds-fs));
-  font-weight: 700;
-}
-
-.mds-capability-step b {
-  display: block;
-  margin-top: 6px;
-  color: var(--mds-on-surface);
-  font-size: calc(15px * var(--mds-fs));
-  line-height: 1.12;
-}
-
-.mds-capability-step small {
-  margin-top: 8px;
-  color: var(--mds-cyan);
-  font-family: var(--mds-font-mono);
-  font-size: calc(10.5px * var(--mds-fs));
-  line-height: 1.3;
 }
 
 .mds-phase-proof-panel {
@@ -2508,6 +2459,24 @@
   margin-top: auto;
 }
 
+.mds-chat-composer-wrap.is-proof {
+  gap: 8px;
+}
+
+.mds-chat-composer-wrap.is-proof .mds-chat-query-starters {
+  display: grid;
+  grid-template-columns: auto repeat(2, minmax(0, 1fr));
+}
+
+.mds-chat-composer-wrap.is-proof .mds-chat-starter-chip {
+  min-width: 0;
+  overflow: hidden;
+  padding-inline: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mds-chat-quick-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3365,7 +3334,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 10px;
+  margin: 2px 0 10px;
 }
 
 .mds-trace-summary span {
@@ -3383,39 +3352,6 @@
   color: var(--mds-green);
   background: rgba(55, 210, 157, 0.1);
   font-family: var(--mds-font-mono);
-}
-
-.mds-phase-proof {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 6px 10px;
-  align-items: center;
-  margin-bottom: 11px;
-  padding: 10px 11px;
-  border: 1px solid rgba(55, 210, 157, 0.24);
-  border-radius: 12px;
-  background: rgba(55, 210, 157, 0.06);
-}
-
-.mds-phase-proof span {
-  color: var(--mds-green);
-  font-size: calc(10.5px * var(--mds-fs));
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.mds-phase-proof b {
-  color: var(--mds-on-surface);
-  font-size: calc(14px * var(--mds-fs));
-  font-weight: 760;
-  font-family: var(--mds-font-mono);
-}
-
-.mds-phase-proof small {
-  grid-column: 1 / -1;
-  color: var(--mds-on-surface-soft);
-  font-size: calc(13px * var(--mds-fs));
-  line-height: 1.4;
 }
 
 .mds-contract-panel,
@@ -3836,8 +3772,18 @@
 
 .mds-trace-actions {
   display: flex;
+  justify-content: flex-end;
   gap: 8px;
   margin-top: 11px;
+}
+
+.mds-trace-actions button {
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
 }
 
 .mds-sql-list {
@@ -4057,10 +4003,6 @@
     grid-template-columns: 190px minmax(0, 1fr);
   }
 
-  .mds-capability-ladder {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .mds-phase-proof-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -4133,14 +4075,6 @@
 
   .mds-phase-selector {
     width: 100%;
-  }
-
-  .mds-capability-ladder {
-    grid-template-columns: 1fr;
-  }
-
-  .mds-capability-step {
-    min-height: 0;
   }
 
   .mds-phase-proof-panel-head {
@@ -4449,7 +4383,6 @@
   .mds-status-pill { max-width:none; gap:6px; padding-inline:9px; white-space:nowrap; }
   .mds-status-sep,.mds-status-unit { display:none; }
   .mds-phase-selector { overflow-x:auto; grid-template-columns:repeat(5,minmax(86px,1fr)); }
-  .mds-capability-ladder { display:flex; overflow-x:auto; }.mds-capability-step { min-width:180px; }
   .mds-trip-modal { display:block; }.mds-trip-modal-visual { min-height:260px; }.mds-trip-modal-body { padding:22px 18px; }.mds-trip-facts { grid-template-columns:1fr; }
   .mds-compare-grid { grid-template-columns:1fr; }.mds-modal-backdrop { padding:10px; }
 }
@@ -4918,10 +4851,12 @@
   color: var(--mds-on-surface-faint);
 }
 .mds-rls-run {
-  padding: 4px 11px;
-  border-radius: 999px;
-  font-size: calc(11px * var(--mds-fs));
-  font-weight: 600;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 8px;
   color: var(--mds-cyan);
   background: var(--mds-cyan-soft);
   border: 1px solid var(--mds-cyan-line);
@@ -4930,6 +4865,90 @@
 .mds-rls-run:disabled {
   opacity: 0.55;
   cursor: default;
+}
+
+.mds-rls-run:disabled svg {
+  animation: mds-spin 900ms linear infinite;
+}
+
+@media (max-width: 720px) {
+  .mds-chat-composer-wrap.is-proof .mds-chat-query-starters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mds-chat-composer-wrap.is-proof .mds-chat-starter-label {
+    display: none;
+  }
+}
+
+.mds-authz-chain {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.mds-authz-step {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid var(--mds-line);
+  border-radius: 8px;
+  background: var(--mds-fill-1);
+}
+.mds-authz-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--mds-cyan);
+  background: var(--mds-cyan-soft);
+}
+.mds-authz-step.is-allow .mds-authz-icon {
+  color: var(--mds-green);
+  background: color-mix(in srgb, var(--mds-green) 12%, transparent);
+}
+.mds-authz-step.is-deny .mds-authz-icon {
+  color: var(--mds-danger);
+  background: color-mix(in srgb, var(--mds-danger) 12%, transparent);
+}
+.mds-authz-step small,
+.mds-authz-step strong,
+.mds-authz-step code {
+  display: block;
+  min-width: 0;
+}
+.mds-authz-step small {
+  margin-bottom: 3px;
+  color: var(--mds-on-surface-faint);
+  font-size: calc(9.5px * var(--mds-fs));
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.mds-authz-step strong {
+  color: var(--mds-on-surface);
+  font-size: calc(11.5px * var(--mds-fs));
+  line-height: 1.35;
+}
+.mds-authz-step code {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--mds-on-surface-soft);
+  font-family: var(--mds-font-mono);
+  font-size: calc(9px * var(--mds-fs));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mds-rls-layer-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+  color: var(--mds-on-surface-faint);
+  font-size: calc(10.5px * var(--mds-fs));
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .mds-rls-row {

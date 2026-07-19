@@ -5,7 +5,15 @@ import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 
 type ChipKey = 'travelers' | 'dates' | 'spa' | 'flights';
 
-export function ChatComposer({ state, compact = false }: { state: MeridianShowcaseState; compact?: boolean }) {
+export function ChatComposer({
+  state,
+  compact = false,
+  proofMode = false,
+}: {
+  state: MeridianShowcaseState;
+  compact?: boolean;
+  proofMode?: boolean;
+}) {
   const [openChip, setOpenChip] = useState<ChipKey | null>(null);
 
   const onSubmit = (event: FormEvent) => {
@@ -15,7 +23,7 @@ export function ChatComposer({ state, compact = false }: { state: MeridianShowca
 
   // Phase-specific example prompts seed the composer with a canonical
   // walkthrough query for whichever phase is selected.
-  const queryStarters = compact ? [] : state.phaseExamples.slice(0, 3);
+  const queryStarters = compact ? [] : state.phaseExamples.slice(0, proofMode ? 2 : 3);
 
   const updateFilters = (patch: Partial<ChatFilters>) => {
     state.setChatFilters({ ...state.chatFilters, ...patch });
@@ -25,7 +33,7 @@ export function ChatComposer({ state, compact = false }: { state: MeridianShowca
   const toggleChip = (key: ChipKey) => setOpenChip((prev) => (prev === key ? null : key));
 
   return (
-    <div className={`mds-chat-composer-wrap${compact ? ' is-compact' : ''}`}>
+    <div className={`mds-chat-composer-wrap${compact ? ' is-compact' : ''}${proofMode ? ' is-proof' : ''}`}>
       {queryStarters.length > 0 && (
         <div className="mds-chat-query-starters" aria-label="Query starters for this phase">
           <span className="mds-chat-starter-label">Try</span>
@@ -54,7 +62,7 @@ export function ChatComposer({ state, compact = false }: { state: MeridianShowca
               </button>
             );
           })}
-          {state.selectedPhase === 4 && (
+          {!proofMode && state.selectedPhase === 4 && (
             <span className="mds-chat-phase-framing" role="note">
               <span>Trace beat</span>
               <b>AgentCore memory/search stays traced end to end; Workflow checkpoints the dependent plan.</b>
@@ -85,7 +93,7 @@ export function ChatComposer({ state, compact = false }: { state: MeridianShowca
           )}
         </button>
       </form>
-      {!compact && (
+      {!compact && !proofMode && (
         <div className="mds-chat-quick-actions" aria-label="Quick concierge actions">
           <TravelersChip
             filters={state.chatFilters}

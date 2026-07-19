@@ -90,24 +90,27 @@ The reranker model id isn't in this file — the call delegates to
 
 | Lines | Show | Say |
 |---|---|---|
-| **6–11** | the envelope comment | "The whole turn — Runtime, Memory, RLS tx, Gateway, persist." (Identity resolves the IAM principal but we don't feature it.) |
-| **258** | `async with self.db.scoped_session(traveler_id=...)` | "**This** is the security line — every read below is pinned to one traveler." |
+| **6–11** | the envelope comment | "The whole turn — Identity, authorization grant, Runtime, Memory, RLS tx, Gateway, persist." |
+| **258** | `async with self.db.scoped_session(..., authorization=scope.authorization)` | "This first authorizes the workload for Alex, then pins every read to Alex." |
 | **338 · 369** | `list_recent_turns()` · `semantic_recall()` | "Read session + semantic memory from AgentCore." |
 | **440** | `persist_turn(...)` | "Write to Aurora…" |
 | **477** | `record_turn()` — a *separate* call | "…and **separately** mirror to AgentCore Memory. Two write paths, not one." |
 
 > The trace panel now shows **all 18 spans** for a Phase 4 turn (Identity → Runtime → Memory r/w → Aurora `@tools` → Gateway → persist → polish) — the AgentCore spans reach the UI via the `collect` callback wired in `process_turn`.
 
-### C. `backend/db/rds_data_client.py` — `scoped_session()` (the RLS mechanism)
+### C. `backend/db/rds_data_client.py` — `scoped_session()` (authorization + RLS)
 
 | Lines | Show | Say |
 |---|---|---|
+| **check_traveler_authorization** | lookup in `traveler_identity_bindings` | "RLS trusts a traveler ID. This proves the authenticated subject may claim it first." |
 | **285** | `set_config('app.current_traveler_id', …, true)` | "Pin the traveler into a transaction-local GUC — the RLS policy's input." |
 | **302** | `SET LOCAL ROLE meridian_app` | "**The catch:** our Data API secret maps to the master role, which on this cluster isn't subject to RLS (row_security_active() = false — not superuser/BYPASSRLS, just the master). We step down to a least-privilege role so the policy bites. (Production: give the app its own non-master secret.)" |
 
 ### D. RLS probe — `backend/routers/diagnostics.py` (`/api/diagnostics/rls-probe`)
 
-The Phase-4 **RLS tab** calls this: same `COUNT(*)` scoped vs unscoped + the live `pg_policies` USING clause. `ALLOWED_TABLES` (line 43) is the injection guard. **Demo narration for the probe lives in `PRESENTER_GUIDE.md` → Phase 4 → "The RLS probe."**
+The Phase-4 **RLS tab** proves three layers: workload identity, `ALLOW Alex` /
+`DENY Jordan` authorization, then the same `COUNT(*)` scoped vs unscoped plus
+the live `pg_policies` USING clause.
 
 ### B. `backend/agents/production_04/memory_agent.py` (282 lines) — open to line 72
 

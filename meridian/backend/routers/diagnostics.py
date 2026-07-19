@@ -1,6 +1,8 @@
 """Diagnostics API — prove Aurora RLS is enforced, live.
 
-The ``/rls-probe`` endpoint runs the SAME ``COUNT(*)`` twice against a table:
+The ``/rls-probe`` endpoint first proves the authenticated workload is allowed
+to claim Alex and denied when it claims the decoy traveler. It then runs the
+SAME ``COUNT(*)`` twice against a table:
 
   1. SCOPED   — inside ``scoped_session(traveler_id=...)``, so the GUC
                 ``app.current_traveler_id`` is set and the RLS policy filters
@@ -29,9 +31,11 @@ AWS docs:
 
 from typing import List, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from backend.agentcore.identity import get_agentcore_identity
+from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.memory.store import DEMO_TRAVELER_ID
 
@@ -47,6 +51,7 @@ ALLOWED_TABLES = (
     "conversation_messages",
 )
 DEFAULT_TABLES = ("traveler_preferences", "trip_interactions")
+NEGATIVE_CONTROL_TRAVELER_ID = "trv_demo_decoy"
 
 
 class RlsProbeRequest(BaseModel):
@@ -69,6 +74,8 @@ class RlsPolicy(BaseModel):
 
 class RlsProbeResponse(BaseModel):
     traveler_id: str
+    authorization: dict
+    negative_control: dict
     tables: List[RlsTableResult]
     policies: List[RlsPolicy]
     # Proof RLS is engaged: the effective role inside the scoped txn (the
@@ -95,13 +102,32 @@ async def rls_probe(request: RlsProbeRequest = RlsProbeRequest()) -> RlsProbeRes
     tables = [t for t in requested if t in ALLOWED_TABLES] or list(DEFAULT_TABLES)
 
     db = get_rds_data_client()
+    authorization = get_agentcore_identity().authorization_context()
     results: List[RlsTableResult] = []
+
+    # Layer 1 + 2 proof: authenticated AWS subject -> explicit traveler grant.
+    # The negative control asks the same subject for Jordan's decoy record and
+    # should be denied before any RLS scope can be set.
+    decision = await db.check_traveler_authorization(
+        traveler_id,
+        authorization,
+        write_audit=True,
+    )
+    if not decision.allowed:
+        raise HTTPException(status_code=403, detail=str(TravelerAuthorizationError(decision)))
+    negative = await db.check_traveler_authorization(
+        NEGATIVE_CONTROL_TRAVELER_ID,
+        authorization,
+        write_audit=True,
+    )
 
     for table in tables:
         try:
             # Scoped: GUC set → RLS filters to this traveler.
             async with db.scoped_session(
-                traveler_id=traveler_id, agent_type="memory_agent"
+                traveler_id=traveler_id,
+                agent_type="memory_agent",
+                authorization=authorization,
             ) as tx:
                 scoped = await _count(db, table, tx)
             # Unscoped: no transaction → GUC empty → empty-string bypass → all rows.
@@ -146,22 +172,50 @@ async def rls_probe(request: RlsProbeRequest = RlsProbeRequest()) -> RlsProbeRes
     debug: Optional[dict] = None
     try:
         async with db.scoped_session(
-            traveler_id=traveler_id, agent_type="memory_agent"
+            traveler_id=traveler_id,
+            agent_type="memory_agent",
+            authorization=authorization,
         ) as tx:
             seen = await db.execute(
                 "SELECT current_user AS effective_role, "
                 "row_security_active('traveler_preferences') AS rls_active, "
-                "current_setting('app.current_traveler_id', true) AS scope",
+                "current_setting('app.current_traveler_id', true) AS scope, "
+                "current_setting('app.authorization_provider', true) AS auth_provider, "
+                "current_setting('app.authorization_subject', true) AS auth_subject",
                 transaction_id=tx,
             )
         debug = {
             "effective_role": (seen[0].get("effective_role") if seen else None),
             "rls_active": (seen[0].get("rls_active") if seen else None),
             "scope": (seen[0].get("scope") if seen else None),
+            "authorization_provider": (
+                seen[0].get("auth_provider") if seen else None
+            ),
+            "authorization_subject": (
+                seen[0].get("auth_subject") if seen else None
+            ),
         }
     except Exception as exc:
         debug = {"error": str(exc)[:200]}
 
     return RlsProbeResponse(
-        traveler_id=traveler_id, tables=results, policies=policies, debug=debug
+        traveler_id=traveler_id,
+        authorization={
+            "provider": decision.provider,
+            "subject_id": decision.subject_id,
+            "principal": decision.principal,
+            "requested_traveler_id": decision.traveler_id,
+            "decision": decision.decision,
+            "binding_id": decision.binding_id,
+            "audit_id": decision.audit_id,
+        },
+        negative_control={
+            "requested_traveler_id": negative.traveler_id,
+            "decision": negative.decision,
+            "reason": negative.reason,
+            "audit_id": negative.audit_id,
+        },
+        tables=results,
+        policies=policies,
+        debug=debug,
     )
