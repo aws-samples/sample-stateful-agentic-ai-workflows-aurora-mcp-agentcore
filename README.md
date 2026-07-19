@@ -3,7 +3,7 @@
 Reference application for **Build stateful agentic AI workflows with Aurora, MCP, and AgentCore**.
 
 [![License: MIT-0](https://img.shields.io/badge/License-MIT--0-2EA44F?style=flat-square)](LICENSE)
-![Amazon Aurora PostgreSQL 17](https://img.shields.io/badge/Amazon_Aurora-PostgreSQL_17-527FFF?style=flat-square&labelColor=232F3E)
+![Amazon Aurora PostgreSQL 18+](https://img.shields.io/badge/Amazon_Aurora-PostgreSQL_18%2B-527FFF?style=flat-square&labelColor=232F3E)
 ![Amazon Bedrock AgentCore](https://img.shields.io/badge/Amazon_Bedrock-AgentCore-FF9900?style=flat-square&labelColor=232F3E)
 ![Claude Sonnet 5](https://img.shields.io/badge/Claude-Sonnet_5-191919?style=flat-square&logo=anthropic&logoColor=white)
 ![Model Context Protocol](https://img.shields.io/badge/MCP-Model_Context_Protocol-000000?style=flat-square&logo=modelcontextprotocol&logoColor=white)
@@ -101,7 +101,7 @@ root route redirects to the showcase.
 - **Frontend:** React, Vite, TypeScript
 - **Backend:** FastAPI, Strands Agents, LangGraph
 - **Models:** Claude Sonnet 5 on Amazon Bedrock, Cohere Embed v4, Cohere Rerank 3.5
-- **Data:** Aurora PostgreSQL 17, pgvector, RDS Data API, identity bindings, Row-Level Security
+- **Data:** Aurora PostgreSQL 18+, pgvector, RDS Data API, identity bindings, Row-Level Security
 - **Protocols and services:** Model Context Protocol, Bedrock AgentCore Runtime, Gateway, Memory, and Identity
 
 This sample authorizes AWS or AgentCore workload identities. A shared hosted

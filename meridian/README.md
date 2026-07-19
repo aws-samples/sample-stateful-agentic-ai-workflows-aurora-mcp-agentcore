@@ -17,7 +17,7 @@ The root route redirects to `/showcase`.
 - Python 3.11+
 - Node.js 20.19+ or 22.12+
 - AWS credentials with Amazon Bedrock and RDS Data API access
-- Aurora PostgreSQL 17 with pgvector enabled, or a cluster created through `scripts/create_cluster.sh`
+- Aurora PostgreSQL 18+ with pgvector enabled, or a cluster created through `scripts/create_cluster.sh`
 - Bedrock model access for `global.anthropic.claude-sonnet-5`
 
 ## Quick Start
@@ -192,7 +192,7 @@ Key environment variables are documented in `.env.example`.
 | Backend | FastAPI, Python 3.11+ |
 | Agents | Strands Agents for Phases 1–4 |
 | Workflow | LangGraph `StateGraph` with `PostgresSaver` checkpoints in Phase 5 |
-| Database | Aurora PostgreSQL 17, RDS Data API, pgvector HNSW, identity bindings, Row-Level Security |
+| Database | Aurora PostgreSQL 18+, RDS Data API, pgvector HNSW, identity bindings, Row-Level Security |
 | Embeddings and rerank | Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`us.cohere.rerank-v3-5:0`) on Bedrock |
 | LLM | Claude Sonnet 5 on Amazon Bedrock (`global.anthropic.claude-sonnet-5`) |
 | MCP | `awslabs.postgres-mcp-server`, custom `meridian-concierge`, and `meridian-memory` MCP servers |
