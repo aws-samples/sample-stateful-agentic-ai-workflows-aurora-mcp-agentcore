@@ -2,12 +2,12 @@
 
 Reference application for **Build stateful agentic AI workflows with Aurora, MCP, and AgentCore**.
 
-[![License: MIT-0](https://img.shields.io/badge/License-MIT--0-blue?style=flat-square)](LICENSE)
-![AWS Aurora PostgreSQL](https://img.shields.io/badge/AWS-Aurora%20PostgreSQL-232F3E?style=flat-square&logo=amazonaws&logoColor=white)
-![Amazon Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Claude%20Sonnet%205-232F3E?style=flat-square&logo=amazonaws&logoColor=white)
-![Amazon Bedrock AgentCore](https://img.shields.io/badge/Amazon%20Bedrock-AgentCore-FF9900?style=flat-square&logo=amazonaws&logoColor=white)
-![Model Context Protocol](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-5B5FC7?style=flat-square)
-![LangGraph](https://img.shields.io/badge/LangGraph-StateGraph-1F6F8B?style=flat-square)
+[![License: MIT-0](https://img.shields.io/badge/License-MIT--0-2EA44F?style=flat-square)](LICENSE)
+![Amazon Aurora PostgreSQL 17](https://img.shields.io/badge/Amazon_Aurora-PostgreSQL_17-527FFF?style=flat-square&labelColor=232F3E)
+![Amazon Bedrock AgentCore](https://img.shields.io/badge/Amazon_Bedrock-AgentCore-FF9900?style=flat-square&labelColor=232F3E)
+![Claude Sonnet 5](https://img.shields.io/badge/Claude-Sonnet_5-191919?style=flat-square&logo=anthropic&logoColor=white)
+![Model Context Protocol](https://img.shields.io/badge/MCP-Model_Context_Protocol-000000?style=flat-square&logo=modelcontextprotocol&logoColor=white)
+![LangGraph StateGraph](https://img.shields.io/badge/LangGraph-StateGraph-1C3C3C?style=flat-square&logo=langchain&logoColor=white)
 
 Meridian is a realistic agentic travel concierge operating on live relational
 data. It combines structured SQL, pgvector semantic retrieval, PostgreSQL
