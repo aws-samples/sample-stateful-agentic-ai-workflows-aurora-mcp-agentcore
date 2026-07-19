@@ -13,7 +13,11 @@ def row_to_api_product(row: Dict[str, Any]) -> Dict[str, Any]:
         "description": row.get("description") or "",
         "image_url": row.get("image_url") or "",
         "category": row.get("trip_type", row.get("category", "")),
+        "destination": row.get("destination") or "",
+        "region": row.get("region") or "",
         "available_sizes": row.get("durations", row.get("available_sizes")),
+        "availability": row.get("availability"),
+        "highlights": row.get("highlights"),
         "similarity": float(sim) if sim is not None else None,
     }
 

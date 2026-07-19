@@ -35,13 +35,32 @@ def test_classify_routes_search_query() -> None:
 def test_classify_routes_availability_query() -> None:
     assert _classify_intent("What dates are available for Tokyo?") == "availability"
     assert _classify_intent("When can I depart for Lisbon?") == "availability"
+    assert (
+        _classify_intent(
+            "Which duration options are available for Amalfi Coast Villa Week?"
+        )
+        == "availability"
+    )
 
 
 def test_classify_routes_memory_query() -> None:
     assert _classify_intent("Do you remember our last trip?") == "memory_recall"
     assert (
-        _classify_intent("Use what we discussed last time to suggest the next Tokyo step.")
+        _classify_intent(
+            "Using what we decided about my October Tokyo trip last time, "
+            "what should I do next?"
+        )
         == "memory_recall"
+    )
+
+
+def test_classify_routes_canonical_plan_query() -> None:
+    assert (
+        _classify_intent(
+            "Plan the Kyoto extension: find matching packages, then verify "
+            "available duration options."
+        )
+        == "plan"
     )
 
 

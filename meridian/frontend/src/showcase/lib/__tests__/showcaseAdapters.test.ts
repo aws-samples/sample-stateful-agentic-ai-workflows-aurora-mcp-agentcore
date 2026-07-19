@@ -22,9 +22,19 @@ describe('SHOWCASE_EXAMPLE_PROMPTS phase ladder', () => {
     expect(SHOWCASE_EXAMPLE_PROMPTS[4][1]).toBe(SHOWCASE_EXAMPLE_PROMPTS[3][2]);
   });
 
+  it('uses the Production failure unchanged as the Workflow plan success', () => {
+    expect(SHOWCASE_EXAMPLE_PROMPTS[5][2]).toBe(SHOWCASE_EXAMPLE_PROMPTS[4][2]);
+  });
+
   it('ends with distinct workflow branches that demonstrate durable orchestration', () => {
-    expect(SHOWCASE_EXAMPLE_PROMPTS[5][0].toLowerCase()).toContain('dates');
+    expect(SHOWCASE_EXAMPLE_PROMPTS[5][0].toLowerCase()).toContain('duration options');
     expect(SHOWCASE_EXAMPLE_PROMPTS[5][1].toLowerCase()).toContain('last time');
-    expect(SHOWCASE_EXAMPLE_PROMPTS[5][2].toLowerCase()).toContain('end-to-end');
+    expect(SHOWCASE_EXAMPLE_PROMPTS[5][2].toLowerCase()).toContain('then verify');
+  });
+
+  it('uses plain traveler language and explicit units', () => {
+    expect(SHOWCASE_EXAMPLE_PROMPTS[1][0]).toContain('$2,000 per traveler');
+    expect(SHOWCASE_EXAMPLE_PROMPTS[1][0].toLowerCase()).not.toContain('city break');
+    expect(SHOWCASE_EXAMPLE_PROMPTS[2][1].toLowerCase()).toContain('november');
   });
 });

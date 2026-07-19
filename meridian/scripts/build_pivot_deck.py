@@ -219,7 +219,7 @@ def build_slide_two(prs: Presentation) -> None:
     phases = [
         ("1", "SQL",
          "RDS Data API → trip_packages",
-         "“City breaks” works  ·  “Romantic week in Europe” returns 0"),
+         "“City trips under $2,000” works  ·  “Romantic wine-country week” returns 0"),
         ("2", "MCP",
          "postgres-mcp-server (public)",
          "Same intent gap — interface change, not intelligence"),

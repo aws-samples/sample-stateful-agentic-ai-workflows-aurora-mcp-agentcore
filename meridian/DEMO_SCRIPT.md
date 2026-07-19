@@ -109,8 +109,8 @@ Point to the **Architecture** section (five phase cards):
 
 | Query | What happens |
 | ----- | ------------ |
-| `City breaks` | Trip type filter on `trip_packages` |
-| `Beach & Resort` | Trip type match |
+| `Show me city trips under $2,000 per traveler.` | Trip type + per-traveler price filter on `trip_packages` |
+| `Show me beach and resort trips under $2,500 per traveler.` | Trip type + per-traveler price filter |
 | `Business travel under $1500` | Type + price filter |
 
 **Point to the agent trace:** RDS connection → filter SQL → package rows returned.
@@ -119,7 +119,7 @@ Point to the **Architecture** section (five phase cards):
 
 | Query | What happens |
 | ----- | ------------ |
-| `Compare our top trips and show prices in EUR` | **Wrong abstraction** — SQL can return rows, but compare + currency conversion belongs in a tool contract |
+| `Compare three trips from different categories and show their prices in euros.` | **Wrong abstraction** — SQL can return rows, but comparison + per-package currency conversion belongs in a tool contract |
 
 > "The user didn't ask a bad SQL question — they asked for a business operation. That's the hook for MCP."
 
@@ -142,14 +142,14 @@ Point to the **Architecture** section (five phase cards):
 
 | Query | Notes |
 | ----- | ----- |
-| `Compare our top trips and show prices in EUR` | `compare_packages` + `currency_convert` |
-| `What is the cheapest month to visit Tokyo?` | `seasonal_price_band` |
+| `Compare three trips from different categories and show their prices in euros.` | `compare_packages` + one `currency_convert` call per package |
+| `Show me the off-season price range for Tokyo packages in November.` | `seasonal_price_band` |
 
 ### Demo query that still breaks
 
 | Query | Notes |
 | ----- | ----- |
-| `A romantic slow week somewhere with great wine` | Mood/intent query — Phase 3 needed |
+| `Find a slow, romantic week in wine country with a villa stay.` | Mood/intent query — Phase 3 needed |
 
 ### Optional code walkthrough
 
@@ -207,14 +207,14 @@ and gets back `{}` — the RLS policy refuses to leak rows.
 
 | Query | Expected |
 | ----- | -------- |
-| `A romantic slow week somewhere with great wine` | Tuscany / Amalfi / Douro-style matches (MCP could not infer intent) |
+| `Find a slow, romantic week in wine country with a villa stay.` | Tuscany / Amalfi / Douro-style matches (MCP could not infer intent) |
 | `Weekend in Paris under $2k` | Price-aware semantic match |
 | `Family-friendly beach resort` | Intent-based matches |
 | `Is the Maldives package available?` | Routes to PackageAgent availability path |
 
 ### The money shot — cross-phase comparison
 
-1. Phase 2: `A romantic slow week somewhere with great wine` → no intent match
+1. Phase 2: `Find a slow, romantic week in wine country with a villa stay.` → no intent match
 2. Phase 3: same query → ranked trips  
 
 > "Same database. Same catalog. Different retrieval architecture."
@@ -233,7 +233,7 @@ and gets back `{}` — the RLS policy refuses to leak rows.
 
 ### What to say
 
-> "Phase 4 is the returning traveler. Meet **Alex Morgan** from BOS — traveling as a party of two, Tokyo culture trip Oct 12–19, shellfish allergy. None of that is in the prompt; it's in **Aurora** (`traveler_profiles`, `traveler_preferences`, `conversation_messages`, `trip_interactions`)."
+> "Phase 4 is the returning traveler. Meet **Alex Morgan** from JFK — traveling as a party of two, Tokyo culture trip Oct 12–19, shellfish allergy. None of that is in the prompt; it's in **Aurora** (`traveler_profiles`, `traveler_preferences`, `conversation_messages`, `trip_interactions`)."
 
 Point to the **persona card** and trace memory spans:
 
@@ -248,7 +248,7 @@ Point to the **persona card** and trace memory spans:
 | ----- | ----------------- |
 | `Tokyo trip for two in October` | Tokyo packages + memory-aware greeting |
 | `Beach escape under $2500 — remember my food allergies` | Budget + dietary context from profile |
-| `What did we discuss last time about Iceland?` | Session / interaction recall (richer after prior turns) |
+| `What did we decide about my October Tokyo trip last time? Continue from there.` | Session / interaction recall grounded in the seeded Tokyo thread |
 
 ### Follow-up in same session
 
@@ -385,12 +385,12 @@ aws rds-data execute-statement \
 
 In the UI, switch the phase pill to **Workflow** and try the same prompts:
 
-- "What dates are open for the Amalfi Coast Villa Week?" → classify routes to
+- "Which duration options are available for Amalfi Coast Villa Week?" → classify routes to
   `availability`
-- "Use what we discussed last time to suggest the next Tokyo step." → classify
+- "Using what we decided about my October Tokyo trip last time, what should I do next?" → classify
   routes to `memory_recall`
-- "Plan a Kyoto cultural trip end-to-end: find matching trips, then check which
-  November departures are open." → classify routes to `plan`
+- "Plan the Kyoto extension: find matching packages, then verify available
+  duration options." → classify routes to `plan`
 
 In the trace, point out:
 
@@ -449,28 +449,28 @@ Phase 5   Durable Workflow   checkpoint written between graph nodes
 
 | Works | Breaks |
 | ----- | ------ |
-| City breaks under $2000 | Compare our top trips and show prices in EUR |
-| Beach & Resort trips under $2500 | |
+| Show me city trips under $2,000 per traveler. | Compare three trips from different categories and show their prices in euros. |
+| Show me beach and resort trips under $2,500 per traveler. | |
 
 ### Phase 2 — works / breaks
 
 | Works | Breaks |
 | ----- | ------ |
-| Compare our top trips and show prices in EUR | A romantic slow week somewhere with great wine |
-| What is the cheapest month to visit Tokyo? | |
+| Compare three trips from different categories and show their prices in euros. | Find a slow, romantic week in wine country with a villa stay. |
+| Show me the off-season price range for Tokyo packages in November. | |
 
 ### Phase 3 — suggested
 
 - Weekend in Paris under $2k  
 - Family-friendly beach resort  
 - Is the Maldives package available?  
-- A romantic slow week somewhere with great wine *(compare to Phase 2)*
+- Find a slow, romantic week in wine country with a villa stay. *(compare to Phase 2)*
 
 ### Phase 4 — suggested (as Alex Morgan)
 
 - Tokyo trip for two in October  
 - Beach escape under $2500 — remember my food allergies  
-- What did we discuss last time about Iceland?  
+- What did we decide about my October Tokyo trip last time? Continue from there.
 
 ---
 
@@ -486,12 +486,12 @@ curl -s http://localhost:8000/api/memory/trv_meridian_demo | jq .
 # Phase 1 — filter
 curl -s -X POST http://localhost:8000/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"message":"City breaks","phase":1}' | jq '.message, (.products | length)'
+  -d '{"message":"Show me city trips under $2,000 per traveler.","phase":1}' | jq '.message, (.products | length)'
 
 # Phase 3 — semantic
 curl -s -X POST http://localhost:8000/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"message":"A romantic slow week somewhere with great wine","phase":3}' | jq '.message, (.products | length)'
+  -d '{"message":"Find a slow, romantic week in wine country with a villa stay.","phase":3}' | jq '.message, (.products | length)'
 
 # Phase 4 — memory + search
 curl -s -X POST http://localhost:8000/api/chat \
@@ -547,7 +547,7 @@ uvicorn backend.main:app --reload --port 8000
 | ----- | ----- |
 | ID | `trv_meridian_demo` |
 | Name | Alex Morgan |
-| Home | BOS |
+| Home | JFK |
 | Party | 2 |
 | Goal | Tokyo culture trip — Oct 12–19 |
 | Dietary | Shellfish allergy |

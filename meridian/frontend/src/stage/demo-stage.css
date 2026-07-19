@@ -369,7 +369,7 @@
   color: #bff5e8;
   font-size: 11.5px;
   font-weight: 600;
-  /* Long facts ("loyalty programs · Marriott Bonvoy, Delta SkyMiles")
+  /* Long facts ("loyalty programs · Bonvoy Platinum, MileagePlus 1K")
      wrap inside the chip and stay within the panel instead of bleeding
      past its right edge. max-width caps a single chip at the column. */
   max-width: 100%;

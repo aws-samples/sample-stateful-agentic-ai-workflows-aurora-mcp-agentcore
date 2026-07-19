@@ -5,6 +5,7 @@ import {
   DEMO_TRAVELER_ID,
   MCP_TOOL_CATALOG,
 } from '../proDemoData'
+import { SHOWCASE_EXAMPLE_PROMPTS } from '../../showcase/lib/showcaseAdapters'
 
 describe('proDemoData static config', () => {
   it('DEMO_TRAVELER_ID matches the seeded id', () => {
@@ -13,7 +14,8 @@ describe('proDemoData static config', () => {
 
   it('DEMO_PROMPT is a non-empty multi-intent example query', () => {
     expect(DEMO_PROMPT.length).toBeGreaterThan(0)
-    expect(DEMO_PROMPT.toLowerCase()).toContain('tokyo')
+    expect(DEMO_PROMPT.toLowerCase()).toContain('kyoto')
+    expect(DEMO_PROMPT).toBe(SHOWCASE_EXAMPLE_PROMPTS[5][2])
   })
 
   it('MCP_TOOL_CATALOG lists postgres.run_query and trips.hybrid_search', () => {

@@ -39,6 +39,7 @@ Run stand-alone (e.g. for Claude Desktop):
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from typing import Any, Dict, List, Optional
@@ -68,7 +69,7 @@ _FX_PER_USD: Dict[str, float] = {
 }
 
 # Loyalty tier thresholds (points → tier label). Real systems plug into
-# Marriott Bonvoy / Delta SkyMiles APIs; the demo returns the same
+# Marriott Bonvoy / United MileagePlus APIs; the demo returns the same
 # shape so the agent can reason about tier without us shipping creds.
 _LOYALTY_TIERS = [
     (0, "Member"),
@@ -275,13 +276,44 @@ async def loyalty_balance(traveler_id: str, program: str) -> Dict[str, Any]:
 
     Args:
         traveler_id: e.g. 'trv_meridian_demo'.
-        program: e.g. 'Marriott Bonvoy', 'Delta SkyMiles'.
+        program: e.g. 'Marriott Bonvoy', 'United MileagePlus'.
 
-    Demo implementation derives a deterministic point balance from the
-    traveler_id hash so every query returns the same answer across runs.
-    Real deployments would call the loyalty platform API here.
+    The demo traveler is read from Aurora ``traveler_profiles.loyalty_programs``.
+    Unknown travelers use a stable SHA-256-derived fallback so repeat runs never
+    change with Python's process-level hash seed.
     """
-    base = abs(hash(f"{traveler_id}:{program}")) % 200_000
+    row = await _db().execute_one(
+        """
+        SELECT loyalty_programs
+        FROM traveler_profiles
+        WHERE traveler_id = %s
+        """,
+        (traveler_id,),
+    )
+    programs = (row or {}).get("loyalty_programs") or {}
+    requested = (program or "").lower()
+    if isinstance(programs, dict):
+        for value in programs.values():
+            if not isinstance(value, dict):
+                continue
+            configured_program = str(value.get("program") or "")
+            if (
+                requested in configured_program.lower()
+                or configured_program.lower() in requested
+            ):
+                return {
+                    "traveler_id": traveler_id,
+                    "program": configured_program,
+                    "member_id": value.get("member_id"),
+                    "points_balance": int(value.get("points_balance") or 0),
+                    "tier": value.get("tier") or "Member",
+                    "next_tier_threshold": None,
+                    "points_to_next_tier": 0,
+                    "source": "traveler_profiles.loyalty_programs",
+                }
+
+    digest = hashlib.sha256(f"{traveler_id}:{program}".encode("utf-8")).digest()
+    base = int.from_bytes(digest[:8], "big") % 200_000
     tier_label = _LOYALTY_TIERS[0][1]
     next_tier_at: Optional[int] = None
     for i, (threshold, label) in enumerate(_LOYALTY_TIERS):
@@ -296,7 +328,7 @@ async def loyalty_balance(traveler_id: str, program: str) -> Dict[str, Any]:
         "tier": tier_label,
         "next_tier_threshold": next_tier_at,
         "points_to_next_tier": (next_tier_at - base) if next_tier_at else 0,
-        "source": "indicative",
+        "source": "stable indicative fallback",
     }
 
 

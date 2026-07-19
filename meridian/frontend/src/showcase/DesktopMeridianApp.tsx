@@ -9,6 +9,8 @@ import { AuroraEvidenceStrip } from './components/AuroraEvidenceStrip';
 import { TracePanel } from './components/TracePanel';
 import { TravelerContextPanel } from './components/TravelerContextPanel';
 import { TripDetailDrawer } from './components/TripDetailDrawer';
+import { ComparisonDialog } from './components/ComparisonDialog';
+import { JourneyPanel } from './components/JourneyPanel';
 import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
 import { SHOWCASE_PHASES } from './lib/showcaseAdapters';
 import { ALEX_IMAGE_URL, ALEX_NAME } from './lib/personas';
@@ -28,7 +30,7 @@ function BrandMark() {
   return <span className="mds-brand-mark" aria-hidden="true" />;
 }
 
-function NavIcon({ id }: { id: NavItemId | 'settings' }) {
+function NavIcon({ id }: { id: NavItemId }) {
   if (id === 'concierge') {
     return (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
@@ -63,7 +65,7 @@ function NavIcon({ id }: { id: NavItemId | 'settings' }) {
       </svg>
     );
   }
-  if (id === 'preferences' || id === 'settings') {
+  if (id === 'preferences') {
     return (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="3.1" />
@@ -80,6 +82,7 @@ function NavIcon({ id }: { id: NavItemId | 'settings' }) {
 }
 
 export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) {
+  const [surfaceMode, setSurfaceMode] = useState<'experience' | 'proof'>('experience');
   const [memoryOpen, setMemoryOpen] = useState(false);
   // Let presenters free right-rail space without losing traveler context.
   const [forYouCollapsed, setForYouCollapsed] = useState(false);
@@ -103,7 +106,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
         : 'evening';
 
   return (
-    <div className="mds-desktop-app">
+    <div className={`mds-desktop-app is-${surfaceMode}`}>
       <aside className="mds-desktop-sidebar">
         <div className="mds-brand">
           <BrandMark />
@@ -147,19 +150,13 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
           })}
         </nav>
         <div className="mds-sidebar-spacer" />
-        <button type="button" className="mds-nav-item" onClick={() => setMemoryOpen(true)}>
-          <span className="mds-nav-icon" aria-hidden="true">
-            <NavIcon id="settings" />
-          </span>
-          Settings
-        </button>
         <div className="mds-account-mini">
           <span className="mds-avatar is-photo" aria-hidden="true">
             <img src={ALEX_IMAGE_URL} alt={ALEX_NAME} loading="lazy" />
           </span>
           <div className="mds-account-copy">
             <strong>Alex Morgan</strong>
-            <span>Explorer</span>
+            <span>Bonvoy Platinum Elite</span>
           </div>
         </div>
       </aside>
@@ -184,15 +181,19 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
               <span className="mds-status-unit">USD</span>
             </span>
           </div>
+          <div className="mds-surface-switch" role="tablist" aria-label="Showcase view">
+            <button type="button" role="tab" aria-selected={surfaceMode === 'experience'} className={surfaceMode === 'experience' ? 'is-active' : ''} onClick={() => setSurfaceMode('experience')}>Experience</button>
+            <button type="button" role="tab" aria-selected={surfaceMode === 'proof'} className={surfaceMode === 'proof' ? 'is-active' : ''} onClick={() => { setSurfaceMode('proof'); setAuroraEvidenceCollapsed(false); }}>System proof</button>
+          </div>
           <div className="mds-headline-row">
             <div>
               <h1>{`Good ${greetingPart}, Alex.`}</h1>
               <p>Where would you like to go next?</p>
             </div>
-            <PhaseSelector state={state} />
+            {surfaceMode === 'proof' && <PhaseSelector state={state} />}
           </div>
 
-          <div className="mds-capability-ladder" aria-label="Five phase capability ladder">
+          {surfaceMode === 'proof' && <div className="mds-capability-ladder" aria-label="Five phase capability ladder">
             {SHOWCASE_PHASES.map((phase) => (
               <div
                 key={phase.label}
@@ -203,13 +204,13 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
                 <small>{phase.proofPoint}</small>
               </div>
             ))}
-          </div>
+          </div>}
 
-          <AuroraEvidenceStrip
+          {surfaceMode === 'proof' && <AuroraEvidenceStrip
             state={state}
             collapsed={auroraEvidenceCollapsed}
             onToggleCollapsed={() => setAuroraEvidenceCollapsed((prev) => !prev)}
-          />
+          />}
 
           {/* Phase callout names the new capability added at this rung. */}
           {state.phaseHint && (
@@ -263,9 +264,11 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
           {/* Product cards stay attached to the bot turn that produced them. */}
 
           <div className="mds-main-actions">
+            {surfaceMode === 'proof' && (
             <button type="button" onClick={() => state.replayLastPrompt()} disabled={!state.lastPrompt || state.isLoading}>
               Rerun across {state.phaseLabel}
             </button>
+            )}
             <button type="button" onClick={() => setMemoryOpen(true)}>
               Inspect memory
             </button>
@@ -286,6 +289,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
       </main>
 
       <aside className="mds-desktop-right">
+        {surfaceMode === 'experience' ? <JourneyPanel state={state} /> : <>
         <TravelerContextPanel
           state={state}
           onOpenMemory={() => setMemoryOpen(true)}
@@ -297,11 +301,14 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
           collapsed={activityCollapsed}
           onToggleCollapsed={() => setActivityCollapsed((prev) => !prev)}
         />
+        </>}
       </aside>
 
       <TripDetailDrawer state={state} />
+      <ComparisonDialog state={state} />
       <MemoryDrawer state={state} open={memoryOpen} onClose={() => setMemoryOpen(false)} />
       <NavPanelDrawer state={state} panel={navPanel} onClose={() => setNavPanel(null)} />
+      {state.workspaceNotice && <div className="mds-toast" role="status">{state.workspaceNotice}</div>}
     </div>
   );
 }

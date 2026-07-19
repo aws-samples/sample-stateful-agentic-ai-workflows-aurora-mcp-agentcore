@@ -549,9 +549,10 @@ class OrchestrationAgent:
         intent = state.get("intent", "search")
         if intent == "plan":
             response = (
-                f"Planned end-to-end: searched the catalog, then checked live "
-                f"departures across {len(packages)} matching trips — each step "
-                f"checkpointed to Aurora so the plan can pause and resume."
+                f"Planned the extension: searched the catalog, then checked "
+                f"available duration options across {len(packages)} matching "
+                f"trips — each step checkpointed to Aurora so the plan can "
+                f"pause and resume."
                 if packages
                 else "Ran the full plan graph (search → availability), but no "
                 "trips matched — try broadening the destination."

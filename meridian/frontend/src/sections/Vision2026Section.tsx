@@ -110,7 +110,7 @@ export function Vision2026Section() {
           <div>
             <div className="memory-preview-eyebrow">Wave 01 · Memory of me</div>
             <p className="memory-preview-copy">
-              Meet <strong>Alex Morgan</strong> — a demo traveler from BOS with a held Tokyo culture
+              Meet <strong>Alex Morgan</strong> — a demo traveler from JFK with a held Tokyo culture
               trip (Oct 12-19) and a booked Tuscany week in Feb 2026. AgentCore Memory recalls the
               shellfish allergy, no-red-eye rule, boutique-over-chain lodging style, and active
               loyalty programs from Aurora before routing.
@@ -122,7 +122,7 @@ export function Vision2026Section() {
             onActivate={() =>
               openConcierge({
                 phase: 4,
-                prompt: 'What did we discuss last time? Pick up where we left off.',
+                prompt: 'What did we decide about my October Tokyo trip last time? Continue from there.',
                 send: true,
               })
             }

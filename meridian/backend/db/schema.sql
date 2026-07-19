@@ -145,6 +145,7 @@ CREATE TABLE bookings (
     traveler_id VARCHAR(50) REFERENCES travelers(traveler_id),
     status VARCHAR(50) DEFAULT 'pending',
     total_amount DECIMAL(10, 2) NOT NULL,
+    hold_expires_at TIMESTAMPTZ,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     confirmed_at TIMESTAMP
 );

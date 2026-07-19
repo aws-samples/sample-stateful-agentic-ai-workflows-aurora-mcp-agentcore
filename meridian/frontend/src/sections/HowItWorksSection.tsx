@@ -30,7 +30,7 @@ const steps: JourneyStep[] = [
     desc: 'The lab. Direct RDS Data API. Fast for exact matches — and it breaks when the user asks for comparison plus currency conversion.',
     chips: ['RDS Data API', 'SQL · WHERE'],
     scale: '~50 trips/day · small team, one ops console',
-    persona: 'Alex types "Beach & Resort under $1500" — a SQL WHERE clause returns 3 packages. "Compare top trips in EUR" needs domain tools SQL does not own.',
+    persona: 'Alex asks for city trips under $2,000 — a SQL WHERE clause returns matching rows. Comparing categories and converting every price to euros needs domain tools SQL does not own.',
     skills: ['sql_filter'],
   },
   {
@@ -41,7 +41,7 @@ const steps: JourneyStep[] = [
     desc: 'Two MCP servers in one turn. postgres-mcp wraps the catalog; meridian-concierge adds domain tools (compare_packages, currency_convert, seasonal_price_band). Typed schemas, IAM auth — but intent still loses.',
     chips: ['postgres-mcp', 'meridian-concierge', 'tool registry'],
     scale: '~500 trips/day · booking, pricing, and support agents share one catalog',
-    persona: '"Compare top trips in EUR" routes to compare_packages + currency_convert. "Cheapest month for Tokyo" hits seasonal_price_band. Same Bedrock turn calls both servers — but a romantic-wine prompt still has nothing to keyword on.',
+    persona: 'A cross-category comparison in euros routes to compare_packages + currency_convert. Tokyo’s November range hits seasonal_price_band — but a slow wine-country prompt still has nothing literal to keyword on.',
     skills: ['run_query', 'compare_packages', 'currency_convert', 'seasonal_price_band'],
   },
   {
@@ -52,7 +52,7 @@ const steps: JourneyStep[] = [
     desc: 'Where intent finally lands. Cohere Embed v4 + hybrid pgvector + tsvector + Cohere Rerank 3.5. Strands supervisor delegates to SearchAgent / PackageAgent. Memory recall remains out of scope — that gap motivates Production.',
     chips: ['pgvector HNSW', 'tsvector', 'Cohere v4', 'Cohere Rerank', 'Strands supervisor'],
     scale: '~5,000 trips/day · customer-facing natural language',
-    persona: 'Alex: "A romantic slow week somewhere with great wine." pgvector + Cohere Rerank surface Tuscany Wine & Wellness. Then Alex asks "Pick up where we left off" — Retrieval honestly says no.',
+    persona: 'Alex asks for a slow, romantic wine-country week. pgvector + Cohere Rerank surface Tuscany Wine & Wellness. Then Alex asks what was decided last time — Retrieval honestly says it has no prior-turn memory.',
     skills: ['hybrid_search', 'availability', 'rerank'],
   },
   {
@@ -74,7 +74,7 @@ const steps: JourneyStep[] = [
     desc: 'LangGraph owns control flow when we want it inspectable, branchable, resumable. Explicit StateGraph (classify → search → availability → memory_recall → synthesize) with PostgresSaver checkpoints in Aurora. Production chained three jobs implicitly inside one Bedrock turn — Workflow routes the same query through named nodes so each step is debuggable and resumable.',
     chips: ['LangGraph', 'StateGraph', 'PostgresSaver', 'AgentCore'],
     scale: '~500,000 trips/day · multi-step workflows that span weeks',
-    persona: 'Alex: "Plan our October Tokyo trip — find dates, pick a Marriott property, hold a Kyoto side trip." Same intent as Production, but each step lands in its own checkpointed node.',
+    persona: 'Alex asks to plan the Kyoto extension by finding packages, then verifying duration availability. Each dependent step lands in its own checkpointed node.',
     skills: ['classify', 'search', 'availability', 'memory_recall', 'synthesize'],
   },
 ];

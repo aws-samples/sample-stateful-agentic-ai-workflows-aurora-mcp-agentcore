@@ -40,11 +40,8 @@
   --mds-font: "Geist", "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
   --mds-font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  /* Global type scale for the showcase. Every font-size below is
-     calc(<base>px * var(--mds-fs)), so this one knob lifts the whole
-     app for big-room legibility without browser zoom. 1 = original;
-     1.24 is tuned for in-room monitor readability. */
-  --mds-fs: 1.24;
+  /* Global type scale for projector legibility without browser zoom. */
+  --mds-fs: 1.12;
 
   color: var(--mds-ink);
   font-family: var(--mds-font);
@@ -65,13 +62,13 @@
   --mds-bg-2: #dde5ee;
   --mds-shell: #eef2f7;
   --mds-shell-elevated: #ffffff;
-  --mds-panel: rgba(255, 255, 255, 0.72);
-  --mds-panel-2: rgba(255, 255, 255, 0.85);
-  --mds-line: rgba(15, 23, 42, 0.10);
-  --mds-line-strong: rgba(15, 23, 42, 0.16);
+  --mds-panel: rgba(255, 255, 255, 0.84);
+  --mds-panel-2: rgba(255, 255, 255, 0.94);
+  --mds-line: rgba(15, 23, 42, 0.14);
+  --mds-line-strong: rgba(15, 23, 42, 0.22);
   --mds-ink: #0f172a;
   --mds-muted: #475569;   /* darkened from mockup #64748b for projector contrast */
-  --mds-dim: #6b7a8d;     /* darkened from #94a3b8 */
+  --mds-dim: #58677a;
   --mds-cyan: #0891b2;
   --mds-amber: #b45309;
   --mds-green: #15803d;
@@ -79,7 +76,7 @@
 
   --mds-on-surface: #0f172a;
   --mds-on-surface-soft: #334155;
-  --mds-on-surface-faint: #64748b;
+  --mds-on-surface-faint: #526176;
   --mds-fill-1: rgba(15, 23, 42, 0.03);
   --mds-fill-2: rgba(15, 23, 42, 0.06);
   --mds-fill-3: rgba(15, 23, 42, 0.10);
@@ -4379,6 +4376,82 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* Production shell: stable laptop/mobile geometry and product dialogs. */
+.mds-root * { letter-spacing: 0; }
+.mds-surface-switch { display:flex; gap:3px; align-self:flex-start; padding:3px; border:1px solid var(--mds-line-strong); border-radius:8px; background:var(--mds-fill-2); }
+.mds-surface-switch button { min-height:32px; padding:0 13px; border:0; border-radius:6px; color:var(--mds-muted); background:transparent; font-weight:700; }
+.mds-surface-switch button.is-active { color:var(--mds-on-surface); background:var(--mds-card); box-shadow:var(--mds-shadow-1); }
+.mds-toast { position:fixed; left:50%; bottom:24px; z-index:100; transform:translateX(-50%); padding:11px 16px; border:1px solid var(--mds-cyan-line); border-radius:8px; color:var(--mds-on-surface); background:var(--mds-shell-elevated); box-shadow:var(--mds-shadow-2); }
+.mds-modal-backdrop { position:fixed; inset:0; z-index:90; display:grid; place-items:center; padding:24px; background:rgba(2,6,12,.72); backdrop-filter:blur(10px); }
+.mds-trip-modal,.mds-compare-modal { position:relative; width:min(1040px,100%); max-height:min(860px,calc(100dvh - 48px)); overflow:auto; border:1px solid var(--mds-line-strong); border-radius:8px; color:var(--mds-ink); background:var(--mds-shell-elevated); box-shadow:0 28px 80px rgba(0,0,0,.5); }
+.mds-trip-modal { display:grid; grid-template-columns:minmax(300px,.9fr) minmax(420px,1.1fr); }
+.mds-trip-modal-visual { position:relative; min-height:620px; }
+.mds-trip-modal-visual .mds-trip-visual { height:100%; }
+.mds-trip-modal-visual>span { position:absolute; left:20px; bottom:20px; color:#fff; font-weight:700; }
+.mds-trip-modal-body { display:grid; align-content:start; gap:18px; padding:34px; }
+.mds-trip-modal-body h2,.mds-compare-modal h2 { margin:5px 0 8px; font-size:30px; color:var(--mds-on-surface); }
+.mds-trip-modal-body p,.mds-trip-section { color:var(--mds-on-surface-soft); line-height:1.55; }
+.mds-modal-close { position:absolute; top:14px; right:14px; z-index:2; width:36px; height:36px; display:grid; place-items:center; border:1px solid var(--mds-line-strong); border-radius:50%; color:var(--mds-on-surface); background:var(--mds-card); }
+.mds-trip-facts,.mds-journey-profile dl { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--mds-line); }
+.mds-trip-facts div,.mds-journey-profile dl div { padding:12px; background:var(--mds-card); }
+.mds-trip-facts span,.mds-trip-facts b,.mds-journey-profile dt,.mds-journey-profile dd { display:block; margin:0; }
+.mds-trip-facts span,.mds-journey-profile dt { color:var(--mds-muted); font-size:calc(12px * var(--mds-fs)); }
+.mds-journey-profile dd { color:var(--mds-on-surface); font-size:calc(15px * var(--mds-fs)); font-weight:650; }
+.mds-journey-loyalty { padding:12px; border-top:1px solid var(--mds-line); background:var(--mds-card); }
+.mds-journey-loyalty span,.mds-journey-loyalty b,.mds-journey-loyalty small { display:block; }
+.mds-journey-loyalty span,.mds-journey-loyalty small { color:var(--mds-muted); font-size:calc(11.5px * var(--mds-fs)); }
+.mds-journey-loyalty b { margin:3px 0; color:var(--mds-on-surface); font-size:calc(13px * var(--mds-fs)); line-height:1.35; }
+.mds-trip-section ul,.mds-compare-copy ul { display:grid; gap:8px; margin-top:10px; padding-left:18px; }
+.mds-availability-list { display:flex; flex-wrap:wrap; gap:8px; }.mds-availability-list span { padding:9px; border:1px solid var(--mds-line); border-radius:6px; }.mds-availability-list b { display:block; }
+.mds-trip-disclosure,.mds-hold-receipt { display:flex; gap:9px; padding:12px; border:1px solid var(--mds-line); border-radius:6px; background:var(--mds-fill-1); }
+.mds-hold-receipt { flex-direction:column; border-color:var(--mds-cyan-line); }
+.mds-trip-modal-actions,.mds-journey-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.mds-trip-modal-actions button,.mds-journey-actions button,.mds-compare-copy button { min-height:40px; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:0 14px; border:1px solid var(--mds-line-strong); border-radius:6px; color:var(--mds-on-surface); background:var(--mds-card); font-weight:700; }
+.mds-trip-modal-actions .is-primary,.mds-compare-copy .is-primary { color:#06232a; background:var(--mds-cyan); margin-left:auto; }
+.mds-compare-modal { padding:26px; }.mds-compare-modal>header { display:flex; justify-content:space-between; }.mds-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.mds-compare-grid article { position:relative; overflow:hidden; border:1px solid var(--mds-line); border-radius:8px; background:var(--mds-card); }.mds-compare-copy { display:grid; gap:12px; padding:16px; }.mds-compare-copy dl { display:grid; gap:6px; }.mds-compare-copy dl div { display:flex; justify-content:space-between; }.mds-compare-remove { position:absolute; top:8px; right:8px; z-index:2; width:30px; height:30px; border:0; border-radius:50%; }
+.mds-journey-panel { display:grid; align-content:start; gap:14px; padding:18px; }.mds-journey-panel>header { display:flex; justify-content:space-between; font-size:calc(15px * var(--mds-fs)); }.mds-journey-hero { position:relative; min-height:270px; overflow:hidden; padding:0; border:0; border-radius:8px; text-align:left; }.mds-journey-hero .mds-trip-visual { position:absolute; inset:0; height:100%; }.mds-journey-hero>span { position:absolute; inset:auto 16px 16px; display:grid; gap:5px; color:#fff; text-shadow:0 1px 8px #000; }.mds-journey-hero small { display:flex; gap:5px; }.mds-journey-empty { position:relative; min-height:250px; display:grid; place-content:end start; gap:6px; overflow:hidden; padding:20px; border-radius:8px; color:#fff; text-align:left; background:linear-gradient(180deg,transparent 25%,rgba(3,9,15,.86)),url('/travel/coast.jpg') center/cover; box-shadow:var(--mds-shadow-1); }.mds-journey-empty svg { color:var(--mds-cyan); }.mds-journey-empty span { color:rgba(255,255,255,.82); font-size:calc(13px * var(--mds-fs)); line-height:1.45; }
+.mds-drawer { overflow-y:auto; }
+.mds-drawer-row input { width:100%; margin:5px 0; padding:8px; border:1px solid var(--mds-cyan-line); border-radius:6px; color:var(--mds-on-surface); background:var(--mds-card); }
+.mds-memory-disclosure { margin:0 0 16px; color:var(--mds-on-surface-soft); font-size:13px; line-height:1.5; }
+
+@media (max-width:1450px) {
+  .mds-desktop-app { --mds-right-rail:340px; grid-template-columns:190px minmax(0,1fr) var(--mds-right-rail); }
+  .mds-desktop-scroll { padding:26px 24px 20px; }
+  .mds-desktop-dock { padding:12px 24px 18px; }
+  .mds-headline-row { grid-template-columns:1fr; align-items:start; }
+  .mds-phase-selector-wrap { justify-items:stretch; max-width:none; }
+  .mds-phase-selector { width:100%; }
+  .mds-phase-selector button { min-width:0; }
+  .mds-headline-row h1 { font-size:48px; }
+}
+@media (max-width:1100px) {
+  .mds-desktop-app { grid-template-columns:82px minmax(0,1fr); overflow:auto; }
+  .mds-desktop-sidebar { grid-row:1 / span 2; }
+  .mds-brand { font-size:0; justify-content:center; }
+  .mds-nav-item { padding:0; justify-content:center; font-size:0; }
+  .mds-nav-icon { width:20px; height:20px; }
+  .mds-account-copy { display:none; }
+  .mds-desktop-right { grid-column:2; height:auto; min-height:0; }
+}
+@media (max-width:760px) {
+  .mds-desktop-app { display:block; min-height:100dvh; overflow:visible; }
+  .mds-fullbleed-route .mds-desktop-sidebar { position:relative; height:auto; min-height:0; overflow:visible; }
+  .mds-brand { justify-content:flex-start; font-size:25px; }
+  .mds-nav-item { gap:4px; justify-content:flex-start; padding:0 4px; font-size:11px; }
+  .mds-fullbleed-route .mds-desktop-main { height:auto; min-height:100dvh; display:flex; flex-direction:column; padding:0; overflow:visible; }
+  .mds-desktop-scroll { overflow:visible; padding:24px 18px; }
+  .mds-desktop-dock { position:sticky; bottom:0; z-index:15; padding:12px 18px calc(14px + env(safe-area-inset-bottom)); }
+  .mds-fullbleed-route .mds-desktop-right { height:auto; min-height:0; padding:18px; display:block; }
+  .mds-headline-row h1 { font-size:40px; }
+  .mds-top-actions { align-items:flex-start; }
+  .mds-status-pill { max-width:none; gap:6px; padding-inline:9px; white-space:nowrap; }
+  .mds-status-sep,.mds-status-unit { display:none; }
+  .mds-phase-selector { overflow-x:auto; grid-template-columns:repeat(5,minmax(86px,1fr)); }
+  .mds-capability-ladder { display:flex; overflow-x:auto; }.mds-capability-step { min-width:180px; }
+  .mds-trip-modal { display:block; }.mds-trip-modal-visual { min-height:260px; }.mds-trip-modal-body { padding:22px 18px; }.mds-trip-facts { grid-template-columns:1fr; }
+  .mds-compare-grid { grid-template-columns:1fr; }.mds-modal-backdrop { padding:10px; }
 }
 
 /* ============================================================

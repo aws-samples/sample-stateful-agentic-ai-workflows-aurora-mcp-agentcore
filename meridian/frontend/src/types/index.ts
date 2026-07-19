@@ -10,7 +10,11 @@ export interface Product {
   description: string;
   image_url: string;
   category: string;
+  destination?: string;
+  region?: string;
   available_sizes?: string[] | null;
+  availability?: Record<string, number> | null;
+  highlights?: string[] | null;
   similarity?: number;
   // Phase 3 rerank-visualization metadata (Retrieval path only).
   pre_rerank_position?: number | null;
@@ -122,6 +126,9 @@ export interface Order {
   total: number;
   status: string;
   estimated_delivery?: string;
+  hold_expires_at?: string;
+  departure_date?: string;
+  payment_required?: boolean;
 }
 
 export type Phase = 1 | 2 | 3 | 4 | 5;
@@ -143,6 +150,13 @@ export interface ChatResponse {
   memory_facts?: LongTermMemoryFact[];
 }
 
+export interface LoyaltyProgram {
+  program: string;
+  member_id?: string;
+  tier: string;
+  points_balance?: number;
+}
+
 export interface TravelerProfile {
   full_name?: string;
   home_airport?: string;
@@ -152,6 +166,7 @@ export interface TravelerProfile {
   seat_preference?: string;
   dietary_notes?: string;
   trip_goal?: string;
+  loyalty_programs?: Record<string, LoyaltyProgram | string>;
 }
 
 export interface MemoryProfileResponse {
@@ -184,6 +199,8 @@ export interface OrderRequest {
   size?: string;
   quantity?: number;
   phase: Phase;
+  traveler_id?: string;
+  action?: 'hold';
 }
 
 export interface OrderResponse {

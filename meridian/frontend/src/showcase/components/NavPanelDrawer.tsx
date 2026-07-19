@@ -2,6 +2,8 @@ import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import type { Product } from '../../types';
 import { SHOWCASE_EXAMPLE_PROMPTS, SHOWCASE_PHASES } from '../lib/showcaseAdapters';
 import { ALEX_IMAGE_URL, ALEX_NAME } from '../lib/personas';
+import { X } from 'lucide-react';
+import { useDialogA11y } from '../hooks/useDialogA11y';
 
 // Lightweight-but-complete side panels for the sidebar nav. Each panel
 // renders REAL session / Aurora state — no fixtures — so a presenter (or a
@@ -31,15 +33,18 @@ export function NavPanelDrawer({
   panel: NavPanelId | null;
   onClose: () => void;
 }) {
+  const dialogRef = useDialogA11y(Boolean(panel), onClose);
   if (!panel) return null;
 
   return (
     <div className="mds-drawer-backdrop" onClick={onClose} role="presentation">
       <aside
+        ref={dialogRef}
         className="mds-drawer"
         role="dialog"
         aria-modal="true"
         aria-label={PANEL_TITLE[panel]}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <header>
@@ -48,7 +53,7 @@ export function NavPanelDrawer({
             <strong>Alex Morgan</strong>
           </div>
           <button type="button" onClick={onClose} aria-label={`Close ${PANEL_TITLE[panel]}`}>
-            x
+            <X size={17} />
           </button>
         </header>
 
@@ -63,13 +68,10 @@ export function NavPanelDrawer({
 
 // --- Trips: saved trips + this turn's recommendations -------------------
 function TripsPanel({ state, onClose }: { state: MeridianShowcaseState; onClose: () => void }) {
-  const recs = state.recommendations;
-  const savedRecs = recs.filter((p) => state.savedTripIds.has(p.product_id));
-  // Saved trips first; fall back to the current turn's results.
-  const saved = savedRecs;
-  const browsing = recs.filter((p) => !state.savedTripIds.has(p.product_id));
+  const saved = state.savedTrips;
+  const browsing = state.recommendations.filter((p) => !state.savedTripIds.has(p.product_id));
 
-  if (recs.length === 0) {
+  if (saved.length === 0 && browsing.length === 0) {
     return (
       <div className="mds-navpanel-empty">
         <b>No trips yet</b>
@@ -88,14 +90,14 @@ function TripsPanel({ state, onClose }: { state: MeridianShowcaseState; onClose:
           ))}
         </div>
       )}
-      <div className="mds-navpanel-section">
+      {browsing.length > 0 && <div className="mds-navpanel-section">
         <div className="mds-navpanel-section-head">
           {saved.length > 0 ? 'This turn' : `Results · ${browsing.length}`}
         </div>
         {browsing.map((p) => (
           <TripRow key={p.product_id} product={p} state={state} onClose={onClose} />
         ))}
-      </div>
+      </div>}
     </div>
   );
 }

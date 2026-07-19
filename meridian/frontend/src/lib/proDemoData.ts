@@ -11,12 +11,10 @@
 export const DEMO_TRAVELER_ID = 'trv_meridian_demo';
 
 /** Headline example query used by the hero + catalog CTAs.
- *  Multi-intent Production prompt — Strands chains three jobs implicitly in one
- *  Bedrock turn (find dates / pick property / hold side trip), and the Workflow
- *  mode routes the same query through named classify → search → availability →
- *  memory nodes. */
+ *  The Workflow mode routes this two-step request through named
+ *  classify → search → availability nodes with a checkpoint after each. */
 export const DEMO_PROMPT =
-  'Plan our October Tokyo trip — find open dates, pick a Marriott property, and hold a Kyoto side trip';
+  'Plan the Kyoto extension: find matching packages, then verify available duration options.';
 
 /** MCP tool catalog displayed in the System section. */
 export interface McpToolEntry {
@@ -102,9 +100,9 @@ export const MCP_TOOL_CATALOG: McpToolEntry[] = [
     p50: '132ms',
     health: 'healthy',
     sampleInput:
-      '{\n  "system": "Meridian concierge — ground replies in trip_cards + memory facts",\n  "user": "Plan our October Tokyo trip — find open dates, pick a Marriott property, and hold a Kyoto side trip"\n}',
+      '{\n  "system": "Meridian concierge — ground replies in trip_cards + memory facts",\n  "user": "Plan the Kyoto extension: find matching packages, then verify available duration options."\n}',
     sampleOutput:
-      '"For your Tokyo Oct 12-19 window, the closest matches are Tokyo Executive Stopover ($1,949) and Tokyo Ryokan & Onsen Slow Week ($3,899), with shellfish allergy on dining and BOS departures with no red-eyes…"',
+      '"For your Tokyo Oct 12-19 window, the closest matches are Tokyo Executive Stopover ($1,949) and Tokyo Ryokan & Onsen Slow Week ($3,899), with shellfish allergy on dining and JFK departures with no red-eyes…"',
   },
 ];
 

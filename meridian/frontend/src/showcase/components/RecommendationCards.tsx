@@ -111,17 +111,15 @@ function RecommendationCard({
             >
               <button
                 type="button"
-                onClick={() => state.holdTrip(product)}
-                disabled={state.isLoading}
+                onClick={() => state.openTripDetails(product)}
               >
-                Hold
+                Details
               </button>
               <button
                 type="button"
-                onClick={() => state.planTrip(product)}
-                disabled={state.isLoading}
+                onClick={() => state.compareTrip(product)}
               >
-                Plan
+                Compare
               </button>
               <button
                 type="button"
@@ -129,9 +127,6 @@ function RecommendationCard({
                 aria-pressed={saved}
               >
                 {saved ? 'Saved' : 'Save'}
-              </button>
-              <button type="button" onClick={() => state.compareTrip(product)}>
-                Compare
               </button>
             </div>
           )}

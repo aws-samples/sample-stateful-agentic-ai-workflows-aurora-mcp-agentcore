@@ -18,7 +18,7 @@ The root route redirects to `/showcase`.
 - Node.js 20.19+ or 22.12+
 - AWS credentials with Amazon Bedrock and RDS Data API access
 - Aurora PostgreSQL 17 with pgvector enabled, or a cluster created through `scripts/create_cluster.sh`
-- Bedrock model access for `global.anthropic.claude-sonnet-4-6`
+- Bedrock model access for `global.anthropic.claude-sonnet-5`
 
 ## Quick Start
 
@@ -86,11 +86,11 @@ Each phase has two safe wins and one prompt that naturally motivates the next ph
 
 | Phase | Known-good prompts | Tee-up prompt |
 | ----- | ------------------ | ------------- |
-| SQL | `City breaks under $2000`; `Beach & Resort trips under $2500` | `Compare our top trips and show prices in EUR` → needs custom MCP tools |
-| MCP | `Compare our top trips and show prices in EUR`; `What is the cheapest month to visit Tokyo?` | `A romantic slow week somewhere with great wine` → needs intent retrieval |
-| Retrieval | `A romantic slow week somewhere with great wine`; `Check availability for the Tuscany Wine & Wellness week` | `What did we discuss last time? Pick up where we left off.` → needs durable memory |
-| Production | `Tokyo culture trip for two — boutique stays, local food, walkable neighborhoods`; `What did we discuss last time? Pick up where we left off.` | `Plan our October Tokyo trip — find open dates, pick a Marriott property, and stage a Kyoto side trip` → needs explicit workflow |
-| Workflow | `What dates are open for the Amalfi Coast Villa Week?`; `Use what we discussed last time to suggest the next Tokyo step.`; `Plan a Kyoto cultural trip end-to-end: find matching trips, then check which November departures are open.` | Finale: all three are successful branches |
+| SQL | `Show me city trips under $2,000 per traveler.`; `Show me beach and resort trips under $2,500 per traveler.` | `Compare three trips from different categories and show their prices in euros.` → needs custom MCP tools |
+| MCP | `Compare three trips from different categories and show their prices in euros.`; `Show me the off-season price range for Tokyo packages in November.` | `Find a slow, romantic week in wine country with a villa stay.` → needs intent retrieval |
+| Retrieval | `Find a slow, romantic week in wine country with a villa stay.`; `Which duration options are still available for Tuscany Wine & Wellness?` | `What did we decide about my October Tokyo trip last time? Continue from there.` → needs durable memory |
+| Production | `Find a Tokyo culture trip for two with boutique stays, local food, and walkable neighborhoods.`; `What did we decide about my October Tokyo trip last time? Continue from there.` | `Plan the Kyoto extension: find matching packages, then verify available duration options.` → needs explicit workflow |
+| Workflow | `Which duration options are available for Amalfi Coast Villa Week?`; `Using what we decided about my October Tokyo trip last time, what should I do next?`; `Plan the Kyoto extension: find matching packages, then verify available duration options.` | Finale: all three are successful branches |
 
 ## Architecture
 
@@ -150,7 +150,7 @@ Key environment variables are documented in `.env.example`.
 
 | Variable | Purpose |
 | -------- | ------- |
-| `BEDROCK_MODEL_ID` | LLM used by all Strands agents. Default: `global.anthropic.claude-sonnet-4-6` |
+| `BEDROCK_MODEL_ID` | LLM used by all Strands agents. Default: `global.anthropic.claude-sonnet-5` |
 | `BEDROCK_REGION` / `AWS_DEFAULT_REGION` | Bedrock and AWS SDK region |
 | `EMBEDDING_MODEL` | Default: `cohere.embed-v4:0` |
 | `EMBEDDING_DIMENSION` | Default: `1024` |
@@ -169,7 +169,7 @@ Key environment variables are documented in `.env.example`.
 | Workflow | LangGraph `StateGraph` with `PostgresSaver` checkpoints in Phase 5 |
 | Database | Aurora PostgreSQL 17, RDS Data API, pgvector HNSW, Row-Level Security |
 | Embeddings and rerank | Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`us.cohere.rerank-v3-5:0`) on Bedrock |
-| LLM | Claude Sonnet 4.6 on Amazon Bedrock (`global.anthropic.claude-sonnet-4-6`) |
+| LLM | Claude Sonnet 5 on Amazon Bedrock (`global.anthropic.claude-sonnet-5`) |
 | MCP | `awslabs.postgres-mcp-server`, custom `meridian-concierge`, and `meridian-memory` MCP servers |
 | Memory and identity | Bedrock AgentCore Memory and AgentCore Identity |
 

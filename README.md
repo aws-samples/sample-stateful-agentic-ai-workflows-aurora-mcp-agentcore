@@ -77,7 +77,7 @@ Open [`http://localhost:5173/showcase`](http://localhost:5173/showcase). The roo
 
 - **Frontend:** React, Vite, TypeScript
 - **Backend:** FastAPI, Strands Agents, LangGraph
-- **Models:** Claude Sonnet 4.6 on Amazon Bedrock, Cohere Embed v4, Cohere Rerank 3.5
+- **Models:** Claude Sonnet 5 on Amazon Bedrock, Cohere Embed v4, Cohere Rerank 3.5
 - **Data:** Aurora PostgreSQL 17, pgvector, RDS Data API, Row-Level Security
 - **Protocols and services:** Model Context Protocol, Bedrock AgentCore Runtime, Gateway, Memory, and Identity
 

@@ -1,6 +1,3 @@
-@import './styles/daylight.css';
-@import './styles/meridian-pro.css';
-@import './styles/concierge-studio.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -17,9 +14,9 @@ html {
 }
 
 body {
-  background: var(--dl-bg);
+  background: var(--dl-bg, #05080d);
   font-family: 'SF Pro Display', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  color: var(--dl-ink);
+  color: var(--dl-ink, #f5f8fb);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

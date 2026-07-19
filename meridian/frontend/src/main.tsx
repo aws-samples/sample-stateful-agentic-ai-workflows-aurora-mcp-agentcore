@@ -1,9 +1,10 @@
-import React from 'react'
+import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App'
-import { DemoStage } from './stage/DemoStage'
-import { MeridianDeviceShowcase } from './showcase/MeridianDeviceShowcase'
 import './index.css'
+
+const App = lazy(() => import('./App'))
+const DemoStage = lazy(() => import('./stage/DemoStage').then((module) => ({ default: module.DemoStage })))
+const MeridianDeviceShowcase = lazy(() => import('./showcase/MeridianDeviceShowcase'))
 
 /**
  * Lightweight path-based router.
@@ -33,5 +34,7 @@ function pickRoot() {
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>{pickRoot()}</React.StrictMode>,
+  <React.StrictMode>
+    <Suspense fallback={<div aria-label="Loading Meridian" />}>{pickRoot()}</Suspense>
+  </React.StrictMode>,
 )

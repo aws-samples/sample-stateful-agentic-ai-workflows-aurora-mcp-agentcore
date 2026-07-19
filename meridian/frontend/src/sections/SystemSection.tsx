@@ -139,7 +139,7 @@ const SCHEMA_URL =
   'https://github.com/aws-samples/sample-dat309-agentic-workflows-aurora-mcp/blob/main/meridian/backend/db/schema.sql';
 
 const DRY_RUN_PROMPTS: Record<string, string> = {
-  'postgres.run_query': 'Dry-run: list 3 trip_packages in City Breaks under $3000',
+  'postgres.run_query': 'Dry-run: list 3 city trip packages under $3,000',
   'trips.hybrid_search': 'Dry-run hybrid search: slow wine country week in Europe',
   'memory.recall': 'Dry-run memory recall for our Tokyo trip preferences',
   'memory.write_fact': 'Dry-run: remember we prefer boutique hotels over chains',
@@ -259,7 +259,7 @@ export function SystemSection() {
               onClick={() =>
                 openConcierge({
                   phase: 2,
-                  prompt: 'Show me a dry-run of postgres.run_query for City Breaks under $3000',
+                  prompt: 'Show me a dry-run of postgres.run_query for city trip packages under $3,000',
                   send: true,
                 })
               }

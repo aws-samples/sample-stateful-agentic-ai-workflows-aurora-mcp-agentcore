@@ -70,7 +70,7 @@ class MCPAgent:
         """
         self.activity_callback = activity_callback or (lambda x: None)
         
-        # Initialize Bedrock model - Sonnet 4.6 by default (cross-region inference)
+        # Initialize Bedrock model - Sonnet 5 by default (cross-region inference)
         self.model = BedrockModel(
             model_id=config.bedrock.model_id,
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")

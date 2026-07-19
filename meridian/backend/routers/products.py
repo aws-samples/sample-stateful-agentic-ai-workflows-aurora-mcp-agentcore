@@ -151,7 +151,11 @@ class LegacyProduct(BaseModel):
     price: float = Field(validation_alias="price_per_person")
     description: str
     image_url: str
+    destination: Optional[str] = None
+    region: Optional[str] = None
     available_sizes: Optional[List[str]] = Field(default=None, validation_alias="durations")
+    availability: Optional[dict] = None
+    highlights: Optional[List[str]] = None
     similarity: Optional[float] = None
 
     model_config = {"populate_by_name": True}
@@ -175,7 +179,11 @@ async def legacy_list(
                 "price": p.price_per_person,
                 "description": p.description,
                 "image_url": p.image_url,
+                "destination": p.destination,
+                "region": p.region,
                 "available_sizes": p.durations,
+                "availability": p.availability,
+                "highlights": p.highlights,
                 "similarity": p.similarity,
             }
             for p in data.packages
@@ -195,5 +203,9 @@ async def legacy_get(product_id: str):
         "price": p.price_per_person,
         "description": p.description,
         "image_url": p.image_url,
+        "destination": p.destination,
+        "region": p.region,
         "available_sizes": p.durations,
+        "availability": p.availability,
+        "highlights": p.highlights,
     }

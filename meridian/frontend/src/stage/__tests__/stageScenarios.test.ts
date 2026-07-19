@@ -4,6 +4,7 @@ import {
   STAGE_SCENARIOS,
   getStageScenarioById,
 } from '../data/stageScenarios'
+import { SHOWCASE_EXAMPLE_PROMPTS } from '../../showcase/lib/showcaseAdapters'
 
 describe('Demo Stage scenario prompts', () => {
   it('defines three keynote scenarios', () => {
@@ -28,5 +29,11 @@ describe('Demo Stage scenario prompts', () => {
 
   it('DEFAULT_SCENARIO_ID is tokyo', () => {
     expect(DEFAULT_SCENARIO_ID).toBe('tokyo')
+  })
+
+  it('stays synchronized with the three Production showcase prompts', () => {
+    expect(STAGE_SCENARIOS.map((scenario) => scenario.prompt)).toEqual(
+      SHOWCASE_EXAMPLE_PROMPTS[4],
+    )
   })
 })

@@ -27,7 +27,7 @@ export const DEMO_PERSONA_INITIALS = personaInitials('Alex Morgan');
  *  Identity only — preference facts always come from Aurora. */
 export const DEMO_PERSONA_FALLBACK: TravelerProfile = {
   full_name: 'Alex Morgan',
-  home_airport: 'BOS',
+  home_airport: 'JFK',
   party_size: 2,
   seat_preference: 'Window on short-haul · aisle on long-haul',
 };

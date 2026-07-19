@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  deleteMemoryFact,
   fetchHealth,
   fetchMemoryProfile,
   processOrder,
   sendChatMessage,
+  updateMemoryFact,
 } from '../../api/client';
-import type { ChatResponse, LongTermMemoryFact, Message, OrderResponse, Phase, Product } from '../../types';
+import type {
+  ChatResponse,
+  LongTermMemoryFact,
+  Message,
+  OrderResponse,
+  Phase,
+  Product,
+  TravelerProfile,
+} from '../../types';
 import { runConfigEmbedLabel, runConfigModelLabel, type BackendHealth } from '../../lib/runConfig';
 import {
   SHOWCASE_EXAMPLE_PROMPTS,
@@ -21,6 +31,12 @@ import {
   type ShowcaseTraceTab,
 } from '../lib/showcaseAdapters';
 import { SHOWCASE_INITIAL_PROMPT, SHOWCASE_TRAVELER_ID } from '../lib/showcaseFallbackData';
+import {
+  loadTripWorkspace,
+  saveTripWorkspace,
+  toggleComparedTrip,
+  toggleSavedTrip,
+} from '../lib/tripWorkspace';
 
 export interface ActionDrawerState {
   kind: 'hold' | 'plan' | 'compare' | 'save';
@@ -63,8 +79,15 @@ export interface MeridianShowcaseState {
   currentPrompt: string;
   recommendations: Product[];
   selectedTrip: Product | null;
+  tripDetailsOpen: boolean;
+  savedTrips: Product[];
   savedTripIds: Set<string>;
+  comparedTrips: Product[];
+  comparisonOpen: boolean;
   memoryFacts: LongTermMemoryFact[];
+  travelerProfile: TravelerProfile | null;
+  memoryMutationError: string | null;
+  workspaceNotice: string | null;
   traceSpans: ShowcaseTraceSpan[];
   traceTab: ShowcaseTraceTab;
   expandedSpanId: string | null;
@@ -95,10 +118,18 @@ export interface MeridianShowcaseState {
   replayLastPrompt: () => Promise<void>;
   replayTrace: () => void;
   selectTrip: (product: Product) => void;
-  holdTrip: (product: Product) => void;
-  planTrip: (product: Product) => Promise<void>;
+  openTripDetails: (product: Product) => void;
+  closeTripDetails: () => void;
+  holdTrip: (product: Product) => Promise<void>;
+  planTrip: (product: Product) => void;
   saveTrip: (product: Product) => void;
   compareTrip: (product: Product) => void;
+  removeComparedTrip: (productId: string) => void;
+  openComparison: () => void;
+  closeComparison: () => void;
+  updateMemoryPreference: (key: string, value: string) => Promise<boolean>;
+  deleteMemoryPreference: (key: string) => Promise<boolean>;
+  clearMemoryMutationError: () => void;
   closeActionDrawer: () => void;
   clearError: () => void;
   clearChat: () => void;
@@ -156,8 +187,13 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [currentPrompt, setCurrentPrompt] = useState(SHOWCASE_INITIAL_PROMPT);
   const [recommendations, setRecommendations] = useState<Product[]>([]);
   const [selectedTrip, setSelectedTrip] = useState<Product | null>(null);
-  const [savedTripIds, setSavedTripIds] = useState<Set<string>>(new Set());
+  const [tripDetailsOpen, setTripDetailsOpen] = useState(false);
+  const [workspace, setWorkspace] = useState(loadTripWorkspace);
+  const [comparisonOpen, setComparisonOpen] = useState(false);
   const [memoryFacts, setMemoryFacts] = useState<LongTermMemoryFact[]>([]);
+  const [travelerProfile, setTravelerProfile] = useState<TravelerProfile | null>(null);
+  const [memoryMutationError, setMemoryMutationError] = useState<string | null>(null);
+  const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
   const [traceSpans, setTraceSpans] = useState<ShowcaseTraceSpan[]>([]);
   const [traceTab, setTraceTab] = useState<ShowcaseTraceTab>('spans');
   const [expandedSpanId, setExpandedSpanId] = useState<string | null>(null);
@@ -182,6 +218,21 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [chatFilters, setChatFiltersState] = useState<ChatFilters>(EMPTY_FILTERS);
   const replayTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const mounted = useRef(true);
+
+  const savedTripIds = useMemo(
+    () => new Set(workspace.savedTrips.map((product) => product.product_id)),
+    [workspace.savedTrips],
+  );
+
+  useEffect(() => {
+    saveTripWorkspace(workspace);
+  }, [workspace]);
+
+  useEffect(() => {
+    if (!workspaceNotice) return undefined;
+    const timer = window.setTimeout(() => setWorkspaceNotice(null), 3200);
+    return () => window.clearTimeout(timer);
+  }, [workspaceNotice]);
 
   // Safety net: force-mark the latest reply as complete if it has been
   // streaming for too long. Without this, a typewriter that fails to
@@ -251,6 +302,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (cancelled || !mounted.current) return;
         const facts = memoryResponseToFacts(profile);
         if (facts.length) setMemoryFacts(facts);
+        if (profile.profile) setTravelerProfile(profile.profile);
       } catch {
         if (cancelled || !mounted.current) return;
         // Quietly leave the panel empty - the "Backend offline" badge
@@ -447,6 +499,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setIsReplaying(false);
     setConversationId(null);
     setActionDrawer(null);
+    setTripDetailsOpen(false);
+    setComparisonOpen(false);
     setError(null);
     setChatFiltersState(EMPTY_FILTERS);
     setLatestStreamComplete(true);
@@ -460,41 +514,32 @@ export function useMeridianShowcase(): MeridianShowcaseState {
 
   const selectTrip = useCallback((product: Product) => {
     setSelectedTrip(product);
+    setTripDetailsOpen(true);
   }, []);
 
-  const holdTrip = useCallback((product: Product) => {
+  const openTripDetails = useCallback((product: Product) => {
     setSelectedTrip(product);
-    setActionDrawer({
-      kind: 'hold',
-      product,
-      message: `${product.name} is held for 12 hours in this local workspace.`,
-      live: backendStatus === 'online' && !isFallbackMode,
-    });
-    setMessages((prior) => [
-      ...prior,
-      {
-        role: 'bot',
-        type: 'text',
-        text: `Held ${product.name} for 12 hours. You can still compare or plan before confirming.`,
-      },
-    ]);
-  }, [backendStatus, isFallbackMode]);
+    setTripDetailsOpen(true);
+    setActionDrawer(null);
+  }, []);
 
-  const planTrip = useCallback(
+  const holdTrip = useCallback(
     async (product: Product) => {
       if (isLoading) return;
       setSelectedTrip(product);
+      setTripDetailsOpen(true);
       setIsLoading(true);
       setLatestStreamComplete(false);
       setError(null);
-      const prompt = `Plan trip: ${product.name}`;
-      setMessages((prior) => [...prior, { role: 'user', text: prompt }]);
+      const prompt = `Request a 12-hour courtesy hold: ${product.name}`;
       try {
         const response = await processOrder({
           product_id: product.product_id,
           size: product.available_sizes?.[0] ?? undefined,
-          quantity: 1,
+          quantity: travelerProfile?.party_size ?? 1,
           phase: selectedPhase,
+          traveler_id: SHOWCASE_TRAVELER_ID,
+          action: 'hold',
         });
         if (!mounted.current) return;
         setMessages((prior) => [
@@ -508,49 +553,106 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         setTraceSpans(nextTrace);
         setExpandedSpanId(nextTrace[0]?.id ?? null);
         setActionDrawer({
-          kind: 'plan',
+          kind: 'hold',
           product,
           message: response.message,
           order: response.order,
           live: true,
         });
+        setWorkspaceNotice(`Courtesy hold created for ${product.name}.`);
       } catch {
         if (!mounted.current) return;
         setBackendStatus('offline');
         setError(
-          `Unable to plan ${product.name}: live booking endpoint is unavailable. Restart the FastAPI backend.`,
+          `Unable to hold ${product.name}: the live hold service is unavailable. Restart the FastAPI backend.`,
         );
       } finally {
         if (mounted.current) setIsLoading(false);
       }
     },
-    [isLoading, selectedPhase],
+    [isLoading, selectedPhase, travelerProfile?.party_size],
   );
 
+  const planTrip = useCallback((product: Product) => {
+    openTripDetails(product);
+  }, [openTripDetails]);
+
   const saveTrip = useCallback((product: Product) => {
-    setSavedTripIds((prior) => {
-      const next = new Set(prior);
-      if (next.has(product.product_id)) next.delete(product.product_id);
-      else next.add(product.product_id);
-      return next;
-    });
-    setActionDrawer({
-      kind: 'save',
-      product,
-      message: `Saved ${product.name} to this session.`,
-      live: false,
+    setWorkspace((prior) => {
+      const alreadySaved = prior.savedTrips.some(
+        (item) => item.product_id === product.product_id,
+      );
+      setWorkspaceNotice(
+        alreadySaved
+          ? `${product.name} removed from saved trips.`
+          : `${product.name} saved on this device.`,
+      );
+      return {
+        ...prior,
+        savedTrips: toggleSavedTrip(prior.savedTrips, product),
+      };
     });
   }, []);
 
   const compareTrip = useCallback((product: Product) => {
     setSelectedTrip(product);
-    setActionDrawer({
-      kind: 'compare',
-      product,
-      message: `${product.name} is now pinned for comparison against ${recommendations[0]?.name ?? 'the top match'}.`,
-      live: false,
+    setWorkspace((prior) => {
+      const next = toggleComparedTrip(prior.compareTrips, product);
+      const added = next.some((item) => item.product_id === product.product_id);
+      setWorkspaceNotice(
+        added
+          ? `${product.name} added to comparison.`
+          : `${product.name} removed from comparison.`,
+      );
+      return { ...prior, compareTrips: next };
     });
-  }, [recommendations]);
+    setComparisonOpen(true);
+  }, []);
+
+  const removeComparedTrip = useCallback((productId: string) => {
+    setWorkspace((prior) => ({
+      ...prior,
+      compareTrips: prior.compareTrips.filter(
+        (product) => product.product_id !== productId,
+      ),
+    }));
+  }, []);
+
+  const updateMemoryPreference = useCallback(async (key: string, value: string) => {
+    const previous = memoryFacts;
+    setMemoryMutationError(null);
+    setMemoryFacts((facts) => facts.map((fact) => (
+      fact.key === key ? { ...fact, value, source: 'traveler_edit', confidence: 1 } : fact
+    )));
+    try {
+      const updated = await updateMemoryFact(SHOWCASE_TRAVELER_ID, key, value);
+      if (!mounted.current) return false;
+      setMemoryFacts((facts) => facts.map((fact) => (
+        fact.key === key ? updated : fact
+      )));
+      return true;
+    } catch {
+      if (!mounted.current) return false;
+      setMemoryFacts(previous);
+      setMemoryMutationError('That preference could not be updated. Try again.');
+      return false;
+    }
+  }, [memoryFacts]);
+
+  const deleteMemoryPreference = useCallback(async (key: string) => {
+    const previous = memoryFacts;
+    setMemoryMutationError(null);
+    setMemoryFacts((facts) => facts.filter((fact) => fact.key !== key));
+    try {
+      await deleteMemoryFact(SHOWCASE_TRAVELER_ID, key);
+      return true;
+    } catch {
+      if (!mounted.current) return false;
+      setMemoryFacts(previous);
+      setMemoryMutationError('That preference could not be removed. Try again.');
+      return false;
+    }
+  }, [memoryFacts]);
 
   const clearChat = useCallback(() => {
     // Reset every per-conversation surface back to its empty state. The
@@ -571,6 +673,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setIsReplaying(false);
     setConversationId(null);
     setActionDrawer(null);
+    setTripDetailsOpen(false);
     setError(null);
     setChatFiltersState(EMPTY_FILTERS);
     setLatestStreamComplete(true);
@@ -597,8 +700,15 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     currentPrompt,
     recommendations,
     selectedTrip,
+    tripDetailsOpen,
+    savedTrips: workspace.savedTrips,
     savedTripIds,
+    comparedTrips: workspace.compareTrips,
+    comparisonOpen,
     memoryFacts,
+    travelerProfile,
+    memoryMutationError,
+    workspaceNotice,
     traceSpans,
     traceTab,
     expandedSpanId,
@@ -629,10 +739,21 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     replayLastPrompt,
     replayTrace,
     selectTrip,
+    openTripDetails,
+    closeTripDetails: () => {
+      setTripDetailsOpen(false);
+      setActionDrawer(null);
+    },
     holdTrip,
     planTrip,
     saveTrip,
     compareTrip,
+    removeComparedTrip,
+    openComparison: () => setComparisonOpen(true),
+    closeComparison: () => setComparisonOpen(false),
+    updateMemoryPreference,
+    deleteMemoryPreference,
+    clearMemoryMutationError: () => setMemoryMutationError(null),
     closeActionDrawer: () => setActionDrawer(null),
     clearError: () => setError(null),
     clearChat,

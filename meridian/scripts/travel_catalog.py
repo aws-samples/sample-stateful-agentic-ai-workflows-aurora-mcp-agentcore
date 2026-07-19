@@ -232,7 +232,7 @@ TRAVELERS = [
         "traveler_id": DEMO_TRAVELER_ID,
         "full_name": "Alex Morgan",
         "email": "alex.morgan@example.com",
-        "home_airport": "BOS",
+        "home_airport": "JFK",
     },
 ]
 
@@ -246,7 +246,20 @@ TRAVELER_PROFILES = [
         "seat_preference": "Window on short-haul · aisle on long-haul",
         "dietary_notes": "Shellfish allergy — exclude seafood dining",
         "trip_goal": "Tokyo culture trip — target Oct 12–19",
-        "loyalty_programs": {"united": "1K", "marriott": "Platinum"},
+        "loyalty_programs": {
+            "united_mileageplus": {
+                "program": "United MileagePlus",
+                "member_id": "MP••7314",
+                "tier": "Premier 1K",
+                "points_balance": 124600,
+            },
+            "marriott_bonvoy": {
+                "program": "Marriott Bonvoy",
+                "member_id": "MB••4821",
+                "tier": "Platinum Elite",
+                "points_balance": 86240,
+            },
+        },
     },
 ]
 
@@ -255,9 +268,9 @@ TRAVELER_PREFERENCES = [
     # agent uses to filter recommendations.
     {"preference_type": "logistics", "preference_key": "no_red_eye", "preference_value": "true",
      "confidence": 0.99, "source": "support_ticket"},
-    {"preference_type": "logistics", "preference_key": "home_airport", "preference_value": "BOS",
+    {"preference_type": "logistics", "preference_key": "home_airport", "preference_value": "JFK",
      "confidence": 1.0, "source": "profile"},
-    {"preference_type": "logistics", "preference_key": "avoid_connections", "preference_value": "LHR, JFK",
+    {"preference_type": "logistics", "preference_key": "avoid_connections", "preference_value": "LHR, EWR",
      "confidence": 0.87, "source": "booking_history"},
     {"preference_type": "logistics", "preference_key": "party_size", "preference_value": "2 travelers",
      "confidence": 0.98, "source": "booking_history"},
@@ -292,7 +305,7 @@ TRAVELER_PREFERENCES = [
 
     # Loyalty programs (used by meridian-concierge MCP loyalty_balance tool)
     {"preference_type": "loyalty", "preference_key": "loyalty_programs",
-     "preference_value": "Marriott Bonvoy, Delta SkyMiles",
+     "preference_value": "Marriott Bonvoy Platinum Elite; United MileagePlus Premier 1K",
      "confidence": 0.96, "source": "profile"},
 
     # Recent trips (gives Phase 4/5 something to recall + refine on)
@@ -314,7 +327,7 @@ TRAVELER_PREFERENCES = [
 # Conversation history (Phase 4/5 short-term memory + semantic recall demos).
 #
 # Three demo threads scoped to DEMO_TRAVELER_ID. Each thread is a real
-# multi-turn back-and-forth so "what did we discuss last time?" returns
+# multi-turn back-and-forth so the "what did we decide last time?" prompt returns
 # something coherent on the very first stage demo run, before any new
 # turn has been written.
 #
@@ -363,18 +376,18 @@ DEMO_CONVERSATION_MESSAGES = [
     # ---- Iceland winter thread ----
     _msg("conv_iceland_winter", "user",
          "We are thinking about Iceland in late January — mainly to chase the aurora. "
-         "Anything that avoids long red-eye connections from Boston?", 0),
+         "Anything that avoids long overnight connections from New York?", 0),
     _msg("conv_iceland_winter", "assistant",
          "Iceland in late January is excellent for aurora — clear nights, lower crowds. "
          "I would anchor on Reykjavik for the first three nights with a Golden Circle day, "
          "then a Vik south-coast night, and a final night near Thingvellir for darker skies. "
-         "From BOS, Icelandair runs a daytime nonstop most days; I will avoid red-eye "
-         "options per your saved preference.", 4),
+         "From JFK, Icelandair offers nonstop service; I will avoid itineraries that add "
+         "an overnight connection and flag the eastbound flight timing before booking.", 4),
     _msg("conv_iceland_winter", "user",
          "Sounds great. Can you keep it under $3,200 per person?", 9),
     _msg("conv_iceland_winter", "assistant",
          "The Iceland Ring Road package fits at $2,799 per person for 7 nights with the "
-         "winter add-on, including aurora hunts, Blue Lagoon entry, and the daytime BOS "
+         "winter add-on, including aurora hunts, Blue Lagoon entry, and a nonstop JFK-KEF "
          "flight. Let me know if you want me to hold a slot.", 13),
 
     # ---- Tokyo October thread ----
@@ -386,7 +399,7 @@ DEMO_CONVERSATION_MESSAGES = [
          "starting in Hakone. I will base you in Shibuya at a boutique ryokan-style "
          "stay (matching your boutique-over-chain preference), book a vegetarian "
          "kaiseki experience in Yanaka, and add a Hakone day trip with the rail pass. "
-         "Direct ANA flight from BOS keeps you off red-eyes.", 5),
+         "A nonstop ANA flight from JFK avoids connections and respects your routing preference.", 5),
     _msg("conv_tokyo_october", "user",
          "Perfect. What dates have availability?", 12),
     _msg("conv_tokyo_october", "assistant",
@@ -423,10 +436,10 @@ DEMO_TRIP_INTERACTIONS = [
     {
         "interaction_id": "int_iceland_aurora",
         "conversation_id": "conv_iceland_winter",
-        "query_text": "Winter aurora trip from Boston, no red-eyes, "
+        "query_text": "Winter aurora trip from New York, no overnight connections, "
                       "ring road style with Reykjavik base.",
         "response_summary": "Suggested Iceland Ring Road (ADV-002), 7 nights, "
-                            "Icelandair daytime BOS-KEF, aurora hunts plus Blue Lagoon. "
+                            "Icelandair nonstop JFK-KEF, aurora hunts plus Blue Lagoon. "
                             "Held a slot for late January.",
         "packages_shown": [
             {"package_id": "ADV-002", "name": "Iceland Ring Road", "was_selected": True},
@@ -514,4 +527,3 @@ DEMO_BOOKINGS = [
         ],
     },
 ]
-

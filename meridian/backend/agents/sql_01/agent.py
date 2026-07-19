@@ -59,7 +59,7 @@ class SQLAgent:
     """
     Phase 1 travel concierge with direct database access.
     
-    Uses Strands SDK with the configured Bedrock model (Sonnet 4.6 by default).
+    Uses Strands SDK with the configured Bedrock model (Sonnet 5 by default).
     Connects to Aurora PostgreSQL using RDS Data API.
     
     """
@@ -74,7 +74,7 @@ class SQLAgent:
         self.activity_callback = activity_callback or (lambda x: None)
         self.db = get_rds_data_client()
         
-        # Initialize Bedrock model - Sonnet 4.6 by default (cross-region inference)
+        # Initialize Bedrock model - Sonnet 5 by default (cross-region inference)
         self.model = BedrockModel(
             model_id=config.bedrock.model_id,
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")

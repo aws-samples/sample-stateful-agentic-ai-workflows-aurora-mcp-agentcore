@@ -14,7 +14,7 @@ export interface PhaseProof {
 }
 
 export interface AuroraEvidence {
-  key: 'sql' | 'mcp' | 'vector' | 'rerank' | 'rls' | 'checkpoint';
+  key: 'sql' | 'mcp' | 'vector' | 'rerank' | 'runtime' | 'rls' | 'checkpoint';
   label: string;
   value: string;
   detail: string;
@@ -114,6 +114,7 @@ export function deriveAuroraEvidence({
   const vectorSpans = traceSpans.filter((s) => /pgvector|semantic_trip_search|embedding|hybrid|tsvector/i.test(spanText(s)));
   const rerankSpans = traceSpans.filter((s) => /rerank|rank/i.test(spanText(s)));
   const rlsSpans = traceSpans.filter((s) => /rls|scoped|identity|traveler_preferences|conversation_messages|persist[_ ]turn|agentcore/i.test(spanText(s)));
+  const runtimeSpans = traceSpans.filter((s) => /agentcore|strands|runtime|gateway|identity/i.test(spanText(s)));
   const checkpointSpans = traceSpans.filter(isCheckpointSpan);
   const checkpointKind =
     traceSpans
@@ -149,9 +150,9 @@ export function deriveAuroraEvidence({
     },
     {
       key: 'vector',
-      label: 'Vector search',
-      value: vectorSpans.length ? 'pgvector' : selectedPhase >= 3 ? 'ready' : 'later',
-      detail: firstMatchingDetail(vectorSpans, /candidate|embedding|pgvector/i) ?? 'Hybrid semantic + lexical retrieval',
+      label: 'Hybrid retrieval',
+      value: vectorSpans.length ? 'pgvector + FTS' : selectedPhase >= 3 ? 'ready' : 'later',
+      detail: firstMatchingDetail(vectorSpans, /candidate|embedding|pgvector|tsvector/i) ?? 'Semantic vectors plus PostgreSQL full-text search',
       status: statusFor(selectedPhase >= 3, vectorSpans.length > 0),
     },
     {
@@ -162,10 +163,19 @@ export function deriveAuroraEvidence({
       status: statusFor(selectedPhase >= 3, rerankSpans.length > 0 || hasRankDeltas),
     },
     {
+      key: 'runtime',
+      label: 'Agent runtime',
+      value: runtimeSpans.length ? 'AgentCore + Strands' : selectedPhase >= 4 ? 'ready' : 'later',
+      detail: runtimeSpans.length
+        ? 'Identity, runtime, gateway, and agent execution observed'
+        : 'AgentCore and Strands unlock at Production',
+      status: statusFor(selectedPhase >= 4, runtimeSpans.length > 0),
+    },
+    {
       key: 'rls',
-      label: 'RLS scope',
+      label: 'Governance',
       value: rlsSpans.length ? 'scoped' : selectedPhase >= 4 ? 'ready' : 'later',
-      detail: rlsSpans.length ? 'Traveler context is enforced during data access' : 'Identity + memory are Phase 4 proof points',
+      detail: rlsSpans.length ? 'RLS scope and audit context enforced during data access' : 'RLS and audit proof unlock at Production',
       status: statusFor(selectedPhase >= 4, rlsSpans.length > 0),
     },
     {

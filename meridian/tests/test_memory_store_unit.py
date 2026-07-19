@@ -136,3 +136,47 @@ class TestVectorLiteral:
 
     def test_empty_vector_produces_empty_brackets(self):
         assert MemoryStore._vector_literal([]) == "[]"
+
+
+class TestRecallProfile:
+    def test_includes_structured_loyalty_programs(self, store):
+        s, db = store
+        db.queue([{
+            "full_name": "Alex Morgan",
+            "loyalty_programs": {
+                "marriott_bonvoy": {
+                    "program": "Marriott Bonvoy",
+                    "tier": "Platinum Elite",
+                }
+            },
+        }])
+
+        profile = _run(
+            s.recall_profile("trv_meridian_demo", transaction_id="tx-profile")
+        )
+
+        assert profile["loyalty_programs"]["marriott_bonvoy"]["tier"] == "Platinum Elite"
+        sql, params, tx = db.calls[0]
+        assert "p.loyalty_programs" in sql
+        assert params == ("trv_meridian_demo",)
+        assert tx == "tx-profile"
+
+
+class TestPreferenceMutation:
+    def test_update_preference_is_scoped_and_upserts(self, store):
+        s, db = store
+        _run(s.update_preference("traveler-1", "home_airport", "JFK", transaction_id="tx-pref"))
+        assert "INSERT INTO travelers" in db.calls[0][0]
+        sql, params, tx = db.calls[1]
+        assert "INSERT INTO traveler_preferences" in sql
+        assert "ON CONFLICT" in sql
+        assert params[1:] == ("traveler-1", "home_airport", "JFK")
+        assert tx == "tx-pref"
+
+    def test_delete_preference_binds_traveler_and_key(self, store):
+        s, db = store
+        _run(s.delete_preference("traveler-1", "home_airport", transaction_id="tx-pref"))
+        sql, params, tx = db.calls[0]
+        assert "DELETE FROM traveler_preferences" in sql
+        assert params == ("traveler-1", "home_airport")
+        assert tx == "tx-pref"

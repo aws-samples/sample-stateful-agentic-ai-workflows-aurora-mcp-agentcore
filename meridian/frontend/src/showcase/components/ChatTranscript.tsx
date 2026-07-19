@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Message, Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import { typewriterCadence } from '../lib/streamingCadence';
 import { RankDeltaBadge } from './RankDeltaBadge';
 import { TripVisual } from './TripVisual';
 
@@ -135,7 +136,7 @@ function ThinkingTicker({ phase }: { phase: string }) {
     const t = setInterval(() => {
       // Hold on the final phrase until the reply lands.
       setIdx((i) => Math.min(i + 1, phrases.length - 1));
-    }, 1600);
+    }, 1250);
     return () => clearInterval(t);
   }, [phase, phrases.length]);
   // Key on idx so each phrase swap replays the fade.
@@ -392,7 +393,7 @@ function InlineProductGrid({
     const t = setTimeout(() => {
       autoPlayed.current = true;
       setReranked(true);
-    }, 520);
+    }, 320);
     return () => clearTimeout(t);
   }, [rerankArmed, isLatestBot, state.latestStreamComplete]);
 
@@ -525,17 +526,15 @@ function InlineProductCard({
           >
             <button
               type="button"
-              onClick={() => state.holdTrip(product)}
-              disabled={state.isLoading}
+              onClick={() => state.openTripDetails(product)}
             >
-              Hold
+              Details
             </button>
             <button
               type="button"
-              onClick={() => state.planTrip(product)}
-              disabled={state.isLoading}
+              onClick={() => state.compareTrip(product)}
             >
-              Plan
+              Compare
             </button>
             <button
               type="button"
@@ -551,23 +550,13 @@ function InlineProductCard({
   );
 }
 
-// Reveal the text one character (or small chunk) at a time so the chat
-// reads as a left-to-right stream rather than a hard pop. Cadence is
-// tuned to match ChatGPT / Claude.ai's perceived feel: ~3 chars per
-// 30ms tick → ~100 chars/sec, which is fast enough for a 600-char
-// reply to finish in ~6 seconds without dragging on a 2000-char one.
-//
-// We deliberately do NOT clamp duration to a fixed budget — that's what
-// produced the old "long replies just block-paint" behavior. Instead we
-// keep the per-tick rate constant so longer replies stream proportionally
-// longer (and shorter replies finish quickly). A 6-second hard ceiling
-// catches edge cases (3000+ char replies) so the animation can't drag
-// the demo to a halt.
+// Reveal small adaptive chunks so normal replies finish in about 2–2.5s
+// while long replies stay smooth and remain bounded for live presentation.
 function useTypewriterReveal(text: string): string {
-  // Start with the first 2 chars already revealed so the bubble pops in
+  // Start with the first 6 chars already revealed so the bubble pops in
   // *with content*, not as an empty rectangle. The first chunk arriving
   // immediately is what makes the stream feel alive on slow renders.
-  const initial = text.slice(0, Math.min(2, text.length));
+  const initial = text.slice(0, Math.min(6, text.length));
   const [visible, setVisible] = useState(initial);
 
   useEffect(() => {
@@ -576,15 +565,17 @@ function useTypewriterReveal(text: string): string {
       return undefined;
     }
 
-    const seed = text.slice(0, Math.min(2, text.length));
+    if (prefersReducedMotion) {
+      setVisible(text);
+      return undefined;
+    }
+
+    const seed = text.slice(0, Math.min(6, text.length));
     setVisible(seed);
     if (seed.length >= text.length) return undefined;
 
-    // ChatGPT-ish cadence: 3 chars per 30ms tick = ~100 cps perceived.
-    // Hard ceiling at 6s so a wildly long reply doesn't drag forever.
-    const stepMs = 30;
-    const charsPerStep = 3;
-    const ceilingMs = 6000;
+    const { stepMs, charsPerStep, naturalDurationMs } =
+      typewriterCadence(text.length - seed.length);
 
     let cursor = seed.length;
     const id = window.setInterval(() => {
@@ -595,12 +586,8 @@ function useTypewriterReveal(text: string): string {
       }
     }, stepMs);
 
-    // Failsafe: even if the interval is interrupted (StrictMode cleanup,
-    // tab backgrounding, very long text), the full text lands within
-    // the ceiling. Calculate the natural finish time for this length
-    // first, then take the smaller of (natural, ceiling).
-    const naturalDurationMs = Math.ceil(text.length / charsPerStep) * stepMs;
-    const failsafeMs = Math.min(naturalDurationMs + 200, ceilingMs);
+    // Failsafe for background tabs and interrupted interval scheduling.
+    const failsafeMs = Math.min(naturalDurationMs + 120, 3400);
     const failsafe = window.setTimeout(() => {
       setVisible(text);
       window.clearInterval(id);

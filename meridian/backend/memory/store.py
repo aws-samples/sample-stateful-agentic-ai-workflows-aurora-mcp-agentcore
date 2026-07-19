@@ -164,13 +164,13 @@ class MemoryStore:
         """Return the traveler's core profile (name, home airport, party size…).
 
         Joins ``travelers`` with ``traveler_profiles``. Used to ground a turn
-        before search — e.g. defaulting departures to BOS for Alex Morgan.
+        before search — e.g. defaulting departures to JFK for Alex Morgan.
         """
         rows = await self.db.execute(
             """
             SELECT t.full_name, t.home_airport,
                    p.party_size, p.budget_min, p.budget_max, p.seat_preference,
-                   p.dietary_notes, p.trip_goal
+                   p.dietary_notes, p.trip_goal, p.loyalty_programs
             FROM travelers t
             LEFT JOIN traveler_profiles p ON t.traveler_id = p.traveler_id
             WHERE t.traveler_id = %s
@@ -179,6 +179,59 @@ class MemoryStore:
             transaction_id=transaction_id,
         )
         return rows[0] if rows else None
+
+    async def update_preference(
+        self,
+        traveler_id: str,
+        key: str,
+        value: str,
+        transaction_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create or update one explicit traveler preference."""
+        await self.ensure_traveler_exists(traveler_id, transaction_id=transaction_id)
+        preference_id = f"pref_{uuid.uuid4().hex[:12]}"
+        await self.db.execute(
+            """
+            INSERT INTO traveler_preferences (
+                preference_id, traveler_id, preference_type, preference_key,
+                preference_value, confidence, signal_count, source,
+                first_seen_at, last_seen_at
+            )
+            VALUES (%s, %s, 'explicit', %s, %s, 1.0, 1, 'traveler_edit',
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (traveler_id, preference_type, preference_key)
+            DO UPDATE SET
+                preference_value = EXCLUDED.preference_value,
+                confidence = 1.0,
+                signal_count = traveler_preferences.signal_count + 1,
+                source = 'traveler_edit',
+                last_seen_at = CURRENT_TIMESTAMP
+            """,
+            (preference_id, traveler_id, key, value),
+            transaction_id=transaction_id,
+        )
+        return {
+            "key": key,
+            "value": value,
+            "source": "traveler_edit",
+            "confidence": 1.0,
+        }
+
+    async def delete_preference(
+        self,
+        traveler_id: str,
+        key: str,
+        transaction_id: Optional[str] = None,
+    ) -> None:
+        """Delete an explicit or learned preference by key for one traveler."""
+        await self.db.execute(
+            """
+            DELETE FROM traveler_preferences
+            WHERE traveler_id = %s AND preference_key = %s
+            """,
+            (traveler_id, key),
+            transaction_id=transaction_id,
+        )
 
     async def recall_similar_interactions(
         self,

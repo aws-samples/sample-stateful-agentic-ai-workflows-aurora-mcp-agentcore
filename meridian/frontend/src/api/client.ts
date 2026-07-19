@@ -1,7 +1,16 @@
 /**
  * API client for Meridian backend
  */
-import type { Product, ProductListResponse, ChatRequest, ChatResponse, OrderRequest, OrderResponse, MemoryProfileResponse } from '../types';
+import type {
+  ChatRequest,
+  ChatResponse,
+  LongTermMemoryFact,
+  MemoryProfileResponse,
+  OrderRequest,
+  OrderResponse,
+  Product,
+  ProductListResponse,
+} from '../types';
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
@@ -88,6 +97,35 @@ export async function fetchMemoryProfile(travelerId = 'trv_meridian_demo'): Prom
     throw new Error(`Memory profile request failed: ${response.statusText}`);
   }
   return response.json();
+}
+
+export async function updateMemoryFact(
+  travelerId: string,
+  key: string,
+  value: string,
+): Promise<LongTermMemoryFact> {
+  const response = await fetch(
+    `${API_BASE}/memory/${encodeURIComponent(travelerId)}/facts/${encodeURIComponent(key)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Memory update failed: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+export async function deleteMemoryFact(travelerId: string, key: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/memory/${encodeURIComponent(travelerId)}/facts/${encodeURIComponent(key)}`,
+    { method: 'DELETE' },
+  );
+  if (!response.ok) {
+    throw new Error(`Memory delete failed: ${response.statusText}`);
+  }
 }
 
 /**

@@ -31,6 +31,8 @@ class SearchConfig:
     category_keywords: Dict[str, str | None] = field(default_factory=lambda: {
         "city break": "City Breaks",
         "city breaks": "City Breaks",
+        "city trip": "City Breaks",
+        "city trips": "City Breaks",
         "beach": "Beach & Resort",
         "resort": "Beach & Resort",
         "adventure": "Adventure & Outdoors",
@@ -111,10 +113,8 @@ class BedrockConfig:
     variable (``BEDROCK_MODEL_ID``) without editing eight files.
 
     Default is the Global cross-Region inference profile for Anthropic Claude
-    Sonnet 4.6 (``global.anthropic.claude-sonnet-4-6``) — chosen for the live
-    demo because it's markedly faster per turn than Opus on venue networks.
-    Swap to ``global.anthropic.claude-opus-4-8`` for maximum quality. If you
-    see::
+    Sonnet 5 (``global.anthropic.claude-sonnet-5``). Swap to
+    ``global.anthropic.claude-opus-4-8`` for maximum quality. If you see::
 
         ValidationException: The provided model identifier is invalid
 
@@ -139,7 +139,7 @@ class BedrockConfig:
             --query "inferenceProfileSummaries[?contains(inferenceProfileId, 'anthropic')].inferenceProfileId"
     """
 
-    DEFAULT_MODEL_ID: str = "global.anthropic.claude-sonnet-4-6"
+    DEFAULT_MODEL_ID: str = "global.anthropic.claude-sonnet-5"
 
     model_id: str = field(
         default_factory=lambda: os.getenv(
@@ -158,11 +158,13 @@ class BedrockConfig:
 def bedrock_model_label(model_id: str) -> str:
     """Human-readable label for Run config / health (from BEDROCK_MODEL_ID).
 
-    Covers the live fallback chain: Sonnet 4.6 -> Haiku 4.5 -> Opus 4.8.
+    Covers the live fallback chain: Sonnet 5 -> Haiku 4.5 -> Opus 4.8.
     """
     mid = model_id.lower()
     if "opus-4-8" in mid or "opus-4.8" in mid:
         return "Claude Opus 4.8"
+    if "sonnet-5" in mid or "sonnet-5.0" in mid:
+        return "Claude Sonnet 5"
     if "sonnet-4-6" in mid or "sonnet-4.6" in mid:
         return "Claude Sonnet 4.6"
     if "sonnet-4-5" in mid or "sonnet-4.5" in mid:

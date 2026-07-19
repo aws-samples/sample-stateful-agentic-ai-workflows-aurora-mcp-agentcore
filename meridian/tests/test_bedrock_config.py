@@ -21,6 +21,7 @@ class TestBedrockConfig:
         monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
         cfg = _reload_config_module()
         assert cfg.config.bedrock.model_id == cfg.BedrockConfig.DEFAULT_MODEL_ID
+        assert cfg.BedrockConfig.DEFAULT_MODEL_ID == "global.anthropic.claude-sonnet-5"
         # Region falls back to us-east-1 when neither var is set.
         assert cfg.config.bedrock.region == "us-east-1"
 

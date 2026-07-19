@@ -17,37 +17,40 @@ export function TripVisual({ product, compact = false }: { product: Product; com
               : 'vineyard';
 
   const imageByVariant: Record<string, string> = {
-    // Sunlit vineyard rows on a hill — matches Willamette Valley pinot country.
-    willamette:
-      'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?auto=format&fit=crop&w=1400&q=80',
-    // Estate vineyard with rolling green California hills.
-    napa:
-      'https://images.unsplash.com/photo-1507608158173-1dcec673a2e5?auto=format&fit=crop&w=1400&q=80',
-    // Snow-capped Andes with vines / mountain backdrop for Mendoza.
-    mendoza:
-      'https://images.unsplash.com/photo-1467269204594-9661b134dd2b?auto=format&fit=crop&w=1400&q=80',
-    vineyard:
-      'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?auto=format&fit=crop&w=1400&q=80',
-    douro:
-      'https://images.unsplash.com/photo-1523906834658-6e24ef2386f9?auto=format&fit=crop&w=1400&q=80',
-    alsace:
-      'https://images.unsplash.com/photo-1499696010180-025ef6e1a8f9?auto=format&fit=crop&w=1400&q=80',
-    coast:
-      'https://images.unsplash.com/photo-1469474968028-56623f02e42e?auto=format&fit=crop&w=1400&q=80',
+    willamette: '/travel/tuscany-vineyard.jpg',
+    napa: '/travel/napa.jpg',
+    mendoza: '/travel/mendoza.jpg',
+    vineyard: '/travel/tuscany-vineyard.jpg',
+    douro: '/travel/tuscany-vineyard.jpg',
+    alsace: '/travel/alsace.jpg',
+    coast: '/travel/coast.jpg',
   };
   // Prefer the live image_url returned by the backend if it looks like an HTTPS URL,
   // otherwise fall back to the variant-keyed showcase photo.
+  const curatedOverride =
+    key.includes('tuscany') || key.includes('chianti')
+      ? '/travel/tuscany-vineyard.jpg'
+      : null;
   const photoUrl =
-    product.image_url && /^https?:\/\//.test(product.image_url)
+    curatedOverride ??
+    (product.image_url && (/^https?:\/\//.test(product.image_url) || product.image_url.startsWith('/'))
       ? product.image_url
-      : imageByVariant[variant] || imageByVariant.vineyard;
+      : imageByVariant[variant] || imageByVariant.vineyard);
 
   return (
     <div
       className={`mds-trip-visual mds-trip-visual-${variant}${compact ? ' is-compact' : ''}`}
       aria-hidden="true"
     >
-      <img className="mds-trip-photo" src={photoUrl} alt="" loading="lazy" />
+      <img
+        className="mds-trip-photo"
+        src={photoUrl}
+        alt=""
+        loading="lazy"
+        onError={(event) => {
+          event.currentTarget.src = imageByVariant[variant] || imageByVariant.vineyard;
+        }}
+      />
       <span className="mds-trip-sun" />
       <span className="mds-trip-ridge one" />
       <span className="mds-trip-ridge two" />

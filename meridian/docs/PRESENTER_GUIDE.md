@@ -7,8 +7,8 @@ snippets, env knobs, FAQ). The dry-run checklist is at the end.
 > **Source of truth:** every tool name, signature, and SQL example matches
 > `backend/agents/{sql_01, mcp_02, retrieval_03, production_04, orchestration_05}/`,
 > and every demo prompt matches the live pills in
-> `frontend/src/showcase/lib/showcaseAdapters.ts`. Model: Bedrock **Claude Sonnet 4.6**
-> (`global.anthropic.claude-sonnet-4-6`), fallback chain Sonnet 4.6 → Haiku 4.5 → Opus 4.8.
+> `frontend/src/showcase/lib/showcaseAdapters.ts`. Model: Bedrock **Claude Sonnet 5**
+> (`global.anthropic.claude-sonnet-5`), fallback chain Sonnet 5 → Haiku 4.5 → Opus 4.8.
 > Retrieval ranks with **Cohere Embed v4** + **Cohere Rerank 3.5** (`us.cohere.rerank-v3-5:0`).
 
 **Shape of the talk:** climb the capability ladder: **Query → Tool → Intent → Trust →
@@ -27,30 +27,30 @@ Everything personal in Phases 3–5 hangs on one seeded traveler. These facts li
 Aurora `traveler_preferences` / `trip_interactions` for `trv_meridian_demo` — never in
 the prompt. They're what the "For you" panel shows.
 
-- **Alex Morgan** — home airport **BOS**, **party of 2**
+- **Alex Morgan** — home airport **JFK**, **party of 2**
 - **Shellfish allergy** (dining gets vetted)
-- **No red-eyes** out of BOS
+- **No red-eyes** out of JFK
 - **Boutique over chain** lodging
-- **Marriott Bonvoy + Delta SkyMiles** loyalty
+- **Marriott Bonvoy Platinum Elite + United MileagePlus Premier 1K** loyalty
 - **Recent trips:** Tuscany (booked, Feb 2026), Kyoto (held)
 - **Tokyo culture trip** Oct 12–19 in motion
 
 ## The three recurring beats
 
 **Beat 1 — the tool-contract query (hinge of Phases 1–2):**
-> *"Compare our top trips and show prices in EUR."*
+> *"Compare three trips from different categories and show their prices in euros."*
 - **SQL:** awkward / not owned by the SQL filter path. It can return rows, but it has no
   reusable `compare_packages` + `currency_convert` contract.
 - **MCP:** lands — the custom `meridian-concierge` MCP server exposes comparison and
   currency tools that a Bedrock turn can call.
 
 **Beat 2 — the intent query (hinge of Phases 2–3):**
-> *"A romantic slow week somewhere with great wine."*
+> *"Find a slow, romantic week in wine country with a villa stay."*
 - **MCP:** nothing. Better tools, same intent gap.
 - **Retrieval:** Tuscany Wine & Wellness / Amalfi / Douro. *The moment of release.*
 
 **Beat 3 — the memory query (hinge of Phases 3–4):**
-> *"What did we discuss last time? Pick up where we left off."*
+> *"What did we decide about my October Tokyo trip last time? Continue from there."*
 - **Retrieval:** fails *honestly* — "I can't recall prior turns; that's the next phase." Zero products, a reasoning span naming the limitation. **Intentional, not a bug.**
 - **Production:** lands — recalls the Tokyo thread from AgentCore Memory + Aurora.
 
@@ -82,8 +82,8 @@ Tools (all `@tool`, async, hit `trip_packages`): `_search_trip_packages`,
 `_process_booking`.
 
 **Demo (live pills, in order):**
-1. **Works** — *"City breaks under $2000."* Trace shows `WHERE trip_type = :t AND price_per_person <= :p`.
-2. **First failure** — *Beat 1.* *"Compare our top trips and show prices in EUR."* **Pause.** *"This is not a better WHERE clause. It is a tool-contract problem."*
+1. **Works** — *"Show me city trips under $2,000 per traveler."* Trace shows `WHERE trip_type = :t AND price_per_person <= :p`.
+2. **First failure** — *Beat 1.* *"Compare three trips from different categories and show their prices in euros."* **Pause.** *"This is not a better WHERE clause. It is a tool-contract problem."*
 
 **Talking points:** *"Strands gives the LLM the schema for each `@tool`. Bedrock picks
 which to call. RDS Data API is how we reach Aurora — no pool, IAM-auth, the path every
@@ -100,9 +100,9 @@ Custom tools: `compare_packages`, `currency_convert`, `seasonal_price_band`,
 `region_inventory`, `loyalty_balance` — discovered at runtime, IAM-authed, portable.
 
 **Demo:**
-1. *"Compare our top trips and show prices in EUR."* → `compare_packages` + `currency_convert`. *Pause — a single SQL query doesn't do this cleanly.*
-2. *"What is the cheapest month to visit Tokyo?"* → `seasonal_price_band` (low/median/high).
-3. **Beat 2.** *"A romantic slow week somewhere with great wine."* Still nothing. *"Better tools, richer domain logic — intent gap untouched. The interface got better. The intelligence didn't."*
+1. *"Compare three trips from different categories and show their prices in euros."* → `compare_packages` + one `currency_convert` call per package. *Pause — a single SQL filter does not own this reusable operation.*
+2. *"Show me the off-season price range for Tokyo packages in November."* → `seasonal_price_band` (low/median/high).
+3. **Beat 2.** *"Find a slow, romantic week in wine country with a villa stay."* Still nothing. *"Better tools, richer domain logic — intent gap untouched. The interface got better. The intelligence didn't."*
 
 **Talking points:** *"MCP changes the **interface**, not the **intelligence**. Tools are
 versioned and IAM-authed; teams share them without rebuilding. But matching a **mood**
@@ -175,7 +175,7 @@ that pins the traveler with `set_config('app.current_traveler_id', …)` and the
 ROLE` into a least-privilege role — so the RLS policy denies anything outside that
 traveler's scope. That role switch is the catch: our connection is the Aurora master user,
 which isn't subject to RLS otherwise — step down, and the policy applies. We'll watch it in
-the demo — 'what did we discuss last time?' This time it remembers the Tokyo thread,
+the demo — asking what was decided about Tokyo last time. This time it remembers the thread,
 grounded in Alex's stored preferences. The grounding is all in Aurora — none of it's in the
 prompt."*
 
@@ -194,9 +194,9 @@ prompt."*
   turn. Two real layers, clear division of labor."*
 
 **Demo — one Tokyo storyline, IN ORDER:**
-1. **Seed the thread** — *"Tokyo culture trip for two — boutique stays, local food, walkable neighborhoods."* Prompt carries no allergy/airport/loyalty; the agent weaves in shellfish allergy, BOS no-red-eyes, boutique-over-chain — all from Aurora **before** answering.
+1. **Seed the thread** — *"Find a Tokyo culture trip for two with boutique stays, local food, and walkable neighborhoods."* Prompt carries no allergy/airport/loyalty; the agent weaves in shellfish allergy, JFK no-red-eyes, boutique-over-chain — all from Aurora **before** answering.
 2. **Beat 2, second take — it lands.** Same prompt that failed a phase ago; now `recall_session_context` + `recall_similar_interactions` return the Tokyo thread. *Point back to that failure.*
-3. **Multi-intent** — *"Plan our October Tokyo trip — find open dates, pick a Marriott property, hold a Kyoto side trip."* Strands chains three jobs in one turn; honestly pivots to a real Bonvoy property. *Sets up Phase 5.*
+3. **Multi-step boundary** — *"Plan the Kyoto extension: find matching packages, then verify available duration options."* Production can reason about the request, but hands it to Workflow so the dependent steps are explicit and resumable. *Sets up Phase 5.*
 
 **Talking points (trust pitch):** *"AgentCore Runtime isolates every session in a
 microVM. AgentCore Memory mirrors every turn. Aurora RLS wraps every query in a tx with
@@ -268,18 +268,17 @@ classify ──┼─→ availability ────┤
                                 synthesize → END
 ```
 
-**Callback — the limitation you planted in Phase 4.** That multi-intent prompt
-(*"find open dates, pick a Marriott, hold a Kyoto side trip"*) — Production answered it
-in **one model turn**, then *asked permission*: "Would you like me to lock the dates and
-hunt down a Marriott next?" It planned in its head and handed the work back. Three things
-it couldn't do: (1) **run** the steps as inspectable steps, (2) **branch** deterministically
-when one fails its constraint — the catalog had **zero** Marriott properties, so it punted,
-(3) **resume** if you walked away mid-plan. Phase 5 fixes all three.
+**Callback — the limitation you planted in Phase 4.** The exact Kyoto extension
+prompt asks for two dependent operations: find matching packages, then verify their
+available duration options. Production recognizes the boundary and hands it off rather
+than implying both steps completed inside one response. Phase 5 can (1) **run** each
+operation as an inspectable node, (2) **checkpoint** between them, and (3) **resume**
+if execution is interrupted.
 
 **Demo (live pills, in order):**
-1. *"What dates are open for the Amalfi Coast Villa Week?"* → classify → **availability** → synthesize; a `PostgresSaver.put` after the PackageAgent node.
-2. *"Use what we discussed last time to suggest the next Tokyo step."* → classify → **memory_recall** → synthesize; same RLS-scoped memory, now as an explicit graph node.
-3. *"Plan a Kyoto cultural trip end-to-end: find matching trips, then check which November departures are open."* → the payoff: classify → **search → availability** → synthesize. **Two sequential worker nodes, a checkpoint between each.** This is composition a single tool call can't make visible — Phase 5 ends on a strength.
+1. *"Which duration options are available for Amalfi Coast Villa Week?"* → classify → **availability** → synthesize; a `PostgresSaver.put` after the PackageAgent node.
+2. *"Using what we decided about my October Tokyo trip last time, what should I do next?"* → classify → **memory_recall** → synthesize; same RLS-scoped memory, now as an explicit graph node.
+3. *"Plan the Kyoto extension: find matching packages, then verify available duration options."* → the payoff: classify → **search → availability** → synthesize. **Two sequential worker nodes, a checkpoint between each.** It is the exact prompt Production handed off, so the upgrade is visible rather than theoretical.
 
 **Talking points:** *"Same Aurora, same tools — what changed is the **orchestration**. An
 explicit StateGraph: classify fans out by intent, and the edge out of `search`
@@ -368,8 +367,9 @@ self.agent = Agent(
 )
 ```
 **Say:** "One agent, five tools, direct RDS Data API. Bedrock picks the tool; each runs
-SQL and logs the query for the trace. The limitation is ownership: 'compare top trips
-in EUR' is not a better WHERE clause, it's a reusable tool-contract problem."
+SQL and logs the query for the trace. The limitation is ownership: comparing packages
+across categories and converting each price is not a better WHERE clause; it is a
+reusable tool-contract problem."
 **Live path:** `chat.py` → `phase1_search()` (same SQL, no LLM loop).
 
 ## Phase 2 — MCP Agent · `backend/agents/mcp_02/agent.py`
@@ -525,8 +525,8 @@ layer; Aurora is the durable system of record (preferences + embeddings, RLS-sco
 # DRY-RUN CHECKLIST
 
 - [ ] Spine query fails in Phase 1 & 2, lands in Phase 3 (Tuscany / Amalfi / Douro + scores)
-- [ ] "What did we discuss last time?" fails honestly in Phase 3, recalls in Phase 4
+- [ ] The October Tokyo recall prompt fails honestly in Phase 3, then lands in Phase 4
 - [ ] Phase 4 trace shows the RLS span + AgentCore Memory + per-turn audit row
 - [ ] Phase 5 "plan" prompt shows search → availability with a checkpoint between nodes
 - [ ] Tool name reads `hybrid_search_tool` everywhere (no stale `semantic_search_tool`)
-- [ ] Seeded facts (Alex Morgan: allergy, BOS, boutique) appear from Aurora, not the prompt
+- [ ] Seeded facts (Alex Morgan: allergy, JFK, boutique) appear from Aurora, not the prompt

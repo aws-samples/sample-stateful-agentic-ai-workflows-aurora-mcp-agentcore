@@ -2,7 +2,7 @@ import os
 
 from strands.models.bedrock import BedrockModel
 
-DEFAULT_MODEL_ID = "global.anthropic.claude-sonnet-4-6"
+DEFAULT_MODEL_ID = "global.anthropic.claude-sonnet-5"
 
 
 def load_model() -> BedrockModel:

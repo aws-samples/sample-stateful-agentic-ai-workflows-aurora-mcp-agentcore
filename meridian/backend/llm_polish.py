@@ -4,7 +4,7 @@ Concierge-tone polish over deterministic tool outputs.
 The MCP path produces precise but dry readouts ("FX via meridian-concierge
 MCP: 2500 USD ≈ 2300 EUR"). On stage we want longer, narrative replies
 that read like a real travel concierge. This module wraps a Bedrock
-Converse call (Claude Sonnet 4.6 by default, with fallback to Haiku 4.5
+Converse call (Claude Sonnet 5 by default, with fallback to Haiku 4.5
 and Opus 4.8) around the deterministic facts so the user sees a richer
 answer without the agent hallucinating numbers - all factual content
 comes from the tool result that we feed verbatim into the system prompt.
@@ -54,9 +54,9 @@ _CONCIERGE_SYSTEM = (
     "- When the TOOL OUTPUT lists 'Traveler preferences applied to this turn', "
     "weave 3-5 of them naturally into the reply, prioritizing whichever "
     "preferences actually shape THIS recommendation. Examples: 'your "
-    "no_red_eye rule out of BOS', 'within the boutique-over-chain lodging "
+    "no_red_eye rule out of JFK', 'within the boutique-over-chain lodging "
     "style you favor', 'I noted your shellfish allergy on dining picks', "
-    "'we'll route on Marriott Bonvoy / Delta SkyMiles where it earns', "
+    "'we'll route on Marriott Bonvoy / United MileagePlus where it earns', "
     "'kept the Tokyo Oct 12-19 thread alive', 'sized for a 2-traveler party'. "
     "Vary which facts you cite turn-to-turn so the relationship feels "
     "lived-in - never repeat the same 1-2 facts every time. If the "
@@ -77,13 +77,13 @@ _CONCIERGE_SYSTEM = (
 )
 
 
-# Model fallback chain. The live primary is Sonnet 4.6 (set in .env /
+# Model fallback chain. The live primary is Sonnet 5 (set in .env /
 # config.bedrock.model_id) and _candidate_models() always tries that first.
 # This chain is the BACKUP order if the primary errors: stay fast — Sonnet
-# 4.6, then Haiku 4.5 — and keep Opus 4.8 last so a transient Sonnet hiccup
+# 5, then Haiku 4.5 — and keep Opus 4.8 last so a transient Sonnet hiccup
 # on stage never silently falls back to the slowest model. First success wins.
 _DEFAULT_FALLBACK_CHAIN: List[str] = [
-    "global.anthropic.claude-sonnet-4-6",
+    "global.anthropic.claude-sonnet-5",
     "global.anthropic.claude-haiku-4-5-20251001-v1:0",
     "global.anthropic.claude-opus-4-8",
 ]

@@ -145,5 +145,5 @@ scrolled-and-ready when you switch is `search_agent.py` at line **111**.
 ## Demo traveler (for reference)
 
 Seeded in Aurora (not the prompt): **Alex Morgan** · `trv_meridian_demo` · home
-airport **BOS** · party of 2 · Tokyo culture trip Oct 12–19 · shellfish allergy ·
-boutique-over-chain · Marriott Bonvoy + Delta SkyMiles.
+airport **JFK** · party of 2 · Tokyo culture trip Oct 12–19 · shellfish allergy ·
+boutique-over-chain · Marriott Bonvoy Platinum Elite + United MileagePlus Premier 1K.

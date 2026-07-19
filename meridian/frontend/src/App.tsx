@@ -15,6 +15,9 @@ import { SystemSection } from './sections/SystemSection';
 import { Vision2026Section } from './sections/Vision2026Section';
 import { PhaseMatrixSection } from './sections/PhaseMatrixSection';
 import { Footer } from './components/Footer';
+import './styles/daylight.css';
+import './styles/meridian-pro.css';
+import './styles/concierge-studio.css';
 
 export default function App() {
   const scrollY = useScrollY();

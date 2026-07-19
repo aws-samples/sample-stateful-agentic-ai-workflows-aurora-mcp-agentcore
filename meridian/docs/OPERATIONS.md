@@ -147,7 +147,7 @@ Primary surface:
 ## 3) Health checks (must pass)
 
 ```bash
-curl -s http://localhost:8000/health | jq .                       # Sonnet 4.6 + cohere.embed-v4:0
+curl -s http://localhost:8000/health | jq .                       # Sonnet 5 + cohere.embed-v4:0
 curl -s http://localhost:8000/api/memory/trv_meridian_demo | jq . # Alex Morgan facts
 
 # Phase 4 smoke — exercises Bedrock → AgentCore Gateway → Aurora end to end:

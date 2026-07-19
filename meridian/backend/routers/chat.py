@@ -101,7 +101,11 @@ class Product(BaseModel):
     description: str
     image_url: str
     category: str
+    destination: Optional[str] = None
+    region: Optional[str] = None
     available_sizes: Optional[List[str]] = None
+    availability: Optional[Dict[str, Any]] = None
+    highlights: Optional[List[str]] = None
     similarity: Optional[float] = None
     # Phase 3 rerank-visualization metadata (optional; only the Retrieval
     # path populates these). Lets the UI animate the hybrid→reranked reorder.
@@ -129,6 +133,9 @@ class Order(BaseModel):
     total: float
     status: str
     estimated_delivery: Optional[str] = None
+    hold_expires_at: Optional[str] = None
+    departure_date: Optional[str] = None
+    payment_required: bool = False
 
 
 class MemoryFact(BaseModel):
@@ -213,7 +220,7 @@ def generate_follow_ups(query: str, products: List[Product], phase: int) -> List
         primary_category = categories[0] if categories else None
 
         category_keywords_map = {
-            "City Breaks": "city breaks",
+            "City Breaks": "city trips",
             "Beach & Resort": "beach resort",
             "Adventure & Outdoors": "adventure travel",
             "Wellness & Luxury": "wellness travel",
@@ -245,7 +252,7 @@ def generate_follow_ups(query: str, products: List[Product], phase: int) -> List
             elif "Adventure & Outdoors" in categories:
                 follow_ups.append("Wellness & Luxury")
             else:
-                follow_ups.append("Show me city breaks")
+                follow_ups.append("Show me city trips")
 
         else:
             semantic_suggestions = {
@@ -289,16 +296,16 @@ def generate_follow_ups(query: str, products: List[Product], phase: int) -> List
                             break
 
             if "City Breaks" not in categories:
-                follow_ups.append("Weekend city break under $2k")
+                follow_ups.append("City trip under $2,000")
             elif "Beach & Resort" not in categories:
                 follow_ups.append("Relaxing beach vacation")
 
     else:
         if phase in [1, 2]:
             follow_ups = [
-                "City breaks",
-                "Beach & Resort",
-                "Business travel",
+                "Show me city trips",
+                "Show me beach and resort trips",
+                "Show me business travel packages",
             ]
         else:
             follow_ups = [
@@ -404,6 +411,8 @@ _DOMAIN_INTENT_KEYWORDS = (
     "loyalty",
     "bonvoy",
     "skymiles",
+    "mileageplus",
+    "united status",
     "off-season",
     "off season",
     "shoulder season",
@@ -428,6 +437,7 @@ async def _call_domain_tool(query: str) -> Optional[Dict[str, Any]]:
     compare_packages and currency_convert)."""
     q = query.lower()
     calls: List[Dict[str, Any]] = []
+    compared_packages: List[Dict[str, Any]] = []
 
     async with concierge_mcp_session() as cli:
         if any(k in q for k in ("compare", "comparison", "side by side")):
@@ -465,6 +475,8 @@ async def _call_domain_tool(query: str) -> Optional[Dict[str, Any]]:
                 log_error("compare_packages_row_pull", error=str(exc))
             if ids:
                 result = await cli.call("compare_packages", {"package_ids": ids})
+                if isinstance(result, list):
+                    compared_packages = result
                 calls.append({"tool": "compare_packages", "args": {"package_ids": ids}, "result": result})
 
         if any(k in q for k in ("convert", "in eur", "in euro", "in gbp", "in pounds", "in jpy", "in yen")):
@@ -474,18 +486,54 @@ async def _call_domain_tool(query: str) -> Optional[Dict[str, Any]]:
                 else "JPY" if "jpy" in q or "yen" in q
                 else "EUR"
             )
-            result = await cli.call(
-                "currency_convert",
-                {"amount": 2500.0, "from_ccy": "USD", "to_ccy": target},
-            )
+            if compared_packages:
+                conversions: List[Dict[str, Any]] = []
+                for package in compared_packages:
+                    amount = float(package.get("price_per_person") or 0)
+                    converted = await cli.call(
+                        "currency_convert",
+                        {"amount": amount, "from_ccy": "USD", "to_ccy": target},
+                    )
+                    if isinstance(converted, dict):
+                        conversions.append({
+                            "package_id": package.get("package_id"),
+                            "name": package.get("name"),
+                            **converted,
+                        })
+                result: Dict[str, Any] = {
+                    "to": target,
+                    "conversions": conversions,
+                    "note": "indicative rates, not for settlement",
+                }
+                args: Dict[str, Any] = {
+                    "amounts": [
+                        float(package.get("price_per_person") or 0)
+                        for package in compared_packages
+                    ],
+                    "to": target,
+                }
+            else:
+                result = await cli.call(
+                    "currency_convert",
+                    {"amount": 2500.0, "from_ccy": "USD", "to_ccy": target},
+                )
+                args = {"amount": 2500.0, "to": target}
             calls.append({
                 "tool": "currency_convert",
-                "args": {"amount": 2500.0, "to": target},
+                "args": args,
                 "result": result,
             })
 
-        if any(k in q for k in ("loyalty", "bonvoy", "skymiles")):
-            program = "Marriott Bonvoy" if "bonvoy" in q else "Delta SkyMiles" if "skymiles" in q else "Marriott Bonvoy"
+        if any(k in q for k in ("loyalty", "bonvoy", "skymiles", "mileageplus", "united status")):
+            program = (
+                "Marriott Bonvoy"
+                if "bonvoy" in q
+                else "United MileagePlus"
+                if "mileageplus" in q or "united" in q
+                else "Delta SkyMiles"
+                if "skymiles" in q
+                else "Marriott Bonvoy"
+            )
             result = await cli.call(
                 "loyalty_balance",
                 {"traveler_id": "trv_meridian_demo", "program": program},
@@ -555,7 +603,7 @@ async def mcp_search(
     use_custom_mcp = _wants_domain_tool(query)
     # Pure domain queries (no recognized trip_type AND no price filter
     # AND a domain intent) skip the SQL search entirely - ILIKE-ing on
-    # "compare top trips and show prices in EUR" matches nothing useful
+    # A cross-category comparison with converted prices matches no catalog text
     # and the user only cares about the domain tool's answer anyway.
     pure_domain = (
         use_custom_mcp
@@ -774,6 +822,29 @@ def _format_domain_reply(tool: str, result: Any) -> str:
                 )
             return "\n".join(lines)
         if tool == "currency_convert" and isinstance(result, dict):
+            conversions = result.get("conversions")
+            if isinstance(conversions, list):
+                if not conversions:
+                    return "No package prices were available to convert."
+                lines = [
+                    f"Package prices converted to {result.get('to')} via "
+                    "meridian-concierge MCP:"
+                ]
+                for item in conversions:
+                    amount = item.get("amount")
+                    converted = item.get("converted")
+                    amount_s = f"{amount:,.0f}" if isinstance(amount, (int, float)) else "—"
+                    converted_s = (
+                        f"{converted:,.2f}"
+                        if isinstance(converted, (int, float))
+                        else "—"
+                    )
+                    lines.append(
+                        f"• {item.get('name')} — {amount_s} {item.get('from')} "
+                        f"≈ {converted_s} {item.get('to')}"
+                    )
+                lines.append("Indicative rates; not for settlement.")
+                return "\n".join(lines)
             amt = result.get("amount")
             converted = result.get("converted")
             rate = result.get("rate")
@@ -834,6 +905,9 @@ def _summarize_domain_result(tool: str, result: Any) -> str:
                 return f"compared {len(result)} packages"
             return f"unexpected shape: {type(result).__name__}"
         if tool == "currency_convert" and isinstance(result, dict):
+            conversions = result.get("conversions")
+            if isinstance(conversions, list):
+                return f"converted {len(conversions)} package prices to {result.get('to')}"
             return f"{result.get('amount')} {result.get('from')} = {result.get('converted')} {result.get('to')}"
         if tool == "loyalty_balance" and isinstance(result, dict):
             pts = result.get("points_balance", 0) or 0
@@ -1182,10 +1256,10 @@ def _is_availability_query(query: str) -> bool:
 
 
 _PHASE4_WORKFLOW_TRANSITION_MESSAGE = (
-    "I can recall your Tokyo context and find candidate trips, but this request "
-    "has multiple dependent steps: shortlist Tokyo, verify October availability, "
-    "choose a Bonvoy-aligned stay, and stage Kyoto. I need a workflow to "
-    "checkpoint each step before committing the plan."
+    "I can carry forward your Tokyo context, but planning the Kyoto extension "
+    "requires two dependent steps: find matching packages, then verify their "
+    "available duration options. Switch to Workflow so each step is explicit, "
+    "checkpointed, and resumable."
 )
 
 
@@ -1592,8 +1666,12 @@ async def retrieval_availability_search(query: str) -> tuple[List[Product], List
     
     # Extract key terms from query
     search_terms = []
-    stopwords = {'is', 'the', 'in', 'available', 'do', 'you', 'have', 'check', 'what',
-                 'durations', 'duration', 'for', 'a', 'an', 'any', 'package', 'trip'}
+    stopwords = {
+        'a', 'an', 'any', 'are', 'available', 'check', 'departures', 'do',
+        'duration', 'durations', 'find', 'for', 'have', 'in', 'is', 'matching',
+        'open', 'options', 'package', 'packages', 'plan', 'still', 'the', 'then',
+        'trip', 'verify', 'what', 'which', 'you',
+    }
     for word in query_lower.split():
         if word not in stopwords:
             search_terms.append(word)
@@ -1835,8 +1913,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
                     details=(
                         "Production mode recalled traveler context and found candidate "
                         "trips, but this prompt has dependent planning steps. "
-                        "Hand off to Workflow mode so search, availability, and "
-                        "side-trip staging can checkpoint separately."
+                        "Hand off to Workflow mode so package search and duration "
+                        "availability can checkpoint separately."
                     ),
                     agent_name="ProductionAgent",
                     agent_file="agents/production_04/concierge.py",
@@ -1870,7 +1948,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
                     ))
                     message = raw_message
             follow_ups = (
-                ["Run this in Workflow", "Show Tokyo open dates", "Stage the Kyoto side trip"]
+                [
+                    "Run this in Workflow",
+                    "Find Kyoto packages",
+                    "Check Kyoto duration options",
+                ]
                 if needs_workflow
                 else generate_follow_ups(request.message, products, request.phase)
             )
@@ -2127,30 +2209,38 @@ async def chat(request: ChatRequest) -> ChatResponse:
                         f"{polish.text}\n\n"
                         f"_(Concierge polish unavailable: {polish.note}. "
                         f"Check Bedrock model access for "
-                        f"`global.anthropic.claude-sonnet-4-6`, "
+                        f"`global.anthropic.claude-sonnet-5`, "
                         f"`global.anthropic.claude-haiku-4-5-20251001-v1:0`, "
                         f"and `global.anthropic.claude-opus-4-8` "
                         f"in this region.)_"
                     )
             elif request.phase == 1:
-                # SQL keyword filters found nothing. Polish the explanation
-                # through Opus so the "keyword search can't read intent"
-                # teaching beat reads like a concierge, not an error string.
-                raw = (
-                    "Search summary:\n"
-                    "- SQLAgent ran a keyword ILIKE on name/description/"
-                    "  destination/operator in trip_packages and returned 0 rows.\n"
-                    "- The prompt expresses intent (a mood: 'romantic', 'slow', "
-                    "  a theme: 'great wine') rather than a literal keyword that "
-                    "  lives in a trip_packages column.\n"
-                    "- SQL filters match exact tokens, not meaning, so a "
-                    "  natural-language wish slips straight through.\n"
-                    "- What still works here: concrete destination or operator "
-                    "  names like 'Tokyo' or 'ANA Holidays'.\n"
-                    "- Next step the system supports: switch to Retrieval mode, "
-                    "  which uses Cohere Embed v4 + pgvector + Cohere Rerank to "
-                    "  read intent and surface wine-country trips."
-                )
+                # Explain the actual boundary the prompt crossed. The canonical
+                # Phase 1 stretch is a compare + FX operation, while free-form
+                # intent prompts fail for a different reason.
+                if _wants_domain_tool(request.message):
+                    raw = (
+                        "Search summary:\n"
+                        "- SQLAgent only owns direct catalog filters and returned "
+                        "0 rows for this business operation.\n"
+                        "- Comparing packages side by side and converting each "
+                        "price requires reusable domain contracts, not another "
+                        "WHERE clause.\n"
+                        "- Next step: switch to MCP mode, where compare_packages "
+                        "and currency_convert are typed, auditable tools."
+                    )
+                else:
+                    raw = (
+                        "Search summary:\n"
+                        "- SQLAgent ran a keyword ILIKE on name/description/"
+                        "destination/operator in trip_packages and returned 0 rows.\n"
+                        "- The prompt expresses intent rather than a literal keyword "
+                        "that lives in a trip_packages column.\n"
+                        "- SQL filters match exact tokens, not meaning, so a "
+                        "natural-language wish slips straight through.\n"
+                        "- Next step: switch to Retrieval mode, which uses Cohere "
+                        "Embed v4 + pgvector + Cohere Rerank to read intent."
+                    )
                 polish = await polish_concierge_reply(request.message, raw)
                 if polish.model_id:
                     activities.append(create_activity(
@@ -2254,7 +2344,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             products=None,
             order=None,
             activities=activities,
-            follow_ups=["Tokyo culture trip", "Beach resort for two", "City breaks in Europe"]
+            follow_ups=["Tokyo culture trip", "Beach resort for two", "City trips in Europe"]
         ),
             request.phase,
             turn_started,
@@ -2267,11 +2357,13 @@ async def chat(request: ChatRequest) -> ChatResponse:
 # =============================================================================
 
 class OrderRequest(BaseModel):
-    """Request model for booking processing."""
+    """Request model for a no-payment courtesy hold."""
     product_id: str
     size: Optional[str] = None
     quantity: int = 1
-    phase: Literal[1, 2, 3, 4]
+    phase: Literal[1, 2, 3, 4, 5]
+    traveler_id: str = "trv_meridian_demo"
+    action: Literal["hold"] = "hold"
 
 
 class OrderResponse(BaseModel):
@@ -2284,16 +2376,17 @@ class OrderResponse(BaseModel):
 @router.post("/order", response_model=OrderResponse)
 async def process_order(request: OrderRequest) -> OrderResponse:
     """
-    Process an order for a product - demonstrates agentic workflow capabilities.
+    Create a persisted 12-hour courtesy hold for a trip package.
 
-    Simulates:
+    The endpoint:
     1. Product lookup
     2. Inventory check
-    3. Payment processing (mock)
-    4. Order confirmation
+    3. Aurora-backed hold persistence
+    4. Hold receipt generation
+
+    No payment is authorized or captured.
     """
     import asyncio
-    import random
 
     activities = []
     start_time = datetime.now(timezone.utc)
@@ -2306,6 +2399,7 @@ async def process_order(request: OrderRequest) -> OrderResponse:
         # Phase 4 booking is driven by the concierge orchestrator; the BookingAgent
         # in phase 3 is reused as the booking specialist.
         4: ("BookingAgent", "agents/retrieval_03/booking_agent.py"),
+        5: ("WorkflowAgent", "agents/orchestration_05/workflow.py"),
     }
     agent_name, agent_file = phase_configs[request.phase]
 
@@ -2370,9 +2464,12 @@ async def process_order(request: OrderRequest) -> OrderResponse:
 
         await asyncio.sleep(0.2)
 
-        # Mock availability check - always available for demo
-        departures_available = True
-        seats_available = random.randint(5, 50)
+        availability = product.get("availability") or {}
+        requested_duration = request.size or (
+            (product.get("durations") or [None])[0]
+        )
+        seats_available = int(availability.get(requested_duration, 1)) if availability else 1
+        departures_available = seats_available > 0
 
         availability_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000) - lookup_time
 
@@ -2392,49 +2489,100 @@ async def process_order(request: OrderRequest) -> OrderResponse:
                 activities=activities
             )
 
-        # Step 3: Booking authorization (mock — demo only)
+        # Step 3: Persist a courtesy hold. No payment operation occurs.
         activities.append(create_activity(
             activity_type="order",
-            title="Booking authorization (demo)",
-            details="Holding seats with stored traveler profile",
+            title="Creating courtesy hold",
+            details="No payment authorization or capture",
             agent_name=agent_name,
             agent_file=agent_file
         ))
 
         await asyncio.sleep(0.4)
 
-        # Calculate order totals using config values
+        # The package price remains an estimate until a traveler confirms.
         subtotal = pkg['price'] * request.quantity
-        tax = round(subtotal * config.order.tax_rate, 2)
-        shipping = 0.0 if subtotal >= config.order.free_shipping_threshold else config.order.shipping_fee
-        total = round(subtotal + tax + shipping, 2)
+        tax = 0.0
+        shipping = 0.0
+        total = round(subtotal, 2)
 
         payment_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000) - lookup_time - availability_time
 
         activities.append(create_activity(
             activity_type="order",
-            title="Booking authorized (demo)",
-            details=f"Authorized ${total:.2f} hold on traveler profile",
+            title="Courtesy hold prepared",
+            details=f"Estimated trip total ${total:.2f}; payment not required",
             execution_time_ms=payment_time,
             agent_name=agent_name,
             agent_file=agent_file
         ))
 
-        # Step 4: Create order
-        order_id = f"ORD-{uuid.uuid4().hex[:8].upper()}"
+        # Step 4: Create the hold record.
+        order_id = f"HLD-{uuid.uuid4().hex[:8].upper()}"
 
         activities.append(create_activity(
             activity_type="order",
-            title="Booking confirmed",
-            details=f"Booking #{order_id}",
+            title="Courtesy hold persisted",
+            details=f"Hold #{order_id}",
             agent_name=agent_name,
             agent_file=agent_file
         ))
 
-        # Estimate departure using config values
+        # Estimate a departure for the demo catalog and set a real expiry.
         from datetime import timedelta
-        days_to_departure = random.randint(config.order.min_delivery_days, config.order.max_delivery_days)
+        days_to_departure = max(config.order.min_delivery_days, 45)
         departure_date = (datetime.now(timezone.utc) + timedelta(days=days_to_departure)).strftime("%B %d, %Y")
+        hold_expires_at = datetime.now(timezone.utc) + timedelta(hours=12)
+
+        async with db.scoped_session(
+            traveler_id=request.traveler_id,
+            agent_type="booking_agent",
+        ) as transaction_id:
+            await db.execute(
+                """
+                INSERT INTO travelers (traveler_id, full_name, email)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (traveler_id) DO NOTHING
+                """,
+                (
+                    request.traveler_id,
+                    f"Traveler {request.traveler_id}",
+                    f"{request.traveler_id}@meridian.demo",
+                ),
+                transaction_id=transaction_id,
+            )
+            await db.execute(
+                """
+                INSERT INTO bookings (
+                    booking_id, traveler_id, status, total_amount,
+                    hold_expires_at, created_at
+                )
+                VALUES (%s, %s, 'held', %s, %s, CURRENT_TIMESTAMP)
+                """,
+                (
+                    order_id,
+                    request.traveler_id,
+                    total,
+                    hold_expires_at.isoformat(),
+                ),
+                transaction_id=transaction_id,
+            )
+            await db.execute(
+                """
+                INSERT INTO booking_lines (
+                    booking_id, package_id, duration, travelers_count, unit_price
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    order_id,
+                    pkg['product_id'],
+                    request.size,
+                    request.quantity,
+                    pkg['price'],
+                ),
+                transaction_id=transaction_id,
+            )
 
         order = Order(
             order_id=order_id,
@@ -2451,29 +2599,33 @@ async def process_order(request: OrderRequest) -> OrderResponse:
             tax=tax,
             shipping=shipping,
             total=total,
-            status="confirmed",
-            estimated_delivery=departure_date
+            status="held",
+            estimated_delivery=departure_date,
+            departure_date=departure_date,
+            hold_expires_at=hold_expires_at.isoformat(),
+            payment_required=False,
         )
 
         total_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         activities.append(create_activity(
             activity_type="result",
-            title="Booking complete",
-            details=f"Departure: {departure_date}",
+            title="Hold receipt ready",
+            details=f"Expires {hold_expires_at.isoformat()}",
             execution_time_ms=total_time,
             agent_name=agent_name,
             agent_file=agent_file
         ))
 
-        service_fee_label = "Service fee"
-        message = f"Great choice! I've placed your booking for **{pkg['name']}**.\n\n" \
-                  f"**Booking #{order_id}**\n" \
-                  f"- Subtotal: ${subtotal:.2f}\n" \
-                  f"- Tax: ${tax:.2f}\n" \
-                  f"- {service_fee_label}: {'FREE' if shipping == 0 else f'${shipping:.2f}'}\n" \
-                  f"- **Total: ${total:.2f}**\n\n" \
-                  f"Departure: {departure_date}"
+        message = (
+            f"I placed **{pkg['name']}** on a 12-hour courtesy hold.\n\n"
+            f"**Hold #{order_id}**\n"
+            f"- Estimated package total: ${total:.2f}\n"
+            f"- Travelers: {request.quantity}\n"
+            f"- Suggested departure: {departure_date}\n"
+            f"- Payment charged: No\n\n"
+            "Review the itinerary and final terms before confirming with an operator."
+        )
 
         # Log successful order
         log_order(
@@ -2481,7 +2633,7 @@ async def process_order(request: OrderRequest) -> OrderResponse:
             order_id=order_id,
             product_id=request.product_id,
             total=total,
-            status="confirmed"
+            status="held"
         )
 
         return OrderResponse(
@@ -2492,15 +2644,7 @@ async def process_order(request: OrderRequest) -> OrderResponse:
 
     except Exception as e:
         log_error(context="order_processing", error=str(e), phase=request.phase)
-        activities.append(create_activity(
-            activity_type="error",
-            title="Order processing failed",
-            details=str(e),
-            agent_name=agent_name,
-            agent_file=agent_file
-        ))
-        return OrderResponse(
-            message="Sorry, I encountered an error processing your order. Please try again.",
-            order=None,
-            activities=activities
-        )
+        raise HTTPException(
+            status_code=503,
+            detail="The courtesy hold could not be created. Try again shortly.",
+        ) from e

@@ -10,12 +10,11 @@
  *   1. tokyo   — concrete Tokyo culture query that persists into Aurora
  *                via AgentCore Memory; seeds the thread the recall picks
  *                up. Matches showcase Production pill #1.
- *   2. recall  — "what did we discuss last time" — depends on the prior
+ *   2. recall  — "what did we decide last time" — depends on the prior
  *                Tokyo turn being in conversation_messages, so it only
  *                lands AFTER scenario 1. Matches showcase pill #2.
- *   3. plan    — multi-intent Tokyo prompt (find dates + Marriott pick +
- *                Kyoto hold) that Strands chains implicitly in one
- *                Bedrock turn; motivates the upgrade to Phase 5
+ *   3. plan    — two-step Kyoto extension prompt (find + availability)
+ *                that needs explicit, checkpointed control flow in Phase 5
  *                LangGraph. Matches showcase pill #3.
  */
 import { PHASE_EYEBROW } from '../../lib/phaseLabels';
@@ -43,7 +42,7 @@ const ALEX_TRAVELER = {
   id: 'trv_meridian_demo',
   name: 'Alex Morgan',
   initials: 'AM',
-  origin: 'BOS',
+  origin: 'JFK',
   facts: [],
 };
 
@@ -52,7 +51,7 @@ export const STAGE_SCENARIOS: StageScenario[] = [
     id: 'tokyo',
     phaseLabel: PHASE_4_LABEL,
     traceId: '',
-    prompt: 'Tokyo culture trip for two — boutique stays, local food, walkable neighborhoods',
+    prompt: 'Find a Tokyo culture trip for two with boutique stays, local food, and walkable neighborhoods.',
     assistantReply: '',
     reasoning: '',
     traveler: { ...ALEX_TRAVELER, budgetCapUsd: 4500 },
@@ -64,7 +63,7 @@ export const STAGE_SCENARIOS: StageScenario[] = [
     id: 'recall',
     phaseLabel: PHASE_4_LABEL,
     traceId: '',
-    prompt: 'What did we discuss last time? Pick up where we left off.',
+    prompt: 'What did we decide about my October Tokyo trip last time? Continue from there.',
     assistantReply: '',
     reasoning: '',
     traveler: { ...ALEX_TRAVELER, budgetCapUsd: 3200 },
@@ -76,8 +75,7 @@ export const STAGE_SCENARIOS: StageScenario[] = [
     id: 'plan',
     phaseLabel: PHASE_4_LABEL,
     traceId: '',
-    prompt:
-      'Plan our October Tokyo trip — find open dates, pick a Marriott property, and hold a Kyoto side trip',
+    prompt: 'Plan the Kyoto extension: find matching packages, then verify available duration options.',
     assistantReply: '',
     reasoning: '',
     traveler: { ...ALEX_TRAVELER, budgetCapUsd: 4500 },

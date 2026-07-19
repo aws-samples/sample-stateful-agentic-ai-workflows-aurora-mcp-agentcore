@@ -14,6 +14,10 @@ class TestParseSearchQueryPriceExtraction:
         params = parse_search_query("luxury below $2999.99")
         assert params.price_filter == 2999.99
 
+    def test_extracts_price_with_thousands_separator(self):
+        params = parse_search_query("city trips under $2,000")
+        assert params.price_filter == 2000.0
+
     def test_extracts_less_than_price(self):
         params = parse_search_query("city break less than 1200")
         assert params.price_filter == 1200.0
@@ -31,6 +35,20 @@ class TestParseSearchQueryCategoryRouting:
     def test_city_break_singular(self):
         params = parse_search_query("show me a city break")
         assert params.matched_trip_type == "City Breaks"
+
+    def test_canonical_city_trip_prompt(self):
+        params = parse_search_query(
+            "Show me city trips under $2,000 per traveler."
+        )
+        assert params.matched_trip_type == "City Breaks"
+        assert params.price_filter == 2000.0
+
+    def test_canonical_beach_and_resort_prompt(self):
+        params = parse_search_query(
+            "Show me beach and resort trips under $2,500 per traveler."
+        )
+        assert params.matched_trip_type == "Beach & Resort"
+        assert params.price_filter == 2500.0
 
     def test_beach_keyword(self):
         params = parse_search_query("beach trips in Greece")

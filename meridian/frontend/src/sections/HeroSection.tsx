@@ -174,7 +174,7 @@ export function HeroSection({ scrollY: _scrollY }: HeroSectionProps) {
         </div>
         <div className="mp-feature-meta">
           <div className="cell">
-            From<b>BOS</b>
+            From<b>JFK</b>
           </div>
           <div className="cell">
             Hotel<b>{current?.brand ?? '—'}</b>

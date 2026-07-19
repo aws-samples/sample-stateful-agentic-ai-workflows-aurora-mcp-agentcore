@@ -25,9 +25,12 @@ class SearchParams:
 def parse_search_query(query: str) -> SearchParams:
     query_lower = query.lower()
     price_filter = None
-    price_match = re.search(r"(?:under|below|less than|<)\s*\$?(\d+(?:\.\d{2})?)", query_lower)
+    price_match = re.search(
+        r"(?:under|below|less than|<)\s*\$?(\d[\d,]*(?:\.\d{2})?)",
+        query_lower,
+    )
     if price_match:
-        price_filter = float(price_match.group(1))
+        price_filter = float(price_match.group(1).replace(",", ""))
 
     matched_trip_type = None
     for keyword, trip_type in config.search.category_keywords.items():
