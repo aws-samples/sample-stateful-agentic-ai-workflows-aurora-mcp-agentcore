@@ -11,7 +11,7 @@ class _ProfileDb:
             "loyalty_programs": {
                 "marriott_bonvoy": {
                     "program": "Marriott Bonvoy",
-                    "member_id": "MB-xx4821",
+                    "member_id": "MB xxxx4821",
                     "tier": "Platinum Elite",
                     "points_balance": 86240,
                 }
@@ -30,5 +30,6 @@ def test_loyalty_balance_reads_seeded_aurora_profile(monkeypatch) -> None:
     )
 
     assert result["tier"] == "Platinum Elite"
+    assert result["member_id"] == "MB xxxx4821"
     assert result["points_balance"] == 86240
     assert result["source"] == "traveler_profiles.loyalty_programs"

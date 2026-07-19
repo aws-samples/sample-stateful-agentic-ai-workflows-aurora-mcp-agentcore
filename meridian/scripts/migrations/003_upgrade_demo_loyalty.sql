@@ -10,7 +10,7 @@ SET loyalty_programs = jsonb_build_object(
         ),
         'marriott_bonvoy', jsonb_build_object(
             'program', 'Marriott Bonvoy',
-            'member_id', 'MB-xx4821',
+            'member_id', 'MB xxxx4821',
             'tier', 'Platinum Elite',
             'points_balance', 86240
         )

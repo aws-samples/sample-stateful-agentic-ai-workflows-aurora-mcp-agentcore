@@ -255,7 +255,7 @@ TRAVELER_PROFILES = [
             },
             "marriott_bonvoy": {
                 "program": "Marriott Bonvoy",
-                "member_id": "MB••4821",
+                "member_id": "MB xxxx4821",
                 "tier": "Platinum Elite",
                 "points_balance": 86240,
             },
