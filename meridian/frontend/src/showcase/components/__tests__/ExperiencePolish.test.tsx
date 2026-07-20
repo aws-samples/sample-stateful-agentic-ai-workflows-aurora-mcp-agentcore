@@ -131,6 +131,7 @@ describe('Experience presentation polish', () => {
 
     const { rerender } = render(<JourneyPanel state={initial} />);
     expect(screen.getByText('ANA · NH 109')).toBeInTheDocument();
+    expect(screen.getByText('Action needed')).toBeInTheDocument();
     expect(screen.getByText('Cancelled')).toBeInTheDocument();
     expect(screen.getByText('Premier 1K recognized')).toBeInTheDocument();
     expect(screen.queryByText(/No shortlist/i)).not.toBeInTheDocument();

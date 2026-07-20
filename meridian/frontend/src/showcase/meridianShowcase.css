@@ -4912,7 +4912,12 @@
   font-size: calc(15px * var(--mds-fs));
 }
 
+.mds-journey-panel > header {
+  padding-right: 44px;
+}
+
 .mds-current-trip-state {
+  flex: 0 0 auto;
   padding: 4px 7px;
   border: 1px solid color-mix(in srgb, var(--mds-amber) 48%, transparent);
   border-radius: 5px;
@@ -4920,6 +4925,7 @@
   background: color-mix(in srgb, var(--mds-amber) 10%, transparent);
   font-size: calc(10.5px * var(--mds-fs));
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .mds-current-trip-state.is-running {

@@ -59,7 +59,7 @@ TRIP_PACKAGES = [
     _pkg("CTY-004", "Barcelona Architecture Week", "City Breaks", "Barcelona", "Europe", 1599.0,
          "Iberia Escapes",
          "Gothic Quarter boutique stay, Sagrada Família skip-the-line, tapas tour.",
-         "1449824913935-59a10b8d2000", ["4 nights", "6 nights"],
+         "1583422409516-2895a77efded", ["4 nights", "6 nights"],
          {"4 nights": 11, "6 nights": 5}),
     _pkg("CTY-005", "Rome Ancient & Modern", "City Breaks", "Rome", "Europe", 1749.0,
          "Alitalia Tours",

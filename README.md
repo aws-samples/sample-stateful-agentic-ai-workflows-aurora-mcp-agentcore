@@ -21,9 +21,9 @@ security, audit trails, and checkpoints keep every turn governed and resilient.
 > PostgresSaver externalizes workflow execution state into Aurora through a
 > bounded PostgreSQL connection pool.
 
-![Meridian showcase displaying grounded trip results, SQL execution proof, and Alex Morgan's governed traveler context](meridian/docs/meridian-showcase.jpg)
+![Meridian showcase displaying live trip cards, disruption recovery, and Alex Morgan's governed traveler context](meridian/docs/meridian-showcase.jpg)
 
-<p align="center"><sub>The live showcase pairs the traveler experience with inspectable SQL, retrieval, memory, RLS, and workflow proof.</sub></p>
+<p align="center"><sub>Live Aurora results pair realistic trip cards with disruption recovery, traveler context, and inspectable system proof.</sub></p>
 
 **[Quick start](#quick-start)** · **[Five-phase architecture](#what-it-demonstrates)** · **[Stateful architecture](meridian/docs/STATEFUL_ARCHITECTURE.md)** · **[Demo script](meridian/DEMO_SCRIPT.md)** · **[Presenter guide](meridian/docs/PRESENTER_GUIDE.md)**
 
@@ -97,8 +97,8 @@ root route redirects to the showcase.
 | Doc | Purpose |
 | --- | ------- |
 | [meridian/README.md](meridian/README.md) | Full setup, architecture, API, phase prompts, and validation |
-| [meridian/DEMO_SCRIPT.md](meridian/DEMO_SCRIPT.md) | Presenter flow and live-demo talk track |
-| [meridian/docs/PRESENTER_GUIDE.md](meridian/docs/PRESENTER_GUIDE.md) | Detailed narration, code references, and dry-run checklist |
+| [meridian/DEMO_SCRIPT.md](meridian/DEMO_SCRIPT.md) | Extended demo script and optional code walkthrough |
+| [meridian/docs/PRESENTER_GUIDE.md](meridian/docs/PRESENTER_GUIDE.md) | Concise run of show, claim boundaries, and readiness checklist |
 | [meridian/docs/OPERATIONS.md](meridian/docs/OPERATIONS.md) | AgentCore deployment and day-of operations |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
 

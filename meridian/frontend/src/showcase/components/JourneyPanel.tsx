@@ -52,7 +52,7 @@ export function JourneyPanel({ state }: { state: MeridianShowcaseState }) {
             ? 'Plan ready'
             : recoveryStage === 'running'
               ? 'Recovering'
-              : 'Action required'}
+              : 'Action needed'}
         </b>
       </header>
       <section className={`mds-current-trip-card is-${recoveryStage}`}>
