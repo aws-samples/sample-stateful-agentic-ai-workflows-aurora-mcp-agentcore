@@ -30,17 +30,30 @@ Expected keys:
 - `AGENTCORE_GATEWAY_SEARCH_TOOL`
 - `AGENTCORE_MEMORY_ID`
 
-## 2) Start the demo stack
+## 2) Start the durable demo stack
 
-Backend:
+Terminal 1 — Aurora checkpoint tunnel:
+
+```bash
+cd meridian
+./scripts/start_checkpoint_tunnel.sh
+```
+
+Terminal 2 — backend:
 
 ```bash
 cd meridian
 source venv/bin/activate
-uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+export LANGGRAPH_CHECKPOINT_HOST=127.0.0.1
+export LANGGRAPH_CHECKPOINT_PORT=15432
+export LANGGRAPH_CHECKPOINT_DATABASE=meridian
+export LANGGRAPH_CHECKPOINT_REQUIRED=true
+export LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP=true
+export LANGGRAPH_DEMO_INTERRUPT_AFTER=search
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ```
 
-Frontend (new terminal):
+Terminal 3 — frontend:
 
 ```bash
 cd meridian/frontend
@@ -57,6 +70,16 @@ API health:
 
 ```bash
 curl -s http://localhost:8000/health | jq .
+```
+
+Required checkpoint fields:
+
+```json
+{
+  "checkpoint_backend": "PostgresSaver (Aurora · pooled)",
+  "checkpoint_durable": true,
+  "checkpoint_required": true
+}
 ```
 
 Memory endpoint:
@@ -77,7 +100,17 @@ curl -s -X POST http://localhost:8000/api/chat \
   }' | jq '.message, .conversation_id, (.products | length)'
 ```
 
-## 4) Gateway smoke test (direct)
+## 4) Durable workflow smoke test
+
+1. Run the cancelled JFK-to-Tokyo prompt in Workflow.
+2. Confirm the workflow pauses after `search` with `next=availability`.
+3. Stop and restart only the backend.
+4. Click **Resume workflow from checkpoint** without clearing the browser.
+5. Confirm the same thread resumes at `availability`.
+
+Do not present `MemorySaver` as durable. It is an in-process fallback only.
+
+## 5) Gateway smoke test (direct)
 
 Run once before going live:
 
@@ -97,7 +130,7 @@ print("packages:", len(pkgs))
 PY
 ```
 
-## 5) Quick recovery playbook
+## 6) Quick recovery playbook
 
 ### A) `runtimeSessionId ... valid min length: 33`
 
@@ -144,14 +177,14 @@ Expected value:
 - Restart frontend dev server.
 - Hard refresh browser (`Cmd+Shift+R`).
 
-## 6) Walkthrough mode (2 hours later)
+## 7) Walkthrough mode (2 hours later)
 
 Recommended:
 - Reuse the same deployed AgentCore resources.
 - Keep kiosk stack running if possible.
 - For code walkthrough, explain deploy commands but avoid live redeploy unless that is the explicit session objective.
 
-## 7) Operator notes
+## 8) Operator notes
 
 - Prefer reliability over "fresh deploy theater".
 - Keep one terminal focused on backend logs and one on frontend logs.

@@ -21,9 +21,16 @@ export function ChatComposer({
     void state.submitPrompt();
   };
 
-  // Phase-specific example prompts seed the composer with a canonical
-  // walkthrough query for whichever phase is selected.
-  const queryStarters = compact ? [] : state.phaseExamples.slice(0, proofMode ? 2 : 3);
+  // Experience stays quiet with two known-good prompts. System proof keeps the
+  // third stretch prompt because exposing each phase's limit is the teaching
+  // mechanism for the five-rung ladder.
+  const queryStarters = compact
+    ? []
+    : proofMode
+      ? state.selectedPhase <= 3
+        ? [state.phaseExamples[0], state.phaseExamples[2]].filter(Boolean)
+        : state.phaseExamples.slice(0, 3)
+      : state.phaseExamples.slice(0, 2);
 
   const updateFilters = (patch: Partial<ChatFilters>) => {
     state.setChatFilters({ ...state.chatFilters, ...patch });
@@ -35,28 +42,28 @@ export function ChatComposer({
   return (
     <div className={`mds-chat-composer-wrap${compact ? ' is-compact' : ''}${proofMode ? ' is-proof' : ''}`}>
       {queryStarters.length > 0 && (
-        <div className="mds-chat-query-starters" aria-label="Query starters for this phase">
+        <div
+          className={`mds-chat-query-starters has-${queryStarters.length}`}
+          aria-label="Query starters for this phase"
+        >
           <span className="mds-chat-starter-label">Try</span>
-          {queryStarters.map((prompt, index) => {
-            // The third pill in each phase is intentionally a "stretch"
-            // prompt - one this phase cannot fully handle, so the next
-            // phase has something to demonstrate against. Marked with a
-            // distinct amber border so the presenter knows which is which.
-            // Workflow (Phase 5) is the finale — there's no next phase to
-            // motivate, and all three pills are solid LangGraph successes,
-            // so none of them are marked as a stretch.
+          {queryStarters.map((prompt) => {
             const isStretch =
+              proofMode &&
               state.phaseLabel !== 'Workflow' &&
-              index === queryStarters.length - 1 &&
-              queryStarters.length === 3;
+              prompt === state.phaseExamples[2];
             return (
               <button
                 key={prompt}
                 type="button"
                 className={`mds-chat-starter-chip${isStretch ? ' is-stretch' : ''}`}
                 disabled={state.isLoading}
-                onClick={() => void state.applyPhaseExample(prompt)}
-                title={isStretch ? `Stretch query — exposes ${state.phaseLabel}'s limits` : prompt}
+                onClick={() => void state.applyPhaseExample(prompt, true)}
+                title={
+                  isStretch
+                    ? `Stretch query — exposes ${state.phaseLabel}'s limits`
+                    : prompt
+                }
               >
                 {prompt}
               </button>
@@ -65,7 +72,7 @@ export function ChatComposer({
           {!proofMode && state.selectedPhase === 4 && (
             <span className="mds-chat-phase-framing" role="note">
               <span>Trace beat</span>
-              <b>AgentCore memory/search stays traced end to end; Workflow checkpoints the dependent plan.</b>
+              <b>AgentCore carries context across turns; Workflow externalizes the dependent plan into Aurora checkpoints.</b>
             </span>
           )}
         </div>
@@ -88,7 +95,7 @@ export function ChatComposer({
             <span className="mds-chat-send-spinner" aria-hidden="true" />
           ) : (
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M5 12h14M13 6l6 6-6 6" />
+              <path d="M12 19V5M6 11l6-6 6 6" />
             </svg>
           )}
         </button>

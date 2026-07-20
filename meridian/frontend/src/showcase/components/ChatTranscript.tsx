@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Message, Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import { rehypeMemoryHighlight } from '../lib/memoryHighlight';
 import { typewriterCadence } from '../lib/streamingCadence';
 import { RankDeltaBadge } from './RankDeltaBadge';
 import { TripVisual } from './TripVisual';
@@ -107,7 +108,7 @@ export function ChatTranscript({ state, compact = false }: { state: MeridianShow
       {state.isLoading && (
         <div className="mds-message bot">
           <div className="mds-message-role">Meridian</div>
-          <div className="mds-message-bubble">
+          <div className="mds-message-bubble is-thinking">
             <span className="mds-running-dot" />
             <ThinkingTicker phase={state.phaseLabel} />
           </div>
@@ -201,7 +202,7 @@ function ChatMessage({
       {!isEmptyStream && (
         <div className={bubbleClass}>
           {message.role === 'bot' ? (
-            <MarkdownText source={visible || ' '} />
+            <MarkdownText source={visible || ' '} highlightMemory={state.selectedPhase >= 4} />
           ) : (
             <span className="mds-message-text">{visible || ' '}</span>
           )}
@@ -230,7 +231,9 @@ function ChatMessage({
 }
 
 // Render safe markdown while enforcing the no-emoji presentation contract.
-function MarkdownText({ source }: { source: string }) {
+// When highlightMemory is set (Production+), recalled preferences are marked
+// so the audience can see what came from Aurora vs the prompt.
+function MarkdownText({ source, highlightMemory = false }: { source: string; highlightMemory?: boolean }) {
   const cleaned = stripEmojis(source);
   return (
     <div className="mds-message-text mds-md">
@@ -239,6 +242,7 @@ function MarkdownText({ source }: { source: string }) {
       >
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
+          rehypePlugins={highlightMemory ? [rehypeMemoryHighlight] : []}
           // Make raw-HTML rejection explicit at the renderer boundary.
           skipHtml
         >

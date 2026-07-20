@@ -129,14 +129,36 @@ cd ../.. && grep "AGENTCORE_" .env          # env has the 4 keys below
 Expected `.env` keys: `AGENTCORE_RUNTIME_ARN`, `AGENTCORE_GATEWAY_URL`,
 `AGENTCORE_GATEWAY_SEARCH_TOOL`, `AGENTCORE_MEMORY_ID`.
 
-## 2) Start the stack
+## 2) Start the durable stack
 
+Terminal 1 — private Aurora checkpoint tunnel:
 ```bash
-# Backend
-cd meridian && source venv/bin/activate
-uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+cd meridian
+./scripts/start_checkpoint_tunnel.sh
+```
 
-# Frontend (new terminal)
+Keep that terminal open. It forwards local port `15432` through the SSM host to
+Aurora port `5432`.
+
+Terminal 2 — fail-closed backend with the real checkpoint store:
+```bash
+cd meridian
+source venv/bin/activate
+export LANGGRAPH_CHECKPOINT_HOST=127.0.0.1
+export LANGGRAPH_CHECKPOINT_PORT=15432
+export LANGGRAPH_CHECKPOINT_DATABASE=meridian
+export LANGGRAPH_CHECKPOINT_REQUIRED=true
+export LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP=true
+export LANGGRAPH_DEMO_INTERRUPT_AFTER=search
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
+
+The checkpoint password is resolved from `LANGGRAPH_CHECKPOINT_SECRET_ARN` or
+the demo's existing `AURORA_SECRET_ARN`. Use a dedicated least-privilege
+checkpoint secret in a hosted deployment.
+
+Terminal 3 — frontend:
+```bash
 cd meridian/frontend
 npm run dev -- --host --port 5173
 ```
@@ -157,6 +179,19 @@ curl -s -X POST http://localhost:8000/api/chat \
   | jq '.message, .conversation_id, (.products | length)'
 ```
 
+For the stage proof, `/health` must include:
+
+```json
+{
+  "checkpoint_backend": "PostgresSaver (Aurora · pooled)",
+  "checkpoint_durable": true,
+  "checkpoint_required": true
+}
+```
+
+If it reports `MemorySaver`, stop. That is an honest local fallback, not the
+Aurora durability proof.
+
 ## 4) Gateway smoke test (direct — run once before going live)
 
 ```bash
@@ -171,7 +206,24 @@ pkgs, _ = ad.semantic_trip_search("wine week in europe", 3); print("packages:", 
 PY
 ```
 
-## 5) Recovery playbook
+## 5) Prove pause, restart, and resume
+
+1. Open `http://localhost:5173/showcase`, choose **Workflow**, and run:
+   `My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.`
+2. Confirm the reply says the workflow paused and the proof names
+   `PostgresSaver (Aurora · pooled)` with `next=availability`.
+3. Stop only Terminal 2 with `Ctrl+C`. Leave the browser and tunnel open.
+4. Restart the same backend command in Terminal 2.
+5. Confirm `/health` is durable again.
+6. Click **Resume workflow from checkpoint** in the existing conversation.
+7. Confirm `Workflow resumed from checkpoint` uses the same `thread_id` and
+   continues at `availability`; the `search` node must not run twice.
+
+This is the title claim made visible: the worker process disappears, while the
+execution position survives in Aurora's `checkpoints`, `checkpoint_blobs`, and
+`checkpoint_writes` tables.
+
+## 6) Recovery playbook
 
 **`runtimeSessionId ... valid min length: 33`** — restart backend; verify
 `rg "_build_runtime_session_id" backend/agentcore/runtime.py`.
@@ -191,7 +243,7 @@ equals `SemanticTripSearchLambda___semantic_trip_search`; restart backend after 
 
 **UI issues** — restart frontend dev server; hard refresh (`Cmd+Shift+R`).
 
-## 6) Operator notes
+## 7) Operator notes
 
 - Reuse the same deployed stack for both kiosk and the code walkthrough — avoid
   "fresh deploy theater" unless deploying is the explicit lesson.
@@ -199,6 +251,8 @@ equals `SemanticTripSearchLambda___semantic_trip_search`; restart backend after 
 - After any fix, rerun the Section 3 health checks before resuming booth traffic.
 - The kiosk auto-loops real `/api/chat` calls on a timer → real Bedrock + Aurora
   spend. Stop it when not actively demoing.
+- Never narrate durable recovery unless `/health` says
+  `"checkpoint_durable": true` and the trace names PostgresSaver.
 
 ---
 

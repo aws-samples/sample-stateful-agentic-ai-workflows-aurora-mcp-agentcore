@@ -4,15 +4,15 @@ Five orchestration phases, each teaching a different builder pattern on the **sa
 
 | Phase | Agent | Module | Pattern |
 | ----- | ----- | ------ | ------- |
-| 1 | **SQL Agent** | `phase1/agent.py` | Strands `@tool` + direct RDS Data API |
-| 2 | **MCP Agent** | `phase2/agent.py` | Strands + `MCPClient` (postgres-mcp-server) |
-| 3 | **Retrieval Agent** | `phase3/supervisor.py` | Strands supervisor delegating to specialists |
-| 3 | Search Agent | `phase3/search_agent.py` | `@tool` semantic search (pgvector) |
-| 3 | Package Agent | `phase3/package_agent.py` | `@tool` details + departure availability |
-| 3 | Booking Agent | `phase3/booking_agent.py` | `@tool` totals + Aurora booking writes |
-| 4 | **Production Agent** | `phase4/concierge.py` | Strands concierge + RLS + AgentCore |
-| 4 | Traveler Memory Agent | `phase4/memory_agent.py` | `@tool` recall / persist for Aurora memory |
-| 5 | **Orchestration Agent** | `phase5/workflow.py` | LangGraph `StateGraph` + checkpointer |
+| 1 | **SQL Agent** | `sql_01/agent.py` | Strands `@tool` + direct RDS Data API |
+| 2 | **MCP Agent** | `mcp_02/agent.py` | Strands + `MCPClient` (postgres-mcp-server) |
+| 3 | **Retrieval Agent** | `retrieval_03/supervisor.py` | Strands supervisor delegating to specialists |
+| 3 | Search Agent | `retrieval_03/search_agent.py` | `@tool` semantic search (pgvector) |
+| 3 | Package Agent | `retrieval_03/package_agent.py` | `@tool` details + departure availability |
+| 3 | Booking Agent | `retrieval_03/booking_agent.py` | `@tool` totals + Aurora booking writes |
+| 4 | **Production Agent** | `production_04/concierge.py` | Strands concierge + RLS + AgentCore |
+| 4 | Traveler Memory Agent | `production_04/memory_agent.py` | `@tool` recall / persist for Aurora memory |
+| 5 | **Orchestration Agent** | `orchestration_05/workflow.py` | LangGraph `StateGraph` + pooled PostgresSaver |
 
 ## Live API routing (`backend/routers/chat.py`)
 
@@ -33,6 +33,7 @@ See **`docs/PRESENTER_GUIDE.md`** (Part 2 — Code Reference) for annotated snip
 | Variable | Effect |
 | -------- | ------ |
 | `AGENTCORE_*` / CLI `@aws/agentcore` | **Required for Phase 4** — Runtime, Gateway, Memory via `agentcore deploy` |
-| `LANGGRAPH_CHECKPOINT_DSN` | Phase 5 PostgresSaver against Aurora |
+| `LANGGRAPH_CHECKPOINT_DSN` / `LANGGRAPH_CHECKPOINT_*` | Phase 5 pooled PostgresSaver against Aurora |
+| `LANGGRAPH_CHECKPOINT_REQUIRED=true` | Fail closed when durable workflow state is unavailable |
 
 All SQL, prompts, and tools use the **travel schema** (`trip_packages`, `bookings`, `travelers`, `traveler_preferences`).

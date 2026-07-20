@@ -29,7 +29,11 @@ describe('SHOWCASE_EXAMPLE_PROMPTS phase ladder', () => {
   it('ends with distinct workflow branches that demonstrate durable orchestration', () => {
     expect(SHOWCASE_EXAMPLE_PROMPTS[5][0].toLowerCase()).toContain('duration options');
     expect(SHOWCASE_EXAMPLE_PROMPTS[5][1].toLowerCase()).toContain('last time');
-    expect(SHOWCASE_EXAMPLE_PROMPTS[5][2].toLowerCase()).toContain('then verify');
+    // The plan branch is the flight-disruption replan: a re-search step plus a
+    // departure-availability step, the two dependent operations Phase 5 owns.
+    const planBreak = SHOWCASE_EXAMPLE_PROMPTS[5][2].toLowerCase();
+    expect(planBreak).toContain('cancelled');
+    expect(planBreak).toContain('departures');
   });
 
   it('uses plain traveler language and explicit units', () => {

@@ -11,10 +11,10 @@
 export const DEMO_TRAVELER_ID = 'trv_meridian_demo';
 
 /** Headline example query used by the hero + catalog CTAs.
- *  The Workflow mode routes this two-step request through named
+ *  The Workflow mode routes this flight-disruption replan through named
  *  classify → search → availability nodes with a checkpoint after each. */
 export const DEMO_PROMPT =
-  'Plan the Kyoto extension: find matching packages, then verify available duration options.';
+  'My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.';
 
 /** MCP tool catalog displayed in the System section. */
 export interface McpToolEntry {
@@ -100,7 +100,7 @@ export const MCP_TOOL_CATALOG: McpToolEntry[] = [
     p50: '132ms',
     health: 'healthy',
     sampleInput:
-      '{\n  "system": "Meridian concierge — ground replies in trip_cards + memory facts",\n  "user": "Plan the Kyoto extension: find matching packages, then verify available duration options."\n}',
+      '{\n  "system": "Meridian concierge — ground replies in trip_cards + memory facts",\n  "user": "My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open."\n}',
     sampleOutput:
       '"For your Tokyo Oct 12-19 window, the closest matches are Tokyo Executive Stopover ($1,949) and Tokyo Ryokan & Onsen Slow Week ($3,899), with shellfish allergy on dining and JFK departures with no red-eyes…"',
   },

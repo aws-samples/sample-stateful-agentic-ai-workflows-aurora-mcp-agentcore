@@ -31,7 +31,7 @@ export interface McpContract {
 }
 
 export interface WorkflowStateProof {
-  status: 'ready' | 'running' | 'checkpointed';
+  status: 'ready' | 'running' | 'checkpointed' | 'ephemeral';
   intent: string;
   path: string[];
   visited: string[];
@@ -39,6 +39,7 @@ export interface WorkflowStateProof {
   checkpoint: string;
   checkpointCount: number;
   table: string;
+  durable: boolean;
 }
 
 export const PHASE_PROOFS: Record<Phase, PhaseProof> = {
@@ -82,7 +83,7 @@ export const PHASE_PROOFS: Record<Phase, PhaseProof> = {
     phase: 5,
     headline: 'Durable workflow',
     dataPath: 'Classify -> branch -> worker node -> checkpoint -> synthesize',
-    auroraCapability: 'Aurora stores LangGraph checkpoints between nodes.',
+    auroraCapability: 'PostgresSaver externalizes LangGraph workflow checkpoints into Aurora.',
     agentBoundary: 'LangGraph makes routing explicit and resumable.',
     proof: 'Executed node path and PostgresSaver checkpoint are visible.',
     source: 'backend/agents/orchestration_05/workflow.py',
@@ -119,14 +120,20 @@ export function deriveAuroraEvidence({
   const checkpointKind =
     traceSpans
       .map((span) => fieldValue(span, 'checkpointer'))
-      .find(Boolean) ?? 'PostgresSaver (Aurora)';
+      .find(Boolean) ??
+    (checkpointSpans.some((span) => /postgressaver/i.test(spanText(span)))
+      ? 'PostgresSaver'
+      : checkpointSpans.some((span) => /memorysaver/i.test(spanText(span)))
+        ? 'MemorySaver (in-process)'
+        : 'not observed');
+  const durableCheckpoint = /postgressaver/i.test(checkpointKind);
   const checkpointStore =
     traceSpans
       .map((span) => fieldValue(span, 'checkpoint_store'))
       .find(Boolean) ??
     (checkpointKind.toLowerCase().includes('memorysaver')
       ? 'process memory'
-      : 'langgraph_checkpoints');
+      : durableCheckpoint ? 'checkpoints' : 'not observed');
   const hasRankDeltas = recommendations.some((p) => p.rank_delta != null || p.pre_rerank_position != null);
 
   return [
@@ -181,11 +188,20 @@ export function deriveAuroraEvidence({
     {
       key: 'checkpoint',
       label: 'Checkpoint',
-      value: checkpointSpans.length ? `${checkpointSpans.length} saved` : selectedPhase >= 5 ? 'ready' : 'later',
+      value: checkpointSpans.length
+        ? durableCheckpoint
+          ? `${checkpointSpans.length} saved to Aurora`
+          : 'in-process only'
+        : selectedPhase >= 5 ? 'ready' : 'later',
       detail: checkpointSpans.length
-        ? `Workflow state checkpointed via ${checkpointKind} (${checkpointStore})`
+        ? durableCheckpoint
+          ? `Durable workflow state checkpointed via ${checkpointKind} (${checkpointStore})`
+          : `Ephemeral workflow state via ${checkpointKind}; Aurora durability not observed`
         : 'LangGraph checkpoints unlock at Workflow',
-      status: statusFor(selectedPhase >= 5, checkpointSpans.length > 0),
+      status: statusFor(
+        selectedPhase >= 5,
+        checkpointSpans.length > 0 && durableCheckpoint,
+      ),
     },
   ];
 }
@@ -214,18 +230,21 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
   const checkpoint =
     traceSpans
       .map((span) => fieldValue(span, 'checkpointer'))
-      .find(Boolean) ?? 'PostgresSaver (Aurora)';
+      .find(Boolean) ?? 'not observed';
+  const durable = /postgressaver/i.test(checkpoint);
   const table =
     traceSpans
       .map((span) => fieldValue(span, 'checkpoint_store'))
       .find(Boolean) ??
     (checkpoint.toLowerCase().includes('memorysaver')
       ? 'process memory'
-      : 'langgraph_checkpoints');
+      : durable ? 'checkpoints' : 'not observed');
   const nextNode = path.find((node) => !visited.includes(node)) ?? 'complete';
 
   return {
-    status: checkpointSpans.length ? 'checkpointed' : visited.length ? 'running' : 'ready',
+    status: checkpointSpans.length
+      ? durable ? 'checkpointed' : 'ephemeral'
+      : visited.length ? 'running' : 'ready',
     intent,
     path,
     visited,
@@ -233,6 +252,7 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
     checkpoint,
     checkpointCount: checkpointSpans.length,
     table,
+    durable,
   };
 }
 
@@ -333,7 +353,7 @@ function fieldValue(span: ShowcaseTraceSpan, label: string): string | null {
 }
 
 function isCheckpointSpan(span: ShowcaseTraceSpan): boolean {
-  return /checkpoint|langgraph_checkpoints/i.test(
+  return /checkpoint/i.test(
     [span.name, span.details, span.sql, span.component].filter(Boolean).join(' '),
   );
 }

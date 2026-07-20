@@ -4,7 +4,7 @@ import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { deriveWorkflowState } from '../lib/showcaseProof';
 
 export function WorkflowStateInspector({ state }: { state: MeridianShowcaseState }) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
   const workflow = deriveWorkflowState(state.traceSpans);
 
   return (
@@ -23,9 +23,15 @@ export function WorkflowStateInspector({ state }: { state: MeridianShowcaseState
         <span className="mds-workflow-state-icon" aria-hidden="true">
           <Route size={16} strokeWidth={2.2} />
         </span>
-        <div>
-          <strong>Workflow state</strong>
-          <small>{workflow.status === 'ready' ? 'waiting for a Phase 5 prompt' : workflow.status}</small>
+          <div>
+            <strong>Workflow state</strong>
+            <small>
+              {workflow.status === 'ready'
+                ? 'waiting for a Phase 5 prompt'
+                : workflow.status === 'ephemeral'
+                  ? 'in-process only'
+                  : workflow.status}
+            </small>
         </div>
       </button>
 
@@ -62,7 +68,9 @@ export function WorkflowStateInspector({ state }: { state: MeridianShowcaseState
             <DatabaseZap size={14} strokeWidth={2.1} aria-hidden="true" />
             <span>
               {workflow.checkpointCount
-                ? `${workflow.checkpointCount} write${workflow.checkpointCount === 1 ? '' : 's'} to ${workflow.table}`
+                ? workflow.durable
+                  ? `${workflow.checkpointCount} durable write${workflow.checkpointCount === 1 ? '' : 's'} to ${workflow.table}`
+                  : `${workflow.checkpointCount} ephemeral write${workflow.checkpointCount === 1 ? '' : 's'} in process memory`
                 : `writes to ${workflow.table} after worker nodes`}
             </span>
           </div>

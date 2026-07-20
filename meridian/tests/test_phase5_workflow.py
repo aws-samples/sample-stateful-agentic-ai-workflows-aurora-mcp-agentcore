@@ -23,9 +23,17 @@ from backend.agents.orchestration_05.workflow import (
 
 
 @pytest.fixture(autouse=True)
-def _disable_auto_checkpoint_dsn(monkeypatch: pytest.MonkeyPatch) -> None:
+def _disable_auto_checkpoint_dsn(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("LANGGRAPH_CHECKPOINT_DSN", raising=False)
     monkeypatch.setenv("LANGGRAPH_AUTO_CHECKPOINT_DSN", "false")
+    monkeypatch.setenv("LANGGRAPH_CHECKPOINT_REQUIRED", "false")
+    monkeypatch.setenv("LANGGRAPH_CHECKPOINT_POOL_TIMEOUT", "10")
+    monkeypatch.delenv("LANGGRAPH_DEMO_INTERRUPT_AFTER", raising=False)
+    workflow_mod._checkpoint_backend = None
+    workflow_mod._checkpoint_init_lock = None
+    yield
+    workflow_mod._checkpoint_backend = None
+    workflow_mod._checkpoint_init_lock = None
 
 
 def test_classify_routes_search_query() -> None:
@@ -98,6 +106,9 @@ def test_workflow_availability_branch() -> None:
 
 def test_checkpointer_kind_is_memory_when_dsn_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     wf = _build_workflow()
+    asyncio.run(
+        wf.run("Find me a Kyoto cultural trip", traveler_id="t1", conversation_id="c-memory")
+    )
     assert "MemorySaver" in wf.checkpointer_kind
 
 
@@ -120,32 +131,34 @@ def test_checkpoint_dsn_can_be_built_from_aurora_env(monkeypatch: pytest.MonkeyP
 def test_workflow_enters_async_postgres_saver_when_dsn_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    entered: List[str] = []
-    exited: List[bool] = []
+    events: List[str] = []
 
     class FakeAsyncSaver(MemorySaver):
+        def __init__(self, pool: Any):
+            super().__init__()
+            events.append(f"saver:{pool.name}")
+
         async def setup(self) -> None:
-            entered.append("setup")
+            events.append("setup")
 
-    class FakeAsyncContext:
-        async def __aenter__(self) -> FakeAsyncSaver:
-            entered.append("enter")
-            return FakeAsyncSaver()
+    class FakePool:
+        def __init__(self, *, conninfo: str, name: str, **_kwargs: Any):
+            self.name = name
+            events.append(f"pool:{conninfo}")
 
-        async def __aexit__(self, *_args: Any) -> None:
-            exited.append(True)
+        async def open(self, *, wait: bool, timeout: float) -> None:
+            events.append(f"open:{wait}:{int(timeout)}")
 
-    class FakeAsyncPostgresSaver:
-        @classmethod
-        def from_conn_string(cls, dsn: str) -> FakeAsyncContext:
-            entered.append(dsn)
-            return FakeAsyncContext()
+        async def close(self) -> None:
+            events.append("close")
 
     monkeypatch.setenv("LANGGRAPH_CHECKPOINT_DSN", "postgresql://example")
-    monkeypatch.setattr(workflow_mod, "AsyncPostgresSaver", FakeAsyncPostgresSaver)
+    monkeypatch.setattr(workflow_mod, "AsyncPostgresSaver", FakeAsyncSaver)
+    monkeypatch.setattr(workflow_mod, "AsyncConnectionPool", FakePool)
+    monkeypatch.setattr(workflow_mod, "dict_row", object())
 
     wf = _build_workflow()
-    assert wf.checkpointer_kind == "MemorySaver (in-process)"
+    assert wf.checkpointer_kind == "MemorySaver (initializing)"
 
     res = asyncio.run(
         wf.run(
@@ -156,8 +169,72 @@ def test_workflow_enters_async_postgres_saver_when_dsn_set(
     )
 
     assert res["intent"] == "availability"
-    assert wf.checkpointer_kind == "PostgresSaver (Aurora)"
-    assert entered == ["postgresql://example", "enter", "setup"]
-    assert exited == [True]
+    assert wf.checkpointer_kind == "PostgresSaver (Aurora · pooled)"
+    assert events == [
+        "pool:postgresql://example",
+        "open:True:10",
+        "saver:meridian-langgraph-checkpoints",
+        "setup",
+    ]
     titles = [a.get("title", "") for a in res.get("activities", [])]
     assert "Checkpoint · PostgresSaver.put" in titles
+
+    asyncio.run(workflow_mod.close_checkpoint_backend())
+    assert events[-1] == "close"
+
+
+def test_required_checkpoint_store_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LANGGRAPH_CHECKPOINT_REQUIRED", "true")
+    wf = _build_workflow()
+
+    with pytest.raises(RuntimeError, match="Durable workflow checkpoints are required"):
+        asyncio.run(
+            wf.run(
+                "Find me a Kyoto cultural trip",
+                traveler_id="t1",
+                conversation_id="c-required",
+            )
+        )
+
+
+def test_workflow_can_pause_and_resume_same_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LANGGRAPH_DEMO_INTERRUPT_AFTER", "search")
+    calls = {"search": 0, "availability": 0}
+
+    async def scenario() -> tuple[dict, dict]:
+        async def fake_search(q: str, limit: int = 5):
+            calls["search"] += 1
+            return ([{"package_id": "pkg-a", "name": "Tokyo replan"}], [])
+
+        async def fake_avail(q: str):
+            calls["availability"] += 1
+            return ([{"package_id": "pkg-a", "date": "2026-10-12"}], [], "")
+
+        wf = OrchestrationAgent(
+            search_fn=fake_search,
+            availability_fn=fake_avail,
+        )
+        paused = await wf.run(
+            "Plan a Tokyo trip and check available departures",
+            traveler_id="t1",
+            conversation_id="c-resume",
+        )
+        resumed = await wf.run(
+            "Resume workflow from checkpoint",
+            traveler_id="t1",
+            conversation_id="c-resume",
+            resume=True,
+        )
+        return paused, resumed
+
+    paused, resumed = asyncio.run(scenario())
+
+    assert paused["workflow_status"] == "paused"
+    assert resumed["workflow_status"] == "resumed"
+    assert calls == {"search": 1, "availability": 1}
+    titles = [a.get("title", "") for a in resumed.get("activities", [])]
+    assert "Workflow resumed from checkpoint" in titles

@@ -104,5 +104,30 @@ describe('showcase proof helpers', () => {
     expect(workflow.visited).toEqual(['classify', 'search']);
     expect(workflow.nextNode).toBe('availability');
     expect(workflow.checkpointCount).toBe(1);
+    expect(workflow.durable).toBe(true);
+    expect(workflow.table).toBe('checkpoints');
+  });
+
+  it('does not present MemorySaver as durable Aurora proof', () => {
+    const spans = [
+      span({
+        name: 'Checkpoint · MemorySaver.put',
+        fields: [
+          { label: 'checkpointer', value: 'MemorySaver (in-process)' },
+          { label: 'checkpoint_store', value: 'process memory' },
+        ],
+      }),
+    ];
+    const workflow = deriveWorkflowState(spans);
+    const checkpoint = deriveAuroraEvidence({
+      selectedPhase: 5,
+      recommendations: [],
+      traceSpans: spans,
+    }).find((item) => item.key === 'checkpoint');
+
+    expect(workflow.status).toBe('ephemeral');
+    expect(workflow.durable).toBe(false);
+    expect(checkpoint?.status).toBe('ready');
+    expect(checkpoint?.detail).toContain('Aurora durability not observed');
   });
 });

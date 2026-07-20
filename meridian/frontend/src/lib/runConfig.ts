@@ -8,6 +8,9 @@ export interface BackendHealth {
   bedrock_model_id?: string;
   bedrock_model_label?: string;
   embedding_model_id?: string;
+  checkpoint_backend?: string;
+  checkpoint_durable?: boolean;
+  checkpoint_required?: boolean;
 }
 
 /** Phases 1–2: procedural SQL/MCP only — no Bedrock LLM on the live /api/chat path. */

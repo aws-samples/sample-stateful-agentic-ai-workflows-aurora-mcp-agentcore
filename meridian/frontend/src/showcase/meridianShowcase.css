@@ -15,6 +15,11 @@
   --mds-amber: #e3a45e;
   --mds-green: #37d29d;
   --mds-danger: #ff815f;
+  /* Recalled-from-memory signature. Warm gold stays legible on a projected
+     dark surface and remains distinct from cyan actions and green success. */
+  --mds-memory: #ffd34d;
+  --mds-memory-soft: rgba(255, 211, 77, 0.18);
+  --mds-memory-line: rgba(255, 211, 77, 0.72);
 
   /* Semantic surface tokens — these flip in light mode. In dark they equal
      the white-on-dark values they replace, so the default look is unchanged.
@@ -73,6 +78,9 @@
   --mds-amber: #b45309;
   --mds-green: #15803d;
   --mds-danger: #dc2626;
+  --mds-memory: #8a5a00;
+  --mds-memory-soft: rgba(245, 183, 0, 0.16);
+  --mds-memory-line: rgba(138, 90, 0, 0.48);
 
   --mds-on-surface: #0f172a;
   --mds-on-surface-soft: #334155;
@@ -1069,14 +1077,14 @@
   border-radius: 10px;
   color: #aeb9c4;
   background: transparent;
-  font-size: calc(12px * var(--mds-fs));
+  font-size: calc(13px * var(--mds-fs));
   font-weight: 700;
 }
 
 .mds-phase-selector button.is-active {
   color: #06232a;
   background: var(--mds-cyan);
-  box-shadow: 0 0 24px rgba(49, 212, 228, 0.36);
+  box-shadow: 0 0 28px rgba(49, 212, 228, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.28);
 }
 
 .mds-phase-proof-panel {
@@ -1420,6 +1428,120 @@
   .mds-phase-hint-tech { display: none; }
 }
 
+.mds-disruption-alert {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 16px;
+  border: 2px solid color-mix(in srgb, var(--mds-amber) 74%, var(--mds-line));
+  border-radius: 8px;
+  background:
+    linear-gradient(
+      100deg,
+      color-mix(in srgb, var(--mds-amber) 18%, var(--mds-card)),
+      color-mix(in srgb, var(--mds-amber) 7%, var(--mds-card))
+    );
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+  animation: mds-disruption-attention 2.4s ease-in-out 3;
+}
+
+@keyframes mds-disruption-attention {
+  0%, 100% {
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--mds-amber) 22%, transparent),
+      0 12px 38px color-mix(in srgb, var(--mds-amber) 24%, rgba(0, 0, 0, 0.24));
+  }
+}
+
+.mds-disruption-icon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--mds-amber) 70%, transparent);
+  border-radius: 8px;
+  color: #1b0d00;
+  background: var(--mds-amber);
+}
+
+.mds-disruption-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.mds-disruption-copy strong {
+  color: var(--mds-on-surface);
+  font-size: calc(18px * var(--mds-fs));
+  line-height: 1.25;
+}
+
+.mds-disruption-copy p {
+  margin: 0;
+  color: var(--mds-on-surface-soft);
+  font-size: calc(12.5px * var(--mds-fs));
+  line-height: 1.4;
+}
+
+.mds-disruption-status {
+  justify-self: start;
+  padding: 5px 9px;
+  border-radius: 5px;
+  color: #1b0d00;
+  background: var(--mds-amber);
+  font-size: calc(10px * var(--mds-fs));
+  font-weight: 840;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.mds-disruption-alert button {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid var(--mds-amber);
+  border-radius: 6px;
+  color: #1b0d00;
+  background: var(--mds-amber);
+  font-size: calc(12px * var(--mds-fs));
+  font-weight: 820;
+  white-space: nowrap;
+}
+
+.mds-disruption-alert button:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.mds-disruption-alert button:disabled {
+  cursor: wait;
+  filter: saturate(0.45);
+  opacity: 0.72;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mds-disruption-alert {
+    animation: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .mds-disruption-alert {
+    grid-template-columns: 46px minmax(0, 1fr);
+  }
+  .mds-disruption-alert button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
 .mds-chat-transcript {
   /* Unified scroll: the chat transcript no longer owns its own scrollbar.
      The whole main column scrolls as one surface, so chat history and the
@@ -1506,6 +1628,16 @@
   color: #f0f5fa;
 }
 
+/* The pre-reply "thinking" bubble gets a cyan left-border accent so the
+   audience reads it as live work in progress, distinct from a settled reply. */
+.mds-message.bot .mds-message-bubble.is-thinking {
+  display: inline-flex;
+  align-items: center;
+  border-left: 2.5px solid var(--mds-cyan);
+  border-radius: 16px 16px 16px 4px;
+  background: var(--mds-cyan-soft);
+}
+
 /* Bot bubbles that carry products stack their summary chip below the
    reply text. Same width cap as a regular bubble - the chip is small. */
 .mds-message.bot.has-products .mds-message-bubble {
@@ -1542,6 +1674,21 @@
 
 .mds-message-text {
   display: block;
+}
+
+/* Recalled-from-memory phrases inside a Production+ reply. The <mark> is
+   injected on hast by rehypeMemoryHighlight, so it survives skipHtml and
+   reapplies as the typewriter reveals each phrase. */
+.mds-md mark.mds-memory-highlight {
+  color: var(--mds-memory);
+  background: var(--mds-memory-soft);
+  border-bottom: 2px solid var(--mds-memory-line);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-weight: 720;
+  /* Keep multi-word phrases from breaking their tint across a line wrap. */
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 /* react-markdown output for bot replies. Tight vertical rhythm, cyan
@@ -2224,9 +2371,9 @@
   color: #f3f9ff;
   background: rgba(10, 18, 26, 0.62);
   backdrop-filter: blur(8px);
-  font-size: calc(10px * var(--mds-fs));
+  font-size: calc(11px * var(--mds-fs));
   font-weight: 640;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 
 .mds-rec-overlay .mds-rec-actions button:hover {
@@ -2465,16 +2612,32 @@
 
 .mds-chat-composer-wrap.is-proof .mds-chat-query-starters {
   display: grid;
+  align-items: stretch;
+}
+
+.mds-chat-composer-wrap.is-proof .mds-chat-query-starters.has-2 {
   grid-template-columns: auto repeat(2, minmax(0, 1fr));
 }
 
+.mds-chat-composer-wrap.is-proof .mds-chat-query-starters.has-3 {
+  grid-template-columns: auto repeat(3, minmax(0, 1fr));
+}
+
+/* Wrap all three proof prompts instead of truncating them so the amber stretch
+   query stays legible from the back of the room. */
 .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip {
   min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
+  align-items: center;
+  padding-block: 6px;
   padding-inline: 12px;
+  min-height: 34px;
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.28;
 }
 
 .mds-chat-quick-actions {
@@ -4334,9 +4497,13 @@
 .mds-trip-facts span,.mds-journey-profile dt { color:var(--mds-muted); font-size:calc(12px * var(--mds-fs)); }
 .mds-journey-profile dd { color:var(--mds-on-surface); font-size:calc(15px * var(--mds-fs)); font-weight:650; }
 .mds-journey-loyalty { padding:12px; border-top:1px solid var(--mds-line); background:var(--mds-card); }
-.mds-journey-loyalty span,.mds-journey-loyalty b,.mds-journey-loyalty small { display:block; }
-.mds-journey-loyalty span,.mds-journey-loyalty small { color:var(--mds-muted); font-size:calc(11.5px * var(--mds-fs)); }
-.mds-journey-loyalty b { margin:3px 0; color:var(--mds-on-surface); font-size:calc(13px * var(--mds-fs)); line-height:1.35; }
+.mds-journey-loyalty>span,.mds-journey-loyalty b,.mds-journey-loyalty small { display:block; }
+.mds-journey-loyalty>span,.mds-journey-loyalty small { color:var(--mds-muted); font-size:calc(11.5px * var(--mds-fs)); }
+.mds-journey-loyalty-list { display:grid; margin-top:5px; }
+.mds-journey-loyalty-program { padding:7px 0; border-top:1px solid var(--mds-line); }
+.mds-journey-loyalty-program:first-child { padding-top:2px; border-top:0; }
+.mds-journey-loyalty-program:last-child { padding-bottom:0; }
+.mds-journey-loyalty b { margin-bottom:3px; color:var(--mds-on-surface); font-size:calc(13px * var(--mds-fs)); line-height:1.35; }
 .mds-trip-section ul,.mds-compare-copy ul { display:grid; gap:8px; margin-top:10px; padding-left:18px; }
 .mds-availability-list { display:flex; flex-wrap:wrap; gap:8px; }.mds-availability-list span { padding:9px; border:1px solid var(--mds-line); border-radius:6px; }.mds-availability-list b { display:block; }
 .mds-trip-disclosure,.mds-hold-receipt { display:flex; gap:9px; padding:12px; border:1px solid var(--mds-line); border-radius:6px; background:var(--mds-fill-1); }
@@ -4633,6 +4800,14 @@
   text-align: center;
   text-transform: uppercase;
 }
+.mds-wfgraph-branches b {
+  transition: opacity 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+/* Once a branch is taken, fade the paths not taken so the routed branch is
+   unmistakable from the room. Only dims when a sibling is active. */
+.mds-wfgraph-branches:has(b.is-active) b:not(.is-active) {
+  opacity: 0.45;
+}
 .mds-wfgraph-branches b.is-active {
   border-color: var(--mds-cyan-line);
   background: var(--mds-cyan-soft);
@@ -4927,9 +5102,28 @@
   text-transform: uppercase;
 }
 .mds-authz-step strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   color: var(--mds-on-surface);
-  font-size: calc(11.5px * var(--mds-fs));
+  font-size: calc(12.5px * var(--mds-fs));
   line-height: 1.35;
+}
+.mds-authz-decision {
+  flex: none;
+  padding: 2px 9px;
+  border-radius: 6px;
+  font-size: calc(11px * var(--mds-fs));
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.mds-authz-decision.is-allow {
+  color: #04140c;
+  background: var(--mds-green);
+}
+.mds-authz-decision.is-deny {
+  color: #1a0505;
+  background: var(--mds-danger);
 }
 .mds-authz-step code {
   margin-top: 3px;
@@ -4968,25 +5162,61 @@
   color: var(--mds-on-surface);
 }
 .mds-rls-counts {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
   font-size: calc(11.5px * var(--mds-fs));
   color: var(--mds-on-surface-soft);
 }
-.mds-rls-counts b {
+.mds-rls-count-scoped {
+  font-size: calc(26px * var(--mds-fs));
+  font-weight: 800;
+  line-height: 1;
   color: var(--mds-cyan);
-  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.mds-rls-count-arrow {
+  font-size: calc(14px * var(--mds-fs));
+  color: var(--mds-on-surface-faint);
+}
+.mds-rls-count-unscoped {
+  font-size: calc(15px * var(--mds-fs));
+  color: var(--mds-on-surface-faint);
+  text-decoration-thickness: 1.5px;
+  font-variant-numeric: tabular-nums;
+}
+.mds-rls-count-unit {
+  font-size: calc(11px * var(--mds-fs));
+  color: var(--mds-on-surface-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 .mds-rls-err {
   font-size: calc(11px * var(--mds-fs));
   color: var(--mds-danger);
 }
 
-/* The full track = unscoped (all rows); the cyan fill = scoped (RLS-filtered). */
+/* The full track = unscoped (all rows). The red ghost fills the whole track as
+   the "before" state; the cyan bar animates down over it to the scoped count,
+   so the audience literally watches the red (RLS-hidden) rows get revealed. */
 .mds-rls-bar {
   position: relative;
-  height: 10px;
+  height: 14px;
   border-radius: 999px;
   background: var(--mds-fill-2);
   overflow: hidden;
+}
+.mds-rls-bar-ghost {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--mds-danger) 22%, transparent) 0,
+    color-mix(in srgb, var(--mds-danger) 22%, transparent) 6px,
+    color-mix(in srgb, var(--mds-danger) 11%, transparent) 6px,
+    color-mix(in srgb, var(--mds-danger) 11%, transparent) 12px
+  );
 }
 .mds-rls-bar-scoped {
   position: absolute;
@@ -4994,6 +5224,7 @@
   height: 100%;
   border-radius: 999px;
   background: var(--mds-cyan);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--mds-cyan) 45%, transparent);
 }
 .mds-rls-legend {
   display: flex;
@@ -5015,7 +5246,7 @@
   background: var(--mds-cyan);
 }
 .mds-rls-dot.is-hidden {
-  background: var(--mds-fill-3);
+  background: color-mix(in srgb, var(--mds-danger) 45%, transparent);
 }
 
 .mds-rls-policies {

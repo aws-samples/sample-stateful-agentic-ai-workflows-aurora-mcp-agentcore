@@ -15,11 +15,17 @@ full-text search, and reranking with MCP tools, Strands Agents, Bedrock
 AgentCore, and durable LangGraph workflows. Aurora-backed memory, row-level
 security, audit trails, and checkpoints keep every turn governed and resilient.
 
+> **Statefulness lives in durable stores, not database connections.** The RDS
+> Data API is a connectionless transport for durable Aurora reads and writes;
+> AgentCore Memory carries managed context across turns; and LangGraph
+> PostgresSaver externalizes workflow execution state into Aurora through a
+> bounded PostgreSQL connection pool.
+
 ![Meridian showcase displaying grounded trip results, SQL execution proof, and Alex Morgan's governed traveler context](meridian/docs/meridian-showcase.jpg)
 
 <p align="center"><sub>The live showcase pairs the traveler experience with inspectable SQL, retrieval, memory, RLS, and workflow proof.</sub></p>
 
-**[Quick start](#quick-start)** · **[Five-phase architecture](#what-it-demonstrates)** · **[Demo script](meridian/DEMO_SCRIPT.md)** · **[Presenter guide](meridian/docs/PRESENTER_GUIDE.md)**
+**[Quick start](#quick-start)** · **[Five-phase architecture](#what-it-demonstrates)** · **[Stateful architecture](meridian/docs/STATEFUL_ARCHITECTURE.md)** · **[Demo script](meridian/DEMO_SCRIPT.md)** · **[Presenter guide](meridian/docs/PRESENTER_GUIDE.md)**
 
 ## What It Demonstrates
 
@@ -32,7 +38,7 @@ without hiding the implementation behind a generic chat interface:
 | **2 · MCP** | Governed tools | PostgreSQL MCP plus typed comparison, FX, loyalty, and availability tools |
 | **3 · Retrieval** | Intent | Cohere Embed v4, pgvector, full-text search, and Cohere Rerank 3.5 |
 | **4 · Production** | Trust | Workload identity, workload-to-traveler grants, RLS, and audit trails |
-| **5 · Workflow** | Durability | Explicit LangGraph routing with Aurora-backed checkpoints and resume |
+| **5 · Workflow** | Durability | PostgresSaver checkpoint, worker restart, and same-thread resume from Aurora |
 
 The demo traveler is **Alex Morgan** (`trv_meridian_demo`), a JFK-based
 Marriott Bonvoy Platinum Elite traveler. Production and Workflow use Alex's
@@ -101,7 +107,7 @@ root route redirects to the showcase.
 - **Frontend:** React, Vite, TypeScript
 - **Backend:** FastAPI, Strands Agents, LangGraph
 - **Models:** Claude Sonnet 5 on Amazon Bedrock, Cohere Embed v4, Cohere Rerank 3.5
-- **Data:** Aurora PostgreSQL 18+, pgvector, RDS Data API, identity bindings, Row-Level Security
+- **Data:** Aurora PostgreSQL 18+, pgvector, RDS Data API, pooled psycopg, identity bindings, Row-Level Security
 - **Protocols and services:** Model Context Protocol, Bedrock AgentCore Runtime, Gateway, Memory, and Identity
 
 This sample authorizes AWS or AgentCore workload identities. A shared hosted

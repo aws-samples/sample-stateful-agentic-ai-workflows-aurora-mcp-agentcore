@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AlertTriangle, ArrowRight } from 'lucide-react';
 import { ChatComposer } from './components/ChatComposer';
 import { ChatTranscript } from './components/ChatTranscript';
 import { MemoryDrawer } from './components/MemoryDrawer';
@@ -13,6 +14,7 @@ import { ComparisonDialog } from './components/ComparisonDialog';
 import { JourneyPanel } from './components/JourneyPanel';
 import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
 import { ALEX_IMAGE_URL, ALEX_NAME } from './lib/personas';
+import { SHOWCASE_FINALE_PROMPT } from './lib/showcaseAdapters';
 
 type NavItemId = 'concierge' | 'trips' | 'discover' | 'profile' | 'preferences' | 'messages';
 
@@ -217,6 +219,34 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
                 </svg>
               </button>
             </div>
+          )}
+
+          {surfaceMode === 'experience' && (
+            <section className="mds-disruption-alert" aria-label="Active flight disruption">
+              <span className="mds-disruption-icon" aria-hidden="true">
+                <AlertTriangle size={24} strokeWidth={2.3} />
+              </span>
+              <div className="mds-disruption-copy">
+                <b className="mds-disruption-status">Action needed</b>
+                <strong>JFK to Tokyo flight cancelled</strong>
+                <p>Rework Alex's itinerary, then verify live alternatives before presenting a plan.</p>
+              </div>
+              <button
+                type="button"
+                disabled={state.isLoading}
+                onClick={() => {
+                  state.setSelectedPhase(5);
+                  void state.applyPhaseExample(
+                    SHOWCASE_FINALE_PROMPT,
+                    true,
+                    5,
+                  );
+                }}
+              >
+                Start recovery workflow
+                <ArrowRight size={16} strokeWidth={2.4} />
+              </button>
+            </section>
           )}
 
           {state.error && (

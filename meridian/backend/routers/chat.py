@@ -68,6 +68,7 @@ class ChatRequest(BaseModel):
     phase: Literal[1, 2, 3, 4, 5]
     customer_id: Optional[str] = None
     conversation_id: Optional[str] = None
+    resume: bool = False
 
 
 class TraceTelemetry(BaseModel):
@@ -157,6 +158,7 @@ class ChatResponse(BaseModel):
     follow_ups: Optional[List[str]] = None
     conversation_id: Optional[str] = None
     memory_facts: Optional[List[MemoryFact]] = None
+    workflow_status: Optional[str] = None
 
 
 def create_activity(
@@ -1258,10 +1260,9 @@ def _is_availability_query(query: str) -> bool:
 
 
 _PHASE4_WORKFLOW_TRANSITION_MESSAGE = (
-    "I can carry forward your Tokyo context, but planning the Kyoto extension "
-    "requires two dependent steps: find matching packages, then verify their "
-    "available duration options. Switch to Workflow so each step is explicit, "
-    "checkpointed, and resumable."
+    "I can carry forward your Tokyo context, but this needs two dependent "
+    "steps: rework the itinerary, then verify which departures are still open. "
+    "Switch to Workflow so each step is explicit, checkpointed, and resumable."
 )
 
 
@@ -1272,12 +1273,21 @@ def _needs_checkpointed_workflow(query: str) -> bool:
     that asks for multiple dependent travel-planning steps should not be framed
     as completed in one fluent paragraph. Phase 5 owns that story because the
     graph can checkpoint search -> availability -> synthesis/resume.
+
+    A cancelled-flight replan qualifies as its own multi-step plan: reworking
+    the itinerary is a re-search step and confirming which departures are still
+    open is an availability step, so it bridges to Workflow just like the
+    explicit "plan ... extension" phrasing does.
     """
     q = (query or "").lower()
     if not q:
         return False
 
-    has_plan_intent = any(
+    is_disruption_replan = any(
+        m in q for m in ("cancel", "disrupt", "rebook", "stranded", "rerouted")
+    ) and any(m in q for m in ("rework", "replan", "re-plan", "redo", "rebuild"))
+
+    has_plan_intent = is_disruption_replan or any(
         marker in q
         for marker in (
             "plan ",
@@ -1299,16 +1309,18 @@ def _needs_checkpointed_workflow(query: str) -> bool:
             "departures",
             "what dates",
             "when can",
+            "still open",
         )
     )
     dependent_steps = sum(
         bool(any(marker in q for marker in markers))
         for markers in (
-            ("shortlist", "candidate", "find "),
+            ("shortlist", "candidate", "find ", "rework", "replan"),
             ("pick ", "choose ", "select "),
             ("marriott", "bonvoy"),
             ("kyoto", "side trip", "extension"),
             ("hold", "stage", "reserve", "book"),
+            ("departure", "departures", "still open"),
         )
     )
     return has_plan_intent and has_availability_step and dependent_steps >= 2
@@ -1522,14 +1534,16 @@ async def orchestration_workflow(
     query: str,
     traveler_id: str,
     conversation_id: Optional[str] = None,
-) -> tuple[List[Product], List[ActivityEntry], str, str]:
+    *,
+    resume: bool = False,
+) -> tuple[List[Product], List[ActivityEntry], str, str, str]:
     """
     Phase 5: LangGraph StateGraph orchestrates classify → branch → synthesize.
 
     Reuses Phase 3's retrieval search and availability check as graph nodes so the
     workflow story is "explicit edges + checkpoints" rather than "different
-    search code."  Checkpointer is PostgresSaver when LANGGRAPH_CHECKPOINT_DSN
-    is set, otherwise MemorySaver.
+    search code." The process-wide checkpoint backend is pooled PostgresSaver
+    when configured, otherwise an explicitly ephemeral MemorySaver.
     """
     from backend.agents.orchestration_05.workflow import OrchestrationAgent
 
@@ -1542,6 +1556,7 @@ async def orchestration_workflow(
         query,
         traveler_id=traveler_id,
         conversation_id=conversation_id or "",
+        resume=resume,
     )
 
     raw_activities = final_state.get("activities", []) or []
@@ -1551,7 +1566,8 @@ async def orchestration_workflow(
     packages = final_state.get("packages", []) or []
     response = final_state.get("response") or "Workflow finished."
     conv_id = final_state.get("conversation_id") or ""
-    return packages, activities, response, conv_id
+    workflow_status = final_state.get("workflow_status") or "complete"
+    return packages, activities, response, conv_id, workflow_status
 
 
 def _dict_to_activity_entry(activity: Any) -> ActivityEntry:
@@ -1775,6 +1791,17 @@ def is_availability_query(query: str) -> bool:
     return any(pattern in query_lower for pattern in availability_patterns)
 
 
+def _is_workflow_resume_query(query: str) -> bool:
+    normalized = " ".join((query or "").lower().split())
+    return normalized in {
+        "resume",
+        "resume workflow",
+        "resume workflow from checkpoint",
+        "continue workflow",
+        "continue from checkpoint",
+    }
+
+
 @router.post("", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     """
@@ -1960,8 +1987,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
             follow_ups = (
                 [
                     "Run this in Workflow",
-                    "Find Kyoto packages",
-                    "Check Kyoto duration options",
+                    "Rework the itinerary",
+                    "Check which departures are open",
                 ]
                 if needs_workflow
                 else generate_follow_ups(request.message, products, request.phase)
@@ -2022,39 +2049,58 @@ async def chat(request: ChatRequest) -> ChatResponse:
     if request.phase == 5:
         from backend.memory.store import DEMO_TRAVELER_ID
         try:
-            workflow_packages, workflow_activities, raw_message, conv_id = await orchestration_workflow(
+            resume_workflow = request.resume or _is_workflow_resume_query(
+                request.message
+            )
+            (
+                workflow_packages,
+                workflow_activities,
+                raw_message,
+                conv_id,
+                workflow_status,
+            ) = await orchestration_workflow(
                 request.message,
                 traveler_id=request.customer_id or DEMO_TRAVELER_ID,
                 conversation_id=request.conversation_id,
+                resume=resume_workflow,
             )
             activities.extend(workflow_activities)
-            polished, polish_model, polish_note = await _polish_phase_reply(
-                phase=5,
-                user_query=request.message,
-                raw_message=raw_message,
-                products=workflow_packages,
-                activities=activities,
-                memory_facts=None,
-            )
-            if polish_model:
-                activities.append(create_activity(
-                    activity_type="reasoning",
-                    title=f"Bedrock · concierge polish ({polish_model})",
-                    details="Wrapping Workflow reply in concierge tone",
-                    agent_name="OrchestrationAgent",
-                    agent_file="backend/llm_polish.py",
-                ))
-                message = polished
-            else:
-                activities.append(create_activity(
-                    activity_type="error",
-                    title="Bedrock polish unavailable",
-                    details=polish_note or "unknown",
-                    agent_name="OrchestrationAgent",
-                    agent_file="backend/llm_polish.py",
-                ))
+            if workflow_status == "paused":
                 message = raw_message
-            follow_ups = generate_follow_ups(request.message, workflow_packages, request.phase)
+            else:
+                polished, polish_model, polish_note = await _polish_phase_reply(
+                    phase=5,
+                    user_query=request.message,
+                    raw_message=raw_message,
+                    products=workflow_packages,
+                    activities=activities,
+                    memory_facts=None,
+                )
+                if polish_model:
+                    activities.append(create_activity(
+                        activity_type="reasoning",
+                        title=f"Bedrock · concierge polish ({polish_model})",
+                        details="Wrapping Workflow reply in concierge tone",
+                        agent_name="OrchestrationAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+                    message = polished
+                else:
+                    activities.append(create_activity(
+                        activity_type="error",
+                        title="Bedrock polish unavailable",
+                        details=polish_note or "unknown",
+                        agent_name="OrchestrationAgent",
+                        agent_file="backend/llm_polish.py",
+                    ))
+                    message = raw_message
+            follow_ups = (
+                ["Resume workflow from checkpoint"]
+                if workflow_status == "paused"
+                else generate_follow_ups(
+                    request.message, workflow_packages, request.phase
+                )
+            )
             return _complete_chat_turn(
                 ChatResponse(
                 message=message,
@@ -2063,6 +2109,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 activities=activities,
                 follow_ups=follow_ups,
                 conversation_id=conv_id,
+                workflow_status=workflow_status,
             ),
                 request.phase,
                 turn_started,

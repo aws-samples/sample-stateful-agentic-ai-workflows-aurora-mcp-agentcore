@@ -17,7 +17,7 @@ Production and Orchestration modes import agent / workflow modules at runtime:
 
 - `backend/agents/production_04/concierge.py` — Strands concierge + Aurora memory + AgentCore mirror
 - `backend/agents/production_04/memory_agent.py` — `@tool` recall/persist methods
-- `backend/agents/orchestration_05/workflow.py` — LangGraph `StateGraph` + `PostgresSaver`/`MemorySaver`
+- `backend/agents/orchestration_05/workflow.py` — LangGraph `StateGraph` + shared pooled `PostgresSaver`/ephemeral `MemorySaver`
 - `backend/agentcore/memory.py`, `backend/agentcore/identity.py` — Bedrock AgentCore adapters
 
 SQL/MCP/Retrieval modes execute inside `chat.py` (`sql_search`, `mcp_search`, `retrieval_search`). The matching files under `backend/agents/sql_01`, `backend/agents/mcp_02`, and `backend/agents/retrieval_03` are the imported mode implementations.
@@ -32,7 +32,7 @@ SQL/MCP/Retrieval modes execute inside `chat.py` (`sql_search`, `mcp_search`, `r
 | `backend/memory/` | Aurora traveler memory store + audit writer |
 | `backend/agentcore/` | Bedrock AgentCore Runtime, Gateway, Memory, Identity — real API calls only |
 | `backend/agents/production_04/` | Live concierge + memory agents |
-| `backend/agents/orchestration_05/` | LangGraph `OrchestrationAgent` (StateGraph + PostgresSaver) |
+| `backend/agents/orchestration_05/` | LangGraph `OrchestrationAgent` (StateGraph + pooled PostgresSaver + restart/resume) |
 | `backend/agents/sql_01,mcp_02,retrieval_03/` | SQL, MCP, and Retrieval mode agents |
 | `backend/routers/` | FastAPI routes |
 | `examples/rls_for_agents.sql` | Aurora RLS policies + authorization/RLS audit view |

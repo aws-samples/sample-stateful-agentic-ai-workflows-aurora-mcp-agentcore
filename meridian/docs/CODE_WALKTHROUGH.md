@@ -14,12 +14,12 @@ phase, in reveal order. Pair this with [`PRESENTER_GUIDE.md`](./PRESENTER_GUIDE.
 backend/agents/sql_01/agent.py:83
 backend/agents/mcp_02/agent.py:82      backend/mcp/concierge_server.py:52
 backend/agents/retrieval_03/search_agent.py:111   backend/agents/retrieval_03/supervisor.py:95
-backend/agents/production_04/concierge.py:180      backend/agents/production_04/memory_agent.py:109
-backend/agents/orchestration_05/workflow.py:187
+backend/agents/production_04/concierge.py:180      backend/agents/production_04/memory_agent.py:114
+backend/agents/orchestration_05/workflow.py:390
 ```
 
 **The three "land the point" lines to bookmark** (jump-to-line is `Cmd/Ctrl-G`):
-`search_agent.py:264` (rerank fusion) · `concierge.py:258` (RLS scope) · `workflow.py:212` (the plan branch).
+`search_agent.py:264` (rerank fusion) · `concierge.py:265` (short RLS read unit) · `workflow.py:557` (the plan branch).
 
 ---
 
@@ -86,15 +86,14 @@ The reranker model id isn't in this file — the call delegates to
 
 ## Phase 4 — Production · two files
 
-### A. `backend/agents/production_04/concierge.py` (515 lines) — open to line 180 (`process_turn`)
+### A. `backend/agents/production_04/concierge.py` — open to line 180 (`process_turn`)
 
 | Lines | Show | Say |
 |---|---|---|
-| **6–11** | the envelope comment | "The whole turn — Identity, authorization grant, Runtime, Memory, RLS tx, Gateway, persist." |
-| **258** | `async with self.db.scoped_session(..., authorization=scope.authorization)` | "This first authorizes the workload for Alex, then pins every read to Alex." |
-| **338 · 369** | `list_recent_turns()` · `semantic_recall()` | "Read session + semantic memory from AgentCore." |
-| **440** | `persist_turn(...)` | "Write to Aurora…" |
-| **477** | `record_turn()` — a *separate* call | "…and **separately** mirror to AgentCore Memory. Two write paths, not one." |
+| **255–387** | prepared query vector + first `scoped_session(...)` | "Prepare the embedding first, then authorize and run a short RLS read unit." |
+| **422–507** | Runtime, AgentCore Memory, and Gateway | "The read unit is already committed; no DB transaction waits on an external service." |
+| **552–621** | second `scoped_session(...)` + `persist_turn` + audit | "Reauthorize, write, and commit in a separate short RLS unit." |
+| **626–653** | `record_turn()` after commit | "Mirror to AgentCore Memory as a separate consistency domain." |
 
 > The trace panel now shows **all 18 spans** for a Phase 4 turn (Identity → Runtime → Memory r/w → Aurora `@tools` → Gateway → persist → polish) — the AgentCore spans reach the UI via the `collect` callback wired in `process_turn`.
 
@@ -103,8 +102,8 @@ The reranker model id isn't in this file — the call delegates to
 | Lines | Show | Say |
 |---|---|---|
 | **check_traveler_authorization** | lookup in `traveler_identity_bindings` | "RLS trusts a traveler ID. This proves the authenticated subject may claim it first." |
-| **285** | `set_config('app.current_traveler_id', …, true)` | "Pin the traveler into a transaction-local GUC — the RLS policy's input." |
-| **302** | `SET LOCAL ROLE meridian_app` | "**The catch:** our Data API secret maps to the master role, which on this cluster isn't subject to RLS (row_security_active() = false — not superuser/BYPASSRLS, just the master). We step down to a least-privilege role so the policy bites. (Production: give the app its own non-master secret.)" |
+| **381** | `set_config('app.current_traveler_id', …, true)` | "Pin the traveler into a transaction-local GUC — the RLS policy's input." |
+| **425** | `SET LOCAL ROLE meridian_app` | "**The catch:** our Data API secret maps to the master role, which on this cluster isn't subject to RLS (row_security_active() = false — not superuser/BYPASSRLS, just the master). We step down to a least-privilege role so the policy bites. (Production: give the app its own non-master secret.)" |
 
 ### D. RLS probe — `backend/routers/diagnostics.py` (`/api/diagnostics/rls-probe`)
 
@@ -112,29 +111,29 @@ The Phase-4 **RLS tab** proves three layers: workload identity, `ALLOW Alex` /
 `DENY Jordan` authorization, then the same `COUNT(*)` scoped vs unscoped plus
 the live `pg_policies` USING clause.
 
-### B. `backend/agents/production_04/memory_agent.py` (282 lines) — open to line 72
+### B. `backend/agents/production_04/memory_agent.py` — open to line 77
 
 | Lines | Show | Say |
 |---|---|---|
-| **72–80** | `tools=[...]` | "Four memory tools." |
-| **109 · 153 · 181 · 220** | `recall_session_context` · `recall_traveler_preferences` · `recall_similar_interactions` · `persist_turn` | "Three read; `persist_turn` (220) is the only writer, and it writes **Aurora only**." |
+| **77–85** | `tools=[...]` | "Four memory tools." |
+| **114 · 158 · 185 · 231** | `recall_session_context` · `recall_traveler_preferences` · `recall_similar_interactions` · `persist_turn` | "Three read; `persist_turn` is the only writer, and it writes **Aurora only**." |
 
 ---
 
-## Phase 5 — Orchestration · `backend/agents/orchestration_05/workflow.py` (525 lines)
+## Phase 5 — Orchestration · `backend/agents/orchestration_05/workflow.py`
 
-**Open to line 187** — the whole graph build fits on one screen.
+**Open to line 530** — the graph build fits on one screen.
 
 | Lines | Show | Say |
 |---|---|---|
-| **187–192** | `StateGraph` + `add_node` ×5 | "Five named nodes: classify, search, availability, memory_recall, synthesize." |
-| **197–206** | `add_conditional_edges("classify", ...)` | "Classify fans out by intent." |
-| **212–219** | conditional edge **out of search** → `availability if intent=='plan' else synthesize` | "**The magenta path** — a 'plan' chains search → availability, two sequential steps." |
-| **170–181** | `PostgresSaver` ↔ `MemorySaver` fallback | "Checkpoint to Aurora if the DSN's set; in-process otherwise." |
-| **223** | `compile(checkpointer=self.checkpointer)` | "LangGraph serializes state after every node — pause Tuesday, resume Thursday." |
+| **532–537** | `StateGraph` + `add_node` ×5 | "Five named nodes: classify, search, availability, memory_recall, synthesize." |
+| **542–551** | `add_conditional_edges("classify", ...)` | "Classify fans out by intent." |
+| **557–564** | conditional edge **out of search** → `availability if intent=='plan' else synthesize` | "The plan path chains search → availability, two sequential steps." |
+| **196–307** | shared pool + `AsyncPostgresSaver.setup()` | "Initialize one bounded saver for the process, not one connection per request." |
+| **583–586** | `compile(checkpointer=self.checkpointer, interrupt_after=...)` | "Pause after a committed node, terminate the worker, then resume the same thread." |
 
-`_classify_intent` (lines **97–127**) is good backup if asked "how does it know
-it's a plan?" The visible `INSERT INTO langgraph_checkpoints` SQL is emitted by
+`_classify_intent` (line **390**) is good backup if asked "how does it know
+it's a plan?" The visible `INSERT INTO checkpoints` proof is emitted by
 the worker nodes (search / availability / memory_recall), not classify/synthesize.
 
 ---

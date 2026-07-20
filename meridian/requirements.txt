@@ -15,6 +15,7 @@ langgraph>=0.2.0
 # Requires direct Postgres connectivity (not RDS Data API).
 langgraph-checkpoint-postgres>=2.0.0
 psycopg[binary]>=3.1.0
+psycopg-pool>=3.2.0
 
 # FastAPI Backend
 fastapi>=0.109.0

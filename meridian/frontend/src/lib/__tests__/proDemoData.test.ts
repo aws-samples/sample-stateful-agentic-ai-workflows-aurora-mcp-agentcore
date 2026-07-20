@@ -14,7 +14,7 @@ describe('proDemoData static config', () => {
 
   it('DEMO_PROMPT is a non-empty multi-intent example query', () => {
     expect(DEMO_PROMPT.length).toBeGreaterThan(0)
-    expect(DEMO_PROMPT.toLowerCase()).toContain('kyoto')
+    expect(DEMO_PROMPT.toLowerCase()).toContain('cancelled')
     expect(DEMO_PROMPT).toBe(SHOWCASE_EXAMPLE_PROMPTS[5][2])
   })
 

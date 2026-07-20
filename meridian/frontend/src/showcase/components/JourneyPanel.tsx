@@ -19,9 +19,17 @@ function normalizeLoyalty(
 
 export function JourneyPanel({ state }: { state: MeridianShowcaseState }) {
   const trip = state.selectedTrip ?? state.savedTrips[0] ?? null;
-  const loyalty = normalizeLoyalty(state.travelerProfile?.loyalty_programs ?? {});
-  const primaryLoyalty =
-    loyalty.find((program) => /marriott/i.test(program.program)) ?? loyalty[0];
+  const loyalty = normalizeLoyalty(
+    state.travelerProfile?.loyalty_programs ?? {},
+  ).sort((left, right) => {
+    const rank = (program: LoyaltyProgram) =>
+      /marriott/i.test(program.program)
+        ? 0
+        : /united/i.test(program.program)
+          ? 1
+          : 2;
+    return rank(left) - rank(right);
+  });
   return (
     <aside className="mds-journey-panel" aria-label="Trip workspace">
       <header><span>Your journey</span><b>{state.savedTrips.length} saved</b></header>
@@ -44,11 +52,29 @@ export function JourneyPanel({ state }: { state: MeridianShowcaseState }) {
           <div><dt>Travelers</dt><dd>{state.travelerProfile?.party_size ?? 1}</dd></div>
           <div><dt>Budget</dt><dd>{state.travelerProfile?.budget_max ? `$${state.travelerProfile.budget_max.toLocaleString()}` : 'Flexible'}</dd></div>
         </dl>
-        {primaryLoyalty && (
+        {loyalty.length > 0 && (
           <div className="mds-journey-loyalty">
             <span>Loyalty status</span>
-            <b>{primaryLoyalty.program} · {primaryLoyalty.tier}</b>
-            <small>{primaryLoyalty.member_id}{primaryLoyalty.points_balance ? ` · ${primaryLoyalty.points_balance.toLocaleString()} points` : ''}</small>
+            <div className="mds-journey-loyalty-list">
+              {loyalty.map((program) => (
+                <div
+                  className="mds-journey-loyalty-program"
+                  key={`${program.program}-${program.member_id ?? program.tier}`}
+                >
+                  <b>{program.program} · {program.tier}</b>
+                  <small>
+                    {program.member_id}
+                    {program.points_balance
+                      ? ` · ${program.points_balance.toLocaleString()} ${
+                          /united|mileage/i.test(program.program)
+                            ? 'miles'
+                            : 'points'
+                        }`
+                      : ''}
+                  </small>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </section>

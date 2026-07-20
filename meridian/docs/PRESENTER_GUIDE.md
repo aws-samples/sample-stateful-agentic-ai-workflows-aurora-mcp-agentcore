@@ -154,11 +154,12 @@ every query."*
 **The production envelope on every turn:**
 1. **Identity** — live AgentCore workload identity, or authenticated IAM workload fallback
 2. **Authorization** — `traveler_identity_bindings` must ALLOW that subject for Alex
-3. **Runtime** — session envelope (`runtimeSessionId`, microVM isolation)
-4. **Memory** — session recall + semantic recall + `create_event` mirror
-5. **Aurora RLS tx** — authorized traveler scope + `SET LOCAL ROLE`; memory `@tools` run inside it
+3. **Aurora RLS read unit** — authorized traveler scope + `SET LOCAL ROLE`; profile and memory reads
+4. **Runtime** — session envelope (`runtimeSessionId`, microVM isolation)
+5. **Memory** — session recall + semantic recall from AgentCore
 6. **Gateway** — managed MCP `tools/list` + `tools/call` for trip search
-7. **persist_turn** — Aurora write + AgentCore Memory write-back
+7. **Aurora RLS write unit** — reauthorize, persist the turn, and write the audit row
+8. **AgentCore Memory mirror** — `create_event` after the Aurora commit
 
 **The four memory `@tools`:** `recall_session_context`, `recall_traveler_preferences`,
 `recall_similar_interactions`, `persist_turn`. All read/write Aurora; `persist_turn` is
@@ -171,11 +172,13 @@ Durable memory lives in Aurora: `trip_interactions` with embeddings for semantic
 over pgvector HNSW, traveler preferences for facts like the shellfish allergy and loyalty
 programs, and a durable copy of the session. Four MemoryAgent tools — three read, and
 `persist_turn` is the only writer — but it writes Aurora only; the AgentCore write-back is
-a separate call from the orchestrator. Every read, and that write, runs in one transaction
-that first authorizes the workload for Alex, pins Alex with
-`set_config('app.current_traveler_id', …)`, and then `SET LOCAL ROLE` into a
-least-privilege role. The authorization lookup rejects arbitrary traveler IDs;
-RLS denies rows outside the authorized scope. That role switch is the catch:
+a separate call from the orchestrator. The Aurora reads run in one short RLS transaction.
+It commits before Runtime, AgentCore Memory, or Gateway calls. A separate short write
+transaction reauthorizes the workload, persists the turn, and writes the audit row; the
+AgentCore mirror follows after commit. Both units pin Alex with
+`set_config('app.current_traveler_id', …)` and `SET LOCAL ROLE` into a least-privilege
+role. The authorization lookup rejects arbitrary traveler IDs; RLS denies rows outside
+the authorized scope. That role switch is the catch:
 our connection is the Aurora master user,
 which isn't subject to RLS otherwise — step down, and the policy applies. We'll watch it in
 the demo — asking what was decided about Tokyo last time. This time it remembers the thread,
@@ -199,7 +202,7 @@ prompt."*
 **Demo — one Tokyo storyline, IN ORDER:**
 1. **Seed the thread** — *"Find a Tokyo culture trip for two with boutique stays, local food, and walkable neighborhoods."* Prompt carries no allergy/airport/loyalty; the agent weaves in shellfish allergy, JFK no-red-eyes, boutique-over-chain — all from Aurora **before** answering.
 2. **Beat 2, second take — it lands.** Same prompt that failed a phase ago; now `recall_session_context` + `recall_similar_interactions` return the Tokyo thread. *Point back to that failure.*
-3. **Multi-step boundary** — *"Plan the Kyoto extension: find matching packages, then verify available duration options."* Production can reason about the request, but hands it to Workflow so the dependent steps are explicit and resumable. *Sets up Phase 5.*
+3. **Multi-step boundary** — *"My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open."* Production recalls Alex, authorizes, finds candidates, then **stops**: the trace shows a `Checkpointed workflow required` span and the reply refuses to collapse two dependent steps (rework the itinerary, then verify open departures) into one paragraph. The boundary is detected in the backend and rendered on screen — the "Run this in Workflow" follow-up is the hand-off. *Sets up Phase 5; run the same prompt there.*
 
 **Talking points (trust pitch):** *"Authentication, authorization, and row
 filtering are different controls. AgentCore Identity or STS tells us which
@@ -263,14 +266,14 @@ control before running the same `COUNT(*)` scoped vs unscoped.
 > workload-to-traveler authorization. End-user authentication is the production
 > extension, not something this demo silently claims.
 
-**Bridge → Phase 5:** *"That last prompt asked for three things in one breath. Strands chained them, but the routing was invisible. What if we want each step explicit, branchable, and resumable weeks later?"*
+**Bridge → Phase 5:** *"A flight just got cancelled and Production reworked the trip in one turn. But that was two dependent steps hidden inside one opaque LLM turn, with nothing checkpointed. What if we want each step explicit, branchable, and resumable weeks later?"* Then re-run the identical prompt in Phase 5.
 
 ---
 
 ## Phase 5 · Workflow — the durability layer (≈ 8 min) · `agents/orchestration_05/workflow.py`
 
 **Open with:** *"Strands picks tools when the LLM picks the call. LangGraph owns control
-flow when **we** want it explicit, branchable, resumable. Same multi-intent Tokyo plan —
+flow when **we** want it explicit, branchable, resumable. Same cancelled-flight replan —
 now through named, checkpointed nodes."*
 
 ```
@@ -280,28 +283,30 @@ classify ──┼─→ availability ────┤
                                 synthesize → END
 ```
 
-**Callback — the limitation you planted in Phase 4.** The exact Kyoto extension
-prompt asks for two dependent operations: find matching packages, then verify their
-available duration options. Production recognizes the boundary and hands it off rather
-than implying both steps completed inside one response. Phase 5 can (1) **run** each
-operation as an inspectable node, (2) **checkpoint** between them, and (3) **resume**
-if execution is interrupted.
+**Callback — the same prompt you just ran in Phase 4.** The cancelled-flight replan is two
+dependent operations: re-find open alternatives, then verify which departures are still
+available. Production answered it in one opaque turn; Phase 5 can (1) **run** each operation
+as an inspectable node, (2) **checkpoint** between them, and (3) **resume** if execution is
+interrupted.
 
 **Demo (live pills, in order):**
 1. *"Which duration options are available for Amalfi Coast Villa Week?"* → classify → **availability** → synthesize; a `PostgresSaver.put` after the PackageAgent node.
 2. *"Using what we decided about my October Tokyo trip last time, what should I do next?"* → classify → **memory_recall** → synthesize; same RLS-scoped memory, now as an explicit graph node.
-3. *"Plan the Kyoto extension: find matching packages, then verify available duration options."* → the payoff: classify → **search → availability** → synthesize. **Two sequential worker nodes, a checkpoint between each.** It is the exact prompt Production handed off, so the upgrade is visible rather than theoretical.
+3. *"My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open."* → the payoff: classify → **search → availability** → synthesize. **Two sequential worker nodes, a checkpoint between each.** It is the exact prompt Production answered in one turn, so the A/B upgrade is visible rather than theoretical.
 
 **Talking points:** *"Same Aurora, same tools — what changed is the **orchestration**. An
 explicit StateGraph: classify fans out by intent, and the edge out of `search`
-conditionally continues to `availability` for a 'plan'. PostgresSaver writes the entire
-`WorkflowState` to Aurora after every node — threads scope by `traveler_id`, checkpoints
-by `thread_id`. Pause Tuesday, resume Thursday, same state. Phase 4 planned the trip in
-its head and asked to proceed; Phase 5 writes the plan down as steps it can run, branch
-on, and resume."*
+conditionally continues to `availability` for a 'plan'. The checkpointer writes the entire
+`WorkflowState` after every node — threads scope by `traveler_id`, checkpoints by
+`thread_id`. PostgresSaver writes that state to Aurora. We pause after search, terminate
+the worker, restart it, and resume the same thread at availability. Phase 4 recognized the
+boundary; Phase 5 writes the plan down as steps it can run, branch on, and resume."*
+**Say the checkpoint story honestly:** *"The stage run must say `PostgresSaver (Aurora ·
+pooled)`. If the span says MemorySaver, that is an in-process fallback and does not prove
+durable recovery."*
 
-**If asked "so did it book the Marriott?"** Be candid: *"No — it composes the durable
-workflow a production system hangs that booking step on. The agent can plan it in one
+**If asked "so did it rebook the flight?"** Be candid: *"No — it composes the durable
+workflow a production system hangs the rebooking step on. The agent can plan it in one
 turn; the graph makes it survivable and auditable."* That honesty is on-brand.
 
 ---
@@ -322,7 +327,7 @@ turn; the graph makes it survivable and auditable."* That honesty is on-brand.
 1. *"Three teams want this catalog. They shouldn't all hand-write SQL. Who owns the tools?"* → **Phase 2**
 2. *"The interface is portable. But every query is still keyword-based. We need the agent to understand what we **mean**."* → **Phase 3**
 3. *"It understands what you mean — it just failed to remember, because it has nowhere to. And we can't ship this reading any traveler's data."* → **Phase 4**
-4. *"Production planned all three in its head, then asked permission to proceed. What if we want each step run, branchable, and resumable — not just described?"* → **Phase 5**
+4. *"A flight got cancelled and Production reworked the trip in one opaque turn. What if we want each step run, branchable, and resumable — not just described?"* → **Phase 5**
 5. *"Same Aurora throughout. Five phases, one substrate."* → **Close**
 
 ---
@@ -341,11 +346,38 @@ that match the repo.
 | **Data plane** | Aurora + RDS Data API + pgvector | 1–5 | Secure, shared source of truth |
 | **Agent plane (implicit loops)** | Strands Agents + `@tool` | 1–4 | Bedrock chooses tools; multi-agent patterns |
 | **Workflow plane (explicit graphs)** | LangGraph `StateGraph` | 5 | Branching, checkpointing, resumable |
+| **Checkpoint plane** | Pooled psycopg + PostgresSaver + Aurora | 5 | Durable state survives worker restart |
 | **Managed services** | AgentCore Runtime + Gateway + Memory + Identity | 4 | Managed hosting, MCP tools, session memory, identity |
 
 Phase 5 does **not** replace Strands with AgentCore runtime — AgentCore is the hero of
 Phase 4. Phase 5's differentiator is **LangGraph**: edges you can whiteboard, state you
 can checkpoint in Aurora, workflows you can resume after failure.
+
+### Transport: Data API vs. direct connection (the one slide sentence)
+
+**"Statefulness lives in durable stores, not database connections. The Data API is our
+connectionless transport for durable domain state; PostgresSaver uses a bounded PostgreSQL
+pool for durable workflow state."**
+
+- **Domain SQL in all five phases uses the Data API.** `meridian-demo` is a private
+  Serverless v2 cluster, and the Data API reaches it over IAM-authorized HTTPS using
+  database credentials in Secrets Manager. Phase 4 uses short, genuine
+  `BeginTransaction` → authorization → `set_config` → `SET LOCAL ROLE` → read or write
+  unit → `Commit` sequences. External service calls happen between those units.
+- **Phase 5 is intentionally hybrid.** Search and memory nodes reuse the Data API paths;
+  LangGraph's checkpoint protocol uses one application-lifetime psycopg pool and
+  `AsyncPostgresSaver`. RDS Proxy is optional for fleet connection churn, not a universal
+  requirement.
+- **RLS is identical over both transports.** `SET LOCAL ROLE` + the traveler GUC is a
+  SQL-session technique; it does not care whether the statement arrived via Data API or a
+  socket. Do not imply RLS "needs" one transport.
+- **MCP is orthogonal.** An MCP server can use either transport internally; MCP governs the
+  **tool contract**, not the DB connection.
+
+If asked "why not psycopg everywhere?": *"From a laptop outside the cluster's VPC, a
+direct connection can't reach the host without a tunnel — Data API can. For the checkpoint
+proof we use an SSM tunnel into the VPC and a bounded pool. Same Aurora, different transport
+matched to the workload."*
 
 ### Live demo vs IDE walkthrough
 
@@ -461,17 +493,23 @@ class MemoryAgent:
         return {"facts": facts}
 ```
 ```python
-# concierge.py — authorization precedes RLS
+# concierge.py — two short RLS units around external calls
 scope = self.identity.scope_for_turn()                    # Identity
 async with self.db.scoped_session(
     traveler_id=...,
     authorization=scope.authorization,
-) as tx:                                                   # Grant, then RLS
-    runtime_session = self.agentcore_runtime.session_for_turn(...)  # Runtime
-    self.agentcore_memory.list_recent_turns(...)          # Memory (read)
-    packages, _ = await self._search_packages(...)        # Gateway MCP
-    await self.traveler_memory.persist_turn(...)          # Aurora write
-    self.agentcore_memory.record_turn(...)                # AgentCore mirror
+) as read_tx:                                              # Grant + RLS read
+    ...                                                    # Aurora memory reads
+
+runtime_session = self.agentcore_runtime.session_for_turn(...)
+self.agentcore_memory.list_recent_turns(...)              # no DB tx held
+packages, _ = await self._search_packages(...)            # Gateway MCP
+
+async with self.db.scoped_session(...) as write_tx:        # Reauthorize + RLS
+    await self.traveler_memory.persist_turn(...)
+    await self.store.write_audit(...)
+
+self.agentcore_memory.record_turn(...)                    # after Aurora commit
 ```
 **Say:** "Strands owns the reasoning loop. AgentCore isolates, remembers, and
 exposes tools. Aurora authorizes the workload-to-traveler claim, stores durable
@@ -501,12 +539,22 @@ builder.add_node("memory_recall", self._node_memory_recall)
 builder.add_node("synthesize", self._node_synthesize)
 builder.add_conditional_edges("classify", lambda s: s["intent"], {...})
 # edge OUT of search is conditional: intent=="plan" → availability, else → synthesize
-return builder.compile(checkpointer=PostgresSaver.from_conn_string(dsn))  # Aurora
+pool = AsyncConnectionPool(dsn, min_size=1, max_size=10, open=False)
+await pool.open(wait=True)
+checkpointer = AsyncPostgresSaver(pool)
+await checkpointer.setup()
+return builder.compile(checkpointer=checkpointer)
 ```
 **Say:** "LangGraph doesn't replace Strands — it orchestrates *functions* that reuse
 Phase 3 search and Phase 4 memory. The win is explicit edges and PostgresSaver
-checkpoints in Aurora."
-**Env:** `LANGGRAPH_CHECKPOINT_DSN` → PostgresSaver; unset → in-process MemorySaver.
+checkpoints through one bounded, application-lifetime pool."
+**Stage env:** start `scripts/start_checkpoint_tunnel.sh`, then set
+`LANGGRAPH_CHECKPOINT_HOST=127.0.0.1`, `LANGGRAPH_CHECKPOINT_PORT=15432`,
+`LANGGRAPH_CHECKPOINT_REQUIRED=true`, `LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP=true`, and
+`LANGGRAPH_DEMO_INTERRUPT_AFTER=search`.
+**On stage:** pause after `search`, restart the backend, then resume the same `thread_id`.
+The trace must say `PostgresSaver (Aurora · pooled)`. If it says `MemorySaver`, Aurora
+durability has not been demonstrated.
 
 ## Files to have open (in order)
 

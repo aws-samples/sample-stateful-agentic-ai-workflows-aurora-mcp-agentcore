@@ -2,7 +2,9 @@
 
 > Agentic travel concierge built on Aurora PostgreSQL, MCP, Strands Agents, Bedrock AgentCore, and LangGraph.
 
-Meridian is a live workshop demo for the five-phase progression **Query → Tool → Intent → Trust → Durable Workflow**. The technical phases are **SQL → MCP → Retrieval → Production → Workflow**. The showcase UI calls a real FastAPI backend backed by Aurora PostgreSQL through the RDS Data API and pgvector.
+Meridian is a live workshop demo for the five-phase progression **Query → Tool → Intent → Trust → Durable Workflow**. The technical phases are **SQL → MCP → Retrieval → Production → Workflow**. Domain-data operations use the connectionless RDS Data API; AgentCore Memory carries managed context across turns; and Phase 5 uses pooled psycopg connectivity to externalize LangGraph workflow checkpoints into Aurora.
+
+> **Statefulness lives in durable stores, not database connections.**
 
 The primary demo surface is:
 
@@ -84,7 +86,19 @@ python scripts/bind_current_identity.py
 | **2 · MCP** | Tool | Aurora access through MCP plus custom domain tools such as package comparison, FX conversion, and seasonal pricing |
 | **3 · Retrieval** | Intent | Hybrid pgvector + full-text candidates reranked by Cohere, with specialist-agent routing |
 | **4 · Production** | Trust | AgentCore, workload-to-traveler grants, Aurora RLS, and auditable per-turn scope |
-| **5 · Workflow** | Durable Workflow | Explicit LangGraph routing with Aurora-backed checkpoints |
+| **5 · Workflow** | Durable Workflow | PostgresSaver checkpoint, process restart, and same-thread resume from Aurora |
+
+### Where state lives
+
+| State | Durable store | Access path |
+| --- | --- | --- |
+| Traveler profile, preferences, conversation history, and audit | Aurora PostgreSQL | RDS Data API |
+| Managed session and semantic context across turns | Bedrock AgentCore Memory | AgentCore APIs |
+| LangGraph execution position and pending writes | Aurora PostgreSQL | PostgresSaver over pooled psycopg |
+
+MCP defines the governed tool contract, not the database transport. A Data API
+transaction keeps RLS role and traveler scope together for one unit of work; it
+is not long-lived workflow state.
 
 ## Prompt Ladder
 
@@ -95,8 +109,8 @@ Each phase has two safe wins and one prompt that naturally motivates the next ph
 | SQL | `Show me city trips under $2,000 per traveler.`; `Show me beach and resort trips under $2,500 per traveler.` | `Compare three trips from different categories and show their prices in euros.` → needs custom MCP tools |
 | MCP | `Compare three trips from different categories and show their prices in euros.`; `Show me the off-season price range for Tokyo packages in November.` | `Find a slow, romantic week in wine country with a villa stay.` → needs intent retrieval |
 | Retrieval | `Find a slow, romantic week in wine country with a villa stay.`; `Which duration options are still available for Tuscany Wine & Wellness?` | `What did we decide about my October Tokyo trip last time? Continue from there.` → needs durable memory |
-| Production | `Find a Tokyo culture trip for two with boutique stays, local food, and walkable neighborhoods.`; `What did we decide about my October Tokyo trip last time? Continue from there.` | `Plan the Kyoto extension: find matching packages, then verify available duration options.` → needs explicit workflow |
-| Workflow | `Which duration options are available for Amalfi Coast Villa Week?`; `Using what we decided about my October Tokyo trip last time, what should I do next?`; `Plan the Kyoto extension: find matching packages, then verify available duration options.` | Finale: all three are successful branches |
+| Production | `Find a Tokyo culture trip for two with boutique stays, local food, and walkable neighborhoods.`; `What did we decide about my October Tokyo trip last time? Continue from there.` | `My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.` → needs explicit workflow |
+| Workflow | `Which duration options are available for Amalfi Coast Villa Week?`; `Using what we decided about my October Tokyo trip last time, what should I do next?`; `My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.` | Finale: explicit search → availability checkpoints |
 
 ## Architecture
 
@@ -182,7 +196,9 @@ Key environment variables are documented in `.env.example`.
 | `AURORA_CLUSTER_ARN`, `AURORA_SECRET_ARN`, `AURORA_DATABASE` | RDS Data API connection |
 | `RLS_APP_ROLE` | Least-privilege role used for scoped Aurora RLS sessions |
 | `AGENTCORE_*` | Phase 4 Runtime, Gateway, Memory, and Identity configuration |
-| `LANGGRAPH_CHECKPOINT_DSN` | Enables Phase 5 `PostgresSaver`; otherwise falls back to `MemorySaver` |
+| `LANGGRAPH_CHECKPOINT_DSN` or `LANGGRAPH_CHECKPOINT_*` | Dedicated Phase 5 PostgreSQL checkpoint connection |
+| `LANGGRAPH_CHECKPOINT_REQUIRED` | Fail closed when durable PostgresSaver is unavailable |
+| `LANGGRAPH_DEMO_INTERRUPT_AFTER` | Pause after a named node for the restart/resume proof |
 
 ## Tech Stack
 
@@ -220,4 +236,5 @@ python -m pytest
 | [DEMO_SCRIPT.md](DEMO_SCRIPT.md) | Presenter flow and recommended live prompts |
 | [docs/PRESENTER_GUIDE.md](docs/PRESENTER_GUIDE.md) | Narration, code references, FAQ, and dry-run checklist |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | AgentCore deployment and day-of operating guide |
+| [docs/STATEFUL_ARCHITECTURE.md](docs/STATEFUL_ARCHITECTURE.md) | Source of truth for state, transport, and September slide messaging |
 | [STRUCTURE.md](STRUCTURE.md) | Live code vs reference-only layout |

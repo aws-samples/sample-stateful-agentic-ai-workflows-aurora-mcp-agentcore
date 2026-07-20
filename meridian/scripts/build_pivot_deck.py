@@ -230,8 +230,8 @@ def build_slide_two(prs: Presentation) -> None:
          "ConciergeOrchestrator  ·  Aurora memory + RLS + audit  ·  AgentCore Memory & Identity",
          "Knows Alex Morgan, Tokyo Oct 12–19, shellfish allergy"),
         ("5", "Orchestration",
-         "LangGraph StateGraph  ·  PostgresSaver checkpoints in Aurora",
-         "classify → search / availability / recall → synthesize"),
+         "LangGraph StateGraph  ·  pooled PostgresSaver → Aurora",
+         "checkpoint → restart worker → resume the same thread"),
     ]
 
     top = 2.15

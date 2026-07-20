@@ -138,6 +138,7 @@ export interface ChatRequest {
   phase: Phase;
   customer_id?: string;
   conversation_id?: string;
+  resume?: boolean;
 }
 
 export interface ChatResponse {
@@ -148,6 +149,7 @@ export interface ChatResponse {
   follow_ups?: string[];
   conversation_id?: string;
   memory_facts?: LongTermMemoryFact[];
+  workflow_status?: 'paused' | 'resumed' | 'complete';
 }
 
 export interface LoyaltyProgram {

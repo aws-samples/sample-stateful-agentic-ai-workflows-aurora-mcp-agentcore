@@ -12,20 +12,29 @@ from backend.routers.chat import (
 )
 
 
-def test_tokyo_plan_query_bridges_to_workflow() -> None:
+def test_disruption_replan_bridges_to_workflow() -> None:
+    query = (
+        "My JFK flight to Tokyo just got cancelled. Rework the trip and check "
+        "which departures are still open."
+    )
+
+    assert _needs_checkpointed_workflow(query)
+    assert (
+        _PHASE4_WORKFLOW_TRANSITION_MESSAGE
+        == "I can carry forward your Tokyo context, but this needs two dependent "
+        "steps: rework the itinerary, then verify which departures are still "
+        "open. Switch to Workflow so each step is explicit, checkpointed, and "
+        "resumable."
+    )
+
+
+def test_kyoto_extension_still_bridges_to_workflow() -> None:
     query = (
         "Plan the Kyoto extension: find matching packages, then verify "
         "available duration options."
     )
 
     assert _needs_checkpointed_workflow(query)
-    assert (
-        _PHASE4_WORKFLOW_TRANSITION_MESSAGE
-        == "I can carry forward your Tokyo context, but planning the Kyoto "
-        "extension requires two dependent steps: find matching packages, then "
-        "verify their available duration options. Switch to Workflow so each "
-        "step is explicit, checkpointed, and resumable."
-    )
 
 
 def test_simple_availability_query_stays_on_package_agent_path() -> None:
@@ -68,8 +77,8 @@ def test_phase4_demo_query_returns_workflow_handoff(monkeypatch) -> None:
                 phase=4,
                 customer_id="trv_meridian_demo",
                 message=(
-                    "Plan the Kyoto extension: find matching packages, then "
-                    "verify available duration options."
+                    "My JFK flight to Tokyo just got cancelled. Rework the trip "
+                    "and check which departures are still open."
                 ),
             )
         )

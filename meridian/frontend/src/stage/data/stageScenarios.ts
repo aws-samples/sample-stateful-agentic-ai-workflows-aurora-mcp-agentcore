@@ -13,9 +13,9 @@
  *   2. recall  — "what did we decide last time" — depends on the prior
  *                Tokyo turn being in conversation_messages, so it only
  *                lands AFTER scenario 1. Matches showcase pill #2.
- *   3. plan    — two-step Kyoto extension prompt (find + availability)
- *                that needs explicit, checkpointed control flow in Phase 5
- *                LangGraph. Matches showcase pill #3.
+ *   3. plan    — flight-disruption replan (re-search + availability): two
+ *                dependent steps that need explicit, checkpointed control
+ *                flow in Phase 5 LangGraph. Matches showcase pill #3.
  */
 import { PHASE_EYEBROW } from '../../lib/phaseLabels';
 import type { StageScenario } from '../types';
@@ -74,7 +74,7 @@ export const STAGE_SCENARIOS: StageScenario[] = [
     id: 'plan',
     phaseLabel: PHASE_4_LABEL,
     traceId: '',
-    prompt: 'Plan the Kyoto extension: find matching packages, then verify available duration options.',
+    prompt: 'My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.',
     assistantReply: '',
     reasoning: '',
     traveler: { ...ALEX_TRAVELER, budgetCapUsd: 4500 },

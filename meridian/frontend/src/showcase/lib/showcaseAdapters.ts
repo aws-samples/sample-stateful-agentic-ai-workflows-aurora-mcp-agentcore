@@ -33,6 +33,9 @@ export interface ShowcasePhaseOption {
 // - the third prompt exposes the limit that the next phase fixes.
 // Adjacent phases intentionally pair: SQL stretch -> MCP success,
 // MCP stretch -> Retrieval success, Retrieval stretch -> Production success.
+export const SHOWCASE_FINALE_PROMPT =
+  'My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.';
+
 export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
   // Direct filters work; comparison plus FX needs a domain tool contract.
   1: [
@@ -52,17 +55,18 @@ export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
     'Which duration options are still available for Tuscany Wine & Wellness?',
     'What did we decide about my October Tokyo trip last time? Continue from there.',
   ],
-  // Tokyo proves memory and RLS; the Kyoto extension tees up explicit Workflow.
+  // Tokyo proves memory and RLS; the flight disruption is the same prompt Phase 5
+  // owns — Production answers it in one turn, teeing up the checkpointed A/B.
   4: [
     'Find a Tokyo culture trip for two with boutique stays, local food, and walkable neighborhoods.',
     'What did we decide about my October Tokyo trip last time? Continue from there.',
-    'Plan the Kyoto extension: find matching packages, then verify available duration options.',
+    SHOWCASE_FINALE_PROMPT,
   ],
   // Each prompt lands on a distinct branch: availability, memory_recall, plan.
   5: [
     'Which duration options are available for Amalfi Coast Villa Week?',
     'Using what we decided about my October Tokyo trip last time, what should I do next?',
-    'Plan the Kyoto extension: find matching packages, then verify available duration options.',
+    SHOWCASE_FINALE_PROMPT,
   ],
 };
 
@@ -131,7 +135,7 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     capability: 'Durable Workflow',
     takeaway: 'Make multi-step work explicit, inspectable, checkpointed, and resumable.',
     proofPoint: 'Checkpoint written',
-    adds: 'Adds durability: explicit graph nodes, checkpointed to Aurora — pause Tuesday, resume Thursday.',
+    adds: 'Adds durability: LangGraph externalizes execution state through PostgresSaver in Aurora, so a restarted worker can resume the same thread.',
     tech: 'LangGraph + PostgresSaver',
   },
 ];

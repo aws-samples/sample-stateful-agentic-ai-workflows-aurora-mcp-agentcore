@@ -63,6 +63,12 @@ class MemoryAgent:
         # When set, every memory tool routes its SQL through this RDS Data API
         # transaction so the RLS session variables stay in scope.
         self._transaction_id: Optional[str] = None
+        # The concierge prepares Bedrock embeddings before opening its short
+        # RLS transactions. Stand-alone tool calls leave these unset and retain
+        # the original prepare-on-demand behavior.
+        self._prepared_query_vector: Optional[str] = None
+        self._query_vector_prepared = False
+        self._prepared_turn_vectors: Optional[Dict[str, Optional[str]]] = None
         self.model = BedrockModel(
             model_id=config.bedrock.model_id,
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
@@ -191,7 +197,12 @@ class MemoryAgent:
         """
         start = datetime.now(timezone.utc)
         rows = await self.store.recall_similar_interactions(
-            traveler_id, query, limit, transaction_id=self._transaction_id
+            traveler_id,
+            query,
+            limit,
+            transaction_id=self._transaction_id,
+            query_vector=self._prepared_query_vector,
+            embedding_prepared=self._query_vector_prepared,
         )
         elapsed = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
         self._log_tool(
@@ -237,9 +248,23 @@ class MemoryAgent:
         """
         start = datetime.now(timezone.utc)
         tx = self._transaction_id
-        await self.store.append_message(conversation_id, "user", user_message, transaction_id=tx)
+        vectors = self._prepared_turn_vectors
+        embeddings_prepared = vectors is not None
         await self.store.append_message(
-            conversation_id, "assistant", assistant_message, transaction_id=tx
+            conversation_id,
+            "user",
+            user_message,
+            transaction_id=tx,
+            embedding_vector=vectors.get("user") if vectors else None,
+            embedding_prepared=embeddings_prepared,
+        )
+        await self.store.append_message(
+            conversation_id,
+            "assistant",
+            assistant_message,
+            transaction_id=tx,
+            embedding_vector=vectors.get("assistant") if vectors else None,
+            embedding_prepared=embeddings_prepared,
         )
         interaction_id = await self.store.persist_interaction(
             traveler_id,
@@ -248,6 +273,8 @@ class MemoryAgent:
             assistant_message,
             packages_shown,
             transaction_id=tx,
+            embedding_vector=vectors.get("interaction") if vectors else None,
+            embedding_prepared=embeddings_prepared,
         )
         elapsed = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
         self._log_tool(

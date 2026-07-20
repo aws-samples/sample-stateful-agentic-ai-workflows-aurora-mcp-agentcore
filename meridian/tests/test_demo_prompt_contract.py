@@ -36,6 +36,10 @@ MEMORY_RECALL = (
     "What did we decide about my October Tokyo trip last time? Continue from there."
 )
 WORKFLOW_PLAN = (
+    "My JFK flight to Tokyo just got cancelled. Rework the trip and check "
+    "which departures are still open."
+)
+WORKFLOW_PLAN_KYOTO = (
     "Plan the Kyoto extension: find matching packages, then verify available "
     "duration options."
 )
@@ -72,6 +76,7 @@ def test_retrieval_prompts_select_expected_special_paths() -> None:
 
 def test_production_stretch_requires_checkpointed_workflow() -> None:
     assert _needs_checkpointed_workflow(WORKFLOW_PLAN)
+    assert _needs_checkpointed_workflow(WORKFLOW_PLAN_KYOTO)
     assert not _needs_checkpointed_workflow(TUSCANY_AVAILABILITY)
 
 

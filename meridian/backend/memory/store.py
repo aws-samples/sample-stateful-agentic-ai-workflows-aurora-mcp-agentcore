@@ -39,6 +39,24 @@ class MemoryStore:
     def _vector_literal(values: List[float]) -> str:
         return "[" + ",".join(str(v) for v in values) + "]"
 
+    def prepare_embedding_vector(
+        self,
+        text: str,
+        *,
+        input_type: str,
+    ) -> Optional[str]:
+        """Generate a pgvector literal before opening a database transaction."""
+        if not text.strip():
+            return None
+        try:
+            embedding = self.embeddings.generate_text_embedding(
+                text,
+                input_type=input_type,
+            )
+        except Exception:
+            return None
+        return self._vector_literal(embedding)
+
     async def ensure_traveler_exists(
         self,
         traveler_id: str,
@@ -239,6 +257,8 @@ class MemoryStore:
         query: str,
         limit: int = 3,
         transaction_id: Optional[str] = None,
+        query_vector: Optional[str] = None,
+        embedding_prepared: bool = False,
     ) -> List[Dict[str, Any]]:
         """Semantic recall of the traveler's past interactions (pgvector).
 
@@ -247,11 +267,11 @@ class MemoryStore:
         the ``embedding <=> query`` operator (HNSW index). Returns [] if the
         embedding call fails — recall is best-effort, never blocks the turn.
         """
-        try:
-            embedding = self.embeddings.generate_text_embedding(query, input_type="search_query")
-        except Exception:
+        vec = query_vector
+        if not embedding_prepared:
+            vec = self.prepare_embedding_vector(query, input_type="search_query")
+        if not vec:
             return []
-        vec = self._vector_literal(embedding)
         return await self.db.execute(
             """
             SELECT query_text, response_summary, packages_shown,
@@ -272,6 +292,8 @@ class MemoryStore:
         content: str,
         with_embedding: bool = True,
         transaction_id: Optional[str] = None,
+        embedding_vector: Optional[str] = None,
+        embedding_prepared: bool = False,
     ) -> str:
         """Append one message to ``conversation_messages`` (part of persist_turn).
 
@@ -280,10 +302,13 @@ class MemoryStore:
         """
         message_id = f"msg_{uuid.uuid4().hex[:12]}"
         if with_embedding and content.strip():
-            try:
-                vec = self._vector_literal(
-                    self.embeddings.generate_text_embedding(content, input_type="search_document")
+            vec = embedding_vector
+            if not embedding_prepared:
+                vec = self.prepare_embedding_vector(
+                    content,
+                    input_type="search_document",
                 )
+            if vec:
                 await self.db.execute(
                     """
                     INSERT INTO conversation_messages (message_id, conversation_id, role, content, embedding)
@@ -292,7 +317,7 @@ class MemoryStore:
                     (message_id, conversation_id, role, content, vec),
                     transaction_id=transaction_id,
                 )
-            except Exception:
+            else:
                 await self.db.execute(
                     """
                     INSERT INTO conversation_messages (message_id, conversation_id, role, content)
@@ -328,6 +353,8 @@ class MemoryStore:
         response_summary: str,
         packages_shown: Optional[List[Dict[str, Any]]] = None,
         transaction_id: Optional[str] = None,
+        embedding_vector: Optional[str] = None,
+        embedding_prepared: bool = False,
     ) -> str:
         """Persist one full interaction with its embedding (part of persist_turn).
 
@@ -337,17 +364,15 @@ class MemoryStore:
         """
         interaction_id = f"int_{uuid.uuid4().hex[:12]}"
         combined = f"User: {query_text}\nAssistant: {response_summary}"
-        try:
-            vec = self._vector_literal(
-                self.embeddings.generate_text_embedding(combined, input_type="search_document")
+        vec = embedding_vector
+        if not embedding_prepared:
+            vec = self.prepare_embedding_vector(
+                combined,
+                input_type="search_document",
             )
-            has_vec = True
-        except Exception:
-            vec = None
-            has_vec = False
 
         payload = json.dumps(packages_shown or [])
-        if has_vec:
+        if vec:
             await self.db.execute(
                 """
                 INSERT INTO trip_interactions (

@@ -43,7 +43,7 @@ const PHASE_MATRIX: PhaseMatrixRow[] = [
     phase: SHOWCASE_PHASES[4],
     primaryAgent: 'OrchestrationAgent',
     specialists: 'SearchAgent, PackageAgent',
-    tools: 'LangGraph StateGraph + PostgresSaver checkpoints',
+    tools: 'LangGraph StateGraph + pooled PostgresSaver',
     skills: 'classify, checkpoint, synthesize',
   },
 ];

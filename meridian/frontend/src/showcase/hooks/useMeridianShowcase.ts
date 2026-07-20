@@ -113,8 +113,12 @@ export interface MeridianShowcaseState {
   setExpandedSpanId: (id: string | null) => void;
   setSelectedTrip: (product: Product | null) => void;
   setSelectedPhase: (phase: Phase) => void;
-  submitPrompt: (prompt?: string) => Promise<void>;
-  applyPhaseExample: (prompt: string, runImmediately?: boolean) => Promise<void>;
+  submitPrompt: (prompt?: string, phaseOverride?: Phase) => Promise<void>;
+  applyPhaseExample: (
+    prompt: string,
+    runImmediately?: boolean,
+    phaseOverride?: Phase,
+  ) => Promise<void>;
   replayLastPrompt: () => Promise<void>;
   replayTrace: () => void;
   selectTrip: (product: Product) => void;
@@ -379,9 +383,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, []);
 
   const submitPrompt = useCallback(
-    async (overridePrompt?: string) => {
+    async (overridePrompt?: string, phaseOverride?: Phase) => {
       const baseRaw = (overridePrompt ?? currentPrompt).trim();
       if (!baseRaw || isLoading) return;
+      const requestPhase = phaseOverride ?? selectedPhase;
 
       // Decorate the user's prompt with the active action-chip filters so
       // the backend agent sees the full traveler intent. The decorated
@@ -413,11 +418,14 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       try {
         const response = await sendChatMessage({
           message: decorated,
-          phase: selectedPhase,
-          ...(selectedPhase >= 4
+          phase: requestPhase,
+          ...(requestPhase >= 4
             ? {
                 customer_id: SHOWCASE_TRAVELER_ID,
-                conversation_id: conversationId ?? undefined,
+                conversation_id:
+                  requestPhase === selectedPhase
+                    ? conversationId ?? undefined
+                    : undefined,
               }
             : {}),
         });
@@ -442,10 +450,14 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   );
 
   const applyPhaseExample = useCallback(
-    async (prompt: string, runImmediately = false) => {
+    async (
+      prompt: string,
+      runImmediately = false,
+      phaseOverride?: Phase,
+    ) => {
       setCurrentPrompt(prompt);
       if (runImmediately) {
-        await submitPrompt(prompt);
+        await submitPrompt(prompt, phaseOverride);
       }
     },
     [submitPrompt],

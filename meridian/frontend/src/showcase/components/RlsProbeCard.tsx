@@ -77,7 +77,10 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
               <span className="mds-authz-icon"><BadgeCheck size={16} aria-hidden="true" /></span>
               <div>
                 <small>2 · Traveler grant</small>
-                <strong>ALLOW · Alex Morgan</strong>
+                <strong>
+                  <span className="mds-authz-decision is-allow">ALLOW</span>
+                  Alex Morgan
+                </strong>
                 <code>{data.authorization.binding_id ?? 'traveler_identity_bindings'}</code>
               </div>
             </div>
@@ -85,7 +88,16 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
               <span className="mds-authz-icon"><ShieldX size={16} aria-hidden="true" /></span>
               <div>
                 <small>Negative control</small>
-                <strong>{data.negative_control.decision.toUpperCase()} · Jordan Lee</strong>
+                <strong>
+                  <span
+                    className={`mds-authz-decision ${
+                      data.negative_control.decision.toUpperCase() === 'ALLOW' ? 'is-allow' : 'is-deny'
+                    }`}
+                  >
+                    {data.negative_control.decision.toUpperCase()}
+                  </span>
+                  Jordan Lee
+                </strong>
                 <code>{data.negative_control.reason ?? 'no active identity binding'}</code>
               </div>
             </div>
@@ -108,13 +120,17 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
                     <span className="mds-rls-err">{t.error}</span>
                   ) : (
                     <span className="mds-rls-counts">
-                      <b>{t.scoped_count}</b> of {t.unscoped_count} rows
+                      <b className="mds-rls-count-scoped">{t.scoped_count}</b>
+                      <span className="mds-rls-count-arrow" aria-hidden="true">←</span>
+                      <s className="mds-rls-count-unscoped">{t.unscoped_count}</s>
+                      <span className="mds-rls-count-unit">rows</span>
                     </span>
                   )}
                 </div>
                 {!t.error && (
                   <div className="mds-rls-bar" role="img"
                     aria-label={`Without scope ${t.unscoped_count} rows, with RLS ${t.scoped_count} rows`}>
+                    <div className="mds-rls-bar-ghost" aria-hidden="true" />
                     <motion.div
                       className="mds-rls-bar-scoped"
                       initial={prefersReducedMotion ? { width: `${scopedPct}%` } : { width: '100%' }}

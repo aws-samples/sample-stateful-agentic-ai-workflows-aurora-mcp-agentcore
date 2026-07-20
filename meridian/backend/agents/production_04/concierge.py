@@ -6,7 +6,7 @@ Presenter walkthrough — AgentCore on one turn
   1. AgentCore Runtime   — session envelope (runtimeSessionId · microVM isolation)
   2. AgentCore Identity  — workload / IAM envelope (security span)
   3. AgentCore Memory    — list + semantic recall + create_event mirror
-  4. Aurora RLS tx       — scoped_session + MemoryAgent @tools
+  4. Aurora RLS units    — short authorized read and write transactions
   5. AgentCore Gateway   — managed MCP tools/list + tools/call for trip search
   6. persist_turn        — Aurora write + AgentCore Memory write-back
 
@@ -189,12 +189,12 @@ class ProductionAgent:
         The turn is the Phase 4 story end to end — each step emits a trace span:
           1. AgentCore Identity   — resolve the IAM/workload envelope (security span)
           2. Traveler grant       — authorize the workload for traveler_id
-          3. Aurora RLS           — open one transaction, pin app.current_traveler_id
-                                     so every read/write is per-traveler isolated
-          3. AgentCore Runtime    — session envelope (runtimeSessionId, microVM isolation)
-          4. AgentCore Memory     — recall recent session events + semantic recall
-          5. AgentCore Gateway    — managed MCP tools/list + tools/call for trip search
-          6. persist_turn         — write back to Aurora and mirror to AgentCore Memory
+          3. Aurora RLS read      — short transaction for profile and memory reads
+          4. AgentCore Runtime    — session envelope (runtimeSessionId, microVM isolation)
+          5. AgentCore Memory     — recall recent session events + semantic recall
+          6. AgentCore Gateway    — managed MCP tools/list + tools/call for trip search
+          7. Aurora RLS write     — separate short transaction for turn + audit
+          8. AgentCore Memory     — mirror the committed turn with create_event
 
         Args:
             message: The traveler's utterance for this turn.
@@ -226,7 +226,7 @@ class ProductionAgent:
 
         # Resolve the identity envelope first so it can land in both the
         # Security trace span and the per-turn audit row.
-        scope = self.identity.scope_for_turn()
+        scope = await asyncio.to_thread(self.identity.scope_for_turn)
 
         self._log(
             "reasoning",
@@ -252,319 +252,416 @@ class ProductionAgent:
             },
         )
 
-        # Open one Aurora transaction for the whole turn and pin the RLS
-        # session variables.  Every memory read/write below runs through this
-        # transaction id, so traveler_preferences / conversation_messages /
-        # trip_interactions enforce per-traveler isolation in Postgres itself.
-        async with self.db.scoped_session(
-            traveler_id=traveler_id,
-            agent_type="concierge_agent",
-            authorization=scope.authorization,
-        ) as tx:
-            self.traveler_memory._transaction_id = tx
+        # Embedding is an external Bedrock call. Prepare it before opening the
+        # RLS read unit so the Data API transaction never waits on a model.
+        query_vector = await asyncio.to_thread(
+            self.store.prepare_embedding_vector,
+            message,
+            input_type="search_query",
+        )
+        self.traveler_memory._prepared_query_vector = query_vector
+        self.traveler_memory._query_vector_prepared = True
 
-            self._log(
-                "security",
-                "Workload traveler grant allowed",
-                details=(
-                    f"{scope.authorization.provider}:{scope.authorization.subject_id} "
-                    f"-> {traveler_id}"
-                ),
-                telemetry={
-                    "category": "security",
-                    "component": "Aurora identity binding",
-                    "status": "ok",
-                    "fields": [
-                        {
-                            "label": "authorization.provider",
-                            "value": scope.authorization.provider,
-                        },
-                        {
-                            "label": "authorization.subject",
-                            "value": scope.authorization.subject_id,
-                            "mono": True,
-                        },
-                        {
-                            "label": "authorization.decision",
-                            "value": "allow",
-                        },
-                        {
-                            "label": "traveler_id",
-                            "value": traveler_id,
-                            "mono": True,
-                        },
-                        {
-                            "label": "binding_table",
-                            "value": "traveler_identity_bindings",
-                            "mono": True,
-                        },
-                    ],
-                },
-            )
-
-            self._log(
-                "security",
-                "RLS scope set on Aurora session",
-                details=(
-                    f"app.current_traveler_id={traveler_id} · "
-                    f"app.agent_type=concierge_agent · role=meridian_app"
-                ),
-                sql_query=(
-                    f"-- RLS scope for this transaction (SET LOCAL — reverts on commit)\n"
-                    f"SET LOCAL app.current_traveler_id = '{traveler_id}';\n"
-                    f"SET LOCAL app.agent_type = 'concierge_agent';\n"
-                    f"SET LOCAL ROLE meridian_app;  -- step off the master role so RLS applies"
-                ),
-                telemetry={
-                    "category": "security",
-                    "component": "Aurora RLS",
-                    "status": "ok",
-                    "fields": [
-                        {"label": "iam_identity", "value": scope.iam_identity, "mono": True},
-                        {
-                            "label": "authorization.subject",
-                            "value": scope.authorization.subject_id,
-                            "mono": True,
-                        },
-                        {"label": "rls.traveler_id", "value": traveler_id, "mono": True},
-                        {"label": "rls.agent_type", "value": "concierge_agent"},
-                        {"label": "rls.role", "value": "meridian_app", "mono": True},
-                        {"label": "policies", "value": "traveler_preferences, conversation_messages, trip_interactions"},
-                    ],
-                },
-            )
-
-            conv_id = await self.store.get_or_create_conversation(
-                traveler_id, conversation_id, transaction_id=tx
-            )
-            profile = await self.store.recall_profile(traveler_id, transaction_id=tx)
-
-            runtime_session = self.agentcore_runtime.session_for_turn(conv_id, traveler_id)
-            self._log(
-                "reasoning",
-                "AgentCore Runtime · session envelope",
-                details=(
-                    f"session={runtime_session.runtime_session_id} · "
-                    f"invoke={runtime_session.invoke_status}"
-                ),
-                telemetry={
-                    "category": "runtime",
-                    "component": "Bedrock AgentCore Runtime",
-                    "status": "ok",
-                    "fields": [
-                        {
-                            "label": "runtime_arn",
-                            "value": runtime_session.runtime_arn,
-                            "mono": True,
-                        },
-                        {
-                            "label": "runtimeSessionId",
-                            "value": runtime_session.runtime_session_id,
-                            "mono": True,
-                        },
-                        {"label": "qualifier", "value": runtime_session.qualifier},
-                        {"label": "isolation", "value": runtime_session.isolation},
-                        {"label": "invoke_status", "value": runtime_session.invoke_status},
-                    ],
-                },
-            )
-
-            self._log(
-                "reasoning",
-                "Concierge session start (Strands)",
-                details=f"traveler={traveler_id}, conversation={conv_id}",
-                telemetry={
-                    "category": "runtime",
-                    "component": "Strands Agents + Aurora",
-                    "status": "ok",
-                    "fields": [
-                        {"label": "traveler_id", "value": traveler_id, "mono": True},
-                        {"label": "conversation_id", "value": conv_id, "mono": True},
-                    ],
-                },
-            )
-
-            memory_namespace = self.agentcore_memory._namespace(traveler_id, conv_id)
-            agentcore_turns = self.agentcore_memory.list_recent_turns(
-                traveler_id, conv_id, limit=6
-            )
-            self._log(
-                "reasoning",
-                "AgentCore Memory · recent session events",
-                details=f"{len(agentcore_turns)} events",
-                telemetry={
-                    "category": "memory_short",
-                    "component": "Bedrock AgentCore Memory",
-                    "status": "ok",
-                    "memory": {
-                        "shortTerm": {
-                            "label": "AgentCore session events",
-                            "items": [
-                                (t.get("text") or "")[:120]
-                                for t in agentcore_turns
-                            ],
-                        }
-                    },
-                    "fields": [
-                        {
-                            "label": "memory_id",
-                            "value": self.agentcore_memory.memory_id,
-                            "mono": True,
-                        },
-                        {"label": "namespace", "value": memory_namespace},
-                    ],
-                },
-            )
-
-            agentcore_semantic = self.agentcore_memory.semantic_recall(
-                traveler_id, conv_id, message, top_k=3
-            )
-            self._log(
-                "reasoning",
-                "AgentCore Memory · semantic retrieve",
-                details=f"{len(agentcore_semantic)} records",
-                telemetry={
-                    "category": "memory_long",
-                    "component": "Bedrock AgentCore Memory",
-                    "status": "ok",
-                    "memory": {
-                        "longTerm": {
-                            "label": "AgentCore semantic recall",
-                            "items": [
-                                (r.get("text") or "")[:120] for r in agentcore_semantic
-                            ],
-                        }
-                    },
-                    "fields": [
-                        {"label": "operation", "value": "retrieve_memory_records"},
-                        {"label": "top_k", "value": "3"},
-                    ],
-                },
-            )
-
-            # Load traveler memory once, deterministically. Each @tool fires
-            # exactly once here and emits its own trace span — there is no
-            # separate LLM-driven recall pass, so the trace shows each memory
-            # tool a single time (no duplicate Aurora reads/writes).
-            session = await self.traveler_memory.recall_session_context(conv_id)
-            prefs = await self.traveler_memory.recall_traveler_preferences(traveler_id)
-            similar = await self.traveler_memory.recall_similar_interactions(traveler_id, message)
-            memory_facts: List[Dict[str, Any]] = prefs.get("facts", [])
-            memory_context = self.store.format_memory_context(
-                profile, session.get("turns", []), memory_facts, similar.get("interactions", [])
-            )
-
-            self._log(
-                "reasoning",
-                "Apply traveler context to search",
-                details=f"orchestration=deterministic · {memory_context[:240]}",
-            )
-
-            packages, search_activities = await self._search_packages(message, limit)
-            activities.extend(search_activities)
-
-            shown = [
-                {"package_id": getattr(p, "package_id", None), "name": p.name}
-                for p in packages
-            ]
-
-            if packages:
-                # Pull the most-confident traveler fact for the reply hint, but
-                # render it as "key: value" so it never reads as a money-or
-                # date assertion the LLM didn't make. Previously we injected
-                # just the value (e.g. " for $3,200"), which misleadingly
-                # framed the budget cap as the search criterion.
-                hint = ""
-                if memory_facts:
-                    fact = memory_facts[0]
-                    fact_key = str(fact.get("key", "")).replace("_", " ").strip()
-                    fact_value = str(fact.get("value", "")).strip()
-                    if fact_key and fact_value:
-                        hint = f" (matched on {fact_key}: {fact_value})"
-                response_message = (
-                    f"Welcome back — I found {len(packages)} trips that fit your profile{hint}:"
-                )
-            else:
-                response_message = "No exact matches yet; I've saved this search to your history."
-
-            await self.traveler_memory.persist_turn(
-                traveler_id, conv_id, message, response_message, shown
-            )
-            self._log(
-                "tool_call",
-                "Strands @tool persist_turn",
-                details=(
-                    f"Wrote 2 messages + 1 trip_interaction inside RLS "
-                    f"transaction · {len(shown)} packages shown"
-                ),
-                sql_query=(
-                    "-- Inside the same RLS transaction:\n"
-                    "INSERT INTO conversation_messages "
-                    "(message_id, conversation_id, role, content, embedding)\n"
-                    "  VALUES (..., ..., 'user', $1, $2::vector);\n"
-                    "INSERT INTO conversation_messages "
-                    "(message_id, conversation_id, role, content, embedding)\n"
-                    "  VALUES (..., ..., 'assistant', $3, $4::vector);\n"
-                    "INSERT INTO trip_interactions "
-                    "(interaction_id, traveler_id, conversation_id,\n"
-                    " query_text, response_summary, packages_shown, embedding)\n"
-                    "  VALUES (..., $5, ..., $1, $3, $6::jsonb, $2::vector);"
-                ),
-                telemetry={
-                    "category": "memory_short",
-                    "component": "Aurora write path · scoped_session",
-                    "status": "ok",
-                    "fields": [
-                        {"label": "table", "value": "conversation_messages + trip_interactions"},
-                        {"label": "rls.traveler_id", "value": traveler_id, "mono": True},
-                    ],
-                },
-            )
-
-            # Mirror the turn into AgentCore Memory so the managed service has
-            # an authoritative session record.  Skipped silently when the
-            # adapter is not configured.
-            agentcore_write = self.agentcore_memory.record_turn(
-                traveler_id, conv_id, message, response_message
-            )
-            self._log(
-                "tool_call",
-                "AgentCore Memory · create_event",
-                details=f"event_id={agentcore_write.get('event_id')}",
-                telemetry={
-                    "category": "memory_short",
-                    "component": "Bedrock AgentCore Memory",
-                    "status": "ok",
-                    "fields": [
-                        {"label": "operation", "value": "create_event"},
-                        {"label": "actor_id", "value": traveler_id, "mono": True},
-                        {"label": "session_id", "value": conv_id, "mono": True},
-                    ],
-                },
-            )
-
-            await self.store.write_audit(
-                agent_name="ProductionAgent",
-                operation="production_turn",
+        try:
+            async with self.db.scoped_session(
                 traveler_id=traveler_id,
-                rls_traveler=traveler_id,
-                rls_agent_type="concierge_agent",
-                iam_identity=scope.iam_identity,
-                authorization_provider=scope.authorization.provider,
-                authorization_subject=scope.authorization.subject_id,
-                authorization_decision="allow",
-                rows_returned=len(packages),
-                transaction_id=tx,
+                agent_type="concierge_agent",
+                authorization=scope.authorization,
+            ) as read_tx:
+                self.traveler_memory._transaction_id = read_tx
+
+                self._log(
+                    "security",
+                    "Workload traveler grant allowed",
+                    details=(
+                        f"{scope.authorization.provider}:{scope.authorization.subject_id} "
+                        f"-> {traveler_id}"
+                    ),
+                    telemetry={
+                        "category": "security",
+                        "component": "Aurora identity binding",
+                        "status": "ok",
+                        "fields": [
+                            {
+                                "label": "authorization.provider",
+                                "value": scope.authorization.provider,
+                            },
+                            {
+                                "label": "authorization.subject",
+                                "value": scope.authorization.subject_id,
+                                "mono": True,
+                            },
+                            {
+                                "label": "authorization.decision",
+                                "value": "allow",
+                            },
+                            {
+                                "label": "traveler_id",
+                                "value": traveler_id,
+                                "mono": True,
+                            },
+                            {
+                                "label": "binding_table",
+                                "value": "traveler_identity_bindings",
+                                "mono": True,
+                            },
+                        ],
+                    },
+                )
+
+                self._log(
+                    "security",
+                    "Aurora RLS · short read unit",
+                    details=(
+                        f"app.current_traveler_id={traveler_id} · "
+                        "role=meridian_app · commits before external calls"
+                    ),
+                    sql_query=(
+                        "-- Short RLS read transaction (SET LOCAL reverts on commit)\n"
+                        f"SET LOCAL app.current_traveler_id = '{traveler_id}';\n"
+                        "SET LOCAL app.agent_type = 'concierge_agent';\n"
+                        "SET LOCAL ROLE meridian_app;"
+                    ),
+                    telemetry={
+                        "category": "security",
+                        "component": "Aurora RLS",
+                        "status": "ok",
+                        "fields": [
+                            {
+                                "label": "iam_identity",
+                                "value": scope.iam_identity,
+                                "mono": True,
+                            },
+                            {
+                                "label": "authorization.subject",
+                                "value": scope.authorization.subject_id,
+                                "mono": True,
+                            },
+                            {
+                                "label": "rls.traveler_id",
+                                "value": traveler_id,
+                                "mono": True,
+                            },
+                            {"label": "rls.role", "value": "meridian_app", "mono": True},
+                            {"label": "transaction.unit", "value": "read"},
+                        ],
+                    },
+                )
+
+                conv_id = await self.store.get_or_create_conversation(
+                    traveler_id,
+                    conversation_id,
+                    transaction_id=read_tx,
+                )
+                profile = await self.store.recall_profile(
+                    traveler_id,
+                    transaction_id=read_tx,
+                )
+                session = await self.traveler_memory.recall_session_context(conv_id)
+                prefs = await self.traveler_memory.recall_traveler_preferences(
+                    traveler_id
+                )
+                similar = await self.traveler_memory.recall_similar_interactions(
+                    traveler_id,
+                    message,
+                )
+        finally:
+            self.traveler_memory._transaction_id = None
+            self.traveler_memory._prepared_query_vector = None
+            self.traveler_memory._query_vector_prepared = False
+
+        memory_facts: List[Dict[str, Any]] = prefs.get("facts", [])
+        memory_context = self.store.format_memory_context(
+            profile,
+            session.get("turns", []),
+            memory_facts,
+            similar.get("interactions", []),
+        )
+
+        # The RLS read unit has committed. Runtime, AgentCore Memory, and
+        # Gateway calls now execute without holding a database transaction.
+        runtime_session = await asyncio.to_thread(
+            self.agentcore_runtime.session_for_turn,
+            conv_id,
+            traveler_id,
+        )
+        self._log(
+            "reasoning",
+            "AgentCore Runtime · session envelope",
+            details=(
+                f"session={runtime_session.runtime_session_id} · "
+                f"invoke={runtime_session.invoke_status}"
+            ),
+            telemetry={
+                "category": "runtime",
+                "component": "Bedrock AgentCore Runtime",
+                "status": "ok",
+                "fields": [
+                    {
+                        "label": "runtime_arn",
+                        "value": runtime_session.runtime_arn,
+                        "mono": True,
+                    },
+                    {
+                        "label": "runtimeSessionId",
+                        "value": runtime_session.runtime_session_id,
+                        "mono": True,
+                    },
+                    {"label": "qualifier", "value": runtime_session.qualifier},
+                    {"label": "isolation", "value": runtime_session.isolation},
+                    {"label": "invoke_status", "value": runtime_session.invoke_status},
+                ],
+            },
+        )
+
+        self._log(
+            "reasoning",
+            "Concierge session start (Strands)",
+            details=f"traveler={traveler_id}, conversation={conv_id}",
+            telemetry={
+                "category": "runtime",
+                "component": "Strands Agents + Aurora",
+                "status": "ok",
+                "fields": [
+                    {"label": "traveler_id", "value": traveler_id, "mono": True},
+                    {"label": "conversation_id", "value": conv_id, "mono": True},
+                ],
+            },
+        )
+
+        memory_namespace = self.agentcore_memory._namespace(traveler_id, conv_id)
+        agentcore_turns = await asyncio.to_thread(
+            self.agentcore_memory.list_recent_turns,
+            traveler_id,
+            conv_id,
+            limit=6,
+        )
+        self._log(
+            "reasoning",
+            "AgentCore Memory · recent session events",
+            details=f"{len(agentcore_turns)} events",
+            telemetry={
+                "category": "memory_short",
+                "component": "Bedrock AgentCore Memory",
+                "status": "ok",
+                "memory": {
+                    "shortTerm": {
+                        "label": "AgentCore session events",
+                        "items": [
+                            (turn.get("text") or "")[:120]
+                            for turn in agentcore_turns
+                        ],
+                    }
+                },
+                "fields": [
+                    {
+                        "label": "memory_id",
+                        "value": self.agentcore_memory.memory_id,
+                        "mono": True,
+                    },
+                    {"label": "namespace", "value": memory_namespace},
+                ],
+            },
+        )
+
+        agentcore_semantic = await asyncio.to_thread(
+            self.agentcore_memory.semantic_recall,
+            traveler_id,
+            conv_id,
+            message,
+            top_k=3,
+        )
+        self._log(
+            "reasoning",
+            "AgentCore Memory · semantic retrieve",
+            details=f"{len(agentcore_semantic)} records",
+            telemetry={
+                "category": "memory_long",
+                "component": "Bedrock AgentCore Memory",
+                "status": "ok",
+                "memory": {
+                    "longTerm": {
+                        "label": "AgentCore semantic recall",
+                        "items": [
+                            (record.get("text") or "")[:120]
+                            for record in agentcore_semantic
+                        ],
+                    }
+                },
+                "fields": [
+                    {"label": "operation", "value": "retrieve_memory_records"},
+                    {"label": "top_k", "value": "3"},
+                ],
+            },
+        )
+
+        self._log(
+            "reasoning",
+            "Apply traveler context to search",
+            details=f"orchestration=deterministic · {memory_context[:240]}",
+        )
+
+        packages, search_activities = await self._search_packages(message, limit)
+        activities.extend(search_activities)
+
+        shown = [
+            {"package_id": getattr(package, "package_id", None), "name": package.name}
+            for package in packages
+        ]
+
+        if packages:
+            hint = ""
+            if memory_facts:
+                fact = memory_facts[0]
+                fact_key = str(fact.get("key", "")).replace("_", " ").strip()
+                fact_value = str(fact.get("value", "")).strip()
+                if fact_key and fact_value:
+                    hint = f" (matched on {fact_key}: {fact_value})"
+            response_message = (
+                f"Welcome back — I found {len(packages)} trips that fit your profile{hint}:"
+            )
+        else:
+            response_message = (
+                "No exact matches yet; I've saved this search to your history."
             )
 
-            self._log(
-                "result",
-                "Memory-grounded reply ready",
-                details=f"{len(packages)} packages · Aurora memory updated",
-                telemetry={"category": "synthesis", "component": "ProductionAgent", "status": "ok"},
-            )
+        # Prepare all write-side vectors before the short RLS write unit. These
+        # independent Bedrock calls run concurrently to reduce turn latency.
+        interaction_text = f"User: {message}\nAssistant: {response_message}"
+        user_vector, assistant_vector, interaction_vector = await asyncio.gather(
+            asyncio.to_thread(
+                self.store.prepare_embedding_vector,
+                message,
+                input_type="search_document",
+            ),
+            asyncio.to_thread(
+                self.store.prepare_embedding_vector,
+                response_message,
+                input_type="search_document",
+            ),
+            asyncio.to_thread(
+                self.store.prepare_embedding_vector,
+                interaction_text,
+                input_type="search_document",
+            ),
+        )
+        self.traveler_memory._prepared_turn_vectors = {
+            "user": user_vector,
+            "assistant": assistant_vector,
+            "interaction": interaction_vector,
+        }
 
-        self.traveler_memory._transaction_id = None
+        try:
+            async with self.db.scoped_session(
+                traveler_id=traveler_id,
+                agent_type="concierge_agent",
+                authorization=scope.authorization,
+            ) as write_tx:
+                self.traveler_memory._transaction_id = write_tx
+                await self.traveler_memory.persist_turn(
+                    traveler_id,
+                    conv_id,
+                    message,
+                    response_message,
+                    shown,
+                )
+                self._log(
+                    "tool_call",
+                    "Strands @tool persist_turn",
+                    details=(
+                        "Reauthorized traveler scope; wrote 2 messages + "
+                        f"1 trip_interaction in a short RLS write unit · "
+                        f"{len(shown)} packages shown"
+                    ),
+                    sql_query=(
+                        "-- Separate short RLS write transaction:\n"
+                        "INSERT INTO conversation_messages "
+                        "(message_id, conversation_id, role, content, embedding)\n"
+                        "  VALUES (..., ..., 'user', $1, $2::vector);\n"
+                        "INSERT INTO conversation_messages "
+                        "(message_id, conversation_id, role, content, embedding)\n"
+                        "  VALUES (..., ..., 'assistant', $3, $4::vector);\n"
+                        "INSERT INTO trip_interactions "
+                        "(interaction_id, traveler_id, conversation_id,\n"
+                        " query_text, response_summary, packages_shown, embedding)\n"
+                        "  VALUES (..., $5, ..., $1, $3, $6::jsonb, $2::vector);"
+                    ),
+                    telemetry={
+                        "category": "memory_short",
+                        "component": "Aurora write path · scoped_session",
+                        "status": "ok",
+                        "fields": [
+                            {
+                                "label": "table",
+                                "value": (
+                                    "conversation_messages + trip_interactions"
+                                ),
+                            },
+                            {
+                                "label": "rls.traveler_id",
+                                "value": traveler_id,
+                                "mono": True,
+                            },
+                            {"label": "transaction.unit", "value": "write"},
+                        ],
+                    },
+                )
+
+                await self.store.write_audit(
+                    agent_name="ProductionAgent",
+                    operation="production_turn",
+                    traveler_id=traveler_id,
+                    rls_traveler=traveler_id,
+                    rls_agent_type="concierge_agent",
+                    iam_identity=scope.iam_identity,
+                    authorization_provider=scope.authorization.provider,
+                    authorization_subject=scope.authorization.subject_id,
+                    authorization_decision="allow",
+                    rows_returned=len(packages),
+                    transaction_id=write_tx,
+                )
+        finally:
+            self.traveler_memory._transaction_id = None
+            self.traveler_memory._prepared_turn_vectors = None
+
+        # Aurora is committed before the managed-memory mirror. Cross-store
+        # delivery is a separate consistency domain; production deployments
+        # should drive retries from an outbox rather than hold the DB tx open.
+        agentcore_write = await asyncio.to_thread(
+            self.agentcore_memory.record_turn,
+            traveler_id,
+            conv_id,
+            message,
+            response_message,
+        )
+        self._log(
+            "tool_call",
+            "AgentCore Memory · create_event",
+            details=f"event_id={agentcore_write.get('event_id')} · after Aurora commit",
+            telemetry={
+                "category": "memory_short",
+                "component": "Bedrock AgentCore Memory",
+                "status": "ok",
+                "fields": [
+                    {"label": "operation", "value": "create_event"},
+                    {"label": "actor_id", "value": traveler_id, "mono": True},
+                    {"label": "session_id", "value": conv_id, "mono": True},
+                    {"label": "consistency", "value": "post-commit mirror"},
+                ],
+            },
+        )
+
+        self._log(
+            "result",
+            "Memory-grounded reply ready",
+            details=f"{len(packages)} packages · Aurora memory updated",
+            telemetry={
+                "category": "synthesis",
+                "component": "ProductionAgent",
+                "status": "ok",
+            },
+        )
+
         return packages, activities, response_message, conv_id, memory_facts
 
 

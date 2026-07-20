@@ -71,10 +71,10 @@ const steps: JourneyStep[] = [
     ph: PHASE_JOURNEY_SUB[5],
     title: 'Workflow',
     serif: '',
-    desc: 'LangGraph owns control flow when we want it inspectable, branchable, resumable. Explicit StateGraph (classify → search → availability → memory_recall → synthesize) with PostgresSaver checkpoints in Aurora. Production chained three jobs implicitly inside one Bedrock turn — Workflow routes the same query through named nodes so each step is debuggable and resumable.',
+    desc: 'LangGraph owns control flow when we want it inspectable, branchable, and resumable. The explicit StateGraph routes classify → search → availability → memory_recall → synthesize, while PostgresSaver externalizes execution state into Aurora. Domain-data nodes can keep using the connectionless Data API; durable checkpoints use pooled PostgreSQL connectivity.',
     chips: ['LangGraph', 'StateGraph', 'PostgresSaver', 'AgentCore'],
     scale: '~500,000 trips/day · multi-step workflows that span weeks',
-    persona: 'Alex asks to plan the Kyoto extension by finding packages, then verifying duration availability. Each dependent step lands in its own checkpointed node.',
+    persona: "Alex's JFK flight to Tokyo is cancelled mid-trip. The graph reworks the itinerary, then verifies which departures are still open — each dependent step lands in its own checkpointed node.",
     skills: ['classify', 'search', 'availability', 'memory_recall', 'synthesize'],
   },
 ];
