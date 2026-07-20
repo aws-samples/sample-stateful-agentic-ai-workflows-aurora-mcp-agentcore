@@ -1468,9 +1468,18 @@
   display: grid;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--mds-amber) 70%, transparent);
-  border-radius: 8px;
+  border-radius: 10px;
   color: #1b0d00;
-  background: var(--mds-amber);
+  /* Dimensional fill instead of a flat swatch: top highlight + amber base,
+     a soft drop glow, and an inner top edge so it reads as a lit chip. */
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--mds-amber) 88%, white),
+    var(--mds-amber)
+  );
+  box-shadow:
+    0 6px 16px color-mix(in srgb, var(--mds-amber) 38%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 
 .mds-disruption-copy {
@@ -1520,14 +1529,39 @@
 
 .mds-disruption-status {
   justify-self: start;
-  padding: 5px 9px;
-  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 8px;
+  border-radius: 999px;
   color: #1b0d00;
   background: var(--mds-amber);
   font-size: calc(10px * var(--mds-fs));
   font-weight: 840;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+/* Live-alert dot inside the status pill — a pulsing ring that echoes the
+   card's own attention animation so the badge reads as active, not static. */
+.mds-disruption-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #1b0d00;
+  box-shadow: 0 0 0 0 rgba(27, 13, 0, 0.55);
+  animation: mds-disruption-dot 1.8s ease-out infinite;
+}
+
+@keyframes mds-disruption-dot {
+  0% {
+    box-shadow: 0 0 0 0 rgba(27, 13, 0, 0.55);
+  }
+  70%, 100% {
+    box-shadow: 0 0 0 6px rgba(27, 13, 0, 0);
+  }
 }
 
 .mds-disruption-alert button {
@@ -1536,25 +1570,56 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 0 13px;
-  border: 1px solid var(--mds-amber);
-  border-radius: 6px;
+  padding: 0 15px;
+  border: 1px solid color-mix(in srgb, var(--mds-amber) 70%, white);
+  border-radius: 8px;
   color: #1b0d00;
-  background: var(--mds-amber);
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--mds-amber) 90%, white),
+    var(--mds-amber)
+  );
+  box-shadow:
+    0 6px 16px color-mix(in srgb, var(--mds-amber) 34%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
   font-size: calc(12px * var(--mds-fs));
   font-weight: 820;
   white-space: nowrap;
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+
+.mds-disruption-alert button svg {
+  transition: transform 180ms ease;
 }
 
 .mds-disruption-alert button:hover {
-  filter: brightness(1.08);
   transform: translateY(-1px);
+  box-shadow:
+    0 10px 22px color-mix(in srgb, var(--mds-amber) 44%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.36);
+  filter: brightness(1.05);
+}
+
+.mds-disruption-alert button:hover svg {
+  transform: translateX(3px);
+}
+
+.mds-disruption-alert button:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--mds-amber) 40%, transparent),
+    0 6px 16px color-mix(in srgb, var(--mds-amber) 34%, transparent);
 }
 
 .mds-disruption-alert button:disabled {
   cursor: wait;
   filter: saturate(0.45);
   opacity: 0.72;
+  transform: none;
+}
+
+.mds-disruption-alert button:disabled svg {
+  transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1562,7 +1627,23 @@
     animation: none;
   }
 
+  .mds-disruption-status::before {
+    animation: none;
+  }
+
+  .mds-disruption-alert button svg {
+    transition: none;
+  }
+
+  .mds-disruption-alert button:hover svg {
+    transform: none;
+  }
+
   .mds-current-trip-card.is-running .mds-current-trip-topline > b svg {
+    animation: none;
+  }
+
+  .mds-current-trip-state::before {
     animation: none;
   }
 }
@@ -4917,10 +4998,16 @@
 }
 
 .mds-current-trip-state {
+  /* Per-state pulse tint — the dot's ::before reads this instead of
+     currentColor, which is unreliable inside color-mix(). */
+  --mds-trip-dot: var(--mds-amber);
   flex: 0 0 auto;
-  padding: 4px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
   border: 1px solid color-mix(in srgb, var(--mds-amber) 48%, transparent);
-  border-radius: 5px;
+  border-radius: 999px;
   color: color-mix(in srgb, var(--mds-amber) 84%, white);
   background: color-mix(in srgb, var(--mds-amber) 10%, transparent);
   font-size: calc(10.5px * var(--mds-fs));
@@ -4928,13 +5015,42 @@
   white-space: nowrap;
 }
 
+/* Status dot echoes the Experience banner's live-alert badge: same 1.8s
+   radar pulse. --mds-trip-dot carries each state's tint (amber / cyan /
+   green); the ring pulses while the disruption is active or recovering and
+   settles to a solid dot once the plan is ready. */
+.mds-current-trip-state::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mds-trip-dot);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--mds-trip-dot) 55%, transparent);
+  animation: mds-trip-state-dot 1.8s ease-out infinite;
+}
+
+.mds-current-trip-state.is-ready::before {
+  animation: none;
+}
+
+@keyframes mds-trip-state-dot {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--mds-trip-dot) 55%, transparent);
+  }
+  70%, 100% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--mds-trip-dot) 0%, transparent);
+  }
+}
+
 .mds-current-trip-state.is-running {
+  --mds-trip-dot: var(--mds-cyan);
   border-color: var(--mds-cyan-line);
   color: var(--mds-cyan);
   background: var(--mds-cyan-soft);
 }
 
 .mds-current-trip-state.is-ready {
+  --mds-trip-dot: var(--mds-green);
   border-color: color-mix(in srgb, var(--mds-green) 44%, transparent);
   color: var(--mds-green);
   background: color-mix(in srgb, var(--mds-green) 10%, transparent);
