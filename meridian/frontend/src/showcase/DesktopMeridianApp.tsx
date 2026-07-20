@@ -13,6 +13,7 @@ import { TripDetailDrawer } from './components/TripDetailDrawer';
 import { ComparisonDialog } from './components/ComparisonDialog';
 import { JourneyPanel } from './components/JourneyPanel';
 import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
+import { MERIDIAN_MARK_SRC } from '../lib/meridianBrand';
 import { ALEX_IMAGE_URL, ALEX_NAME } from './lib/personas';
 import { SHOWCASE_FINALE_PROMPT } from './lib/showcaseAdapters';
 
@@ -28,7 +29,17 @@ const navItems: { id: NavItemId; label: string }[] = [
 ];
 
 function BrandMark() {
-  return <span className="mds-brand-mark" aria-hidden="true" />;
+  return (
+    <img
+      className="mds-brand-mark"
+      src={MERIDIAN_MARK_SRC}
+      alt=""
+      width="32"
+      height="32"
+      loading="eager"
+      decoding="async"
+    />
+  );
 }
 
 function NavIcon({ id }: { id: NavItemId }) {
@@ -157,7 +168,10 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
           </span>
           <div className="mds-account-copy">
             <strong>Alex Morgan</strong>
-            <span>Bonvoy Platinum Elite</span>
+            <span className="mds-account-loyalty">
+              <span>Bonvoy Platinum</span>
+              <span>United 1K</span>
+            </span>
           </div>
         </div>
       </aside>
@@ -229,7 +243,13 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
               <div className="mds-disruption-copy">
                 <b className="mds-disruption-status">Action needed</b>
                 <strong>JFK to Tokyo flight cancelled</strong>
-                <p>Rework Alex's itinerary, then verify live alternatives before presenting a plan.</p>
+                <div className="mds-disruption-meta" aria-label="Cancelled flight details">
+                  <span>ANA NH 109</span>
+                  <span>Today · 10:40 AM</span>
+                  <span>JFK → HND</span>
+                  <b>Premier 1K</b>
+                </div>
+                <p>Check live alternatives and rebuild the itinerary around Alex's preferences.</p>
               </div>
               <button
                 type="button"
@@ -275,7 +295,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
             </div>
           )}
 
-          <ChatTranscript state={state} />
+          <ChatTranscript state={state} proofMode={surfaceMode === 'proof'} />
 
           {/* Product cards stay attached to the bot turn that produced them. */}
 

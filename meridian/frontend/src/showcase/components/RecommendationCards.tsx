@@ -1,25 +1,6 @@
 import type { Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
-import { TripVisual } from './TripVisual';
-
-function money(price: number): string {
-  return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
-}
-
-function dateRangeFor(product: Product): string {
-  // Deterministic hash of the product_id so demos stay stable across renders.
-  const seed = Array.from(product.product_id).reduce(
-    (acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0,
-    7,
-  );
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const monthIndex = seed % months.length;
-  const startDay = (seed % 18) + 5;
-  const durationStr = product.available_sizes?.[0] ?? '7 nights';
-  const nights = Number((durationStr.match(/\d+/) ?? ['7'])[0]);
-  const endDay = Math.min(startDay + nights, 28);
-  return `${months[monthIndex]} ${startDay} – ${endDay}`;
-}
+import { TripResultCardContent } from './TripResultCardContent';
 
 export function RecommendationCards({
   state,
@@ -67,13 +48,11 @@ function RecommendationCard({
   priority: boolean;
 }) {
   const selected = state.selectedTrip?.product_id === product.product_id;
-  const saved = state.savedTripIds.has(product.product_id);
   const matchPct = product.similarity != null ? Math.round(product.similarity * 100) : null;
-  const dateRange = dateRangeFor(product);
 
   return (
     <article
-      className={`mds-rec-card${selected ? ' is-selected' : ''}${priority ? ' is-priority' : ''}`}
+      className={`mds-trip-result-card${selected ? ' is-selected' : ''}${priority ? ' is-priority' : ''}`}
       tabIndex={0}
       role="button"
       aria-label={`Open ${product.name}`}
@@ -85,53 +64,12 @@ function RecommendationCard({
         }
       }}
     >
-      <TripVisual product={product} compact={compact} />
-      <div className="mds-rec-fade" aria-hidden="true" />
-      <div className="mds-rec-overlay">
-        {matchPct != null && (
-          <div className="mds-rec-match-badge">
-            <span className="mds-rec-match-dot" aria-hidden="true" />
-            {matchPct}% match
-          </div>
-        )}
-        <div className="mds-rec-overlay-meta">
-          <span className="mds-rec-date">{dateRange}</span>
-        </div>
-        <strong className="mds-rec-title">{product.name}</strong>
-        <span className="mds-rec-sub">{product.brand}</span>
-        <div className="mds-rec-overlay-row">
-          <div className="mds-rec-price">
-            <span>From</span>
-            <b>{money(product.price)}</b>
-          </div>
-          {!compact && (
-            <div
-              className="mds-rec-actions"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <button
-                type="button"
-                onClick={() => state.openTripDetails(product)}
-              >
-                Details
-              </button>
-              <button
-                type="button"
-                onClick={() => state.compareTrip(product)}
-              >
-                Compare
-              </button>
-              <button
-                type="button"
-                onClick={() => state.saveTrip(product)}
-                aria-pressed={saved}
-              >
-                {saved ? 'Saved' : 'Save'}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+      <TripResultCardContent
+        product={product}
+        state={state}
+        matchPct={matchPct}
+        compact={compact}
+      />
     </article>
   );
 }

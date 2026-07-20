@@ -1530,6 +1530,67 @@ async def workflow_memory_recall(
     return products, activities
 
 
+async def _load_workflow_memory_facts(traveler_id: str) -> List[MemoryFact]:
+    """Read recovery context in one short, authorized RLS transaction."""
+    from backend.memory.store import get_memory_store
+
+    store = get_memory_store()
+    async with store.db.scoped_session(
+        traveler_id=traveler_id,
+        agent_type="orchestration_agent",
+        authorization=get_agentcore_identity().authorization_context(),
+    ) as tx:
+        facts = await store.recall_preferences(
+            traveler_id,
+            limit=20,
+            transaction_id=tx,
+        )
+    return [
+        MemoryFact(
+            key=str(fact.get("key") or ""),
+            value=str(fact.get("value") or ""),
+            source=fact.get("source"),
+            confidence=fact.get("confidence"),
+        )
+        for fact in facts
+        if fact.get("key") and fact.get("value")
+    ]
+
+
+def _append_recovery_memory_receipt(
+    message: str,
+    query: str,
+    memory_facts: List[MemoryFact],
+) -> str:
+    """Show which Aurora facts materially shaped a disruption recovery."""
+    is_disruption = re.search(
+        r"\b(cancelled|canceled|disrupt|rebook|stranded)\b",
+        query,
+        re.I,
+    )
+    is_trip = re.search(r"\b(flight|departure|itinerary|trip)\b", query, re.I)
+    if not (is_disruption and is_trip):
+        return message
+
+    by_key = {fact.key: fact.value for fact in memory_facts}
+    receipt: List[str] = []
+    home_airport = by_key.get("home_airport")
+    if home_airport:
+        receipt.append(f"- **Home airport:** {home_airport}")
+    shellfish = by_key.get("shellfish_allergy")
+    if shellfish:
+        receipt.append(
+            f"- **Dietary safety:** shellfish allergy — {shellfish}"
+        )
+    if not receipt:
+        return message
+    return (
+        f"{message.rstrip()}\n\n"
+        "**Traveler context applied from Aurora**\n"
+        + "\n".join(receipt)
+    )
+
+
 async def orchestration_workflow(
     query: str,
     traveler_id: str,
@@ -2065,6 +2126,25 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 resume=resume_workflow,
             )
             activities.extend(workflow_activities)
+            workflow_memory_facts: List[MemoryFact] = []
+            if workflow_status != "paused":
+                try:
+                    workflow_memory_facts = await _load_workflow_memory_facts(
+                        request.customer_id or DEMO_TRAVELER_ID
+                    )
+                    if workflow_memory_facts:
+                        activities.append(create_activity(
+                            activity_type="search",
+                            title="Aurora recall: recovery context",
+                            details=(
+                                "RLS-scoped home airport and dietary safety "
+                                "facts applied to the recovery plan"
+                            ),
+                            agent_name="OrchestrationAgent",
+                            agent_file="backend/memory/store.py",
+                        ))
+                except Exception as exc:
+                    log_error("workflow_memory_fetch", error=str(exc))
             if workflow_status == "paused":
                 message = raw_message
             else:
@@ -2074,7 +2154,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                     raw_message=raw_message,
                     products=workflow_packages,
                     activities=activities,
-                    memory_facts=None,
+                    memory_facts=workflow_memory_facts or None,
                 )
                 if polish_model:
                     activities.append(create_activity(
@@ -2094,6 +2174,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
                         agent_file="backend/llm_polish.py",
                     ))
                     message = raw_message
+                message = _append_recovery_memory_receipt(
+                    message,
+                    request.message,
+                    workflow_memory_facts,
+                )
             follow_ups = (
                 ["Resume workflow from checkpoint"]
                 if workflow_status == "paused"
@@ -2109,6 +2194,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 activities=activities,
                 follow_ups=follow_ups,
                 conversation_id=conv_id,
+                memory_facts=workflow_memory_facts or None,
                 workflow_status=workflow_status,
             ),
                 request.phase,

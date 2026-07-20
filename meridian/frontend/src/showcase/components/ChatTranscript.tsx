@@ -8,7 +8,7 @@ import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { rehypeMemoryHighlight } from '../lib/memoryHighlight';
 import { typewriterCadence } from '../lib/streamingCadence';
 import { RankDeltaBadge } from './RankDeltaBadge';
-import { TripVisual } from './TripVisual';
+import { TripResultCardContent } from './TripResultCardContent';
 
 // Respect reduced motion by disabling spring-style reorder animations.
 const prefersReducedMotion =
@@ -49,7 +49,15 @@ function findScrollParent(node: HTMLElement | null): HTMLElement | null {
   return null;
 }
 
-export function ChatTranscript({ state, compact = false }: { state: MeridianShowcaseState; compact?: boolean }) {
+export function ChatTranscript({
+  state,
+  compact = false,
+  proofMode = false,
+}: {
+  state: MeridianShowcaseState;
+  compact?: boolean;
+  proofMode?: boolean;
+}) {
   const visibleMessages = compact
     ? state.messages.slice(-3)
     : state.messages.slice(-VISIBLE_TURN_LIMIT);
@@ -78,18 +86,10 @@ export function ChatTranscript({ state, compact = false }: { state: MeridianShow
         <div className="mds-empty-state">
           <div className="mds-empty-title">Ask me about your next trip.</div>
           <div className="mds-empty-sub">
-            I'm running in <b>{state.phaseLabel}</b> mode. Try a starter below, or type your own.
+            {proofMode
+              ? 'Run a phase prompt below to generate live system evidence.'
+              : 'I’ll search live availability and use your saved travel preferences.'}
           </div>
-          {state.phaseExamples.length > 0 && (
-            <button
-              type="button"
-              className="mds-empty-starter"
-              onClick={() => void state.applyPhaseExample(state.phaseExamples[0], true)}
-              disabled={state.isLoading}
-            >
-              {state.phaseExamples[0]}
-            </button>
-          )}
         </div>
       ) : (
         visibleMessages.map((message, index) => (
@@ -471,7 +471,6 @@ function InlineProductCard({
       : product.similarity;
   const matchPct =
     shownSimilarity != null ? Math.round(shownSimilarity * 100) : null;
-  const saved = state.savedTripIds.has(product.product_id);
   const selected = state.selectedTrip?.product_id === product.product_id;
   const showDelta = rerankArmed && reranked && product.rank_delta != null;
   return (
@@ -482,7 +481,7 @@ function InlineProductCard({
           ? { duration: 0 }
           : { type: 'spring', stiffness: 420, damping: 34 }
       }
-      className={`mds-msg-card${selected ? ' is-selected' : ''}`}
+      className={`mds-trip-result-card${selected ? ' is-selected' : ''}`}
       style={{ animationDelay: `${Math.min(index * 60, 360)}ms` }}
       tabIndex={0}
       role="button"
@@ -494,62 +493,25 @@ function InlineProductCard({
         }
       }}
     >
-      <span className="mds-msg-card-img" aria-hidden="true">
-        <TripVisual product={product} compact />
-      </span>
-      <span className="mds-msg-card-fade" aria-hidden="true" />
-      <span className="mds-msg-card-overlay">
-        {matchPct != null && (
-          <span className="mds-msg-card-match">
-            <span className="mds-msg-card-match-dot" aria-hidden="true" />
-            {matchPct}% match
-            <AnimatePresence>
-              {showDelta && (
-                <motion.span
-                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.6 }}
-                  animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, transition: { duration: 0.12 } }}
-                  transition={prefersReducedMotion ? { duration: 0 } : { delay: 0.25 }}
-                >
-                  <RankDeltaBadge delta={product.rank_delta ?? 0} />
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </span>
-        )}
-        <span className="mds-msg-card-title">{product.name}</span>
-        <span className="mds-msg-card-sub">{product.brand}</span>
-        <span className="mds-msg-card-row">
-          <span className="mds-msg-card-price">
-            <span>From</span>
-            <b>{money(product.price)}</b>
-          </span>
-          <span
-            className="mds-msg-card-actions"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              onClick={() => state.openTripDetails(product)}
-            >
-              Details
-            </button>
-            <button
-              type="button"
-              onClick={() => state.compareTrip(product)}
-            >
-              Compare
-            </button>
-            <button
-              type="button"
-              onClick={() => state.saveTrip(product)}
-              aria-pressed={saved}
-            >
-              {saved ? 'Saved' : 'Save'}
-            </button>
-          </span>
-        </span>
-      </span>
+      <TripResultCardContent
+        product={product}
+        state={state}
+        matchPct={matchPct}
+        matchExtra={
+          <AnimatePresence>
+            {showDelta && (
+              <motion.span
+                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.6 }}
+                animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, transition: { duration: 0.12 } }}
+                transition={prefersReducedMotion ? { duration: 0 } : { delay: 0.25 }}
+              >
+                <RankDeltaBadge delta={product.rank_delta ?? 0} />
+              </motion.span>
+            )}
+          </AnimatePresence>
+        }
+      />
     </motion.article>
   );
 }

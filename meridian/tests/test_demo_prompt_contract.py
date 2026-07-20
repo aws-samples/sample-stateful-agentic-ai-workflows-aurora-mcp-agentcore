@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 
 import backend.routers.chat as chat_router
 from backend.routers.chat import (
+    MemoryFact,
+    _append_recovery_memory_receipt,
     _call_domain_tool,
     _format_domain_reply,
     _is_availability_query,
@@ -78,6 +80,31 @@ def test_production_stretch_requires_checkpointed_workflow() -> None:
     assert _needs_checkpointed_workflow(WORKFLOW_PLAN)
     assert _needs_checkpointed_workflow(WORKFLOW_PLAN_KYOTO)
     assert not _needs_checkpointed_workflow(TUSCANY_AVAILABILITY)
+
+
+def test_workflow_recovery_surfaces_applied_aurora_memory() -> None:
+    message = _append_recovery_memory_receipt(
+        "I found two viable recovery options.",
+        WORKFLOW_PLAN,
+        [
+            MemoryFact(
+                key="home_airport",
+                value="JFK",
+                source="profile",
+                confidence=1.0,
+            ),
+            MemoryFact(
+                key="shellfish_allergy",
+                value="Exclude shellfish",
+                source="support_ticket",
+                confidence=1.0,
+            ),
+        ],
+    )
+
+    assert "Traveler context applied from Aurora" in message
+    assert "**Home airport:** JFK" in message
+    assert "shellfish allergy" in message
 
 
 def test_multi_price_fx_reply_names_every_compared_package() -> None:
