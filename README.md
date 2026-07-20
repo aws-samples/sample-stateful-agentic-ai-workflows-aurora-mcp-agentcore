@@ -21,7 +21,7 @@ security, audit trails, and checkpoints keep every turn governed and resilient.
 > PostgresSaver externalizes workflow execution state into Aurora through a
 > bounded PostgreSQL connection pool.
 
-![Meridian showcase displaying live trip cards, disruption recovery, and Alex Morgan's governed traveler context](meridian/docs/meridian-showcase.jpg)
+![Meridian showcase displaying live trip cards, disruption recovery, and Alex Morgan's governed traveler context](meridian/docs/meridian-showcase.png)
 
 <p align="center"><sub>Live Aurora results pair realistic trip cards with disruption recovery, traveler context, and inspectable system proof.</sub></p>
 
