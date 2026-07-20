@@ -6,7 +6,7 @@ Preferred workflow (Node-based CLI):
 
     npm install -g @aws/agentcore
     cd meridian/meridian_agentcore
-    agentcore add memory --name meridian-session --strategies SEMANTIC
+    agentcore add memory --name meridian_session --strategies SEMANTIC
     agentcore add gateway --name meridian-aurora --authorizer-type AWS_IAM
     agentcore add gateway-target --name AuroraSearch --type mcp-server ...
     agentcore deploy -y

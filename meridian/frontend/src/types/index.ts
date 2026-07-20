@@ -48,7 +48,7 @@ export interface PackageListResponse {
   total: number;
 }
 
-export type ActivityType = 'search' | 'embedding' | 'tool_call' | 'database' | 'error' | 'inventory' | 'order' | 'delegation' | 'mcp' | 'reasoning' | 'result' | 'security';
+export type ActivityType = 'search' | 'embedding' | 'tool_call' | 'database' | 'error' | 'inventory' | 'order' | 'delegation' | 'mcp' | 'reasoning' | 'result' | 'security' | 'availability';
 
 export type TraceSpanCategory =
   | 'runtime'

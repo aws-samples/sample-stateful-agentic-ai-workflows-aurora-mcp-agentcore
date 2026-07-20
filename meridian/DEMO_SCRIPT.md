@@ -100,7 +100,7 @@ python scripts/seed_data.py
 ```bash
 npm install -g @aws/agentcore
 cd meridian_agentcore/agentcore
-agentcore add memory --name meridian-session --strategies SEMANTIC --expiry 30
+agentcore add memory --name meridian_session --strategies SEMANTIC --expiry 30
 agentcore add gateway --name meridian-aurora --authorizer-type AWS_IAM
 agentcore deploy -y
 cd ../.. && python scripts/sync_agentcore_env.py --write
@@ -108,6 +108,18 @@ cd ../.. && python scripts/sync_agentcore_env.py --write
 
 Without deployed AgentCore Runtime/Gateway/Memory, Phase 4 surfaces an explicit
 "AgentCore platform not configured" message instead of pretending to run Production mode.
+
+**Required for the Phase 5 durability proof — start the checkpoint tunnel first**
+
+The "prove durable state" moment (Phase 5) needs Aurora-backed checkpoints, not
+`MemorySaver`. This cannot be stood up mid-talk. Before going live, follow
+`docs/OPERATIONS.md` §2 "Start the durable stack": run
+`scripts/start_checkpoint_tunnel.sh` in its own terminal (forwards local
+`15432` → Aurora `5432`), then launch the backend with
+`LANGGRAPH_CHECKPOINT_REQUIRED=true` and `LANGGRAPH_DEMO_INTERRUPT_AFTER=search`.
+Confirm `/health` reports `"checkpoint_backend": "PostgresSaver (Aurora · pooled)"`
+and `"checkpoint_durable": true`. If it says `MemorySaver`, the resume finale is
+not durable — fix it before the room sees Phase 5.
 
 ---
 

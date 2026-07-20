@@ -196,12 +196,18 @@ export function TracePanel({
               </div>
             ) : state.traceTab === 'memory' ? (
               <div className="mds-memory-mini">
-                {memoryFacts.map((fact) => (
-                  <div key={fact.key}>
-                    <span>{fact.key}</span>
-                    <b>{fact.value}</b>
+                {memoryFacts.length === 0 ? (
+                  <div className="mds-empty">
+                    Aurora-backed memory recalls at Phase 4+.
                   </div>
-                ))}
+                ) : (
+                  memoryFacts.map((fact) => (
+                    <div key={fact.key}>
+                      <span>{fact.key}</span>
+                      <b>{fact.value}</b>
+                    </div>
+                  ))
+                )}
               </div>
             ) : state.traceTab === 'rls' ? (
               <RlsProbeCard travelerId={state.travelerId} />

@@ -186,12 +186,25 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
               <span className="mds-breadcrumb-sep" aria-hidden="true">/</span>
               <span className="mds-breadcrumb-current">Recommendations</span>
             </nav>
-            {/* Live status: backend reachability plus currency context. */}
+            {/* Live status: backend reachability plus currency context. The
+                initial health check resolves in ~1-2s; show a neutral
+                "Connecting" state until then so the pill never flashes a red
+                "offline" on a projector during page load. */}
             <span
-              className={`mds-status-pill${state.backendStatus === 'online' ? ' is-live' : ' is-off'}`}
+              className={`mds-status-pill${
+                state.backendStatus === 'online'
+                  ? ' is-live'
+                  : state.backendStatus === 'checking'
+                    ? ' is-checking'
+                    : ' is-off'
+              }`}
             >
               <span className="mds-status-dot" aria-hidden="true" />
-              {state.backendStatus === 'online' ? 'Reasoning live' : 'Backend offline'}
+              {state.backendStatus === 'online'
+                ? 'Reasoning live'
+                : state.backendStatus === 'checking'
+                  ? 'Connecting…'
+                  : 'Backend offline'}
               <span className="mds-status-sep" aria-hidden="true">·</span>
               <span className="mds-status-unit">USD</span>
             </span>
@@ -301,7 +314,7 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
 
           <div className="mds-main-actions">
             {surfaceMode === 'proof' && (
-            <button type="button" onClick={() => state.replayLastPrompt()} disabled={!state.lastPrompt || state.isLoading}>
+            <button type="button" onClick={() => void state.replayLastPrompt()} disabled={!state.lastPrompt || state.isLoading}>
               Rerun across {state.phaseLabel}
             </button>
             )}

@@ -183,6 +183,12 @@ function ChatMessage({
     markLatestStreamComplete,
   ]);
   const hasInlineProducts = message.role === 'bot' && (message.products?.length ?? 0) > 0;
+  // Follow-up chips only belong on the latest bot turn: they act on the
+  // conversation's current state (e.g. resuming a paused workflow), so
+  // surfacing them on scrolled-back history would let a click act on stale
+  // context. Gate on productsRevealed below so they land after the reveal.
+  const followUps =
+    isLatestBot && message.role === 'bot' ? message.follow_ups ?? [] : [];
   // Each bot turn owns its product-card expansion state.
   const [expanded, setExpanded] = useState<boolean>(isLatestBot);
   // Collapse older results so history stays scannable.
@@ -224,8 +230,52 @@ function ChatMessage({
               )}
             </>
           )}
+          {followUps.length > 0 && productsRevealed && (
+            <FollowUpChips prompts={followUps} state={state} />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+// Clickable suggestions the backend returns with a turn. The Phase 5 workflow
+// emits "Resume workflow from checkpoint" here when a run pauses, so this chip
+// row is what makes the disruption -> recovery finale a single click instead
+// of the presenter typing an exact phrase on stage.
+function FollowUpChips({
+  prompts,
+  state,
+}: {
+  prompts: string[];
+  state: MeridianShowcaseState;
+}) {
+  return (
+    <div className="mds-followups" aria-label="Suggested next steps">
+      {prompts.map((prompt) => (
+        <button
+          key={prompt}
+          type="button"
+          className="mds-followup-chip"
+          onClick={() => void state.submitPrompt(prompt)}
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M5 12h14" />
+            <path d="m13 6 6 6-6 6" />
+          </svg>
+          {prompt}
+        </button>
+      ))}
     </div>
   );
 }

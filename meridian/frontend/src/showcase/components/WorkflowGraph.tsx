@@ -162,7 +162,23 @@ export function WorkflowGraph({ state }: { state: MeridianShowcaseState }) {
     nodeFacts,
   } = deriveActivation(state.traceSpans, state.isReplaying, state.replayIndex);
 
-  if (litNodes.size === 0) return null;
+  // The caller only mounts this at Phase 5 with spans present, so an empty
+  // node set means workflow spans arrived but none matched the expected node
+  // labels (e.g. a backend span-title change). Surface that explicitly rather
+  // than silently hiding the entire Phase 5 proof surface on stage.
+  if (litNodes.size === 0) {
+    return (
+      <div className="mds-wfgraph is-unmatched" role="status">
+        <div className="mds-wfgraph-head">
+          <span className="mds-wfgraph-title">LangGraph route</span>
+        </div>
+        <p className="mds-wfgraph-empty">
+          Workflow spans received, but node labels were not recognized. Check
+          that the backend emits “Workflow node: …” span titles.
+        </p>
+      </div>
+    );
+  }
 
   const branchIntents = [
     ['search', 'search'],

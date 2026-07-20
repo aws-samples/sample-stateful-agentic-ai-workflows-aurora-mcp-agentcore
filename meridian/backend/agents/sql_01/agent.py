@@ -22,7 +22,6 @@ AWS docs:
 """
 
 import os
-import json
 import uuid
 from datetime import datetime, timezone
 from typing import Callable, Any, Optional, List
@@ -46,13 +45,6 @@ class ActivityEntry(BaseModel):
     sql_query: Optional[str] = None
     execution_time_ms: Optional[int] = None
     agent_name: Optional[str] = None
-
-
-class AgentResponse(BaseModel):
-    """Response from agent processing."""
-    message: str
-    packages: Optional[List[dict]] = None
-    booking: Optional[dict] = None
 
 
 class SQLAgent:
@@ -401,43 +393,6 @@ Trip types in the catalog:
             "estimated_departure": departure_window.strftime("%B %d, %Y")
         }
     
-    async def process_message(
-        self,
-        message: str,
-        customer_id: str,
-        activity_callback: Optional[Callable[[ActivityEntry], Any]] = None
-    ) -> AgentResponse:
-        """
-        Process a customer message and return a response.
-        
-        Args:
-            message: The customer's message
-            customer_id: Identifier for the customer
-            activity_callback: Optional callback for activity updates
-            
-        Returns:
-            AgentResponse with message, optional packages, and optional booking
-        """
-        if activity_callback:
-            self.activity_callback = activity_callback
-        
-        self._log_activity(
-            activity_type="search",
-            title="Processing customer message",
-            details=f"Message: {message[:100]}..."
-        )
-        
-        # Run the agent
-        response = await self.agent.run(message)
-        
-        # Parse response for packages and bookings
-        # The agent's response is the final message
-        return AgentResponse(
-            message=str(response),
-            packages=None,  # Would be populated from tool results
-            booking=None  # Would be populated from booking processing
-        )
-
 
 def create_sql_agent(
     activity_callback: Optional[Callable[[ActivityEntry], Any]] = None

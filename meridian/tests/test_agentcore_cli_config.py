@@ -38,7 +38,7 @@ def test_parse_deployed_state_runtimes_gateways_memories(tmp_path: Path):
                         }
                     },
                     "memories": {
-                        "meridian-session": {"memoryId": "mem-abc", "name": "meridian-session"}
+                        "meridian_session": {"memoryId": "mem-abc", "name": "meridian_session"}
                     },
                 },
             }

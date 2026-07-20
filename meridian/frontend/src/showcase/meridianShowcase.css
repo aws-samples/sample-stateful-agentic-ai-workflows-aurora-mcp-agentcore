@@ -225,17 +225,11 @@
   background: var(--mds-fill-2);
   border-color: var(--mds-line);
 }
-.mds-root[data-theme="light"] .mds-phase-proof-panel,
 .mds-root[data-theme="light"] .mds-aurora-strip,
 .mds-root[data-theme="light"] .mds-contract-panel,
 .mds-root[data-theme="light"] .mds-workflow-state {
   background: var(--mds-card);
   border-color: var(--mds-line);
-}
-.mds-root[data-theme="light"] .mds-phase-proof-panel {
-  background: var(--mds-cyan-soft);
-  border-color: var(--mds-cyan-line);
-  box-shadow: none;
 }
 .mds-root[data-theme="light"] .mds-chat-action-chip,
 .mds-root[data-theme="light"] .mds-chat-starter-chip,
@@ -1004,6 +998,11 @@
   background: var(--mds-danger);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--mds-danger) 22%, transparent);
 }
+.mds-status-pill.is-checking .mds-status-dot {
+  background: var(--mds-amber);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mds-amber) 22%, transparent);
+  animation: mds-status-pulse 1.4s ease-in-out infinite;
+}
 .mds-status-sep {
   color: var(--mds-on-surface-faint);
 }
@@ -1017,6 +1016,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .mds-status-pill.is-live .mds-status-dot { animation: none; }
+  .mds-status-pill.is-checking .mds-status-dot { animation: none; }
 }
 
 .mds-fallback-badge {
@@ -1092,30 +1092,9 @@
   box-shadow: 0 0 28px rgba(49, 212, 228, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.28);
 }
 
-.mds-phase-proof-panel {
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-  border: 1px solid rgba(49, 212, 228, 0.22);
-  border-radius: 14px;
-  background: linear-gradient(180deg, rgba(49, 212, 228, 0.08), rgba(7, 14, 22, 0.58));
-}
-
-.mds-phase-proof-panel.is-collapsed,
 .mds-aurora-strip.is-collapsed {
   gap: 0;
   padding: 10px 12px;
-}
-
-.mds-phase-proof-panel-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.mds-phase-proof-panel-head div {
-  min-width: 0;
 }
 
 .mds-proof-toggle {
@@ -1137,7 +1116,6 @@
   transition: transform 180ms ease;
 }
 
-.mds-phase-proof-panel.is-collapsed .mds-proof-toggle > svg,
 .mds-aurora-strip.is-collapsed .mds-proof-toggle > svg {
   transform: rotate(-90deg);
 }
@@ -1148,8 +1126,7 @@
   gap: 2px;
 }
 
-.mds-proof-toggle em,
-.mds-phase-proof-panel-head span {
+.mds-proof-toggle em {
   display: block;
   color: var(--mds-cyan);
   font-size: calc(11px * var(--mds-fs));
@@ -1158,8 +1135,7 @@
   text-transform: uppercase;
 }
 
-.mds-proof-toggle strong,
-.mds-phase-proof-panel-head strong {
+.mds-proof-toggle strong {
   display: block;
   margin-top: 4px;
   color: var(--mds-on-surface);
@@ -1176,7 +1152,6 @@
   line-height: 1.28;
 }
 
-.mds-phase-proof-panel.is-collapsed .mds-proof-toggle strong,
 .mds-aurora-strip.is-collapsed .mds-proof-toggle strong {
   overflow: hidden;
   color: var(--mds-on-surface-soft);
@@ -1188,64 +1163,6 @@
 
 .mds-aurora-strip.is-collapsed .mds-proof-toggle small {
   display: none;
-}
-
-.mds-phase-proof-panel-head code {
-  max-width: 42%;
-  padding: 5px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: var(--mds-on-surface-soft);
-  background: rgba(0, 0, 0, 0.16);
-  font-family: var(--mds-font-mono);
-  font-size: calc(10.5px * var(--mds-fs));
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.mds-phase-proof-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 9px;
-}
-
-.mds-phase-proof-cell {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
-  gap: 9px;
-  align-items: start;
-  padding: 11px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.045);
-}
-
-.mds-proof-icon {
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  color: var(--mds-cyan);
-  background: rgba(49, 212, 228, 0.11);
-}
-
-.mds-phase-proof-cell span:not(.mds-proof-icon) {
-  display: block;
-  color: var(--mds-on-surface-soft);
-  font-size: calc(10.5px * var(--mds-fs));
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.mds-phase-proof-cell b {
-  display: block;
-  margin-top: 5px;
-  color: var(--mds-on-surface);
-  font-size: calc(12.5px * var(--mds-fs));
-  font-weight: 650;
-  line-height: 1.38;
 }
 
 .mds-aurora-strip {
@@ -1639,6 +1556,16 @@
     transform: none;
   }
 
+  .mds-followup-chip,
+  .mds-followup-chip svg {
+    transition: none;
+  }
+
+  .mds-followup-chip:hover,
+  .mds-followup-chip:hover svg {
+    transform: none;
+  }
+
   .mds-current-trip-card.is-running .mds-current-trip-topline > b svg {
     animation: none;
   }
@@ -2006,6 +1933,55 @@
 
 .mds-msg-result-chip-text span {
   color: rgba(231, 250, 255, 0.78);
+}
+
+/* Follow-up chips: the backend's suggested next steps for a turn. The Phase 5
+   "Resume workflow from checkpoint" suggestion lands here, so these read as
+   clear call-to-action affordances rather than passive result summaries. */
+.mds-followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mds-followup-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px 7px 11px;
+  border: 1px solid var(--mds-cyan-line);
+  border-radius: 999px;
+  color: rgba(231, 250, 255, 0.92);
+  background: var(--mds-cyan-soft);
+  font-size: calc(12.5px * var(--mds-fs));
+  font-weight: 560;
+  letter-spacing: 0.005em;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.mds-followup-chip svg {
+  color: var(--mds-cyan);
+  transition: transform 180ms ease;
+}
+
+.mds-followup-chip:hover,
+.mds-followup-chip:focus-visible {
+  border-color: rgba(49, 212, 228, 0.7);
+  background: rgba(20, 56, 68, 0.9);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.mds-followup-chip:hover svg {
+  transform: translateX(3px);
+}
+
+.mds-root[data-theme="light"] .mds-followup-chip {
+  color: var(--mds-on-surface);
+  background: var(--mds-cyan-soft);
+  border-color: var(--mds-cyan-line);
 }
 
 .mds-msg-result-chip.is-active .mds-msg-result-chip-text span {
@@ -2880,6 +2856,21 @@
 
 .mds-trip-visual-coast {
   background: linear-gradient(180deg, #5e9bb8 0 42%, #d7bd82 43% 55%, #1e5a64 56% 100%);
+}
+
+/* City / mountain / landscape have no curated photo — these gradients are the
+   graceful fallback when a live image_url is slow or blocked on venue wifi, so
+   a Tokyo or Paris card reads as itself rather than an unrelated vineyard. */
+.mds-trip-visual-city {
+  background: linear-gradient(165deg, #3a4a63 0 38%, #c98d6b 39% 52%, #1c2635 53% 100%);
+}
+
+.mds-trip-visual-mountain {
+  background: linear-gradient(180deg, #7fa6c4 0 40%, #d7d2c4 41% 54%, #37505a 55% 100%);
+}
+
+.mds-trip-visual-landscape {
+  background: linear-gradient(180deg, #6f9fc0 0 32%, #c7b277 33% 48%, #425f40 49% 100%);
 }
 
 .mds-trip-sun,
@@ -4616,10 +4607,6 @@
     grid-template-columns: 190px minmax(0, 1fr);
   }
 
-  .mds-phase-proof-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .mds-aurora-strip-items {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -4703,15 +4690,6 @@
     width: 100%;
   }
 
-  .mds-phase-proof-panel-head {
-    display: grid;
-  }
-
-  .mds-phase-proof-panel-head code {
-    max-width: none;
-  }
-
-  .mds-phase-proof-grid,
   .mds-aurora-strip-items,
   .mds-workflow-kv {
     grid-template-columns: 1fr;
@@ -5506,6 +5484,16 @@
     linear-gradient(180deg, color-mix(in srgb, var(--mds-cyan) 7%, transparent), transparent 46%),
     var(--mds-fill-2);
   border: 1px solid var(--mds-line);
+}
+.mds-wfgraph.is-unmatched {
+  border-color: var(--mds-amber);
+  background: color-mix(in srgb, var(--mds-amber) 8%, var(--mds-fill-2));
+}
+.mds-wfgraph-empty {
+  margin: 2px 0 0;
+  font-size: calc(12px * var(--mds-fs));
+  line-height: 1.4;
+  color: var(--mds-on-surface-soft);
 }
 .mds-wfgraph-head {
   display: flex;

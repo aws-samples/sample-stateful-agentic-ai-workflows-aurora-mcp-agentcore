@@ -24,7 +24,7 @@ MCP server (awslabs):
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Callable, Any, Optional, List
+from typing import Callable, Any, Optional
 
 from strands import Agent
 from strands.models import BedrockModel
@@ -44,13 +44,6 @@ class ActivityEntry(BaseModel):
     sql_query: Optional[str] = None
     execution_time_ms: Optional[int] = None
     agent_name: Optional[str] = None
-
-
-class AgentResponse(BaseModel):
-    """Response from agent processing."""
-    message: str
-    packages: Optional[List[dict]] = None
-    booking: Optional[dict] = None
 
 
 class MCPAgent:
@@ -207,54 +200,6 @@ Trip types:
             return result
         
         return wrapped
-    
-    async def process_message(
-        self,
-        message: str,
-        customer_id: str,
-        activity_callback: Optional[Callable[[ActivityEntry], Any]] = None
-    ) -> AgentResponse:
-        """
-        Process a customer message and return a response.
-        
-        Args:
-            message: The customer's message
-            customer_id: Identifier for the customer
-            activity_callback: Optional callback for activity updates
-            
-        Returns:
-            AgentResponse with message, optional packages, and optional booking
-        """
-        if activity_callback:
-            self.activity_callback = activity_callback
-        
-        # Initialize agent if needed
-        await self._initialize_agent()
-        
-        self._log_activity(
-            activity_type="mcp",
-            title="Processing customer message via MCP",
-            details=f"Message: {message[:100]}..."
-        )
-        
-        start_time = datetime.now(timezone.utc)
-        
-        # Run the agent
-        response = await self.agent.run(message)
-        
-        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-        
-        self._log_activity(
-            activity_type="mcp",
-            title="Agent response generated",
-            execution_time_ms=execution_time
-        )
-        
-        return AgentResponse(
-            message=str(response),
-            packages=None,
-            booking=None
-        )
     
     async def close(self):
         """Close MCP client connection."""

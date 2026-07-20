@@ -175,7 +175,7 @@ curl -s http://localhost:8000/api/memory/trv_meridian_demo | jq . # Alex Morgan 
 # Phase 4 smoke — exercises Bedrock → AgentCore Gateway → Aurora end to end:
 curl -s -X POST http://localhost:8000/api/chat \
   -H "Content-Type: application/json" \
-  -d '{"phase":4,"message":"A slow week somewhere we can drink good wine","traveler_id":"trv_meridian_demo"}' \
+  -d '{"phase":4,"message":"A slow week somewhere we can drink good wine","customer_id":"trv_meridian_demo"}' \
   | jq '.message, .conversation_id, (.products | length)'
 ```
 

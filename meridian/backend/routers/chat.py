@@ -23,7 +23,6 @@ AWS docs (by phase):
     https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html
 """
 
-import os
 import re
 import uuid
 from datetime import datetime, timezone
@@ -44,7 +43,7 @@ from backend.search_utils import (
     build_search_sql,
     results_to_packages,
 )
-from backend.catalog_compat import row_to_api_product, rows_to_api_products
+from backend.catalog_compat import row_to_api_product
 
 # MCP clients — Phase 2 demos two distinct MCP servers side-by-side:
 #   1. awslabs.postgres-mcp-server (generic SQL transport, public AWS server)
@@ -2538,8 +2537,6 @@ async def process_order(request: OrderRequest) -> OrderResponse:
 
     No payment is authorized or captured.
     """
-    import asyncio
-
     activities = []
     start_time = datetime.now(timezone.utc)
 
@@ -2566,9 +2563,6 @@ async def process_order(request: OrderRequest) -> OrderResponse:
             agent_name=agent_name,
             agent_file=agent_file
         ))
-
-        # Simulate processing time
-        await asyncio.sleep(0.3)
 
         sql = """
             SELECT package_id, name, operator, price_per_person, description,
@@ -2614,8 +2608,6 @@ async def process_order(request: OrderRequest) -> OrderResponse:
             agent_file=agent_file
         ))
 
-        await asyncio.sleep(0.2)
-
         availability = product.get("availability") or {}
         requested_duration = request.size or (
             (product.get("durations") or [None])[0]
@@ -2649,8 +2641,6 @@ async def process_order(request: OrderRequest) -> OrderResponse:
             agent_name=agent_name,
             agent_file=agent_file
         ))
-
-        await asyncio.sleep(0.4)
 
         # The package price remains an estimate until a traveler confirms.
         subtotal = pkg['price'] * request.quantity
