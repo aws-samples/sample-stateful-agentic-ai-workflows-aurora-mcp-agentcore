@@ -1,31 +1,44 @@
 import { useState } from 'react';
-import { AlertTriangle, ArrowRight } from 'lucide-react';
+import {
+  Briefcase,
+  Compass,
+  Mail,
+  Moon,
+  Settings2,
+  Sparkles,
+  Sun,
+  UserRound,
+  X,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { AuroraEvidenceStrip } from './components/AuroraEvidenceStrip';
 import { ChatComposer } from './components/ChatComposer';
 import { ChatTranscript } from './components/ChatTranscript';
+import { ComparisonDialog } from './components/ComparisonDialog';
+import { JourneyPanel } from './components/JourneyPanel';
 import { MemoryDrawer } from './components/MemoryDrawer';
 import { NavPanelDrawer } from './components/NavPanelDrawer';
 import type { NavPanelId } from './components/NavPanelDrawer';
 import { PhaseSelector } from './components/PhaseSelector';
-import { AuroraEvidenceStrip } from './components/AuroraEvidenceStrip';
+import { RecoveryWorkspace } from './components/RecoveryWorkspace';
 import { TracePanel } from './components/TracePanel';
 import { TravelerContextPanel } from './components/TravelerContextPanel';
 import { TripDetailDrawer } from './components/TripDetailDrawer';
-import { ComparisonDialog } from './components/ComparisonDialog';
-import { JourneyPanel } from './components/JourneyPanel';
 import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
 import { MERIDIAN_MARK_SRC } from '../lib/meridianBrand';
 import { ALEX_IMAGE_URL, ALEX_NAME } from './lib/personas';
-import { SHOWCASE_FINALE_PROMPT } from './lib/showcaseAdapters';
 
 type NavItemId = 'concierge' | 'trips' | 'discover' | 'profile' | 'preferences' | 'messages';
+type ShowcaseTheme = 'dark' | 'light';
+type DemoStep = 'ladder' | 'finale';
 
-const navItems: { id: NavItemId; label: string }[] = [
-  { id: 'concierge', label: 'Concierge' },
-  { id: 'trips', label: 'Trips' },
-  { id: 'discover', label: 'Discover' },
-  { id: 'profile', label: 'Profile' },
-  { id: 'preferences', label: 'Preferences' },
-  { id: 'messages', label: 'Messages' },
+const navItems: { id: NavItemId; label: string; icon: LucideIcon }[] = [
+  { id: 'concierge', label: 'Concierge', icon: Sparkles },
+  { id: 'trips', label: 'Trips', icon: Briefcase },
+  { id: 'discover', label: 'Discover', icon: Compass },
+  { id: 'profile', label: 'Profile', icon: UserRound },
+  { id: 'preferences', label: 'Preferences', icon: Settings2 },
+  { id: 'messages', label: 'Messages', icon: Mail },
 ];
 
 function BrandMark() {
@@ -34,91 +47,62 @@ function BrandMark() {
       className="mds-brand-mark"
       src={MERIDIAN_MARK_SRC}
       alt=""
-      width="32"
-      height="32"
+      width="36"
+      height="36"
       loading="eager"
       decoding="async"
     />
   );
 }
 
-function NavIcon({ id }: { id: NavItemId }) {
-  if (id === 'concierge') {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M8 9V6a4 4 0 1 1 8 0v3" />
-        <path d="M4 11h16l-1 9H5l-1-9Z" />
-        <path d="M9.5 13.5h5" />
-      </svg>
-    );
-  }
-  if (id === 'trips') {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="7" width="18" height="13" rx="2" />
-        <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-        <path d="M3 12h18" />
-      </svg>
-    );
-  }
-  if (id === 'discover') {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 21s7-4.4 7-10a7 7 0 1 0-14 0c0 5.6 7 10 7 10Z" />
-        <circle cx="12" cy="11" r="2.2" />
-      </svg>
-    );
-  }
-  if (id === 'profile') {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="8" r="3.3" />
-        <path d="M5 20a7 7 0 0 1 14 0" />
-      </svg>
-    );
-  }
-  if (id === 'preferences') {
-    return (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="3.1" />
-        <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.7l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.7-.3 1.6 1.6 0 0 0-1 1.5V22a2 2 0 1 1-4 0v-.2a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.7.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.7 1.6 1.6 0 0 0-1.5-1H2a2 2 0 1 1 0-4h.2a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.7l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.7.3h.1a1.6 1.6 0 0 0 1-1.5V2a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 1 1.5h.1a1.6 1.6 0 0 0 1.7-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.7v.1a1.6 1.6 0 0 0 1.5 1H22a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.5 1Z" />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 6h16v12H4z" />
-      <path d="m4 7 8 6 8-6" />
-    </svg>
-  );
+function greetingForHour(hour: number): string {
+  if (hour >= 5 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 17) return 'afternoon';
+  return 'evening';
 }
 
-export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) {
-  const [surfaceMode, setSurfaceMode] = useState<'experience' | 'proof'>('experience');
+export function DesktopMeridianApp({
+  state,
+  theme,
+  onToggleTheme,
+}: {
+  state: MeridianShowcaseState;
+  theme: ShowcaseTheme;
+  onToggleTheme: () => void;
+}) {
+  const [demoStep, setDemoStep] = useState<DemoStep>('ladder');
   const [memoryOpen, setMemoryOpen] = useState(false);
-  // Let presenters free right-rail space without losing traveler context.
-  const [forYouCollapsed, setForYouCollapsed] = useState(true);
-  // Same affordance for traces, useful when the traveler panel is the focus.
+  const [forYouCollapsed, setForYouCollapsed] = useState(false);
   const [activityCollapsed, setActivityCollapsed] = useState(false);
-  // Keep the trust proof available without crowding the chat surface.
-  const [auroraEvidenceCollapsed, setAuroraEvidenceCollapsed] = useState(true);
-  // Null means the default Concierge surface is active.
+  const [auroraEvidenceCollapsed, setAuroraEvidenceCollapsed] = useState(false);
   const [navPanel, setNavPanel] = useState<NavPanelId | null>(null);
+  const greetingPart = greetingForHour(new Date().getHours());
+  const isLadder = demoStep === 'ladder';
+  const showAudienceRuntimeStatus = state.backendStatus !== 'offline';
 
-  // Time-of-day greeting keeps the demo personal without storing state.
-  //   05:00–11:59 → morning
-  //   12:00–16:59 → afternoon
-  //   17:00–04:59 → evening
-  const greetingHour = new Date().getHours();
-  const greetingPart =
-    greetingHour >= 5 && greetingHour < 12
-      ? 'morning'
-      : greetingHour >= 12 && greetingHour < 17
-        ? 'afternoon'
-        : 'evening';
+  const openLadder = () => setDemoStep('ladder');
+  const openFinale = () => {
+    state.setSelectedPhase(5);
+    setDemoStep('finale');
+  };
+
+  const openNavItem = (id: NavItemId) => {
+    if (id === 'concierge') {
+      setNavPanel(null);
+      setMemoryOpen(false);
+      return;
+    }
+    if (id === 'preferences') {
+      setNavPanel(null);
+      setMemoryOpen(true);
+      return;
+    }
+    setMemoryOpen(false);
+    setNavPanel(id as NavPanelId);
+  };
 
   return (
-    <div className={`mds-desktop-app is-${surfaceMode}`}>
+    <div className={`mds-desktop-app is-projector ${isLadder ? 'is-proof is-ladder' : 'is-experience is-finale'}`}>
       <aside className="mds-desktop-sidebar">
         <div className="mds-brand">
           <BrandMark />
@@ -126,32 +110,21 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
         </div>
         <nav className="mds-nav-items" aria-label="Desktop navigation">
           {navItems.map((item) => {
-            // Keep sidebar selection aligned with drawers as well as pages.
             const isActive =
               (item.id === 'concierge' && navPanel === null && !memoryOpen) ||
               (item.id === 'preferences' && memoryOpen) ||
               navPanel === (item.id as NavPanelId);
+            const Icon = item.icon;
             return (
               <button
                 key={item.id}
                 type="button"
                 className={`mds-nav-item${isActive ? ' is-active' : ''}`}
                 aria-current={isActive ? 'page' : undefined}
-                onClick={() => {
-                  if (item.id === 'concierge') {
-                    setNavPanel(null);
-                    setMemoryOpen(false);
-                  } else if (item.id === 'preferences') {
-                    setNavPanel(null);
-                    setMemoryOpen(true);
-                  } else {
-                    setMemoryOpen(false);
-                    setNavPanel(item.id as NavPanelId);
-                  }
-                }}
+                onClick={() => openNavItem(item.id)}
               >
                 <span className="mds-nav-icon" aria-hidden="true">
-                  <NavIcon id={item.id} />
+                  <Icon size={18} strokeWidth={1.8} />
                 </span>
                 {item.label}
                 {item.id === 'messages' && state.messages.length > 0 && (
@@ -162,202 +135,211 @@ export function DesktopMeridianApp({ state }: { state: MeridianShowcaseState }) 
           })}
         </nav>
         <div className="mds-sidebar-spacer" />
-        <div className="mds-account-mini">
+        <button
+          type="button"
+          className="mds-account-mini"
+          onClick={() => openNavItem('profile')}
+          aria-label="Open Alex Morgan profile"
+        >
           <span className="mds-avatar is-photo" aria-hidden="true">
             <img src={ALEX_IMAGE_URL} alt={ALEX_NAME} loading="lazy" />
           </span>
           <div className="mds-account-copy">
             <strong>Alex Morgan</strong>
             <span className="mds-account-loyalty">
-              <span>Bonvoy Platinum</span>
-              <span>United 1K</span>
+              <span>Hotel Platinum</span>
+              <span>Airline Premier</span>
             </span>
           </div>
-        </div>
+          <span className="mds-account-chevron" aria-hidden="true">›</span>
+        </button>
       </aside>
 
       <main className="mds-desktop-main">
-        {/* One scroll surface keeps history and inline results moving together. */}
         <div className="mds-desktop-scroll">
           <div className="mds-top-actions">
-            {/* Breadcrumb orients the current surface. */}
-            <nav className="mds-breadcrumb" aria-label="Breadcrumb">
-              <span>Concierge</span>
-              <span className="mds-breadcrumb-sep" aria-hidden="true">/</span>
-              <span className="mds-breadcrumb-current">Recommendations</span>
-            </nav>
-            {/* Live status: backend reachability plus currency context. The
-                initial health check resolves in ~1-2s; show a neutral
-                "Connecting" state until then so the pill never flashes a red
-                "offline" on a projector during page load. */}
-            <span
-              className={`mds-status-pill${
-                state.backendStatus === 'online'
-                  ? ' is-live'
-                  : state.backendStatus === 'checking'
-                    ? ' is-checking'
-                    : ' is-off'
-              }`}
-            >
-              <span className="mds-status-dot" aria-hidden="true" />
-              {state.backendStatus === 'online'
-                ? 'Reasoning live'
-                : state.backendStatus === 'checking'
-                  ? 'Connecting…'
-                  : 'Backend offline'}
-              <span className="mds-status-sep" aria-hidden="true">·</span>
-              <span className="mds-status-unit">USD</span>
-            </span>
-          </div>
-          <div className="mds-surface-switch" role="tablist" aria-label="Showcase view">
-            <button type="button" role="tab" aria-selected={surfaceMode === 'experience'} className={surfaceMode === 'experience' ? 'is-active' : ''} onClick={() => setSurfaceMode('experience')}>Experience</button>
-            <button type="button" role="tab" aria-selected={surfaceMode === 'proof'} className={surfaceMode === 'proof' ? 'is-active' : ''} onClick={() => setSurfaceMode('proof')}>System proof</button>
-          </div>
-          <div className="mds-headline-row">
-            <div>
-              <h1>{`Good ${greetingPart}, Alex.`}</h1>
-              <p>Where would you like to go next?</p>
-            </div>
-            {surfaceMode === 'proof' && <PhaseSelector state={state} />}
-          </div>
-
-          {surfaceMode === 'proof' && <AuroraEvidenceStrip
-            state={state}
-            collapsed={auroraEvidenceCollapsed}
-            onToggleCollapsed={() => setAuroraEvidenceCollapsed((prev) => !prev)}
-          />}
-
-          {/* Phase callout names the new capability added at this rung. */}
-          {state.phaseHint && surfaceMode === 'experience' && (
-            <div className="mds-phase-hint" role="status" aria-live="polite">
-              <span className="mds-phase-hint-badge">{state.phaseHint.label}</span>
-              <span className="mds-phase-hint-copy">{state.phaseHint.adds}</span>
-              {state.phaseHint.tech && (
-                <span className="mds-phase-hint-tech">{state.phaseHint.tech}</span>
+            <div className="mds-top-status">
+              {showAudienceRuntimeStatus && (
+                <span
+                  className={`mds-status-pill${
+                    state.backendStatus === 'online'
+                      ? ' is-live'
+                      : ' is-checking'
+                  }`}
+                >
+                  <span className="mds-status-dot" aria-hidden="true" />
+                  {state.backendStatus === 'online' ? 'Reasoning live' : 'Connecting…'}
+                  <span className="mds-status-sep" aria-hidden="true">·</span>
+                  <span className="mds-status-unit">
+                    {state.backendStatus === 'online' ? 'USD' : 'Live data pending'}
+                  </span>
+                </span>
               )}
               <button
                 type="button"
-                className="mds-phase-hint-dismiss"
-                onClick={state.dismissPhaseHint}
-                aria-label="Dismiss"
+                className="mds-theme-toggle"
+                onClick={onToggleTheme}
+                aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                  <path d="M6 6l12 12M18 6L6 18" />
-                </svg>
+                {theme === 'dark'
+                  ? <Sun size={17} aria-hidden="true" />
+                  : <Moon size={17} aria-hidden="true" />}
               </button>
             </div>
-          )}
+          </div>
 
-          {surfaceMode === 'experience' && (
-            <section className="mds-disruption-alert" aria-label="Active flight disruption">
-              <span className="mds-disruption-icon" aria-hidden="true">
-                <AlertTriangle size={24} strokeWidth={2.3} />
-              </span>
-              <div className="mds-disruption-copy">
-                <b className="mds-disruption-status">Action needed</b>
-                <strong>JFK to Tokyo flight cancelled</strong>
-                <div className="mds-disruption-meta" aria-label="Cancelled flight details">
-                  <span>ANA NH 109</span>
-                  <span>Today · 10:40 AM</span>
-                  <span>JFK → HND</span>
-                  <b>Premier 1K</b>
-                </div>
-                <p>Check live alternatives and rebuild the itinerary around Alex's preferences.</p>
-              </div>
-              <button
-                type="button"
-                disabled={state.isLoading}
-                onClick={() => {
-                  state.setSelectedPhase(5);
-                  void state.applyPhaseExample(
-                    SHOWCASE_FINALE_PROMPT,
-                    true,
-                    5,
-                  );
-                }}
-              >
-                Start recovery workflow
-                <ArrowRight size={16} strokeWidth={2.4} />
-              </button>
-            </section>
-          )}
-
-          {state.error && (
-            <div className="mds-error-banner" role="alert">
-              <span className="mds-error-banner-copy">
-                Couldn't reach the concierge. Aurora + FastAPI may be reconnecting.
-              </span>
-              <span className="mds-error-banner-actions">
-                {state.lastPrompt && (
-                  <button
-                    type="button"
-                    className="mds-error-retry"
-                    onClick={() => {
-                      state.clearError();
-                      void state.replayLastPrompt();
-                    }}
-                    disabled={state.isLoading}
-                  >
-                    Retry
-                  </button>
-                )}
-                <button type="button" className="mds-error-dismiss" onClick={state.clearError}>
-                  Dismiss
-                </button>
-              </span>
-            </div>
-          )}
-
-          <ChatTranscript state={state} proofMode={surfaceMode === 'proof'} />
-
-          {/* Product cards stay attached to the bot turn that produced them. */}
-
-          <div className="mds-main-actions">
-            {surfaceMode === 'proof' && (
-            <button type="button" onClick={() => void state.replayLastPrompt()} disabled={!state.lastPrompt || state.isLoading}>
-              Rerun across {state.phaseLabel}
-            </button>
-            )}
-            <button type="button" onClick={() => setMemoryOpen(true)}>
-              Inspect memory
-            </button>
+          <nav className="mds-demo-sequence" aria-label="Chalk-talk sequence">
             <button
               type="button"
-              onClick={() => state.clearChat()}
-              disabled={state.isLoading || (state.messages.length === 0 && state.traceSpans.length === 0)}
+              className={isLadder ? 'is-active' : ''}
+              aria-current={isLadder ? 'step' : undefined}
+              onClick={openLadder}
             >
-              Clear chat
+              <span>1</span>
+              Capability ladder
             </button>
-          </div>
+            <i aria-hidden="true" />
+            <button
+              type="button"
+              className={!isLadder ? 'is-active' : ''}
+              aria-current={!isLadder ? 'step' : undefined}
+              onClick={openFinale}
+            >
+              <span>2</span>
+              Stateful Recovery finale
+            </button>
+          </nav>
+
+          {isLadder ? (
+            <>
+              <div className="mds-headline-row mds-ladder-headline">
+                <div>
+                  <h1>{`Good ${greetingPart}, Alex.`}</h1>
+                  <p>Capability ladder · SQL → MCP → Retrieval → Production → Durable workflow</p>
+                </div>
+                <PhaseSelector state={state} />
+              </div>
+
+              <AuroraEvidenceStrip
+                state={state}
+                collapsed={auroraEvidenceCollapsed}
+                onToggleCollapsed={() => setAuroraEvidenceCollapsed((prev) => !prev)}
+              />
+
+              {state.phaseHint && (
+                <div className="mds-phase-hint" role="status" aria-live="polite">
+                  <span className="mds-phase-hint-badge">{state.phaseHint.label}</span>
+                  <span className="mds-phase-hint-copy">{state.phaseHint.adds}</span>
+                  {state.phaseHint.tech && (
+                    <span className="mds-phase-hint-tech">{state.phaseHint.tech}</span>
+                  )}
+                  <button
+                    type="button"
+                    className="mds-phase-hint-dismiss"
+                    onClick={state.dismissPhaseHint}
+                    aria-label="Dismiss"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+
+              {state.error && (
+                <div className="mds-error-banner" role="alert">
+                  <span className="mds-error-banner-copy">
+                    Meridian could not reach the live concierge.
+                  </span>
+                  <span className="mds-error-banner-actions">
+                    {state.lastPrompt && (
+                      <button
+                        type="button"
+                        className="mds-error-retry"
+                        onClick={() => {
+                          state.clearError();
+                          void state.replayLastPrompt();
+                        }}
+                        disabled={state.isLoading}
+                      >
+                        Retry
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="mds-error-dismiss"
+                      onClick={state.clearError}
+                    >
+                      Dismiss
+                    </button>
+                  </span>
+                </div>
+              )}
+
+              <ChatTranscript state={state} proofMode />
+
+              <div className="mds-main-actions">
+                <button
+                  type="button"
+                  onClick={() => void state.replayLastPrompt()}
+                  disabled={!state.lastPrompt || state.isLoading}
+                >
+                  Rerun across {state.phaseLabel}
+                </button>
+                <button type="button" onClick={() => setMemoryOpen(true)}>
+                  Inspect memory
+                </button>
+                <button
+                  type="button"
+                  onClick={state.clearChat}
+                  disabled={state.isLoading || (state.messages.length === 0 && state.traceSpans.length === 0)}
+                >
+                  Clear chat
+                </button>
+              </div>
+            </>
+          ) : (
+            <RecoveryWorkspace
+              state={state}
+              greetingPart={greetingPart}
+              onOpenProof={openLadder}
+            />
+          )}
         </div>
 
-        {/* Sticky composer stays reachable while history scrolls. */}
-        <div className="mds-desktop-dock">
-          <ChatComposer state={state} proofMode={surfaceMode === 'proof'} />
-        </div>
+        {isLadder && (
+          <div className="mds-desktop-dock">
+            <ChatComposer state={state} proofMode />
+          </div>
+        )}
       </main>
 
       <aside className="mds-desktop-right">
-        {surfaceMode === 'experience' ? <JourneyPanel state={state} /> : <>
-        <TravelerContextPanel
-          state={state}
-          onOpenMemory={() => setMemoryOpen(true)}
-          collapsed={forYouCollapsed}
-          onToggleCollapsed={() => setForYouCollapsed((prev) => !prev)}
-        />
-        <TracePanel
-          state={state}
-          collapsed={activityCollapsed}
-          onToggleCollapsed={() => setActivityCollapsed((prev) => !prev)}
-        />
-        </>}
+        {isLadder ? (
+          <>
+            <TravelerContextPanel
+              state={state}
+              onOpenMemory={() => setMemoryOpen(true)}
+              collapsed={forYouCollapsed}
+              onToggleCollapsed={() => setForYouCollapsed((prev) => !prev)}
+            />
+            <TracePanel
+              state={state}
+              collapsed={activityCollapsed}
+              onToggleCollapsed={() => setActivityCollapsed((prev) => !prev)}
+            />
+          </>
+        ) : (
+          <JourneyPanel state={state} onOpenProof={openLadder} />
+        )}
       </aside>
 
       <TripDetailDrawer state={state} />
       <ComparisonDialog state={state} />
       <MemoryDrawer state={state} open={memoryOpen} onClose={() => setMemoryOpen(false)} />
       <NavPanelDrawer state={state} panel={navPanel} onClose={() => setNavPanel(null)} />
-      {state.workspaceNotice && <div className="mds-toast" role="status">{state.workspaceNotice}</div>}
+      {state.workspaceNotice && (
+        <div className="mds-toast" role="status">{state.workspaceNotice}</div>
+      )}
     </div>
   );
 }

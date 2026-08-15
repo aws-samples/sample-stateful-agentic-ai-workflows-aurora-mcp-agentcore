@@ -55,8 +55,8 @@ def test_classify_routes_memory_query() -> None:
     assert _classify_intent("Do you remember our last trip?") == "memory_recall"
     assert (
         _classify_intent(
-            "Using what we decided about my October Tokyo trip last time, "
-            "what should I do next?"
+            "Recall my October Tokyo plan and use my saved preferences to "
+            "recommend the next step."
         )
         == "memory_recall"
     )
@@ -76,7 +76,10 @@ def _build_workflow() -> OrchestrationAgent:
     async def fake_search(q: str, limit: int = 5) -> Tuple[List[Any], List[Any]]:
         return ([{"package_id": "pkg-a", "name": "Kyoto cultural"}], [])
 
-    async def fake_avail(q: str) -> Tuple[List[Any], List[Any], str]:
+    async def fake_avail(
+        q: str,
+        package_id: str | None = None,
+    ) -> Tuple[List[Any], List[Any], str]:
         return ([{"package_id": "pkg-a", "date": "2026-10-12"}], [], "")
 
     return OrchestrationAgent(search_fn=fake_search, availability_fn=fake_avail)
@@ -210,9 +213,19 @@ def test_workflow_can_pause_and_resume_same_thread(
             calls["search"] += 1
             return ([{"package_id": "pkg-a", "name": "Tokyo replan"}], [])
 
-        async def fake_avail(q: str):
+        async def fake_avail(q: str, package_id: str | None = None):
             calls["availability"] += 1
-            return ([{"package_id": "pkg-a", "date": "2026-10-12"}], [], "")
+            return (
+                [
+                    {
+                        "product_id": package_id or "pkg-a",
+                        "available_sizes": ["7 nights"],
+                        "availability": {"7 nights": 4},
+                    }
+                ],
+                [],
+                "",
+            )
 
         wf = OrchestrationAgent(
             search_fn=fake_search,
@@ -235,6 +248,138 @@ def test_workflow_can_pause_and_resume_same_thread(
 
     assert paused["workflow_status"] == "paused"
     assert resumed["workflow_status"] == "resumed"
+    assert resumed["resumed_after_restart"] is False
     assert calls == {"search": 1, "availability": 1}
     titles = [a.get("title", "") for a in resumed.get("activities", [])]
     assert "Workflow resumed from checkpoint" in titles
+
+
+def test_canonical_recovery_finale_pauses_without_hidden_env_toggle() -> None:
+    async def fake_search(q: str, limit: int = 5):
+        return ([{"product_id": "tokyo-1", "name": "Tokyo option"}], [])
+
+    async def fake_avail(q: str, package_id: str | None = None):
+        return ([], [], "")
+
+    workflow = OrchestrationAgent(
+        search_fn=fake_search,
+        availability_fn=fake_avail,
+    )
+    result = asyncio.run(
+        workflow.run(
+            "My JFK-to-Tokyo flight was cancelled. Rework the trip, then "
+            "check duration availability for the best three options.",
+            traveler_id="t1",
+            conversation_id="c-canonical-recovery",
+        )
+    )
+
+    assert result["workflow_status"] == "paused"
+    assert result["packages"][0]["product_id"] == "tokyo-1"
+    assert "Resume thread c-canonical-recovery" in result["response"]
+
+
+def test_resume_detects_changed_worker_instance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LANGGRAPH_DEMO_INTERRUPT_AFTER", "search")
+
+    async def scenario() -> dict:
+        async def fake_search(q: str, limit: int = 5):
+            return ([{"product_id": "tokyo-1", "name": "Tokyo option"}], [])
+
+        async def fake_avail(q: str, package_id: str | None = None):
+            return (
+                [
+                    {
+                        "product_id": package_id or "tokyo-1",
+                        "available_sizes": ["3 nights"],
+                        "availability": {"3 nights": 2},
+                    }
+                ],
+                [],
+                "",
+            )
+
+        workflow = OrchestrationAgent(
+            search_fn=fake_search,
+            availability_fn=fake_avail,
+        )
+        await workflow.run(
+            "Plan a Tokyo trip and check duration availability",
+            traveler_id="t1",
+            conversation_id="c-restarted",
+        )
+        monkeypatch.setattr(
+            workflow_mod,
+            "WORKER_INSTANCE_ID",
+            "worker-after-restart",
+        )
+        return await workflow.run(
+            "Resume workflow from checkpoint",
+            traveler_id="t1",
+            conversation_id="c-restarted",
+            resume=True,
+        )
+
+    resumed = asyncio.run(scenario())
+
+    assert resumed["workflow_status"] == "resumed"
+    assert resumed["resumed_after_restart"] is True
+    resumed_activity = next(
+        activity
+        for activity in resumed["activities"]
+        if activity["title"] == "Workflow resumed from checkpoint"
+    )
+    fields = resumed_activity["telemetry"]["fields"]
+    assert {"label": "worker_restart", "value": "observed"} in fields
+
+
+def test_plan_fans_out_availability_and_merges_inventory() -> None:
+    checked: List[str] = []
+
+    async def fake_search(q: str, limit: int = 5):
+        return (
+            [
+                {"product_id": f"pkg-{idx}", "name": f"Tokyo option {idx}"}
+                for idx in range(1, 5)
+            ],
+            [],
+        )
+
+    async def fake_avail(q: str, package_id: str | None = None):
+        assert package_id is not None
+        checked.append(package_id)
+        return (
+            [
+                {
+                    "product_id": package_id,
+                    "available_sizes": ["7 nights"],
+                    "availability": {"7 nights": 3},
+                }
+            ],
+            [],
+            "",
+        )
+
+    workflow = OrchestrationAgent(
+        search_fn=fake_search,
+        availability_fn=fake_avail,
+    )
+    result = asyncio.run(
+        workflow.run(
+            "Plan a Tokyo trip and check duration availability",
+            traveler_id="t1",
+            conversation_id="c-fanout",
+        )
+    )
+
+    assert checked == ["pkg-1", "pkg-2", "pkg-3"]
+    assert result["availability_checks"] == 3
+    assert len(result["packages"]) == 4
+    assert result["packages"][0]["availability"] == {"7 nights": 3}
+    assert "availability" not in result["packages"][3]
+    titles = [a.get("title", "") for a in result.get("activities", [])]
+    assert "Workflow node: availability fan-out" in titles
+    details = [a.get("details", "") for a in result.get("activities", [])]
+    assert any("duration inventory" in detail for detail in details)

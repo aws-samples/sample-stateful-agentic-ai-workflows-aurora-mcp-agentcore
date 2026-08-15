@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
+import { Navigation2, RefreshCw, Send } from 'lucide-react';
 import type { ChatFilters } from '../hooks/useMeridianShowcase';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import { showcasePromptLabel } from '../lib/showcaseAdapters';
 
 type ChipKey = 'travelers' | 'dates' | 'spa' | 'flights';
 
@@ -9,10 +11,12 @@ export function ChatComposer({
   state,
   compact = false,
   proofMode = false,
+  recoveryMode = false,
 }: {
   state: MeridianShowcaseState;
   compact?: boolean;
   proofMode?: boolean;
+  recoveryMode?: boolean;
 }) {
   const [openChip, setOpenChip] = useState<ChipKey | null>(null);
 
@@ -24,7 +28,7 @@ export function ChatComposer({
   // Experience stays quiet with two known-good prompts. System proof keeps the
   // third stretch prompt because exposing each phase's limit is the teaching
   // mechanism for the five-rung ladder.
-  const queryStarters = compact
+  const queryStarters = compact || recoveryMode
     ? []
     : proofMode
       ? state.selectedPhase <= 3
@@ -40,7 +44,7 @@ export function ChatComposer({
   const toggleChip = (key: ChipKey) => setOpenChip((prev) => (prev === key ? null : key));
 
   return (
-    <div className={`mds-chat-composer-wrap${compact ? ' is-compact' : ''}${proofMode ? ' is-proof' : ''}`}>
+    <div className={`mds-chat-composer-wrap${compact ? ' is-compact' : ''}${proofMode ? ' is-proof' : ''}${recoveryMode ? ' is-recovery' : ''}`}>
       {queryStarters.length > 0 && (
         <div
           className={`mds-chat-query-starters has-${queryStarters.length}`}
@@ -59,13 +63,14 @@ export function ChatComposer({
                 className={`mds-chat-starter-chip${isStretch ? ' is-stretch' : ''}`}
                 disabled={state.isLoading}
                 onClick={() => void state.applyPhaseExample(prompt, true)}
+                aria-label={prompt}
                 title={
                   isStretch
-                    ? `Stretch query — exposes ${state.phaseLabel}'s limits`
+                    ? `Stretch query — exposes ${state.phaseLabel}'s limits: ${prompt}`
                     : prompt
                 }
               >
-                {prompt}
+                <span>{showcasePromptLabel(prompt)}</span>
               </button>
             );
           })}
@@ -81,7 +86,11 @@ export function ChatComposer({
         <input
           value={state.currentPrompt}
           onChange={(event) => state.setCurrentPrompt(event.target.value)}
-          placeholder={'Ask Meridian anything — "a calm wine trip in October, under $2,500"…'}
+          placeholder={
+            recoveryMode
+              ? 'Ask Meridian anything — find the fastest way to Tokyo tomorrow…'
+              : 'Ask Meridian anything — "a calm wine trip in October, under $2,500"…'
+          }
           disabled={state.isLoading}
           aria-label="Ask Meridian anything"
         />
@@ -94,9 +103,7 @@ export function ChatComposer({
           {state.isLoading ? (
             <span className="mds-chat-send-spinner" aria-hidden="true" />
           ) : (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 19V5M6 11l6-6 6 6" />
-            </svg>
+            <Send size={19} strokeWidth={2.1} aria-hidden="true" />
           )}
         </button>
       </form>
@@ -132,8 +139,22 @@ export function ChatComposer({
             active={state.chatFilters.directFlights}
             disabled={state.isLoading}
             onToggle={() => updateFilters({ directFlights: !state.chatFilters.directFlights })}
-            icon={<PlaneIcon />}
+            icon={<Navigation2 size={16} />}
           />
+          {recoveryMode && (
+            <ToggleChip
+              label="Rebook nonstop"
+              activeLabel="Rebook nonstop"
+              active={Boolean(state.chatFilters.rebookNonstop)}
+              disabled={state.isLoading}
+              onToggle={() =>
+                updateFilters({
+                  rebookNonstop: !state.chatFilters.rebookNonstop,
+                })
+              }
+              icon={<RefreshCw size={16} />}
+            />
+          )}
           {hasAnyFilter(state.chatFilters) && (
             <button
               type="button"
@@ -154,7 +175,14 @@ export function ChatComposer({
 }
 
 function hasAnyFilter(f: ChatFilters): boolean {
-  return f.travelers > 0 || !!f.startDate || !!f.endDate || f.spa || f.directFlights;
+  return (
+    f.travelers > 0 ||
+    !!f.startDate ||
+    !!f.endDate ||
+    f.spa ||
+    f.directFlights ||
+    Boolean(f.rebookNonstop)
+  );
 }
 
 // ----------------------------- Travelers chip -----------------------------
@@ -483,13 +511,6 @@ function SpaIcon() {
   );
 }
 
-function PlaneIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2.5 1.5V22l4-1 4 1v-1.5L13 19v-5.5z" />
-    </svg>
-  );
-}
 
 function CloseIcon() {
   return (

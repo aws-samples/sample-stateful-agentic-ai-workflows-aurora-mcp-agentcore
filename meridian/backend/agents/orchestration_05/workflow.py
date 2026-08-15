@@ -74,6 +74,7 @@ POSTGRES_CHECKPOINT_TABLES = (
     "checkpoint_writes",
     "checkpoint_migrations",
 )
+WORKER_INSTANCE_ID = f"worker-{uuid.uuid4().hex[:8]}"
 
 
 def _utc_now() -> datetime:
@@ -356,11 +357,14 @@ class WorkflowState(TypedDict, total=False):
     query: str
     traveler_id: str
     conversation_id: str
+    worker_instance_id: str
     intent: str  # 'search' | 'availability' | 'memory_recall'
     packages: List[Any]
     response: str
     activities: List[Dict[str, Any]]
+    availability_checks: int
     workflow_status: str
+    resumed_after_restart: bool
 
 
 def _activity(
@@ -389,6 +393,20 @@ def _activity(
 
 def _classify_intent(query: str) -> str:
     q = query.lower()
+    # Explicit recall language wins over incidental planning words. For
+    # example, "Recall my October Tokyo plan..." is asking for memory even
+    # though "plan" also appears as a noun.
+    memory_signals = (
+        "recall ",
+        "remember",
+        "last time",
+        "previous",
+        "we discussed",
+        "you said",
+    )
+    if any(s in q for s in memory_signals):
+        return "memory_recall"
+
     # "plan" is the multi-step intent: prompts that ask for a trip AND its
     # open dates in one breath. It routes through TWO sequential worker
     # nodes (search → availability) before synthesis — the case where an
@@ -431,16 +449,22 @@ def _classify_intent(query: str) -> str:
     )
     if any(s in q for s in availability_signals):
         return "availability"
-    memory_signals = (
-        "remember",
-        "last time",
-        "previous",
-        "we discussed",
-        "you said",
-    )
-    if any(s in q for s in memory_signals):
-        return "memory_recall"
     return "search"
+
+
+def _package_to_dict(package: Any) -> Dict[str, Any]:
+    """Normalize API/domain models before LangGraph checkpoints serialize them."""
+    if isinstance(package, dict):
+        return dict(package)
+    if hasattr(package, "model_dump"):
+        return dict(package.model_dump(mode="json"))
+    if hasattr(package, "__dict__"):
+        return {
+            key: value
+            for key, value in vars(package).items()
+            if not key.startswith("_")
+        }
+    raise TypeError(f"Unsupported workflow package type: {type(package).__name__}")
 
 
 class OrchestrationAgent:
@@ -457,6 +481,7 @@ class OrchestrationAgent:
         self.memory_recall_fn = memory_recall_fn
         self.checkpointer = MemorySaver()
         self.checkpointer_kind = "MemorySaver (initializing)"
+        self.interrupt_after = ""
         self.graph = self._build_graph()
 
     @property
@@ -565,7 +590,7 @@ class OrchestrationAgent:
         builder.add_edge("availability", "synthesize")
         builder.add_edge("memory_recall", "synthesize")
         builder.add_edge("synthesize", END)
-        interrupt_after = os.getenv("LANGGRAPH_DEMO_INTERRUPT_AFTER", "").strip()
+        interrupt_after = self.interrupt_after
         allowed_interrupts = {
             "classify",
             "search",
@@ -584,6 +609,24 @@ class OrchestrationAgent:
             checkpointer=self.checkpointer,
             interrupt_after=[interrupt_after] if interrupt_after else None,
         )
+
+    @staticmethod
+    def _interrupt_after_for_query(query: str) -> str:
+        configured = os.getenv("LANGGRAPH_DEMO_INTERRUPT_AFTER", "").strip()
+        if configured:
+            return configured
+
+        # The canonical Stateful Recovery finale deliberately pauses after search so the
+        # audience sees a committed checkpoint before availability fan-out.
+        # Other Phase 5 branches continue in one request.
+        normalized = query.lower()
+        is_recovery_finale = (
+            "cancelled" in normalized
+            and "flight" in normalized
+            and "then check" in normalized
+            and "best three" in normalized
+        )
+        return "search" if is_recovery_finale else ""
 
     # ---------------------------------------------------------------- nodes
 
@@ -625,7 +668,11 @@ class OrchestrationAgent:
         step 1 of 2 — the conditional edge then routes to the availability node.
         """
         start = _utc_now()
-        packages, search_activities = await self.search_fn(state["query"], limit=5)
+        raw_packages, search_activities = await self.search_fn(
+            state["query"],
+            limit=5,
+        )
+        packages = [_package_to_dict(package) for package in raw_packages]
         elapsed = int((_utc_now() - start).total_seconds() * 1000)
         activities = list(state.get("activities", []))
         activities.append(
@@ -651,41 +698,129 @@ class OrchestrationAgent:
         return {"packages": packages, "activities": activities}
 
     async def _node_availability(self, state: WorkflowState) -> WorkflowState:
-        """Worker node: check departure availability (delegates to Package fn).
+        """Worker node: check duration inventory (delegates to Package fn).
 
         On the 'plan' path this runs AFTER search (step 2 of 2) and layers
         availability onto the prior trip results; for a standalone 'availability'
         intent it surfaces the availability rows directly. Checkpoints after return.
         """
         start = _utc_now()
-        avail_packages, sub_activities, _msg = await self.availability_fn(state["query"])
-        elapsed = int((_utc_now() - start).total_seconds() * 1000)
-        # In the multi-step "plan" path this node runs AFTER search, so we
-        # keep the richer search results (trip cards + similarity scores)
-        # as the user-facing set and treat availability as a layered-on
-        # step. For a standalone "availability" intent there are no prior
-        # search packages, so we surface the availability rows directly.
         is_plan = state.get("intent") == "plan"
-        prior = state.get("packages", []) or []
-        packages = prior if (is_plan and prior) else avail_packages
+        prior = [
+            _package_to_dict(package)
+            for package in (state.get("packages", []) or [])
+        ]
+
+        if is_plan and prior:
+            targets = [
+                package
+                for package in prior[:3]
+                if package.get("product_id") or package.get("package_id")
+            ]
+
+            async def check_target(
+                package: Dict[str, Any],
+            ) -> tuple[List[Any], List[Any], str]:
+                package_id = str(
+                    package.get("product_id")
+                    or package.get("package_id")
+                    or ""
+                )
+                return await self.availability_fn(
+                    state["query"],
+                    package_id=package_id,
+                )
+
+            target_results = (
+                await asyncio.gather(
+                    *(check_target(package) for package in targets)
+                )
+                if targets
+                else []
+            )
+            availability_by_id: Dict[str, Dict[str, Any]] = {}
+            sub_activities: List[Any] = []
+            for avail_packages, target_activities, _msg in target_results:
+                sub_activities.extend(target_activities)
+                for package in avail_packages:
+                    normalized = _package_to_dict(package)
+                    package_id = str(
+                        normalized.get("product_id")
+                        or normalized.get("package_id")
+                        or ""
+                    )
+                    if package_id:
+                        availability_by_id[package_id] = normalized
+
+            packages = []
+            for package in prior:
+                package_id = str(
+                    package.get("product_id")
+                    or package.get("package_id")
+                    or ""
+                )
+                availability = availability_by_id.get(package_id)
+                packages.append(
+                    {
+                        **package,
+                        **(
+                            {
+                                "available_sizes": availability.get(
+                                    "available_sizes"
+                                ),
+                                "availability": availability.get(
+                                    "availability"
+                                ),
+                            }
+                            if availability
+                            else {}
+                        ),
+                    }
+                )
+            availability_checks = len(target_results)
+            availability_rows = len(availability_by_id)
+        else:
+            raw_available, sub_activities, _msg = await self.availability_fn(
+                state["query"]
+            )
+            packages = [
+                _package_to_dict(package) for package in raw_available
+            ]
+            availability_checks = 1 if packages else 0
+            availability_rows = len(packages)
+
+        elapsed = int((_utc_now() - start).total_seconds() * 1000)
         activities = list(state.get("activities", []))
         activities.append(
             _activity(
                 "delegation",
-                "Workflow node: availability",
-                details=(
-                    f"Checked departures across {len(prior)} planned trips"
+                (
+                    "Workflow node: availability fan-out"
                     if is_plan and prior
-                    else f"{len(avail_packages)} availability rows"
+                    else "Workflow node: availability"
+                ),
+                details=(
+                    f"Checked duration inventory for {availability_checks} "
+                    "top-ranked trips in parallel"
+                    if is_plan and prior
+                    else f"{availability_rows} availability rows"
                 ),
                 execution_time_ms=elapsed,
                 telemetry={
                     "category": "orchestration",
-                    "component": "LangGraph → PackageAgent",
+                    "component": (
+                        "LangGraph → PackageAgent fan-out"
+                        if is_plan and prior
+                        else "LangGraph → PackageAgent"
+                    ),
                     "status": "ok",
                     "fields": [
                         {"label": "node", "value": "availability"},
-                        {"label": "rows", "value": str(len(avail_packages))},
+                        {
+                            "label": "checks",
+                            "value": str(availability_checks),
+                        },
+                        {"label": "rows", "value": str(availability_rows)},
                         {"label": "step", "value": "2 of 2" if is_plan else "1 of 1"},
                     ],
                 },
@@ -694,7 +829,11 @@ class OrchestrationAgent:
         for sa in sub_activities:
             activities.append(_coerce_activity(sa))
         activities.append(self._checkpoint_activity("availability", elapsed))
-        return {"packages": packages, "activities": activities}
+        return {
+            "packages": packages,
+            "activities": activities,
+            "availability_checks": availability_checks,
+        }
 
     async def _node_memory_recall(self, state: WorkflowState) -> WorkflowState:
         """Worker node: recall prior context (delegates to the Phase 4 memory fn).
@@ -746,6 +885,7 @@ class OrchestrationAgent:
         """
         packages = state.get("packages", []) or []
         intent = state.get("intent", "search")
+        availability_checks = state.get("availability_checks", 0)
         # Keep the durability clause true to the checkpointer that is actually
         # wired: PostgresSaver persists to Aurora, MemorySaver keeps state in
         # process. The trace's checkpoint spans already carry the exact store;
@@ -760,15 +900,15 @@ class OrchestrationAgent:
         if intent == "plan":
             response = (
                 f"Planned the extension: searched the catalog, then checked "
-                f"available duration options across {len(packages)} matching "
-                f"trips — {checkpoint_clause}."
+                f"live duration options for the top {availability_checks} "
+                f"choices — {checkpoint_clause}."
                 if packages
                 else "Ran the full plan graph (search → availability), but no "
                 "trips matched — try broadening the destination."
             )
         elif intent == "availability" and packages:
             response = (
-                f"Found {len(packages)} departure options matching your request."
+                f"Found duration inventory for {len(packages)} matching trips."
             )
         elif intent == "memory_recall":
             response = (
@@ -794,6 +934,10 @@ class OrchestrationAgent:
                     "fields": [
                         {"label": "intent", "value": intent},
                         {"label": "packages", "value": str(len(packages))},
+                        {
+                            "label": "availability_checks",
+                            "value": str(availability_checks),
+                        },
                     ],
                 },
             )
@@ -812,15 +956,18 @@ class OrchestrationAgent:
     ) -> WorkflowState:
         thread_id = conversation_id or f"phase5-{uuid.uuid4().hex[:8]}"
         config = {"configurable": {"thread_id": thread_id}}
+        self.interrupt_after = self._interrupt_after_for_query(query)
         initial: WorkflowState = {
             "query": query,
             "traveler_id": traveler_id,
             "conversation_id": thread_id,
+            "worker_instance_id": WORKER_INSTANCE_ID,
             "activities": [],
         }
         await self._ensure_checkpoint_backend()
 
         resumed_nodes: List[str] = []
+        resumed_after_restart = False
         if resume:
             prior = await self.graph.aget_state(config)
             resumed_nodes = list(prior.next)
@@ -828,6 +975,13 @@ class OrchestrationAgent:
                 raise RuntimeError(
                     f"No interrupted workflow can be resumed for thread_id={thread_id}."
                 )
+            prior_worker_instance = str(
+                (prior.values or {}).get("worker_instance_id") or ""
+            )
+            resumed_after_restart = bool(
+                prior_worker_instance
+                and prior_worker_instance != WORKER_INSTANCE_ID
+            )
             result = await self.graph.ainvoke(None, config=config)
         else:
             result = await self.graph.ainvoke(initial, config=config)
@@ -876,6 +1030,7 @@ class OrchestrationAgent:
             result["workflow_status"] = "paused"
         else:
             result["workflow_status"] = "resumed" if resume else "complete"
+            result["resumed_after_restart"] = resumed_after_restart
             if resume:
                 activities.append(
                     _activity(
@@ -883,7 +1038,8 @@ class OrchestrationAgent:
                         "Workflow resumed from checkpoint",
                         details=(
                             f"thread_id={thread_id} · resumed={', '.join(resumed_nodes)} "
-                            f"· store={self.checkpointer_kind}"
+                            f"· store={self.checkpointer_kind} · "
+                            f"worker_restart={'observed' if resumed_after_restart else 'not observed'}"
                         ),
                         telemetry={
                             "category": "orchestration",
@@ -905,6 +1061,14 @@ class OrchestrationAgent:
                                         "Aurora"
                                         if self._uses_postgres_saver
                                         else "in-process only"
+                                    ),
+                                },
+                                {
+                                    "label": "worker_restart",
+                                    "value": (
+                                        "observed"
+                                        if resumed_after_restart
+                                        else "not observed"
                                     ),
                                 },
                             ],

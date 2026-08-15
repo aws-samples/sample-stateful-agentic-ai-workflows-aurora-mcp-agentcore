@@ -52,7 +52,7 @@ const steps: JourneyStep[] = [
     desc: 'Where intent finally lands. Cohere Embed v4 + hybrid pgvector + tsvector + Cohere Rerank 3.5. Strands supervisor delegates to SearchAgent / PackageAgent. Memory recall remains out of scope — that gap motivates Production.',
     chips: ['pgvector HNSW', 'tsvector', 'Cohere v4', 'Cohere Rerank', 'Strands supervisor'],
     scale: '~5,000 trips/day · customer-facing natural language',
-    persona: 'Alex asks for a slow, romantic wine-country week. pgvector + Cohere Rerank surface Tuscany Wine & Wellness. Then Alex asks what was decided last time — Retrieval honestly says it has no prior-turn memory.',
+    persona: 'Alex asks for a quiet, romantic wine-country escape. pgvector + Cohere Rerank surface Tuscany Wine & Wellness. Then Alex asks to recall the October Tokyo plan — Retrieval honestly says it has no prior-turn memory.',
     skills: ['hybrid_search', 'availability', 'rerank'],
   },
   {
@@ -74,7 +74,7 @@ const steps: JourneyStep[] = [
     desc: 'LangGraph owns control flow when we want it inspectable, branchable, and resumable. The explicit StateGraph routes classify → search → availability → memory_recall → synthesize, while PostgresSaver externalizes execution state into Aurora. Domain-data nodes can keep using the connectionless Data API; durable checkpoints use pooled PostgreSQL connectivity.',
     chips: ['LangGraph', 'StateGraph', 'PostgresSaver', 'AgentCore'],
     scale: '~500,000 trips/day · multi-step workflows that span weeks',
-    persona: "Alex's JFK flight to Tokyo is cancelled mid-trip. The graph reworks the itinerary, then verifies which departures are still open — each dependent step lands in its own checkpointed node.",
+    persona: "Alex's JFK-to-Tokyo flight is cancelled. The graph reworks the itinerary, then checks duration availability for the best three options — each dependent step lands in its own checkpointed node.",
     skills: ['classify', 'search', 'availability', 'memory_recall', 'synthesize'],
   },
 ];

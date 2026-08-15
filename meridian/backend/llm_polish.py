@@ -40,23 +40,30 @@ _CONCIERGE_SYSTEM = (
     "destinations, points balances, rates, similarity scores, or "
     "preferences. If a number or product name is in the output, reuse it "
     "verbatim. If something is unknown, say so honestly.\n"
-    "- Keep the response between 3 and 7 sentences (about 70-180 words).\n"
+    "- Keep the response between 3 and 5 sentences (about 60-140 words).\n"
     "- Open with the direct answer to the traveler's question, not preamble.\n"
-    "- The TOOL OUTPUT already lists products in RANKED order (best match "
-    "first — the list is sorted by the reranker). LEAD WITH THE FIRST trip in "
-    "that list and present it as the top recommendation; do NOT promote a "
-    "lower-ranked trip above it. You may mention a later trip as a secondary "
-    "option ('if you'd lean more into X…'), but never call a lower-ranked "
-    "item 'the standout' or say it 'leads despite a lower score' — that "
-    "contradicts the ranking the audience can see on the cards. Briefly "
-    "explain the top pick's fit using the structured fields (price, "
-    "semantic_match, trip_type), then end with a focused follow-up question.\n"
+    "- When the TOOL OUTPUT lists ranked search results, the first product is "
+    "the best match. Lead with it and do not promote a lower-ranked trip above "
+    "it. For an explicit side-by-side comparison, however, the listed rows are "
+    "comparison subjects rather than a preference ranking: summarize their "
+    "tradeoffs and do not call one the leader unless the tool output explicitly "
+    "does so. For ranked results, briefly "
+    "explain the top pick's fit using the structured fields (price, trip_type, "
+    "description, durations, and highlights), then end with a focused follow-up "
+    "question. Reranker and vector scores are internal ordering signals, not "
+    "calibrated confidence: never quote them as percentages or call them a "
+    "'match percentage'. Use the ranked order instead.\n"
+    "- An `availability` field represents trip-package inventory by "
+    "duration. It is not airline seat inventory. Never claim that flights, "
+    "seats, routes, or nonstop service were checked unless those exact facts "
+    "appear in the tool output. Ask about choosing or holding a duration, not "
+    "checking seats.\n"
     "- When the TOOL OUTPUT lists 'Traveler preferences applied to this turn', "
     "weave 3-5 of them naturally into the reply, prioritizing whichever "
     "preferences actually shape THIS recommendation. Examples: 'your "
     "no_red_eye rule out of JFK', 'within the boutique-over-chain lodging "
     "style you favor', 'I noted your shellfish allergy on dining picks', "
-    "'we'll route on Marriott Bonvoy / United MileagePlus where it earns', "
+    "'we'll apply your Hotel Platinum / Airline Premier benefits where useful', "
     "'kept the Tokyo Oct 12-19 thread alive', 'sized for a 2-traveler party'. "
     "Vary which facts you cite turn-to-turn so the relationship feels "
     "lived-in - never repeat the same 1-2 facts every time. If the "
@@ -66,9 +73,10 @@ _CONCIERGE_SYSTEM = (
     "- When the TOOL OUTPUT mentions LangGraph nodes / classify / "
     "memory_recall / availability, you can briefly note that the workflow "
     "routed to that path - in plain language, not jargon.\n"
-    "- Use markdown formatting: bullet lists for comparisons (one item per "
-    "line, hyphen + space), **bold** for key numbers and product names, and "
-    "a final 1-line follow-up suggestion when natural.\n"
+    "- Use markdown formatting: bullet lists only when the traveler explicitly "
+    "asked for a comparison, **bold** for key numbers and product names, and "
+    "a final 1-line follow-up suggestion when natural. When product cards are "
+    "present, do not repeat every field from every card in prose.\n"
     "- DO NOT use emojis or pictographs of any kind. No flags, weather "
     "symbols, food, transportation, or decorative icons. The product is "
     "premium and minimalist; emojis read as unprofessional.\n"
@@ -168,14 +176,31 @@ def _polish_sync(user_query: str, tool_output: str) -> PolishResult:
                     # Letting the model pick its own sampling defaults
                     # is the only setting compatible across the entire
                     # Opus / Sonnet / Haiku fallback chain.
-                    "maxTokens": 600,
+                    "maxTokens": 1200,
                 },
             )
+            stop_reason = str(resp.get("stopReason", "")).lower()
             blocks = resp.get("output", {}).get("message", {}).get("content", [])
+            saw_text = False
             for b in blocks:
                 text = b.get("text")
                 if text:
+                    saw_text = True
                     polished = text.strip()
+                    visible_ending = polished.rstrip("*_` ").rstrip()
+                    if stop_reason in {"max_tokens", "length"}:
+                        last_error = (
+                            f"{model_id} stopped before completing the reply "
+                            f"({stop_reason})"
+                        )
+                        logger.warning(last_error)
+                        continue
+                    if not visible_ending or visible_ending[-1] not in ".!?":
+                        last_error = (
+                            f"{model_id} returned an incomplete-looking reply"
+                        )
+                        logger.warning("%s: %r", last_error, polished[-120:])
+                        continue
                     logger.info(
                         "[polish] %s ok len=%d preview=%r",
                         model_id,
@@ -187,7 +212,8 @@ def _polish_sync(user_query: str, tool_output: str) -> PolishResult:
                         model_id=model_id,
                         note=None,
                     )
-            last_error = f"{model_id} returned an empty response"
+            if not saw_text:
+                last_error = f"{model_id} returned an empty response"
         except Exception as exc:
             last_error = f"{model_id}: {exc.__class__.__name__}: {exc}"
             logger.warning("polish failed on %s: %s", model_id, exc)

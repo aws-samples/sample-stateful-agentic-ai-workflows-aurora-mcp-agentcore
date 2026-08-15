@@ -209,7 +209,7 @@ PY
 ## 5) Prove pause, restart, and resume
 
 1. Open `http://localhost:5173/showcase`, choose **Workflow**, and run:
-   `My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.`
+   `My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.`
 2. Confirm the reply says the workflow paused and the proof names
    `PostgresSaver (Aurora · pooled)` with `next=availability`.
 3. Stop only Terminal 2 with `Ctrl+C`. Leave the browser and tunnel open.

@@ -1,7 +1,4 @@
-/**
- * Meridian brand mark — Unsplash travel photography (bundled for reliable loading).
- * Source: https://unsplash.com/photos/snow-covered-mountain-1506905925346
- */
+/** Meridian aircraft brand tile, bundled and optimized for reliable loading. */
 export const MERIDIAN_MARK_SRC = '/brand/meridian-mark.jpg';
 
 /** Brand mark URL (local asset; size handled via CSS). */

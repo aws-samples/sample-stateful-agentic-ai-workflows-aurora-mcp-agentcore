@@ -1,5 +1,6 @@
 import type { Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import { resultRankLabel } from '../lib/resultRankLabel';
 import { TripResultCardContent } from './TripResultCardContent';
 
 export function RecommendationCards({
@@ -28,6 +29,7 @@ export function RecommendationCards({
           key={product.product_id}
           product={product}
           state={state}
+          index={index}
           compact={compact}
           priority={index === 0}
         />
@@ -39,16 +41,17 @@ export function RecommendationCards({
 function RecommendationCard({
   product,
   state,
+  index,
   compact,
   priority,
 }: {
   product: Product;
   state: MeridianShowcaseState;
+  index: number;
   compact: boolean;
   priority: boolean;
 }) {
   const selected = state.selectedTrip?.product_id === product.product_id;
-  const matchPct = product.similarity != null ? Math.round(product.similarity * 100) : null;
 
   return (
     <article
@@ -67,8 +70,10 @@ function RecommendationCard({
       <TripResultCardContent
         product={product}
         state={state}
-        matchPct={matchPct}
+        matchPct={null}
+        matchLabel={resultRankLabel(state.selectedPhase, index)}
         compact={compact}
+        featured={priority}
       />
     </article>
   );

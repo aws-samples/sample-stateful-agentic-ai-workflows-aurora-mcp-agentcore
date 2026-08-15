@@ -106,11 +106,11 @@ Each phase has two safe wins and one prompt that naturally motivates the next ph
 
 | Phase | Known-good prompts | Tee-up prompt |
 | ----- | ------------------ | ------------- |
-| SQL | `Show me city trips under $2,000 per traveler.`; `Show me beach and resort trips under $2,500 per traveler.` | `Compare three trips from different categories and show their prices in euros.` → needs custom MCP tools |
-| MCP | `Compare three trips from different categories and show their prices in euros.`; `Show me the off-season price range for Tokyo packages in November.` | `Find a slow, romantic week in wine country with a villa stay.` → needs intent retrieval |
-| Retrieval | `Find a slow, romantic week in wine country with a villa stay.`; `Which duration options are still available for Tuscany Wine & Wellness?` | `What did we decide about my October Tokyo trip last time? Continue from there.` → needs durable memory |
-| Production | `Find a Tokyo culture trip for two with boutique stays, local food, and walkable neighborhoods.`; `What did we decide about my October Tokyo trip last time? Continue from there.` | `My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.` → needs explicit workflow |
-| Workflow | `Which duration options are available for Amalfi Coast Villa Week?`; `Using what we decided about my October Tokyo trip last time, what should I do next?`; `My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.` | Finale: explicit search → availability checkpoints |
+| SQL | `Show me city trips under $2,000 per traveler.`; `Show me beach trips under $2,500 per traveler.` | `Compare three trip types side by side and convert their prices to euros.` → needs custom MCP tools |
+| MCP | `Compare three trip types side by side and convert their prices to euros.`; `What is the off-season price range for Tokyo trips in November?` | `I want a quiet, romantic escape in wine country, ideally with a villa.` → needs intent retrieval |
+| Retrieval | `I want a quiet, romantic escape in wine country, ideally with a villa.`; `Which trip lengths are still available for Tuscany Wine & Wellness?` | `Recall my October Tokyo plan and use my saved preferences to recommend the next step.` → needs durable memory |
+| Production | `Find a Tokyo culture trip for two using my saved preferences.`; `Recall my October Tokyo plan and use my saved preferences to recommend the next step.` | `My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.` → needs explicit workflow |
+| Workflow | `Which trip lengths are still available for Amalfi Coast Villa Week?`; `Recall my October Tokyo plan and use my saved preferences to recommend the next step.`; `My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.` | Finale: explicit search → availability checkpoints |
 
 ## Architecture
 

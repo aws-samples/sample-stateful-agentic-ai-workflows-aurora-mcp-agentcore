@@ -21,6 +21,8 @@ const MEMORY_PHRASE_SOURCE = [
   'no[-\\s]red[-\\s]?eyes?',
   'red[-\\s]?eyes?',
   'boutique(?:[-\\s](?:over|>)[-\\s]?chain)?',
+  'Hotel Platinum',
+  'Airline Premier',
   '(?:Marriott\\s+)?Bonvoy(?:\\s+Platinum(?:\\s+Elite)?)?',
   'Platinum Elite',
   'vegetarian(?:[-\\s]friendly)?',

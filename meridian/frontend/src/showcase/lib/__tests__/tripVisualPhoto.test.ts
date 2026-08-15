@@ -41,27 +41,36 @@ describe('tripVisualVariant', () => {
 describe('tripVisualPhoto', () => {
   it('prefers the live image_url for non-curated variants', () => {
     const src = 'https://images.unsplash.com/photo-1540959733332';
-    expect(tripVisualPhoto(product({ image_url: src })).src).toBe(src);
+    expect(tripVisualPhoto(product({ product_id: 'CITY-LIVE', image_url: src })).src).toBe(src);
   });
 
   it('never falls a city trip back to the Tuscany vineyard photo', () => {
     // No live URL and no city photo on disk: expect the gradient (null src),
     // not tuscany-vineyard.jpg.
-    expect(tripVisualPhoto(product({ image_url: '' })).src).toBeNull();
+    expect(tripVisualPhoto(product({ product_id: 'CITY-NO-PHOTO', image_url: '' })).src).toBeNull();
   });
 
-  it('pins the curated Tuscany hero photo over any live URL', () => {
+  it('pins stage-critical package IDs to replaceable local artwork', () => {
     const tuscany = product({
+      product_id: 'WEL-005',
       name: 'Tuscany Wine & Wellness',
       destination: 'Chianti',
       category: 'Wellness & Luxury',
       image_url: 'https://images.unsplash.com/photo-1523531294919',
     });
-    expect(tripVisualPhoto(tuscany).src).toBe('/travel/tuscany-vineyard.jpg');
+    const tokyo = product({
+      product_id: 'TKY-003',
+      name: 'Tokyo Executive Stopover',
+      image_url: 'https://images.unsplash.com/photo-1540959733332',
+    });
+
+    expect(tripVisualPhoto(tuscany).src).toBe('/travel/catalog/WEL-005.jpg');
+    expect(tripVisualPhoto(tokyo).src).toBe('/travel/catalog/TKY-003.jpg');
   });
 
   it('routes willamette to the vineyard photo, not tuscany', () => {
     const oregon = product({
+      product_id: 'WINE-OREGON',
       name: 'Willamette Pinot Weekend',
       destination: 'Oregon',
       category: 'Wine',

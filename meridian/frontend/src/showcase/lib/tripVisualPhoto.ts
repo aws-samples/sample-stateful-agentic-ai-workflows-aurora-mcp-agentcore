@@ -31,6 +31,28 @@ export const LOCAL_PHOTO: Partial<Record<TripVisualVariant, string>> = {
 // look instead of accepting whatever the live catalog URL returns.
 const CURATED: ReadonlySet<TripVisualVariant> = new Set(['vineyard']);
 
+// Cache the exact trips used by the five presenter queries. The wider catalog
+// can still use its live image_url, while the stage-critical cards stay
+// reliable on venue Wi-Fi and retain the same catalog photography.
+const SHOWCASE_PRODUCT_PHOTO: Readonly<Record<string, string>> = {
+  'ADV-001': '/travel/catalog/ADV-001.jpg',
+  'BCH-001': '/travel/catalog/BCH-001.jpg',
+  'BCH-003': '/travel/catalog/BCH-003.jpg',
+  'BCH-004': '/travel/catalog/BCH-004.jpg',
+  'CTY-001': '/travel/catalog/CTY-001.jpg',
+  'CTY-002': '/travel/catalog/CTY-002.jpg',
+  'CTY-003': '/travel/catalog/CTY-003.jpg',
+  'CTY-004': '/travel/catalog/CTY-004.jpg',
+  'CTY-005': '/travel/catalog/CTY-005.jpg',
+  'TKY-001': '/travel/catalog/TKY-001.jpg',
+  'TKY-002': '/travel/catalog/TKY-002.jpg',
+  'TKY-003': '/travel/catalog/TKY-003.jpg',
+  'TKY-004': '/travel/catalog/TKY-004.jpg',
+  'WEL-001': '/travel/catalog/WEL-001.jpg',
+  'WEL-002': '/travel/catalog/WEL-002.jpg',
+  'WEL-005': '/travel/catalog/WEL-005.jpg',
+};
+
 /** Classify a trip into a visual variant from its native travel fields. */
 export function tripVisualVariant(product: Product): TripVisualVariant {
   const key = [product.category, product.name, product.brand, product.destination, product.region]
@@ -61,6 +83,8 @@ export function tripVisualVariant(product: Product): TripVisualVariant {
 export function tripVisualPhoto(product: Product): { variant: TripVisualVariant; src: string | null } {
   const variant = tripVisualVariant(product);
   const local = LOCAL_PHOTO[variant] ?? null;
+  const showcasePhoto = SHOWCASE_PRODUCT_PHOTO[product.product_id];
+  if (showcasePhoto) return { variant, src: showcasePhoto };
   if (CURATED.has(variant) && local) return { variant, src: local };
 
   const liveUrl =

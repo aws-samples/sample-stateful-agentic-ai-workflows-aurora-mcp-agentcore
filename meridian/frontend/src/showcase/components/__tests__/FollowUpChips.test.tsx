@@ -29,7 +29,10 @@ function makeState(
 }
 
 const PAUSED_TURN: Message[] = [
-  { role: 'user', text: 'My JFK flight to Tokyo just got cancelled.' },
+  {
+    role: 'user',
+    text: 'My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.',
+  },
   {
     role: 'bot',
     text: 'Recovery paused at the checkpoint.',

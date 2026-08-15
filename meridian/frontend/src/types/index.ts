@@ -139,6 +139,7 @@ export interface ChatRequest {
   customer_id?: string;
   conversation_id?: string;
   resume?: boolean;
+  memory_enabled?: boolean;
 }
 
 export interface ChatResponse {
@@ -150,6 +151,7 @@ export interface ChatResponse {
   conversation_id?: string;
   memory_facts?: LongTermMemoryFact[];
   workflow_status?: 'paused' | 'resumed' | 'complete';
+  workflow_resumed_after_restart?: boolean;
 }
 
 export interface LoyaltyProgram {

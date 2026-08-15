@@ -36,6 +36,9 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     comparisonOpen: false,
     memoryFacts: [],
     travelerProfile: null,
+    memoryEnabled: false,
+    memoryLoading: false,
+    memoryToggleError: null,
     memoryMutationError: null,
     workspaceNotice: null,
     traceSpans: [traceSpan],
@@ -49,6 +52,8 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     backendHealth: null,
     isFallbackMode: false,
     conversationId: null,
+    workflowStatus: null,
+    workflowResumedAfterRestart: false,
     lastPrompt: 'Show me city trips under $2,000 per traveler.',
     actionDrawer: null,
     modelLabel: 'Claude Sonnet 5',
@@ -69,6 +74,7 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     setExpandedSpanId: vi.fn(),
     setSelectedTrip: vi.fn(),
     setSelectedPhase: vi.fn(),
+    setMemoryEnabled: vi.fn(),
     submitPrompt: vi.fn(),
     applyPhaseExample: vi.fn(),
     replayLastPrompt: vi.fn(),
@@ -108,7 +114,7 @@ describe('TracePanel collapse behavior', () => {
     );
 
     expect(screen.getByText('Aurora SQL query')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /collapse meridian activity panel/i }));
+    fireEvent.click(screen.getByRole('button', { name: /collapse activity panel/i }));
     expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
 
     rerender(
@@ -121,9 +127,17 @@ describe('TracePanel collapse behavior', () => {
 
     expect(screen.queryByText('Aurora SQL query')).not.toBeInTheDocument();
     expect(screen.getByText('1 spans')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /expand meridian activity panel/i })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /expand activity panel/i })).toHaveAttribute(
       'aria-expanded',
       'false',
     );
+  });
+
+  it('only marks capabilities represented by the completed trace', () => {
+    render(<TracePanel state={makeState()} />);
+
+    expect(screen.getByText('Querying live travel data').closest('li')).toHaveClass('is-done');
+    expect(screen.getByText('Recalling traveler context').closest('li')).toHaveClass('is-pending');
+    expect(screen.getByText('Evaluating options').closest('li')).toHaveClass('is-pending');
   });
 });

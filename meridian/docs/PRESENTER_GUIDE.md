@@ -61,10 +61,10 @@ questions.
 | Phase | Run this query | Point to | Transition |
 | --- | --- | --- | --- |
 | **1 - SQL** | `Show me city trips under $2,000 per traveler.` | Parameterized SQL, live rows, inventory | Structured filters work, but business operations need a contract. |
-| **2 - MCP** | `Compare three trips from different categories and show their prices in euros.` | MCP tool discovery, comparison, FX conversion | Tools improve interoperability, not semantic understanding. |
-| **3 - Retrieval** | `Find a slow, romantic week in wine country with a villa stay.` | pgvector, full-text candidates, Cohere rerank | Intent works, but the system still needs trusted memory. |
-| **4 - Production** | `What did we decide about my October Tokyo trip last time? Continue from there.` | Memory facts, identity, ALLOW/DENY, RLS, audit | A multi-step disruption plan now needs durable execution state. |
-| **5 - Workflow** | `My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.` | Named graph nodes, checkpoints, same-thread resume | The plan survives process interruption because state is externalized. |
+| **2 - MCP** | `Compare three trip types side by side and convert their prices to euros.` | MCP tool discovery, comparison, FX conversion | Tools improve interoperability, not semantic understanding. |
+| **3 - Retrieval** | `I want a quiet, romantic escape in wine country, ideally with a villa.` | pgvector, full-text candidates, Cohere rerank | Intent works, but the system still needs trusted memory. |
+| **4 - Production** | `Recall my October Tokyo plan and use my saved preferences to recommend the next step.` | Memory facts, identity, ALLOW/DENY, RLS, audit | A multi-step disruption plan now needs durable execution state. |
+| **5 - Workflow** | `My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.` | Named graph nodes, checkpoints, same-thread resume | The plan survives process interruption because state is externalized. |
 
 ## Presentation Flow
 

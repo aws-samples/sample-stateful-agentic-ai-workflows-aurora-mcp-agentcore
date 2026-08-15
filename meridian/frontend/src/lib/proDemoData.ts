@@ -14,7 +14,7 @@ export const DEMO_TRAVELER_ID = 'trv_meridian_demo';
  *  The Workflow mode routes this flight-disruption replan through named
  *  classify → search → availability nodes with a checkpoint after each. */
 export const DEMO_PROMPT =
-  'My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.';
+  'My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.';
 
 /** MCP tool catalog displayed in the System section. */
 export interface McpToolEntry {
@@ -100,7 +100,7 @@ export const MCP_TOOL_CATALOG: McpToolEntry[] = [
     p50: '132ms',
     health: 'healthy',
     sampleInput:
-      '{\n  "system": "Meridian concierge — ground replies in trip_cards + memory facts",\n  "user": "My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open."\n}',
+      '{\n  "system": "Meridian concierge — ground replies in trip_cards + memory facts",\n  "user": "My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options."\n}',
     sampleOutput:
       '"For your Tokyo Oct 12-19 window, the closest matches are Tokyo Executive Stopover ($1,949) and Tokyo Ryokan & Onsen Slow Week ($3,899), with shellfish allergy on dining and JFK departures with no red-eyes…"',
   },

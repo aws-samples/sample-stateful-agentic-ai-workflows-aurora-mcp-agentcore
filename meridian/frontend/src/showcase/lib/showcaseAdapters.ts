@@ -34,41 +34,58 @@ export interface ShowcasePhaseOption {
 // Adjacent phases intentionally pair: SQL stretch -> MCP success,
 // MCP stretch -> Retrieval success, Retrieval stretch -> Production success.
 export const SHOWCASE_FINALE_PROMPT =
-  'My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.';
+  'My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.';
 
 export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
   // Direct filters work; comparison plus FX needs a domain tool contract.
   1: [
     'Show me city trips under $2,000 per traveler.',
-    'Show me beach and resort trips under $2,500 per traveler.',
-    'Compare three trips from different categories and show their prices in euros.',
+    'Show me beach trips under $2,500 per traveler.',
+    'Compare three trip types side by side and convert their prices to euros.',
   ],
   // Custom MCP tools solve comparison, FX, and seasonality; mood intent remains retrieval's job.
   2: [
-    'Compare three trips from different categories and show their prices in euros.',
-    'Show me the off-season price range for Tokyo packages in November.',
-    'Find a slow, romantic week in wine country with a villa stay.',
+    'Compare three trip types side by side and convert their prices to euros.',
+    'What is the off-season price range for Tokyo trips in November?',
+    'I want a quiet, romantic escape in wine country, ideally with a villa.',
   ],
   // Intent routing works; persisted conversation memory is still out of scope.
   3: [
-    'Find a slow, romantic week in wine country with a villa stay.',
-    'Which duration options are still available for Tuscany Wine & Wellness?',
-    'What did we decide about my October Tokyo trip last time? Continue from there.',
+    'I want a quiet, romantic escape in wine country, ideally with a villa.',
+    'Which trip lengths are still available for Tuscany Wine & Wellness?',
+    'Recall my October Tokyo plan and use my saved preferences to recommend the next step.',
   ],
   // Tokyo proves memory and RLS; the flight disruption is the same prompt Phase 5
   // owns — Production answers it in one turn, teeing up the checkpointed A/B.
   4: [
-    'Find a Tokyo culture trip for two with boutique stays, local food, and walkable neighborhoods.',
-    'What did we decide about my October Tokyo trip last time? Continue from there.',
+    'Find a Tokyo culture trip for two using my saved preferences.',
+    'Recall my October Tokyo plan and use my saved preferences to recommend the next step.',
     SHOWCASE_FINALE_PROMPT,
   ],
   // Each prompt lands on a distinct branch: availability, memory_recall, plan.
   5: [
-    'Which duration options are available for Amalfi Coast Villa Week?',
-    'Using what we decided about my October Tokyo trip last time, what should I do next?',
+    'Which trip lengths are still available for Amalfi Coast Villa Week?',
+    'Recall my October Tokyo plan and use my saved preferences to recommend the next step.',
     SHOWCASE_FINALE_PROMPT,
   ],
 };
+
+const SHOWCASE_PROMPT_LABELS: Record<string, string> = {
+  [SHOWCASE_EXAMPLE_PROMPTS[1][0]]: 'City trips under $2,000',
+  [SHOWCASE_EXAMPLE_PROMPTS[1][1]]: 'Beach trips under $2,500',
+  [SHOWCASE_EXAMPLE_PROMPTS[1][2]]: 'Compare 3 trip types in EUR',
+  [SHOWCASE_EXAMPLE_PROMPTS[2][1]]: 'Tokyo off-season pricing',
+  [SHOWCASE_EXAMPLE_PROMPTS[2][2]]: 'Romantic wine-country villa',
+  [SHOWCASE_EXAMPLE_PROMPTS[3][1]]: 'Tuscany trip lengths',
+  [SHOWCASE_EXAMPLE_PROMPTS[3][2]]: 'Recall my Tokyo plan',
+  [SHOWCASE_EXAMPLE_PROMPTS[4][0]]: 'Tokyo trip using preferences',
+  [SHOWCASE_FINALE_PROMPT]: 'Cancelled flight replan',
+  [SHOWCASE_EXAMPLE_PROMPTS[5][0]]: 'Amalfi trip lengths',
+};
+
+export function showcasePromptLabel(prompt: string): string {
+  return SHOWCASE_PROMPT_LABELS[prompt] ?? prompt;
+}
 
 export interface ShowcaseTraceSpan {
   id: string;
@@ -186,18 +203,41 @@ export function packagesResponseToRecommendations(input: Product[] | TripPackage
   return normalized.slice(0, 6);
 }
 
+export function genericizeLoyaltyText(value: string): string {
+  return value
+    .replace(/Marriott Bonvoy Platinum Elite/gi, 'Hotel Platinum')
+    .replace(/Marriott Bonvoy Platinum/gi, 'Hotel Platinum')
+    .replace(/Bonvoy Platinum Elite/gi, 'Hotel Platinum')
+    .replace(/Bonvoy Platinum/gi, 'Hotel Platinum')
+    .replace(/Platinum Elite/gi, 'Hotel Platinum')
+    .replace(/United MileagePlus Premier 1K/gi, 'Airline Premier')
+    .replace(/United Premier 1K/gi, 'Airline Premier')
+    .replace(/MileagePlus Premier 1K/gi, 'Airline Premier')
+    .replace(/Premier 1K/gi, 'Airline Premier')
+    .replace(/Marriott Bonvoy/gi, 'hotel loyalty')
+    .replace(/\bBonvoy\b/gi, 'hotel loyalty')
+    .replace(/United MileagePlus/gi, 'airline loyalty')
+    .replace(/\bMileagePlus\b/gi, 'airline loyalty');
+}
+
 export function memoryResponseToFacts(response: MemoryProfileResponse | null | undefined): LongTermMemoryFact[] {
-  return response?.facts?.length ? response.facts : [];
+  return response?.facts?.length
+    ? response.facts.map((fact) => ({
+        ...fact,
+        value: genericizeLoyaltyText(fact.value),
+      }))
+    : [];
 }
 
 export function chatResponseToMessages(prior: Message[], userText: string, response: ChatResponse): Message[] {
   const userMsg: Message = { role: 'user', text: userText };
+  const assistantText = genericizeLoyaltyText(response.message);
   const assistant: Message =
     response.products?.length
-      ? { role: 'bot', type: 'products', text: response.message, products: response.products }
+      ? { role: 'bot', type: 'products', text: assistantText, products: response.products }
       : response.order
-        ? { role: 'bot', type: 'order', text: response.message, order: response.order }
-        : { role: 'bot', type: 'text', text: response.message };
+        ? { role: 'bot', type: 'order', text: assistantText, order: response.order }
+        : { role: 'bot', type: 'text', text: assistantText };
 
   if (response.follow_ups?.length) assistant.follow_ups = response.follow_ups;
   return [...prior, userMsg, assistant];
@@ -215,9 +255,14 @@ export function activityToShowcaseTraceSpan(activity: ActivityEntry, index: numb
   const status = telemetry?.status ?? (activity.activity_type === 'error' ? 'error' : 'ok');
   const category = telemetry?.category ?? inferCategory(activity);
   const sql = activity.sql_query ?? activity.sqlQuery;
+  const details = activity.details ? genericizeLoyaltyText(activity.details) : undefined;
+  const fields = (telemetry?.fields ?? []).map((field) => ({
+    ...field,
+    value: genericizeLoyaltyText(field.value),
+  }));
   return {
     id: activity.id || `showcase-span-${index}`,
-    name: activity.title || `Trace span ${index + 1}`,
+    name: genericizeLoyaltyText(activity.title || `Trace span ${index + 1}`),
     category,
     type: activity.activity_type ?? activity.type ?? 'tool_call',
     status,
@@ -226,10 +271,12 @@ export function activityToShowcaseTraceSpan(activity: ActivityEntry, index: numb
     file: activity.agent_file ?? activity.agentFile,
     component: telemetry?.component,
     sql,
-    details: activity.details,
-    fields: telemetry?.fields ?? [],
-    input: index === 0 ? prompt : telemetry?.fields?.find((f) => f.label.toLowerCase().includes('input'))?.value,
-    output: activity.details,
+    details,
+    fields,
+    input: index === 0
+      ? genericizeLoyaltyText(prompt)
+      : fields.find((field) => field.label.toLowerCase().includes('input'))?.value,
+    output: details,
   };
 }
 
@@ -248,6 +295,11 @@ function inferCategory(activity: ActivityEntry): string {
 
 export function healthResponseToStatus(response: unknown): BackendStatus {
   if (!response || typeof response !== 'object') return 'offline';
+  const isMeridianHealth =
+    'bedrock_model_id' in response &&
+    'embedding_model_id' in response &&
+    'checkpoint_backend' in response;
+  if (!isMeridianHealth) return 'offline';
   const status = 'status' in response ? String(response.status).toLowerCase() : 'healthy';
   return status.includes('healthy') || status.includes('ok') ? 'online' : 'offline';
 }

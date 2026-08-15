@@ -1,6 +1,4 @@
-/**
- * MeridianMark — square brand image from Unsplash (nav, stage, favicon).
- */
+/** Shared Meridian aircraft brand tile. */
 import { meridianLogoUrl } from '../lib/meridianBrand';
 
 export type MeridianMarkVariant = 'nav' | 'stage';

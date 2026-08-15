@@ -11,6 +11,7 @@ from backend.routers.chat import (
     _format_domain_reply,
     _is_availability_query,
     _is_memory_recall_query,
+    _is_semantic_intent_query,
     _needs_checkpointed_workflow,
     _wants_domain_tool,
     is_availability_query,
@@ -23,23 +24,24 @@ from scripts.travel_catalog import (
 
 
 COMPARE_AND_FX = (
-    "Compare three trips from different categories and show their prices in euros."
+    "Compare three trip types side by side and convert their prices to euros."
 )
 MCP_SEASONAL = (
-    "Show me the off-season price range for Tokyo packages in November."
+    "What is the off-season price range for Tokyo trips in November?"
 )
 RETRIEVAL_INTENT = (
-    "Find a slow, romantic week in wine country with a villa stay."
+    "I want a quiet, romantic escape in wine country, ideally with a villa."
 )
 TUSCANY_AVAILABILITY = (
-    "Which duration options are still available for Tuscany Wine & Wellness?"
+    "Which trip lengths are still available for Tuscany Wine & Wellness?"
 )
 MEMORY_RECALL = (
-    "What did we decide about my October Tokyo trip last time? Continue from there."
+    "Recall my October Tokyo plan and use my saved preferences to recommend "
+    "the next step."
 )
 WORKFLOW_PLAN = (
-    "My JFK flight to Tokyo just got cancelled. Rework the trip and check "
-    "which departures are still open."
+    "My JFK-to-Tokyo flight was cancelled. Rework the trip, then check "
+    "duration availability for the best three options."
 )
 WORKFLOW_PLAN_KYOTO = (
     "Plan the Kyoto extension: find matching packages, then verify available "
@@ -68,6 +70,49 @@ def test_mcp_prompts_select_domain_tools() -> None:
     assert _wants_domain_tool(COMPARE_AND_FX)
     assert _wants_domain_tool(MCP_SEASONAL)
     assert not _wants_domain_tool(RETRIEVAL_INTENT)
+    assert _is_semantic_intent_query(RETRIEVAL_INTENT)
+    assert not _is_semantic_intent_query(COMPARE_AND_FX)
+
+
+def test_early_phase_stretch_prompts_return_explicit_boundaries() -> None:
+    sql_response = asyncio.run(
+        chat_router.chat(
+            chat_router.ChatRequest(
+                phase=1,
+                message=COMPARE_AND_FX,
+                customer_id="trv_meridian_demo",
+            )
+        )
+    )
+    assert "Switch to MCP" in sql_response.message
+    assert not sql_response.products
+
+    mcp_response = asyncio.run(
+        chat_router.chat(
+            chat_router.ChatRequest(
+                phase=2,
+                message=RETRIEVAL_INTENT,
+                customer_id="trv_meridian_demo",
+            )
+        )
+    )
+    assert "Switch to Retrieval" in mcp_response.message
+    assert not mcp_response.products
+
+
+def test_retrieval_memory_stretch_is_concise_and_honest() -> None:
+    response = asyncio.run(
+        chat_router.chat(
+            chat_router.ChatRequest(
+                phase=3,
+                message=MEMORY_RECALL,
+                customer_id="trv_meridian_demo",
+            )
+        )
+    )
+    assert "no traveler profile or prior-turn memory" in response.message
+    assert "Switch to Production" in response.message
+    assert not response.products
 
 
 def test_retrieval_prompts_select_expected_special_paths() -> None:

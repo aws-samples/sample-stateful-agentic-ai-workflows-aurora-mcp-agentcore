@@ -205,6 +205,8 @@ When searching:
                 destination,
                 region,
                 durations,
+                availability,
+                highlights,
                 ts_rank(search_vector, websearch_to_tsquery('english', %s)) AS lexical_score
             FROM trip_packages
             WHERE search_vector @@ websearch_to_tsquery('english', %s)
@@ -225,6 +227,53 @@ When searching:
                 existing["lexical_score"] = float(row.get("lexical_score", 0.0))
             else:
                 merged_by_package[row["package_id"]] = dict(row)
+
+        # The semantic SQL function intentionally returns a compact ranking
+        # shape. Hydrate every merged candidate from the catalog before
+        # reranking so semantic-only hits retain the card facts that lexical
+        # hits already carry.
+        candidate_ids = list(merged_by_package)
+        if candidate_ids:
+            placeholders = ", ".join(["%s"] * len(candidate_ids))
+            detail_rows = await self.db.execute(
+                f"""
+                    SELECT package_id, name, operator, price_per_person,
+                           description, image_url, trip_type, destination,
+                           region, durations, availability, highlights
+                    FROM trip_packages
+                    WHERE package_id IN ({placeholders})
+                """,
+                tuple(candidate_ids),
+            )
+            detail_by_id = {
+                str(row["package_id"]): dict(row) for row in detail_rows
+            }
+            merged_by_package = {
+                package_id: {
+                    **candidate,
+                    **detail_by_id.get(str(package_id), {}),
+                    **{
+                        key: candidate[key]
+                        for key in ("similarity", "lexical_score")
+                        if key in candidate
+                    },
+                }
+                for package_id, candidate in merged_by_package.items()
+            }
+            self._log_activity(
+                activity_type="search",
+                title="Catalog card details hydrated",
+                details=(
+                    f"{len(detail_rows)} candidates joined to durations, "
+                    "inventory, and highlights"
+                ),
+                sql_query=(
+                    "SELECT package_id, destination, region, durations, "
+                    "availability, highlights FROM trip_packages "
+                    "WHERE package_id IN (...)"
+                ),
+            )
+
         results = list(merged_by_package.values())
         # Stamp each candidate's PRE-RERANK position + the pgvector cosine it
         # had at this point, BEFORE the reorder loop overwrites `similarity`
@@ -316,6 +365,10 @@ When searching:
                 "image_url": r['image_url'],
                 "trip_type": r['trip_type'],
                 "destination": r.get('destination'),
+                "region": r.get('region'),
+                "durations": r.get('durations') or [],
+                "availability": r.get('availability') or {},
+                "highlights": r.get('highlights') or [],
                 "similarity": float(r.get('similarity', 0.0)),
                 # Rerank-visualization metadata (Phase 3 UI):
                 "pre_rerank_position": r.get('pre_rerank_position'),

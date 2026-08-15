@@ -1,6 +1,7 @@
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import type { Product } from '../../types';
 import { SHOWCASE_EXAMPLE_PROMPTS, SHOWCASE_PHASES } from '../lib/showcaseAdapters';
+import { resultRankLabel } from '../lib/resultRankLabel';
 import { ALEX_IMAGE_URL, ALEX_NAME } from '../lib/personas';
 import { X } from 'lucide-react';
 import { useDialogA11y } from '../hooks/useDialogA11y';
@@ -85,8 +86,8 @@ function TripsPanel({ state, onClose }: { state: MeridianShowcaseState; onClose:
       {saved.length > 0 && (
         <div className="mds-navpanel-section">
           <div className="mds-navpanel-section-head">Saved · {saved.length}</div>
-          {saved.map((p) => (
-            <TripRow key={p.product_id} product={p} state={state} onClose={onClose} saved />
+          {saved.map((p, index) => (
+            <TripRow key={p.product_id} product={p} state={state} index={index} onClose={onClose} saved />
           ))}
         </div>
       )}
@@ -94,8 +95,8 @@ function TripsPanel({ state, onClose }: { state: MeridianShowcaseState; onClose:
         <div className="mds-navpanel-section-head">
           {saved.length > 0 ? 'This turn' : `Results · ${browsing.length}`}
         </div>
-        {browsing.map((p) => (
-          <TripRow key={p.product_id} product={p} state={state} onClose={onClose} />
+        {browsing.map((p, index) => (
+          <TripRow key={p.product_id} product={p} state={state} index={index} onClose={onClose} />
         ))}
       </div>}
     </div>
@@ -105,15 +106,17 @@ function TripsPanel({ state, onClose }: { state: MeridianShowcaseState; onClose:
 function TripRow({
   product,
   state,
+  index,
   onClose,
   saved = false,
 }: {
   product: Product;
   state: MeridianShowcaseState;
+  index: number;
   onClose: () => void;
   saved?: boolean;
 }) {
-  const matchPct = product.similarity != null ? Math.round(product.similarity * 100) : null;
+  const rankLabel = resultRankLabel(state.selectedPhase, index, { saved });
   return (
     <button
       type="button"
@@ -129,7 +132,7 @@ function TripRow({
       </div>
       <div className="mds-navpanel-trip-meta">
         <b>{money(product.price)}</b>
-        {matchPct != null && <span>{matchPct}% match</span>}
+        <span>{rankLabel}</span>
         {saved && <span className="mds-navpanel-saved-dot" aria-label="Saved" />}
       </div>
     </button>

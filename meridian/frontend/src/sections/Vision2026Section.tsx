@@ -122,7 +122,7 @@ export function Vision2026Section() {
             onActivate={() =>
               openConcierge({
                 phase: 4,
-                prompt: 'What did we decide about my October Tokyo trip last time? Continue from there.',
+                prompt: 'Recall my October Tokyo plan and use my saved preferences to recommend the next step.',
                 send: true,
               })
             }

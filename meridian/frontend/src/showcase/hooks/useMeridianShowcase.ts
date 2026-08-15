@@ -22,6 +22,7 @@ import {
   SHOWCASE_PHASES,
   chatResponseToMessages,
   chatResponseToTraceSpans,
+  genericizeLoyaltyText,
   healthResponseToStatus,
   memoryResponseToFacts,
   phaseLabelFor,
@@ -56,6 +57,7 @@ export interface ChatFilters {
   endDate: string | null;
   spa: boolean;
   directFlights: boolean;
+  rebookNonstop?: boolean;
 }
 
 export const EMPTY_FILTERS: ChatFilters = {
@@ -64,6 +66,7 @@ export const EMPTY_FILTERS: ChatFilters = {
   endDate: null,
   spa: false,
   directFlights: false,
+  rebookNonstop: false,
 };
 
 export interface MeridianShowcaseState {
@@ -86,6 +89,9 @@ export interface MeridianShowcaseState {
   comparisonOpen: boolean;
   memoryFacts: LongTermMemoryFact[];
   travelerProfile: TravelerProfile | null;
+  memoryEnabled: boolean;
+  memoryLoading: boolean;
+  memoryToggleError: string | null;
   memoryMutationError: string | null;
   workspaceNotice: string | null;
   traceSpans: ShowcaseTraceSpan[];
@@ -99,6 +105,8 @@ export interface MeridianShowcaseState {
   backendHealth: BackendHealth | null;
   isFallbackMode: boolean;
   conversationId: string | null;
+  workflowStatus: ChatResponse['workflow_status'] | null;
+  workflowResumedAfterRestart: boolean;
   lastPrompt: string | null;
   actionDrawer: ActionDrawerState | null;
   modelLabel: string;
@@ -113,6 +121,7 @@ export interface MeridianShowcaseState {
   setExpandedSpanId: (id: string | null) => void;
   setSelectedTrip: (product: Product | null) => void;
   setSelectedPhase: (phase: Phase) => void;
+  setMemoryEnabled: (enabled: boolean) => Promise<void>;
   submitPrompt: (prompt?: string, phaseOverride?: Phase) => Promise<void>;
   applyPhaseExample: (
     prompt: string,
@@ -168,6 +177,9 @@ export function decoratePromptWithFilters(prompt: string, filters: ChatFilters):
   }
   if (filters.spa) fragments.push('with spa access included');
   if (filters.directFlights) fragments.push('with direct flights only');
+  if (filters.rebookNonstop) {
+    fragments.push('and prioritize a nonstop rebooking if disruption recovery is needed');
+  }
 
   if (fragments.length === 0) return prompt;
   // Use commas + Oxford-style "and" for the final fragment so the
@@ -196,6 +208,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [memoryFacts, setMemoryFacts] = useState<LongTermMemoryFact[]>([]);
   const [travelerProfile, setTravelerProfile] = useState<TravelerProfile | null>(null);
+  const [memoryEnabled, setMemoryEnabledState] = useState(false);
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memoryToggleError, setMemoryToggleError] = useState<string | null>(null);
   const [memoryMutationError, setMemoryMutationError] = useState<string | null>(null);
   const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
   const [traceSpans, setTraceSpans] = useState<ShowcaseTraceSpan[]>([]);
@@ -217,6 +232,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   // false for the lifetime of the session.
   const [isFallbackMode] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [workflowStatus, setWorkflowStatus] =
+    useState<ChatResponse['workflow_status'] | null>(null);
+  const [workflowResumedAfterRestart, setWorkflowResumedAfterRestart] =
+    useState(false);
   const [lastPrompt, setLastPrompt] = useState<string | null>(null);
   const [actionDrawer, setActionDrawer] = useState<ActionDrawerState | null>(null);
   const [chatFilters, setChatFiltersState] = useState<ChatFilters>(EMPTY_FILTERS);
@@ -282,8 +301,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       } catch {
         if (!mounted.current) return;
         setBackendStatus('offline');
-        // The "Backend offline" badge in the top bar is enough on its own —
-        // no banner needed unless the user actively tries to chat or plan.
+        // Runtime health stays in the technical activity rail. The audience
+        // only sees an error banner after an attempted chat or plan action.
       }
     };
 
@@ -292,42 +311,36 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     return () => clearInterval(interval);
   }, []);
 
-  // Aurora-only memory prefetch on mount: pulls the seeded
-  // traveler_preferences for SHOWCASE_TRAVELER_ID so the "For you"
-  // panel shows real facts (no_red_eye, vegetarian_friendly, boutique
-  // style, $3,200 cap, ...) regardless of which phase is active. No
-  // fixture fallback - if Aurora is offline the panel stays empty,
-  // which honestly matches the "live data only" philosophy.
-  useEffect(() => {
-    let cancelled = false;
-    const loadMemory = async () => {
-      try {
-        const profile = await fetchMemoryProfile(SHOWCASE_TRAVELER_ID);
-        if (cancelled || !mounted.current) return;
-        const facts = memoryResponseToFacts(profile);
-        if (facts.length) setMemoryFacts(facts);
-        if (profile.profile) setTravelerProfile(profile.profile);
-      } catch {
-        if (cancelled || !mounted.current) return;
-        // Quietly leave the panel empty - the "Backend offline" badge
-        // already tells the user why.
-      }
-    };
-    void loadMemory();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // The showcase starts with traveler context disconnected. Production makes
+  // memory an explicit capability: enabling it performs the real Aurora read,
+  // then subsequent chat requests carry memory_enabled=true.
+  const setMemoryEnabled = useCallback(async (enabled: boolean) => {
+    setMemoryToggleError(null);
+    if (!enabled) {
+      setMemoryEnabledState(false);
+      setMemoryFacts([]);
+      setTravelerProfile(null);
+      return;
+    }
 
-  useEffect(() => {
-    // Clean-slate showcase: do NOT prefetch featured packages on mount —
-    // we want the recommendation grid to stay empty until the presenter
-    // submits a real prompt and Aurora streams back the matching trips.
-    //
-    // Traveler memory is also left empty by default; once the presenter
-    // graduates to Phase 4/5 the chat response carries `memory_facts`
-    // that populate the right rail naturally.
-    return undefined;
+    setMemoryLoading(true);
+    try {
+      const profile = await fetchMemoryProfile(SHOWCASE_TRAVELER_ID);
+      if (!mounted.current) return;
+      setMemoryFacts(memoryResponseToFacts(profile));
+      setTravelerProfile(profile.profile ?? null);
+      setMemoryEnabledState(true);
+    } catch {
+      if (!mounted.current) return;
+      setMemoryEnabledState(false);
+      setMemoryFacts([]);
+      setTravelerProfile(null);
+      setMemoryToggleError(
+        'Traveler context could not be authorized. Confirm Aurora is available and try again.',
+      );
+    } finally {
+      if (mounted.current) setMemoryLoading(false);
+    }
   }, []);
 
   const replayTrace = useCallback(() => {
@@ -372,7 +385,18 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setExpandedSpanId(nextTrace[0]?.id ?? null);
     setTraceTab('spans');
     if (response.conversation_id) setConversationId(response.conversation_id);
-    if (response.memory_facts?.length) setMemoryFacts(response.memory_facts);
+    setWorkflowStatus(response.workflow_status ?? null);
+    setWorkflowResumedAfterRestart(
+      response.workflow_resumed_after_restart === true,
+    );
+    if (response.memory_facts?.length) {
+      setMemoryFacts(
+        response.memory_facts.map((fact) => ({
+          ...fact,
+          value: genericizeLoyaltyText(fact.value),
+        })),
+      );
+    }
     const products = productsFromChatResponse(response);
     // Always sync the recommendation grid to THIS turn's products. If the
     // turn returned 0 (a zero-result query, like SQL keyword search
@@ -416,17 +440,25 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setMessages((prior) => [...prior, { role: 'user', text: decorated }]);
 
       try {
+        const resumeRequested =
+          requestPhase === 5 &&
+          workflowStatus === 'paused' &&
+          /resume|checkpoint/i.test(decorated);
         const response = await sendChatMessage({
           message: decorated,
           phase: requestPhase,
           ...(requestPhase >= 4
             ? {
                 customer_id: SHOWCASE_TRAVELER_ID,
+                memory_enabled: memoryEnabled,
                 conversation_id:
                   requestPhase === selectedPhase
                     ? conversationId ?? undefined
                     : undefined,
               }
+            : {}),
+          ...(requestPhase === 5
+            ? { resume: resumeRequested || undefined }
             : {}),
         });
         if (!mounted.current) return;
@@ -446,7 +478,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (mounted.current) setIsLoading(false);
       }
     },
-    [applyChatResponse, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, selectedPhase],
+    [applyChatResponse, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, memoryEnabled, selectedPhase, workflowStatus],
   );
 
   const applyPhaseExample = useCallback(
@@ -510,12 +542,20 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setReplayIndex(-1);
     setIsReplaying(false);
     setConversationId(null);
+    setWorkflowStatus(null);
+    setWorkflowResumedAfterRestart(false);
     setActionDrawer(null);
     setTripDetailsOpen(false);
     setComparisonOpen(false);
     setError(null);
     setChatFiltersState(EMPTY_FILTERS);
     setLatestStreamComplete(true);
+    if (phase < 4) {
+      setMemoryEnabledState(false);
+      setMemoryFacts([]);
+      setTravelerProfile(null);
+      setMemoryToggleError(null);
+    }
     // No auto-prompt: leave the composer empty so the presenter types
     // intent freshly for each phase walkthrough.
   }, [selectedPhase, clearReplayTimers]);
@@ -684,6 +724,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setReplayIndex(-1);
     setIsReplaying(false);
     setConversationId(null);
+    setWorkflowStatus(null);
+    setWorkflowResumedAfterRestart(false);
     setActionDrawer(null);
     setTripDetailsOpen(false);
     setError(null);
@@ -719,6 +761,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     comparisonOpen,
     memoryFacts,
     travelerProfile,
+    memoryEnabled,
+    memoryLoading,
+    memoryToggleError,
     memoryMutationError,
     workspaceNotice,
     traceSpans,
@@ -732,6 +777,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     backendHealth,
     isFallbackMode,
     conversationId,
+    workflowStatus,
+    workflowResumedAfterRestart,
     lastPrompt,
     actionDrawer,
     modelLabel: runConfigModelLabel(selectedPhase, backendHealth),
@@ -746,6 +793,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setExpandedSpanId,
     setSelectedTrip,
     setSelectedPhase,
+    setMemoryEnabled,
     submitPrompt,
     applyPhaseExample,
     replayLastPrompt,

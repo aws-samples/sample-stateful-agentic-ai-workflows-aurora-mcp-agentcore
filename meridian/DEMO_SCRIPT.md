@@ -160,7 +160,7 @@ Point to the five phase pills (grouped as one ladder):
 | Query | What happens |
 | ----- | ------------ |
 | `Show me city trips under $2,000 per traveler.` | Trip-type + per-traveler price filter on `trip_packages` |
-| `Show me beach and resort trips under $2,500 per traveler.` | Same filter shape |
+| `Show me beach trips under $2,500 per traveler.` | Same filter shape |
 
 Point to the trace: RDS connection → parameterized filter SQL → package rows.
 
@@ -168,7 +168,7 @@ Point to the trace: RDS connection → parameterized filter SQL → package rows
 
 | Query | Why it fails |
 | ----- | ------------ |
-| `Compare three trips from different categories and show their prices in euros.` | SQL can return rows, but **comparison + per-package currency conversion is a business operation**, not a `WHERE` clause. |
+| `Compare three trip types side by side and convert their prices to euros.` | SQL can return rows, but **comparison + per-package currency conversion is a business operation**, not a `WHERE` clause. |
 
 > **Pause.** "The user didn't ask a bad SQL question. They asked for an *operation* SQL
 > doesn't own. Who owns reusable tools? That's Phase 2."
@@ -192,8 +192,8 @@ Point to the trace: RDS connection → parameterized filter SQL → package rows
 
 | Query | Notes |
 | ----- | ----- |
-| `Compare three trips from different categories and show their prices in euros.` | `compare_packages` + one `currency_convert` call per package — the exact operation SQL couldn't own |
-| `Show me the off-season price range for Tokyo packages in November.` | `seasonal_price_band` (low/median/high) |
+| `Compare three trip types side by side and convert their prices to euros.` | `compare_packages` + one `currency_convert` call per package — the exact operation SQL couldn't own |
+| `What is the off-season price range for Tokyo trips in November?` | `seasonal_price_band` (low/median/high) |
 
 Point back to Phase 1: **same prompt, now it lands** — because it's a tool contract now.
 
@@ -201,7 +201,7 @@ Point back to Phase 1: **same prompt, now it lands** — because it's a tool con
 
 | Query | Why it fails |
 | ----- | ------------ |
-| `Find a slow, romantic week in wine country with a villa stay.` | Mood/intent. Better tools, richer domain logic — the **intent gap is untouched**. |
+| `I want a quiet, romantic escape in wine country, ideally with a villa.` | Mood/intent. Better tools, richer domain logic — the **intent gap is untouched**. |
 
 > "The interface got portable and IAM-authed. The intelligence didn't. Matching a *mood*
 > needs embeddings, not tools. That's Phase 3."
@@ -230,9 +230,9 @@ it authorizes the workload against `traveler_identity_bindings` **before** RLS s
 
 **Open by typing the Phase-2 failure a third time. Say nothing. Wait for the cards.**
 
-> `Find a slow, romantic week in wine country with a villa stay.`
+> `I want a quiet, romantic escape in wine country, ideally with a villa.`
 > → Tuscany Wine & Wellness, Amalfi Coast Villa Week, Douro / Tokyo Ryokan — each with a
-> semantic-match score.
+> clear rank label.
 
 **Let it land.** Then explain what changed:
 
@@ -251,14 +251,14 @@ trip_packages ──► pgvector cosine + tsvector ts_rank ──► Cohere Rera
 
 | Query | Expected |
 | ----- | -------- |
-| `Find a slow, romantic week in wine country with a villa stay.` | The intent match MCP couldn't produce |
+| `I want a quiet, romantic escape in wine country, ideally with a villa.` | The intent match MCP couldn't produce |
 | `Family-friendly beach resort with snorkeling` | Rerank fixes order (Costa del Sol, Cancún, Maldives) |
 
 **Third failure — the honest one (rehearse this, do not apologize):**
 
 | Query | What happens |
 | ----- | ------------ |
-| `What did we decide about my October Tokyo trip last time? Continue from there.` | Zero products. A reasoning span states: *"I'm pure retrieval — no memory of prior turns. That's the next phase."* |
+| `Recall my October Tokyo plan and use my saved preferences to recommend the next step.` | Zero products. A reasoning span states: *"I'm pure retrieval — no memory of prior turns. That's the next phase."* |
 
 > "It understands what you *mean*. It has no idea who *you* are, and it can't remember a
 > thing. And we can't ship this reading any traveler's data. That's Phase 4."
@@ -281,10 +281,10 @@ trip_packages ──► pgvector cosine + tsvector ts_rank ──► Cohere Rera
 
 ### Beat 1 — memory lands (the payoff to Phase 3's honest failure)
 
-1. **Seed the thread:** `Find a Tokyo culture trip for two with boutique stays, local food, and walkable neighborhoods.`
+1. **Seed the thread:** `Find a Tokyo culture trip for two using my saved preferences.`
    The reply weaves in the shellfish allergy, JFK no-red-eyes, boutique preference — all
    pulled from Aurora **before** answering. None of it was typed.
-2. **The recall that failed a phase ago now works:** `What did we decide about my October Tokyo trip last time? Continue from there.`
+2. **The recall that failed a phase ago now works:** `Recall my October Tokyo plan and use my saved preferences to recommend the next step.`
    `recall_session_context` + `recall_similar_interactions` return the Tokyo thread. *Point
    back to the Phase-3 failure.*
 
@@ -337,16 +337,16 @@ it's: run your scoped queries as a role that's always covered."*
 
 Click the third Phase 4 pill (the disruption prompt):
 
-> `My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.`
+> `My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.`
 
 Production recalls Alex, authorizes, and finds candidate trips — then **stops and refuses to
 fake it.** The trace shows a **"Checkpointed workflow required"** span and the reply says it
-won't collapse two dependent steps (rework the itinerary, then verify which departures are
-still open) into one fluent paragraph. This is Phase 4's honest break: it *recognizes* the
+won't collapse two dependent steps (rework the itinerary, then check package-duration
+availability for the best three options) into one fluent paragraph. This is Phase 4's honest break: it *recognizes* the
 multi-step boundary rather than pretending both steps completed atomically.
 
 > "It recalled everything about Alex and found alternatives — then it stopped. A cancelled
-> flight is two dependent steps: rework the trip, then verify which departures are still open.
+> flight is two dependent steps: rework the trip, then check duration inventory for the best three options.
 > Production won't pretend it ran both inside one turn. When a booking pipeline hangs off step
 > 1 finishing before step 2 runs, you want that explicit, checkpointed, and resumable. That's
 > Phase 5."
@@ -378,10 +378,10 @@ classify ──┼─→ availability ────┤
 
 **Run the exact prompt Production handed off:**
 
-> `My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.`
+> `My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.`
 
 Classify routes it to **plan**: `search` runs (re-find matching Tokyo trips), a checkpoint is
-written, then the conditional edge continues to `availability` (verify open departures), a
+written, then the conditional edge continues to `availability` (check package-duration inventory), a
 second checkpoint, then `synthesize`. **Two sequential worker nodes, a checkpoint between
 each** — the multi-step composition a single tool call can't make visible.
 
@@ -453,31 +453,31 @@ the graph makes that plan survivable and auditable."*
 ### Phase 1 — works / breaks
 | Works | Breaks |
 | ----- | ------ |
-| Show me city trips under $2,000 per traveler. | Compare three trips from different categories and show their prices in euros. |
-| Show me beach and resort trips under $2,500 per traveler. | |
+| Show me city trips under $2,000 per traveler. | Compare three trip types side by side and convert their prices to euros. |
+| Show me beach trips under $2,500 per traveler. | |
 
 ### Phase 2 — works / breaks
 | Works | Breaks |
 | ----- | ------ |
-| Compare three trips from different categories and show their prices in euros. | Find a slow, romantic week in wine country with a villa stay. |
-| Show me the off-season price range for Tokyo packages in November. | |
+| Compare three trip types side by side and convert their prices to euros. | I want a quiet, romantic escape in wine country, ideally with a villa. |
+| What is the off-season price range for Tokyo trips in November? | |
 
 ### Phase 3 — works / breaks
 | Works | Breaks (honest, on purpose) |
 | ----- | --------------------------- |
-| Find a slow, romantic week in wine country with a villa stay. | What did we decide about my October Tokyo trip last time? Continue from there. |
+| I want a quiet, romantic escape in wine country, ideally with a villa. | Recall my October Tokyo plan and use my saved preferences to recommend the next step. |
 | Family-friendly beach resort with snorkeling | |
 
 ### Phase 4 — as Alex Morgan
-- Find a Tokyo culture trip for two with boutique stays, local food, and walkable neighborhoods.
-- What did we decide about my October Tokyo trip last time? Continue from there.
+- Find a Tokyo culture trip for two using my saved preferences.
+- Recall my October Tokyo plan and use my saved preferences to recommend the next step.
 - **Governance probe:** RLS tab → Re-run (ALLOW Alex · DENY Jordan · 17 of 22).
-- **Hand-off:** My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.
+- **Hand-off:** My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.
 
 ### Phase 5 — Workflow
-- My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open. *(plan → search → availability)*
-- Which duration options are available for Amalfi Coast Villa Week? *(availability)*
-- Using what we decided about my October Tokyo trip last time, what should I do next? *(memory_recall)*
+- My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options. *(plan → search → availability)*
+- Which trip lengths are still available for Amalfi Coast Villa Week? *(availability)*
+- Recall my October Tokyo plan and use my saved preferences to recommend the next step. *(memory_recall)*
 
 ---
 
@@ -498,7 +498,7 @@ curl -s -X POST http://localhost:8000/api/chat \
 # Phase 3 — semantic
 curl -s -X POST http://localhost:8000/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"message":"Find a slow, romantic week in wine country with a villa stay.","phase":3}' | jq '.message, (.products | length)'
+  -d '{"message":"I want a quiet, romantic escape in wine country, ideally with a villa.","phase":3}' | jq '.message, (.products | length)'
 
 # Phase 4 — memory + search
 curl -s -X POST http://localhost:8000/api/chat \
@@ -509,7 +509,7 @@ curl -s -X POST http://localhost:8000/api/chat \
 # Phase 5 — flight-disruption replan (plan → search → availability)
 curl -s -X POST http://localhost:8000/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"message":"My JFK flight to Tokyo just got cancelled. Rework the trip and check which departures are still open.","phase":5,"customer_id":"trv_meridian_demo"}' \
+  -d '{"message":"My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.","phase":5,"customer_id":"trv_meridian_demo"}' \
   | jq '.message, (.activities[].title)'
 ```
 

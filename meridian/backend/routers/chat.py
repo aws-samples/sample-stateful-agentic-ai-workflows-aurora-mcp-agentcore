@@ -68,6 +68,7 @@ class ChatRequest(BaseModel):
     customer_id: Optional[str] = None
     conversation_id: Optional[str] = None
     resume: bool = False
+    memory_enabled: bool = True
 
 
 class TraceTelemetry(BaseModel):
@@ -158,6 +159,7 @@ class ChatResponse(BaseModel):
     conversation_id: Optional[str] = None
     memory_facts: Optional[List[MemoryFact]] = None
     workflow_status: Optional[str] = None
+    workflow_resumed_after_restart: Optional[bool] = None
 
 
 def create_activity(
@@ -216,6 +218,55 @@ def generate_follow_ups(query: str, products: List[Product], phase: int) -> List
     query_lower = query.lower()
 
     if products:
+        result_context = " ".join(
+            " ".join(
+                filter(
+                    None,
+                    (
+                        product.name,
+                        product.destination,
+                        product.region,
+                        product.category,
+                    ),
+                )
+            )
+            for product in products
+        ).lower()
+        is_tokyo_result = "tokyo" in result_context
+
+        if phase == 5 and is_tokyo_result and (
+            _is_workflow_resume_query(query)
+            or any(
+                marker in query_lower
+                for marker in ("cancel", "disrupt", "rebook", "stranded")
+            )
+        ):
+            return [
+                "Compare live duration inventory for the top three Tokyo options.",
+                f"Show the best available duration for {products[0].name}.",
+                "Show slower Tokyo options with live duration inventory.",
+            ]
+
+        if "tokyo" in query_lower or is_tokyo_result:
+            if phase >= 4:
+                return [
+                    "Find a Tokyo culture trip under $3,200 per traveler.",
+                    "Show me a slower boutique Tokyo option.",
+                    "Rework the Tokyo trip and check duration availability.",
+                ]
+            return [
+                "Which duration options are available for Tokyo Culture & Cuisine?",
+                "Show Tokyo options under $3,200 per traveler.",
+                "Find a slower Tokyo ryokan stay.",
+            ]
+
+        if any(marker in query_lower for marker in ("wine", "villa", "tuscany")):
+            return [
+                "Which duration options are available for Tuscany Wine & Wellness?",
+                "Compare Tuscany Wine & Wellness with Amalfi Coast Villa Week.",
+                "Show wine-country trips under $3,500 per traveler.",
+            ]
+
         # Get categories and brands from results
         categories = list(set(p.category for p in products))
         brands = list(set(p.brand for p in products if p.brand))
@@ -430,6 +481,22 @@ _DOMAIN_INTENT_KEYWORDS = (
 def _wants_domain_tool(query: str) -> bool:
     q = query.lower()
     return any(k in q for k in _DOMAIN_INTENT_KEYWORDS)
+
+
+def _is_semantic_intent_query(query: str) -> bool:
+    """Detect mood-led prompts that need semantic retrieval, not MCP tools."""
+    q = (query or "").lower()
+    intent_markers = (
+        "quiet",
+        "romantic",
+        "wine country",
+        "villa",
+        "family-friendly",
+        "snorkeling",
+        "vibe",
+        "mood",
+    )
+    return sum(marker in q for marker in intent_markers) >= 2
 
 
 async def _call_domain_tool(query: str) -> Optional[Dict[str, Any]]:
@@ -963,12 +1030,21 @@ async def _polish_phase_reply(
     if products:
         lines.append("")
         lines.append(f"Top {len(products)} trips returned by the agent:")
-        for p in products[:5]:
-            sim = getattr(p, "similarity", None)
-            sim_str = f" · semantic_match={round(sim * 100)}%" if sim else ""
-            lines.append(
-                f"- {p.name} ({p.category}) — {p.brand} — ${p.price:,.0f}{sim_str}"
-            )
+        for rank, p in enumerate(products[:5], start=1):
+            facts = [
+                f"rank={rank}",
+                f"name={p.name}",
+                f"trip_type={p.category}",
+                f"operator={p.brand}",
+                f"price=${p.price:,.0f}",
+            ]
+            if p.available_sizes:
+                facts.append(f"durations={', '.join(p.available_sizes[:3])}")
+            if p.highlights:
+                facts.append(f"highlights={', '.join(p.highlights[:3])}")
+            if p.description:
+                facts.append(f"description={p.description[:180]}")
+            lines.append("- " + " · ".join(facts))
 
     if memory_facts:
         lines.append("")
@@ -1260,7 +1336,8 @@ def _is_availability_query(query: str) -> bool:
 
 _PHASE4_WORKFLOW_TRANSITION_MESSAGE = (
     "I can carry forward your Tokyo context, but this needs two dependent "
-    "steps: rework the itinerary, then verify which departures are still open. "
+    "steps: rework the itinerary, then check duration availability for the "
+    "best three options. "
     "Switch to Workflow so each step is explicit, checkpointed, and resumable."
 )
 
@@ -1320,6 +1397,7 @@ def _needs_checkpointed_workflow(query: str) -> bool:
             ("kyoto", "side trip", "extension"),
             ("hold", "stage", "reserve", "book"),
             ("departure", "departures", "still open"),
+            ("availability", "available", "duration"),
         )
     )
     return has_plan_intent and has_availability_step and dependent_steps >= 2
@@ -1416,6 +1494,11 @@ async def retrieval_supervisor_search(
             description=pkg.get("description", "") or "",
             image_url=pkg.get("image_url", "") or "",
             category=pkg.get("trip_type", "") or "",
+            destination=pkg.get("destination"),
+            region=pkg.get("region"),
+            available_sizes=pkg.get("durations") or [],
+            availability=pkg.get("availability") or {},
+            highlights=pkg.get("highlights") or [],
             similarity=pkg.get("similarity"),
             pre_rerank_position=pkg.get("pre_rerank_position"),
             pre_rerank_similarity=pkg.get("pre_rerank_similarity"),
@@ -1596,7 +1679,7 @@ async def orchestration_workflow(
     conversation_id: Optional[str] = None,
     *,
     resume: bool = False,
-) -> tuple[List[Product], List[ActivityEntry], str, str, str]:
+) -> tuple[List[Product], List[ActivityEntry], str, str, str, bool]:
     """
     Phase 5: LangGraph StateGraph orchestrates classify → branch → synthesize.
 
@@ -1623,11 +1706,26 @@ async def orchestration_workflow(
     activities = [_dict_to_activity_entry(a) for a in raw_activities]
     for act in activities:
         log_activity_entry(act)
-    packages = final_state.get("packages", []) or []
+    packages = [
+        package
+        if isinstance(package, Product)
+        else Product(**package)
+        for package in (final_state.get("packages", []) or [])
+    ]
     response = final_state.get("response") or "Workflow finished."
     conv_id = final_state.get("conversation_id") or ""
     workflow_status = final_state.get("workflow_status") or "complete"
-    return packages, activities, response, conv_id, workflow_status
+    resumed_after_restart = bool(
+        final_state.get("resumed_after_restart", False)
+    )
+    return (
+        packages,
+        activities,
+        response,
+        conv_id,
+        workflow_status,
+        resumed_after_restart,
+    )
 
 
 def _dict_to_activity_entry(activity: Any) -> ActivityEntry:
@@ -1696,6 +1794,11 @@ async def production_search(
             description=(getattr(pkg, "description", "") or ""),
             image_url=(getattr(pkg, "image_url", "") or ""),
             category=(getattr(pkg, "trip_type", "") or ""),
+            destination=getattr(pkg, "destination", None),
+            region=getattr(pkg, "region", None),
+            available_sizes=getattr(pkg, "durations", None),
+            availability=getattr(pkg, "availability", None),
+            highlights=getattr(pkg, "highlights", None),
             similarity=getattr(pkg, "similarity", None),
         )
         for pkg in packages
@@ -1704,12 +1807,15 @@ async def production_search(
 
 
 # =============================================================================
-# PHASE 3: PackageAgent — departure slots and package details
+# PHASE 3: PackageAgent — duration inventory and package details
 # =============================================================================
 
-async def retrieval_availability_search(query: str) -> tuple[List[Product], List[ActivityEntry], str]:
+async def retrieval_availability_search(
+    query: str,
+    package_id: Optional[str] = None,
+) -> tuple[List[Product], List[ActivityEntry], str]:
     """
-    Phase 3: PackageAgent handles departure and slot queries.
+    Phase 3: PackageAgent handles duration-inventory queries.
     Supervisor delegates availability questions to the specialist agent.
 
     Returns: (products, activities, message)
@@ -1732,16 +1838,29 @@ async def retrieval_availability_search(query: str) -> tuple[List[Product], List
     activities.append(create_activity(
         activity_type="search",
         title="PackageAgent: Finding package",
-        details="Searching for mentioned trip package",
+        details=(
+            f"Loading ranked package {package_id}"
+            if package_id
+            else "Searching for mentioned trip package"
+        ),
         agent_name="PackageAgent",
         agent_file="agents/retrieval_03/package_agent.py"
     ))
 
-    sql = """
+    search_sql = """
         SELECT package_id, name, operator, price_per_person, description,
-               image_url, trip_type, durations, availability
+               image_url, trip_type, destination, region, durations,
+               availability, highlights
         FROM trip_packages
         WHERE LOWER(name) LIKE %s OR LOWER(operator) LIKE %s
+        LIMIT 1
+    """
+    exact_sql = """
+        SELECT package_id, name, operator, price_per_person, description,
+               image_url, trip_type, destination, region, durations,
+               availability, highlights
+        FROM trip_packages
+        WHERE package_id = %s
         LIMIT 1
     """
     
@@ -1757,11 +1876,17 @@ async def retrieval_availability_search(query: str) -> tuple[List[Product], List
         if word not in stopwords:
             search_terms.append(word)
     
-    results = []
-    for term in search_terms:
-        results = await db.execute(sql, (f'%{term}%', f'%{term}%'))
-        if results:
-            break
+    if package_id:
+        results = await db.execute(exact_sql, (package_id,))
+    else:
+        results = []
+        for term in search_terms:
+            results = await db.execute(
+                search_sql,
+                (f'%{term}%', f'%{term}%'),
+            )
+            if results:
+                break
     
     search_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
     
@@ -1789,7 +1914,7 @@ async def retrieval_availability_search(query: str) -> tuple[List[Product], List
 
     activities.append(create_activity(
         activity_type="availability",
-        title="PackageAgent: Checking departures",
+        title="PackageAgent: Checking duration inventory",
         details=f"Package: {product['name']}",
         sql_query="SELECT availability, durations FROM trip_packages WHERE package_id = ?",
         agent_name="PackageAgent",
@@ -1809,8 +1934,8 @@ async def retrieval_availability_search(query: str) -> tuple[List[Product], List
     
     activities.append(create_activity(
         activity_type="result",
-        title="PackageAgent: Departures verified",
-        details=f"Total: {total_stock} departure slots available",
+        title="PackageAgent: Duration inventory verified",
+        details=f"Total: {total_stock} package places across available durations",
         execution_time_ms=availability_time,
         agent_name="PackageAgent",
         agent_file="agents/retrieval_03/package_agent.py"
@@ -1828,9 +1953,14 @@ async def retrieval_availability_search(query: str) -> tuple[List[Product], List
     if total_stock > 0:
         if durations:
             durations_str = ', '.join(durations[:5])
-            message = f"**{product['name']}** has availability! {total_stock} departure slots across: {durations_str}."
+            message = (
+                f"**{product['name']}** has {total_stock} package places "
+                f"across these trip lengths: {durations_str}."
+            )
         else:
-            message = f"**{product['name']}** has {total_stock} departure slots available."
+            message = (
+                f"**{product['name']}** has {total_stock} package places available."
+            )
     else:
         message = f"**{product['name']}** is currently sold out. Would you like similar alternatives?"
     
@@ -1987,6 +2117,38 @@ async def chat(request: ChatRequest) -> ChatResponse:
     if request.phase == 4:
         from backend.memory.store import DEMO_TRAVELER_ID
 
+        if not request.memory_enabled:
+            activities.append(create_activity(
+                activity_type="reasoning",
+                title="Traveler memory disabled for this run",
+                details=(
+                    "Production did not read Aurora traveler preferences, prior "
+                    "conversations, or AgentCore Memory. No memory writeback occurred."
+                ),
+                agent_name="ProductionAgent",
+                agent_file="agents/production_04/concierge.py",
+            ))
+            return _complete_chat_turn(
+                ChatResponse(
+                    message=(
+                        "Traveler context is off for this run. Enable **Use traveler "
+                        "context** to let Production recall Alex's saved preferences "
+                        "and prior Tokyo plan. Nothing was read from or written to memory."
+                    ),
+                    products=None,
+                    order=None,
+                    activities=activities,
+                    follow_ups=[
+                        "Enable traveler context",
+                        "Recall my Tokyo plan",
+                        "Find a Tokyo culture trip using my preferences",
+                    ],
+                    memory_facts=None,
+                ),
+                request.phase,
+                turn_started,
+            )
+
         activities.append(create_activity(
             activity_type="reasoning",
             title="Processing with Production concierge (Runtime + Gateway + Memory)",
@@ -2004,6 +2166,23 @@ async def chat(request: ChatRequest) -> ChatResponse:
             activities.extend(search_activities)
             needs_workflow = _needs_checkpointed_workflow(request.message)
             if needs_workflow:
+                if "tokyo" in request.message.lower():
+                    tokyo_products = [
+                        product
+                        for product in products
+                        if "tokyo" in " ".join(
+                            filter(
+                                None,
+                                (
+                                    product.name,
+                                    product.destination,
+                                    product.region,
+                                ),
+                            )
+                        ).lower()
+                    ]
+                    if tokyo_products:
+                        products = tokyo_products
                 activities.append(create_activity(
                     activity_type="reasoning",
                     title="Checkpointed workflow required",
@@ -2048,7 +2227,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 [
                     "Run this in Workflow",
                     "Rework the itinerary",
-                    "Check which departures are open",
+                    "Check duration availability for the best three options",
                 ]
                 if needs_workflow
                 else generate_follow_ups(request.message, products, request.phase)
@@ -2118,6 +2297,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 raw_message,
                 conv_id,
                 workflow_status,
+                resumed_after_restart,
             ) = await orchestration_workflow(
                 request.message,
                 traveler_id=request.customer_id or DEMO_TRAVELER_ID,
@@ -2195,6 +2375,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 conversation_id=conv_id,
                 memory_facts=workflow_memory_facts or None,
                 workflow_status=workflow_status,
+                workflow_resumed_after_restart=resumed_after_restart,
             ),
                 request.phase,
                 turn_started,
@@ -2243,6 +2424,72 @@ async def chat(request: ChatRequest) -> ChatResponse:
         agent_name=agent_name,
         agent_file=agent_file
     ))
+
+    if request.phase == 1 and _wants_domain_tool(request.message):
+        activities.append(create_activity(
+            activity_type="result",
+            title="Boundary reached: comparison and FX need MCP tools",
+            details=(
+                "SQL mode owns direct catalog filters. Side-by-side comparison "
+                "and currency conversion are explicit domain operations."
+            ),
+            agent_name=agent_name,
+            agent_file=agent_file,
+        ))
+        return _complete_chat_turn(
+            ChatResponse(
+                message=(
+                    "SQL can filter catalog rows by trip type, destination, and "
+                    "price, but this request combines comparison with currency "
+                    "conversion. Switch to MCP, where `compare_packages` and "
+                    "`currency_convert` are explicit tools."
+                ),
+                products=None,
+                order=None,
+                activities=activities,
+                follow_ups=[
+                    "Show me city trips under $2,000 per traveler.",
+                    "Show me beach trips under $2,500 per traveler.",
+                ],
+            ),
+            request.phase,
+            turn_started,
+        )
+
+    if (
+        request.phase == 2
+        and not _wants_domain_tool(request.message)
+        and _is_semantic_intent_query(request.message)
+    ):
+        activities.append(create_activity(
+            activity_type="result",
+            title="Boundary reached: mood intent needs semantic retrieval",
+            details=(
+                "MCP mode can invoke explicit tools and structured queries, but "
+                "this prompt describes meaning that is not a catalog field."
+            ),
+            agent_name=agent_name,
+            agent_file=agent_file,
+        ))
+        return _complete_chat_turn(
+            ChatResponse(
+                message=(
+                    "MCP can invoke explicit tools and structured queries, but "
+                    "this request describes a mood rather than a catalog field "
+                    "or tool operation. Switch to Retrieval, which uses semantic "
+                    "search and reranking to understand the intent."
+                ),
+                products=None,
+                order=None,
+                activities=activities,
+                follow_ups=[
+                    "Compare three trip types side by side and convert their prices to euros.",
+                    "What is the off-season price range for Tokyo trips in November?",
+                ],
+            ),
+            request.phase,
+            turn_started,
+        )
     
     try:
         # Phase 2 returns a 3-tuple (products, activities, domain_text)
@@ -2285,7 +2532,23 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 else:
                     raw_message = f"Here are {len(products)} trips that might interest you:"
             else:
-                raw_message = f"I found {len(products)} trips for you:"
+                prices = [product.price for product in products]
+                lowest_price = min(prices)
+                highest_price = max(prices)
+                lowest = [
+                    product.name
+                    for product in products
+                    if product.price == lowest_price
+                ]
+                lowest_names = " and ".join(lowest[:2])
+                raw_message = (
+                    f"I found {len(products)} trips within your filters, from "
+                    f"${lowest_price:,.0f} to ${highest_price:,.0f} per traveler. "
+                    f"{lowest_names} {'are' if len(lowest) > 1 else 'is'} the "
+                    f"lowest-priced {'options' if len(lowest) > 1 else 'option'} "
+                    f"at ${lowest_price:,.0f}; compare duration and live inventory "
+                    "on the cards below."
+                )
 
             # Phase 3 specifically benefits from polish: similarity scores
             # in the product list let the model name *why* each trip
@@ -2415,50 +2678,16 @@ async def chat(request: ChatRequest) -> ChatResponse:
                         "language search."
                     )
             elif request.phase == 3 and _is_memory_recall_query(request.message):
-                # Phase 3 has no conversation store. We routed this query to
-                # the honest-failure path on purpose — surface the gap to
-                # the user and point them at Phase 4 (AgentCore Memory +
-                # Aurora RLS), which is exactly the upgrade that fixes it.
-                raw = (
-                    "Retrieval mode status: cannot resolve memory-recall queries.\n"
-                    "- This mode is pure search: pgvector + Cohere Rerank "
-                    "on the current prompt only.\n"
-                    "- There is no conversation store, no traveler profile, "
-                    "no prior-turn awareness in scope here.\n"
-                    "- Embedding 'what did we discuss' would just match "
-                    "whatever is vector-closest to that phrase, which is "
-                    "noise — not actual recall.\n"
-                    "- The fix is Production mode: AgentCore Memory + "
-                    "Aurora RLS reads conversation_messages and "
-                    "trip_interactions for this traveler and answers the "
-                    "question correctly.\n"
-                    "- Suggested next step: switch the mode selector to "
-                    "Production and resubmit."
+                # Keep the staged failure concise and deterministic. The
+                # absence of a memory tool is the lesson, not a model-generated
+                # apology for returning zero search results.
+                message = (
+                    "Retrieval understands the request, but it only searches the "
+                    "current prompt; it has no traveler profile or prior-turn "
+                    "memory. Switch to Production, where AgentCore Memory and "
+                    "Aurora RLS can recall the October Tokyo plan and saved "
+                    "preferences."
                 )
-                polish = await polish_concierge_reply(request.message, raw)
-                if polish.model_id:
-                    activities.append(create_activity(
-                        activity_type="reasoning",
-                        title=f"Bedrock · concierge polish ({polish.model_id})",
-                        details="Explaining the Retrieval-mode memory gap in concierge tone",
-                        agent_name="RetrievalAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
-                    message = polish.text
-                else:
-                    activities.append(create_activity(
-                        activity_type="error",
-                        title="Bedrock polish unavailable",
-                        details=polish.note or "unknown",
-                        agent_name="RetrievalAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
-                    message = (
-                        "I can't pick up where we left off in this mode — Retrieval "
-                        "is pure search and has no memory of prior turns. "
-                        "Switch to Production mode and I'll read your "
-                        "conversation history from AgentCore Memory + Aurora RLS."
-                    )
             else:
                 message = "I couldn't find exact matches. Try different destinations, trip types, or travel dates."
 

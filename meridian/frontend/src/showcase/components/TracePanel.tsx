@@ -11,7 +11,7 @@ import { WorkflowStateInspector } from './WorkflowStateInspector';
 const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTraceSpan) => boolean }[] = [
   {
     id: 'understand',
-    label: 'Understanding your request',
+    label: 'Understanding request',
     matches: (s) =>
       ['orchestration', 'security', 'runtime'].includes(s.category) ||
       s.type === 'delegation' ||
@@ -19,27 +19,27 @@ const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTrac
   },
   {
     id: 'recall',
-    label: 'Searching previously-matched destinations',
+    label: 'Recalling traveler context',
     matches: (s) =>
       ['memory_short', 'memory_long'].includes(s.category) ||
-      /recall|memory|preferences|interaction|embed|cohere/i.test(s.name),
+      /recall|memory|preferences|interaction/i.test(s.name),
   },
   {
     id: 'inventory',
-    label: 'Checking availability & pricing',
+    label: 'Querying live travel data',
     matches: (s) =>
       ['data', 'tool'].includes(s.category) ||
-      /sql|pgvector|run_query|tools\/call|gateway|availability|trip_packages|booking|hybrid/i.test(s.name),
+      /sql|pgvector|run_query|tools\/call|gateway|availability|trip_packages|booking|hybrid|embed|cohere/i.test(s.name),
   },
   {
     id: 'curate',
-    label: 'Curating personalized recommendations',
+    label: 'Evaluating options',
     matches: (s) =>
       s.category === 'model' || /rerank|rank|compose|synthes|claude|opus|reasoning/i.test(s.name),
   },
   {
     id: 'optimize',
-    label: 'Optimizing your journey',
+    label: 'Preparing response',
     matches: (s) =>
       s.category === 'synthesis' ||
       s.type === 'result' ||
@@ -53,16 +53,11 @@ interface PhaseProgress {
 }
 
 function classifySpansToPhases(spans: ShowcaseTraceSpan[]): Map<string, string> {
-  // Unmatched spans stay with the last known phase so progress never jumps backward.
   const map = new Map<string, string>();
-  let lastPhaseIndex = 0;
   spans.forEach((span) => {
     const matchedIdx = THINKING_PHASES.findIndex((phase) => phase.matches(span));
     if (matchedIdx >= 0) {
-      lastPhaseIndex = matchedIdx;
       map.set(span.id, THINKING_PHASES[matchedIdx].id);
-    } else {
-      map.set(span.id, THINKING_PHASES[lastPhaseIndex].id);
     }
   });
   return map;
@@ -104,8 +99,8 @@ export function TracePanel({
             className="mds-collapse-toggle"
             onClick={onToggleCollapsed}
             aria-expanded={!collapsed}
-            aria-label={collapsed ? 'Expand Meridian activity panel' : 'Collapse Meridian activity panel'}
-            title={collapsed ? 'Expand Meridian activity' : 'Collapse Meridian activity'}
+            aria-label={collapsed ? 'Expand activity panel' : 'Collapse activity panel'}
+            title={collapsed ? 'Expand activity' : 'Collapse activity'}
           >
             <span className="mds-collapse-chevron" aria-hidden="true">
               <span className="mds-collapse-chevron-inner">
@@ -114,7 +109,7 @@ export function TracePanel({
                 </svg>
               </span>
             </span>
-            <strong>Meridian activity</strong>
+            <strong>Activity</strong>
             {collapsed && (
               <span className="mds-collapse-hint">
                 {state.traceSpans.length} spans
@@ -122,10 +117,27 @@ export function TracePanel({
             )}
           </button>
         ) : (
-          <strong>Meridian activity</strong>
+          <strong>Activity</strong>
         )}
-        <span className={`mds-live-state ${state.isLoading || state.isReplaying ? 'is-live' : ''}`}>
-          {state.isLoading ? 'Running' : state.isReplaying ? 'Replay' : 'Live'}
+        <span
+          className={`mds-live-state${
+            state.isLoading || state.isReplaying
+              ? ' is-live'
+              : state.backendStatus === 'offline'
+                ? ' is-offline'
+                : ''
+          }`}
+          title={state.backendStatus === 'offline' ? 'Backend offline' : undefined}
+        >
+          {state.isLoading
+            ? 'Running'
+            : state.isReplaying
+              ? 'Replay'
+              : state.backendStatus === 'online'
+                ? 'Live'
+                : state.backendStatus === 'checking'
+                  ? 'Connecting'
+                  : 'Offline'}
         </span>
       </div>
 
@@ -138,7 +150,9 @@ export function TracePanel({
             {!compact && (
               <div className="mds-trace-summary">
                 <span>{state.phaseLabel}</span>
-                {phaseMeta && <span className="mds-proof-pill">{phaseMeta.proofPoint}</span>}
+                {phaseMeta && state.traceSpans.length > 0 && (
+                  <span className="mds-proof-pill">{phaseMeta.proofPoint}</span>
+                )}
                 {state.traceSpans.length > 0 && <span>{state.traceSpans.length} spans</span>}
                 {agentCount > 0 && <span>{agentCount} agents</span>}
                 {state.totalLatencyMs > 0 && <span>{state.totalLatencyMs}ms</span>}
@@ -357,8 +371,11 @@ function ThinkingPhases({ state }: { state: MeridianShowcaseState }) {
   if (spans.length > 0) {
     if (state.isReplaying) {
       const reachedSpanIndex = Math.max(0, state.replayIndex);
-      const reachedSpan = spans[reachedSpanIndex];
-      const reachedPhaseId = reachedSpan ? phaseBySpan.get(reachedSpan.id) : undefined;
+      const reachedPhaseIds = spans
+        .slice(0, reachedSpanIndex + 1)
+        .map((span) => phaseBySpan.get(span.id))
+        .filter((phaseId): phaseId is string => Boolean(phaseId));
+      const reachedPhaseId = reachedPhaseIds[reachedPhaseIds.length - 1];
       const reachedPhaseIndex = THINKING_PHASES.findIndex((p) => p.id === reachedPhaseId);
       progress.forEach((p, idx) => {
         if (idx < reachedPhaseIndex) p.status = 'done';
@@ -374,8 +391,10 @@ function ThinkingPhases({ state }: { state: MeridianShowcaseState }) {
       if (firstPending !== -1) progress[firstPending].status = 'active';
     } else {
       progress.forEach((p) => {
-        p.status = 'done';
+        p.status = p.spanIds.length ? 'done' : 'pending';
       });
+      progress[0].status = 'done';
+      progress[progress.length - 1].status = 'done';
     }
   } else if (state.isLoading) {
     progress.forEach((p, idx) => {

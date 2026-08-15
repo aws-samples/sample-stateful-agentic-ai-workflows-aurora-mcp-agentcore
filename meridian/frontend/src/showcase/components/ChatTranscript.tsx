@@ -1,6 +1,13 @@
 import type { ReactNode } from 'react';
 import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
+import {
+  BedDouble,
+  BusFront,
+  Headphones,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Message, Product } from '../../types';
@@ -9,6 +16,7 @@ import { rehypeMemoryHighlight } from '../lib/memoryHighlight';
 import { typewriterCadence } from '../lib/streamingCadence';
 import { RankDeltaBadge } from './RankDeltaBadge';
 import { TripResultCardContent } from './TripResultCardContent';
+import { resultRankLabel } from '../lib/resultRankLabel';
 
 // Respect reduced motion by disabling spring-style reorder animations.
 const prefersReducedMotion =
@@ -208,7 +216,7 @@ function ChatMessage({
       {!isEmptyStream && (
         <div className={bubbleClass}>
           {message.role === 'bot' ? (
-            <MarkdownText source={visible || ' '} highlightMemory={state.selectedPhase >= 4} />
+            <ShowcaseMarkdown source={visible || ' '} highlightMemory={state.selectedPhase >= 4} />
           ) : (
             <span className="mds-message-text">{visible || ' '}</span>
           )}
@@ -241,7 +249,7 @@ function ChatMessage({
 
 // Clickable suggestions the backend returns with a turn. The Phase 5 workflow
 // emits "Resume workflow from checkpoint" here when a run pauses, so this chip
-// row is what makes the disruption -> recovery finale a single click instead
+// row is what makes the disruption -> Stateful Recovery finale a single click instead
 // of the presenter typing an exact phrase on stage.
 function FollowUpChips({
   prompts,
@@ -283,7 +291,13 @@ function FollowUpChips({
 // Render safe markdown while enforcing the no-emoji presentation contract.
 // When highlightMemory is set (Production+), recalled preferences are marked
 // so the audience can see what came from Aurora vs the prompt.
-function MarkdownText({ source, highlightMemory = false }: { source: string; highlightMemory?: boolean }) {
+export function ShowcaseMarkdown({
+  source,
+  highlightMemory = false,
+}: {
+  source: string;
+  highlightMemory?: boolean;
+}) {
   const cleaned = stripEmojis(source);
   return (
     <div className="mds-message-text mds-md">
@@ -495,7 +509,99 @@ function InlineProductGrid({
           ))}
         </div>
       </LayoutGroup>
+      <InlineConciergeCard products={products} state={state} />
     </>
+  );
+}
+
+function InlineConciergeCard({
+  products,
+  state,
+}: {
+  products: Product[];
+  state: MeridianShowcaseState;
+}) {
+  const hasTokyoResult = products.some((product) =>
+    /tokyo|haneda|japan/i.test(
+      `${product.name} ${product.destination ?? ''} ${product.description}`,
+    ),
+  );
+  if (state.selectedPhase < 4 || !hasTokyoResult) return null;
+
+  const travelerContextObserved =
+    state.memoryEnabled &&
+    (state.memoryFacts.length > 0 || Boolean(state.travelerProfile));
+  const runWorkflowPrompt = (prompt: string) => {
+    state.setSelectedPhase(5);
+    void state.applyPhaseExample(prompt, true, 5);
+  };
+
+  return (
+    <aside className="mds-inline-concierge" aria-label="Concierge assistance">
+      <div className="mds-inline-concierge-media" aria-hidden="true">
+        <img src="/travel/haneda-hotel.jpg" alt="" />
+        <span>Haneda · Tokyo</span>
+      </div>
+      <div className="mds-inline-concierge-copy">
+        <header>
+          <span>
+            <Headphones size={16} aria-hidden="true" />
+            Concierge assistance
+          </span>
+          <em>Search ready</em>
+        </header>
+        <h3>Continue with a hotel near Haneda</h3>
+        <p>
+          Meridian can search an airport-area stay after you choose the travel
+          plan. No room or service is booked without confirmation.
+        </p>
+        <div className="mds-inline-concierge-signals">
+          {travelerContextObserved && (
+            <span className="is-violet">
+              <Sparkles size={12} aria-hidden="true" />
+              Memory match
+            </span>
+          )}
+          {travelerContextObserved && (
+            <span>
+              <ShieldCheck size={12} aria-hidden="true" />
+              Hotel Platinum
+            </span>
+          )}
+          <span className="is-green">
+            <BedDouble size={12} aria-hidden="true" />
+            Lounge access
+          </span>
+          <span className="is-yellow">
+            <BusFront size={12} aria-hidden="true" />
+            Airport transfer
+          </span>
+        </div>
+        <footer>
+          <button
+            type="button"
+            className="is-primary"
+            onClick={() =>
+              runWorkflowPrompt(
+                'Find a well-rated hotel near Haneda for tonight with lounge access and an easy airport transfer.',
+              )
+            }
+          >
+            Find hotel options
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              runWorkflowPrompt(
+                'Review my trip protection and change-fee options before rebooking the cancelled Tokyo flight.',
+              )
+            }
+          >
+            Review protection
+          </button>
+        </footer>
+      </div>
+    </aside>
   );
 }
 
@@ -512,15 +618,10 @@ function InlineProductCard({
   rerankArmed: boolean;
   reranked: boolean;
 }) {
-  // Before the reorder plays we show the pgvector cosine the hybrid arms
-  // produced; after, the reranker's relevance score. The number visibly
-  // changing alongside the reorder is extra proof the reranker re-judged it.
-  const shownSimilarity =
-    rerankArmed && !reranked && product.pre_rerank_similarity != null
-      ? product.pre_rerank_similarity
-      : product.similarity;
-  const matchPct =
-    shownSimilarity != null ? Math.round(shownSimilarity * 100) : null;
+  const preRerank = rerankArmed && !reranked;
+  const matchLabel = resultRankLabel(state.selectedPhase, index, {
+    preRerank,
+  });
   const selected = state.selectedTrip?.product_id === product.product_id;
   const showDelta = rerankArmed && reranked && product.rank_delta != null;
   return (
@@ -531,7 +632,7 @@ function InlineProductCard({
           ? { duration: 0 }
           : { type: 'spring', stiffness: 420, damping: 34 }
       }
-      className={`mds-trip-result-card${selected ? ' is-selected' : ''}`}
+      className={`mds-trip-result-card${selected ? ' is-selected' : ''}${index === 0 ? ' is-priority' : ''}`}
       style={{ animationDelay: `${Math.min(index * 60, 360)}ms` }}
       tabIndex={0}
       role="button"
@@ -546,7 +647,9 @@ function InlineProductCard({
       <TripResultCardContent
         product={product}
         state={state}
-        matchPct={matchPct}
+        matchPct={null}
+        matchLabel={matchLabel}
+        featured={index === 0}
         matchExtra={
           <AnimatePresence>
             {showDelta && (

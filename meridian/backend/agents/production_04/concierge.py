@@ -160,6 +160,62 @@ class ProductionAgent:
                 ],
             },
         )
+
+        # Gateway owns discovery and ranking, while the local catalog read
+        # hydrates the richer card facts that the managed tool may omit
+        # (inventory, highlights, region). Preserve the Gateway score/order.
+        package_ids = [
+            str(package.get("package_id") or "")
+            for package in packages_raw
+            if package.get("package_id")
+        ]
+        if package_ids:
+            placeholders = ", ".join(["%s"] * len(package_ids))
+            detail_rows = await self.db.execute(
+                f"""
+                    SELECT package_id, name, operator, price_per_person,
+                           description, image_url, trip_type, destination,
+                           region, durations, availability, highlights
+                    FROM trip_packages
+                    WHERE package_id IN ({placeholders})
+                """,
+                tuple(package_ids),
+            )
+            detail_by_id = {
+                str(row.get("package_id") or ""): dict(row)
+                for row in detail_rows
+            }
+            packages_raw = [
+                {
+                    **package,
+                    **detail_by_id.get(str(package.get("package_id") or ""), {}),
+                    **(
+                        {"similarity": package.get("similarity")}
+                        if "similarity" in package
+                        else {}
+                    ),
+                }
+                for package in packages_raw
+            ]
+            self._log(
+                "database",
+                "Hydrated managed search results",
+                details=f"{len(detail_rows)} live catalog rows joined to Gateway ranking",
+                sql_query=(
+                    "SELECT package_id, durations, availability, highlights "
+                    "FROM trip_packages WHERE package_id IN (...)"
+                ),
+                telemetry={
+                    "category": "data",
+                    "component": "Aurora trip_packages",
+                    "status": "ok",
+                    "fields": [
+                        {"label": "rows", "value": str(len(detail_rows))},
+                        {"label": "preserved_order", "value": "Gateway ranking"},
+                    ],
+                },
+            )
+
         from types import SimpleNamespace
 
         packages = [
@@ -171,6 +227,11 @@ class ProductionAgent:
                 description=p.get("description", "") or "",
                 image_url=p.get("image_url", "") or "",
                 trip_type=p.get("trip_type", "") or "",
+                destination=p.get("destination"),
+                region=p.get("region"),
+                durations=p.get("durations") or [],
+                availability=p.get("availability") or {},
+                highlights=p.get("highlights") or [],
                 similarity=p.get("similarity"),
             )
             for p in packages_raw
