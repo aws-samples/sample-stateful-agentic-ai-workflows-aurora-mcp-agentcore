@@ -3620,14 +3620,23 @@
 .mds-chat-composer-wrap.is-proof .mds-chat-query-starters {
   display: grid;
   align-items: stretch;
+  gap: 9px 12px;
 }
 
 .mds-chat-composer-wrap.is-proof .mds-chat-query-starters.has-2 {
-  grid-template-columns: auto repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .mds-chat-composer-wrap.is-proof .mds-chat-query-starters.has-3 {
-  grid-template-columns: auto repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mds-chat-composer-wrap.is-proof .mds-chat-starter-label {
+  grid-column: 1 / -1;
+  align-self: center;
+  color: var(--mds-on-surface);
+  font-size: calc(13.5px * var(--mds-fs));
+  letter-spacing: 0.04em;
 }
 
 /* Keep all three proof prompts in a stable two-line row. The full prompt remains
@@ -3635,17 +3644,19 @@
    the composer below. */
 .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip {
   min-width: 0;
-  height: 50px;
-  min-height: 50px;
+  height: 64px;
+  min-height: 64px;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   overflow: hidden;
-  padding-block: 5px;
-  padding-inline: 12px;
-  font-size: calc(12.5px * var(--mds-fs));
+  padding: 9px 16px;
+  border-radius: 12px;
+  font-size: calc(15.5px * var(--mds-fs));
+  font-weight: 650;
   text-align: left;
   white-space: normal;
-  line-height: 1.25;
+  line-height: 1.28;
 }
 
 .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip > span {

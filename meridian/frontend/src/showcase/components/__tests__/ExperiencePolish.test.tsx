@@ -198,6 +198,33 @@ describe('Experience presentation polish', () => {
     expect(stretch).toHaveClass('is-stretch');
   });
 
+  it('keeps projector query starters in stable two and three column groups', () => {
+    const { container, rerender } = render(
+      <ChatComposer state={makeState()} proofMode />,
+    );
+
+    let starters = container.querySelector('.mds-chat-query-starters');
+    expect(starters).toHaveClass('has-2');
+    expect(within(starters as HTMLElement).getByText('Try a query'))
+      .toBeInTheDocument();
+    expect(starters?.querySelectorAll('.mds-chat-starter-chip')).toHaveLength(2);
+
+    rerender(
+      <ChatComposer
+        state={makeState({
+          selectedPhase: 4,
+          phaseLabel: 'Production',
+          phaseExamples: SHOWCASE_EXAMPLE_PROMPTS[4],
+        })}
+        proofMode
+      />,
+    );
+
+    starters = container.querySelector('.mds-chat-query-starters');
+    expect(starters).toHaveClass('has-3');
+    expect(starters?.querySelectorAll('.mds-chat-starter-chip')).toHaveLength(3);
+  });
+
   it('progresses the current trip from disruption through recovery', () => {
     const initial = makeState();
     expect(deriveRecoveryStage(initial)).toBe('action');
@@ -278,8 +305,11 @@ describe('Experience presentation polish', () => {
       screen.getByRole('article', { name: 'Start travel recovery' }),
     ).toBeInTheDocument();
     expect(
-      screen.getAllByRole('button', { name: 'Recover my trip' }),
+      screen.getAllByRole('button', { name: 'Start recovery' }),
     ).toHaveLength(1);
+    expect(
+      screen.getByRole('img', { name: 'ANA aircraft on final approach' }),
+    ).toHaveAttribute('src', '/travel/recovery-flight.jpg');
     expect(
       screen.queryByRole('article', { name: 'Concierge assistance' }),
     ).not.toBeInTheDocument();
@@ -565,7 +595,7 @@ describe('Experience presentation polish', () => {
       <RecoveryWorkspace state={initial} />,
     );
 
-    expect(screen.getByRole('button', { name: 'Recover my trip' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start recovery' })).toBeInTheDocument();
     expect(
       screen.getByText('Your flight has been cancelled.'),
     ).toBeInTheDocument();

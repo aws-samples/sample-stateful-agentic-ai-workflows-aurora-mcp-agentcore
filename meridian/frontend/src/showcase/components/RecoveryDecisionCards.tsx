@@ -148,6 +148,49 @@ function preferenceChips(
   return chips.length ? chips.slice(0, 3) : ['Preference match pending'];
 }
 
+function travelerContextReasons(
+  evidence: RecoveryEvidence,
+  facts: LongTermMemoryFact[],
+  profile: TravelerProfile | null,
+): { label: string; detail: string }[] {
+  if (!evidence.memoryObserved) return [];
+  const byKey = new Map(facts.map((fact) => [fact.key, fact.value]));
+  const reasons: { label: string; detail: string }[] = [];
+  const allergy =
+    byKey.get('shellfish_allergy') ??
+    profile?.dietary_notes;
+  if (allergy) {
+    reasons.push({
+      label: 'Dietary safety',
+      detail: `Shellfish allergy flagged for every hotel and dining handoff`,
+    });
+  }
+  const lodging =
+    byKey.get('lodging_preference') ??
+    byKey.get('lodging_style') ??
+    byKey.get('travel_style');
+  if (lodging) {
+    reasons.push({
+      label: 'Stay preference',
+      detail: `${cleanPreference(lodging) ?? lodging} carried into concierge search`,
+    });
+  }
+  const seat = cleanPreference(profile?.seat_preference);
+  if (seat) {
+    reasons.push({
+      label: 'Long-haul comfort',
+      detail: `${seat} retained for replacement-flight review`,
+    });
+  }
+  if (evidence.loyaltyObserved) {
+    reasons.push({
+      label: 'Loyalty context',
+      detail: 'Airline Premier and Hotel Platinum benefits checked',
+    });
+  }
+  return reasons.slice(0, 3);
+}
+
 function stageBadge(stage: RecoveryStage): string {
   if (stage === 'ready') return 'Ready for review';
   if (stage === 'checkpointed') return 'Shortlist checkpointed';
@@ -252,10 +295,7 @@ export function RecoveryLaunchCard({
           aria-label="Cancelled ANA NH 109 mobile trip card"
         >
           <div className="mds-mobile-disruption-topline">
-            <span>
-              <Plane size={15} aria-hidden="true" />
-              Meridian trips
-            </span>
+            <span>Meridian trips</span>
             <em>
               {failed ? (
                 <AlertTriangle size={13} aria-hidden="true" />
@@ -272,80 +312,94 @@ export function RecoveryLaunchCard({
             </em>
           </div>
 
-          <div className="mds-mobile-disruption-message">
-            <span aria-hidden="true">
-              <AlertTriangle size={22} />
-            </span>
-            <div>
+          <div className="mds-mobile-disruption-hero">
+            <div className="mds-mobile-disruption-message">
               <small>Trip update</small>
-              <h2>Your flight has been cancelled.</h2>
-              <p>
-                ANA NH 109 from New York to Tokyo is no longer operating.
-                Meridian can build a recovery plan now.
-              </p>
-            </div>
-          </div>
-
-          <div className="mds-mobile-disruption-route">
-            <span>
-              <small>From</small>
-              <strong>JFK</strong>
-              <em>New York</em>
-            </span>
-            <span className="mds-mobile-disruption-route-line">
-              <i />
-              <Plane size={18} aria-hidden="true" />
-              <i />
-              <b>ANA NH 109</b>
-            </span>
-            <span>
-              <small>To</small>
-              <strong>HND</strong>
-              <em>Tokyo</em>
-            </span>
-          </div>
-
-          <div className="mds-mobile-disruption-status">
-            <strong>Cancelled</strong>
-            <span>
-              {failed
-                ? 'The workflow stopped safely before changing the trip.'
-                : running
-                  ? 'Meridian is building a checkpointed recovery plan.'
-                  : 'Live recovery options are ready to search.'}
-            </span>
-          </div>
-
-          {failed && (
-            <div className="mds-recovery-launch-error" role="alert">
-              <AlertTriangle size={17} aria-hidden="true" />
-              <span>
-                <strong>
-                  {connectionFailure
-                    ? 'Aurora checkpoint connection unavailable'
-                    : 'Recovery workflow interrupted'}
-                </strong>
-                <small>{errorDetail}</small>
+              <span aria-hidden="true">
+                <AlertTriangle size={22} />
               </span>
+              <div>
+                <h2>Your flight has been cancelled.</h2>
+                <p>
+                  ANA NH 109 from New York to Tokyo is no longer operating.
+                  Meridian can build a recovery plan now.
+                </p>
+              </div>
             </div>
-          )}
+            <figure className="mds-mobile-disruption-media">
+              <img
+                src="/travel/recovery-flight.jpg"
+                alt="ANA aircraft on final approach"
+                width="1920"
+                height="1168"
+                loading="eager"
+                decoding="async"
+              />
+            </figure>
 
-          <button
-            type="button"
-            onClick={onStart}
-            disabled={disabled || running}
-          >
-            {running ? (
-              <Loader2 size={18} aria-hidden="true" />
-            ) : (
-              <Plane size={18} aria-hidden="true" />
-            )}
-            {running
-              ? 'Building recovery plan'
-              : failed
-                ? 'Retry recovery'
-                : 'Recover my trip'}
-          </button>
+            <div className="mds-mobile-disruption-flight">
+              <div className="mds-mobile-disruption-route">
+                <span>
+                  <small>From</small>
+                  <strong>JFK</strong>
+                  <em>New York</em>
+                </span>
+                <span className="mds-mobile-disruption-route-line">
+                  <i />
+                  <Circle size={8} fill="currentColor" aria-hidden="true" />
+                  <i />
+                  <b>ANA NH 109</b>
+                </span>
+                <span>
+                  <small>To</small>
+                  <strong>HND</strong>
+                  <em>Tokyo</em>
+                </span>
+              </div>
+
+              <div className="mds-mobile-disruption-status">
+                <strong>Cancelled</strong>
+                <span>
+                  {failed
+                    ? 'The workflow stopped safely before changing the trip.'
+                    : running
+                      ? 'Meridian is building a checkpointed recovery plan.'
+                      : 'Live recovery options are ready to search.'}
+                </span>
+              </div>
+
+              {failed && (
+                <div className="mds-recovery-launch-error" role="alert">
+                  <AlertTriangle size={17} aria-hidden="true" />
+                  <span>
+                    <strong>
+                      {connectionFailure
+                        ? 'Aurora checkpoint connection unavailable'
+                        : 'Recovery workflow interrupted'}
+                    </strong>
+                    <small>{errorDetail}</small>
+                  </span>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={onStart}
+                disabled={disabled || running}
+              >
+                {running ? (
+                  <Loader2 size={18} aria-hidden="true" />
+                ) : (
+                  <Route size={18} aria-hidden="true" />
+                )}
+                {running
+                  ? 'Building plan'
+                  : failed
+                    ? 'Retry recovery'
+                    : 'Start recovery'}
+              </button>
+            </div>
+          </div>
         </section>
       )}
 
@@ -455,6 +509,11 @@ export function RecommendedRecoveryPlanCard({
     memoryFacts,
     travelerProfile,
   );
+  const contextReasons = travelerContextReasons(
+    evidence,
+    memoryFacts,
+    travelerProfile,
+  );
 
   return (
     <article
@@ -476,6 +535,11 @@ export function RecommendedRecoveryPlanCard({
 
       {product ? (
         <>
+          <div className="mds-recommended-plan-media">
+            <TripVisual product={product} />
+            <span aria-hidden="true" />
+            <em>Recovery pick</em>
+          </div>
           <div className="mds-recommended-plan-title">
             <div>
               <small>
@@ -529,7 +593,11 @@ export function RecommendedRecoveryPlanCard({
       )}
 
       <div className="mds-decision-preference-row">
-        <small>Preference and loyalty context</small>
+        <small>
+          {evidence.memoryObserved
+            ? 'Traveler context applied'
+            : 'Traveler context pending'}
+        </small>
         <div>
           {chips.map((chip) => (
             <span
@@ -548,6 +616,32 @@ export function RecommendedRecoveryPlanCard({
           ))}
         </div>
       </div>
+
+      {contextReasons.length > 0 && (
+        <section
+          className="mds-recovery-context-reasons"
+          aria-label="Why this plan fits Alex"
+        >
+          <header>
+            <span>
+              <Sparkles size={15} aria-hidden="true" />
+              Why this fits Alex
+            </span>
+            <em>Aurora traveler context</em>
+          </header>
+          <ul>
+            {contextReasons.map((reason) => (
+              <li key={reason.label}>
+                <CheckCircle2 size={15} aria-hidden="true" />
+                <span>
+                  <strong>{reason.label}</strong>
+                  <small>{reason.detail}</small>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <footer className="mds-decision-card-actions">
         <button

@@ -50,7 +50,7 @@ export function ChatComposer({
           className={`mds-chat-query-starters has-${queryStarters.length}`}
           aria-label="Query starters for this phase"
         >
-          <span className="mds-chat-starter-label">Try</span>
+          <span className="mds-chat-starter-label">Try a query</span>
           {queryStarters.map((prompt) => {
             const isStretch =
               proofMode &&

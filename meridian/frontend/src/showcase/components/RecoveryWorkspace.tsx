@@ -3,7 +3,7 @@ import {
   Database,
   Sparkles,
 } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChatComposer } from './ChatComposer';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { SHOWCASE_FINALE_PROMPT } from '../lib/showcaseAdapters';
@@ -25,6 +25,40 @@ const STAY_PROMPT =
   'Find a well-rated hotel near Haneda for tonight with lounge access and an easy airport transfer.';
 const PROTECTION_PROMPT =
   'Review my trip protection and change-fee options before rebooking the cancelled Tokyo flight.';
+
+type RecoveryLayout = 'command' | 'focus' | 'journey';
+
+const RECOVERY_LAYOUTS: {
+  id: RecoveryLayout;
+  label: string;
+  description: string;
+}[] = [
+  {
+    id: 'command',
+    label: 'Command',
+    description: 'Dominant decision with a compact operational rail',
+  },
+  {
+    id: 'focus',
+    label: 'Focus',
+    description: 'Full-width decision, comparison, then proof',
+  },
+  {
+    id: 'journey',
+    label: 'Journey',
+    description: 'Plan and concierge first, alternatives and evidence next',
+  },
+];
+
+function initialRecoveryLayout(): RecoveryLayout {
+  if (typeof window === 'undefined') return 'command';
+  const layout = new URLSearchParams(window.location.search).get(
+    'recoveryLayout',
+  );
+  return RECOVERY_LAYOUTS.some((option) => option.id === layout)
+    ? (layout as RecoveryLayout)
+    : 'command';
+}
 
 export function RecoveryWorkspace({
   state,
@@ -50,6 +84,15 @@ export function RecoveryWorkspace({
   const briefingRef = useRef<HTMLElement>(null);
   const consoleRef = useRef<HTMLDivElement>(null);
   const previousLoadingRef = useRef(false);
+  const [recoveryLayout, setRecoveryLayout] = useState<RecoveryLayout>(
+    initialRecoveryLayout,
+  );
+  const layoutReviewEnabled =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('recoveryReview') === '1';
+  const activeLayout =
+    RECOVERY_LAYOUTS.find((option) => option.id === recoveryLayout) ??
+    RECOVERY_LAYOUTS[0];
   const isResumingFromCheckpoint =
     recoveryStage === 'running' &&
     state.workflowStatus === 'paused' &&
@@ -100,6 +143,14 @@ export function RecoveryWorkspace({
     state.setSelectedPhase(5);
     void state.applyPhaseExample(prompt, true, 5);
   };
+  const selectRecoveryLayout = (layout: RecoveryLayout) => {
+    setRecoveryLayout(layout);
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('recoveryReview', '1');
+    url.searchParams.set('recoveryLayout', layout);
+    window.history.replaceState(null, '', url);
+  };
   const hasConversation =
     state.messages.length > 0 || state.isLoading || Boolean(state.error);
   const durableCheckpoint =
@@ -121,7 +172,7 @@ export function RecoveryWorkspace({
       ? 'Review this plan'
       : recoveryStage === 'checkpointed'
         ? 'Resume and verify'
-        : 'Recover my trip';
+        : 'Start recovery';
   const alternativeProducts = Array.from({ length: 3 }, (_, index) =>
     state.recommendations?.[index + 1] ?? null,
   );
@@ -151,7 +202,7 @@ export function RecoveryWorkspace({
     <div
       className={`mds-recovery-workspace${
         recoveryStage === 'running' ? ' is-running' : ''
-      }${hasConversation ? ' has-conversation' : ''}`}
+      }${hasConversation ? ' has-conversation' : ''} is-layout-${recoveryLayout}`}
     >
       <header className={`mds-recovery-overview is-${recoveryStage}`}>
         <div className="mds-recovery-overview-title">
@@ -185,6 +236,31 @@ export function RecoveryWorkspace({
           </div>
         )}
       </header>
+
+      {layoutReviewEnabled && (
+        <section
+          className="mds-recovery-layout-review"
+          aria-label="Recovery layout prototypes"
+        >
+          <span>
+            <strong>Layout study</strong>
+            <small>{activeLayout.description}</small>
+          </span>
+          <div role="group" aria-label="Choose a recovery layout">
+            {RECOVERY_LAYOUTS.map((layout) => (
+              <button
+                key={layout.id}
+                type="button"
+                className={recoveryLayout === layout.id ? 'is-active' : ''}
+                aria-pressed={recoveryLayout === layout.id}
+                onClick={() => selectRecoveryLayout(layout.id)}
+              >
+                {layout.label}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {recoveryStage === 'running' ? (
         <div ref={consoleRef} className="mds-recovery-active-console">
