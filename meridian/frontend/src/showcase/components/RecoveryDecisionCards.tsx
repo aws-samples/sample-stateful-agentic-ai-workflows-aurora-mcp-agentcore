@@ -1,6 +1,6 @@
 import {
+  AlertTriangle,
   ArrowRight,
-  BedDouble,
   Check,
   CheckCircle2,
   Circle,
@@ -9,12 +9,15 @@ import {
   FileCheck2,
   GitCompareArrows,
   Headphones,
+  LockKeyhole,
   Loader2,
   Plane,
   Route,
+  Search,
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { LongTermMemoryFact, Product, TravelerProfile } from '../../types';
 import type {
   RecoveryEvidence,
@@ -70,8 +73,15 @@ interface CheckpointedPlanCardProps {
   evidence: RecoveryEvidence;
   threadId: string;
   resumedAfterRestart: boolean;
+}
+
+interface RecoveryLaunchCardProps {
+  stage: RecoveryStage;
+  errorDetail?: string | null;
   disabled?: boolean;
-  onResume: () => void;
+  compact?: boolean;
+  resumeMode?: boolean;
+  onStart: () => void;
 }
 
 function money(price: number): string {
@@ -172,6 +182,265 @@ function RouteTimeline({
   );
 }
 
+export function RecoveryLaunchCard({
+  stage,
+  errorDetail = null,
+  disabled = false,
+  compact = false,
+  resumeMode = false,
+  onStart,
+}: RecoveryLaunchCardProps) {
+  const running = stage === 'running';
+  const failed = Boolean(errorDetail);
+  const [activeStep, setActiveStep] = useState(0);
+  const launchSteps = [
+    {
+      icon: AlertTriangle,
+      label: 'Understand disruption',
+      detail: 'Classify the cancelled-flight recovery.',
+    },
+    {
+      icon: Search,
+      label: 'Search and rank',
+      detail: 'Retrieve and rerank live Tokyo options.',
+    },
+    {
+      icon: Database,
+      label: 'Save an Aurora checkpoint',
+      detail: 'Persist the shortlist before verification.',
+    },
+    {
+      icon: CheckCircle2,
+      label: 'Verify after resume',
+      detail: 'Check the top three options after the pause.',
+    },
+  ];
+
+  useEffect(() => {
+    if (!running) {
+      setActiveStep(0);
+      return undefined;
+    }
+
+    if (resumeMode) {
+      setActiveStep(3);
+      return undefined;
+    }
+
+    setActiveStep(0);
+    const timers = [
+      window.setTimeout(() => setActiveStep(1), 300),
+      window.setTimeout(() => setActiveStep(2), 1250),
+    ];
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [resumeMode, running]);
+
+  const connectionFailure =
+    failed && /connection|checkpoint|postgres|aurora/i.test(errorDetail ?? '');
+  const failedStep = connectionFailure ? 2 : Math.max(activeStep, 0);
+
+  return (
+    <article
+      className={`mds-decision-card mds-recovery-launch-card is-${stage}${
+        failed ? ' has-error' : ''
+      }${compact ? ' is-compact' : ''}`}
+      aria-label={compact ? 'Live recovery progress' : 'Start travel recovery'}
+    >
+      {!compact && (
+        <section
+          className="mds-mobile-disruption-card"
+          aria-label="Cancelled ANA NH 109 mobile trip card"
+        >
+          <div className="mds-mobile-disruption-topline">
+            <span>
+              <Plane size={15} aria-hidden="true" />
+              Meridian trips
+            </span>
+            <em>
+              {failed ? (
+                <AlertTriangle size={13} aria-hidden="true" />
+              ) : running ? (
+                <Loader2 size={13} aria-hidden="true" />
+              ) : (
+                <AlertTriangle size={13} aria-hidden="true" />
+              )}
+              {failed
+                ? 'Recovery needs attention'
+                : running
+                  ? 'Recovery in progress'
+                  : 'Action needed'}
+            </em>
+          </div>
+
+          <div className="mds-mobile-disruption-message">
+            <span aria-hidden="true">
+              <AlertTriangle size={22} />
+            </span>
+            <div>
+              <small>Trip update</small>
+              <h2>Your flight has been cancelled.</h2>
+              <p>
+                ANA NH 109 from New York to Tokyo is no longer operating.
+                Meridian can build a recovery plan now.
+              </p>
+            </div>
+          </div>
+
+          <div className="mds-mobile-disruption-route">
+            <span>
+              <small>From</small>
+              <strong>JFK</strong>
+              <em>New York</em>
+            </span>
+            <span className="mds-mobile-disruption-route-line">
+              <i />
+              <Plane size={18} aria-hidden="true" />
+              <i />
+              <b>ANA NH 109</b>
+            </span>
+            <span>
+              <small>To</small>
+              <strong>HND</strong>
+              <em>Tokyo</em>
+            </span>
+          </div>
+
+          <div className="mds-mobile-disruption-status">
+            <strong>Cancelled</strong>
+            <span>
+              {failed
+                ? 'The workflow stopped safely before changing the trip.'
+                : running
+                  ? 'Meridian is building a checkpointed recovery plan.'
+                  : 'Live recovery options are ready to search.'}
+            </span>
+          </div>
+
+          {failed && (
+            <div className="mds-recovery-launch-error" role="alert">
+              <AlertTriangle size={17} aria-hidden="true" />
+              <span>
+                <strong>
+                  {connectionFailure
+                    ? 'Aurora checkpoint connection unavailable'
+                    : 'Recovery workflow interrupted'}
+                </strong>
+                <small>{errorDetail}</small>
+              </span>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={onStart}
+            disabled={disabled || running}
+          >
+            {running ? (
+              <Loader2 size={18} aria-hidden="true" />
+            ) : (
+              <Plane size={18} aria-hidden="true" />
+            )}
+            {running
+              ? 'Building recovery plan'
+              : failed
+                ? 'Retry recovery'
+                : 'Recover my trip'}
+          </button>
+        </section>
+      )}
+
+      <div className="mds-recovery-timeline-heading">
+        <span>{running ? 'Live workflow' : failed ? 'Workflow stopped' : 'Recovery workflow'}</span>
+        <small>
+          {running
+            ? `Step ${activeStep + 1} of ${launchSteps.length}`
+            : failed
+              ? 'No trip change was made'
+              : 'Runs after you confirm'}
+        </small>
+      </div>
+
+      <ol
+        className={`mds-recovery-launch-steps${
+          running ? ' is-running' : failed ? ' is-failed' : ''
+        }`}
+        aria-label="Recovery workflow progress"
+      >
+        {launchSteps.map((step, index) => {
+          const Icon = step.icon;
+          const stepState = failed
+            ? index < failedStep
+              ? 'is-visited'
+              : index === failedStep
+                ? 'is-failed'
+                : 'is-pending'
+            : running
+              ? index < activeStep
+                ? 'is-visited'
+                : index === activeStep
+                  ? 'is-current'
+                  : 'is-pending'
+              : index === 0
+                ? 'is-ready'
+                : 'is-pending';
+          return (
+            <li
+              key={step.label}
+              className={stepState}
+              aria-current={stepState === 'is-current' ? 'step' : undefined}
+            >
+              <span>
+                {stepState === 'is-current' ? (
+                  <Loader2 size={16} aria-hidden="true" />
+                ) : stepState === 'is-visited' ? (
+                  <Check size={15} strokeWidth={3} aria-hidden="true" />
+                ) : stepState === 'is-failed' ? (
+                  <AlertTriangle size={15} aria-hidden="true" />
+                ) : (
+                  <Icon size={16} aria-hidden="true" />
+                )}
+              </span>
+              <div>
+                <strong>{step.label}</strong>
+                <small>{step.detail}</small>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+
+      {!compact && (
+        <footer className="mds-recovery-launch-actions">
+          <span>
+            <LockKeyhole size={14} aria-hidden="true" />
+            No booking or purchase without confirmation
+          </span>
+        </footer>
+      )}
+    </article>
+  );
+}
+
+export function RecoveryGuardrailsCard() {
+  return (
+    <article
+      className="mds-decision-card mds-recovery-guardrails-card"
+      aria-label="Recovery guardrails"
+    >
+      <span>
+        <ShieldCheck size={17} aria-hidden="true" />
+      </span>
+      <div>
+        <strong>Built for a safe handoff</strong>
+        <small>
+          Live search, traveler context, and durable state become visible only
+          after the workflow observes them.
+        </small>
+      </div>
+    </article>
+  );
+}
+
 export function RecommendedRecoveryPlanCard({
   product,
   stage,
@@ -207,15 +476,14 @@ export function RecommendedRecoveryPlanCard({
 
       {product ? (
         <>
-          <div className="mds-recommended-plan-media">
-            <TripVisual product={product} compact />
-            <span className="mds-recommended-plan-media-shade" />
-            <div className="mds-recommended-plan-media-copy">
+          <div className="mds-recommended-plan-title">
+            <div>
               <small>
                 {product.brand || 'Meridian partner'}
                 {product.destination ? ` · ${product.destination}` : ''}
               </small>
               <strong>{product.name}</strong>
+              {product.description && <p>{product.description}</p>}
             </div>
             <div className="mds-recommended-plan-price">
               <small>From</small>
@@ -331,9 +599,9 @@ export function FlightOptionCard({
       </header>
       {product ? (
         <>
-          <div className="mds-flight-option-card-media" aria-hidden="true">
+          <div className="mds-flight-option-card-media">
             <TripVisual product={product} compact />
-            <span />
+            <span aria-hidden="true" />
           </div>
           <div className="mds-flight-option-card-title">
             <strong>{product.name}</strong>
@@ -407,48 +675,33 @@ export function ConciergeAssistanceCard({
         <Sparkles size={16} aria-hidden="true" />
       </header>
       <div className="mds-concierge-hotel-media">
-        <img src="/travel/haneda-hotel.jpg" alt="" />
+        <img
+          src="/travel/haneda-hotel.jpg"
+          alt="Airport hotel room overlooking Haneda runways"
+        />
         <span className="mds-concierge-hotel-media-shade" />
+        <em>{ready ? 'Search ready' : 'Queued'}</em>
         <div>
           <small>Haneda · hotel assistance</small>
-          <strong>Airport-area stay search</strong>
+          <strong>Airport-area stay shortlist</strong>
           <span>
             {product
               ? `Aligned to ${product.name}`
               : 'Ready after a replacement plan is selected'}
           </span>
         </div>
-        <em>{ready ? 'Search ready' : 'Queued'}</em>
       </div>
       <div className="mds-concierge-context-chips">
         {evidence.memoryObserved && <span className="is-violet">Memory match</span>}
         {evidence.loyaltyObserved && <span>Hotel Platinum</span>}
-        <span className="is-green">Lounge access</span>
-        <span className="is-yellow">Airport transfer</span>
+        <span className={ready ? 'is-green' : ''}>
+          {ready ? 'Lounge access' : 'Hotel options'}
+        </span>
+        <span className={ready ? 'is-yellow' : ''}>
+          {ready ? 'Airport transfer' : 'Transfer support'}
+        </span>
       </div>
       <p>{contextLabel}. Nothing is booked automatically.</p>
-      <div className="mds-concierge-assistance-list">
-        <div>
-          <span aria-hidden="true"><BedDouble size={17} /></span>
-          <div>
-            <strong>Hotel and lounge</strong>
-            <small>
-              {ready
-                ? 'Search near Haneda using the confirmed arrival.'
-                : 'Queued until the replacement itinerary is chosen.'}
-            </small>
-          </div>
-          <em>{ready ? 'Ready' : 'Not run'}</em>
-        </div>
-        <div>
-          <span aria-hidden="true"><FileCheck2 size={17} /></span>
-          <div>
-            <strong>Trip protection</strong>
-            <small>Review coverage and change-fee terms before rebooking.</small>
-          </div>
-          <em>Not checked</em>
-        </div>
-      </div>
       <footer className="mds-concierge-assistance-actions">
         <button
           type="button"
@@ -574,8 +827,6 @@ export function CheckpointedPlanCard({
   evidence,
   threadId,
   resumedAfterRestart,
-  disabled = false,
-  onResume,
 }: CheckpointedPlanCardProps) {
   const searchDone = evidence.searchObserved;
   const rankDone = evidence.alternativesObserved;
@@ -630,12 +881,6 @@ export function CheckpointedPlanCard({
               ? 'Meridian is saving progress between workflow steps.'
               : 'Recovery state will be persisted before inventory verification.'}
       </p>
-      {stage === 'checkpointed' && (
-        <button type="button" onClick={onResume} disabled={disabled}>
-          Resume recovery
-          <ArrowRight size={15} aria-hidden="true" />
-        </button>
-      )}
     </article>
   );
 }

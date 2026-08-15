@@ -155,6 +155,22 @@ def test_workflow_enters_async_postgres_saver_when_dsn_set(
         async def close(self) -> None:
             events.append("close")
 
+        def connection(self, *, timeout: float):
+            events.append(f"preflight:{int(timeout)}")
+
+            class ConnectionContext:
+                async def __aenter__(self):
+                    class Connection:
+                        async def execute(self, statement: str) -> None:
+                            events.append(f"execute:{statement}")
+
+                    return Connection()
+
+                async def __aexit__(self, *_args: Any) -> None:
+                    return None
+
+            return ConnectionContext()
+
     monkeypatch.setenv("LANGGRAPH_CHECKPOINT_DSN", "postgresql://example")
     monkeypatch.setattr(workflow_mod, "AsyncPostgresSaver", FakeAsyncSaver)
     monkeypatch.setattr(workflow_mod, "AsyncConnectionPool", FakePool)
@@ -178,6 +194,8 @@ def test_workflow_enters_async_postgres_saver_when_dsn_set(
         "open:True:10",
         "saver:meridian-langgraph-checkpoints",
         "setup",
+        "preflight:3",
+        "execute:SELECT 1",
     ]
     titles = [a.get("title", "") for a in res.get("activities", [])]
     assert "Checkpoint · PostgresSaver.put" in titles

@@ -542,13 +542,36 @@ class OrchestrationAgent:
 
     # ------------------------------------------------------------- checkpointer
 
-    async def _ensure_checkpoint_backend(self) -> None:
+    async def _ensure_checkpoint_backend(self) -> CheckpointBackend:
         backend = await initialize_checkpoint_backend()
-        if self.checkpointer is backend.saver:
+        if self.checkpointer is not backend.saver:
+            self.checkpointer = backend.saver
+            self.checkpointer_kind = backend.kind
+            self.graph = self._build_graph()
+        return backend
+
+    async def _preflight_checkpoint_connection(
+        self,
+        backend: CheckpointBackend,
+    ) -> None:
+        """Fail quickly when the local Aurora tunnel or checkpoint pool is down."""
+        if backend.pool is None:
             return
-        self.checkpointer = backend.saver
-        self.checkpointer_kind = backend.kind
-        self.graph = self._build_graph()
+
+        timeout = float(
+            max(
+                1,
+                _int_env("LANGGRAPH_CHECKPOINT_PREFLIGHT_TIMEOUT", 3),
+            )
+        )
+        try:
+            async with backend.pool.connection(timeout=timeout) as connection:
+                await connection.execute("SELECT 1")
+        except Exception as exc:
+            raise RuntimeError(
+                "Aurora checkpoint connection unavailable. Start "
+                "scripts/start_checkpoint_tunnel.sh and restart the backend."
+            ) from exc
 
     # ------------------------------------------------------------------ graph
 
@@ -964,7 +987,8 @@ class OrchestrationAgent:
             "worker_instance_id": WORKER_INSTANCE_ID,
             "activities": [],
         }
-        await self._ensure_checkpoint_backend()
+        checkpoint_backend = await self._ensure_checkpoint_backend()
+        await self._preflight_checkpoint_connection(checkpoint_backend)
 
         resumed_nodes: List[str] = []
         resumed_after_restart = False

@@ -2385,20 +2385,38 @@ async def chat(request: ChatRequest) -> ChatResponse:
             raise HTTPException(status_code=403, detail=str(e)) from e
         except Exception as e:
             log_error("orchestration_workflow", error=str(e))
+            error_detail = str(e)
+            checkpoint_unavailable = any(
+                marker in error_detail.lower()
+                for marker in (
+                    "connection",
+                    "checkpoint",
+                    "postgres",
+                    "aurora",
+                    "pool",
+                )
+            )
             activities.append(create_activity(
                 activity_type="error",
                 title="LangGraph workflow error",
-                details=str(e),
+                details=error_detail,
                 agent_name="OrchestrationAgent",
                 agent_file="agents/orchestration_05/workflow.py",
             ))
             return _complete_chat_turn(
                 ChatResponse(
-                message="The Workflow run hit an error. Please try a Retrieval or Production query.",
+                message=(
+                    "Recovery stopped safely before changing the trip because "
+                    "the Aurora checkpoint connection is unavailable. Restore "
+                    "the checkpoint connection, then retry recovery."
+                    if checkpoint_unavailable
+                    else "Recovery stopped safely before changing the trip. "
+                    "Retry the workflow or inspect the failed step in Agent proof."
+                ),
                 products=None,
                 order=None,
                 activities=activities,
-                follow_ups=["Tokyo culture trip", "Family-friendly beach resort", "Romantic week in Europe"],
+                follow_ups=["Retry recovery"],
             ),
                 request.phase,
                 turn_started,

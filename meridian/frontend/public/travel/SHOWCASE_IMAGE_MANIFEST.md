@@ -1,15 +1,17 @@
-# Showcase photography cache
+# Showcase editorial image cache
 
-The presenter-query cards use locally cached real travel photography so the
-projected experience remains reliable without venue Wi-Fi. The catalog images
-are high-resolution Unsplash source photographs, except for the existing
-licensed Tuscany image and the bundled real hotel interior used for TKY-003.
+The presenter-query cards use locally bundled editorial travel imagery so the
+projected experience remains reliable without venue Wi-Fi. On August 15, 2026,
+the stage-critical assets listed below were replaced with user-supplied,
+photorealistic generated images. `catalog/CTY-004.jpg` and
+`catalog/BCH-003.jpg` retain the earlier catalog photography.
 
 Replacement photography should remain:
 
 - 1600 x 900 pixels or larger, landscape JPG
 - center-safe for responsive 16:9 crops
-- real architecture, landscape, lodging, or food experiences
+- grounded in recognizable architecture, landscape, lodging, or food
+  experiences
 - free of text overlays, watermarks, prominent logos, and close-up faces
 - premium but believable rather than concept-art or synthetic-looking
 

@@ -4,6 +4,8 @@ import {
   Compass,
   Mail,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings2,
   Sparkles,
   Sun,
@@ -15,7 +17,6 @@ import { AuroraEvidenceStrip } from './components/AuroraEvidenceStrip';
 import { ChatComposer } from './components/ChatComposer';
 import { ChatTranscript } from './components/ChatTranscript';
 import { ComparisonDialog } from './components/ComparisonDialog';
-import { JourneyPanel } from './components/JourneyPanel';
 import { MemoryDrawer } from './components/MemoryDrawer';
 import { NavPanelDrawer } from './components/NavPanelDrawer';
 import type { NavPanelId } from './components/NavPanelDrawer';
@@ -27,6 +28,7 @@ import { TripDetailDrawer } from './components/TripDetailDrawer';
 import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
 import { MERIDIAN_MARK_SRC } from '../lib/meridianBrand';
 import { ALEX_IMAGE_URL, ALEX_NAME } from './lib/personas';
+import { deriveRecoveryStage } from './lib/recoveryState';
 
 type NavItemId = 'concierge' | 'trips' | 'discover' | 'profile' | 'preferences' | 'messages';
 type ShowcaseTheme = 'dark' | 'light';
@@ -75,9 +77,16 @@ export function DesktopMeridianApp({
   const [forYouCollapsed, setForYouCollapsed] = useState(false);
   const [activityCollapsed, setActivityCollapsed] = useState(false);
   const [auroraEvidenceCollapsed, setAuroraEvidenceCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(max-width: 1180px)').matches,
+  );
   const [navPanel, setNavPanel] = useState<NavPanelId | null>(null);
   const greetingPart = greetingForHour(new Date().getHours());
   const isLadder = demoStep === 'ladder';
+  const recoveryStage = deriveRecoveryStage(state);
   const showAudienceRuntimeStatus = state.backendStatus !== 'offline';
 
   const openLadder = () => setDemoStep('ladder');
@@ -102,11 +111,29 @@ export function DesktopMeridianApp({
   };
 
   return (
-    <div className={`mds-desktop-app is-projector ${isLadder ? 'is-proof is-ladder' : 'is-experience is-finale'}`}>
+    <div
+      className={`mds-desktop-app is-projector ${
+        isLadder ? 'is-proof is-ladder' : 'is-experience is-finale'
+      }${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}
+    >
       <aside className="mds-desktop-sidebar">
-        <div className="mds-brand">
-          <BrandMark />
-          Meridian
+        <div className="mds-sidebar-head">
+          <div className="mds-brand">
+            <BrandMark />
+            <span className="mds-brand-name">Meridian</span>
+          </div>
+          <button
+            type="button"
+            className="mds-sidebar-toggle"
+            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+            aria-label={sidebarCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar'}
+            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-expanded={!sidebarCollapsed}
+          >
+            {sidebarCollapsed
+              ? <PanelLeftOpen size={18} aria-hidden="true" />
+              : <PanelLeftClose size={18} aria-hidden="true" />}
+          </button>
         </div>
         <nav className="mds-nav-items" aria-label="Desktop navigation">
           {navItems.map((item) => {
@@ -121,12 +148,14 @@ export function DesktopMeridianApp({
                 type="button"
                 className={`mds-nav-item${isActive ? ' is-active' : ''}`}
                 aria-current={isActive ? 'page' : undefined}
+                aria-label={sidebarCollapsed ? item.label : undefined}
+                title={sidebarCollapsed ? item.label : undefined}
                 onClick={() => openNavItem(item.id)}
               >
                 <span className="mds-nav-icon" aria-hidden="true">
                   <Icon size={18} strokeWidth={1.8} />
                 </span>
-                {item.label}
+                <span className="mds-nav-label">{item.label}</span>
                 {item.id === 'messages' && state.messages.length > 0 && (
                   <b>{state.messages.length}</b>
                 )}
@@ -300,21 +329,25 @@ export function DesktopMeridianApp({
           ) : (
             <RecoveryWorkspace
               state={state}
-              greetingPart={greetingPart}
               onOpenProof={openLadder}
+              showComposer={false}
             />
           )}
         </div>
 
-        {isLadder && (
+        {(isLadder || recoveryStage === 'ready') && (
           <div className="mds-desktop-dock">
-            <ChatComposer state={state} proofMode />
+            {isLadder ? (
+              <ChatComposer state={state} proofMode />
+            ) : (
+              <ChatComposer state={state} recoveryMode />
+            )}
           </div>
         )}
       </main>
 
-      <aside className="mds-desktop-right">
-        {isLadder ? (
+      {isLadder && (
+        <aside className="mds-desktop-right">
           <>
             <TravelerContextPanel
               state={state}
@@ -328,10 +361,8 @@ export function DesktopMeridianApp({
               onToggleCollapsed={() => setActivityCollapsed((prev) => !prev)}
             />
           </>
-        ) : (
-          <JourneyPanel state={state} onOpenProof={openLadder} />
-        )}
-      </aside>
+        </aside>
+      )}
 
       <TripDetailDrawer state={state} />
       <ComparisonDialog state={state} />

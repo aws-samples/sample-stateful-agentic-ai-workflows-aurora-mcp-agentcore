@@ -5,7 +5,6 @@ import {
   BedDouble,
   Bookmark,
   BusFront,
-  CalendarDays,
   CheckCircle2,
   Database,
   GitCompareArrows,
@@ -144,106 +143,88 @@ export function TripResultCardContent({
           {rankLabel}
           {matchExtra}
         </span>
-        {featured && (
-          <div className="mds-trip-result-feature-copy">
-            <span>{facts.region}</span>
-            <strong>{product.name}</strong>
-            <small>{product.brand}</small>
-            {product.description && <p>{product.description}</p>}
-            {signals.length > 0 && (
-              <div className="mds-trip-result-signals" aria-label="Why this trip matches">
-                {signals.map((signal) => {
-                  const Icon = signal.icon;
-                  return (
-                    <span key={signal.label} className={`is-${signal.tone}`}>
-                      <Icon size={13} aria-hidden="true" />
-                      {signal.label}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="mds-trip-result-body">
-        {!featured && (
-          <>
-            <div className="mds-trip-result-heading">
-              <span>{facts.region}</span>
-              <strong>{product.name}</strong>
-              <small>{product.brand}</small>
+        <div className="mds-trip-result-summary">
+          <div className="mds-trip-result-heading">
+            <span>{facts.region}</span>
+            <strong>{product.name}</strong>
+            <small>{product.brand}</small>
+          </div>
+          {product.description && (
+            <p className="mds-trip-result-description">{product.description}</p>
+          )}
+          {signals.length > 0 && (
+            <div className="mds-trip-result-signals" aria-label="Why this trip matches">
+              {signals.map((signal) => {
+                const Icon = signal.icon;
+                return (
+                  <span key={signal.label} className={`is-${signal.tone}`}>
+                    <Icon size={featured ? 13 : 12} aria-hidden="true" />
+                    {signal.label}
+                  </span>
+                );
+              })}
             </div>
-            {signals.length > 0 && (
-              <div className="mds-trip-result-signals" aria-label="Why this trip matches">
-                {signals.map((signal) => {
-                  const Icon = signal.icon;
-                  return (
-                    <span key={signal.label} className={`is-${signal.tone}`}>
-                      <Icon size={12} aria-hidden="true" />
-                      {signal.label}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
-
-        <div className="mds-trip-result-facts">
-          <span>
-            <CalendarDays size={14} aria-hidden="true" />
-            <b>Trip length</b>
-            {facts.duration}
-          </span>
-          <span className={facts.availabilityLow ? 'is-low' : ''}>
-            <CheckCircle2 size={14} aria-hidden="true" />
-            <b>Availability</b>
-            {facts.availability}
-          </span>
+          )}
         </div>
 
-        <div className="mds-trip-result-footer">
+        <div className="mds-trip-result-commerce">
+          <span className="mds-trip-result-fact">
+            <b>Trip length</b>
+            <em>{facts.duration}</em>
+          </span>
           <div className="mds-trip-result-price">
             <span>From</span>
             <b>{money(product.price)}</b>
             <small>per traveler</small>
           </div>
-          {!compact && (
-            <div
-              className="mds-trip-result-actions"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <button
-                type="button"
-                className="is-details"
-                onClick={() => state.openTripDetails(product)}
+          <div
+            className={`mds-trip-result-fact is-availability${
+              facts.availabilityLow ? ' is-low' : ''
+            }`}
+          >
+            <b>Availability</b>
+            <em>
+              <CheckCircle2 size={13} aria-hidden="true" />
+              {facts.availability}
+            </em>
+            {!compact && (
+              <div
+                className="mds-trip-result-actions"
+                onClick={(event) => event.stopPropagation()}
               >
-                View details
-                <ArrowRight size={14} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="is-icon"
-                onClick={() => state.compareTrip(product)}
-                aria-label={`Compare ${product.name}`}
-                title="Add to comparison"
-              >
-                <GitCompareArrows size={14} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className="is-icon"
-                onClick={() => state.saveTrip(product)}
-                aria-label={saved ? `Remove ${product.name} from saved trips` : `Save ${product.name}`}
-                aria-pressed={saved}
-                title={saved ? 'Saved' : 'Save trip'}
-              >
-                <Bookmark size={15} fill={saved ? 'currentColor' : 'none'} aria-hidden="true" />
-              </button>
-            </div>
-          )}
+                <button
+                  type="button"
+                  className="is-details"
+                  onClick={() => state.openTripDetails(product)}
+                >
+                  View details
+                  <ArrowRight size={14} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="is-icon"
+                  onClick={() => state.compareTrip(product)}
+                  aria-label={`Compare ${product.name}`}
+                  title="Add to comparison"
+                >
+                  <GitCompareArrows size={14} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="is-icon"
+                  onClick={() => state.saveTrip(product)}
+                  aria-label={saved ? `Remove ${product.name} from saved trips` : `Save ${product.name}`}
+                  aria-pressed={saved}
+                  title={saved ? 'Saved' : 'Save trip'}
+                >
+                  <Bookmark size={15} fill={saved ? 'currentColor' : 'none'} aria-hidden="true" />
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </>

@@ -1,11 +1,9 @@
 import {
   AlertTriangle,
-  CheckCircle2,
   Database,
-  Loader2,
   Sparkles,
 } from 'lucide-react';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { ChatComposer } from './ChatComposer';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { SHOWCASE_FINALE_PROMPT } from '../lib/showcaseAdapters';
@@ -19,9 +17,9 @@ import {
   CheckpointedPlanCard,
   ConciergeAssistanceCard,
   FlightOptionCard,
+  RecoveryLaunchCard,
   RecommendedRecoveryPlanCard,
 } from './RecoveryDecisionCards';
-import { RecoveryRouteMap } from './RecoveryRouteMap';
 
 const STAY_PROMPT =
   'Find a well-rated hotel near Haneda for tonight with lounge access and an easy airport transfer.';
@@ -30,17 +28,49 @@ const PROTECTION_PROMPT =
 
 export function RecoveryWorkspace({
   state,
-  greetingPart,
   onOpenProof = () => {},
+  showComposer = true,
 }: {
   state: MeridianShowcaseState;
-  greetingPart: string;
   onOpenProof?: () => void;
+  showComposer?: boolean;
 }) {
   const recoveryStage = deriveRecoveryStage(state);
   const recoveryEvidence = deriveRecoveryEvidence(state);
   const topRecoveryOption = state.recommendations?.[0] ?? null;
+  const workflowErrorSpan = state.traceSpans.find(
+    (span) =>
+      span.status === 'error' ||
+      span.category === 'error' ||
+      /workflow error|langgraph error/i.test(
+        `${span.name} ${span.details ?? ''}`,
+      ),
+  );
+  const workflowErrorDetail = workflowErrorSpan?.details ?? null;
   const briefingRef = useRef<HTMLElement>(null);
+  const consoleRef = useRef<HTMLDivElement>(null);
+  const previousLoadingRef = useRef(false);
+  const isResumingFromCheckpoint =
+    recoveryStage === 'running' &&
+    state.workflowStatus === 'paused' &&
+    /resume|checkpoint/i.test(state.lastPrompt ?? '');
+
+  useEffect(() => {
+    const wasLoading = previousLoadingRef.current;
+    previousLoadingRef.current = state.isLoading;
+    if (!state.isLoading || wasLoading) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      if (typeof consoleRef.current?.scrollIntoView === 'function') {
+        consoleRef.current.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [state.isLoading]);
+
   const startRecovery = () => {
     state.setSelectedPhase(5);
     void state.applyPhaseExample(SHOWCASE_FINALE_PROMPT, true, 5);
@@ -78,22 +108,20 @@ export function RecoveryWorkspace({
   const threadId = state.conversationId ?? 'phase5-pending';
   const recoveryStatusLabel =
     recoveryStage === 'ready'
-      ? 'Plan ready'
+      ? 'Recovery plan ready'
       : recoveryStage === 'checkpointed'
         ? durableCheckpoint
-          ? 'Checkpoint saved in Aurora'
-          : 'Checkpoint saved'
+          ? 'Shortlist checkpointed in Aurora'
+          : 'Shortlist checkpointed'
         : recoveryStage === 'running'
-          ? 'Recovery running'
-          : 'Action needed';
+          ? 'Recovery in progress'
+          : 'Recovery ready to start';
   const primaryActionLabel =
     recoveryStage === 'ready'
       ? 'Review this plan'
       : recoveryStage === 'checkpointed'
         ? 'Resume and verify'
-        : recoveryStage === 'running'
-          ? 'Recovery running'
-          : 'Recover my trip';
+        : 'Recover my trip';
   const alternativeProducts = Array.from({ length: 3 }, (_, index) =>
     state.recommendations?.[index + 1] ?? null,
   );
@@ -116,157 +144,156 @@ export function RecoveryWorkspace({
     }
     return `Ranked option ${index + 2}`;
   };
+  const showDecisionDashboard =
+    recoveryStage === 'checkpointed' || recoveryStage === 'ready';
 
   return (
-    <div className="mds-recovery-workspace">
-      <header className="mds-recovery-greeting">
-        <h1>{`Good ${greetingPart}, Alex.`}</h1>
-        <p>Let&apos;s get your Tokyo trip back on track.</p>
+    <div
+      className={`mds-recovery-workspace${
+        recoveryStage === 'running' ? ' is-running' : ''
+      }${hasConversation ? ' has-conversation' : ''}`}
+    >
+      <header className={`mds-recovery-overview is-${recoveryStage}`}>
+        <div className="mds-recovery-overview-title">
+          <h1>Alex&apos;s JFK → Tokyo recovery</h1>
+          <span className="mds-recovery-cancelled-badge">
+            <AlertTriangle size={14} aria-hidden="true" />
+            Cancelled flight
+          </span>
+        </div>
+        <div className="mds-recovery-overview-meta">
+          <span>Original: ANA NH 109 cancelled</span>
+          <i aria-hidden="true" />
+          <strong>{recoveryStatusLabel}</strong>
+        </div>
+        {(recoveryStage === 'checkpointed' ||
+          (recoveryStage === 'ready' && state.workflowStatus === 'resumed')) && (
+          <div
+            className={`mds-recovery-receipt is-${recoveryStage}`}
+            role="status"
+          >
+            <Database size={14} aria-hidden="true" />
+            <span>
+              {recoveryStage === 'checkpointed'
+                ? durableCheckpoint
+                  ? `Checkpoint saved · thread ${threadId} · safe to restart`
+                  : `Checkpoint saved · thread ${threadId} · current worker`
+                : state.workflowResumedAfterRestart
+                  ? `Resumed from Aurora after worker restart · thread ${threadId}`
+                  : `Resumed from Aurora checkpoint · thread ${threadId}`}
+            </span>
+          </div>
+        )}
       </header>
 
-      <section
-        className={`mds-recovery-command is-${recoveryStage}`}
-        aria-label="Active flight disruption"
-      >
-        <div className="mds-recovery-command-main is-compact">
-          <span className="mds-recovery-warning" aria-hidden="true">
-            {recoveryStage === 'ready' ? (
-              <CheckCircle2 size={25} strokeWidth={2.1} />
-            ) : recoveryStage === 'checkpointed' ? (
-              <Database size={24} strokeWidth={2} />
-            ) : recoveryStage === 'running' ? (
-              <Loader2 size={24} strokeWidth={2} />
-            ) : (
-              <AlertTriangle size={25} strokeWidth={2.1} />
-            )}
-          </span>
-          <div className="mds-recovery-command-copy">
-            <b className="mds-recovery-status">{recoveryStatusLabel}</b>
-            <h2>JFK to Tokyo flight cancelled</h2>
-            <div className="mds-recovery-flight-meta">
-              <strong>ANA</strong>
-              <span>NH 109</span>
-              <span>Today · 10:40 AM</span>
-              <span>JFK → HND</span>
-              <em>Airline Premier</em>
-            </div>
-            <p>
-              {recoveryStage === 'ready'
-                ? 'Your live alternatives and duration inventory are ready to review.'
-                : recoveryStage === 'checkpointed'
-                  ? 'The ranked shortlist is durable. Resume when you are ready to verify live duration inventory.'
-                  : recoveryStage === 'running'
-                    ? 'Meridian is ranking alternatives and saving workflow progress.'
-                    : 'Meridian can rebuild the itinerary, checkpoint the shortlist, and resume before rebooking.'}
-            </p>
-            {(recoveryStage === 'checkpointed' ||
-              (recoveryStage === 'ready' &&
-                state.workflowStatus === 'resumed')) && (
-              <div
-                className={`mds-recovery-receipt is-${recoveryStage}`}
-                role="status"
-              >
-                <Database size={14} aria-hidden="true" />
-                <span>
-                  {recoveryStage === 'checkpointed'
-                    ? durableCheckpoint
-                      ? `Checkpoint saved · thread ${threadId} · safe to restart`
-                      : `Checkpoint saved · thread ${threadId} · current worker`
-                    : state.workflowResumedAfterRestart
-                      ? `Resumed from Aurora after worker restart · thread ${threadId}`
-                      : `Resumed from Aurora checkpoint · thread ${threadId}`}
-                </span>
+      {recoveryStage === 'running' ? (
+        <div ref={consoleRef} className="mds-recovery-active-console">
+          <RecoveryLaunchCard
+            stage={recoveryStage}
+            compact
+            resumeMode={isResumingFromCheckpoint}
+            disabled
+            onStart={startRecovery}
+          />
+        </div>
+      ) : showDecisionDashboard ? (
+        <div ref={consoleRef} className="mds-recovery-active-console">
+          <section
+            className="mds-recovery-decision-system"
+            aria-label="Recovery decisions"
+          >
+            <div className="mds-recovery-decision-primary">
+              <RecommendedRecoveryPlanCard
+                product={topRecoveryOption}
+                stage={recoveryStage}
+                evidence={recoveryEvidence}
+                memoryFacts={state.memoryFacts}
+                travelerProfile={state.travelerProfile}
+                primaryAction={{
+                  label: primaryActionLabel,
+                  onClick: runPrimaryAction,
+                  disabled: state.isLoading,
+                }}
+                secondaryAction={{
+                  label: topRecoveryOption ? 'Why this option?' : 'How recovery works',
+                  onClick: reviewRecoveryPlan,
+                  disabled: !hasConversation,
+                }}
+              />
+
+              <div className="mds-recovery-alternatives">
+                <div className="mds-recovery-alternatives-head">
+                  <span>
+                    <b>Alternative options</b>
+                    <small>Ranked from the same live recovery search</small>
+                  </span>
+                  <em>
+                    {state.recommendations?.length
+                      ? `${state.recommendations.length} total`
+                      : 'Searching live options'}
+                  </em>
+                </div>
+                <div className="mds-recovery-alternative-grid">
+                  {alternativeProducts.map((product, index) => (
+                    <FlightOptionCard
+                      key={product?.product_id ?? `pending-${index}`}
+                      product={product}
+                      rank={index + 2}
+                      badge={optionBadge(product, index)}
+                      availabilityObserved={
+                        recoveryEvidence.availabilityObserved && index < 2
+                      }
+                      disabled={state.isLoading}
+                      onView={() => {
+                        if (product) state.openTripDetails(product);
+                      }}
+                      onCompare={() => {
+                        if (product) state.compareTrip(product);
+                      }}
+                    />
+                  ))}
+                </div>
               </div>
-            )}
-          </div>
-          <RecoveryRouteMap />
-        </div>
-      </section>
-
-      <section
-        className="mds-recovery-decision-system"
-        aria-label="Recovery decisions"
-      >
-        <div className="mds-recovery-decision-primary">
-          <RecommendedRecoveryPlanCard
-            product={topRecoveryOption}
-            stage={recoveryStage}
-            evidence={recoveryEvidence}
-            memoryFacts={state.memoryFacts}
-            travelerProfile={state.travelerProfile}
-            primaryAction={{
-              label: primaryActionLabel,
-              onClick: runPrimaryAction,
-              disabled: state.isLoading,
-            }}
-            secondaryAction={{
-              label: topRecoveryOption ? 'Why this option?' : 'How recovery works',
-              onClick: reviewRecoveryPlan,
-              disabled: !hasConversation,
-            }}
-          />
-
-          <div className="mds-recovery-alternatives">
-            <div className="mds-recovery-alternatives-head">
-              <span>
-                <b>Alternative options</b>
-                <small>Ranked from the same live recovery search</small>
-              </span>
-              <em>
-                {state.recommendations?.length
-                  ? `${state.recommendations.length} total`
-                  : 'Awaiting search'}
-              </em>
             </div>
-            <div className="mds-recovery-alternative-grid">
-              {alternativeProducts.map((product, index) => (
-                <FlightOptionCard
-                  key={product?.product_id ?? `pending-${index}`}
-                  product={product}
-                  rank={index + 2}
-                  badge={optionBadge(product, index)}
-                  availabilityObserved={
-                    recoveryEvidence.availabilityObserved && index < 2
-                  }
-                  disabled={state.isLoading}
-                  onView={() => {
-                    if (product) state.openTripDetails(product);
-                  }}
-                  onCompare={() => {
-                    if (product) state.compareTrip(product);
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        </div>
 
-        <div className="mds-recovery-decision-support">
-          <ConciergeAssistanceCard
-            stage={recoveryStage}
-            evidence={recoveryEvidence}
-            product={topRecoveryOption}
-            disabled={state.isLoading}
-            onHotel={() => runWorkflowPrompt(STAY_PROMPT)}
-            onProtection={() => runWorkflowPrompt(PROTECTION_PROMPT)}
-          />
-          <AgentProofCard
-            stage={recoveryStage}
-            evidence={recoveryEvidence}
-            recommendationCount={state.recommendations?.length ?? 0}
-            traceCount={state.traceSpans?.length ?? 0}
-            onViewProof={onOpenProof}
-          />
-          <CheckpointedPlanCard
-            stage={recoveryStage}
-            evidence={recoveryEvidence}
-            threadId={threadId}
-            resumedAfterRestart={state.workflowResumedAfterRestart}
-            disabled={state.isLoading}
-            onResume={resumeRecovery}
-          />
+            <div className="mds-recovery-decision-support">
+              <ConciergeAssistanceCard
+                stage={recoveryStage}
+                evidence={recoveryEvidence}
+                product={topRecoveryOption}
+                disabled={state.isLoading}
+                onHotel={() => runWorkflowPrompt(STAY_PROMPT)}
+                onProtection={() => runWorkflowPrompt(PROTECTION_PROMPT)}
+              />
+              <AgentProofCard
+                stage={recoveryStage}
+                evidence={recoveryEvidence}
+                recommendationCount={state.recommendations?.length ?? 0}
+                traceCount={state.traceSpans?.length ?? 0}
+                onViewProof={onOpenProof}
+              />
+              <CheckpointedPlanCard
+                stage={recoveryStage}
+                evidence={recoveryEvidence}
+                threadId={threadId}
+                resumedAfterRestart={state.workflowResumedAfterRestart}
+              />
+            </div>
+          </section>
         </div>
-      </section>
+      ) : (
+        <section
+          className="mds-recovery-launch-system"
+          aria-label="Start recovery"
+        >
+          <RecoveryLaunchCard
+            stage={recoveryStage}
+            errorDetail={workflowErrorDetail}
+            disabled={state.isLoading}
+            onStart={startRecovery}
+          />
+        </section>
+      )}
 
       {hasConversation && (
         <section
@@ -314,7 +341,9 @@ export function RecoveryWorkspace({
         </section>
       )}
 
-      <ChatComposer state={state} recoveryMode />
+      {showComposer && recoveryStage === 'ready' && (
+        <ChatComposer state={state} recoveryMode />
+      )}
     </div>
   );
 }

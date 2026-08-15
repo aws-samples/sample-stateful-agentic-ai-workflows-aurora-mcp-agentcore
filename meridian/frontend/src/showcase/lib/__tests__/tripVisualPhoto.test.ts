@@ -68,6 +68,26 @@ describe('tripVisualPhoto', () => {
     expect(tripVisualPhoto(tokyo).src).toBe('/travel/catalog/TKY-003.jpg');
   });
 
+  it('pins every recovery alternative to its Tokyo editorial image', () => {
+    const alternatives = [
+      ['TKY-001', 'Tokyo Indie Neighborhood Walk'],
+      ['CTY-002', 'Tokyo Culture & Cuisine'],
+      ['TKY-002', 'Tokyo Family Discovery Week'],
+    ] as const;
+
+    alternatives.forEach(([productId, name]) => {
+      expect(
+        tripVisualPhoto(
+          product({
+            product_id: productId,
+            name,
+            image_url: '',
+          }),
+        ).src,
+      ).toBe(`/travel/catalog/${productId}.jpg`);
+    });
+  });
+
   it('routes willamette to the vineyard photo, not tuscany', () => {
     const oregon = product({
       product_id: 'WINE-OREGON',

@@ -11,6 +11,7 @@ import {
   showcasePromptLabel,
 } from '../../lib/showcaseAdapters';
 import { deriveRecoveryStage } from '../../lib/recoveryState';
+import { DesktopMeridianApp } from '../../DesktopMeridianApp';
 import { ChatComposer } from '../ChatComposer';
 import { ChatTranscript } from '../ChatTranscript';
 import { JourneyPanel } from '../JourneyPanel';
@@ -75,6 +76,79 @@ function makeState(
 }
 
 describe('Experience presentation polish', () => {
+  it('collapses the sidebar into an accessible icon rail across both demo steps', () => {
+    const state = makeState({
+      backendStatus: 'online',
+    });
+    const { container } = render(
+      <DesktopMeridianApp
+        state={state}
+        theme="dark"
+        onToggleTheme={vi.fn()}
+      />,
+    );
+    const app = container.querySelector('.mds-desktop-app');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Collapse navigation sidebar' }),
+    );
+
+    expect(app).toHaveClass('is-sidebar-collapsed');
+    expect(
+      screen.getByRole('button', { name: 'Expand navigation sidebar' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Trips' })).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '2 Stateful Recovery finale' }),
+    );
+    expect(app).toHaveClass('is-sidebar-collapsed');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand navigation sidebar' }),
+    );
+    expect(app).not.toHaveClass('is-sidebar-collapsed');
+  });
+
+  it('shows the recovery composer only after the plan is ready', () => {
+    const { container, rerender } = render(
+      <DesktopMeridianApp
+        state={makeState()}
+        theme="dark"
+        onToggleTheme={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '2 Stateful Recovery finale' }),
+    );
+
+    const dock = container.querySelector('.mds-desktop-dock');
+    const scroll = container.querySelector('.mds-desktop-scroll');
+
+    expect(dock).not.toBeInTheDocument();
+    expect(scroll?.querySelector('.mds-chat-composer-wrap.is-recovery'))
+      .not.toBeInTheDocument();
+
+    rerender(
+      <DesktopMeridianApp
+        state={makeState({
+          selectedPhase: 5,
+          lastPrompt: SHOWCASE_FINALE_PROMPT,
+          workflowStatus: 'resumed',
+        })}
+        theme="dark"
+        onToggleTheme={vi.fn()}
+      />,
+    );
+
+    expect(
+      container.querySelector(
+        '.mds-desktop-dock .mds-chat-composer-wrap.is-recovery',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('renders an offline geographic JFK-to-HND recovery map', () => {
     const { container } = render(<RecoveryRouteMap />);
 
@@ -197,28 +271,148 @@ describe('Experience presentation polish', () => {
     expect(screen.getByText('$3,200')).toBeInTheDocument();
   });
 
-  it('renders the reusable airline recovery decision-card system', () => {
-    render(<RecoveryWorkspace state={makeState()} greetingPart="morning" />);
+  it('renders an intentional recovery launch state before live results exist', () => {
+    render(<RecoveryWorkspace state={makeState()} />);
 
     expect(
-      screen.getByRole('article', { name: 'Recommended recovery plan' }),
+      screen.getByRole('article', { name: 'Start travel recovery' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('article', { name: 'Recovery option 2' }),
+      screen.getAllByRole('button', { name: 'Recover my trip' }),
+    ).toHaveLength(1);
+    expect(
+      screen.queryByRole('article', { name: 'Concierge assistance' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('article', { name: 'Recovery guardrails' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'Agent proof' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: 'Recovery option 2' })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: "Alex's JFK → Tokyo recovery" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('article', { name: 'Concierge assistance' }),
+      screen.getByRole('heading', {
+        name: 'Your flight has been cancelled.',
+      }),
     ).toBeInTheDocument();
+    expect(screen.getByText('Cancelled flight')).toBeInTheDocument();
     expect(
-      screen.getByRole('article', { name: 'Agent proof' }),
+      screen.getByRole('list', { name: 'Recovery workflow progress' }),
     ).toBeInTheDocument();
+    expect(screen.getByText('Search and rank')).toBeInTheDocument();
+    expect(screen.getByText('Save an Aurora checkpoint')).toBeInTheDocument();
     expect(
-      screen.getByRole('article', { name: 'Checkpointed plan progress' }),
-    ).toBeInTheDocument();
+      screen.queryByRole('textbox', { name: 'Ask Meridian anything' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows the live recovery timeline while the workflow request is running', () => {
+    render(
+      <RecoveryWorkspace
+        state={makeState({
+          selectedPhase: 5,
+          phaseLabel: 'Workflow',
+          lastPrompt: SHOWCASE_FINALE_PROMPT,
+          isLoading: true,
+        })}
+      />,
+    );
+
+    expect(screen.getByText('Live workflow')).toBeInTheDocument();
+    expect(screen.getByText('Step 1 of 4')).toBeInTheDocument();
     expect(
-      document.querySelector('.mds-recovery-decision-system img'),
+      screen.getByText('Understand disruption').closest('li'),
+    ).toHaveAttribute('aria-current', 'step');
+    expect(
+      screen.getByRole('article', { name: 'Live recovery progress' }),
+    ).toHaveClass('is-compact');
+    expect(
+      screen.queryByRole('region', { name: 'Recovery decisions' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('article', { name: 'Recommended recovery plan' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('article', { name: 'Recovery option 2' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('region', { name: 'Recovery briefing' }),
+    ).toHaveTextContent('Building the recovery plan');
+    expect(
+      screen.queryByRole('heading', {
+        name: 'Your flight has been cancelled.',
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('textbox', { name: 'Ask Meridian anything' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('continues at verification while resuming a checkpoint', () => {
+    render(
+      <RecoveryWorkspace
+        state={makeState({
+          selectedPhase: 5,
+          phaseLabel: 'Workflow',
+          lastPrompt: 'Resume workflow from checkpoint',
+          workflowStatus: 'paused',
+          isLoading: true,
+          messages: [
+            { role: 'user', text: SHOWCASE_FINALE_PROMPT },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText('Step 4 of 4')).toBeInTheDocument();
+    expect(
+      screen.getByText('Verify after resume').closest('li'),
+    ).toHaveAttribute('aria-current', 'step');
+    expect(
+      screen.getByText('Understand disruption').closest('li'),
+    ).toHaveClass('is-visited');
+  });
+
+  it('renders a precise failed checkpoint step with a retry action', () => {
+    render(
+      <RecoveryWorkspace
+        state={makeState({
+          selectedPhase: 5,
+          phaseLabel: 'Workflow',
+          lastPrompt: SHOWCASE_FINALE_PROMPT,
+          messages: [
+            { role: 'user', text: SHOWCASE_FINALE_PROMPT },
+            {
+              role: 'bot',
+              text: 'Recovery stopped safely before changing the trip.',
+            },
+          ],
+          traceSpans: [
+            {
+              id: 'checkpoint-error',
+              name: 'LangGraph workflow error',
+              category: 'error',
+              type: 'error',
+              status: 'error',
+              latencyMs: 3000,
+              details: 'Aurora checkpoint connection unavailable.',
+              fields: [],
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(
+      screen.getByText('Aurora checkpoint connection unavailable'),
     ).toBeInTheDocument();
-    expect(screen.getByText('Airport-area stay search')).toBeInTheDocument();
+    expect(screen.getByText('Workflow stopped')).toBeInTheDocument();
+    expect(screen.getByText('No trip change was made')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry recovery' })).toBeInTheDocument();
+    expect(
+      screen.getByText('Save an Aurora checkpoint').closest('li'),
+    ).toHaveClass('is-failed');
   });
 
   it('renders evidence-driven traveler signals on the featured recommendation', () => {
@@ -322,7 +516,7 @@ describe('Experience presentation polish', () => {
       submitPrompt,
     });
 
-    render(<RecoveryWorkspace state={state} greetingPart="morning" />);
+    render(<RecoveryWorkspace state={state} />);
 
     expect(screen.getByText('Request')).toBeInTheDocument();
     expect(screen.getByText('Checkpoint ready')).toBeInTheDocument();
@@ -334,6 +528,12 @@ describe('Experience presentation polish', () => {
     fireEvent.click(summary as HTMLElement);
     expect(summary?.parentElement).toHaveAttribute('open');
 
+    expect(
+      screen.getAllByRole('button', { name: 'Resume and verify' }),
+    ).toHaveLength(1);
+    expect(
+      screen.queryByRole('button', { name: 'Resume recovery' }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Resume and verify' }));
     expect(submitPrompt).toHaveBeenCalledWith(
       'Resume workflow from checkpoint',
@@ -362,16 +562,16 @@ describe('Experience presentation polish', () => {
     });
 
     const { rerender } = render(
-      <RecoveryWorkspace state={initial} greetingPart="morning" />,
+      <RecoveryWorkspace state={initial} />,
     );
 
     expect(screen.getByRole('button', { name: 'Recover my trip' })).toBeInTheDocument();
     expect(
-      screen.getByText('Your recommended plan will appear here'),
+      screen.getByText('Your flight has been cancelled.'),
     ).toBeInTheDocument();
-    expect(screen.getByText('No live result observed yet')).toBeInTheDocument();
-    expect(screen.getByText('Checkpoint not observed yet')).toBeInTheDocument();
-    expect(screen.getByText('Preference match pending')).toBeInTheDocument();
+    expect(screen.queryByText('Alternative pending')).not.toBeInTheDocument();
+    expect(screen.queryByText('No live result observed yet')).not.toBeInTheDocument();
+    expect(screen.queryByText('Checkpoint not observed yet')).not.toBeInTheDocument();
     expect(screen.queryByText('Seats available')).not.toBeInTheDocument();
     expect(screen.queryByText('Active')).not.toBeInTheDocument();
 
@@ -399,7 +599,7 @@ describe('Experience presentation polish', () => {
         { role: 'bot', text: 'Recovery complete.', products: [product] },
       ],
     });
-    rerender(<RecoveryWorkspace state={ready} greetingPart="morning" />);
+    rerender(<RecoveryWorkspace state={ready} />);
 
     expect(screen.getByRole('button', { name: 'Review this plan' })).toBeInTheDocument();
     expect(screen.getAllByText('Tokyo Executive Stopover').length).toBeGreaterThan(0);
@@ -411,6 +611,9 @@ describe('Experience presentation polish', () => {
     expect(
       screen.getByText('Policy review remains a traveler decision'),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole('textbox', { name: 'Ask Meridian anything' }),
+    ).toBeEnabled();
   });
 
   it('marks only observed activity as verified', () => {
@@ -458,11 +661,33 @@ describe('Experience presentation polish', () => {
   });
 
   it('limits verified inventory to the top three plans and polishes memory context', () => {
-    const products = Array.from({ length: 4 }, (_, index) => ({
-      product_id: `tokyo-${index + 1}`,
-      name: `Tokyo recovery option ${index + 1}`,
-      brand: index === 0 ? 'JAL Premium' : 'ANA Holidays',
-      price: 1900 + index * 200,
+    const products = [
+      {
+        product_id: 'TKY-003',
+        name: 'Tokyo Executive Stopover',
+        brand: 'JAL Premium',
+        price: 1949,
+      },
+      {
+        product_id: 'TKY-001',
+        name: 'Tokyo Indie Neighborhood Walk',
+        brand: 'JAL Tours',
+        price: 1599,
+      },
+      {
+        product_id: 'CTY-002',
+        name: 'Tokyo Culture & Cuisine',
+        brand: 'ANA Holidays',
+        price: 2499,
+      },
+      {
+        product_id: 'TKY-002',
+        name: 'Tokyo Family Discovery Week',
+        brand: 'ANA Holidays',
+        price: 2899,
+      },
+    ].map((product) => ({
+      ...product,
       description: 'A ranked Tokyo recovery option.',
       image_url: '',
       category: 'city',
@@ -511,7 +736,7 @@ describe('Experience presentation polish', () => {
       ],
     });
 
-    render(<RecoveryWorkspace state={state} greetingPart="morning" />);
+    render(<RecoveryWorkspace state={state} />);
 
     expect(screen.getByText('Boutique hotels')).toBeInTheDocument();
     expect(screen.queryByText('boutique > chain')).not.toBeInTheDocument();
@@ -527,5 +752,17 @@ describe('Experience presentation polish', () => {
       within(screen.getByRole('article', { name: 'Recovery option 4' }))
         .getByText('Live duration inventory pending'),
     ).toBeInTheDocument();
+    [
+      ['Recovery option 2', '/travel/catalog/TKY-001.jpg'],
+      ['Recovery option 3', '/travel/catalog/CTY-002.jpg'],
+      ['Recovery option 4', '/travel/catalog/TKY-002.jpg'],
+    ].forEach(([label, src]) => {
+      const card = screen.getByRole('article', { name: label });
+      expect(
+        card.querySelector('.mds-flight-option-card-media'),
+      ).toBeInTheDocument();
+      expect(card.querySelector('.mds-flight-option-card-media img'))
+        .toHaveAttribute('src', src);
+    });
   });
 });
