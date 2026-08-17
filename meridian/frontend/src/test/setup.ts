@@ -1,5 +1,5 @@
 /**
- * Test setup — runs once before every Vitest worker.
+ * Test setup - runs once before every Vitest worker.
  *
  * Extends `expect` with `@testing-library/jest-dom` matchers and silences a
  * couple of React-in-test warnings that show up in jsdom but aren't actually
@@ -20,4 +20,12 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
     removeEventListener: () => {},
     dispatchEvent: () => false,
   })
+}
+
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
 }

@@ -7,12 +7,17 @@ AWS docs:
 
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
+from backend.http_auth import (
+    HttpPrincipal,
+    authorize_traveler,
+    require_http_principal,
+)
 from backend.memory.store import DEMO_TRAVELER_ID, get_memory_store
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
@@ -36,7 +41,11 @@ class MemoryFactUpdate(BaseModel):
 
 
 @router.get("/{traveler_id}", response_model=MemoryProfileResponse)
-async def get_memory_profile(traveler_id: str = DEMO_TRAVELER_ID) -> MemoryProfileResponse:
+async def get_memory_profile(
+    traveler_id: str = DEMO_TRAVELER_ID,
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> MemoryProfileResponse:
+    traveler_id = authorize_traveler(principal, traveler_id)
     store = get_memory_store()
     db = get_rds_data_client()
     # Pin RLS for the read so the API endpoint exercises the same isolation
@@ -74,7 +83,9 @@ async def update_memory_fact(
     traveler_id: str,
     preference_key: str,
     update: MemoryFactUpdate,
+    principal: HttpPrincipal = Depends(require_http_principal),
 ) -> MemoryFactResponse:
+    traveler_id = authorize_traveler(principal, traveler_id)
     value = update.value.strip()
     if not value:
         raise HTTPException(status_code=422, detail="Preference value cannot be empty")
@@ -105,7 +116,12 @@ async def update_memory_fact(
 
 
 @router.delete("/{traveler_id}/facts/{preference_key}")
-async def delete_memory_fact(traveler_id: str, preference_key: str) -> dict:
+async def delete_memory_fact(
+    traveler_id: str,
+    preference_key: str,
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> dict:
+    traveler_id = authorize_traveler(principal, traveler_id)
     store = get_memory_store()
     db = get_rds_data_client()
     try:

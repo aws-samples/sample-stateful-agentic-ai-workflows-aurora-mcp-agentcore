@@ -7,7 +7,7 @@ import countries from 'world-atlas/countries-110m.json';
 const MAP_WIDTH = 440;
 const MAP_HEIGHT = 180;
 const JFK: [number, number] = [-73.7781, 40.6413];
-const HND: [number, number] = [139.7798, 35.5494];
+const TOKYO: [number, number] = [139.6503, 35.6762];
 
 const topology = countries as unknown as Topology<{
   countries: GeometryCollection;
@@ -24,7 +24,7 @@ const projection = geoEqualEarth()
 const path = geoPath(projection);
 const route: LineString = {
   type: 'LineString',
-  coordinates: [JFK, HND],
+  coordinates: [JFK, TOKYO],
 };
 
 function projected(coordinates: [number, number]): [number, number] {
@@ -65,7 +65,7 @@ export function RecoveryRouteMap() {
     <div
       className="mds-recovery-route-map"
       role="img"
-      aria-label="Pacific-centered map showing the recovery route from John F. Kennedy International Airport to Tokyo Haneda Airport"
+      aria-label="Pacific-centered map showing the reported trip from New York to Tokyo"
     >
       <svg
         className="mds-route-map-svg"
@@ -85,9 +85,9 @@ export function RecoveryRouteMap() {
         <path className="mds-route-line-glow" d={routePath} />
         <path className="mds-route-line" d={routePath} />
         <AirportMarker code="JFK" coordinates={JFK} labelOffset={-8} />
-        <AirportMarker code="HND" coordinates={HND} labelOffset={8} />
+        <AirportMarker code="TYO" coordinates={TOKYO} labelOffset={8} />
       </svg>
-      <span className="mds-route-map-caption">JFK · NORTH PACIFIC · HND</span>
+      <span className="mds-route-map-caption">JFK / NORTH PACIFIC / TYO</span>
     </div>
   );
 }

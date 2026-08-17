@@ -1,9 +1,10 @@
 /**
- * SystemProofRail — right rail with Aurora schema, MCP tool catalog, and
+ * SystemProofRail - right rail with Aurora schema, MCP tool catalog, and
  * governance gates. Each card highlights when the relevant span is active.
  */
 import type { StageScenario, StageSpan, StageSystemId } from '../types';
 import type { ShowcasePhaseOption } from '../../showcase/lib/showcaseAdapters';
+import { ShieldCheck } from 'lucide-react';
 
 // Real Aurora tables (backend/db/schema.sql). `match` lists substrings we
 // look for in the active span's title/detail to decide when a table lights.
@@ -16,7 +17,7 @@ const AURORA_TABLES: { name: string; kind: string; match: string[] }[] = [
   { name: 'agent_traces', kind: 'observability', match: ['persist_turn', 'audit', 'synthes'] },
 ];
 
-// Real Phase 4 (Production) operations — the AgentCore Gateway tool plus the
+// Real Phase 4 (Production) operations - the AgentCore Gateway tool plus the
 // Strands @tool memory methods the concierge binds. `match` is the substring
 // we look for in a span title to decide when this row is the one firing.
 // (Names mirror backend/agents/production_04/memory_agent.py + gateway.py.)
@@ -34,15 +35,6 @@ interface SystemProofRailProps {
   activeSpan: StageSpan | null;
   activeSystem: StageSystemId | null;
   phase?: ShowcasePhaseOption;
-}
-
-function ShieldIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M8 1.5L13.5 3.5V8C13.5 11.3137 11.0376 13.7461 8 14.5C4.9624 13.7461 2.5 11.3137 2.5 8V3.5L8 1.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M5.5 8.2L7.2 9.9L10.5 6.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
 }
 
 export function SystemProofRail({ scenario, activeSpan, activeSystem, phase }: SystemProofRailProps) {
@@ -122,7 +114,7 @@ export function SystemProofRail({ scenario, activeSpan, activeSystem, phase }: S
             const wasCalled = toolCalledThisTurn(tool.match);
             // Three states: actively firing (bright), used this turn (dim
             // highlight), idle (no highlight). So the rail shows exactly
-            // which tools ran — not the whole block lighting at once.
+            // which tools ran - not the whole block lighting at once.
             const cls = calling ? ' is-calling' : wasCalled ? ' is-called' : '';
             return (
               <div key={tool.name} className={`ds-mcp-tool${cls}`}>
@@ -145,28 +137,28 @@ export function SystemProofRail({ scenario, activeSpan, activeSystem, phase }: S
         </header>
         <div className="ds-gov">
           <div className="ds-gov-row">
-            <ShieldIcon />
+            <ShieldCheck size={14} aria-hidden="true" />
             <div>
               <b>{scenario.governance.scope}</b>
               <span>per-traveler scope (live)</span>
             </div>
           </div>
           <div className="ds-gov-row">
-            <ShieldIcon />
+            <ShieldCheck size={14} aria-hidden="true" />
             <div>
               <b>{scenario.governance.budgetCap}</b>
               <span>RLS enforcement (live)</span>
             </div>
           </div>
           <div className="ds-gov-row">
-            <ShieldIcon />
+            <ShieldCheck size={14} aria-hidden="true" />
             <div>
               <b>{scenario.governance.confirmation}</b>
               <span>workload identity (live)</span>
             </div>
           </div>
           <div className="ds-gov-row">
-            <ShieldIcon />
+            <ShieldCheck size={14} aria-hidden="true" />
             <div>
               <b>{scenario.governance.audit}</b>
               <span>observability (live)</span>

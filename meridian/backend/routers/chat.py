@@ -27,8 +27,8 @@ import re
 import uuid
 from datetime import datetime, timezone
 from typing import Literal, Optional, List, Any, Dict
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.authorization import TravelerAuthorizationError
@@ -36,6 +36,11 @@ from backend.db.rds_data_client import get_rds_data_client
 from backend.db.embedding_service import get_embedding_service
 from backend.config import config
 from backend.logging_config import log_search, log_order, log_error, log_turn_start, log_turn_complete, log_activity_entry
+from backend.http_auth import (
+    HttpPrincipal,
+    authorize_traveler,
+    require_http_principal,
+)
 from backend.search_utils import (
     PACKAGE_COLUMNS,
     parse_search_query,
@@ -1758,7 +1763,7 @@ async def production_search(
     limit: int = 5,
 ) -> tuple[List[Product], List[ActivityEntry], str, str, List[MemoryFact]]:
     """
-    Production mode: Runtime session + Memory recall + Gateway search + persist turn.
+    Production mode: Memory recall + Gateway search + Runtime decision + persist turn.
 
     Requires deployed AgentCore Runtime, Gateway, and Memory — see ``agentcore/README.md``.
     """
@@ -1993,7 +1998,10 @@ def _is_workflow_resume_query(query: str) -> bool:
 
 
 @router.post("", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> ChatResponse:
     """
     Process a chat message with the AI travel concierge.
 
@@ -2003,6 +2011,9 @@ async def chat(request: ChatRequest) -> ChatResponse:
     - Phase 3: Hybrid retrieval + Cohere rerank; PackageAgent for slot checks
     - Phase 4: Production concierge with AgentCore Runtime/Gateway/Memory
     """
+    traveler_id = authorize_traveler(principal, request.customer_id)
+    request = request.model_copy(update={"customer_id": traveler_id})
+
     turn_started = log_turn_start(
         request.phase,
         request.message,
@@ -2197,32 +2208,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
                 ))
                 message = _PHASE4_WORKFLOW_TRANSITION_MESSAGE
             else:
-                polished, polish_model, polish_note = await _polish_phase_reply(
-                    phase=4,
-                    user_query=request.message,
-                    raw_message=raw_message,
-                    products=products,
-                    activities=activities,
-                    memory_facts=memory_facts,
-                )
-                if polish_model:
-                    activities.append(create_activity(
-                        activity_type="reasoning",
-                        title=f"Bedrock · concierge polish ({polish_model})",
-                        details="Wrapping Production reply in concierge tone",
-                        agent_name="ProductionAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
-                    message = polished
-                else:
-                    activities.append(create_activity(
-                        activity_type="error",
-                        title="Bedrock polish unavailable",
-                        details=polish_note or "unknown",
-                        agent_name="ProductionAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
-                    message = raw_message
+                # ProductionAgent persists the managed Runtime decision. Return
+                # that same decision unchanged so the audience-facing response
+                # is authored by AgentCore Runtime rather than a second local
+                # model pass.
+                message = raw_message
             follow_ups = (
                 [
                     "Run this in Workflow",
@@ -2724,6 +2714,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
             turn_started,
         )
         
+    except HTTPException:
+        raise
     except TravelerAuthorizationError as e:
         log_error(context="traveler_authorization", error=str(e), phase=request.phase)
         raise HTTPException(status_code=403, detail=str(e)) from e
@@ -2758,7 +2750,7 @@ class OrderRequest(BaseModel):
     """Request model for a no-payment courtesy hold."""
     product_id: str
     size: Optional[str] = None
-    quantity: int = 1
+    quantity: int = Field(default=1, gt=0, le=12)
     phase: Literal[1, 2, 3, 4, 5]
     traveler_id: str = "trv_meridian_demo"
     action: Literal["hold"] = "hold"
@@ -2772,7 +2764,10 @@ class OrderResponse(BaseModel):
 
 
 @router.post("/order", response_model=OrderResponse)
-async def process_order(request: OrderRequest) -> OrderResponse:
+async def process_order(
+    request: OrderRequest,
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> OrderResponse:
     """
     Create a persisted 12-hour courtesy hold for a trip package.
 
@@ -2784,6 +2779,8 @@ async def process_order(request: OrderRequest) -> OrderResponse:
 
     No payment is authorized or captured.
     """
+    traveler_id = authorize_traveler(principal, request.traveler_id)
+    request = request.model_copy(update={"traveler_id": traveler_id})
     activities = []
     start_time = datetime.now(timezone.utc)
 
@@ -2813,7 +2810,7 @@ async def process_order(request: OrderRequest) -> OrderResponse:
 
         sql = """
             SELECT package_id, name, operator, price_per_person, description,
-                   image_url, trip_type, durations
+                   image_url, trip_type, durations, availability
             FROM trip_packages
             WHERE package_id = %s
         """
@@ -2855,19 +2852,34 @@ async def process_order(request: OrderRequest) -> OrderResponse:
             agent_file=agent_file
         ))
 
+        durations = product.get("durations") or []
         availability = product.get("availability") or {}
-        requested_duration = request.size or (
-            (product.get("durations") or [None])[0]
+        requested_duration = request.size or (durations[0] if durations else None)
+        if not requested_duration or requested_duration not in durations:
+            raise HTTPException(
+                status_code=422,
+                detail="Select one of the package's published durations.",
+            )
+        raw_capacity = availability.get(requested_duration)
+        if isinstance(raw_capacity, bool) or not isinstance(raw_capacity, (int, float)):
+            raise HTTPException(
+                status_code=409,
+                detail="Live inventory is unavailable for that duration.",
+            )
+        seats_available = int(raw_capacity)
+        departures_available = (
+            seats_available > 0 and request.quantity <= seats_available
         )
-        seats_available = int(availability.get(requested_duration, 1)) if availability else 1
-        departures_available = seats_available > 0
 
         availability_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000) - lookup_time
 
         activities.append(create_activity(
             activity_type="availability",
             title="Departure available" if departures_available else "No departures available",
-            details=f"{seats_available} seats available on requested dates",
+            details=(
+                f"{seats_available} package places published for "
+                f"{requested_duration}"
+            ),
             execution_time_ms=availability_time,
             agent_name=agent_name,
             agent_file=agent_file
@@ -2875,7 +2887,10 @@ async def process_order(request: OrderRequest) -> OrderResponse:
 
         if not departures_available:
             return OrderResponse(
-                message=f"Sorry, {product['name']} has no departures on your requested dates. Would you like me to notify you when seats open up?",
+                message=(
+                    f"Sorry, {product['name']} does not have enough places for "
+                    f"{request.quantity} traveler(s) on {requested_duration}."
+                ),
                 order=None,
                 activities=activities
             )
@@ -2928,51 +2943,45 @@ async def process_order(request: OrderRequest) -> OrderResponse:
             agent_type="booking_agent",
             authorization=get_agentcore_identity().authorization_context(),
         ) as transaction_id:
-            await db.execute(
-                """
-                INSERT INTO travelers (traveler_id, full_name, email)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (traveler_id) DO NOTHING
-                """,
-                (
-                    request.traveler_id,
-                    f"Traveler {request.traveler_id}",
-                    f"{request.traveler_id}@meridian.demo",
-                ),
-                transaction_id=transaction_id,
-            )
-            await db.execute(
-                """
-                INSERT INTO bookings (
-                    booking_id, traveler_id, status, total_amount,
-                    hold_expires_at, created_at
+            try:
+                hold_result = await db.execute(
+                    """
+                    SELECT seats_available, seats_reserved, seats_remaining
+                    FROM create_courtesy_hold(
+                        %s::TEXT,
+                        %s::TEXT,
+                        %s::TEXT,
+                        %s::TEXT,
+                        %s::INTEGER,
+                        %s::NUMERIC,
+                        %s::NUMERIC,
+                        %s::TIMESTAMPTZ
+                    )
+                    """,
+                    (
+                        order_id,
+                        request.traveler_id,
+                        pkg["product_id"],
+                        requested_duration,
+                        request.quantity,
+                        pkg["price"],
+                        total,
+                        hold_expires_at.isoformat(),
+                    ),
+                    transaction_id=transaction_id,
                 )
-                VALUES (%s, %s, 'held', %s, %s, CURRENT_TIMESTAMP)
-                """,
-                (
-                    order_id,
-                    request.traveler_id,
-                    total,
-                    hold_expires_at.isoformat(),
-                ),
-                transaction_id=transaction_id,
-            )
-            await db.execute(
-                """
-                INSERT INTO booking_lines (
-                    booking_id, package_id, duration, travelers_count, unit_price
-                )
-                VALUES (%s, %s, %s, %s, %s)
-                """,
-                (
-                    order_id,
-                    pkg['product_id'],
-                    request.size,
-                    request.quantity,
-                    pkg['price'],
-                ),
-                transaction_id=transaction_id,
-            )
+            except Exception as exc:
+                if "insufficient_inventory" in str(exc):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "Inventory changed before the hold was saved. "
+                            "Refresh the package and choose an available duration."
+                        ),
+                    ) from exc
+                raise
+
+        remaining = int(hold_result[0]["seats_remaining"]) if hold_result else 0
 
         order = Order(
             order_id=order_id,
@@ -2980,7 +2989,7 @@ async def process_order(request: OrderRequest) -> OrderResponse:
                 OrderItem(
                     product_id=pkg['product_id'],
                     name=pkg['name'],
-                    size=request.size,
+                    size=requested_duration,
                     quantity=request.quantity,
                     unit_price=pkg['price']
                 )
@@ -3012,6 +3021,8 @@ async def process_order(request: OrderRequest) -> OrderResponse:
             f"**Hold #{order_id}**\n"
             f"- Estimated package total: ${total:.2f}\n"
             f"- Travelers: {request.quantity}\n"
+            f"- Duration: {requested_duration}\n"
+            f"- Remaining package places: {remaining}\n"
             f"- Suggested departure: {departure_date}\n"
             f"- Payment charged: No\n\n"
             "Review the itinerary and final terms before confirming with an operator."
@@ -3032,6 +3043,8 @@ async def process_order(request: OrderRequest) -> OrderResponse:
             activities=activities
         )
 
+    except HTTPException:
+        raise
     except TravelerAuthorizationError as e:
         log_error(context="order_authorization", error=str(e), phase=request.phase)
         raise HTTPException(status_code=403, detail=str(e)) from e

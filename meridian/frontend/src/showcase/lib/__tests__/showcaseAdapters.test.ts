@@ -39,7 +39,7 @@ describe('SHOWCASE_EXAMPLE_PROMPTS phase ladder', () => {
     // The plan branch is the flight-disruption replan: a re-search step plus a
     // departure-availability step, the two dependent operations Phase 5 owns.
     const planBreak = SHOWCASE_EXAMPLE_PROMPTS[5][2].toLowerCase();
-    expect(planBreak).toContain('cancelled');
+    expect(planBreak).toContain('canceled');
     expect(planBreak).toContain('duration availability');
     expect(planBreak).toContain('best three');
   });
@@ -55,7 +55,7 @@ describe('SHOWCASE_EXAMPLE_PROMPTS phase ladder', () => {
       'Recall my Tokyo plan',
     );
     expect(showcasePromptLabel(SHOWCASE_EXAMPLE_PROMPTS[5][2])).toBe(
-      'Cancelled flight replan',
+      'Canceled flight replan',
     );
   });
 });

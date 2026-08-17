@@ -4,6 +4,8 @@ import { DesktopMeridianApp } from './DesktopMeridianApp';
 import { useMeridianShowcase } from './hooks/useMeridianShowcase';
 import './meridianShowcase.css';
 import './recoveryWorkspace.css';
+import './discoveryWorkspace.css';
+import './recoveryDecisionRefresh.css';
 
 type ShowcaseTheme = 'dark' | 'light';
 
@@ -39,7 +41,7 @@ class ShowcaseErrorBoundary extends Component<
           <h2>Something rendered out of bounds.</h2>
           <p>
             The showcase caught a render-time error. The full stack is in the
-            browser console. Click below to retry — your conversation history
+            browser console. Click below to retry - your conversation history
             and traveler memory are preserved.
           </p>
           <pre>{message}</pre>

@@ -39,7 +39,6 @@ export function AuroraEvidenceStrip({
             className="mds-proof-toggle"
             onClick={onToggleCollapsed}
             aria-expanded={!collapsed}
-            aria-label={collapsed ? 'Expand Aurora evidence' : 'Collapse Aurora evidence'}
           >
             <ChevronDown size={16} strokeWidth={2.4} aria-hidden="true" />
             <span>

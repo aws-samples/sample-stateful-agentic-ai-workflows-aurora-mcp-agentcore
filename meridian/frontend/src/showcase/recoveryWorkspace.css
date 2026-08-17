@@ -566,7 +566,7 @@
 .mds-desktop-app.is-experience .mds-desktop-main {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -2075,9 +2075,9 @@
 .mds-journey-section-head h2 {
   margin: 0;
   color: #f1f5f9;
-  font-family: var(--mds-serif);
+  font-family: var(--mds-font);
   font-size: calc(18px * var(--mds-fs));
-  font-weight: 650;
+  font-weight: 720;
 }
 
 .mds-travel-context-head {
@@ -2182,7 +2182,7 @@
 }
 
 .mds-desktop-app.is-experience .mds-current-trip-route strong {
-  font-family: var(--mds-serif);
+  font-family: var(--mds-font);
   font-size: calc(33px * var(--mds-fs));
 }
 
@@ -2962,7 +2962,7 @@
   .mds-desktop-app .mds-desktop-main {
     grid-column: 2;
     height: auto;
-    min-height: 100vh;
+    min-height: 100dvh;
   }
 
   .mds-desktop-app .mds-desktop-right {
@@ -3092,13 +3092,24 @@
   }
 
   .mds-desktop-app.is-proof .mds-phase-selector {
-    grid-template-columns: repeat(5, minmax(68px, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .mds-desktop-app.is-proof .mds-phase-selector button {
     min-width: 0;
-    padding: 8px 6px;
-    font-size: calc(10.5px * var(--mds-fs));
+    min-height: 44px;
+    padding: 0 4px;
+    font-size: calc(11px * var(--mds-fs));
+  }
+
+  .mds-desktop-app.is-projector.is-proof .mds-phase-selector button {
+    min-height: 44px;
+    padding: 0 4px;
+    font-size: calc(11px * var(--mds-fs));
+  }
+
+  .mds-desktop-app.is-projector .mds-aurora-strip-items {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .mds-desktop-app.is-experience {
@@ -3577,6 +3588,11 @@
   align-content: center;
   column-gap: 14px;
   row-gap: 4px;
+  padding: 18px;
+  border: 1px solid var(--mds-blue-line);
+  border-radius: 12px;
+  background: var(--mds-blue-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
 .mds-mobile-disruption-message > span {
@@ -3586,11 +3602,11 @@
   height: 46px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(246, 183, 60, 0.38);
+  border: 1px solid var(--mds-blue-line);
   border-radius: 12px;
-  color: #201100;
-  background: linear-gradient(145deg, #ffd477, #f6b73c);
-  box-shadow: 0 10px 24px rgba(246, 183, 60, 0.17);
+  color: #8cc4ff;
+  background: rgba(47, 140, 255, 0.16);
+  box-shadow: 0 10px 24px rgba(47, 140, 255, 0.12);
 }
 
 .mds-mobile-disruption-message > div {
@@ -3613,13 +3629,13 @@
 .mds-mobile-disruption-message h2 {
   margin: 0;
   color: #ffffff;
-  font-family: var(--mds-serif);
+  font-family: var(--mds-font);
   font-size: clamp(
     calc(29px * var(--mds-fs)),
     2.8vw,
     calc(40px * var(--mds-fs))
   );
-  font-weight: 680;
+  font-weight: 800;
   line-height: 1.02;
 }
 
@@ -4139,6 +4155,7 @@
   border: 1px solid rgba(190, 219, 255, 0.15);
   border-radius: 16px;
   color: #e9eff5;
+  font-family: var(--mds-font);
   background:
     linear-gradient(180deg, rgba(13, 31, 49, 0.92), rgba(8, 20, 34, 0.94));
   box-shadow:
@@ -4347,7 +4364,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Borderless departure line under the headline, like a boarding display. */
+/* Catalog-grounded destination and duration summary. */
 .mds-decision-route {
   display: grid;
   grid-template-columns: auto minmax(100px, 1fr) auto auto;
@@ -4369,6 +4386,7 @@
 }
 
 .mds-decision-route b {
+  overflow-wrap: anywhere;
   color: #f3f7fb;
   font-size: calc(24px * var(--mds-fs));
   font-weight: 800;
@@ -4388,7 +4406,7 @@
   font-size: calc(13px * var(--mds-fs));
   font-style: normal;
   font-weight: 700;
-  white-space: nowrap;
+  line-height: 1.25;
 }
 
 .mds-decision-route-line {

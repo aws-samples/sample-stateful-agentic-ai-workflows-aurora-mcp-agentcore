@@ -31,7 +31,7 @@ function makeState(
 const PAUSED_TURN: Message[] = [
   {
     role: 'user',
-    text: 'My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.',
+    text: 'My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.',
   },
   {
     role: 'bot',

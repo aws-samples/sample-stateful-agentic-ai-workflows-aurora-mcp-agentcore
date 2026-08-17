@@ -1,5 +1,5 @@
 /**
- * TraceHero — the dominant element on the Demo Stage.
+ * TraceHero - the dominant element on the Demo Stage.
  *
  * Renders the span timeline as a stack of animated horizontal bars. Each row
  * shows kind tag, name + detail, latency bar, ms. Rows are clickable buttons
@@ -7,6 +7,7 @@
  */
 import { ConciergeResponseCard } from './ConciergeResponseCard';
 import { RecommendationDeck } from './RecommendationDeck';
+import { ChevronDown } from 'lucide-react';
 import type { StageRecommendation, StageSpan } from '../types';
 
 const KIND_LABEL: Record<string, string> = {
@@ -35,7 +36,7 @@ interface TraceHeroProps {
   /** Top recommendation, surfaced under the reply once composed. */
   primaryRecommendation?: StageRecommendation | null;
   /** Full recommendation set, rendered inline under the reply once the
-   *  typewriter finishes — so the trace literally produces the cards. */
+   *  typewriter finishes - so the trace literally produces the cards. */
   recommendations?: StageRecommendation[];
   /** True once the reply typewriter has landed; gates the inline deck. */
   showDeck?: boolean;
@@ -88,7 +89,7 @@ export function TraceHero({
           </div>
           <div>
             Active
-            <b>{activeIndex < 0 ? '—' : `${activeIndex + 1}/${spans.length}`}</b>
+            <b>{activeIndex < 0 ? '-' : `${activeIndex + 1}/${spans.length}`}</b>
           </div>
           {onToggleCollapsed && (
             <button
@@ -100,9 +101,7 @@ export function TraceHero({
               title={collapsed ? 'Expand trace' : 'Collapse trace'}
             >
               <span className="ds-trace-collapse-chevron" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
+                <ChevronDown size={16} strokeWidth={2.4} />
               </span>
             </button>
           )}
@@ -151,7 +150,7 @@ export function TraceHero({
         onStreamComplete={onReplyStreamComplete}
       />
 
-      {/* The cards land INSIDE the panel, right under the reply — so the
+      {/* The cards land INSIDE the panel, right under the reply - so the
           trace visibly produces the results instead of leaving a static
           deck parked below. Revealed only after the typewriter finishes. */}
       {showDeck && recommendations.length > 0 && (

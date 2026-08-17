@@ -1,5 +1,5 @@
 /**
- * RankDeltaBadge — shows how far Cohere Rerank 3.5 moved a candidate from its
+ * RankDeltaBadge - shows how far Cohere Rerank 3.5 moved a candidate from its
  * pre-rerank (hybrid pgvector + tsvector) position. Positive delta = promoted
  * (moved up toward the top), negative = demoted. Used on Phase 3 trip cards
  * once the reorder animation has played, so the audience sees the reranker's

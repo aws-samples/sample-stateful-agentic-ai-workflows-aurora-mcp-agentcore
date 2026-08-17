@@ -1,5 +1,5 @@
 /**
- * StageTopBar — keynote brand bar, live system badges, phase + trace id.
+ * StageTopBar - keynote brand bar, live system badges, phase + trace id.
  */
 import { MeridianMark } from '../../components/MeridianMark';
 import type { StageSystemId } from '../types';
@@ -30,7 +30,7 @@ export function StageTopBar({ phaseLabel, traceId }: StageTopBarProps) {
       </div>
 
       {/* The stack this demo is built on. These are context, not a live
-          readout — kept calm and uniform so a single span-driven chip never
+          readout - kept calm and uniform so a single span-driven chip never
           "dances" alone. The live signal is the phase pill + the trace. */}
       <nav className="ds-systems" aria-label="System stack">
         {SYSTEMS.map((s) => (

@@ -62,12 +62,10 @@ async function main() {
 
     // Extract credentials from deployed state for this target
     const targetState = (deployedState as Record<string, unknown>)?.targets as
-      | Record<string, Record<string, unknown>>
-      | undefined;
+      Record<string, Record<string, unknown>> | undefined;
     const targetResources = targetState?.[target.name]?.resources as Record<string, unknown> | undefined;
     const credentials = targetResources?.credentials as
-      | Record<string, { credentialProviderArn: string; clientSecretArn?: string }>
-      | undefined;
+      Record<string, { credentialProviderArn: string; clientSecretArn?: string }> | undefined;
 
     new AgentCoreStack(app, stackName, {
       spec,

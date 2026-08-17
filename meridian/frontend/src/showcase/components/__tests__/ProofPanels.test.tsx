@@ -15,11 +15,19 @@ describe('proof panels', () => {
       <AuroraEvidenceStrip state={state} collapsed onToggleCollapsed={vi.fn()} />,
     );
 
-    expect(screen.getByRole('button', { name: /expand aurora evidence/i })).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      screen.getByRole('button', {
+        name: 'Aurora evidence waiting for first run Latest trace only, not cumulative',
+      }),
+    ).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('SQL rows')).not.toBeInTheDocument();
 
     rerender(<AuroraEvidenceStrip state={state} collapsed={false} onToggleCollapsed={vi.fn()} />);
-    expect(screen.getByRole('button', { name: /collapse aurora evidence/i })).toHaveAttribute('aria-expanded', 'true');
+    expect(
+      screen.getByRole('button', {
+        name: 'Aurora evidence waiting for first run Latest trace only, not cumulative',
+      }),
+    ).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('SQL rows')).toBeInTheDocument();
   });
 });

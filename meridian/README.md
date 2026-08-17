@@ -49,6 +49,15 @@ curl http://localhost:8000/health
 
 Expected result: `{"status":"healthy", ...}`.
 
+`requirements.in` is the human-maintained dependency specification.
+`requirements.txt` is the hash-pinned lock generated with:
+
+```bash
+PIP_CONFIG_FILE=/dev/null pip-compile requirements.in \
+  --output-file requirements.txt --generate-hashes --strip-extras \
+  --index-url https://pypi.org/simple
+```
+
 ### Frontend
 
 ```bash
@@ -76,7 +85,7 @@ python scripts/bind_current_identity.py
 | Surface | Route | Use |
 | ------- | ----- | --- |
 | **Device Showcase** | `/showcase`, `/device-showcase` | Primary AWS Summit chalk-talk experience: chat, phase selector, trace, traveler memory, RLS proof, and trip cards |
-| **Legacy Pro** | `/pro` | Local builder walkthrough and older overview surface |
+| **Demo Stage** | `/demo-stage`, `/stage` | Kiosk loop and presenter playback surface |
 
 ## Five-Phase Demo Ladder
 
@@ -131,8 +140,7 @@ meridian/
 │   └── mcp/                  # MCP clients and custom memory server
 ├── frontend/src/
 │   ├── showcase/             # Primary /showcase experience
-│   ├── stage/                # Legacy presenter playback surface
-│   ├── sections/             # Legacy /pro sections
+│   ├── stage/                # Presenter playback surface
 │   └── lib/                  # Shared adapters and run config
 ├── examples/                 # RLS and setup SQL
 ├── scripts/                  # Cluster, schema, seed, and sync helpers
@@ -226,7 +234,9 @@ npm run build
 ```bash
 cd meridian
 source venv/bin/activate
+python -m pip install --require-hashes -r requirements.txt
 python -m pytest
+python -m pip_audit -r requirements.txt
 ```
 
 ## Documentation

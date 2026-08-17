@@ -28,7 +28,7 @@ describe('TravelerContextPanel memory capability', () => {
     render(<TravelerContextPanel state={state()} onOpenMemory={vi.fn()} />);
 
     expect(screen.getByText('Unlocks in Production')).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: 'Use traveler context' })).toBeDisabled();
+    expect(screen.getByRole('switch', { name: 'Use traveler context: off' })).toBeDisabled();
     expect(screen.queryByText('Alex Morgan')).not.toBeInTheDocument();
   });
 
@@ -45,7 +45,7 @@ describe('TravelerContextPanel memory capability', () => {
       />,
     );
 
-    const toggle = screen.getByRole('switch', { name: 'Use traveler context' });
+    const toggle = screen.getByRole('switch', { name: 'Use traveler context: off' });
     expect(toggle).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByText('Context disconnected')).toBeInTheDocument();
 
@@ -70,6 +70,7 @@ describe('TravelerContextPanel memory capability', () => {
     );
 
     expect(toggle).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('switch', { name: 'Use traveler context: on' })).toBeInTheDocument();
     expect(screen.getByText('Profile')).toBeInTheDocument();
     expect(screen.getByText('Preferences')).toBeInTheDocument();
     expect(screen.getByText('Prior plans')).toBeInTheDocument();

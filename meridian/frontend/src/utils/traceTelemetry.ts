@@ -5,10 +5,10 @@ import type { Message, ActivityEntry } from '../types';
 
 const LONG_TERM_FACTS = [
   { key: 'party_size', value: '2 travelers', source: 'booking_history', confidence: 0.98 },
-  { key: 'goal', value: 'Tokyo culture trip — Oct 12–19', source: 'profile', confidence: 0.95 },
+  { key: 'goal', value: 'Tokyo culture trip - Oct 12-19', source: 'profile', confidence: 0.95 },
   { key: 'preference', value: 'Window seat · aisle on long-haul', source: 'browse_session', confidence: 0.91 },
-  { key: 'allergy', value: 'Shellfish — exclude seafood dining', source: 'support_ticket', confidence: 1.0 },
-  { key: 'budget', value: 'Prefers $2k–3.5k per person', source: 'search_analytics', confidence: 0.87 },
+  { key: 'allergy', value: 'Shellfish - exclude seafood dining', source: 'support_ticket', confidence: 1.0 },
+  { key: 'budget', value: 'Prefers $2k-3.5k per person', source: 'search_analytics', confidence: 0.87 },
 ];
 
 function span(
@@ -55,7 +55,7 @@ function buildPhase4Preamble(
           { label: 'runtime', value: 'meridian-travel-v3' },
           { label: 'region', value: 'us-east-1' },
           { label: 'governance', value: 'scopes: search, availability · budget: $4,000' },
-          { label: 'isolation', value: 'Aurora RLS — see Security span below' },
+          { label: 'isolation', value: 'Aurora RLS - see Security span below' },
         ],
       },
     }),
@@ -172,7 +172,7 @@ function buildPhase1Preamble(_query: string, traceId: string): ActivityEntry[] {
         status: 'ok',
         fields: [
           { label: 'trace_id', value: traceId, mono: true },
-          { label: 'memory', value: 'none — stateless turn' },
+          { label: 'memory', value: 'none - stateless turn' },
           { label: 'path', value: 'hardcoded tools → RDS Data API' },
         ],
       },
@@ -249,7 +249,7 @@ function enrichActivity(a: ActivityEntry, phase: 1 | 2 | 3 | 4 | 5, query: strin
       fields: [
         { label: 'from', value: a.agent_name ?? 'Supervisor' },
         { label: 'action', value: a.title },
-        { label: 'details', value: a.details ?? '—' },
+        { label: 'details', value: a.details ?? '-' },
       ],
     };
   } else if (type === 'inventory') {

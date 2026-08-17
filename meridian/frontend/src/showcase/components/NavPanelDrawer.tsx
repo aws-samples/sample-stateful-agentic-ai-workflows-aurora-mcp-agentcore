@@ -3,11 +3,10 @@ import type { Product } from '../../types';
 import { SHOWCASE_EXAMPLE_PROMPTS, SHOWCASE_PHASES } from '../lib/showcaseAdapters';
 import { resultRankLabel } from '../lib/resultRankLabel';
 import { ALEX_IMAGE_URL, ALEX_NAME } from '../lib/personas';
-import { X } from 'lucide-react';
-import { useDialogA11y } from '../hooks/useDialogA11y';
+import { ShowcaseSheet } from './ShowcaseSheet';
 
 // Lightweight-but-complete side panels for the sidebar nav. Each panel
-// renders REAL session / Aurora state — no fixtures — so a presenter (or a
+// renders REAL session / Aurora state - no fixtures - so a presenter (or a
 // booth visitor) can click any nav item and land on something coherent
 // instead of a dead button. All four share the existing drawer chrome
 // (.mds-drawer) so they match the Memory drawer visually.
@@ -34,36 +33,24 @@ export function NavPanelDrawer({
   panel: NavPanelId | null;
   onClose: () => void;
 }) {
-  const dialogRef = useDialogA11y(Boolean(panel), onClose);
   if (!panel) return null;
 
   return (
-    <div className="mds-drawer-backdrop" onClick={onClose} role="presentation">
-      <aside
-        ref={dialogRef}
-        className="mds-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-label={PANEL_TITLE[panel]}
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <header>
-          <div>
-            <span>{PANEL_TITLE[panel]}</span>
-            <strong>Alex Morgan</strong>
-          </div>
-          <button type="button" onClick={onClose} aria-label={`Close ${PANEL_TITLE[panel]}`}>
-            <X size={17} />
-          </button>
-        </header>
-
-        {panel === 'trips' && <TripsPanel state={state} onClose={onClose} />}
-        {panel === 'discover' && <DiscoverPanel state={state} onClose={onClose} />}
-        {panel === 'profile' && <ProfilePanel state={state} />}
-        {panel === 'messages' && <MessagesPanel state={state} />}
-      </aside>
-    </div>
+    <ShowcaseSheet
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+      title={PANEL_TITLE[panel]}
+      subtitle="Alex Morgan"
+      description={`${PANEL_TITLE[panel]} workspace for Alex Morgan`}
+      closeLabel={`Close ${PANEL_TITLE[panel]}`}
+    >
+      {panel === 'trips' && <TripsPanel state={state} onClose={onClose} />}
+      {panel === 'discover' && <DiscoverPanel state={state} onClose={onClose} />}
+      {panel === 'profile' && <ProfilePanel state={state} />}
+      {panel === 'messages' && <MessagesPanel state={state} />}
+    </ShowcaseSheet>
   );
 }
 
@@ -76,7 +63,7 @@ function TripsPanel({ state, onClose }: { state: MeridianShowcaseState; onClose:
     return (
       <div className="mds-navpanel-empty">
         <b>No trips yet</b>
-        <span>Ask the concierge for a destination, then Save the ones you like — they'll collect here.</span>
+        <span>Ask the concierge for a destination, then Save the ones you like - they'll collect here.</span>
       </div>
     );
   }
@@ -185,7 +172,13 @@ function ProfilePanel({ state }: { state: MeridianShowcaseState }) {
     <div className="mds-drawer-list">
       <div className="mds-navpanel-profile-head">
         <span className="mds-avatar is-photo" aria-hidden="true">
-          <img src={ALEX_IMAGE_URL} alt={ALEX_NAME} loading="lazy" />
+          <img
+            src={ALEX_IMAGE_URL}
+            alt={ALEX_NAME}
+            width="640"
+            height="960"
+            loading="lazy"
+          />
         </span>
         <div>
           <strong>Alex Morgan</strong>
@@ -212,7 +205,7 @@ function ProfilePanel({ state }: { state: MeridianShowcaseState }) {
         <div className="mds-navpanel-section-head">Memory facts · {state.memoryFacts.length}</div>
         {state.memoryFacts.length === 0 ? (
           <div className="mds-navpanel-hint">
-            Switch to Production and ask a question — traveler facts load from Aurora here.
+            Switch to Production and ask a question - traveler facts load from Aurora here.
           </div>
         ) : (
           state.memoryFacts.map((fact) => (

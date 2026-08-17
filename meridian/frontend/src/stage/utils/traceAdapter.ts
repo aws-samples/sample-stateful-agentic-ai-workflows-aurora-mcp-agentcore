@@ -1,7 +1,7 @@
 /**
- * traceAdapter — convert a backend `ChatResponse` into the Demo Stage span model.
+ * traceAdapter - convert a backend `ChatResponse` into the Demo Stage span model.
  *
- * Requires a live API response with activities and/or products — no fixture
+ * Requires a live API response with activities and/or products - no fixture
  * trace synthesis.
  */
 import type { ChatResponse, Product } from '../../types';

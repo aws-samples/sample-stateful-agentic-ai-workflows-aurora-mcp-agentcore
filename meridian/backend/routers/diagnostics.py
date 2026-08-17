@@ -7,20 +7,16 @@ SAME ``COUNT(*)`` twice against a table:
   1. SCOPED   — inside ``scoped_session(traveler_id=...)``, so the GUC
                 ``app.current_traveler_id`` is set and the RLS policy filters
                 rows to that traveler.
-  2. UNSCOPED — outside any transaction, so the GUC is empty. The policies in
-                ``examples/rls_for_agents.sql`` deliberately allow the empty
-                string as an admin/seed bypass (``... OR current_setting(
-                'app.current_traveler_id', true) = ''``), so an unscoped read
-                sees ALL rows.
+  2. BASELINE — through the privileged migration connection, outside the app
+                role. This sees all rows for a count-only comparison.
 
 The difference between the two counts is the live proof that RLS is doing the
 filtering — not a comment in a slide. The endpoint also returns the real
 ``CREATE POLICY`` USING clause from ``pg_policies`` so the audience sees the
 actual rule.
 
-NOTE: the empty-string bypass IS the mechanism this endpoint demonstrates — do
-not "fix" it. It's how seed scripts and this diagnostic read across travelers
-while agent turns stay scoped.
+The app role itself is fail closed when the traveler GUC is unset. The broader
+baseline is available only through the privileged administrative connection.
 
 This endpoint is READ-ONLY (COUNT + pg_policies SELECT only).
 
@@ -31,13 +27,18 @@ AWS docs:
 
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.memory.store import DEMO_TRAVELER_ID
+from backend.http_auth import (
+    HttpPrincipal,
+    authorize_traveler,
+    require_http_principal,
+)
 
 router = APIRouter(prefix="/api/diagnostics", tags=["diagnostics"])
 
@@ -94,9 +95,14 @@ async def _count(db, table: str, transaction_id: Optional[str]) -> int:
 
 
 @router.post("/rls-probe", response_model=RlsProbeResponse)
-async def rls_probe(request: RlsProbeRequest = RlsProbeRequest()) -> RlsProbeResponse:
+async def rls_probe(
+    request: RlsProbeRequest = RlsProbeRequest(),
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> RlsProbeResponse:
     """Run scoped vs unscoped COUNT(*) per table + return the live policies."""
-    traveler_id = request.traveler_id or DEMO_TRAVELER_ID
+    traveler_id = authorize_traveler(
+        principal, request.traveler_id or DEMO_TRAVELER_ID
+    )
     requested = request.tables or list(DEFAULT_TABLES)
     # Drop anything not on the allow-list (injection guard).
     tables = [t for t in requested if t in ALLOWED_TABLES] or list(DEFAULT_TABLES)
@@ -130,7 +136,8 @@ async def rls_probe(request: RlsProbeRequest = RlsProbeRequest()) -> RlsProbeRes
                 authorization=authorization,
             ) as tx:
                 scoped = await _count(db, table, tx)
-            # Unscoped: no transaction → GUC empty → empty-string bypass → all rows.
+            # Privileged baseline: the Data API secret maps to the migration
+            # role, so this count is intentionally outside the app role.
             unscoped = await _count(db, table, None)
             results.append(
                 RlsTableResult(table=table, scoped_count=scoped, unscoped_count=unscoped)

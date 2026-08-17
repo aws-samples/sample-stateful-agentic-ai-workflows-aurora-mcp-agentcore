@@ -2,7 +2,7 @@
  * Demo Stage span model.
  *
  * The Demo Stage trace is intentionally narrower than the full
- * `ActivityEntry` telemetry — it's the "cinematic" shape audiences see on the
+ * `ActivityEntry` telemetry - it's the "cinematic" shape audiences see on the
  * monitor. `traceAdapter.ts` is responsible for converting whatever the
  * backend returns into this shape.
  */

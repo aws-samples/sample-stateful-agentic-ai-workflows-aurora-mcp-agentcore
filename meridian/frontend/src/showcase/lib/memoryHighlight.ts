@@ -1,5 +1,5 @@
 /**
- * memoryHighlight — mark recalled-from-memory phrases inside Production+ replies.
+ * memoryHighlight - mark recalled-from-memory phrases inside Production+ replies.
  *
  * A rehype plugin that walks the markdown-derived hast tree and wraps phrases
  * the Production concierge recalls from Aurora-backed memory (rather than from
@@ -26,10 +26,10 @@ const MEMORY_PHRASE_SOURCE = [
   '(?:Marriott\\s+)?Bonvoy(?:\\s+Platinum(?:\\s+Elite)?)?',
   'Platinum Elite',
   'vegetarian(?:[-\\s]friendly)?',
-  'Oct(?:ober)?\\.?\\s*12\\s*[–-]\\s*19',
+  'Oct(?:ober)?\\.?\\s*12\\s*[--]\\s*19',
 ].join('|');
 
-// Minimal hast shape — enough to walk and rewrite text nodes without pulling
+// Minimal hast shape - enough to walk and rewrite text nodes without pulling
 // in @types/hast just for this transform.
 export interface HastNode {
   type: string;
@@ -70,7 +70,7 @@ export function splitMemoryPhrases(value: string): HastNode[] | null {
 
 function highlightMemoryInTree(node: HastNode): void {
   if (!node.children) return;
-  // Never rewrite inside code — recalled facts there are literal SQL/JSON.
+  // Never rewrite inside code - recalled facts there are literal SQL/JSON.
   if (node.tagName === 'code' || node.tagName === 'pre') return;
   const rewritten: HastNode[] = [];
   let changed = false;

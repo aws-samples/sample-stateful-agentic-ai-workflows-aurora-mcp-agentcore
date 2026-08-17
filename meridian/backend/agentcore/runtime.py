@@ -21,9 +21,10 @@ import hashlib
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from backend.agentcore.cli_config import resolve_agentcore_config
@@ -37,14 +38,17 @@ def _utc_timestamp() -> str:
 
 
 @dataclass
-class RuntimeSession:
-    """AgentCore Runtime session envelope for one concierge turn."""
+class RuntimeDecision:
+    """Managed Runtime result for one Meridian concierge turn."""
 
     runtime_arn: str
     runtime_session_id: str
     qualifier: str
     isolation: str
     invoke_status: str
+    message: str
+    recommended_package_ids: list[str]
+    follow_ups: list[str]
 
 
 class AgentCoreRuntimeAdapter:
@@ -78,7 +82,15 @@ class AgentCoreRuntimeAdapter:
 
     def _get_client(self):
         if self._client is None:
-            self._client = boto3.client("bedrock-agentcore", region_name=self.region)
+            self._client = boto3.client(
+                "bedrock-agentcore",
+                region_name=self.region,
+                config=Config(
+                    retries={"total_max_attempts": 5, "mode": "adaptive"},
+                    connect_timeout=5,
+                    read_timeout=90,
+                ),
+            )
         return self._client
 
     @staticmethod
@@ -97,24 +109,75 @@ class AgentCoreRuntimeAdapter:
         digest = hashlib.sha256(f"{traveler_id}:{conversation_id}".encode("utf-8")).hexdigest()[:32]
         return f"rt-{slug}-{digest}"
 
-    def session_for_turn(self, conversation_id: str, traveler_id: str) -> RuntimeSession:
-        """Open a Runtime session and ping ``invoke_agent_runtime``."""
+    @staticmethod
+    def _response_bytes(response: dict[str, Any]) -> bytes:
+        chunks = response.get("response") or []
+        output = bytearray()
+        for chunk in chunks:
+            if isinstance(chunk, (bytes, bytearray)):
+                output.extend(chunk)
+            elif isinstance(chunk, str):
+                output.extend(chunk.encode())
+            elif isinstance(chunk, dict):
+                payload = chunk.get("chunk", {}).get("bytes") or chunk.get("bytes")
+                if isinstance(payload, str):
+                    output.extend(payload.encode())
+                elif isinstance(payload, (bytes, bytearray)):
+                    output.extend(payload)
+        return bytes(output)
+
+    @staticmethod
+    def _parse_decision(raw: bytes) -> dict[str, Any]:
+        text = raw.decode("utf-8").strip()
+        if not text:
+            raise RuntimeError("AgentCore Runtime returned an empty concierge decision.")
+        if text.startswith("data:"):
+            text = "\n".join(
+                line.removeprefix("data:").strip()
+                for line in text.splitlines()
+                if line.startswith("data:")
+            )
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                "AgentCore Runtime returned an invalid concierge payload."
+            ) from exc
+        # BedrockAgentCoreApp streams JSON over SSE. The service encodes each
+        # yielded string as the SSE data value, so a JSON object yielded by the
+        # app arrives as one additional JSON-encoded string layer.
+        if isinstance(parsed, str):
+            try:
+                parsed = json.loads(parsed)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(
+                    "AgentCore Runtime returned an invalid concierge payload."
+                ) from exc
+        if not isinstance(parsed, dict) or not str(parsed.get("message", "")).strip():
+            raise RuntimeError(
+                "AgentCore Runtime response is missing the concierge message."
+            )
+        return parsed
+
+    def invoke_turn(
+        self,
+        conversation_id: str,
+        traveler_id: str,
+        prompt: str,
+        memory_context: str,
+        candidates: list[dict[str, Any]],
+    ) -> RuntimeDecision:
+        """Execute the Meridian concierge decision inside AgentCore Runtime."""
         arn = self._require_arn()
         session_id = self._build_runtime_session_id(conversation_id, traveler_id)
-        invoke_status = self._invoke_session_start(arn, session_id, traveler_id)
-        return RuntimeSession(
-            runtime_arn=arn,
-            runtime_session_id=session_id,
-            qualifier=self.qualifier,
-            isolation="microVM · session-scoped CPU/memory/filesystem",
-            invoke_status=invoke_status,
-        )
-
-    def _invoke_session_start(self, arn: str, session_id: str, traveler_id: str) -> str:
         payload = json.dumps(
             {
-                "event": "concierge_session_start",
+                "event": "concierge_turn",
                 "traveler_id": traveler_id,
+                "conversation_id": conversation_id,
+                "prompt": prompt,
+                "memory_context": memory_context[:6000],
+                "candidates": candidates[:8],
                 "timestamp": _utc_timestamp(),
             }
         ).encode()
@@ -126,17 +189,28 @@ class AgentCoreRuntimeAdapter:
                 payload=payload,
                 qualifier=self.qualifier,
             )
-            chunks = response.get("response") or []
-            if chunks:
-                _ = b"".join(
-                    chunk if isinstance(chunk, (bytes, bytearray)) else chunk.encode()
-                    for chunk in chunks
-                )
-            return "live"
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code", "Unknown")
             logger.error("invoke_agent_runtime failed: %s", code)
             raise RuntimeError(f"AgentCore Runtime invoke failed: {code}") from exc
+
+        parsed = self._parse_decision(self._response_bytes(response))
+        return RuntimeDecision(
+            runtime_arn=arn,
+            runtime_session_id=session_id,
+            qualifier=self.qualifier,
+            isolation="microVM · session-scoped CPU/memory/filesystem",
+            invoke_status="live",
+            message=str(parsed["message"]).strip(),
+            recommended_package_ids=[
+                str(value)
+                for value in parsed.get("recommended_package_ids", [])
+                if value
+            ],
+            follow_ups=[
+                str(value) for value in parsed.get("follow_ups", []) if value
+            ],
+        )
 
 
 _adapter: Optional[AgentCoreRuntimeAdapter] = None

@@ -1,10 +1,10 @@
 /**
- * RlsProbeCard — Phase 4 workload authorization and RLS proof panel.
+ * RlsProbeCard - Phase 4 workload authorization and RLS proof panel.
  *
  * Calls POST /api/diagnostics/rls-probe, which runs the SAME COUNT(*) twice
- * per table — once scoped (app.current_traveler_id set → RLS filters to the
- * traveler) and once unscoped (GUC empty → admin bypass → all rows). The bar
- * animates from the unscoped total down to the scoped count, so the audience
+ * per table - once through the fail-closed app role and once through the
+ * privileged migration connection. The bar animates from the administrative
+ * baseline down to the scoped count, so the audience
  * watches the row set collapse to just this traveler's data. Below each table
  * we show the real CREATE POLICY USING clause from pg_policies.
  *
@@ -129,7 +129,7 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
                 </div>
                 {!t.error && (
                   <div className="mds-rls-bar" role="img"
-                    aria-label={`Without scope ${t.unscoped_count} rows, with RLS ${t.scoped_count} rows`}>
+                    aria-label={`Privileged baseline ${t.unscoped_count} rows, application RLS ${t.scoped_count} rows`}>
                     <div className="mds-rls-bar-ghost" aria-hidden="true" />
                     <motion.div
                       className="mds-rls-bar-scoped"
@@ -141,7 +141,7 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
                 )}
                 {!t.error && (
                   <div className="mds-rls-legend">
-                    <span><i className="mds-rls-dot is-scoped" />With RLS: {t.scoped_count}</span>
+                    <span><i className="mds-rls-dot is-scoped" />App role: {t.scoped_count}</span>
                     <span><i className="mds-rls-dot is-hidden" />Hidden by policy: {hidden}</span>
                   </div>
                 )}

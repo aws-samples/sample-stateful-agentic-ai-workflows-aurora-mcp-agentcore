@@ -25,7 +25,7 @@ day before is fine.
 |---|---|---|
 | **Memory** | `meridian_session` | `create_event` write + recall read every Phase 4 turn — visible in trace |
 | **Gateway** | `meridian-aurora` | Managed MCP endpoint fronting the `semantic_trip_search` Lambda — `tools/list` + `tools/call` spans |
-| **Runtime** | `MeridianConcierge` | Hosts the agent module; runtime ARN appears in the AgentCore Identity span |
+| **Runtime** | `MeridianConcierge` | Produces the traveler-facing decision from authorized memory context and live Gateway candidates |
 
 All three are declared in
 [`meridian_agentcore/agentcore/agentcore.json`](../meridian_agentcore/agentcore/agentcore.json).
@@ -88,6 +88,7 @@ In the showcase trace panel you should see (real, not faked):
 - `AgentCore Identity resolved` — workload identity envelope
 - `AgentCore Gateway · tools/list` — real MCP discovery
 - `AgentCore Gateway · tools/call → semantic_trip_search` — real tool invocation
+- `AgentCore Runtime · concierge decision` — managed Runtime output consumed by the backend
 - `AgentCore Memory · create_event` — real write
 - `AgentCore Memory · list/retrieve` (recall) — real read
 
@@ -150,12 +151,16 @@ export LANGGRAPH_CHECKPOINT_DATABASE=meridian
 export LANGGRAPH_CHECKPOINT_REQUIRED=true
 export LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP=true
 export LANGGRAPH_DEMO_INTERRUPT_AFTER=search
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
 The checkpoint password is resolved from `LANGGRAPH_CHECKPOINT_SECRET_ARN` or
 the demo's existing `AURORA_SECRET_ARN`. Use a dedicated least-privilege
 checkpoint secret in a hosted deployment.
+
+The API permits unauthenticated calls only from loopback in development. Before
+binding to a network interface, set `MERIDIAN_API_TOKEN`,
+`MERIDIAN_API_TRAVELER_ID`, and an explicit `CORS_ORIGINS` allow-list.
 
 Terminal 3 — frontend:
 ```bash

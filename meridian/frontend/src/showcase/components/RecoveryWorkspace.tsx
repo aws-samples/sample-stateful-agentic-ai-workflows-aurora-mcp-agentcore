@@ -16,7 +16,7 @@ import {
   AgentProofCard,
   CheckpointedPlanCard,
   ConciergeAssistanceCard,
-  FlightOptionCard,
+  PackageOptionCard,
   RecoveryLaunchCard,
   RecommendedRecoveryPlanCard,
 } from './RecoveryDecisionCards';
@@ -24,7 +24,7 @@ import {
 const STAY_PROMPT =
   'Find a well-rated hotel near Haneda for tonight with lounge access and an easy airport transfer.';
 const PROTECTION_PROMPT =
-  'Review my trip protection and change-fee options before rebooking the cancelled Tokyo flight.';
+  'Review my trip protection and change-fee options before rebooking the canceled Tokyo flight.';
 
 type RecoveryLayout = 'command' | 'focus' | 'journey';
 
@@ -206,14 +206,14 @@ export function RecoveryWorkspace({
     >
       <header className={`mds-recovery-overview is-${recoveryStage}`}>
         <div className="mds-recovery-overview-title">
-          <h1>Alex&apos;s JFK → Tokyo recovery</h1>
+          <h1>Alex&apos;s JFK to Tokyo recovery</h1>
           <span className="mds-recovery-cancelled-badge">
             <AlertTriangle size={14} aria-hidden="true" />
-            Cancelled flight
+            Traveler-reported disruption
           </span>
         </div>
         <div className="mds-recovery-overview-meta">
-          <span>Original: ANA NH 109 cancelled</span>
+          <span>Request: rework a canceled JFK-to-Tokyo trip</span>
           <i aria-hidden="true" />
           <strong>{recoveryStatusLabel}</strong>
         </div>
@@ -311,7 +311,7 @@ export function RecoveryWorkspace({
                 </div>
                 <div className="mds-recovery-alternative-grid">
                   {alternativeProducts.map((product, index) => (
-                    <FlightOptionCard
+                    <PackageOptionCard
                       key={product?.product_id ?? `pending-${index}`}
                       product={product}
                       rank={index + 2}

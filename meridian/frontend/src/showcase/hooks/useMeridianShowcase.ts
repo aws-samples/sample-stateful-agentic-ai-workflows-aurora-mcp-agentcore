@@ -153,12 +153,12 @@ export interface MeridianShowcaseState {
   markLatestStreamComplete: () => void;
 }
 
-// Clean slate by design — the chat transcript stays empty until the
+// Clean slate by design - the chat transcript stays empty until the
 // presenter types a real prompt and Aurora streams the first turn back.
 const INITIAL_MESSAGES: Message[] = [];
 
 function formatDateLabel(iso: string): string {
-  // ISO YYYY-MM-DD into "Sep 14" — readable inside the prompt text.
+  // ISO YYYY-MM-DD into "Sep 14" - readable inside the prompt text.
   const [, m, d] = iso.split('-');
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const monthIdx = Math.max(0, Math.min(11, Number(m) - 1));
@@ -195,7 +195,7 @@ const PHASE_DELAYS: Record<Phase, number> = { 1: 420, 2: 360, 3: 300, 4: 280, 5:
 
 export function useMeridianShowcase(): MeridianShowcaseState {
   // Start the showcase at Phase 1 (SQL) so a stage walk-through can begin
-  // with the simplest data path — direct SQL filters over Aurora — and
+  // with the simplest data path - direct SQL filters over Aurora - and
   // progressively introduce MCP, Retrieval, Production, and Workflow.
   const [selectedPhase, setSelectedPhaseState] = useState<Phase>(1);
   const [phaseHint, setPhaseHint] = useState<MeridianShowcaseState['phaseHint']>(null);
@@ -227,7 +227,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [error, setError] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
   const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
-  // No fallback mode — /showcase is live-Aurora-only. The flag remains in
+  // No fallback mode - /showcase is live-Aurora-only. The flag remains in
   // state so existing consumers that read it still type-check, but it stays
   // false for the lifetime of the session.
   const [isFallbackMode] = useState(false);
@@ -415,7 +415,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       // Decorate the user's prompt with the active action-chip filters so
       // the backend agent sees the full traveler intent. The decorated
       // string is what we send to /api/chat AND what we record as the
-      // turn's user-facing message — that way the chat transcript shows
+      // turn's user-facing message - that way the chat transcript shows
       // exactly what was searched.
       const decorated = decoratePromptWithFilters(baseRaw, chatFilters);
 
@@ -472,7 +472,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (!mounted.current) return;
         setBackendStatus('offline');
         setError(
-          'Live chat request failed. Confirm Aurora + FastAPI are running on localhost:8000 — the showcase only renders real Aurora data.',
+          'Live chat request failed. Confirm Aurora + FastAPI are running on localhost:8000 - the showcase only renders real Aurora data.',
         );
       } finally {
         if (mounted.current) setIsLoading(false);
@@ -500,7 +500,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, [lastPrompt, submitPrompt]);
 
   const setSelectedPhase = useCallback((phase: Phase) => {
-    // Compute the transition from the CURRENT phase directly — never from a
+    // Compute the transition from the CURRENT phase directly - never from a
     // side-effect written inside a setState updater. The updater can run
     // asynchronously (and twice under StrictMode), so reading a flag it sets
     // is a race: the clear below sometimes fired and sometimes didn't. This
@@ -508,7 +508,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     const prev = selectedPhase;
     const phaseChanged = phase !== prev;
     if (!phaseChanged) {
-      // Re-clicking the active pill is a no-op — don't wipe an in-progress
+      // Re-clicking the active pill is a no-op - don't wipe an in-progress
       // conversation or re-trigger the hint.
       return;
     }
@@ -516,7 +516,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setSelectedPhaseState(phase);
 
     // Surface the "what this rung adds" callout only when advancing to a
-    // higher phase — that's the narrative beat (each mode composes onto the
+    // higher phase - that's the narrative beat (each mode composes onto the
     // last). Backward switches stay quiet so re-demoing an earlier mode
     // doesn't spam the banner. Sticky: stays until the presenter clicks Close.
     const meta = SHOWCASE_PHASES.find((p) => p.phase === phase);
@@ -527,7 +527,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     }
 
     // Switching to a different phase auto-clears the conversation so each
-    // mode starts from a clean slate — the presenter doesn't want Phase 2's
+    // mode starts from a clean slate - the presenter doesn't want Phase 2's
     // transcript bleeding into the Retrieval demo. Phase choice and
     // Aurora-backed memory facts are preserved.
     clearReplayTimers();

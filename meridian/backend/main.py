@@ -103,17 +103,9 @@ app = FastAPI(
     }
 )
 
-# Configure CORS for frontend communication.
-#
-# This API has no cookie/session auth — the frontend calls it with plain JSON
-# and never sends credentials. For local/demo use we therefore accept ANY
-# origin so CORS preflights never 400. This matters because the app is opened
-# from several contexts during the workshop: localhost:5173, 127.0.0.1, ad-hoc
-# Vite ports, and embedded/preview browsers that send `Origin: null` (which is
-# not matchable by an explicit allow-list).
-#
-# To lock this down (e.g. a hosted deployment), set CORS_ORIGINS to a comma-
-# separated allow-list; that path re-enables credentialed, origin-scoped CORS.
+# Configure CORS for frontend communication. The default accepts only local
+# browser origins on arbitrary development ports. Hosted deployments must set
+# an explicit allow-list rather than silently inheriting wildcard CORS.
 custom_origins = os.getenv("CORS_ORIGINS", "").strip()
 
 if custom_origins:
@@ -127,11 +119,11 @@ if custom_origins:
 else:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        # Must be False when allow_origins=["*"]; the API uses no cookies anyway.
+        allow_origins=[],
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
         allow_credentials=False,
         allow_methods=["*"],
-        allow_headers=["*"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
 # Include routers
@@ -223,7 +215,7 @@ if __name__ == "__main__":
     import uvicorn
     
     # Get configuration from environment
-    host = os.getenv("HOST", "0.0.0.0")
+    host = os.getenv("HOST", "127.0.0.1")
     port = int(os.getenv("PORT", "8000"))
     reload = os.getenv("ENVIRONMENT", "development") == "development"
     

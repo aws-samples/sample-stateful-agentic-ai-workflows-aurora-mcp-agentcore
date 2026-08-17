@@ -1,9 +1,16 @@
 /**
- * PresenterControls — discreet bottom strip for the speaker.
+ * PresenterControls - discreet bottom strip for the speaker.
  *
  * Local UI state only. Backend is not involved. Hidden in kiosk mode.
  */
 import type { StageScenario, StageView } from '../types';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Pause,
+  Play,
+  RotateCcw,
+} from 'lucide-react';
 
 interface PresenterControlsProps {
   isPlaying: boolean;
@@ -18,19 +25,6 @@ interface PresenterControlsProps {
   onPrev: () => void;
   onReplay: () => void;
   onView: (view: StageView) => void;
-}
-
-function PlayIcon({ playing }: { playing: boolean }) {
-  return playing ? (
-    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="3" y="2.5" width="3.6" height="11" rx="1" fill="currentColor" />
-      <rect x="9.4" y="2.5" width="3.6" height="11" rx="1" fill="currentColor" />
-    </svg>
-  ) : (
-    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M4 2.5L13 8L4 13.5V2.5Z" fill="currentColor" />
-    </svg>
-  );
 }
 
 const SCENARIO_LABEL: Record<StageScenario['id'], string> = {
@@ -62,7 +56,11 @@ export function PresenterControls({
           onClick={onTogglePlay}
           aria-label={isPlaying ? 'Pause demo loop' : 'Start demo loop'}
         >
-          <PlayIcon playing={isPlaying} />
+          {isPlaying ? (
+            <Pause size={13} aria-hidden="true" />
+          ) : (
+            <Play size={13} aria-hidden="true" />
+          )}
           {isPlaying ? 'Pause' : isComplete ? 'Replay' : 'Play'}
           <span className="ds-kbd">Space</span>
         </button>
@@ -72,7 +70,8 @@ export function PresenterControls({
           onClick={onPrev}
           aria-label="Previous span"
         >
-          ◀ Prev
+          <ChevronLeft size={14} aria-hidden="true" />
+          Prev
         </button>
         <button
           type="button"
@@ -81,7 +80,9 @@ export function PresenterControls({
           disabled={!canStep}
           aria-label="Step to next span"
         >
-          Next span ▶ <span className="ds-kbd">→</span>
+          Next span
+          <ChevronRight size={14} aria-hidden="true" />
+          <span className="ds-kbd">Right</span>
         </button>
         <button
           type="button"
@@ -89,7 +90,8 @@ export function PresenterControls({
           onClick={onReplay}
           aria-label="Replay trace from the beginning"
         >
-          ↻ Replay <span className="ds-kbd">R</span>
+          <RotateCcw size={13} aria-hidden="true" />
+          Replay <span className="ds-kbd">R</span>
         </button>
       </div>
 

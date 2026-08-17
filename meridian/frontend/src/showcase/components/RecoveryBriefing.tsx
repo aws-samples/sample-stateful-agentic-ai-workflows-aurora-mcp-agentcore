@@ -25,7 +25,7 @@ function recoveryRequest(messages: Message[]): Message | null {
     const message = messages[index];
     if (
       message.role === 'user' &&
-      /flight.+cancelled|cancelled.+flight/i.test(message.text)
+      /flight.+cancell?ed|cancell?ed.+flight/i.test(message.text)
     ) {
       return message;
     }

@@ -17,6 +17,7 @@ import { AuroraEvidenceStrip } from './components/AuroraEvidenceStrip';
 import { ChatComposer } from './components/ChatComposer';
 import { ChatTranscript } from './components/ChatTranscript';
 import { ComparisonDialog } from './components/ComparisonDialog';
+import { DiscoveryWorkspace } from './components/DiscoveryWorkspace';
 import { MemoryDrawer } from './components/MemoryDrawer';
 import { NavPanelDrawer } from './components/NavPanelDrawer';
 import type { NavPanelId } from './components/NavPanelDrawer';
@@ -25,6 +26,7 @@ import { RecoveryWorkspace } from './components/RecoveryWorkspace';
 import { TracePanel } from './components/TracePanel';
 import { TravelerContextPanel } from './components/TravelerContextPanel';
 import { TripDetailDrawer } from './components/TripDetailDrawer';
+import { IconTooltip } from './components/ShowcaseTooltip';
 import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
 import { MERIDIAN_MARK_SRC } from '../lib/meridianBrand';
 import { ALEX_IMAGE_URL, ALEX_NAME } from './lib/personas';
@@ -32,7 +34,7 @@ import { deriveRecoveryStage } from './lib/recoveryState';
 
 type NavItemId = 'concierge' | 'trips' | 'discover' | 'profile' | 'preferences' | 'messages';
 type ShowcaseTheme = 'dark' | 'light';
-type DemoStep = 'ladder' | 'finale';
+type DemoStep = 'discovery' | 'ladder' | 'finale';
 
 const navItems: { id: NavItemId; label: string; icon: LucideIcon }[] = [
   { id: 'concierge', label: 'Concierge', icon: Sparkles },
@@ -72,7 +74,7 @@ export function DesktopMeridianApp({
   theme: ShowcaseTheme;
   onToggleTheme: () => void;
 }) {
-  const [demoStep, setDemoStep] = useState<DemoStep>('ladder');
+  const [demoStep, setDemoStep] = useState<DemoStep>('discovery');
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [forYouCollapsed, setForYouCollapsed] = useState(false);
   const [activityCollapsed, setActivityCollapsed] = useState(false);
@@ -85,14 +87,24 @@ export function DesktopMeridianApp({
   );
   const [navPanel, setNavPanel] = useState<NavPanelId | null>(null);
   const greetingPart = greetingForHour(new Date().getHours());
+  const isDiscovery = demoStep === 'discovery';
   const isLadder = demoStep === 'ladder';
+  const isFinale = demoStep === 'finale';
   const recoveryStage = deriveRecoveryStage(state);
   const showAudienceRuntimeStatus = state.backendStatus !== 'offline';
 
+  const openDiscovery = () => setDemoStep('discovery');
   const openLadder = () => setDemoStep('ladder');
   const openFinale = () => {
     state.setSelectedPhase(5);
     setDemoStep('finale');
+  };
+  const clearIntoLadder = () => {
+    state.clearChat();
+    state.setSelectedPhase(1);
+    setMemoryOpen(false);
+    setNavPanel(null);
+    setDemoStep('ladder');
   };
 
   const openNavItem = (id: NavItemId) => {
@@ -113,7 +125,11 @@ export function DesktopMeridianApp({
   return (
     <div
       className={`mds-desktop-app is-projector ${
-        isLadder ? 'is-proof is-ladder' : 'is-experience is-finale'
+        isDiscovery
+          ? 'is-discovery'
+          : isLadder
+            ? 'is-proof is-ladder'
+            : 'is-experience is-finale'
       }${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}
     >
       <aside className="mds-desktop-sidebar">
@@ -122,18 +138,19 @@ export function DesktopMeridianApp({
             <BrandMark />
             <span className="mds-brand-name">Meridian</span>
           </div>
-          <button
-            type="button"
-            className="mds-sidebar-toggle"
-            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-            aria-label={sidebarCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar'}
-            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            aria-expanded={!sidebarCollapsed}
-          >
-            {sidebarCollapsed
-              ? <PanelLeftOpen size={18} aria-hidden="true" />
-              : <PanelLeftClose size={18} aria-hidden="true" />}
-          </button>
+          <IconTooltip label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+            <button
+              type="button"
+              className="mds-sidebar-toggle"
+              onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+              aria-label={sidebarCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar'}
+              aria-expanded={!sidebarCollapsed}
+            >
+              {sidebarCollapsed
+                ? <PanelLeftOpen size={18} aria-hidden="true" />
+                : <PanelLeftClose size={18} aria-hidden="true" />}
+            </button>
+          </IconTooltip>
         </div>
         <nav className="mds-nav-items" aria-label="Desktop navigation">
           {navItems.map((item) => {
@@ -171,7 +188,13 @@ export function DesktopMeridianApp({
           aria-label="Open Alex Morgan profile"
         >
           <span className="mds-avatar is-photo" aria-hidden="true">
-            <img src={ALEX_IMAGE_URL} alt={ALEX_NAME} loading="lazy" />
+            <img
+              src={ALEX_IMAGE_URL}
+              alt={ALEX_NAME}
+              width="640"
+              height="960"
+              loading="lazy"
+            />
           </span>
           <div className="mds-account-copy">
             <strong>Alex Morgan</strong>
@@ -204,43 +227,60 @@ export function DesktopMeridianApp({
                   </span>
                 </span>
               )}
-              <button
-                type="button"
-                className="mds-theme-toggle"
-                onClick={onToggleTheme}
-                aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              >
-                {theme === 'dark'
-                  ? <Sun size={17} aria-hidden="true" />
-                  : <Moon size={17} aria-hidden="true" />}
-              </button>
+              <IconTooltip label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+                <button
+                  type="button"
+                  className="mds-theme-toggle"
+                  onClick={onToggleTheme}
+                  aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                >
+                  {theme === 'dark'
+                    ? <Sun size={17} aria-hidden="true" />
+                    : <Moon size={17} aria-hidden="true" />}
+                </button>
+              </IconTooltip>
             </div>
           </div>
 
-          <nav className="mds-demo-sequence" aria-label="Chalk-talk sequence">
+          <nav className="mds-demo-sequence has-three" aria-label="Chalk-talk sequence">
+            <button
+              type="button"
+              className={isDiscovery ? 'is-active' : ''}
+              aria-current={isDiscovery ? 'step' : undefined}
+              onClick={openDiscovery}
+            >
+              <span>1</span>
+              Discovery
+            </button>
+            <i aria-hidden="true" />
             <button
               type="button"
               className={isLadder ? 'is-active' : ''}
               aria-current={isLadder ? 'step' : undefined}
               onClick={openLadder}
             >
-              <span>1</span>
+              <span>2</span>
               Capability ladder
             </button>
             <i aria-hidden="true" />
             <button
               type="button"
-              className={!isLadder ? 'is-active' : ''}
-              aria-current={!isLadder ? 'step' : undefined}
+              className={isFinale ? 'is-active' : ''}
+              aria-current={isFinale ? 'step' : undefined}
               onClick={openFinale}
             >
-              <span>2</span>
+              <span>3</span>
               Stateful Recovery finale
             </button>
           </nav>
 
-          {isLadder ? (
+          {isDiscovery ? (
+            <DiscoveryWorkspace
+              state={state}
+              greeting={greetingPart}
+              onClear={clearIntoLadder}
+            />
+          ) : isLadder ? (
             <>
               <div className="mds-headline-row mds-ladder-headline">
                 <div>
@@ -335,7 +375,7 @@ export function DesktopMeridianApp({
           )}
         </div>
 
-        {(isLadder || recoveryStage === 'ready') && (
+        {(isLadder || (isFinale && recoveryStage === 'ready')) && (
           <div className="mds-desktop-dock">
             {isLadder ? (
               <ChatComposer state={state} proofMode />

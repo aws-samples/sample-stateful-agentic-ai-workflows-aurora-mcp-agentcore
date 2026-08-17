@@ -140,4 +140,20 @@ describe('TracePanel collapse behavior', () => {
     expect(screen.getByText('Recalling traveler context').closest('li')).toHaveClass('is-pending');
     expect(screen.getByText('Evaluating options').closest('li')).toHaveClass('is-pending');
   });
+
+  it('exposes trace filters as pressed controls', () => {
+    const setTraceTab = vi.fn();
+    render(<TracePanel state={makeState({ setTraceTab })} />);
+
+    const filters = screen.getByRole('group', { name: 'Trace filters' });
+    const trace = screen.getByRole('button', { name: 'Trace' });
+    const memory = screen.getByRole('button', { name: 'Memory' });
+
+    expect(filters).toContainElement(trace);
+    expect(trace).toHaveAttribute('aria-pressed', 'true');
+    expect(memory).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(memory);
+    expect(setTraceTab).toHaveBeenCalledWith('memory');
+  });
 });

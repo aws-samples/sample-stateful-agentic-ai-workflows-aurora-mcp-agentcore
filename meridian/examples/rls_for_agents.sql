@@ -10,7 +10,8 @@
 -- │ trip_interactions        │ rls_interactions_traveler │ app.current_traveler_id          │
 -- │ conversations            │ rls_conversations_traveler│ app.current_traveler_id          │
 -- │ conversation_messages    │ rls_messages_traveler     │ via conversations FK → same GUC  │
--- │ bookings                 │ rls_bookings_agent_type   │ app.agent_type ∈ agent_access[]  │
+-- │ bookings                 │ rls_bookings_scope        │ traveler + app.agent_type        │
+-- │ booking_lines            │ rls_booking_lines_scope   │ parent booking traveler + agent  │
 -- └──────────────────────────┴───────────────────────────┴──────────────────────────────────┘
 --
 -- READ THIS IF YOU'RE STRONG ON ONE SIDE AND NEW TO THE OTHER ------------------
@@ -75,14 +76,10 @@
 --   • Pooled connections carry no residual identity → no cross-request leakage.
 --   • No cleanup code; Postgres reverts everything on COMMIT/ROLLBACK.
 --
--- FAIL-OPEN ESCAPE HATCH ----------------------
---   Each policy also passes rows when the GUC is empty:
---       OR current_setting('app.current_traveler_id', true) = ''
---   This lets seed scripts and admin tooling (master user, no GUC) read across
---   travelers. So an UNSET GUC is fail-OPEN, not fail-closed. The app stays
---   safe two ways: it ALWAYS sets the GUC, AND it runs as the non-BYPASSRLS
---   meridian_app role. For a stricter production posture, drop the '' branch
---   (fail-closed) and give seed/admin tooling its own privileged path.
+-- FAIL-CLOSED SCOPE ---------------------------
+--   Every app-role policy requires a non-empty traveler/agent GUC. Seed and
+--   admin tooling run through the privileged migration path instead of sharing
+--   an application-policy bypass.
 --
 -- IDENTITY, AUTHORIZATION, AND RLS ARE THREE DISTINCT CONTROLS ---------------
 --   1. AgentCore Identity / AWS STS authenticates WHO the workload is.
@@ -138,29 +135,33 @@ DROP POLICY IF EXISTS rls_interactions_traveler ON trip_interactions;
 DROP POLICY IF EXISTS rls_conversations_traveler ON conversations;
 CREATE POLICY rls_prefs_traveler ON traveler_preferences FOR ALL USING (
     traveler_id = current_setting('app.current_traveler_id', true)
-    OR current_setting('app.current_traveler_id', true) = ''
+) WITH CHECK (
+    traveler_id = current_setting('app.current_traveler_id', true)
 );
 CREATE POLICY rls_interactions_traveler ON trip_interactions FOR ALL USING (
     traveler_id = current_setting('app.current_traveler_id', true)
-    OR current_setting('app.current_traveler_id', true) = ''
+) WITH CHECK (
+    traveler_id = current_setting('app.current_traveler_id', true)
 );
 CREATE POLICY rls_conversations_traveler ON conversations FOR ALL USING (
     traveler_id = current_setting('app.current_traveler_id', true)
-    OR current_setting('app.current_traveler_id', true) = ''
+) WITH CHECK (
+    traveler_id = current_setting('app.current_traveler_id', true)
 );
 -- conversation_messages joins to conversations to derive the traveler.
 CREATE POLICY rls_messages_traveler ON conversation_messages FOR ALL USING (
-    current_setting('app.current_traveler_id', true) = ''
-    OR conversation_id IN (
+    conversation_id IN (
+        SELECT conversation_id
+        FROM conversations
+        WHERE traveler_id = current_setting('app.current_traveler_id', true)
+    )
+) WITH CHECK (
+    conversation_id IN (
         SELECT conversation_id
         FROM conversations
         WHERE traveler_id = current_setting('app.current_traveler_id', true)
     )
 );
--- The empty-string branch above is FAIL-OPEN: an unset GUC sees all rows, so
--- seed scripts / admin tooling (master user, no GUC) can read across travelers.
--- The app stays scoped because it always sets the GUC AND runs as the
--- non-BYPASSRLS meridian_app role. Drop this branch for a fail-closed posture.
 -- ----------------------------------------------------------------------------
 -- B. Agent-type scoping on bookings
 -- ----------------------------------------------------------------------------
@@ -170,12 +171,136 @@ UPDATE bookings
 SET agent_access = ARRAY ['booking_agent', 'supervisor_agent', 'concierge_agent']
 WHERE agent_access IS NULL;
 DROP POLICY IF EXISTS rls_bookings_agent_type ON bookings;
-CREATE POLICY rls_bookings_agent_type ON bookings FOR ALL USING (
-    current_setting('app.agent_type', true) = ''
-    OR current_setting('app.agent_type', true) = ANY(agent_access)
+DROP POLICY IF EXISTS rls_bookings_scope ON bookings;
+CREATE POLICY rls_bookings_scope ON bookings FOR ALL USING (
+    traveler_id = current_setting('app.current_traveler_id', true)
+    AND current_setting('app.agent_type', true) = ANY(agent_access)
+) WITH CHECK (
+    traveler_id = current_setting('app.current_traveler_id', true)
+    AND current_setting('app.agent_type', true) = ANY(agent_access)
 );
 ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bookings FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS rls_booking_lines_scope ON booking_lines;
+CREATE POLICY rls_booking_lines_scope ON booking_lines FOR ALL USING (
+    EXISTS (
+        SELECT 1
+        FROM bookings b
+        WHERE b.booking_id = booking_lines.booking_id
+          AND b.traveler_id = current_setting('app.current_traveler_id', true)
+          AND current_setting('app.agent_type', true) = ANY(b.agent_access)
+    )
+) WITH CHECK (
+    EXISTS (
+        SELECT 1
+        FROM bookings b
+        WHERE b.booking_id = booking_lines.booking_id
+          AND b.traveler_id = current_setting('app.current_traveler_id', true)
+          AND current_setting('app.agent_type', true) = ANY(b.agent_access)
+    )
+);
+ALTER TABLE booking_lines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE booking_lines FORCE ROW LEVEL SECURITY;
+
+-- The SECURITY DEFINER function is the only path that needs a global view of
+-- active holds. It serializes each package/duration with an advisory lock,
+-- validates the authenticated transaction scope, and writes booking + line
+-- atomically. Application queries remain subject to fail-closed RLS.
+CREATE OR REPLACE FUNCTION create_courtesy_hold(
+    p_booking_id TEXT,
+    p_traveler_id TEXT,
+    p_package_id TEXT,
+    p_duration TEXT,
+    p_quantity INTEGER,
+    p_unit_price NUMERIC,
+    p_total_amount NUMERIC,
+    p_hold_expires_at TIMESTAMPTZ
+) RETURNS TABLE (
+    seats_available INTEGER,
+    seats_reserved INTEGER,
+    seats_remaining INTEGER
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_scope TEXT := current_setting('app.current_traveler_id', true);
+    v_agent_type TEXT := current_setting('app.agent_type', true);
+    v_capacity INTEGER;
+    v_reserved INTEGER;
+BEGIN
+    IF v_scope IS NULL OR v_scope = '' OR v_scope <> p_traveler_id THEN
+        RAISE EXCEPTION 'traveler_scope_mismatch';
+    END IF;
+    IF v_agent_type NOT IN ('booking_agent', 'supervisor_agent', 'concierge_agent') THEN
+        RAISE EXCEPTION 'booking_agent_not_authorized';
+    END IF;
+    IF p_quantity IS NULL OR p_quantity <= 0 THEN
+        RAISE EXCEPTION 'invalid_hold_quantity';
+    END IF;
+
+    PERFORM pg_advisory_xact_lock(
+        hashtextextended(p_package_id || ':' || p_duration, 0)
+    );
+
+    SELECT CASE
+        WHEN jsonb_typeof(availability -> p_duration) = 'number'
+        THEN (availability ->> p_duration)::INTEGER
+        ELSE NULL
+    END
+    INTO v_capacity
+    FROM trip_packages
+    WHERE package_id = p_package_id
+      AND durations ? p_duration;
+
+    IF v_capacity IS NULL OR v_capacity < 0 THEN
+        RAISE EXCEPTION 'invalid_package_inventory';
+    END IF;
+
+    SELECT COALESCE(SUM(bl.travelers_count), 0)::INTEGER
+    INTO v_reserved
+    FROM booking_lines bl
+    JOIN bookings b ON b.booking_id = bl.booking_id
+    WHERE bl.package_id = p_package_id
+      AND bl.duration = p_duration
+      AND (
+          b.status = 'confirmed'
+          OR (
+              b.status = 'held'
+              AND b.hold_expires_at > CURRENT_TIMESTAMP
+          )
+      );
+
+    IF p_quantity > (v_capacity - v_reserved) THEN
+        RAISE EXCEPTION 'insufficient_inventory';
+    END IF;
+
+    INSERT INTO bookings (
+        booking_id, traveler_id, status, total_amount,
+        hold_expires_at, created_at
+    ) VALUES (
+        p_booking_id, p_traveler_id, 'held', p_total_amount,
+        p_hold_expires_at, CURRENT_TIMESTAMP
+    );
+
+    INSERT INTO booking_lines (
+        booking_id, package_id, duration, travelers_count, unit_price
+    ) VALUES (
+        p_booking_id, p_package_id, p_duration, p_quantity, p_unit_price
+    );
+
+    RETURN QUERY SELECT
+        v_capacity,
+        v_reserved + p_quantity,
+        v_capacity - v_reserved - p_quantity;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION create_courtesy_hold(
+    TEXT, TEXT, TEXT, TEXT, INTEGER, NUMERIC, NUMERIC, TIMESTAMPTZ
+) FROM PUBLIC;
 -- ----------------------------------------------------------------------------
 -- C. Lightweight audit log written by the agent runtime
 -- ----------------------------------------------------------------------------

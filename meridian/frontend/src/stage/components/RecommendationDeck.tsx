@@ -1,5 +1,5 @@
 /**
- * RecommendationDeck — the polished output cards below the trace.
+ * RecommendationDeck - the polished output cards below the trace.
  *
  * The primary card is the headline recommendation; secondary cards make it
  * obvious that the agent considered alternatives. Each card renders the same

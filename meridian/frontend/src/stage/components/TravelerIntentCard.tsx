@@ -1,5 +1,5 @@
 /**
- * TravelerIntentCard — left column on the Demo Stage.
+ * TravelerIntentCard - left column on the Demo Stage.
  *
  * Encodes the human side of the keynote thesis: a real traveler, real
  * preferences, and the prompt that triggered the agent. Highlights when a
@@ -37,7 +37,13 @@ export function TravelerIntentCard({ traveler, prompt, memoryActive }: TravelerI
 
         <div className="ds-traveler-profile">
           <div className="ds-traveler-avatar is-photo" aria-hidden="true">
-            <img src={ALEX_IMAGE_URL} alt={ALEX_NAME} loading="lazy" />
+            <img
+              src={ALEX_IMAGE_URL}
+              alt={ALEX_NAME}
+              width="640"
+              height="960"
+              loading="lazy"
+            />
           </div>
           <div>
             <div className="ds-traveler-name">{traveler.name}</div>
@@ -68,7 +74,7 @@ export function TravelerIntentCard({ traveler, prompt, memoryActive }: TravelerI
           </div>
         </div>
 
-        {/* Booth brand footer — anchors the left pane with the AWS mark. */}
+        {/* Booth brand footer - anchors the left pane with the AWS mark. */}
         <div className="ds-aws-mark" aria-label="Build on AWS">
           {awsMarkMissing ? (
             <span className="ds-aws-mark-text">
@@ -78,6 +84,8 @@ export function TravelerIntentCard({ traveler, prompt, memoryActive }: TravelerI
             <img
               src={BUILD_ON_AWS_SRC}
               alt="Build on AWS"
+              width="600"
+              height="572"
               loading="lazy"
               onError={() => setAwsMarkMissing(true)}
             />

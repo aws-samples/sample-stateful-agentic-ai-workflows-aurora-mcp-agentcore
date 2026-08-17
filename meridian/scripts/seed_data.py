@@ -520,9 +520,8 @@ def seed_bookings():
 
 # A second, decoy traveler so the RLS probe (Phase 4) shows a real diff:
 # unscoped reads see Alex + decoy rows, scoped reads see only the active
-# traveler's. Without this there is exactly one traveler and scoped==unscoped,
-# which makes "watch RLS filter the rows" invisible. Preferences only (no
-# embedding needed) — that's the table the probe defaults to.
+# traveler's. Without this there is exactly one traveler and scoped==baseline,
+# which makes "watch RLS filter the rows" invisible.
 DECOY_TRAVELER_ID = "trv_demo_decoy"
 DECOY_PREFERENCES = [
     {"preference_type": "lodging", "preference_key": "style", "preference_value": "budget hostels"},
@@ -571,6 +570,47 @@ def seed_decoy_traveler():
                 {"name": "preference_value", "value": {"stringValue": pref["preference_value"]}},
             ],
         )
+
+    # Give the second default proof table a real negative-control row too, so
+    # both visual counts demonstrate filtering rather than only preferences.
+    run_sql(
+        """
+        INSERT INTO trip_interactions (
+            interaction_id, traveler_id, query_text, response_summary,
+            packages_shown, created_at
+        ) VALUES (
+            :interaction_id, :traveler_id, :query_text, :response_summary,
+            :packages_shown::jsonb, CURRENT_TIMESTAMP
+        )
+        ON CONFLICT (interaction_id) DO UPDATE SET
+            traveler_id = EXCLUDED.traveler_id,
+            query_text = EXCLUDED.query_text,
+            response_summary = EXCLUDED.response_summary,
+            packages_shown = EXCLUDED.packages_shown
+        """,
+        [
+            {
+                "name": "interaction_id",
+                "value": {"stringValue": "int_decoy_rls_probe"},
+            },
+            {
+                "name": "traveler_id",
+                "value": {"stringValue": DECOY_TRAVELER_ID},
+            },
+            {
+                "name": "query_text",
+                "value": {"stringValue": "Find a budget hostel in Bangkok"},
+            },
+            {
+                "name": "response_summary",
+                "value": {"stringValue": "Decoy traveler RLS control"},
+            },
+            {
+                "name": "packages_shown",
+                "value": {"stringValue": "[]"},
+            },
+        ],
+    )
 
 
 def main():

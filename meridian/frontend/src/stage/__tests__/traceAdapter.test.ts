@@ -32,7 +32,7 @@ describe('adaptChatResponseToScenario', () => {
 
   it('uses response.message for assistantReply', () => {
     const live: ChatResponse = {
-      message: '   Tuscany is held — three options under cap.   ',
+      message: '   Tuscany is held - three options under cap.   ',
       activities: [
         {
           id: 'live-1',
@@ -44,7 +44,7 @@ describe('adaptChatResponseToScenario', () => {
       ],
     }
     const merged = adaptChatResponseToScenario(live, tokyo)
-    expect(merged!.assistantReply).toBe('Tuscany is held — three options under cap.')
+    expect(merged!.assistantReply).toBe('Tuscany is held - three options under cap.')
   })
 
   it('builds spans from backend activities only', () => {

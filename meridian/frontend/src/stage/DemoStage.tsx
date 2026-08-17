@@ -1,5 +1,5 @@
 /**
- * Meridian Demo Stage — cinematic, 16:9-friendly keynote surface.
+ * Meridian Demo Stage - cinematic, 16:9-friendly keynote surface.
  *
  * Routes:
  *   /demo-stage             → standard presenter mode
@@ -49,22 +49,21 @@ const ARCHITECTURE_IMAGE_SRC = '/kiosk/architecture.png';
 const TRY_QR_IMAGE_SRC = '/kiosk/try-meridian-qr.png';
 type KioskTab = 'demo' | 'architecture' | 'try';
 
-// Chalk-talk session — shown on the "Try it live" pane to drive folks to
+// Chalk-talk session - shown on the "Try it live" pane to drive folks to
 // the deeper session. Keep in one place so the date/room is easy to edit.
 const CHALK_TALK = {
   code: 'DAT301-R',
   title: 'Build agentic workflows with Aurora and MCP',
-  time: '4:15 – 5:15 PM · Chalk talk',
+  time: '4:15 - 5:15 PM · Chalk talk',
   room: 'Room 716A',
   speakers: 'Shayon Sanyal & Aditya Samant',
 } as const;
 
 // Showcase is the Summit participant surface. The stage remains available for
-// kiosk loops; the Pro overview is legacy-only at /pro.
+// kiosk loops and presenter playback.
 const MERIDIAN_SURFACES: { label: string; path: string; blurb: string }[] = [
-  { label: 'Showcase', path: '/showcase', blurb: 'Full concierge — chat, trace, memory' },
+  { label: 'Showcase', path: '/showcase', blurb: 'Full concierge - chat, trace, memory' },
   { label: 'Kiosk', path: '/demo-stage?kiosk=1', blurb: 'This auto-playing booth' },
-  { label: 'Legacy Pro', path: '/pro', blurb: 'Builder overview · internal' },
 ];
 
 function readUrlFlags() {
@@ -86,7 +85,7 @@ export function DemoStage() {
   const [view, setView] = useState<StageView>(flags.view);
   const [selectedSpanIdx, setSelectedSpanIdx] = useState<number | null>(null);
   const [kiosk] = useState(flags.kiosk);
-  // True once the reply typewriter finishes — gates the product deck so
+  // True once the reply typewriter finishes - gates the product deck so
   // cards fan in right after the stream lands (not before).
   const [replyStreamDone, setReplyStreamDone] = useState(false);
   // Collapses the center trace panel after completion so the reply +
@@ -108,7 +107,7 @@ export function DemoStage() {
 
   // Session cache of adapted scenarios, keyed by scenarioId. The kiosk
   // loops the same 3 scenarios forever, so after the first pass every
-  // turn serves instantly from here — no recurring "Loading live trace…"
+  // turn serves instantly from here - no recurring "Loading live trace…"
   // dead air. Still 100% live data; we just fetch each scenario once and
   // prefetch the NEXT one while the current plays.
   const scenarioCache = useRef<Map<StageScenario['id'], StageScenario>>(new Map());
@@ -145,7 +144,7 @@ export function DemoStage() {
     [scenarioData.spans],
   );
   const replyPhase: 'pending' | 'composing' | 'composed' = (() => {
-    // Once the trace player finishes, the reply is fully composed — this
+    // Once the trace player finishes, the reply is fully composed - this
     // also covers the common case where the model span is the LAST span,
     // so activeIndex sits AT modelSpanIdx and never exceeds it (which
     // otherwise leaves the card stuck in "composing" and hides the cards).
@@ -182,7 +181,7 @@ export function DemoStage() {
       }
       const merged = adaptChatResponseToScenario(res, template);
       if (!merged) {
-        throw new Error('Backend returned an empty trace — check AgentCore + Aurora configuration.');
+        throw new Error('Backend returned an empty trace - check AgentCore + Aurora configuration.');
       }
       scenarioCache.current.set(id, merged);
       return merged;
@@ -224,11 +223,11 @@ export function DemoStage() {
   // Auto-collapse the trace once the player finishes walking the spans, so
   // the answer and product cards rise into view without scrolling. We key
   // off `isComplete` (the player's own deterministic "trace done" signal)
-  // rather than the reply typewriter — the deck still waits for the stream
+  // rather than the reply typewriter - the deck still waits for the stream
   // (replyStreamDone), but the fold is the trace's beat, not the reply's.
   // (Earlier this rode on replyStreamDone, which got starved on the live
   // path once the typewriter stopped firing onComplete in the pending
-  // phase — so the panel stopped collapsing.) A short delay lets the
+  // phase - so the panel stopped collapsing.) A short delay lets the
   // audience register the completed trace before it folds. The presenter
   // can re-expand with the arrow at any time.
   useEffect(() => {
@@ -386,7 +385,7 @@ export function DemoStage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [activeTab, kiosk, toggle, next, prev, replay, selectedSpanIdx]);
 
-  // Title for the browser tab — small touch but presenters appreciate it.
+  // Title for the browser tab - small touch but presenters appreciate it.
   useEffect(() => {
     const prev = document.title;
     document.title = kiosk ? 'Meridian · Kiosk · Aurora + MCP' : 'Meridian · Demo Stage';
@@ -531,6 +530,8 @@ export function DemoStage() {
                 src={ARCHITECTURE_IMAGE_SRC}
                 alt="Meridian architecture diagram"
                 className="ds-kiosk-architecture-img"
+                width="3246"
+                height="1838"
                 onLoad={() => setArchitectureMissing(false)}
                 onError={() => setArchitectureMissing(true)}
               />
@@ -552,7 +553,7 @@ export function DemoStage() {
               <p>Open the showcase, scan the repo, or join our chalk talk.</p>
             </div>
 
-            {/* Chalk-talk invite — the deeper session this booth previews. */}
+            {/* Chalk-talk invite - the deeper session this booth previews. */}
             <a
               className="ds-kiosk-session"
               href={KIOSK_GITHUB_REPO}
@@ -602,6 +603,8 @@ export function DemoStage() {
                       src={TRY_QR_IMAGE_SRC}
                       alt="QR code to Meridian repository"
                       className="ds-kiosk-qr-img"
+                      width="1000"
+                      height="1000"
                       onLoad={() => setQrMissing(false)}
                       onError={() => setQrMissing(true)}
                     />

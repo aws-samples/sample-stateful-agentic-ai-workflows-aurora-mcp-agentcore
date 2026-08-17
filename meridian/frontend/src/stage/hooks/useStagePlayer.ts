@@ -1,5 +1,5 @@
 /**
- * useStagePlayer — controls span playback on the Demo Stage.
+ * useStagePlayer - controls span playback on the Demo Stage.
  *
  * The "player" walks through `spans` in order, advancing every
  * `spanDurationMs` while playing. Kiosk mode auto-loops across scenarios.

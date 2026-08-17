@@ -6,17 +6,13 @@ import { TripResultCardContent } from './TripResultCardContent';
 export function RecommendationCards({
   state,
   compact = false,
-  limit,
+  limit = 3,
 }: {
   state: MeridianShowcaseState;
   compact?: boolean;
   limit?: number;
 }) {
-  // Show every recommendation Aurora returned. Limiting to 3 used to cause
-  // a desync between the chat reply ("I found 4 trips for you") and the UI,
-  // because the 4th card was silently dropped. The grid wraps when the
-  // backend returns more than fit on one row, so this stays responsive.
-  const cards = limit != null ? state.recommendations.slice(0, limit) : state.recommendations;
+  const cards = state.recommendations.slice(0, limit);
 
   // True clean slate: render nothing when there are no recommendations.
   // The chat surface above speaks for itself; no extra empty-state copy.
@@ -56,16 +52,7 @@ function RecommendationCard({
   return (
     <article
       className={`mds-trip-result-card${selected ? ' is-selected' : ''}${priority ? ' is-priority' : ''}`}
-      tabIndex={0}
-      role="button"
-      aria-label={`Open ${product.name}`}
-      onClick={() => state.selectTrip(product)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          state.selectTrip(product);
-        }
-      }}
+      aria-label={product.name}
     >
       <TripResultCardContent
         product={product}

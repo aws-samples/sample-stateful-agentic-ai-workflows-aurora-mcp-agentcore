@@ -166,7 +166,7 @@ export function JourneyPanel({
 
         <div className={`mds-current-trip-card is-${recoveryStage}`}>
           <div className="mds-current-trip-topline">
-            <span>ANA · NH 109</span>
+            <span>Traveler report</span>
             <b>
               {recoveryStage === 'ready' ? (
                 <Check size={14} aria-hidden="true" />
@@ -183,10 +183,10 @@ export function JourneyPanel({
                   ? 'Shortlist saved'
                 : recoveryStage === 'running'
                   ? 'Checking alternatives'
-                  : 'Cancelled'}
+                  : 'Canceled'}
             </b>
           </div>
-          <div className="mds-current-trip-route" aria-label="New York JFK to Tokyo Haneda">
+          <div className="mds-current-trip-route" aria-label="New York JFK to Tokyo">
             <div>
               <strong>JFK</strong>
               <span>New York</span>
@@ -197,12 +197,12 @@ export function JourneyPanel({
               <i />
             </span>
             <div>
-              <strong>HND</strong>
+              <strong>TYO</strong>
               <span>Tokyo</span>
             </div>
           </div>
           <div className="mds-current-trip-meta">
-            <span><CalendarDays size={14} />Today · 10:40 AM</span>
+            <span><CalendarDays size={14} />Today / 10:40 AM</span>
             <span><UsersRound size={14} />{partySize} travelers</span>
           </div>
           <div className="mds-current-trip-loyalty">

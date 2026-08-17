@@ -1,9 +1,9 @@
 """
-Production mode — Production Agent (Strands + full AgentCore stack + Aurora RLS).
+Production mode — managed AgentCore Runtime concierge + Aurora RLS.
 
 Presenter walkthrough — AgentCore on one turn
 ---------------------------------------------
-  1. AgentCore Runtime   — session envelope (runtimeSessionId · microVM isolation)
+  1. AgentCore Runtime   — managed concierge decision (runtimeSessionId · microVM)
   2. AgentCore Identity  — workload / IAM envelope (security span)
   3. AgentCore Memory    — list + semantic recall + create_event mirror
   4. Aurora RLS units    — short authorized read and write transactions
@@ -33,15 +33,10 @@ AWS docs (Aurora):
 
 import asyncio
 import logging
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from strands import Agent
-from strands.models import BedrockModel
-
-from backend.config import config
 from backend.agentcore.cli_config import require_agentcore_platform
 from backend.agentcore.gateway import get_agentcore_gateway
 from backend.agentcore.identity import get_agentcore_identity
@@ -61,8 +56,9 @@ class ProductionAgent:
     """
     Phase 4 concierge orchestrator.
 
-    Composes MemoryAgent @tools into a Strands Agent, searches trips
-    via AgentCore Gateway MCP, and persists every turn under RLS.
+    Loads memory under RLS, searches through AgentCore Gateway, sends the live
+    context and candidates to the managed AgentCore Runtime concierge, and
+    persists the returned decision under RLS.
     """
 
     AGENT_FILE = "agents/production_04/concierge.py"
@@ -76,27 +72,6 @@ class ProductionAgent:
         self.agentcore_memory = get_agentcore_memory()
         self.agentcore_runtime = get_agentcore_runtime()
         self.agentcore_gateway = get_agentcore_gateway()
-        self.model = BedrockModel(
-            model_id=config.bedrock.model_id,
-            region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
-        )
-        # Concierge Agent — the four memory @tools (bound MemoryAgent methods)
-        # registered as a Strands Agent. NOTE: process_turn() drives the turn
-        # deterministically (calls each tool once, in order), so this Agent is
-        # not invoked per-turn; it documents the available toolset and is kept
-        # for an optional LLM-driven path. Driving the turn through it caused
-        # each tool to fire twice (once by the LLM, once by the direct calls),
-        # including a duplicate persist_turn write — so the turn path is direct.
-        self.agent = Agent(
-            model=self.model,
-            tools=[
-                self.traveler_memory.recall_session_context,
-                self.traveler_memory.recall_traveler_preferences,
-                self.traveler_memory.recall_similar_interactions,
-                self.traveler_memory.persist_turn,
-            ],
-            system_prompt="Meridian concierge: load traveler memory from Aurora, search trips, save the turn.",
-        )
 
     def _log(self, activity_type: str, title: str, details: Optional[str] = None, **kwargs) -> None:
         self.activity_callback(
@@ -251,7 +226,7 @@ class ProductionAgent:
           1. AgentCore Identity   — resolve the IAM/workload envelope (security span)
           2. Traveler grant       — authorize the workload for traveler_id
           3. Aurora RLS read      — short transaction for profile and memory reads
-          4. AgentCore Runtime    — session envelope (runtimeSessionId, microVM isolation)
+          4. AgentCore Runtime    — managed concierge decision from live context
           5. AgentCore Memory     — recall recent session events + semantic recall
           6. AgentCore Gateway    — managed MCP tools/list + tools/call for trip search
           7. Aurora RLS write     — separate short transaction for turn + audit
@@ -439,57 +414,6 @@ class ProductionAgent:
             similar.get("interactions", []),
         )
 
-        # The RLS read unit has committed. Runtime, AgentCore Memory, and
-        # Gateway calls now execute without holding a database transaction.
-        runtime_session = await asyncio.to_thread(
-            self.agentcore_runtime.session_for_turn,
-            conv_id,
-            traveler_id,
-        )
-        self._log(
-            "reasoning",
-            "AgentCore Runtime · session envelope",
-            details=(
-                f"session={runtime_session.runtime_session_id} · "
-                f"invoke={runtime_session.invoke_status}"
-            ),
-            telemetry={
-                "category": "runtime",
-                "component": "Bedrock AgentCore Runtime",
-                "status": "ok",
-                "fields": [
-                    {
-                        "label": "runtime_arn",
-                        "value": runtime_session.runtime_arn,
-                        "mono": True,
-                    },
-                    {
-                        "label": "runtimeSessionId",
-                        "value": runtime_session.runtime_session_id,
-                        "mono": True,
-                    },
-                    {"label": "qualifier", "value": runtime_session.qualifier},
-                    {"label": "isolation", "value": runtime_session.isolation},
-                    {"label": "invoke_status", "value": runtime_session.invoke_status},
-                ],
-            },
-        )
-
-        self._log(
-            "reasoning",
-            "Concierge session start (Strands)",
-            details=f"traveler={traveler_id}, conversation={conv_id}",
-            telemetry={
-                "category": "runtime",
-                "component": "Strands Agents + Aurora",
-                "status": "ok",
-                "fields": [
-                    {"label": "traveler_id", "value": traveler_id, "mono": True},
-                    {"label": "conversation_id", "value": conv_id, "mono": True},
-                ],
-            },
-        )
-
         memory_namespace = self.agentcore_memory._namespace(traveler_id, conv_id)
         agentcore_turns = await asyncio.to_thread(
             self.agentcore_memory.list_recent_turns,
@@ -565,26 +489,79 @@ class ProductionAgent:
         packages, search_activities = await self._search_packages(message, limit)
         activities.extend(search_activities)
 
+        runtime_context = "\n".join(
+            part
+            for part in (
+                memory_context,
+                "AgentCore recent turns: "
+                + "; ".join(
+                    (turn.get("text") or "")[:240] for turn in agentcore_turns
+                ),
+                "AgentCore semantic recall: "
+                + "; ".join(
+                    (record.get("text") or "")[:240]
+                    for record in agentcore_semantic
+                ),
+            )
+            if part
+        )
+        runtime_candidates = [
+            {
+                "package_id": getattr(package, "package_id", ""),
+                "name": getattr(package, "name", ""),
+                "destination": getattr(package, "destination", ""),
+                "operator": getattr(package, "operator", ""),
+                "price_per_person": getattr(package, "price_per_person", None),
+                "durations": getattr(package, "durations", None),
+                "availability": getattr(package, "availability", None),
+                "highlights": getattr(package, "highlights", None),
+            }
+            for package in packages
+        ]
+        runtime_decision = await asyncio.to_thread(
+            self.agentcore_runtime.invoke_turn,
+            conv_id,
+            traveler_id,
+            message,
+            runtime_context,
+            runtime_candidates,
+        )
+        self._log(
+            "reasoning",
+            "AgentCore Runtime · concierge decision",
+            details=(
+                f"session={runtime_decision.runtime_session_id} · "
+                f"invoke={runtime_decision.invoke_status}"
+            ),
+            telemetry={
+                "category": "runtime",
+                "component": "Bedrock AgentCore Runtime · MeridianConcierge",
+                "status": "ok",
+                "fields": [
+                    {
+                        "label": "runtime_arn",
+                        "value": runtime_decision.runtime_arn,
+                        "mono": True,
+                    },
+                    {
+                        "label": "runtimeSessionId",
+                        "value": runtime_decision.runtime_session_id,
+                        "mono": True,
+                    },
+                    {"label": "qualifier", "value": runtime_decision.qualifier},
+                    {"label": "isolation", "value": runtime_decision.isolation},
+                    {"label": "invoke_status", "value": runtime_decision.invoke_status},
+                    {"label": "decision_source", "value": "managed Runtime"},
+                ],
+            },
+        )
+
         shown = [
             {"package_id": getattr(package, "package_id", None), "name": package.name}
             for package in packages
         ]
 
-        if packages:
-            hint = ""
-            if memory_facts:
-                fact = memory_facts[0]
-                fact_key = str(fact.get("key", "")).replace("_", " ").strip()
-                fact_value = str(fact.get("value", "")).strip()
-                if fact_key and fact_value:
-                    hint = f" (matched on {fact_key}: {fact_value})"
-            response_message = (
-                f"Welcome back — I found {len(packages)} trips that fit your profile{hint}:"
-            )
-        else:
-            response_message = (
-                "No exact matches yet; I've saved this search to your history."
-            )
+        response_message = runtime_decision.message
 
         # Prepare all write-side vectors before the short RLS write unit. These
         # independent Bedrock calls run concurrently to reduce turn latency.

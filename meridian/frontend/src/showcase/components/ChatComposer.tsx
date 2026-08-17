@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
-import { Navigation2, RefreshCw, Send } from 'lucide-react';
+import {
+  CalendarDays,
+  Navigation2,
+  RefreshCw,
+  Send,
+  Sparkles,
+  UsersRound,
+  X,
+} from 'lucide-react';
 import type { ChatFilters } from '../hooks/useMeridianShowcase';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { showcasePromptLabel } from '../lib/showcaseAdapters';
@@ -56,6 +64,10 @@ export function ChatComposer({
               proofMode &&
               state.phaseLabel !== 'Workflow' &&
               prompt === state.phaseExamples[2];
+            const promptLabel = showcasePromptLabel(prompt);
+            const accessibleLabel = promptLabel === prompt
+              ? prompt
+              : `${promptLabel}: ${prompt}`;
             return (
               <button
                 key={prompt}
@@ -63,14 +75,14 @@ export function ChatComposer({
                 className={`mds-chat-starter-chip${isStretch ? ' is-stretch' : ''}`}
                 disabled={state.isLoading}
                 onClick={() => void state.applyPhaseExample(prompt, true)}
-                aria-label={prompt}
+                aria-label={accessibleLabel}
                 title={
                   isStretch
-                    ? `Stretch query — exposes ${state.phaseLabel}'s limits: ${prompt}`
+                    ? `Stretch query - exposes ${state.phaseLabel}'s limits: ${prompt}`
                     : prompt
                 }
               >
-                <span>{showcasePromptLabel(prompt)}</span>
+                <span>{promptLabel}</span>
               </button>
             );
           })}
@@ -88,8 +100,8 @@ export function ChatComposer({
           onChange={(event) => state.setCurrentPrompt(event.target.value)}
           placeholder={
             recoveryMode
-              ? 'Ask Meridian anything — find the fastest way to Tokyo tomorrow…'
-              : 'Ask Meridian anything — "a calm wine trip in October, under $2,500"…'
+              ? 'Ask Meridian anything - find the fastest way to Tokyo tomorrow…'
+              : 'Ask Meridian anything - "a calm wine trip in October, under $2,500"…'
           }
           disabled={state.isLoading}
           aria-label="Ask Meridian anything"
@@ -131,7 +143,7 @@ export function ChatComposer({
             active={state.chatFilters.spa}
             disabled={state.isLoading}
             onToggle={() => updateFilters({ spa: !state.chatFilters.spa })}
-            icon={<SpaIcon />}
+            icon={<Sparkles size={16} />}
           />
           <ToggleChip
             label="Direct flights"
@@ -163,7 +175,7 @@ export function ChatComposer({
               title="Clear all filters"
             >
               <span className="mds-chat-action-chip-icon" aria-hidden="true">
-                <CloseIcon />
+                <X size={16} />
               </span>
               Clear
             </button>
@@ -222,7 +234,7 @@ function TravelersChip({
           active={active}
           disabled={disabled}
           onClick={onToggle}
-          icon={<TravelersIcon />}
+          icon={<UsersRound size={16} />}
         />
       }
     >
@@ -291,7 +303,7 @@ function DatesChip({
   const hasStart = !!filters.startDate;
   const hasEnd = !!filters.endDate;
   const label = hasStart && hasEnd
-    ? `${formatShort(filters.startDate!)} – ${formatShort(filters.endDate!)}`
+    ? `${formatShort(filters.startDate!)} - ${formatShort(filters.endDate!)}`
     : hasStart
       ? `From ${formatShort(filters.startDate!)}`
       : 'Change dates';
@@ -307,7 +319,7 @@ function DatesChip({
           active={active}
           disabled={disabled}
           onClick={onToggle}
-          icon={<CalendarIcon />}
+          icon={<CalendarDays size={16} />}
         />
       }
     >
@@ -473,50 +485,4 @@ function formatShort(iso: string): string {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const monthIdx = Math.max(0, Math.min(11, Number(m) - 1));
   return `${months[monthIdx]} ${Number(d)}`;
-}
-
-// ----------------------------- Icons -----------------------------
-
-function TravelersIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="9" cy="9" r="3.4" />
-      <path d="M3 19a6 6 0 0 1 12 0" />
-      <circle cx="17" cy="8" r="2.6" />
-      <path d="M14.5 19a4.6 4.6 0 0 1 7 0" />
-    </svg>
-  );
-}
-
-function CalendarIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="5" width="18" height="16" rx="2" />
-      <path d="M3 10h18" />
-      <path d="M8 3v4" />
-      <path d="M16 3v4" />
-    </svg>
-  );
-}
-
-function SpaIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 4c-2.5 3-2.5 6 0 9" />
-      <path d="M12 4c2.5 3 2.5 6 0 9" />
-      <path d="M4 14c1.6 1.4 3.6 1.6 6 1" />
-      <path d="M20 14c-1.6 1.4-3.6 1.6-6 1" />
-      <path d="M5 19c2.6 1.6 11.4 1.6 14 0" />
-    </svg>
-  );
-}
-
-
-function CloseIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 6l12 12" />
-      <path d="M18 6L6 18" />
-    </svg>
-  );
 }

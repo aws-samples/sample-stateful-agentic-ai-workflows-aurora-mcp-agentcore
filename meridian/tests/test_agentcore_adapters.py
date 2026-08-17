@@ -39,7 +39,7 @@ def unconfigured_agentcore(tmp_path, monkeypatch):
 def test_runtime_unconfigured_raises(unconfigured_agentcore):
     adapter = AgentCoreRuntimeAdapter(runtime_arn=None)
     with pytest.raises(AgentCoreNotConfiguredError):
-        adapter.session_for_turn("conv-1", "trv_demo")
+        adapter.invoke_turn("conv-1", "trv_demo", "hello", "", [])
 
 
 def test_runtime_configured_invoke_live():
@@ -48,16 +48,50 @@ def test_runtime_configured_invoke_live():
         region="us-east-1",
     )
     mock_client = MagicMock()
-    mock_client.invoke_agent_runtime.return_value = {"response": [b'{"ok":true}']}
+    mock_client.invoke_agent_runtime.return_value = {
+        "response": [
+            b'{"message":"Tokyo fits your saved preferences.",'
+            b'"recommended_package_ids":["CTY-002"],'
+            b'"follow_ups":["Compare options"]}'
+        ]
+    }
     adapter._client = mock_client
 
-    session = adapter.session_for_turn("conv-2", "trv_demo")
-    assert session.invoke_status == "live"
-    assert len(session.runtime_session_id) >= 33
-    assert session.runtime_session_id.startswith("rt-")
+    decision = adapter.invoke_turn(
+        "conv-2",
+        "trv_demo",
+        "Find Tokyo",
+        "prefers boutique hotels",
+        [{"package_id": "CTY-002", "name": "Tokyo Culture"}],
+    )
+    assert decision.invoke_status == "live"
+    assert decision.message == "Tokyo fits your saved preferences."
+    assert decision.recommended_package_ids == ["CTY-002"]
+    assert len(decision.runtime_session_id) >= 33
+    assert decision.runtime_session_id.startswith("rt-")
     mock_client.invoke_agent_runtime.assert_called_once()
     kwargs = mock_client.invoke_agent_runtime.call_args.kwargs
-    assert kwargs["runtimeSessionId"] == session.runtime_session_id
+    assert kwargs["runtimeSessionId"] == decision.runtime_session_id
+    payload = json.loads(kwargs["payload"])
+    assert payload["event"] == "concierge_turn"
+    assert payload["candidates"][0]["package_id"] == "CTY-002"
+
+
+def test_runtime_unwraps_agentcore_sse_json_string():
+    payload = json.dumps(
+        {
+            "message": "Tokyo fits your saved preferences.",
+            "recommended_package_ids": ["TKY-003"],
+            "follow_ups": ["Compare options"],
+        }
+    )
+
+    parsed = AgentCoreRuntimeAdapter._parse_decision(
+        f"data: {json.dumps(payload)}\n\n".encode()
+    )
+
+    assert parsed["message"] == "Tokyo fits your saved preferences."
+    assert parsed["recommended_package_ids"] == ["TKY-003"]
 
 
 def test_gateway_unconfigured_raises(unconfigured_agentcore):

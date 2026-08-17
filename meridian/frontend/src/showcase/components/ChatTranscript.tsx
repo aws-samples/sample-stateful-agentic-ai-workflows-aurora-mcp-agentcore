@@ -2,9 +2,12 @@ import type { ReactNode } from 'react';
 import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import {
+  ArrowRight,
   BedDouble,
   BusFront,
+  ChevronDown,
   Headphones,
+  List,
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
@@ -267,20 +270,7 @@ function FollowUpChips({
           className="mds-followup-chip"
           onClick={() => void state.submitPrompt(prompt)}
         >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M5 12h14" />
-            <path d="m13 6 6 6-6 6" />
-          </svg>
+          <ArrowRight size={13} strokeWidth={2.2} aria-hidden="true" />
           {prompt}
         </button>
       ))}
@@ -357,9 +347,7 @@ function ResponseMetaTags({ state }: { state: MeridianShowcaseState }) {
     <div className="mds-msg-meta" aria-label="Trace summary">
       {capability && (
         <span className="mds-msg-meta-tag">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M12 2 4 7v6c0 5 3.5 7.5 8 9 4.5-1.5 8-4 8-9V7l-8-5Z" />
-          </svg>
+          <ShieldCheck size={12} strokeWidth={1.8} aria-hidden="true" />
           {capability}
         </span>
       )}
@@ -390,7 +378,7 @@ function ProductSummaryChip({
     minPrice != null && maxPrice != null
       ? minPrice === maxPrice
         ? money(minPrice)
-        : `${money(minPrice)} – ${money(maxPrice)}`
+        : `${money(minPrice)} - ${money(maxPrice)}`
       : null;
 
   return (
@@ -407,20 +395,14 @@ function ProductSummaryChip({
       aria-expanded={expanded}
     >
       <span className="mds-msg-result-chip-icon" aria-hidden="true">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 7h18" />
-          <path d="M3 12h18" />
-          <path d="M3 17h12" />
-        </svg>
+        <List size={14} strokeWidth={2.2} />
       </span>
       <span className="mds-msg-result-chip-text">
         <b>{products.length} {products.length === 1 ? 'trip' : 'trips'}</b>
         {priceRange && <span> · {priceRange}</span>}
       </span>
       <span className="mds-msg-result-chip-caret" aria-hidden="true">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
+        <ChevronDown size={14} strokeWidth={2.4} />
       </span>
     </button>
   );
@@ -451,7 +433,13 @@ function InlineProductGrid({
     products.some((p) => (p.rank_delta ?? 0) !== 0);
 
   const [reranked, setReranked] = useState(!rerankArmed);
+  const [showAll, setShowAll] = useState(false);
   const autoPlayed = useRef(false);
+  const productKey = products.map((product) => product.product_id).join('|');
+
+  useEffect(() => {
+    setShowAll(false);
+  }, [productKey]);
 
   // Auto-play once after the reply finishes streaming, on the latest turn
   // only. Older turns keep whatever state they settled into.
@@ -474,6 +462,7 @@ function InlineProductGrid({
       (a, b) => (a.pre_rerank_position ?? 0) - (b.pre_rerank_position ?? 0),
     );
   }, [products, rerankArmed, reranked]);
+  const visibleProducts = showAll ? ordered : ordered.slice(0, 3);
 
   return (
     <>
@@ -497,7 +486,7 @@ function InlineProductGrid({
       )}
       <LayoutGroup>
         <div className="mds-msg-grid" role="region" aria-label="Trips for this turn">
-          {ordered.map((product, index) => (
+          {visibleProducts.map((product, index) => (
             <InlineProductCard
               key={product.product_id}
               product={product}
@@ -509,6 +498,22 @@ function InlineProductGrid({
           ))}
         </div>
       </LayoutGroup>
+      {ordered.length > 3 && (
+        <div className="mds-result-disclosure">
+          <span>
+            {showAll
+              ? `Showing all ${ordered.length} trips`
+              : `Showing top 3 of ${ordered.length} trips`}
+          </span>
+          <button
+            type="button"
+            aria-expanded={showAll}
+            onClick={() => setShowAll((expanded) => !expanded)}
+          >
+            {showAll ? 'Show top 3' : `Show all ${ordered.length}`}
+          </button>
+        </div>
+      )}
       <InlineConciergeCard products={products} state={state} />
     </>
   );
@@ -539,7 +544,13 @@ function InlineConciergeCard({
   return (
     <aside className="mds-inline-concierge" aria-label="Concierge assistance">
       <div className="mds-inline-concierge-media" aria-hidden="true">
-        <img src="/travel/haneda-hotel.jpg" alt="" />
+        <img
+          src="/travel/haneda-hotel.jpg"
+          alt=""
+          width="1600"
+          height="900"
+          loading="lazy"
+        />
         <span>Haneda · Tokyo</span>
       </div>
       <div className="mds-inline-concierge-copy">
@@ -593,7 +604,7 @@ function InlineConciergeCard({
             type="button"
             onClick={() =>
               runWorkflowPrompt(
-                'Review my trip protection and change-fee options before rebooking the cancelled Tokyo flight.',
+                'Review my trip protection and change-fee options before rebooking the canceled Tokyo flight.',
               )
             }
           >
@@ -634,15 +645,7 @@ function InlineProductCard({
       }
       className={`mds-trip-result-card${selected ? ' is-selected' : ''}${index === 0 ? ' is-priority' : ''}`}
       style={{ animationDelay: `${Math.min(index * 60, 360)}ms` }}
-      tabIndex={0}
-      role="button"
-      onClick={() => state.selectTrip(product)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          state.selectTrip(product);
-        }
-      }}
+      aria-label={product.name}
     >
       <TripResultCardContent
         product={product}
@@ -669,7 +672,7 @@ function InlineProductCard({
   );
 }
 
-// Reveal small adaptive chunks so normal replies finish in about 2–2.5s
+// Reveal small adaptive chunks so normal replies finish in about 2-2.5s
 // while long replies stay smooth and remain bounded for live presentation.
 function useTypewriterReveal(text: string): string {
   // Start with the first 6 chars already revealed so the bubble pops in

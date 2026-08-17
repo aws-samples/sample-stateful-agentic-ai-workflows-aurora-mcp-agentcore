@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   ArrowRight,
+  CalendarDays,
   Check,
   CheckCircle2,
   Circle,
@@ -41,7 +42,7 @@ interface RecommendedRecoveryPlanCardProps {
   secondaryAction: DecisionCardAction;
 }
 
-interface FlightOptionCardProps {
+interface PackageOptionCardProps {
   product: Product | null;
   rank: number;
   badge: string;
@@ -198,29 +199,32 @@ function stageBadge(stage: RecoveryStage): string {
   return 'Awaiting recovery';
 }
 
-function RouteTimeline({
+function PackageSummary({
+  product,
   detail,
   compact = false,
 }: {
+  product: Product;
   detail: string;
   compact?: boolean;
 }) {
+  const destination = product.destination ?? product.region ?? 'Trip package';
   return (
     <div className={`mds-decision-route${compact ? ' is-compact' : ''}`}>
       <span>
-        <b>JFK</b>
-        {!compact && <small>New York</small>}
+        <b>{destination}</b>
+        {!compact && <small>Destination</small>}
       </span>
       <span className="mds-decision-route-line" aria-hidden="true">
         <i />
-        <Plane size={compact ? 13 : 16} />
+        <CalendarDays size={compact ? 13 : 16} />
         <i />
       </span>
       <span>
-        <b>HND</b>
-        {!compact && <small>Tokyo</small>}
+        <b>{detail}</b>
+        {!compact && <small>Trip length</small>}
       </span>
-      <em>{detail}</em>
+      <em>Package inventory only. Flights not checked.</em>
     </div>
   );
 }
@@ -240,7 +244,7 @@ export function RecoveryLaunchCard({
     {
       icon: AlertTriangle,
       label: 'Understand disruption',
-      detail: 'Classify the cancelled-flight recovery.',
+      detail: 'Classify the canceled-flight recovery.',
     },
     {
       icon: Search,
@@ -292,7 +296,7 @@ export function RecoveryLaunchCard({
       {!compact && (
         <section
           className="mds-mobile-disruption-card"
-          aria-label="Cancelled ANA NH 109 mobile trip card"
+          aria-label="Traveler-reported canceled flight"
         >
           <div className="mds-mobile-disruption-topline">
             <span>Meridian trips</span>
@@ -319,17 +323,17 @@ export function RecoveryLaunchCard({
                 <AlertTriangle size={22} />
               </span>
               <div>
-                <h2>Your flight has been cancelled.</h2>
+                <h2>Your flight has been canceled.</h2>
                 <p>
-                  ANA NH 109 from New York to Tokyo is no longer operating.
-                  Meridian can build a recovery plan now.
+                  You reported a canceled JFK-to-Tokyo flight. Meridian can
+                  rebuild the trip plan and preserve its workflow state.
                 </p>
               </div>
             </div>
             <figure className="mds-mobile-disruption-media">
               <img
                 src="/travel/recovery-flight.jpg"
-                alt="ANA aircraft on final approach"
+                alt="Aircraft on final approach"
                 width="1920"
                 height="1168"
                 loading="eager"
@@ -348,23 +352,23 @@ export function RecoveryLaunchCard({
                   <i />
                   <Circle size={8} fill="currentColor" aria-hidden="true" />
                   <i />
-                  <b>ANA NH 109</b>
+                  <b>Traveler report</b>
                 </span>
                 <span>
                   <small>To</small>
-                  <strong>HND</strong>
+                  <strong>TYO</strong>
                   <em>Tokyo</em>
                 </span>
               </div>
 
               <div className="mds-mobile-disruption-status">
-                <strong>Cancelled</strong>
+                <strong>Canceled</strong>
                 <span>
                   {failed
                     ? 'The workflow stopped safely before changing the trip.'
                     : running
                       ? 'Meridian is building a checkpointed recovery plan.'
-                      : 'Live recovery options are ready to search.'}
+                      : 'Live trip-package options are ready to search.'}
                 </span>
               </div>
 
@@ -523,7 +527,7 @@ export function RecommendedRecoveryPlanCard({
       <header className="mds-decision-card-head">
         <span className="mds-decision-card-kicker">
           <Sparkles size={17} aria-hidden="true" />
-          Recommended recovery plan
+          Recommended trip plan
         </span>
         <span className={`mds-decision-status is-${stage}`}>
           {stage === 'running' && <Loader2 size={13} aria-hidden="true" />}
@@ -538,7 +542,7 @@ export function RecommendedRecoveryPlanCard({
           <div className="mds-recommended-plan-media">
             <TripVisual product={product} />
             <span aria-hidden="true" />
-            <em>Recovery pick</em>
+            <em>Top catalog match</em>
           </div>
           <div className="mds-recommended-plan-title">
             <div>
@@ -556,7 +560,10 @@ export function RecommendedRecoveryPlanCard({
             </div>
           </div>
 
-          <RouteTimeline detail={durationLabel(product)} />
+          <PackageSummary
+            product={product}
+            detail={durationLabel(product)}
+          />
 
           <div className="mds-recommended-plan-signals">
             <span className={evidence.availabilityObserved ? 'is-verified' : ''}>
@@ -571,7 +578,7 @@ export function RecommendedRecoveryPlanCard({
             </span>
             <span>
               <FileCheck2 size={14} aria-hidden="true" />
-              Policy review remains a traveler decision
+              Flight and policy review remain traveler decisions
             </span>
           </div>
         </>
@@ -673,7 +680,7 @@ export function RecommendedRecoveryPlanCard({
   );
 }
 
-export function FlightOptionCard({
+export function PackageOptionCard({
   product,
   rank,
   badge,
@@ -681,7 +688,7 @@ export function FlightOptionCard({
   disabled = false,
   onView,
   onCompare,
-}: FlightOptionCardProps) {
+}: PackageOptionCardProps) {
   return (
     <article
       className="mds-decision-card mds-flight-option-card"
@@ -701,7 +708,11 @@ export function FlightOptionCard({
             <strong>{product.name}</strong>
             <span>{product.brand || 'Meridian partner'}</span>
           </div>
-          <RouteTimeline detail={durationLabel(product)} compact />
+          <PackageSummary
+            product={product}
+            detail={durationLabel(product)}
+            compact
+          />
           <dl>
             <div>
               <dt>Price</dt>
@@ -772,6 +783,9 @@ export function ConciergeAssistanceCard({
         <img
           src="/travel/haneda-hotel.jpg"
           alt="Airport hotel room overlooking Haneda runways"
+          width="1600"
+          height="900"
+          loading="lazy"
         />
         <span className="mds-concierge-hotel-media-shade" />
         <em>{ready ? 'Search ready' : 'Queued'}</em>

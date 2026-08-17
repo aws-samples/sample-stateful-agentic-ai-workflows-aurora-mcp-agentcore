@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, RefreshCw, RotateCcw } from 'lucide-react';
+import { Check, ChevronDown, Copy, RefreshCw, RotateCcw } from 'lucide-react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { SHOWCASE_PHASES, type ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 import { WorkflowGraph } from './WorkflowGraph';
 import { RlsProbeCard } from './RlsProbeCard';
 import { McpToolContractPanel } from './McpToolContractPanel';
 import { WorkflowStateInspector } from './WorkflowStateInspector';
+import { IconTooltip } from './ShowcaseTooltip';
 
 // Maps raw trace spans into five audience-readable progress steps.
 const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTraceSpan) => boolean }[] = [
@@ -104,9 +105,7 @@ export function TracePanel({
           >
             <span className="mds-collapse-chevron" aria-hidden="true">
               <span className="mds-collapse-chevron-inner">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
+                <ChevronDown size={12} strokeWidth={2.6} />
               </span>
             </span>
             <strong>Activity</strong>
@@ -161,7 +160,7 @@ export function TracePanel({
             {!compact && state.selectedPhase === 2 && <McpToolContractPanel state={state} />}
             {!compact && state.selectedPhase === 5 && <WorkflowStateInspector state={state} />}
             {!compact && (
-              <div className="mds-trace-tabs" role="tablist" aria-label="Trace filters">
+              <div className="mds-trace-tabs" role="group" aria-label="Trace filters">
                 {/* RLS is a Phase 4 proof point, so other phases keep the lean tab set. */}
                 {(state.selectedPhase === 4
                   ? (['spans', 'memory', 'sql', 'rls'] as const)
@@ -171,6 +170,7 @@ export function TracePanel({
                     key={tab}
                     type="button"
                     className={state.traceTab === tab ? 'is-active' : ''}
+                    aria-pressed={state.traceTab === tab}
                     onClick={() => state.setTraceTab(tab)}
                   >
                     {tab === 'spans'
@@ -243,24 +243,26 @@ export function TracePanel({
 
           {!compact && (
             <div className="mds-trace-actions">
-              <button
-                type="button"
-                onClick={state.replayTrace}
-                disabled={!state.traceSpans.length || state.isLoading}
-                aria-label="Replay trace"
-                title="Replay trace"
-              >
-                <RotateCcw size={16} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                onClick={state.replayLastPrompt}
-                disabled={!state.lastPrompt || state.isLoading}
-                aria-label="Rerun query"
-                title="Rerun query"
-              >
-                <RefreshCw size={16} aria-hidden="true" />
-              </button>
+              <IconTooltip label="Replay trace">
+                <button
+                  type="button"
+                  onClick={state.replayTrace}
+                  disabled={!state.traceSpans.length || state.isLoading}
+                  aria-label="Replay trace"
+                >
+                  <RotateCcw size={16} aria-hidden="true" />
+                </button>
+              </IconTooltip>
+              <IconTooltip label="Rerun query">
+                <button
+                  type="button"
+                  onClick={state.replayLastPrompt}
+                  disabled={!state.lastPrompt || state.isLoading}
+                  aria-label="Rerun query"
+                >
+                  <RefreshCw size={16} aria-hidden="true" />
+                </button>
+              </IconTooltip>
               <CopyTraceButton state={state} />
             </div>
           )}
@@ -321,18 +323,20 @@ function CopyTraceButton({ state }: { state: MeridianShowcaseState }) {
     }
   };
 
+  const label = copied ? 'Trace copied' : "Copy this turn's trace as JSON";
   return (
-    <button
-      type="button"
-      onClick={onCopy}
-      disabled={disabled}
-      aria-label={copied ? 'Trace copied' : 'Copy trace'}
-      title={copied ? 'Trace copied' : "Copy this turn's trace as JSON"}
-    >
-      {copied
-        ? <Check size={16} aria-hidden="true" />
-        : <Copy size={16} aria-hidden="true" />}
-    </button>
+    <IconTooltip label={label}>
+      <button
+        type="button"
+        onClick={onCopy}
+        disabled={disabled}
+        aria-label={copied ? 'Trace copied' : 'Copy trace'}
+      >
+        {copied
+          ? <Check size={16} aria-hidden="true" />
+          : <Copy size={16} aria-hidden="true" />}
+      </button>
+    </IconTooltip>
   );
 }
 

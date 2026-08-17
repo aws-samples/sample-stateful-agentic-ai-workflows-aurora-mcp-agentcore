@@ -1,0 +1,506 @@
+/* Operational recovery refresh.
+   The underlying memory, product, proof, and checkpoint components remain
+   intact. This layer removes decorative dashboard treatment and makes the
+   hierarchy read like a real traveler decision workspace. */
+
+.mds-recovery-workspace {
+  gap: 13px;
+}
+
+.mds-recovery-workspace .mds-recovery-overview {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.mds-recovery-workspace .mds-recovery-overview-title h1 {
+  font-family: var(--mds-font);
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.mds-recovery-workspace .mds-recovery-cancelled-badge {
+  border-radius: 5px;
+}
+
+.mds-recovery-workspace .mds-recovery-decision-system {
+  gap: 12px;
+}
+
+.mds-recovery-workspace
+  :is(.mds-recovery-decision-primary, .mds-recovery-decision-support) {
+  gap: 12px;
+}
+
+.mds-recovery-workspace .mds-decision-card {
+  border-color: var(--mds-experience-border);
+  border-radius: 8px;
+  background: var(--mds-experience-panel);
+  box-shadow: 0 10px 26px rgba(0, 5, 14, 0.16);
+}
+
+.mds-recovery-workspace .mds-decision-card-head {
+  min-height: 46px;
+  padding: 5px 16px 0;
+}
+
+.mds-recovery-workspace .mds-decision-card-kicker {
+  gap: 7px;
+  font-size: calc(13px * var(--mds-fs));
+  font-weight: 690;
+  letter-spacing: 0;
+}
+
+.mds-recovery-workspace
+  :is(.mds-decision-status, .mds-checkpoint-badge) {
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-size: calc(9px * var(--mds-fs));
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mds-recovery-workspace .mds-recommended-plan-card {
+  border-left-width: 1px;
+}
+
+.mds-recovery-workspace .mds-recommended-plan-card.is-checkpointed {
+  border-color: rgba(67, 206, 171, 0.34);
+}
+
+.mds-recovery-workspace .mds-recommended-plan-card.is-ready {
+  border-color: rgba(50, 207, 134, 0.34);
+}
+
+.mds-recovery-workspace .mds-recommended-plan-media {
+  height: 142px;
+  margin: 8px 16px 0;
+  border-radius: 6px;
+}
+
+.mds-recovery-workspace .mds-recommended-plan-media > em {
+  top: 9px;
+  right: 9px;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  background: rgba(4, 18, 30, 0.82);
+  backdrop-filter: none;
+  font-size: calc(9px * var(--mds-fs));
+}
+
+.mds-recovery-workspace .mds-recommended-plan-title {
+  gap: 18px;
+  padding: 14px 18px;
+}
+
+.mds-recovery-workspace .mds-recommended-plan-title small {
+  color: #8acbff;
+  font-size: calc(10px * var(--mds-fs));
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mds-recovery-workspace .mds-recommended-plan-title strong {
+  font-size: calc(23px * var(--mds-fs));
+  font-weight: 730;
+  letter-spacing: 0;
+}
+
+.mds-recovery-workspace .mds-recommended-plan-price b {
+  font-size: calc(21px * var(--mds-fs));
+  letter-spacing: 0;
+}
+
+.mds-recovery-workspace .mds-decision-route {
+  margin: 0 18px;
+  padding-bottom: 11px;
+}
+
+.mds-recovery-workspace .mds-decision-route b {
+  font-size: calc(19px * var(--mds-fs));
+  letter-spacing: 0;
+}
+
+.mds-recovery-workspace .mds-decision-route-line i {
+  background: rgba(47, 140, 255, 0.42);
+}
+
+.mds-recovery-workspace .mds-decision-route-line i:last-child {
+  background: rgba(47, 140, 255, 0.42);
+}
+
+.mds-recovery-workspace .mds-recommended-plan-signals {
+  gap: 6px;
+  padding: 12px 18px 5px;
+}
+
+.mds-recovery-workspace .mds-recommended-plan-signals > span {
+  min-height: 29px;
+  padding: 4px 9px;
+  border-radius: 5px;
+  background: transparent;
+  font-size: calc(10px * var(--mds-fs));
+}
+
+.mds-recovery-workspace
+  .mds-recommended-plan-signals
+  > span.is-verified {
+  background: rgba(50, 207, 134, 0.06);
+}
+
+.mds-recovery-workspace .mds-decision-preference-row {
+  grid-template-columns: minmax(118px, auto) minmax(0, 1fr);
+  gap: 10px;
+  margin: 0 18px;
+  padding: 11px 0;
+}
+
+.mds-recovery-workspace .mds-decision-preference-row > small {
+  font-size: calc(9.5px * var(--mds-fs));
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mds-recovery-workspace
+  .mds-decision-preference-row
+  > div
+  > span {
+  min-height: 27px;
+  padding: 0 9px 0 8px;
+  border-radius: 5px;
+  font-size: calc(10px * var(--mds-fs));
+}
+
+.mds-recovery-workspace .mds-recovery-context-reasons {
+  gap: 7px;
+  margin: 0 18px;
+  padding: 11px 0 12px;
+}
+
+.mds-recovery-workspace .mds-recovery-context-reasons > header em {
+  color: var(--mds-muted);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mds-recovery-workspace .mds-recovery-context-reasons > header svg {
+  color: var(--mds-blue);
+}
+
+.mds-recovery-workspace .mds-recovery-context-reasons ul {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.mds-recovery-workspace .mds-recovery-context-reasons li {
+  min-height: 43px;
+  align-items: center;
+  padding: 7px 2px;
+  border: 0;
+  border-top: 1px solid var(--mds-experience-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.mds-recovery-workspace .mds-recovery-context-reasons li > svg {
+  color: var(--mds-green);
+}
+
+.mds-recovery-workspace .mds-decision-card-actions {
+  min-height: 58px;
+  gap: 9px;
+  padding: 10px 18px 16px;
+}
+
+.mds-recovery-workspace .mds-decision-card-actions button {
+  min-height: 40px;
+  padding: 0 13px;
+  border-radius: 6px;
+  font-size: calc(11.5px * var(--mds-fs));
+  white-space: nowrap;
+}
+
+.mds-recovery-workspace .mds-decision-card-actions .is-primary {
+  min-width: 168px;
+  border-color: var(--mds-blue);
+  color: #ffffff;
+  background: var(--mds-blue);
+  box-shadow: none;
+}
+
+.mds-recovery-workspace
+  .mds-recommended-plan-card.is-checkpointed
+  .mds-decision-card-actions
+  .is-primary,
+.mds-recovery-workspace
+  .mds-recommended-plan-card.is-ready
+  .mds-decision-card-actions
+  .is-primary {
+  border-color: var(--mds-blue);
+  color: #ffffff;
+  background: var(--mds-blue);
+  box-shadow: none;
+}
+
+.mds-recovery-workspace .mds-recovery-alternatives {
+  gap: 8px;
+}
+
+.mds-recovery-workspace .mds-recovery-alternatives-head b {
+  color: var(--mds-on-surface);
+  font-size: calc(13px * var(--mds-fs));
+}
+
+.mds-recovery-workspace .mds-recovery-alternatives-head small,
+.mds-recovery-workspace .mds-recovery-alternatives-head em {
+  font-size: calc(10px * var(--mds-fs));
+}
+
+.mds-recovery-workspace .mds-recovery-alternative-grid {
+  gap: 8px;
+}
+
+.mds-recovery-workspace .mds-flight-option-card {
+  min-height: 340px;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+}
+
+.mds-recovery-workspace .mds-flight-option-card > header {
+  min-height: 40px;
+  padding: 10px 12px 0;
+}
+
+.mds-recovery-workspace .mds-flight-option-card > header > span {
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: #9bc9ff;
+  background: rgba(47, 140, 255, 0.06);
+  font-size: calc(9px * var(--mds-fs));
+}
+
+.mds-recovery-workspace
+  .mds-recovery-alternative-grid
+  > :nth-child(n)
+  > header
+  > span {
+  border-color: rgba(47, 140, 255, 0.32);
+  color: #9bc9ff;
+  background: rgba(47, 140, 255, 0.06);
+}
+
+.mds-recovery-workspace .mds-flight-option-card > header > small {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mds-recovery-workspace .mds-flight-option-card-media {
+  min-height: 102px;
+  aspect-ratio: 16 / 7;
+}
+
+.mds-recovery-workspace .mds-flight-option-card-title {
+  padding: 11px 12px 8px;
+}
+
+.mds-recovery-workspace .mds-flight-option-card-title strong {
+  min-height: 31px;
+  font-size: calc(14px * var(--mds-fs));
+  letter-spacing: 0;
+}
+
+.mds-recovery-workspace .mds-decision-route.is-compact {
+  margin: 0 12px;
+}
+
+.mds-recovery-workspace .mds-flight-option-card dl {
+  padding: 9px 12px;
+}
+
+.mds-recovery-workspace .mds-flight-option-card dt {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mds-recovery-workspace .mds-flight-option-card > footer {
+  min-height: 50px;
+  padding: 7px 10px 10px;
+}
+
+.mds-recovery-workspace .mds-flight-option-card > footer button {
+  min-height: 36px;
+  border-radius: 6px;
+}
+
+.mds-recovery-workspace
+  :is(
+    .mds-concierge-assistance-card,
+    .mds-agent-proof-card,
+    .mds-checkpointed-plan-card
+  ) {
+  min-height: 0;
+}
+
+.mds-recovery-workspace .mds-concierge-hotel-media {
+  min-height: 118px;
+  margin: 7px 12px 0;
+  border-radius: 6px;
+}
+
+.mds-recovery-workspace .mds-concierge-hotel-media > em {
+  border-radius: 4px;
+  backdrop-filter: none;
+}
+
+.mds-recovery-workspace .mds-concierge-hotel-media > div small {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mds-recovery-workspace
+  .mds-concierge-assistance-actions
+  button.is-primary {
+  border-color: var(--mds-blue);
+  color: #ffffff;
+  background: var(--mds-blue);
+  box-shadow: none;
+}
+
+.mds-recovery-workspace .mds-agent-proof-card ul {
+  padding-inline: 12px;
+}
+
+.mds-recovery-workspace .mds-agent-proof-card li {
+  min-height: 38px;
+}
+
+.mds-recovery-workspace .mds-agent-proof-card > button {
+  border-radius: 5px;
+}
+
+.mds-recovery-workspace .mds-checkpoint-thread {
+  margin: 9px 12px 0;
+  padding: 8px 9px;
+  border-radius: 5px;
+  background: rgba(4, 16, 33, 0.26);
+}
+
+.mds-recovery-workspace .mds-checkpoint-thread small {
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mds-recovery-workspace .mds-checkpoint-progress {
+  padding: 15px 12px 10px;
+}
+
+.mds-recovery-workspace .mds-checkpoint-progress li::before {
+  height: 1px;
+  border-radius: 0;
+}
+
+.mds-recovery-workspace .mds-checkpoint-progress li.is-done i,
+.mds-recovery-workspace .mds-checkpoint-progress li.is-current i {
+  box-shadow: none;
+}
+
+.mds-root[data-theme="light"]
+  .mds-recovery-workspace
+  .mds-decision-card {
+  border-color: #dedbd4;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(31, 43, 55, 0.08);
+}
+
+.mds-root[data-theme="light"]
+  .mds-recovery-workspace
+  .mds-recovery-context-reasons
+  li {
+  border-color: #e4e1da;
+  background: transparent;
+}
+
+@media (min-width: 1280px) {
+  .mds-recovery-workspace .mds-recommended-plan-card {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.42fr) minmax(0, 1fr);
+    grid-template-areas:
+      "head head"
+      "media title"
+      "route route"
+      "signals signals"
+      "preferences preferences"
+      "memory memory"
+      "actions actions";
+  }
+
+  .mds-recovery-workspace
+    .mds-recommended-plan-card
+    > .mds-decision-card-head {
+    grid-area: head;
+  }
+
+  .mds-recovery-workspace .mds-recommended-plan-media {
+    grid-area: media;
+    height: auto;
+    min-height: 132px;
+    margin: 8px 0 0 16px;
+  }
+
+  .mds-recovery-workspace .mds-recommended-plan-title {
+    grid-area: title;
+    align-content: center;
+  }
+
+  .mds-recovery-workspace
+    .mds-recommended-plan-card
+    > .mds-decision-route {
+    grid-area: route;
+  }
+
+  .mds-recovery-workspace .mds-recommended-plan-signals {
+    grid-area: signals;
+  }
+
+  .mds-recovery-workspace .mds-decision-preference-row {
+    grid-area: preferences;
+  }
+
+  .mds-recovery-workspace .mds-recovery-context-reasons {
+    grid-area: memory;
+  }
+
+  .mds-recovery-workspace .mds-decision-card-actions {
+    grid-area: actions;
+  }
+
+  .mds-recovery-workspace .mds-recommended-plan-empty {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 760px) {
+  .mds-recovery-workspace .mds-recommended-plan-title,
+  .mds-recovery-workspace .mds-recommended-plan-signals,
+  .mds-recovery-workspace .mds-decision-card-actions {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .mds-recovery-workspace .mds-decision-route,
+  .mds-recovery-workspace .mds-decision-preference-row,
+  .mds-recovery-workspace .mds-recovery-context-reasons {
+    margin-right: 14px;
+    margin-left: 14px;
+  }
+
+  .mds-recovery-workspace .mds-recommended-plan-media {
+    margin-right: 14px;
+    margin-left: 14px;
+  }
+
+  .mds-recovery-workspace .mds-decision-card-actions button {
+    width: 100%;
+  }
+}

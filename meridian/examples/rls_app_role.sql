@@ -37,11 +37,18 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
     conversation_messages,
     trip_interactions,
     agent_audit_log,
-    bookings
+    bookings,
+    booking_lines
 TO meridian_app;
 
 -- 4. Sequences (e.g. bookings/booking_lines SERIAL) so INSERTs can get ids.
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO meridian_app;
+
+-- 5. The hold function owns the global inventory check while the app role
+-- remains constrained to its authenticated traveler scope.
+GRANT EXECUTE ON FUNCTION create_courtesy_hold(
+    TEXT, TEXT, TEXT, TEXT, INTEGER, NUMERIC, NUMERIC, TIMESTAMPTZ
+) TO meridian_app;
 
 -- Verify (optional):
 --   SET ROLE meridian_app;

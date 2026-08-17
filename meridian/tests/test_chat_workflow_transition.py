@@ -2,6 +2,7 @@
 
 import asyncio
 
+from backend.http_auth import HttpPrincipal
 from backend.routers.chat import (
     ChatRequest,
     MemoryFact,
@@ -9,6 +10,12 @@ from backend.routers.chat import (
     _PHASE4_WORKFLOW_TRANSITION_MESSAGE,
     _needs_checkpointed_workflow,
     chat,
+)
+
+PRINCIPAL = HttpPrincipal(
+    subject_id="test-client",
+    traveler_id="trv_meridian_demo",
+    authentication="test",
 )
 
 
@@ -90,7 +97,8 @@ def test_phase4_demo_query_returns_workflow_handoff(monkeypatch) -> None:
                     "My JFK-to-Tokyo flight was cancelled. Rework the trip, then "
                     "check duration availability for the best three options."
                 ),
-            )
+            ),
+            PRINCIPAL,
         )
     )
 
@@ -126,7 +134,8 @@ def test_phase4_memory_off_stops_before_recall_or_writeback(monkeypatch) -> None
                     "Recall my October Tokyo plan and use my saved preferences "
                     "to recommend the next step."
                 ),
-            )
+            ),
+            PRINCIPAL,
         )
     )
 
@@ -139,3 +148,55 @@ def test_phase4_memory_off_stops_before_recall_or_writeback(monkeypatch) -> None
         activity.title == "Traveler memory disabled for this run"
         for activity in response.activities
     )
+
+
+def test_phase4_returns_managed_runtime_decision_without_local_rewrite(
+    monkeypatch,
+) -> None:
+    runtime_message = "Managed Runtime selected Tokyo Culture using Alex's saved context."
+
+    async def fake_production_search(*args, **kwargs):
+        return (
+            [
+                Product(
+                    product_id="CTY-002",
+                    name="Tokyo Culture & Cuisine",
+                    brand="Meridian Partner",
+                    price=2499.0,
+                    description="Tokyo culture trip",
+                    image_url="",
+                    category="City Breaks",
+                    similarity=0.71,
+                )
+            ],
+            [],
+            runtime_message,
+            "conv-runtime",
+            [],
+        )
+
+    async def unexpected_polish(*args, **kwargs):
+        raise AssertionError("Production must not rewrite the managed Runtime decision")
+
+    monkeypatch.setattr(
+        "backend.routers.chat.production_search",
+        fake_production_search,
+    )
+    monkeypatch.setattr(
+        "backend.routers.chat._polish_phase_reply",
+        unexpected_polish,
+    )
+
+    response = asyncio.run(
+        chat(
+            ChatRequest(
+                phase=4,
+                customer_id="trv_meridian_demo",
+                message="Recall my Tokyo plan and recommend the next step.",
+            ),
+            PRINCIPAL,
+        )
+    )
+
+    assert response.message == runtime_message
+    assert response.conversation_id == "conv-runtime"

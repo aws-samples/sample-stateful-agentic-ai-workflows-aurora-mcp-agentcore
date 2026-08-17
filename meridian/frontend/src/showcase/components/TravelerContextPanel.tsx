@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   CheckCircle2,
+  ChevronDown,
   Database,
   History,
   Loader2,
@@ -109,6 +110,7 @@ export function TravelerContextPanel({
   ]
     .filter(Boolean)
     .join(' ');
+  const memoryStatus = state.memoryLoading ? 'connecting' : memoryOn ? 'on' : 'off';
 
   return (
     <section className={className}>
@@ -124,9 +126,7 @@ export function TravelerContextPanel({
           >
             <span className="mds-collapse-chevron" aria-hidden="true">
               <span className="mds-collapse-chevron-inner">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
+                <ChevronDown size={12} strokeWidth={2.6} />
               </span>
             </span>
             <strong>Traveler context</strong>
@@ -175,13 +175,13 @@ export function TravelerContextPanel({
               role="switch"
               className="mds-memory-switch"
               aria-checked={memoryOn}
-              aria-label="Use traveler context"
+              aria-label={`Use traveler context: ${memoryStatus}`}
               disabled={!memoryAvailable || state.memoryLoading}
               onClick={() => void state.setMemoryEnabled(!memoryOn)}
             >
               <span aria-hidden="true"><i /></span>
               <b>
-                {state.memoryLoading ? 'Connecting' : memoryOn ? 'On' : 'Off'}
+                {memoryStatus.charAt(0).toUpperCase() + memoryStatus.slice(1)}
               </b>
             </button>
           </div>
@@ -219,7 +219,13 @@ export function TravelerContextPanel({
             >
               <div className="mds-profile-line">
                 <span className="mds-avatar is-photo" aria-hidden="true">
-                  <img src={ALEX_IMAGE_URL} alt={ALEX_NAME} loading="lazy" />
+                  <img
+                    src={ALEX_IMAGE_URL}
+                    alt={ALEX_NAME}
+                    width="640"
+                    height="960"
+                    loading="lazy"
+                  />
                 </span>
                 <div>
                   <strong>Alex Morgan</strong>

@@ -1,5 +1,5 @@
 /**
- * Shared phase names — keep kiosk, workspace, and marketing sections aligned.
+ * Shared phase names - keep kiosk, workspace, and marketing sections aligned.
  */
 import type { Phase } from '../types';
 

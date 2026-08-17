@@ -237,15 +237,19 @@ else
         --query 'GroupId' \
         --output text)
     
-    # Add inbound rule for PostgreSQL
-    aws ec2 authorize-security-group-ingress \
+    # The application uses RDS Data API, so PostgreSQL does not need public
+    # ingress. Direct checkpoint access should be granted from a bastion or
+    # application security group after provisioning, never from 0.0.0.0/0.
+    log_success "Security group created: $SECURITY_GROUP_ID"
+fi
+
+if [ "${ALLOW_PUBLIC_POSTGRES:-false}" != "true" ]; then
+    aws ec2 revoke-security-group-ingress \
         --group-id "$SECURITY_GROUP_ID" \
         --protocol tcp \
         --port 5432 \
         --cidr 0.0.0.0/0 \
-        --region "$REGION" > /dev/null
-    
-    log_success "Security group created: $SECURITY_GROUP_ID"
+        --region "$REGION" >/dev/null 2>&1 || true
 fi
 
 # Step 5: Create Aurora PostgreSQL Serverless v2 cluster

@@ -50,8 +50,13 @@ export LANGGRAPH_CHECKPOINT_DATABASE=meridian
 export LANGGRAPH_CHECKPOINT_REQUIRED=true
 export LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP=true
 export LANGGRAPH_DEMO_INTERRUPT_AFTER=search
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
+uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
+
+Keep the API loopback-only for the single-machine kiosk. If a remote browser
+must connect, configure `MERIDIAN_API_TOKEN`, pin
+`MERIDIAN_API_TRAVELER_ID`, and set an explicit `CORS_ORIGINS` allow-list
+before using a non-loopback host.
 
 Terminal 3 — frontend:
 

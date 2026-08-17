@@ -75,7 +75,54 @@ function makeState(
   } as unknown as MeridianShowcaseState;
 }
 
+function getQueryStarter(prompt: string) {
+  const label = showcasePromptLabel(prompt);
+  const button = screen.getByText(label).closest('button');
+  if (!button) throw new Error(`Missing query starter for "${prompt}".`);
+
+  expect(button).toHaveAttribute(
+    'aria-label',
+    label === prompt ? prompt : `${label}: ${prompt}`,
+  );
+  return button;
+}
+
 describe('Experience presentation polish', () => {
+  it('starts with discovery and clears into Phase 1 of the capability ladder', () => {
+    const clearChat = vi.fn();
+    const setSelectedPhase = vi.fn();
+    const { container } = render(
+      <DesktopMeridianApp
+        state={makeState({ clearChat, setSelectedPhase })}
+        theme="dark"
+        onToggleTheme={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole('region', { name: 'Meridian discovery' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '1 Discovery' }),
+    ).toHaveAttribute('aria-current', 'step');
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Clear discovery and start the capability ladder',
+      }),
+    );
+
+    expect(clearChat).toHaveBeenCalledOnce();
+    expect(setSelectedPhase).toHaveBeenCalledWith(1);
+    expect(container.querySelector('.mds-desktop-app')).toHaveClass(
+      'is-proof',
+      'is-ladder',
+    );
+    expect(
+      screen.getByRole('button', { name: '2 Capability ladder' }),
+    ).toHaveAttribute('aria-current', 'step');
+  });
+
   it('collapses the sidebar into an accessible icon rail across both demo steps', () => {
     const state = makeState({
       backendStatus: 'online',
@@ -100,7 +147,7 @@ describe('Experience presentation polish', () => {
     expect(screen.getByRole('button', { name: 'Trips' })).toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole('button', { name: '2 Stateful Recovery finale' }),
+      screen.getByRole('button', { name: '3 Stateful Recovery finale' }),
     );
     expect(app).toHaveClass('is-sidebar-collapsed');
 
@@ -120,7 +167,7 @@ describe('Experience presentation polish', () => {
     );
 
     fireEvent.click(
-      screen.getByRole('button', { name: '2 Stateful Recovery finale' }),
+      screen.getByRole('button', { name: '3 Stateful Recovery finale' }),
     );
 
     const dock = container.querySelector('.mds-desktop-dock');
@@ -149,12 +196,12 @@ describe('Experience presentation polish', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders an offline geographic JFK-to-HND recovery map', () => {
+  it('renders an offline geographic JFK-to-Tokyo recovery map', () => {
     const { container } = render(<RecoveryRouteMap />);
 
-    expect(screen.getByRole('img', { name: /John F. Kennedy.*Haneda/i })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /New York.*Tokyo/i })).toBeInTheDocument();
     expect(screen.getByText('JFK')).toBeInTheDocument();
-    expect(screen.getByText('HND')).toBeInTheDocument();
+    expect(screen.getByText('TYO')).toBeInTheDocument();
     expect(container.querySelectorAll('.mds-route-geography').length).toBeGreaterThan(100);
     expect(container.querySelector('.mds-route-line')).toBeInTheDocument();
   });
@@ -174,25 +221,57 @@ describe('Experience presentation polish', () => {
     expect(screen.queryByText(/SQL mode/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(showcasePromptLabel(firstPrompt))).toHaveLength(1);
 
-    const promptButtons = SHOWCASE_EXAMPLE_PROMPTS[1].slice(0, 2).map((prompt) =>
-      screen.getByRole('button', { name: prompt }),
-    );
+    const promptButtons = SHOWCASE_EXAMPLE_PROMPTS[1]
+      .slice(0, 2)
+      .map(getQueryStarter);
     expect(promptButtons).toHaveLength(2);
     promptButtons.forEach((button) => {
       expect(button).not.toHaveClass('is-stretch');
     });
   });
 
+  it('shows one featured and two supporting trips until the user expands the result set', () => {
+    const products = Array.from({ length: 4 }, (_, index) => ({
+      product_id: `trip-${index + 1}`,
+      name: `Trip ${index + 1}`,
+      brand: 'Meridian Travel',
+      price: 1200 + index * 100,
+      description: `Catalog trip ${index + 1}`,
+      image_url: '',
+      category: 'city',
+      destination: 'Tokyo',
+      available_sizes: ['3 nights'],
+    }));
+    const state = makeState({
+      recommendations: products,
+      messages: [
+        { role: 'user', text: 'Show me Tokyo trips.' },
+        {
+          role: 'bot',
+          text: 'I found four live catalog options.',
+          products,
+        },
+      ],
+    });
+
+    render(<ChatTranscript state={state} />);
+
+    const results = screen.getByRole('region', { name: 'Trips for this turn' });
+    expect(within(results).getAllByRole('article')).toHaveLength(3);
+    expect(screen.getByText('Showing top 3 of 4 trips')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show all 4' }));
+
+    expect(within(results).getAllByRole('article')).toHaveLength(4);
+    expect(screen.getByText('Showing all 4 trips')).toBeInTheDocument();
+  });
+
   it('reserves the dashed stretch treatment for System proof', () => {
     const state = makeState();
     render(<ChatComposer state={state} proofMode />);
 
-    const working = screen.getByRole('button', {
-      name: SHOWCASE_EXAMPLE_PROMPTS[1][0],
-    });
-    const stretch = screen.getByRole('button', {
-      name: SHOWCASE_EXAMPLE_PROMPTS[1][2],
-    });
+    const working = getQueryStarter(SHOWCASE_EXAMPLE_PROMPTS[1][0]);
+    const stretch = getQueryStarter(SHOWCASE_EXAMPLE_PROMPTS[1][2]);
 
     expect(working).not.toHaveClass('is-stretch');
     expect(stretch).toHaveClass('is-stretch');
@@ -266,9 +345,9 @@ describe('Experience presentation polish', () => {
     expect(deriveRecoveryStage(checkpointed)).toBe('checkpointed');
 
     const { rerender } = render(<JourneyPanel state={initial} />);
-    expect(screen.getByText('ANA · NH 109')).toBeInTheDocument();
+    expect(screen.getByText('Traveler report')).toBeInTheDocument();
     expect(screen.getByText('Action needed')).toBeInTheDocument();
-    expect(screen.getByText('Cancelled')).toBeInTheDocument();
+    expect(screen.getByText('Canceled')).toBeInTheDocument();
     expect(screen.getByText('Airline Premier')).toBeInTheDocument();
     expect(screen.getByText('Elite status recognized')).toBeInTheDocument();
     expect(screen.queryByText(/No shortlist/i)).not.toBeInTheDocument();
@@ -308,7 +387,7 @@ describe('Experience presentation polish', () => {
       screen.getAllByRole('button', { name: 'Start recovery' }),
     ).toHaveLength(1);
     expect(
-      screen.getByRole('img', { name: 'ANA aircraft on final approach' }),
+      screen.getByRole('img', { name: 'Aircraft on final approach' }),
     ).toHaveAttribute('src', '/travel/recovery-flight.jpg');
     expect(
       screen.queryByRole('article', { name: 'Concierge assistance' }),
@@ -319,14 +398,15 @@ describe('Experience presentation polish', () => {
     expect(screen.queryByRole('article', { name: 'Agent proof' })).not.toBeInTheDocument();
     expect(screen.queryByRole('article', { name: 'Recovery option 2' })).not.toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: "Alex's JFK → Tokyo recovery" }),
+      screen.getByRole('heading', { name: "Alex's JFK to Tokyo recovery" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('heading', {
-        name: 'Your flight has been cancelled.',
+        name: 'Your flight has been canceled.',
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Cancelled flight')).toBeInTheDocument();
+    expect(screen.getByText('Traveler-reported disruption')).toBeInTheDocument();
+    expect(screen.queryByText(/ANA NH 109/i)).not.toBeInTheDocument();
     expect(
       screen.getByRole('list', { name: 'Recovery workflow progress' }),
     ).toBeInTheDocument();
@@ -371,7 +451,7 @@ describe('Experience presentation polish', () => {
     ).toHaveTextContent('Building the recovery plan');
     expect(
       screen.queryByRole('heading', {
-        name: 'Your flight has been cancelled.',
+        name: 'Your flight has been canceled.',
       }),
     ).not.toBeInTheDocument();
     expect(
@@ -597,7 +677,7 @@ describe('Experience presentation polish', () => {
 
     expect(screen.getByRole('button', { name: 'Start recovery' })).toBeInTheDocument();
     expect(
-      screen.getByText('Your flight has been cancelled.'),
+      screen.getByText('Your flight has been canceled.'),
     ).toBeInTheDocument();
     expect(screen.queryByText('Alternative pending')).not.toBeInTheDocument();
     expect(screen.queryByText('No live result observed yet')).not.toBeInTheDocument();
@@ -636,10 +716,13 @@ describe('Experience presentation polish', () => {
     expect(screen.getByText(/JAL Premium · Tokyo/i)).toBeInTheDocument();
     expect(screen.getAllByText('$1,949').length).toBeGreaterThan(0);
     expect(screen.getByText('5 places across 2 stays')).toBeInTheDocument();
+    expect(
+      screen.getByText('Package inventory only. Flights not checked.'),
+    ).toBeInTheDocument();
     expect(screen.queryByText('NH110')).not.toBeInTheDocument();
     expect(screen.getByText('Top-option inventory verified')).toBeInTheDocument();
     expect(
-      screen.getByText('Policy review remains a traveler decision'),
+      screen.getByText('Flight and policy review remain traveler decisions'),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('textbox', { name: 'Ask Meridian anything' }),

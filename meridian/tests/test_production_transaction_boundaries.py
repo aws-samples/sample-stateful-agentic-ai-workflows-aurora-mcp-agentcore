@@ -137,7 +137,7 @@ def test_production_turn_releases_transactions_before_external_calls(monkeypatch
         return call
 
     agent.agentcore_runtime = SimpleNamespace(
-        session_for_turn=external(
+        invoke_turn=external(
             "external:runtime",
             SimpleNamespace(
                 runtime_session_id="runtime-session-id",
@@ -145,6 +145,9 @@ def test_production_turn_releases_transactions_before_external_calls(monkeypatch
                 runtime_arn="arn:runtime",
                 qualifier="DEFAULT",
                 isolation="microVM",
+                message="Tokyo options grounded in traveler context.",
+                recommended_package_ids=["pkg-1"],
+                follow_ups=[],
             ),
         )
     )

@@ -1,6 +1,6 @@
 /**
  * Map backend ActivityEntry[] → StageSpan[] for cinematic trace UIs
- * (Demo Stage + Meridian Pro workspace).
+ * used by the Demo Stage.
  */
 import type { ActivityEntry, TraceSpanCategory } from '../types';
 import type { StageSpan, StageSpanKind, StageSystemId } from '../stage/types';

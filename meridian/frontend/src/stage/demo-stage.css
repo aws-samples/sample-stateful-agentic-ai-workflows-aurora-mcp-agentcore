@@ -91,7 +91,7 @@
   padding: 12px 0 12px;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 100dvh;
   gap: 14px;
 }
 
@@ -1365,13 +1365,15 @@
   background: rgba(2, 4, 8, 0.62);
   backdrop-filter: blur(6px);
   z-index: 50;
-  display: flex;
-  justify-content: flex-end;
   animation: dsFade 0.18s ease both;
 }
 .ds-inspector {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 51;
   width: min(440px, 100vw);
-  height: 100vh;
+  height: 100dvh;
   background: linear-gradient(180deg, #0b1018, #06080d);
   border-left: 1px solid var(--ds-line-2);
   box-shadow: -40px 0 80px rgba(0, 0, 0, 0.5);
@@ -1387,6 +1389,7 @@
   border-bottom: 1px solid var(--ds-line);
 }
 .ds-inspector-title {
+  margin: 0;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: -0.015em;
@@ -1902,10 +1905,10 @@
   white-space: nowrap;
 }
 
-/* Three surface links — Showcase / Pro / Kiosk. */
+/* Primary participant and kiosk surfaces. */
 .ds-kiosk-surfaces {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 10px;
 }
 .ds-kiosk-surface {

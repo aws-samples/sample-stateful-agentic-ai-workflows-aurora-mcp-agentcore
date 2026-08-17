@@ -1,39 +1,28 @@
+import json
 from typing import Any
 
-from strands import Agent, tool
+from strands import Agent
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from model.load import load_model
-from mcp_client.client import get_streamable_http_mcp_client
 
 app = BedrockAgentCoreApp()
 log = app.logger
 
-# Define a Streamable HTTP MCP Client
-mcp_clients = [get_streamable_http_mcp_client()]
-
 DEFAULT_SYSTEM_PROMPT = """
-You are a helpful assistant. Use tools when appropriate.
+You are Meridian's production travel concierge running inside Amazon Bedrock
+AgentCore Runtime. You receive an authenticated traveler request, authorized
+memory context, and live trip candidates already returned by Meridian's
+AgentCore Gateway.
+
+Write a concise, traveler-facing recommendation grounded only in those inputs.
+Explain the most relevant preference match when evidence is present. Never
+invent seats, flight times, hotel confirmations, loyalty benefits, prices, or
+availability. If no candidates are supplied, say that no exact match was found.
+Use two to four sentences and do not add a heading.
 """
 
-
-# Define a collection of tools used by the model
-tools = []
-
-# Define a simple function tool
-@tool
-def add_numbers(a: int, b: int) -> int:
-    """Return the sum of two numbers"""
-    return a+b
-tools.append(add_numbers)
-
-
-# Add MCP client to tools if available
-for mcp_client in mcp_clients:
-    if mcp_client:
-        tools.append(mcp_client)
-
-
 _agent = None
+
 
 def get_or_create_agent():
     global _agent
@@ -41,24 +30,57 @@ def get_or_create_agent():
         _agent = Agent(
             model=load_model(),
             system_prompt=DEFAULT_SYSTEM_PROMPT,
-            tools=tools
+            tools=[],
         )
     return _agent
 
 
 @app.entrypoint
 async def invoke(payload, context):
-    log.info("Invoking Agent.....")
+    if payload.get("event") != "concierge_turn":
+        yield json.dumps(
+            {
+                "message": "Unsupported Meridian Runtime event.",
+                "recommended_package_ids": [],
+                "follow_ups": [],
+            }
+        )
+        return
 
     agent = get_or_create_agent()
+    candidates = payload.get("candidates") or []
+    prompt = (
+        f"Traveler request:\n{payload.get('prompt', '')}\n\n"
+        f"Authorized traveler context:\n{payload.get('memory_context', '')}\n\n"
+        "Live candidate packages:\n"
+        f"{json.dumps(candidates, ensure_ascii=True)}"
+    )
 
-    # Execute and format response
-    stream = agent.stream_async(payload.get("prompt"))
-
+    chunks: list[str] = []
+    stream = agent.stream_async(prompt)
     async for event in stream:
-        # Handle Text parts of the response
         if "data" in event and isinstance(event["data"], str):
-            yield event["data"]
+            chunks.append(event["data"])
+
+    message = "".join(chunks).strip()
+    if not message:
+        message = "I could not produce a grounded recommendation from the live options."
+
+    yield json.dumps(
+        {
+            "message": message,
+            "recommended_package_ids": [
+                candidate.get("package_id")
+                for candidate in candidates
+                if candidate.get("package_id")
+            ],
+            "follow_ups": [
+                "Compare the top options",
+                "Check duration availability",
+                "Explain the preference match",
+            ],
+        }
+    )
 
 
 if __name__ == "__main__":

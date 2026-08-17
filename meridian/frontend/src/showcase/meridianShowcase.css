@@ -96,8 +96,8 @@
   --mds-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --mds-shadow-2: 0 8px 30px rgba(0, 0, 0, 0.45);
 
-  --mds-font: "Geist", "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
-  --mds-font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --mds-font: "Geist Variable", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mds-font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   /* Display serif for headlines and section titles. Shared by both demo steps —
      defined here rather than on the finale so the capability ladder resolves the
      real stack instead of falling through to its Georgia fallback. */
@@ -593,7 +593,7 @@
 /* Page-level error boundary fallback. Shown when a render crash would
    otherwise blank the showcase. */
 .mds-error-screen {
-  min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   display: grid;
   place-items: center;
@@ -659,7 +659,7 @@
 }
 
 .mds-fullbleed-route {
-  min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   overflow: hidden;
   background:
@@ -709,7 +709,7 @@
   --mds-right-rail: clamp(360px, 24vw, 420px);
 
   position: relative;
-  min-height: 100vh;
+  min-height: 100dvh;
   width: 100%;
   margin: 0;
   display: grid;
@@ -747,7 +747,7 @@
 }
 
 .mds-fullbleed-route .mds-desktop-app {
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .mds-desktop-sidebar,
@@ -757,7 +757,7 @@
 }
 
 .mds-desktop-sidebar {
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -974,7 +974,7 @@
      to its bottom while everything else flows. */
   position: relative;
   min-width: 0;
-  height: 100vh;
+  height: 100dvh;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
@@ -1173,13 +1173,24 @@
 
 .mds-phase-selector button {
   min-width: 94px;
-  padding: 10px 13px;
+  min-height: 44px;
+  padding: 0 13px;
   border: 0;
   border-radius: 10px;
   color: #aeb9c4;
   background: transparent;
   font-size: calc(13px * var(--mds-fs));
   font-weight: 700;
+}
+
+.mds-phase-selector-label-compact {
+  display: none;
+}
+
+.mds-phase-selector button:active:not(:disabled),
+.mds-trace-tabs button:active:not(:disabled),
+.mds-memory-switch:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 /* Phase selection is an interaction state, so it uses blue rather than the
@@ -2119,6 +2130,38 @@
   animation: mds-msg-grid-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.mds-result-disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--mds-line);
+  color: var(--mds-on-surface-soft);
+  font-size: calc(11.5px * var(--mds-fs));
+}
+
+.mds-result-disclosure button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--mds-blue-line);
+  border-radius: 8px;
+  color: var(--mds-blue);
+  background: var(--mds-blue-soft);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mds-result-disclosure button:hover {
+  background: color-mix(in srgb, var(--mds-blue) 18%, transparent);
+}
+
+.mds-result-disclosure button:active {
+  transform: translateY(1px);
+}
+
 @keyframes mds-msg-grid-in {
   from {
     opacity: 0;
@@ -2140,7 +2183,7 @@
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(8, 14, 21, 0.82), rgba(6, 11, 18, 0.94));
   text-align: left;
-  cursor: pointer;
+  cursor: default;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
   animation: mds-msg-card-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
@@ -2352,7 +2395,7 @@
 }
 
 .mds-trip-result-card:hover,
-.mds-trip-result-card:focus-visible {
+.mds-trip-result-card:focus-within {
   transform: translateY(-3px);
   border-color: rgba(49, 215, 255, 0.42);
   box-shadow:
@@ -2369,7 +2412,7 @@
 }
 
 .mds-trip-result-card:hover .mds-trip-photo,
-.mds-trip-result-card:focus-visible .mds-trip-photo,
+.mds-trip-result-card:focus-within .mds-trip-photo,
 .mds-trip-result-card.is-selected .mds-trip-photo {
   transform: scale(1.045);
 }
@@ -4142,7 +4185,7 @@
 }
 
 .mds-desktop-right {
-  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -4182,12 +4225,10 @@
 
 .mds-traveler-panel {
   flex: 0 1 auto;
-  max-height: calc(100vh - 302px);
+  max-height: calc(100dvh - 302px);
   overflow-x: hidden;
   overflow-y: auto;
   padding: 16px;
-  /* Smoothly reclaim right-rail space when the panel collapses. */
-  transition: padding 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Collapsed panels render as compact header strips. */
@@ -4337,6 +4378,7 @@
 
 .mds-memory-switch {
   min-width: 76px;
+  min-height: 44px;
   display: grid;
   grid-template-columns: 38px 28px;
   gap: 6px;
@@ -4560,7 +4602,6 @@
   display: flex;
   flex-direction: column;
   padding: 16px;
-  transition: padding 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .mds-trace-panel > .mds-panel-head,
@@ -5027,7 +5068,7 @@
 }
 
 .mds-trace-tabs button {
-  min-height: 34px;
+  min-height: 44px;
   border: 0;
   border-radius: 8px;
   color: var(--mds-on-surface-soft);
@@ -5307,21 +5348,88 @@
 }
 
 .mds-drawer-backdrop {
-  position: absolute;
+  position: fixed;
   inset: 0;
   z-index: 60;
-  display: grid;
-  justify-items: end;
   background: rgba(0, 0, 0, 0.28);
 }
 
 .mds-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 61;
   width: min(440px, 92%);
   height: 100%;
   padding: 20px;
+  overflow-y: auto;
   border-left: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(5, 10, 16, 0.97);
   box-shadow: -30px 0 80px rgba(0, 0, 0, 0.42);
+}
+
+.mds-drawer-backdrop[data-state="open"] {
+  animation: mds-sheet-fade 160ms ease-out;
+}
+
+.mds-drawer[data-state="open"] {
+  animation: mds-sheet-enter 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mds-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.mds-tooltip {
+  z-index: 90;
+  max-width: 240px;
+  padding: 7px 9px;
+  border: 1px solid rgba(151, 185, 218, 0.22);
+  border-radius: 8px;
+  color: var(--mds-on-surface);
+  background: rgba(5, 12, 20, 0.98);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34);
+  font-size: calc(12px * var(--mds-fs));
+  font-weight: 620;
+  line-height: 1.2;
+  animation: mds-tooltip-enter 120ms ease-out;
+}
+
+.mds-tooltip-arrow {
+  fill: rgba(5, 12, 20, 0.98);
+}
+
+@keyframes mds-sheet-fade {
+  from { opacity: 0; }
+}
+
+@keyframes mds-sheet-enter {
+  from {
+    opacity: 0.86;
+    transform: translateX(24px);
+  }
+}
+
+@keyframes mds-tooltip-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mds-drawer-backdrop[data-state="open"],
+  .mds-drawer[data-state="open"],
+  .mds-tooltip {
+    animation: none;
+  }
 }
 
 .mds-drawer header {
@@ -5410,7 +5518,7 @@
 
 @media (max-width: 1240px) {
   .mds-fullbleed-route .mds-desktop-app {
-    min-height: 100vh;
+    min-height: 100dvh;
     grid-template-columns: 190px minmax(0, 1fr);
   }
 
@@ -5434,7 +5542,7 @@
 
 @media (max-width: 760px) {
   .mds-fullbleed-route .mds-desktop-app {
-    min-height: 100vh;
+    min-height: 100dvh;
     border: 0;
     border-radius: 0;
     grid-template-columns: 1fr;
@@ -5502,10 +5610,23 @@
     grid-template-columns: 1fr;
   }
 
+  .mds-aurora-strip-title > b {
+    display: none;
+  }
+
   .mds-phase-selector button {
     min-width: 0;
-    padding: 8px 4px;
+    min-height: 44px;
+    padding: 0 4px;
     font-size: calc(11px * var(--mds-fs));
+  }
+
+  .mds-phase-selector-label-full {
+    display: none;
+  }
+
+  .mds-phase-selector-label-compact {
+    display: block;
   }
 
   .mds-message {
@@ -6061,7 +6182,6 @@
   display: flex;
   gap: 5px;
 }
-.mds-drawer { overflow-y:auto; }
 .mds-drawer-row input { width:100%; margin:5px 0; padding:8px; border:1px solid var(--mds-blue-line); border-radius:6px; color:var(--mds-on-surface); background:var(--mds-card); }
 .mds-memory-disclosure { margin:0 0 16px; color:var(--mds-on-surface-soft); font-size:13px; line-height:1.5; }
 
@@ -6097,7 +6217,7 @@
   .mds-top-actions { align-items:flex-start; }
   .mds-status-pill { max-width:none; gap:6px; padding-inline:9px; white-space:nowrap; }
   .mds-status-sep,.mds-status-unit { display:none; }
-  .mds-phase-selector { overflow-x:auto; grid-template-columns:repeat(5,minmax(86px,1fr)); }
+  .mds-phase-selector { overflow:visible; grid-template-columns:repeat(5,minmax(0,1fr)); }
   .mds-current-trip-route strong { font-size:calc(28px * var(--mds-fs)); }
   .mds-recovery-steps li { font-size:calc(10px * var(--mds-fs)); }
   .mds-trip-modal { display:block; }.mds-trip-modal-visual { min-height:260px; }.mds-trip-modal-body { padding:22px 18px; }.mds-trip-facts { grid-template-columns:1fr; }
@@ -6657,7 +6777,7 @@
 .mds-authz-step small {
   margin-bottom: 3px;
   color: var(--mds-on-surface-faint);
-  font-size: calc(9.5px * var(--mds-fs));
+  font-size: calc(11.5px * var(--mds-fs));
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -6666,14 +6786,14 @@
   align-items: center;
   gap: 7px;
   color: var(--mds-on-surface);
-  font-size: calc(12.5px * var(--mds-fs));
+  font-size: calc(13px * var(--mds-fs));
   line-height: 1.35;
 }
 .mds-authz-decision {
   flex: none;
   padding: 2px 9px;
   border-radius: 6px;
-  font-size: calc(11px * var(--mds-fs));
+  font-size: calc(11.5px * var(--mds-fs));
   font-weight: 800;
   letter-spacing: 0.06em;
 }
@@ -6690,7 +6810,7 @@
   overflow: hidden;
   color: var(--mds-on-surface-soft);
   font-family: var(--mds-font-mono);
-  font-size: calc(9px * var(--mds-fs));
+  font-size: calc(11px * var(--mds-fs));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -6700,7 +6820,7 @@
   gap: 6px;
   padding-top: 2px;
   color: var(--mds-on-surface-faint);
-  font-size: calc(10.5px * var(--mds-fs));
+  font-size: calc(11px * var(--mds-fs));
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -6709,20 +6829,28 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 .mds-rls-row-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
 }
 .mds-rls-row-head code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
   font-family: var(--mds-font-mono);
   font-size: calc(12px * var(--mds-fs));
   color: var(--mds-on-surface);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mds-rls-counts {
   display: inline-flex;
+  flex: none;
   align-items: baseline;
   gap: 6px;
   font-size: calc(11.5px * var(--mds-fs));
@@ -6788,8 +6916,9 @@
 }
 .mds-rls-legend {
   display: flex;
+  flex-wrap: wrap;
   gap: 14px;
-  font-size: calc(10.5px * var(--mds-fs));
+  font-size: calc(11px * var(--mds-fs));
   color: var(--mds-on-surface-soft);
 }
 .mds-rls-legend span {
@@ -6817,7 +6946,7 @@
   border-top: 1px solid var(--mds-line);
 }
 .mds-rls-policies-title {
-  font-size: calc(10.5px * var(--mds-fs));
+  font-size: calc(11px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -6831,15 +6960,18 @@
   margin-bottom: 2px;
 }
 .mds-rls-policy pre {
+  box-sizing: border-box;
+  max-width: 100%;
   margin: 0 0 6px;
   padding: 8px 10px;
   border-radius: 8px;
   background: var(--mds-fill-1);
   border: 1px solid var(--mds-line);
   font-family: var(--mds-font-mono);
-  font-size: calc(10.5px * var(--mds-fs));
+  font-size: calc(11px * var(--mds-fs));
   line-height: 1.5;
   color: var(--mds-on-surface-soft);
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
   word-break: break-word;
 }

@@ -4,6 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import backend.routers.chat as chat_router
+from backend.http_auth import HttpPrincipal
 from backend.routers.chat import (
     MemoryFact,
     _append_recovery_memory_receipt,
@@ -48,6 +49,12 @@ WORKFLOW_PLAN_KYOTO = (
     "duration options."
 )
 
+PRINCIPAL = HttpPrincipal(
+    subject_id="test-client",
+    traveler_id="trv_meridian_demo",
+    authentication="test",
+)
+
 
 def test_demo_traveler_airport_contract() -> None:
     traveler = next(t for t in TRAVELERS if t["traveler_id"] == DEMO_TRAVELER_ID)
@@ -81,7 +88,8 @@ def test_early_phase_stretch_prompts_return_explicit_boundaries() -> None:
                 phase=1,
                 message=COMPARE_AND_FX,
                 customer_id="trv_meridian_demo",
-            )
+            ),
+            PRINCIPAL,
         )
     )
     assert "Switch to MCP" in sql_response.message
@@ -93,7 +101,8 @@ def test_early_phase_stretch_prompts_return_explicit_boundaries() -> None:
                 phase=2,
                 message=RETRIEVAL_INTENT,
                 customer_id="trv_meridian_demo",
-            )
+            ),
+            PRINCIPAL,
         )
     )
     assert "Switch to Retrieval" in mcp_response.message
@@ -107,7 +116,8 @@ def test_retrieval_memory_stretch_is_concise_and_honest() -> None:
                 phase=3,
                 message=MEMORY_RECALL,
                 customer_id="trv_meridian_demo",
-            )
+            ),
+            PRINCIPAL,
         )
     )
     assert "no traveler profile or prior-turn memory" in response.message

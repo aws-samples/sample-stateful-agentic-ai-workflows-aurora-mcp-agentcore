@@ -1,5 +1,5 @@
 /**
- * ConciergeResponseCard — natural-language reply card that lives at the
+ * ConciergeResponseCard - natural-language reply card that lives at the
  * bottom of the trace hero panel.
  *
  * Reveal model:
@@ -33,7 +33,7 @@ interface ConciergeResponseCardProps {
   onStreamComplete?: () => void;
 }
 
-// Strip emoji / pictographs the model may have slipped in — the product is
+// Strip emoji / pictographs the model may have slipped in - the product is
 // premium-minimalist and the system prompt asks for none. Mirrors the
 // showcase's stripEmojis so both surfaces render identically.
 function stripEmojis(source: string): string {
@@ -52,7 +52,7 @@ function stripEmojis(source: string): string {
 // (left-to-right, ~100 cps) and fires `onComplete` when it lands. When
 // disabled, it shows the full text immediately and reports complete. The
 // reveal keys off the text itself, so a reply that's already "composed"
-// on first render still types out — the regression we hit when the phase
+// on first render still types out - the regression we hit when the phase
 // jumped straight to composed because the model span was last.
 function useTypewriterReveal(
   text: string,
@@ -69,7 +69,7 @@ function useTypewriterReveal(
       return undefined;
     }
     if (!enabled) {
-      // Not streaming yet — this is the pending phase, where the reply text
+      // Not streaming yet - this is the pending phase, where the reply text
       // is already known but the trace hasn't reached the model span. Show
       // nothing (the card renders its skeleton here) and crucially do NOT
       // report complete: firing onComplete now would reveal the product deck
@@ -114,7 +114,7 @@ function useTypewriterReveal(
       window.clearInterval(id);
       window.clearTimeout(failsafe);
     };
-    // onComplete intentionally omitted — we only want to re-run on text change.
+    // onComplete intentionally omitted - we only want to re-run on text change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, enabled]);
 
@@ -124,7 +124,7 @@ function useTypewriterReveal(
 // While streaming, a half-revealed `**bold` shows a literal `**` until the
 // closing marker is typed. On an always-on booth that flickers on every
 // loop, so we close any dangling bold/italic marker for the partial string
-// — the markdown renders balanced at every frame, and the real close just
+// - the markdown renders balanced at every frame, and the real close just
 // replaces our temporary one when it arrives.
 function balanceMarkdown(partial: string): string {
   const boldCount = (partial.match(/\*\*/g) || []).length;
@@ -145,7 +145,7 @@ export function ConciergeResponseCard({
 }: ConciergeResponseCardProps) {
   const cleaned = stripEmojis(reply || '');
   // Type the reply out whenever we have text to show (composing OR
-  // composed) — the player often jumps straight to composed when the model
+  // composed) - the player often jumps straight to composed when the model
   // span is last, so keying off phase alone skips the animation entirely.
   const shouldStream = phase !== 'pending' && cleaned.length > 0;
   const revealed = useTypewriterReveal(cleaned, shouldStream, onStreamComplete);

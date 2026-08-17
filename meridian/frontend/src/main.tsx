@@ -1,8 +1,10 @@
 import React, { lazy, Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
+import '@fontsource-variable/geist'
+import '@fontsource-variable/geist-mono'
 import './index.css'
+import { RouteSkeleton } from './components/RouteSkeleton'
 
-const App = lazy(() => import('./App'))
 const DemoStage = lazy(() => import('./stage/DemoStage').then((module) => ({ default: module.DemoStage })))
 const MeridianDeviceShowcase = lazy(() => import('./showcase/MeridianDeviceShowcase'))
 
@@ -11,8 +13,7 @@ const MeridianDeviceShowcase = lazy(() => import('./showcase/MeridianDeviceShowc
  *
  * We deliberately avoid adding react-router (or any new dep) for the booth
  * demo. `/` redirects to the live showcase because the Summit talk only needs
- * that surface. Legacy `/demo-stage`, `/stage`, and `/pro` routes remain for
- * older local walkthrough links without becoming the public entry point.
+ * that surface. `/demo-stage` and `/stage` remain for kiosk and presenter use.
  */
 function pickRoot() {
   const path = window.location.pathname.replace(/\/+$/, '')
@@ -26,15 +27,12 @@ function pickRoot() {
   if (path === '/showcase' || path === '/device-showcase') {
     return <MeridianDeviceShowcase />
   }
-  if (path === '/pro') {
-    return <App />
-  }
   window.location.replace('/showcase')
   return null
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <Suspense fallback={<div aria-label="Loading Meridian" />}>{pickRoot()}</Suspense>
+    <Suspense fallback={<RouteSkeleton />}>{pickRoot()}</Suspense>
   </React.StrictMode>,
 )

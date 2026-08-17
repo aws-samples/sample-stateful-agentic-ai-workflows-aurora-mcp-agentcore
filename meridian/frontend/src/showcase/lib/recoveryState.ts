@@ -31,7 +31,7 @@ function spanText(
 }
 
 function hasRecoveryRequest(state: MeridianShowcaseState): boolean {
-  const recoveryPattern = /flight.+cancelled|cancelled.+flight/i;
+  const recoveryPattern = /flight.+cancell?ed|cancell?ed.+flight/i;
   return (
     recoveryPattern.test(state.lastPrompt ?? '') ||
     state.messages.some(

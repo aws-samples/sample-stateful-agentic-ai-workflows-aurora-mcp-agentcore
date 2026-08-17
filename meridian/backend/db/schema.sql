@@ -176,7 +176,7 @@ CREATE INDEX IF NOT EXISTS idx_traveler_prefs ON traveler_preferences(traveler_i
 -- =============================================================================
 CREATE TABLE bookings (
     booking_id VARCHAR(50) PRIMARY KEY,
-    traveler_id VARCHAR(50) REFERENCES travelers(traveler_id),
+    traveler_id VARCHAR(50) NOT NULL REFERENCES travelers(traveler_id),
     status VARCHAR(50) DEFAULT 'pending',
     total_amount DECIMAL(10, 2) NOT NULL,
     hold_expires_at TIMESTAMPTZ,
@@ -186,10 +186,10 @@ CREATE TABLE bookings (
 
 CREATE TABLE booking_lines (
     line_id SERIAL PRIMARY KEY,
-    booking_id VARCHAR(50) REFERENCES bookings(booking_id),
-    package_id VARCHAR(50) REFERENCES trip_packages(package_id),
-    duration VARCHAR(50),
-    travelers_count INTEGER DEFAULT 1,
+    booking_id VARCHAR(50) NOT NULL REFERENCES bookings(booking_id),
+    package_id VARCHAR(50) NOT NULL REFERENCES trip_packages(package_id),
+    duration VARCHAR(50) NOT NULL,
+    travelers_count INTEGER NOT NULL DEFAULT 1 CHECK (travelers_count > 0),
     unit_price DECIMAL(10, 2) NOT NULL
 );
 

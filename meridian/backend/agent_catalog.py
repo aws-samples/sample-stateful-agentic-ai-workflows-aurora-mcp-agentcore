@@ -74,7 +74,7 @@ PHASE_CATALOG: Dict[int, PhaseSpec] = {
         method="Strands concierge + AgentCore (Runtime/Gateway/Memory/Identity) + Aurora",
         specialists=("MemoryAgent", "RetrievalAgent"),
         skills=(
-            SkillSpec("runtime_session", "AgentCore Runtime", "invoke_agent_runtime(session_id, payload)", "agentcore/runtime.py"),
+            SkillSpec("runtime_decision", "AgentCore Runtime", "invoke_agent_runtime(session_id, traveler context + candidates)", "agentcore/runtime.py"),
             SkillSpec("gateway_search", "AgentCore Gateway", "tools/call(semantic_trip_search)", "agentcore/gateway.py"),
             SkillSpec("recall_session_context", "MemoryAgent", "recall_session_context(conversation_id, limit=6)", "agents/production_04/memory_agent.py"),
             SkillSpec("recall_traveler_preferences", "MemoryAgent", "recall_traveler_preferences(traveler_id, limit=8)", "agents/production_04/memory_agent.py"),

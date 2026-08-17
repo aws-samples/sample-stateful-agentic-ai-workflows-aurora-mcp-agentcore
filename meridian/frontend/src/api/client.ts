@@ -16,22 +16,50 @@ function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
 }
 
-function resolveBackendOrigin(): string {
-  const explicit = import.meta.env.VITE_API_ORIGIN as string | undefined;
+interface BrowserLocation {
+  protocol: string;
+  hostname: string;
+}
+
+export function resolveBackendOriginFor(
+  explicit: string | undefined,
+  isDev: boolean,
+  location?: BrowserLocation,
+): string {
   if (explicit?.trim()) return trimTrailingSlash(explicit.trim());
 
-  // In local dev we always run FastAPI on localhost:8000.
-  // Using the page host can break when the frontend is opened via a proxy/domain.
-  if (import.meta.env.DEV || typeof window === 'undefined') return 'http://localhost:8000';
+  if (isDev || !location) return 'http://localhost:8000';
 
-  const { protocol, hostname } = window.location;
+  const { protocol, hostname } = location;
+  if (['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname)) {
+    const localHostname = hostname === '::1' ? '[::1]' : hostname;
+    return `${protocol}//${localHostname}:8000`;
+  }
+
   return `${protocol}//${hostname}`;
+}
+
+function resolveBackendOrigin(): string {
+  const explicit = import.meta.env.VITE_API_ORIGIN as string | undefined;
+  return resolveBackendOriginFor(
+    explicit,
+    import.meta.env.DEV,
+    typeof window === 'undefined' ? undefined : window.location,
+  );
 }
 
 const explicitApiBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
 const API_BASE = explicitApiBase?.trim()
   ? trimTrailingSlash(explicitApiBase.trim())
   : `${resolveBackendOrigin()}/api`;
+const apiToken = (import.meta.env.VITE_MERIDIAN_API_TOKEN as string | undefined)?.trim();
+
+function apiHeaders(json = false): HeadersInit {
+  return {
+    ...(json ? { 'Content-Type': 'application/json' } : {}),
+    ...(apiToken ? { Authorization: `Bearer ${apiToken}` } : {}),
+  };
+}
 
 const HEALTH_URL_CANDIDATES = [
   `${resolveBackendOrigin()}/health`,
@@ -75,9 +103,7 @@ export async function fetchProduct(productId: string): Promise<Product> {
 export async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
   const response = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: apiHeaders(true),
     body: JSON.stringify(request),
   });
   
@@ -92,7 +118,9 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
  * Fetch long-term memory profile from Aurora (Phase 4)
  */
 export async function fetchMemoryProfile(travelerId = 'trv_meridian_demo'): Promise<MemoryProfileResponse> {
-  const response = await fetch(`${API_BASE}/memory/${travelerId}`);
+  const response = await fetch(`${API_BASE}/memory/${travelerId}`, {
+    headers: apiHeaders(),
+  });
   if (!response.ok) {
     throw new Error(`Memory profile request failed: ${response.statusText}`);
   }
@@ -108,7 +136,7 @@ export async function updateMemoryFact(
     `${API_BASE}/memory/${encodeURIComponent(travelerId)}/facts/${encodeURIComponent(key)}`,
     {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: apiHeaders(true),
       body: JSON.stringify({ value }),
     },
   );
@@ -121,7 +149,7 @@ export async function updateMemoryFact(
 export async function deleteMemoryFact(travelerId: string, key: string): Promise<void> {
   const response = await fetch(
     `${API_BASE}/memory/${encodeURIComponent(travelerId)}/facts/${encodeURIComponent(key)}`,
-    { method: 'DELETE' },
+    { method: 'DELETE', headers: apiHeaders() },
   );
   if (!response.ok) {
     throw new Error(`Memory delete failed: ${response.statusText}`);
@@ -165,9 +193,7 @@ export async function searchProducts(query: string, phase: 1 | 2 | 3 = 3): Promi
 export async function processOrder(request: OrderRequest): Promise<OrderResponse> {
   const response = await fetch(`${API_BASE}/chat/order`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: apiHeaders(true),
     body: JSON.stringify(request),
   });
 
@@ -229,7 +255,7 @@ export async function fetchRlsProbe(
 ): Promise<RlsProbeResponse> {
   const response = await fetch(`${API_BASE}/diagnostics/rls-probe`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: apiHeaders(true),
     body: JSON.stringify({ traveler_id: travelerId }),
   });
   if (!response.ok) {

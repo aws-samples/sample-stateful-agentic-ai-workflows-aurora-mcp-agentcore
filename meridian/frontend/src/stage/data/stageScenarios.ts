@@ -1,19 +1,19 @@
 /**
- * Demo Stage scenario prompts — metadata only.
+ * Demo Stage scenario prompts - metadata only.
  *
  * Trace spans, recommendations, and assistant replies come from live
  * `POST /api/chat` responses via `traceAdapter.ts`. The three prompts
  * below mirror the Phase 4 (Production) pills in /showcase EXACTLY and
- * are ordered to tell the same Tokyo storyline arc — so the kiosk and
+ * are ordered to tell the same Tokyo storyline arc - so the kiosk and
  * the showcase narrate one consistent demo:
  *
- *   1. tokyo   — concrete Tokyo culture query that persists into Aurora
+ *   1. tokyo   - concrete Tokyo culture query that persists into Aurora
  *                via AgentCore Memory; seeds the thread the recall picks
  *                up. Matches showcase Production pill #1.
- *   2. recall  — "what did we decide last time" — depends on the prior
+ *   2. recall  - "what did we decide last time" - depends on the prior
  *                Tokyo turn being in conversation_messages, so it only
  *                lands AFTER scenario 1. Matches showcase pill #2.
- *   3. plan    — flight-disruption replan (re-search + availability): two
+ *   3. plan    - flight-disruption replan (re-search + availability): two
  *                dependent steps that need explicit, checkpointed control
  *                flow in Phase 5 LangGraph. Matches showcase pill #3.
  */
@@ -24,12 +24,12 @@ const PHASE_4_LABEL = PHASE_EYEBROW[4];
 
 // Governance values shown in the SystemProofRail. Worded to match what
 // the backend ACTUALLY does today vs. what's the documented pattern:
-//   - identity: REAL — AgentCore Identity / STS resolves the workload.
-//   - grant: REAL — traveler_identity_bindings authorizes Alex and rejects
+//   - identity: REAL - AgentCore Identity / STS resolves the workload.
+//   - grant: REAL - traveler_identity_bindings authorizes Alex and rejects
 //            an unbound traveler before the RLS GUC is set.
-//   - rls: REAL — scoped_session() switches to meridian_app and Aurora
+//   - rls: REAL - scoped_session() switches to meridian_app and Aurora
 //          filters rows using app.current_traveler_id.
-//   - audit: REAL — allow/deny and completed-turn evidence persist in Aurora.
+//   - audit: REAL - allow/deny and completed-turn evidence persist in Aurora.
 const GOVERNANCE = {
   scope: 'Identity → traveler grant → RLS',
   budgetCap: 'Aurora RLS · least-privilege role',
@@ -74,7 +74,7 @@ export const STAGE_SCENARIOS: StageScenario[] = [
     id: 'plan',
     phaseLabel: PHASE_4_LABEL,
     traceId: '',
-    prompt: 'My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.',
+    prompt: 'My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.',
     assistantReply: '',
     reasoning: '',
     traveler: { ...ALEX_TRAVELER, budgetCapUsd: 4500 },

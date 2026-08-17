@@ -34,7 +34,7 @@ export interface ShowcasePhaseOption {
 // Adjacent phases intentionally pair: SQL stretch -> MCP success,
 // MCP stretch -> Retrieval success, Retrieval stretch -> Production success.
 export const SHOWCASE_FINALE_PROMPT =
-  'My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.';
+  'My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.';
 
 export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
   // Direct filters work; comparison plus FX needs a domain tool contract.
@@ -56,7 +56,7 @@ export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
     'Recall my October Tokyo plan and use my saved preferences to recommend the next step.',
   ],
   // Tokyo proves memory and RLS; the flight disruption is the same prompt Phase 5
-  // owns — Production answers it in one turn, teeing up the checkpointed A/B.
+  // owns - Production answers it in one turn, teeing up the checkpointed A/B.
   4: [
     'Find a Tokyo culture trip for two using my saved preferences.',
     'Recall my October Tokyo plan and use my saved preferences to recommend the next step.',
@@ -79,7 +79,7 @@ const SHOWCASE_PROMPT_LABELS: Record<string, string> = {
   [SHOWCASE_EXAMPLE_PROMPTS[3][1]]: 'Tuscany trip lengths',
   [SHOWCASE_EXAMPLE_PROMPTS[3][2]]: 'Recall my Tokyo plan',
   [SHOWCASE_EXAMPLE_PROMPTS[4][0]]: 'Tokyo trip using preferences',
-  [SHOWCASE_FINALE_PROMPT]: 'Cancelled flight replan',
+  [SHOWCASE_FINALE_PROMPT]: 'Canceled flight replan',
   [SHOWCASE_EXAMPLE_PROMPTS[5][0]]: 'Amalfi trip lengths',
 };
 
@@ -112,7 +112,7 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     capability: 'Query',
     takeaway: 'Ground the assistant in live Aurora rows before adding agent abstractions.',
     proofPoint: 'SQL executed',
-    // Phase 1 is the base rung — nothing to diff against.
+    // Phase 1 is the base rung - nothing to diff against.
     tech: 'RDS Data API',
   },
   {
@@ -122,7 +122,7 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     capability: 'Tool',
     takeaway: 'Expose Aurora through governed tool contracts that agents can call safely.',
     proofPoint: 'MCP tool invoked',
-    adds: 'Same Aurora — now reached through versioned, IAM-authed MCP tools instead of hand-written SQL.',
+    adds: 'Same Aurora - now reached through versioned, IAM-authed MCP tools instead of hand-written SQL.',
     tech: 'postgres-mcp + meridian-concierge',
   },
   {
