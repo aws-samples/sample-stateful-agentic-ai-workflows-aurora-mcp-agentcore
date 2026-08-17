@@ -464,8 +464,12 @@
     font-size: 0;
   }
 
-  .mds-demo-sequence.has-three button span {
+  .mds-demo-sequence.has-three .mds-demo-sequence-index {
     margin: 0;
+  }
+
+  .mds-demo-sequence.has-three .mds-demo-sequence-copy {
+    display: none;
   }
 
   .mds-discovery-heading {

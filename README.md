@@ -24,9 +24,9 @@ security, audit trails, and checkpoints keep every turn governed and resilient.
 > PostgresSaver externalizes workflow execution state into Aurora through a
 > bounded PostgreSQL connection pool.
 
-![Meridian Discovery workspace showing personalized Tuscany and Tokyo recommendations for Alex Morgan](meridian/docs/meridian-showcase.png)
+![Meridian Discovery experience showing personalized Tuscany and Tokyo recommendations with the Experience, Architecture, and Proof journey](meridian/docs/meridian-showcase.png)
 
-<p align="center"><sub>Discovery opens with image-led recommendations personalized from Alex Morgan's Aurora-backed traveler context.</sub></p>
+<p align="center"><sub>Meridian moves from customer experience, to architecture, to durable proof, starting with Aurora-backed personalized discovery.</sub></p>
 
 **[Quick start](#quick-start)** · **[Five-phase architecture](#what-it-demonstrates)** · **[Stateful architecture](meridian/docs/STATEFUL_ARCHITECTURE.md)** · **[Validation](#validation)** · **[Demo script](meridian/DEMO_SCRIPT.md)** · **[Presenter guide](meridian/docs/PRESENTER_GUIDE.md)**
 

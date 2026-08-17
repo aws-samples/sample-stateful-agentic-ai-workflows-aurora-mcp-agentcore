@@ -103,7 +103,7 @@ describe('Experience presentation polish', () => {
       screen.getByRole('region', { name: 'Meridian discovery' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: '1 Discovery' }),
+      screen.getByRole('button', { name: '1 Discovery, Experience' }),
     ).toHaveAttribute('aria-current', 'step');
 
     fireEvent.click(
@@ -119,7 +119,7 @@ describe('Experience presentation polish', () => {
       'is-ladder',
     );
     expect(
-      screen.getByRole('button', { name: '2 Capability ladder' }),
+      screen.getByRole('button', { name: '2 Capability ladder, Architecture' }),
     ).toHaveAttribute('aria-current', 'step');
   });
 
@@ -147,7 +147,7 @@ describe('Experience presentation polish', () => {
     expect(screen.getByRole('button', { name: 'Trips' })).toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole('button', { name: '3 Stateful Recovery finale' }),
+      screen.getByRole('button', { name: '3 Stateful recovery, Proof' }),
     );
     expect(app).toHaveClass('is-sidebar-collapsed');
 
@@ -167,7 +167,7 @@ describe('Experience presentation polish', () => {
     );
 
     fireEvent.click(
-      screen.getByRole('button', { name: '3 Stateful Recovery finale' }),
+      screen.getByRole('button', { name: '3 Stateful recovery, Proof' }),
     );
 
     const dock = container.querySelector('.mds-desktop-dock');

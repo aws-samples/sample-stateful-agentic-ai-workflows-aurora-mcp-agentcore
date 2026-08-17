@@ -247,30 +247,42 @@ export function DesktopMeridianApp({
               type="button"
               className={isDiscovery ? 'is-active' : ''}
               aria-current={isDiscovery ? 'step' : undefined}
+              aria-label="1 Discovery, Experience"
               onClick={openDiscovery}
             >
-              <span>1</span>
-              Discovery
+              <span className="mds-demo-sequence-index" aria-hidden="true">1</span>
+              <span className="mds-demo-sequence-copy" aria-hidden="true">
+                <strong>Discovery</strong>
+                <small>Experience</small>
+              </span>
             </button>
             <i aria-hidden="true" />
             <button
               type="button"
               className={isLadder ? 'is-active' : ''}
               aria-current={isLadder ? 'step' : undefined}
+              aria-label="2 Capability ladder, Architecture"
               onClick={openLadder}
             >
-              <span>2</span>
-              Capability ladder
+              <span className="mds-demo-sequence-index" aria-hidden="true">2</span>
+              <span className="mds-demo-sequence-copy" aria-hidden="true">
+                <strong>Capability ladder</strong>
+                <small>Architecture</small>
+              </span>
             </button>
             <i aria-hidden="true" />
             <button
               type="button"
               className={isFinale ? 'is-active' : ''}
               aria-current={isFinale ? 'step' : undefined}
+              aria-label="3 Stateful recovery, Proof"
               onClick={openFinale}
             >
-              <span>3</span>
-              Stateful Recovery finale
+              <span className="mds-demo-sequence-index" aria-hidden="true">3</span>
+              <span className="mds-demo-sequence-copy" aria-hidden="true">
+                <strong>Stateful recovery</strong>
+                <small>Proof</small>
+              </span>
             </button>
           </nav>
 

@@ -50,10 +50,10 @@
 }
 
 .mds-demo-sequence button {
-  min-height: 32px;
+  min-height: 38px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   padding: 0;
   border: 0;
   color: var(--mds-muted);
@@ -62,9 +62,10 @@
   font-weight: 700;
 }
 
-.mds-demo-sequence button span {
+.mds-demo-sequence-index {
   width: 23px;
   height: 23px;
+  flex: 0 0 23px;
   display: grid;
   place-items: center;
   border: 1px solid var(--mds-line-strong);
@@ -74,15 +75,47 @@
   font-size: calc(11px * var(--mds-fs));
 }
 
+.mds-demo-sequence-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  text-align: left;
+}
+
+.mds-demo-sequence-copy strong,
+.mds-demo-sequence-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mds-demo-sequence-copy strong {
+  color: inherit;
+  font-size: inherit;
+  font-weight: 720;
+  line-height: 1.1;
+}
+
+.mds-demo-sequence-copy small {
+  color: var(--mds-dim);
+  font-size: calc(10px * var(--mds-fs));
+  font-weight: 600;
+  line-height: 1.1;
+}
+
 .mds-demo-sequence button.is-active {
   color: var(--mds-on-surface);
 }
 
-.mds-demo-sequence button.is-active span {
+.mds-demo-sequence button.is-active .mds-demo-sequence-index {
   border-color: var(--mds-blue);
   color: #052329;
   background: var(--mds-blue);
   box-shadow: 0 0 14px var(--mds-blue-line);
+}
+
+.mds-demo-sequence button.is-active .mds-demo-sequence-copy small {
+  color: var(--mds-blue);
 }
 
 .mds-demo-sequence > i {
