@@ -272,7 +272,10 @@ def test_workflow_can_pause_and_resume_same_thread(
     assert "Workflow resumed from checkpoint" in titles
 
 
-def test_canonical_recovery_finale_pauses_without_hidden_env_toggle() -> None:
+@pytest.mark.parametrize("cancellation_spelling", ["canceled", "cancelled"])
+def test_canonical_recovery_finale_pauses_without_hidden_env_toggle(
+    cancellation_spelling: str,
+) -> None:
     async def fake_search(q: str, limit: int = 5):
         return ([{"product_id": "tokyo-1", "name": "Tokyo option"}], [])
 
@@ -285,8 +288,8 @@ def test_canonical_recovery_finale_pauses_without_hidden_env_toggle() -> None:
     )
     result = asyncio.run(
         workflow.run(
-            "My JFK-to-Tokyo flight was cancelled. Rework the trip, then "
-            "check duration availability for the best three options.",
+            f"My JFK-to-Tokyo flight was {cancellation_spelling}. Rework the "
+            "trip, then check duration availability for the best three options.",
             traveler_id="t1",
             conversation_id="c-canonical-recovery",
         )

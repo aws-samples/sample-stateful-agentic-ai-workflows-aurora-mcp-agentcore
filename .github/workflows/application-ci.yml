@@ -57,6 +57,10 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: meridian/meridian_agentcore/agentcore/cdk/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@v5
       - run: npm ci
       - run: npm run build
       - run: npm test -- --runInBand

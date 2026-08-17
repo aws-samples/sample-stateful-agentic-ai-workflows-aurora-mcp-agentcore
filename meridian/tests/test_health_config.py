@@ -1,9 +1,10 @@
 """Health endpoint exposes Bedrock / embedding config for the UI."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.config import bedrock_model_label
-from backend.main import app
+from backend.main import app, parse_cors_origins
 
 
 def test_bedrock_model_label_opus():
@@ -32,3 +33,15 @@ def test_health_includes_model_fields():
     assert "bedrock_model_label" in body
     assert "embedding_model_id" in body
     assert body["bedrock_model_label"]
+
+
+def test_cors_origins_accepts_explicit_allowlist():
+    assert parse_cors_origins(" https://app.example,https://preview.example ") == [
+        "https://app.example",
+        "https://preview.example",
+    ]
+
+
+def test_cors_origins_rejects_wildcard():
+    with pytest.raises(ValueError, match="wildcard CORS"):
+        parse_cors_origins("https://app.example,*")

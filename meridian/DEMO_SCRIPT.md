@@ -99,11 +99,11 @@ python scripts/seed_data.py
 
 ```bash
 npm install -g @aws/agentcore
-cd meridian_agentcore/agentcore
-agentcore add memory --name meridian_session --strategies SEMANTIC --expiry 30
-agentcore add gateway --name meridian-aurora --authorizer-type AWS_IAM
+cd meridian_agentcore
+agentcore validate --json
+agentcore package --runtime MeridianConcierge
 agentcore deploy -y
-cd ../.. && python scripts/sync_agentcore_env.py --write
+cd .. && python scripts/sync_agentcore_env.py --write
 ```
 
 Without deployed AgentCore Runtime/Gateway/Memory, Phase 4 surfaces an explicit

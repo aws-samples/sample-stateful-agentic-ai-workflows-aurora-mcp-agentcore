@@ -35,6 +35,7 @@ pip install -r requirements.txt
 cp .env.example .env
 # Fill in AURORA_CLUSTER_ARN, AURORA_SECRET_ARN, AURORA_DATABASE, and AWS region.
 
+# Fresh or disposable database only: recreates the schema.
 python scripts/init_aurora_schema.py
 python scripts/seed_data.py  # also binds the current AWS workload to Alex
 
@@ -48,6 +49,13 @@ curl http://localhost:8000/health
 ```
 
 Expected result: `{"status":"healthy", ...}`.
+
+For an existing database, do not run `init_aurora_schema.py`: it rebuilds the
+base schema. Apply the tracked, non-destructive upgrades instead:
+
+```bash
+python scripts/apply_migrations.py
+```
 
 `requirements.in` is the human-maintained dependency specification.
 `requirements.txt` is the hash-pinned lock generated with:
@@ -118,8 +126,8 @@ Each phase has two safe wins and one prompt that naturally motivates the next ph
 | SQL | `Show me city trips under $2,000 per traveler.`; `Show me beach trips under $2,500 per traveler.` | `Compare three trip types side by side and convert their prices to euros.` → needs custom MCP tools |
 | MCP | `Compare three trip types side by side and convert their prices to euros.`; `What is the off-season price range for Tokyo trips in November?` | `I want a quiet, romantic escape in wine country, ideally with a villa.` → needs intent retrieval |
 | Retrieval | `I want a quiet, romantic escape in wine country, ideally with a villa.`; `Which trip lengths are still available for Tuscany Wine & Wellness?` | `Recall my October Tokyo plan and use my saved preferences to recommend the next step.` → needs durable memory |
-| Production | `Find a Tokyo culture trip for two using my saved preferences.`; `Recall my October Tokyo plan and use my saved preferences to recommend the next step.` | `My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.` → needs explicit workflow |
-| Workflow | `Which trip lengths are still available for Amalfi Coast Villa Week?`; `Recall my October Tokyo plan and use my saved preferences to recommend the next step.`; `My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.` | Finale: explicit search → availability checkpoints |
+| Production | `Find a Tokyo culture trip for two using my saved preferences.`; `Recall my October Tokyo plan and use my saved preferences to recommend the next step.` | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` → needs explicit workflow |
+| Workflow | `Which trip lengths are still available for Amalfi Coast Villa Week?`; `Recall my October Tokyo plan and use my saved preferences to recommend the next step.`; `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` | Finale: explicit search → availability checkpoints |
 
 ## Architecture
 

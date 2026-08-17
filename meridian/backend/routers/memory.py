@@ -8,7 +8,7 @@ AWS docs:
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.authorization import TravelerAuthorizationError
@@ -37,7 +37,7 @@ class MemoryProfileResponse(BaseModel):
 
 
 class MemoryFactUpdate(BaseModel):
-    value: str
+    value: str = Field(min_length=1, max_length=1000)
 
 
 @router.get("/{traveler_id}", response_model=MemoryProfileResponse)
@@ -86,10 +86,11 @@ async def update_memory_fact(
     principal: HttpPrincipal = Depends(require_http_principal),
 ) -> MemoryFactResponse:
     traveler_id = authorize_traveler(principal, traveler_id)
+    preference_key = preference_key.strip()
     value = update.value.strip()
-    if not value:
-        raise HTTPException(status_code=422, detail="Preference value cannot be empty")
-    if len(preference_key) > 100 or len(value) > 1000:
+    if not preference_key:
+        raise HTTPException(status_code=422, detail="Preference key cannot be empty")
+    if len(preference_key) > 100:
         raise HTTPException(status_code=422, detail="Preference is too long")
 
     store = get_memory_store()
@@ -122,6 +123,9 @@ async def delete_memory_fact(
     principal: HttpPrincipal = Depends(require_http_principal),
 ) -> dict:
     traveler_id = authorize_traveler(principal, traveler_id)
+    preference_key = preference_key.strip()
+    if not preference_key or len(preference_key) > 100:
+        raise HTTPException(status_code=422, detail="Preference key is invalid")
     store = get_memory_store()
     db = get_rds_data_client()
     try:

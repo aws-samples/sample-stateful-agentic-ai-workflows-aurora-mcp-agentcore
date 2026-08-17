@@ -350,7 +350,17 @@ class RDSDataClient:
             "true",
             "yes",
         }
+        if (
+            allow_unscoped
+            and os.getenv("ENVIRONMENT", "development").strip().lower()
+            != "development"
+        ):
+            raise RuntimeError(
+                "RLS_ALLOW_UNSCOPED_FALLBACK is permitted only when "
+                "ENVIRONMENT=development."
+            )
         tx = self.begin_transaction()
+        transaction_finished = False
         try:
             if traveler_id is not None:
                 if authorization is None:
@@ -369,6 +379,7 @@ class RDSDataClient:
                     # would erase the audit row together with the rejected
                     # request, so commit this audit-only transaction first.
                     self.commit_transaction(tx)
+                    transaction_finished = True
                     raise TravelerAuthorizationError(decision)
 
             # Force row_security ON for this transaction (belt-and-suspenders;
@@ -434,8 +445,10 @@ class RDSDataClient:
                         raise RuntimeError(msg) from exc
             yield tx
             self.commit_transaction(tx)
+            transaction_finished = True
         except Exception:
-            self.rollback_transaction(tx)
+            if not transaction_finished:
+                self.rollback_transaction(tx)
             raise
 
 

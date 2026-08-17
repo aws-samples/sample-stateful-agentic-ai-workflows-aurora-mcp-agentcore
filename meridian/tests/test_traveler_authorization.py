@@ -135,6 +135,7 @@ def test_scoped_session_denies_unbound_traveler_before_setting_rls() -> None:
     with pytest.raises(TravelerAuthorizationError):
         asyncio.run(run())
     assert db.commits == ["tx-authz"]  # preserve the DENY audit record
+    assert db.rollbacks == []
     assert not any("current_traveler_id" in query for query in db.executed)
 
 
@@ -155,3 +156,26 @@ def test_scoped_session_authorizes_then_sets_rls_scope() -> None:
     assert any("app.authorization_subject" in query for query in db.executed)
     assert any("SET LOCAL ROLE meridian_app" in query for query in db.executed)
     assert db.commits == ["tx-authz"]
+
+
+def test_scoped_session_rejects_unscoped_fallback_outside_development(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = _ScopedDb(allowed=True)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("RLS_ALLOW_UNSCOPED_FALLBACK", "true")
+
+    async def run() -> None:
+        async with db.scoped_session(
+            traveler_id="trv_meridian_demo",
+            agent_type="memory_agent",
+            authorization=AUTHORIZATION,
+        ):
+            pass
+
+    with pytest.raises(RuntimeError, match="ENVIRONMENT=development"):
+        asyncio.run(run())
+
+    assert db.executed == []
+    assert db.commits == []
+    assert db.rollbacks == []

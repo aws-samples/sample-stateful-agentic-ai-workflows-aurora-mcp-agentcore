@@ -138,4 +138,4 @@ When modifying JSON config files:
 | `agentcore eval` | Run evaluations against an agent |
 | `agentcore package` | Package agent artifacts |
 | `agentcore validate` | Validate configuration |
-| `agentcore pause` / `resume` | Pause or resume a deployed agent |
+| `agentcore pause` / `resume` | Pause or resume an online evaluation or A/B test |

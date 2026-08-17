@@ -41,7 +41,6 @@ from __future__ import annotations
 import logging
 import os
 import uuid
-import json
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -96,26 +95,12 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
-def _secret_json(secret_arn: str) -> Dict[str, Any]:
-    """Read the existing Aurora secret so Phase 5 can build a Postgres DSN.
-
-    The repo's primary data path uses RDS Data API, so .env intentionally
-    stores a Secrets Manager ARN instead of a plaintext database password.
-    PostgresSaver needs a direct PostgreSQL DSN; this adapter derives it from
-    the same Aurora secret rather than requiring a second presenter-only env var.
-    """
-    try:
-        import boto3
-
-        region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-        client = boto3.client("secretsmanager", region_name=region)
-        response = client.get_secret_value(SecretId=secret_arn)
-        raw = response.get("SecretString") or "{}"
-        parsed = json.loads(raw)
-        return parsed if isinstance(parsed, dict) else {}
-    except Exception as exc:
-        logger.warning("Unable to read Aurora secret for PostgresSaver DSN: %s", exc)
-        return {}
+def _auto_checkpoint_dsn_enabled() -> bool:
+    """Allow derived DSNs only when explicitly enabled outside development."""
+    configured = os.getenv("LANGGRAPH_AUTO_CHECKPOINT_DSN")
+    if configured is not None:
+        return _truthy_env("LANGGRAPH_AUTO_CHECKPOINT_DSN")
+    return os.getenv("ENVIRONMENT", "development").strip().lower() == "development"
 
 
 def _resolve_checkpoint_dsn() -> Optional[str]:
@@ -123,49 +108,40 @@ def _resolve_checkpoint_dsn() -> Optional[str]:
 
     Priority:
       1. Explicit LANGGRAPH_CHECKPOINT_DSN.
-      2. Auto-built DSN from Aurora env + Secrets Manager secret.
+      2. Auto-built DSN from environment-injected checkpoint credentials.
 
-    Set LANGGRAPH_AUTO_CHECKPOINT_DSN=false to disable the auto-build fallback.
+    The application never reads a Secrets Manager secret directly. Inject
+    LANGGRAPH_CHECKPOINT_DSN, or inject the discrete credentials outside the
+    process before startup. Auto-building is development-only unless
+    LANGGRAPH_AUTO_CHECKPOINT_DSN is explicitly enabled.
     """
     explicit = os.getenv("LANGGRAPH_CHECKPOINT_DSN")
     if explicit:
         return explicit
-    if not _truthy_env("LANGGRAPH_AUTO_CHECKPOINT_DSN"):
+    if not _auto_checkpoint_dsn_enabled():
         return None
-
-    secret: Dict[str, Any] = {}
-    secret_arn = os.getenv("LANGGRAPH_CHECKPOINT_SECRET_ARN") or os.getenv(
-        "AURORA_SECRET_ARN"
-    )
-    if secret_arn:
-        secret = _secret_json(secret_arn)
 
     username = (
         os.getenv("LANGGRAPH_CHECKPOINT_USERNAME")
         or os.getenv("AURORA_USERNAME")
-        or str(secret.get("username") or "")
     ).strip()
     password = (
         os.getenv("LANGGRAPH_CHECKPOINT_PASSWORD")
         or os.getenv("AURORA_PASSWORD")
-        or str(secret.get("password") or "")
     ).strip()
     host = (
         os.getenv("LANGGRAPH_CHECKPOINT_HOST")
         or os.getenv("AURORA_HOST")
         or os.getenv("AURORA_CLUSTER_ENDPOINT")
-        or str(secret.get("host") or "")
     ).strip()
     port = str(
         os.getenv("LANGGRAPH_CHECKPOINT_PORT")
         or os.getenv("AURORA_PORT")
-        or secret.get("port")
         or "5432"
     ).strip()
     database = (
         os.getenv("LANGGRAPH_CHECKPOINT_DATABASE")
         or os.getenv("AURORA_DATABASE")
-        or str(secret.get("dbname") or secret.get("database") or "")
     ).strip()
 
     if not all((username, password, host, port, database)):
@@ -323,24 +299,20 @@ def checkpoint_backend_status() -> Dict[str, Any]:
     """Return non-secret checkpoint configuration for health and diagnostics."""
     backend = _checkpoint_backend
     explicitly_configured = bool(os.getenv("LANGGRAPH_CHECKPOINT_DSN"))
-    auto_configured = _truthy_env("LANGGRAPH_AUTO_CHECKPOINT_DSN") and bool(
+    auto_configured = _auto_checkpoint_dsn_enabled() and bool(
         (
             os.getenv("LANGGRAPH_CHECKPOINT_HOST")
             or os.getenv("AURORA_HOST")
             or os.getenv("AURORA_CLUSTER_ENDPOINT")
         )
         and (
-            os.getenv("LANGGRAPH_CHECKPOINT_SECRET_ARN")
-            or os.getenv("AURORA_SECRET_ARN")
-            or (
-                (
-                    os.getenv("LANGGRAPH_CHECKPOINT_USERNAME")
-                    or os.getenv("AURORA_USERNAME")
-                )
-                and (
-                    os.getenv("LANGGRAPH_CHECKPOINT_PASSWORD")
-                    or os.getenv("AURORA_PASSWORD")
-                )
+            (
+                os.getenv("LANGGRAPH_CHECKPOINT_USERNAME")
+                or os.getenv("AURORA_USERNAME")
+            )
+            and (
+                os.getenv("LANGGRAPH_CHECKPOINT_PASSWORD")
+                or os.getenv("AURORA_PASSWORD")
             )
         )
     )
@@ -644,7 +616,7 @@ class OrchestrationAgent:
         # Other Phase 5 branches continue in one request.
         normalized = query.lower()
         is_recovery_finale = (
-            "cancelled" in normalized
+            ("canceled" in normalized or "cancelled" in normalized)
             and "flight" in normalized
             and "then check" in normalized
             and "best three" in normalized

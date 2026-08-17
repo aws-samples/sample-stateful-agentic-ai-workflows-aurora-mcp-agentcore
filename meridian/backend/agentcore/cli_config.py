@@ -37,10 +37,11 @@ from typing import Any, Dict, Iterable, Optional
 logger = logging.getLogger(__name__)
 
 # CLI project root (single source of truth):
-#   meridian/meridian_agentcore/agentcore
+#   meridian/meridian_agentcore
+# The declarative config and deployment state live below agentcore/.
 # Override with AGENTCORE_PROJECT_DIR if needed.
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_PREFERRED_PROJECT_DIR = _PROJECT_ROOT / "meridian_agentcore" / "agentcore"
+_PREFERRED_PROJECT_DIR = _PROJECT_ROOT / "meridian_agentcore"
 
 
 @dataclass(frozen=True)
@@ -76,12 +77,22 @@ class AgentCoreDeployedConfig:
 def agentcore_project_dir() -> Path:
     raw = os.getenv("AGENTCORE_PROJECT_DIR")
     if raw:
-        return Path(raw).expanduser().resolve()
+        candidate = Path(raw).expanduser().resolve()
+        # CLI 0.27.0 expects the directory containing agentcore/, not the
+        # config directory itself. Preserve older config-directory overrides.
+        if candidate.name == "agentcore" or (candidate / "agentcore.json").is_file():
+            return candidate.parent
+        return candidate
     return _PREFERRED_PROJECT_DIR
 
 
+def agentcore_config_dir() -> Path:
+    """Return the declarative config directory beneath the CLI project root."""
+    return agentcore_project_dir() / "agentcore"
+
+
 def deployed_state_path() -> Path:
-    return agentcore_project_dir() / ".cli" / "deployed-state.json"
+    return agentcore_config_dir() / ".cli" / "deployed-state.json"
 
 
 def _first_str(*values: Any) -> Optional[str]:
@@ -186,14 +197,29 @@ def _parse_status_json(data: Dict[str, Any]) -> Dict[str, Optional[str]]:
             rtype = (resource.get("resourceType") or resource.get("type") or "").lower()
             merged = _parse_deployed_state({"resources": [resource]})
             if rtype in ("agent", "runtime"):
-                found["runtime_arn"] = found["runtime_arn"] or merged["runtime_arn"]
-                found["runtime_name"] = found["runtime_name"] or merged["runtime_name"]
+                found["runtime_arn"] = found["runtime_arn"] or _first_str(
+                    merged["runtime_arn"],
+                    resource.get("identifier"),
+                )
+                found["runtime_name"] = found["runtime_name"] or _first_str(
+                    merged["runtime_name"],
+                    resource.get("runtimeName"),
+                    resource.get("name"),
+                )
             elif rtype == "gateway":
                 found["gateway_url"] = found["gateway_url"] or merged["gateway_url"]
-                found["gateway_name"] = found["gateway_name"] or merged["gateway_name"]
+                found["gateway_name"] = found["gateway_name"] or _first_str(
+                    merged["gateway_name"],
+                    resource.get("gatewayName"),
+                    resource.get("name"),
+                )
             elif rtype == "memory":
                 found["memory_id"] = found["memory_id"] or merged["memory_id"]
-                found["memory_name"] = found["memory_name"] or merged["memory_name"]
+                found["memory_name"] = found["memory_name"] or _first_str(
+                    merged["memory_name"],
+                    resource.get("memoryName"),
+                    resource.get("name"),
+                )
             elif rtype in ("identity", "credential"):
                 found["workload_identity"] = found["workload_identity"] or merged["workload_identity"]
                 found["resource_provider"] = found["resource_provider"] or merged["resource_provider"]

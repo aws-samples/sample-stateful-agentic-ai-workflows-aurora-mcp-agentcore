@@ -301,6 +301,9 @@ $$;
 REVOKE ALL ON FUNCTION create_courtesy_hold(
     TEXT, TEXT, TEXT, TEXT, INTEGER, NUMERIC, NUMERIC, TIMESTAMPTZ
 ) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION create_courtesy_hold(
+    TEXT, TEXT, TEXT, TEXT, INTEGER, NUMERIC, NUMERIC, TIMESTAMPTZ
+) TO meridian_app;
 -- ----------------------------------------------------------------------------
 -- C. Lightweight audit log written by the agent runtime
 -- ----------------------------------------------------------------------------

@@ -195,6 +195,7 @@ if [ "$SUBNET_COUNT" -lt 2 ]; then
 fi
 
 log_success "Using subnets: $SUBNET_IDS"
+IFS=',' read -r -a SUBNET_ID_ARRAY <<< "$SUBNET_IDS"
 
 # Step 3: Create DB subnet group
 log_info "Creating DB subnet group..."
@@ -208,7 +209,7 @@ else
     aws rds create-db-subnet-group \
         --db-subnet-group-name "$SUBNET_GROUP_NAME" \
         --db-subnet-group-description "Subnet group for Meridian Aurora cluster" \
-        --subnet-ids $(echo $SUBNET_IDS | tr ',' ' ') \
+        --subnet-ids "${SUBNET_ID_ARRAY[@]}" \
         --region "$REGION" > /dev/null
     log_success "Subnet group created: $SUBNET_GROUP_NAME"
 fi

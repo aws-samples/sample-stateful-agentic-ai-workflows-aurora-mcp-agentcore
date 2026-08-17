@@ -103,15 +103,25 @@ app = FastAPI(
     }
 )
 
+def parse_cors_origins(value: str) -> list[str]:
+    """Parse an explicit CORS allow-list and reject unsafe wildcard values."""
+    origins = [origin.strip() for origin in value.split(",") if origin.strip()]
+    if "*" in origins:
+        raise ValueError(
+            "CORS_ORIGINS must name explicit origins; wildcard CORS is not supported."
+        )
+    return origins
+
+
 # Configure CORS for frontend communication. The default accepts only local
 # browser origins on arbitrary development ports. Hosted deployments must set
 # an explicit allow-list rather than silently inheriting wildcard CORS.
-custom_origins = os.getenv("CORS_ORIGINS", "").strip()
+custom_origins = parse_cors_origins(os.getenv("CORS_ORIGINS", ""))
 
 if custom_origins:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[origin.strip() for origin in custom_origins.split(",") if origin.strip()],
+        allow_origins=custom_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

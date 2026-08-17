@@ -48,25 +48,34 @@ function resolveBackendOrigin(): string {
   );
 }
 
+const BACKEND_ORIGIN = resolveBackendOrigin();
 const explicitApiBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
 const API_BASE = explicitApiBase?.trim()
   ? trimTrailingSlash(explicitApiBase.trim())
-  : `${resolveBackendOrigin()}/api`;
-const apiToken = (import.meta.env.VITE_MERIDIAN_API_TOKEN as string | undefined)?.trim();
+  : `${BACKEND_ORIGIN}/api`;
+
+export function healthOriginFor(apiBase: string, fallbackOrigin: string): string {
+  try {
+    return new URL(apiBase, fallbackOrigin).origin;
+  } catch {
+    return fallbackOrigin;
+  }
+}
 
 function apiHeaders(json = false): HeadersInit {
   return {
     ...(json ? { 'Content-Type': 'application/json' } : {}),
-    ...(apiToken ? { Authorization: `Bearer ${apiToken}` } : {}),
   };
 }
 
-const HEALTH_URL_CANDIDATES = [
-  `${resolveBackendOrigin()}/health`,
-  `${resolveBackendOrigin()}/api/health`,
-  'http://127.0.0.1:8000/health',
-  'http://127.0.0.1:8000/api/health',
-];
+export function healthUrlsFor(origin: string): string[] {
+  const normalized = trimTrailingSlash(origin);
+  return [`${normalized}/health`, `${normalized}/api/health`];
+}
+
+const HEALTH_URL_CANDIDATES = healthUrlsFor(
+  healthOriginFor(API_BASE, BACKEND_ORIGIN),
+);
 
 /**
  * Fetch all products from the backend

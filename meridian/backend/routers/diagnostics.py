@@ -28,7 +28,7 @@ AWS docs:
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.authorization import TravelerAuthorizationError
@@ -56,8 +56,8 @@ NEGATIVE_CONTROL_TRAVELER_ID = "trv_demo_decoy"
 
 
 class RlsProbeRequest(BaseModel):
-    traveler_id: Optional[str] = None
-    tables: Optional[List[str]] = None
+    traveler_id: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    tables: Optional[List[str]] = Field(default=None, max_length=len(ALLOWED_TABLES))
 
 
 class RlsTableResult(BaseModel):
@@ -105,7 +105,9 @@ async def rls_probe(
     )
     requested = request.tables or list(DEFAULT_TABLES)
     # Drop anything not on the allow-list (injection guard).
-    tables = [t for t in requested if t in ALLOWED_TABLES] or list(DEFAULT_TABLES)
+    tables = list(dict.fromkeys(t for t in requested if t in ALLOWED_TABLES))
+    if not tables:
+        tables = list(DEFAULT_TABLES)
 
     db = get_rds_data_client()
     authorization = get_agentcore_identity().authorization_context()

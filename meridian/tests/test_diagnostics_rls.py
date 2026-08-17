@@ -10,7 +10,9 @@ from backend.routers.diagnostics import ALLOWED_TABLES, DEFAULT_TABLES
 
 def _filter_tables(requested):
     """Mirror the filter the endpoint applies to request.tables."""
-    return [t for t in requested if t in ALLOWED_TABLES] or list(DEFAULT_TABLES)
+    return list(dict.fromkeys(t for t in requested if t in ALLOWED_TABLES)) or list(
+        DEFAULT_TABLES
+    )
 
 
 def test_unknown_table_is_dropped():
@@ -30,6 +32,10 @@ def test_all_invalid_falls_back_to_defaults():
 
 def test_valid_subset_is_preserved():
     assert _filter_tables(["conversations"]) == ["conversations"]
+
+
+def test_duplicate_tables_are_probed_once():
+    assert _filter_tables(["conversations", "conversations"]) == ["conversations"]
 
 
 def test_allowlist_only_contains_rls_tables():

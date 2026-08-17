@@ -8,8 +8,8 @@ the stable AWS IAM principal id from STS is the authorization subject.
 
 Configuration (preferred — @aws/agentcore CLI):
 
-    cd meridian/meridian_agentcore/agentcore
-    agentcore add identity --name meridian-workload   # when available in your CLI version
+    cd meridian/meridian_agentcore
+    agentcore validate --json
     agentcore deploy -y
 
 Or override manually after deploy:

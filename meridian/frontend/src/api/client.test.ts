@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveBackendOriginFor } from './client';
+import {
+  healthOriginFor,
+  healthUrlsFor,
+  resolveBackendOriginFor,
+} from './client';
 
 describe('resolveBackendOriginFor', () => {
   it('uses and normalizes an explicit backend origin', () => {
@@ -32,5 +36,37 @@ describe('resolveBackendOriginFor', () => {
         hostname: 'meridian.example',
       }),
     ).toBe('https://meridian.example');
+  });
+});
+
+describe('healthUrlsFor', () => {
+  it('probes health only on the resolved backend origin', () => {
+    expect(healthUrlsFor('https://api.meridian.example/')).toEqual([
+      'https://api.meridian.example/health',
+      'https://api.meridian.example/api/health',
+    ]);
+  });
+
+  it('does not add a loopback fallback for deployed origins', () => {
+    expect(healthUrlsFor('https://api.meridian.example')).not.toContain(
+      'http://127.0.0.1:8000/health',
+    );
+  });
+});
+
+describe('healthOriginFor', () => {
+  it('uses the configured API base when it is hosted separately', () => {
+    expect(
+      healthOriginFor(
+        'https://api.meridian.example/api',
+        'https://showcase.meridian.example',
+      ),
+    ).toBe('https://api.meridian.example');
+  });
+
+  it('keeps the resolved backend origin for a relative API base', () => {
+    expect(
+      healthOriginFor('/api', 'https://showcase.meridian.example'),
+    ).toBe('https://showcase.meridian.example');
   });
 });

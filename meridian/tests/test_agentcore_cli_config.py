@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -76,6 +77,79 @@ def test_resolve_from_deployed_state_file(tmp_path: Path, monkeypatch):
     cfg = cli_config.resolve_agentcore_config()
     assert cfg.runtime_arn == "arn:runtime:1"
     assert "deployed-state.json" in cfg.sources
+
+
+def test_legacy_config_directory_override_uses_cli_project_root(tmp_path: Path, monkeypatch):
+    project_dir = tmp_path / "project"
+    config_dir = project_dir / "agentcore"
+    config_dir.mkdir(parents=True)
+    (config_dir / "agentcore.json").write_text("{}", encoding="utf-8")
+    calls = []
+
+    def fake_run(*args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout='{"resources": []}', stderr="")
+
+    monkeypatch.setenv("AGENTCORE_PROJECT_DIR", str(config_dir))
+    monkeypatch.delenv("AGENTCORE_SKIP_CLI_SYNC", raising=False)
+    monkeypatch.setattr(cli_config.subprocess, "run", fake_run)
+
+    cfg = cli_config.resolve_agentcore_config()
+
+    assert cli_config.agentcore_project_dir() == project_dir
+    assert cli_config.deployed_state_path() == config_dir / ".cli" / "deployed-state.json"
+    assert cfg.cli_project_dir == str(project_dir)
+    assert calls[0][1]["cwd"] == str(project_dir)
+
+
+def test_parse_status_json_current_cli_shape():
+    status = {
+        "resources": [
+            {
+                "resourceType": "agent",
+                "name": "MeridianConcierge",
+                "deploymentState": "deployed",
+                "identifier": "arn:aws:bedrock-agentcore:us-east-1:123:runtime/meridian",
+            },
+            {
+                "resourceType": "memory",
+                "name": "meridian_session",
+                "deploymentState": "deployed",
+            },
+            {
+                "resourceType": "gateway",
+                "name": "meridian-aurora",
+                "deploymentState": "deployed",
+            },
+        ],
+        "deployedState": {
+            "targets": {
+                "default": {
+                    "resources": {
+                        "memories": {
+                            "meridian_session": {"memoryId": "mem-abc"},
+                        },
+                        "mcp": {
+                            "gateways": {
+                                "meridian-aurora": {
+                                    "gatewayUrl": "https://gw.example.com/mcp",
+                                }
+                            }
+                        },
+                    }
+                }
+            }
+        },
+    }
+
+    parsed = cli_config._parse_status_json(status)
+
+    assert parsed["runtime_name"] == "MeridianConcierge"
+    assert parsed["runtime_arn"].endswith(":runtime/meridian")
+    assert parsed["memory_name"] == "meridian_session"
+    assert parsed["memory_id"] == "mem-abc"
+    assert parsed["gateway_name"] == "meridian-aurora"
+    assert parsed["gateway_url"] == "https://gw.example.com/mcp"
 
 
 def test_env_overrides_deployed_state(tmp_path: Path, monkeypatch):

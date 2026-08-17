@@ -30,8 +30,8 @@ aws sts get-caller-identity
 export AWS_DEFAULT_REGION=us-east-1
 
 # 3. AgentCore CLI installed:
-npm install -g @aws/agentcore-cli
-agentcore --version  # expect 0.x or later
+npm install -g @aws/agentcore
+agentcore --version
 
 # 4. Docker running (Runtime build path uses CodeZip, but the CDK
 #    asset bundler still pulls a Node image during synth).
@@ -43,27 +43,28 @@ node --version
 ## One-time bootstrap (CDK)
 
 ```bash
-cd meridian/meridian_agentcore/agentcore
+cd meridian/meridian_agentcore/agentcore/cdk
 
 # CDK bootstrap stamps the account+region with the assets bucket /
 # image repo / IAM roles needed for any AgentCore deploy. Idempotent —
 # safe to re-run.
-npx cdk bootstrap aws://$(aws sts get-caller-identity --query Account --output text)/us-east-1
+npm run cdk -- bootstrap aws://$(aws sts get-caller-identity --query Account --output text)/us-east-1
 ```
 
 ## Deploy
 
 ```bash
-cd meridian/meridian_agentcore/agentcore
+cd meridian/meridian_agentcore
 
 # Validate the spec first so we catch typos before CDK spins up:
-agentcore validate
+agentcore validate --json
+agentcore package --runtime MeridianConcierge
 
 # Synth + deploy. Expect 5–8 min the first time:
 #   - Memory: ~1 min
 #   - Gateway + Lambda target: ~2–3 min
 #   - Runtime (ECR push + microVM): ~3–4 min
-agentcore deploy
+agentcore deploy -y
 ```
 
 `agentcore deploy` writes the live ARNs back into
@@ -108,11 +109,14 @@ In the showcase trace panel you should see (real, not faked):
 ## Rollback / cleanup
 
 ```bash
-# Pause Runtime billing without losing the deploy:
-agentcore pause MeridianConcierge
-
-# Or tear everything down (Memory, Gateway, Runtime, Lambda):
-agentcore destroy
+# AgentCore CLI 0.27.0 does not pause Runtime resources. To remove this stack,
+# update the schema with these commands, then deploy the removals:
+agentcore remove gateway-target --name SemanticTripSearchLambda -y
+agentcore remove gateway --name meridian-aurora -y
+agentcore remove memory --name meridian_session -y
+agentcore remove agent --name MeridianConcierge -y
+agentcore validate --json
+agentcore deploy -y
 ```
 
 ## What to say if something fails on stage

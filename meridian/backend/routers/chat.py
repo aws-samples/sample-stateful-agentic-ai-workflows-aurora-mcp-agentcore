@@ -68,10 +68,10 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 class ChatRequest(BaseModel):
     """Request model for chat endpoint."""
-    message: str
+    message: str = Field(min_length=1, max_length=4000)
     phase: Literal[1, 2, 3, 4, 5]
-    customer_id: Optional[str] = None
-    conversation_id: Optional[str] = None
+    customer_id: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    conversation_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
     resume: bool = False
     memory_enabled: bool = True
 
@@ -504,7 +504,11 @@ def _is_semantic_intent_query(query: str) -> bool:
     return sum(marker in q for marker in intent_markers) >= 2
 
 
-async def _call_domain_tool(query: str) -> Optional[Dict[str, Any]]:
+async def _call_domain_tool(
+    query: str,
+    *,
+    traveler_id: str,
+) -> Optional[Dict[str, Any]]:
     """Pick the most relevant custom-MCP tool(s) for a domain-flavored
     prompt and call them. Returns a single dict (legacy single-call path)
     OR a dict with `tool='multi'` and a `calls` list when more than one
@@ -611,11 +615,11 @@ async def _call_domain_tool(query: str) -> Optional[Dict[str, Any]]:
             )
             result = await cli.call(
                 "loyalty_balance",
-                {"traveler_id": "trv_meridian_demo", "program": program},
+                {"traveler_id": traveler_id, "program": program},
             )
             calls.append({
                 "tool": "loyalty_balance",
-                "args": {"program": program},
+                "args": {"traveler_id": traveler_id, "program": program},
                 "result": result,
             })
 
@@ -657,7 +661,10 @@ async def _call_domain_tool(query: str) -> Optional[Dict[str, Any]]:
 
 
 async def mcp_search(
-    query: str, limit: int = 5
+    query: str,
+    *,
+    traveler_id: str,
+    limit: int = 5,
 ) -> tuple[List[Product], List[ActivityEntry], Optional[str]]:
     """
     Phase 2: Search via MCP abstraction layer.
@@ -734,7 +741,10 @@ async def mcp_search(
             agent_file="backend/mcp/concierge_server.py",
         ))
         try:
-            domain_call = await _call_domain_tool(query)
+            domain_call = await _call_domain_tool(
+                query,
+                traveler_id=traveler_id,
+            )
             if domain_call:
                 # Normalize single-call and multi-call shapes into a list
                 # so we can log + format both uniformly.
@@ -799,36 +809,10 @@ async def mcp_search(
                     except Exception as exc:
                         log_error("compare_hydrate", error=str(exc))
                 if reply_parts:
-                    raw_text = "\n\n".join(reply_parts)
-                    # Polish deterministic tool output into concierge tone.
-                    # Facts stay locked to the tool payload.
-                    polish = await polish_concierge_reply(query, raw_text)
-                    if polish.model_id:
-                        activities.append(create_activity(
-                            activity_type="reasoning",
-                            title=f"Bedrock · concierge polish ({polish.model_id})",
-                            details="Wrapping deterministic tool output in concierge tone",
-                            agent_name="MCPAgent",
-                            agent_file="backend/llm_polish.py",
-                        ))
-                    else:
-                        # Every model in the fallback chain failed - tell
-                        # the user what blocked us instead of pretending
-                        # the dry deterministic text was the polished one.
-                        activities.append(create_activity(
-                            activity_type="error",
-                            title="Bedrock polish unavailable",
-                            details=polish.note or "unknown",
-                            agent_name="MCPAgent",
-                            agent_file="backend/llm_polish.py",
-                        ))
-                    domain_text = polish.text
-                    if not polish.model_id and polish.note:
-                        domain_text = (
-                            f"{polish.text}\n\n"
-                            f"_(Concierge polish unavailable: {polish.note}. "
-                            f"Showing raw tool output above.)_"
-                        )
+                    # Phase 2 demonstrates deterministic, explicit MCP tools.
+                    # Keep the response in that contract rather than invoking
+                    # an LLM that the capability ladder does not advertise.
+                    domain_text = "\n\n".join(reply_parts)
             else:
                 # The intent matched but no tool branch picked it up.
                 domain_text = (
@@ -2259,7 +2243,7 @@ async def chat(
                 message=(
                     "Production mode requires deployed AgentCore Runtime, Gateway, "
                     "and Memory resources. Run `agentcore deploy -y` from "
-                    "`meridian/meridian_agentcore/agentcore`, then run "
+                    "`meridian/meridian_agentcore`, then run "
                     "`python scripts/sync_agentcore_env.py --write` from `meridian`."
                     if is_agentcore_config_error
                     else "I encountered an error in Production mode. Please try again."
@@ -2505,7 +2489,11 @@ async def chat(
         # All other phases stay on the 2-tuple shape.
         domain_text: Optional[str] = None
         if request.phase == 2:
-            products, search_activities, domain_text = await mcp_search(request.message, limit=5)
+            products, search_activities, domain_text = await mcp_search(
+                request.message,
+                traveler_id=request.customer_id,
+                limit=5,
+            )
         elif (
             request.phase == 3
             and not _is_memory_recall_query(request.message)
@@ -2527,10 +2515,10 @@ async def chat(
         # Generate personalized response message
         if domain_text:
             # Custom MCP produced a domain readout (compare / FX / loyalty
-            # / seasonal pricing / inventory) - that IS the answer. The
-            # polished domain_text already names the specific trips it
-            # surfaced, so we don't tack on a generic "I also found N
-            # trips" suffix; the recommendation grid speaks for itself.
+            # / seasonal pricing / inventory) - that IS the answer. It
+            # names the specific trips it surfaced, so we don't tack on a
+            # generic "I also found N trips" suffix; the recommendation grid
+            # speaks for itself.
             message = domain_text
         elif products:
             if request.phase in (3, 4):
@@ -2592,47 +2580,12 @@ async def chat(
                 message = raw_message
         else:
             if request.phase == 2:
-                # Phase 2 fallback - SQL came up empty AND no domain tool
-                # matched. Polish the explanation through Opus so the
-                # stretch-query narrative reads naturally.
-                raw = (
-                    "Search summary:\n"
-                    "- postgres-mcp ran a keyword ILIKE on name/description/destination "
-                    "  and returned 0 rows.\n"
-                    "- meridian-concierge (custom MCP) was loaded but no domain tool "
-                    "  matched the query.\n"
-                    "- Reason: the prompt expresses intent (vibe, mood, openness) "
-                    "  rather than a literal keyword that lives in trip_packages.\n"
-                    "- Next step the system supports: switch to Retrieval mode "
-                    "  which uses pgvector + Cohere Rerank to read intent."
+                message = (
+                    "MCP ran the available explicit catalog tools but found no "
+                    "literal match. This request expresses intent rather than a "
+                    "catalog field or typed operation. Switch to Retrieval for "
+                    "semantic search and reranking."
                 )
-                polish = await polish_concierge_reply(request.message, raw)
-                if polish.model_id:
-                    activities.append(create_activity(
-                        activity_type="reasoning",
-                        title=f"Bedrock · concierge polish ({polish.model_id})",
-                        details="Explaining the stretch-query miss in concierge tone",
-                        agent_name="MCPAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
-                    message = polish.text
-                else:
-                    activities.append(create_activity(
-                        activity_type="error",
-                        title="Bedrock polish unavailable",
-                        details=polish.note or "unknown",
-                        agent_name="MCPAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
-                    message = (
-                        f"{polish.text}\n\n"
-                        f"_(Concierge polish unavailable: {polish.note}. "
-                        f"Check Bedrock model access for "
-                        f"`global.anthropic.claude-sonnet-5`, "
-                        f"`global.anthropic.claude-haiku-4-5-20251001-v1:0`, "
-                        f"and `global.anthropic.claude-opus-4-8` "
-                        f"in this region.)_"
-                    )
             elif request.phase == 1:
                 # Explain the actual boundary the prompt crossed. The canonical
                 # Phase 1 stretch is a compare + FX operation, while free-form
@@ -2660,31 +2613,7 @@ async def chat(
                         "- Next step: switch to Retrieval mode, which uses Cohere "
                         "Embed v4 + pgvector + Cohere Rerank to read intent."
                     )
-                polish = await polish_concierge_reply(request.message, raw)
-                if polish.model_id:
-                    activities.append(create_activity(
-                        activity_type="reasoning",
-                        title=f"Bedrock · concierge polish ({polish.model_id})",
-                        details="Explaining the keyword-search miss in concierge tone",
-                        agent_name="SQLAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
-                    message = polish.text
-                else:
-                    activities.append(create_activity(
-                        activity_type="error",
-                        title="Bedrock polish unavailable",
-                        details=polish.note or "unknown",
-                        agent_name="SQLAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
-                    message = (
-                        "No matches yet — SQL mode searches exact keywords in the "
-                        "catalog, so an intent-led request like this slips through. "
-                        "Try a destination or operator name like 'Tokyo' or "
-                        "'ANA Holidays', or switch to Retrieval mode for natural-"
-                        "language search."
-                    )
+                message = raw
             elif request.phase == 3 and _is_memory_recall_query(request.message):
                 # Keep the staged failure concise and deterministic. The
                 # absence of a memory tool is the lesson, not a model-generated
@@ -2748,11 +2677,11 @@ async def chat(
 
 class OrderRequest(BaseModel):
     """Request model for a no-payment courtesy hold."""
-    product_id: str
-    size: Optional[str] = None
+    product_id: str = Field(min_length=1, max_length=50)
+    size: Optional[str] = Field(default=None, min_length=1, max_length=50)
     quantity: int = Field(default=1, gt=0, le=12)
     phase: Literal[1, 2, 3, 4, 5]
-    traveler_id: str = "trv_meridian_demo"
+    traveler_id: str = Field(default="trv_meridian_demo", min_length=1, max_length=50)
     action: Literal["hold"] = "hold"
 
 

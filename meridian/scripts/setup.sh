@@ -23,6 +23,7 @@ fi
 echo ""
 
 echo "[3/8] Activating venv..."
+# shellcheck source=/dev/null
 source venv/bin/activate
 echo ""
 
@@ -39,7 +40,7 @@ if [ ! -f ".env" ]; then
   echo "[6/8] Creating .env from template..."
   cp .env.example .env
   echo "Edit .env with Aurora ARNs before continuing."
-  read -p "Press Enter after updating .env..."
+  read -r -p "Press Enter after updating .env..."
 else
   echo "[6/8] .env exists"
 fi

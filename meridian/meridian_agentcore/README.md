@@ -61,8 +61,8 @@ agentcore deploy
 | `agentcore eval` | Run evaluations |
 | `agentcore package` | Package agent artifacts |
 | `agentcore validate` | Validate configuration |
-| `agentcore pause` | Pause a deployed agent |
-| `agentcore resume` | Resume a paused agent |
+| `agentcore pause` | Pause an online evaluation or A/B test |
+| `agentcore resume` | Resume a paused online evaluation or A/B test |
 | `agentcore fetch` | Fetch remote resource definitions |
 | `agentcore import` | Import existing resources |
 | `agentcore update` | Check for CLI updates |

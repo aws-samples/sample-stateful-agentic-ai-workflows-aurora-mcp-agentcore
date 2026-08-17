@@ -7,10 +7,10 @@ traveler preferences and interaction embeddings (RLS-scoped).
 
 Configuration (preferred — @aws/agentcore CLI):
 
-    cd meridian/meridian_agentcore/agentcore
-    agentcore add memory --name meridian_session --strategies SEMANTIC --expiry 30
+    cd meridian/meridian_agentcore
+    agentcore validate --json
     agentcore deploy -y
-    cd ../.. && python scripts/sync_agentcore_env.py --write
+    cd .. && python scripts/sync_agentcore_env.py --write
 
 Memory ID is loaded from ``meridian_agentcore/agentcore/.cli/deployed-state.json``
 or env override:

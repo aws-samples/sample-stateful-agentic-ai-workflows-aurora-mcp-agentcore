@@ -81,7 +81,12 @@ def test_mcp_prompts_select_domain_tools() -> None:
     assert not _is_semantic_intent_query(COMPARE_AND_FX)
 
 
-def test_early_phase_stretch_prompts_return_explicit_boundaries() -> None:
+def test_early_phase_stretch_prompts_return_explicit_boundaries(monkeypatch) -> None:
+    async def unexpected_polish(*_args, **_kwargs):
+        raise AssertionError("Phase 1 and Phase 2 must not invoke Bedrock polish")
+
+    monkeypatch.setattr(chat_router, "polish_concierge_reply", unexpected_polish)
+
     sql_response = asyncio.run(
         chat_router.chat(
             chat_router.ChatRequest(
@@ -228,8 +233,52 @@ def test_compare_prompt_converts_each_package_price(monkeypatch) -> None:
     monkeypatch.setattr(chat_router, "get_rds_data_client", lambda: FakeDb())
     monkeypatch.setattr(chat_router, "concierge_mcp_session", fake_session)
 
-    result = asyncio.run(_call_domain_tool(COMPARE_AND_FX))
+    result = asyncio.run(
+        _call_domain_tool(
+            COMPARE_AND_FX,
+            traveler_id=DEMO_TRAVELER_ID,
+        )
+    )
 
     assert result["tool"] == "multi"
     currency_calls = [args for tool, args in client.calls if tool == "currency_convert"]
     assert [call["amount"] for call in currency_calls] == [1200.0, 2200.0, 3200.0]
+
+
+def test_loyalty_tool_uses_authenticated_traveler(monkeypatch) -> None:
+    class FakeMcp:
+        def __init__(self):
+            self.calls = []
+
+        async def call(self, tool, args):
+            self.calls.append((tool, args))
+            return {
+                "program": args["program"],
+                "points_balance": 124600,
+            }
+
+    client = FakeMcp()
+
+    @asynccontextmanager
+    async def fake_session():
+        yield client
+
+    monkeypatch.setattr(chat_router, "concierge_mcp_session", fake_session)
+
+    result = asyncio.run(
+        _call_domain_tool(
+            "Show my United MileagePlus loyalty balance.",
+            traveler_id="trv_authenticated",
+        )
+    )
+
+    assert result["tool"] == "loyalty_balance"
+    assert client.calls == [
+        (
+            "loyalty_balance",
+            {
+                "traveler_id": "trv_authenticated",
+                "program": "United MileagePlus",
+            },
+        )
+    ]

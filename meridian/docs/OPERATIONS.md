@@ -53,10 +53,11 @@ node --version
 ## Deploy
 
 ```bash
-cd meridian/meridian_agentcore/agentcore
+cd meridian/meridian_agentcore
 
 # Validate the config against the current CLI schema first:
-agentcore status --json     # also shows whether resources already exist
+agentcore validate --json
+agentcore package --runtime MeridianConcierge
 
 # Synth + deploy (idempotent — updates the existing stack in place):
 agentcore deploy -y
@@ -107,8 +108,13 @@ path. We fail closed instead of silently swapping in a different architecture."*
 
 Resources bill while they exist. When done:
 ```bash
-cd meridian/meridian_agentcore/agentcore
-agentcore destroy           # Memory, Gateway, Runtime, Lambda target
+cd meridian/meridian_agentcore
+agentcore remove gateway-target --name SemanticTripSearchLambda -y
+agentcore remove gateway --name meridian-aurora -y
+agentcore remove memory --name meridian_session -y
+agentcore remove agent --name MeridianConcierge -y
+agentcore validate --json
+agentcore deploy -y
 ```
 
 ---
@@ -122,7 +128,7 @@ Keep this open in one tab while operating the booth.
 ```bash
 aws sts get-caller-identity                 # AWS auth works
 
-cd meridian/meridian_agentcore/agentcore
+cd meridian/meridian_agentcore
 agentcore status --json                     # resources healthy
 
 cd ../.. && grep "AGENTCORE_" .env          # env has the 4 keys below
@@ -148,19 +154,21 @@ source venv/bin/activate
 export LANGGRAPH_CHECKPOINT_HOST=127.0.0.1
 export LANGGRAPH_CHECKPOINT_PORT=15432
 export LANGGRAPH_CHECKPOINT_DATABASE=meridian
+export LANGGRAPH_CHECKPOINT_DSN='postgresql://checkpoint_user:password@127.0.0.1:15432/meridian?sslmode=require'
 export LANGGRAPH_CHECKPOINT_REQUIRED=true
 export LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP=true
 export LANGGRAPH_DEMO_INTERRUPT_AFTER=search
 uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-The checkpoint password is resolved from `LANGGRAPH_CHECKPOINT_SECRET_ARN` or
-the demo's existing `AURORA_SECRET_ARN`. Use a dedicated least-privilege
-checkpoint secret in a hosted deployment.
+Inject `LANGGRAPH_CHECKPOINT_DSN` from a dedicated least-privilege checkpoint
+credential before starting the backend. The application does not retrieve
+database passwords from Secrets Manager.
 
 The API permits unauthenticated calls only from loopback in development. Before
-binding to a network interface, set `MERIDIAN_API_TOKEN`,
-`MERIDIAN_API_TRAVELER_ID`, and an explicit `CORS_ORIGINS` allow-list.
+binding to a network interface, use an OIDC-aware reverse proxy or
+backend-for-frontend that keeps `MERIDIAN_API_TOKEN` server-side, and set an
+explicit `CORS_ORIGINS` allow-list.
 
 Terminal 3 — frontend:
 ```bash
@@ -235,7 +243,7 @@ execution position survives in Aurora's `checkpoints`, `checkpoint_blobs`, and
 
 **Gateway `no targets were configured`** — re-attach the Lambda target and redeploy:
 ```bash
-cd meridian/meridian_agentcore/agentcore
+cd meridian/meridian_agentcore
 agentcore add gateway-target --name SemanticTripSearchLambda --gateway meridian-aurora \
   --type lambda-function-arn \
   --lambda-arn arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search \

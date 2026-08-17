@@ -47,6 +47,7 @@ source venv/bin/activate
 export LANGGRAPH_CHECKPOINT_HOST=127.0.0.1
 export LANGGRAPH_CHECKPOINT_PORT=15432
 export LANGGRAPH_CHECKPOINT_DATABASE=meridian
+export LANGGRAPH_CHECKPOINT_DSN='postgresql://checkpoint_user:password@127.0.0.1:15432/meridian?sslmode=require'
 export LANGGRAPH_CHECKPOINT_REQUIRED=true
 export LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP=true
 export LANGGRAPH_DEMO_INTERRUPT_AFTER=search
@@ -54,9 +55,10 @@ uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
 Keep the API loopback-only for the single-machine kiosk. If a remote browser
-must connect, configure `MERIDIAN_API_TOKEN`, pin
-`MERIDIAN_API_TRAVELER_ID`, and set an explicit `CORS_ORIGINS` allow-list
-before using a non-loopback host.
+must connect, put an OIDC-aware reverse proxy or backend-for-frontend in front
+of the API. It must authenticate the caller and keep `MERIDIAN_API_TOKEN`
+server-side; do not put a bearer token in a Vite environment variable. Set an
+explicit `CORS_ORIGINS` allow-list before using a non-loopback host.
 
 Terminal 3 — frontend:
 
@@ -101,13 +103,13 @@ curl -s -X POST http://localhost:8000/api/chat \
   -d '{
     "phase": 4,
     "message": "A slow week somewhere we can drink good wine",
-    "traveler_id": "trv_meridian_demo"
+    "customer_id": "trv_meridian_demo"
   }' | jq '.message, .conversation_id, (.products | length)'
 ```
 
 ## 4) Durable workflow smoke test
 
-1. Run the cancelled JFK-to-Tokyo prompt in Workflow.
+1. Run the canceled JFK-to-Tokyo prompt in Workflow.
 2. Confirm the workflow pauses after `search` with `next=availability`.
 3. Stop and restart only the backend.
 4. Click **Resume workflow from checkpoint** without clearing the browser.
