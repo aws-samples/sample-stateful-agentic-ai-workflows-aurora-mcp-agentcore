@@ -133,7 +133,7 @@ export function TraceHero({
               </div>
               <div className="ds-trace-bar-cell">
                 <div className="ds-trace-bar" aria-hidden="true">
-                  <span style={{ width: isPending ? '0%' : `${widthPct}%` }} />
+                  <span style={{ transform: isPending ? 'scaleX(0)' : `scaleX(${widthPct / 100})` }} />
                 </div>
               </div>
               <span className="ds-trace-ms">{span.latencyMs}ms</span>

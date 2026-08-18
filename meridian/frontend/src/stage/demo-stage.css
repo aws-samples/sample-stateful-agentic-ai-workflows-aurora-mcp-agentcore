@@ -627,13 +627,17 @@
   background: rgba(255, 255, 255, 0.06);
   overflow: hidden;
 }
+/* Full-width fill scaled from the left: the grow stays on the compositor and
+   the gradient ramp keeps its full span. At 6px tall the cap-radius squash
+   from scaleX is imperceptible. */
 .ds-trace-bar > span {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  inset: 0;
   border-radius: inherit;
   background: linear-gradient(90deg, rgba(255, 153, 0, 0.85), rgba(99, 245, 214, 0.95));
-  transition: width 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: left;
+  transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
   box-shadow: 0 0 18px rgba(255, 153, 0, 0.32);
 }
 .ds-trace-row.kind-memory .ds-trace-bar > span { background: linear-gradient(90deg, rgba(99, 245, 214, 0.55), rgba(99, 245, 214, 0.95)); box-shadow: 0 0 16px rgba(99, 245, 214, 0.28); }
@@ -649,6 +653,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .ds-trace-row.is-active .ds-trace-bar > span::after { animation: none; }
+  .ds-trace-bar > span { transition: none; }
 }
 @keyframes dsBarShimmer {
   0% { transform: translateX(-100%); }

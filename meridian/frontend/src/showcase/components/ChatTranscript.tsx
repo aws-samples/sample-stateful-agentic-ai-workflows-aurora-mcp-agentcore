@@ -20,12 +20,7 @@ import { typewriterCadence } from '../lib/streamingCadence';
 import { RankDeltaBadge } from './RankDeltaBadge';
 import { TripResultCardContent } from './TripResultCardContent';
 import { resultRankLabel } from '../lib/resultRankLabel';
-
-// Respect reduced motion by disabling spring-style reorder animations.
-const prefersReducedMotion =
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+import { prefersReducedMotion } from '../lib/prefersReducedMotion';
 
 // Keep a malformed markdown response from taking down the transcript.
 class MarkdownBoundary extends Component<
@@ -116,15 +111,29 @@ export function ChatTranscript({
           />
         ))
       )}
-      {state.isLoading && (
-        <div className="mds-message bot">
-          <div className="mds-message-role">Meridian</div>
-          <div className="mds-message-bubble is-thinking">
-            <span className="mds-running-dot" />
-            <ThinkingTicker phase={state.phaseLabel} />
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {state.isLoading && (
+          <motion.div
+            className="mds-message bot"
+            // Entry stays with the shared mds-msg-in CSS; Motion only owns the
+            // exit so the bubble cross-fades into the arriving reply.
+            initial={false}
+            exit={{
+              opacity: 0,
+              transform: 'translateY(-6px)',
+              transition: prefersReducedMotion
+                ? { duration: 0 }
+                : { duration: 0.18, ease: 'easeOut' },
+            }}
+          >
+            <div className="mds-message-role">Meridian</div>
+            <div className="mds-message-bubble is-thinking">
+              <span className="mds-running-dot" />
+              <ThinkingTicker phase={state.phaseLabel} />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

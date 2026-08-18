@@ -35,15 +35,17 @@ function AirportMarker({
   code,
   coordinates,
   labelOffset,
+  end,
 }: {
   code: string;
   coordinates: [number, number];
   labelOffset: number;
+  end: 'origin' | 'destination';
 }) {
   const [x, y] = projected(coordinates);
 
   return (
-    <g transform={`translate(${x} ${y})`}>
+    <g className={`mds-route-airport is-${end}`} transform={`translate(${x} ${y})`}>
       <circle className="mds-route-marker-halo" r={7} />
       <circle className="mds-route-marker" r={3.25} />
       <text
@@ -82,10 +84,10 @@ export function RecoveryRouteMap() {
             d={path(country) ?? undefined}
           />
         ))}
-        <path className="mds-route-line-glow" d={routePath} />
+        <path className="mds-route-line-glow" d={routePath} pathLength={1} />
         <path className="mds-route-line" d={routePath} />
-        <AirportMarker code="JFK" coordinates={JFK} labelOffset={-8} />
-        <AirportMarker code="TYO" coordinates={TOKYO} labelOffset={8} />
+        <AirportMarker code="JFK" coordinates={JFK} labelOffset={-8} end="origin" />
+        <AirportMarker code="TYO" coordinates={TOKYO} labelOffset={8} end="destination" />
       </svg>
       <span className="mds-route-map-caption">JFK / NORTH PACIFIC / TYO</span>
     </div>

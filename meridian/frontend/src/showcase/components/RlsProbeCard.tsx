@@ -15,11 +15,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { BadgeCheck, Database, Fingerprint, RefreshCw, ShieldX } from 'lucide-react';
 import { fetchRlsProbe, type RlsProbeResponse } from '../../api/client';
-
-const prefersReducedMotion =
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+import { prefersReducedMotion } from '../lib/prefersReducedMotion';
 
 export function RlsProbeCard({ travelerId }: { travelerId: string }) {
   const [data, setData] = useState<RlsProbeResponse | null>(null);
@@ -133,8 +129,12 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
                     <div className="mds-rls-bar-ghost" aria-hidden="true" />
                     <motion.div
                       className="mds-rls-bar-scoped"
-                      initial={prefersReducedMotion ? { width: `${scopedPct}%` } : { width: '100%' }}
-                      animate={{ width: `${scopedPct}%` }}
+                      initial={{
+                        transform: prefersReducedMotion
+                          ? `translateX(-${100 - scopedPct}%)`
+                          : 'translateX(0%)',
+                      }}
+                      animate={{ transform: `translateX(-${100 - scopedPct}%)` }}
                       transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.7, ease: 'easeOut' }}
                     />
                   </div>

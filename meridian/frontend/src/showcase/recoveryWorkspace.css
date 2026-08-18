@@ -1117,6 +1117,10 @@
   stroke: rgba(246, 183, 60, 0.22);
   stroke-width: 6;
   filter: blur(2px);
+  /* pathLength={1} on the element normalizes dash units to the whole route,
+     so a single dash of 1 offset 1 -> 0 sweeps the arc tip-first. */
+  stroke-dasharray: 1;
+  animation: mds-route-draw 1.1s cubic-bezier(0.33, 1, 0.68, 1) both;
 }
 
 .mds-route-line {
@@ -1124,6 +1128,45 @@
   stroke-width: 1.8;
   stroke-dasharray: 5 4;
   filter: drop-shadow(0 0 4px rgba(246, 183, 60, 0.48));
+  /* The dash pattern can't draw-on without distorting, so the dashed line
+     fades in behind the glow's sweep; -9 is one 5+4 dash period, so the
+     loop wraps seamlessly as the dashes drift JFK -> TYO. */
+  animation:
+    mds-route-line-in 0.5s ease-out 0.55s both,
+    mds-route-dash-flow 2.6s linear 1.05s infinite;
+}
+
+/* Opacity only: a CSS transform here would override the marker group's SVG
+   transform attribute and teleport both airports to the origin. */
+.mds-route-airport {
+  animation: mds-route-line-in 0.45s ease-out both;
+}
+.mds-route-airport.is-origin {
+  animation-delay: 0.1s;
+}
+.mds-route-airport.is-destination {
+  animation-delay: 0.95s;
+}
+
+@keyframes mds-route-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes mds-route-line-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes mds-route-dash-flow {
+  to {
+    stroke-dashoffset: -9;
+  }
 }
 
 .mds-route-marker-halo {
@@ -3335,7 +3378,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .mds-agent-activity-row.is-running .mds-agent-activity-icon svg,
-  .mds-current-trip-state.is-running svg {
+  .mds-current-trip-state.is-running svg,
+  .mds-route-line-glow,
+  .mds-route-line,
+  .mds-route-airport {
     animation: none;
   }
 }

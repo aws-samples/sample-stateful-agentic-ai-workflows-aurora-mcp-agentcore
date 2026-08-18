@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { ALEX_IMAGE_URL, ALEX_NAME } from '../lib/personas';
+import { prefersReducedMotion } from '../lib/prefersReducedMotion';
 
 // Snake-case schema keys read as "authentic Aurora data" for some fields
 // (no_red_eye, vegetarian_friendly) but feel awkward for multi-word
@@ -33,12 +34,6 @@ function formatFactKey(key: string): string {
 const PROFILE_KEYS = new Set(['home_airport', 'party_size', 'budget_cap']);
 const PLAN_KEYS = new Set(['recent_trips', 'tokyo_culture', 'trip_goal']);
 const DRAWER_ONLY_KEYS = new Set(['loyalty_programs', 'recent_trips']);
-
-// Respect the OS reduced-motion setting: spring pops become plain fades.
-const prefersReducedMotion =
-  typeof window !== 'undefined' &&
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function TravelerContextPanel({
   state,

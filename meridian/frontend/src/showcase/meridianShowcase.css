@@ -5882,6 +5882,26 @@
 .mds-trip-modal-actions button,.mds-journey-actions button,.mds-compare-copy button { min-height:40px; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:0 14px; border:1px solid var(--mds-line-strong); border-radius:6px; color:var(--mds-on-surface); background:var(--mds-card); font-weight:700; }
 .mds-trip-modal-actions .is-primary,.mds-compare-copy .is-primary { color:#07172e; background:var(--mds-blue); margin-left:auto; }
 .mds-compare-modal { padding:26px; }.mds-compare-modal>header { display:flex; justify-content:space-between; }.mds-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.mds-compare-grid article { position:relative; overflow:hidden; border:1px solid var(--mds-line); border-radius:8px; background:var(--mds-card); }.mds-compare-copy { display:grid; gap:12px; padding:16px; }.mds-compare-copy dl { display:grid; gap:6px; }.mds-compare-copy dl div { display:flex; justify-content:space-between; }.mds-compare-remove { position:absolute; top:8px; right:8px; z-index:2; width:30px; height:30px; border:0; border-radius:50%; }
+
+/* Enter-only, mirroring the Radix drawers (mds-sheet-*): close stays instant
+   because these modals unmount conditionally with no exit phase to hook. */
+.mds-modal-backdrop { animation: mds-sheet-fade 160ms ease-out; }
+.mds-trip-modal,
+.mds-compare-modal { animation: mds-modal-enter 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes mds-modal-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mds-modal-backdrop,
+  .mds-trip-modal,
+  .mds-compare-modal {
+    animation: none;
+  }
+}
+
 .mds-journey-panel {
   display: grid;
   align-content: start;
@@ -6553,13 +6573,24 @@
   border: 1px solid var(--mds-line-strong);
   background: var(--mds-fill-2);
   color: var(--mds-on-surface-faint);
+  transition: border-color 280ms ease, color 280ms ease, box-shadow 280ms ease;
 }
+/* The pop plays when a node settles into "visited" - including the moment
+   is-current moves on, since dropping that class re-resolves `animation`
+   to this rule and restarts it. That is the per-node arrival cue. */
 .mds-wfgraph-route-node.is-visited {
   border-color: var(--mds-blue-line);
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--mds-blue) 13%, transparent), transparent 54%),
     var(--mds-fill-2);
   color: var(--mds-on-surface);
+  animation: mds-wfgraph-arrive 340ms cubic-bezier(0.34, 1.45, 0.64, 1);
+}
+@keyframes mds-wfgraph-arrive {
+  from {
+    opacity: 0.55;
+    transform: scale(0.965);
+  }
 }
 .mds-wfgraph-route-node.is-current {
   border-color: var(--mds-green);
@@ -6589,6 +6620,9 @@
 .mds-wfgraph-route-node.is-visited .mds-wfgraph-route-step {
   background: var(--mds-green);
   color: #03120d;
+}
+.mds-wfgraph-route-step {
+  transition: background-color 280ms ease, color 280ms ease;
 }
 .mds-wfgraph-route-copy {
   min-width: 0;
@@ -6663,8 +6697,13 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .mds-wfgraph-route-ckpt,
-  .mds-wfgraph-route-node.is-current {
+  .mds-wfgraph-route-node.is-current,
+  .mds-wfgraph-route-node.is-visited {
     animation: none;
+  }
+  .mds-wfgraph-route-node,
+  .mds-wfgraph-route-step {
+    transition: none;
   }
 }
 
@@ -6885,8 +6924,10 @@
 }
 
 /* The full track = unscoped (all rows). The red ghost fills the whole track as
-   the "before" state; the cyan bar animates down over it to the scoped count,
-   so the audience literally watches the red (RLS-hidden) rows get revealed. */
+   the "before" state; the blue bar animates down over it to the scoped count,
+   so the audience literally watches the red (RLS-hidden) rows get revealed.
+   The blue bar stays full-width and slides left via transform (compositor
+   thread, no layout) while the track's overflow clips it to the scoped span. */
 .mds-rls-bar {
   position: relative;
   height: 14px;
@@ -6908,8 +6949,7 @@
 }
 .mds-rls-bar-scoped {
   position: absolute;
-  inset: 0 auto 0 0;
-  height: 100%;
+  inset: 0;
   border-radius: 999px;
   background: var(--mds-blue);
   box-shadow: 0 0 12px color-mix(in srgb, var(--mds-blue) 45%, transparent);
