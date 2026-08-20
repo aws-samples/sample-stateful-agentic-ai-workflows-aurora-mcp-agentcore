@@ -157,6 +157,35 @@ describe('Experience presentation polish', () => {
     expect(app).not.toHaveClass('is-sidebar-collapsed');
   });
 
+  it('keeps the live-service status visible and contextual when offline', () => {
+    const { rerender } = render(
+      <DesktopMeridianApp
+        state={makeState({ backendStatus: 'online' })}
+        theme="dark"
+        onToggleTheme={vi.fn()}
+      />,
+    );
+
+    const liveStatus = screen.getByRole('status');
+    expect(liveStatus).toHaveTextContent('Meridian live');
+    expect(liveStatus).toHaveTextContent('USD');
+    expect(liveStatus).toHaveAttribute('aria-atomic', 'true');
+    expect(liveStatus).toHaveClass('is-live');
+
+    rerender(
+      <DesktopMeridianApp
+        state={makeState({ backendStatus: 'offline' })}
+        theme="dark"
+        onToggleTheme={vi.fn()}
+      />,
+    );
+
+    const offlineStatus = screen.getByRole('status');
+    expect(offlineStatus).toHaveTextContent('Meridian offline');
+    expect(offlineStatus).toHaveTextContent('Live data unavailable');
+    expect(offlineStatus).toHaveClass('is-off');
+  });
+
   it('shows the recovery composer only after the plan is ready', () => {
     const { container, rerender } = render(
       <DesktopMeridianApp
@@ -383,9 +412,9 @@ describe('Experience presentation polish', () => {
     expect(
       screen.getByRole('article', { name: 'Start travel recovery' }),
     ).toBeInTheDocument();
-    expect(
-      screen.getAllByRole('button', { name: 'Start recovery' }),
-    ).toHaveLength(1);
+    const startRecovery = screen.getByRole('button', { name: 'Start recovery' });
+    expect(startRecovery.closest('.mds-mobile-disruption-message')).not.toBeNull();
+    expect(startRecovery.closest('.mds-mobile-disruption-flight')).toBeNull();
     expect(
       screen.getByRole('img', { name: 'Aircraft on final approach' }),
     ).toHaveAttribute('src', '/travel/recovery-flight.jpg');

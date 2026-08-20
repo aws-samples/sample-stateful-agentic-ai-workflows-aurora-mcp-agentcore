@@ -472,7 +472,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (!mounted.current) return;
         setBackendStatus('offline');
         setError(
-          'Live chat request failed. Confirm Aurora + FastAPI are running on localhost:8000 - the showcase only renders real Aurora data.',
+          'Live chat request failed. Confirm Meridian FastAPI and Aurora are available, then try again.',
         );
       } finally {
         if (mounted.current) setIsLoading(false);

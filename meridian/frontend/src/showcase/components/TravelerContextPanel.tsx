@@ -139,7 +139,11 @@ export function TravelerContextPanel({
               initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.7, y: -2 }}
               animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1, y: 0 }}
               exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.8 }}
-              transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 500, damping: 30 }}
+              transition={
+                prefersReducedMotion
+                  ? { duration: 0.12, ease: [0.23, 1, 0.32, 1] }
+                  : { type: 'spring', stiffness: 500, damping: 30 }
+              }
               aria-live="polite"
             >
               <span className="mds-writeback-dot" aria-hidden="true" />
@@ -210,7 +214,10 @@ export function TravelerContextPanel({
               className="mds-memory-enabled-content"
               initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: prefersReducedMotion ? 0 : 0.24 }}
+              transition={{
+                duration: prefersReducedMotion ? 0.12 : 0.24,
+                ease: [0.23, 1, 0.32, 1],
+              }}
             >
               <div className="mds-profile-line">
                 <span className="mds-avatar is-photo" aria-hidden="true">

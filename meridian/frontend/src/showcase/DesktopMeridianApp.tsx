@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Briefcase,
   Compass,
@@ -91,7 +91,35 @@ export function DesktopMeridianApp({
   const isLadder = demoStep === 'ladder';
   const isFinale = demoStep === 'finale';
   const recoveryStage = deriveRecoveryStage(state);
-  const showAudienceRuntimeStatus = state.backendStatus !== 'offline';
+  const runtimeStatus =
+    state.backendStatus === 'online'
+      ? {
+          className: 'is-live',
+          label: 'Meridian live',
+          detail: 'USD',
+        }
+      : state.backendStatus === 'offline'
+        ? {
+            className: 'is-off',
+            label: 'Meridian offline',
+            detail: 'Live data unavailable',
+          }
+        : {
+            className: 'is-checking',
+            label: 'Connecting to Meridian',
+            detail: 'Live data pending',
+          };
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+
+    const compactSidebar = window.matchMedia('(max-width: 1180px)');
+    const syncSidebar = () => setSidebarCollapsed(compactSidebar.matches);
+
+    syncSidebar();
+    compactSidebar.addEventListener('change', syncSidebar);
+    return () => compactSidebar.removeEventListener('change', syncSidebar);
+  }, []);
 
   const openDiscovery = () => setDemoStep('discovery');
   const openLadder = () => setDemoStep('ladder');
@@ -165,7 +193,7 @@ export function DesktopMeridianApp({
                 type="button"
                 className={`mds-nav-item${isActive ? ' is-active' : ''}`}
                 aria-current={isActive ? 'page' : undefined}
-                aria-label={sidebarCollapsed ? item.label : undefined}
+                aria-label={item.label}
                 title={sidebarCollapsed ? item.label : undefined}
                 onClick={() => openNavItem(item.id)}
               >
@@ -211,22 +239,17 @@ export function DesktopMeridianApp({
         <div className="mds-desktop-scroll">
           <div className="mds-top-actions">
             <div className="mds-top-status">
-              {showAudienceRuntimeStatus && (
-                <span
-                  className={`mds-status-pill${
-                    state.backendStatus === 'online'
-                      ? ' is-live'
-                      : ' is-checking'
-                  }`}
-                >
-                  <span className="mds-status-dot" aria-hidden="true" />
-                  {state.backendStatus === 'online' ? 'Reasoning live' : 'Connecting…'}
-                  <span className="mds-status-sep" aria-hidden="true">·</span>
-                  <span className="mds-status-unit">
-                    {state.backendStatus === 'online' ? 'USD' : 'Live data pending'}
-                  </span>
-                </span>
-              )}
+              <span
+                className={`mds-status-pill ${runtimeStatus.className}`}
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                <span className="mds-status-dot" aria-hidden="true" />
+                {runtimeStatus.label}
+                <span className="mds-status-sep" aria-hidden="true">·</span>
+                <span className="mds-status-unit">{runtimeStatus.detail}</span>
+              </span>
               <IconTooltip label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
                 <button
                   type="button"

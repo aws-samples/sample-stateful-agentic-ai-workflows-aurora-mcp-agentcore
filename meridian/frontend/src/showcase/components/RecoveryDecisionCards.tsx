@@ -329,6 +329,23 @@ export function RecoveryLaunchCard({
                   rebuild the trip plan and preserve its workflow state.
                 </p>
               </div>
+              <button
+                type="button"
+                className="mds-mobile-disruption-primary"
+                onClick={onStart}
+                disabled={disabled || running}
+              >
+                {running ? (
+                  <Loader2 size={18} aria-hidden="true" />
+                ) : (
+                  <Route size={18} aria-hidden="true" />
+                )}
+                {running
+                  ? 'Building plan'
+                  : failed
+                    ? 'Retry recovery'
+                    : 'Start recovery'}
+              </button>
             </div>
             <figure className="mds-mobile-disruption-media">
               <img
@@ -385,23 +402,6 @@ export function RecoveryLaunchCard({
                   </span>
                 </div>
               )}
-
-              <button
-                type="button"
-                onClick={onStart}
-                disabled={disabled || running}
-              >
-                {running ? (
-                  <Loader2 size={18} aria-hidden="true" />
-                ) : (
-                  <Route size={18} aria-hidden="true" />
-                )}
-                {running
-                  ? 'Building plan'
-                  : failed
-                    ? 'Retry recovery'
-                    : 'Start recovery'}
-              </button>
             </div>
           </div>
         </section>

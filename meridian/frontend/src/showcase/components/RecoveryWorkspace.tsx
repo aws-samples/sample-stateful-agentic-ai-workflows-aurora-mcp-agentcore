@@ -11,6 +11,7 @@ import {
   deriveRecoveryEvidence,
   deriveRecoveryStage,
 } from '../lib/recoveryState';
+import { prefersReducedMotion } from '../lib/prefersReducedMotion';
 import { RecoveryBriefing } from './RecoveryBriefing';
 import {
   AgentProofCard,
@@ -106,7 +107,7 @@ export function RecoveryWorkspace({
     const frame = window.requestAnimationFrame(() => {
       if (typeof consoleRef.current?.scrollIntoView === 'function') {
         consoleRef.current.scrollIntoView({
-          behavior: 'smooth',
+          behavior: prefersReducedMotion ? 'auto' : 'smooth',
           block: 'start',
         });
       }
@@ -127,7 +128,10 @@ export function RecoveryWorkspace({
     if (!briefing) return;
     const details = briefing.querySelector('details');
     if (details) details.open = true;
-    briefing.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    briefing.scrollIntoView({
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      block: 'start',
+    });
     briefing.querySelector<HTMLElement>('summary')?.focus();
   };
   const runPrimaryAction = () => {
