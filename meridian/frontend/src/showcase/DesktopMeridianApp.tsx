@@ -78,7 +78,10 @@ export function DesktopMeridianApp({
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [forYouCollapsed, setForYouCollapsed] = useState(false);
   const [activityCollapsed, setActivityCollapsed] = useState(false);
-  const [auroraEvidenceCollapsed, setAuroraEvidenceCollapsed] = useState(false);
+  // Collapsed by default. The header still reports "N of 7 stages observed
+  // this turn", so the signal survives while the chip row's height goes to the
+  // transcript. Expand it for the proof beat.
+  const [auroraEvidenceCollapsed, setAuroraEvidenceCollapsed] = useState(true);
   // Collapsed by default: the nav is product chrome, and the 136px it gives
   // back goes to the transcript and result cards, which is what a room reads.
   // Presenters can expand it to show the surrounding product.

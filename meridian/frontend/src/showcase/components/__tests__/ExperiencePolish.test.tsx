@@ -123,6 +123,30 @@ describe('Experience presentation polish', () => {
     ).toHaveAttribute('aria-current', 'step');
   });
 
+  it('opens the ladder with the Aurora evidence strip collapsed but still reporting', () => {
+    render(
+      <DesktopMeridianApp
+        state={makeState({ backendStatus: 'online' })}
+        theme="dark"
+        onToggleTheme={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '2 Capability ladder, Architecture' }),
+    );
+
+    // Collapsed gives the chip row's height back to the transcript, but the
+    // header keeps reporting progress so the proof signal survives.
+    const strip = screen.getByRole('region', { name: 'Aurora proof points' });
+    expect(within(strip).getByText('Aurora evidence')).toBeInTheDocument();
+    expect(within(strip).getByText('waiting for first run')).toBeInTheDocument();
+    expect(within(strip).queryByText('MCP calls')).not.toBeInTheDocument();
+
+    fireEvent.click(within(strip).getByRole('button', { expanded: false }));
+    expect(within(strip).getByText('MCP calls')).toBeInTheDocument();
+  });
+
   it('opens with the sidebar collapsed into an accessible icon rail', () => {
     const state = makeState({
       backendStatus: 'online',
