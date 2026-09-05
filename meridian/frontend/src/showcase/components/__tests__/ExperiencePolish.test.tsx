@@ -123,7 +123,7 @@ describe('Experience presentation polish', () => {
     ).toHaveAttribute('aria-current', 'step');
   });
 
-  it('collapses the sidebar into an accessible icon rail across both demo steps', () => {
+  it('opens with the sidebar collapsed into an accessible icon rail', () => {
     const state = makeState({
       backendStatus: 'online',
     });
@@ -136,14 +136,12 @@ describe('Experience presentation polish', () => {
     );
     const app = container.querySelector('.mds-desktop-app');
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Collapse navigation sidebar' }),
-    );
-
+    // The rail starts closed so the transcript and result cards get the width.
     expect(app).toHaveClass('is-sidebar-collapsed');
     expect(
       screen.getByRole('button', { name: 'Expand navigation sidebar' }),
     ).toBeInTheDocument();
+    // Collapsed is an icon rail, not a hidden nav - the items stay reachable.
     expect(screen.getByRole('button', { name: 'Trips' })).toBeInTheDocument();
 
     fireEvent.click(
@@ -155,6 +153,11 @@ describe('Experience presentation polish', () => {
       screen.getByRole('button', { name: 'Expand navigation sidebar' }),
     );
     expect(app).not.toHaveClass('is-sidebar-collapsed');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Collapse navigation sidebar' }),
+    );
+    expect(app).toHaveClass('is-sidebar-collapsed');
   });
 
   it('keeps the live-service status visible and contextual when offline', () => {

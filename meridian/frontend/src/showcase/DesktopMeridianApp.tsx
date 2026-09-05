@@ -79,12 +79,10 @@ export function DesktopMeridianApp({
   const [forYouCollapsed, setForYouCollapsed] = useState(false);
   const [activityCollapsed, setActivityCollapsed] = useState(false);
   const [auroraEvidenceCollapsed, setAuroraEvidenceCollapsed] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(max-width: 1180px)').matches,
-  );
+  // Collapsed by default: the nav is product chrome, and the 136px it gives
+  // back goes to the transcript and result cards, which is what a room reads.
+  // Presenters can expand it to show the surrounding product.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [navPanel, setNavPanel] = useState<NavPanelId | null>(null);
   const greetingPart = greetingForHour(new Date().getHours());
   const isDiscovery = demoStep === 'discovery';
@@ -113,12 +111,17 @@ export function DesktopMeridianApp({
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
 
+    // Narrow viewports force the rail closed, but going wide again must not
+    // re-open it — that used to discard a presenter's manual choice every time
+    // the window crossed the breakpoint.
     const compactSidebar = window.matchMedia('(max-width: 1180px)');
-    const syncSidebar = () => setSidebarCollapsed(compactSidebar.matches);
+    const collapseWhenNarrow = () => {
+      if (compactSidebar.matches) setSidebarCollapsed(true);
+    };
 
-    syncSidebar();
-    compactSidebar.addEventListener('change', syncSidebar);
-    return () => compactSidebar.removeEventListener('change', syncSidebar);
+    collapseWhenNarrow();
+    compactSidebar.addEventListener('change', collapseWhenNarrow);
+    return () => compactSidebar.removeEventListener('change', collapseWhenNarrow);
   }, []);
 
   const openDiscovery = () => setDemoStep('discovery');
