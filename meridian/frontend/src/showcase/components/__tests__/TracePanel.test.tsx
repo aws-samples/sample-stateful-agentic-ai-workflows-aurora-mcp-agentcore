@@ -37,6 +37,8 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     comparisonOpen: false,
     memoryFacts: [],
     travelerProfile: null,
+    previewFacts: [],
+    previewProfile: null,
     memoryEnabled: false,
     memoryLoading: false,
     memoryToggleError: null,

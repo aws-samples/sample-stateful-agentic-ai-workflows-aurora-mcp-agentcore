@@ -32,6 +32,8 @@ function makeState(
     catalog: [],
     traceSpans: [],
     memoryFacts: [],
+    previewFacts: [],
+    previewProfile: null,
     isLoading: false,
     error: null,
     lastPrompt: null,
@@ -169,28 +171,6 @@ describe('Experience presentation polish', () => {
     expect(rungs[3].classList.contains('is-active')).toBe(true);
     expect(rungs[4].classList.contains('is-carried')).toBe(false);
     expect(rungs[4].classList.contains('is-active')).toBe(false);
-  });
-
-  it('opens the ladder with the Aurora evidence strip collapsed but still reporting', () => {
-    render(
-      <DesktopMeridianApp
-        state={makeState({ backendStatus: 'online' })}
-        theme="dark"
-        onToggleTheme={vi.fn()}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /^Phase 1, SQL/ }));
-
-    // Collapsed gives the chip row's height back to the transcript, but the
-    // header keeps reporting progress so the proof signal survives.
-    const strip = screen.getByRole('region', { name: 'Aurora proof points' });
-    expect(within(strip).getByText('Aurora evidence')).toBeInTheDocument();
-    expect(within(strip).getByText('waiting for first run')).toBeInTheDocument();
-    expect(within(strip).queryByText('MCP calls')).not.toBeInTheDocument();
-
-    fireEvent.click(within(strip).getByRole('button', { expanded: false }));
-    expect(within(strip).getByText('MCP calls')).toBeInTheDocument();
   });
 
   it('opens with the sidebar collapsed into an accessible icon rail', () => {
@@ -906,7 +886,9 @@ describe('Experience presentation polish', () => {
     ].map((product) => ({
       ...product,
       description: 'A ranked Tokyo recovery option.',
-      image_url: '',
+      // Seeded packages carry their own commissioned artwork, so a fixture
+      // standing in for one has to as well.
+      image_url: `/travel/catalog/${product.product_id}.jpg`,
       category: 'city',
       destination: 'Tokyo',
       available_sizes: ['3 nights', '5 nights'],

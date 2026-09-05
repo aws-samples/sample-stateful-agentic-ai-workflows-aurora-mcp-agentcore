@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Briefcase,
+  ChevronLeft,
   Compass,
   Mail,
   Moon,
@@ -14,7 +15,6 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { AuroraEvidenceStrip } from './components/AuroraEvidenceStrip';
 import { ChatComposer } from './components/ChatComposer';
 import { ChatTranscript } from './components/ChatTranscript';
 import { ComparisonDialog } from './components/ComparisonDialog';
@@ -90,14 +90,16 @@ export function DesktopMeridianApp({
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [forYouCollapsed, setForYouCollapsed] = useState(false);
   const [activityCollapsed, setActivityCollapsed] = useState(false);
-  // Collapsed by default. The header still reports "N of 7 stages observed
-  // this turn", so the signal survives while the chip row's height goes to the
-  // transcript. Expand it for the proof beat.
-  const [auroraEvidenceCollapsed, setAuroraEvidenceCollapsed] = useState(true);
   // Collapsed by default: the nav is product chrome, and the 136px it gives
   // back goes to the transcript and result cards, which is what a room reads.
   // Presenters can expand it to show the surrounding product.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  // The evidence rail is the proof surface, not the story. Folding it away
+  // hands its ~400px to the transcript, which is what the room is reading
+  // while a phase runs. Open by default: the ladder's whole argument is that
+  // the claims are checkable, so the proof should be on screen unless the
+  // presenter deliberately reclaims the width.
+  const [railCollapsed, setRailCollapsed] = useState(false);
   const [navPanel, setNavPanel] = useState<NavPanelId | null>(null);
   const greetingPart = greetingForHour(new Date().getHours());
   const isProduct = view === 'product';
@@ -179,7 +181,9 @@ export function DesktopMeridianApp({
           : isRecovery
             ? 'is-experience is-finale'
             : 'is-proof is-ladder'
-      }${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}
+      }${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}${
+        railCollapsed ? ' is-rail-collapsed' : ''
+      }`}
     >
       <aside className="mds-desktop-sidebar">
         <div className="mds-sidebar-head">
@@ -454,16 +458,33 @@ export function DesktopMeridianApp({
       </main>
 
       {isLadder && (
-        <aside className="mds-desktop-right" aria-label="System proof">
+        <aside
+          className={`mds-desktop-right${railCollapsed ? ' is-collapsed' : ''}`}
+          aria-label="System proof"
+        >
+          {/* The drawer's only control, on its edge. The label shows just
+              when shut - open, the panel below carries its own "Aurora
+              evidence" header and repeating it printed the title twice. */}
+          <button
+            type="button"
+            className="mds-rail-handle"
+            onClick={() => setRailCollapsed((collapsed) => !collapsed)}
+            aria-expanded={!railCollapsed}
+            aria-label={
+              railCollapsed
+                ? 'Open the Aurora evidence drawer'
+                : 'Close the Aurora evidence drawer'
+            }
+          >
+            <ChevronLeft size={15} strokeWidth={2.6} aria-hidden="true" />
+            {railCollapsed && <span>Aurora evidence</span>}
+          </button>
+          {!railCollapsed && (
           <>
-            {/* One proof column, read top to bottom: what was proven this turn,
-                the traveler state it ran against, then the span-level detail.
-                These used to be three surfaces in two places. */}
-            <AuroraEvidenceStrip
-              state={state}
-              collapsed={auroraEvidenceCollapsed}
-              onToggleCollapsed={() => setAuroraEvidenceCollapsed((prev) => !prev)}
-            />
+            {/* Two surfaces, read top to bottom: the traveler state this turn
+                ran against, then the span-level detail behind it. The stage
+                strip that used to sit above them tried to fit seven stages and
+                their values into the rail's width and never became legible. */}
             <TravelerContextPanel
               state={state}
               onOpenMemory={() => setMemoryOpen(true)}
@@ -476,6 +497,7 @@ export function DesktopMeridianApp({
               onToggleCollapsed={() => setActivityCollapsed((prev) => !prev)}
             />
           </>
+          )}
         </aside>
       )}
 

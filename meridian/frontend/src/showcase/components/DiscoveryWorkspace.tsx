@@ -4,11 +4,11 @@ import {
   ArrowRight,
   Check,
   Clock3,
-  Database,
   Heart,
   Lock,
   MapPin,
 } from 'lucide-react';
+import { ServiceMark } from './ServiceMark';
 import type { Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { tripVisualPhoto } from '../lib/tripVisualPhoto';
@@ -175,15 +175,31 @@ function PersonalizationPills({
   state: MeridianShowcaseState;
   product: Product | undefined;
 }) {
-  const pills = useMemo(
-    () => derivePersonalization(product, state.travelerProfile, state.memoryFacts),
-    [product, state.travelerProfile, state.memoryFacts],
-  );
+  // The talk opens on "this is what good looks like", so the cold open shows
+  // real preference matches read from Aurora at load. The moment the presenter
+  // runs a prompt the live memory state takes over, which leaves it empty again
+  // until Phase 4 authorizes it - the reveal still has to be earned.
+  const coldOpen = state.messages.length === 0;
+  const { travelerProfile, memoryFacts, previewProfile, previewFacts } = state;
+
+  const pills = useMemo(() => {
+    const profile = travelerProfile ?? (coldOpen ? previewProfile : null);
+    const facts =
+      memoryFacts.length > 0 ? memoryFacts : coldOpen ? previewFacts : [];
+    return derivePersonalization(product, profile, facts);
+  }, [
+    product,
+    coldOpen,
+    travelerProfile,
+    memoryFacts,
+    previewProfile,
+    previewFacts,
+  ]);
 
   if (pills.length === 0) {
-    // The showcase starts with traveler context disconnected on purpose -
-    // Production is where it gets authorized. Say that, rather than implying
-    // a load is in flight or inventing personalization we have not earned.
+    // Traveler context is disconnected and there is nothing to preview - say
+    // so, rather than implying a load is in flight or inventing
+    // personalization we have not earned.
     return (
       <p className="mds-discovery-pills-empty" role="status">
         <Lock size={13} aria-hidden="true" />
@@ -207,7 +223,7 @@ function PersonalizationPills({
             ) : pill.tone === 'match' ? (
               <Check size={12} />
             ) : (
-              <Database size={12} />
+              <ServiceMark name="aurora" size={13} />
             )}
           </span>
           <span className="mds-discovery-pill-label">{pill.label}</span>
@@ -303,7 +319,12 @@ export function DiscoveryWorkspace({
         ))}
       </div>
 
-      <SessionReceipt travelerId={state.travelerId} />
+      {/* The receipt is the closing beat, not the opener. On the cold open the
+          hero should own the stage, and a receipt counting rows from an earlier
+          run would be reporting on a session the audience has not seen yet. */}
+      {state.messages.length > 0 && (
+        <SessionReceipt travelerId={state.travelerId} />
+      )}
     </section>
   );
 }

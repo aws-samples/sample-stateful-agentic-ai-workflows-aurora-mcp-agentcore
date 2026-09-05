@@ -91,6 +91,11 @@ export interface MeridianShowcaseState {
   comparisonOpen: boolean;
   memoryFacts: LongTermMemoryFact[];
   travelerProfile: TravelerProfile | null;
+  /** Traveler context for the opening product view only. Read once at load so
+   *  the talk can open on real personalization; never gates chat requests and
+   *  never populates the memory drawers. */
+  previewFacts: LongTermMemoryFact[];
+  previewProfile: TravelerProfile | null;
   memoryEnabled: boolean;
   memoryLoading: boolean;
   memoryToggleError: string | null;
@@ -213,6 +218,12 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [memoryFacts, setMemoryFacts] = useState<LongTermMemoryFact[]>([]);
   const [travelerProfile, setTravelerProfile] = useState<TravelerProfile | null>(null);
+  // "What good looks like" for the opening product view. The talk opens on real
+  // personalization, then resets and builds back up to it. Kept separate from
+  // memoryFacts/travelerProfile on purpose: those stay empty until Phase 4
+  // authorizes the workload, so the ladder still earns its reveal.
+  const [previewFacts, setPreviewFacts] = useState<LongTermMemoryFact[]>([]);
+  const [previewProfile, setPreviewProfile] = useState<TravelerProfile | null>(null);
   const [memoryEnabled, setMemoryEnabledState] = useState(false);
   const [memoryLoading, setMemoryLoading] = useState(false);
   const [memoryToggleError, setMemoryToggleError] = useState<string | null>(null);
@@ -314,6 +325,26 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     void loadHealth();
     const interval = setInterval(loadHealth, 30000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    // One read at load so the opening product view can show real preference
+    // matches rather than invented ones. This never sets memoryEnabled: Phase
+    // 1-3 chat requests still go out with memory off and the memory drawers
+    // stay empty, so nothing about the ladder changes.
+    const loadPreview = async () => {
+      try {
+        const profile = await fetchMemoryProfile(SHOWCASE_TRAVELER_ID);
+        if (!mounted.current) return;
+        setPreviewFacts(memoryResponseToFacts(profile));
+        setPreviewProfile(profile.profile ?? null);
+      } catch {
+        // Aurora unreachable: the cold open falls back to the disconnected
+        // copy rather than showing preferences we cannot source.
+      }
+    };
+
+    void loadPreview();
   }, []);
 
   // The showcase starts with traveler context disconnected. Production makes
@@ -785,6 +816,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     comparisonOpen,
     memoryFacts,
     travelerProfile,
+    previewFacts,
+    previewProfile,
     memoryEnabled,
     memoryLoading,
     memoryToggleError,

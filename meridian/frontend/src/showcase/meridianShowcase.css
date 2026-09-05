@@ -730,6 +730,11 @@
 
 .mds-desktop-app {
   --mds-right-rail: clamp(360px, 24vw, 420px);
+  /* How wide the ladder's content runs, and how wide a paragraph inside it
+     may get. The stage measure is generous on purpose; only prose is held to
+     a reading width. */
+  --mds-stage-measure: 1560px;
+  --mds-prose-measure: 78ch;
 
   position: relative;
   min-height: 100dvh;
@@ -777,6 +782,99 @@
 .mds-desktop-right {
   min-width: 0;
   background: transparent;
+}
+
+/* The evidence rail is a drawer. Shut, it leaves a 42px edge tab carrying its
+   name, so the proof surface stays visible as a thing you can open rather than
+   disappearing and needing to be remembered. Open, it takes its full track and
+   the tab becomes the close control. */
+/* Several other rules assign --mds-right-rail: two media queries here (400px
+   above 1600px, 340px below 1450px) and the sidebar-collapsed layouts in
+   recoveryWorkspace.css. The compound selectors below outrank all of them on
+   specificity, so the folded width wins whatever the viewport matches and
+   whichever stylesheet loaded last. */
+.mds-desktop-app.is-rail-collapsed,
+.mds-desktop-app.is-sidebar-collapsed.is-rail-collapsed,
+.mds-desktop-app.is-finale.is-sidebar-collapsed.is-rail-collapsed {
+  --mds-right-rail: 44px;
+}
+
+.mds-desktop-app {
+  transition: grid-template-columns 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mds-desktop-right.is-collapsed {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* The handle reads bottom-to-top along the edge, which is the convention for
+   a right-hand tab and the only way a full label fits in 42px. */
+.mds-rail-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  padding: 14px 0;
+  border: 0;
+  color: var(--mds-on-surface-soft);
+  background: transparent;
+  font: inherit;
+  font-size: calc(11.5px * var(--mds-fs));
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.mds-rail-handle:hover,
+.mds-rail-handle:focus-visible {
+  color: var(--mds-on-surface);
+}
+
+/* Shut, the handle is a tab at the top of the edge, not a label adrift in the
+   middle of an empty column. writing-mode does the turning, so the chevron is
+   the only thing that needs rotating back to point at the content it opens. */
+/* Open, the handle is just the close chevron above the panels - the label
+   would repeat the strip's own "Aurora evidence" heading directly below it. */
+.mds-desktop-right:not(.is-collapsed) .mds-rail-handle {
+  width: auto;
+  align-self: flex-end;
+  padding: 0 0 4px;
+  gap: 0;
+}
+
+.mds-desktop-right:not(.is-collapsed) .mds-rail-handle svg {
+  transform: rotate(180deg);
+}
+
+.mds-desktop-right.is-collapsed .mds-rail-handle {
+  height: 100%;
+  align-self: stretch;
+  justify-content: center;
+  padding: 16px 0;
+  writing-mode: vertical-rl;
+  border-left: 1px solid transparent;
+}
+
+.mds-desktop-right.is-collapsed .mds-rail-handle:hover,
+.mds-desktop-right.is-collapsed .mds-rail-handle:focus-visible {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mds-desktop-right.is-collapsed .mds-rail-handle svg {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mds-desktop-app {
+    transition: none;
+  }
 }
 
 .mds-desktop-sidebar {
@@ -1042,6 +1140,29 @@
 .mds-desktop-app.is-proof .mds-desktop-scroll {
   gap: 12px;
   padding-top: 26px;
+}
+
+/* The composer, the example pills and the result grid take the stage measure,
+   which is deliberately generous - this is a room-facing surface and it should
+   feel wide. Only the reply paragraph is capped tighter, by
+   --mds-prose-measure, because a line of text is the one thing here that gets
+   harder to read as it gets wider. Sharing one measure and one centre line
+   keeps the phase nav, the transcript and the composer on the same edges. */
+.mds-desktop-app.is-proof .mds-desktop-scroll > *,
+.mds-desktop-app.is-proof .mds-desktop-dock > * {
+  width: 100%;
+  max-width: var(--mds-stage-measure);
+  margin-inline: auto;
+}
+
+/* Less gutter on the ladder: the composer is the thing the room watches being
+   typed into, so it earns the width the padding was holding. */
+.mds-desktop-app.is-proof .mds-desktop-dock {
+  padding-inline: 22px;
+}
+
+.mds-desktop-app.is-proof .mds-desktop-scroll {
+  padding-inline: 22px;
 }
 
 .mds-desktop-app.is-proof .mds-headline-row h1 {
@@ -1331,9 +1452,14 @@
   font-weight: 650;
 }
 
+/* Seven stages, two columns. Six columns in a ~370px rail gave each stage
+   about 55px, which is narrower than "Hybrid retrieval" or "AgentCore +
+   Strands" can render - the labels collided and the seventh stage wrapped
+   alone onto a second row. Two columns give each chip roughly 180px, enough
+   for the label and its value to read at a glance. */
 .mds-aurora-strip-items {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
 }
 
@@ -1342,9 +1468,9 @@
   min-height: 52px;
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
-  gap: 7px;
+  gap: 8px;
   align-items: center;
-  padding: 8px;
+  padding: 9px 10px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 11px;
   color: var(--mds-on-surface-soft);
@@ -1747,6 +1873,14 @@
    length so paragraphs still read at conversational measure. */
 .mds-message.bot {
   max-width: 100%;
+}
+
+/* The reply paragraph takes a reading measure while the result grid beside it
+   keeps the full column. They share a left edge, which is what actually reads
+   as alignment - matching their right edges only made the prose run to a
+   width no one can track a line across. */
+.mds-message.bot .mds-message-bubble {
+  max-width: var(--mds-prose-measure);
 }
 
 @keyframes mds-msg-in {
@@ -3717,15 +3851,15 @@
    the composer below. */
 .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip {
   min-width: 0;
-  height: 64px;
-  min-height: 64px;
+  height: 72px;
+  min-height: 72px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
   overflow: hidden;
-  padding: 9px 16px;
-  border-radius: 12px;
-  font-size: calc(15.5px * var(--mds-fs));
+  padding: 11px 20px;
+  border-radius: 14px;
+  font-size: calc(16.5px * var(--mds-fs));
   font-weight: 650;
   text-align: left;
   white-space: normal;
@@ -4922,10 +5056,15 @@
 /* One line per tool: status, tool name + server, Aurora operation. The full
    request/result pair stays in the row title and for screen readers, so
    condensing the rail costs no information. */
+/* Status icon, then everything else stacked beneath it. This used to put the
+   Aurora note in a third `auto` track, which sized to its own sentence and
+   squeezed the tool-name column to about one character - long ids like
+   awslabs.postgres-mcp-server then broke at every letter and ran down the
+   rail. Two content columns never fit here; one does. */
 .mds-contract-row {
   display: grid;
-  grid-template-columns: 15px minmax(0, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: 15px minmax(0, 1fr);
+  gap: 4px 8px;
   align-items: baseline;
   padding: 6px 9px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -4969,11 +5108,12 @@
 }
 
 .mds-contract-aurora {
-  justify-self: end;
+  grid-column: 2;
+  justify-self: start;
   color: var(--mds-on-surface-soft);
   font-size: calc(11px * var(--mds-fs));
   line-height: 1.3;
-  text-align: right;
+  text-align: left;
   overflow-wrap: anywhere;
 }
 
@@ -5545,7 +5685,7 @@
   }
 
   .mds-aurora-strip-items {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .mds-fullbleed-route .mds-desktop-right {
@@ -6308,6 +6448,7 @@
   gap: 8px;
   padding: 8px 2px;
 }
+
 .mds-empty-title {
   color: var(--mds-on-surface);
   font-size: calc(17px * var(--mds-fs));
@@ -7054,4 +7195,28 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .mds-thinking-ticker { animation: none; }
+}
+
+/* Official AWS service tiles. They ship as a coloured square with a white
+   glyph, so a small radius stops them reading as a hard sticker against the
+   panel, and the baseline nudge lines them up with the text they sit beside. */
+.mds-service-mark {
+  flex: none;
+  border-radius: 3px;
+  vertical-align: -2px;
+}
+
+/* The MCP mark is stroke art on currentColor, so it needs no tile treatment -
+   just optical alignment with the text beside it. */
+.mds-mcp-mark {
+  flex: none;
+  vertical-align: -2px;
+}
+
+/* Monochrome brand marks (MCP, LangGraph). They take currentColor, so they
+   only need optical alignment and a little room from the label. */
+.mds-mono-mark {
+  flex: none;
+  margin-right: 6px;
+  vertical-align: -2px;
 }

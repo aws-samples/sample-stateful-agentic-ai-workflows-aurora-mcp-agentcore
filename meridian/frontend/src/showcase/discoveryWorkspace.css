@@ -1,4 +1,10 @@
 .mds-desktop-app.is-discovery {
+  /* How far the text chrome sits in from the stage edge. The trip grid ignores
+     it on purpose - that is what makes the hero full-bleed. */
+  --mds-discovery-inset: 22px;
+  /* The strip of navy the trip grid stops short of at the bottom, so the
+     picture terminates on the shell instead of running off the screen. */
+  --mds-discovery-baseline: 16px;
   grid-template-columns: 244px minmax(0, 1fr);
 }
 
@@ -6,23 +12,39 @@
   grid-template-columns: 76px minmax(0, 1fr);
 }
 
+/* The product view is a picture surface first. The trip grid runs to the left
+   and right edges of the stage and only the text chrome above it keeps an
+   inset, so the hero gets the width a frame would otherwise spend on margin.
+   The bottom keeps a strip of the navy shell: run the photograph off that edge
+   too and it reads as an image overflowing its container rather than a
+   deliberate full-bleed, and the cards' rounded corners lose something to
+   land against. */
 .mds-desktop-app.is-discovery .mds-desktop-scroll {
   height: 100dvh;
-  gap: 14px;
-  padding: 20px 22px 22px;
+  gap: 10px;
+  padding: 16px 0 var(--mds-discovery-baseline);
 }
 
 .mds-desktop-app.is-discovery .mds-top-actions {
   min-height: 34px;
+  padding-inline: var(--mds-discovery-inset);
 }
 
 .mds-discovery-workspace {
   min-height: 0;
   flex: 1;
   display: grid;
-  /* heading · personalization pills · trip grid */
+  /* heading · personalization pills · trip grid, then the receipt once the
+     session has written something worth counting. */
   grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 16px;
+  gap: 12px;
+}
+
+.mds-discovery-heading,
+.mds-discovery-workspace > .mds-discovery-pills,
+.mds-discovery-workspace > .mds-discovery-pills-empty,
+.mds-discovery-workspace > .mds-receipt {
+  padding-inline: var(--mds-discovery-inset);
 }
 
 .mds-discovery-heading {

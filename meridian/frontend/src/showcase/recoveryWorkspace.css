@@ -381,12 +381,18 @@
   grid-template-columns: 212px minmax(0, 1fr) 384px;
 }
 
+/* The evidence rail's width is a token so the drawer can collapse it. These
+   used to hardcode 384px, which silently won over --mds-right-rail and left
+   the folded drawer sitting in a 384px track with 340px of dead space beside
+   it. Keep 384 as this layout's value, but let the token carry it. */
 .mds-desktop-app.is-sidebar-collapsed {
-  grid-template-columns: 76px minmax(0, 1fr) 384px;
+  --mds-right-rail: 384px;
+  grid-template-columns: 76px minmax(0, 1fr) var(--mds-right-rail);
 }
 
 .mds-desktop-app.is-finale.is-sidebar-collapsed {
-  grid-template-columns: 76px minmax(0, 1fr) 384px;
+  --mds-right-rail: 384px;
+  grid-template-columns: 76px minmax(0, 1fr) var(--mds-right-rail);
 }
 
 /* Shared sidebar typography, using the finale's treatment so the chrome does not

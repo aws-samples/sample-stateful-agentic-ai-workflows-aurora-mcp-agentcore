@@ -39,15 +39,28 @@ export function ChatComposer({
   //
   // Once a turn has run, the starters give their fixed footer space back to the
   // transcript - the reply and the trip cards are what the room needs to read.
-  // Follow-up chips carry the next prompt from that point on.
+  //
+  // The stretch prompt is the exception. Each rung's third example is the one
+  // this phase cannot answer, and the beat is: ask the ordinary question, watch
+  // it work, then ask the one that breaks and motivates the next rung. Clearing
+  // it along with the rest meant the breaking prompt vanished at exactly the
+  // moment the presenter needs it, leaving them to type it by hand.
   const conversationStarted = state.messages.length > 0;
-  const queryStarters = compact || recoveryMode || conversationStarted
+  const stretchPrompt = state.phaseExamples[2];
+  const stretchStillUnasked =
+    Boolean(stretchPrompt) && state.lastPrompt !== stretchPrompt;
+
+  const queryStarters = compact || recoveryMode
     ? []
-    : proofMode
-      ? state.selectedPhase <= 3
-        ? [state.phaseExamples[0], state.phaseExamples[2]].filter(Boolean)
-        : state.phaseExamples.slice(0, 3)
-      : state.phaseExamples.slice(0, 2);
+    : conversationStarted
+      ? proofMode && stretchStillUnasked
+        ? [stretchPrompt]
+        : []
+      : proofMode
+        ? state.selectedPhase <= 3
+          ? [state.phaseExamples[0], state.phaseExamples[2]].filter(Boolean)
+          : state.phaseExamples.slice(0, 3)
+        : state.phaseExamples.slice(0, 2);
 
   const updateFilters = (patch: Partial<ChatFilters>) => {
     state.setChatFilters({ ...state.chatFilters, ...patch });
