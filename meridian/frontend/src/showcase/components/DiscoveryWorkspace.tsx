@@ -8,8 +8,6 @@ import {
   Heart,
   Lock,
   MapPin,
-  Pause,
-  Play,
 } from 'lucide-react';
 import type { Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
@@ -238,7 +236,6 @@ export function DiscoveryWorkspace({
         : CATALOG_PREVIEW;
 
   const [rotationIndex, setRotationIndex] = useState(0);
-  const [paused, setPaused] = useState(prefersReducedMotion);
   const rotationRef = useRef<number | null>(null);
 
   // Keep the index in range when the pool changes underneath the rotation.
@@ -246,15 +243,17 @@ export function DiscoveryWorkspace({
     setRotationIndex((index) => (index < pool.length ? index : 0));
   }, [pool.length]);
 
+  // The hero advances on its own. No controls: this is an ambient product
+  // surface, not a carousel the audience is meant to operate.
   useEffect(() => {
-    if (paused || pool.length < 2) return;
+    if (prefersReducedMotion || pool.length < 2) return;
     rotationRef.current = window.setInterval(() => {
       setRotationIndex((index) => (index + 1) % pool.length);
     }, ROTATE_MS);
     return () => {
       if (rotationRef.current !== null) window.clearInterval(rotationRef.current);
     };
-  }, [paused, pool.length]);
+  }, [pool.length]);
 
   const featured = pool[rotationIndex % pool.length];
   const supporting = pool
@@ -291,34 +290,6 @@ export function DiscoveryWorkspace({
             onView={() => state.openTripDetails(featured)}
             onSave={() => state.saveTrip(featured)}
           />
-          {pool.length > 1 && (
-            <div className="mds-discovery-rotation">
-              <button
-                type="button"
-                className="mds-discovery-rotation-toggle"
-                onClick={() => setPaused((value) => !value)}
-                aria-label={paused ? 'Resume catalog rotation' : 'Pause catalog rotation'}
-              >
-                {paused ? <Play size={13} /> : <Pause size={13} />}
-              </button>
-              <ol aria-label="Catalog rotation">
-                {pool.slice(0, 8).map((item, index) => (
-                  <li key={item.product_id}>
-                    <button
-                      type="button"
-                      className={index === rotationIndex % pool.length ? 'is-active' : ''}
-                      aria-current={index === rotationIndex % pool.length ? 'true' : undefined}
-                      aria-label={item.name}
-                      onClick={() => {
-                        setPaused(true);
-                        setRotationIndex(index);
-                      }}
-                    />
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
         </div>
         {supporting.map((product) => (
           <DiscoveryTrip
