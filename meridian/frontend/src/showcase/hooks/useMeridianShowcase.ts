@@ -3,6 +3,7 @@ import {
   deleteMemoryFact,
   fetchHealth,
   fetchMemoryProfile,
+  fetchProducts,
   processOrder,
   sendChatMessage,
   updateMemoryFact,
@@ -81,6 +82,7 @@ export interface MeridianShowcaseState {
   messages: Message[];
   currentPrompt: string;
   recommendations: Product[];
+  catalog: Product[];
   selectedTrip: Product | null;
   tripDetailsOpen: boolean;
   savedTrips: Product[];
@@ -202,6 +204,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [currentPrompt, setCurrentPrompt] = useState(SHOWCASE_INITIAL_PROMPT);
   const [recommendations, setRecommendations] = useState<Product[]>([]);
+  // Live catalog for the product view's rotating hero. Aurora rows, not a
+  // bundled preview list.
+  const [catalog, setCatalog] = useState<Product[]>([]);
   const [selectedTrip, setSelectedTrip] = useState<Product | null>(null);
   const [tripDetailsOpen, setTripDetailsOpen] = useState(false);
   const [workspace, setWorkspace] = useState(loadTripWorkspace);
@@ -341,6 +346,24 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     } finally {
       if (mounted.current) setMemoryLoading(false);
     }
+  }, []);
+
+  // Load the catalog once so the product view can rotate through real Aurora
+  // rows. A failure here is not worth surfacing: the view falls back to the
+  // current recommendation set.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await fetchProducts(undefined, 12);
+        if (!cancelled && mounted.current) setCatalog(rows);
+      } catch {
+        if (!cancelled && mounted.current) setCatalog([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const replayTrace = useCallback(() => {
@@ -753,6 +776,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     messages,
     currentPrompt,
     recommendations,
+    catalog,
     selectedTrip,
     tripDetailsOpen,
     savedTrips: workspace.savedTrips,

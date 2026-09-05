@@ -29,6 +29,7 @@ function makeState(
     messages: [],
     currentPrompt: '',
     recommendations: [],
+    catalog: [],
     traceSpans: [],
     memoryFacts: [],
     isLoading: false,

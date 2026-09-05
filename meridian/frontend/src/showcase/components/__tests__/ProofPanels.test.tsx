@@ -7,6 +7,7 @@ const state = {
   selectedPhase: 2,
   traceSpans: [],
   recommendations: [],
+  catalog: [],
 } as unknown as MeridianShowcaseState;
 
 describe('proof panels', () => {

@@ -531,3 +531,163 @@
     transition: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Personalization pills
+
+   Each pill is one row Aurora actually returned for this traveler, evaluated
+   against the trip currently in the hero. They recompute as the hero rotates,
+   which is the point: the product view is reading live profile state, not
+   rendering a fixed marketing strip.
+--------------------------------------------------------------------------- */
+.mds-discovery-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.mds-discovery-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px 5px 8px;
+  border: 1px solid var(--mds-line);
+  border-radius: 999px;
+  background: var(--mds-fill-1);
+  font-size: calc(12px * var(--mds-fs));
+  font-weight: 640;
+  line-height: 1.25;
+}
+
+.mds-discovery-pill-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.mds-discovery-pill-label {
+  color: var(--mds-on-surface);
+}
+
+.mds-discovery-pill-source {
+  color: var(--mds-dim);
+  font-family: var(--mds-font-mono);
+  font-size: calc(10px * var(--mds-fs));
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.mds-discovery-pill.is-match {
+  border-color: rgba(55, 210, 157, 0.3);
+  background: rgba(55, 210, 157, 0.08);
+}
+
+.mds-discovery-pill.is-match .mds-discovery-pill-icon {
+  color: var(--mds-green);
+}
+
+.mds-discovery-pill.is-caution {
+  border-color: rgba(240, 180, 90, 0.34);
+  background: rgba(240, 180, 90, 0.09);
+}
+
+.mds-discovery-pill.is-caution .mds-discovery-pill-icon {
+  color: var(--mds-yellow);
+}
+
+.mds-discovery-pill.is-context .mds-discovery-pill-icon {
+  color: var(--mds-blue);
+}
+
+.mds-discovery-pills-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 14px;
+  color: var(--mds-dim);
+  font-size: calc(12px * var(--mds-fs));
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+   Hero rotation
+--------------------------------------------------------------------------- */
+.mds-discovery-featured {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  animation: mds-discovery-fade 420ms ease-out;
+}
+
+@keyframes mds-discovery-fade {
+  from {
+    opacity: 0;
+    transform: scale(1.008);
+  }
+}
+
+.mds-discovery-rotation {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px 5px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(6, 12, 20, 0.62);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.mds-discovery-rotation-toggle {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.mds-discovery-rotation ol {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mds-discovery-rotation ol button {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.34);
+  transition: width 200ms ease, background 200ms ease;
+}
+
+.mds-discovery-rotation ol button.is-active {
+  width: 18px;
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mds-discovery-featured {
+    animation: none;
+  }
+  .mds-discovery-rotation ol button {
+    transition: none;
+  }
+}

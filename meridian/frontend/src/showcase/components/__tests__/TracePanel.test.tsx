@@ -28,6 +28,7 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     messages: [],
     currentPrompt: '',
     recommendations: [],
+    catalog: [],
     selectedTrip: null,
     tripDetailsOpen: false,
     savedTrips: [],

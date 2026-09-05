@@ -1,15 +1,25 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowRight,
   Check,
   Clock3,
+  Database,
   Eraser,
   Heart,
   MapPin,
+  Pause,
+  Play,
   Sparkles,
 } from 'lucide-react';
 import type { Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { tripVisualPhoto } from '../lib/tripVisualPhoto';
+import { derivePersonalization } from '../lib/discoveryPersonalization';
+import { prefersReducedMotion } from '../lib/prefersReducedMotion';
+
+/** How long each trip holds the hero before the next one takes over. */
+const ROTATE_MS = 7000;
 
 const CATALOG_PREVIEW: Product[] = [
   {
@@ -177,6 +187,51 @@ function DiscoveryTrip({
   );
 }
 
+function PersonalizationPills({
+  state,
+  product,
+}: {
+  state: MeridianShowcaseState;
+  product: Product | undefined;
+}) {
+  const pills = useMemo(
+    () => derivePersonalization(product, state.travelerProfile, state.memoryFacts),
+    [product, state.travelerProfile, state.memoryFacts],
+  );
+
+  if (pills.length === 0) {
+    return (
+      <p className="mds-discovery-pills-empty" role="status">
+        <Database size={13} aria-hidden="true" />
+        Reading traveler context from Aurora…
+      </p>
+    );
+  }
+
+  return (
+    <ul
+      className="mds-discovery-pills"
+      aria-label={`Why Meridian is showing ${product?.name ?? 'this trip'}`}
+    >
+      {pills.map((pill) => (
+        <li key={pill.id} className={`mds-discovery-pill is-${pill.tone}`}>
+          <span className="mds-discovery-pill-icon" aria-hidden="true">
+            {pill.tone === 'caution' ? (
+              <AlertTriangle size={12} />
+            ) : pill.tone === 'match' ? (
+              <Check size={12} />
+            ) : (
+              <Database size={12} />
+            )}
+          </span>
+          <span className="mds-discovery-pill-label">{pill.label}</span>
+          <span className="mds-discovery-pill-source">{pill.source}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function DiscoveryWorkspace({
   state,
   onClear,
@@ -186,16 +241,44 @@ export function DiscoveryWorkspace({
   onClear: () => void;
   greeting: string;
 }) {
-  const products =
+  // Prefer the live recommendation set, then the live catalog, and only fall
+  // back to the bundled preview when Aurora has not answered yet.
+  const pool =
     state.recommendations.length > 0
-      ? state.recommendations.slice(0, 3)
-      : CATALOG_PREVIEW;
-  const featured = products[0];
-  const supporting = products.slice(1);
+      ? state.recommendations
+      : state.catalog.length > 0
+        ? state.catalog
+        : CATALOG_PREVIEW;
+
+  const [rotationIndex, setRotationIndex] = useState(0);
+  const [paused, setPaused] = useState(prefersReducedMotion);
+  const rotationRef = useRef<number | null>(null);
+
+  // Keep the index in range when the pool changes underneath the rotation.
+  useEffect(() => {
+    setRotationIndex((index) => (index < pool.length ? index : 0));
+  }, [pool.length]);
+
+  useEffect(() => {
+    if (paused || pool.length < 2) return;
+    rotationRef.current = window.setInterval(() => {
+      setRotationIndex((index) => (index + 1) % pool.length);
+    }, ROTATE_MS);
+    return () => {
+      if (rotationRef.current !== null) window.clearInterval(rotationRef.current);
+    };
+  }, [paused, pool.length]);
+
+  const featured = pool[rotationIndex % pool.length];
+  const supporting = pool
+    .filter((_, index) => index !== rotationIndex % pool.length)
+    .slice(0, 2);
   const sourceLabel =
     state.recommendations.length > 0
       ? 'Current recommendation set'
-      : 'Meridian catalog preview';
+      : state.catalog.length > 0
+        ? 'Live Aurora catalog'
+        : 'Meridian catalog preview';
 
   return (
     <section className="mds-discovery-workspace" aria-label="Meridian discovery">
@@ -224,13 +307,45 @@ export function DiscoveryWorkspace({
         </div>
       </header>
 
+      <PersonalizationPills state={state} product={featured} />
+
       <div className="mds-discovery-grid">
-        <DiscoveryTrip
-          product={featured}
-          featured
-          onView={() => state.openTripDetails(featured)}
-          onSave={() => state.saveTrip(featured)}
-        />
+        <div className="mds-discovery-featured" key={featured?.product_id}>
+          <DiscoveryTrip
+            product={featured}
+            featured
+            onView={() => state.openTripDetails(featured)}
+            onSave={() => state.saveTrip(featured)}
+          />
+          {pool.length > 1 && (
+            <div className="mds-discovery-rotation">
+              <button
+                type="button"
+                className="mds-discovery-rotation-toggle"
+                onClick={() => setPaused((value) => !value)}
+                aria-label={paused ? 'Resume catalog rotation' : 'Pause catalog rotation'}
+              >
+                {paused ? <Play size={13} /> : <Pause size={13} />}
+              </button>
+              <ol aria-label="Catalog rotation">
+                {pool.slice(0, 8).map((item, index) => (
+                  <li key={item.product_id}>
+                    <button
+                      type="button"
+                      className={index === rotationIndex % pool.length ? 'is-active' : ''}
+                      aria-current={index === rotationIndex % pool.length ? 'true' : undefined}
+                      aria-label={item.name}
+                      onClick={() => {
+                        setPaused(true);
+                        setRotationIndex(index);
+                      }}
+                    />
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
         {supporting.map((product) => (
           <DiscoveryTrip
             key={product.product_id}
