@@ -24,7 +24,7 @@ export function AuroraEvidenceStrip({
   });
   const observedCount = evidence.filter((item) => item.status === 'observed').length;
   const observedLabel = observedCount
-    ? `${observedCount} observed this turn`
+    ? `${observedCount} of ${evidence.length} stages observed this turn`
     : 'waiting for first run';
 
   return (
@@ -50,8 +50,8 @@ export function AuroraEvidenceStrip({
         ) : (
           <span>Aurora evidence</span>
         )}
-        {!collapsed && (
-          <b>{state.traceSpans.length ? `${state.traceSpans.length} spans` : 'waiting for first run'}</b>
+        {!collapsed && state.traceSpans.length > 0 && (
+          <b>{`${state.traceSpans.length} spans`}</b>
         )}
       </div>
       {!collapsed && (

@@ -16,7 +16,7 @@ The root route redirects to `/showcase`.
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.13 (the version CI builds and tests against)
 - Node.js 20.19+ or 22.12+
 - AWS credentials with Amazon Bedrock and RDS Data API access
 - Aurora PostgreSQL 18+ with pgvector enabled, or a cluster created through `scripts/create_cluster.sh`
@@ -30,7 +30,7 @@ The root route redirects to `/showcase`.
 cd meridian
 python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.txt
 
 cp .env.example .env
 # Fill in AURORA_CLUSTER_ARN, AURORA_SECRET_ARN, AURORA_DATABASE, and AWS region.
@@ -70,7 +70,7 @@ PIP_CONFIG_FILE=/dev/null pip-compile requirements.in \
 
 ```bash
 cd meridian/frontend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -92,7 +92,7 @@ python scripts/bind_current_identity.py
 
 | Surface | Route | Use |
 | ------- | ----- | --- |
-| **Device Showcase** | `/showcase`, `/device-showcase` | Primary AWS Summit chalk-talk experience: chat, phase selector, trace, traveler memory, RLS proof, and trip cards |
+| **Meridian Showcase** | `/showcase`, `/device-showcase` | Primary chalk-talk experience: chat, phase selector, trace, traveler memory, RLS proof, and trip cards |
 | **Demo Stage** | `/demo-stage`, `/stage` | Kiosk loop and presenter playback surface |
 
 ## Five-Phase Demo Ladder
@@ -221,7 +221,7 @@ Key environment variables are documented in `.env.example`.
 | Layer | Technology |
 | ----- | ---------- |
 | Frontend | React 18, Vite, TypeScript |
-| Backend | FastAPI, Python 3.11+ |
+| Backend | FastAPI, Python 3.13 |
 | Agents | Strands Agents for Phases 1–4 |
 | Workflow | LangGraph `StateGraph` with `PostgresSaver` checkpoints in Phase 5 |
 | Database | Aurora PostgreSQL 18+, RDS Data API, pgvector HNSW, identity bindings, Row-Level Security |
@@ -254,5 +254,5 @@ python -m pip_audit -r requirements.txt
 | [DEMO_SCRIPT.md](DEMO_SCRIPT.md) | Presenter flow and recommended live prompts |
 | [docs/PRESENTER_GUIDE.md](docs/PRESENTER_GUIDE.md) | Narration, code references, FAQ, and dry-run checklist |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | AgentCore deployment and day-of operating guide |
-| [docs/STATEFUL_ARCHITECTURE.md](docs/STATEFUL_ARCHITECTURE.md) | Source of truth for state, transport, and September slide messaging |
+| [docs/STATEFUL_ARCHITECTURE.md](docs/STATEFUL_ARCHITECTURE.md) | Source of truth for state, transport, and slide messaging |
 | [STRUCTURE.md](STRUCTURE.md) | Live code vs reference-only layout |

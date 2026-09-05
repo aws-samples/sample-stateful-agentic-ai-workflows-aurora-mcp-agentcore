@@ -59,7 +59,7 @@ const CHALK_TALK = {
   speakers: 'Shayon Sanyal & Aditya Samant',
 } as const;
 
-// Showcase is the Summit participant surface. The stage remains available for
+// Showcase is the participant surface. The stage remains available for
 // kiosk loops and presenter playback.
 const MERIDIAN_SURFACES: { label: string; path: string; blurb: string }[] = [
   { label: 'Showcase', path: '/showcase', blurb: 'Full concierge - chat, trace, memory' },

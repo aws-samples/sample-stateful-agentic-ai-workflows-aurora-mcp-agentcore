@@ -55,8 +55,21 @@ poor. Keep browser zoom at 100 percent.
 
 ## Suggested Run Of Show
 
-Allow about 30 minutes for the walkthrough and leave additional time for
-questions.
+[`DEMO_SCRIPT.md`](../DEMO_SCRIPT.md) holds the authoritative timing budget:
+about 45 minutes of content in a 60-minute slot, leaving the balance as
+distributed Q&A. Use the table below as the at-a-glance card and that budget
+for pacing.
+
+**Before your first prompt:** the landing view is the Experience surface and
+has no phase selector or composer. Click **2 · Capability ladder** in the
+journey header first; the phase pills (SQL / MCP / Retrieval / Production /
+Workflow), the Aurora evidence strip, and the prompt box all live there.
+
+**Expect a pause on Phases 3 to 5.** On a warm cluster, Phase 1 returns in
+about a second and Phase 2 in about two. Phases 3 and 4 take roughly 13 to 25
+seconds because each turn makes two Bedrock round trips (specialist routing
+and the concierge rewrite) on top of embedding, pgvector, and rerank. That is
+airtime, not a stall: narrate the trace panel as the spans land.
 
 | Phase | Run this query | Point to | Transition |
 | --- | --- | --- | --- |
@@ -64,7 +77,7 @@ questions.
 | **2 - MCP** | `Compare three trip types side by side and convert their prices to euros.` | MCP tool discovery, comparison, FX conversion | Tools improve interoperability, not semantic understanding. |
 | **3 - Retrieval** | `I want a quiet, romantic escape in wine country, ideally with a villa.` | pgvector, full-text candidates, Cohere rerank | Intent works, but the system still needs trusted memory. |
 | **4 - Production** | `Recall my October Tokyo plan and use my saved preferences to recommend the next step.` | Memory facts, identity, ALLOW/DENY, RLS, audit | A multi-step disruption plan now needs durable execution state. |
-| **5 - Workflow** | `My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.` | Named graph nodes, checkpoints, same-thread resume | The plan survives process interruption because state is externalized. |
+| **5 - Workflow** | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` | Named graph nodes, checkpoints, same-thread resume | The plan survives process interruption because state is externalized. |
 
 ## Presentation Flow
 
@@ -72,7 +85,7 @@ questions.
 
 Start in **Experience**. Point out:
 
-- The cancelled JFK to HND flight.
+- The canceled JFK to HND flight.
 - Alex's United Premier 1K and Marriott Bonvoy Platinum status.
 - The recovery action and persistent journey workspace.
 
@@ -161,6 +174,33 @@ Explain the transport split:
 If demonstrating restart recovery, pause after `search`, restart the backend,
 and resume the same thread. The proof is the same thread continuing from an
 Aurora checkpoint, not an in-memory object surviving.
+
+## Governance Q&A
+
+These three come up every time the RLS probe runs. DEMO_SCRIPT.md defers to
+this section for them.
+
+**"Why is `trip_interactions` 33 of 34 when preferences drop to 17 of 22?"**
+The row counts differ because the decoy traveler owns one interaction and five
+preferences. RLS is doing identical work in both cases; only the seed
+distribution differs. Lead with `traveler_preferences`, which shows the
+collapse clearly, and treat the interactions row as a second table under the
+same policy rather than a second proof.
+
+**"Doesn't the policy's `OR ... = ''` branch open a hole?"**
+The seed branch lets a session with no traveler scope set read nothing rather
+than error. `scoped_session` refuses to run when `RLS_APP_ROLE` is empty, so
+an unscoped session never reaches a query in normal operation. It fails
+closed, not open. Show `examples/rls_for_agents.sql` if pressed.
+
+**"Why not `FORCE ROW LEVEL SECURITY` instead of a step-down role?"**
+`FORCE` makes the table owner subject to its own policies, and it works. The
+reusable lesson is stronger without it: the Data API connects as the cluster
+master, which owns these tables and is exempt from RLS. Rather than juggling
+owner and superuser exemptions, the session does `SET LOCAL ROLE` to
+`meridian_app` - a role that owns nothing and holds no special attributes, so
+it is covered by the policy by construction. Run scoped queries as a role that
+is always subject to the policy, and the exemption question stops mattering.
 
 ## Claim Boundaries
 

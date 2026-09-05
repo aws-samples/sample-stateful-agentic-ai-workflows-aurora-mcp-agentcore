@@ -282,3 +282,27 @@ def test_loyalty_tool_uses_authenticated_traveler(monkeypatch) -> None:
             },
         )
     ]
+
+
+def test_prompt_ladder_matches_documented_prompts() -> None:
+    """The shipped ladder must stay in step with DEMO_SCRIPT.md."""
+    from backend.demo_prompts import PROMPT_LADDER, tee_up_prompt
+
+    assert set(PROMPT_LADDER) == {1, 2, 3, 4, 5}
+    assert tee_up_prompt(1) == COMPARE_AND_FX
+    assert tee_up_prompt(2) == RETRIEVAL_INTENT
+    assert tee_up_prompt(3) == MEMORY_RECALL
+    assert tee_up_prompt(4) == WORKFLOW_PLAN
+    assert MCP_SEASONAL in PROMPT_LADDER[2].works
+    assert TUSCANY_AVAILABILITY in PROMPT_LADDER[3].works
+
+
+def test_follow_ups_always_offer_the_next_rung() -> None:
+    """The hand-off prompt must be one click away on every phase."""
+    from backend.demo_prompts import tee_up_prompt
+    from backend.routers.chat import generate_follow_ups
+
+    for phase in (1, 2, 3, 4):
+        chips = generate_follow_ups("Show me city trips", [], phase)
+        assert tee_up_prompt(phase) in chips, f"phase {phase} lost its tee-up"
+        assert all(chip.strip() == chip and chip for chip in chips)

@@ -257,5 +257,8 @@ video {
 }
 
 .bg-app {
-  background-color: #f6f5f0;
+  /* Legacy hook from the Tailwind build. It must not pin a fixed colour --
+     that overrode the themed body background and left a light ground under
+     the dark UI. */
+  background-color: var(--app-bg);
 }

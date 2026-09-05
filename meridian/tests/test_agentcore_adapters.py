@@ -162,24 +162,55 @@ def test_memory_record_turn_uses_template_namespace():
     assert kwargs["metadata"]["namespace"]["stringValue"] == "/users/trv_demo/sessions/conv_123"
 
 
-def test_memory_reads_use_template_namespace():
+def test_semantic_recall_uses_template_namespace():
     adapter = AgentCoreMemoryAdapter(memory_id="mem-abc", region="us-east-1")
     mock_client = MagicMock()
-    mock_client.list_memory_records.return_value = {"memoryRecordSummaries": []}
     mock_client.retrieve_memory_records.return_value = {"memoryRecordSummaries": []}
     adapter._client = mock_client
 
-    adapter.list_recent_turns("trv_demo", "conv_123")
     adapter.semantic_recall("trv_demo", "conv_123", "tokyo")
 
-    assert (
-        mock_client.list_memory_records.call_args.kwargs["namespace"]
-        == "/users/trv_demo/sessions/conv_123"
-    )
     assert (
         mock_client.retrieve_memory_records.call_args.kwargs["namespace"]
         == "/users/trv_demo/sessions/conv_123"
     )
+
+
+def test_session_tier_reads_events_not_extracted_records():
+    """The session tier must read back the turn that was just mirrored.
+
+    ``list_memory_records`` only returns records the SEMANTIC strategy has
+    already extracted, which lands minutes later — so during a live session it
+    reported zero events immediately after a successful ``create_event``.
+    """
+    adapter = AgentCoreMemoryAdapter(memory_id="mem-abc", region="us-east-1")
+    mock_client = MagicMock()
+    mock_client.list_events.return_value = {
+        "events": [
+            {
+                "eventTimestamp": "2026-09-04T00:00:00Z",
+                "payload": [
+                    {"conversational": {"role": "USER", "content": {"text": "tokyo?"}}},
+                    {
+                        "conversational": {
+                            "role": "ASSISTANT",
+                            "content": {"text": "Here are five."},
+                        }
+                    },
+                ],
+            }
+        ]
+    }
+    adapter._client = mock_client
+
+    turns = adapter.list_recent_turns("trv_demo", "conv_123", limit=6)
+
+    mock_client.list_memory_records.assert_not_called()
+    kwargs = mock_client.list_events.call_args.kwargs
+    assert kwargs["actorId"] == "trv_demo"
+    assert kwargs["sessionId"] == "conv_123"
+    assert [turn["text"] for turn in turns] == ["tokyo?", "Here are five."]
+    assert [turn["role"] for turn in turns] == ["USER", "ASSISTANT"]
 
 
 def test_singleton_getters():

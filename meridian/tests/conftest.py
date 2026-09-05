@@ -4,7 +4,6 @@ Pytest configuration for Meridian tests.
 Configures Hypothesis settings and shared fixtures for property-based testing.
 """
 import os
-import json
 import pytest
 from hypothesis import settings, Verbosity, Phase
 

@@ -131,6 +131,60 @@ def test_checkpoint_dsn_can_be_built_from_aurora_env(monkeypatch: pytest.MonkeyP
     )
 
 
+@pytest.mark.parametrize(
+    "present",
+    [
+        pytest.param({}, id="nothing-configured"),
+        pytest.param(
+            {
+                "AURORA_USERNAME": "meridian_admin",
+                "AURORA_HOST": "db.example.com",
+                "AURORA_DATABASE": "meridian",
+            },
+            id="documented-default-no-password",
+        ),
+        pytest.param(
+            {
+                "AURORA_USERNAME": "meridian_admin",
+                "AURORA_PASSWORD": "   ",
+                "AURORA_HOST": "db.example.com",
+                "AURORA_DATABASE": "meridian",
+            },
+            id="blank-password",
+        ),
+    ],
+)
+def test_checkpoint_dsn_degrades_instead_of_raising(
+    monkeypatch: pytest.MonkeyPatch, present: dict
+) -> None:
+    """Missing checkpoint credentials must fall back, not crash Phase 5.
+
+    ``.env.example`` deliberately leaves ``AURORA_PASSWORD`` unset and steers
+    operators to the Data API, so the documented default configuration reaches
+    this path on every Phase 5 turn.
+    """
+    for name in (
+        "LANGGRAPH_CHECKPOINT_DSN",
+        "LANGGRAPH_CHECKPOINT_USERNAME",
+        "LANGGRAPH_CHECKPOINT_PASSWORD",
+        "LANGGRAPH_CHECKPOINT_HOST",
+        "LANGGRAPH_CHECKPOINT_PORT",
+        "LANGGRAPH_CHECKPOINT_DATABASE",
+        "AURORA_USERNAME",
+        "AURORA_PASSWORD",
+        "AURORA_HOST",
+        "AURORA_CLUSTER_ENDPOINT",
+        "AURORA_PORT",
+        "AURORA_DATABASE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LANGGRAPH_AUTO_CHECKPOINT_DSN", "true")
+    for name, value in present.items():
+        monkeypatch.setenv(name, value)
+
+    assert _resolve_checkpoint_dsn() is None
+
+
 def test_workflow_enters_async_postgres_saver_when_dsn_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

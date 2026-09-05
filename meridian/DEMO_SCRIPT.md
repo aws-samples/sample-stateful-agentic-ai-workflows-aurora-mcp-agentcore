@@ -83,10 +83,19 @@ npm run dev
 - http://localhost:5173/showcase loads the live concierge
 - http://localhost:8000/health returns `"status":"healthy"`
 - `GET /api/memory/trv_meridian_demo` returns Alex Morgan profile facts
-- Phase pills, trace panel, and Alex Morgan context are visible
+- Alex Morgan's context is visible on the landing (Experience) view
+- Click **2 · Capability ladder** in the journey header — the phase pills,
+  Aurora evidence strip, trace panel, and prompt box live there. The landing
+  view has no phase selector and no composer, so every "Select: Phase N"
+  instruction below assumes you are already on this screen.
 - **Warm the cluster:** run one Phase 1 query. Aurora Serverless v2 scales from 0.5 ACU;
   the first query after idle can take a few seconds or, if the cluster is mid-maintenance,
   error. Never let the *first* thing the room sees be a cold-start stall.
+- **Know the warm timings.** Phase 1 lands in ~1s and Phase 2 in ~2s, but Phases 3–5
+  take **13–25 seconds** because each turn makes two Bedrock round trips (specialist
+  routing plus the concierge rewrite) on top of embedding, pgvector, and rerank.
+  That is not a stall — narrate the trace spans as they land. Rehearse talking
+  through it rather than standing in silence.
 
 **If Aurora was reset**
 
@@ -144,7 +153,7 @@ Point to the five phase pills (grouped as one ladder):
 
 > "Phases 1–3 build the retrieval stack. Phase 4 makes it trustworthy — it remembers Alex
 > Morgan and physically cannot read anyone else's data. Phase 5 makes multi-step work
-> survivable: a flight gets cancelled mid-plan, and the workflow picks up where it left off."
+> survivable: a flight gets canceled mid-plan, and the workflow picks up where it left off."
 
 ---
 
@@ -228,7 +237,8 @@ it authorizes the workload against `traveler_identity_bindings` **before** RLS s
 
 **Select:** `Phase 3 · Retrieval`
 
-**Open by typing the Phase-2 failure a third time. Say nothing. Wait for the cards.**
+**Open by typing the Phase-2 failure a third time, then narrate the trace while it runs**
+(~15–20s: embed → pgvector + tsvector → rerank). Do not stand in silence.
 
 > `I want a quiet, romantic escape in wine country, ideally with a villa.`
 > → Tuscany Wine & Wellness, Amalfi Coast Villa Week, Douro / Tokyo Ryokan — each with a
@@ -337,7 +347,7 @@ it's: run your scoped queries as a role that's always covered."*
 
 Click the third Phase 4 pill (the disruption prompt):
 
-> `My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.`
+> `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`
 
 Production recalls Alex, authorizes, and finds candidate trips — then **stops and refuses to
 fake it.** The trace shows a **"Checkpointed workflow required"** span and the reply says it
@@ -345,7 +355,7 @@ won't collapse two dependent steps (rework the itinerary, then check package-dur
 availability for the best three options) into one fluent paragraph. This is Phase 4's honest break: it *recognizes* the
 multi-step boundary rather than pretending both steps completed atomically.
 
-> "It recalled everything about Alex and found alternatives — then it stopped. A cancelled
+> "It recalled everything about Alex and found alternatives — then it stopped. A canceled
 > flight is two dependent steps: rework the trip, then check duration inventory for the best three options.
 > Production won't pretend it ran both inside one turn. When a booking pipeline hangs off step
 > 1 finishing before step 2 runs, you want that explicit, checkpointed, and resumable. That's
@@ -378,7 +388,7 @@ classify ──┼─→ availability ────┤
 
 **Run the exact prompt Production handed off:**
 
-> `My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.`
+> `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`
 
 Classify routes it to **plan**: `search` runs (re-find matching Tokyo trips), a checkpoint is
 written, then the conditional edge continues to `availability` (check package-duration inventory), a
@@ -432,7 +442,7 @@ the graph makes that plan survivable and auditable."*
 > Retrieval closed the intent gap with pgvector, tsvector, and Cohere rerank. Production made
 > it trustworthy — AgentCore identity, a workload-to-traveler grant, Aurora RLS, audited
 > memory. Workflow made multi-step work durable — an explicit LangGraph StateGraph that
-> checkpoints between nodes so a cancelled flight doesn't lose the plan. What changes each
+> checkpoints between nodes so a canceled flight doesn't lose the plan. What changes each
 > phase is **how much state the agent carries** and **how much governance sits between it and
 > the database.** Everything else stayed the same."
 
@@ -472,10 +482,10 @@ the graph makes that plan survivable and auditable."*
 - Find a Tokyo culture trip for two using my saved preferences.
 - Recall my October Tokyo plan and use my saved preferences to recommend the next step.
 - **Governance probe:** RLS tab → Re-run (ALLOW Alex · DENY Jordan · 17 of 22).
-- **Hand-off:** My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.
+- **Hand-off:** My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.
 
 ### Phase 5 — Workflow
-- My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options. *(plan → search → availability)*
+- My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options. *(plan → search → availability)*
 - Which trip lengths are still available for Amalfi Coast Villa Week? *(availability)*
 - Recall my October Tokyo plan and use my saved preferences to recommend the next step. *(memory_recall)*
 
@@ -509,7 +519,7 @@ curl -s -X POST http://localhost:8000/api/chat \
 # Phase 5 — flight-disruption replan (plan → search → availability)
 curl -s -X POST http://localhost:8000/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"message":"My JFK-to-Tokyo flight was cancelled. Rework the trip, then check duration availability for the best three options.","phase":5,"customer_id":"trv_meridian_demo"}' \
+  -d '{"message":"My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.","phase":5,"customer_id":"trv_meridian_demo"}' \
   | jq '.message, (.activities[].title)'
 ```
 

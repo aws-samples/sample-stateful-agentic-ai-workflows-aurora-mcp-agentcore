@@ -36,7 +36,12 @@ export function ChatComposer({
   // Experience stays quiet with two known-good prompts. System proof keeps the
   // third stretch prompt because exposing each phase's limit is the teaching
   // mechanism for the five-rung ladder.
-  const queryStarters = compact || recoveryMode
+  //
+  // Once a turn has run, the starters give their fixed footer space back to the
+  // transcript - the reply and the trip cards are what the room needs to read.
+  // Follow-up chips carry the next prompt from that point on.
+  const conversationStarted = state.messages.length > 0;
+  const queryStarters = compact || recoveryMode || conversationStarted
     ? []
     : proofMode
       ? state.selectedPhase <= 3

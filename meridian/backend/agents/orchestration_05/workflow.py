@@ -95,6 +95,20 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
+def _first_env(*names: str, default: str = "") -> str:
+    """Return the first environment variable that holds a non-blank value.
+
+    Always returns a string. Callers build the checkpoint DSN from several
+    fallback chains; an unset chain must degrade to the MemorySaver path
+    rather than raise, so this never returns ``None``.
+    """
+    for name in names:
+        value = os.getenv(name)
+        if value and value.strip():
+            return value.strip()
+    return default
+
+
 def _auto_checkpoint_dsn_enabled() -> bool:
     """Allow derived DSNs only when explicitly enabled outside development."""
     configured = os.getenv("LANGGRAPH_AUTO_CHECKPOINT_DSN")
@@ -121,28 +135,15 @@ def _resolve_checkpoint_dsn() -> Optional[str]:
     if not _auto_checkpoint_dsn_enabled():
         return None
 
-    username = (
-        os.getenv("LANGGRAPH_CHECKPOINT_USERNAME")
-        or os.getenv("AURORA_USERNAME")
-    ).strip()
-    password = (
-        os.getenv("LANGGRAPH_CHECKPOINT_PASSWORD")
-        or os.getenv("AURORA_PASSWORD")
-    ).strip()
-    host = (
-        os.getenv("LANGGRAPH_CHECKPOINT_HOST")
-        or os.getenv("AURORA_HOST")
-        or os.getenv("AURORA_CLUSTER_ENDPOINT")
-    ).strip()
-    port = str(
-        os.getenv("LANGGRAPH_CHECKPOINT_PORT")
-        or os.getenv("AURORA_PORT")
-        or "5432"
-    ).strip()
-    database = (
-        os.getenv("LANGGRAPH_CHECKPOINT_DATABASE")
-        or os.getenv("AURORA_DATABASE")
-    ).strip()
+    username = _first_env("LANGGRAPH_CHECKPOINT_USERNAME", "AURORA_USERNAME")
+    password = _first_env("LANGGRAPH_CHECKPOINT_PASSWORD", "AURORA_PASSWORD")
+    host = _first_env(
+        "LANGGRAPH_CHECKPOINT_HOST",
+        "AURORA_HOST",
+        "AURORA_CLUSTER_ENDPOINT",
+    )
+    port = _first_env("LANGGRAPH_CHECKPOINT_PORT", "AURORA_PORT", default="5432")
+    database = _first_env("LANGGRAPH_CHECKPOINT_DATABASE", "AURORA_DATABASE")
 
     if not all((username, password, host, port, database)):
         return None

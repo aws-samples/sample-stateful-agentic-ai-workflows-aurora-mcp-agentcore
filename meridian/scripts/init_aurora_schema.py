@@ -8,7 +8,6 @@ AWS docs:
     https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraPostgreSQL.Extensions.html
 """
 import os
-import re
 from pathlib import Path
 
 import boto3

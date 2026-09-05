@@ -1,4 +1,4 @@
-import { Component, useState } from 'react';
+import { Component, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { DesktopMeridianApp } from './DesktopMeridianApp';
 import { useMeridianShowcase } from './hooks/useMeridianShowcase';
@@ -57,6 +57,18 @@ export function MeridianDeviceShowcase() {
   // Theme is session-local and scoped through CSS tokens.
   const [theme, setTheme] = useState<ShowcaseTheme>(initialTheme);
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+
+  // Mirror the theme onto <html> so the document's own background and text
+  // colour flip with the app. Without this the page keeps its dark ground
+  // behind the showcase's translucent panels, and anything inheriting the
+  // body colour renders near-white on near-white in light mode.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = theme;
+    return () => {
+      delete root.dataset.theme;
+    };
+  }, [theme]);
 
   return (
     <main

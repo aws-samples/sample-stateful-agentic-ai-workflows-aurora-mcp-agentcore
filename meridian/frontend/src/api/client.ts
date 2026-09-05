@@ -243,6 +243,7 @@ export interface RlsProbeResponse {
   };
   negative_control: {
     requested_traveler_id: string;
+    display_name?: string | null;
     decision: 'allow' | 'deny';
     reason?: string | null;
     audit_id?: string | null;

@@ -142,7 +142,7 @@ the worker nodes (search / availability / memory_recall), not classify/synthesiz
 
 Run the **live showcase demo first** so the result lands with the audience, then
 switch to the editor to show it's real code, not staged. The single file to have
-scrolled-and-ready when you switch is `search_agent.py` at line **111**.
+scrolled-and-ready when you switch is `backend/agents/retrieval_03/search_agent.py` at line **111**.
 
 ## Demo traveler (for reference)
 

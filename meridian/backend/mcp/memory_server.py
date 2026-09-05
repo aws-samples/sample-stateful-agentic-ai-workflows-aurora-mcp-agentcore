@@ -43,10 +43,9 @@ runs. RLS then filters every query to the workload's granted traveler.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from mcp.server.fastmcp import FastMCP
 

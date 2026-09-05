@@ -9,9 +9,11 @@
 }
 
 /* The showcase is the presenter surface. Projector mode raises the shared type
-   scale and contrast without changing the normal Meridian product UI. */
+   scale and contrast without changing the normal Meridian product UI.
+   The scale is tuned for reading trip results from the back of a room, so it
+   runs well above the product default. */
 .mds-desktop-app.is-projector {
-  --mds-fs: 1.2;
+  --mds-fs: 1.32;
 
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -178,7 +180,8 @@
 }
 
 .mds-desktop-app.is-projector.is-proof .mds-message-bubble {
-  font-size: calc(15.5px * var(--mds-fs));
+  font-size: calc(17px * var(--mds-fs));
+  line-height: 1.5;
 }
 
 .mds-desktop-app.is-projector.is-proof
@@ -278,16 +281,17 @@
 /* Both steps share the finale's shell geometry, so switching views never moves
    the sidebar, main stage, or proof rail. */
 .mds-desktop-app {
-  grid-template-columns: 244px minmax(0, 1fr) 404px;
+  /* Narrower chrome so the transcript and result cards get the width. */
+  grid-template-columns: 212px minmax(0, 1fr) 356px;
   transition: grid-template-columns 220ms cubic-bezier(0.2, 0.72, 0.2, 1);
 }
 
 .mds-desktop-app.is-finale {
-  grid-template-columns: 244px minmax(0, 1fr);
+  grid-template-columns: 212px minmax(0, 1fr);
 }
 
 .mds-desktop-app.is-sidebar-collapsed {
-  grid-template-columns: 76px minmax(0, 1fr) 404px;
+  grid-template-columns: 76px minmax(0, 1fr) 356px;
 }
 
 .mds-desktop-app.is-finale.is-sidebar-collapsed {
@@ -426,7 +430,10 @@
   min-width: 0;
   margin: 0;
   font-family: var(--mds-serif);
-  font-size: calc(28px * var(--mds-fs));
+  /* Scale with the sidebar instead of clipping. At a fixed 28px the wordmark
+     overflowed its track on ~1280-1360px laptops and rendered as "Meridiar" --
+     the product's own name, silently truncated, with no ellipsis. */
+  font-size: clamp(20px, 1.7vw, calc(28px * var(--mds-fs)));
   font-weight: 700;
 }
 
@@ -434,6 +441,7 @@
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .mds-desktop-app .mds-sidebar-toggle {
@@ -2948,7 +2956,7 @@
 /* Laptop and tablet layouts retain every workflow control. */
 @media (max-width: 1500px) {
   .mds-desktop-app {
-    grid-template-columns: 218px minmax(0, 1fr) 356px;
+    grid-template-columns: 196px minmax(0, 1fr) 320px;
   }
 
   .mds-desktop-app .mds-brand {

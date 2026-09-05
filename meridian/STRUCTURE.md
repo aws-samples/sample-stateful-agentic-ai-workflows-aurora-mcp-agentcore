@@ -3,15 +3,21 @@
 ## What runs in production (the demo)
 
 ```
-frontend/src/App.tsx
-  → sections: Hero, Products (trips grid), HowItWorks, Vision, Agent (live chat)
+frontend/src/main.tsx
+  → /showcase, /device-showcase → showcase/MeridianDeviceShowcase.tsx
+  → /demo-stage, /stage         → stage/DemoStage.tsx
   → api/client.ts → backend :8000
 
 backend/main.py
-  → routers/chat.py      # Phases 1–5 (inline search + Phase 4 concierge + Phase 5 LangGraph)
-  → routers/products.py  # GET /api/packages (+ legacy /api/products)
-  → routers/memory.py    # GET /api/memory/{traveler_id} (authorized + RLS-scoped)
+  → routers/chat.py        # Phases 1–5 (inline search + Phase 4 concierge + Phase 5 LangGraph)
+  → routers/products.py    # GET /api/packages (+ legacy /api/products)
+  → routers/memory.py      # GET /api/memory/{traveler_id} (authorized + RLS-scoped)
+  → routers/diagnostics.py # POST /api/diagnostics/rls-probe (ALLOW/DENY + scoped counts)
 ```
+
+The showcase is a three-step journey — Discovery (Experience), Capability
+ladder (Architecture), Stateful recovery (Proof). The five phase pills and the
+chat composer live inside step 2; the landing view has neither.
 
 Production and Orchestration modes import agent / workflow modules at runtime:
 
@@ -21,6 +27,11 @@ Production and Orchestration modes import agent / workflow modules at runtime:
 - `backend/agentcore/memory.py`, `backend/agentcore/identity.py` — Bedrock AgentCore adapters
 
 SQL/MCP/Retrieval modes execute inside `chat.py` (`sql_search`, `mcp_search`, `retrieval_search`). The matching files under `backend/agents/sql_01`, `backend/agents/mcp_02`, and `backend/agents/retrieval_03` are the imported mode implementations.
+
+> `chat.py` carries the hybrid lexical/semantic candidate query a second time
+> for the direct Phase 3 and Phase 5 paths. Keep it in step with
+> `SearchAgent.hybrid_search` — `tests/test_hybrid_lexical_arm.py` guards the
+> agent copy.
 
 ## Directory map
 
@@ -35,12 +46,14 @@ SQL/MCP/Retrieval modes execute inside `chat.py` (`sql_search`, `mcp_search`, `r
 | `backend/agents/orchestration_05/` | LangGraph `OrchestrationAgent` (StateGraph + pooled PostgresSaver + restart/resume) |
 | `backend/agents/sql_01,mcp_02,retrieval_03/` | SQL, MCP, and Retrieval mode agents |
 | `backend/routers/` | FastAPI routes |
+| `backend/demo_prompts.py` | The five-phase presenter prompt ladder (single source of truth) |
 | `examples/rls_for_agents.sql` | Aurora RLS policies + authorization/RLS audit view |
 | `examples/memory_mcp_demo.py` | Stand-alone smoke test for the custom memory MCP server |
 | `scripts/sync_agentcore_env.py` | Sync `agentcore deploy` state → `.env` |
 | `backend/catalog_compat.py` | Maps `trip_packages` rows → legacy API `Product` shape |
-| `frontend/src/sections/` | Live SPA sections |
-| `frontend/src/components/` | Shared UI (nav, trace, persona, thumbs) |
+| `frontend/src/showcase/` | Primary `/showcase` surface (components, hooks, adapters) |
+| `frontend/src/stage/` | Kiosk and presenter playback surface |
+| `frontend/src/components/` | Shared UI (brand mark, route skeleton) |
 | `scripts/travel_catalog.py` | Trip + traveler seed source |
 | `scripts/seed_data.py` | Seeds Aurora and binds the current workload to Alex |
 | `scripts/bind_current_identity.py` | Migrates an existing DB and grants the current IAM/AgentCore workload access to Alex |

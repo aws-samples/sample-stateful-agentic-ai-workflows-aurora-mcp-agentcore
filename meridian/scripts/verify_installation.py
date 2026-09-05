@@ -10,59 +10,59 @@ packages_status = []
 
 # Strands
 try:
-    import strands
+    import strands  # noqa: F401  (import is the availability probe)
     packages_status.append(("✅ Strands", "installed"))
-except ImportError as e:
-    packages_status.append(("❌ Strands", f"NOT INSTALLED"))
+except ImportError:
+    packages_status.append(("❌ Strands", "NOT INSTALLED"))
 
 # Boto3
 try:
     import boto3
     packages_status.append(("✅ Boto3", boto3.__version__))
-except ImportError as e:
-    packages_status.append(("❌ Boto3", f"NOT INSTALLED"))
+except ImportError:
+    packages_status.append(("❌ Boto3", "NOT INSTALLED"))
 
 # numpy
 try:
     import numpy
     packages_status.append(("✅ numpy", numpy.__version__))
-except ImportError as e:
-    packages_status.append(("❌ numpy", f"NOT INSTALLED"))
+except ImportError:
+    packages_status.append(("❌ numpy", "NOT INSTALLED"))
 
 # rich
 try:
-    from rich.console import Console
+    from rich.console import Console  # noqa: F401  (availability probe)
     packages_status.append(("✅ rich", "installed"))
-except ImportError as e:
-    packages_status.append(("❌ rich", f"NOT INSTALLED"))
+except ImportError:
+    packages_status.append(("❌ rich", "NOT INSTALLED"))
 
 # python-dotenv
 try:
-    from dotenv import load_dotenv
+    from dotenv import load_dotenv  # noqa: F401  (availability probe)
     packages_status.append(("✅ python-dotenv", "installed"))
-except ImportError as e:
-    packages_status.append(("❌ python-dotenv", f"NOT INSTALLED"))
+except ImportError:
+    packages_status.append(("❌ python-dotenv", "NOT INSTALLED"))
 
 # pydantic
 try:
     import pydantic
     packages_status.append(("✅ pydantic", pydantic.__version__))
-except ImportError as e:
-    packages_status.append(("❌ pydantic", f"NOT INSTALLED"))
+except ImportError:
+    packages_status.append(("❌ pydantic", "NOT INSTALLED"))
 
 # FastAPI
 try:
     import fastapi
     packages_status.append(("✅ FastAPI", fastapi.__version__))
-except ImportError as e:
-    packages_status.append(("❌ FastAPI", f"NOT INSTALLED"))
+except ImportError:
+    packages_status.append(("❌ FastAPI", "NOT INSTALLED"))
 
 # Hypothesis (for property-based testing)
 try:
     import hypothesis
     packages_status.append(("✅ Hypothesis", hypothesis.__version__))
-except ImportError as e:
-    packages_status.append(("❌ Hypothesis", f"NOT INSTALLED"))
+except ImportError:
+    packages_status.append(("❌ Hypothesis", "NOT INSTALLED"))
 
 # Print results
 print("=" * 70)
@@ -82,7 +82,7 @@ if not failed:
 else:
     print("\n⚠️  Some dependencies are missing!")
     print("\nMissing packages:")
-    for package, error in failed:
+    for package, _error in failed:
         print(f"  • {package.replace('❌ ', '')}")
     print("\n💡 Run: pip install -r requirements.txt")
 

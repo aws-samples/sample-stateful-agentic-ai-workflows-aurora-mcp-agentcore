@@ -10,14 +10,28 @@ body,
   min-height: 100%;
 }
 
+/* Document ground and default ink. The showcase mirrors its theme onto
+   <html data-theme>, so these flip with the app instead of leaving a dark
+   page behind a light UI. Both values are always defined together — a light
+   background paired with the dark theme's text was a 1.02:1 contrast bug. */
+:root {
+  --app-bg: #05080d;
+  --app-fg: #f5f8fb;
+}
+
+:root[data-theme='light'] {
+  --app-bg: #eef2f7;
+  --app-fg: #0f172a;
+}
+
 html {
-  background: #05080d;
+  background: var(--app-bg);
 }
 
 body {
   margin: 0;
-  background: #05080d;
-  color: #f5f8fb;
+  background: var(--app-bg);
+  color: var(--app-fg);
   font-family: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

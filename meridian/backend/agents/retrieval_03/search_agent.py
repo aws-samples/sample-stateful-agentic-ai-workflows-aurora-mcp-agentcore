@@ -190,10 +190,21 @@ When searching:
 
         # --- Arm 2 of the hybrid retrieval: LEXICAL (exact terms) -------------
         # PostgreSQL full-text search over the generated `search_vector` tsvector.
-        # websearch_to_tsquery parses the query the way a search box would;
-        # ts_rank scores the match. This arm catches exact terms — a destination
-        # name, an operator — that pure embeddings can blur.
+        # websearch_to_tsquery parses the query the way a search box would, but
+        # it joins bare terms with AND. A conversational prompt ("a quiet
+        # romantic escape in wine country, ideally with a villa") then requires
+        # every stemmed term to appear in one row, which matches nothing in a
+        # catalog this size and silently collapses the arm to zero candidates.
+        # Rewriting the operators to OR keeps websearch parsing (stemming,
+        # quoted phrases, negation) while letting ts_rank do the discriminating:
+        # rows matching more terms simply rank higher. This arm catches exact
+        # terms — a destination name, an operator — that embeddings blur.
         lexical_sql = """
+            WITH q AS (
+                SELECT replace(
+                    websearch_to_tsquery('english', %s)::text, '&', '|'
+                )::tsquery AS tsq
+            )
             SELECT
                 package_id,
                 name,
@@ -207,13 +218,13 @@ When searching:
                 durations,
                 availability,
                 highlights,
-                ts_rank(search_vector, websearch_to_tsquery('english', %s)) AS lexical_score
-            FROM trip_packages
-            WHERE search_vector @@ websearch_to_tsquery('english', %s)
+                ts_rank(search_vector, q.tsq) AS lexical_score
+            FROM trip_packages, q
+            WHERE search_vector @@ q.tsq
             ORDER BY lexical_score DESC
             LIMIT %s
         """
-        lexical_rows = await self.db.execute(lexical_sql, (query, query, candidate_limit))
+        lexical_rows = await self.db.execute(lexical_sql, (query, candidate_limit))
         # --- Merge + dedup by package_id -------------------------------------
         # This is the "fusion" step: union the two candidate pools keyed on
         # package_id so a trip found by BOTH arms appears once (and carries its

@@ -1,6 +1,6 @@
 """Map trip_packages rows to legacy API Product shape (frontend compat)."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 def row_to_api_product(row: Dict[str, Any]) -> Dict[str, Any]:

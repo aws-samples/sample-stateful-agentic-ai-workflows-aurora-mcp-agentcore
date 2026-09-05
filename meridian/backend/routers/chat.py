@@ -23,6 +23,7 @@ AWS docs (by phase):
     https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html
 """
 
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
@@ -35,6 +36,7 @@ from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.db.embedding_service import get_embedding_service
 from backend.config import config
+from backend.demo_prompts import tee_up_prompt, working_prompts
 from backend.logging_config import log_search, log_order, log_error, log_turn_start, log_turn_complete, log_activity_entry
 from backend.http_auth import (
     HttpPrincipal,
@@ -62,6 +64,8 @@ from backend.mcp.mcp_client import mcp_session
 from backend.mcp.concierge_mcp_client import concierge_mcp_session
 from backend.llm_polish import polish_concierge_reply
 
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -209,15 +213,11 @@ def _complete_chat_turn(
     return response
 
 
-def generate_follow_ups(query: str, products: List[Product], phase: int) -> List[str]:
-    """Generate contextual follow-up suggestions based on the query and results.
+def _phase_suggestions(query: str, products: List[Product], phase: int) -> List[str]:
+    """Pick contextual suggestions from the query and the returned trips.
 
-    Phase 1 & 2: SQL filter search (trip_type, operator, price filters)
-    Phase 3: Hybrid retrieval + Cohere rerank (understands natural language)
-
-    Suggestions are designed to:
-    1. Show queries that work in the current phase
-    2. For Phase 1/2, include semantic queries that will fail to demonstrate limitations
+    Several branches return early. ``generate_follow_ups`` wraps this so the
+    phase's tee-up prompt is appended on every path.
     """
     follow_ups = []
     query_lower = query.lower()
@@ -296,22 +296,25 @@ def generate_follow_ups(query: str, products: List[Product], phase: int) -> List
             if prices:
                 avg_price = sum(prices) / len(prices)
                 if avg_price > 2000:
-                    follow_ups.append(f"{category_keyword} under $2000")
+                    follow_ups.append(f"Show me {category_keyword} under $2,000 per traveler.")
 
             if brands:
                 for brand in brands:
                     if brand.lower() not in query_lower:
-                        follow_ups.append(f"{brand} {category_keyword}")
+                        # Brands come from mixed results, so do not pair the
+                        # brand with the primary category - an adventure
+                        # operator was being offered as "wellness travel".
+                        follow_ups.append(f"Show me more trips from {brand}.")
                         break
 
             if "City Breaks" in categories:
-                follow_ups.append("Beach & Resort")
+                follow_ups.append("Show me beach and resort trips.")
             elif "Beach & Resort" in categories:
-                follow_ups.append("Adventure & Outdoors")
+                follow_ups.append("Show me adventure and outdoors trips.")
             elif "Adventure & Outdoors" in categories:
-                follow_ups.append("Wellness & Luxury")
+                follow_ups.append("Show me wellness and luxury trips.")
             else:
-                follow_ups.append("Show me city trips")
+                follow_ups.append("Show me city trips under $2,000 per traveler.")
 
         else:
             semantic_suggestions = {
@@ -355,32 +358,37 @@ def generate_follow_ups(query: str, products: List[Product], phase: int) -> List
                             break
 
             if "City Breaks" not in categories:
-                follow_ups.append("City trip under $2,000")
+                follow_ups.append("Show me city trips under $2,000 per traveler.")
             elif "Beach & Resort" not in categories:
-                follow_ups.append("Relaxing beach vacation")
+                follow_ups.append("Show me beach trips under $2,500 per traveler.")
 
     else:
-        if phase in [1, 2]:
-            follow_ups = [
-                "Show me city trips",
-                "Show me beach and resort trips",
-                "Show me business travel packages",
-            ]
-        else:
-            follow_ups = [
-                "Romantic week in Europe",
-                "Family-friendly beach resort",
-                "Adventure trip with guided hikes",
-            ]
+        # No results: offer this phase's documented known-good prompts rather
+        # than generic fragments.
+        follow_ups = working_prompts(phase)
 
-    # Limit to 3 unique suggestions
-    seen = set()
-    unique_follow_ups = []
-    for fu in follow_ups:
-        fu_lower = fu.lower()
-        if fu_lower not in seen:
-            seen.add(fu_lower)
-            unique_follow_ups.append(fu)
+    return follow_ups
+
+
+def generate_follow_ups(query: str, products: List[Product], phase: int) -> List[str]:
+    """Three follow-up chips, the last of which always advances the ladder.
+
+    Every phase ends with the prompt that motivates the next rung, so the
+    hand-off is on screen rather than in the presenter's memory. The two
+    preceding chips are contextual suggestions for the current results.
+    """
+    suggestions = _phase_suggestions(query, products, phase)
+    tee_up = tee_up_prompt(phase)
+    if tee_up and tee_up.lower() != query.lower():
+        suggestions = suggestions[:2] + [tee_up]
+
+    seen: set[str] = set()
+    unique_follow_ups: List[str] = []
+    for suggestion in suggestions:
+        key = suggestion.lower()
+        if key not in seen:
+            seen.add(key)
+            unique_follow_ups.append(suggestion)
 
     return unique_follow_ups[:3]
 
@@ -1095,6 +1103,51 @@ async def _polish_phase_reply(
 # AWS docs:
 #   Cohere Embed v4: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed-v4.html
 #   Aurora pgvector: https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraPostgreSQL.Extensions.html#AuroraPostgreSQL.Extensions.pgvector
+
+async def _polish_and_record(
+    *,
+    phase: int,
+    mode_label: str,
+    agent_name: str,
+    user_query: str,
+    raw_message: str,
+    products: List[Product],
+    activities: List[ActivityEntry],
+    memory_facts: Optional[List[Any]] = None,
+) -> str:
+    """Polish a reply and append the matching success/failure span.
+
+    Phases 3, 4 and 5 all end a turn the same way: run the Bedrock rewrite,
+    record whether it succeeded, and fall back to the deterministic reply if it
+    did not. Keeping that in one place stops the three call sites drifting.
+    """
+    polished, polish_model, polish_note = await _polish_phase_reply(
+        phase=phase,
+        user_query=user_query,
+        raw_message=raw_message,
+        products=products,
+        activities=activities,
+        memory_facts=memory_facts,
+    )
+    if polish_model:
+        activities.append(create_activity(
+            activity_type="reasoning",
+            title=f"Bedrock · concierge polish ({polish_model})",
+            details=f"Wrapping {mode_label} reply in concierge tone",
+            agent_name=agent_name,
+            agent_file="backend/llm_polish.py",
+        ))
+        return polished
+    activities.append(create_activity(
+        activity_type="error",
+        title="Bedrock polish unavailable",
+        details=polish_note or "unknown",
+        agent_name=agent_name,
+        agent_file="backend/llm_polish.py",
+    ))
+    return raw_message
+
+
 # =============================================================================
 
 async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], List[ActivityEntry]]:
@@ -1163,7 +1216,16 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     if price_filter is not None:
         semantic_rows = [r for r in semantic_rows if float(r["price_per_person"]) <= price_filter]
 
+    # websearch_to_tsquery joins bare terms with AND, so a conversational
+    # prompt requires every stemmed term in one row and the lexical arm
+    # returns nothing. Rewrite the operators to OR and let ts_rank order the
+    # results. Keep this in step with SearchAgent.hybrid_search.
     lexical_sql = """
+        WITH q AS (
+            SELECT replace(
+                websearch_to_tsquery('english', %s)::text, '&', '|'
+            )::tsquery AS tsq
+        )
         SELECT
             package_id,
             name,
@@ -1175,11 +1237,11 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
             destination,
             region,
             durations,
-            ts_rank(search_vector, websearch_to_tsquery('english', %s)) AS lexical_score
-        FROM trip_packages
-        WHERE search_vector @@ websearch_to_tsquery('english', %s)
+            ts_rank(search_vector, q.tsq) AS lexical_score
+        FROM trip_packages, q
+        WHERE search_vector @@ q.tsq
     """
-    lexical_params: list[Any] = [query, query]
+    lexical_params: list[Any] = [query]
     if price_filter is not None:
         lexical_sql += " AND price_per_person <= %s"
         lexical_params.append(price_filter)
@@ -2055,31 +2117,16 @@ async def chat(
                 except Exception as exc:
                     log_error("availability_memory_fetch", error=str(exc))
 
-                polished, polish_model, polish_note = await _polish_phase_reply(
+                message = await _polish_and_record(
                     phase=4,
+                    mode_label="availability",
+                    agent_name="ProductionAgent",
                     user_query=request.message,
                     raw_message=message,
                     products=products,
                     activities=activities,
                     memory_facts=polish_memory_facts,
                 )
-                if polish_model:
-                    activities.append(create_activity(
-                        activity_type="reasoning",
-                        title=f"Bedrock · concierge polish ({polish_model})",
-                        details="Wrapping availability reply in concierge tone",
-                        agent_name="ProductionAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
-                    message = polished
-                else:
-                    activities.append(create_activity(
-                        activity_type="error",
-                        title="Bedrock polish unavailable",
-                        details=polish_note or "unknown",
-                        agent_name="ProductionAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
 
             follow_ups = ["Show similar trips", "What other durations are available?", "Find alternatives"]
 
@@ -2301,32 +2348,16 @@ async def chat(
             if workflow_status == "paused":
                 message = raw_message
             else:
-                polished, polish_model, polish_note = await _polish_phase_reply(
+                message = await _polish_and_record(
                     phase=5,
+                    mode_label="Workflow",
+                    agent_name="OrchestrationAgent",
                     user_query=request.message,
                     raw_message=raw_message,
                     products=workflow_packages,
                     activities=activities,
                     memory_facts=workflow_memory_facts or None,
                 )
-                if polish_model:
-                    activities.append(create_activity(
-                        activity_type="reasoning",
-                        title=f"Bedrock · concierge polish ({polish_model})",
-                        details="Wrapping Workflow reply in concierge tone",
-                        agent_name="OrchestrationAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
-                    message = polished
-                else:
-                    activities.append(create_activity(
-                        activity_type="error",
-                        title="Bedrock polish unavailable",
-                        details=polish_note or "unknown",
-                        agent_name="OrchestrationAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
-                    message = raw_message
                 message = _append_recovery_memory_receipt(
                     message,
                     request.message,
@@ -2358,7 +2389,13 @@ async def chat(
             log_error("workflow_authorization", error=str(e))
             raise HTTPException(status_code=403, detail=str(e)) from e
         except Exception as e:
-            log_error("orchestration_workflow", error=str(e))
+            # Keep the stack in the log; show the audience a stable reference,
+            # not a Python exception string projected on the wall.
+            error_ref = uuid.uuid4().hex[:8]
+            logger.exception(
+                "orchestration_workflow failed (ref=%s)", error_ref
+            )
+            log_error("orchestration_workflow", error=str(e), ref=error_ref)
             error_detail = str(e)
             checkpoint_unavailable = any(
                 marker in error_detail.lower()
@@ -2373,7 +2410,12 @@ async def chat(
             activities.append(create_activity(
                 activity_type="error",
                 title="LangGraph workflow error",
-                details=error_detail,
+                details=(
+                    "The Aurora checkpoint connection is unavailable."
+                    if checkpoint_unavailable
+                    else "The workflow stopped before changing the trip."
+                )
+                + f" Reference {error_ref} — see backend logs for the stack.",
                 agent_name="OrchestrationAgent",
                 agent_file="agents/orchestration_05/workflow.py",
             ))
@@ -2550,32 +2592,15 @@ async def chat(
             # in the product list let the model name *why* each trip
             # matched (intent, vibe, dates) instead of just listing.
             if request.phase == 3:
-                polished, polish_model, polish_note = await _polish_phase_reply(
+                message = await _polish_and_record(
                     phase=3,
+                    mode_label="Retrieval",
+                    agent_name="RetrievalAgent",
                     user_query=request.message,
                     raw_message=raw_message,
                     products=products,
                     activities=activities,
-                    memory_facts=None,
                 )
-                if polish_model:
-                    activities.append(create_activity(
-                        activity_type="reasoning",
-                        title=f"Bedrock · concierge polish ({polish_model})",
-                        details="Wrapping Retrieval reply in concierge tone",
-                        agent_name="RetrievalAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
-                    message = polished
-                else:
-                    activities.append(create_activity(
-                        activity_type="error",
-                        title="Bedrock polish unavailable",
-                        details=polish_note or "unknown",
-                        agent_name="RetrievalAgent",
-                        agent_file="backend/llm_polish.py",
-                    ))
-                    message = raw_message
             else:
                 message = raw_message
         else:

@@ -92,7 +92,7 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
                   >
                     {data.negative_control.decision.toUpperCase()}
                   </span>
-                  Jordan Lee
+                  {data.negative_control.display_name ?? 'the decoy traveler'}
                 </strong>
                 <code>{data.negative_control.reason ?? 'no active identity binding'}</code>
               </div>

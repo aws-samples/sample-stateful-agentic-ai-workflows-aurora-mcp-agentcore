@@ -193,7 +193,7 @@ Trip types:
             self._log_activity(
                 activity_type="mcp",
                 title=f"MCP tool completed: {tool_name}",
-                details=f"Result received",
+                details="Result received",
                 execution_time_ms=execution_time
             )
             

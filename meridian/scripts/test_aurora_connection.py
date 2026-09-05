@@ -1,7 +1,6 @@
 """Test Aurora PostgreSQL connection via RDS Data API"""
 import os
 import sys
-import json
 from dotenv import load_dotenv
 
 # Load environment variables

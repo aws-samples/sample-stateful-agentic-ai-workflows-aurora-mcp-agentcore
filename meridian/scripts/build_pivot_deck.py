@@ -156,7 +156,7 @@ def build_slide_one(prs: Presentation) -> None:
     col_w = [8.0, 2.0, 2.0]
 
     # Header
-    header_bg = _add_rect(slide, 0.5, table_top, 12.5, row_h, ACCENT_SOFT)
+    _add_rect(slide, 0.5, table_top, 12.5, row_h, ACCENT_SOFT)
     _add_text(slide, "Abstract claim", col_x[0] + 0.18, table_top + 0.10, col_w[0] - 0.2, row_h,
               size=11, bold=True, color=ACCENT)
     _add_text(slide, "ClickShop", col_x[1], table_top + 0.10, col_w[1], row_h,

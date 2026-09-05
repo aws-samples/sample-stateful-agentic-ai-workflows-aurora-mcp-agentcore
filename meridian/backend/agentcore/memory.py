@@ -31,7 +31,6 @@ API references (boto3):
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -48,7 +47,8 @@ class AgentCoreMemoryAdapter:
     """AgentCore Memory data-plane client — the managed session layer.
 
     Mirrors each turn to AgentCore Memory (``create_event``) and reads it back
-    (``list_memory_records`` / ``retrieve_memory_records``), scoped by the
+    (``list_events`` for the session tier, ``retrieve_memory_records`` for the
+    asynchronously extracted semantic tier), scoped by the
     namespace template deployed in ``agentcore.json``:
     ``/users/{actorId}/sessions/{sessionId}``. This is the short-term session
     store; Aurora remains the durable system of record for preferences and
@@ -138,31 +138,45 @@ class AgentCoreMemoryAdapter:
         conversation_id: str,
         limit: int = 10,
     ) -> List[Dict[str, Any]]:
-        """Pull the most recent records AgentCore has for this session."""
+        """Read back the turns this session mirrored with ``create_event``.
+
+        Reads the *event* tier, not the memory-record tier. Memory records are
+        produced asynchronously by the SEMANTIC strategy and land minutes after
+        the turn, so reading them here reported zero for the whole of a live
+        session even though ``create_event`` had succeeded. ``list_events``
+        returns the mirrored turn immediately, which is what "recent session
+        events" means. Semantic extraction is surfaced by
+        :meth:`semantic_recall` instead.
+        """
         memory_id = self._require_memory_id()
         client = self._get_client()
 
         try:
-            response = client.list_memory_records(
+            response = client.list_events(
                 memoryId=memory_id,
-                namespace=self._namespace(traveler_id, conversation_id),
+                actorId=traveler_id,
+                sessionId=conversation_id,
                 maxResults=limit,
             )
         except ClientError as exc:
-            raise self._client_error("list_memory_records", exc) from exc
+            raise self._client_error("list_events", exc) from exc
 
         rows: List[Dict[str, Any]] = []
-        for rec in response.get("memoryRecordSummaries", []):
-            content = rec.get("content", {})
-            text = content.get("text") if isinstance(content, dict) else None
-            rows.append(
-                {
-                    "text": text or "",
-                    "score": rec.get("score"),
-                    "created_at": rec.get("createdAt"),
-                }
-            )
-        return rows
+        for event in response.get("events", []):
+            for entry in event.get("payload", []):
+                conversational = entry.get("conversational") or {}
+                text = (conversational.get("content") or {}).get("text")
+                if not text:
+                    continue
+                rows.append(
+                    {
+                        "text": text,
+                        "role": conversational.get("role"),
+                        "score": None,
+                        "created_at": event.get("eventTimestamp"),
+                    }
+                )
+        return rows[:limit]
 
     def semantic_recall(
         self,

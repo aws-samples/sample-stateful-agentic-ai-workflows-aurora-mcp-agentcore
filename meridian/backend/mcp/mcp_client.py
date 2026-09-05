@@ -18,7 +18,6 @@ MCP server source (awslabs):
 """
 
 import os
-import asyncio
 import json
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager

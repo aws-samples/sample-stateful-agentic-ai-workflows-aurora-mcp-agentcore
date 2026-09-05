@@ -10,12 +10,11 @@ as specified by the Cohere Embed v4 model.
 **Validates: Requirements 2.8**
 """
 import os
-import json
 import pytest
 import boto3
 from hypothesis import given, settings, assume, HealthCheck
 from hypothesis import strategies as st
-from typing import Optional, List, Tuple
+from typing import List
 from dotenv import load_dotenv
 
 # Load environment variables

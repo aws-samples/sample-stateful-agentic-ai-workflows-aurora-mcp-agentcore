@@ -123,7 +123,7 @@ class ProductionAgent:
         self._log(
             "search",
             f"AgentCore Gateway · tools/call → {gateway.search_tool}",
-            details=f"Found {len(packages_raw)} packages via managed MCP",
+            details=f"Retrieved {len(packages_raw)} candidate packages via managed MCP",
             telemetry={
                 "category": "gateway",
                 "component": "Bedrock AgentCore Gateway",
@@ -456,10 +456,19 @@ class ProductionAgent:
             message,
             top_k=3,
         )
+        # The SEMANTIC strategy extracts memory records asynchronously, so an
+        # empty result early in a session means "not extracted yet", not "no
+        # memory". Say that rather than showing a bare zero next to a write
+        # that just succeeded.
+        semantic_detail = (
+            f"{len(agentcore_semantic)} records"
+            if agentcore_semantic
+            else "semantic extraction pending (async strategy)"
+        )
         self._log(
             "reasoning",
             "AgentCore Memory · semantic retrieve",
-            details=f"{len(agentcore_semantic)} records",
+            details=semantic_detail,
             telemetry={
                 "category": "memory_long",
                 "component": "Bedrock AgentCore Memory",
@@ -609,7 +618,7 @@ class ProductionAgent:
                     details=(
                         "Reauthorized traveler scope; wrote 2 messages + "
                         f"1 trip_interaction in a short RLS write unit · "
-                        f"{len(shown)} packages shown"
+                        f"{len(shown)} packages recorded"
                     ),
                     sql_query=(
                         "-- Separate short RLS write transaction:\n"

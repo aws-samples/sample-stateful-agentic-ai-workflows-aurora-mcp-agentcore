@@ -53,6 +53,9 @@ ALLOWED_TABLES = (
 )
 DEFAULT_TABLES = ("traveler_preferences", "trip_interactions")
 NEGATIVE_CONTROL_TRAVELER_ID = "trv_demo_decoy"
+# Returned to the UI so the probe card renders the decoy's real name
+# instead of hard-coding it client side and lying if this changes.
+NEGATIVE_CONTROL_DISPLAY_NAME = "Jordan Lee"
 
 
 class RlsProbeRequest(BaseModel):
@@ -220,6 +223,7 @@ async def rls_probe(
         },
         negative_control={
             "requested_traveler_id": negative.traveler_id,
+            "display_name": NEGATIVE_CONTROL_DISPLAY_NAME,
             "decision": negative.decision,
             "reason": negative.reason,
             "audit_id": negative.audit_id,
