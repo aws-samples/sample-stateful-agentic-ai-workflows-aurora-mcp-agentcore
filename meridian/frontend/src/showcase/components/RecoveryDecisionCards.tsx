@@ -74,6 +74,9 @@ interface CheckpointedPlanCardProps {
   evidence: RecoveryEvidence;
   threadId: string;
   resumedAfterRestart: boolean;
+  /** Which checkpointer actually ran. PostgresSaver is durable; MemorySaver is not. */
+  checkpointStore: string;
+  durable: boolean;
 }
 
 interface RecoveryLaunchCardProps {
@@ -935,6 +938,8 @@ export function CheckpointedPlanCard({
   evidence,
   threadId,
   resumedAfterRestart,
+  checkpointStore,
+  durable,
 }: CheckpointedPlanCardProps) {
   const searchDone = evidence.searchObserved;
   const rankDone = evidence.alternativesObserved;
@@ -966,6 +971,24 @@ export function CheckpointedPlanCard({
       <div className="mds-checkpoint-thread">
         <small>Thread</small>
         <strong>{threadId}</strong>
+      </div>
+      {/* The claim this phase makes lives or dies on which store ran, so name
+          it here rather than only in the trace rail. */}
+      <div className={`mds-checkpoint-receipt${durable ? ' is-durable' : ''}`}>
+        <span className="mds-checkpoint-receipt-store">
+          <Database size={13} aria-hidden="true" />
+          {checkpointStore || 'checkpointer not observed'}
+        </span>
+        {durable ? (
+          <span className="mds-checkpoint-receipt-tag is-durable">survives process loss</span>
+        ) : (
+          <span className="mds-checkpoint-receipt-tag">in-process only</span>
+        )}
+        {resumedAfterRestart && (
+          <span className="mds-checkpoint-receipt-tag is-restart">
+            resumed after worker restart
+          </span>
+        )}
       </div>
       <ol className="mds-checkpoint-progress">
         <li className="is-done"><i />Disruption</li>

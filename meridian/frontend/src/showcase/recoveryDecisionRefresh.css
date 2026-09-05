@@ -504,3 +504,57 @@
     width: 100%;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Durability receipt
+
+   Phase 5's claim depends entirely on which checkpointer ran. PostgresSaver
+   survives process loss; MemorySaver does not. The presenter guide warns not
+   to present MemorySaver as the durable proof, so the surface names the store
+   rather than leaving it in the trace rail.
+--------------------------------------------------------------------------- */
+.mds-checkpoint-receipt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 8px 0 2px;
+}
+
+.mds-checkpoint-receipt-store {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mds-on-surface-soft);
+  font-family: var(--mds-font-mono);
+  font-size: calc(11px * var(--mds-fs-chrome));
+  font-weight: 600;
+}
+
+.mds-checkpoint-receipt.is-durable .mds-checkpoint-receipt-store {
+  color: var(--mds-green);
+}
+
+.mds-checkpoint-receipt-tag {
+  padding: 2px 8px;
+  border: 1px solid var(--mds-line);
+  border-radius: 999px;
+  color: var(--mds-dim);
+  font-size: calc(10.5px * var(--mds-fs-chrome));
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.mds-checkpoint-receipt-tag.is-durable {
+  border-color: rgb(var(--mds-green-rgb) / 0.34);
+  color: var(--mds-green);
+  background: rgb(var(--mds-green-rgb) / 0.09);
+}
+
+.mds-checkpoint-receipt-tag.is-restart {
+  border-color: rgb(var(--mds-blue-rgb) / 0.4);
+  color: var(--mds-blue);
+  background: rgb(var(--mds-blue-rgb) / 0.1);
+}

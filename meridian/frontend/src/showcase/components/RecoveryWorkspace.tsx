@@ -11,6 +11,7 @@ import {
   deriveRecoveryEvidence,
   deriveRecoveryStage,
 } from '../lib/recoveryState';
+import { deriveWorkflowState } from '../lib/showcaseProof';
 import { prefersReducedMotion } from '../lib/prefersReducedMotion';
 import { RecoveryBriefing } from './RecoveryBriefing';
 import {
@@ -160,6 +161,7 @@ export function RecoveryWorkspace({
   const durableCheckpoint =
     recoveryEvidence.checkpointObserved &&
     recoveryEvidence.durableCheckpoint;
+  const workflowProof = deriveWorkflowState(state.traceSpans);
   const threadId = state.conversationId ?? 'phase5-pending';
   const recoveryStatusLabel =
     recoveryStage === 'ready'
@@ -356,6 +358,8 @@ export function RecoveryWorkspace({
                 stage={recoveryStage}
                 evidence={recoveryEvidence}
                 threadId={threadId}
+                checkpointStore={workflowProof.checkpoint}
+                durable={workflowProof.durable}
                 resumedAfterRestart={state.workflowResumedAfterRestart}
               />
             </div>

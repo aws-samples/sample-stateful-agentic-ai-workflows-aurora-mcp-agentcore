@@ -40,6 +40,8 @@ export interface WorkflowStateProof {
   checkpointCount: number;
   table: string;
   durable: boolean;
+  /** The LangGraph thread. Identical before and after a restart is the proof. */
+  threadId: string;
 }
 
 export const PHASE_PROOFS: Record<Phase, PhaseProof> = {
@@ -249,6 +251,10 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
     path,
     visited,
     nextNode,
+    threadId:
+      traceSpans
+        .map((span) => fieldValue(span, 'thread_id'))
+        .find(Boolean) ?? '',
     checkpoint,
     checkpointCount: checkpointSpans.length,
     table,
