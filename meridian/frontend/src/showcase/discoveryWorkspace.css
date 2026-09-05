@@ -16,10 +16,6 @@
   min-height: 34px;
 }
 
-.mds-demo-sequence.has-three {
-  grid-template-columns: auto 32px auto 32px auto;
-}
-
 .mds-discovery-workspace {
   min-height: 0;
   flex: 1;
@@ -452,24 +448,6 @@
     height: auto;
     overflow: visible;
     padding: 16px 14px 72px;
-  }
-
-  .mds-demo-sequence.has-three {
-    width: 100%;
-    grid-template-columns: 1fr 18px 1fr 18px 1fr;
-  }
-
-  .mds-demo-sequence.has-three button {
-    justify-content: center;
-    font-size: 0;
-  }
-
-  .mds-demo-sequence.has-three .mds-demo-sequence-index {
-    margin: 0;
-  }
-
-  .mds-demo-sequence.has-three .mds-demo-sequence-copy {
-    display: none;
   }
 
   .mds-discovery-heading {

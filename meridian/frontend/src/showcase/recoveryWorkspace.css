@@ -42,29 +42,101 @@
   box-shadow: none;
 }
 
-.mds-demo-sequence {
+/* ---------------------------------------------------------------------------
+   Ladder navigation
+
+   The five rungs are the top level, because the ladder is the argument. The
+   product entry sits before them, un-numbered and visually separated, so it
+   reads as the thing the ladder builds toward rather than a peer step.
+
+   Rungs below the current one keep a lit index: each phase adds to the stack
+   rather than replacing it, and the nav should make that visible.
+--------------------------------------------------------------------------- */
+.mds-ladder-nav {
   width: fit-content;
-  display: grid;
-  grid-template-columns: auto 42px auto;
+  max-width: 100%;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 34px;
+  gap: 14px;
+  min-height: 40px;
 }
 
-.mds-demo-sequence button {
+.mds-ladder-nav-product {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--mds-line-strong);
+  border-radius: 999px;
+  color: var(--mds-muted);
+  background: var(--mds-fill-1);
+  font-size: calc(12.5px * var(--mds-fs));
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.mds-ladder-nav-product:hover {
+  color: var(--mds-on-surface);
+  border-color: var(--mds-blue-line);
+}
+
+.mds-ladder-nav-product.is-active {
+  color: var(--mds-on-surface);
+  border-color: var(--mds-blue);
+  background: var(--mds-blue-soft);
+}
+
+.mds-ladder-nav-divider {
+  width: 1px;
+  height: 22px;
+  flex: none;
+  background: var(--mds-line-strong);
+}
+
+.mds-ladder-nav-rungs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mds-ladder-nav-rungs::-webkit-scrollbar {
+  display: none;
+}
+
+.mds-ladder-nav-rung {
   min-height: 38px;
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  padding: 0;
-  border: 0;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   color: var(--mds-muted);
   background: transparent;
   font-size: calc(13px * var(--mds-fs));
   font-weight: 700;
+  white-space: nowrap;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
-.mds-demo-sequence-index {
+.mds-ladder-nav-rung:hover {
+  color: var(--mds-on-surface);
+  background: var(--mds-fill-1);
+}
+
+.mds-ladder-nav-index {
   width: 23px;
   height: 23px;
   flex: 0 0 23px;
@@ -75,54 +147,69 @@
   color: var(--mds-muted);
   background: var(--mds-fill-1);
   font-size: calc(11px * var(--mds-fs));
+  font-variant-numeric: tabular-nums;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
 }
 
-.mds-demo-sequence-copy {
+.mds-ladder-nav-copy {
   min-width: 0;
   display: grid;
   gap: 1px;
   text-align: left;
 }
 
-.mds-demo-sequence-copy strong,
-.mds-demo-sequence-copy small {
+.mds-ladder-nav-copy strong,
+.mds-ladder-nav-copy small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.mds-demo-sequence-copy strong {
+.mds-ladder-nav-copy strong {
   color: inherit;
   font-size: inherit;
   font-weight: 720;
   line-height: 1.1;
 }
 
-.mds-demo-sequence-copy small {
+.mds-ladder-nav-copy small {
   color: var(--mds-dim);
   font-size: calc(10px * var(--mds-fs));
   font-weight: 600;
   line-height: 1.1;
 }
 
-.mds-demo-sequence button.is-active {
-  color: var(--mds-on-surface);
+/* Already climbed: the capability is still running underneath. */
+.mds-ladder-nav-rung.is-carried .mds-ladder-nav-index {
+  border-color: var(--mds-blue-line);
+  color: var(--mds-blue);
+  background: var(--mds-blue-soft);
 }
 
-.mds-demo-sequence button.is-active .mds-demo-sequence-index {
+.mds-ladder-nav-rung.is-active {
+  color: var(--mds-on-surface);
+  border-color: var(--mds-blue-line);
+  background: var(--mds-blue-soft);
+}
+
+.mds-ladder-nav-rung.is-active .mds-ladder-nav-index {
   border-color: var(--mds-blue);
   color: #052329;
   background: var(--mds-blue);
   box-shadow: 0 0 14px var(--mds-blue-line);
 }
 
-.mds-demo-sequence button.is-active .mds-demo-sequence-copy small {
+.mds-ladder-nav-rung.is-active .mds-ladder-nav-copy small {
   color: var(--mds-blue);
 }
 
-.mds-demo-sequence > i {
-  height: 1px;
-  background: var(--mds-line-strong);
+@media (max-width: 1180px) {
+  .mds-ladder-nav-copy small {
+    display: none;
+  }
 }
 
 .mds-desktop-app.is-projector .mds-aurora-strip-items {
@@ -154,9 +241,6 @@
    Keep its essential copy above the projector legibility floor while leaving
    dense implementation details subordinate in the proof rail. */
 .mds-desktop-app.is-projector.is-proof .mds-nav-item,
-.mds-desktop-app.is-projector.is-proof .mds-demo-sequence button {
-  font-size: calc(14px * var(--mds-fs));
-}
 
 .mds-desktop-app.is-projector.is-proof .mds-phase-selector button {
   min-height: 46px;
@@ -286,8 +370,10 @@
   transition: grid-template-columns 220ms cubic-bezier(0.2, 0.72, 0.2, 1);
 }
 
+/* The proof rail is present on every rung, recovery included, so the finale
+   keeps the same three-column shape as the rest of the ladder. */
 .mds-desktop-app.is-finale {
-  grid-template-columns: 212px minmax(0, 1fr);
+  grid-template-columns: 212px minmax(0, 1fr) 356px;
 }
 
 .mds-desktop-app.is-sidebar-collapsed {
@@ -295,7 +381,7 @@
 }
 
 .mds-desktop-app.is-finale.is-sidebar-collapsed {
-  grid-template-columns: 76px minmax(0, 1fr);
+  grid-template-columns: 76px minmax(0, 1fr) 356px;
 }
 
 /* Shared sidebar typography, using the finale's treatment so the chrome does not
@@ -3108,10 +3194,6 @@
   .mds-top-status .mds-theme-toggle {
     width: 40px;
     height: 40px;
-  }
-
-  .mds-demo-sequence button {
-    min-height: 44px;
   }
 
   .mds-desktop-app.is-proof {

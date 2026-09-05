@@ -21,20 +21,30 @@ import { DiscoveryWorkspace } from './components/DiscoveryWorkspace';
 import { MemoryDrawer } from './components/MemoryDrawer';
 import { NavPanelDrawer } from './components/NavPanelDrawer';
 import type { NavPanelId } from './components/NavPanelDrawer';
-import { PhaseSelector } from './components/PhaseSelector';
 import { RecoveryWorkspace } from './components/RecoveryWorkspace';
 import { TracePanel } from './components/TracePanel';
 import { TravelerContextPanel } from './components/TravelerContextPanel';
 import { TripDetailDrawer } from './components/TripDetailDrawer';
 import { IconTooltip } from './components/ShowcaseTooltip';
 import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
+import type { Phase } from '../types';
 import { MERIDIAN_MARK_SRC } from '../lib/meridianBrand';
 import { ALEX_IMAGE_URL, ALEX_NAME } from './lib/personas';
 import { deriveRecoveryStage } from './lib/recoveryState';
+import { SHOWCASE_PHASES } from './lib/showcaseAdapters';
 
 type NavItemId = 'concierge' | 'trips' | 'discover' | 'profile' | 'preferences' | 'messages';
 type ShowcaseTheme = 'dark' | 'light';
-type DemoStep = 'discovery' | 'ladder' | 'finale';
+/**
+ * Two views, not three steps.
+ *
+ * The five-phase ladder is the argument, so it is the top level. `product` is
+ * the un-numbered cold open (and the close): the Meridian experience the
+ * ladder builds toward. Numbering the product view as "step 1 of 3" made the
+ * ladder look like a third of the story and forced the room to hold two
+ * mental models at once.
+ */
+type ShowcaseView = 'product' | 'ladder';
 
 const navItems: { id: NavItemId; label: string; icon: LucideIcon }[] = [
   { id: 'concierge', label: 'Concierge', icon: Sparkles },
@@ -74,7 +84,7 @@ export function DesktopMeridianApp({
   theme: ShowcaseTheme;
   onToggleTheme: () => void;
 }) {
-  const [demoStep, setDemoStep] = useState<DemoStep>('discovery');
+  const [view, setView] = useState<ShowcaseView>('product');
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [forYouCollapsed, setForYouCollapsed] = useState(false);
   const [activityCollapsed, setActivityCollapsed] = useState(false);
@@ -88,9 +98,13 @@ export function DesktopMeridianApp({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [navPanel, setNavPanel] = useState<NavPanelId | null>(null);
   const greetingPart = greetingForHour(new Date().getHours());
-  const isDiscovery = demoStep === 'discovery';
-  const isLadder = demoStep === 'ladder';
-  const isFinale = demoStep === 'finale';
+  const isProduct = view === 'product';
+  const isLadder = view === 'ladder';
+  // Phase 5 is the durable-workflow rung, and the flight-disruption replan is
+  // what that rung means. Opening it on the recovery workspace lets the change
+  // of surface carry the change of phase.
+  const isRecovery = isLadder && state.selectedPhase === 5;
+  const activePhase = SHOWCASE_PHASES.find((p) => p.phase === state.selectedPhase);
   const recoveryStage = deriveRecoveryStage(state);
   const runtimeStatus =
     state.backendStatus === 'online'
@@ -127,18 +141,17 @@ export function DesktopMeridianApp({
     return () => compactSidebar.removeEventListener('change', collapseWhenNarrow);
   }, []);
 
-  const openDiscovery = () => setDemoStep('discovery');
-  const openLadder = () => setDemoStep('ladder');
-  const openFinale = () => {
-    state.setSelectedPhase(5);
-    setDemoStep('finale');
+  const openProduct = () => setView('product');
+  const openPhase = (phase: Phase) => {
+    state.setSelectedPhase(phase);
+    setView('ladder');
   };
   const clearIntoLadder = () => {
     state.clearChat();
     state.setSelectedPhase(1);
     setMemoryOpen(false);
     setNavPanel(null);
-    setDemoStep('ladder');
+    setView('ladder');
   };
 
   const openNavItem = (id: NavItemId) => {
@@ -159,11 +172,11 @@ export function DesktopMeridianApp({
   return (
     <div
       className={`mds-desktop-app is-projector ${
-        isDiscovery
+        isProduct
           ? 'is-discovery'
-          : isLadder
-            ? 'is-proof is-ladder'
-            : 'is-experience is-finale'
+          : isRecovery
+            ? 'is-experience is-finale'
+            : 'is-proof is-ladder'
       }${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}
     >
       <aside className="mds-desktop-sidebar">
@@ -271,64 +284,62 @@ export function DesktopMeridianApp({
             </div>
           </div>
 
-          <nav className="mds-demo-sequence has-three" aria-label="Chalk-talk sequence">
+          <nav className="mds-ladder-nav" aria-label="Meridian capability ladder">
             <button
               type="button"
-              className={isDiscovery ? 'is-active' : ''}
-              aria-current={isDiscovery ? 'step' : undefined}
-              aria-label="1 Discovery, Experience"
-              onClick={openDiscovery}
+              className={`mds-ladder-nav-product${isProduct ? ' is-active' : ''}`}
+              aria-current={isProduct ? 'page' : undefined}
+              onClick={openProduct}
+              title="The Meridian experience the ladder builds toward"
             >
-              <span className="mds-demo-sequence-index" aria-hidden="true">1</span>
-              <span className="mds-demo-sequence-copy" aria-hidden="true">
-                <strong>Discovery</strong>
-                <small>Experience</small>
-              </span>
+              Product
             </button>
-            <i aria-hidden="true" />
-            <button
-              type="button"
-              className={isLadder ? 'is-active' : ''}
-              aria-current={isLadder ? 'step' : undefined}
-              aria-label="2 Capability ladder, Architecture"
-              onClick={openLadder}
-            >
-              <span className="mds-demo-sequence-index" aria-hidden="true">2</span>
-              <span className="mds-demo-sequence-copy" aria-hidden="true">
-                <strong>Capability ladder</strong>
-                <small>Architecture</small>
-              </span>
-            </button>
-            <i aria-hidden="true" />
-            <button
-              type="button"
-              className={isFinale ? 'is-active' : ''}
-              aria-current={isFinale ? 'step' : undefined}
-              aria-label="3 Stateful recovery, Proof"
-              onClick={openFinale}
-            >
-              <span className="mds-demo-sequence-index" aria-hidden="true">3</span>
-              <span className="mds-demo-sequence-copy" aria-hidden="true">
-                <strong>Stateful recovery</strong>
-                <small>Proof</small>
-              </span>
-            </button>
+            <span className="mds-ladder-nav-divider" aria-hidden="true" />
+            <ol className="mds-ladder-nav-rungs">
+              {SHOWCASE_PHASES.map((phase) => {
+                const active = isLadder && state.selectedPhase === phase.phase;
+                // Rungs below the current one stay lit: each phase adds to the
+                // stack rather than replacing it, and the nav should say so.
+                const carried = isLadder && state.selectedPhase > phase.phase;
+                return (
+                  <li key={phase.phase}>
+                    <button
+                      type="button"
+                      className={`mds-ladder-nav-rung${active ? ' is-active' : ''}${
+                        carried ? ' is-carried' : ''
+                      }`}
+                      aria-current={active ? 'step' : undefined}
+                      onClick={() => openPhase(phase.phase)}
+                      title={`${phase.description}. ${phase.proofPoint}.`}
+                      aria-label={`Phase ${phase.phase}, ${phase.label}: ${phase.description}. ${phase.proofPoint}.`}
+                    >
+                      <span className="mds-ladder-nav-index" aria-hidden="true">
+                        {phase.phase}
+                      </span>
+                      <span className="mds-ladder-nav-copy" aria-hidden="true">
+                        <strong>{phase.label}</strong>
+                        <small>{phase.capability}</small>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
           </nav>
 
-          {isDiscovery ? (
+          {isProduct ? (
             <DiscoveryWorkspace
               state={state}
               greeting={greetingPart}
               onClear={clearIntoLadder}
             />
-          ) : isLadder ? (
+          ) : !isRecovery ? (
             <>
               <div className="mds-headline-row mds-ladder-headline">
                 <div>
-                  <h1>{`Good ${greetingPart}, Alex.`}</h1>
-                  <p>Capability ladder · SQL → MCP → Retrieval → Production → Durable workflow</p>
+                  <h1>{activePhase ? `${activePhase.label} · ${activePhase.capability}` : 'Capability ladder'}</h1>
+                  <p>{activePhase?.description ?? 'SQL → MCP → Retrieval → Production → Durable workflow'}</p>
                 </div>
-                <PhaseSelector state={state} />
               </div>
 
               <AuroraEvidenceStrip
@@ -410,15 +421,15 @@ export function DesktopMeridianApp({
           ) : (
             <RecoveryWorkspace
               state={state}
-              onOpenProof={openLadder}
+              onOpenProof={() => setActivityCollapsed(false)}
               showComposer={false}
             />
           )}
         </div>
 
-        {(isLadder || (isFinale && recoveryStage === 'ready')) && (
+        {(isLadder && (!isRecovery || recoveryStage === 'ready')) && (
           <div className="mds-desktop-dock">
-            {isLadder ? (
+            {!isRecovery ? (
               <ChatComposer state={state} proofMode />
             ) : (
               <ChatComposer state={state} recoveryMode />

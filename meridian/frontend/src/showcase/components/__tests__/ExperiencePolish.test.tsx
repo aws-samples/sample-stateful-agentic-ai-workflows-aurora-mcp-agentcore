@@ -103,8 +103,8 @@ describe('Experience presentation polish', () => {
       screen.getByRole('region', { name: 'Meridian discovery' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: '1 Discovery, Experience' }),
-    ).toHaveAttribute('aria-current', 'step');
+      screen.getByRole('button', { name: 'Product' }),
+    ).toHaveAttribute('aria-current', 'page');
 
     fireEvent.click(
       screen.getByRole('button', {
@@ -119,8 +119,55 @@ describe('Experience presentation polish', () => {
       'is-ladder',
     );
     expect(
-      screen.getByRole('button', { name: '2 Capability ladder, Architecture' }),
+      screen.getByRole('button', { name: /^Phase 1, SQL/ }),
     ).toHaveAttribute('aria-current', 'step');
+  });
+
+  it('puts the five phases at the top level with the product entry un-numbered', () => {
+    render(
+      <DesktopMeridianApp
+        state={makeState({ selectedPhase: 3 })}
+        theme="dark"
+        onToggleTheme={vi.fn()}
+      />,
+    );
+
+    const nav = screen.getByRole('navigation', {
+      name: 'Meridian capability ladder',
+    });
+
+    // All five rungs are top level - none of them nests inside a journey step.
+    for (const label of ['SQL', 'MCP', 'Retrieval', 'Production', 'Workflow']) {
+      expect(
+        within(nav).getByRole('button', { name: new RegExp(`^Phase \\d, ${label}`) }),
+      ).toBeInTheDocument();
+    }
+
+    // The product view is the cold open, not a numbered peer of the ladder.
+    const product = within(nav).getByRole('button', { name: 'Product' });
+    expect(product).toBeInTheDocument();
+    expect(product).not.toHaveAttribute('aria-current', 'step');
+  });
+
+  it('carries the rungs already climbed so capability reads as cumulative', () => {
+    const { container } = render(
+      <DesktopMeridianApp
+        state={makeState({ selectedPhase: 4 })}
+        theme="dark"
+        onToggleTheme={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^Phase 4, Production/ }));
+
+    const rungs = Array.from(
+      container.querySelectorAll('.mds-ladder-nav-rung'),
+    );
+    // 1-3 carried, 4 active, 5 neither.
+    expect(rungs.slice(0, 3).every((r) => r.classList.contains('is-carried'))).toBe(true);
+    expect(rungs[3].classList.contains('is-active')).toBe(true);
+    expect(rungs[4].classList.contains('is-carried')).toBe(false);
+    expect(rungs[4].classList.contains('is-active')).toBe(false);
   });
 
   it('opens the ladder with the Aurora evidence strip collapsed but still reporting', () => {
@@ -132,9 +179,7 @@ describe('Experience presentation polish', () => {
       />,
     );
 
-    fireEvent.click(
-      screen.getByRole('button', { name: '2 Capability ladder, Architecture' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: /^Phase 1, SQL/ }));
 
     // Collapsed gives the chip row's height back to the transcript, but the
     // header keeps reporting progress so the proof signal survives.
@@ -169,7 +214,7 @@ describe('Experience presentation polish', () => {
     expect(screen.getByRole('button', { name: 'Trips' })).toBeInTheDocument();
 
     fireEvent.click(
-      screen.getByRole('button', { name: '3 Stateful recovery, Proof' }),
+      screen.getByRole('button', { name: /^Phase 5, Workflow/ }),
     );
     expect(app).toHaveClass('is-sidebar-collapsed');
 
@@ -214,16 +259,18 @@ describe('Experience presentation polish', () => {
   });
 
   it('shows the recovery composer only after the plan is ready', () => {
+    // Phase 5 is the recovery workspace, and the phase is owned by the hook,
+    // so the view follows selectedPhase rather than a local step.
     const { container, rerender } = render(
       <DesktopMeridianApp
-        state={makeState()}
+        state={makeState({ selectedPhase: 5 })}
         theme="dark"
         onToggleTheme={vi.fn()}
       />,
     );
 
     fireEvent.click(
-      screen.getByRole('button', { name: '3 Stateful recovery, Proof' }),
+      screen.getByRole('button', { name: /^Phase 5, Workflow/ }),
     );
 
     const dock = container.querySelector('.mds-desktop-dock');
