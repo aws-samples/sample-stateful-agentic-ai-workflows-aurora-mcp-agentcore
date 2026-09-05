@@ -40,52 +40,40 @@ describe('tripVisualVariant', () => {
 
 describe('tripVisualPhoto', () => {
   it('prefers the live image_url for non-curated variants', () => {
-    const src = 'https://images.unsplash.com/photo-1540959733332';
+    const src = 'https://example.com/photo/tokyo-live.jpg';
     expect(tripVisualPhoto(product({ product_id: 'CITY-LIVE', image_url: src })).src).toBe(src);
+  });
+
+  it('uses the commissioned catalog artwork the seed points at', () => {
+    // Every package ships its own image under /travel/catalog. Nothing is
+    // fetched from a stock photo CDN, so the seeded path is what renders.
+    expect(
+      tripVisualPhoto(
+        product({ product_id: 'WEL-005', image_url: '/travel/catalog/WEL-005.jpg' }),
+      ).src,
+    ).toBe('/travel/catalog/WEL-005.jpg');
+  });
+
+  it('does not let a variant photo shadow a package that has its own artwork', () => {
+    // WEL-005 classifies as 'vineyard', which has tuscany-vineyard.jpg on disk.
+    // The package's own photograph has to win, or commissioning artwork for it
+    // achieves nothing.
+    const resolved = tripVisualPhoto(
+      product({
+        product_id: 'WEL-005',
+        name: 'Tuscany Wine & Wellness',
+        destination: 'Chianti',
+        image_url: '/travel/catalog/WEL-005.jpg',
+      }),
+    );
+    expect(resolved.variant).toBe('vineyard');
+    expect(resolved.src).toBe('/travel/catalog/WEL-005.jpg');
   });
 
   it('never falls a city trip back to the Tuscany vineyard photo', () => {
     // No live URL and no city photo on disk: expect the gradient (null src),
     // not tuscany-vineyard.jpg.
     expect(tripVisualPhoto(product({ product_id: 'CITY-NO-PHOTO', image_url: '' })).src).toBeNull();
-  });
-
-  it('pins stage-critical package IDs to replaceable local artwork', () => {
-    const tuscany = product({
-      product_id: 'WEL-005',
-      name: 'Tuscany Wine & Wellness',
-      destination: 'Chianti',
-      category: 'Wellness & Luxury',
-      image_url: 'https://images.unsplash.com/photo-1523531294919',
-    });
-    const tokyo = product({
-      product_id: 'TKY-003',
-      name: 'Tokyo Executive Stopover',
-      image_url: 'https://images.unsplash.com/photo-1540959733332',
-    });
-
-    expect(tripVisualPhoto(tuscany).src).toBe('/travel/catalog/WEL-005.jpg');
-    expect(tripVisualPhoto(tokyo).src).toBe('/travel/catalog/TKY-003.jpg');
-  });
-
-  it('pins every recovery alternative to its Tokyo editorial image', () => {
-    const alternatives = [
-      ['TKY-001', 'Tokyo Indie Neighborhood Walk'],
-      ['CTY-002', 'Tokyo Culture & Cuisine'],
-      ['TKY-002', 'Tokyo Family Discovery Week'],
-    ] as const;
-
-    alternatives.forEach(([productId, name]) => {
-      expect(
-        tripVisualPhoto(
-          product({
-            product_id: productId,
-            name,
-            image_url: '',
-          }),
-        ).src,
-      ).toBe(`/travel/catalog/${productId}.jpg`);
-    });
   });
 
   it('routes willamette to the vineyard photo, not tuscany', () => {

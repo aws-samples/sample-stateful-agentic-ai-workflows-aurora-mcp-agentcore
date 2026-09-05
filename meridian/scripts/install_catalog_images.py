@@ -1,32 +1,36 @@
 #!/usr/bin/env python3
 """Install generated catalog artwork into the showcase.
 
-The product hero renders at roughly 1725x1003 CSS px, so on a 2x display it
-needs about 2200 device pixels. The bundled 1600px sources were being upscaled
-around 37%, which is why they looked soft. This script takes freshly generated
-images, checks they are big enough, normalises them, and drops them into
+All 35 packages ship with commissioned artwork; nothing is fetched from a stock
+photo CDN. This script takes freshly generated images, normalises them to the
+hero's aspect and pixel target, and drops them into
 ``frontend/public/travel/catalog/``.
+
+The hero renders around 1743x1050 CSS px, which is about 3500 device pixels on
+a 2x display. Sources below that get enlarged and sharpened rather than
+rejected, and the run reports which ones were short.
 
 Usage::
 
-    python scripts/install_catalog_images.py ~/Downloads
-    python scripts/install_catalog_images.py ~/Downloads --dry-run
+    python scripts/install_catalog_images.py ~/Downloads/meridian-art
+    python scripts/install_catalog_images.py ~/Downloads/meridian-art --dry-run
     python scripts/install_catalog_images.py ~/Downloads --map IMG_4821.jpg=WEL-002
 
-Files named after their package id (``WEL-002.jpg``, ``wel-002.jpeg``) are
-matched automatically. Anything else needs a ``--map`` entry, which is the
-usual case for images generated on a phone.
+A file is matched when its name starts with a package id - ``WEL-002.png`` and
+``WEL-002 - Amalfi Coast Villa Week.png`` both work. ``--map`` covers anything
+that does not, such as a camera roll filename.
 """
 
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import sys
 from pathlib import Path
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageFilter
 except ImportError:  # pragma: no cover - guidance beats a traceback
     sys.exit("Pillow is required: pip install Pillow")
 
@@ -34,11 +38,21 @@ REPO = Path(__file__).resolve().parents[1]
 CATALOG = REPO / "frontend" / "public" / "travel" / "catalog"
 PORTRAIT = REPO / "frontend" / "public" / "travel"
 
+MISSING_ART_HINT = (
+    "Every package in the catalog ships with its own artwork, so a gap here is "
+    "a card that will fall back to a flat gradient on stage."
+)
+
+# The full catalog: seven series of five. Kept in step with TRIP_PACKAGES in
+# travel_catalog.py - if a package is added there it needs artwork here.
 PACKAGE_IDS = [
-    "ADV-001", "BCH-001", "BCH-003", "BCH-004",
+    "ADV-001", "ADV-002", "ADV-003", "ADV-004", "ADV-005",
+    "BCH-001", "BCH-002", "BCH-003", "BCH-004", "BCH-005",
+    "BIZ-001", "BIZ-002", "BIZ-003", "BIZ-004", "BIZ-005",
     "CTY-001", "CTY-002", "CTY-003", "CTY-004", "CTY-005",
-    "TKY-001", "TKY-002", "TKY-003", "TKY-004",
-    "WEL-001", "WEL-002", "WEL-005",
+    "FAM-001", "FAM-002", "FAM-003", "FAM-004", "FAM-005",
+    "TKY-001", "TKY-002", "TKY-003", "TKY-004", "TKY-005",
+    "WEL-001", "WEL-002", "WEL-003", "WEL-004", "WEL-005",
 ]
 
 # What the hero actually needs at 2x. Anything smaller is accepted but flagged,
@@ -48,17 +62,41 @@ TARGET_HEIGHT = 1440
 MIN_WIDTH = 2200
 JPEG_QUALITY = 82
 
+# Sharpening applied only when a source had to be enlarged. Spreading fixed
+# detail over more pixels is what makes an upscale read soft, and an unsharp
+# mask puts back most of the local contrast that costs. The threshold keeps it
+# off smooth gradients, so skies stay clean instead of picking up halos.
+# Downscaled sources skip this: Lanczos reduction is already crisp and the
+# mask would only over-bite the edges.
+UNSHARP_RADIUS = 1.5
+UNSHARP_PERCENT = 80
+UNSHARP_THRESHOLD = 3
+
 # Alex is centre-cropped into a circle, so a square source is what keeps the
 # framing under your control rather than the crop's.
 PORTRAIT_TARGETS = {"alex-morgan": (1024, 1024)}
 
 
 def resolve_target(stem: str) -> tuple[Path, tuple[int, int]] | None:
-    """Map a file stem onto its destination and pixel target."""
-    key = stem.strip().upper()
+    """Map a file stem onto its destination and pixel target.
+
+    Accepts a bare package id (``WEL-002``) and also the shape image tools
+    hand back when the prompt is used as the filename - a leading id followed
+    by a separator and the package name, e.g. ``TKY-005 - Tokyo Autumn Koyo``.
+    Renaming 35 files by hand before every install is exactly the sort of
+    chore that gets one of them wrong.
+    """
+    cleaned = stem.strip()
+    key = cleaned.upper()
     if key in PACKAGE_IDS:
         return CATALOG / f"{key}.jpg", (TARGET_WIDTH, TARGET_HEIGHT)
-    lowered = stem.strip().lower()
+
+    leading = re.match(r"^([A-Z]{3}-\d{3})\b", key)
+    if leading and leading.group(1) in PACKAGE_IDS:
+        package = leading.group(1)
+        return CATALOG / f"{package}.jpg", (TARGET_WIDTH, TARGET_HEIGHT)
+
+    lowered = cleaned.lower()
     if lowered in PORTRAIT_TARGETS:
         return PORTRAIT / f"{lowered}.jpg", PORTRAIT_TARGETS[lowered]
     return None
@@ -79,6 +117,19 @@ def normalise(source: Path, destination: Path, size: tuple[int, int]) -> str:
         top = (interim[1] - target_h) // 2
         image = image.crop((left, top, left + target_w, top + target_h))
 
+        # Enlarging spreads fixed detail over more pixels, which is what reads
+        # as soft. An unsharp mask restores most of the local contrast that
+        # costs; a reduction is already crisp, so it skips this.
+        enlarged = scale > 1.0
+        if enlarged:
+            image = image.filter(
+                ImageFilter.UnsharpMask(
+                    radius=UNSHARP_RADIUS,
+                    percent=UNSHARP_PERCENT,
+                    threshold=UNSHARP_THRESHOLD,
+                )
+            )
+
         destination.parent.mkdir(parents=True, exist_ok=True)
         image.save(
             destination,
@@ -88,7 +139,8 @@ def normalise(source: Path, destination: Path, size: tuple[int, int]) -> str:
             progressive=True,
         )
     kb = destination.stat().st_size // 1024
-    return f"{src_w}x{src_h} -> {target_w}x{target_h}, {kb} KB"
+    note = " +sharpen" if enlarged else ""
+    return f"{src_w}x{src_h} -> {target_w}x{target_h}, {kb} KB{note}"
 
 
 def main() -> int:
@@ -186,6 +238,7 @@ def main() -> int:
     ]
     if missing:
         print(f"\nStill missing artwork: {', '.join(missing)}")
+        print(f"  {MISSING_ART_HINT}")
     return 0
 
 
