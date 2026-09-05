@@ -458,3 +458,106 @@ def test_plan_fans_out_availability_and_merges_inventory() -> None:
     assert "Workflow node: availability fan-out" in titles
     details = [a.get("details", "") for a in result.get("activities", [])]
     assert any("duration inventory" in detail for detail in details)
+
+
+# ---------------------------------------------------------------------------
+# Courtesy hold: the workflow's only committed side effect.
+# ---------------------------------------------------------------------------
+
+# A disruption that does NOT match the canonical finale predicate, so the graph
+# runs straight through to the hold instead of pausing after search.
+WORKFLOW_PLAN = (
+    "My flight was cancelled, rework the trip and show duration availability."
+)
+
+
+def _plan_workflow(hold_calls: List[dict]) -> OrchestrationAgent:
+    """A plan-path workflow whose hold node records its Aurora call."""
+
+    async def fake_search(q: str, limit: int = 5):
+        return ([{"product_id": "TKY-003", "name": "Tokyo Executive Stopover",
+                  "price": 1949}], [])
+
+    async def fake_avail(q: str, package_id: str | None = None):
+        return (
+            [{"product_id": package_id or "TKY-003",
+              "available_sizes": ["2 nights", "3 nights"],
+              "availability": {"2 nights": 14, "3 nights": 0}}],
+            [],
+            "",
+        )
+
+    workflow = OrchestrationAgent(search_fn=fake_search, availability_fn=fake_avail)
+
+    async def fake_hold(state):
+        hold_calls.append(dict(state))
+        return {"activities": list(state.get("activities", []))}
+
+    workflow._node_hold = fake_hold  # type: ignore[method-assign]
+    return workflow
+
+
+def test_plan_path_places_a_courtesy_hold() -> None:
+    """The recovery plan commits inventory, not just workflow position."""
+    calls: List[dict] = []
+    asyncio.run(
+        _plan_workflow(calls).run(
+            WORKFLOW_PLAN,
+            traveler_id="trv_meridian_demo",
+            conversation_id="hold-plan",
+        )
+    )
+    assert len(calls) == 1, "plan path must reach the hold node exactly once"
+
+
+def test_availability_lookup_never_holds_inventory() -> None:
+    """A read must not reserve seats as a side effect."""
+    calls: List[dict] = []
+    asyncio.run(
+        _plan_workflow(calls).run(
+            "Which trip lengths are still available for Amalfi Coast Villa Week?",
+            traveler_id="trv_meridian_demo",
+            conversation_id="hold-availability",
+        )
+    )
+    assert calls == [], "a bare availability intent must not place a hold"
+
+
+def test_hold_picks_a_duration_that_has_inventory() -> None:
+    """Never hold against a sold-out duration."""
+    from backend.agents.orchestration_05.workflow import _first_available_duration
+
+    assert _first_available_duration(
+        {"availability": {"2 nights": 0, "3 nights": 5}}
+    ) == "3 nights"
+    assert _first_available_duration(
+        {"availability": {}, "available_sizes": ["6 nights"]}
+    ) == "6 nights"
+
+
+def test_failed_workflow_releases_a_committed_hold() -> None:
+    """Compensation: seats go back when a later step fails."""
+    released: List[str] = []
+
+    async def fake_search(q: str, limit: int = 5):
+        return ([{"product_id": "TKY-003", "name": "Tokyo", "price": 1949}], [])
+
+    async def boom(q: str, package_id: str | None = None):
+        raise RuntimeError("availability provider exploded")
+
+    workflow = OrchestrationAgent(search_fn=fake_search, availability_fn=boom)
+
+    async def record_release(state):
+        released.append(str(state.get("hold_id") or "no-hold"))
+
+    workflow._release_hold = record_release  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError, match="availability provider exploded"):
+        asyncio.run(
+            workflow.run(
+                WORKFLOW_PLAN,
+                traveler_id="trv_meridian_demo",
+                conversation_id="hold-compensation",
+            )
+        )
+    assert released, "a failing workflow must run the compensating release"

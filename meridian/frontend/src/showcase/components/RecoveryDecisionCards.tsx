@@ -1,5 +1,5 @@
 import {
-  AlertTriangle,
+AlertTriangle,
   ArrowRight,
   CalendarDays,
   Check,
@@ -10,8 +10,9 @@ import {
   FileCheck2,
   GitCompareArrows,
   Headphones,
-  LockKeyhole,
   Loader2,
+  Lock,
+  LockKeyhole,
   Plane,
   Route,
   Search,
@@ -77,6 +78,10 @@ interface CheckpointedPlanCardProps {
   /** Which checkpointer actually ran. PostgresSaver is durable; MemorySaver is not. */
   checkpointStore: string;
   durable: boolean;
+  /** A committed courtesy hold, when the recovery path reached the hold node. */
+  holdId?: string;
+  holdExpiresAt?: string;
+  holdSeatsRemaining?: string;
 }
 
 interface RecoveryLaunchCardProps {
@@ -933,6 +938,58 @@ export function AgentProofCard({
   );
 }
 
+/**
+ * A live countdown on the committed hold.
+ *
+ * This is what makes the durability claim tangible: the seats are reserved in
+ * Aurora with a TTL, so after the worker is killed and the thread resumes, the
+ * clock is still running and the inventory is still decremented. Workflow
+ * position surviving is abstract; a reservation surviving is not.
+ */
+function HoldCountdown({
+  holdId,
+  expiresAt,
+  seatsRemaining,
+}: {
+  holdId: string;
+  expiresAt?: string;
+  seatsRemaining?: string;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!expiresAt) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [expiresAt]);
+
+  const msLeft = expiresAt ? new Date(expiresAt).getTime() - now : 0;
+  const expired = Boolean(expiresAt) && msLeft <= 0;
+  const clock = expiresAt
+    ? `${Math.floor(Math.max(msLeft, 0) / 60000)}:${String(
+        Math.floor((Math.max(msLeft, 0) % 60000) / 1000),
+      ).padStart(2, '0')}`
+    : null;
+
+  return (
+    <div className={`mds-hold-receipt${expired ? ' is-expired' : ''}`}>
+      <span className="mds-hold-receipt-head">
+        <Lock size={13} aria-hidden="true" />
+        Seats held in Aurora
+      </span>
+      <code>{holdId}</code>
+      {clock && (
+        <span className="mds-hold-receipt-clock" role="timer" aria-live="off">
+          {expired ? 'hold expired' : `${clock} left`}
+        </span>
+      )}
+      {seatsRemaining && (
+        <span className="mds-hold-receipt-stock">{seatsRemaining} seats left</span>
+      )}
+    </div>
+  );
+}
+
 export function CheckpointedPlanCard({
   stage,
   evidence,
@@ -940,6 +997,9 @@ export function CheckpointedPlanCard({
   resumedAfterRestart,
   checkpointStore,
   durable,
+  holdId,
+  holdExpiresAt,
+  holdSeatsRemaining,
 }: CheckpointedPlanCardProps) {
   const searchDone = evidence.searchObserved;
   const rankDone = evidence.alternativesObserved;
@@ -972,6 +1032,13 @@ export function CheckpointedPlanCard({
         <small>Thread</small>
         <strong>{threadId}</strong>
       </div>
+      {holdId && (
+        <HoldCountdown
+          holdId={holdId}
+          expiresAt={holdExpiresAt}
+          seatsRemaining={holdSeatsRemaining}
+        />
+      )}
       {/* The claim this phase makes lives or dies on which store ran, so name
           it here rather than only in the trace rail. */}
       <div className={`mds-checkpoint-receipt${durable ? ' is-durable' : ''}`}>

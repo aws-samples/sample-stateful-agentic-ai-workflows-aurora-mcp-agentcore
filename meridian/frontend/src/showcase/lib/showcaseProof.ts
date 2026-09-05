@@ -42,6 +42,10 @@ export interface WorkflowStateProof {
   durable: boolean;
   /** The LangGraph thread. Identical before and after a restart is the proof. */
   threadId: string;
+  /** A committed courtesy hold, if the recovery path reached the hold node. */
+  holdId: string;
+  holdExpiresAt: string;
+  holdSeatsRemaining: string;
 }
 
 export const PHASE_PROOFS: Record<Phase, PhaseProof> = {
@@ -254,6 +258,14 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
     threadId:
       traceSpans
         .map((span) => fieldValue(span, 'thread_id'))
+        .find(Boolean) ?? '',
+    holdId:
+      traceSpans.map((span) => fieldValue(span, 'hold_id')).find(Boolean) ?? '',
+    holdExpiresAt:
+      traceSpans.map((span) => fieldValue(span, 'expires_at')).find(Boolean) ?? '',
+    holdSeatsRemaining:
+      traceSpans
+        .map((span) => fieldValue(span, 'seats_remaining'))
         .find(Boolean) ?? '',
     checkpoint,
     checkpointCount: checkpointSpans.length,

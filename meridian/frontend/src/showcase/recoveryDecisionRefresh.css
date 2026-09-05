@@ -558,3 +558,61 @@
   color: var(--mds-blue);
   background: rgb(var(--mds-blue-rgb) / 0.1);
 }
+
+/* ---------------------------------------------------------------------------
+   Hold receipt
+
+   The seats are reserved in Aurora with a TTL, so the clock keeps running
+   across a worker restart. Workflow position surviving is abstract; a
+   reservation surviving is not.
+--------------------------------------------------------------------------- */
+.mds-hold-receipt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  margin: 10px 0 2px;
+  padding: 8px 10px;
+  border: 1px solid rgb(var(--mds-green-rgb) / 0.28);
+  border-radius: 9px;
+  background: rgb(var(--mds-green-rgb) / 0.08);
+}
+
+.mds-hold-receipt.is-expired {
+  border-color: var(--mds-line);
+  background: var(--mds-fill-1);
+}
+
+.mds-hold-receipt-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mds-green);
+  font-size: calc(11.5px * var(--mds-fs-chrome));
+  font-weight: 760;
+}
+
+.mds-hold-receipt.is-expired .mds-hold-receipt-head {
+  color: var(--mds-dim);
+}
+
+.mds-hold-receipt code {
+  color: var(--mds-on-surface-soft);
+  font-family: var(--mds-font-mono);
+  font-size: calc(10.5px * var(--mds-fs-chrome));
+}
+
+.mds-hold-receipt-clock {
+  margin-left: auto;
+  color: var(--mds-on-surface);
+  font-family: var(--mds-font-mono);
+  font-size: calc(13px * var(--mds-fs-chrome));
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+}
+
+.mds-hold-receipt-stock {
+  color: var(--mds-dim);
+  font-size: calc(10.5px * var(--mds-fs-chrome));
+  font-weight: 640;
+}

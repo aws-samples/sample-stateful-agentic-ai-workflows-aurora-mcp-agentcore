@@ -360,6 +360,9 @@ export function RecoveryWorkspace({
                 threadId={threadId}
                 checkpointStore={workflowProof.checkpoint}
                 durable={workflowProof.durable}
+                holdId={workflowProof.holdId}
+                holdExpiresAt={workflowProof.holdExpiresAt}
+                holdSeatsRemaining={workflowProof.holdSeatsRemaining}
                 resumedAfterRestart={state.workflowResumedAfterRestart}
               />
             </div>

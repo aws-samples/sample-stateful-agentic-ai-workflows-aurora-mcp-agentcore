@@ -43,7 +43,7 @@ import os
 import uuid
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, TypedDict
 from urllib.parse import quote
 
@@ -338,6 +338,31 @@ class WorkflowState(TypedDict, total=False):
     availability_checks: int
     workflow_status: str
     resumed_after_restart: bool
+    hold_id: str
+    hold_expires_at: str
+    hold_package: str
+    hold_seats_remaining: int
+
+
+# How long a courtesy hold survives. Short enough that the room can watch the
+# clock move across a worker restart, long enough not to expire mid-demo.
+HOLD_MINUTES = int(os.getenv("MERIDIAN_HOLD_MINUTES", "15"))
+
+
+def _first_available_duration(package: Dict[str, Any]) -> str:
+    """Pick a duration that still has inventory, falling back to the first."""
+    availability = package.get("availability") or {}
+    if isinstance(availability, dict):
+        for duration, seats in availability.items():
+            try:
+                if int(seats) > 0:
+                    return str(duration)
+            except (TypeError, ValueError):
+                continue
+    sizes = package.get("available_sizes") or package.get("durations") or []
+    if isinstance(sizes, list) and sizes:
+        return str(sizes[0])
+    return "7 nights"
 
 
 def _activity(
@@ -362,6 +387,27 @@ def _activity(
         "agent_file": AGENT_FILE,
         "telemetry": telemetry,
     }
+
+
+def _is_recovery_request(query: str) -> bool:
+    """Does this query justify committing inventory?
+
+    Only a disruption does. `_classify_intent` labels anything that names both
+    a trip and a date as a "plan", which correctly includes a documented
+    availability question like "Which trip lengths are still available for
+    Amalfi Coast Villa Week?". Routing on intent alone would let a read reserve
+    seats, so the hold node needs a stronger signal: the traveler's trip broke
+    and we are rebuilding it.
+    """
+    q = (query or "").lower()
+    disrupted = any(
+        marker in q
+        for marker in ("cancelled", "canceled", "disrupt", "stranded", "rebook", "missed")
+    )
+    reworking = any(
+        marker in q for marker in ("rework", "rebuild", "replan", "re-plan", "recover")
+    )
+    return disrupted and reworking
 
 
 def _classify_intent(query: str) -> str:
@@ -555,6 +601,7 @@ class OrchestrationAgent:
         builder.add_node("search", self._node_search)
         builder.add_node("availability", self._node_availability)
         builder.add_node("memory_recall", self._node_memory_recall)
+        builder.add_node("hold", self._node_hold)
         builder.add_node("synthesize", self._node_synthesize)
 
         builder.set_entry_point("classify")
@@ -583,7 +630,16 @@ class OrchestrationAgent:
                 "synthesize": "synthesize",
             },
         )
-        builder.add_edge("availability", "synthesize")
+        # Only the 'plan' path commits inventory. A bare availability lookup
+        # is a read, and must not reserve seats as a side effect.
+        builder.add_conditional_edges(
+            "availability",
+            lambda state: (
+                "hold" if _is_recovery_request(state.get("query", "")) else "synthesize"
+            ),
+            {"hold": "hold", "synthesize": "synthesize"},
+        )
+        builder.add_edge("hold", "synthesize")
         builder.add_edge("memory_recall", "synthesize")
         builder.add_edge("synthesize", END)
         interrupt_after = self.interrupt_after
@@ -591,6 +647,7 @@ class OrchestrationAgent:
             "classify",
             "search",
             "availability",
+            "hold",
             "memory_recall",
             "synthesize",
         }
@@ -831,6 +888,171 @@ class OrchestrationAgent:
             "availability_checks": availability_checks,
         }
 
+    async def _node_hold(self, state: WorkflowState) -> WorkflowState:
+        """Worker node: place a courtesy hold on the top-ranked option.
+
+        This is what makes the durability claim concrete. The previous nodes
+        checkpoint *workflow position*; this one commits a row with real
+        consequences - inventory is decremented and the hold carries a TTL. A
+        worker can now die between here and ``synthesize`` and the hold is
+        still there on resume, with time remaining, because it lives in Aurora
+        rather than in the process.
+
+        ``create_courtesy_hold`` takes an advisory lock, counts confirmed and
+        unexpired holds against capacity, and refuses to oversell. It also
+        rejects a traveler scope that does not match the RLS setting, so the
+        Phase 4 governance chain still applies inside the workflow.
+        """
+        start = _utc_now()
+        activities = list(state.get("activities", []))
+        packages = state.get("packages", []) or []
+        traveler_id = state.get("traveler_id") or ""
+
+        target = next(
+            (
+                _package_to_dict(package)
+                for package in packages
+                if _package_to_dict(package).get("product_id")
+                or _package_to_dict(package).get("package_id")
+            ),
+            None,
+        )
+        if not target or not traveler_id:
+            activities.append(
+                _activity(
+                    "reasoning",
+                    "Workflow node: hold skipped",
+                    details="No ranked option to hold for this traveler.",
+                )
+            )
+            elapsed = int((_utc_now() - start).total_seconds() * 1000)
+            activities.append(self._checkpoint_activity("hold", elapsed))
+            return {"activities": activities}
+
+        package_id = str(target.get("product_id") or target.get("package_id"))
+        duration = _first_available_duration(target)
+        # Alex travels as a party of two; the demo traveler's profile is the
+        # source of truth for this in Phase 4, and the workflow inherits it.
+        quantity = 2
+        unit_price = float(target.get("price") or 0)
+        hold_id = f"hold_{uuid.uuid4().hex[:12]}"
+        expires_at = _utc_now() + timedelta(minutes=HOLD_MINUTES)
+
+        try:
+            from backend.agentcore.identity import get_agentcore_identity
+            from backend.db.rds_data_client import get_rds_data_client
+
+            db = get_rds_data_client()
+            async with db.scoped_session(
+                traveler_id=traveler_id,
+                agent_type="booking_agent",
+                authorization=get_agentcore_identity().authorization_context(),
+            ) as transaction_id:
+                rows = await db.execute(
+                    """
+                    SELECT seats_available, seats_reserved, seats_remaining
+                    FROM create_courtesy_hold(
+                        %s::TEXT, %s::TEXT, %s::TEXT, %s::TEXT,
+                        %s::INTEGER, %s::NUMERIC, %s::NUMERIC, %s::TIMESTAMPTZ
+                    )
+                    """,
+                    (
+                        hold_id,
+                        traveler_id,
+                        package_id,
+                        duration,
+                        quantity,
+                        unit_price,
+                        unit_price * quantity,
+                        expires_at.isoformat(),
+                    ),
+                    transaction_id=transaction_id,
+                )
+        except Exception as exc:  # noqa: BLE001 - degrade, never break the demo
+            reason = "inventory changed" if "insufficient_inventory" in str(exc) else str(exc)[:120]
+            logger.warning("courtesy hold not placed: %s", exc)
+            activities.append(
+                _activity(
+                    "error",
+                    "Workflow node: hold not placed",
+                    details=f"No seats were reserved ({reason}). The plan continues unheld.",
+                )
+            )
+            elapsed = int((_utc_now() - start).total_seconds() * 1000)
+            activities.append(self._checkpoint_activity("hold", elapsed))
+            return {"activities": activities}
+
+        remaining = int((rows[0] or {}).get("seats_remaining", 0)) if rows else 0
+        elapsed = int((_utc_now() - start).total_seconds() * 1000)
+        activities.append(
+            _activity(
+                "database",
+                "Workflow node: hold",
+                details=(
+                    f"Held {quantity} x {duration} on {package_id} until "
+                    f"{expires_at.strftime('%H:%M:%SZ')} · {remaining} seats left"
+                ),
+                sql_query=(
+                    "SELECT seats_available, seats_reserved, seats_remaining\n"
+                    "FROM create_courtesy_hold($1, $2, $3, $4, $5, $6, $7, $8);\n"
+                    "-- advisory lock + capacity check, inside the RLS scope"
+                ),
+                execution_time_ms=elapsed,
+                telemetry={
+                    "category": "database",
+                    "component": "Aurora PostgreSQL",
+                    "status": "ok",
+                    "fields": [
+                        {"label": "hold_id", "value": hold_id, "mono": True},
+                        {"label": "package", "value": package_id},
+                        {"label": "duration", "value": duration},
+                        {"label": "seats_held", "value": str(quantity)},
+                        {"label": "seats_remaining", "value": str(remaining)},
+                        {"label": "expires_at", "value": expires_at.isoformat()},
+                    ],
+                },
+            )
+        )
+        activities.append(self._checkpoint_activity("hold", elapsed))
+        return {
+            "activities": activities,
+            "hold_id": hold_id,
+            "hold_expires_at": expires_at.isoformat(),
+            "hold_package": package_id,
+            "hold_seats_remaining": remaining,
+        }
+
+    async def _release_hold(self, state: WorkflowState) -> None:
+        """Compensating action: give the seats back.
+
+        A durable workflow that commits inventory needs an answer for "step 3
+        failed after step 2 committed". Releasing marks the booking so the
+        capacity count in ``create_courtesy_hold`` stops counting it.
+        """
+        hold_id = state.get("hold_id")
+        traveler_id = state.get("traveler_id")
+        if not hold_id or not traveler_id:
+            return
+        try:
+            from backend.agentcore.identity import get_agentcore_identity
+            from backend.db.rds_data_client import get_rds_data_client
+
+            db = get_rds_data_client()
+            async with db.scoped_session(
+                traveler_id=traveler_id,
+                agent_type="booking_agent",
+                authorization=get_agentcore_identity().authorization_context(),
+            ) as transaction_id:
+                await db.execute(
+                    "UPDATE bookings SET status = 'released' "
+                    "WHERE booking_id = %s AND traveler_id = %s AND status = 'held'",
+                    (hold_id, traveler_id),
+                    transaction_id=transaction_id,
+                )
+            logger.info("released courtesy hold %s", hold_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("could not release hold %s: %s", hold_id, exc)
+
     async def _node_memory_recall(self, state: WorkflowState) -> WorkflowState:
         """Worker node: recall prior context (delegates to the Phase 4 memory fn).
 
@@ -979,9 +1201,18 @@ class OrchestrationAgent:
                 prior_worker_instance
                 and prior_worker_instance != WORKER_INSTANCE_ID
             )
-            result = await self.graph.ainvoke(None, config=config)
-        else:
-            result = await self.graph.ainvoke(initial, config=config)
+        # If the graph fails after the hold node committed inventory, give the
+        # seats back. This is the compensating action a durable workflow owes
+        # for anything it commits mid-flight.
+        try:
+            if resume:
+                result = await self.graph.ainvoke(None, config=config)
+            else:
+                result = await self.graph.ainvoke(initial, config=config)
+        except Exception:
+            failed_state = await self.graph.aget_state(config)
+            await self._release_hold(dict(failed_state.values or {}))
+            raise
 
         result = dict(result or {})
         current = await self.graph.aget_state(config)
