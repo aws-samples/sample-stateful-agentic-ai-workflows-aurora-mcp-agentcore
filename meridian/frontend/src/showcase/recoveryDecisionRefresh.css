@@ -616,3 +616,21 @@
   font-size: calc(10.5px * var(--mds-fs-chrome));
   font-weight: 640;
 }
+
+/* The cross-fade wrapper needs a real box - opacity and transform do not apply
+   to `display: contents`. It mirrors the scroll column's flex layout so the
+   views inside lay out exactly as they did before the wrapper existed. */
+.mds-view-swap {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mds-view-swap {
+    transition: none;
+  }
+}

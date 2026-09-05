@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   Briefcase,
   Compass,
@@ -31,6 +32,7 @@ import type { Phase } from '../types';
 import { MERIDIAN_MARK_SRC } from '../lib/meridianBrand';
 import { ALEX_IMAGE_URL, ALEX_NAME } from './lib/personas';
 import { deriveRecoveryStage } from './lib/recoveryState';
+import { prefersReducedMotion } from './lib/prefersReducedMotion';
 import { SHOWCASE_PHASES } from './lib/showcaseAdapters';
 
 type NavItemId = 'concierge' | 'trips' | 'discover' | 'profile' | 'preferences' | 'messages';
@@ -327,6 +329,23 @@ export function DesktopMeridianApp({
             </ol>
           </nav>
 
+          {/* Switching rungs clears the transcript, spans and results, so
+              without a transition the whole column blinks out and back. Cross
+              fade the swap instead: out fast, in a touch slower, keyed on the
+              view so React unmounts cleanly between phases. */}
+          <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={isProduct ? 'product' : `phase-${state.selectedPhase}`}
+            className="mds-view-swap"
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
+            transition={
+              prefersReducedMotion
+                ? { duration: 0.12 }
+                : { duration: 0.26, ease: [0.22, 0.61, 0.36, 1] }
+            }
+          >
           {isProduct ? (
             <DiscoveryWorkspace
               state={state}
@@ -419,6 +438,8 @@ export function DesktopMeridianApp({
               showComposer={false}
             />
           )}
+          </motion.div>
+          </AnimatePresence>
         </div>
 
         {(isLadder && (!isRecovery || recoveryStage === 'ready')) && (

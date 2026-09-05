@@ -12,7 +12,7 @@
  * the showcase hook).
  */
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { BadgeCheck, Database, Fingerprint, RefreshCw, ShieldX } from 'lucide-react';
 import { fetchRlsProbe, type RlsProbeResponse } from '../../api/client';
 import { prefersReducedMotion } from '../lib/prefersReducedMotion';
