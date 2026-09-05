@@ -1,4 +1,5 @@
-import { Cable, CheckCircle2, Clock3 } from 'lucide-react';
+import { CheckCircle2, Clock3 } from 'lucide-react';
+import { McpMark } from './McpMark';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { deriveMcpContracts } from '../lib/showcaseProof';
 
@@ -18,7 +19,7 @@ export function McpToolContractPanel({ state }: { state: MeridianShowcaseState }
     <section className="mds-contract-panel is-condensed" aria-label="MCP tool contract">
       <div className="mds-contract-head">
         <span className="mds-contract-icon" aria-hidden="true">
-          <Cable size={16} strokeWidth={2.2} />
+          <McpMark size={17} />
         </span>
         <div>
           <strong>MCP tool contract</strong>

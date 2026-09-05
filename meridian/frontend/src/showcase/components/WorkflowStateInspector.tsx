@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ChevronDown, DatabaseZap, GitBranch, Route } from 'lucide-react';
+import { LangGraphMark } from './LangGraphMark';
+import { ChevronDown, DatabaseZap, GitBranch } from 'lucide-react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { deriveWorkflowState } from '../lib/showcaseProof';
 
@@ -21,7 +22,7 @@ export function WorkflowStateInspector({ state }: { state: MeridianShowcaseState
       >
         <ChevronDown className="mds-workflow-state-chevron" size={15} strokeWidth={2.4} aria-hidden="true" />
         <span className="mds-workflow-state-icon" aria-hidden="true">
-          <Route size={16} strokeWidth={2.2} />
+          <LangGraphMark size={16} />
         </span>
           <div>
             <strong>Workflow state</strong>

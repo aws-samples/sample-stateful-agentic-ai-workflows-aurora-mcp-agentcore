@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  History,
   CheckCircle2,
   ChevronDown,
-  Database,
-  History,
   Loader2,
   LockKeyhole,
   SlidersHorizontal,
   UserRound,
 } from 'lucide-react';
+import { ServiceMark } from './ServiceMark';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { ALEX_IMAGE_URL, ALEX_NAME } from '../lib/personas';
 import { prefersReducedMotion } from '../lib/prefersReducedMotion';
@@ -159,7 +159,7 @@ export function TravelerContextPanel({
         <>
           <div className={`mds-memory-control${memoryOn ? ' is-enabled' : ''}`}>
             <span className="mds-memory-control-icon" aria-hidden="true">
-              <Database size={17} />
+              <ServiceMark name="aurora" size={24} />
             </span>
             <span className="mds-memory-control-copy">
               <strong>Use traveler context</strong>
@@ -240,8 +240,8 @@ export function TravelerContextPanel({
               </div>
 
               <div className="mds-memory-provenance">
-                <span><Database size={12} />Aurora · RLS scoped</span>
-                {agentCoreObserved && <span><History size={12} />AgentCore session recalled</span>}
+                <span><ServiceMark name="aurora" size={13} />Aurora · RLS scoped</span>
+                {agentCoreObserved && <span><ServiceMark name="agentcore" size={13} />AgentCore session recalled</span>}
               </div>
 
               <MemoryFactGroup

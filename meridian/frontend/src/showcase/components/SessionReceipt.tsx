@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Database, Lock, RefreshCw } from 'lucide-react';
+import { Lock, RefreshCw } from 'lucide-react';
+import { ServiceMark } from './ServiceMark';
 import {
   fetchSessionReceipt,
   type SessionReceiptResponse,
@@ -56,7 +57,7 @@ export function SessionReceipt({
     <section className="mds-receipt" aria-label="What this session wrote to Aurora">
       <header className="mds-receipt-head">
         <span className="mds-receipt-icon" aria-hidden="true">
-          <Database size={17} strokeWidth={2.1} />
+          <ServiceMark name="aurora" size={18} />
         </span>
         <div>
           <strong>Everything this session wrote to Aurora</strong>
