@@ -7,6 +7,7 @@ import {
   Database,
   Eraser,
   Heart,
+  Lock,
   MapPin,
   Pause,
   Play,
@@ -200,10 +201,15 @@ function PersonalizationPills({
   );
 
   if (pills.length === 0) {
+    // The showcase starts with traveler context disconnected on purpose -
+    // Production is where it gets authorized. Say that, rather than implying
+    // a load is in flight or inventing personalization we have not earned.
     return (
       <p className="mds-discovery-pills-empty" role="status">
-        <Database size={13} aria-hidden="true" />
-        Reading traveler context from Aurora…
+        <Lock size={13} aria-hidden="true" />
+        {state.memoryLoading
+          ? 'Reading traveler context from Aurora…'
+          : 'Traveler context is disconnected. Phase 4 authorizes the workload for Alex, and these become live preference matches.'}
       </p>
     );
   }

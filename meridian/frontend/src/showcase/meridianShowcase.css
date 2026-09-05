@@ -4968,12 +4968,13 @@
   background: rgba(55, 210, 157, 0.07);
 }
 
-/* Two-up when the rail is narrow rather than three truncated tiles.
-   "awaiting" and "not observed" were rendering as "awaiti…" and "not ob…". */
+/* Three even tiles that wrap their values, rather than three that truncate
+   mid-word ("awaiti…", "not ob…") or two-plus-an-orphan. */
 .mds-workflow-kv {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 7px;
+  align-items: start;
 }
 
 .mds-workflow-kv div {

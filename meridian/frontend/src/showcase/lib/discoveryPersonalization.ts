@@ -146,26 +146,33 @@ export function derivePersonalization(
     }
   }
 
-  // 4. Budget, compared against the stored range.
+  // 4. Budget, compared against the stored range. Under the range is not a
+  // problem, so only overspend earns a caution.
   const min = numeric(profile?.budget_min);
   const max = numeric(profile?.budget_max);
   if (max !== null && Number.isFinite(product.price)) {
-    const withinBudget = product.price <= max && (min === null || product.price >= min);
-    pills.push(
-      withinBudget
-        ? {
-            id: 'budget',
-            label: `Within your saved budget`,
-            tone: 'match',
-            source: 'profile',
-          }
-        : {
-            id: 'budget',
-            label: `Above your saved budget`,
-            tone: 'caution',
-            source: 'profile',
-          },
-    );
+    if (product.price > max) {
+      pills.push({
+        id: 'budget',
+        label: 'Above your saved budget',
+        tone: 'caution',
+        source: 'profile',
+      });
+    } else if (min !== null && product.price < min) {
+      pills.push({
+        id: 'budget',
+        label: 'Under your usual spend',
+        tone: 'match',
+        source: 'profile',
+      });
+    } else {
+      pills.push({
+        id: 'budget',
+        label: 'Within your saved budget',
+        tone: 'match',
+        source: 'profile',
+      });
+    }
   }
 
   // 5. Previously travelled, from booking history.

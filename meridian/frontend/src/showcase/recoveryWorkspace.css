@@ -62,13 +62,13 @@
   max-width: 100%;
   display: flex;
   align-items: center;
-  gap: 14px;
-  min-height: 40px;
+  gap: 18px;
+  min-height: 46px;
 }
 
 .mds-ladder-nav-product {
-  min-height: 34px;
-  padding: 0 12px;
+  min-height: 38px;
+  padding: 0 16px;
   border: 1px solid var(--mds-line-strong);
   border-radius: 999px;
   color: var(--mds-muted);
@@ -104,7 +104,7 @@
 .mds-ladder-nav-rungs {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -118,11 +118,11 @@
 }
 
 .mds-ladder-nav-rung {
-  min-height: 38px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  padding: 0 11px;
+  gap: 11px;
+  padding: 0 15px;
   border: 1px solid transparent;
   border-radius: 10px;
   color: var(--mds-muted);
@@ -162,7 +162,7 @@
 .mds-ladder-nav-copy {
   min-width: 0;
   display: grid;
-  gap: 1px;
+  gap: 3px;
   text-align: left;
 }
 

@@ -20,7 +20,8 @@
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* heading · personalization pills · trip grid */
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 16px;
 }
 
@@ -124,6 +125,16 @@
   border-radius: 8px;
   background: #061425;
   isolation: isolate;
+}
+
+.mds-discovery-featured {
+  grid-row: 1 / -1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.mds-discovery-featured > .mds-discovery-trip {
+  height: 100%;
 }
 
 .mds-discovery-trip.is-featured {
@@ -544,7 +555,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
-  margin: 0 0 14px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -607,7 +618,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  margin: 0 0 14px;
+  margin: 0;
   color: var(--mds-dim);
   font-size: calc(12px * var(--mds-fs));
   font-weight: 600;
