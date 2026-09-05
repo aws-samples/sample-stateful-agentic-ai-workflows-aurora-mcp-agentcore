@@ -91,3 +91,39 @@ def test_tooltip_colours_come_from_tokens() -> None:
     assert not re.search(r"#[0-9a-fA-F]{6}", rule), (
         "tooltip still carries a hard-coded colour"
     )
+
+
+# ---------------------------------------------------------------------------
+# Session receipt: the closing beat must not overstate what Aurora holds.
+# ---------------------------------------------------------------------------
+
+
+def test_receipt_reads_bookings_as_the_agent_entitled_to_them() -> None:
+    """`bookings` is scoped by traveler AND agent type.
+
+    Reading it as ``memory_agent`` returns nothing even when a live hold
+    exists, because the policy also gates on ``app.agent_type``. That is the
+    policy working, but it made the receipt report zero holds against a real
+    reservation.
+    """
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "backend" / "routers" / "diagnostics.py"
+    ).read_text(encoding="utf-8")
+    receipt = source[source.index("async def session_receipt") :]
+    assert 'agent_type="booking_agent"' in receipt, (
+        "the bookings count must run under booking_agent or RLS hides the hold"
+    )
+
+
+def test_receipt_is_read_only() -> None:
+    """The close must never mutate the state it reports on."""
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "backend" / "routers" / "diagnostics.py"
+    ).read_text(encoding="utf-8")
+    receipt = source[source.index("async def session_receipt") :]
+    for statement in ("INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE"):
+        assert statement not in receipt.upper(), (
+            f"session_receipt must stay read-only; found {statement}"
+        )

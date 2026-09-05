@@ -13,6 +13,7 @@ import type { Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { tripVisualPhoto } from '../lib/tripVisualPhoto';
 import { derivePersonalization } from '../lib/discoveryPersonalization';
+import { SessionReceipt } from './SessionReceipt';
 import { prefersReducedMotion } from '../lib/prefersReducedMotion';
 
 /** How long each trip holds the hero before the next one takes over. */
@@ -301,6 +302,8 @@ export function DiscoveryWorkspace({
           />
         ))}
       </div>
+
+      <SessionReceipt travelerId={state.travelerId} />
     </section>
   );
 }

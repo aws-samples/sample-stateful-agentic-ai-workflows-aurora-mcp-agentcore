@@ -232,3 +232,189 @@ async def rls_probe(
         policies=policies,
         debug=debug,
     )
+
+
+# =============================================================================
+# Session receipt — everything the talk actually wrote to Aurora.
+#
+# The closing beat. Each phase claims to persist something: authorization
+# decisions, RLS-scoped reads, conversation turns, interaction embeddings, a
+# courtesy hold, workflow checkpoints. This counts the rows behind those claims
+# so the close can point at them rather than restate them.
+#
+# READ-ONLY. Traveler-scoped tables are counted inside a scoped session, so the
+# receipt is itself subject to the governance it reports on.
+# =============================================================================
+
+# LangGraph's checkpoint tables only exist once PostgresSaver has run. Their
+# absence is a legitimate answer ("the durable store was never configured"),
+# not an error.
+CHECKPOINT_TABLES = ("checkpoints", "checkpoint_writes")
+
+
+class ReceiptLine(BaseModel):
+    label: str
+    table: str
+    count: int
+    detail: Optional[str] = None
+    scoped: bool = False
+
+
+class SessionReceiptResponse(BaseModel):
+    traveler_id: str
+    since: str
+    lines: List[ReceiptLine]
+    authorization_subject: Optional[str] = None
+    durable_checkpoints: bool = False
+
+
+class SessionReceiptRequest(BaseModel):
+    traveler_id: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    # Minutes of history to attribute to this session. The default covers a
+    # 60-minute slot plus setup.
+    window_minutes: int = Field(default=90, ge=1, le=1440)
+
+
+async def _count_since(
+    db, sql: str, params: tuple, transaction_id: Optional[str] = None
+) -> Optional[int]:
+    """Count rows, returning None when the relation does not exist."""
+    try:
+        rows = await db.execute(sql, params, transaction_id=transaction_id)
+    except Exception:  # noqa: BLE001 - a missing table is an answer, not a fault
+        return None
+    return int(rows[0]["n"]) if rows else 0
+
+
+@router.post("/session-receipt", response_model=SessionReceiptResponse)
+async def session_receipt(
+    request: SessionReceiptRequest = SessionReceiptRequest(),
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> SessionReceiptResponse:
+    """Count the durable state this session produced, table by table."""
+    traveler_id = authorize_traveler(
+        principal, request.traveler_id or DEMO_TRAVELER_ID
+    )
+    db = get_rds_data_client()
+    authorization = get_agentcore_identity().authorization_context()
+    window = f"{request.window_minutes} minutes"
+    lines: List[ReceiptLine] = []
+
+    # Governance evidence is not traveler-scoped: a DENY is precisely a row for
+    # a traveler this workload may not claim, so it is read on the admin path.
+    allow = await _count_since(
+        db,
+        "SELECT COUNT(*) AS n FROM traveler_access_audit "
+        "WHERE decision = 'allow' AND decided_at > CURRENT_TIMESTAMP - %s::interval",
+        (window,),
+    )
+    deny = await _count_since(
+        db,
+        "SELECT COUNT(*) AS n FROM traveler_access_audit "
+        "WHERE decision = 'deny' AND decided_at > CURRENT_TIMESTAMP - %s::interval",
+        (window,),
+    )
+    lines.append(ReceiptLine(
+        label="Authorization decisions",
+        table="traveler_access_audit",
+        count=(allow or 0) + (deny or 0),
+        detail=f"{allow or 0} allow · {deny or 0} deny",
+    ))
+
+    audited = await _count_since(
+        db,
+        "SELECT COUNT(*) AS n FROM agent_audit_log "
+        "WHERE ran_at > CURRENT_TIMESTAMP - %s::interval",
+        (window,),
+    )
+    lines.append(ReceiptLine(
+        label="RLS-scoped operations audited",
+        table="agent_audit_log",
+        count=audited or 0,
+        detail="workload identity linked to the traveler scope it ran under",
+    ))
+
+    # Traveler-scoped counts run under RLS, so the receipt obeys the same rule
+    # it is reporting on.
+    async with db.scoped_session(
+        traveler_id=traveler_id,
+        agent_type="memory_agent",
+        authorization=authorization,
+    ) as tx:
+        turns = await _count_since(
+            db,
+            "SELECT COUNT(*) AS n FROM conversation_messages "
+            "WHERE created_at > CURRENT_TIMESTAMP - %s::interval",
+            (window,),
+            transaction_id=tx,
+        )
+        interactions = await _count_since(
+            db,
+            "SELECT COUNT(*) AS n FROM trip_interactions "
+            "WHERE created_at > CURRENT_TIMESTAMP - %s::interval",
+            (window,),
+            transaction_id=tx,
+        )
+
+    lines.append(ReceiptLine(
+        label="Conversation turns persisted",
+        table="conversation_messages",
+        count=turns or 0,
+        detail="each with a 1024d embedding",
+        scoped=True,
+    ))
+    lines.append(ReceiptLine(
+        label="Interactions written for semantic recall",
+        table="trip_interactions",
+        count=interactions or 0,
+        detail="pgvector rows Phase 4 recalls against",
+        scoped=True,
+    ))
+    # `bookings` is scoped by traveler AND by agent type, so it has to be read
+    # as the agent entitled to it. Reading as memory_agent returns nothing,
+    # which is the policy working, not an empty table.
+    async with db.scoped_session(
+        traveler_id=traveler_id,
+        agent_type="booking_agent",
+        authorization=authorization,
+    ) as booking_tx:
+        holds = await _count_since(
+            db,
+            "SELECT COUNT(*) AS n FROM bookings "
+            "WHERE status = 'held' AND hold_expires_at > CURRENT_TIMESTAMP",
+            (),
+            transaction_id=booking_tx,
+        )
+    lines.append(ReceiptLine(
+        label="Courtesy holds still live",
+        table="bookings",
+        count=holds or 0,
+        detail="inventory committed by the workflow, still inside its TTL",
+        scoped=True,
+    ))
+
+    checkpoint_total = 0
+    checkpoints_exist = False
+    for table in CHECKPOINT_TABLES:
+        count = await _count_since(db, f"SELECT COUNT(*) AS n FROM {table}", ())
+        if count is not None:
+            checkpoints_exist = True
+            checkpoint_total += count
+    lines.append(ReceiptLine(
+        label="LangGraph checkpoint rows",
+        table=", ".join(CHECKPOINT_TABLES),
+        count=checkpoint_total,
+        detail=(
+            "workflow position externalized into Aurora"
+            if checkpoints_exist
+            else "PostgresSaver was never configured, so nothing was written"
+        ),
+    ))
+
+    return SessionReceiptResponse(
+        traveler_id=traveler_id,
+        since=f"last {request.window_minutes} minutes",
+        lines=lines,
+        authorization_subject=authorization.subject_id if authorization else None,
+        durable_checkpoints=checkpoints_exist and checkpoint_total > 0,
+    )

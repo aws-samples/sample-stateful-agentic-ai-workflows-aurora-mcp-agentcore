@@ -273,3 +273,35 @@ export async function fetchRlsProbe(
   }
   return response.json();
 }
+
+export interface SessionReceiptLine {
+  label: string;
+  table: string;
+  count: number;
+  detail?: string | null;
+  scoped: boolean;
+}
+
+export interface SessionReceiptResponse {
+  traveler_id: string;
+  since: string;
+  lines: SessionReceiptLine[];
+  authorization_subject?: string | null;
+  durable_checkpoints: boolean;
+}
+
+/** Everything this session committed to Aurora, counted table by table. */
+export async function fetchSessionReceipt(
+  travelerId = 'trv_meridian_demo',
+  windowMinutes = 90,
+): Promise<SessionReceiptResponse> {
+  const response = await fetch(`${API_BASE}/diagnostics/session-receipt`, {
+    method: 'POST',
+    headers: apiHeaders(true),
+    body: JSON.stringify({ traveler_id: travelerId, window_minutes: windowMinutes }),
+  });
+  if (!response.ok) {
+    throw new Error(`Session receipt failed: ${response.statusText}`);
+  }
+  return response.json();
+}
