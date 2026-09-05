@@ -342,12 +342,6 @@ export function DesktopMeridianApp({
                 </div>
               </div>
 
-              <AuroraEvidenceStrip
-                state={state}
-                collapsed={auroraEvidenceCollapsed}
-                onToggleCollapsed={() => setAuroraEvidenceCollapsed((prev) => !prev)}
-              />
-
               {state.phaseHint && (
                 <div className="mds-phase-hint" role="status" aria-live="polite">
                   <span className="mds-phase-hint-badge">{state.phaseHint.label}</span>
@@ -439,8 +433,16 @@ export function DesktopMeridianApp({
       </main>
 
       {isLadder && (
-        <aside className="mds-desktop-right">
+        <aside className="mds-desktop-right" aria-label="System proof">
           <>
+            {/* One proof column, read top to bottom: what was proven this turn,
+                the traveler state it ran against, then the span-level detail.
+                These used to be three surfaces in two places. */}
+            <AuroraEvidenceStrip
+              state={state}
+              collapsed={auroraEvidenceCollapsed}
+              onToggleCollapsed={() => setAuroraEvidenceCollapsed((prev) => !prev)}
+            />
             <TravelerContextPanel
               state={state}
               onOpenMemory={() => setMemoryOpen(true)}

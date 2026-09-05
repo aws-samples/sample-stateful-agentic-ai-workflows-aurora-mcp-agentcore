@@ -234,7 +234,6 @@ function ChatMessage({
           )}
           {hasInlineProducts && message.products && productsRevealed && (
             <>
-              <ResponseMetaTags state={state} />
               <ProductSummaryChip
                 products={message.products}
                 state={state}
@@ -332,40 +331,6 @@ function stripEmojis(source: string): string {
 
 function money(price: number): string {
   return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
-}
-
-// Trace receipt labels are keyed to phase so the UI never over-claims capability.
-const PHASE_CAPABILITY: Record<number, string> = {
-  1: 'Direct SQL',
-  2: 'MCP tools',
-  3: 'Hybrid retrieval · reranked',
-  4: 'AgentCore memory',
-  5: 'LangGraph · checkpointed',
-};
-
-function ResponseMetaTags({ state }: { state: MeridianShowcaseState }) {
-  const phase = state.selectedPhase;
-  const capability = PHASE_CAPABILITY[phase];
-  const prefs = phase >= 4 ? state.memoryFacts.length : 0;
-  const latency = state.totalLatencyMs;
-  const showMemory = phase >= 4 && prefs > 0;
-
-  if (!capability && !showMemory && !latency) return null;
-
-  return (
-    <div className="mds-msg-meta" aria-label="Trace summary">
-      {capability && (
-        <span className="mds-msg-meta-tag">
-          <ShieldCheck size={12} strokeWidth={1.8} aria-hidden="true" />
-          {capability}
-        </span>
-      )}
-      {showMemory && (
-        <span className="mds-msg-meta-tag">memory: {prefs} {prefs === 1 ? 'pref' : 'prefs'}</span>
-      )}
-      {!!latency && <span className="mds-msg-meta-tag">{latency}ms</span>}
-    </div>
-  );
 }
 
 // Compact summary chip keeps result cards attached to the turn that produced them.
