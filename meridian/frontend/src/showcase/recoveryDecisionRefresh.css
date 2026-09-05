@@ -65,11 +65,11 @@
 }
 
 .mds-recovery-workspace .mds-recommended-plan-card.is-checkpointed {
-  border-color: rgba(67, 206, 171, 0.34);
+  border-color: rgb(var(--mds-teal-rgb) / 0.34);
 }
 
 .mds-recovery-workspace .mds-recommended-plan-card.is-ready {
-  border-color: rgba(50, 207, 134, 0.34);
+  border-color: rgb(var(--mds-recovery-green-rgb) / 0.34);
 }
 
 .mds-recovery-workspace .mds-recommended-plan-media {
@@ -123,11 +123,11 @@
 }
 
 .mds-recovery-workspace .mds-decision-route-line i {
-  background: rgba(47, 140, 255, 0.42);
+  background: rgb(var(--mds-blue-rgb) / 0.42);
 }
 
 .mds-recovery-workspace .mds-decision-route-line i:last-child {
-  background: rgba(47, 140, 255, 0.42);
+  background: rgb(var(--mds-blue-rgb) / 0.42);
 }
 
 .mds-recovery-workspace .mds-recommended-plan-signals {
@@ -146,7 +146,7 @@
 .mds-recovery-workspace
   .mds-recommended-plan-signals
   > span.is-verified {
-  background: rgba(50, 207, 134, 0.06);
+  background: rgb(var(--mds-recovery-green-rgb) / 0.06);
 }
 
 .mds-recovery-workspace .mds-decision-preference-row {
@@ -276,7 +276,7 @@
   padding: 0 8px;
   border-radius: 5px;
   color: #9bc9ff;
-  background: rgba(47, 140, 255, 0.06);
+  background: rgb(var(--mds-blue-rgb) / 0.06);
   font-size: calc(9px * var(--mds-fs));
 }
 
@@ -285,9 +285,9 @@
   > :nth-child(n)
   > header
   > span {
-  border-color: rgba(47, 140, 255, 0.32);
+  border-color: rgb(var(--mds-blue-rgb) / 0.32);
   color: #9bc9ff;
-  background: rgba(47, 140, 255, 0.06);
+  background: rgb(var(--mds-blue-rgb) / 0.06);
 }
 
 .mds-recovery-workspace .mds-flight-option-card > header > small {

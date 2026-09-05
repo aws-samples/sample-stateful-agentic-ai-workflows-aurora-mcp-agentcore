@@ -593,8 +593,8 @@
 }
 
 .mds-discovery-pill.is-match {
-  border-color: rgba(55, 210, 157, 0.3);
-  background: rgba(55, 210, 157, 0.08);
+  border-color: rgb(var(--mds-green-rgb) / 0.3);
+  background: rgb(var(--mds-green-rgb) / 0.08);
 }
 
 .mds-discovery-pill.is-match .mds-discovery-pill-icon {

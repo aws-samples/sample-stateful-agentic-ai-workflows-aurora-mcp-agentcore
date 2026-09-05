@@ -5,13 +5,11 @@ import {
   Check,
   Clock3,
   Database,
-  Eraser,
   Heart,
   Lock,
   MapPin,
   Pause,
   Play,
-  Sparkles,
 } from 'lucide-react';
 import type { Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
@@ -98,23 +96,6 @@ function discoverySignals(product: Product): string[] {
   return [...highlights, duration].filter(
     (value): value is string => Boolean(value),
   );
-}
-
-function travelerContext(state: MeridianShowcaseState): string {
-  const profile = state.travelerProfile;
-  if (!profile) return 'Traveler context loads from Aurora';
-
-  const facts = [
-    profile.home_airport ? `${profile.home_airport} home airport` : null,
-    profile.party_size
-      ? `${profile.party_size} ${profile.party_size === 1 ? 'traveler' : 'travelers'}`
-      : null,
-    Object.keys(profile.loyalty_programs ?? {}).length > 0
-      ? `${Object.keys(profile.loyalty_programs ?? {}).length} loyalty profiles`
-      : null,
-  ].filter(Boolean);
-
-  return facts.join(', ');
 }
 
 function DiscoveryTrip({
@@ -279,12 +260,6 @@ export function DiscoveryWorkspace({
   const supporting = pool
     .filter((_, index) => index !== rotationIndex % pool.length)
     .slice(0, 2);
-  const sourceLabel =
-    state.recommendations.length > 0
-      ? 'Current recommendation set'
-      : state.catalog.length > 0
-        ? 'Live Aurora catalog'
-        : 'Meridian catalog preview';
 
   return (
     <section className="mds-discovery-workspace" aria-label="Meridian discovery">
@@ -294,21 +269,14 @@ export function DiscoveryWorkspace({
           <p>Travel ideas shaped around the way you already travel.</p>
         </div>
         <div className="mds-discovery-heading-actions">
-          <span className="mds-discovery-context">
-            <Sparkles size={16} aria-hidden="true" />
-            <span>
-              <strong>{sourceLabel}</strong>
-              {travelerContext(state)}
-            </span>
-          </span>
           <button
             type="button"
             className="mds-discovery-clear"
             onClick={onClear}
-            aria-label="Clear discovery and start the capability ladder"
+            aria-label="Start the capability ladder at Phase 1"
           >
-            <Eraser size={16} aria-hidden="true" />
-            Clear
+            Start the capability ladder
+            <ArrowRight size={16} aria-hidden="true" />
           </button>
         </div>
       </header>

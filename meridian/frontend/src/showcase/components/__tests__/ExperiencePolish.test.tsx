@@ -109,7 +109,7 @@ describe('Experience presentation polish', () => {
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'Clear discovery and start the capability ladder',
+        name: 'Start the capability ladder at Phase 1',
       }),
     );
 
