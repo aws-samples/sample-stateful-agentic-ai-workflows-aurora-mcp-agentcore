@@ -8,6 +8,7 @@ AWS docs:
     https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraPostgreSQL.Extensions.html
 """
 import os
+import re
 from pathlib import Path
 
 import boto3
@@ -66,6 +67,34 @@ def execute_sql(client, sql: str, description: str = "") -> None:
         raise
 
 
+def _statement_head(sql: str) -> str:
+    """First meaningful line of a statement, for progress output."""
+    return next(
+        (ln.strip() for ln in sql.splitlines() if ln.strip() and not ln.strip().startswith("--")),
+        sql[:60],
+    )
+
+
+def _grants_on_objects(sql: str) -> bool:
+    """True for a GRANT that names database objects rather than a role.
+
+    ``GRANT ... ON <tables>`` needs those tables to exist; ``GRANT <role> TO
+    <role>`` only needs the roles. The ON is what separates them, and it is
+    what decides whether a statement runs before or after the table DDL.
+    """
+    head = _statement_head(sql).upper()
+    return head.startswith("GRANT") and re.search(r"\bON\b", sql.upper()) is not None
+
+
+def _apply(client, statements: list, tag: str, heading: str) -> None:
+    """Run a phase of statements, reporting progress."""
+    if not statements:
+        return
+    console.print(f"\n[cyan]{heading}[/cyan]")
+    for i, sql in enumerate(statements, 1):
+        execute_sql(client, sql, f"[{tag} {i}/{len(statements)}] {_statement_head(sql)[:70]}")
+
+
 def initialize_database() -> None:
     console.print("\n[bold blue]Initializing Meridian travel schema[/bold blue]")
     if not CLUSTER_ARN or not SECRET_ARN:
@@ -81,25 +110,30 @@ def initialize_database() -> None:
         first_line = next((ln.strip() for ln in sql.splitlines() if ln.strip() and not ln.strip().startswith("--")), sql[:60])
         execute_sql(client, sql, f"[{i}/{len(statements)}] {first_line[:70]}")
 
+    # The two RLS files depend on each other, so neither can be applied whole
+    # before the other: rls_app_role.sql grants on agent_audit_log, which
+    # rls_for_agents.sql creates, while rls_for_agents.sql grants EXECUTE to
+    # meridian_app, which rls_app_role.sql creates. Applying the role file
+    # first made a fresh database fail on the grant; an already-seeded database
+    # hid it, because the table was left over from a previous run.
+    #
+    # Split it by dependency instead of by file: the role has to exist before
+    # anything grants to it, and the objects have to exist before anything
+    # grants on them.
+    role_setup, object_grants = [], []
     if RLS_APP_ROLE_PATH.exists():
-        console.print("\n[cyan]Applying least-privilege RLS app role[/cyan]")
-        role_statements = split_sql(RLS_APP_ROLE_PATH.read_text())
-        for i, sql in enumerate(role_statements, 1):
-            first_line = next(
-                (ln.strip() for ln in sql.splitlines() if ln.strip() and not ln.strip().startswith("--")),
-                sql[:60],
-            )
-            execute_sql(client, sql, f"[rls-role {i}/{len(role_statements)}] {first_line[:70]}")
+        for sql in split_sql(RLS_APP_ROLE_PATH.read_text()):
+            (object_grants if _grants_on_objects(sql) else role_setup).append(sql)
 
+    _apply(client, role_setup, "rls-role", "Creating the least-privilege app role")
     if RLS_PATH.exists():
-        console.print("\n[cyan]Applying RLS policies + audit log[/cyan]")
-        rls_statements = split_sql(RLS_PATH.read_text())
-        for i, sql in enumerate(rls_statements, 1):
-            first_line = next(
-                (ln.strip() for ln in sql.splitlines() if ln.strip() and not ln.strip().startswith("--")),
-                sql[:60],
-            )
-            execute_sql(client, sql, f"[rls {i}/{len(rls_statements)}] {first_line[:70]}")
+        _apply(
+            client,
+            split_sql(RLS_PATH.read_text()),
+            "rls",
+            "Applying RLS policies, functions, and audit log",
+        )
+    _apply(client, object_grants, "rls-grant", "Granting table access to the app role")
 
     console.print("\n[bold green]Schema ready[/bold green]")
 
