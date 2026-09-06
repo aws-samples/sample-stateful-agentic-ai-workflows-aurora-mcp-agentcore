@@ -2907,6 +2907,55 @@ async def test_another_traveler_cannot_use_the_journey(db, journey_id) -> None:
         )
 ```
 
+- [ ] **Step 3b: Verify `RETURNING` survives the Data API transport**
+
+The segmented pending-write guard skips its appends when
+`INSERT ... ON CONFLICT DO NOTHING RETURNING 1` returns no rows. That is
+correct against PostgreSQL, verified live. It is NOT verified through the Data
+API, and nothing in the offline suite can verify it: `FakeDataClient` returns
+whatever is queued. If `records` came back empty for a successful insert, every
+multi-segment pending write would silently truncate, with no error.
+
+Run:
+
+```
+venv/bin/python -c "
+import asyncio
+from backend.db.rds_data_client import get_rds_data_client
+
+async def main():
+    db = get_rds_data_client()
+    tx = await db.begin_transaction()
+    try:
+        await db.execute(
+            'CREATE TABLE returning_probe (k TEXT PRIMARY KEY, v TEXT)',
+            transaction_id=tx,
+        )
+        first = await db.execute(
+            \"INSERT INTO returning_probe (k, v) VALUES ('a', 'x') \"
+            'ON CONFLICT (k) DO NOTHING RETURNING 1',
+            transaction_id=tx,
+        )
+        again = await db.execute(
+            \"INSERT INTO returning_probe (k, v) VALUES ('a', 'y') \"
+            'ON CONFLICT (k) DO NOTHING RETURNING 1',
+            transaction_id=tx,
+        )
+        print('fresh insert rows:', len(first), '(must be 1)')
+        print('conflicting insert rows:', len(again), '(must be 0)')
+    finally:
+        await db.rollback_transaction(tx)
+
+asyncio.run(main())
+"
+```
+
+Expected: `fresh insert rows: 1` and `conflicting insert rows: 0`. The probe
+table is created and dropped inside a rolled-back transaction, so nothing
+persists. If the fresh insert returns 0 rows, stop: the append guard cannot
+work over this transport and `_write_pending_blob` needs a different mechanism,
+such as reading `octet_length` back to decide whether appends are needed.
+
 - [ ] **Step 4: Run the slice**
 
 Run: `venv/bin/pytest tests/test_durable_recovery_slice.py -q -m database`
