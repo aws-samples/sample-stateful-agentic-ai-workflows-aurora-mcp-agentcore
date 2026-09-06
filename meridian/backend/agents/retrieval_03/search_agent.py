@@ -19,6 +19,7 @@ AWS docs:
 
 """
 
+import json
 import os
 import uuid
 from datetime import datetime, timezone
@@ -32,6 +33,7 @@ from pydantic import BaseModel
 
 from backend.db.embedding_service import EmbeddingUnavailable, get_embedding_service
 from backend.db.rds_data_client import get_rds_data_client
+from backend.search_utils import parse_search_query
 
 
 class ActivityEntry(BaseModel):
@@ -48,6 +50,37 @@ class ActivityEntry(BaseModel):
 
 # Cohere Embed v4 Configuration (1024 dimensions)
 EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "1024"))
+
+
+def _total_stock(availability: Any) -> int:
+    """Total remaining places across a package's durations.
+
+    Args:
+        availability: The package's ``availability`` jsonb, as a mapping of
+            duration to remaining places, or ``{"quantity": n}``.
+
+    Returns:
+        Total places, or 0 when the shape is unrecognized or empty.
+    """
+    if isinstance(availability, str):
+        try:
+            availability = json.loads(availability)
+        except (ValueError, TypeError):
+            return 0
+    if not isinstance(availability, dict):
+        return 0
+    if "quantity" in availability:
+        try:
+            return int(availability["quantity"])
+        except (ValueError, TypeError):
+            return 0
+    total = 0
+    for value in availability.values():
+        try:
+            total += int(value)
+        except (ValueError, TypeError):
+            continue
+    return total
 
 
 class SearchAgent:
@@ -218,15 +251,34 @@ When searching:
         # romantic escape in wine country, ideally with a villa") then requires
         # every stemmed term to appear in one row, which matches nothing in a
         # catalog this size and silently collapses the arm to zero candidates.
-        # Rewriting the operators to OR keeps websearch parsing (stemming,
-        # quoted phrases, negation) while letting ts_rank do the discriminating:
-        # rows matching more terms simply rank higher. This arm catches exact
-        # terms — a destination name, an operator — that embeddings blur.
+        # So the positive terms are rewritten to OR and ts_rank does the
+        # discriminating: rows matching more terms simply rank higher. Only the
+        # positive terms are broadened. Negations stay ANDed, because turning
+        # "tokyo -luxury" into "tokyo OR NOT luxury" makes !luxury match every
+        # non-luxury row in the catalog and the exclusion stops meaning
+        # anything. This arm catches exact terms — a destination name, an
+        # operator — that embeddings blur.
         lexical_sql = """
-            WITH q AS (
-                SELECT replace(
-                    websearch_to_tsquery('english', %s)::text, '&', '|'
-                )::tsquery AS tsq
+            WITH raw AS (
+                SELECT websearch_to_tsquery('english', %s)::text AS text_query
+            ),
+            parts AS (
+                SELECT
+                    (SELECT string_agg(part, ' | ')
+                       FROM unnest(string_to_array(text_query, ' & ')) AS part
+                      WHERE left(part, 1) <> '!') AS positives,
+                    (SELECT string_agg(part, ' & ')
+                       FROM unnest(string_to_array(text_query, ' & ')) AS part
+                      WHERE left(part, 1) = '!') AS negatives
+                FROM raw
+            ),
+            q AS (
+                SELECT CASE
+                    WHEN positives IS NULL THEN negatives
+                    WHEN negatives IS NULL THEN '(' || positives || ')'
+                    ELSE '(' || positives || ') & ' || negatives
+                END::tsquery AS tsq
+                FROM parts
             )
             SELECT
                 package_id,
@@ -307,6 +359,47 @@ When searching:
                     "WHERE package_id IN (...)"
                 ),
             )
+
+        # --- Eligibility gate -------------------------------------------
+        # Relevance is not eligibility. Both arms rank on meaning and wording
+        # only, so without this an "under $2,000" prompt can surface a $4,499
+        # sold-out package purely because it reads as the closest match.
+        # Applied after hydration, which is where price and inventory land.
+        eligibility = parse_search_query(query)
+        dropped_budget = 0
+        dropped_stock = 0
+        eligible: dict[str, dict] = {}
+        for package_id, row in merged_by_package.items():
+            price = row.get("price_per_person")
+            if (
+                eligibility.price_filter is not None
+                and price is not None
+                and float(price) > eligibility.price_filter
+            ):
+                dropped_budget += 1
+                continue
+            if _total_stock(row.get("availability")) <= 0:
+                dropped_stock += 1
+                continue
+            eligible[package_id] = row
+
+        if dropped_budget or dropped_stock:
+            reasons = []
+            if dropped_budget:
+                reasons.append(
+                    f"{dropped_budget} over the ${eligibility.price_filter:,.0f} budget"
+                )
+            if dropped_stock:
+                reasons.append(f"{dropped_stock} with no remaining places")
+            self._log_activity(
+                activity_type="search",
+                title="Eligibility filter applied",
+                details=(
+                    f"Dropped {dropped_budget + dropped_stock} of "
+                    f"{len(merged_by_package)} candidates: " + ", ".join(reasons)
+                ),
+            )
+        merged_by_package = eligible
 
         results = list(merged_by_package.values())
         # Stamp each candidate's PRE-RERANK position + the pgvector cosine it
