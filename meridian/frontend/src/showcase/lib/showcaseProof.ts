@@ -212,6 +212,40 @@ export function deriveAuroraEvidence({
   ];
 }
 
+/**
+ * The evidence keys that each phase's proof pill actually claims.
+ *
+ * Phase 3 says "pgvector + rerank" and Phase 4 says "Workload grant + RLS",
+ * so both of their keys have to land before the claim is true.
+ */
+const PHASE_PROOF_KEYS: Record<Phase, AuroraEvidence['key'][]> = {
+  1: ['sql'],
+  2: ['mcp'],
+  3: ['vector', 'rerank'],
+  4: ['runtime', 'rls'],
+  5: ['checkpoint'],
+};
+
+/**
+ * Whether a phase actually established the proof its pill asserts.
+ *
+ * The pill used to render as soon as any span arrived, so a phase that
+ * errored, or one running on a fallback path, still displayed its proof
+ * point as though it had been demonstrated.
+ */
+export function isPhaseProofObserved(
+  phase: Phase,
+  evidence: AuroraEvidence[],
+): boolean {
+  const keys = PHASE_PROOF_KEYS[phase] ?? [];
+  return (
+    keys.length > 0 &&
+    keys.every((key) =>
+      evidence.some((item) => item.key === key && item.status === 'observed'),
+    )
+  );
+}
+
 export function deriveMcpContracts(traceSpans: ShowcaseTraceSpan[]): McpContract[] {
   const observed = traceSpans
     .filter((span) => /postgres-mcp|meridian-concierge/i.test(span.name))

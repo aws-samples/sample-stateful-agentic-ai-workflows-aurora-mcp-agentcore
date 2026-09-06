@@ -7,6 +7,7 @@ import { RlsProbeCard } from './RlsProbeCard';
 import { McpToolContractPanel } from './McpToolContractPanel';
 import { WorkflowStateInspector } from './WorkflowStateInspector';
 import { IconTooltip } from './ShowcaseTooltip';
+import { deriveAuroraEvidence, isPhaseProofObserved } from '../lib/showcaseProof';
 
 // Maps raw trace spans into five audience-readable progress steps.
 const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTraceSpan) => boolean }[] = [
@@ -80,6 +81,16 @@ export function TracePanel({
   const agentCount = new Set(state.traceSpans.map((span) => span.agent).filter(Boolean)).size;
   const activeSpans = compact ? state.traceSpans.slice(0, 4) : state.traceSpans;
   const phaseMeta = SHOWCASE_PHASES.find((phase) => phase.phase === state.selectedPhase);
+  // The pill asserts the phase's proof point, so it waits for the
+  // evidence behind that claim rather than for any span at all.
+  const proofObserved = isPhaseProofObserved(
+    state.selectedPhase,
+    deriveAuroraEvidence({
+      selectedPhase: state.selectedPhase,
+      traceSpans: state.traceSpans,
+      recommendations: state.recommendations,
+    }),
+  );
   const hasTraceActivity =
     state.traceSpans.length > 0 || state.isLoading || state.isReplaying;
   const className = [
@@ -149,7 +160,7 @@ export function TracePanel({
             {!compact && (
               <div className="mds-trace-summary">
                 <span>{state.phaseLabel}</span>
-                {phaseMeta && state.traceSpans.length > 0 && (
+                {phaseMeta && proofObserved && (
                   <span className="mds-proof-pill">{phaseMeta.proofPoint}</span>
                 )}
                 {state.traceSpans.length > 0 && <span>{state.traceSpans.length} spans</span>}
