@@ -235,9 +235,11 @@ export function RecoveryWorkspace({
                 ? durableCheckpoint
                   ? `Checkpoint saved · thread ${threadId} · safe to restart`
                   : `Checkpoint saved · thread ${threadId} · current worker`
-                : state.workflowResumedAfterRestart
-                  ? `Resumed from Aurora after worker restart · thread ${threadId}`
-                  : `Resumed from Aurora checkpoint · thread ${threadId}`}
+                : !durableCheckpoint
+                  ? `Resumed from in-process checkpoint · thread ${threadId}`
+                  : state.workflowResumedAfterRestart
+                    ? `Resumed from Aurora after worker restart · thread ${threadId}`
+                    : `Resumed from Aurora checkpoint · thread ${threadId}`}
             </span>
           </div>
         )}

@@ -1070,9 +1070,11 @@ export function CheckpointedPlanCard({
       </ol>
       <p>
         {stage === 'ready'
-          ? resumedAfterRestart
-            ? 'Resumed from Aurora after a worker restart.'
-            : 'Resumed from the saved Aurora workflow state.'
+          ? !evidence.durableCheckpoint
+            ? 'Resumed from in-process workflow state. Not durable across a restart.'
+            : resumedAfterRestart
+              ? 'Resumed from Aurora after a worker restart.'
+              : 'Resumed from the saved Aurora workflow state.'
           : stage === 'checkpointed'
             ? 'The ranked shortlist is durable and safe to resume.'
             : stage === 'running'

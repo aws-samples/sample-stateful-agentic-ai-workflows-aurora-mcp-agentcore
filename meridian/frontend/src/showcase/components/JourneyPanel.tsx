@@ -110,8 +110,10 @@ function activityRows(state: MeridianShowcaseState): ActivityRow[] {
     {
       label: 'Checkpoint',
       detail: checkpointSpans
-        ? `${checkpointSpans} durable state span${checkpointSpans === 1 ? '' : 's'}`
-        : 'Aurora checkpoint pending',
+        ? evidence.durableCheckpoint
+          ? `${checkpointSpans} durable state span${checkpointSpans === 1 ? '' : 's'}`
+          : `${checkpointSpans} in-process state span${checkpointSpans === 1 ? '' : 's'}`
+        : 'Checkpoint pending',
       status: evidence.checkpointObserved
         ? 'done'
         : running
