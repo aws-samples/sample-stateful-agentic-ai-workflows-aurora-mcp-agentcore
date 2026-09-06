@@ -702,26 +702,29 @@ async def mcp_search(
     )
 
     # ----- Generic MCP server (awslabs.postgres-mcp-server) -----
-    activities.append(create_activity(
-        activity_type="mcp",
-        title="MCP server discovered: awslabs.postgres-mcp-server",
-        details=(
-            "Generic SQL transport · tools/list returned "
-            "run_query, connect_to_database, get_table_schema"
-        ),
-        agent_name="MCPAgent",
-        agent_file="agents/mcp_02/agent.py",
-    ))
-    activities.append(create_activity(
-        activity_type="mcp",
-        title="postgres-mcp · connect_to_database",
-        details="Aurora PostgreSQL via RDS Data API (rdsapi)",
-        agent_name="MCPAgent",
-        agent_file="agents/mcp_02/agent.py",
-    ))
-
+    # Only traced when the turn actually opens a generic session.  A
+    # pure-domain turn (currency, loyalty) never enters mcp_session(), so
+    # emitting discovery and connect here would put a session in the trace
+    # that no code opened.
     results: List[Dict[str, Any]] = []
     if not pure_domain:
+        activities.append(create_activity(
+            activity_type="mcp",
+            title="MCP server discovered: awslabs.postgres-mcp-server",
+            details=(
+                "Generic SQL transport · tools/list returned "
+                "run_query, connect_to_database, get_table_schema"
+            ),
+            agent_name="MCPAgent",
+            agent_file="agents/mcp_02/agent.py",
+        ))
+        activities.append(create_activity(
+            activity_type="mcp",
+            title="postgres-mcp · connect_to_database",
+            details="Aurora PostgreSQL via RDS Data API (rdsapi)",
+            agent_name="MCPAgent",
+            agent_file="agents/mcp_02/agent.py",
+        ))
         sql, display_sql, search_title = build_search_sql(params, limit)
         async with mcp_session() as client:
             results = await client.run_query(sql)
@@ -852,12 +855,13 @@ async def mcp_search(
     log_search(phase=2, query=query, results_count=len(results),
                execution_time_ms=execution_time, search_type="mcp")
 
+    # Count the servers this turn actually used, not the ones it could have.
+    servers_used = (0 if pure_domain else 1) + (1 if use_custom_mcp else 0)
     activities.append(create_activity(
         activity_type="mcp",
         title=(
-            "MCP turn complete · 2 servers"
-            if use_custom_mcp
-            else "MCP turn complete · 1 server"
+            f"MCP turn complete · {servers_used} server"
+            f"{'' if servers_used == 1 else 's'}"
         ),
         details=f"Retrieved {len(results)} rows in {execution_time}ms",
         execution_time_ms=execution_time,
@@ -1870,6 +1874,93 @@ async def production_search(
 # PHASE 3: PackageAgent — duration inventory and package details
 # =============================================================================
 
+def _rank_named_package_matches(
+    rows: List[Dict[str, Any]],
+    query_lower: str,
+    search_terms: List[str],
+) -> List[Dict[str, Any]]:
+    """Order candidate packages by how specifically the query names them.
+
+    Ranking beats first-match here because the catalog has six Tokyo
+    packages.  Matching on the first surviving token alone resolves "the
+    Tokyo Executive Stopover" on "tokyo" and returns whichever row the
+    planner emits first, which is neither correct nor stable between runs.
+
+    Args:
+        rows: Candidate package rows that matched at least one search term.
+        query_lower: The lowercased traveler query.
+        search_terms: Stopword-filtered tokens taken from the query.
+
+    Returns:
+        The rows, most specifically named first.  Ties break on package_id
+        so repeated runs of the same query answer with the same package.
+    """
+
+    def score(row: Dict[str, Any]) -> tuple:
+        name = (row.get("name") or "").lower()
+        operator = (row.get("operator") or "").lower()
+        name_words = [word for word in re.split(r"\W+", name) if word]
+        # How much of the package name the traveler actually said, so a
+        # two-of-three word match outranks two-of-six on a longer name.
+        coverage = (
+            sum(1 for word in name_words if word in search_terms) / len(name_words)
+            if name_words
+            else 0.0
+        )
+        return (
+            1 if name and name in query_lower else 0,
+            sum(1 for term in search_terms if term in name),
+            round(coverage, 3),
+            sum(1 for term in search_terms if term in operator),
+        )
+
+    return sorted(
+        rows,
+        key=lambda row: tuple(-value for value in score(row))
+        + ((row.get("package_id") or ""),),
+    )
+
+
+async def _resolve_named_package(
+    db: Any,
+    query_lower: str,
+    search_terms: List[str],
+) -> List[Dict[str, Any]]:
+    """Find the package a traveler named, ranked by specificity.
+
+    Args:
+        db: RDS Data API client.
+        query_lower: The lowercased traveler query.
+        search_terms: Stopword-filtered tokens taken from the query.
+
+    Returns:
+        Matching package rows, best match first; empty when nothing matched.
+    """
+    if not search_terms:
+        return []
+
+    # Bounded so a long sentence cannot build an unbounded OR chain.
+    terms = search_terms[:12]
+    clause = " OR ".join(
+        ["(LOWER(name) LIKE %s OR LOWER(operator) LIKE %s)"] * len(terms)
+    )
+    params: List[str] = []
+    for term in terms:
+        params.extend([f"%{term}%", f"%{term}%"])
+
+    rows = await db.execute(
+        f"""
+        SELECT package_id, name, operator, price_per_person, description,
+               image_url, trip_type, destination, region, durations,
+               availability, highlights
+        FROM trip_packages
+        WHERE {clause}
+        """,
+        tuple(params),
+    )
+    return _rank_named_package_matches(rows or [], query_lower, terms)
+
+
 async def retrieval_availability_search(
     query: str,
     package_id: Optional[str] = None,
@@ -1907,14 +1998,6 @@ async def retrieval_availability_search(
         agent_file="agents/retrieval_03/package_agent.py"
     ))
 
-    search_sql = """
-        SELECT package_id, name, operator, price_per_person, description,
-               image_url, trip_type, destination, region, durations,
-               availability, highlights
-        FROM trip_packages
-        WHERE LOWER(name) LIKE %s OR LOWER(operator) LIKE %s
-        LIMIT 1
-    """
     exact_sql = """
         SELECT package_id, name, operator, price_per_person, description,
                image_url, trip_type, destination, region, durations,
@@ -1932,21 +2015,18 @@ async def retrieval_availability_search(
         'open', 'options', 'package', 'packages', 'plan', 'still', 'the', 'then',
         'trip', 'verify', 'what', 'which', 'you',
     }
-    for word in query_lower.split():
-        if word not in stopwords:
+    for raw_word in query_lower.split():
+        # Trailing punctuation would survive into the LIKE pattern, and
+        # "%tokyo?%" matches nothing.  Pure-punctuation tokens ("&") carry
+        # no signal either.
+        word = raw_word.strip(".,!?;:'\"()[]")
+        if word and any(ch.isalnum() for ch in word) and word not in stopwords:
             search_terms.append(word)
     
     if package_id:
         results = await db.execute(exact_sql, (package_id,))
     else:
-        results = []
-        for term in search_terms:
-            results = await db.execute(
-                search_sql,
-                (f'%{term}%', f'%{term}%'),
-            )
-            if results:
-                break
+        results = await _resolve_named_package(db, query_lower, search_terms)
     
     search_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
     
