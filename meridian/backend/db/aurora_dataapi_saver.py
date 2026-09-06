@@ -47,11 +47,14 @@ UPDATE checkpoint_blobs SET blob = blob || %s
  WHERE thread_id = %s AND checkpoint_ns = %s AND channel = %s AND version = %s
 """
 
+# checkpoint and metadata are JSONB columns. The Data API sends every string
+# parameter as text and PostgreSQL will not coerce text into jsonb implicitly,
+# so both are cast at the call site.
 UPSERT_CHECKPOINT_SQL = """
 INSERT INTO checkpoints
     (thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id,
      type, checkpoint, metadata)
-VALUES (%s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s::JSONB, %s::JSONB)
 ON CONFLICT (thread_id, checkpoint_ns, checkpoint_id)
 DO UPDATE SET checkpoint = EXCLUDED.checkpoint, metadata = EXCLUDED.metadata
 """

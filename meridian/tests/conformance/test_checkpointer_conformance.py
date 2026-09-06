@@ -25,7 +25,6 @@ from langgraph.checkpoint.serde.jsonplus import (
 )
 
 from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
-from tests.conformance.fake_cluster import FakeCluster
 
 
 class MemoryPydantic(BaseModel):
@@ -42,8 +41,8 @@ def _reset_warned_types() -> None:
 
 class TestMemorySaver:
     @pytest.fixture(autouse=True)
-    def setup(self) -> None:
-        self.memory_saver = AuroraDataApiSaver(FakeCluster())
+    def setup(self, cluster) -> None:
+        self.memory_saver = AuroraDataApiSaver(cluster)
 
         # objects for test setup
         self.config_1: RunnableConfig = {
@@ -273,14 +272,14 @@ async def test_memory_saver() -> None:
 
 
 async def test_memory_saver_warns_on_unregistered_msgpack(
-    caplog: pytest.LogCaptureFixture,
+    caplog: pytest.LogCaptureFixture, cluster
 ) -> None:
     # Adapted: sync .put()/.get_tuple() -> async aput/aget_tuple; InMemorySaver
-    # -> AuroraDataApiSaver(FakeCluster(), serde=serde). This exercises
+    # -> AuroraDataApiSaver(cluster, serde=serde). This exercises
     # JsonPlusSerializer's allowlist/warning behavior, which is generic to any
     # saver built on that serde, not an InMemorySaver-specific feature.
     serde = JsonPlusSerializer()
-    memory_saver = AuroraDataApiSaver(FakeCluster(), serde=serde)
+    memory_saver = AuroraDataApiSaver(cluster, serde=serde)
     obj = MemoryPydantic(foo="bar")
 
     checkpoint = empty_checkpoint()
@@ -301,14 +300,14 @@ async def test_memory_saver_warns_on_unregistered_msgpack(
 
 
 async def test_memory_saver_allowlist_silences_warning(
-    caplog: pytest.LogCaptureFixture,
+    caplog: pytest.LogCaptureFixture, cluster
 ) -> None:
     serde = JsonPlusSerializer(
         allowed_msgpack_modules=[
             ("tests.conformance.test_checkpointer_conformance", "MemoryPydantic")
         ]
     )
-    memory_saver = AuroraDataApiSaver(FakeCluster(), serde=serde)
+    memory_saver = AuroraDataApiSaver(cluster, serde=serde)
     obj = MemoryPydantic(foo="bar")
 
     checkpoint = empty_checkpoint()
@@ -329,10 +328,10 @@ async def test_memory_saver_allowlist_silences_warning(
 
 
 async def test_memory_saver_strict_blocks_unregistered(
-    caplog: pytest.LogCaptureFixture,
+    caplog: pytest.LogCaptureFixture, cluster
 ) -> None:
     serde = JsonPlusSerializer(allowed_msgpack_modules=None)
-    memory_saver = AuroraDataApiSaver(FakeCluster(), serde=serde)
+    memory_saver = AuroraDataApiSaver(cluster, serde=serde)
     obj = MemoryPydantic(foo="bar")
 
     checkpoint = empty_checkpoint()
@@ -353,9 +352,9 @@ async def test_memory_saver_strict_blocks_unregistered(
     assert result.checkpoint["channel_values"]["foo"] == expected
 
 
-async def test_memory_saver_with_allowlist_proxy_isolated() -> None:
+async def test_memory_saver_with_allowlist_proxy_isolated(cluster) -> None:
     serde = JsonPlusSerializer(allowed_msgpack_modules=None)
-    memory_saver = AuroraDataApiSaver(FakeCluster(), serde=serde)
+    memory_saver = AuroraDataApiSaver(cluster, serde=serde)
     proxy = memory_saver.with_allowlist(
         [("tests.conformance.test_checkpointer_conformance", "MemoryPydantic")]
     )
@@ -502,7 +501,9 @@ class TestBaseFallbackGetChannelWrites:
     collapse to a single row — causing the fallback to return `[]`.
     """
 
-    async def _build_saver_with_chain(self) -> tuple[AuroraDataApiSaver, str, str]:
+    async def _build_saver_with_chain(
+        self, cluster
+    ) -> tuple[AuroraDataApiSaver, str, str]:
         """Build an AuroraDataApiSaver with a 3-checkpoint chain and per-step
         writes for a `messages` channel.
 
@@ -514,7 +515,7 @@ class TestBaseFallbackGetChannelWrites:
 
         Returns `(saver, thread_id, namespace)`.
         """
-        saver = AuroraDataApiSaver(FakeCluster())
+        saver = AuroraDataApiSaver(cluster)
         thread_id, ns = "t1", ""
 
         cp0_id = "00000000000000000000000000000001.0000000000000000"
@@ -585,8 +586,8 @@ class TestBaseFallbackGetChannelWrites:
             "task-6-report.md."
         )
     )
-    async def test_fallback_returns_ancestor_writes_oldest_first(self) -> None:
-        saver, thread_id, ns = await self._build_saver_with_chain()
+    async def test_fallback_returns_ancestor_writes_oldest_first(self, cluster) -> None:
+        saver, thread_id, ns = await self._build_saver_with_chain(cluster)
         target_id = "00000000000000000000000000000003.0000000000000000"
         config: RunnableConfig = {
             "configurable": {
@@ -605,8 +606,8 @@ class TestBaseFallbackGetChannelWrites:
         values = [v for _, _, v in result["writes"]]
         assert values == [{"content": "first"}, {"content": "second"}]
 
-    async def test_async_fallback_returns_ancestor_writes_oldest_first(self) -> None:
-        saver, thread_id, ns = await self._build_saver_with_chain()
+    async def test_async_fallback_returns_ancestor_writes_oldest_first(self, cluster) -> None:
+        saver, thread_id, ns = await self._build_saver_with_chain(cluster)
         target_id = "00000000000000000000000000000003.0000000000000000"
         config: RunnableConfig = {
             "configurable": {
@@ -624,7 +625,7 @@ class TestBaseFallbackGetChannelWrites:
         values = [v for _, _, v in result["writes"]]
         assert values == ["first", "second"]
 
-    async def test_async_fallback_concurrent_tasks_do_not_interfere(self) -> None:
+    async def test_async_fallback_concurrent_tasks_do_not_interfere(self, cluster) -> None:
         """Regression: the re-entrancy guard must be task-local, not thread-local.
 
         Two concurrent `aget_delta_channel_history` calls on the same event-loop
@@ -634,7 +635,7 @@ class TestBaseFallbackGetChannelWrites:
         """
         import asyncio
 
-        saver, thread_id, ns = await self._build_saver_with_chain()
+        saver, thread_id, ns = await self._build_saver_with_chain(cluster)
 
         # Force the two tasks to interleave across the `set(True)` boundary:
         # each `aget_tuple` yields control, so if the guard were thread-local

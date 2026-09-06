@@ -29,8 +29,13 @@ overrides `get_delta_channel_history`, so several tests needed adaptation
 rather than a bare fixture swap:
 
 - **Fixture**: `TestMemorySaver.setup` and the delta-channel test builders
-  now construct `AuroraDataApiSaver(FakeCluster())` (optionally with a
-  `serde=` override) instead of `InMemorySaver()`.
+  now construct `AuroraDataApiSaver(cluster)` (optionally with a `serde=`
+  override) instead of `InMemorySaver()`, where `cluster` is the live Aurora
+  cluster supplied by `conftest.py`. It ran against an in-memory
+  `FakeCluster` first, which was worse than no test at all: the fake accepted
+  a text parameter for the JSONB `checkpoint` column, so the suite was green
+  while the saver could not write a single checkpoint to Aurora. The fake is
+  gone; each test clears its own threads before and after.
 - **Sync -> async call sites**: tests that called `.put()`/`.get_tuple()`
   synchronously were converted to `await saver.aput(...)` /
   `await saver.aget_tuple(...)` inside `async def` tests. The assertions are
