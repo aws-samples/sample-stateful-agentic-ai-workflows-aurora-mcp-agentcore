@@ -18,6 +18,7 @@ import type { LucideIcon } from 'lucide-react';
 import { ChatComposer } from './components/ChatComposer';
 import { SURFACES, useJourney, useSurfaceUrlState } from './journey/useJourney';
 import { PresenterProof } from './surfaces/PresenterProof';
+import { ConciergeRail } from './surfaces/ConciergeRail';
 import { ChatTranscript } from './components/ChatTranscript';
 import { ComparisonDialog } from './components/ComparisonDialog';
 import { DiscoveryWorkspace } from './components/DiscoveryWorkspace';
@@ -502,9 +503,13 @@ export function DesktopMeridianApp({
           </AnimatePresence>
         </div>
 
-        {(isLadder && (!isRecovery || recoveryStage === 'ready')) && (
+        {/* Concierge and the ladder share one dock. Moving between them should
+            change what is on screen, not where the screen's controls are. */}
+        {((isProduct || isLadder) && (!isRecovery || recoveryStage === 'ready')) && (
           <div className="mds-desktop-dock">
-            {!isRecovery ? (
+            {isProduct ? (
+              <ChatComposer state={state} />
+            ) : !isRecovery ? (
               <ChatComposer state={state} proofMode />
             ) : (
               <ChatComposer state={state} recoveryMode />
@@ -512,6 +517,12 @@ export function DesktopMeridianApp({
           </div>
         )}
       </main>
+
+      {isProduct && (
+        <aside className="mds-desktop-right is-concierge" aria-label="Your travel concierge">
+          <ConciergeRail state={state} />
+        </aside>
+      )}
 
       {isLadder && (
         <aside

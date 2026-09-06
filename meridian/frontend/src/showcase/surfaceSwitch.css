@@ -193,3 +193,66 @@
     max-width: 100%;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Concierge gets the ladder's three-column stage
+   ---------------------------------------------------------------------------
+   Sidebar, stage, rail — the same skeleton as the Capability ladder, so the
+   step from one to the other changes the content and not the furniture.
+
+   Declared here, and with the extra class, on purpose: four stylesheets set
+   `grid-template-columns` on this element across a dozen breakpoints, and this
+   is the last one imported. The explicit `grid-column` on each child means the
+   rail lands in the third track no matter which of those rules wins.
+------------------------------------------------------------------------------ */
+
+.mds-root .mds-desktop-app.is-discovery {
+  grid-template-columns: 244px minmax(0, 1fr) var(--mds-right-rail);
+}
+
+.mds-root .mds-desktop-app.is-discovery.is-sidebar-collapsed {
+  grid-template-columns: 76px minmax(0, 1fr) var(--mds-right-rail);
+}
+
+.mds-root .mds-desktop-app.is-discovery .mds-desktop-main {
+  grid-column: 2;
+}
+
+.mds-root .mds-desktop-app.is-discovery .mds-desktop-right.is-concierge {
+  grid-column: 3;
+  grid-row: 1 / -1;
+  height: 100dvh;
+}
+
+/* Below the ladder's own two-column breakpoint the rail stacks under the
+   stage rather than squeezing the hero. */
+@media (max-width: 1240px) {
+  .mds-root .mds-desktop-app.is-discovery,
+  .mds-root .mds-desktop-app.is-discovery.is-sidebar-collapsed {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+
+  .mds-root .mds-desktop-app.is-discovery .mds-desktop-right.is-concierge {
+    grid-column: 2;
+    grid-row: auto;
+    height: auto;
+    padding: 0 var(--mds-discovery-inset) 14px;
+  }
+}
+
+/* Concierge has a composer dock now, so its stage can no longer be pinned to
+   the full viewport height: at 100dvh the grid ran under the dock and the
+   dock's blur sat over the bottom of the trip cards. The main grid's first row
+   already resolves to the space the dock leaves. */
+.mds-root .mds-desktop-app.is-discovery .mds-desktop-scroll {
+  height: auto;
+  min-height: 0;
+}
+
+/* With the dock taking its share, the two supporting cards became short enough
+   that their titles clipped ("Barcelona Architecture Week" lost its first
+   word). Give the grid a floor and let the stage scroll instead of letting the
+   cards compress below the size their copy needs. */
+.mds-root .mds-desktop-app.is-discovery .mds-discovery-grid {
+  min-height: 540px;
+}

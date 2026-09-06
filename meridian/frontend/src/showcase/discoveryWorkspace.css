@@ -830,3 +830,177 @@
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Concierge rail
+   ---------------------------------------------------------------------------
+   Sits in the same column as the ladder's evidence rail and reads as its calm
+   sibling: the traveler's conversation and what it produced, with none of the
+   trace vocabulary. The composer is in the shared dock below the stage, not in
+   here, so both surfaces put their input in the same place.
+------------------------------------------------------------------------------ */
+
+.mds-desktop-right.is-concierge {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 16px 16px 16px 0;
+}
+
+.mds-concierge-rail {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid var(--mds-line);
+  border-radius: 16px;
+  background: var(--mds-card);
+  scrollbar-width: thin;
+}
+
+.mds-concierge-rail-head {
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+}
+
+.mds-concierge-rail-glyph {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  color: var(--mds-blue);
+  background: var(--mds-blue-soft);
+}
+
+.mds-concierge-rail-head strong {
+  display: block;
+  color: var(--mds-on-surface);
+  font-size: calc(15px * var(--mds-fs));
+  font-weight: 700;
+}
+
+.mds-concierge-rail-head p {
+  margin: 2px 0 0;
+  color: var(--mds-dim);
+  font-size: calc(12.5px * var(--mds-fs));
+}
+
+.mds-concierge-rail-idle {
+  margin: 0;
+  color: var(--mds-muted);
+  font-size: calc(13px * var(--mds-fs));
+  line-height: 1.55;
+}
+
+.mds-concierge-rail-thread {
+  min-height: 0;
+  max-height: 46vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.mds-concierge-rail-options header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.mds-concierge-rail-options header strong {
+  color: var(--mds-on-surface);
+  font-size: calc(12.5px * var(--mds-fs));
+  font-weight: 700;
+}
+
+.mds-concierge-rail-options header span {
+  color: var(--mds-dim);
+  font-size: calc(11.5px * var(--mds-fs));
+}
+
+.mds-concierge-rail-options ul {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mds-concierge-rail-options button {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  width: 100%;
+  min-height: 56px;
+  padding: 7px 10px 7px 7px;
+  border: 1px solid var(--mds-line);
+  border-radius: 12px;
+  color: var(--mds-muted);
+  background: var(--mds-fill-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.mds-concierge-rail-options button:hover {
+  border-color: var(--mds-blue-line);
+  background: var(--mds-blue-soft);
+}
+
+.mds-concierge-rail-thumb {
+  display: block;
+  flex: none;
+  overflow: hidden;
+  width: 44px;
+  height: 44px;
+  border-radius: 9px;
+  background: var(--mds-fill-1);
+}
+
+.mds-concierge-rail-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mds-concierge-rail-option-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.mds-concierge-rail-option-copy strong {
+  overflow: hidden;
+  color: var(--mds-on-surface);
+  font-size: calc(13px * var(--mds-fs));
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mds-concierge-rail-option-copy small {
+  color: var(--mds-dim);
+  font-size: calc(11.5px * var(--mds-fs));
+}
+
+.mds-concierge-rail-foot {
+  margin: auto 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--mds-line);
+  color: var(--mds-dim);
+  font-size: calc(11px * var(--mds-fs));
+}
+
+@media (max-width: 1100px) {
+  .mds-concierge-rail-thread {
+    max-height: 260px;
+  }
+}
