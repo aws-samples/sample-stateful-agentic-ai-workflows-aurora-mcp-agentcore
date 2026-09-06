@@ -602,7 +602,7 @@ Implements the write and single-read halves of `BaseCheckpointSaver`. Blob segme
 
 **Interfaces:**
 - Consumes: `RDSDataClient` binary support (Task 1); `window_offsets`, `split_for_write`, `MAX_ROW_BYTES` from `backend.db.blob_windows` (Task 2); tables from Task 3.
-- Produces: `class AuroraDataApiSaver(BaseCheckpointSaver)` with `__init__(self, client, serde=None)`, `async aput(config, checkpoint, metadata, new_versions) -> RunnableConfig`, `async aget_tuple(config) -> CheckpointTuple | None`, and `async _read_blob(thread_id, checkpoint_ns, channel, version) -> bytes | None`.
+- Produces: `class AuroraDataApiSaver(BaseCheckpointSaver)` with `__init__(self, client, serde=None)`, `async aput(config, checkpoint, metadata, new_versions) -> RunnableConfig`, `async aget_tuple(config) -> CheckpointTuple | None`, and `async _read_blob(thread_id, checkpoint_ns, channel, version) -> tuple[str, bytes] | None` returning `(blob_type, payload)`, plus `async _load_channel_values(thread_id, ns, channel_versions) -> dict`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -964,11 +964,9 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
         checkpoint = json.loads(row["checkpoint"])
         values: dict[str, Any] = {}
         for channel, version in checkpoint.get("channel_versions", {}).items():
-            payload = await self._read_blob(thread_id, ns, channel, str(version))
-            if payload is not None:
-                blob_type = await self._read_blob_type(
-                    thread_id, ns, channel, str(version)
-                )
+            found = await self._read_blob(thread_id, ns, channel, str(version))
+            if found is not None:
+                blob_type, payload = found
                 values[channel] = self.serde.loads_typed((blob_type, payload))
         checkpoint["channel_values"] = values
 
@@ -1308,15 +1306,14 @@ Add these methods to the class:
 
         for row in await self.client.execute(sql, params):
             checkpoint = json.loads(row["checkpoint"])
-            values: dict[str, Any] = {}
-            for channel, version in checkpoint.get("channel_versions", {}).items():
-                payload = await self._read_blob(thread_id, ns, channel, str(version))
-                if payload is not None:
-                    blob_type = await self._read_blob_type(
-                        thread_id, ns, channel, str(version)
-                    )
-                    values[channel] = self.serde.loads_typed((blob_type, payload))
-            checkpoint["channel_values"] = values
+            # Same merge as aget_tuple: upstream inlines primitives in the
+            # JSONB and writes no blob row for them, so both sources count.
+            checkpoint["channel_values"] = {
+                **(checkpoint.get("channel_values") or {}),
+                **await self._load_channel_values(
+                    thread_id, ns, checkpoint.get("channel_versions", {})
+                ),
+            }
             yield CheckpointTuple(
                 config={
                     "configurable": {
