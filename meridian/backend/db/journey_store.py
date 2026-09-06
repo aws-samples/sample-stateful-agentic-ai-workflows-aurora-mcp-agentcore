@@ -26,6 +26,10 @@ UPDATE journeys
  WHERE journey_id = %s
 """
 
+JOURNEY_FOR_THREAD_SQL = """
+SELECT journey_id FROM journey_threads WHERE thread_id = %s
+"""
+
 ABANDON_EXPIRED_SQL = """
 UPDATE journey_executions
    SET status = 'abandoned', ended_at = CURRENT_TIMESTAMP
@@ -73,6 +77,24 @@ UPDATE journey_executions
 """
 
 
+class ScopedDb:
+    """Route journey statements through an already-open scoped transaction.
+
+    The journey tables are behind RLS, so every statement has to run inside the
+    transaction that set ``app.current_traveler_id``. The Data API client takes
+    the transaction as a keyword argument; this binds it once.
+    """
+
+    def __init__(self, client: Any, transaction_id: str) -> None:
+        self.client = client
+        self.transaction_id = transaction_id
+
+    async def execute(self, sql: str, params: tuple = (), **kwargs) -> Any:
+        return await self.client.execute(
+            sql, params, transaction_id=self.transaction_id
+        )
+
+
 @dataclass
 class ExecutionClaim:
     """The outcome of attempting to claim a thread's single running slot."""
@@ -113,6 +135,46 @@ async def bind_thread(db: Any, journey_id: str, thread_id: str) -> None:
     """
     await db.execute(BIND_THREAD_SQL, (thread_id, journey_id))
     await db.execute(ACTIVATE_THREAD_SQL, (thread_id, journey_id))
+
+
+async def journey_for_thread(db: Any, thread_id: str) -> Optional[str]:
+    """Return the journey a thread already belongs to, if any.
+
+    Reads through RLS, so a thread owned by another traveler is invisible here
+    and reads as unbound rather than as someone else's journey.
+
+    Args:
+        db: Data API client, inside a traveler-scoped session.
+        thread_id: The LangGraph thread id.
+
+    Returns:
+        The journey id, or None when the thread is not bound.
+    """
+    rows = await db.execute(JOURNEY_FOR_THREAD_SQL, (thread_id,))
+    return str(rows[0]["journey_id"]) if rows else None
+
+
+async def ensure_journey(
+    db: Any, traveler_id: str, thread_id: str, checkpoint_backend: str
+) -> str:
+    """Return the thread's journey, creating and binding one if it has none.
+
+    Args:
+        db: Data API client, inside a traveler-scoped session.
+        traveler_id: The owner.
+        thread_id: The LangGraph thread id.
+        checkpoint_backend: The backend serving this journey.
+
+    Returns:
+        The journey id the thread is bound to.
+    """
+    existing = await journey_for_thread(db, thread_id)
+    if existing:
+        return existing
+
+    journey_id = await create_journey(db, traveler_id, checkpoint_backend)
+    await bind_thread(db, journey_id, thread_id)
+    return journey_id
 
 
 async def claim_execution(

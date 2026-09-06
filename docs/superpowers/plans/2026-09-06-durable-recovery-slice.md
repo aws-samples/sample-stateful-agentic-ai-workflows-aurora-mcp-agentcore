@@ -2303,8 +2303,33 @@ git commit -m "Checkpoint the hold intent before the hold runs"
 
 **Files:**
 - Create: `meridian/scripts/migrations/008_hold_request_identity.sql`
-- Modify: `meridian/backend/routers/chat.py:2967-3030` (the `create_courtesy_hold` call site)
-- Test: `meridian/tests/test_hold_request_identity.py`
+- Modify: `meridian/examples/rls_for_agents.sql` (the fresh-bootstrap copy of the function)
+- Modify: `meridian/backend/routers/chat.py` (the direct-order call site)
+- Modify: `meridian/backend/agents/orchestration_05/workflow.py` (the Phase 5 hold node)
+- Modify: `meridian/backend/db/journey_store.py` (`ensure_journey`, `ScopedDb`)
+- Test: `meridian/tests/test_hold_request_identity.py`, `meridian/tests/test_hold_request_identity_aurora.py`, `meridian/tests/test_order_hold.py`
+
+**There are three definitions of this function, not one.** `chat.py` is the
+direct-order call site, `workflow.py` is the Phase 5 hold node, and
+`examples/rls_for_agents.sql` is what `init_aurora_schema.py` runs on a fresh
+database. Dropping the eight-argument version while any of them still expects
+it is worse than leaving it: the workflow's hold node swallows its exception
+into "hold not placed", so the demo's centrepiece would fail silently, and the
+bootstrap file would recreate the dropped signature as a second overload.
+
+**Nothing creates journeys yet.** The new function raises `journey_not_owned`
+without one, so Task 8's store has to be wired in here rather than in Task 11.
+`ensure_journey` binds the thread's journey or opens one; the workflow keeps
+`journey_id` in checkpointed state so a resume reuses it, and a direct order
+gets a one-step journey bound to `order-<order_id>`.
+
+**Two bugs here only reproduce against Aurora.** `RETURN QUERY` demands an
+exact type match, so returning `hold_requests.booking_id` (VARCHAR) into a
+TEXT out-column raises `42804 structure of query does not match function
+result type`. It fires only on the replay path, because the insert path
+returns the TEXT parameter. And a bare `REVOKE` on the old signature fails
+with `undefined_function` the second time the migration runs, so it is wrapped
+in a `DO` block that swallows exactly that.
 
 **Interfaces:**
 - Consumes: `hold_requests` (Task 3), `HoldIntent` (Task 9).
@@ -2636,8 +2661,14 @@ reservation.
 
 - [ ] **Step 7: Run the hold tests**
 
-Run: `venv/bin/pytest tests/test_order_hold.py tests/test_workflow_safety.py tests/test_production_transaction_boundaries.py -q`
+Run: `venv/bin/pytest tests/test_order_hold.py tests/test_workflow_safety.py tests/test_production_transaction_boundaries.py tests/test_hold_request_identity_aurora.py -q`
 Expected: PASS. Update any test that constructs the old eight-argument call.
+
+**Against the cluster, not a fake.** A fake database asserts that the route
+built a string. It returned rows for a signature the cluster no longer had and
+handed back TEXT where the real columns are VARCHAR, so it stayed green
+through both bugs above. The order route and the hold function are exercised
+against live Aurora, and each test removes the rows it wrote.
 
 - [ ] **Step 8: Run the full suite**
 

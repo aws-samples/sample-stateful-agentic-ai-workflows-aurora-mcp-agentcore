@@ -204,12 +204,21 @@ ALTER TABLE booking_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE booking_lines FORCE ROW LEVEL SECURITY;
 
 -- The SECURITY DEFINER function is the only path that needs a global view of
--- active holds. It serializes each package/duration with an advisory lock,
--- validates the authenticated transaction scope, and writes booking + line
--- atomically. Application queries remain subject to fail-closed RLS.
+-- active holds. It claims the request identity, serializes each
+-- package/duration with an advisory lock, validates the authenticated
+-- transaction scope, and writes booking + line atomically. A second call
+-- carrying the same request identity replays the first hold instead of
+-- reserving again. Application queries remain subject to fail-closed RLS.
+--
+-- Requires the journeys and hold_requests tables from migration 007. plpgsql
+-- resolves table references at run time, so the function is creatable before
+-- them, but not callable.
 CREATE OR REPLACE FUNCTION create_courtesy_hold(
     p_booking_id TEXT,
     p_traveler_id TEXT,
+    p_journey_id TEXT,
+    p_hold_request_id TEXT,
+    p_fingerprint TEXT,
     p_package_id TEXT,
     p_duration TEXT,
     p_quantity INTEGER,
@@ -217,6 +226,9 @@ CREATE OR REPLACE FUNCTION create_courtesy_hold(
     p_total_amount NUMERIC,
     p_hold_expires_at TIMESTAMPTZ
 ) RETURNS TABLE (
+    booking_id TEXT,
+    status TEXT,
+    replayed BOOLEAN,
     seats_available INTEGER,
     seats_reserved INTEGER,
     seats_remaining INTEGER
@@ -230,6 +242,8 @@ DECLARE
     v_agent_type TEXT := current_setting('app.agent_type', true);
     v_capacity INTEGER;
     v_reserved INTEGER;
+    v_inserted BOOLEAN;
+    v_existing RECORD;
 BEGIN
     IF v_scope IS NULL OR v_scope = '' OR v_scope <> p_traveler_id THEN
         RAISE EXCEPTION 'traveler_scope_mismatch';
@@ -239,6 +253,47 @@ BEGIN
     END IF;
     IF p_quantity IS NULL OR p_quantity <= 0 THEN
         RAISE EXCEPTION 'invalid_hold_quantity';
+    END IF;
+
+    -- Authorize the journey before either path. Knowing a request id must not
+    -- return another traveler's booking.
+    PERFORM 1 FROM journeys
+     WHERE journey_id = p_journey_id AND traveler_id = p_traveler_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'journey_not_owned';
+    END IF;
+
+    INSERT INTO hold_requests (
+        journey_id, hold_request_id, booking_id, fingerprint, thread_id,
+        execution_id
+    ) VALUES (
+        p_journey_id, p_hold_request_id, p_booking_id, p_fingerprint,
+        COALESCE(current_setting('app.thread_id', true), ''),
+        NULLIF(current_setting('app.execution_id', true), '')
+    )
+    ON CONFLICT (journey_id, hold_request_id) DO NOTHING;
+
+    GET DIAGNOSTICS v_inserted = ROW_COUNT;
+
+    IF NOT v_inserted THEN
+        SELECT hr.booking_id, hr.fingerprint, b.status
+          INTO v_existing
+          FROM hold_requests hr
+          JOIN bookings b ON b.booking_id = hr.booking_id
+         WHERE hr.journey_id = p_journey_id
+           AND hr.hold_request_id = p_hold_request_id;
+
+        IF v_existing.fingerprint IS DISTINCT FROM p_fingerprint THEN
+            RAISE EXCEPTION 'hold_request_parameter_mismatch';
+        END IF;
+
+        -- The columns are VARCHAR on the tables and TEXT in the OUT list, and
+        -- RETURN QUERY requires an exact type match, so cast explicitly. The
+        -- non-replay path returns the TEXT parameter and never hit this.
+        RETURN QUERY SELECT
+            v_existing.booking_id::TEXT, v_existing.status::TEXT, TRUE,
+            NULL::INTEGER, NULL::INTEGER, NULL::INTEGER;
+        RETURN;
     END IF;
 
     PERFORM pg_advisory_xact_lock(
@@ -252,8 +307,7 @@ BEGIN
     END
     INTO v_capacity
     FROM trip_packages
-    WHERE package_id = p_package_id
-      AND durations ? p_duration;
+    WHERE package_id = p_package_id AND durations ? p_duration;
 
     IF v_capacity IS NULL OR v_capacity < 0 THEN
         RAISE EXCEPTION 'invalid_package_inventory';
@@ -267,41 +321,15 @@ BEGIN
       AND bl.duration = p_duration
       AND (
           b.status = 'confirmed'
-          OR (
-              b.status = 'held'
-              AND b.hold_expires_at > CURRENT_TIMESTAMP
-          )
+          OR (b.status = 'held' AND b.hold_expires_at > CURRENT_TIMESTAMP)
       );
 
     IF p_quantity > (v_capacity - v_reserved) THEN
         RAISE EXCEPTION 'insufficient_inventory';
     END IF;
 
-    -- Idempotency. The caller derives p_booking_id from the workflow thread
-    -- and what is being held, so a replayed workflow node presents the same
-    -- id rather than a new one. LangGraph re-runs a node after a crash
-    -- between the commit and the checkpoint; without this the retry booked a
-    -- second hold and reserved the inventory twice.
-    --
-    -- Returning the existing reservation makes the retry a no-op with the
-    -- same answer, which is what the caller needs to carry on. The traveler
-    -- check keeps one traveler's id from colliding into another's hold.
-    IF EXISTS (
-        SELECT 1 FROM bookings
-        WHERE booking_id = p_booking_id
-          AND traveler_id = p_traveler_id
-          AND status = 'held'
-    ) THEN
-        RETURN QUERY SELECT
-            v_capacity,
-            v_reserved,
-            v_capacity - v_reserved;
-        RETURN;
-    END IF;
-
     INSERT INTO bookings (
-        booking_id, traveler_id, status, total_amount,
-        hold_expires_at, created_at
+        booking_id, traveler_id, status, total_amount, hold_expires_at, created_at
     ) VALUES (
         p_booking_id, p_traveler_id, 'held', p_total_amount,
         p_hold_expires_at, CURRENT_TIMESTAMP
@@ -314,17 +342,16 @@ BEGIN
     );
 
     RETURN QUERY SELECT
-        v_capacity,
-        v_reserved + p_quantity,
-        v_capacity - v_reserved - p_quantity;
+        p_booking_id, 'held'::TEXT, FALSE,
+        v_capacity, v_reserved + p_quantity, v_capacity - v_reserved - p_quantity;
 END;
 $$;
 
 REVOKE ALL ON FUNCTION create_courtesy_hold(
-    TEXT, TEXT, TEXT, TEXT, INTEGER, NUMERIC, NUMERIC, TIMESTAMPTZ
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, INTEGER, NUMERIC, NUMERIC, TIMESTAMPTZ
 ) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION create_courtesy_hold(
-    TEXT, TEXT, TEXT, TEXT, INTEGER, NUMERIC, NUMERIC, TIMESTAMPTZ
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, INTEGER, NUMERIC, NUMERIC, TIMESTAMPTZ
 ) TO meridian_app;
 -- ----------------------------------------------------------------------------
 -- C. Lightweight audit log written by the agent runtime

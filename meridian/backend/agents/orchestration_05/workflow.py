@@ -49,6 +49,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, TypedDict
 from urllib.parse import quote
 
 from backend.agents.orchestration_05.hold_intent import prepare_hold_node
+from backend.db.journey_store import ScopedDb, ensure_journey
 from backend.agents.orchestration_05.packages import (
     first_available_duration,
     package_to_dict,
@@ -398,6 +399,7 @@ class WorkflowState(TypedDict, total=False):
     hold_duration: str
     hold_seats_remaining: int
     hold_intent: Dict[str, Any]
+    journey_id: str
 
 
 # How long a courtesy hold survives. Short enough that the room can watch the
@@ -1005,6 +1007,9 @@ class OrchestrationAgent:
         unit_price = float(intent.get("unit_price") or target.get("price") or 0)
         hold_id = _hold_key(state.get("conversation_id") or "", package_id, duration)
         expires_at = _utc_now() + timedelta(minutes=HOLD_MINUTES)
+        thread_id = str(state.get("conversation_id") or "")
+        hold_request_id = str(intent.get("hold_request_id") or hold_id)
+        fingerprint = str(intent.get("fingerprint") or "")
 
         try:
             from backend.agentcore.identity import get_agentcore_identity
@@ -1016,17 +1021,29 @@ class OrchestrationAgent:
                 agent_type="booking_agent",
                 authorization=get_agentcore_identity().authorization_context(),
             ) as transaction_id:
+                scoped = ScopedDb(db, transaction_id)
+                journey_id = state.get("journey_id") or await ensure_journey(
+                    scoped,
+                    traveler_id,
+                    thread_id,
+                    self.checkpointer_kind,
+                )
                 rows = await db.execute(
                     """
-                    SELECT seats_available, seats_reserved, seats_remaining
+                    SELECT booking_id, status, replayed,
+                           seats_available, seats_reserved, seats_remaining
                     FROM create_courtesy_hold(
-                        %s::TEXT, %s::TEXT, %s::TEXT, %s::TEXT,
+                        %s::TEXT, %s::TEXT, %s::TEXT, %s::TEXT, %s::TEXT,
+                        %s::TEXT, %s::TEXT,
                         %s::INTEGER, %s::NUMERIC, %s::NUMERIC, %s::TIMESTAMPTZ
                     )
                     """,
                     (
                         hold_id,
                         traveler_id,
+                        journey_id,
+                        hold_request_id,
+                        fingerprint,
                         package_id,
                         duration,
                         quantity,
@@ -1050,20 +1067,33 @@ class OrchestrationAgent:
             activities.append(self._checkpoint_activity("hold", elapsed))
             return {"activities": activities}
 
-        remaining = int((rows[0] or {}).get("seats_remaining", 0)) if rows else 0
+        row = (rows[0] or {}) if rows else {}
+        replayed = bool(row.get("replayed"))
+        # A replay returns the existing booking without re-counting inventory,
+        # so its seat columns are null by design.
+        remaining = int(row.get("seats_remaining") or 0)
         elapsed = int((_utc_now() - start).total_seconds() * 1000)
         activities.append(
             _activity(
                 "database",
                 "Workflow node: hold",
                 details=(
-                    f"Held {quantity} x {duration} on {package_id} until "
-                    f"{expires_at.strftime('%H:%M:%SZ')} · {remaining} seats left"
+                    (
+                        f"Replayed the hold already placed for this request on "
+                        f"{package_id} ({duration})"
+                    )
+                    if replayed
+                    else (
+                        f"Held {quantity} x {duration} on {package_id} until "
+                        f"{expires_at.strftime('%H:%M:%SZ')} · {remaining} seats left"
+                    )
                 ),
                 sql_query=(
-                    "SELECT seats_available, seats_reserved, seats_remaining\n"
-                    "FROM create_courtesy_hold($1, $2, $3, $4, $5, $6, $7, $8);\n"
-                    "-- advisory lock + capacity check, inside the RLS scope"
+                    "SELECT booking_id, status, replayed,\n"
+                    "       seats_available, seats_reserved, seats_remaining\n"
+                    "FROM create_courtesy_hold($1 .. $11);\n"
+                    "-- request identity claimed first, then advisory lock and\n"
+                    "-- capacity check, inside the RLS scope"
                 ),
                 execution_time_ms=elapsed,
                 telemetry={
@@ -1072,6 +1102,13 @@ class OrchestrationAgent:
                     "status": "ok",
                     "fields": [
                         {"label": "hold_id", "value": hold_id, "mono": True},
+                        {
+                            "label": "hold_request_id",
+                            "value": hold_request_id,
+                            "mono": True,
+                        },
+                        {"label": "journey_id", "value": journey_id, "mono": True},
+                        {"label": "replayed", "value": "yes" if replayed else "no"},
                         {"label": "package", "value": package_id},
                         {"label": "duration", "value": duration},
                         {"label": "seats_held", "value": str(quantity)},
@@ -1084,6 +1121,7 @@ class OrchestrationAgent:
         activities.append(self._checkpoint_activity("hold", elapsed))
         return {
             "activities": activities,
+            "journey_id": journey_id,
             "hold_id": hold_id,
             "hold_expires_at": expires_at.isoformat(),
             "hold_package": package_id,

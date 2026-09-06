@@ -31,7 +31,14 @@ from typing import Literal, Optional, List, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from decimal import Decimal
+
 from backend.agentcore.identity import get_agentcore_identity
+from backend.agents.orchestration_05.hold_intent import (
+    fingerprint_terms,
+    normalize_hold_terms,
+)
+from backend.db.journey_store import ScopedDb, ensure_journey
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.db.embedding_service import get_embedding_service
@@ -2987,10 +2994,31 @@ async def process_order(
             authorization=get_agentcore_identity().authorization_context(),
         ) as transaction_id:
             try:
+                # A direct order is a one-step journey: it carries no
+                # checkpointed workflow state, so its request identity is
+                # derived from the order it is placing.
+                journey_id = await ensure_journey(
+                    ScopedDb(db, transaction_id),
+                    request.traveler_id,
+                    f"order-{order_id}",
+                    "direct",
+                )
+                fingerprint = fingerprint_terms(
+                    normalize_hold_terms(
+                        pkg["product_id"],
+                        requested_duration,
+                        request.quantity,
+                        Decimal(str(pkg["price"])),
+                    )
+                )
                 hold_result = await db.execute(
                     """
-                    SELECT seats_available, seats_reserved, seats_remaining
+                    SELECT booking_id, status, replayed,
+                           seats_available, seats_reserved, seats_remaining
                     FROM create_courtesy_hold(
+                        %s::TEXT,
+                        %s::TEXT,
+                        %s::TEXT,
                         %s::TEXT,
                         %s::TEXT,
                         %s::TEXT,
@@ -3004,6 +3032,9 @@ async def process_order(
                     (
                         order_id,
                         request.traveler_id,
+                        journey_id,
+                        f"hrq_{order_id}",
+                        fingerprint,
                         pkg["product_id"],
                         requested_duration,
                         request.quantity,
@@ -3024,7 +3055,8 @@ async def process_order(
                     ) from exc
                 raise
 
-        remaining = int(hold_result[0]["seats_remaining"]) if hold_result else 0
+        # A replay returns the existing booking and leaves the seat columns null.
+        remaining = int((hold_result[0].get("seats_remaining") or 0)) if hold_result else 0
 
         order = Order(
             order_id=order_id,
