@@ -48,6 +48,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, TypedDict
 from urllib.parse import quote
 
+from backend.agents.orchestration_05.hold_intent import prepare_hold_node
+from backend.agents.orchestration_05.packages import (
+    first_available_duration,
+    package_to_dict,
+    top_ranked_package,
+)
+
 logger = logging.getLogger(__name__)
 
 # LangGraph imports are kept module-local so the rest of the backend doesn't
@@ -390,27 +397,12 @@ class WorkflowState(TypedDict, total=False):
     hold_package: str
     hold_duration: str
     hold_seats_remaining: int
+    hold_intent: Dict[str, Any]
 
 
 # How long a courtesy hold survives. Short enough that the room can watch the
 # clock move across a worker restart, long enough not to expire mid-demo.
 HOLD_MINUTES = int(os.getenv("MERIDIAN_HOLD_MINUTES", "15"))
-
-
-def _first_available_duration(package: Dict[str, Any]) -> str:
-    """Pick a duration that still has inventory, falling back to the first."""
-    availability = package.get("availability") or {}
-    if isinstance(availability, dict):
-        for duration, seats in availability.items():
-            try:
-                if int(seats) > 0:
-                    return str(duration)
-            except (TypeError, ValueError):
-                continue
-    sizes = package.get("available_sizes") or package.get("durations") or []
-    if isinstance(sizes, list) and sizes:
-        return str(sizes[0])
-    return "7 nights"
 
 
 def _activity(
@@ -517,21 +509,6 @@ def _classify_intent(query: str) -> str:
     if any(s in q for s in availability_signals):
         return "availability"
     return "search"
-
-
-def _package_to_dict(package: Any) -> Dict[str, Any]:
-    """Normalize API/domain models before LangGraph checkpoints serialize them."""
-    if isinstance(package, dict):
-        return dict(package)
-    if hasattr(package, "model_dump"):
-        return dict(package.model_dump(mode="json"))
-    if hasattr(package, "__dict__"):
-        return {
-            key: value
-            for key, value in vars(package).items()
-            if not key.startswith("_")
-        }
-    raise TypeError(f"Unsupported workflow package type: {type(package).__name__}")
 
 
 def _hold_key(thread_id: str, package_id: str, duration: str) -> str:
@@ -682,6 +659,7 @@ class OrchestrationAgent:
         builder.add_node("search", self._node_search)
         builder.add_node("availability", self._node_availability)
         builder.add_node("memory_recall", self._node_memory_recall)
+        builder.add_node("prepare_hold", prepare_hold_node)
         builder.add_node("hold", self._node_hold)
         builder.add_node("synthesize", self._node_synthesize)
 
@@ -716,10 +694,16 @@ class OrchestrationAgent:
         builder.add_conditional_edges(
             "availability",
             lambda state: (
-                "hold" if _is_recovery_request(state.get("query", "")) else "synthesize"
+                "prepare_hold"
+                if _is_recovery_request(state.get("query", ""))
+                else "synthesize"
             ),
-            {"hold": "hold", "synthesize": "synthesize"},
+            {"prepare_hold": "prepare_hold", "synthesize": "synthesize"},
         )
+        # The intent is allocated and checkpointed in its own node, so a
+        # worker that dies inside the hold resumes with the same identity
+        # rather than allocating a second one.
+        builder.add_edge("prepare_hold", "hold")
         builder.add_edge("hold", "synthesize")
         builder.add_edge("memory_recall", "synthesize")
         builder.add_edge("synthesize", END)
@@ -728,6 +712,7 @@ class OrchestrationAgent:
             "classify",
             "search",
             "availability",
+            "prepare_hold",
             "hold",
             "memory_recall",
             "synthesize",
@@ -806,7 +791,7 @@ class OrchestrationAgent:
             state["query"],
             limit=5,
         )
-        packages = [_package_to_dict(package) for package in raw_packages]
+        packages = [package_to_dict(package) for package in raw_packages]
         elapsed = int((_utc_now() - start).total_seconds() * 1000)
         activities = list(state.get("activities", []))
         activities.append(
@@ -841,7 +826,7 @@ class OrchestrationAgent:
         start = _utc_now()
         is_plan = state.get("intent") == "plan"
         prior = [
-            _package_to_dict(package)
+            package_to_dict(package)
             for package in (state.get("packages", []) or [])
         ]
 
@@ -877,7 +862,7 @@ class OrchestrationAgent:
             for avail_packages, target_activities, _msg in target_results:
                 sub_activities.extend(target_activities)
                 for package in avail_packages:
-                    normalized = _package_to_dict(package)
+                    normalized = package_to_dict(package)
                     package_id = str(
                         normalized.get("product_id")
                         or normalized.get("package_id")
@@ -918,7 +903,7 @@ class OrchestrationAgent:
                 state["query"]
             )
             packages = [
-                _package_to_dict(package) for package in raw_available
+                package_to_dict(package) for package in raw_available
             ]
             availability_checks = 1 if packages else 0
             availability_rows = len(packages)
@@ -989,15 +974,7 @@ class OrchestrationAgent:
         packages = state.get("packages", []) or []
         traveler_id = state.get("traveler_id") or ""
 
-        target = next(
-            (
-                _package_to_dict(package)
-                for package in packages
-                if _package_to_dict(package).get("product_id")
-                or _package_to_dict(package).get("package_id")
-            ),
-            None,
-        )
+        target = top_ranked_package(packages)
         if not target or not traveler_id:
             activities.append(
                 _activity(
@@ -1010,12 +987,22 @@ class OrchestrationAgent:
             activities.append(self._checkpoint_activity("hold", elapsed))
             return {"activities": activities}
 
-        package_id = str(target.get("product_id") or target.get("package_id"))
-        duration = _first_available_duration(target)
+        # Terms come from the checkpointed intent, so the hold that runs is the
+        # hold that was fingerprinted. Falling back to deriving them again
+        # keeps a direct call to this node working.
         # Alex travels as a party of two; the demo traveler's profile is the
         # source of truth for this in Phase 4, and the workflow inherits it.
-        quantity = 2
-        unit_price = float(target.get("price") or 0)
+        intent = state.get("hold_intent") or prepare_hold_node(state).get(
+            "hold_intent", {}
+        )
+        package_id = str(
+            intent.get("package_id")
+            or target.get("product_id")
+            or target.get("package_id")
+        )
+        duration = str(intent.get("duration") or first_available_duration(target))
+        quantity = int(intent.get("quantity") or 2)
+        unit_price = float(intent.get("unit_price") or target.get("price") or 0)
         hold_id = _hold_key(state.get("conversation_id") or "", package_id, duration)
         expires_at = _utc_now() + timedelta(minutes=HOLD_MINUTES)
 

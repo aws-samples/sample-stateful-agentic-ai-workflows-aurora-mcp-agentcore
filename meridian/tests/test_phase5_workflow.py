@@ -527,7 +527,9 @@ def test_availability_lookup_never_holds_inventory() -> None:
 
 def test_hold_picks_a_duration_that_has_inventory() -> None:
     """Never hold against a sold-out duration."""
-    from backend.agents.orchestration_05.workflow import _first_available_duration
+    from backend.agents.orchestration_05.packages import (
+        first_available_duration as _first_available_duration,
+    )
 
     assert _first_available_duration(
         {"availability": {"2 nights": 0, "3 nights": 5}}

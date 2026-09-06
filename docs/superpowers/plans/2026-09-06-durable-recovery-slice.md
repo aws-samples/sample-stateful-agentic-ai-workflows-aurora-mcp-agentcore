@@ -1996,8 +1996,23 @@ A `prepare_hold` node allocates `hold_request_id`, normalizes and validates the 
 
 **Files:**
 - Create: `meridian/backend/agents/orchestration_05/hold_intent.py`
-- Modify: `meridian/backend/agents/orchestration_05/workflow.py` (add the node and its edge)
+- Create: `meridian/backend/agents/orchestration_05/packages.py`
+- Modify: `meridian/backend/agents/orchestration_05/workflow.py` (add the node and its edge, read the intent in the hold node)
 - Test: `meridian/tests/test_hold_intent.py`
+
+**Where the terms come from.** The hold node derives `package_id`, `duration`,
+`quantity` and `unit_price` from `state["packages"]`; there are no
+`selected_package` or `unit_price` keys in `WorkflowState`. The intent has to
+be over the same terms the hold will actually execute, or the fingerprint
+describes a hold that never happens. `_package_to_dict` and
+`_first_available_duration` move out of `workflow.py` into `packages.py` so
+both the node and the intent read the ranking through one path, and the hold
+node then executes the checkpointed intent instead of re-deriving it.
+
+**Case folding is for the fingerprint only.** Task 10 passes `p_package_id`
+into `create_courtesy_hold`, which writes it to the booking, so `HoldIntent`
+keeps the caller's casing. Only the digest is computed over the lowered form,
+which is what makes two spellings of one intent the same hold.
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
