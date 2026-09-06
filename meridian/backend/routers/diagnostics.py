@@ -266,6 +266,10 @@ class SessionReceiptResponse(BaseModel):
     lines: List[ReceiptLine]
     authorization_subject: Optional[str] = None
     durable_checkpoints: bool = False
+    # Named so the receipt can say which backend it is talking about rather
+    # than asserting a mechanism it never checked.
+    checkpoint_backend: Optional[str] = None
+    checkpoint_backend_durable: bool = False
 
 
 class SessionReceiptRequest(BaseModel):
@@ -421,8 +425,14 @@ async def session_receipt(
             checkpoints_exist = True
             checkpoint_total += count
 
+    from backend.agents.orchestration_05.workflow import checkpoint_backend_status
+
+    backend_status = checkpoint_backend_status()
+    backend_kind = str(backend_status.get("kind") or "not initialized")
+    backend_durable = bool(backend_status.get("durable"))
+
     if not checkpoints_exist:
-        checkpoint_detail = "PostgresSaver was never configured, so nothing was written"
+        checkpoint_detail = "no checkpoint tables in this database, so nothing was written"
     elif thread_id is None:
         checkpoint_detail = "no workflow thread ran in this session"
     elif checkpoint_total:
@@ -443,4 +453,6 @@ async def session_receipt(
         lines=lines,
         authorization_subject=authorization.subject_id if authorization else None,
         durable_checkpoints=checkpoints_exist and checkpoint_total > 0,
+        checkpoint_backend=backend_kind,
+        checkpoint_backend_durable=backend_durable,
     )

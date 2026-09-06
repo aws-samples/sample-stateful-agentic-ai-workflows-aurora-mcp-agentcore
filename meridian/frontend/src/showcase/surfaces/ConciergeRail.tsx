@@ -1,6 +1,6 @@
 import { ArrowRight, MessageCircle } from 'lucide-react';
 
-import { ChatTranscript } from '../components/ChatTranscript';
+import { ShowcaseMarkdown } from '../components/ChatTranscript';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { tripVisualPhoto } from '../lib/tripVisualPhoto';
 import type { Product } from '../../types';
@@ -42,9 +42,20 @@ export function ConciergeRail({ state }: { state: MeridianShowcaseState }) {
       </header>
 
       {hasTurn ? (
-        <div className="mds-concierge-rail-thread">
-          <ChatTranscript state={state} compact />
-        </div>
+        <ol className="mds-concierge-rail-thread">
+          {state.messages.slice(-4).map((message, index) => (
+            <li
+              key={`${index}-${message.text.slice(0, 24)}`}
+              className={message.role === 'user' ? 'is-traveler' : 'is-concierge'}
+            >
+              {message.role === 'user' ? (
+                <p>{message.text}</p>
+              ) : (
+                <ShowcaseMarkdown source={message.text} />
+              )}
+            </li>
+          ))}
+        </ol>
       ) : (
         <p className="mds-concierge-rail-idle">
           Ask for a change of plan, a quieter stay, or somewhere new. Alex’s

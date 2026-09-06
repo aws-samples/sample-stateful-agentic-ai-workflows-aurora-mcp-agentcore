@@ -321,9 +321,22 @@ export function DiscoveryWorkspace({
 
       {/* The receipt is the closing beat, not the opener. On the cold open the
           hero should own the stage, and a receipt counting rows from an earlier
-          run would be reporting on a session the audience has not seen yet. */}
+          run would be reporting on a session the audience has not seen yet.
+
+          Folded away even then: expanded it competed with the full-bleed hero
+          for the same rows and the two rendered over each other. A presenter
+          opens it when the receipt is the point. */}
       {state.messages.length > 0 && (
-        <SessionReceipt travelerId={state.travelerId} conversationId={state.conversationId} />
+        <details className="mds-discovery-receipt">
+          <summary>
+            <span>Session receipt</span>
+            <small>What this session wrote, by table</small>
+          </summary>
+          <SessionReceipt
+            travelerId={state.travelerId}
+            conversationId={state.conversationId}
+          />
+        </details>
       )}
     </section>
   );

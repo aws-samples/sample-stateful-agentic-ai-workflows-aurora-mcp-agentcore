@@ -292,6 +292,8 @@ export interface SessionReceiptResponse {
   lines: SessionReceiptLine[];
   authorization_subject?: string | null;
   durable_checkpoints: boolean;
+  checkpoint_backend?: string | null;
+  checkpoint_backend_durable?: boolean;
 }
 
 /** Everything this session committed to Aurora, counted table by table. */

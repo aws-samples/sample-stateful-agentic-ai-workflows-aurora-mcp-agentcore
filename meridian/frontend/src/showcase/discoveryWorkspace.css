@@ -36,7 +36,11 @@
   display: grid;
   /* heading · personalization pills · trip grid, then the receipt once the
      session has written something worth counting. */
-  grid-template-rows: auto auto minmax(0, 1fr);
+  /* heading · personalization pills · trip grid · session receipt.
+     The receipt used to fall into an implicit fourth row, which the grid sized
+     to whatever was left after the 1fr trip grid had taken everything: it
+     collapsed to a sliver and drew over the full-bleed hero. */
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 12px;
 }
 
@@ -898,13 +902,6 @@
   line-height: 1.55;
 }
 
-.mds-concierge-rail-thread {
-  min-height: 0;
-  max-height: 46vh;
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-
 .mds-concierge-rail-options header {
   display: flex;
   align-items: baseline;
@@ -999,8 +996,4 @@
   font-size: calc(11px * var(--mds-fs));
 }
 
-@media (max-width: 1100px) {
-  .mds-concierge-rail-thread {
-    max-height: 260px;
-  }
-}
+

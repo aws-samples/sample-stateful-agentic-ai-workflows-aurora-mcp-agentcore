@@ -254,7 +254,16 @@
    word). Give the grid a floor and let the stage scroll instead of letting the
    cards compress below the size their copy needs. */
 .mds-root .mds-desktop-app.is-discovery .mds-discovery-grid {
-  min-height: 540px;
+  min-height: 420px;
+}
+
+/* The workspace is a fixed-height flex child with four grid rows. When the
+   session receipt opened, its row had nowhere to grow, so the rows overlapped
+   and the receipt rendered underneath the full-bleed hero. Sizing to content
+   lets the rows keep their heights and hands the overflow to the scroll
+   container, which already scrolls. */
+.mds-root .mds-desktop-app.is-discovery .mds-discovery-workspace {
+  min-height: min-content;
 }
 
 /* ---------------------------------------------------------------------------
@@ -454,4 +463,150 @@
   .mds-root .mds-desktop-app.is-continuity-rail.is-sidebar-collapsed {
     grid-template-columns: 76px minmax(0, 1fr);
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Concierge rail thread
+   ---------------------------------------------------------------------------
+   The conversation only. The rail used to host the full ChatTranscript, which
+   renders the recommendation deck at full width: inside a 384px column the
+   cards clipped their own prices and overlapped the list below them. The
+   recommendations already have two homes on this surface - the hero grid and
+   "Made for your next chapter" - so the rail carries what was said instead.
+------------------------------------------------------------------------------ */
+
+.mds-concierge-rail-thread {
+  /* An explicit single track. A grid's default `auto` column sizes to its
+     content, so a long unbroken token in a reply pushed the bubbles past the
+     rail's edge. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  /* No nested scroller. The rail already scrolls, and a second one inside it
+     cut replies mid-sentence at a hard edge that read as a render fault
+     rather than as something you could scroll.
+
+     `flex: none` because the rail is a flex column: as a shrinkable child the
+     thread was compressed to the space left over and its last reply was
+     truncated in place instead of extending the rail's scroll. */
+  flex: none;
+  list-style: none;
+}
+
+/* Direct children only: the assistant's reply is markdown and contains its own
+   list items, which would otherwise each render as a chat bubble. */
+.mds-concierge-rail-thread > li {
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  overflow-wrap: break-word;
+  font-size: calc(12.5px * var(--mds-fs));
+  line-height: 1.55;
+}
+
+.mds-concierge-rail-thread > li.is-traveler {
+  color: var(--mds-on-surface);
+  background: var(--mds-blue-soft);
+}
+
+.mds-concierge-rail-thread > li.is-concierge {
+  color: var(--mds-muted);
+  background: var(--mds-fill-1);
+}
+
+.mds-concierge-rail-thread > li > * {
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+
+.mds-concierge-rail-thread p {
+  margin: 0;
+}
+
+.mds-concierge-rail-thread :is(h1, h2, h3, h4) {
+  margin: 0 0 4px;
+  font-size: calc(12.5px * var(--mds-fs));
+}
+
+.mds-concierge-rail-thread :is(ul, ol) {
+  margin: 6px 0 0;
+  padding-left: 17px;
+}
+
+.mds-concierge-rail-thread :is(ul, ol) li {
+  margin: 0 0 3px;
+  padding: 0;
+  background: none;
+}
+
+/* Wide block content inside a reply scrolls itself rather than the rail. */
+.mds-concierge-rail-thread :is(pre, table) {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* ---------------------------------------------------------------------------
+   Session receipt, folded
+   ---------------------------------------------------------------------------
+   Expanded it competed with the full-bleed hero for the same rows and the two
+   drew over each other. Closed by default; a presenter opens it when the
+   receipt is the point being made.
+------------------------------------------------------------------------------ */
+
+.mds-discovery-receipt {
+  margin-inline: var(--mds-discovery-inset);
+  border: 1px solid var(--mds-line);
+  border-radius: 12px;
+  background: var(--mds-card);
+}
+
+.mds-discovery-receipt > summary {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 12px;
+  color: var(--mds-on-surface);
+  cursor: pointer;
+  list-style: none;
+}
+
+.mds-discovery-receipt > summary::-webkit-details-marker {
+  display: none;
+}
+
+.mds-discovery-receipt > summary::before {
+  content: '›';
+  display: inline-block;
+  color: var(--mds-dim);
+  font-size: 15px;
+  transition: rotate 160ms ease;
+}
+
+.mds-discovery-receipt[open] > summary::before {
+  rotate: 90deg;
+}
+
+.mds-discovery-receipt > summary span {
+  font-size: calc(12.5px * var(--mds-fs));
+  font-weight: 700;
+}
+
+.mds-discovery-receipt > summary small {
+  color: var(--mds-dim);
+  font-size: calc(11.5px * var(--mds-fs));
+}
+
+.mds-discovery-receipt[open] {
+  padding-bottom: 12px;
+}
+
+/* Same reason: the options list keeps its height and the rail scrolls. */
+.mds-concierge-rail-options,
+.mds-concierge-rail-head,
+.mds-concierge-rail-idle {
+  flex: none;
 }

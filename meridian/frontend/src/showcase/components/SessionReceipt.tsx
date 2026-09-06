@@ -110,9 +110,15 @@ export function SessionReceipt({
           <p className="mds-receipt-footer">
             {total.toLocaleString()} rows, every one attributable to a workload
             authorized for a single traveler.
+            {/* Say which case this is rather than asserting a mechanism. The
+                old copy claimed checkpoints were in-process whenever the count
+                was zero, which is a different fact from "no workflow ran" and
+                became simply untrue once the Data API saver was wired up. */}
             {receipt.durable_checkpoints
-              ? ' Workflow position included.'
-              : ' Checkpoints were in-process only, so none were written.'}
+              ? ` Workflow position included, via ${receipt.checkpoint_backend ?? 'the configured checkpointer'}.`
+              : receipt.checkpoint_backend_durable
+                ? ` No workflow ran this session; ${receipt.checkpoint_backend} is configured and durable.`
+                : ' No durable checkpointer is configured, so workflow position was not written.'}
           </p>
         </>
       )}
