@@ -35,6 +35,59 @@ from backend.authorization import (
 )
 
 
+def _encode_boolean(value: Any) -> Dict[str, Any]:
+    """Encode a bool as an RDS Data API boolean parameter payload."""
+    return {"value": {"booleanValue": value}}
+
+
+def _encode_long(value: Any) -> Dict[str, Any]:
+    """Encode an int as an RDS Data API long parameter payload."""
+    return {"value": {"longValue": value}}
+
+
+def _encode_double(value: Any) -> Dict[str, Any]:
+    """Encode a float as an RDS Data API double parameter payload."""
+    return {"value": {"doubleValue": value}}
+
+
+def _encode_decimal(value: Any) -> Dict[str, Any]:
+    """Encode a Decimal as a string parameter payload with a DECIMAL type hint."""
+    return {"value": {"stringValue": str(value)}, "typeHint": "DECIMAL"}
+
+
+def _encode_blob(value: Any) -> Dict[str, Any]:
+    """Encode bytes-like data as an RDS Data API blob parameter payload.
+
+    boto3 base64-transcodes blobValue in both directions, so the raw bytes go
+    on the wire. Encoding here would double-encode.
+    """
+    return {"value": {"blobValue": bytes(value)}}
+
+
+def _encode_json(value: Any) -> Dict[str, Any]:
+    """Encode a list or dict as a JSON string parameter payload."""
+    return {"value": {"stringValue": json.dumps(value)}}
+
+
+def _encode_fallback(value: Any) -> Dict[str, Any]:
+    """Encode any other value via its string representation."""
+    return {"value": {"stringValue": str(value)}}
+
+
+# Ordered (type(s), encoder) table used by _format_parameters. Order matters:
+# bool must precede int because bool is a subclass of int and would otherwise
+# be encoded as a longValue. None is matched separately, by identity, since
+# there is no type to key it on here.
+_PARAM_ENCODERS = [
+    (bool, _encode_boolean),
+    (int, _encode_long),
+    (float, _encode_double),
+    (Decimal, _encode_decimal),
+    ((bytes, bytearray, memoryview), _encode_blob),
+    ((list, dict), _encode_json),
+]
+
+
 class RDSDataClient:
     """
     RDS Data API client for Aurora PostgreSQL.
@@ -67,36 +120,28 @@ class RDSDataClient:
         self.client = boto3.client('rds-data', region_name=self.region)
     
     def _format_parameters(self, params: Optional[tuple]) -> List[Dict]:
-        """Convert tuple parameters to RDS Data API format."""
+        """Convert tuple parameters to RDS Data API format.
+
+        Each value is dispatched to a table-driven encoder (see
+        `_PARAM_ENCODERS`) that returns the complete parameter payload,
+        including an optional `typeHint`.
+        """
         if not params:
             return []
-        
+
         formatted = []
         for i, value in enumerate(params):
-            param: Dict[str, Any] = {"name": f"p{i}"}
-            
             if value is None:
-                param["value"] = {"isNull": True}
-            elif isinstance(value, bool):
-                param["value"] = {"booleanValue": value}
-            elif isinstance(value, int):
-                param["value"] = {"longValue": value}
-            elif isinstance(value, float):
-                param["value"] = {"doubleValue": value}
-            elif isinstance(value, Decimal):
-                param["value"] = {"stringValue": str(value)}
-                param["typeHint"] = "DECIMAL"
-            elif isinstance(value, (bytes, bytearray, memoryview)):
-                # boto3 base64-transcodes blobValue in both directions, so the
-                # raw bytes go on the wire. Encoding here would double-encode.
-                param["value"] = {"blobValue": bytes(value)}
-            elif isinstance(value, (list, dict)):
-                param["value"] = {"stringValue": json.dumps(value)}
+                payload = {"value": {"isNull": True}}
             else:
-                param["value"] = {"stringValue": str(value)}
-            
-            formatted.append(param)
-        
+                encoder = next(
+                    (enc for types, enc in _PARAM_ENCODERS if isinstance(value, types)),
+                    _encode_fallback,
+                )
+                payload = encoder(value)
+
+            formatted.append({"name": f"p{i}", **payload})
+
         return formatted
     
     def _convert_sql_placeholders(self, sql: str, param_count: int) -> str:
