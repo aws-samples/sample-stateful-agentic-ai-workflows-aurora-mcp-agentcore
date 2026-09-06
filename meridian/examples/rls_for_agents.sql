@@ -277,6 +277,28 @@ BEGIN
         RAISE EXCEPTION 'insufficient_inventory';
     END IF;
 
+    -- Idempotency. The caller derives p_booking_id from the workflow thread
+    -- and what is being held, so a replayed workflow node presents the same
+    -- id rather than a new one. LangGraph re-runs a node after a crash
+    -- between the commit and the checkpoint; without this the retry booked a
+    -- second hold and reserved the inventory twice.
+    --
+    -- Returning the existing reservation makes the retry a no-op with the
+    -- same answer, which is what the caller needs to carry on. The traveler
+    -- check keeps one traveler's id from colliding into another's hold.
+    IF EXISTS (
+        SELECT 1 FROM bookings
+        WHERE booking_id = p_booking_id
+          AND traveler_id = p_traveler_id
+          AND status = 'held'
+    ) THEN
+        RETURN QUERY SELECT
+            v_capacity,
+            v_reserved,
+            v_capacity - v_reserved;
+        RETURN;
+    END IF;
+
     INSERT INTO bookings (
         booking_id, traveler_id, status, total_amount,
         hold_expires_at, created_at

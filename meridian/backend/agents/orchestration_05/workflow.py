@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import logging
 import os
+import hashlib
 import uuid
 import asyncio
 from dataclasses import dataclass
@@ -341,6 +342,7 @@ class WorkflowState(TypedDict, total=False):
     hold_id: str
     hold_expires_at: str
     hold_package: str
+    hold_duration: str
     hold_seats_remaining: int
 
 
@@ -484,6 +486,31 @@ def _package_to_dict(package: Any) -> Dict[str, Any]:
             if not key.startswith("_")
         }
     raise TypeError(f"Unsupported workflow package type: {type(package).__name__}")
+
+
+def _hold_key(thread_id: str, package_id: str, duration: str) -> str:
+    """A stable id for one intended hold.
+
+    The hold used to take a fresh uuid4 on every invocation, so replaying the
+    node after a crash asked the database for a *second* hold rather than the
+    same one again. LangGraph guarantees the node runs at least once, not
+    exactly once - the external effect has to carry its own identity for that.
+
+    Deriving the key from the thread and what is being held means a retry
+    presents the same booking_id, and the primary key on ``bookings`` rejects
+    the duplicate instead of reserving inventory twice. A genuinely different
+    hold - another package, another duration - still gets its own key.
+    """
+    digest = hashlib.sha256(f"{thread_id}|{package_id}|{duration}".encode()).hexdigest()
+    return f"hold_{digest[:24]}"
+
+
+class WorkflowAuthorizationError(PermissionError):
+    """A caller tried to reach a workflow thread that is not theirs.
+
+    Distinct from a generic failure so the API can answer 403 rather than 500:
+    the request was understood and refused, not broken.
+    """
 
 
 class OrchestrationAgent:
@@ -935,7 +962,7 @@ class OrchestrationAgent:
         # source of truth for this in Phase 4, and the workflow inherits it.
         quantity = 2
         unit_price = float(target.get("price") or 0)
-        hold_id = f"hold_{uuid.uuid4().hex[:12]}"
+        hold_id = _hold_key(state.get("conversation_id") or "", package_id, duration)
         expires_at = _utc_now() + timedelta(minutes=HOLD_MINUTES)
 
         try:
@@ -1019,19 +1046,34 @@ class OrchestrationAgent:
             "hold_id": hold_id,
             "hold_expires_at": expires_at.isoformat(),
             "hold_package": package_id,
+            # Part of the idempotency key, so compensation can recompute it.
+            "hold_duration": duration,
             "hold_seats_remaining": remaining,
         }
 
-    async def _release_hold(self, state: WorkflowState) -> None:
+    async def _release_hold(
+        self, state: WorkflowState, *, expected_hold_id: Optional[str] = None
+    ) -> None:
         """Compensating action: give the seats back.
 
         A durable workflow that commits inventory needs an answer for "step 3
         failed after step 2 committed". Releasing marks the booking so the
         capacity count in ``create_courtesy_hold`` stops counting it.
+
+        ``expected_hold_id`` scopes the compensation to the run that is
+        failing. The persisted state is the *latest* state for the thread, so
+        without this a failed run could read a hold from an earlier successful
+        run and release it - undoing work that never failed.
         """
         hold_id = state.get("hold_id")
         traveler_id = state.get("traveler_id")
         if not hold_id or not traveler_id:
+            return
+        if expected_hold_id is not None and hold_id != expected_hold_id:
+            logger.warning(
+                "not releasing hold %s: it belongs to a different run than the one that failed",
+                hold_id,
+            )
             return
         try:
             from backend.agentcore.identity import get_agentcore_identity
@@ -1164,6 +1206,25 @@ class OrchestrationAgent:
 
     # ------------------------------------------------------------------- run
 
+    @staticmethod
+    def _authorize_thread(prior, thread_id: str, traveler_id: str) -> None:
+        """Refuse to resume a workflow thread belonging to another traveler.
+
+        Re-checked on every resume rather than once at creation, so a traveler
+        whose access was revoked between the interrupt and the resume is denied
+        by the same path.
+        """
+        persisted = str((prior.values or {}).get("traveler_id") or "")
+        if not persisted:
+            # An unknown thread is not an implicitly public one.
+            raise WorkflowAuthorizationError(
+                f"Thread {thread_id} has no recorded owner and cannot be resumed."
+            )
+        if persisted != traveler_id:
+            raise WorkflowAuthorizationError(
+                f"Thread {thread_id} belongs to another traveler."
+            )
+
     async def run(
         self,
         query: str,
@@ -1181,6 +1242,14 @@ class OrchestrationAgent:
             "conversation_id": thread_id,
             "worker_instance_id": WORKER_INSTANCE_ID,
             "activities": [],
+            # Explicitly per-run. Without these, a fresh run over an existing
+            # conversation inherited the last run's hold_id from the persisted
+            # state, and a later failure released a hold that had nothing to do
+            # with it.
+            "hold_id": None,
+            "hold_expires_at": None,
+            "hold_package": None,
+            "hold_seats_remaining": None,
         }
         checkpoint_backend = await self._ensure_checkpoint_backend()
         await self._preflight_checkpoint_connection(checkpoint_backend)
@@ -1189,6 +1258,15 @@ class OrchestrationAgent:
         resumed_after_restart = False
         if resume:
             prior = await self.graph.aget_state(config)
+            # Resuming replays a thread's persisted state, which carries the
+            # traveler it was created for. The caller's identity is checked at
+            # the edge, but that proves who they are, not that this thread is
+            # theirs - and on resume the initial state is discarded entirely,
+            # so nothing downstream would compare them. A thread id is not a
+            # capability: knowing one must not be enough to continue someone
+            # else's workflow.
+            self._authorize_thread(prior, thread_id, traveler_id)
+
             resumed_nodes = list(prior.next)
             if not resumed_nodes:
                 raise RuntimeError(
@@ -1211,7 +1289,19 @@ class OrchestrationAgent:
                 result = await self.graph.ainvoke(initial, config=config)
         except Exception:
             failed_state = await self.graph.aget_state(config)
-            await self._release_hold(dict(failed_state.values or {}))
+            values = dict(failed_state.values or {})
+            # Release only what this run holds. The key is derived from the
+            # thread, package and duration, so recomputing it here and
+            # comparing is enough to tell this run's hold from an older one
+            # still sitting in the thread's persisted state.
+            package = values.get("hold_package")
+            duration = values.get("hold_duration")
+            expected = (
+                _hold_key(thread_id, str(package), str(duration))
+                if package and duration
+                else None
+            )
+            await self._release_hold(values, expected_hold_id=expected)
             raise
 
         result = dict(result or {})

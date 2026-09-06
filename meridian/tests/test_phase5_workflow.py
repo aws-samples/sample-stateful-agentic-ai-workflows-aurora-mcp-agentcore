@@ -547,7 +547,12 @@ def test_failed_workflow_releases_a_committed_hold() -> None:
 
     workflow = OrchestrationAgent(search_fn=fake_search, availability_fn=boom)
 
-    async def record_release(state):
+    scoped_to: List[object] = []
+
+    async def record_release(state, *, expected_hold_id=None):
+        # Compensation is now scoped to the run that failed, so the caller has
+        # to say which hold it expects to be releasing.
+        scoped_to.append(expected_hold_id)
         released.append(str(state.get("hold_id") or "no-hold"))
 
     workflow._release_hold = record_release  # type: ignore[method-assign]
@@ -561,3 +566,4 @@ def test_failed_workflow_releases_a_committed_hold() -> None:
             )
         )
     assert released, "a failing workflow must run the compensating release"
+    assert scoped_to, "the release must be told which run's hold it is releasing"

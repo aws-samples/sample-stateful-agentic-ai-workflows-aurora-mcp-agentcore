@@ -28,7 +28,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from typing import Literal, Optional, List, Any, Dict
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from backend.agentcore.identity import get_agentcore_identity
@@ -1739,19 +1739,28 @@ async def orchestration_workflow(
     search code." The process-wide checkpoint backend is pooled PostgresSaver
     when configured, otherwise an explicitly ephemeral MemorySaver.
     """
-    from backend.agents.orchestration_05.workflow import OrchestrationAgent
+    from backend.agents.orchestration_05.workflow import (
+        OrchestrationAgent,
+        WorkflowAuthorizationError,
+    )
 
     workflow = OrchestrationAgent(
         search_fn=retrieval_search,
         availability_fn=retrieval_availability_search,
         memory_recall_fn=workflow_memory_recall,
     )
-    final_state = await workflow.run(
-        query,
-        traveler_id=traveler_id,
-        conversation_id=conversation_id or "",
-        resume=resume,
-    )
+    try:
+        final_state = await workflow.run(
+            query,
+            traveler_id=traveler_id,
+            conversation_id=conversation_id or "",
+            resume=resume,
+        )
+    except WorkflowAuthorizationError as exc:
+        # Refused, not broken: the thread exists and belongs to someone else.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
+        ) from exc
 
     raw_activities = final_state.get("activities", []) or []
     activities = [_dict_to_activity_entry(a) for a in raw_activities]
