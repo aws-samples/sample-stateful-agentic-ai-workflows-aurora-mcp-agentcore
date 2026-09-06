@@ -5,9 +5,16 @@ cannot open a psycopg connection from a laptop. This saver writes the same
 tables over the Data API, which is the transport the rest of the application
 already uses.
 
-Storage matches ``langgraph-checkpoint-postgres`` 3.1.2 exactly. The Data API
-caps a returned row at 64 KB, so values are written in appended segments and
-read through windowed ``substring`` calls.
+The ``checkpoints`` and ``checkpoint_blobs`` tables, their columns, and their
+natural keys are identical to ``langgraph-checkpoint-postgres`` 3.1.2. The
+write shape differs in one respect: this saver writes every channel value to
+``checkpoint_blobs``, while upstream inlines primitive values directly into
+the ``checkpoints.checkpoint`` JSONB and only writes a blob row for the rest.
+Both directions still read correctly -- upstream's reader (and this saver's)
+merges inline ``channel_values`` with blob-backed ones, blobs winning on key
+collision -- so a checkpoint written by either saver reads correctly through
+the other. The Data API caps a returned row at 64 KB, so values are written
+in appended segments and read through windowed ``substring`` calls.
 """
 
 import json
@@ -19,6 +26,7 @@ from langgraph.checkpoint.base import (
     Checkpoint,
     CheckpointMetadata,
     CheckpointTuple,
+    get_serializable_checkpoint_metadata,
 )
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
@@ -47,21 +55,12 @@ DO UPDATE SET checkpoint = EXCLUDED.checkpoint, metadata = EXCLUDED.metadata
 """
 
 BLOB_SIZE_SQL = """
-SELECT octet_length(blob) AS n FROM checkpoint_blobs
+SELECT octet_length(blob) AS n, type FROM checkpoint_blobs
  WHERE thread_id = %s AND checkpoint_ns = %s AND channel = %s AND version = %s
 """
 
 BLOB_WINDOW_SQL = """
-SELECT substring(blob FROM %s FOR %s) AS part FROM checkpoint_blobs
- WHERE thread_id = %s AND checkpoint_ns = %s AND channel = %s AND version = %s
-"""
-
-# Read back separately from BLOB_SIZE_SQL/BLOB_WINDOW_SQL rather than folded
-# into them: ``JsonPlusSerializer.dumps_typed`` returns "msgpack" (not
-# "json") for the values this saver stores, and ``loads_typed`` needs that
-# exact type back or it deserializes garbage. See aget_tuple.
-BLOB_TYPE_SQL = """
-SELECT type FROM checkpoint_blobs
+SELECT substring(blob FROM %s::integer FOR %s::integer) AS part FROM checkpoint_blobs
  WHERE thread_id = %s AND checkpoint_ns = %s AND channel = %s AND version = %s
 """
 
@@ -104,13 +103,35 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
 
     async def _read_blob(
         self, thread_id: str, ns: str, channel: str, version: str
-    ) -> Optional[bytes]:
-        """Read one channel value in windows under the 64 KB row limit."""
+    ) -> Optional[tuple[str, bytes]]:
+        """Read one channel value in windows under the 64 KB row limit.
+
+        Args:
+            thread_id: The thread the checkpoint belongs to.
+            ns: The checkpoint namespace.
+            channel: The channel name.
+            version: The channel version string.
+
+        Returns:
+            A ``(blob_type, payload)`` pair, or ``None`` if no blob row exists
+            for this key.
+
+        Raises:
+            RuntimeError: If a blob row disappears mid-read, its stored
+                ``type`` is missing or empty, or the reassembled payload does
+                not match the size read up front.
+        """
         key = (thread_id, ns, channel, version)
         rows = await self.client.execute(BLOB_SIZE_SQL, key)
         if not rows or rows[0].get("n") is None:
             return None
         total = int(rows[0]["n"])
+        blob_type = rows[0].get("type")
+        if not blob_type:
+            raise RuntimeError(
+                f"checkpoint blob has no stored type: thread={thread_id} "
+                f"channel={channel} version={version}"
+            )
         parts: list[bytes] = []
         for offset, length in window_offsets(total):
             window = await self.client.execute(
@@ -122,21 +143,14 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
                     f"channel={channel} version={version} offset={offset}"
                 )
             parts.append(window[0]["part"])
-        return b"".join(parts)
-
-    async def _read_blob_type(
-        self, thread_id: str, ns: str, channel: str, version: str
-    ) -> str:
-        """Read the ``type`` a channel value was serialized with.
-
-        ``dumps_typed`` is not guaranteed to return ``"json"`` -- the
-        installed ``JsonPlusSerializer`` returns ``"msgpack"`` -- so the
-        stored type must be read back rather than assumed.
-        """
-        rows = await self.client.execute(
-            BLOB_TYPE_SQL, (thread_id, ns, channel, version)
-        )
-        return rows[0]["type"] if rows else "json"
+        payload = b"".join(parts)
+        if len(payload) != total:
+            raise RuntimeError(
+                f"checkpoint blob reassembled to the wrong length: "
+                f"thread={thread_id} channel={channel} version={version} "
+                f"expected={total} got={len(payload)}"
+            )
+        return blob_type, payload
 
     async def aput(
         self,
@@ -150,6 +164,19 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
         The ``checkpoints`` row is what makes a checkpoint visible, so it is
         written last. A failed blob write leaves nothing to resume from rather
         than something that cannot be read back.
+
+        Args:
+            config: The config the checkpoint is being saved under. Its
+                ``configurable`` block supplies ``thread_id``,
+                ``checkpoint_ns`` and the parent ``checkpoint_id``.
+            checkpoint: The checkpoint to persist, including its
+                ``channel_values``.
+            metadata: Metadata associated with the checkpoint.
+            new_versions: The channel versions written by this checkpoint.
+
+        Returns:
+            The config to retrieve this checkpoint, with ``checkpoint_id``
+            set to this checkpoint's id.
         """
         configurable = config["configurable"]
         thread_id = configurable["thread_id"]
@@ -163,6 +190,7 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
                 )
 
         stored = {k: v for k, v in checkpoint.items() if k != "channel_values"}
+        serializable_metadata = get_serializable_checkpoint_metadata(config, metadata)
         await self.client.execute(
             UPSERT_CHECKPOINT_SQL,
             (
@@ -172,7 +200,7 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
                 configurable.get("checkpoint_id"),
                 "json",
                 json.dumps(stored),
-                json.dumps(dict(metadata)),
+                json.dumps(serializable_metadata),
             ),
         )
         return {
@@ -190,14 +218,32 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
         values: dict[str, Any] = {}
         for channel, version in channel_versions.items():
             version = str(version)
-            payload = await self._read_blob(thread_id, ns, channel, version)
-            if payload is not None:
-                blob_type = await self._read_blob_type(thread_id, ns, channel, version)
+            found = await self._read_blob(thread_id, ns, channel, version)
+            if found is not None:
+                blob_type, payload = found
                 values[channel] = self.serde.loads_typed((blob_type, payload))
         return values
 
     async def aget_tuple(self, config: dict) -> Optional[CheckpointTuple]:
-        """Load one checkpoint and rehydrate its channel values."""
+        """Load one checkpoint and rehydrate its channel values.
+
+        Primitive channel values may already be inlined in the stored
+        ``checkpoint`` JSONB -- upstream's ``AsyncPostgresSaver`` writes them
+        that way instead of to ``checkpoint_blobs``. Blob-backed values are
+        merged on top of whatever is already inline, winning on key
+        collision, so a checkpoint written by either saver reads correctly.
+
+        Args:
+            config: The config identifying the checkpoint to load.
+                ``configurable`` must supply ``thread_id`` and may supply
+                ``checkpoint_ns`` and ``checkpoint_id``; the latest
+                checkpoint for the thread is returned when ``checkpoint_id``
+                is omitted.
+
+        Returns:
+            The matching ``CheckpointTuple``, or ``None`` if no checkpoint
+            exists for the given config.
+        """
         configurable = config["configurable"]
         thread_id = configurable["thread_id"]
         ns = configurable.get("checkpoint_ns", "")
@@ -217,9 +263,12 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
 
         row = rows[0]
         checkpoint = json.loads(row["checkpoint"])
-        checkpoint["channel_values"] = await self._load_channel_values(
-            thread_id, ns, checkpoint.get("channel_versions", {})
-        )
+        checkpoint["channel_values"] = {
+            **(checkpoint.get("channel_values") or {}),
+            **await self._load_channel_values(
+                thread_id, ns, checkpoint.get("channel_versions", {})
+            ),
+        }
 
         return CheckpointTuple(
             config={
@@ -242,5 +291,6 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
                 if row.get("parent_checkpoint_id")
                 else None
             ),
+            # TODO(task-5): return real pending writes once aput_writes lands
             pending_writes=[],
         )
