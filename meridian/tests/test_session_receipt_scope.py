@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import re
 
-import pytest
 
 from backend.routers import diagnostics
 
