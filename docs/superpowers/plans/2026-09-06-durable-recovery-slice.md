@@ -1834,6 +1834,12 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'backend.db.journey_st
 
 - [ ] **Step 3: Write the implementation**
 
+The module also carries `create_journey` and `bind_thread` from the Interfaces
+list above, which Tasks 9 and 11 consume. `bind_thread` is two statements, the
+`journey_threads` row and the `journeys.active_thread_id` pointer, and the
+insert takes `ON CONFLICT (thread_id) DO NOTHING` because resume re-binds a
+thread the journey already owns.
+
 Create `meridian/backend/db/journey_store.py`:
 
 ```python
