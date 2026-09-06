@@ -49,8 +49,9 @@ labels only.
 | Total response size | 1 MiB |
 | Total HTTP request size, including headers and JSON | 4 MiB |
 
-The 64 KB per-row limit is the binding constraint on checkpoint storage and is
-the reason the saver chunks blobs rather than storing one value per row.
+The 64 KB per-row limit is the binding constraint on checkpoint reads. It is
+handled by windowed `substring` reads over LangGraph's own `checkpoint_blobs`
+rather than by a schema change, so the two backends share one table layout.
 
 **Pinned versions.** `langgraph==1.2.9`, `langgraph-checkpoint==4.1.1`,
 `langgraph-checkpoint-postgres==3.1.2`, `psycopg==3.3.4`, `boto3==1.43.51`.
@@ -236,32 +237,43 @@ binary at all today:
 Both gain binary handling, with a test asserting byte-identical round trips
 across the full byte range including embedded nulls.
 
-**Size enforcement before acknowledgement.** A checkpoint that cannot be read
-back must never be reported as persisted. Serialized values are chunked into
-segments safely below the 64 KB per-row limit and stored across ordered rows:
+**Storage uses LangGraph's own tables unchanged.** The saver writes
+`checkpoints`, `checkpoint_blobs`, and `checkpoint_writes` with the exact DDL
+from `langgraph-checkpoint-postgres==3.1.2`, including
+`checkpoint_writes.task_path`. No parallel chunk table, so the two backends
+never diverge on schema and the `checkpoint_migrations` bookkeeping stays
+consistent.
+
+The 64 KB per-row limit is handled entirely on the **read** path by ranged
+reads, which is why no schema change is needed:
 
 ```sql
-CREATE TABLE checkpoint_blob_chunks (
-    thread_id     VARCHAR(200) NOT NULL,
-    checkpoint_ns VARCHAR(200) NOT NULL,
-    channel       VARCHAR(200) NOT NULL,
-    version       VARCHAR(64)  NOT NULL,
-    chunk_index   INTEGER      NOT NULL,
-    chunk         BYTEA        NOT NULL,
-    PRIMARY KEY (thread_id, checkpoint_ns, channel, version, chunk_index)
-);
+-- size first
+SELECT octet_length(blob) AS n FROM checkpoint_blobs
+ WHERE thread_id = :p0 AND checkpoint_ns = :p1
+   AND channel = :p2 AND version = :p3;
+
+-- then fixed-size windows, each safely under 64 KB
+SELECT substring(blob FROM :p4 FOR :p5) AS part FROM checkpoint_blobs
+ WHERE thread_id = :p0 AND checkpoint_ns = :p1
+   AND channel = :p2 AND version = :p3;
 ```
 
-`aput` computes the encoded size, writes chunks, and only then writes the
-`checkpoints` row that makes the checkpoint visible. If any chunk write fails,
-the checkpoint is not acknowledged. Writes stay under the 4 MiB request limit
-by construction, since each statement carries one chunk.
+Writes stay under the 4 MiB request limit the same way: the first segment is
+inserted, and subsequent segments append with
+`UPDATE ... SET blob = blob || :chunk`, so no single HTTP request carries the
+whole value.
 
-**Paginated reads.** `aget_tuple` fetches chunks ordered by `chunk_index` and
-reassembles. `alist` pages through history with `LIMIT`/keyset pagination so no
-single response approaches 1 MiB. A row that would exceed 64 KB on return is a
-bug in the writer, and a read that encounters one fails loudly with the
-thread, checkpoint, and channel named.
+**Size enforcement before acknowledgement.** A checkpoint that cannot be read
+back must never be reported as persisted. `aput` writes all blob segments
+first and writes the `checkpoints` row that makes the checkpoint visible only
+after they succeed, so a partial write is never observable as a committed
+checkpoint.
+
+**Paginated reads.** `alist` pages history with keyset pagination on
+`checkpoint_id` so no single response approaches the 1 MiB ceiling. A read
+that encounters a value it cannot window fails loudly, naming the thread,
+checkpoint, and channel.
 
 **Bug this exposes.** `_uses_postgres_saver` (`workflow.py:533`) tests
 `checkpointer_kind.startswith("PostgresSaver")`. A Data API saver fails that
@@ -351,8 +363,10 @@ A deliberate replacement hold allocates a new `hold_request_id` through
 
 A forward migration, `007_journey_scoped_hold_identity.sql`:
 
-- Creates `journeys`, `journey_threads`, `journey_executions`,
-  `hold_requests`, and `checkpoint_blob_chunks`.
+- Creates `journeys`, `journey_threads`, `journey_executions`, and
+  `hold_requests`, plus LangGraph's `checkpoint_migrations`, `checkpoints`,
+  `checkpoint_blobs`, and `checkpoint_writes` using the exact DDL from
+  `langgraph-checkpoint-postgres==3.1.2`.
 - Creates the new `create_courtesy_hold` with the expanded signature, and
   **drops the old eight-argument function**. `CREATE OR REPLACE FUNCTION` with
   a changed parameter list creates an overload rather than replacing, so
@@ -363,9 +377,10 @@ A forward migration, `007_journey_scoped_hold_identity.sql`:
   same traveler-scoped RLS policy pattern the existing traveler tables use to
   `journeys`, `journey_threads`, `journey_executions`, and `hold_requests`,
   so a scoped session cannot read another traveler's journey rows.
-  `checkpoint_blob_chunks` is workload-owned rather than traveler-scoped and
-  is granted to the application role without an RLS policy, matching how the
-  other LangGraph checkpoint tables are treated.
+  The LangGraph checkpoint tables are workload-owned rather than
+  traveler-scoped and are granted to the application role without an RLS
+  policy; thread ownership is enforced above them by `journey_threads` and the
+  resume authorization path.
 - Preserves existing `booking_id` values. Legacy holds are linked to journeys
   and request identities only where the mapping is unambiguous.
 
@@ -383,7 +398,7 @@ already hold the facts. It has no workflow side effects.
 | --- | --- |
 | Journey, owner, backend, active thread | `journeys`, `journey_threads` |
 | Executions, workers, attempts, leases | `journey_executions` |
-| Checkpoint and thread | active backend, `checkpoints`, `checkpoint_blob_chunks` |
+| Checkpoint and thread | active backend, `checkpoints`, `checkpoint_blobs` |
 | Conversation and recommendations | `conversation_messages`, checkpointed state |
 | Business record | `bookings`, `booking_lines`, `hold_requests` |
 | Authorization history | `traveler_access_audit` |
@@ -545,7 +560,7 @@ Vertical slice, against real Aurora:
    verify one hold created under the checkpointed `hold_request_id`.
 
 Focused tests: serialization round trips, pending writes and reserved indices,
-retry idempotency, chunk reassembly, the 64 KB row boundary, the 1 MiB
+retry idempotency, ranged blob reads, the 64 KB row boundary, the 1 MiB
 paginated read boundary, and byte-identical binary round trips with no double
 encoding.
 
@@ -575,8 +590,9 @@ repeated resume does not duplicate the business action.
 - **Checkpointer correctness.** Pending writes, reserved indices, and channel
   versions are where custom savers fail. Mitigated by the vendored conformance
   suite at pinned versions plus interrupt-and-resume integration tests.
-- **Chunking correctness.** Reassembly bugs surface as corrupted resumes, not
-  as errors. Mitigated by round-trip tests at and above the 64 KB boundary.
+- **Segmented blob correctness.** Windowing bugs surface as corrupted resumes,
+  not as errors. Mitigated by round-trip tests at and above the 64 KB
+  boundary, including values spanning many windows.
 - **Lease tuning.** Too long delays recovery after a kill; too short risks
   stealing a live execution. The TTL and heartbeat interval are configuration
   with a documented default and a test at both edges.
