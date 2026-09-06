@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Briefcase,
@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ChatComposer } from './components/ChatComposer';
+import { SURFACES, useJourney, useSurfaceUrlState } from './journey/useJourney';
+import { PresenterProof } from './surfaces/PresenterProof';
 import { ChatTranscript } from './components/ChatTranscript';
 import { ComparisonDialog } from './components/ComparisonDialog';
 import { DiscoveryWorkspace } from './components/DiscoveryWorkspace';
@@ -46,7 +48,6 @@ type ShowcaseTheme = 'dark' | 'light';
  * ladder look like a third of the story and forced the room to hold two
  * mental models at once.
  */
-type ShowcaseView = 'product' | 'ladder';
 
 const navItems: { id: NavItemId; label: string; icon: LucideIcon }[] = [
   { id: 'concierge', label: 'Concierge', icon: Sparkles },
@@ -86,7 +87,8 @@ export function DesktopMeridianApp({
   theme: ShowcaseTheme;
   onToggleTheme: () => void;
 }) {
-  const [view, setView] = useState<ShowcaseView>('product');
+  const { view, journeyId, setView, setJourneyId } = useSurfaceUrlState();
+  const journey = useJourney(journeyId, setJourneyId, view === 'proof');
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [forYouCollapsed, setForYouCollapsed] = useState(false);
   const [activityCollapsed, setActivityCollapsed] = useState(false);
@@ -102,12 +104,15 @@ export function DesktopMeridianApp({
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [navPanel, setNavPanel] = useState<NavPanelId | null>(null);
   const greetingPart = greetingForHour(new Date().getHours());
-  const isProduct = view === 'product';
+  const isProduct = view === 'concierge';
   const isLadder = view === 'ladder';
+  const isProof = view === 'proof';
   // Phase 5 is the durable-workflow rung, and the flight-disruption replan is
   // what that rung means. Opening it on the recovery workspace lets the change
   // of surface carry the change of phase.
-  const isRecovery = isLadder && state.selectedPhase === 5;
+  // The Recovery desk is its own surface, and it is also what rung 5 means.
+  // Reaching it either way lands on the same workspace.
+  const isRecovery = view === 'recovery' || (isLadder && state.selectedPhase === 5);
   const activePhase = SHOWCASE_PHASES.find((p) => p.phase === state.selectedPhase);
   const recoveryStage = deriveRecoveryStage(state);
   const runtimeStatus =
@@ -145,7 +150,19 @@ export function DesktopMeridianApp({
     return () => compactSidebar.removeEventListener('change', collapseWhenNarrow);
   }, []);
 
-  const openProduct = () => setView('product');
+  // The row scrolls on a narrow screen, and a surface you cannot see is a
+  // surface you will not find. Keep the active one in view.
+  const surfaceRowRef = useRef<HTMLOListElement | null>(null);
+  useEffect(() => {
+    const active = surfaceRowRef.current?.querySelector('[data-active="true"]');
+    // Not every environment implements scrollIntoView, and none of this is
+    // load-bearing: without it the row simply does not auto-scroll.
+    if (typeof active?.scrollIntoView === 'function') {
+      active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  }, [view]);
+
+  const openProduct = () => setView('concierge');
   const openPhase = (phase: Phase) => {
     state.setSelectedPhase(phase);
     setView('ladder');
@@ -178,9 +195,11 @@ export function DesktopMeridianApp({
       className={`mds-desktop-app is-projector ${
         isProduct
           ? 'is-discovery'
-          : isRecovery
-            ? 'is-experience is-finale'
-            : 'is-proof is-ladder'
+          : isProof
+            ? 'is-presenter-proof'
+            : isRecovery
+              ? 'is-experience is-finale'
+              : 'is-proof is-ladder'
       }${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}${
         railCollapsed ? ' is-rail-collapsed' : ''
       }`}
@@ -291,16 +310,37 @@ export function DesktopMeridianApp({
           </div>
 
           <nav className="mds-ladder-nav" aria-label="Meridian capability ladder">
-            <button
-              type="button"
-              className={`mds-ladder-nav-product${isProduct ? ' is-active' : ''}`}
-              aria-current={isProduct ? 'page' : undefined}
-              onClick={openProduct}
-              title="The Meridian experience the ladder builds toward"
+            <ol
+              className="mds-surface-switch"
+              aria-label="Meridian surfaces"
+              ref={surfaceRowRef}
             >
-              Product
-            </button>
-            <span className="mds-ladder-nav-divider" aria-hidden="true" />
+              {SURFACES.map((surface) => {
+                const active = view === surface.id;
+                return (
+                  <li key={surface.id}>
+                    <button
+                      type="button"
+                      className={`mds-surface-tab${active ? ' is-active' : ''}`}
+                      aria-current={active ? 'page' : undefined}
+                      data-active={active ? 'true' : undefined}
+                      onClick={() => {
+                        if (surface.id === 'concierge') openProduct();
+                        else setView(surface.id);
+                      }}
+                      title={surface.blurb}
+                    >
+                      <strong>{surface.label}</strong>
+                      <small>{surface.blurb}</small>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          </nav>
+
+          {isLadder && (
+          <nav className="mds-ladder-nav" aria-label="Capability ladder phases">
             <ol className="mds-ladder-nav-rungs">
               {SHOWCASE_PHASES.map((phase) => {
                 const active = isLadder && state.selectedPhase === phase.phase;
@@ -332,6 +372,7 @@ export function DesktopMeridianApp({
               })}
             </ol>
           </nav>
+          )}
 
           {/* Switching rungs clears the transcript, spans and results, so
               without a transition the whole column blinks out and back. Cross
@@ -339,7 +380,15 @@ export function DesktopMeridianApp({
               view so React unmounts cleanly between phases. */}
           <AnimatePresence mode="wait" initial={false}>
           <motion.div
-            key={isProduct ? 'product' : `phase-${state.selectedPhase}`}
+            key={
+              isProof
+                ? 'proof'
+                : isProduct
+                  ? 'product'
+                  : isRecovery
+                    ? 'recovery'
+                    : `phase-${state.selectedPhase}`
+            }
             className="mds-view-swap"
             initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
             animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
@@ -350,7 +399,14 @@ export function DesktopMeridianApp({
                 : { duration: 0.26, ease: [0.22, 0.61, 0.36, 1] }
             }
           >
-          {isProduct ? (
+          {isProof ? (
+            <PresenterProof
+              document={journey.document}
+              loading={journey.loading}
+              error={journey.error}
+              onRefresh={journey.refresh}
+            />
+          ) : isProduct ? (
             <DiscoveryWorkspace
               state={state}
               greeting={greetingPart}

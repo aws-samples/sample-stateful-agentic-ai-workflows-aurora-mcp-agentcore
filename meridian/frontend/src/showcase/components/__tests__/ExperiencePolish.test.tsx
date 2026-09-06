@@ -105,8 +105,11 @@ describe('Experience presentation polish', () => {
     expect(
       screen.getByRole('region', { name: 'Meridian discovery' }),
     ).toBeInTheDocument();
+    // The sidebar also has a Concierge entry - that one is the traveler's
+    // product nav. Scope to the surface axis.
+    const surfaces = screen.getByRole('list', { name: 'Meridian surfaces' });
     expect(
-      screen.getByRole('button', { name: 'Product' }),
+      within(surfaces).getByRole('button', { name: /^Concierge/ }),
     ).toHaveAttribute('aria-current', 'page');
 
     fireEvent.click(
@@ -135,8 +138,15 @@ describe('Experience presentation polish', () => {
       />,
     );
 
+    // The rungs belong to the Capability ladder surface, one level below the
+    // four surfaces, so open it before looking for them.
+    const surfaces = screen.getByRole('list', { name: 'Meridian surfaces' });
+    fireEvent.click(
+      within(surfaces).getByRole('button', { name: /^Capability ladder/ }),
+    );
+
     const nav = screen.getByRole('navigation', {
-      name: 'Meridian capability ladder',
+      name: 'Capability ladder phases',
     });
 
     // All five rungs are top level - none of them nests inside a journey step.
@@ -146,10 +156,12 @@ describe('Experience presentation polish', () => {
       ).toBeInTheDocument();
     }
 
-    // The product view is the cold open, not a numbered peer of the ladder.
-    const product = within(nav).getByRole('button', { name: 'Product' });
-    expect(product).toBeInTheDocument();
-    expect(product).not.toHaveAttribute('aria-current', 'step');
+    // The Concierge is a peer surface, not a numbered rung of the ladder.
+    const concierge = within(surfaces).getByRole('button', {
+      name: /^Concierge/,
+    });
+    expect(concierge).toBeInTheDocument();
+    expect(concierge).not.toHaveAttribute('aria-current', 'step');
   });
 
   it('carries the rungs already climbed so capability reads as cumulative', () => {

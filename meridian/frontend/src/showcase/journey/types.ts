@@ -1,0 +1,111 @@
+/** The evidence document served by `GET /api/journeys/{journey_id}`.
+ *
+ * Mirrors the contract in the journey shell spec, section 4. Every section is
+ * either observed with a named source, or explicitly unavailable with a
+ * reason. Nothing is optional-by-omission: a surface that cannot tell "absent"
+ * from "not applicable" ends up asserting things it has not checked.
+ */
+
+export type Unavailable = {
+  status: 'unavailable';
+  reason: string;
+  source?: string;
+};
+
+export type Observed<T> = { status: string; source: string } & T;
+
+export type Evidence<T> = Unavailable | Observed<T>;
+
+export function isObserved<T>(
+  section: Evidence<T> | undefined,
+): section is Observed<T> {
+  return !!section && section.status !== 'unavailable';
+}
+
+export type JourneyExecution = {
+  execution_id: string;
+  attempt: number;
+  worker_id: string;
+  status: string;
+  started_at: string | null;
+  ended_at: string | null;
+  lease_expires_at: string | null;
+};
+
+export type JourneyCheckpoint = {
+  thread_id: string;
+  checkpoint_id: string;
+  parent_checkpoint_id: string | null;
+  checkpoint_ns: string;
+  committed_at: string | null;
+};
+
+export type JourneyHold = {
+  label: string;
+  hold_request_id: string;
+  booking_id: string;
+  created_by_execution_id: string | null;
+  hold_expires_at: string | null;
+  package_id: string | null;
+  duration: string | null;
+  travelers_count: number | null;
+  hold_records: number;
+};
+
+export type JourneyAuthorization = {
+  audit_id: string;
+  identity_provider: string;
+  subject: string;
+  decision: string;
+  reason: string | null;
+  observed_at: string;
+};
+
+export type JourneyMessage = {
+  message_id: string;
+  role: string;
+  content: string;
+  created_at: string | null;
+};
+
+export type JourneyRecommendation = {
+  product_id?: string;
+  package_id?: string;
+  name?: string;
+  price?: number;
+  price_per_person?: number;
+  image_url?: string;
+  destination?: string;
+  available_sizes?: string[];
+};
+
+export type JourneyDocument = {
+  journey_id: string;
+  traveler_id: string;
+  status: string;
+  checkpoint_backend: { kind: string; durable: boolean };
+  active_thread_id: string | null;
+  executions: Evidence<{ items: JourneyExecution[] }>;
+  checkpoint: Evidence<JourneyCheckpoint>;
+  selected_plan: Evidence<{ package_id: string }>;
+  recommendations: Evidence<{ items: JourneyRecommendation[] }>;
+  pending_decision: Evidence<{
+    hold_request_id: string;
+    package_id: string;
+    prompt: string;
+  }>;
+  conversation: Evidence<{ messages: JourneyMessage[] }>;
+  hold: Evidence<JourneyHold>;
+  authorization: Evidence<JourneyAuthorization>;
+  rls: Evidence<Record<string, unknown>>;
+};
+
+export type JourneySummary = {
+  journey_id: string;
+  status: string;
+  checkpoint_backend: string;
+  active_thread_id: string | null;
+  execution_count: number;
+  created_at: string;
+  updated_at: string;
+};

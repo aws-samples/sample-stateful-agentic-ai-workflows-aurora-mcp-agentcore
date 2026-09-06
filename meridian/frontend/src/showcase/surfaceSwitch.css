@@ -1,0 +1,195 @@
+/* ---------------------------------------------------------------------------
+   Surface switch
+   ---------------------------------------------------------------------------
+   The four surfaces from the journey shell spec, named descriptively. A/B/C
+   were design-review labels and are deliberately absent here.
+
+   This row is the top level of navigation; the capability ladder's five rungs
+   are one level below it and render only inside that surface. Splitting them
+   is also what stops the rung labels from being squeezed to zero width on a
+   phone, which turned five named phases into five unlabelled circles.
+------------------------------------------------------------------------------ */
+
+.mds-surface-switch {
+  /* A segmented control, not four loose buttons: the four surfaces are one
+     choice, and adjacent bordered pills read as a single merged strip. */
+  display: flex;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid var(--mds-line);
+  border-radius: 14px;
+  background: var(--mds-fill-0, var(--mds-fill-1));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mds-surface-switch::-webkit-scrollbar {
+  display: none;
+}
+
+.mds-surface-tab {
+  display: grid;
+  gap: 2px;
+  min-height: 46px;
+  padding: 6px 15px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--mds-muted);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.mds-surface-tab:hover {
+  color: var(--mds-on-surface);
+  border-color: var(--mds-blue-line);
+}
+
+.mds-surface-tab.is-active {
+  color: var(--mds-on-surface);
+  border-color: var(--mds-blue-line);
+  background: var(--mds-surface, #fff);
+  box-shadow: 0 1px 3px rgba(8, 18, 15, 0.1);
+}
+
+.mds-surface-tab strong {
+  font-size: calc(13px * var(--mds-fs));
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.mds-surface-tab small {
+  color: var(--mds-dim);
+  font-size: calc(10.5px * var(--mds-fs));
+  font-weight: 600;
+}
+
+.mds-surface-tab.is-active small {
+  color: var(--mds-blue);
+}
+
+/* The ladder's rungs sit under the surface row, so they get their own line and
+   keep their labels rather than collapsing. */
+.mds-desktop-app .mds-ladder-nav {
+  width: 100%;
+}
+
+.mds-desktop-app .mds-ladder-nav-rungs {
+  flex: 1 1 auto;
+}
+
+/* A grid item's automatic minimum size is its content, which is what let the
+   rung copy squeeze to nothing instead of the row scrolling. */
+.mds-ladder-nav-copy {
+  flex: none;
+}
+
+@media (max-width: 760px) {
+  .mds-surface-tab {
+    min-height: 42px;
+    padding: 5px 12px;
+  }
+
+  .mds-surface-tab small {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Shell on a phone
+   ---------------------------------------------------------------------------
+   Below 760px the app stacks, and the sidebar becomes a normal block. Left as
+   a column of centred icons it ran the full height of the viewport, so the
+   first screen of the demo was navigation and nothing else. It becomes a
+   single compact bar instead.
+------------------------------------------------------------------------------ */
+
+@media (max-width: 760px) {
+  .mds-fullbleed-route .mds-desktop-sidebar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 13px;
+    border-bottom: 1px solid var(--mds-line);
+  }
+
+  .mds-fullbleed-route .mds-sidebar-head,
+  .mds-fullbleed-route .mds-account-mini {
+    flex: none;
+  }
+
+  .mds-fullbleed-route .mds-sidebar-spacer {
+    display: none;
+  }
+
+  .mds-fullbleed-route .mds-nav-items {
+    flex: 1 1 auto;
+    flex-direction: row;
+    gap: 3px;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .mds-fullbleed-route .mds-nav-items::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mds-fullbleed-route .mds-nav-item {
+    min-width: 42px;
+    justify-content: center;
+  }
+
+  .mds-fullbleed-route .mds-account-mini .mds-account-copy,
+  .mds-fullbleed-route .mds-account-mini .mds-account-chevron {
+    display: none;
+  }
+
+  /* The row scrolls, so say so at its trailing edge rather than letting the
+     last surface look like the last surface there is. */
+  .mds-surface-switch {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      #000 calc(100% - 26px),
+      transparent
+    );
+    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
+  }
+}
+
+/* The Recovery desk kept its desktop grid on a phone.
+   `.mds-desktop-app.is-experience .mds-desktop-main` declares `display: grid`
+   at specificity (0,3,0) outside any media query, which outranks the (0,2,0)
+   `display: flex` in the 760px block. The grid's implicit column then sized to
+   its content — 589px inside a 390px viewport — and `.mds-root`'s
+   `overflow-x: hidden` clipped the remainder away with no way to scroll to it.
+   Matching the specificity is what actually lets the phone layout apply. */
+@media (max-width: 760px) {
+  .mds-desktop-app.is-experience .mds-desktop-main,
+  .mds-desktop-app.is-discovery .mds-desktop-main,
+  .mds-desktop-app.is-presenter-proof .mds-desktop-main,
+  .mds-desktop-app .mds-desktop-main {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    min-height: 100dvh;
+    min-width: 0;
+    overflow: visible;
+  }
+
+  .mds-desktop-app .mds-desktop-scroll {
+    min-width: 0;
+    max-width: 100%;
+  }
+}

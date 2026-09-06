@@ -6,6 +6,8 @@ import './meridianShowcase.css';
 import './recoveryWorkspace.css';
 import './discoveryWorkspace.css';
 import './recoveryDecisionRefresh.css';
+import './presenterProof.css';
+import './surfaceSwitch.css';
 
 type ShowcaseTheme = 'dark' | 'light';
 

@@ -11,6 +11,10 @@ import type {
   Product,
   ProductListResponse,
 } from '../types';
+import type {
+  JourneyDocument,
+  JourneySummary,
+} from '../showcase/journey/types';
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
@@ -308,6 +312,34 @@ export async function fetchSessionReceipt(
   });
   if (!response.ok) {
     throw new Error(`Session receipt failed: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+/**
+ * List the caller's journeys, newest first.
+ *
+ * The shell needs a journey id before it can read a document, and a demo
+ * machine should not have to be told one by hand.
+ */
+export async function fetchJourneys(limit = 10): Promise<JourneySummary[]> {
+  const response = await fetch(`${API_BASE}/journeys?limit=${limit}`);
+  if (!response.ok) {
+    throw new Error(`Failed to list journeys: ${response.statusText}`);
+  }
+  const data = (await response.json()) as { journeys: JourneySummary[] };
+  return data.journeys ?? [];
+}
+
+/** Read one journey's evidence document. */
+export async function fetchJourneyDocument(
+  journeyId: string,
+): Promise<JourneyDocument> {
+  const response = await fetch(
+    `${API_BASE}/journeys/${encodeURIComponent(journeyId)}`,
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to read journey ${journeyId}: ${response.statusText}`);
   }
   return response.json();
 }
