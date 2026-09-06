@@ -13,8 +13,10 @@ the ``checkpoints.checkpoint`` JSONB and only writes a blob row for the rest.
 Both directions still read correctly -- upstream's reader (and this saver's)
 merges inline ``channel_values`` with blob-backed ones, blobs winning on key
 collision -- so a checkpoint written by either saver reads correctly through
-the other. The Data API caps a returned row at 64 KB, so values are written
-in appended segments and read through windowed ``substring`` calls.
+the other. The Data API caps a returned row at 64 KB, so values -- in both
+``checkpoint_blobs`` and ``checkpoint_writes``, the latter including the
+``RESUME`` payload that carries a replayed interrupt answer -- are written in
+appended segments and read through windowed ``substring`` calls.
 """
 
 import json
@@ -71,7 +73,9 @@ SELECT thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id,
  WHERE thread_id = %s AND checkpoint_ns = %s
 """
 
-# Two conflict clauses, matching langgraph-checkpoint-postgres 3.1.2 exactly.
+# Two conflict clauses. The columns, conflict target, and update set match
+# langgraph-checkpoint-postgres 3.1.2; the column order does not -- upstream
+# orders task_path 5th and idx 6th, this implementation puts task_path last.
 # Reserved channels are latest-value slots and must overwrite; ordinary writes
 # are append-once and must not, or a retry silently replaces task output.
 _WRITE_COLUMNS = """
@@ -81,17 +85,34 @@ INSERT INTO checkpoint_writes
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (thread_id, checkpoint_ns, checkpoint_id, task_id, idx) """
 
+# RETURNING lets the caller tell whether this statement actually wrote the
+# row -- required so a retried batch knows whether to append its remaining
+# segments (see _write_pending_blob).
 UPSERT_WRITE_SQL = _WRITE_COLUMNS + """DO UPDATE SET
     channel = EXCLUDED.channel, type = EXCLUDED.type, blob = EXCLUDED.blob
+RETURNING 1
 """
 
-INSERT_WRITE_SQL = _WRITE_COLUMNS + "DO NOTHING"
+INSERT_WRITE_SQL = _WRITE_COLUMNS + "DO NOTHING RETURNING 1"
 
-SELECT_WRITES_SQL = """
-SELECT task_id, channel, type, blob
+APPEND_WRITE_SQL = """
+UPDATE checkpoint_writes SET blob = blob || %s
+ WHERE thread_id = %s AND checkpoint_ns = %s AND checkpoint_id = %s
+   AND task_id = %s AND idx = %s
+"""
+
+SELECT_WRITES_META_SQL = """
+SELECT task_id, idx, channel, type, octet_length(blob) AS n
   FROM checkpoint_writes
  WHERE thread_id = %s AND checkpoint_ns = %s AND checkpoint_id = %s
  ORDER BY task_path, task_id, idx
+"""
+
+WRITE_WINDOW_SQL = """
+SELECT substring(blob FROM %s::integer FOR %s::integer) AS part
+  FROM checkpoint_writes
+ WHERE thread_id = %s AND checkpoint_ns = %s AND checkpoint_id = %s
+   AND task_id = %s AND idx = %s
 """
 
 
@@ -303,21 +324,36 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
             },
             checkpoint=checkpoint,
             metadata=json.loads(row["metadata"]),
-            parent_config=(
-                {
-                    "configurable": {
-                        "thread_id": thread_id,
-                        "checkpoint_ns": ns,
-                        "checkpoint_id": row["parent_checkpoint_id"],
-                    }
-                }
-                if row.get("parent_checkpoint_id")
-                else None
+            parent_config=self._parent_config(
+                thread_id, ns, row.get("parent_checkpoint_id")
             ),
             pending_writes=await self._pending_writes(
                 thread_id, ns, row["checkpoint_id"]
             ),
         )
+
+    def _parent_config(
+        self, thread_id: str, ns: str, parent_checkpoint_id: Optional[str]
+    ) -> Optional[dict]:
+        """Build a checkpoint row's parent config.
+
+        Args:
+            thread_id: The thread the checkpoint belongs to.
+            ns: The checkpoint namespace.
+            parent_checkpoint_id: The row's ``parent_checkpoint_id`` column.
+
+        Returns:
+            The parent's config, or ``None`` if the row has no parent.
+        """
+        if not parent_checkpoint_id:
+            return None
+        return {
+            "configurable": {
+                "thread_id": thread_id,
+                "checkpoint_ns": ns,
+                "checkpoint_id": parent_checkpoint_id,
+            }
+        }
 
     async def aput_writes(
         self,
@@ -354,34 +390,89 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
         )
 
         for offset, (channel, value) in enumerate(writes):
+            idx = WRITES_IDX_MAP.get(channel, offset)
             blob_type, payload = self.serde.dumps_typed(value)
-            await self.client.execute(
+            segments = split_for_write(payload)
+            await self._write_pending_blob(
                 sql,
+                (thread_id, ns, checkpoint_id, task_id, idx),
                 (
                     thread_id,
                     ns,
                     checkpoint_id,
                     task_id,
-                    WRITES_IDX_MAP.get(channel, offset),
+                    idx,
                     channel,
                     blob_type,
-                    payload,
+                    segments[0],
                     task_path,
                 ),
+                segments,
             )
+
+    async def _write_pending_blob(
+        self, sql: str, key: tuple, row_params: tuple, segments: list
+    ) -> None:
+        """Insert the first segment, appending the rest only if it was written.
+
+        Args:
+            sql: ``UPSERT_WRITE_SQL`` or ``INSERT_WRITE_SQL``, both ending in
+                ``RETURNING`` so the caller can tell whether this statement
+                actually wrote a row.
+            key: The write's natural key -- ``(thread_id, checkpoint_ns,
+                checkpoint_id, task_id, idx)`` -- used to target the append.
+            row_params: Parameters for the first-segment insert statement.
+            segments: All segments for this value; ``segments[0]`` is already
+                in ``row_params``, and only ``segments[1:]`` are appended.
+
+        Under ``DO NOTHING``, a conflict means some earlier attempt already
+        wrote this row in full, so ``RETURNING`` yields no row and the
+        remaining segments are skipped -- appending them again would double
+        the stored blob. Under ``DO UPDATE`` the row is always (re)written in
+        full, so ``RETURNING`` always yields a row and the remaining
+        segments are always appended.
+        """
+        rows = await self.client.execute(sql, row_params)
+        if not rows:
+            return
+        for segment in segments[1:]:
+            await self.client.execute(APPEND_WRITE_SQL, (segment,) + key)
 
     async def _pending_writes(
         self, thread_id: str, ns: str, checkpoint_id: str
     ) -> list[tuple[str, str, Any]]:
-        """Load pending writes in their stored order."""
+        """Load pending writes in their stored order, windowed under the row cap."""
         rows = await self.client.execute(
-            SELECT_WRITES_SQL, (thread_id, ns, checkpoint_id)
+            SELECT_WRITES_META_SQL, (thread_id, ns, checkpoint_id)
         )
-        return [
-            (row["task_id"], row["channel"],
-             self.serde.loads_typed((row["type"], row["blob"])))
-            for row in rows
-        ]
+        pending = []
+        for row in rows:
+            key = (thread_id, ns, checkpoint_id, row["task_id"], row["idx"])
+            payload = await self._read_write_blob(key, int(row["n"] or 0))
+            pending.append(
+                (
+                    row["task_id"],
+                    row["channel"],
+                    self.serde.loads_typed((row["type"], payload)),
+                )
+            )
+        return pending
+
+    async def _read_write_blob(self, key: tuple, total: int) -> bytes:
+        """Reassemble one pending-write blob from windowed ``substring`` reads.
+
+        Args:
+            key: ``(thread_id, checkpoint_ns, checkpoint_id, task_id, idx)``.
+            total: The blob's size from ``octet_length(blob)``.
+
+        Returns:
+            The reassembled payload.
+        """
+        parts: list[bytes] = []
+        for offset, length in window_offsets(total):
+            window = await self.client.execute(WRITE_WINDOW_SQL, (offset, length) + key)
+            parts.append(window[0]["part"])
+        return b"".join(parts)
 
     async def alist(
         self,
@@ -391,13 +482,39 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
         before: Optional[dict] = None,
         limit: Optional[int] = None,
     ) -> AsyncIterator[CheckpointTuple]:
-        """Yield checkpoints newest first.
+        """Yield checkpoints for a thread, newest first.
 
         Pages with a bounded LIMIT and keyset pagination on checkpoint_id so a
         response never approaches the Data API's 1 MiB ceiling.
+
+        Args:
+            config: Must supply ``configurable.thread_id``; ``checkpoint_ns``
+                defaults to ``""``.
+            filter: Metadata filtering. Not implemented -- must be ``None``
+                or empty; no caller passes this today.
+            before: A config whose ``configurable.checkpoint_id`` bounds the
+                page from above, for keyset pagination.
+            limit: Maximum checkpoints to yield. Defaults to 50 when omitted
+                and is clamped to the range [1, 50] otherwise.
+
+        Yields:
+            Matching ``CheckpointTuple`` instances, newest first.
+
+        Raises:
+            ValueError: If ``config`` is missing or has no ``thread_id``.
+            NotImplementedError: If ``filter`` is non-empty.
         """
+        if filter:
+            raise NotImplementedError(
+                "AuroraDataApiSaver.alist does not implement metadata "
+                "filtering; pass filter=None"
+            )
         configurable = (config or {}).get("configurable", {})
         thread_id = configurable.get("thread_id")
+        if not thread_id:
+            raise ValueError(
+                "alist requires config['configurable']['thread_id']"
+            )
         ns = configurable.get("checkpoint_ns", "")
 
         sql = SELECT_CHECKPOINT_SQL
@@ -406,7 +523,8 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
             sql += " AND checkpoint_id < %s"
             params += (before["configurable"]["checkpoint_id"],)
         sql += " ORDER BY checkpoint_id DESC LIMIT %s"
-        params += (min(limit or 50, 50),)
+        page_limit = 50 if limit is None else max(1, min(limit, 50))
+        params += (page_limit,)
 
         for row in await self.client.execute(sql, params):
             checkpoint = json.loads(row["checkpoint"])
@@ -428,7 +546,9 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
                 },
                 checkpoint=checkpoint,
                 metadata=json.loads(row["metadata"]),
-                parent_config=None,
+                parent_config=self._parent_config(
+                    thread_id, ns, row.get("parent_checkpoint_id")
+                ),
                 pending_writes=await self._pending_writes(
                     thread_id, ns, row["checkpoint_id"]
                 ),
