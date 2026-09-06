@@ -18,7 +18,7 @@ in appended segments and read through windowed ``substring`` calls.
 """
 
 import json
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional, Sequence
 
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
@@ -69,6 +69,29 @@ SELECT thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id,
        checkpoint, metadata
   FROM checkpoints
  WHERE thread_id = %s AND checkpoint_ns = %s
+"""
+
+# Two conflict clauses, matching langgraph-checkpoint-postgres 3.1.2 exactly.
+# Reserved channels are latest-value slots and must overwrite; ordinary writes
+# are append-once and must not, or a retry silently replaces task output.
+_WRITE_COLUMNS = """
+INSERT INTO checkpoint_writes
+    (thread_id, checkpoint_ns, checkpoint_id, task_id, idx,
+     channel, type, blob, task_path)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (thread_id, checkpoint_ns, checkpoint_id, task_id, idx) """
+
+UPSERT_WRITE_SQL = _WRITE_COLUMNS + """DO UPDATE SET
+    channel = EXCLUDED.channel, type = EXCLUDED.type, blob = EXCLUDED.blob
+"""
+
+INSERT_WRITE_SQL = _WRITE_COLUMNS + "DO NOTHING"
+
+SELECT_WRITES_SQL = """
+SELECT task_id, channel, type, blob
+  FROM checkpoint_writes
+ WHERE thread_id = %s AND checkpoint_ns = %s AND checkpoint_id = %s
+ ORDER BY task_path, task_id, idx
 """
 
 
@@ -291,6 +314,122 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
                 if row.get("parent_checkpoint_id")
                 else None
             ),
-            # TODO(task-5): return real pending writes once aput_writes lands
-            pending_writes=[],
+            pending_writes=await self._pending_writes(
+                thread_id, ns, row["checkpoint_id"]
+            ),
         )
+
+    async def aput_writes(
+        self,
+        config: dict,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
+    ) -> None:
+        """Persist pending writes for a task.
+
+        Reserved channels carry fixed negative indices from ``WRITES_IDX_MAP``
+        and are latest-value slots, so a batch made entirely of them upserts.
+        Any other batch inserts without overwriting, because an ordinary write
+        is append-once and replacing it on retry loses task output. This is the
+        same branch ``AsyncPostgresSaver`` takes.
+
+        Args:
+            config: Carries thread_id, checkpoint_ns and checkpoint_id.
+            writes: (channel, value) pairs in emission order.
+            task_id: The task that produced them.
+            task_path: Position in the task tree; part of write ordering.
+        """
+        from langgraph.checkpoint.base import WRITES_IDX_MAP
+
+        configurable = config["configurable"]
+        thread_id = configurable["thread_id"]
+        ns = configurable.get("checkpoint_ns", "")
+        checkpoint_id = configurable["checkpoint_id"]
+
+        sql = (
+            UPSERT_WRITE_SQL
+            if all(channel in WRITES_IDX_MAP for channel, _ in writes)
+            else INSERT_WRITE_SQL
+        )
+
+        for offset, (channel, value) in enumerate(writes):
+            blob_type, payload = self.serde.dumps_typed(value)
+            await self.client.execute(
+                sql,
+                (
+                    thread_id,
+                    ns,
+                    checkpoint_id,
+                    task_id,
+                    WRITES_IDX_MAP.get(channel, offset),
+                    channel,
+                    blob_type,
+                    payload,
+                    task_path,
+                ),
+            )
+
+    async def _pending_writes(
+        self, thread_id: str, ns: str, checkpoint_id: str
+    ) -> list[tuple[str, str, Any]]:
+        """Load pending writes in their stored order."""
+        rows = await self.client.execute(
+            SELECT_WRITES_SQL, (thread_id, ns, checkpoint_id)
+        )
+        return [
+            (row["task_id"], row["channel"],
+             self.serde.loads_typed((row["type"], row["blob"])))
+            for row in rows
+        ]
+
+    async def alist(
+        self,
+        config: Optional[dict],
+        *,
+        filter: Optional[dict] = None,
+        before: Optional[dict] = None,
+        limit: Optional[int] = None,
+    ) -> AsyncIterator[CheckpointTuple]:
+        """Yield checkpoints newest first.
+
+        Pages with a bounded LIMIT and keyset pagination on checkpoint_id so a
+        response never approaches the Data API's 1 MiB ceiling.
+        """
+        configurable = (config or {}).get("configurable", {})
+        thread_id = configurable.get("thread_id")
+        ns = configurable.get("checkpoint_ns", "")
+
+        sql = SELECT_CHECKPOINT_SQL
+        params: tuple = (thread_id, ns)
+        if before:
+            sql += " AND checkpoint_id < %s"
+            params += (before["configurable"]["checkpoint_id"],)
+        sql += " ORDER BY checkpoint_id DESC LIMIT %s"
+        params += (min(limit or 50, 50),)
+
+        for row in await self.client.execute(sql, params):
+            checkpoint = json.loads(row["checkpoint"])
+            # Same merge as aget_tuple: upstream inlines primitives in the
+            # JSONB and writes no blob row for them, so both sources count.
+            checkpoint["channel_values"] = {
+                **(checkpoint.get("channel_values") or {}),
+                **await self._load_channel_values(
+                    thread_id, ns, checkpoint.get("channel_versions", {})
+                ),
+            }
+            yield CheckpointTuple(
+                config={
+                    "configurable": {
+                        "thread_id": thread_id,
+                        "checkpoint_ns": ns,
+                        "checkpoint_id": row["checkpoint_id"],
+                    }
+                },
+                checkpoint=checkpoint,
+                metadata=json.loads(row["metadata"]),
+                parent_config=None,
+                pending_writes=await self._pending_writes(
+                    thread_id, ns, row["checkpoint_id"]
+                ),
+            )
