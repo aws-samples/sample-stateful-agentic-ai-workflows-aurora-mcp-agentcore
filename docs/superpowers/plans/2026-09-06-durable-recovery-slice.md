@@ -1449,7 +1449,7 @@ git commit -m "Run the upstream checkpointer conformance suite"
 
 **Interfaces:**
 - Consumes: `AuroraDataApiSaver` (Tasks 4-6).
-- Produces: `CheckpointBackend` unchanged in shape; `initialize_checkpoint_backend()` may return `kind="AuroraDataApiSaver"` with `durable=True`; `MeridianWorkflow.checkpointer_durable: bool` replaces `_uses_postgres_saver` at call sites.
+- Produces: `CheckpointBackend` unchanged in shape; `initialize_checkpoint_backend()` may return `kind="AuroraDataApiSaver"` with `durable=True`; `OrchestrationAgent.checkpointer_durable: bool` replaces `_uses_postgres_saver` at call sites.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1467,7 +1467,7 @@ import pytest
 
 from backend.agents.orchestration_05.workflow import (
     CheckpointBackend,
-    MeridianWorkflow,
+    OrchestrationAgent,
 )
 
 
@@ -1476,8 +1476,8 @@ async def _noop(*args, **kwargs):
 
 
 @pytest.fixture
-def workflow() -> MeridianWorkflow:
-    return MeridianWorkflow(search_fn=_noop, availability_fn=_noop)
+def workflow() -> OrchestrationAgent:
+    return OrchestrationAgent(search_fn=_noop, availability_fn=_noop)
 
 
 @pytest.mark.parametrize(
@@ -1489,7 +1489,7 @@ def workflow() -> MeridianWorkflow:
     ],
 )
 def test_durability_comes_from_the_flag_not_the_name(
-    workflow: MeridianWorkflow, kind: str, durable: bool
+    workflow: OrchestrationAgent, kind: str, durable: bool
 ) -> None:
     workflow.checkpointer_kind = kind
     workflow.checkpointer_durable = durable
@@ -1497,7 +1497,7 @@ def test_durability_comes_from_the_flag_not_the_name(
 
 
 def test_data_api_saver_is_not_labelled_in_process(
-    workflow: MeridianWorkflow,
+    workflow: OrchestrationAgent,
 ) -> None:
     workflow.checkpointer_kind = "AuroraDataApiSaver"
     workflow.checkpointer_durable = True
@@ -1508,7 +1508,7 @@ def test_data_api_saver_is_not_labelled_in_process(
 
 
 def test_memory_saver_is_still_labelled_in_process(
-    workflow: MeridianWorkflow,
+    workflow: OrchestrationAgent,
 ) -> None:
     workflow.checkpointer_kind = "MemorySaver (in-process)"
     workflow.checkpointer_durable = False
@@ -1527,7 +1527,7 @@ Expected: FAIL. `test_data_api_saver_is_not_labelled_in_process` finds "MemorySa
 
 - [ ] **Step 3: Replace the prefix test with the capability flag**
 
-In `meridian/backend/agents/orchestration_05/workflow.py`, in `MeridianWorkflow.__init__`, add beside `self.checkpointer_kind`:
+In `meridian/backend/agents/orchestration_05/workflow.py`, in `OrchestrationAgent.__init__`, add beside `self.checkpointer_kind`:
 
 ```python
         self.checkpointer_durable = False
@@ -1560,37 +1560,68 @@ In `_checkpoint_activity`, change `if self._uses_postgres_saver:` to
 
 - [ ] **Step 4: Add the Data API branch to backend selection**
 
-In `initialize_checkpoint_backend()`, replace the `if not dsn:` block's fallback so a Data API client is tried before MemorySaver:
+The branch is **opt-in and probed**, not inferred from whether a client can be
+constructed. `RDSDataClient.__init__` reads its ARNs from the environment and
+calls `boto3.client("rds-data", ...)`, neither of which fails when the ARNs are
+absent or the credentials are dead. A bare `try`/`except` around construction
+therefore succeeds everywhere, which would make MemorySaver unreachable, send
+`tests/conftest.py`'s dotenv-loaded unit tests at the live cluster, and break
+`test_checkpointer_kind_is_memory_when_dsn_unset`. It would also defer a
+missing migration 007 to the first checkpoint write, mid-turn, where there is
+no longer anything to fall back to.
+
+Two module-level helpers, beside `_checkpoint_required()`:
+
+```python
+def _data_api_checkpoints_enabled() -> bool:
+    return _truthy_env("LANGGRAPH_CHECKPOINT_DATA_API", "false")
+
+
+async def _probe_data_api_checkpoints(saver: Any) -> None:
+    """Confirm the checkpoint tables answer before the saver is adopted."""
+    await saver.client.execute("SELECT 1 FROM checkpoints LIMIT 1", ())
+```
+
+Then in `initialize_checkpoint_backend()`, replace the `if not dsn:` fallback:
 
 ```python
         if not dsn:
-            try:
-                from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
-                from backend.db.rds_data_client import get_rds_data_client
+            error: Optional[str] = None
+            if _data_api_checkpoints_enabled():
+                try:
+                    from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
+                    from backend.db.rds_data_client import get_rds_data_client
 
-                _checkpoint_backend = CheckpointBackend(
-                    saver=AuroraDataApiSaver(get_rds_data_client()),
-                    kind="AuroraDataApiSaver",
-                    durable=True,
-                )
-                return _checkpoint_backend
-            except Exception as exc:  # noqa: BLE001 - fall through to the guard
-                if _checkpoint_required():
-                    raise RuntimeError(
-                        "Durable workflow checkpoints are required, but neither "
-                        "a checkpoint DSN nor the Data API client resolved."
-                    ) from exc
-                logger.warning(
-                    "Data API checkpointing unavailable (%s). Falling back to "
-                    "MemorySaver.", exc
+                    saver = AuroraDataApiSaver(get_rds_data_client())
+                    await _probe_data_api_checkpoints(saver)
+                except Exception as exc:  # noqa: BLE001 - fall through to the guard
+                    error = f"Data API checkpointing unavailable: {exc}"
+                    logger.warning("%s Falling back to MemorySaver.", error)
+                else:
+                    _checkpoint_backend = CheckpointBackend(
+                        saver=saver,
+                        kind="AuroraDataApiSaver",
+                        durable=True,
+                    )
+                    return _checkpoint_backend
+
+            if _checkpoint_required():
+                raise RuntimeError(
+                    "Durable workflow checkpoints are required, but no "
+                    "LANGGRAPH_CHECKPOINT_DSN or checkpoint credentials resolved."
+                    + (f" {error}" if error else "")
                 )
             _checkpoint_backend = CheckpointBackend(
                 saver=MemorySaver(),
                 kind="MemorySaver (in-process)",
                 durable=False,
+                error=error,
             )
             return _checkpoint_backend
 ```
+
+Turning the flag on for the demo laptop is Task 11's business, after the
+vertical slice proves the saver against real Aurora.
 
 Wherever the workflow adopts a backend, set both fields together:
 
@@ -1633,14 +1664,23 @@ def test_graph_invocation_requests_synchronous_durability() -> None:
     checkpoint write. A kill right after the interrupt would then land on a
     checkpoint that was never persisted.
     """
-    import inspect
+    wf = OrchestrationAgent(search_fn=_noop, availability_fn=_noop)
+    seen: list[object] = []
 
-    from backend.agents.orchestration_05 import workflow as module
+    async def _spy(_self, _input, config=None, **kwargs):
+        seen.append(kwargs.get("durability"))
+        return {"activities": []}
 
-    source = inspect.getsource(module)
-    assert 'durability="sync"' in source, (
-        "graph invocation must pass durability=\"sync\"; the default async "
-        "mode does not await the checkpoint write"
+    # Patch the compiled-graph class, not the instance: adopting a checkpoint
+    # backend recompiles the graph and would discard an instance patch.
+    monkeypatch.setattr(type(wf.graph), "ainvoke", _spy)
+
+    asyncio.run(wf.run("Find me a Kyoto cultural trip", traveler_id="t1",
+                       conversation_id="c-durability"))
+
+    assert seen, "graph.ainvoke was never called"
+    assert seen == ["sync"] * len(seen), (
+        f'every invocation must pass durability="sync"; saw {seen}'
     )
 ```
 

@@ -252,7 +252,9 @@ def test_workflow_enters_async_postgres_saver_when_dsn_set(
         "execute:SELECT 1",
     ]
     titles = [a.get("title", "") for a in res.get("activities", [])]
-    assert "Checkpoint · PostgresSaver.put" in titles
+    # The span names the backend that actually ran, not a fixed class name.
+    assert "Checkpoint · PostgresSaver (Aurora · pooled).put" in titles
+    assert wf.checkpointer_durable is True
 
     asyncio.run(workflow_mod.close_checkpoint_backend())
     assert events[-1] == "close"

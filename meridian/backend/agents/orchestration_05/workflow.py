@@ -172,6 +172,31 @@ def _checkpoint_required() -> bool:
     return _truthy_env("LANGGRAPH_CHECKPOINT_REQUIRED", "false")
 
 
+def _data_api_checkpoints_enabled() -> bool:
+    """Whether to checkpoint through the RDS Data API.
+
+    Opt-in rather than inferred. ``RDSDataClient()`` validates neither its
+    ARNs nor its credentials at construction, so probing for a client would
+    adopt the Data API saver anywhere a dotenv is loaded, unit tests included.
+    """
+    return _truthy_env("LANGGRAPH_CHECKPOINT_DATA_API", "false")
+
+
+async def _probe_data_api_checkpoints(saver: Any) -> None:
+    """Confirm the checkpoint tables answer before the saver is adopted.
+
+    Catches expired credentials and an unapplied migration 007 here, where
+    the backend can still fall back, rather than mid-turn on the first write.
+
+    Args:
+        saver: The candidate ``AuroraDataApiSaver``.
+
+    Raises:
+        Exception: Whatever the Data API raises when the probe fails.
+    """
+    await saver.client.execute("SELECT 1 FROM checkpoints LIMIT 1", ())
+
+
 async def initialize_checkpoint_backend() -> CheckpointBackend:
     """Initialize the process-wide LangGraph checkpointer once."""
     global _checkpoint_backend, _checkpoint_init_lock
@@ -188,15 +213,36 @@ async def initialize_checkpoint_backend() -> CheckpointBackend:
 
         dsn = _resolve_checkpoint_dsn()
         if not dsn:
+            error: Optional[str] = None
+            if _data_api_checkpoints_enabled():
+                try:
+                    from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
+                    from backend.db.rds_data_client import get_rds_data_client
+
+                    saver = AuroraDataApiSaver(get_rds_data_client())
+                    await _probe_data_api_checkpoints(saver)
+                except Exception as exc:  # noqa: BLE001 - fall through to the guard
+                    error = f"Data API checkpointing unavailable: {exc}"
+                    logger.warning("%s Falling back to MemorySaver.", error)
+                else:
+                    _checkpoint_backend = CheckpointBackend(
+                        saver=saver,
+                        kind="AuroraDataApiSaver",
+                        durable=True,
+                    )
+                    return _checkpoint_backend
+
             if _checkpoint_required():
                 raise RuntimeError(
                     "Durable workflow checkpoints are required, but no "
                     "LANGGRAPH_CHECKPOINT_DSN or checkpoint credentials resolved."
+                    + (f" {error}" if error else "")
                 )
             _checkpoint_backend = CheckpointBackend(
                 saver=MemorySaver(),
                 kind="MemorySaver (in-process)",
                 durable=False,
+                error=error,
             )
             return _checkpoint_backend
 
@@ -527,19 +573,25 @@ class OrchestrationAgent:
         self.memory_recall_fn = memory_recall_fn
         self.checkpointer = MemorySaver()
         self.checkpointer_kind = "MemorySaver (initializing)"
+        self.checkpointer_durable = False
         self.interrupt_after = ""
         self.graph = self._build_graph()
 
     @property
-    def _uses_postgres_saver(self) -> bool:
-        return self.checkpointer_kind.startswith("PostgresSaver")
+    def _uses_durable_saver(self) -> bool:
+        """Whether the configured checkpointer persists outside this process.
+
+        Read from the backend's capability flag rather than its name. A name
+        test silently mislabels any backend added later.
+        """
+        return self.checkpointer_durable
 
     def _checkpoint_activity(self, node: str, elapsed_ms: int) -> Dict[str, Any]:
         """Trace the actual configured checkpointer, not just the ideal one."""
-        if self._uses_postgres_saver:
+        if self._uses_durable_saver:
             return _activity(
                 "tool_call",
-                "Checkpoint · PostgresSaver.put",
+                f"Checkpoint · {self.checkpointer_kind}.put",
                 details=f"Workflow state serialized after {node} node ({elapsed_ms}ms)",
                 sql_query=(
                     "INSERT INTO checkpoints\n"
@@ -562,7 +614,7 @@ class OrchestrationAgent:
                             "label": "checkpoint_tables",
                             "value": ", ".join(POSTGRES_CHECKPOINT_TABLES),
                         },
-                        {"label": "durability", "value": "Aurora"},
+                        {"label": "durability", "value": self.checkpointer_kind},
                     ],
                 },
             )
@@ -572,7 +624,8 @@ class OrchestrationAgent:
             "Checkpoint · MemorySaver.put",
             details=(
                 f"Workflow state kept in-process after {node} node ({elapsed_ms}ms). "
-                "Set LANGGRAPH_CHECKPOINT_DSN for Aurora durability."
+                "Set LANGGRAPH_CHECKPOINT_DSN, or LANGGRAPH_CHECKPOINT_DATA_API "
+                "to checkpoint over the Data API, for Aurora durability."
             ),
             telemetry={
                 "category": "memory_short",
@@ -593,6 +646,7 @@ class OrchestrationAgent:
         if self.checkpointer is not backend.saver:
             self.checkpointer = backend.saver
             self.checkpointer_kind = backend.kind
+            self.checkpointer_durable = backend.durable
             self.graph = self._build_graph()
         return backend
 
@@ -1152,7 +1206,7 @@ class OrchestrationAgent:
         # this string must not over-claim Aurora when running in-process.
         checkpoint_clause = (
             "each step checkpointed to Aurora so the plan can pause and resume"
-            if self._uses_postgres_saver
+            if self._uses_durable_saver
             else "each step checkpointed between nodes so the plan can pause "
             "and resume (in-process here; PostgresSaver persists to Aurora "
             "when the workflow runs inside the cluster VPC)"
@@ -1284,9 +1338,13 @@ class OrchestrationAgent:
         # for anything it commits mid-flight.
         try:
             if resume:
-                result = await self.graph.ainvoke(None, config=config)
+                result = await self.graph.ainvoke(
+                    None, config=config, durability="sync"
+                )
             else:
-                result = await self.graph.ainvoke(initial, config=config)
+                result = await self.graph.ainvoke(
+                    initial, config=config, durability="sync"
+                )
         except Exception:
             failed_state = await self.graph.aget_state(config)
             values = dict(failed_state.values or {})
@@ -1333,7 +1391,7 @@ class OrchestrationAgent:
                                 "label": "durability",
                                 "value": (
                                     "Aurora"
-                                    if self._uses_postgres_saver
+                                    if self._uses_durable_saver
                                     else "in-process only"
                                 ),
                             },
@@ -1377,7 +1435,7 @@ class OrchestrationAgent:
                                     "label": "durability",
                                     "value": (
                                         "Aurora"
-                                        if self._uses_postgres_saver
+                                        if self._uses_durable_saver
                                         else "in-process only"
                                     ),
                                 },
