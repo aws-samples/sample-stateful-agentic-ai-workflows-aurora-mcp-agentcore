@@ -31,6 +31,7 @@ from backend.routers import (
     packages_router,
     memory_router,
     diagnostics_router,
+    journeys_router,
 )
 
 
@@ -142,6 +143,7 @@ app.include_router(packages_router)
 app.include_router(products_router)
 app.include_router(memory_router)
 app.include_router(diagnostics_router)
+app.include_router(journeys_router)
 
 
 def _health_payload() -> HealthResponse:
