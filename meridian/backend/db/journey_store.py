@@ -39,12 +39,17 @@ SELECT COALESCE(MAX(attempt), 0) + 1 AS next_attempt
   FROM journey_executions WHERE thread_id = %s
 """
 
+# DO NOTHING rather than letting the index raise. A unique violation aborts the
+# whole transaction in PostgreSQL, so the follow-up query naming the live owner
+# would fail with 25P02 and the caller would see a driver error instead of a
+# conflict. An empty RETURNING is the conflict.
 CLAIM_SQL = """
 INSERT INTO journey_executions
     (execution_id, journey_id, thread_id, attempt, worker_id, status,
      lease_expires_at)
 VALUES (%s, %s, %s, %s, %s, 'running',
         CURRENT_TIMESTAMP + (%s || ' seconds')::interval)
+ON CONFLICT (thread_id) WHERE status = 'running' DO NOTHING
 RETURNING execution_id
 """
 
@@ -77,11 +82,6 @@ class ExecutionClaim:
     worker_id: str
     claimed: bool
     conflict: Optional[dict]
-
-
-def _is_single_running_violation(error: Exception) -> bool:
-    """Whether an error is the one-running-execution index rejecting a claim."""
-    return "journey_executions_one_running" in str(error)
 
 
 async def create_journey(db: Any, traveler_id: str, checkpoint_backend: str) -> str:
@@ -135,27 +135,28 @@ async def claim_execution(
         A claim. When ``claimed`` is False, ``conflict`` names the live owner.
         Expiry is applied as a state transition first, because PostgreSQL
         forbids a non-immutable predicate such as ``now()`` in an index.
+
+    Raises:
+        Exception: Any database error other than losing the race. Losing is
+            not an error: the insert declines and returns no row.
     """
     await db.execute(ABANDON_EXPIRED_SQL, (thread_id,))
     rows = await db.execute(NEXT_ATTEMPT_SQL, (thread_id,))
     attempt = int(rows[0]["next_attempt"]) if rows else 1
     execution_id = f"exe_{uuid.uuid4().hex[:12]}"
 
-    try:
-        await db.execute(
-            CLAIM_SQL,
-            (
-                execution_id,
-                journey_id,
-                thread_id,
-                attempt,
-                worker_id,
-                str(lease_seconds),
-            ),
-        )
-    except Exception as error:  # noqa: BLE001 - the index decides, not us
-        if not _is_single_running_violation(error):
-            raise
+    claimed = await db.execute(
+        CLAIM_SQL,
+        (
+            execution_id,
+            journey_id,
+            thread_id,
+            attempt,
+            worker_id,
+            str(lease_seconds),
+        ),
+    )
+    if not claimed:
         owner = await db.execute(CURRENT_OWNER_SQL, (thread_id,))
         return ExecutionClaim(
             execution_id=None,

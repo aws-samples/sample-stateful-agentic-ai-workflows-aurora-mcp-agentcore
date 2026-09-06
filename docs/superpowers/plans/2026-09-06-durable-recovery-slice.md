@@ -1873,6 +1873,7 @@ INSERT INTO journey_executions
      lease_expires_at)
 VALUES (%s, %s, %s, %s, %s, 'running',
         CURRENT_TIMESTAMP + (%s || ' seconds')::interval)
+ON CONFLICT (thread_id) WHERE status = 'running' DO NOTHING
 RETURNING execution_id
 """
 
@@ -1907,11 +1908,6 @@ class ExecutionClaim:
     conflict: Optional[dict]
 
 
-def _is_single_running_violation(error: Exception) -> bool:
-    """Whether an error is the one-running-execution index rejecting a claim."""
-    return "journey_executions_one_running" in str(error)
-
-
 async def claim_execution(
     db: Any,
     journey_id: str,
@@ -1938,15 +1934,12 @@ async def claim_execution(
     attempt = int(rows[0]["next_attempt"]) if rows else 1
     execution_id = f"exe_{uuid.uuid4().hex[:12]}"
 
-    try:
-        await db.execute(
-            CLAIM_SQL,
-            (execution_id, journey_id, thread_id, attempt, worker_id,
-             str(lease_seconds)),
-        )
-    except Exception as error:  # noqa: BLE001 - the index decides, not us
-        if not _is_single_running_violation(error):
-            raise
+    claimed = await db.execute(
+        CLAIM_SQL,
+        (execution_id, journey_id, thread_id, attempt, worker_id,
+         str(lease_seconds)),
+    )
+    if not claimed:
         owner = await db.execute(CURRENT_OWNER_SQL, (thread_id,))
         return ExecutionClaim(
             execution_id=None,
@@ -1976,10 +1969,22 @@ async def release_execution(db: Any, execution_id: str, status: str) -> None:
     await db.execute(RELEASE_SQL, (status, execution_id))
 ```
 
+**The claim must not raise.** Letting the partial unique index reject the
+insert aborts the surrounding transaction, so the follow-up query naming the
+live owner fails with `25P02 current transaction is aborted`. A fake that
+lets a failed statement be followed by a successful one hides this completely;
+it reproduces on the first real claim against Aurora. `ON CONFLICT (thread_id)
+WHERE status = 'running' DO NOTHING` declines instead, and an empty `RETURNING`
+is the conflict. The index predicate has to be repeated in the conflict target,
+or PostgreSQL cannot infer a partial unique index.
+
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `venv/bin/pytest tests/test_journey_store.py -q`
-Expected: PASS, 7 passed.
+Expected: PASS.
+
+Then against real Aurora, which is where the abort semantics show up:
+`MERIDIAN_AURORA_TESTS=1 venv/bin/pytest tests/test_journey_store_aurora.py -q`
 
 - [ ] **Step 5: Commit**
 
