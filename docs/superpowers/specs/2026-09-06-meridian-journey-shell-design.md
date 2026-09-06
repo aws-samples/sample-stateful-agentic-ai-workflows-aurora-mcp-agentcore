@@ -22,139 +22,275 @@ labels only.
 | Recovery desk | Centerpiece. Selected plan, the interruption, the saved progress, the next action to resume. One dominant decision, one primary action. |
 | Presenter proof | Backend-sourced evidence at projector scale: authenticated identity, authorized scope, retrieval results, checkpoint and thread identifiers, worker execution, resulting business record. |
 
-## Constraints that shaped the design
+## Constraints verified on 2026-09-06
 
-Verified against the account and the code on 2026-09-06.
-
-- `meridian-demo-instance` is `PubliclyAccessible: false`. The cluster has
+- `meridian-demo-instance` is `PubliclyAccessible: false`; the cluster has
   `HttpEndpointEnabled: true`. From a laptop, only the RDS Data API reaches
   Aurora.
-- `AsyncPostgresSaver` requires psycopg over TCP 5432, so it cannot run from
-  the laptop without the tunnel in `scripts/start_checkpoint_tunnel.sh`.
-- Consequently `_resolve_checkpoint_dsn()` returns `None` and the process falls
-  back to `MemorySaver (in-process)`. Every durability claim on the current UI
-  is false on the demo machine unless this changes.
+- `AsyncPostgresSaver` requires psycopg over TCP 5432, so it runs only through
+  `scripts/start_checkpoint_tunnel.sh` or from inside the VPC.
+- `_resolve_checkpoint_dsn()` therefore returns `None` on the laptop and the
+  process falls back to `MemorySaver (in-process)`.
 - The UI has no evidence contract. `ChatResponse` carries only
   `workflow_status` and `workflow_resumed_after_restart`
   (`meridian/backend/routers/chat.py:161`). Everything else is regex-scraped
   from trace prose in `deriveAuroraEvidence`
-  (`meridian/frontend/src/showcase/lib/showcaseProof.ts:110`), including
-  `thread_id` at line 294.
-- Nothing can rehydrate. Eight endpoints, all turn-scoped POSTs plus two
-  catalog GETs. A refresh loses the journey.
-- `setSelectedPhase` deliberately clears the run on every phase change
-  (`meridian/frontend/src/showcase/hooks/useMeridianShowcase.ts:585-611`).
-  Correct for the ladder, incompatible with view switching.
+  (`meridian/frontend/src/showcase/lib/showcaseProof.ts:110`).
+- Nothing rehydrates. A refresh loses the journey.
+- `setSelectedPhase` deliberately clears the run on phase change
+  (`useMeridianShowcase.ts:585-611`). Correct for the ladder, incompatible
+  with view switching.
+
+**Data API limits, confirmed against AWS documentation:**
+
+| Limit | Value |
+| --- | --- |
+| Size of a single row in a returned result set | 64 KB |
+| Total response size | 1 MiB |
+| Total HTTP request size, including headers and JSON | 4 MiB |
+
+The 64 KB per-row limit is the binding constraint on checkpoint storage and is
+the reason the saver chunks blobs rather than storing one value per row.
+
+**Pinned versions.** `langgraph==1.2.9`, `langgraph-checkpoint==4.1.1`,
+`langgraph-checkpoint-postgres==3.1.2`, `psycopg==3.3.4`, `boto3==1.43.51`.
+The checkpointer contract is version-sensitive, so these are pinned and the
+conformance run is tied to them.
 
 ## Decisions
 
 1. **Server-owned journey with a thin persistent identity and an aggregated
-   read API.** The journey document is assembled from existing persisted
-   state. Checkpoints, bookings, audit rows, and conversation records keep
-   authority over their own facts. No copying into a second document, no
-   separate evidence ledger.
+   read API.** The journey document assembles existing persisted state.
+   Checkpoints, bookings, audit rows, and conversation records keep authority
+   over their own facts. No second copy, no separate evidence ledger.
 2. **Hybrid checkpoint deployment.** Aurora Data API checkpointing for the
-   current demo. `AsyncPostgresSaver` retained as the native option where
-   direct database connectivity exists. Both behind the same workflow-facing
-   interface.
-3. **Journey-scoped business-request identity.** A persisted
-   `hold_request_id` allocated once per intended hold, enforced by a database
-   constraint inside the existing inventory transaction.
+   demo; `AsyncPostgresSaver` retained where direct connectivity exists. Both
+   behind the existing `CheckpointBackend` interface. The selected backend is
+   persisted with the journey and never silently switched. Cross-backend
+   resume is out of scope.
+3. **Hold intent is checkpointed before the hold executes.** A `prepare_hold`
+   node durably persists `hold_request_id` and the canonical parameters, and
+   the `hold` node consumes them. The database constraint is the second line
+   of defence, not the only one.
 4. **Durable vertical slice before the new UI.** Kill and resume must work
-   before Recovery desk and Presenter proof are built on top of it.
+   before Recovery desk and Presenter proof are built on it.
 
-## 1. Identity model
-
-Two new tables. Everything else is read where it already lives.
+## 1. Identity, ownership, and the resume target
 
 ```sql
 CREATE TABLE journeys (
     journey_id         VARCHAR(64) PRIMARY KEY,
     traveler_id        VARCHAR(50) NOT NULL REFERENCES travelers(traveler_id),
     checkpoint_backend VARCHAR(32) NOT NULL,
+    active_thread_id   VARCHAR(200),
     status             VARCHAR(32) NOT NULL DEFAULT 'active',
     created_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE journey_executions (
-    execution_id VARCHAR(64) PRIMARY KEY,
-    journey_id   VARCHAR(64) NOT NULL REFERENCES journeys(journey_id),
-    thread_id    VARCHAR(200) NOT NULL,
-    phase        SMALLINT,
-    worker_id    VARCHAR(128) NOT NULL,
-    started_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ended_at     TIMESTAMPTZ
+CREATE TABLE journey_threads (
+    thread_id  VARCHAR(200) PRIMARY KEY,
+    journey_id VARCHAR(64) NOT NULL REFERENCES journeys(journey_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE journey_executions (
+    execution_id     VARCHAR(64) PRIMARY KEY,
+    journey_id       VARCHAR(64) NOT NULL REFERENCES journeys(journey_id),
+    thread_id        VARCHAR(200) NOT NULL REFERENCES journey_threads(thread_id),
+    attempt          INTEGER NOT NULL,
+    phase            SMALLINT,
+    worker_id        VARCHAR(128) NOT NULL,
+    status           VARCHAR(16) NOT NULL,
+    lease_expires_at TIMESTAMPTZ,
+    started_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at         TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX journey_executions_one_running
+    ON journey_executions (thread_id) WHERE status = 'running';
 CREATE INDEX ON journey_executions (journey_id, started_at DESC);
 ```
 
-`journey_id` is stable across worker replacement. A journey contains many
-executions; each execution records the worker that ran it, which is what lets
-Presenter proof show a changed worker identity as a fact rather than a caption.
+`journey_threads` makes journey-to-thread ownership an enforced relationship
+rather than a convention: a thread belongs to exactly one journey, by primary
+key. `journeys.active_thread_id` names the resume target explicitly, so
+"resume the journey" is never a search.
 
-**Why not reuse `conversations`.** It is the Phase-4 memory record: it carries
-`summary` and owns the embedded `conversation_messages` child table, and its
+**Why not reuse `conversations`.** It is the Phase-4 memory record, carrying
+`summary` and owning the embedded `conversation_messages` child, and its
 primary key is already bound one-to-one to the LangGraph thread
-(`meridian/backend/agents/orchestration_05/workflow.py:1236` sets
-`thread_id = conversation_id`). A journey must outlive a thread and span
-several. Overloading that row would break both jobs.
+(`workflow.py:1236` sets `thread_id = conversation_id`). A journey must outlive
+a thread and span several.
 
-`checkpoint_backend` is written when the journey is created and is never
-silently changed. Resume against a different active backend is refused with a
-clear error. Cross-backend resume is out of scope until it is implemented and
-tested deliberately.
+### Resume semantics
+
+Resume creates a **new execution attempt on the existing thread**. It never
+creates a thread, never starts a second workflow, and never repeats a
+business action.
+
+`POST /journeys/{journey_id}/resume` runs one transaction:
+
+1. Authorize the caller against `journeys.traveler_id`.
+2. Insert a `journey_executions` row with `status='running'`, a fresh
+   `execution_id`, `attempt = max(attempt) + 1`, this worker's id, and
+   `lease_expires_at = now() + lease_ttl`.
+3. The partial unique index `journey_executions_one_running` admits exactly
+   one running execution per thread. A concurrent second request violates it.
+
+Concurrency resolves as follows:
+
+- **Live owner.** The unique violation is caught and the endpoint returns
+  `409` naming the existing `execution_id`, its `worker_id`, and its lease
+  expiry. Duplicate resume requests are answered, not queued.
+- **Dead owner.** The claim transaction first runs a takeover step: any
+  `running` row for the thread whose `lease_expires_at` is in the past is
+  transitioned to `abandoned` in the same transaction, after which the insert
+  succeeds. Expiry is a state transition, never an index predicate, because
+  PostgreSQL requires index predicates to be immutable and `now()` is not.
+- **Heartbeat.** A running execution renews `lease_expires_at` on a timer.
+  Losing the heartbeat is what makes a killed worker recoverable within one
+  lease TTL instead of forever.
+
+The same partial-index rule is why a simultaneous-active-holds constraint, if
+one is ever wanted, must also be expressed on a maintained status column
+rather than on `hold_expires_at > now()`.
 
 ## 2. Checkpoint backends
 
-The seam already exists. `CheckpointBackend(saver, kind, durable, pool, error)`
-at `workflow.py:157` is the workflow-facing interface, and
-`initialize_checkpoint_backend()` is the single place backends are chosen.
+`CheckpointBackend(saver, kind, durable, pool, error)` at `workflow.py:157` is
+the workflow-facing interface, and `initialize_checkpoint_backend()` is the
+single place a backend is chosen. `AuroraDataApiSaver` becomes a third branch:
 
-Add `AuroraDataApiSaver`, a `BaseCheckpointSaver` implemented over
-`get_rds_data_client()`. Selection order:
+1. Resolvable DSN plus psycopg extras gives `AsyncPostgresSaver`.
+2. Otherwise a usable Data API client gives `AuroraDataApiSaver`.
+3. Otherwise `MemorySaver`, unless `LANGGRAPH_CHECKPOINT_REQUIRED` is set,
+   which raises.
 
-1. Explicit `LANGGRAPH_CHECKPOINT_DSN` or resolvable credentials, and the
-   psycopg extras installed, gives `AsyncPostgresSaver` (`durable=True`).
-2. Otherwise, a usable Data API client gives `AuroraDataApiSaver`
-   (`durable=True`).
-3. Otherwise `MemorySaver` (`durable=False`), unless
-   `LANGGRAPH_CHECKPOINT_REQUIRED` is set, which raises instead.
+**The demo configuration sets `LANGGRAPH_CHECKPOINT_REQUIRED=true`.** A silent
+degrade to MemorySaver during a talk is the failure this whole design exists
+to prevent, so it fails at startup instead.
 
-The saver mirrors LangGraph's own table layout, `checkpoints`,
-`checkpoint_blobs`, and `checkpoint_writes`, so the two backends do not invent
-separate storage. This keeps a future cross-backend resume cheap without
-claiming it works today.
+### Durability capability versus commit evidence
 
-Implementation notes that the tests must pin:
+These are two different facts and the UI must never substitute one for the
+other:
 
-- Serialize through the same `JsonPlusSerializer` the Postgres saver uses.
-  Pass serialized values as Data API `blobValue` parameters; they return
-  base64-encoded and must round-trip byte-identically.
-- `aput_writes` carries pending writes with their `task_id` and `task_path`.
-  This is where checkpointer implementations usually break, and it is what
-  makes interrupt-and-resume correct rather than approximately correct.
-- The Data API caps a result set at 1 MiB. `aget_tuple` and `alist` must fail
-  loudly with an actionable message when a checkpoint exceeds it, not truncate.
-  A test asserts the ceiling rather than assuming this workflow stays small.
-- Data API calls are retried on throttling and transient faults. Retries must
-  be safe: writes are keyed on
-  `(thread_id, checkpoint_ns, checkpoint_id)` and upsert.
+- **Capability**: `CheckpointBackend.durable` — this backend *can* persist.
+- **Evidence**: a specific `(thread_id, checkpoint_ns, checkpoint_id)` row
+  observed in Aurora with its commit timestamp — this checkpoint *did* persist.
 
-**Bug to fix as part of this work.** `_uses_postgres_saver` (`workflow.py:533`)
-tests `checkpointer_kind.startswith("PostgresSaver")`. A Data API saver would
-fail that string test and silently render the MemorySaver trace, reintroducing
-the mislabelling fixed in commit `e78d68f`. It becomes a check on the `durable`
-capability flag, and the trace reports the actual backend name.
+Presenter proof renders commit evidence. A durable backend with no committed
+row for the current thread reads as "backend durable, no checkpoint committed
+yet", not as a checkpoint.
+
+### Synchronous persistence at the recovery boundary
+
+The checkpoint at the demonstrated interrupt point is committed before the
+request that produced it is acknowledged. LangGraph's durability mode is set
+so the boundary write is synchronous rather than deferred. A resume beat whose
+checkpoint was still in flight when the worker died is not a recovery
+demonstration.
+
+### Semantics the saver must match, not just table shape
+
+Mirroring `checkpoints`, `checkpoint_blobs`, and `checkpoint_writes` is
+necessary and not sufficient. The implementation must match
+`langgraph-checkpoint==4.1.1` on:
+
+- **Pending-write identity.** `(thread_id, checkpoint_ns, checkpoint_id,
+  task_id, idx)`, including `task_path`.
+- **Reserved write indices.** Negative and special indices carry meaning;
+  they are stored and returned verbatim, not renumbered.
+- **Parent relationships.** `parent_checkpoint_id` is written and used for
+  history, so `alist` returns a correctly ordered lineage.
+- **Channel versions.** The version strings the saver emits and compares must
+  round-trip exactly; `new_versions` handling decides what a resumed graph
+  recomputes.
+- **Conflict behaviour.** Writes upsert on the natural key so a retried Data
+  API call is idempotent.
+
+Validation uses the checkpointer conformance suite from the upstream
+`langgraph` repository. It is **not** part of the installed distribution — the
+installed `langgraph/checkpoint/` tree contains only `base`, `memory`,
+`postgres`, and `serde` — so it is vendored into `meridian/tests/` at the
+pinned version and run alongside real Aurora integration tests. Neither
+substitutes for the other: conformance catches contract violations, Aurora
+integration catches transport and size failures.
+
+### Data API storage contract
+
+Serialization uses the same `JsonPlusSerializer` as the Postgres saver.
+
+**Binary handling.** boto3 exposes `blobValue` as Python `bytes` in both
+directions; it performs base64 transcoding itself. Any additional base64 in
+application code is a double-encoding bug. The existing client cannot round-trip
+binary at all today:
+
+- `_format_parameters` (`backend/db/rds_data_client.py:69-95`) has no `bytes`
+  branch. Bytes fall through to `else: {"stringValue": str(value)}`, which
+  stores the Python repr `"b'\\x80\\x03...'"`. Silent corruption.
+- `_parse_value` (`:105-119`) has no `blobValue` branch and returns `None` for
+  any blob column.
+
+Both gain binary handling, with a test asserting byte-identical round trips
+across the full byte range including embedded nulls.
+
+**Size enforcement before acknowledgement.** A checkpoint that cannot be read
+back must never be reported as persisted. Serialized values are chunked into
+segments safely below the 64 KB per-row limit and stored across ordered rows:
+
+```sql
+CREATE TABLE checkpoint_blob_chunks (
+    thread_id     VARCHAR(200) NOT NULL,
+    checkpoint_ns VARCHAR(200) NOT NULL,
+    channel       VARCHAR(200) NOT NULL,
+    version       VARCHAR(64)  NOT NULL,
+    chunk_index   INTEGER      NOT NULL,
+    chunk         BYTEA        NOT NULL,
+    PRIMARY KEY (thread_id, checkpoint_ns, channel, version, chunk_index)
+);
+```
+
+`aput` computes the encoded size, writes chunks, and only then writes the
+`checkpoints` row that makes the checkpoint visible. If any chunk write fails,
+the checkpoint is not acknowledged. Writes stay under the 4 MiB request limit
+by construction, since each statement carries one chunk.
+
+**Paginated reads.** `aget_tuple` fetches chunks ordered by `chunk_index` and
+reassembles. `alist` pages through history with `LIMIT`/keyset pagination so no
+single response approaches 1 MiB. A row that would exceed 64 KB on return is a
+bug in the writer, and a read that encounters one fails loudly with the
+thread, checkpoint, and channel named.
+
+**Bug this exposes.** `_uses_postgres_saver` (`workflow.py:533`) tests
+`checkpointer_kind.startswith("PostgresSaver")`. A Data API saver fails that
+string test and silently renders the MemorySaver trace, reintroducing the
+mislabelling fixed in `e78d68f`. It becomes a check on the `durable`
+capability flag, and the trace reports the real backend name.
 
 ## 3. Business-action identity
 
-The invariant: **one business effect per intended hold request, across
-retries, executions, and workers.**
+The invariant: **one business effect per intended hold request**, across
+retries, executions, and workers. A journey may legitimately contain several
+holds, so every surface labels this as *one hold for this request*, never
+"one hold per journey".
 
-A `hold_request_id` is allocated and persisted once, when the intended hold is
-established and before the business action is scheduled. Every execution and
-retry for that intent reuses it.
+### Intent is persisted before the action
+
+A `prepare_hold` node runs before the `hold` node. It allocates
+`hold_request_id`, normalizes and validates the hold terms, computes the
+fingerprint, writes all of it into the graph state, and that state is
+checkpointed synchronously before the `hold` node is entered. Every retry and
+every later execution reads the id and the canonical parameters back from the
+checkpoint rather than regenerating them.
+
+This is what makes the identity independently persisted. The `hold_requests`
+row commits with the booking and therefore cannot serve as pre-action intent:
+if the transaction rolls back, or the worker dies before it, the row does not
+exist. The checkpoint does.
+
+### The database constraint
 
 ```sql
 CREATE TABLE hold_requests (
@@ -172,168 +308,276 @@ CREATE TABLE hold_requests (
 );
 ```
 
-`thread_id` and `execution_id` are provenance only. `fingerprint` is a
-normalized digest of the material terms: package, duration, quantity, unit
-price, and total.
+`thread_id` and `execution_id` are provenance. `fingerprint` is a digest of
+**validated, normalized** terms — package, duration, quantity, unit price,
+total — computed in `prepare_hold` from values that have already been checked,
+so a fingerprint never encodes unvalidated input.
 
 The foreign key is deferred because the identity row is written before the
-booking it names. `create_courtesy_hold` already receives `p_booking_id` from
-the caller, so the id is known at the top of the transaction, but the
-`bookings` row does not exist until after the inventory check passes. Deferring
-to commit keeps both facts in one transaction without ordering them wrongly.
+booking it names exists. `create_courtesy_hold` already receives
+`p_booking_id` from the caller, so the id is known at the top of the
+transaction.
 
-The identity record and the hold are created **inside** the existing
-inventory-protection transaction. `create_courtesy_hold`
-(`scripts/migrations/006_add_courtesy_hold_function.sql`) gains
-`p_journey_id`, `p_hold_request_id`, and `p_fingerprint`. Its body runs:
+`create_courtesy_hold` gains `p_journey_id`, `p_hold_request_id`, and
+`p_fingerprint`, and its body runs, inside the existing transaction and before
+the advisory lock:
 
-1. `INSERT INTO hold_requests ... ON CONFLICT (journey_id, hold_request_id)
+1. **Authorize the journey.** `journeys.journey_id = p_journey_id` must exist
+   with `traveler_id = p_traveler_id`, in addition to the existing
+   `app.current_traveler_id` scope check. This runs before creation **and**
+   before replay, so a known request id never returns another traveler's
+   booking.
+2. `INSERT INTO hold_requests ... ON CONFLICT (journey_id, hold_request_id)
    DO NOTHING`.
-2. If a row was inserted, take the advisory lock, run the existing capacity
-   check, insert `bookings` and `booking_lines`, and return the new hold.
-3. If the insert conflicted, select the existing row. On a fingerprint
-   mismatch, raise `hold_request_parameter_mismatch`. Otherwise return the
-   existing booking with its current status and take **no** inventory action.
+3. **Inserted**: take the advisory lock, run the existing capacity check,
+   insert `bookings` and `booking_lines`, return the new hold.
+4. **Conflicted**: select the existing row. On fingerprint mismatch raise
+   `hold_request_parameter_mismatch`. Otherwise return the existing booking
+   with its current status, taking no inventory action — no re-reservation, no
+   extended expiry, no reactivation of a cancelled or expired hold.
 
-An application-level check-then-insert is insufficient and is not used.
-Concurrent identical requests serialize on the primary key: one inserts, and
-the other blocks on the uncommitted key until the first transaction commits,
-then observes the committed row and takes the replay path.
+Concurrent identical requests serialize on the primary key: one inserts, the
+other blocks on the uncommitted key, then takes the replay path. An
+application-level check-then-insert is insufficient and is not used.
 
-A failed attempt rolls the identity row back with the rest of the transaction.
-If the capacity check raises `insufficient_inventory`, the `hold_request_id` is
-not consumed and a later retry is a fresh attempt rather than a permanent
-replay of a failure.
+The return signature extends to carry `booking_id`, `status`, and a replay
+flag, so callers render what happened rather than assuming a fresh
+reservation.
 
-Behaviour:
+A deliberate replacement hold allocates a new `hold_request_id` through
+`prepare_hold`, which means a new checkpointed intent.
 
-- **Duplicate request, same fingerprint.** Returns the existing hold and its
-  current status. Does not reserve inventory again, does not extend expiry,
-  does not reactivate a cancelled or expired hold.
-- **Same request id, different fingerprint.** Raises a conflict.
-- **Deliberate replacement.** A new `hold_request_id` is allocated and
-  persisted. The old hold is unaffected by the identity mechanism.
+### Migration
 
-The function's return signature extends to carry `booking_id`, `status`, and
-whether the call was a replay, so callers can render the outcome truthfully
-instead of assuming a fresh reservation.
+A forward migration, `007_journey_scoped_hold_identity.sql`:
 
-**Constraint worth stating explicitly.** A rule about simultaneous active
-holds cannot be expressed as a partial unique index predicated on
-`hold_expires_at > now()`, because PostgreSQL requires index predicates to be
-immutable and `now()` is stable. If that rule is wanted, it is enforced on an
-actively maintained status column, with expiry moved by a transition rather
-than inferred from a timestamp comparison at read time.
+- Creates `journeys`, `journey_threads`, `journey_executions`,
+  `hold_requests`, and `checkpoint_blob_chunks`.
+- Creates the new `create_courtesy_hold` with the expanded signature, and
+  **drops the old eight-argument function**. `CREATE OR REPLACE FUNCTION` with
+  a changed parameter list creates an overload rather than replacing, so
+  leaving it in place would leave a callable path that bypasses idempotency
+  entirely. The old signature is dropped and its grant revoked.
+- Updates every caller to the new signature.
+- Grants `EXECUTE` on the new function to `meridian_app` only, and applies the
+  same traveler-scoped RLS policy pattern the existing traveler tables use to
+  `journeys`, `journey_threads`, `journey_executions`, and `hold_requests`,
+  so a scoped session cannot read another traveler's journey rows.
+  `checkpoint_blob_chunks` is workload-owned rather than traveler-scoped and
+  is granted to the application role without an RLS policy, matching how the
+  other LangGraph checkpoint tables are treated.
+- Preserves existing `booking_id` values. Legacy holds are linked to journeys
+  and request identities only where the mapping is unambiguous.
 
-**Migration.** Existing `booking_id` values are preserved. Legacy holds are
-linked to journeys and request identities only where the mapping is reliable;
-where it is not, the row is left unlinked rather than guessed.
+**Legacy holds that cannot be linked** are readable and cancellable but are
+never resumed into an idempotent flow. A resume that encounters an unlinked
+legacy hold stops and asks for an explicit decision rather than creating a
+second hold or adopting one it cannot prove belongs to the request.
 
 ## 4. Read API and evidence
 
 `GET /journeys/{journey_id}` assembles a typed document from the sources that
-already hold the facts:
+already hold the facts. It has no workflow side effects.
 
 | Section | Source |
 | --- | --- |
-| Journey, owner, backend | `journeys` |
-| Executions, workers | `journey_executions` |
-| Checkpoint and thread | active checkpoint backend, `checkpoints` |
+| Journey, owner, backend, active thread | `journeys`, `journey_threads` |
+| Executions, workers, attempts, leases | `journey_executions` |
+| Checkpoint and thread | active backend, `checkpoints`, `checkpoint_blob_chunks` |
+| Conversation and recommendations | `conversation_messages`, checkpointed state |
 | Business record | `bookings`, `booking_lines`, `hold_requests` |
-| Authorization | `traveler_access_audit`, AgentCore identity context |
-| Session totals | the existing `/diagnostics/session-receipt` logic |
+| Authorization history | `traveler_access_audit` |
+| Session totals | existing `/diagnostics/session-receipt` logic |
 
-Every claim carries `source`, `id`, and `observed_at`. Evidence that is not
-available is represented explicitly as
+Every claim carries `source`, `id`, and `observed_at`, and every claim is
+correlated to the actual `journey_id`, `thread_id`, `execution_id`, and
+`hold_request_id` it describes. Unavailable evidence is explicit:
 `{"status": "unavailable", "reason": "..."}`. It is never omitted and never
-inferred from prose. Success, authorization, persistence, and no-duplicate-hold
-claims render only when the corresponding record supports them.
+inferred from prose.
+
+**Historical authorization comes from `traveler_access_audit` rows, not from
+the current identity context.** Who is authenticated now is a fact about now.
+Presenter proof asserts that a past action was authorized, which only the
+audit row recorded at the time can establish.
 
 Authorization runs on every read and every action, reusing
-`require_http_principal` and `authorize_traveler`, plus the persisted-owner
-check that `_authorize_thread` already performs (`workflow.py:1210`). Knowing a
-journey id or a thread id grants nothing.
+`require_http_principal` and `authorize_traveler` plus the persisted-owner
+check `_authorize_thread` performs (`workflow.py:1210`). A journey id or a
+thread id grants nothing on its own.
 
-Reads and view changes have no workflow side effects. Resume is an explicit
-command, `POST /journeys/{journey_id}/resume`, and it does not start a second
-run or repeat a business action.
+### Response example
+
+```jsonc
+{
+  "journey_id": "jrn_7f3a91",
+  "traveler_id": "TRV-001",
+  "status": "awaiting_decision",
+  "checkpoint_backend": { "kind": "AuroraDataApiSaver", "durable": true },
+  "active_thread_id": "tokyo_1042",
+
+  "conversation": {
+    "source": "conversation_messages",
+    "observed_at": "2026-09-06T02:14:07Z",
+    "messages": [
+      { "message_id": "msg_01", "role": "user",
+        "content": "My plans changed. Can we keep the trip in Tokyo and stay within my budget?",
+        "created_at": "2026-09-06T02:11:52Z" }
+    ]
+  },
+
+  "recommendations": {
+    "source": "checkpoint:tokyo_1042/cp_1042_03#channel:recommendations",
+    "observed_at": "2026-09-06T02:13:40Z",
+    "items": [
+      { "package_id": "TKY-003", "name": "Tokyo Executive Stopover",
+        "price_per_person": 1949, "nights": 3 },
+      { "package_id": "TKY-006", "name": "Tokyo Indie Neighborhood Walk",
+        "price_per_person": 1599, "nights": 4 }
+    ]
+  },
+
+  "selected_plan": {
+    "source": "checkpoint:tokyo_1042/cp_1042_03#channel:selected_package",
+    "package_id": "TKY-003"
+  },
+
+  "pending_decision": {
+    "source": "checkpoint:tokyo_1042/cp_1042_03#next",
+    "next_nodes": ["confirm_plan"],
+    "prompt": "Confirm the Tokyo Executive Stopover hold"
+  },
+
+  "checkpoint": {
+    "status": "committed",
+    "source": "checkpoints",
+    "thread_id": "tokyo_1042",
+    "checkpoint_id": "cp_1042_03",
+    "parent_checkpoint_id": "cp_1042_02",
+    "checkpoint_ns": "",
+    "committed_at": "2026-09-06T02:13:41Z"
+  },
+
+  "hold": {
+    "status": "held",
+    "label": "one hold for this request",
+    "source": "hold_requests + bookings",
+    "hold_request_id": "hrq_5c1d0e",
+    "booking_id": "BKG-4471",
+    "created_by_execution_id": "exe_02",
+    "hold_expires_at": "2026-09-06T14:13:44Z",
+    "replayed": false
+  },
+
+  "executions": [
+    { "execution_id": "exe_01", "attempt": 1, "worker_id": "worker_01",
+      "status": "abandoned", "started_at": "2026-09-06T02:11:50Z",
+      "ended_at": "2026-09-06T02:13:58Z" },
+    { "execution_id": "exe_02", "attempt": 2, "worker_id": "worker_02",
+      "status": "running", "started_at": "2026-09-06T02:14:02Z",
+      "lease_expires_at": "2026-09-06T02:14:32Z" }
+  ],
+
+  "authorization": {
+    "status": "observed",
+    "source": "traveler_access_audit",
+    "subject": "arn:aws:sts::…:assumed-role/meridian-workload/…",
+    "decision": "ALLOW",
+    "observed_at": "2026-09-06T02:11:49Z"
+  },
+
+  "rls": { "status": "unavailable", "reason": "no scoped probe run this session" }
+}
+```
+
+A refresh restores the conversation, the recommendations, the selected plan,
+the pending decision, the hold and its status, and both executions — including
+the fact that `worker_01` was abandoned and `worker_02` holds the lease. That
+is the whole continuity claim, served from persisted state.
 
 ## 5. Frontend shell
 
-A `MeridianJourneyProvider` owns journey identity and the assembled document,
-caching it and coordinating the four views. `useMeridianShowcase` keeps owning
-ladder and turn state, including its clear-on-phase-change behaviour, which now
-applies only inside the Capability ladder.
+`MeridianJourneyProvider` owns journey identity and the assembled document,
+caching it and coordinating the views. `useMeridianShowcase` keeps ladder and
+turn state, including clear-on-phase-change, which now applies only inside the
+Capability ladder.
 
-`view` and `journey_id` live in the URL, so refresh and reconnect reload
-backend state rather than restarting. Capability demonstrations keep their own
-operation ids within the session; not every SQL or retrieval demo is forced
-into the workflow.
+`view` and `journey_id` live in the URL so refresh and reconnect reload backend
+state. Capability demonstrations keep their own operation ids; not every SQL or
+retrieval demo is forced into the workflow.
 
-`deriveAuroraEvidence` stops regex-scraping trace spans and becomes a renderer
-over the typed document. That is the change that makes the proof surfaces
-honest by construction rather than by vigilance, and it retires the class of
-bug fixed in `98bbac2`.
+`deriveAuroraEvidence` stops regex-scraping and becomes a renderer over the
+typed document, retiring the class of bug fixed in `98bbac2`.
 
 Presenter proof shows the actual graph host, the actual checkpoint backend, and
-persisted evidence. A local graph writing Aurora checkpoints is labelled as
+committed evidence. A local graph writing Aurora checkpoints is labelled as
 exactly that.
 
-The design prototypes are visual references. Their simulated state transitions
-are replaced by real integrations.
+The design prototypes are visual references; their simulated transitions are
+replaced by real integrations.
 
 ## 6. Sequencing
 
-The durable slice lands before the new UI. The existing five-phase path stays
-runnable throughout.
+The existing five-phase path stays runnable throughout.
 
-1. `AuroraDataApiSaver` behind the existing `CheckpointBackend` interface,
-   with focused integration tests.
-2. `journeys` and `journey_executions`, the read API, and authorization.
-3. Journey-scoped hold request identity, inside the inventory transaction.
-4. The five-step vertical slice, verified end to end.
-5. Shell and view axis. Capability ladder untouched.
-6. Recovery desk, then Presenter proof.
-7. Concierge visual pass, after continuity works.
+1. Data API binary support and size enforcement in `rds_data_client`.
+2. `AuroraDataApiSaver` behind `CheckpointBackend`, with the vendored
+   conformance suite and Aurora integration tests.
+3. `journeys`, `journey_threads`, `journey_executions`, lease-based resume,
+   read API, authorization.
+4. `prepare_hold` intent checkpointing and journey-scoped hold identity,
+   including the forward migration and the dropped old signature.
+5. The vertical slice, verified end to end.
+6. Shell and view axis. Capability ladder untouched.
+7. Recovery desk, then Presenter proof.
+8. Concierge visual pass.
 
 ## 7. Verification
 
-The vertical slice, run against real Aurora:
+Vertical slice, against real Aurora:
 
-1. Save a checkpoint and confirm persistence.
+1. Save a checkpoint and confirm persistence by reading the committed row.
 2. Terminate the actual graph worker.
 3. Resume the authorized thread from a fresh worker.
 4. Verify restored state and changed worker identity.
 5. Interrupt after a hold commits but before its following checkpoint, retry,
    and verify exactly one hold exists.
+6. Interrupt **between intent persistence and hold creation**, resume, and
+   verify one hold created under the checkpointed `hold_request_id`.
 
-Focused tests covering serialization, pending writes, retries, and Data API
-response limits. Business-identity tests covering concurrent execution of the
-same request, retry after commit but before checkpoint, parameter mismatch,
-and a deliberate new request after expiry.
+Focused tests: serialization round trips, pending writes and reserved indices,
+retry idempotency, chunk reassembly, the 64 KB row boundary, the 1 MiB
+paginated read boundary, and byte-identical binary round trips with no double
+encoding.
 
-Shell tests covering: switching views preserves the active run; interruption
-and resume retain the correct checkpoint; another traveler cannot resume the
-thread; repeated resume does not duplicate the business action.
+Business identity: concurrent execution of the same request, retry after
+commit but before checkpoint, parameter mismatch returning a conflict, a
+deliberate new request after expiry, and ownership rejection on both the
+creation and replay paths.
+
+Shell: switching views preserves the active run; refresh restores conversation,
+recommendations, selected plan, pending decision and hold; interruption and
+resume retain the correct checkpoint; another traveler cannot resume the
+thread; simultaneous resume yields one execution and a `409` naming the other;
+repeated resume does not duplicate the business action.
 
 ## 8. Out of scope
 
-- AgentCore-hosted orchestration with VPC connectivity. Separate deployment
-  milestone.
+- AgentCore-hosted orchestration with VPC connectivity. Separate milestone.
 - Cross-backend resume between `AsyncPostgresSaver` and `AuroraDataApiSaver`.
 - A separate evidence ledger table.
-- The remaining lower-priority audit items: profile-table RLS, the
+- Remaining lower-priority audit items: profile-table RLS, the
   `loyalty_balance` scoped-session check, the `memory_server` preference
   insert missing `preference_id`, and the health endpoint conflating liveness
-  with readiness. Tracked, not part of this work.
+  with readiness.
 
 ## 9. Risks
 
-- **Checkpointer correctness.** Pending writes and channel-value serialization
-  are where `BaseCheckpointSaver` implementations fail. Mitigated by mirroring
-  LangGraph's schema and by testing interrupt-and-resume rather than only
-  put-and-get.
-- **Data API size ceiling.** 1 MiB per result set. Mitigated by an explicit
-  failure and a test that asserts the boundary.
-- **Backend gaps found during UI work.** Recorded separately from the UI
-  tasks so the two do not blur.
+- **Checkpointer correctness.** Pending writes, reserved indices, and channel
+  versions are where custom savers fail. Mitigated by the vendored conformance
+  suite at pinned versions plus interrupt-and-resume integration tests.
+- **Chunking correctness.** Reassembly bugs surface as corrupted resumes, not
+  as errors. Mitigated by round-trip tests at and above the 64 KB boundary.
+- **Lease tuning.** Too long delays recovery after a kill; too short risks
+  stealing a live execution. The TTL and heartbeat interval are configuration
+  with a documented default and a test at both edges.
+- **Backend gaps found during UI work** are recorded separately from UI tasks.
