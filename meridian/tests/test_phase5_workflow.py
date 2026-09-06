@@ -25,6 +25,10 @@ from backend.agents.orchestration_05.workflow import (
 @pytest.fixture(autouse=True)
 def _disable_auto_checkpoint_dsn(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("LANGGRAPH_CHECKPOINT_DSN", raising=False)
+    # These assert what the workflow does with no durable backend configured.
+    # The demo .env now enables the Data API saver, so it has to be turned off
+    # here or the fallback under test never runs.
+    monkeypatch.delenv("LANGGRAPH_CHECKPOINT_DATA_API", raising=False)
     monkeypatch.setenv("LANGGRAPH_AUTO_CHECKPOINT_DSN", "false")
     monkeypatch.setenv("LANGGRAPH_CHECKPOINT_REQUIRED", "false")
     monkeypatch.setenv("LANGGRAPH_CHECKPOINT_POOL_TIMEOUT", "10")

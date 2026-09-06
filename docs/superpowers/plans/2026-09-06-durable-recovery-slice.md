@@ -2698,16 +2698,30 @@ Everything before this is unit-level. This task proves the claim the talk makes.
 
 - [ ] **Step 1: Apply both migrations against the demo cluster**
 
+**`schema_migrations` did not exist on this cluster**, so the runner treated
+002 through 006 as pending too. Re-running 006 would have recreated the
+eight-argument `create_courtesy_hold` that 008 drops. Each of 002-006 was
+verified applied by its effect (the `hold_expires_at` column, the upgraded
+loyalty JSON, the JFK home airport, the identity-bindings table, the function
+itself) and then recorded, so the runner's bookkeeping matches the cluster.
+
 Run: `venv/bin/python scripts/apply_migrations.py`
-Expected: `007_journey_shell.sql` and `008_hold_request_identity.sql` applied. Re-run once and confirm it is a no-op.
+Expected: `No pending migrations.` Applying a single file ahead of that is
+`runner._apply_migration(client, path)`, not a bare run.
 
 - [ ] **Step 2: Require a durable backend in the demo configuration**
 
-Add to `meridian/.env`:
+Add to `meridian/.env`. `REQUIRED` alone would only fail closed; the Data API
+saver is opt-in (Task 7), so both are needed:
 
 ```
+LANGGRAPH_CHECKPOINT_DATA_API=true
 LANGGRAPH_CHECKPOINT_REQUIRED=true
 ```
+
+`tests/test_phase5_workflow.py` asserts the no-durable-backend fallback, so its
+autouse fixture has to unset `LANGGRAPH_CHECKPOINT_DATA_API` now that the demo
+env sets it.
 
 Run: `venv/bin/python -c "
 import asyncio
@@ -3057,6 +3071,12 @@ such as reading `octet_length` back to decide whether appends are needed.
 
 Run: `venv/bin/pytest tests/test_durable_recovery_slice.py -q -m database`
 Expected: PASS, 9 passed.
+
+**The lease needs a heartbeat.** Task 8 produced `renew_lease` and nothing
+called it, which makes the lease a timeout on the whole execution rather than a
+liveness signal: the first run of this script had worker one lose its slot
+while it was still working, because the workflow outlived the lease. Worker one
+renews on an interval, so a SIGKILLed worker loses the slot by ceasing to renew.
 
 - [ ] **Step 5: Write the presenter script**
 

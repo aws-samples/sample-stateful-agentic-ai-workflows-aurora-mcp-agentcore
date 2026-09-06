@@ -10,12 +10,18 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import sys
+
 import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 from rich.console import Console
 
-from scripts.init_aurora_schema import split_sql
+# Runnable as `python scripts/apply_migrations.py` from the project root, which
+# puts scripts/ on sys.path rather than the project root itself.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from scripts.init_aurora_schema import split_sql  # noqa: E402
 
 load_dotenv()
 
