@@ -5,7 +5,9 @@ import {
   Navigation2,
   RefreshCw,
   Send,
-  Sparkles,
+  Leaf,
+  Plane,
+  ConciergeBell,
   UsersRound,
   X,
 } from 'lucide-react';
@@ -20,17 +22,19 @@ export function ChatComposer({
   compact = false,
   proofMode = false,
   recoveryMode = false,
+  conciergeMode = false,
 }: {
   state: MeridianShowcaseState;
   compact?: boolean;
   proofMode?: boolean;
   recoveryMode?: boolean;
+  conciergeMode?: boolean;
 }) {
   const [openChip, setOpenChip] = useState<ChipKey | null>(null);
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    void state.submitPrompt();
+    void state.submitPrompt(undefined, conciergeMode ? 4 : undefined);
   };
 
   // Experience stays quiet with two known-good prompts. System proof keeps the
@@ -60,7 +64,9 @@ export function ChatComposer({
         ? state.selectedPhase <= 3
           ? [state.phaseExamples[0], state.phaseExamples[2]].filter(Boolean)
           : state.phaseExamples.slice(0, 3)
-        : state.phaseExamples.slice(0, 2);
+        : conciergeMode
+          ? ['A quiet wine country escape for two', 'Help me plan a culture trip to Tokyo']
+          : state.phaseExamples.slice(0, 2);
 
   const updateFilters = (patch: Partial<ChatFilters>) => {
     state.setChatFilters({ ...state.chatFilters, ...patch });
@@ -76,7 +82,7 @@ export function ChatComposer({
           className={`mds-chat-query-starters has-${queryStarters.length}`}
           aria-label="Query starters for this phase"
         >
-          <span className="mds-chat-starter-label">Try a query</span>
+          <span className="mds-chat-starter-label">{conciergeMode ? 'Start with an idea' : 'Try a query'}</span>
           {queryStarters.map((prompt) => {
             const isStretch =
               proofMode &&
@@ -92,7 +98,7 @@ export function ChatComposer({
                 type="button"
                 className={`mds-chat-starter-chip${isStretch ? ' is-stretch' : ''}`}
                 disabled={state.isLoading}
-                onClick={() => void state.applyPhaseExample(prompt, true)}
+                onClick={() => void state.applyPhaseExample(prompt, true, conciergeMode ? 4 : undefined)}
                 aria-label={accessibleLabel}
                 title={
                   isStretch
@@ -104,7 +110,7 @@ export function ChatComposer({
               </button>
             );
           })}
-          {!proofMode && state.selectedPhase === 4 && (
+          {!proofMode && !conciergeMode && state.selectedPhase === 4 && (
             <span className="mds-chat-phase-framing" role="note">
               <span>Trace beat</span>
               <b>AgentCore carries context across turns; Workflow externalizes the dependent plan into Aurora checkpoints.</b>
@@ -113,13 +119,14 @@ export function ChatComposer({
         </div>
       )}
       <form className={`mds-chat-composer${compact ? ' is-compact' : ''}`} onSubmit={onSubmit}>
+        {conciergeMode && <span className="mc-composer-icon" aria-hidden="true"><ConciergeBell size={21} strokeWidth={1.6} /></span>}
         <input
           value={state.currentPrompt}
           onChange={(event) => state.setCurrentPrompt(event.target.value)}
           placeholder={
             recoveryMode
               ? 'Ask Meridian anything - find the fastest way to Tokyo tomorrow…'
-              : 'Ask Meridian anything - "a calm wine trip in October, under $2,500"…'
+              : conciergeMode ? 'Tell me what you have in mind…' : 'Ask Meridian anything - "a calm wine trip in October, under $2,500"…'
           }
           disabled={state.isLoading}
           aria-label="Ask Meridian anything"
@@ -156,12 +163,12 @@ export function ChatComposer({
             onChange={(startDate, endDate) => updateFilters({ startDate, endDate })}
           />
           <ToggleChip
-            label="Add Spa"
+            label="Spa & wellness"
             activeLabel="Spa included"
             active={state.chatFilters.spa}
             disabled={state.isLoading}
             onToggle={() => updateFilters({ spa: !state.chatFilters.spa })}
-            icon={<Sparkles size={16} />}
+            icon={<Leaf size={16} />}
           />
           <ToggleChip
             label="Direct flights"
@@ -169,7 +176,7 @@ export function ChatComposer({
             active={state.chatFilters.directFlights}
             disabled={state.isLoading}
             onToggle={() => updateFilters({ directFlights: !state.chatFilters.directFlights })}
-            icon={<Navigation2 size={16} />}
+            icon={conciergeMode ? <Plane size={16} /> : <Navigation2 size={16} />}
           />
           {recoveryMode && (
             <ToggleChip

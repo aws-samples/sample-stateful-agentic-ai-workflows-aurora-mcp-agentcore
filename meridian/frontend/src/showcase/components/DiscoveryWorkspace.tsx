@@ -1,23 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AlertTriangle,
-  ArrowRight,
-  Check,
-  Clock3,
-  Heart,
-  Lock,
-  MapPin,
-} from 'lucide-react';
-import { ServiceMark } from './ServiceMark';
+import { useEffect, useRef } from 'react';
+import { AlertTriangle, ArrowRight, Check, Clock3, Compass, Heart, MapPin, RotateCcw } from 'lucide-react';
+import { ShowcaseMarkdown } from './ChatTranscript';
+import { ConciergeBell } from '../icons/TravelIcons';
 import type { Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { tripVisualPhoto } from '../lib/tripVisualPhoto';
 import { derivePersonalization } from '../lib/discoveryPersonalization';
-import { SessionReceipt } from './SessionReceipt';
-import { prefersReducedMotion } from '../lib/prefersReducedMotion';
-
-/** How long each trip holds the hero before the next one takes over. */
-const ROTATE_MS = 7000;
 
 const CATALOG_PREVIEW: Product[] = [
   {
@@ -68,276 +56,94 @@ const CATALOG_PREVIEW: Product[] = [
 ];
 
 function money(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(value);
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
 }
 
-function availabilityLabel(product: Product): string {
-  const inventory = Object.values(product.availability ?? {}).filter(
-    (value): value is number => Number.isFinite(value),
-  );
-  if (inventory.length > 0) {
-    const total = inventory.reduce((sum, value) => sum + value, 0);
-    return `${total} places across ${inventory.length} stays`;
-  }
-  const durations = product.available_sizes?.length ?? 0;
-  return durations > 0
-    ? `${durations} stay lengths`
-    : 'Availability checked during search';
-}
-
-function discoverySignals(product: Product): string[] {
-  const highlights = (product.highlights ?? []).slice(0, 2);
-  const duration = product.available_sizes?.[0];
-  return [...highlights, duration].filter(
-    (value): value is string => Boolean(value),
-  );
-}
-
-function DiscoveryTrip({
-  product,
-  featured,
-  onView,
-  onSave,
-}: {
+function TripCard({ product, state, featured = false }: {
   product: Product;
-  featured: boolean;
-  onView: () => void;
-  onSave: () => void;
+  state: MeridianShowcaseState;
+  featured?: boolean;
 }) {
   const photo = tripVisualPhoto(product).src;
-
+  const saved = state.savedTripIds.has(product.product_id);
+  const profile = state.travelerProfile ?? state.previewProfile;
+  const facts = state.memoryFacts.length ? state.memoryFacts : state.previewFacts;
+  const match = derivePersonalization(product, profile, facts).find(pill => pill.tone !== 'context');
   return (
-    <article
-      className={`mds-discovery-trip${featured ? ' is-featured' : ''}`}
-      aria-label={product.name}
-    >
-      {photo && (
-        <img
-          src={photo}
-          alt=""
-          width="1600"
-          height="900"
-          loading={featured ? 'eager' : 'lazy'}
-        />
-      )}
-      <span className="mds-discovery-scrim" aria-hidden="true" />
-      <button
-        type="button"
-        className="mds-discovery-save"
-        onClick={onSave}
-        aria-label={`Save ${product.name}`}
-      >
-        <Heart size={17} aria-hidden="true" />
-      </button>
-      <div className="mds-discovery-trip-copy">
-        <span className="mds-discovery-location">
-          <MapPin size={14} aria-hidden="true" />
-          {product.destination ?? product.region ?? product.category}
-        </span>
-        <h2>{product.name}</h2>
-        {featured && <p>{product.description}</p>}
-        <div className="mds-discovery-signals">
-          {discoverySignals(product).map((signal) => (
-            <span key={signal}>
-              <Check size={12} aria-hidden="true" />
-              {signal}
-            </span>
-          ))}
-        </div>
+    <article className={`mc-trip${featured ? ' is-featured' : ''}`} aria-label={product.name}>
+      <div className="mc-trip-image">
+        {photo ? <img src={photo} alt="" width="1600" height="900" loading={featured ? 'eager' : 'lazy'}
+          fetchPriority={featured ? 'high' : 'auto'} onError={event => { event.currentTarget.style.visibility = 'hidden'; }} /> : null}
+        <span className="mc-trip-image-fallback" aria-hidden="true"><MapPin size={28} /></span>
+        <button type="button" className="mc-save" onClick={() => state.saveTrip(product)}
+          aria-pressed={saved} aria-label={`${saved ? 'Unsave' : 'Save'} ${product.name}`}>
+          <Heart size={18} fill={saved ? 'currentColor' : 'none'} aria-hidden="true" />
+        </button>
+        {featured && <span className="mc-destination"><MapPin size={14} aria-hidden="true" />{product.destination ?? product.region}</span>}
+      </div>
+      <div className="mc-trip-copy">
+        {!featured && <span className="mc-trip-location">{product.destination ?? product.region ?? product.category}</span>}
+        <h3>{product.name}</h3>
+        <p>{product.description}</p>
+        <div className="mc-trip-meta"><Clock3 size={14} aria-hidden="true" />{product.available_sizes?.[0] ?? 'Flexible duration'}<span>·</span>{product.brand}</div>
         <footer>
-          <span>
-            <small>From</small>
-            <strong>{money(product.price)}</strong>
-            <em>per traveler</em>
-          </span>
-          <span className="mds-discovery-availability">
-            <Clock3 size={14} aria-hidden="true" />
-            {availabilityLabel(product)}
-          </span>
-          <button type="button" onClick={onView}>
-            View trip
-            <ArrowRight size={16} aria-hidden="true" />
+          <span className="mc-price"><small>From </small><strong>{money(product.price)}</strong><small> / traveler</small></span>
+          <button type="button" className="mc-trip-open" onClick={() => state.openTripDetails(product)} aria-label={`Explore ${product.name}`}>
+            {featured ? 'Explore this trip' : 'Details'}<ArrowRight size={16} aria-hidden="true" />
           </button>
         </footer>
       </div>
+      {match && <div className={`mc-trip-match is-${match.tone}`}>
+        {match.tone === 'caution' ? <AlertTriangle size={13} aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
+        <span>{match.label}</span>
+      </div>}
     </article>
   );
 }
 
-function PersonalizationPills({
-  state,
-  product,
-}: {
-  state: MeridianShowcaseState;
-  product: Product | undefined;
-}) {
-  // The talk opens on "this is what good looks like", so the cold open shows
-  // real preference matches read from Aurora at load. The moment the presenter
-  // runs a prompt the live memory state takes over, which leaves it empty again
-  // until Phase 4 authorizes it - the reveal still has to be earned.
-  const coldOpen = state.messages.length === 0;
-  const { travelerProfile, memoryFacts, previewProfile, previewFacts } = state;
-
-  const pills = useMemo(() => {
-    const profile = travelerProfile ?? (coldOpen ? previewProfile : null);
-    const facts =
-      memoryFacts.length > 0 ? memoryFacts : coldOpen ? previewFacts : [];
-    return derivePersonalization(product, profile, facts);
-  }, [
-    product,
-    coldOpen,
-    travelerProfile,
-    memoryFacts,
-    previewProfile,
-    previewFacts,
-  ]);
-
-  if (pills.length === 0) {
-    // Traveler context is disconnected and there is nothing to preview - say
-    // so, rather than implying a load is in flight or inventing
-    // personalization we have not earned.
-    return (
-      <p className="mds-discovery-pills-empty" role="status">
-        <Lock size={13} aria-hidden="true" />
-        {state.memoryLoading
-          ? 'Reading traveler context from Aurora…'
-          : 'Traveler context is disconnected. Phase 4 authorizes the workload for Alex, and these become live preference matches.'}
-      </p>
-    );
-  }
-
-  return (
-    <ul
-      className="mds-discovery-pills"
-      aria-label={`Why Meridian is showing ${product?.name ?? 'this trip'}`}
-    >
-      {pills.map((pill) => (
-        <li key={pill.id} className={`mds-discovery-pill is-${pill.tone}`}>
-          <span className="mds-discovery-pill-icon" aria-hidden="true">
-            {pill.tone === 'caution' ? (
-              <AlertTriangle size={12} />
-            ) : pill.tone === 'match' ? (
-              <Check size={12} />
-            ) : (
-              <ServiceMark name="aurora" size={13} />
-            )}
-          </span>
-          <span className="mds-discovery-pill-label">{pill.label}</span>
-          <span className="mds-discovery-pill-source">{pill.source}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-export function DiscoveryWorkspace({
-  state,
-  onClear,
-  greeting,
-}: {
+export function DiscoveryWorkspace({ state, onClear, greeting, onDiscover }: {
   state: MeridianShowcaseState;
   onClear: () => void;
   greeting: string;
+  onDiscover?: () => void;
 }) {
-  // Prefer the live recommendation set, then the live catalog, and only fall
-  // back to the bundled preview when Aurora has not answered yet.
-  const pool =
-    state.recommendations.length > 0
-      ? state.recommendations
-      : state.catalog.length > 0
-        ? state.catalog
-        : CATALOG_PREVIEW;
-
-  const [rotationIndex, setRotationIndex] = useState(0);
-  const rotationRef = useRef<number | null>(null);
-
-  // Keep the index in range when the pool changes underneath the rotation.
+  const hasTurn = state.messages.length > 0;
+  // A zero-result search stays empty. Bundled inspiration is only for the opening.
+  const pool = hasTurn ? state.recommendations : state.catalog.length ? state.catalog : CATALOG_PREVIEW;
+  const options = pool.slice(0, 3);
+  const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    setRotationIndex((index) => (index < pool.length ? index : 0));
-  }, [pool.length]);
-
-  // The hero advances on its own. No controls: this is an ambient product
-  // surface, not a carousel the audience is meant to operate.
-  useEffect(() => {
-    if (prefersReducedMotion || pool.length < 2) return;
-    rotationRef.current = window.setInterval(() => {
-      setRotationIndex((index) => (index + 1) % pool.length);
-    }, ROTATE_MS);
-    return () => {
-      if (rotationRef.current !== null) window.clearInterval(rotationRef.current);
-    };
-  }, [pool.length]);
-
-  const featured = pool[rotationIndex % pool.length];
-  const supporting = pool
-    .filter((_, index) => index !== rotationIndex % pool.length)
-    .slice(0, 2);
+    if (hasTurn) endRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'instant' });
+  }, [state.messages.length, state.isLoading, hasTurn]);
 
   return (
-    <section className="mds-discovery-workspace" aria-label="Meridian discovery">
-      <header className="mds-discovery-heading">
-        <div>
-          <h1>{`Good ${greeting}, Alex.`}</h1>
-          <p>Travel ideas shaped around the way you already travel.</p>
-        </div>
-        <div className="mds-discovery-heading-actions">
-          <button
-            type="button"
-            className="mds-discovery-clear"
-            onClick={onClear}
-            aria-label="Start the capability ladder at Phase 1"
-          >
-            Start the capability ladder
-            <ArrowRight size={16} aria-hidden="true" />
-          </button>
-        </div>
+    <section className="mc-workspace" aria-label="Meridian concierge">
+      <header className="mc-welcome">
+        <div><p>Good {greeting}, Alex.</p><h1>{hasTurn ? 'Let’s make it your kind of trip.' : 'Where would you like to go?'}</h1>
+        <span>{hasTurn ? 'A little planning. More to look forward to.' : 'Somewhere new. Something familiar. A trip that’s yours.'}</span></div>
+        <button type="button" className="mc-text-button mc-walkthrough" onClick={onClear} aria-label="Start the capability ladder at Phase 1">How it works<ArrowRight size={15} aria-hidden="true" /></button>
       </header>
 
-      <PersonalizationPills state={state} product={featured} />
+      <ol className="mc-conversation" aria-label="Conversation with Meridian">
+        {state.messages.map((message, index) => <li key={`${index}-${message.role}`} className={`mc-message is-${message.role}`}>
+          <span className="mc-message-author">{message.role === 'user' ? 'You' : <><ConciergeBell size={16} />Meridian</>}</span>
+          {message.role === 'user' ? <p>{message.text}</p> : <ShowcaseMarkdown source={message.text} />}
+        </li>)}
+      </ol>
+      {state.isLoading && <div className="mc-loading" role="status"><ConciergeBell size={18} /><span>Finding the right options for you…</span><span className="mc-loading-dots" aria-hidden="true">•••</span></div>}
+      {state.error && <div className="mc-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><strong>We couldn’t complete that request.</strong><p>Your conversation is still here. Please try again.</p></div>
+        <button type="button" onClick={() => { state.clearError(); void state.replayLastPrompt(); }} disabled={state.isLoading}><RotateCcw size={15} />Try again</button></div>}
 
-      <div className="mds-discovery-grid">
-        <div className="mds-discovery-featured" key={featured?.product_id}>
-          <DiscoveryTrip
-            product={featured}
-            featured
-            onView={() => state.openTripDetails(featured)}
-            onSave={() => state.saveTrip(featured)}
-          />
+      {!state.isLoading && !state.error && options.length > 0 && <section className="mc-collection" aria-label={hasTurn ? 'Your trip recommendations' : 'Travel inspiration'}>
+        <div className="mc-section-heading"><h2>{hasTurn ? 'Worth a closer look' : 'A little inspiration for your next chapter'}</h2>
+          {onDiscover && <button type="button" className="mc-text-button" onClick={onDiscover}>Explore more<ArrowRight size={15} aria-hidden="true" /></button>}
         </div>
-        {supporting.map((product) => (
-          <DiscoveryTrip
-            key={product.product_id}
-            product={product}
-            featured={false}
-            onView={() => state.openTripDetails(product)}
-            onSave={() => state.saveTrip(product)}
-          />
-        ))}
-      </div>
-
-      {/* The receipt is the closing beat, not the opener. On the cold open the
-          hero should own the stage, and a receipt counting rows from an earlier
-          run would be reporting on a session the audience has not seen yet.
-
-          Folded away even then: expanded it competed with the full-bleed hero
-          for the same rows and the two rendered over each other. A presenter
-          opens it when the receipt is the point. */}
-      {state.messages.length > 0 && (
-        <details className="mds-discovery-receipt">
-          <summary>
-            <span>Session receipt</span>
-            <small>What this session wrote, by table</small>
-          </summary>
-          <SessionReceipt
-            travelerId={state.travelerId}
-            conversationId={state.conversationId}
-          />
-        </details>
-      )}
+        <TripCard product={options[0]} state={state} featured />
+        <div className="mc-supporting-trips">{options.slice(1).map(product => <TripCard key={product.product_id} product={product} state={state} />)}</div>
+        <p className="mc-catalog-note">{hasTurn || state.catalog.length ? 'Meridian collection' : 'A preview of the Meridian collection'}<span>·</span>USD per traveler. Dates and availability confirmed when you plan.</p>
+      </section>}
+      {hasTurn && !state.isLoading && !state.error && options.length === 0 && <div className="mc-empty-results"><Compass size={24} aria-hidden="true" /><div><strong>A different direction?</strong><p>Try another destination or a wider budget to find more options.</p></div></div>}
+      <div ref={endRef} />
     </section>
   );
 }

@@ -8,6 +8,7 @@ import './discoveryWorkspace.css';
 import './recoveryDecisionRefresh.css';
 import './presenterProof.css';
 import './surfaceSwitch.css';
+import './airlineConcierge.css';
 
 type ShowcaseTheme = 'dark' | 'light';
 

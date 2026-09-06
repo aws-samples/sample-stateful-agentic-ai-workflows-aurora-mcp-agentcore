@@ -1,20 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ComponentType } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  Briefcase,
   ChevronLeft,
   Compass,
   Mail,
   Moon,
+  ArrowRight,
   PanelLeftClose,
   PanelLeftOpen,
   Settings2,
-  Sparkles,
   Sun,
   UserRound,
   X,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { BoardingPass, ConciergeBell } from './icons/TravelIcons';
 import { ChatComposer } from './components/ChatComposer';
 import { SURFACES, useJourney, useSurfaceUrlState } from './journey/useJourney';
 import { PresenterProof } from './surfaces/PresenterProof';
@@ -51,9 +51,16 @@ type ShowcaseTheme = 'dark' | 'light';
  * mental models at once.
  */
 
-const navItems: { id: NavItemId; label: string; icon: LucideIcon }[] = [
-  { id: 'concierge', label: 'Concierge', icon: Sparkles },
-  { id: 'trips', label: 'Trips', icon: Briefcase },
+/** Lucide's own marks and the travel set drawn to match it share this shape.
+ *  Lucide types `size` as string | number, so widen rather than narrow. */
+type NavIcon = ComponentType<{
+  size?: string | number;
+  strokeWidth?: string | number;
+}>;
+
+const navItems: { id: NavItemId; label: string; icon: NavIcon }[] = [
+  { id: 'concierge', label: 'Concierge', icon: ConciergeBell },
+  { id: 'trips', label: 'Trips', icon: BoardingPass },
   { id: 'discover', label: 'Discover', icon: Compass },
   { id: 'profile', label: 'Profile', icon: UserRound },
   { id: 'preferences', label: 'Preferences', icon: Settings2 },
@@ -186,6 +193,7 @@ export function DesktopMeridianApp({
     if (id === 'concierge') {
       setNavPanel(null);
       setMemoryOpen(false);
+      setView('concierge');
       return;
     }
     if (id === 'preferences') {
@@ -217,7 +225,7 @@ export function DesktopMeridianApp({
         <div className="mds-sidebar-head">
           <div className="mds-brand">
             <BrandMark />
-            <span className="mds-brand-name">Meridian</span>
+            <span className="mds-brand-name">Meridian<small>TRAVEL CONCIERGE</small></span>
           </div>
           <IconTooltip label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
             <button
@@ -262,6 +270,7 @@ export function DesktopMeridianApp({
           })}
         </nav>
         <div className="mds-sidebar-spacer" />
+        <div className="mc-sidebar-note"><span>Every detail.</span><span>Every step of the way.</span><button type="button" onClick={() => setView('recovery')}>Your recovery desk<ArrowRight size={14} aria-hidden="true" /></button></div>
         <button
           type="button"
           className="mds-account-mini"
@@ -288,66 +297,66 @@ export function DesktopMeridianApp({
         </button>
       </aside>
 
+      <header className="mds-shell-header">
+        <nav className="mds-shell-surface-nav" aria-label="Meridian capability ladder">
+          <ol
+            className="mds-surface-switch"
+            aria-label="Meridian surfaces"
+            ref={surfaceRowRef}
+          >
+            {SURFACES.map((surface) => {
+              const active = view === surface.id;
+              return (
+                <li key={surface.id}>
+                  <button
+                    type="button"
+                    className={`mds-surface-tab${active ? ' is-active' : ''}`}
+                    aria-current={active ? 'page' : undefined}
+                    data-active={active ? 'true' : undefined}
+                    onClick={() => {
+                      if (surface.id === 'concierge') openProduct();
+                      else setView(surface.id);
+                    }}
+                    title={surface.blurb}
+                  >
+                    <strong>{surface.label}</strong>
+                    <small>{surface.blurb}</small>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+
+        <div className="mds-shell-status">
+          <span
+            className={`mds-status-pill ${runtimeStatus.className}`}
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            <span className="mds-status-dot" aria-hidden="true" />
+            {runtimeStatus.label}
+            <span className="mds-status-sep" aria-hidden="true">·</span>
+            <span className="mds-status-unit">{runtimeStatus.detail}</span>
+          </span>
+          <IconTooltip label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+            <button
+              type="button"
+              className="mds-theme-toggle"
+              onClick={onToggleTheme}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+              {theme === 'dark'
+                ? <Sun size={17} aria-hidden="true" />
+                : <Moon size={17} aria-hidden="true" />}
+            </button>
+          </IconTooltip>
+        </div>
+      </header>
+
       <main className="mds-desktop-main">
         <div className="mds-desktop-scroll">
-          <div className="mds-top-actions">
-            <div className="mds-top-status">
-              <span
-                className={`mds-status-pill ${runtimeStatus.className}`}
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-              >
-                <span className="mds-status-dot" aria-hidden="true" />
-                {runtimeStatus.label}
-                <span className="mds-status-sep" aria-hidden="true">·</span>
-                <span className="mds-status-unit">{runtimeStatus.detail}</span>
-              </span>
-              <IconTooltip label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
-                <button
-                  type="button"
-                  className="mds-theme-toggle"
-                  onClick={onToggleTheme}
-                  aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                >
-                  {theme === 'dark'
-                    ? <Sun size={17} aria-hidden="true" />
-                    : <Moon size={17} aria-hidden="true" />}
-                </button>
-              </IconTooltip>
-            </div>
-          </div>
-
-          <nav className="mds-ladder-nav" aria-label="Meridian capability ladder">
-            <ol
-              className="mds-surface-switch"
-              aria-label="Meridian surfaces"
-              ref={surfaceRowRef}
-            >
-              {SURFACES.map((surface) => {
-                const active = view === surface.id;
-                return (
-                  <li key={surface.id}>
-                    <button
-                      type="button"
-                      className={`mds-surface-tab${active ? ' is-active' : ''}`}
-                      aria-current={active ? 'page' : undefined}
-                      data-active={active ? 'true' : undefined}
-                      onClick={() => {
-                        if (surface.id === 'concierge') openProduct();
-                        else setView(surface.id);
-                      }}
-                      title={surface.blurb}
-                    >
-                      <strong>{surface.label}</strong>
-                      <small>{surface.blurb}</small>
-                    </button>
-                  </li>
-                );
-              })}
-            </ol>
-          </nav>
-
           {isLadder && (
           <nav className="mds-ladder-nav" aria-label="Capability ladder phases">
             <ol className="mds-ladder-nav-rungs">
@@ -420,6 +429,7 @@ export function DesktopMeridianApp({
               state={state}
               greeting={greetingPart}
               onClear={clearIntoLadder}
+              onDiscover={() => openNavItem('discover')}
             />
           ) : !isRecovery ? (
             <>
@@ -516,7 +526,7 @@ export function DesktopMeridianApp({
         {((isProduct || isLadder) && (!isRecovery || recoveryStage === 'ready')) && (
           <div className="mds-desktop-dock">
             {isProduct ? (
-              <ChatComposer state={state} />
+              <ChatComposer state={state} conciergeMode />
             ) : !isRecovery ? (
               <ChatComposer state={state} proofMode />
             ) : (
@@ -527,8 +537,8 @@ export function DesktopMeridianApp({
       </main>
 
       {isProduct && (
-        <aside className="mds-desktop-right is-concierge" aria-label="Your travel concierge">
-          <ConciergeRail state={state} />
+        <aside className="mds-desktop-right is-concierge" aria-label="Your trip brief">
+          <ConciergeRail state={state} onSaved={() => openNavItem('trips')} onRecovery={() => setView('recovery')} />
         </aside>
       )}
 

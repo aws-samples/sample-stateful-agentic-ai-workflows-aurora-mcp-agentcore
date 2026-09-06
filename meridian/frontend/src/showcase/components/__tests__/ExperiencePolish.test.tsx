@@ -91,7 +91,7 @@ function getQueryStarter(prompt: string) {
 }
 
 describe('Experience presentation polish', () => {
-  it('starts with discovery and clears into Phase 1 of the capability ladder', () => {
+  it('starts with Concierge and clears into Phase 1 of the capability ladder', () => {
     const clearChat = vi.fn();
     const setSelectedPhase = vi.fn();
     const { container } = render(
@@ -103,7 +103,13 @@ describe('Experience presentation polish', () => {
     );
 
     expect(
-      screen.getByRole('region', { name: 'Meridian discovery' }),
+      screen.getByRole('region', { name: 'Meridian concierge' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('list', { name: 'Conversation with Meridian' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('complementary', { name: 'Your trip brief' }),
     ).toBeInTheDocument();
     // The sidebar also has a Concierge entry - that one is the traveler's
     // product nav. Scope to the surface axis.
