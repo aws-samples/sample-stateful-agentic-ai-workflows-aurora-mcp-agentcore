@@ -22,9 +22,12 @@ import {
 export function SessionReceipt({
   travelerId,
   windowMinutes = 90,
+  conversationId = null,
 }: {
   travelerId: string;
   windowMinutes?: number;
+  /** This session's workflow thread, so checkpoint rows count for it alone. */
+  conversationId?: string | null;
 }) {
   const [receipt, setReceipt] = useState<SessionReceiptResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,13 +37,13 @@ export function SessionReceipt({
     setLoading(true);
     setError(null);
     try {
-      setReceipt(await fetchSessionReceipt(travelerId, windowMinutes));
+      setReceipt(await fetchSessionReceipt(travelerId, windowMinutes, conversationId));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not read the receipt');
     } finally {
       setLoading(false);
     }
-  }, [travelerId, windowMinutes]);
+  }, [travelerId, windowMinutes, conversationId]);
 
   useEffect(() => {
     void load();

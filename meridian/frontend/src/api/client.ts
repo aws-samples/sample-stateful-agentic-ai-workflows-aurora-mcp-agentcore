@@ -294,11 +294,17 @@ export interface SessionReceiptResponse {
 export async function fetchSessionReceipt(
   travelerId = 'trv_meridian_demo',
   windowMinutes = 90,
+  conversationId: string | null = null,
 ): Promise<SessionReceiptResponse> {
   const response = await fetch(`${API_BASE}/diagnostics/session-receipt`, {
     method: 'POST',
     headers: apiHeaders(true),
-    body: JSON.stringify({ traveler_id: travelerId, window_minutes: windowMinutes }),
+    body: JSON.stringify({
+      traveler_id: travelerId,
+      window_minutes: windowMinutes,
+      // Scopes the checkpoint count to this session's workflow thread.
+      conversation_id: conversationId,
+    }),
   });
   if (!response.ok) {
     throw new Error(`Session receipt failed: ${response.statusText}`);

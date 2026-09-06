@@ -273,6 +273,10 @@ class SessionReceiptRequest(BaseModel):
     # Minutes of history to attribute to this session. The default covers a
     # 60-minute slot plus setup.
     window_minutes: int = Field(default=90, ge=1, le=1440)
+    # The workflow thread this session ran, so checkpoint rows can be counted
+    # for it rather than for the whole table. Without one there is no thread to
+    # make a durability claim about.
+    conversation_id: Optional[str] = Field(default=None, min_length=1, max_length=200)
 
 
 async def _count_since(
@@ -393,22 +397,44 @@ async def session_receipt(
         scoped=True,
     ))
 
+    # Scoped to this session's workflow thread. Counting these tables whole -
+    # every thread, every traveler, all of time - let a rehearsal from an hour
+    # earlier satisfy a durability claim made about the run on screen, which is
+    # the one number on this receipt that has to be beyond argument.
     checkpoint_total = 0
     checkpoints_exist = False
+    thread_id = request.conversation_id
     for table in CHECKPOINT_TABLES:
-        count = await _count_since(db, f"SELECT COUNT(*) AS n FROM {table}", ())
+        count = await _count_since(
+            db,
+            f"SELECT COUNT(*) AS n FROM {table} WHERE thread_id = %s",
+            (thread_id,),
+        ) if thread_id else None
+        if count is None and thread_id is None:
+            # Distinguish "no thread to count" from "no such table": probe the
+            # relation so the copy can say which is true.
+            count = await _count_since(db, f"SELECT COUNT(*) AS n FROM {table} WHERE false", ())
+            if count is not None:
+                checkpoints_exist = True
+            continue
         if count is not None:
             checkpoints_exist = True
             checkpoint_total += count
+
+    if not checkpoints_exist:
+        checkpoint_detail = "PostgresSaver was never configured, so nothing was written"
+    elif thread_id is None:
+        checkpoint_detail = "no workflow thread ran in this session"
+    elif checkpoint_total:
+        checkpoint_detail = f"workflow position externalized into Aurora for thread {thread_id}"
+    else:
+        checkpoint_detail = f"thread {thread_id} wrote no checkpoint rows"
+
     lines.append(ReceiptLine(
         label="LangGraph checkpoint rows",
         table=", ".join(CHECKPOINT_TABLES),
         count=checkpoint_total,
-        detail=(
-            "workflow position externalized into Aurora"
-            if checkpoints_exist
-            else "PostgresSaver was never configured, so nothing was written"
-        ),
+        detail=checkpoint_detail,
     ))
 
     return SessionReceiptResponse(

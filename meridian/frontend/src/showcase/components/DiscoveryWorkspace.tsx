@@ -323,7 +323,7 @@ export function DiscoveryWorkspace({
           hero should own the stage, and a receipt counting rows from an earlier
           run would be reporting on a session the audience has not seen yet. */}
       {state.messages.length > 0 && (
-        <SessionReceipt travelerId={state.travelerId} />
+        <SessionReceipt travelerId={state.travelerId} conversationId={state.conversationId} />
       )}
     </section>
   );
