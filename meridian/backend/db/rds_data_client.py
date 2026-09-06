@@ -86,6 +86,10 @@ class RDSDataClient:
             elif isinstance(value, Decimal):
                 param["value"] = {"stringValue": str(value)}
                 param["typeHint"] = "DECIMAL"
+            elif isinstance(value, (bytes, bytearray, memoryview)):
+                # boto3 base64-transcodes blobValue in both directions, so the
+                # raw bytes go on the wire. Encoding here would double-encode.
+                param["value"] = {"blobValue": bytes(value)}
             elif isinstance(value, (list, dict)):
                 param["value"] = {"stringValue": json.dumps(value)}
             else:
@@ -114,6 +118,8 @@ class RDSDataClient:
             return field["doubleValue"]
         if "booleanValue" in field:
             return field["booleanValue"]
+        if "blobValue" in field:
+            return bytes(field["blobValue"])
         if "arrayValue" in field:
             return self._parse_array(field["arrayValue"])
         return None
