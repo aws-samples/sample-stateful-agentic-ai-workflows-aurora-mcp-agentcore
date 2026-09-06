@@ -1,121 +1,174 @@
-"""Pending writes and history for the Data API saver.
+"""Pending writes and history for the Data API saver, against live Aurora.
 
 Pending writes are what a resumed graph replays. Losing one, renumbering a
 reserved index, or dropping task_path turns a resume into a silent
 recomputation, so each is pinned here.
+
+These asserted against a recording fake and checked the SQL text the saver
+emitted. That is not the property that matters. What matters is what Aurora
+holds afterwards, which is what these assert now: the fake could not have
+told you that overwrite semantics differ between reserved and ordinary
+channels, because nothing was enforcing a primary key.
+
+Requires migration 007 and AWS credentials.
 """
 
+from __future__ import annotations
+
 import json
+from typing import Any
 
 import pytest
+from langgraph.checkpoint.base import WRITES_IDX_MAP
 
 from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
 from backend.db.blob_windows import MAX_ROW_BYTES, split_for_write
-from tests.test_aurora_dataapi_saver import FakeDataClient, _checkpoint, _config
+from tests.test_aurora_dataapi_saver import Cluster, FaultAfter, _checkpoint, cluster
+
+__all__ = ["cluster"]
+
+RESERVED_CHANNEL = next(iter(WRITES_IDX_MAP))
 
 
-class TransactionalFakeDataClient(FakeDataClient):
-    """``FakeDataClient`` plus a recorded transaction log.
+class TransactionalFault(FaultAfter):
+    """`FaultAfter` that also carries the client's transaction API.
 
-    ``_write_pending_blob`` wraps its insert and appends in a real RDS Data
-    API transaction, so tests that assert on rollback/commit behaviour need
-    ``begin_transaction`` / ``commit_transaction`` / ``rollback_transaction``,
-    which the shared ``FakeDataClient`` does not implement.
+    `_write_pending_blob` opens a real RDS Data API transaction, so a proxy
+    that fails one statement has to pass begin/commit/rollback through for
+    the rollback to be a real rollback in Aurora.
     """
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.transaction_log: list[tuple[str, str]] = []
-        self._next_tx = 0
-
     def begin_transaction(self) -> str:
-        self._next_tx += 1
-        transaction_id = f"tx-{self._next_tx}"
-        self.transaction_log.append(("begin", transaction_id))
-        return transaction_id
+        return self.client.begin_transaction()
 
     def commit_transaction(self, transaction_id: str) -> None:
-        self.transaction_log.append(("commit", transaction_id))
+        self.client.commit_transaction(transaction_id)
 
     def rollback_transaction(self, transaction_id: str) -> None:
-        self.transaction_log.append(("rollback", transaction_id))
+        self.client.rollback_transaction(transaction_id)
 
 
-@pytest.fixture
-def client() -> TransactionalFakeDataClient:
-    return TransactionalFakeDataClient()
+def _write_config(cluster: Cluster, checkpoint_id: str = "cp1") -> dict:
+    return {
+        "configurable": {
+            "thread_id": cluster.thread_id,
+            "checkpoint_ns": "",
+            "checkpoint_id": checkpoint_id,
+        }
+    }
 
 
-@pytest.fixture
-def saver(client: TransactionalFakeDataClient) -> AuroraDataApiSaver:
-    return AuroraDataApiSaver(client)
+async def _seed_checkpoint(cluster: Cluster) -> None:
+    """Pending writes hang off a checkpoint, so one has to exist to read them."""
+    await cluster.saver().aput(
+        cluster.config(), _checkpoint(), {"step": 1}, {"messages": "1"}
+    )
 
 
-@pytest.mark.asyncio
-async def test_writes_use_the_full_natural_key(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    config = {"configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "cp1"}}
-    await saver.aput_writes(config, [("messages", "a")], "task-1", "path/0")
-    sql, params = client.calls[0]
-    assert "checkpoint_writes" in sql
-    assert "t1" in params and "cp1" in params and "task-1" in params
-    assert "path/0" in params
+async def _stored_writes(cluster: Cluster) -> list[dict]:
+    return await cluster.client.execute(
+        """
+        SELECT checkpoint_id, task_id, idx, channel, type, task_id, task_path,
+               octet_length(blob) AS n
+          FROM checkpoint_writes WHERE thread_id = %s ORDER BY idx
+        """,
+        (cluster.thread_id,),
+    )
 
 
-@pytest.mark.asyncio
-async def test_task_path_defaults_to_empty_not_null(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    config = {"configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "cp1"}}
-    await saver.aput_writes(config, [("messages", "a")], "task-1")
-    _, params = client.calls[0]
-    assert "" in params
-    assert None not in params
+# ------------------------------------------------------------ the write row
 
 
-@pytest.mark.asyncio
-async def test_indices_are_sequential_from_zero(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    config = {"configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "cp1"}}
-    await saver.aput_writes(config, [("a", 1), ("b", 2), ("c", 3)], "task-1")
-    indices = [p[4] for _, p in client.calls]
-    assert indices == [0, 1, 2]
+async def test_writes_use_the_full_natural_key(cluster: Cluster) -> None:
+    await cluster.saver().aput_writes(
+        _write_config(cluster), [("messages", "a")], "task-1", "path/0"
+    )
+    rows = await _stored_writes(cluster)
+    assert len(rows) == 1
+    assert rows[0]["checkpoint_id"] == "cp1"
+    assert rows[0]["task_id"] == "task-1"
+    assert rows[0]["task_path"] == "path/0"
+    assert rows[0]["channel"] == "messages"
 
 
-@pytest.mark.asyncio
+async def test_task_path_defaults_to_empty_not_null(cluster: Cluster) -> None:
+    """The column is NOT NULL upstream; a None would be rejected outright."""
+    await cluster.saver().aput_writes(
+        _write_config(cluster), [("messages", "a")], "task-1"
+    )
+    rows = await _stored_writes(cluster)
+    assert rows[0]["task_path"] == ""
+
+
+async def test_indices_are_sequential_from_zero(cluster: Cluster) -> None:
+    await cluster.saver().aput_writes(
+        _write_config(cluster), [("a", 1), ("b", 2), ("c", 3)], "task-1"
+    )
+    rows = await _stored_writes(cluster)
+    assert [int(r["idx"]) for r in rows] == [0, 1, 2]
+    assert [r["channel"] for r in rows] == ["a", "b", "c"]
+
+
 async def test_reserved_channels_get_their_fixed_negative_index(
-    saver: AuroraDataApiSaver, client: FakeDataClient
+    cluster: Cluster,
 ) -> None:
-    from langgraph.checkpoint.base import WRITES_IDX_MAP
-
-    config = {"configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "cp1"}}
-    channel = next(iter(WRITES_IDX_MAP))
-    await saver.aput_writes(config, [(channel, "a")], "task-1")
-    assert client.calls[0][1][4] == WRITES_IDX_MAP[channel]
-
-
-@pytest.mark.asyncio
-async def test_ordinary_channels_keep_positional_indices(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    config = {"configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "cp1"}}
-    await saver.aput_writes(config, [("a", 1), ("b", 2)], "task-1")
-    assert [p[4] for _, p in client.calls] == [0, 1]
+    await cluster.saver().aput_writes(
+        _write_config(cluster), [(RESERVED_CHANNEL, "a")], "task-1"
+    )
+    rows = await _stored_writes(cluster)
+    assert int(rows[0]["idx"]) == WRITES_IDX_MAP[RESERVED_CHANNEL]
 
 
-@pytest.mark.asyncio
-async def test_reserved_only_batches_overwrite(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    """A reserved write is a latest-value slot, so it must upsert."""
-    from langgraph.checkpoint.base import WRITES_IDX_MAP
+# ------------------------------------------------------- overwrite semantics
 
-    config = {"configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "cp1"}}
-    channel = next(iter(WRITES_IDX_MAP))
-    await saver.aput_writes(config, [(channel, "a")], "task-1")
-    assert "DO UPDATE" in client.statements()[0]
+
+async def test_a_reserved_write_is_a_latest_value_slot(cluster: Cluster) -> None:
+    """A re-put of __resume__ must replace the stored blob, not double it."""
+    await _seed_checkpoint(cluster)
+    saver = cluster.saver()
+    config = _write_config(cluster)
+    await saver.aput_writes(config, [(RESERVED_CHANNEL, "first")], "task-1")
+    await saver.aput_writes(config, [(RESERVED_CHANNEL, "second")], "task-1")
+
+    _, encoded_second = saver.serde.dumps_typed("second")
+    rows = await _stored_writes(cluster)
+    assert len(rows) == 1, "a reserved write must not accumulate rows"
+    assert int(rows[0]["n"]) == len(encoded_second), (
+        "the stored blob is exactly the new value, so it was replaced rather "
+        "than concatenated onto the old one"
+    )
+
+    replayed = await cluster.reader().aget_tuple(cluster.config())
+    values = {channel: value for _task, channel, value in replayed.pending_writes}
+    assert values[RESERVED_CHANNEL] == "second"
+
+
+async def test_an_ordinary_write_is_append_once(cluster: Cluster) -> None:
+    """Overwriting an ordinary write silently replaces committed task output."""
+    await _seed_checkpoint(cluster)
+    saver = cluster.saver()
+    config = _write_config(cluster)
+    await saver.aput_writes(config, [("messages", "original")], "task-1")
+    await saver.aput_writes(config, [("messages", "retried")], "task-1")
+
+    rows = await _stored_writes(cluster)
+    assert len(rows) == 1
+    replayed = await cluster.reader().aget_tuple(cluster.config())
+    values = {channel: value for _task, channel, value in replayed.pending_writes}
+    assert values["messages"] == "original", "a retry must not replace the first write"
+
+
+async def test_a_mixed_batch_does_not_overwrite(cluster: Cluster) -> None:
+    await _seed_checkpoint(cluster)
+    saver = cluster.saver()
+    config = _write_config(cluster)
+    batch = [(RESERVED_CHANNEL, "a"), ("messages", "b")]
+    await saver.aput_writes(config, batch, "task-1")
+    await saver.aput_writes(config, [(RESERVED_CHANNEL, "c"), ("messages", "d")], "task-1")
+
+    replayed = await cluster.reader().aget_tuple(cluster.config())
+    values = {channel: value for _task, channel, value in replayed.pending_writes}
+    assert values["messages"] == "b", "the ordinary channel is append-once"
 
 
 def test_reserved_write_reset_sets_rather_than_concatenates() -> None:
@@ -129,467 +182,267 @@ def test_reserved_write_reset_sets_rather_than_concatenates() -> None:
     assert "blob = EXCLUDED.blob" in UPSERT_WRITE_SQL
 
 
-@pytest.mark.asyncio
-async def test_ordinary_batches_do_not_overwrite(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    """Ordinary writes are append-once. Overwriting them loses task output."""
-    config = {"configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "cp1"}}
-    await saver.aput_writes(config, [("messages", "a")], "task-1")
-    sql = client.statements()[0]
-    assert "ON CONFLICT (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)" in sql
-    assert "DO NOTHING" in sql
-    assert "DO UPDATE" not in sql
-
-
-@pytest.mark.asyncio
-async def test_mixed_batches_do_not_overwrite(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    from langgraph.checkpoint.base import WRITES_IDX_MAP
-
-    config = {"configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "cp1"}}
-    channel = next(iter(WRITES_IDX_MAP))
-    await saver.aput_writes(config, [(channel, "a"), ("messages", "b")], "task-1")
-    assert "DO NOTHING" in client.statements()[0]
-
-
-@pytest.mark.asyncio
-async def test_alist_pages_with_a_limit(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    client.results = [[]]
-    [item async for item in saver.alist(_config())]
-    assert "LIMIT" in client.statements()[0]
-
-
-@pytest.mark.asyncio
-async def test_alist_orders_newest_first(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    client.results = [[]]
-    [item async for item in saver.alist(_config())]
-    assert "ORDER BY checkpoint_id DESC" in client.statements()[0]
-
-
-@pytest.mark.asyncio
-async def test_alist_applies_before_as_keyset_pagination(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    client.results = [[]]
-    before = {"configurable": {"checkpoint_id": "cp5"}}
-    [item async for item in saver.alist(_config(), before=before)]
-    sql, params = client.calls[0]
-    assert "checkpoint_id <" in sql
-    assert "cp5" in params
-
-
-# --- Important 1: pending-write blobs windowed like checkpoint_blobs -------
-
-
 def test_write_window_sql_casts_both_substring_bounds() -> None:
-    """Same hazard as checkpoint_blobs: an uncast bigint offset/length makes
-
-    ``substring(bytea, bigint, bigint)`` fail to resolve on PostgreSQL.
-    """
+    """``substring(bytea, bigint, bigint)`` has no overload on PostgreSQL."""
     from backend.db.aurora_dataapi_saver import WRITE_WINDOW_SQL
 
     assert "FROM %s::integer FOR %s::integer" in WRITE_WINDOW_SQL
 
 
-@pytest.mark.asyncio
-async def test_large_pending_write_round_trips_byte_identically(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    """A pending write larger than one window must reassemble exactly.
+# ------------------------------------------------------ segmented durability
 
-    This includes the ``RESUME`` payload carrying a replayed interrupt
-    answer, which is exactly the case that failed before windowing.
+
+async def test_a_large_pending_write_round_trips_byte_identically(
+    cluster: Cluster,
+) -> None:
+    await _seed_checkpoint(cluster)
+    saver = cluster.saver()
+    payload = "q" * (MAX_ROW_BYTES * 2 + 11)
+    await saver.aput_writes(_write_config(cluster), [("messages", payload)], "task-1")
+
+    _, encoded = saver.serde.dumps_typed(payload)
+    assert len(split_for_write(encoded)) == 3, "test setup must span three windows"
+
+    replayed = await cluster.reader().aget_tuple(cluster.config())
+    values = {channel: value for _task, channel, value in replayed.pending_writes}
+    assert values["messages"] == payload
+
+
+async def test_a_retried_ordinary_batch_does_not_double_the_blob(
+    cluster: Cluster,
+) -> None:
+    """Under DO NOTHING a conflicting insert must skip its appends.
+
+    Appending them anyway would leave a blob twice its true length, which
+    deserializes as garbage rather than failing.
     """
-    config = {"configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "cp1"}}
-    value = ["y" * (MAX_ROW_BYTES * 2 + 7)]
-    blob_type, payload = saver.serde.dumps_typed(value)
-    segments = split_for_write(payload)
-    assert len(segments) == 3, "test setup must produce three segments"
+    await _seed_checkpoint(cluster)
+    saver = cluster.saver()
+    config = _write_config(cluster)
+    payload = "r" * (MAX_ROW_BYTES * 2)
+    await saver.aput_writes(config, [("messages", payload)], "task-1")
+    first = (await _stored_writes(cluster))[0]["n"]
 
-    client.results = [[{"returning": 1}]]
-    await saver.aput_writes(config, [("messages", value)], "task-1")
+    await saver.aput_writes(config, [("messages", payload)], "task-1")
+    assert (await _stored_writes(cluster))[0]["n"] == first
 
-    client.results = [
-        [
-            {
-                "task_id": "task-1",
-                "idx": 0,
-                "channel": "messages",
-                "type": blob_type,
-                "n": len(payload),
-            }
-        ],
-        [{"part": segments[0]}],
-        [{"part": segments[1]}],
-        [{"part": segments[2]}],
-    ]
-    pending = await saver._pending_writes("t1", "", "cp1")
-    assert pending == [("task-1", "messages", value)]
+    replayed = await cluster.reader().aget_tuple(cluster.config())
+    values = {channel: value for _task, channel, value in replayed.pending_writes}
+    assert values["messages"] == payload
 
 
-@pytest.mark.asyncio
-async def test_pending_write_raises_when_a_window_vanishes_mid_read(
-    saver: AuroraDataApiSaver, client: FakeDataClient
+async def test_an_append_failure_rolls_back_the_whole_pending_write(
+    cluster: Cluster,
 ) -> None:
-    """A row deleted mid-read must raise a clear ``RuntimeError``, not an
+    """Either every segment lands or none does.
 
-    opaque ``IndexError`` from indexing an empty result.
+    A truncated row would survive a retry, because the retry's DO NOTHING
+    correctly sees the row already exists and skips re-appending it.
     """
-    client.results = [
-        [
-            {
-                "task_id": "task-1",
-                "idx": 0,
-                "channel": "messages",
-                "type": "msgpack",
-                "n": 100,
-            }
-        ],
-        [],
-    ]
-    with pytest.raises(RuntimeError, match="vanished mid-read"):
-        await saver._pending_writes("t1", "", "cp1")
-
-
-@pytest.mark.asyncio
-async def test_pending_write_raises_on_reassembled_length_mismatch(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    client.results = [
-        [
-            {
-                "task_id": "task-1",
-                "idx": 0,
-                "channel": "messages",
-                "type": "msgpack",
-                "n": 100,
-            }
-        ],
-        [{"part": b"too-short"}],
-    ]
-    with pytest.raises(RuntimeError, match="wrong length"):
-        await saver._pending_writes("t1", "", "cp1")
-
-
-@pytest.mark.asyncio
-async def test_pending_write_raises_when_type_is_missing(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    client.results = [
-        [
-            {
-                "task_id": "task-1",
-                "idx": 0,
-                "channel": "messages",
-                "type": "",
-                "n": 5,
-            }
-        ]
-    ]
-    with pytest.raises(RuntimeError, match="no stored type"):
-        await saver._pending_writes("t1", "", "cp1")
-
-
-@pytest.mark.asyncio
-async def test_pending_write_raises_when_size_is_null(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    client.results = [
-        [
-            {
-                "task_id": "task-1",
-                "idx": 0,
-                "channel": "messages",
-                "type": "msgpack",
-                "n": None,
-            }
-        ]
-    ]
-    with pytest.raises(RuntimeError, match="no stored size"):
-        await saver._pending_writes("t1", "", "cp1")
-
-
-@pytest.mark.asyncio
-async def test_retried_ordinary_batch_does_not_double_append_segments(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    """A retried ordinary batch hits ``DO NOTHING`` (no ``RETURNING`` row) and
-
-    must not append its segments again, or the stored blob doubles.
-    """
-    config = {"configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "cp1"}}
-    value = "x" * (MAX_ROW_BYTES * 2 + 5)
-
-    client.results = [[{"returning": 1}]]
-    await saver.aput_writes(config, [("messages", value)], "task-1")
-    first_appends = sum(1 for s in client.statements() if "blob || " in s)
-    assert first_appends == 2, "three segments need two appends"
-
-    client.results = [[]]
-    await saver.aput_writes(config, [("messages", value)], "task-1")
-    total_appends = sum(1 for s in client.statements() if "blob || " in s)
-    assert total_appends == first_appends, (
-        "a retry that hits DO NOTHING must not append again, or the stored "
-        "blob doubles"
+    await _seed_checkpoint(cluster)
+    saver = AuroraDataApiSaver(
+        TransactionalFault(cluster.client, "UPDATE checkpoint_writes SET blob")
     )
+    payload = "s" * (MAX_ROW_BYTES * 2)
+    with pytest.raises(RuntimeError, match="injected failure"):
+        await saver.aput_writes(
+            _write_config(cluster), [("messages", payload)], "task-1"
+        )
+    assert await cluster.rows("checkpoint_writes") == 0, "a partial row must not remain"
+
+    # The retry, against a healthy cluster, builds a complete row.
+    await cluster.saver().aput_writes(
+        _write_config(cluster), [("messages", payload)], "task-1"
+    )
+    replayed = await cluster.reader().aget_tuple(cluster.config())
+    values = {channel: value for _task, channel, value in replayed.pending_writes}
+    assert values["messages"] == payload
 
 
-@pytest.mark.asyncio
-async def test_append_failure_rolls_back_the_whole_pending_write(
-    saver: AuroraDataApiSaver, client: TransactionalFakeDataClient
+async def test_a_truncated_pending_write_is_an_error_not_a_short_value(
+    cluster: Cluster,
 ) -> None:
-    """If an append raises mid-write, the transaction must roll back.
-
-    Without one, the first-segment insert would already be durably
-    committed on its own, leaving a permanently truncated blob with no
-    repair path -- a retry's ``DO NOTHING`` would see the row exists and
-    correctly (but now wrongly, since it's incomplete) skip re-appending.
-    """
-    config = {"configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "cp1"}}
-    value = "x" * (MAX_ROW_BYTES * 2 + 5)
-
-    client.results = [[{"returning": 1}]]
-    client.fail_on = "blob || "
+    await _seed_checkpoint(cluster)
+    await cluster.saver().aput_writes(
+        _write_config(cluster),
+        [("messages", "t" * (MAX_ROW_BYTES * 2))],
+        "task-1",
+    )
+    faulty = AuroraDataApiSaver(
+        TransactionalFault(cluster.client, "substring(blob FROM")
+    )
     with pytest.raises(RuntimeError):
-        await saver.aput_writes(config, [("messages", value)], "task-1")
-
-    ops = [op for op, _ in client.transaction_log]
-    assert ops == ["begin", "rollback"], ops
-    assert "commit" not in ops, "a rolled-back attempt must never also commit"
+        await faulty.aget_tuple(cluster.config())
 
 
-# --- Important 2: alist's row body (inline/blob merge, pending_writes) -----
+async def test_a_write_row_with_no_type_is_refused(cluster: Cluster) -> None:
+    """Reading a blob without its serializer tag would silently corrupt it."""
+    await _seed_checkpoint(cluster)
+    await cluster.client.execute(
+        """
+        INSERT INTO checkpoint_writes
+            (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel,
+             type, blob, task_path)
+        VALUES (%s, '', 'cp1', 'task-1', 0, 'messages', NULL, %s, '')
+        """,
+        (cluster.thread_id, b"not-decodable"),
+    )
+    with pytest.raises(RuntimeError, match="no stored type"):
+        await cluster.saver().aget_tuple(cluster.config())
 
 
-@pytest.mark.asyncio
-async def test_alist_merges_inline_and_blob_channel_values(
-    saver: AuroraDataApiSaver, client: FakeDataClient
+# ------------------------------------------------------------- replay shape
+
+
+async def test_pending_writes_reach_a_resumed_read(cluster: Cluster) -> None:
+    saver = cluster.saver()
+    await saver.aput(
+        cluster.config(), _checkpoint(), {"step": 1}, {"messages": "1"}
+    )
+    await saver.aput_writes(
+        _write_config(cluster), [("messages", "pending")], "task-1", "path/0"
+    )
+    tup = await cluster.reader().aget_tuple(cluster.config())
+    assert tup.pending_writes, "a resumed graph replays these"
+    task_id, channel, value = tup.pending_writes[0]
+    assert (task_id, channel, value) == ("task-1", "messages", "pending")
+
+
+# -------------------------------------------------------------------- alist
+
+
+async def _chain(cluster: Cluster, count: int) -> list[str]:
+    """Write `count` checkpoints, oldest first, returning their ids."""
+    saver = cluster.saver()
+    ids = [f"cp{n:02d}" for n in range(1, count + 1)]
+    parent: str | None = None
+    for cid in ids:
+        config = dict(cluster.config())
+        if parent:
+            config = {
+                "configurable": {
+                    **cluster.config()["configurable"],
+                    "checkpoint_id": parent,
+                }
+            }
+        await saver.aput(config, _checkpoint(cid), {"step": 1}, {"messages": "1"})
+        parent = cid
+    return ids
+
+
+async def test_alist_orders_newest_first(cluster: Cluster) -> None:
+    ids = await _chain(cluster, 3)
+    seen = [t.checkpoint["id"] async for t in cluster.reader().alist(cluster.config())]
+    assert seen == list(reversed(ids))
+
+
+async def test_alist_pages_with_a_limit(cluster: Cluster) -> None:
+    ids = await _chain(cluster, 4)
+    seen = [
+        t.checkpoint["id"]
+        async for t in cluster.reader().alist(cluster.config(), limit=2)
+    ]
+    assert seen == list(reversed(ids))[:2]
+
+
+async def test_alist_applies_before_as_keyset_pagination(cluster: Cluster) -> None:
+    """History must page without ever returning a full response near 1 MiB."""
+    ids = await _chain(cluster, 4)
+    before = {
+        "configurable": {
+            **cluster.config()["configurable"],
+            "checkpoint_id": ids[2],
+        }
+    }
+    seen = [
+        t.checkpoint["id"]
+        async for t in cluster.reader().alist(cluster.config(), before=before)
+    ]
+    assert seen == list(reversed(ids[:2]))
+
+
+async def test_alist_carries_parent_config_when_present(cluster: Cluster) -> None:
+    ids = await _chain(cluster, 2)
+    newest = [t async for t in cluster.reader().alist(cluster.config(), limit=1)][0]
+    assert newest.parent_config["configurable"]["checkpoint_id"] == ids[0]
+
+
+async def test_alist_parent_config_is_none_without_a_parent(
+    cluster: Cluster,
 ) -> None:
-    """Fails against a blob-only implementation: it would drop the inline
+    await _chain(cluster, 1)
+    only = [t async for t in cluster.reader().alist(cluster.config())][0]
+    assert only.parent_config is None
 
-    primitives entirely instead of merging them with the blob-backed
-    channel, and it would not let the blob win on the colliding key.
-    """
-    blob_type, payload = saver.serde.dumps_typed(["blob-msg"])
-    checkpoint_row = {
+
+async def test_alist_merges_inline_and_blob_channel_values(
+    cluster: Cluster,
+) -> None:
+    """Same merge as aget_tuple, on the history path."""
+    saver = cluster.saver()
+    await saver._write_blob(cluster.thread_id, "", "messages", "1", ["msg-1"])
+    inlined = {
         "v": 1,
         "id": "cp1",
         "ts": "2026-09-06T00:00:00+00:00",
-        "channel_values": {
-            "traveler_id": "TRV-001",
-            "workflow_status": "interrupted",
-            "messages": "stale-inline-value",
-        },
+        "channel_values": {"traveler_id": "TRV-001"},
         "channel_versions": {"messages": "1"},
         "versions_seen": {},
     }
-    client.results = [
-        [
-            {
-                "thread_id": "t1",
-                "checkpoint_ns": "",
-                "checkpoint_id": "cp1",
-                "parent_checkpoint_id": None,
-                "checkpoint": json.dumps(checkpoint_row),
-                "metadata": json.dumps({"step": 1}),
-            }
-        ],
-        [{"n": len(payload), "type": blob_type}],
-        [{"part": payload}],
-        [],
-    ]
-
-    [item] = [t async for t in saver.alist(_config())]
-    values = item.checkpoint["channel_values"]
+    await cluster.client.execute(
+        """
+        INSERT INTO checkpoints
+            (thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id,
+             type, checkpoint, metadata)
+        VALUES (%s, '', 'cp1', NULL, 'json', %s::JSONB, %s::JSONB)
+        """,
+        (cluster.thread_id, json.dumps(inlined), json.dumps({"step": 1})),
+    )
+    only = [t async for t in cluster.reader().alist(cluster.config())][0]
+    values = only.checkpoint["channel_values"]
     assert values["traveler_id"] == "TRV-001"
-    assert values["workflow_status"] == "interrupted"
-    assert values["messages"] == ["blob-msg"], "the blob must win on collision"
+    assert values["messages"] == ["msg-1"]
 
 
-@pytest.mark.asyncio
-async def test_alist_yields_non_empty_pending_writes(
-    saver: AuroraDataApiSaver, client: FakeDataClient
+async def test_alist_yields_pending_writes(cluster: Cluster) -> None:
+    saver = cluster.saver()
+    await saver.aput(cluster.config(), _checkpoint(), {"step": 1}, {"messages": "1"})
+    await saver.aput_writes(
+        _write_config(cluster), [("messages", "pending")], "task-1"
+    )
+    only = [t async for t in cluster.reader().alist(cluster.config())][0]
+    assert only.pending_writes == [("task-1", "messages", "pending")]
+
+
+@pytest.mark.parametrize("limit", [0, -5], ids=["zero", "negative"])
+async def test_alist_clamps_a_nonsense_limit_to_one(
+    cluster: Cluster, limit: int
 ) -> None:
-    """Fails against a blob-only implementation that never calls
-
-    ``_pending_writes`` from within the row body, or drops the result.
-    """
-    checkpoint_row = _checkpoint("cp1")
-    checkpoint_row["channel_versions"] = {}
-    blob_type, payload = saver.serde.dumps_typed("resume-answer")
-    client.results = [
-        [
-            {
-                "thread_id": "t1",
-                "checkpoint_ns": "",
-                "checkpoint_id": "cp1",
-                "parent_checkpoint_id": None,
-                "checkpoint": json.dumps(checkpoint_row),
-                "metadata": json.dumps({"step": 1}),
-            }
-        ],
-        [
-            {
-                "task_id": "task-1",
-                "idx": -1,
-                "channel": "__resume__",
-                "type": blob_type,
-                "n": len(payload),
-            }
-        ],
-        [{"part": payload}],
+    await _chain(cluster, 2)
+    seen = [
+        t async for t in cluster.reader().alist(cluster.config(), limit=limit)
     ]
-
-    [item] = [t async for t in saver.alist(_config())]
-    assert item.pending_writes
-    assert item.pending_writes[0][1] == "__resume__"
+    assert len(seen) == 1
 
 
-@pytest.mark.asyncio
-async def test_aget_tuple_returns_non_empty_pending_writes(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    checkpoint_row = _checkpoint("cp1")
-    checkpoint_row["channel_versions"] = {}
-    blob_type, payload = saver.serde.dumps_typed("resume-answer")
-    client.results = [
-        [
-            {
-                "thread_id": "t1",
-                "checkpoint_ns": "",
-                "checkpoint_id": "cp1",
-                "parent_checkpoint_id": None,
-                "checkpoint": json.dumps(checkpoint_row),
-                "metadata": json.dumps({"step": 1}),
-            }
-        ],
-        [
-            {
-                "task_id": "task-1",
-                "idx": -1,
-                "channel": "__resume__",
-                "type": blob_type,
-                "n": len(payload),
-            }
-        ],
-        [{"part": payload}],
-    ]
-
-    tuple_ = await saver.aget_tuple(_config())
-    assert tuple_ is not None
-    assert tuple_.pending_writes
-
-
-# --- Important 3: alist rejects filter instead of ignoring it --------------
-
-
-@pytest.mark.asyncio
-async def test_alist_raises_for_nonempty_filter(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
+async def test_alist_raises_for_a_nonempty_filter(cluster: Cluster) -> None:
+    """Metadata filtering is a documented gap, and must fail loudly."""
     with pytest.raises(NotImplementedError):
-        [item async for item in saver.alist(_config(), filter={"step": 3})]
+        [t async for t in cluster.saver().alist(cluster.config(), filter={"step": 1})]
 
 
-@pytest.mark.asyncio
-async def test_alist_accepts_none_and_empty_filter(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    client.results = [[]]
-    [item async for item in saver.alist(_config(), filter=None)]
-    client.results = [[]]
-    [item async for item in saver.alist(_config(), filter={})]
+@pytest.mark.parametrize("empty", [None, {}], ids=["none", "empty-dict"])
+async def test_alist_accepts_an_absent_filter(cluster: Cluster, empty: Any) -> None:
+    await _chain(cluster, 1)
+    seen = [t async for t in cluster.reader().alist(cluster.config(), filter=empty)]
+    assert len(seen) == 1
 
 
-# --- Important 4: alist carries parent_config -------------------------------
+async def test_alist_raises_without_a_config(cluster: Cluster) -> None:
+    with pytest.raises(ValueError):
+        [t async for t in cluster.saver().alist(None)]
 
 
-@pytest.mark.asyncio
-async def test_alist_carries_parent_config_when_present(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    checkpoint_row = _checkpoint("cp2")
-    checkpoint_row["channel_versions"] = {}
-    client.results = [
-        [
-            {
-                "thread_id": "t1",
-                "checkpoint_ns": "",
-                "checkpoint_id": "cp2",
-                "parent_checkpoint_id": "cp1",
-                "checkpoint": json.dumps(checkpoint_row),
-                "metadata": json.dumps({"step": 2}),
-            }
-        ],
-        [],
-    ]
-    [item] = [t async for t in saver.alist(_config())]
-    assert item.parent_config == {
-        "configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "cp1"}
-    }
-
-
-@pytest.mark.asyncio
-async def test_alist_parent_config_is_none_without_a_parent(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    checkpoint_row = _checkpoint("cp1")
-    checkpoint_row["channel_versions"] = {}
-    client.results = [
-        [
-            {
-                "thread_id": "t1",
-                "checkpoint_ns": "",
-                "checkpoint_id": "cp1",
-                "parent_checkpoint_id": None,
-                "checkpoint": json.dumps(checkpoint_row),
-                "metadata": json.dumps({"step": 1}),
-            }
-        ],
-        [],
-    ]
-    [item] = [t async for t in saver.alist(_config())]
-    assert item.parent_config is None
-
-
-# --- Minor: limit clamping and required thread_id ---------------------------
-
-
-@pytest.mark.asyncio
-async def test_alist_clamps_zero_limit_to_one(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    client.results = [[]]
-    [item async for item in saver.alist(_config(), limit=0)]
-    _, params = client.calls[0]
-    assert params[-1] == 1
-
-
-@pytest.mark.asyncio
-async def test_alist_clamps_negative_limit_to_one(
-    saver: AuroraDataApiSaver, client: FakeDataClient
-) -> None:
-    client.results = [[]]
-    [item async for item in saver.alist(_config(), limit=-5)]
-    _, params = client.calls[0]
-    assert params[-1] == 1
-
-
-@pytest.mark.asyncio
-async def test_alist_raises_without_a_config(saver: AuroraDataApiSaver) -> None:
-    with pytest.raises(ValueError, match="thread_id"):
-        [item async for item in saver.alist(None)]
-
-
-@pytest.mark.asyncio
-async def test_alist_raises_when_config_lacks_thread_id(
-    saver: AuroraDataApiSaver,
-) -> None:
-    with pytest.raises(ValueError, match="thread_id"):
-        [item async for item in saver.alist({"configurable": {}})]
+async def test_alist_raises_when_config_lacks_thread_id(cluster: Cluster) -> None:
+    with pytest.raises(ValueError):
+        [t async for t in cluster.saver().alist({"configurable": {}})]

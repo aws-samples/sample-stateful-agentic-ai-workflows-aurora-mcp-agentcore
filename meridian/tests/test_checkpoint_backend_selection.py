@@ -8,10 +8,12 @@ demo cannot afford to get wrong.
 from __future__ import annotations
 
 import asyncio
+import os
 
 import pytest
 
 import backend.agents.orchestration_05.workflow as workflow_mod
+import backend.db.rds_data_client as rds_data_client
 from backend.agents.orchestration_05.workflow import (
     CheckpointBackend,
     OrchestrationAgent,
@@ -28,6 +30,15 @@ def workflow() -> OrchestrationAgent:
     return OrchestrationAgent(search_fn=_noop, availability_fn=_noop)
 
 
+def _break_the_cluster_arn(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point the Data API at a cluster that does not exist."""
+    monkeypatch.setenv(
+        "AURORA_CLUSTER_ARN",
+        "arn:aws:rds:us-east-1:000000000000:cluster:no-such-cluster",
+    )
+    monkeypatch.setattr(rds_data_client, "_client", None)
+
+
 @pytest.fixture(autouse=True)
 def _isolated_backend(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("LANGGRAPH_CHECKPOINT_DSN", raising=False)
@@ -36,9 +47,11 @@ def _isolated_backend(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("LANGGRAPH_CHECKPOINT_DATA_API", raising=False)
     workflow_mod._checkpoint_backend = None
     workflow_mod._checkpoint_init_lock = None
+    rds_data_client._client = None
     yield
     workflow_mod._checkpoint_backend = None
     workflow_mod._checkpoint_init_lock = None
+    rds_data_client._client = None
 
 
 # --------------------------------------------------------------- labelling
@@ -99,50 +112,46 @@ def test_data_api_backend_is_off_unless_asked_for() -> None:
     assert backend.durable is False
 
 
-def test_data_api_backend_is_adopted_when_it_probes_clean(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("LANGGRAPH_CHECKPOINT_DATA_API", "true")
-    probed: list[str] = []
+def test_the_data_api_backend_probes_the_real_cluster_and_is_adopted() -> None:
+    """The probe has to reach Aurora, not a stand-in for it.
 
-    async def _probe(saver) -> None:
-        probed.append(type(saver).__name__)
+    A stubbed probe proves only that the branch is wired. It cannot tell you
+    whether the checkpoint tables exist or the credentials work, which is the
+    entire question the probe was added to answer.
+    """
+    os.environ["LANGGRAPH_CHECKPOINT_DATA_API"] = "true"
+    try:
+        backend = asyncio.run(initialize_checkpoint_backend())
+    finally:
+        del os.environ["LANGGRAPH_CHECKPOINT_DATA_API"]
 
-    monkeypatch.setattr(workflow_mod, "_probe_data_api_checkpoints", _probe)
-
-    backend = asyncio.run(initialize_checkpoint_backend())
     assert backend.kind == "AuroraDataApiSaver"
     assert backend.durable is True
-    assert probed == ["AuroraDataApiSaver"]
+    assert backend.error is None
 
 
-def test_a_failed_probe_falls_back_instead_of_failing_the_turn(
+def test_an_unreachable_cluster_falls_back_instead_of_failing_the_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An unapplied migration 007 must degrade, not break the first write."""
+    """A cluster that does not answer must degrade, not break the first write.
+
+    Pointed at an ARN that does not exist, so the Data API itself refuses.
+    """
     monkeypatch.setenv("LANGGRAPH_CHECKPOINT_DATA_API", "true")
-
-    async def _probe(saver) -> None:
-        raise RuntimeError('relation "checkpoints" does not exist')
-
-    monkeypatch.setattr(workflow_mod, "_probe_data_api_checkpoints", _probe)
+    _break_the_cluster_arn(monkeypatch)
 
     backend = asyncio.run(initialize_checkpoint_backend())
     assert backend.kind == "MemorySaver (in-process)"
     assert backend.durable is False
-    assert "checkpoints" in (backend.error or "")
+    assert "Data API checkpointing unavailable" in (backend.error or "")
 
 
-def test_a_failed_probe_raises_when_checkpoints_are_required(
+def test_an_unreachable_cluster_raises_when_checkpoints_are_required(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LANGGRAPH_CHECKPOINT_DATA_API", "true")
     monkeypatch.setenv("LANGGRAPH_CHECKPOINT_REQUIRED", "true")
-
-    async def _probe(saver) -> None:
-        raise RuntimeError("no credentials")
-
-    monkeypatch.setattr(workflow_mod, "_probe_data_api_checkpoints", _probe)
+    _break_the_cluster_arn(monkeypatch)
 
     with pytest.raises(RuntimeError, match="Durable workflow checkpoints are required"):
         asyncio.run(initialize_checkpoint_backend())
