@@ -19,6 +19,7 @@ import { ChatComposer } from './components/ChatComposer';
 import { SURFACES, useJourney, useSurfaceUrlState } from './journey/useJourney';
 import { PresenterProof } from './surfaces/PresenterProof';
 import { ConciergeRail } from './surfaces/ConciergeRail';
+import { JourneyContinuityRail } from './surfaces/JourneyContinuityRail';
 import { ChatTranscript } from './components/ChatTranscript';
 import { ComparisonDialog } from './components/ComparisonDialog';
 import { DiscoveryWorkspace } from './components/DiscoveryWorkspace';
@@ -89,7 +90,12 @@ export function DesktopMeridianApp({
   onToggleTheme: () => void;
 }) {
   const { view, journeyId, setView, setJourneyId } = useSurfaceUrlState();
-  const journey = useJourney(journeyId, setJourneyId, view === 'proof');
+  const isRecoveryView = view === 'recovery';
+  const journey = useJourney(
+    journeyId,
+    setJourneyId,
+    view === 'proof' || isRecoveryView,
+  );
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [forYouCollapsed, setForYouCollapsed] = useState(false);
   const [activityCollapsed, setActivityCollapsed] = useState(false);
@@ -201,7 +207,9 @@ export function DesktopMeridianApp({
             : isRecovery
               ? 'is-experience is-finale'
               : 'is-proof is-ladder'
-      }${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}${
+      }${isRecoveryView ? ' is-continuity-rail' : ''}${
+        sidebarCollapsed ? ' is-sidebar-collapsed' : ''
+      }${
         railCollapsed ? ' is-rail-collapsed' : ''
       }`}
     >
@@ -521,6 +529,15 @@ export function DesktopMeridianApp({
       {isProduct && (
         <aside className="mds-desktop-right is-concierge" aria-label="Your travel concierge">
           <ConciergeRail state={state} />
+        </aside>
+      )}
+
+      {isRecoveryView && (
+        <aside
+          className="mds-desktop-right is-continuity"
+          aria-label="Journey continuity"
+        >
+          <JourneyContinuityRail document={journey.document} error={journey.error} />
         </aside>
       )}
 
