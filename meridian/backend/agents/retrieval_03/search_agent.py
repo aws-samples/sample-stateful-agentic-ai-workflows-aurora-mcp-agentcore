@@ -30,7 +30,7 @@ from strands.models import BedrockModel
 from backend.config import config
 from pydantic import BaseModel
 
-from backend.db.embedding_service import get_embedding_service
+from backend.db.embedding_service import EmbeddingUnavailable, get_embedding_service
 from backend.db.rds_data_client import get_rds_data_client
 
 
@@ -143,18 +143,39 @@ When searching:
             details=f"Query: {query[:50]}..."
         )
         
-        query_embedding = self.embedding_service.generate_text_embedding(
-            query, input_type="search_query"
-        )
+        # A vector from a different model is not a degraded answer, it is a
+        # wrong one: cosine distance across two embedding spaces ranks
+        # confidently and meaninglessly. So when the corpus model cannot be
+        # reached we drop the semantic arm and let the lexical arm answer
+        # alone - fewer results, all of them real - and say so in the trace.
+        query_embedding = None
+        embedding_error: Optional[str] = None
+        try:
+            query_embedding = self.embedding_service.generate_text_embedding(
+                query, input_type="search_query"
+            )
+        except EmbeddingUnavailable as exc:
+            embedding_error = str(exc)
 
         embedding_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
-        self._log_activity(
-            activity_type="embedding",
-            title="Text embedding generated",
-            details=f"Dimension: {len(query_embedding)} ({EMBEDDING_DIMENSION}d pgvector)",
-            execution_time_ms=embedding_time
-        )
+        if query_embedding is None:
+            self._log_activity(
+                activity_type="embedding",
+                title="Semantic arm unavailable - lexical only",
+                details=embedding_error or "embedding model unreachable",
+                execution_time_ms=embedding_time,
+            )
+        else:
+            self._log_activity(
+                activity_type="embedding",
+                title="Text embedding generated",
+                details=(
+                    f"Dimension: {len(query_embedding)} ({EMBEDDING_DIMENSION}d pgvector) "
+                    f"via {self.embedding_service.last_model_used}"
+                ),
+                execution_time_ms=embedding_time
+            )
 
         search_start = datetime.now(timezone.utc)
         # Pull a WIDER pool than we'll return (limit*5, floored at 25). The
@@ -174,19 +195,21 @@ When searching:
             SELECT * FROM semantic_trip_search(%s::vector, %s::integer)
         """
 
-        embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
+        semantic_rows = []
+        if query_embedding is not None:
+            embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
 
-        semantic_rows = await self.db.execute(sql, (embedding_str, candidate_limit))
-        
-        search_time = int((datetime.now(timezone.utc) - search_start).total_seconds() * 1000)
-        
-        self._log_activity(
-            activity_type="search",
-            title=f"Semantic search: '{query}'",
-            details=f"Found {len(semantic_rows)} semantic candidates",
-            sql_query="SELECT * FROM semantic_trip_search(...)",
-            execution_time_ms=search_time
-        )
+            semantic_rows = await self.db.execute(sql, (embedding_str, candidate_limit))
+
+            search_time = int((datetime.now(timezone.utc) - search_start).total_seconds() * 1000)
+
+            self._log_activity(
+                activity_type="search",
+                title=f"Semantic search: '{query}'",
+                details=f"Found {len(semantic_rows)} semantic candidates",
+                sql_query="SELECT * FROM semantic_trip_search(...)",
+                execution_time_ms=search_time
+            )
 
         # --- Arm 2 of the hybrid retrieval: LEXICAL (exact terms) -------------
         # PostgreSQL full-text search over the generated `search_vector` tsvector.

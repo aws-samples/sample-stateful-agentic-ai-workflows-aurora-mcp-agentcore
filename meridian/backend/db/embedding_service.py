@@ -21,16 +21,23 @@ from typing import Any, Dict, List, Optional
 import boto3
 
 
+class EmbeddingUnavailable(RuntimeError):
+    """The corpus's embedding model could not be reached.
+
+    Raised instead of substituting another model. Callers degrade to lexical
+    retrieval, which returns fewer but correct results; a vector from a
+    different model would return confident nonsense.
+    """
+
+
 class EmbeddingService:
     """Bedrock embeddings — Cohere Embed v4 by default (1024d for Aurora pgvector)."""
 
     PRIMARY_MODEL = "cohere.embed-v4:0"
-    FALLBACK_MODELS = (
-        "cohere.embed-english-v3",
-        "amazon.titan-embed-text-v2:0",
-    )
     DEFAULT_DIMENSIONS = 1024
     MAX_TEXT_LENGTH = 2048
+    # Retries target the same model; a different model is not a substitute.
+    EMBEDDING_ATTEMPTS = 2
     # Cohere Rerank 3.5 is not directly invokable in us-east-1 with the bare
     # model ID — Bedrock requires the US cross-region inference profile, which
     # routes traffic to whichever Cohere region has capacity. The plain ID
@@ -48,11 +55,14 @@ class EmbeddingService:
         self.dimensions = dimensions or int(os.getenv("EMBEDDING_DIMENSION", self.DEFAULT_DIMENSIONS))
         self.rerank_model_id = os.getenv("RERANK_MODEL", self.DEFAULT_RERANK_MODEL)
         self._bedrock_client = None
-        configured = os.getenv("EMBEDDING_MODEL", self.PRIMARY_MODEL)
-        self.model_candidates: List[str] = [configured]
-        for model_id in (self.PRIMARY_MODEL, *self.FALLBACK_MODELS):
-            if model_id not in self.model_candidates:
-                self.model_candidates.append(model_id)
+        # The catalog was embedded with exactly one model, and a vector only
+        # means anything against vectors from that same model. There is no
+        # fallback chain here for that reason: equal dimensions do not imply a
+        # shared vector space, and cosine distance across two spaces is noise
+        # that looks like a ranking. Changing this value requires re-embedding
+        # the corpus.
+        self.corpus_model_id = os.getenv("EMBEDDING_MODEL", self.PRIMARY_MODEL)
+        self._last_model_used: Optional[str] = None
 
     @property
     def bedrock_client(self):
@@ -62,7 +72,28 @@ class EmbeddingService:
 
     @property
     def model_id(self) -> str:
-        return self.model_candidates[0]
+        """The model the corpus is embedded with, and the only one queried."""
+        return self.corpus_model_id
+
+    @property
+    def last_model_used(self) -> Optional[str]:
+        """The model that actually produced the most recent vector.
+
+        Evidence surfaces should report this rather than the configured model:
+        the two used to differ silently whenever a fallback fired.
+        """
+        return self._last_model_used
+
+    @staticmethod
+    def _truncate_for(model_id: str) -> str:
+        """Over-length handling, which differs by model generation.
+
+        Embed v4 accepts NONE, LEFT or RIGHT; v3 accepts NONE, START or END.
+        Sending v3's "END" to v4 is an invalid request - the seed path already
+        used RIGHT, so queries disagreed with the corpus they searched.
+        https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed-v4.html
+        """
+        return "END" if "embed-english-v3" in model_id else "RIGHT"
 
     def _build_request(self, model_id: str, text: str, input_type: str) -> dict:
         if "titan" in model_id:
@@ -70,7 +101,7 @@ class EmbeddingService:
         body = {
             "texts": [text],
             "input_type": input_type,
-            "truncate": "END",
+            "truncate": self._truncate_for(model_id),
         }
         if "embed-v4" in model_id or "embed-v4:" in model_id:
             body["embedding_types"] = ["float"]
@@ -116,22 +147,28 @@ class EmbeddingService:
             text = text[: self.MAX_TEXT_LENGTH]
 
         last_error: Optional[Exception] = None
-        for model_id in self.model_candidates:
+        for attempt in range(self.EMBEDDING_ATTEMPTS):
             try:
-                embedding = self._invoke_model(model_id, text, input_type)
-                if len(embedding) != self.dimensions:
-                    last_error = ValueError(
-                        f"{model_id} returned {len(embedding)} dimensions, expected {self.dimensions}"
-                    )
-                    continue
-                return embedding
-            except Exception as exc:
+                embedding = self._invoke_model(self.corpus_model_id, text, input_type)
+            except Exception as exc:  # noqa: BLE001 - retried, then surfaced
                 last_error = exc
                 continue
 
-        if last_error is not None:
-            raise last_error
-        raise RuntimeError("No embedding models configured")
+            if len(embedding) != self.dimensions:
+                # A dimension mismatch means this model cannot address the
+                # pgvector column at all. Retrying will not change that.
+                raise EmbeddingUnavailable(
+                    f"{self.corpus_model_id} returned {len(embedding)} dimensions, "
+                    f"but the catalog column is {self.dimensions}"
+                ) from None
+
+            self._last_model_used = self.corpus_model_id
+            return embedding
+
+        raise EmbeddingUnavailable(
+            f"{self.corpus_model_id} did not answer after {self.EMBEDDING_ATTEMPTS} "
+            f"attempts; searching without the semantic arm"
+        ) from last_error
 
     def rerank_documents(
         self,
