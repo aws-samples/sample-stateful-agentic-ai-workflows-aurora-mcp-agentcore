@@ -966,7 +966,10 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
         for channel, version in checkpoint.get("channel_versions", {}).items():
             payload = await self._read_blob(thread_id, ns, channel, str(version))
             if payload is not None:
-                values[channel] = self.serde.loads_typed(("json", payload))
+                blob_type = await self._read_blob_type(
+                    thread_id, ns, channel, str(version)
+                )
+                values[channel] = self.serde.loads_typed((blob_type, payload))
         checkpoint["channel_values"] = values
 
         return CheckpointTuple(
@@ -997,7 +1000,12 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
 - [ ] **Step 5: Run tests to verify they pass**
 
 Run: `venv/bin/pytest tests/test_aurora_dataapi_saver.py -q`
-Expected: PASS, 9 passed. If `dumps_typed` returns a type other than `"json"`, change the `loads_typed` call to use the stored `type` column rather than the literal, and add a test asserting the stored type is used.
+Expected: PASS, 9 passed.
+
+**Confirmed during implementation:** the installed `JsonPlusSerializer` returns
+`"msgpack"`, never `"json"`. The stored `checkpoint_blobs.type` column is read
+back and passed to `loads_typed`; hardcoding a literal type corrupts every
+rehydrated checkpoint.
 
 - [ ] **Step 6: Commit**
 
@@ -1304,7 +1312,10 @@ Add these methods to the class:
             for channel, version in checkpoint.get("channel_versions", {}).items():
                 payload = await self._read_blob(thread_id, ns, channel, str(version))
                 if payload is not None:
-                    values[channel] = self.serde.loads_typed(("json", payload))
+                    blob_type = await self._read_blob_type(
+                        thread_id, ns, channel, str(version)
+                    )
+                    values[channel] = self.serde.loads_typed((blob_type, payload))
             checkpoint["channel_values"] = values
             yield CheckpointTuple(
                 config={
