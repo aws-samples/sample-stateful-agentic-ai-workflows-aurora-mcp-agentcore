@@ -14,13 +14,40 @@ from backend.db.blob_windows import MAX_ROW_BYTES, split_for_write
 from tests.test_aurora_dataapi_saver import FakeDataClient, _checkpoint, _config
 
 
-@pytest.fixture
-def client() -> FakeDataClient:
-    return FakeDataClient()
+class TransactionalFakeDataClient(FakeDataClient):
+    """``FakeDataClient`` plus a recorded transaction log.
+
+    ``_write_pending_blob`` wraps its insert and appends in a real RDS Data
+    API transaction, so tests that assert on rollback/commit behaviour need
+    ``begin_transaction`` / ``commit_transaction`` / ``rollback_transaction``,
+    which the shared ``FakeDataClient`` does not implement.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.transaction_log: list[tuple[str, str]] = []
+        self._next_tx = 0
+
+    def begin_transaction(self) -> str:
+        self._next_tx += 1
+        transaction_id = f"tx-{self._next_tx}"
+        self.transaction_log.append(("begin", transaction_id))
+        return transaction_id
+
+    def commit_transaction(self, transaction_id: str) -> None:
+        self.transaction_log.append(("commit", transaction_id))
+
+    def rollback_transaction(self, transaction_id: str) -> None:
+        self.transaction_log.append(("rollback", transaction_id))
 
 
 @pytest.fixture
-def saver(client: FakeDataClient) -> AuroraDataApiSaver:
+def client() -> TransactionalFakeDataClient:
+    return TransactionalFakeDataClient()
+
+
+@pytest.fixture
+def saver(client: TransactionalFakeDataClient) -> AuroraDataApiSaver:
     return AuroraDataApiSaver(client)
 
 
@@ -89,6 +116,17 @@ async def test_reserved_only_batches_overwrite(
     channel = next(iter(WRITES_IDX_MAP))
     await saver.aput_writes(config, [(channel, "a")], "task-1")
     assert "DO UPDATE" in client.statements()[0]
+
+
+def test_reserved_write_reset_sets_rather_than_concatenates() -> None:
+    """The reset must be ``blob = EXCLUDED.blob``, not a concatenation.
+
+    Reserved-write idempotence depends on this: a re-put of the same
+    ``__resume__`` payload must replace the stored blob, not double it.
+    """
+    from backend.db.aurora_dataapi_saver import UPSERT_WRITE_SQL
+
+    assert "blob = EXCLUDED.blob" in UPSERT_WRITE_SQL
 
 
 @pytest.mark.asyncio
@@ -196,6 +234,88 @@ async def test_large_pending_write_round_trips_byte_identically(
 
 
 @pytest.mark.asyncio
+async def test_pending_write_raises_when_a_window_vanishes_mid_read(
+    saver: AuroraDataApiSaver, client: FakeDataClient
+) -> None:
+    """A row deleted mid-read must raise a clear ``RuntimeError``, not an
+
+    opaque ``IndexError`` from indexing an empty result.
+    """
+    client.results = [
+        [
+            {
+                "task_id": "task-1",
+                "idx": 0,
+                "channel": "messages",
+                "type": "msgpack",
+                "n": 100,
+            }
+        ],
+        [],
+    ]
+    with pytest.raises(RuntimeError, match="vanished mid-read"):
+        await saver._pending_writes("t1", "", "cp1")
+
+
+@pytest.mark.asyncio
+async def test_pending_write_raises_on_reassembled_length_mismatch(
+    saver: AuroraDataApiSaver, client: FakeDataClient
+) -> None:
+    client.results = [
+        [
+            {
+                "task_id": "task-1",
+                "idx": 0,
+                "channel": "messages",
+                "type": "msgpack",
+                "n": 100,
+            }
+        ],
+        [{"part": b"too-short"}],
+    ]
+    with pytest.raises(RuntimeError, match="wrong length"):
+        await saver._pending_writes("t1", "", "cp1")
+
+
+@pytest.mark.asyncio
+async def test_pending_write_raises_when_type_is_missing(
+    saver: AuroraDataApiSaver, client: FakeDataClient
+) -> None:
+    client.results = [
+        [
+            {
+                "task_id": "task-1",
+                "idx": 0,
+                "channel": "messages",
+                "type": "",
+                "n": 5,
+            }
+        ]
+    ]
+    with pytest.raises(RuntimeError, match="no stored type"):
+        await saver._pending_writes("t1", "", "cp1")
+
+
+@pytest.mark.asyncio
+async def test_pending_write_raises_when_size_is_null(
+    saver: AuroraDataApiSaver, client: FakeDataClient
+) -> None:
+    client.results = [
+        [
+            {
+                "task_id": "task-1",
+                "idx": 0,
+                "channel": "messages",
+                "type": "msgpack",
+                "n": None,
+            }
+        ]
+    ]
+    with pytest.raises(RuntimeError, match="no stored size"):
+        await saver._pending_writes("t1", "", "cp1")
+
+
+@pytest.mark.asyncio
 async def test_retried_ordinary_batch_does_not_double_append_segments(
     saver: AuroraDataApiSaver, client: FakeDataClient
 ) -> None:
@@ -218,6 +338,30 @@ async def test_retried_ordinary_batch_does_not_double_append_segments(
         "a retry that hits DO NOTHING must not append again, or the stored "
         "blob doubles"
     )
+
+
+@pytest.mark.asyncio
+async def test_append_failure_rolls_back_the_whole_pending_write(
+    saver: AuroraDataApiSaver, client: TransactionalFakeDataClient
+) -> None:
+    """If an append raises mid-write, the transaction must roll back.
+
+    Without one, the first-segment insert would already be durably
+    committed on its own, leaving a permanently truncated blob with no
+    repair path -- a retry's ``DO NOTHING`` would see the row exists and
+    correctly (but now wrongly, since it's incomplete) skip re-appending.
+    """
+    config = {"configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": "cp1"}}
+    value = "x" * (MAX_ROW_BYTES * 2 + 5)
+
+    client.results = [[{"returning": 1}]]
+    client.fail_on = "blob || "
+    with pytest.raises(RuntimeError):
+        await saver.aput_writes(config, [("messages", value)], "task-1")
+
+    ops = [op for op, _ in client.transaction_log]
+    assert ops == ["begin", "rollback"], ops
+    assert "commit" not in ops, "a rolled-back attempt must never also commit"
 
 
 # --- Important 2: alist's row body (inline/blob merge, pending_writes) -----

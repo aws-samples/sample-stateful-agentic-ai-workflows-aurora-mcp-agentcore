@@ -415,6 +415,25 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
     ) -> None:
         """Insert the first segment, appending the rest only if it was written.
 
+        Under ``DO NOTHING``, a conflict means some earlier attempt already
+        wrote this row in full, so ``RETURNING`` yields no row and the
+        remaining segments are skipped -- appending them again would double
+        the stored blob. Under ``DO UPDATE`` the row is always (re)written in
+        full, so ``RETURNING`` always yields a row and the remaining
+        segments are always appended.
+
+        The insert and its appends run inside one RDS Data API transaction.
+        Without it, each ``execute`` auto-commits on its own: a process death
+        after the insert lands but before the appends would leave the blob
+        truncated with no repair path, because a retry's ``DO NOTHING``
+        correctly sees the row already exists and skips re-appending. Wrapping
+        both in one transaction means either every segment lands or the whole
+        attempt rolls back, leaving a clean row for the next retry to build on.
+        It also serializes concurrent re-puts of a reserved channel (e.g.
+        ``__resume__``): the row lock held for the transaction's lifetime
+        keeps one attempt's ``DO UPDATE`` reset from interleaving with
+        another's appends.
+
         Args:
             sql: ``UPSERT_WRITE_SQL`` or ``INSERT_WRITE_SQL``, both ending in
                 ``RETURNING`` so the caller can tell whether this statement
@@ -425,54 +444,92 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
             segments: All segments for this value; ``segments[0]`` is already
                 in ``row_params``, and only ``segments[1:]`` are appended.
 
-        Under ``DO NOTHING``, a conflict means some earlier attempt already
-        wrote this row in full, so ``RETURNING`` yields no row and the
-        remaining segments are skipped -- appending them again would double
-        the stored blob. Under ``DO UPDATE`` the row is always (re)written in
-        full, so ``RETURNING`` always yields a row and the remaining
-        segments are always appended.
+        Raises:
+            Exception: Whatever the insert, an append, or the transaction
+                itself raises, after rolling back so no partial row survives.
         """
-        rows = await self.client.execute(sql, row_params)
-        if not rows:
-            return
-        for segment in segments[1:]:
-            await self.client.execute(APPEND_WRITE_SQL, (segment,) + key)
+        transaction_id = self.client.begin_transaction()
+        try:
+            rows = await self.client.execute(
+                sql, row_params, transaction_id=transaction_id
+            )
+            if rows:
+                for segment in segments[1:]:
+                    await self.client.execute(
+                        APPEND_WRITE_SQL, (segment,) + key, transaction_id=transaction_id
+                    )
+            self.client.commit_transaction(transaction_id)
+        except Exception:
+            self.client.rollback_transaction(transaction_id)
+            raise
 
     async def _pending_writes(
         self, thread_id: str, ns: str, checkpoint_id: str
     ) -> list[tuple[str, str, Any]]:
-        """Load pending writes in their stored order, windowed under the row cap."""
+        """Load pending writes in their stored order, windowed under the row cap.
+
+        Raises:
+            RuntimeError: If a pending-write row's stored ``type`` is missing
+                or empty, or its size is unexpectedly ``NULL``.
+        """
         rows = await self.client.execute(
             SELECT_WRITES_META_SQL, (thread_id, ns, checkpoint_id)
         )
         pending = []
         for row in rows:
-            key = (thread_id, ns, checkpoint_id, row["task_id"], row["idx"])
-            payload = await self._read_write_blob(key, int(row["n"] or 0))
-            pending.append(
-                (
-                    row["task_id"],
-                    row["channel"],
-                    self.serde.loads_typed((row["type"], payload)),
+            channel = row["channel"]
+            blob_type = row.get("type")
+            if not blob_type:
+                raise RuntimeError(
+                    f"pending write has no stored type: thread={thread_id} "
+                    f"checkpoint={checkpoint_id} task={row['task_id']} channel={channel}"
                 )
+            if row.get("n") is None:
+                raise RuntimeError(
+                    f"pending write has no stored size: thread={thread_id} "
+                    f"checkpoint={checkpoint_id} task={row['task_id']} channel={channel}"
+                )
+            key = (thread_id, ns, checkpoint_id, row["task_id"], row["idx"])
+            payload = await self._read_write_blob(key, channel, int(row["n"]))
+            pending.append(
+                (row["task_id"], channel, self.serde.loads_typed((blob_type, payload)))
             )
         return pending
 
-    async def _read_write_blob(self, key: tuple, total: int) -> bytes:
+    async def _read_write_blob(self, key: tuple, channel: str, total: int) -> bytes:
         """Reassemble one pending-write blob from windowed ``substring`` reads.
 
         Args:
             key: ``(thread_id, checkpoint_ns, checkpoint_id, task_id, idx)``.
+            channel: The write's channel name, for diagnostics only.
             total: The blob's size from ``octet_length(blob)``.
 
         Returns:
             The reassembled payload.
+
+        Raises:
+            RuntimeError: If a window vanishes mid-read, or the reassembled
+                payload does not match the size read up front.
         """
+        thread_id, ns, checkpoint_id, task_id, _idx = key
         parts: list[bytes] = []
         for offset, length in window_offsets(total):
             window = await self.client.execute(WRITE_WINDOW_SQL, (offset, length) + key)
+            if not window:
+                raise RuntimeError(
+                    f"pending write vanished mid-read: thread={thread_id} "
+                    f"checkpoint={checkpoint_id} task={task_id} channel={channel} "
+                    f"offset={offset}"
+                )
             parts.append(window[0]["part"])
-        return b"".join(parts)
+        payload = b"".join(parts)
+        if len(payload) != total:
+            raise RuntimeError(
+                f"pending write reassembled to the wrong length: "
+                f"thread={thread_id} checkpoint={checkpoint_id} task={task_id} "
+                f"channel={channel} expected={total} got={len(payload)}"
+            )
+        return payload
 
     async def alist(
         self,
