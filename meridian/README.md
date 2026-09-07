@@ -2,7 +2,7 @@
 
 > Agentic travel concierge built on Aurora PostgreSQL, MCP, Strands Agents, Bedrock AgentCore, and LangGraph.
 
-Meridian is a live workshop demo for the five-phase progression **Query → Tool → Intent → Trust → Durable Workflow**. The technical phases are **SQL → MCP → Retrieval → Production → Workflow**. Domain-data operations use the connectionless RDS Data API; AgentCore Memory carries managed context across turns; and Phase 5 uses pooled psycopg connectivity to externalize LangGraph workflow checkpoints into Aurora.
+Meridian is a live workshop demo for **SQL → MCP → Retrieval → Production → Workflow**. The four views take the audience from the traveler experience to the implementation: **Concierge → Capability ladder → Recovery desk → System evidence**. Domain-data operations use the RDS Data API. LangGraph persists workflow checkpoints in Aurora through `AuroraDataApiSaver` or a pooled `AsyncPostgresSaver`; AgentCore Memory adds managed context when configured.
 
 > **Statefulness lives in durable stores, not database connections.**
 
@@ -14,10 +14,15 @@ http://localhost:5173/showcase
 
 The root route redirects to `/showcase`.
 
+![The current Meridian Concierge with destination photography, trip recommendations, traveler context, and four-view navigation](docs/meridian-showcase.png)
+
+Captured from the running app in fullscreen presentation mode. Catalog prices
+and availability are sample package inventory, not airline reservations or tickets.
+
 ## Prerequisites
 
 - Python 3.13 (the version CI builds and tests against)
-- Node.js 20.19+ or 22.12+
+- Node.js 22.12+ recommended (CI uses Node 22); Node 20.19+ is also supported
 - AWS credentials with Amazon Bedrock and RDS Data API access
 - Aurora PostgreSQL 18+ with pgvector enabled, or a cluster created through `scripts/create_cluster.sh`
 - Bedrock model access for `global.anthropic.claude-sonnet-5`
@@ -37,7 +42,12 @@ cp .env.example .env
 
 # Fresh or disposable database only: recreates the schema.
 python scripts/init_aurora_schema.py
+python scripts/apply_migrations.py
 python scripts/seed_data.py  # also binds the current AWS workload to Alex
+
+# In .env, enable durable checkpoints for the recovery demonstration:
+# LANGGRAPH_CHECKPOINT_DATA_API=true
+# LANGGRAPH_CHECKPOINT_REQUIRED=true
 
 uvicorn backend.main:app --reload --port 8000
 ```
@@ -49,6 +59,12 @@ curl http://localhost:8000/health
 ```
 
 Expected result: `{"status":"healthy", ...}`.
+
+For the Data API recovery demonstration, also verify
+`checkpoint_backend: "AuroraDataApiSaver"` and `checkpoint_durable: true`.
+An explicit or resolved checkpoint DSN selects `AsyncPostgresSaver` instead.
+`LANGGRAPH_CHECKPOINT_REQUIRED=true` prevents startup from silently falling
+back to in-process checkpoints when the durable store is unavailable.
 
 For an existing database, do not run `init_aurora_schema.py`: it rebuilds the
 base schema. Apply the tracked, non-destructive upgrades instead:
@@ -92,8 +108,27 @@ python scripts/bind_current_identity.py
 
 | Surface | Route | Use |
 | ------- | ----- | --- |
-| **Meridian Showcase** | `/showcase`, `/device-showcase` | Primary chalk-talk experience: chat, phase selector, trace, traveler memory, RLS proof, and trip cards |
+| **Concierge** | `/showcase?view=concierge` | Personalized discovery, conversation, trip details, saved trips, and traveler brief |
+| **Capability ladder** | `/showcase?view=ladder` | Five phases, boundary queries, architecture disclosure, and live evidence |
+| **Recovery desk** | `/showcase?view=recovery` | Canceled-trip scenario, checkpointed shortlist, resume, and package-hold receipt |
+| **System evidence** | `/showcase?view=proof` | Readback of the selected journey's checkpoints, execution leases, authorization, and holds |
 | **Demo Stage** | `/demo-stage`, `/stage` | Kiosk loop and presenter playback surface |
+
+`/showcase` opens Concierge; `/device-showcase` remains an alias. The selected
+view and journey stay in the URL so refresh can restore the saved workflow.
+
+### Presenting on a shared screen
+
+The windowed **Presenter controls** bar contains **Preview audience layout**,
+**Projector readability**, **Room check**, and **Present fullscreen**. Preview
+widens the workspace while leaving the preparation controls available. Projector
+readability increases type size and secondary-text contrast in both themes.
+
+Select **Present fullscreen** before sharing. The entire preparation bar,
+including an open room-check panel, and the service sidebar disappear. The
+Meridian brand, surface navigation, conversation, and evidence remain available.
+Press **Esc** to restore the windowed layout and your preparation choices.
+Controls are visible on a shared windowed screen, so stop sharing first.
 
 ## Five-Phase Demo Ladder
 
@@ -102,16 +137,17 @@ python scripts/bind_current_identity.py
 | **1 · SQL** | Query | Direct Aurora rows returned through RDS Data API filters |
 | **2 · MCP** | Tool | Aurora access through MCP plus custom domain tools such as package comparison, FX conversion, and seasonal pricing |
 | **3 · Retrieval** | Intent | Hybrid pgvector + full-text candidates reranked by Cohere, with specialist-agent routing |
-| **4 · Production** | Trust | AgentCore, workload-to-traveler grants, Aurora RLS, and auditable per-turn scope |
-| **5 · Workflow** | Durable Workflow | PostgresSaver checkpoint, process restart, and same-thread resume from Aurora |
+| **4 · Production** | Trust | Recalled preferences, AgentCore integration, workload-to-traveler grants, Aurora RLS, and auditable per-turn scope |
+| **5 · Workflow** | Durable Workflow | Aurora checkpoint, process restart, same-thread resume, and preserved hold identity and expiry |
 
 ### Where state lives
 
 | State | Durable store | Access path |
 | --- | --- | --- |
 | Traveler profile, preferences, conversation history, and audit | Aurora PostgreSQL | RDS Data API |
-| Managed session and semantic context across turns | Bedrock AgentCore Memory | AgentCore APIs |
-| LangGraph execution position and pending writes | Aurora PostgreSQL | PostgresSaver over pooled psycopg |
+| Managed session and semantic context across turns, when configured | Bedrock AgentCore Memory | AgentCore APIs |
+| LangGraph execution position and pending writes | Aurora PostgreSQL | `AuroraDataApiSaver` over RDS Data API, or `AsyncPostgresSaver` over pooled psycopg |
+| Journey binding, worker leases, and hold-request identities | Aurora PostgreSQL | Scoped RDS Data API transactions |
 
 MCP defines the governed tool contract, not the database transport. A Data API
 transaction keeps RLS role and traveler scope together for one unit of work; it
@@ -119,15 +155,32 @@ is not long-lived workflow state.
 
 ## Prompt Ladder
 
-Each phase has two safe wins and one prompt that naturally motivates the next phase.
+The visible pills pair a working query with a boundary that motivates the next
+phase. **Continue in…** carries the question forward. These are boundaries of
+the configured demo phases, not inherent limitations of SQL or MCP. Additional
+working queries are in [DEMO_SCRIPT.md](DEMO_SCRIPT.md).
 
-| Phase | Known-good prompts | Tee-up prompt |
+| Phase | Works here | Next capability or proof |
 | ----- | ------------------ | ------------- |
-| SQL | `Show me city trips under $2,000 per traveler.`; `Show me beach trips under $2,500 per traveler.` | `Compare three trip types side by side and convert their prices to euros.` → needs custom MCP tools |
-| MCP | `Compare three trip types side by side and convert their prices to euros.`; `What is the off-season price range for Tokyo trips in November?` | `I want a quiet, romantic escape in wine country, ideally with a villa.` → needs intent retrieval |
-| Retrieval | `I want a quiet, romantic escape in wine country, ideally with a villa.`; `Which trip lengths are still available for Tuscany Wine & Wellness?` | `Recall my October Tokyo plan and use my saved preferences to recommend the next step.` → needs durable memory |
-| Production | `Find a Tokyo culture trip for two using my saved preferences.`; `Recall my October Tokyo plan and use my saved preferences to recommend the next step.` | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` → needs explicit workflow |
-| Workflow | `Which trip lengths are still available for Amalfi Coast Villa Week?`; `Recall my October Tokyo plan and use my saved preferences to recommend the next step.`; `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` | Finale: explicit search → availability checkpoints |
+| SQL | `Show me city trips under $2,000 per traveler.` | `Compare three trip types and convert each price to euros.` → MCP |
+| MCP | `Compare three trip types and convert each price to euros.` | `Find a quiet, romantic wine-country retreat with a private villa.` → Retrieval |
+| Retrieval | `Find a quiet, romantic wine-country retreat with a private villa.` | `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` → Production |
+| Production | `Find Tokyo trips that fit my saved preferences.` | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` → Workflow |
+| Workflow | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` | `Resume workflow from checkpoint` after the pause |
+
+### What recovery proves
+
+The canceled itinerary is a preview and is not valid for boarding. Saving a
+shortlist does not hold inventory. Once the workflow creates a package hold,
+its receipt displays the creation time, original 15-minute expiry, and remaining
+time. Restart verification checks that the same request produces one booking
+with the same expiry, and that a replacement execution successfully resumes the
+saved checkpoint. A second worker attempt alone is not proof of success.
+
+Refresh restores the saved thread, shortlist, traveler count, and resume action.
+System evidence distinguishes observed records, expired leases, completed holds,
+and unavailable evidence. See [AUDIT_FIXES.md](docs/AUDIT_FIXES.md) for validation
+and the remaining live-rehearsal limits.
 
 ## Architecture
 
@@ -168,6 +221,11 @@ Core tables live in `backend/db/schema.sql`:
 - `conversations`, `conversation_messages`, `trip_interactions` — session history and semantic recall
 - `bookings`, `booking_lines`, `agent_traces` — demo booking and observability
 - `agent_audit_log` and `agent_iam_audit` — Phase 4 IAM, RLS scope, and rows-returned audit trail
+
+Tracked migrations in `scripts/migrations/` add the journey, execution, hold
+request, and checkpoint tables, including `journeys`, `journey_executions`,
+`hold_requests`, `checkpoints`, `checkpoint_blobs`, and `checkpoint_writes`.
+Apply these migrations on both fresh and existing databases.
 
 Seed data is generated by `scripts/travel_catalog.py` and loaded by `scripts/seed_data.py`.
 `seed_data.py` also writes the Cohere Embed v4 vectors, so re-running it after a
@@ -210,12 +268,14 @@ sample does not authenticate Alex as a human user.
 
 | Method | Path | Description |
 | ------ | ---- | ----------- |
-| `POST` | `/api/chat` | Chat by phase (`phase`: 1–5). Phase 4 accepts `customer_id` and `conversation_id`; Phase 5 routes through LangGraph |
+| `POST` | `/api/chat` | Chat by phase (`phase`: 1–5); Phase 5 carries the conversation, traveler count, and resume request into LangGraph |
 | `GET` | `/api/memory/{traveler_id}` | Traveler profile and preference facts |
 | `GET` | `/api/packages` | Trip catalog in native schema shape |
 | `GET` | `/api/products` | Product-shaped catalog for UI compatibility |
 | `POST` | `/api/chat/order` | Demo booking flow |
-| `GET` | `/health` | Backend health and run configuration |
+| `GET` | `/api/journeys` | List the authorized traveler's journeys |
+| `GET` | `/api/journeys/{journey_id}` | Read the saved workflow, checkpoint, executions, authorization, and hold evidence |
+| `GET` | `/health`, `/api/health` | Backend health, checkpoint backend, and actual durability |
 
 Trace spans are returned inline on each `POST /api/chat` response as `ChatResponse.activities`.
 
@@ -232,8 +292,9 @@ Key environment variables are documented in `.env.example`.
 | `AURORA_CLUSTER_ARN`, `AURORA_SECRET_ARN`, `AURORA_DATABASE` | RDS Data API connection |
 | `RLS_APP_ROLE` | Least-privilege role used for scoped Aurora RLS sessions |
 | `AGENTCORE_*` | Phase 4 Runtime, Gateway, Memory, and Identity configuration |
-| `LANGGRAPH_CHECKPOINT_DSN` or `LANGGRAPH_CHECKPOINT_*` | Dedicated Phase 5 PostgreSQL checkpoint connection |
-| `LANGGRAPH_CHECKPOINT_REQUIRED` | Fail closed when durable PostgresSaver is unavailable |
+| `LANGGRAPH_CHECKPOINT_DATA_API` | Opt into `AuroraDataApiSaver`; used when no checkpoint DSN resolves |
+| `LANGGRAPH_CHECKPOINT_DSN` or discrete `LANGGRAPH_CHECKPOINT_*` connection settings | Select `AsyncPostgresSaver` over a bounded PostgreSQL pool |
+| `LANGGRAPH_CHECKPOINT_REQUIRED` | Fail closed when no durable checkpoint backend is available |
 | `LANGGRAPH_DEMO_INTERRUPT_AFTER` | Pause after a named node for the restart/resume proof |
 
 ## Tech Stack
@@ -243,7 +304,7 @@ Key environment variables are documented in `.env.example`.
 | Frontend | React 18, Vite, TypeScript |
 | Backend | FastAPI, Python 3.13 |
 | Agents | Strands Agents for Phases 1–4 |
-| Workflow | LangGraph `StateGraph` with `PostgresSaver` checkpoints in Phase 5 |
+| Workflow | LangGraph `StateGraph`, Aurora checkpoints, worker leases, and idempotent package holds |
 | Database | Aurora PostgreSQL 18+, RDS Data API, pgvector HNSW, identity bindings, Row-Level Security |
 | Embeddings and rerank | Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`us.cohere.rerank-v3-5:0`) on Bedrock |
 | LLM | Claude Sonnet 5 on Amazon Bedrock (`global.anthropic.claude-sonnet-5`) |
@@ -266,6 +327,11 @@ python -m pip install --require-hashes -r requirements.txt
 python -m pytest
 python -m pip_audit -r requirements.txt
 ```
+
+Install `ruff` and `pip-audit` for the CI quality checks; run
+`ruff check backend scripts tests` from `meridian/`. Local pytest loads `.env`,
+and database-marked tests require a disposable test database. The root
+[README](../README.md#validation) also lists the AgentCore CDK checks.
 
 ## Documentation
 
