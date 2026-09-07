@@ -112,6 +112,7 @@ def test_data_api_backend_is_off_unless_asked_for() -> None:
     assert backend.durable is False
 
 
+@pytest.mark.database
 def test_the_data_api_backend_probes_the_real_cluster_and_is_adopted() -> None:
     """The probe has to reach Aurora, not a stand-in for it.
 
@@ -130,6 +131,7 @@ def test_the_data_api_backend_probes_the_real_cluster_and_is_adopted() -> None:
     assert backend.error is None
 
 
+@pytest.mark.database
 def test_an_unreachable_cluster_falls_back_instead_of_failing_the_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -146,6 +148,7 @@ def test_an_unreachable_cluster_falls_back_instead_of_failing_the_turn(
     assert "Data API checkpointing unavailable" in (backend.error or "")
 
 
+@pytest.mark.database
 def test_an_unreachable_cluster_raises_when_checkpoints_are_required(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

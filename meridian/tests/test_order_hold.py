@@ -22,6 +22,8 @@ from backend.db.rds_data_client import get_rds_data_client
 from backend.http_auth import HttpPrincipal
 from backend.routers.chat import OrderRequest, process_order
 
+pytestmark = pytest.mark.database
+
 TRAVELER = "trv_meridian_demo"
 
 PRINCIPAL = HttpPrincipal(

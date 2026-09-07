@@ -24,6 +24,8 @@ from backend.agents.orchestration_05.hold_intent import (
 from backend.db.journey_store import ScopedDb, ensure_journey
 from backend.db.rds_data_client import get_rds_data_client
 
+pytestmark = pytest.mark.database
+
 TRAVELER = "trv_meridian_demo"
 
 HOLD_SQL = """

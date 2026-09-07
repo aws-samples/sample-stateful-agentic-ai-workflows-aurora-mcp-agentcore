@@ -27,6 +27,8 @@ from tests.test_aurora_dataapi_saver import Cluster, FaultAfter, _checkpoint, cl
 
 __all__ = ["cluster"]
 
+pytestmark = pytest.mark.database
+
 RESERVED_CHANNEL = next(iter(WRITES_IDX_MAP))
 
 

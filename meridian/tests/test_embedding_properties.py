@@ -114,6 +114,7 @@ def get_package_count_with_embeddings() -> int:
     return results[0]['count'] if results else 0
 
 
+@pytest.mark.database
 class TestEmbeddingDimensionConsistency:
     """
     Property-based tests for embedding dimension consistency.
@@ -216,6 +217,7 @@ class TestEmbeddingDimensionConsistency:
         print(f"\n✅ Verified {len(dimensions)} packages all have {EXPECTED_EMBEDDING_DIMENSION}-dimensional embeddings")
 
 
+@pytest.mark.database
 class TestEmbeddingDimensionWithDatabaseQuery:
     """
     Direct database query tests for embedding dimension verification.
@@ -264,6 +266,7 @@ class TestEmbeddingDimensionWithDatabaseQuery:
 
 
 # Standalone test function for pytest discovery
+@pytest.mark.database
 def test_embedding_dimension_property():
     """
     # Feature: meridian, Property 1: Embedding Dimension Consistency

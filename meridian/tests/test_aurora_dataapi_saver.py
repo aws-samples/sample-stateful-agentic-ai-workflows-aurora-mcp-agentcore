@@ -101,6 +101,7 @@ def _checkpoint(cid: str = "cp1", value: Any = None) -> dict:
 # -------------------------------------------------------------------- aput
 
 
+@pytest.mark.database
 async def test_aput_returns_the_new_config(cluster: Cluster) -> None:
     result = await cluster.saver().aput(
         cluster.config(), _checkpoint(), {"step": 1}, {"messages": "1"}
@@ -109,6 +110,7 @@ async def test_aput_returns_the_new_config(cluster: Cluster) -> None:
     assert result["configurable"]["thread_id"] == cluster.thread_id
 
 
+@pytest.mark.database
 async def test_aput_writes_a_checkpoint_aurora_can_read_back(
     cluster: Cluster,
 ) -> None:
@@ -128,6 +130,7 @@ async def test_aput_writes_a_checkpoint_aurora_can_read_back(
     assert rows[0]["type"] == "json"
 
 
+@pytest.mark.database
 async def test_a_failed_blob_leaves_no_visible_checkpoint(cluster: Cluster) -> None:
     """A checkpoint that cannot be read back must never be reported as saved."""
     saver = AuroraDataApiSaver(FaultAfter(cluster.client, "checkpoint_blobs"))
@@ -138,6 +141,7 @@ async def test_a_failed_blob_leaves_no_visible_checkpoint(cluster: Cluster) -> N
     assert await cluster.rows("checkpoints") == 0
 
 
+@pytest.mark.database
 async def test_a_large_value_is_stored_whole(cluster: Cluster) -> None:
     """Beyond one window the saver appends, and Aurora holds every byte."""
     value = ["x" * (MAX_ROW_BYTES * 2)]
@@ -154,6 +158,7 @@ async def test_a_large_value_is_stored_whole(cluster: Cluster) -> None:
     assert int(stored[0]["n"]) == len(expected)
 
 
+@pytest.mark.database
 async def test_a_segmented_write_reassembles_byte_for_byte(cluster: Cluster) -> None:
     value = ["x" * (MAX_ROW_BYTES * 2 + 5)]
     saver = cluster.saver()
@@ -172,6 +177,7 @@ async def test_a_segmented_write_reassembles_byte_for_byte(cluster: Cluster) -> 
 # --------------------------------------------------------------- blob reads
 
 
+@pytest.mark.database
 async def test_a_value_below_one_window_round_trips(cluster: Cluster) -> None:
     saver = cluster.saver()
     await saver._write_blob(cluster.thread_id, "", "messages", "1", ["hello"])
@@ -179,6 +185,7 @@ async def test_a_value_below_one_window_round_trips(cluster: Cluster) -> None:
     assert saver.serde.loads_typed((blob_type, payload)) == ["hello"]
 
 
+@pytest.mark.database
 @pytest.mark.parametrize(
     "size",
     [MAX_ROW_BYTES - 1, MAX_ROW_BYTES, MAX_ROW_BYTES + 1, MAX_ROW_BYTES * 2 + 7],
@@ -197,6 +204,7 @@ async def test_values_around_the_window_boundary_round_trip(
     assert saver.serde.loads_typed((blob_type, payload)) == value
 
 
+@pytest.mark.database
 async def test_binary_survives_the_full_byte_range(cluster: Cluster) -> None:
     """Embedded nulls and high bytes must not be mangled or double encoded."""
     saver = cluster.saver()
@@ -208,6 +216,7 @@ async def test_binary_survives_the_full_byte_range(cluster: Cluster) -> None:
     assert saver.serde.loads_typed((blob_type, payload)) == value
 
 
+@pytest.mark.database
 async def test_read_blob_returns_none_when_absent(cluster: Cluster) -> None:
     assert await cluster.saver()._read_blob(cluster.thread_id, "", "nope", "1") is None
 
@@ -224,6 +233,7 @@ def test_blob_window_sql_casts_both_substring_bounds() -> None:
     assert "FROM %s::integer FOR %s::integer" in BLOB_WINDOW_SQL
 
 
+@pytest.mark.database
 async def test_a_truncated_read_is_an_error_not_a_short_value(
     cluster: Cluster,
 ) -> None:
@@ -240,6 +250,7 @@ async def test_a_truncated_read_is_an_error_not_a_short_value(
 # ---------------------------------------------------------------- aget_tuple
 
 
+@pytest.mark.database
 async def test_aget_tuple_returns_none_for_an_unknown_thread(
     cluster: Cluster,
 ) -> None:
@@ -247,6 +258,7 @@ async def test_aget_tuple_returns_none_for_an_unknown_thread(
     assert await cluster.saver().aget_tuple(missing) is None
 
 
+@pytest.mark.database
 async def test_aput_round_trips_through_a_freshly_built_reader(
     cluster: Cluster,
 ) -> None:
@@ -261,6 +273,7 @@ async def test_aput_round_trips_through_a_freshly_built_reader(
     assert tup.metadata["source"] == "loop"
 
 
+@pytest.mark.database
 async def test_aget_tuple_merges_inline_and_blob_channel_values(
     cluster: Cluster,
 ) -> None:
@@ -304,6 +317,7 @@ async def test_aget_tuple_merges_inline_and_blob_channel_values(
     assert values["messages"] == ["msg-1"]
 
 
+@pytest.mark.database
 async def test_the_stored_blob_type_is_used_rather_than_a_literal(
     cluster: Cluster,
 ) -> None:
@@ -323,6 +337,7 @@ async def test_the_stored_blob_type_is_used_rather_than_a_literal(
     assert tup.checkpoint["channel_values"]["messages"] == {"a": 1}
 
 
+@pytest.mark.database
 async def test_metadata_is_sanitized_the_way_the_postgres_family_does(
     cluster: Cluster,
 ) -> None:

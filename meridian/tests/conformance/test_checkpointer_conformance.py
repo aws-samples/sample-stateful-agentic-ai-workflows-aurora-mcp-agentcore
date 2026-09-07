@@ -39,6 +39,7 @@ def _reset_warned_types() -> None:
     _warned_blocked_types.clear()
 
 
+@pytest.mark.database
 class TestMemorySaver:
     @pytest.fixture(autouse=True)
     def setup(self, cluster) -> None:
@@ -271,6 +272,7 @@ async def test_memory_saver() -> None:
         assert sync_memory_saver is memory_saver
 
 
+@pytest.mark.database
 async def test_memory_saver_warns_on_unregistered_msgpack(
     caplog: pytest.LogCaptureFixture, cluster
 ) -> None:
@@ -299,6 +301,7 @@ async def test_memory_saver_warns_on_unregistered_msgpack(
     assert result.checkpoint["channel_values"]["foo"] == obj
 
 
+@pytest.mark.database
 async def test_memory_saver_allowlist_silences_warning(
     caplog: pytest.LogCaptureFixture, cluster
 ) -> None:
@@ -327,6 +330,7 @@ async def test_memory_saver_allowlist_silences_warning(
     assert result.checkpoint["channel_values"]["foo"] == obj
 
 
+@pytest.mark.database
 async def test_memory_saver_strict_blocks_unregistered(
     caplog: pytest.LogCaptureFixture, cluster
 ) -> None:
@@ -352,6 +356,7 @@ async def test_memory_saver_strict_blocks_unregistered(
     assert result.checkpoint["channel_values"]["foo"] == expected
 
 
+@pytest.mark.database
 async def test_memory_saver_with_allowlist_proxy_isolated(cluster) -> None:
     serde = JsonPlusSerializer(allowed_msgpack_modules=None)
     memory_saver = AuroraDataApiSaver(cluster, serde=serde)
@@ -490,6 +495,7 @@ class TestInMemorySaverDeltaChannel:
         assert result["writes"] == []
 
 
+@pytest.mark.database
 class TestBaseFallbackGetChannelWrites:
     """Exercises the `BaseCheckpointSaver.get_delta_channel_history` default
     implementation — the path third-party savers inherit when they don't

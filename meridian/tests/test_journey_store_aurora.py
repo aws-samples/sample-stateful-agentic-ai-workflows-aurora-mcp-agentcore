@@ -29,6 +29,8 @@ from backend.db.journey_store import (
 )
 from backend.db.rds_data_client import get_rds_data_client
 
+pytestmark = pytest.mark.database
+
 TRAVELER = "trv_meridian_demo"
 
 # A lease that expired before the transaction started, which is what a worker

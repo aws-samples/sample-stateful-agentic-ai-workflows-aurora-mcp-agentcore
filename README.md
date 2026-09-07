@@ -159,7 +159,7 @@ every push to `main`. Run the same commands locally:
 ```bash
 cd meridian
 source venv/bin/activate
-python -m pytest
+PYTHON_DOTENV_DISABLED=1 python -m pytest -m "not database"
 ruff check backend scripts tests
 python -m pip_audit -r requirements.txt
 ```
@@ -183,6 +183,12 @@ npm audit --audit-level=high
 ```
 
 Install `ruff` and `pip-audit` in the backend virtual environment before
-running those checks. Local pytest loads `.env`; database-marked tests need a
-disposable test database. See the [audit validation notes](meridian/docs/AUDIT_FIXES.md)
-for the tested restart scenario and its limits.
+running those checks. CI runs the offline tests; the command above also prevents
+local pytest from loading the demo's `.env` configuration.
+
+Run the live Aurora integration tests separately from `meridian/` with
+`python -m pytest -m database`. This loads `.env` and requires a disposable,
+migrated Aurora test database with a seeded catalog and AWS access. These tests
+write checkpoints, journeys, and holds. See the
+[audit validation notes](meridian/docs/AUDIT_FIXES.md) for the tested restart
+scenario and its limits.

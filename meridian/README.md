@@ -324,13 +324,16 @@ npm run build
 cd meridian
 source venv/bin/activate
 python -m pip install --require-hashes -r requirements.txt
-python -m pytest
+PYTHON_DOTENV_DISABLED=1 python -m pytest -m "not database"
 python -m pip_audit -r requirements.txt
 ```
 
 Install `ruff` and `pip-audit` for the CI quality checks; run
-`ruff check backend scripts tests` from `meridian/`. Local pytest loads `.env`,
-and database-marked tests require a disposable test database. The root
+`ruff check backend scripts tests` from `meridian/`. CI runs the offline tests;
+the command above also prevents loading the demo's local `.env` configuration.
+Run `python -m pytest -m database` separately for live Aurora checks. They load
+`.env` and require a disposable, migrated Aurora test database with a seeded
+catalog and AWS access; they write checkpoints, journeys, and holds. The root
 [README](../README.md#validation) also lists the AgentCore CDK checks.
 
 ## Documentation
