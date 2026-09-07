@@ -109,7 +109,7 @@ precedence over the Data API saver. `MemorySaver` is an in-process fallback
 and cannot demonstrate recovery after a worker restart.
 
 The [release review](meridian/docs/RELEASE_REVIEW.md) records the latest checks,
-plain-language explanations, and the remaining live rehearsal gate.
+plain-language explanations, and live rehearsal results.
 
 ## Demo Surfaces
 

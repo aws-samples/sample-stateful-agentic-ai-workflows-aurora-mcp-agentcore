@@ -1,6 +1,6 @@
 # Meridian release review - September 7, 2026
 
-The code and UI checks below pass. A fresh live rehearsal is still required: the local AWS session expired during this review. Catalog and traveler reads failed while the backend's process health remained green. The app now reports that condition correctly and offers Reconnect.
+The code, UI checks, and fresh live rehearsal below pass. The initial review found an expired AWS session in the running backend. After the session was refreshed, restarting Uvicorn restored live catalog and traveler reads. The browser again shows Meridian live. Reconnect retries service reads; restarting the backend reloads its AWS clients.
 
 ## What changed
 
@@ -47,6 +47,25 @@ Lead with the short explanation. Open Architecture & evidence or System evidence
 
 Aurora consolidates catalog data, retrieval indexes, traveler records, and workflow state. The application still needs model access, execution services, permissions, and deployment configuration. The phase boundaries describe this sample's configured behavior, not universal limits of SQL or MCP.
 
-## Final live gate
+## Live follow-up after the session refresh
 
-Refresh the backend's AWS session, select Reconnect, and confirm catalog and profile reads. Then rehearse the five phase prompts, the authorization negative control, and same-thread recovery with real services. Check the price and an evidence label from the back of the actual room. Until that passes, the repo is verified for code and UI behavior; the live demo is not fully signed off.
+The primary backend was restarted without changing or exposing credentials. It returned all 35 catalog trips and Alex’s profile with eight facts. A browser check confirmed that the warning cleared and no page errors occurred.
+
+The rehearsal used a separate local backend worker, unique temporary conversation IDs, and real Aurora, MCP, Bedrock, and AgentCore calls:
+
+| Check | Result |
+| --- | --- |
+| Phase 1: structured SQL | HTTP 200, five trips, no error events. |
+| Phase 2: MCP comparison and currency conversion | HTTP 200, three trips, no error events. |
+| Phase 3: meaning and keyword retrieval | HTTP 200, five trips, lexical candidates and Cohere reranking observed. |
+| Phase 4: saved traveler context | HTTP 200, five trips; traveler grant, scoped RLS read, managed Runtime invocation, and Memory event recorded. |
+| Authorization negative control | Alex allowed, Jordan denied; PostgreSQL reported RLS active. Preferences narrowed from 22 rows to 17; interactions from 11 to 10. Counts reflect the rehearsal and can change. |
+| Phase 5: recovery | HTTP 200; shortlist saved to an Aurora checkpoint with availability as the next node. |
+| Replacement worker | The rehearsal worker was stopped after its committed pause. A new process resumed the same thread; the saved resume receipt and successful second execution were read back from Aurora. |
+| Package hold | Exactly one hold for two travelers; expiry minus creation time was 900 seconds. |
+
+This follow-up used a graceful process restart after the pause. The earlier SIGKILL test remains the separate crash-recovery proof. Neither test waits fifteen minutes. The five initial requests took roughly 0.5, 1.4, 14.3, 18.2, and 16.2 seconds; resuming on the replacement worker and reading back its evidence took about 52 seconds in this run. These are observations, not latency guarantees.
+
+Temporary Aurora journey, checkpoint, booking, conversation, and interaction records were removed, with zero remaining rows verified. The rehearsal’s managed Memory event and session-scoped extracted records were also removed. Access audit records were retained.
+
+The remaining presentation check is in the actual room: confirm a price and an evidence label are readable from the back, with projector readability enabled. The software and live-service rehearsal are complete for this review.

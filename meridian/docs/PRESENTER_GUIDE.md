@@ -238,7 +238,7 @@ Keep these statements explicit:
 
 ## Fast Recovery
 
-- **Frontend says offline:** check the backend and AWS session, then select **Reconnect**. Process health alone is not enough; trips and traveler details must load.
+- **Frontend says offline:** check the backend and AWS session. If you refreshed the session but the backend still reports `ExpiredTokenException`, restart Uvicorn so its AWS clients load the new session, then select **Reconnect**. Reconnect retries the data reads; it does not restart the backend. Process health alone is not enough; trips and traveler details must load.
 - **First query is slow:** wait for Aurora Serverless v2 and Bedrock cold paths,
   then run the query again before presenting.
 - **Memory profile is empty:** check the session, traveler authorization, and seed records. Re-seed only a fresh disposable database; preserve an existing demo journey.
