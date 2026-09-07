@@ -21,11 +21,13 @@ import { JourneyPanel } from '../JourneyPanel';
 import { RecoveryRouteMap } from '../RecoveryRouteMap';
 import { RecoveryWorkspace } from '../RecoveryWorkspace';
 import { TripResultCardContent } from '../TripResultCardContent';
+import { SessionClose } from '../../surfaces/SessionClose';
 
 function makeState(
   overrides: Partial<MeridianShowcaseState> = {},
 ): MeridianShowcaseState {
   return {
+    tripHolds: [],
     travelersCount: overrides.chatFilters?.travelers || 2,
     restoreJourney: vi.fn(),
     selectedPhase: 1,
@@ -272,18 +274,13 @@ describe('Experience presentation polish', () => {
   });
 
   it('shows the recovery composer only after the plan is ready', () => {
-    // Phase 5 is the recovery workspace, and the phase is owned by the hook,
-    // so the view follows selectedPhase rather than a local step.
+    window.history.replaceState(null, '', '/showcase?view=recovery');
     const { container, rerender } = render(
       <DesktopMeridianApp
         state={makeState({ selectedPhase: 5 })}
         theme="dark"
         onToggleTheme={vi.fn()}
       />,
-    );
-
-    fireEvent.click(
-      screen.getByRole('button', { name: /^Phase 5, Workflow/ }),
     );
 
     const dock = container.querySelector('.mds-desktop-dock');
@@ -307,7 +304,7 @@ describe('Experience presentation polish', () => {
 
     expect(
       container.querySelector(
-        '.mds-desktop-dock .mds-chat-composer-wrap.is-recovery',
+        '.mds-recovery-workspace .mds-chat-composer-wrap.is-recovery',
       ),
     ).toBeInTheDocument();
   });
@@ -1017,6 +1014,47 @@ describe('Experience presentation polish', () => {
 
 
 describe('Concierge travel states', () => {
+  it('hands off a paused Workflow to the desk without starting or resuming a request', async () => {
+    window.history.replaceState(null, '', '/showcase?view=ladder');
+    const state = makeState({ selectedPhase: 5, workflowStatus: 'paused', conversationId: 'same-thread', lastPrompt: SHOWCASE_FINALE_PROMPT });
+    render(<DesktopMeridianApp state={state} theme="dark" onToggleTheme={vi.fn()} />);
+    expect(screen.getByRole('region', { name: 'Workflow checkpoint demonstration' })).toBeInTheDocument();
+    expect(screen.queryByText('Not valid for boarding')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue at recovery desk' }));
+    expect(await screen.findByRole('heading', { name: "Alex's JFK to Tokyo recovery" })).toBeInTheDocument();
+    expect(new URL(window.location.href).searchParams.get('view')).toBe('recovery');
+    expect(state.applyPhaseExample).not.toHaveBeenCalled();
+    expect(state.submitPrompt).not.toHaveBeenCalled();
+    expect(state.clearChat).not.toHaveBeenCalled();
+    expect(state.setSelectedPhase).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Resume and verify' }));
+    expect(state.submitPrompt).toHaveBeenCalledWith('Resume workflow from checkpoint', 5);
+  });
+
+  it('opens the closing screen from evidence and can return without clearing the journey', async () => {
+    window.history.replaceState(null, '', '/showcase?view=proof&journey=same-journey');
+    const state = makeState();
+    render(<DesktopMeridianApp state={state} theme="dark" onToggleTheme={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Session takeaways' }));
+    expect(await screen.findByRole('region', { name: 'Session takeaways' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open for questions' }));
+    expect(screen.getByRole('heading', { name: 'Where would you use this?' })).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: 'Explore the live evidence' }));
+    expect(await screen.findByRole('region', { name: 'System evidence' })).toBeInTheDocument();
+    expect(new URL(window.location.href).searchParams.get('journey')).toBe('same-journey');
+    expect(state.clearChat).not.toHaveBeenCalled();
+  });
+
+  it('lets Q&A revisit the takeaways and return to the concierge', () => {
+    const onConcierge = vi.fn();
+    render(<SessionClose onEvidence={vi.fn()} onConcierge={onConcierge} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open for questions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to takeaways' }));
+    expect(screen.getByRole('region', { name: 'Session takeaways' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Meridian' }));
+    expect(onConcierge).toHaveBeenCalledOnce();
+  });
+
   it('opens System evidence from the recovery proof action', async () => {
     window.history.replaceState(null, '', '/showcase?view=recovery');
     render(

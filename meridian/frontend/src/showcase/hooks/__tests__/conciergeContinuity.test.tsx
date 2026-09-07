@@ -65,6 +65,48 @@ it('uses the same party for estimates and holds before and after clearing per-tu
   expect(processOrder).toHaveBeenLastCalledWith(expect.objectContaining({ quantity: 3 }));
 });
 
+it('retains a confirmed hold and workflow evidence without placing it again on reopen', async () => {
+  const product = { product_id: 'tokyo', name: 'Tokyo', price: 100, brand: 'Meridian', category: 'city', description: '', image_url: '' };
+  const order = { order_id: 'HLD-existing', items: [{ product_id: 'tokyo', name: 'Tokyo', quantity: 2, unit_price: 100 }], subtotal: 200, tax: 0, shipping: 0, total: 200, status: 'held', hold_expires_at: new Date(Date.now() + 43200000).toISOString() };
+  vi.mocked(processOrder).mockResolvedValue({ message: 'Held', order, activities: [] });
+  vi.mocked(sendChatMessage).mockResolvedValue({ message: 'Paused', workflow_status: 'paused', conversation_id: 'same-thread', activities: [{ id: 'saved', timestamp: new Date().toISOString(), activity_type: 'tool_call', title: 'Checkpoint · AuroraDataApiSaver.put', telemetry: { category: 'memory_short', component: 'AuroraDataApiSaver', status: 'ok', fields: [{ label: 'checkpoint_durable', value: 'true' }] } }] });
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+  act(() => result.current.setSelectedPhase(5));
+  await act(async () => { await result.current.submitPrompt('My flight was canceled. Rework the trip.', 5); });
+  const checkpointTrace = result.current.traceSpans;
+  await act(async () => { await result.current.holdTrip(product); });
+  expect(result.current.traceSpans).toEqual(expect.arrayContaining(checkpointTrace));
+  expect(result.current.conversationId).toBe('same-thread');
+  act(() => result.current.closeTripDetails());
+  act(() => result.current.openTripDetails(product));
+  await act(async () => { await result.current.holdTrip(product); });
+  expect(processOrder).toHaveBeenCalledTimes(1);
+  act(() => result.current.clearChat());
+  expect(result.current.tripHolds).toEqual([{ productId: 'tokyo', order }]);
+});
+
+it('keeps a late hold receipt without overwriting a new phase conversation', async () => {
+  const product = { product_id: 'tokyo', name: 'Tokyo', price: 100, brand: 'Meridian', category: 'city', description: '', image_url: '' };
+  let resolveHold!: (value: Awaited<ReturnType<typeof processOrder>>) => void;
+  vi.mocked(processOrder).mockImplementation(() => new Promise(resolve => { resolveHold = resolve; }));
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+  let pending!: Promise<void>;
+  act(() => { pending = result.current.holdTrip(product); });
+  act(() => result.current.setSelectedPhase(3));
+  await act(async () => { await result.current.submitPrompt('A new question'); });
+  const messages = result.current.messages;
+  const traces = result.current.traceSpans;
+  await act(async () => {
+    resolveHold({ message: 'Old hold reply', activities: [], order: { order_id: 'HLD-late', items: [], subtotal: 100, tax: 0, shipping: 0, total: 100, status: 'held', hold_expires_at: new Date(Date.now() + 43200000).toISOString() } });
+    await pending;
+  });
+  expect(result.current.tripHolds[0].order.order_id).toBe('HLD-late');
+  expect(result.current.messages).toEqual(messages);
+  expect(result.current.traceSpans).toEqual(traces);
+});
+
 
 it('restores a saved recovery and sends resume to its original thread', async () => {
   const { result } = renderHook(() => useMeridianShowcase());

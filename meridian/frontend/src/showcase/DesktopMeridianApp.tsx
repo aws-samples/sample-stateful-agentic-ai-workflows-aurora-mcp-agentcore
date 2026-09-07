@@ -30,6 +30,8 @@ import { MemoryDrawer } from './components/MemoryDrawer';
 import { NavPanelDrawer } from './components/NavPanelDrawer';
 import type { NavPanelId } from './components/NavPanelDrawer';
 import { RecoveryWorkspace } from './components/RecoveryWorkspace';
+import { WorkflowWorkspace } from './components/WorkflowWorkspace';
+import { SessionClose } from './surfaces/SessionClose';
 import { TracePanel } from './components/TracePanel';
 import { TravelerContextPanel } from './components/TravelerContextPanel';
 import { TripDetailDrawer } from './components/TripDetailDrawer';
@@ -38,21 +40,11 @@ import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
 import type { Phase } from '../types';
 import { MERIDIAN_MARK_SRC } from '../lib/meridianBrand';
 import { ALEX_IMAGE_URL, ALEX_NAME } from './lib/personas';
-import { deriveRecoveryStage } from './lib/recoveryState';
 import { prefersReducedMotion } from './lib/prefersReducedMotion';
 import { SHOWCASE_PHASES } from './lib/showcaseAdapters';
 
 type NavItemId = 'concierge' | 'trips' | 'discover' | 'profile' | 'preferences' | 'messages';
 type ShowcaseTheme = 'dark' | 'light';
-/**
- * Two views, not three steps.
- *
- * The five-phase ladder is the argument, so it is the top level. `product` is
- * the un-numbered cold open (and the close): the Meridian experience the
- * ladder builds toward. Numbering the product view as "step 1 of 3" made the
- * ladder look like a third of the story and forced the room to hold two
- * mental models at once.
- */
 
 /** Lucide's own marks and the travel set drawn to match it share this shape.
  *  Lucide types `size` as string | number, so widen rather than narrow. */
@@ -99,7 +91,9 @@ export function DesktopMeridianApp({
   theme: ShowcaseTheme;
   onToggleTheme: () => void;
 }) {
-  const { view, journeyId, setView, setJourneyId } = useSurfaceUrlState();
+  const { view, journeyId, setView: writeView, setJourneyId } = useSurfaceUrlState();
+  const [closing, setClosing] = useState(false);
+  const setView = (next: typeof view) => { setClosing(false); writeView(next); };
   const isRecoveryView = view === 'recovery';
   const journey = useJourney(
     journeyId,
@@ -142,16 +136,11 @@ export function DesktopMeridianApp({
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [navPanel, setNavPanel] = useState<NavPanelId | null>(null);
   const greetingPart = greetingForHour(new Date().getHours());
-  const isProduct = view === 'concierge';
-  const isLadder = view === 'ladder';
-  const isProof = view === 'proof';
-  // Phase 5 is the durable-workflow rung, and the flight-disruption replan is
-  // what that rung means. Opening it on the recovery workspace lets the change
-  // of surface carry the change of phase.
-  // The Recovery desk is its own surface, and it is also what rung 5 means.
-  // Reaching it either way lands on the same workspace.
-  const isRecovery = view === 'recovery' || (isLadder && state.selectedPhase === 5);
-  const recoveryStage = deriveRecoveryStage(state);
+  const isProduct = !closing && view === 'concierge';
+  const isLadder = !closing && view === 'ladder';
+  const isProof = !closing && view === 'proof';
+  const isRecovery = !closing && view === 'recovery';
+  const isWorkflow = isLadder && state.selectedPhase === 5;
   const runtimeStatus =
     state.backendStatus === 'online'
       ? {
@@ -238,7 +227,7 @@ export function DesktopMeridianApp({
       className={`mds-desktop-app is-projector ${
         isProduct
           ? 'is-discovery'
-          : isProof
+          : isProof || closing
             ? 'is-presenter-proof'
             : isRecovery
               ? 'is-experience is-finale'
@@ -333,7 +322,7 @@ export function DesktopMeridianApp({
             ref={surfaceRowRef}
           >
             {SURFACES.map((surface) => {
-              const active = view === surface.id;
+              const active = !closing && view === surface.id;
               return (
                 <li key={surface.id}>
                   <button
@@ -436,7 +425,9 @@ export function DesktopMeridianApp({
           <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={
-              isProof
+              closing
+                ? 'close'
+                : isProof
                 ? 'proof'
                 : isProduct
                   ? 'product'
@@ -455,7 +446,8 @@ export function DesktopMeridianApp({
             }
           >
           {isLadder && <CapabilityBrief phase={state.selectedPhase} />}
-          {isProof ? (
+          {closing ? <SessionClose onEvidence={() => setView('proof')} onConcierge={openProduct} /> : isProof ? (
+            <>
             <PresenterProof
               document={journey.document}
               loading={journey.loading}
@@ -463,6 +455,11 @@ export function DesktopMeridianApp({
               onRefresh={journey.refresh}
               onOpenRecovery={() => setView('recovery')}
             />
+            <footer className="mc-session-handoff">
+              <div><h2>Bring the patterns together.</h2><p>Search, access checks, and saved progress: the building blocks behind Meridian.</p></div>
+              <button type="button" className="mc-session-primary" onClick={() => setClosing(true)}>Session takeaways <ArrowRight size={18} aria-hidden="true" /></button>
+            </footer>
+            </>
           ) : isProduct ? (
             <DiscoveryWorkspace
               state={state}
@@ -470,7 +467,7 @@ export function DesktopMeridianApp({
               onClear={clearIntoLadder}
               onDiscover={() => openNavItem('discover')}
             />
-          ) : !isRecovery ? (
+          ) : isWorkflow ? <WorkflowWorkspace state={state} onOpenRecovery={() => setView('recovery')} /> : !isRecovery ? (
             <>
               {state.error && (
                 <div className="mds-error-banner" role="alert">
@@ -524,8 +521,8 @@ export function DesktopMeridianApp({
           ) : (
             <RecoveryWorkspace
               state={state}
+              journeyDocument={journey.document}
               onOpenProof={() => { journey.refresh(); setView('proof'); }}
-              showComposer={false}
               showHeading={!isLadder}
             />
           )}
@@ -535,14 +532,12 @@ export function DesktopMeridianApp({
 
         {/* Concierge and the ladder share one dock. Moving between them should
             change what is on screen, not where the screen's controls are. */}
-        {((isProduct || isLadder) && (!isRecovery || recoveryStage === 'ready')) && (
+        {(isProduct || (isLadder && !isWorkflow)) && (
           <div className="mds-desktop-dock">
             {isProduct ? (
               <ChatComposer state={state} conciergeMode />
-            ) : !isRecovery ? (
-              <ChatComposer state={state} proofMode />
             ) : (
-              <ChatComposer state={state} recoveryMode />
+              <ChatComposer state={state} proofMode />
             )}
           </div>
         )}
@@ -554,7 +549,7 @@ export function DesktopMeridianApp({
         </aside>
       )}
 
-      {isRecoveryView && (
+      {isRecovery && (
         <aside
           className="mds-desktop-right is-continuity"
           aria-label="Journey continuity"

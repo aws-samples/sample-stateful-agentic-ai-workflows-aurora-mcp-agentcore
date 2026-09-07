@@ -49,6 +49,11 @@ export interface ActionDrawerState {
   live: boolean;
 }
 
+export interface TripHold {
+  productId: string;
+  order: NonNullable<OrderResponse['order']>;
+}
+
 // Refinement filters captured by the action-chip popovers below the
 // composer. They get appended to whatever prompt the presenter types
 // when submitPrompt fires, so the agent sees the full traveler intent
@@ -120,6 +125,8 @@ export interface MeridianShowcaseState {
   workflowResumedAfterRestart: boolean;
   lastPrompt: string | null;
   actionDrawer: ActionDrawerState | null;
+  /** Confirmed direct holds stay visible when drawers close or the ladder changes. */
+  tripHolds: TripHold[];
   modelLabel: string;
   embedLabel: string;
   totalLatencyMs: number;
@@ -229,6 +236,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [catalog, setCatalog] = useState<Product[]>([]);
   const [selectedTrip, setSelectedTrip] = useState<Product | null>(null);
   const [tripDetailsOpen, setTripDetailsOpen] = useState(false);
+  const [tripHolds, setTripHolds] = useState<TripHold[]>([]);
+  const holdPending = useRef(false);
   const [workspace, setWorkspace] = useState(loadTripWorkspace);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [memoryFacts, setMemoryFacts] = useState<LongTermMemoryFact[]>([]);
@@ -682,7 +691,14 @@ export function useMeridianShowcase(): MeridianShowcaseState {
 
   const holdTrip = useCallback(
     async (product: Product) => {
-      if (isLoading) return;
+      if (isLoading || holdPending.current) return;
+      const existing = tripHolds.find(hold => hold.productId === product.product_id);
+      if (existing?.order.status === 'held' && Date.parse(existing.order.hold_expires_at ?? '') > Date.now()) {
+        openTripDetails(product);
+        return;
+      }
+      holdPending.current = true;
+      const generation = requestGeneration.current;
       setSelectedTrip(product);
       setTripDetailsOpen(true);
       setIsLoading(true);
@@ -699,6 +715,12 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           action: 'hold',
         });
         if (!mounted.current) return;
+        if (response.order) {
+          const order = response.order;
+          setTripHolds(prior => [...prior.filter(hold => hold.productId !== product.product_id), { productId: product.product_id, order }]);
+        }
+        // Keep a committed receipt, but do not insert a late reply into a new phase.
+        if (generation !== requestGeneration.current) return;
         setMessages((prior) => [
           ...prior,
           { role: 'bot', type: response.order ? 'order' : 'text', text: response.message, order: response.order },
@@ -707,7 +729,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           { message: response.message, activities: response.activities, order: response.order },
           prompt,
         );
-        setTraceSpans(nextTrace);
+        setTraceSpans(prior => selectedPhase === 5 ? [...prior, ...nextTrace] : nextTrace);
         setExpandedSpanId(nextTrace[0]?.id ?? null);
         setActionDrawer({
           kind: 'hold',
@@ -716,18 +738,19 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           order: response.order,
           live: true,
         });
-        setWorkspaceNotice(`Courtesy hold created for ${product.name}.`);
+        setWorkspaceNotice(response.order?.status === 'held' ? `Courtesy hold created for ${product.name}.` : response.message);
       } catch {
-        if (!mounted.current) return;
+        if (!mounted.current || generation !== requestGeneration.current) return;
         setBackendStatus('offline');
         setError(
           `Unable to hold ${product.name}: the live hold service is unavailable. Restart the FastAPI backend.`,
         );
       } finally {
-        if (mounted.current) setIsLoading(false);
+        holdPending.current = false;
+        if (mounted.current && generation === requestGeneration.current) setIsLoading(false);
       }
     },
-    [isLoading, selectedPhase, travelersCount],
+    [isLoading, selectedPhase, travelersCount, tripHolds, openTripDetails],
   );
 
   const planTrip = useCallback((product: Product) => {
@@ -895,6 +918,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     workflowResumedAfterRestart,
     lastPrompt,
     actionDrawer,
+    tripHolds,
     modelLabel: runConfigModelLabel(selectedPhase, backendHealth),
     embedLabel: runConfigEmbedLabel(selectedPhase, backendHealth),
     totalLatencyMs,

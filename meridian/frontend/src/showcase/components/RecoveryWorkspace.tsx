@@ -1,4 +1,3 @@
-import { AuroraIcon } from './ServiceMark';
 import {
   AlertTriangle,
   Sparkles,
@@ -15,9 +14,11 @@ import { deriveWorkflowState } from '../lib/showcaseProof';
 import { prefersReducedMotion } from '../lib/prefersReducedMotion';
 import { RecoveryBriefing } from './RecoveryBriefing';
 import { RecoveryBoardingPass } from './RecoveryBoardingPass';
+import { TripHoldReceipt } from './TripHoldReceipt';
+import { HoldReceipt } from './HoldReceipt';
+import { isObserved, type JourneyDocument } from '../journey/types';
 import {
   AgentProofCard,
-  CheckpointedPlanCard,
   ConciergeAssistanceCard,
   PackageOptionCard,
   RecoveryLaunchCard,
@@ -68,11 +69,13 @@ export function RecoveryWorkspace({
   onOpenProof = () => {},
   showComposer = true,
   showHeading = true,
+  journeyDocument,
 }: {
   state: MeridianShowcaseState;
   onOpenProof?: () => void;
   showComposer?: boolean;
   showHeading?: boolean;
+  journeyDocument?: JourneyDocument | null;
 }) {
   const recoveryStage = deriveRecoveryStage(state);
   const recoveryEvidence = deriveRecoveryEvidence(state);
@@ -87,6 +90,7 @@ export function RecoveryWorkspace({
   );
   const workflowErrorDetail = workflowErrorSpan?.details ?? null;
   const briefingRef = useRef<HTMLElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const consoleRef = useRef<HTMLDivElement>(null);
   const previousLoadingRef = useRef(false);
   const [recoveryLayout, setRecoveryLayout] = useState<RecoveryLayout>(
@@ -102,6 +106,8 @@ export function RecoveryWorkspace({
     recoveryStage === 'running' &&
     state.workflowStatus === 'paused' &&
     /resume|checkpoint/i.test(state.lastPrompt ?? '');
+
+  useEffect(() => { headingRef.current?.focus({ preventScroll: true }); }, []);
 
   useEffect(() => {
     const wasLoading = previousLoadingRef.current;
@@ -161,18 +167,13 @@ export function RecoveryWorkspace({
   };
   const hasConversation =
     state.messages.length > 0 || state.isLoading || Boolean(state.error);
-  const durableCheckpoint =
-    recoveryEvidence.checkpointObserved &&
-    recoveryEvidence.durableCheckpoint;
   const workflowProof = deriveWorkflowState(state.traceSpans);
-  const threadId = state.conversationId ?? 'phase5-pending';
+  const savedHold = journeyDocument?.active_thread_id === state.conversationId && isObserved(journeyDocument?.hold) ? journeyDocument.hold : null;
   const recoveryStatusLabel =
     recoveryStage === 'ready'
       ? 'Recovery plan ready'
       : recoveryStage === 'checkpointed'
-        ? durableCheckpoint
-          ? 'Shortlist checkpointed in Aurora'
-          : 'Shortlist checkpointed'
+        ? 'Shortlist saved · ready to verify'
         : recoveryStage === 'running'
           ? 'Recovery in progress'
           : 'Recovery ready to start';
@@ -215,7 +216,7 @@ export function RecoveryWorkspace({
     >
       <header className={`mds-recovery-overview is-${recoveryStage}`}>
         {showHeading && <div className="mds-recovery-overview-title">
-          <h1>Alex&apos;s JFK to Tokyo recovery</h1>
+          <h1 tabIndex={-1} ref={headingRef}>Alex&apos;s JFK to Tokyo recovery</h1>
           <span className="mds-recovery-cancelled-badge">
             <AlertTriangle size={14} aria-hidden="true" />
             Traveler-reported disruption
@@ -225,29 +226,20 @@ export function RecoveryWorkspace({
           {showHeading && <><span>Request: rework a canceled JFK-to-Tokyo trip</span><i aria-hidden="true" /></>}
           <strong>{recoveryStatusLabel}</strong>
         </div>
-        {(recoveryStage === 'checkpointed' ||
-          (recoveryStage === 'ready' && state.workflowStatus === 'resumed')) && (
-          <div
-            className={`mds-recovery-receipt is-${recoveryStage}`}
-            role="status"
-          >
-            <AuroraIcon size={14} aria-hidden="true" />
-            <span>
-              {recoveryStage === 'checkpointed'
-                ? durableCheckpoint
-                  ? `Checkpoint saved · thread ${threadId} · safe to restart`
-                  : `Checkpoint saved · thread ${threadId} · current worker`
-                : !durableCheckpoint
-                  ? `Resumed from in-process checkpoint · thread ${threadId}`
-                  : state.workflowResumedAfterRestart
-                    ? `Resumed from Aurora after worker restart · thread ${threadId}`
-                    : `Resumed from Aurora checkpoint · thread ${threadId}`}
-            </span>
-          </div>
-        )}
       </header>
 
       <RecoveryBoardingPass state={state} />
+
+      {(savedHold || workflowProof.holdId) && <HoldReceipt
+        holdId={savedHold?.booking_id ?? workflowProof.holdId}
+        createdAt={savedHold?.hold_created_at ?? workflowProof.holdCreatedAt}
+        expiresAt={savedHold?.hold_expires_at ?? workflowProof.holdExpiresAt}
+        observedAt={savedHold?.observed_at}
+        receivedAt={savedHold ? journeyDocument?.received_at : undefined}
+        status={savedHold?.status ?? workflowProof.holdStatus}
+        compact
+      />}
+      {state.tripHolds?.slice(-1).map(hold => <TripHoldReceipt key={hold.order.order_id} hold={hold} compact />)}
 
       {layoutReviewEnabled && (
         <section
@@ -359,19 +351,6 @@ export function RecoveryWorkspace({
                 recommendationCount={state.recommendations?.length ?? 0}
                 traceCount={state.traceSpans?.length ?? 0}
                 onViewProof={onOpenProof}
-              />
-              <CheckpointedPlanCard
-                stage={recoveryStage}
-                evidence={recoveryEvidence}
-                threadId={threadId}
-                checkpointStore={workflowProof.checkpoint}
-                durable={workflowProof.durable}
-                holdId={workflowProof.holdId}
-                holdExpiresAt={workflowProof.holdExpiresAt}
-                holdCreatedAt={workflowProof.holdCreatedAt}
-                holdObservedAt={workflowProof.holdObservedAt}
-                holdStatus={workflowProof.holdStatus}
-                resumedAfterRestart={state.workflowResumedAfterRestart}
               />
             </div>
           </section>

@@ -340,8 +340,8 @@ we `SET LOCAL ROLE` to a role that owns nothing and has no special attributes �
 the policy by construction. The best practice isn't juggling owner/FORCE/superuser flags;
 it's: run your scoped queries as a role that's always covered."*
 
-> See PRESENTER_GUIDE.md for the full Q&A handling (the `OR … = ''` seed branch, the
-> `trip_interactions: 90 of 90` case, and the FORCE-proof framing).
+> See PRESENTER_GUIDE.md for the current Q&A: missing traveler scope matches no
+> traveler rows; compare the actual scoped counts and verify the restricted role.
 
 ### Beat 3 — the multi-step boundary (sets up the Coda)
 
@@ -386,14 +386,15 @@ classify ──┼─→ availability ────┤
                                 synthesize → END
 ```
 
-**Run the exact prompt Production handed off:**
+**Select Run to checkpoint.** It runs the disruption prompt Production handed off:
 
 > `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`
 
-Classify routes it to **plan**: `search` runs (re-find matching Tokyo trips), a checkpoint is
-written, then the conditional edge continues to `availability` (check package-duration inventory), a
-second checkpoint, then `synthesize`. **Two sequential worker nodes, a checkpoint between
-each** — the multi-step composition a single tool call can't make visible.
+Classify routes it to **plan**. `search` finds matching Tokyo trips and saves a
+checkpoint. With the demo pause enabled, the workflow stops here. Select
+**Continue at recovery desk** to carry the same thread and shortlist into the
+traveler view, then **Resume and verify** to check package-duration inventory
+and continue to `synthesize`. Changing desks does not start another search.
 
 In the trace, point to:
 - `Workflow node: classify → plan`
@@ -410,7 +411,7 @@ Run the backend through `scripts/start_checkpoint_tunnel.sh` with
 1. Run the disruption prompt. The graph pauses after `search`; point to
    `PostgresSaver (Aurora · pooled)` and `next=availability`.
 2. Stop and restart the backend. Do not clear the browser.
-3. Click **Resume workflow from checkpoint**.
+3. Select **Continue at recovery desk**, then **Resume and verify**.
 4. Point to `Workflow resumed from checkpoint`: the same `thread_id` continues
    at `availability`, backed by Aurora's `checkpoints`, `checkpoint_blobs`, and
    `checkpoint_writes` tables.
@@ -436,15 +437,26 @@ the graph makes that plan survivable and auditable."*
 
 ---
 
-## Close (1 min)
+## Close and Open for Questions (1 min)
 
-> "Five phases, one Aurora cluster. SQL set the agent shape. MCP made the tools portable.
-> Retrieval closed the intent gap with pgvector, tsvector, and Cohere rerank. Production made
-> it trustworthy — AgentCore identity, a workload-to-traveler grant, Aurora RLS, audited
-> memory. Workflow made multi-step work durable — an explicit LangGraph StateGraph that
-> checkpoints between nodes so a canceled flight doesn't lose the plan. What changes each
-> phase is **how much state the agent carries** and **how much governance sits between it and
-> the database.** Everything else stayed the same."
+After reviewing the hold receipt, select **View system evidence**. Show what
+this run actually recorded. Then select **Session takeaways**.
+
+> “A useful agent needs the right context, permission to use it, and a way to
+> continue when work stops. Aurora brings search, traveler context, and workflow
+> progress into one database. Find the right context. Check access before use.
+> Save enough to continue. Those are the three patterns to take with you.”
+
+Select **Open for questions**.
+
+> “What needs to be remembered in your workflow? Who may access it? What should
+> happen if a worker stops? Where would you use this?”
+
+Leave the Q&A screen up. **Explore the live evidence** returns to the same
+journey for deeper questions; **Build from the sample** opens the repository.
+These audience controls work in fullscreen. Presenter preparation notes stay
+hidden. See [PRESENTER_GUIDE.md](docs/PRESENTER_GUIDE.md) for the handoff and the
+distinct 15-minute workflow / 12-hour direct hold policies.
 
 ### When teams use each pattern
 

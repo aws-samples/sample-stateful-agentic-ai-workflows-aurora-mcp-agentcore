@@ -4,6 +4,34 @@ The code, UI checks, and fresh live rehearsal below pass. The initial review fou
 
 ## What changed
 
+### Closing sequence refinement
+
+Workflow now teaches the pause and checkpoint. **Continue at recovery desk**
+carries the same conversation and shortlist into the traveler’s decision view;
+it sends no new chat request. The desk places the workflow hold receipt near
+the itinerary and leaves detailed checkpoint inspection to the evidence views.
+
+The separate 12-hour direct hold now has an hours/minutes/seconds countdown in
+trip details, the Concierge brief, and the desk. Reopening a known active hold
+does not place it again. Late hold responses retain their receipt without
+overwriting a new phase’s conversation. Direct hold receipts are local to the
+app session; Aurora keeps the booking after a page refresh.
+
+System evidence leads to **Session takeaways → Open for questions**, with a
+return to the same journey and a link to the sample repository. The close
+works in fullscreen while presenter preparation controls remain hidden.
+
+Validation for this refinement: **176 frontend tests in 31 files**, production
+build, and ESLint pass. The browser walkthrough checked **24 screen states**
+across desktop, short desktop, mobile, both themes, and fullscreen. It found
+zero page errors, horizontal document overflows, or axe WCAG A/AA violations.
+Controlled API responses verified same-thread resume, a single direct hold
+request, and preservation of the workflow trace. Fake-clock tests cover
+countdown expiry and remounts. These checks do not represent a new live Aurora
+write or a 12-hour wall-clock wait. The live rehearsal below is separate.
+
+### Earlier release audit
+
 | Finding | Correction |
 | --- | --- |
 | A healthy process could hide failed Aurora reads | The live indicator now requires successful health, catalog, and traveler reads. Refreshes have a deadline, discard old responses, and preserve the conversation. |

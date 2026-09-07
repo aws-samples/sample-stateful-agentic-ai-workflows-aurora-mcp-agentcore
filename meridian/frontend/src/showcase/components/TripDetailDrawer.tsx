@@ -3,6 +3,8 @@ import type { Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { useDialogA11y } from '../hooks/useDialogA11y';
 import { TripVisual } from './TripVisual';
+import { TripHoldReceipt } from './TripHoldReceipt';
+import { useHoldClock } from '../hooks/useHoldClock';
 
 function duration(product: Product) {
   return product.available_sizes?.[0] ?? 'Flexible duration';
@@ -12,6 +14,9 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
   const product = state.selectedTrip;
   const open = state.tripDetailsOpen && Boolean(product);
   const ref = useDialogA11y(open, state.closeTripDetails);
+  const hold = state.tripHolds?.find(item => item.productId === product?.product_id);
+  const { expired, knownExpiry } = useHoldClock(hold?.order.hold_expires_at);
+  const activeHold = hold?.order.status === 'held' && knownExpiry && !expired;
   if (!open || !product) return null;
 
   const saved = state.savedTripIds.has(product.product_id);
@@ -46,6 +51,7 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
             <h2 id="trip-detail-title">{product.name}</h2>
             <p>{product.description}</p>
           </header>
+          {hold && <TripHoldReceipt hold={hold} />}
           <div className="mds-trip-facts">
             <div><span>Package</span><b>${product.price.toLocaleString()} / traveler</b></div>
             <div><span>Duration</span><b>{duration(product)}</b></div>
@@ -69,7 +75,7 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
             <ShieldCheck size={17} />
             A courtesy hold reserves catalog inventory for 12 hours. No payment is charged.
           </div>
-          {state.actionDrawer?.product.product_id === product.product_id && (
+          {!hold && state.actionDrawer?.product.product_id === product.product_id && (
             <div className="mds-hold-receipt" role="status">
               <b>{state.actionDrawer.order?.order_id ?? 'Hold status'}</b>
               <span>{state.actionDrawer.message}</span>
@@ -82,8 +88,8 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
             <button type="button" onClick={() => state.compareTrip(product)} aria-pressed={compared}>
               <GitCompareArrows size={17} />{compared ? 'Comparing' : 'Compare'}
             </button>
-            <button className="is-primary" type="button" onClick={() => void state.holdTrip(product)} disabled={state.isLoading}>
-              {state.isLoading ? 'Creating hold...' : 'Request 12-hour hold'}
+            <button className="is-primary" type="button" onClick={() => void state.holdTrip(product)} disabled={state.isLoading || activeHold}>
+              {state.isLoading ? 'Creating hold...' : activeHold ? 'Package held' : 'Request 12-hour hold'}
             </button>
           </footer>
         </div>

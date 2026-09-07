@@ -23,6 +23,7 @@ export function PresenterControls({ mode }: { mode: PresentationMode }) {
             <ul>
               <li>Check a trip price and an evidence label from the back of the room.</li>
               <li>Confirm Meridian is live and rehearse the next query.</li>
+              <li>Close: Workflow checkpoint → Recovery desk → System evidence → Session takeaways → Questions.</li>
               <li>Select Present fullscreen, then share. Exit fullscreen after sharing stops.</li>
             </ul>
             <p>These controls are visible whenever you share the windowed screen.</p>

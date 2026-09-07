@@ -164,7 +164,9 @@ handoff to introduce Phase 5.
 
 ### 6. Workflow: Durable Multi-Step Execution
 
-Run the disruption query in Phase 5.
+In Phase 5, select **Run to checkpoint**. This view explains the mechanism:
+search for alternatives, save the shortlist, and record the next step.
+The Recovery desk continues this run with the traveler’s decision.
 
 Point to:
 
@@ -184,6 +186,64 @@ Explain the transport split:
 If demonstrating restart recovery, pause after `search`, restart the backend,
 and resume the same thread. The proof is the same thread continuing from an
 Aurora checkpoint, not an in-memory object surviving.
+
+### 7. Handoff: From Saved Progress to Traveler Recovery
+
+When the workflow pauses, say:
+
+> “We have saved the shortlist and the next step. Now let’s pick up this
+> traveler’s plan at the recovery desk.”
+
+Select **Continue at recovery desk**. This changes the view without sending
+another chat request, clearing the shortlist, or changing the thread.
+Then select **Resume and verify**. Point to the available packages and the
+hold receipt near the itinerary. Open **View system evidence** to read the
+checkpoint, worker executions, access decision, and hold back from Aurora.
+Only claim a worker restart when the recorded executions show it.
+
+Keep the two hold policies distinct:
+
+- The recovery workflow requests a **15-minute package hold** after resume.
+  Its receipt uses booking creation and expiry timestamps. A saved shortlist
+  alone does not reserve inventory.
+- **Request 12-hour hold** in trip details creates a separate courtesy hold.
+  Its countdown appears in the drawer, the Concierge travel brief, and the
+  Recovery desk. Closing a drawer or moving between views keeps the original
+  expiry. The app blocks another request for that package while its known
+  hold is active in this browser session.
+- The timer displays the expiry; Aurora enforces it. Inventory queries stop
+  counting expired holds. Neither policy reserves flight seats or charges
+  payment.
+- Direct-hold receipts stay in this browser session’s app state. Refreshing
+  clears that local display; the booking and its expiry remain in Aurora.
+  The 12-hour clock uses device time. Workflow receipts read back from
+  Aurora can use the database observation time.
+
+### 8. Close, Then Open the Room (60–90 Seconds)
+
+From **System evidence**, select **Session takeaways**, available in fullscreen
+too. The audience sees three reusable patterns. This closing screen summarizes
+the architecture; it does not assert that a particular run succeeded.
+
+> “A useful agent needs the right context, permission to use it, and a way
+> to continue when work stops. Aurora brings search, traveler context, and
+> workflow progress into one database. MCP gives the agents named tools.
+> AgentCore and Strands support the agent runtime, while LangGraph makes
+> the steps and checkpoints explicit. These are the patterns you can reuse
+> in your own application.”
+
+Select **Open for questions** and pause:
+
+> “What needs to be remembered in your workflow? Who may access it? What
+> should happen if a worker stops? Where would you use this?”
+
+**Explore the live evidence** returns to the same journey for technical
+questions. **Back to takeaways** revisits the three patterns. **Build from
+the sample** opens the repository. **Return to Meridian** returns to the
+Concierge. None of these actions resets the workflow or places a hold.
+
+Presenter preparation controls remain hidden in fullscreen. The takeaways
+and Q&A are audience content, so they remain visible while sharing.
 
 ## Governance Q&A
 

@@ -279,3 +279,24 @@ The audience layout hides the service sidebar and moves the Meridian mark into t
 All four surfaces use Geist Variable for headings, body copy, and controls. Shared headings use weight 520 and -0.035em tracking; labels use 550. Geist Mono remains reserved for technical identifiers and SQL. The legacy serif token aliases the shared sans family.
 
 The recovery checkpoint and package hold are separate facts. A checkpoint before inventory verification explicitly says no inventory is held yet. The hold receipt shows booking creation, expiry, and the calculated duration. System evidence reads these timestamps from Aurora and anchors its countdown to the browser receive time, so changing tabs cannot restart it. A replacement-created hold is distinguished from one that existed before replacement. Expired holds remain visible as records and no longer count against package capacity.
+
+### Workflow handoff and session close
+
+Phase 5 teaches the checkpoint with a three-step path and a single action:
+Run to checkpoint, then Continue at recovery desk. It does not repeat the
+boarding pass or the traveler’s decision dashboard. The desk carries the same
+conversation and shortlist; opening it sends no new request. Resume and verify
+continues the saved work. The hold receipt sits near the itinerary; detailed
+checkpoint progress belongs in the ladder trace and System evidence.
+
+Direct 12-hour holds show hours, minutes, and seconds in trip details, the
+Concierge travel brief, and the desk. They are distinct from the workflow’s
+15-minute hold. Receipts retain their expiry across view changes within the
+app session. Refreshing clears local direct-hold receipts, while Aurora keeps
+the booking. The direct clock uses device time and names that limitation.
+
+System evidence ends with Session takeaways, leading to an audience-facing
+close and Q&A. Keep four permanent tabs. The close is an intentional detour,
+with a return to the same evidence or Concierge. Large Geist typography,
+three plain-language patterns, and a repository link carry the ending.
+Preparation controls stay hidden in fullscreen; the closing content remains.

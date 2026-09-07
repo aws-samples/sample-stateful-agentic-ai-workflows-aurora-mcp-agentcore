@@ -20,6 +20,7 @@ const traceSpan: ShowcaseTraceSpan = {
 
 function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShowcaseState {
   return {
+    tripHolds: [],
     travelersCount: 1,
     restoreJourney: vi.fn(),
     selectedPhase: 1,

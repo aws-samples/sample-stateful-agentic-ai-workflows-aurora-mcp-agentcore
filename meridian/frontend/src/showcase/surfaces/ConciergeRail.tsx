@@ -1,6 +1,7 @@
 import { ArrowRight, CalendarDays, Check, Heart, Plane, ShieldCheck, UsersRound, Utensils } from 'lucide-react';
 import { ALEX_IMAGE_URL } from '../lib/personas';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import { TripHoldReceipt } from '../components/TripHoldReceipt';
 
 function dateLabel(value: string) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(`${value}T12:00:00`));
@@ -26,6 +27,7 @@ export function ConciergeRail({ state, onSaved, onRecovery }: {
 
   return <div className="mc-brief">
     <header className="mc-brief-header"><h2>Your travel brief</h2><span>Always part of the conversation.</span></header>
+    {state.tripHolds?.slice(-1).map(hold => <TripHoldReceipt key={hold.order.order_id} hold={hold} compact />)}
     <div className="mc-traveler"><img src={ALEX_IMAGE_URL} alt="" width="44" height="44" /><div><strong>Alex Morgan</strong><span>{profile ? 'Your preferences, remembered' : 'Let’s get to know your travel style'}</span></div></div>
     <div className="mc-departure"><div><span>Flying from</span><strong>{profile?.home_airport ?? 'Not set'}</strong></div><Plane size={26} strokeWidth={1.3} aria-hidden="true" /><div><span>Next stop</span><strong>Possibility.</strong></div></div>
     <dl className="mc-brief-details">

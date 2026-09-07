@@ -7,6 +7,24 @@ const receipt = { holdId: 'booking-original', createdAt: '2026-09-06 12:00:00+00
 afterEach(() => vi.useRealTimers());
 
 describe('Aurora hold receipt', () => {
+  it('keeps a 12-hour receipt counting across close, reopen, and expiry', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-07T00:00:00Z'));
+    const props = { holdId: 'direct-hold', kind: 'direct' as const, expiresAt: '2026-09-07T12:00:00Z', status: 'held' };
+    const first = render(<HoldReceipt {...props} compact />);
+    expect(screen.getByRole('timer')).toHaveTextContent('12:00:00 remaining');
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.getByRole('timer')).toHaveTextContent('11:59:59 remaining');
+    first.unmount();
+    vi.setSystemTime(new Date('2026-09-07T11:59:59Z'));
+    render(<HoldReceipt {...props} />);
+    expect(screen.getByText('12-hour package hold')).toBeInTheDocument();
+    expect(screen.getByRole('timer')).toHaveTextContent('00:00:01 remaining');
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.getByRole('timer')).toHaveTextContent('Expired');
+    expect(screen.queryByText(/retry uses the same request/)).not.toBeInTheDocument();
+  });
+
   it('shows the recorded window and advances from database time despite a skewed device clock', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-07T00:00:00Z'));
