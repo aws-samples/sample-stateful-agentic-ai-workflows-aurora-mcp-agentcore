@@ -120,6 +120,13 @@
 ) { font-size: max(18px, calc(14px * var(--mc-type-scale))); }
 .mds-root[data-projector-readability='true'] .mds-proof-foot { font-size: 16px; color: var(--mc-muted); }
 
+/* Use the extra stage height without putting recovery copy over the aircraft. */
+@media (min-width: 1241px) and (min-height: 950px) {
+  .mds-root[data-audience-layout='true'] .mc-recovery-teaser > img {
+    height: clamp(160px, 18dvh, 216px);
+  }
+}
+
 @media (min-width: 861px) and (max-width: 1240px) {
   .mds-root[data-audience-layout='true'] .mds-desktop-app.is-projector { grid-template-columns: 0 minmax(0, 1fr); }
   .mds-root[data-audience-layout='true'] .mds-desktop-app.is-discovery { grid-template-columns: 0 minmax(0, 1fr) 268px; }

@@ -195,7 +195,7 @@ The main surfaces are flat at rest. Surface tone, fine borders, and the fixed na
 
 **The Task Surface Rule.** Use a tonal change or a fine dividing line to separate adjacent work. Add visual weight in proportion to the task's importance, with the primary action and the useful travel content leading.
 
-The recovery photograph uses a navy image scrim to keep overlaid copy readable. This is an image-legibility treatment; it does not establish a general gradient background language. Overlay behavior inherited by dialogs is not a new shadow vocabulary for ordinary cards.
+The concierge's recovery card separates the aircraft photograph from its heading and action. Copy sits below the image on the Soft surface with the shared Ink, Muted, and Accent roles. Tall desktop audience layouts give the image extra height. Overlay behavior inherited by dialogs is not a new shadow vocabulary for ordinary cards.
 
 ## Shapes
 
