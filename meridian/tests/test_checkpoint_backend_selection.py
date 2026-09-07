@@ -190,3 +190,19 @@ def test_graph_invocation_requests_synchronous_durability(
     assert seen == ["sync"] * len(seen), (
         f'every invocation must pass durability="sync"; saw {seen}'
     )
+
+
+@pytest.mark.parametrize(
+    "kind,expected",
+    [
+        ("AuroraDataApiSaver", True),
+        ("PostgresSaver (Aurora · pooled)", True),
+        ("MemorySaver (in-process)", False),
+        ("unknown", False),
+        ("", False),
+    ],
+)
+def test_journey_evidence_only_claims_durability_for_known_backends(kind, expected):
+    from backend.db.journey_document import checkpoint_backend_is_durable
+
+    assert checkpoint_backend_is_durable(kind) is expected

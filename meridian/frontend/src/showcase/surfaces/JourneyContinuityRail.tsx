@@ -92,11 +92,11 @@ export function JourneyContinuityRail({
   const steps = stepsFor(document, now);
 
   return (
-    <div className="mds-continuity-rail">
+    <div className="mds-continuity-rail" tabIndex={0} role="region" aria-label="Journey progress">
       <header className="mds-continuity-head">
         <span>Journey continuity</span>
         <span
-          className={`mds-continuity-dot${document ? ' is-live' : ''}`}
+          className={`mds-continuity-dot${document && !error ? ' is-live' : ''}`}
           aria-hidden="true"
         />
       </header>
@@ -123,7 +123,7 @@ export function JourneyContinuityRail({
       <footer className="mds-continuity-foot">
         <span className="mds-continuity-foot-head">
           <AuroraIcon size={15} aria-hidden="true" />
-          One durable place.
+          Saved journey evidence.
         </span>
         <p>
           The workflow’s progress belongs to the journey, beyond a worker’s
@@ -133,12 +133,12 @@ export function JourneyContinuityRail({
           <code>thread: {document.active_thread_id}</code>
         ) : (
           <code className="mds-continuity-absent">
-            {error ? 'no journey recorded yet' : 'reading…'}
+            {error ? 'evidence unavailable' : 'reading…'}
           </code>
         )}
         <span className="mds-continuity-source">
           <ShieldCheck size={13} aria-hidden="true" />
-          Read from Aurora, not simulated.
+          {error ? 'Read failed; any displayed evidence is from the last load.' : document ? 'Source: Aurora journey records.' : 'Aurora evidence has not loaded.'}
         </span>
       </footer>
     </div>

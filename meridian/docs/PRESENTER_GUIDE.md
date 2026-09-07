@@ -19,8 +19,8 @@ Meridian builds one agentic travel experience in five capability steps:
 
 The central message is:
 
-> Stateful systems persist context and execution state in durable stores. They
-> do not depend on keeping a database connection alive.
+> Remember what the traveler wants. Save where the work stopped. Check who
+> may read or change it. Show the database records that prove each claim.
 
 ## Before the Demo
 
@@ -52,12 +52,12 @@ Use the app's fullscreen button for the demo. Controls are visible on a shared w
 
 Verify:
 
-- `/health` reports `status: healthy`.
+- `/health` reports `status: healthy`. This checks process configuration, so also confirm that live catalog and profile reads succeed. An expired AWS session can leave process health green while those reads fail.
 - The configured Bedrock model is `global.anthropic.claude-sonnet-5`.
 - Alex Morgan's profile loads with JFK, party of two, and both loyalty programs.
 - The first SQL query returns product cards with images and live inventory.
 - Phase 4 shows an authenticated subject and traveler authorization decision.
-- Phase 5 reports `PostgresSaver (Aurora - pooled)` before claiming durable resume.
+- Phase 5 reports `checkpoint_durable: true` with `AuroraDataApiSaver` or `PostgresSaver (Aurora · pooled)`. `MemorySaver` cannot prove restart recovery.
 
 Use the dark theme in a dim room and the light theme when projector contrast is
 poor. Keep browser zoom at 100 percent.
@@ -69,16 +69,17 @@ about 45 minutes of content in a 60-minute slot, leaving the balance as
 distributed Q&A. Use the table below as the at-a-glance card and that budget
 for pacing.
 
-**Before your first prompt:** the landing view is the Experience surface and
-has no phase selector or composer. Click **2 · Capability ladder** in the
-journey header first; the phase pills (SQL / MCP / Retrieval / Production /
-Workflow), the Aurora evidence strip, and the prompt box all live there.
+**Start with Concierge.** Send one trip request to show the traveler experience.
+Then open **Capability ladder** for the five phases, boundary queries, and
+technical evidence. Use **Architecture & evidence** to open the deeper explanation
+when needed; keep it closed while introducing a phase.
 
 **Expect a pause on Phases 3 to 5.** On a warm cluster, Phase 1 returns in
 about a second and Phase 2 in about two. Phases 3 and 4 take roughly 13 to 25
 seconds because each turn makes two Bedrock round trips (specialist routing
 and the concierge rewrite) on top of embedding, pgvector, and rerank. That is
-airtime, not a stall: narrate the trace panel as the spans land.
+time to explain the request path. The chat endpoint returns the trace with its
+completed response; the UI does not stream live step completion while it waits.
 
 | Phase | Run this query | Point to | Transition |
 | --- | --- | --- | --- |
@@ -177,7 +178,7 @@ Point to:
 Explain the transport split:
 
 - Domain reads and writes use the RDS Data API.
-- LangGraph PostgresSaver uses a bounded psycopg pool for checkpoint traffic.
+- LangGraph saves checkpoints through `AuroraDataApiSaver` over the RDS Data API, or `PostgresSaver` through a bounded psycopg pool when a DSN is configured. Name the backend reported by this run.
 - Both persist durable state in the same Aurora system.
 
 If demonstrating restart recovery, pause after `search`, restart the backend,
@@ -196,20 +197,18 @@ distribution differs. Lead with `traveler_preferences`, which shows the
 collapse clearly, and treat the interactions row as a second table under the
 same policy rather than a second proof.
 
-**"Doesn't the policy's `OR ... = ''` branch open a hole?"**
-The seed branch lets a session with no traveler scope set read nothing rather
-than error. `scoped_session` refuses to run when `RLS_APP_ROLE` is empty, so
-an unscoped session never reaches a query in normal operation. It fails
-closed, not open. Show `examples/rls_for_agents.sql` if pressed.
+**"What happens when the traveler scope is missing?"**
+The current policies compare each row’s traveler ID to
+`current_setting('app.current_traveler_id', true)`. Missing scope does not match
+traveler rows. There is no allow-all empty-scope branch. `scoped_session` also
+requires an application role and an authorized traveler before querying.
 
-**"Why not `FORCE ROW LEVEL SECURITY` instead of a step-down role?"**
-`FORCE` makes the table owner subject to its own policies, and it works. The
-reusable lesson is stronger without it: the Data API connects as the cluster
-master, which owns these tables and is exempt from RLS. Rather than juggling
-owner and superuser exemptions, the session does `SET LOCAL ROLE` to
-`meridian_app` - a role that owns nothing and holds no special attributes, so
-it is covered by the policy by construction. Run scoped queries as a role that
-is always subject to the policy, and the exemption question stops mattering.
+**"Why use a restricted role as well as FORCE ROW LEVEL SECURITY?"**
+The current SQL uses both. The application sets a restricted role inside the
+transaction; that role owns no protected tables and has no RLS bypass. `FORCE`
+adds protection for table owners, but superusers and roles with `BYPASSRLS` can
+still bypass policies. Verify the active role and the returned rows in the
+negative-control probe. See [`rls_for_agents.sql`](../examples/rls_for_agents.sql).
 
 ## Claim Boundaries
 
@@ -222,7 +221,7 @@ Keep these statements explicit:
 - **Data API is connectionless, not stateless.** State lives in committed rows,
   memory records, and checkpoints.
 - **MemorySaver is a local fallback.** It does not prove recovery after process
-  loss. Use PostgresSaver for the durable workflow claim.
+  loss. Use a verified Aurora checkpointer for the durable workflow claim.
 - **The sample plans recovery; it does not issue an airline ticket.** A real
   booking workflow would add payment, approval, and carrier integration steps.
 
@@ -239,14 +238,14 @@ Keep these statements explicit:
 
 ## Fast Recovery
 
-- **Frontend says offline:** verify the backend is listening on port 8000.
+- **Frontend says offline:** check the backend and AWS session, then select **Reconnect**. Process health alone is not enough; trips and traveler details must load.
 - **First query is slow:** wait for Aurora Serverless v2 and Bedrock cold paths,
   then run the query again before presenting.
-- **Memory profile is empty:** rerun `python scripts/seed_data.py`.
+- **Memory profile is empty:** check the session, traveler authorization, and seed records. Re-seed only a fresh disposable database; preserve an existing demo journey.
 - **Checkpoint proof says MemorySaver:** restore the checkpoint connection and
   restart with `LANGGRAPH_CHECKPOINT_REQUIRED=true`.
 - **Live service is unavailable:** use the committed screenshot in this
-  repository and walk through System proof using the recorded evidence.
+  repository and walk through System evidence using saved screenshots or exported records. Label that walkthrough as recorded; do not imply it is a live run.
 
 ## References
 

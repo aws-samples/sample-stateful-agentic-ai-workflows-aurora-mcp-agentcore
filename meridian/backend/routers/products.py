@@ -1,5 +1,6 @@
 """Trip package catalog API (trip_packages table)."""
 
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -10,6 +11,8 @@ router = APIRouter(prefix="/api/packages", tags=["packages"])
 
 # Legacy path alias
 legacy_router = APIRouter(prefix="/api/products", tags=["products"])
+logger = logging.getLogger(__name__)
+CATALOG_UNAVAILABLE = "Trip data is temporarily unavailable. Please try again."
 
 
 class TripPackage(BaseModel):
@@ -128,7 +131,8 @@ async def list_packages(
     try:
         return await _list_packages(trip_type, limit, offset, featured)
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Database unavailable: {e}") from e
+        logger.exception("Trip catalog read failed")
+        raise HTTPException(status_code=503, detail=CATALOG_UNAVAILABLE) from e
 
 
 @router.get("/{package_id}", response_model=TripPackage)
@@ -138,7 +142,8 @@ async def get_package(package_id: str) -> TripPackage:
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Database unavailable: {e}") from e
+        logger.exception("Trip package read failed")
+        raise HTTPException(status_code=503, detail=CATALOG_UNAVAILABLE) from e
 
 
 # --- Legacy /api/products responses (maps to packages) ---
@@ -168,7 +173,11 @@ async def legacy_list(
     offset: int = Query(0, ge=0),
     featured: bool = False,
 ):
-    data = await _list_packages(category, limit, offset, featured)
+    try:
+        data = await _list_packages(category, limit, offset, featured)
+    except Exception as exc:
+        logger.exception("Legacy trip catalog read failed")
+        raise HTTPException(status_code=503, detail=CATALOG_UNAVAILABLE) from exc
     return {
         "products": [
             {
@@ -194,7 +203,13 @@ async def legacy_list(
 
 @legacy_router.get("/{product_id}")
 async def legacy_get(product_id: str):
-    p = await _get_package(product_id)
+    try:
+        p = await _get_package(product_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Legacy trip package read failed")
+        raise HTTPException(status_code=503, detail=CATALOG_UNAVAILABLE) from exc
     return {
         "product_id": p.package_id,
         "name": p.name,

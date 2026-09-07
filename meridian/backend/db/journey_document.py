@@ -69,6 +69,11 @@ def _iso(value: Any) -> Optional[str]:
     return None if value is None else str(value)
 
 
+def checkpoint_backend_is_durable(kind: str) -> bool:
+    """Only the durable backends adopted by the workflow can support this claim."""
+    return kind in {"AuroraDataApiSaver", "PostgresSaver (Aurora · pooled)"}
+
+
 def _channel(values: Any, name: str) -> Any:
     """Read one channel out of a checkpoint's loaded values."""
     return values.get(name) if isinstance(values, dict) else None
@@ -158,7 +163,7 @@ async def assemble_journey_document(
             "status": journey["status"],
             "checkpoint_backend": {
                 "kind": journey["checkpoint_backend"],
-                "durable": journey["checkpoint_backend"] != "MemorySaver (in-process)",
+                "durable": checkpoint_backend_is_durable(journey["checkpoint_backend"]),
             },
             "active_thread_id": thread_id,
         }

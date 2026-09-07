@@ -34,7 +34,7 @@ function preferenceSummary(state: MeridianShowcaseState): string {
     .map((fact) => fact.value)
     .filter(Boolean)
     .slice(0, 2);
-  return facts.length ? facts.join(', ') : 'Window seat, early arrival';
+  return facts.length ? facts.join(', ') : 'No preferences recalled yet';
 }
 
 function activityRows(state: MeridianShowcaseState): ActivityRow[] {
@@ -63,7 +63,7 @@ function activityRows(state: MeridianShowcaseState): ActivityRow[] {
   return [
     {
       label: 'Search',
-      detail: searchSpans ? `${searchSpans} governed search spans` : 'Awaiting live search',
+      detail: searchSpans ? `${searchSpans} search steps recorded` : 'Awaiting live search',
       status: evidence.searchObserved
         ? 'done'
         : running
@@ -84,7 +84,7 @@ function activityRows(state: MeridianShowcaseState): ActivityRow[] {
     {
       label: 'Loyalty perks',
       detail: evidence.loyaltyObserved
-        ? 'Airline Premier applied'
+        ? 'Loyalty context read; benefits need confirmation'
         : settled
           ? 'Not observed in this run'
           : 'Profile check pending',
@@ -139,7 +139,7 @@ export function JourneyPanel({
   onOpenProof?: () => void;
 }) {
   const recoveryStage = deriveRecoveryStage(state);
-  const partySize = state.travelerProfile?.party_size ?? 2;
+  const partySize = state.travelersCount;
   const rows = activityRows(state);
   const [travelContextExpanded, setTravelContextExpanded] = useState(false);
 
@@ -204,16 +204,16 @@ export function JourneyPanel({
             </div>
           </div>
           <div className="mds-current-trip-meta">
-            <span><CalendarDays size={14} />Today / 10:40 AM</span>
+            <span><CalendarDays size={14} />Travel date not provided</span>
             <span><UsersRound size={14} />{partySize} travelers</span>
           </div>
           <div className="mds-current-trip-loyalty">
-            <span>Airline Premier</span>
-            <b>Elite status recognized</b>
+            <span>{Object.keys(state.travelerProfile?.loyalty_programs ?? {}).length ? 'Saved loyalty profile' : 'Loyalty profile not loaded'}</span>
+            <b>Partner benefits need confirmation</b>
           </div>
           <ol className={`mds-recovery-steps is-${recoveryStage}`} aria-label="Recovery workflow progress">
             <li className="is-complete"><i />Disruption</li>
-            <li className={recoveryStage === 'action' ? '' : 'is-complete'}><i />Alternatives</li>
+            <li className={['checkpointed', 'ready'].includes(recoveryStage) ? 'is-complete' : ''}><i />Alternatives</li>
             <li className={['checkpointed', 'ready'].includes(recoveryStage) ? 'is-complete' : ''}><i />Checkpoint</li>
           </ol>
         </div>
@@ -255,7 +255,7 @@ export function JourneyPanel({
             </div>
             <div>
               <dt><Star size={16} />Loyalty</dt>
-              <dd><strong>Airline Premier</strong></dd>
+              <dd><strong>{Object.values(state.travelerProfile?.loyalty_programs ?? {}).map(program => typeof program === 'string' ? program : `${program.program} ${program.tier}`).join(', ') || 'Not loaded'}</strong></dd>
             </div>
             <div>
               <dt><Heart size={16} />Preferences</dt>

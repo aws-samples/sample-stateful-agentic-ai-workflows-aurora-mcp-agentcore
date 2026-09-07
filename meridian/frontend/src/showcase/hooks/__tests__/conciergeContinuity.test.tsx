@@ -101,3 +101,48 @@ it.each(['phase', 'clear'])('ignores late responses after %s and leaves newer lo
   expect(result.current.conversationId).toBe('production-thread');
   expect(result.current.isLoading).toBe(false);
 });
+
+const healthyService = {
+  status: 'healthy', bedrock_model_id: 'configured-model',
+  embedding_model_id: 'configured-embedding', checkpoint_backend: 'AuroraDataApiSaver',
+};
+
+describe('Live connection readiness', () => {
+  it.each(['catalog', 'profile'] as const)('does not report live when the %s read fails', async (dependency) => {
+    vi.mocked(fetchHealth).mockResolvedValue(healthyService);
+    if (dependency === 'catalog') vi.mocked(fetchProducts).mockRejectedValueOnce(new Error('Unavailable'));
+    else vi.mocked(fetchMemoryProfile).mockRejectedValueOnce(new Error('Unavailable'));
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.connectionRefreshing).toBe(false));
+    expect(result.current.backendStatus).toBe('offline');
+    expect(result.current.connectionIssue).toContain('unavailable');
+  });
+
+  it('recovers failed opening reads without losing the current draft or enabling ladder memory', async () => {
+    vi.mocked(fetchHealth).mockResolvedValue(healthyService);
+    vi.mocked(fetchProducts).mockRejectedValueOnce(new Error('Session expired'));
+    vi.mocked(fetchMemoryProfile).mockRejectedValueOnce(new Error('Session expired'));
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.connectionIssue).not.toBeNull());
+    act(() => result.current.setCurrentPrompt('Keep my draft'));
+    await act(async () => { await result.current.refreshConnection(); });
+    expect(result.current.backendStatus).toBe('online');
+    expect(result.current.connectionIssue).toBeNull();
+    expect(result.current.previewProfile?.home_airport).toBe('JFK');
+    expect(result.current.currentPrompt).toBe('Keep my draft');
+    expect(result.current.memoryEnabled).toBe(false);
+  });
+
+  it('ignores a delayed failure from an older connection check', async () => {
+    vi.mocked(fetchHealth).mockResolvedValue(healthyService);
+    let rejectOld!: (reason: Error) => void;
+    vi.mocked(fetchProducts).mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject; }));
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(fetchProducts).toHaveBeenCalled());
+    await act(async () => { await result.current.refreshConnection(); });
+    expect(result.current.backendStatus).toBe('online');
+    await act(async () => { rejectOld(new Error('Old failure')); });
+    expect(result.current.backendStatus).toBe('online');
+    expect(result.current.connectionIssue).toBeNull();
+  });
+});

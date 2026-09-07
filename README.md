@@ -101,10 +101,15 @@ root route redirects to the showcase. For an existing database, do not rerun
 `init_aurora_schema.py`; apply tracked upgrades with
 `python scripts/apply_migrations.py`.
 
-Check `http://localhost:8000/health` for `checkpoint_durable: true` before
-demonstrating recovery. An explicitly configured checkpoint DSN takes
+Before demonstrating recovery, check `http://localhost:8000/health` for
+`checkpoint_durable: true`, then confirm live trips and Alex’s profile load in
+the app. Health reports process configuration; it does not revalidate an AWS
+session. The app shows a reconnect notice when catalog or profile reads fail. An explicitly configured checkpoint DSN takes
 precedence over the Data API saver. `MemorySaver` is an in-process fallback
 and cannot demonstrate recovery after a worker restart.
+
+The [release review](meridian/docs/RELEASE_REVIEW.md) records the latest checks,
+plain-language explanations, and the remaining live rehearsal gate.
 
 ## Demo Surfaces
 

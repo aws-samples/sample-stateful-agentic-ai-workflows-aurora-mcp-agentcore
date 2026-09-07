@@ -84,13 +84,13 @@ const HEALTH_URL_CANDIDATES = healthUrlsFor(
 /**
  * Fetch all products from the backend
  */
-export async function fetchProducts(category?: string, limit = 50, featured = false): Promise<Product[]> {
+export async function fetchProducts(category?: string, limit = 50, featured = false, signal?: AbortSignal): Promise<Product[]> {
   const params = new URLSearchParams();
   if (category) params.set('category', category);
   params.set('limit', limit.toString());
   if (featured) params.set('featured', 'true');
   
-  const response = await fetch(`${API_BASE}/products?${params}`);
+  const response = await fetch(`${API_BASE}/products?${params}`, { signal });
   if (!response.ok) {
     throw new Error(`Failed to fetch products: ${response.statusText}`);
   }
@@ -131,9 +131,10 @@ export async function sendChatMessage(request: ChatRequest, signal?: AbortSignal
 /**
  * Fetch long-term memory profile from Aurora (Phase 4)
  */
-export async function fetchMemoryProfile(travelerId = 'trv_meridian_demo'): Promise<MemoryProfileResponse> {
+export async function fetchMemoryProfile(travelerId = 'trv_meridian_demo', signal?: AbortSignal): Promise<MemoryProfileResponse> {
   const response = await fetch(`${API_BASE}/memory/${travelerId}`, {
     headers: apiHeaders(),
+    signal,
   });
   if (!response.ok) {
     throw new Error(`Memory profile request failed: ${response.statusText}`);
@@ -173,17 +174,18 @@ export async function deleteMemoryFact(travelerId: string, key: string): Promise
 /**
  * Fetch backend health from the FastAPI root health endpoint.
  */
-export async function fetchHealth<THealth = unknown>(): Promise<THealth> {
+export async function fetchHealth<THealth = unknown>(signal?: AbortSignal): Promise<THealth> {
   let lastError: Error | null = null;
 
   for (const url of HEALTH_URL_CANDIDATES) {
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { signal });
       if (!response.ok) {
         throw new Error(`Health request failed: ${response.status} ${response.statusText}`);
       }
       return response.json();
     } catch (error) {
+      if (signal?.aborted) throw error;
       lastError = error instanceof Error ? error : new Error('Unknown health request error');
     }
   }
@@ -325,8 +327,8 @@ export async function fetchSessionReceipt(
  * The shell needs a journey id before it can read a document, and a demo
  * machine should not have to be told one by hand.
  */
-export async function fetchJourneys(limit = 10): Promise<JourneySummary[]> {
-  const response = await fetch(`${API_BASE}/journeys?limit=${limit}`);
+export async function fetchJourneys(limit = 10, signal?: AbortSignal): Promise<JourneySummary[]> {
+  const response = await fetch(`${API_BASE}/journeys?limit=${limit}`, { signal });
   if (!response.ok) {
     throw new Error(`Failed to list journeys: ${response.statusText}`);
   }
@@ -337,9 +339,11 @@ export async function fetchJourneys(limit = 10): Promise<JourneySummary[]> {
 /** Read one journey's evidence document. */
 export async function fetchJourneyDocument(
   journeyId: string,
+  signal?: AbortSignal,
 ): Promise<JourneyDocument> {
   const response = await fetch(
     `${API_BASE}/journeys/${encodeURIComponent(journeyId)}`,
+    { signal },
   );
   if (!response.ok) {
     throw new Error(`Failed to read journey ${journeyId}: ${response.statusText}`);

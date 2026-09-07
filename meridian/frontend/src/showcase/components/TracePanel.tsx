@@ -165,7 +165,7 @@ export function TracePanel({
                 )}
                 {state.traceSpans.length > 0 && <span>{state.traceSpans.length} spans</span>}
                 {agentCount > 0 && <span>{agentCount} agents</span>}
-                {state.totalLatencyMs > 0 && <span>{state.totalLatencyMs}ms</span>}
+                {state.totalLatencyMs > 0 && <span>{state.totalLatencyMs}ms recorded</span>}
               </div>
             )}
             {!compact && state.selectedPhase === 2 && <McpToolContractPanel state={state} />}
@@ -296,6 +296,7 @@ function CopyTraceButton({ state }: { state: MeridianShowcaseState }) {
       model: state.modelLabel,
       embed: state.embedLabel,
       total_latency_ms: state.totalLatencyMs,
+      timing_basis: 'Sum of recorded span durations; nested spans may overlap.',
       span_count: state.traceSpans.length,
       spans: state.traceSpans.map((span) => ({
         index: state.traceSpans.indexOf(span) + 1,
@@ -467,7 +468,7 @@ function TraceSpanRow({
       <span className="mds-span-main">
         <span className="mds-span-title">{span.name}</span>
         <span className="mds-span-meta">
-          {span.category} · {span.status} · {span.latencyMs}ms
+          {span.category} · {span.status} · {span.latencyMs === null ? 'timing not recorded' : `${span.latencyMs}ms`}
           {span.component ? ` · ${span.component}` : ''}
         </span>
         {(span.agent || span.file) && (

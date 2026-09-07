@@ -8,6 +8,8 @@ import {
   Mail,
   Moon,
   ArrowRight,
+  AlertTriangle,
+  RefreshCw,
   PanelLeftClose,
   PanelLeftOpen,
   Settings2,
@@ -315,8 +317,7 @@ export function DesktopMeridianApp({
           <div className="mds-account-copy">
             <strong>Alex Morgan</strong>
             <span className="mds-account-loyalty">
-              <span>Hotel Platinum</span>
-              <span>Airline Premier</span>
+              <span>Traveler profile</span>
             </span>
           </div>
           <ChevronRight className="mds-account-chevron" size={16} aria-hidden="true" />
@@ -385,7 +386,14 @@ export function DesktopMeridianApp({
       </header>
 
       <main className="mds-desktop-main">
-        <div className="mds-desktop-scroll">
+        {state.connectionIssue && <div className="mc-connection-notice" role="status">
+          <AlertTriangle size={20} aria-hidden="true" />
+          <div><strong>{state.connectionIssue}</strong><p>Displayed trips may be a preview or the last loaded results. Reconnect before planning.</p></div>
+          <button type="button" disabled={state.connectionRefreshing} onClick={() => void state.refreshConnection()}>
+            <RefreshCw size={16} aria-hidden="true" />{state.connectionRefreshing ? 'Reconnecting…' : 'Reconnect'}
+          </button>
+        </div>}
+        <div className="mds-desktop-scroll" tabIndex={0} role="region" aria-label="Travel workspace">
           {isLadder && (
           <nav className="mds-ladder-nav" aria-label="Capability ladder phases">
             <ol className="mds-ladder-nav-rungs" ref={phaseRowRef}>

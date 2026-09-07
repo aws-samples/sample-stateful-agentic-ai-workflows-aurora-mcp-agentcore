@@ -92,9 +92,9 @@ export const PHASE_PROOFS: Record<Phase, PhaseProof> = {
     phase: 5,
     headline: 'Durable workflow',
     dataPath: 'Classify -> branch -> worker node -> checkpoint -> synthesize',
-    auroraCapability: 'PostgresSaver externalizes LangGraph workflow checkpoints into Aurora.',
+    auroraCapability: 'An Aurora checkpointer saves LangGraph checkpoints through the Data API or a PostgreSQL connection.',
     agentBoundary: 'LangGraph makes routing explicit and resumable.',
-    proof: 'Executed node path and PostgresSaver checkpoint are visible.',
+    proof: 'Executed nodes, checkpoint ID, and the active checkpoint backend are visible.',
     source: 'backend/agents/orchestration_05/workflow.py',
   },
 };
@@ -119,12 +119,14 @@ export function deriveAuroraEvidence({
   traceSpans: ShowcaseTraceSpan[];
   recommendations: Product[];
 }): AuroraEvidence[] {
+  traceSpans = traceSpans.filter(span => span.status === 'ok');
   const sqlSpans = traceSpans.filter((s) => Boolean(s.sql) || s.type === 'database');
   const mcpSpans = traceSpans.filter((s) => /mcp|tools\/call|postgres-mcp|meridian-concierge/i.test(spanText(s)));
   const vectorSpans = traceSpans.filter((s) => /pgvector|semantic_trip_search|embedding|hybrid|tsvector/i.test(spanText(s)));
   const rerankSpans = traceSpans.filter((s) => /rerank|rank/i.test(spanText(s)));
-  const rlsSpans = traceSpans.filter((s) => /rls|scoped|identity|traveler_preferences|conversation_messages|persist[_ ]turn|agentcore/i.test(spanText(s)));
-  const runtimeSpans = traceSpans.filter((s) => /agentcore|strands|runtime|gateway|identity/i.test(spanText(s)));
+  const rlsSpans = traceSpans.filter((s) => /\brls\b|scoped transaction/i.test(spanText(s)));
+  const runtimeSpans = traceSpans.filter((s) => /agentcore runtime/i.test(spanText(s)));
+  const accessGranted = traceSpans.some(span => fieldValue(span, 'authorization.decision') === 'allow');
   const checkpointSpans = traceSpans.filter(isCheckpointSpan);
   const checkpointKind =
     traceSpans
@@ -181,18 +183,18 @@ export function deriveAuroraEvidence({
     {
       key: 'runtime',
       label: 'Agent runtime',
-      value: runtimeSpans.length ? 'AgentCore + Strands' : selectedPhase >= 4 ? 'ready' : 'later',
+      value: runtimeSpans.length ? 'AgentCore Runtime' : selectedPhase >= 4 ? 'ready' : 'later',
       detail: runtimeSpans.length
-        ? 'Identity, runtime, gateway, and agent execution observed'
+        ? 'A managed runtime invocation was recorded'
         : 'AgentCore and Strands unlock at Production',
       status: statusFor(selectedPhase >= 4, runtimeSpans.length > 0),
     },
     {
       key: 'rls',
       label: 'Governance',
-      value: rlsSpans.length ? 'workload granted + scoped' : selectedPhase >= 4 ? 'ready' : 'later',
-      detail: rlsSpans.length ? 'Workload grant, RLS scope, and audit context enforced' : 'Workload authorization, RLS, and audit proof unlock at Production',
-      status: statusFor(selectedPhase >= 4, rlsSpans.length > 0),
+      value: rlsSpans.length && accessGranted ? 'grant + row scope' : selectedPhase >= 4 ? 'ready' : 'later',
+      detail: rlsSpans.length && accessGranted ? 'Access grant and RLS scope recorded; inspect the audit record in System evidence' : 'Workload authorization, RLS, and audit proof unlock at Production',
+      status: statusFor(selectedPhase >= 4, rlsSpans.length > 0 && accessGranted),
     },
     {
       key: 'checkpoint',
@@ -251,7 +253,7 @@ export function isPhaseProofObserved(
 
 export function deriveMcpContracts(traceSpans: ShowcaseTraceSpan[]): McpContract[] {
   const observed = traceSpans
-    .filter((span) => /postgres-mcp|meridian-concierge/i.test(span.name))
+    .filter((span) => span.status === 'ok' && /postgres-mcp|meridian-concierge/i.test(span.name))
     .map(contractFromSpan)
     .filter((contract): contract is McpContract => Boolean(contract));
 
@@ -403,6 +405,7 @@ function splitDomainDetails(details?: string): { request: string; result: string
 }
 
 function workflowNodeFromSpan(span: ShowcaseTraceSpan): string | null {
+  if (span.status !== 'ok') return null;
   const field = fieldValue(span, 'node');
   if (field) return field;
   const match = /Workflow node:\s*(classify|search|availability|memory_recall|synthes)/i.exec(span.name);
@@ -416,7 +419,7 @@ function fieldValue(span: ShowcaseTraceSpan, label: string): string | null {
 }
 
 function isCheckpointSpan(span: ShowcaseTraceSpan): boolean {
-  return /checkpoint/i.test(
+  return span.status === 'ok' && /checkpoint/i.test(
     [span.name, span.details, span.sql, span.component].filter(Boolean).join(' '),
   );
 }

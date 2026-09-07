@@ -201,7 +201,8 @@ async def http_exception_handler(request, exc: HTTPException):
     from fastapi.responses import JSONResponse
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": exc.detail}
+        content={"error": exc.detail},
+        headers=exc.headers,
     )
 
 

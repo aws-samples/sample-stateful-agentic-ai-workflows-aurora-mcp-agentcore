@@ -19,7 +19,6 @@ AlertTriangle,
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import type { LongTermMemoryFact, Product, TravelerProfile } from '../../types';
 import type {
   RecoveryEvidence,
@@ -155,7 +154,7 @@ function preferenceChips(
 
     chips.push('Memory match');
   }
-  if (evidence.loyaltyObserved) chips.push('Airline Premier');
+  if (evidence.loyaltyObserved) chips.push('Loyalty context');
   return chips.length ? chips.slice(0, 3) : ['Preference match pending'];
 }
 
@@ -167,13 +166,12 @@ function travelerContextReasons(
   if (!evidence.memoryObserved) return [];
   const byKey = new Map(facts.map((fact) => [fact.key, fact.value]));
   const reasons: { label: string; detail: string }[] = [];
-  const allergy =
-    byKey.get('shellfish_allergy') ??
-    profile?.dietary_notes;
-  if (allergy) {
+  const dietaryNotes = profile?.dietary_notes ?? byKey.get('dietary_notes');
+  const shellfishNote = byKey.get('shellfish_allergy');
+  if (dietaryNotes || shellfishNote) {
     reasons.push({
-      label: 'Dietary safety',
-      detail: `Shellfish allergy flagged for every hotel and dining handoff`,
+      label: 'Saved dietary note',
+      detail: dietaryNotes || `Shellfish allergy: ${shellfishNote}`,
     });
   }
   const lodging =
@@ -183,20 +181,20 @@ function travelerContextReasons(
   if (lodging) {
     reasons.push({
       label: 'Stay preference',
-      detail: `${cleanPreference(lodging) ?? lodging} carried into concierge search`,
+      detail: cleanPreference(lodging) ?? lodging,
     });
   }
   const seat = cleanPreference(profile?.seat_preference);
   if (seat) {
     reasons.push({
       label: 'Long-haul comfort',
-      detail: `${seat} retained for replacement-flight review`,
+      detail: `${seat} saved in the traveler profile`,
     });
   }
   if (evidence.loyaltyObserved) {
     reasons.push({
       label: 'Loyalty context',
-      detail: 'Airline Premier and Hotel Platinum benefits checked',
+      detail: 'Loyalty context was read. Partner benefits still need confirmation.',
     });
   }
   return reasons.slice(0, 3);
@@ -249,7 +247,8 @@ export function RecoveryLaunchCard({
 }: RecoveryLaunchCardProps) {
   const running = stage === 'running';
   const failed = Boolean(errorDetail);
-  const [activeStep, setActiveStep] = useState(0);
+  // Only a confirmed paused workflow proves the first three steps finished.
+  const activeStep = running && resumeMode ? 3 : -1;
   const launchSteps = [
     {
       icon: AlertTriangle,
@@ -272,29 +271,6 @@ export function RecoveryLaunchCard({
       detail: 'Check the top three options after the pause.',
     },
   ];
-
-  useEffect(() => {
-    if (!running) {
-      setActiveStep(0);
-      return undefined;
-    }
-
-    if (resumeMode) {
-      setActiveStep(3);
-      return undefined;
-    }
-
-    setActiveStep(0);
-    const timers = [
-      window.setTimeout(() => setActiveStep(1), 300),
-      window.setTimeout(() => setActiveStep(2), 1250),
-    ];
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [resumeMode, running]);
-
-  const connectionFailure =
-    failed && /connection|checkpoint|postgres|aurora/i.test(errorDetail ?? '');
-  const failedStep = connectionFailure ? 2 : Math.max(activeStep, 0);
 
   return (
     <article
@@ -392,7 +368,7 @@ export function RecoveryLaunchCard({
                 <strong>Canceled</strong>
                 <span>
                   {failed
-                    ? 'The workflow stopped safely before changing the trip.'
+                    ? 'The workflow was interrupted. Check System evidence for saved progress.'
                     : running
                       ? 'Meridian is building a checkpointed recovery plan.'
                       : 'Live trip-package options are ready to search.'}
@@ -404,9 +380,7 @@ export function RecoveryLaunchCard({
                   <AlertTriangle size={17} aria-hidden="true" />
                   <span>
                     <strong>
-                      {connectionFailure
-                        ? 'Aurora checkpoint connection unavailable'
-                        : 'Recovery workflow interrupted'}
+                      Recovery interrupted
                     </strong>
                     <small>{errorDetail}</small>
                   </span>
@@ -421,9 +395,9 @@ export function RecoveryLaunchCard({
         <span>{running ? 'Live workflow' : failed ? 'Workflow stopped' : 'Recovery workflow'}</span>
         <small>
           {running
-            ? `Step ${activeStep + 1} of ${launchSteps.length}`
+            ? resumeMode ? `Step 4 of ${launchSteps.length}` : 'Waiting for saved results'
             : failed
-              ? 'No trip change was made'
+              ? 'Check saved progress before retrying'
               : 'Runs after you confirm'}
         </small>
       </div>
@@ -437,11 +411,7 @@ export function RecoveryLaunchCard({
         {launchSteps.map((step, index) => {
           const Icon = step.icon;
           const stepState = failed
-            ? index < failedStep
-              ? 'is-visited'
-              : index === failedStep
-                ? 'is-failed'
-                : 'is-pending'
+            ? 'is-pending'
             : running
               ? index < activeStep
                 ? 'is-visited'
@@ -462,8 +432,6 @@ export function RecoveryLaunchCard({
                   <Loader2 size={16} aria-hidden="true" />
                 ) : stepState === 'is-visited' ? (
                   <Check size={15} strokeWidth={3} aria-hidden="true" />
-                ) : stepState === 'is-failed' ? (
-                  <AlertTriangle size={15} aria-hidden="true" />
                 ) : (
                   <Icon size={16} aria-hidden="true" />
                 )}
@@ -811,7 +779,7 @@ export function ConciergeAssistanceCard({
       </div>
       <div className="mds-concierge-context-chips">
         {evidence.memoryObserved && <span className="is-violet">Memory match</span>}
-        {evidence.loyaltyObserved && <span>Hotel Platinum</span>}
+        {evidence.loyaltyObserved && <span>Loyalty context</span>}
         <span className={ready ? 'is-green' : ''}>
           {ready ? 'Lounge access' : 'Hotel options'}
         </span>

@@ -10,7 +10,7 @@ import {
   SHOWCASE_FINALE_PROMPT,
   showcasePromptLabel,
 } from '../../lib/showcaseAdapters';
-import { deriveRecoveryStage } from '../../lib/recoveryState';
+import { deriveRecoveryEvidence, deriveRecoveryStage } from '../../lib/recoveryState';
 import { DesktopMeridianApp } from '../../DesktopMeridianApp';
 import { ChatComposer } from '../ChatComposer';
 import { DiscoveryWorkspace } from '../DiscoveryWorkspace';
@@ -464,8 +464,8 @@ describe('Experience presentation polish', () => {
     expect(screen.getByText('Traveler report')).toBeInTheDocument();
     expect(screen.getByText('Action needed')).toBeInTheDocument();
     expect(screen.getByText('Canceled')).toBeInTheDocument();
-    expect(screen.getByText('Airline Premier')).toBeInTheDocument();
-    expect(screen.getByText('Elite status recognized')).toBeInTheDocument();
+    expect(screen.getByText('Saved loyalty profile')).toBeInTheDocument();
+    expect(screen.getByText('Partner benefits need confirmation')).toBeInTheDocument();
     expect(screen.queryByText(/No shortlist/i)).not.toBeInTheDocument();
 
     rerender(<JourneyPanel state={running} />);
@@ -546,10 +546,10 @@ describe('Experience presentation polish', () => {
     );
 
     expect(screen.getByText('Live workflow')).toBeInTheDocument();
-    expect(screen.getByText('Step 1 of 4')).toBeInTheDocument();
+    expect(screen.getByText('Waiting for saved results')).toBeInTheDocument();
     expect(
       screen.getByText('Understand disruption').closest('li'),
-    ).toHaveAttribute('aria-current', 'step');
+    ).toHaveClass('is-pending');
     expect(
       screen.getByRole('article', { name: 'Live recovery progress' }),
     ).toHaveClass('is-compact');
@@ -600,7 +600,7 @@ describe('Experience presentation polish', () => {
     ).toHaveClass('is-visited');
   });
 
-  it('renders a precise failed checkpoint step with a retry action', () => {
+  it('reports an interrupted request without claiming no changes or completed steps', () => {
     render(
       <RecoveryWorkspace
         state={makeState({
@@ -631,14 +631,14 @@ describe('Experience presentation polish', () => {
     );
 
     expect(
-      screen.getByText('Aurora checkpoint connection unavailable'),
+      screen.getByText('Recovery interrupted'),
     ).toBeInTheDocument();
     expect(screen.getByText('Workflow stopped')).toBeInTheDocument();
-    expect(screen.getByText('No trip change was made')).toBeInTheDocument();
+    expect(screen.getByText('Check saved progress before retrying')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry recovery' })).toBeInTheDocument();
     expect(
       screen.getByText('Save an Aurora checkpoint').closest('li'),
-    ).toHaveClass('is-failed');
+    ).toHaveClass('is-pending');
   });
 
   it('renders evidence-driven traveler signals on the featured recommendation', () => {
@@ -845,6 +845,19 @@ describe('Experience presentation polish', () => {
     ).toBeEnabled();
   });
 
+  it('keeps failed inventory, memory, and checkpoint operations unverified', () => {
+    const state = makeState({ traceSpans: [{
+      id: 'failed', name: 'Checkpoint · AuroraDataApiSaver.put',
+      details: 'availability fan-out, traveler memory, and loyalty failed',
+      category: 'orchestration', type: 'tool_call', status: 'error',
+      latencyMs: 1, fields: [{ label: 'checkpoint_durable', value: 'true' }],
+    }] });
+    expect(deriveRecoveryEvidence(state)).toMatchObject({
+      availabilityObserved: false, loyaltyObserved: false, memoryObserved: false,
+      checkpointObserved: false, durableCheckpoint: false,
+    });
+  });
+
   it('marks only observed activity as verified', () => {
     const state = makeState({
       selectedPhase: 5,
@@ -932,6 +945,7 @@ describe('Experience presentation polish', () => {
       lastPrompt: SHOWCASE_FINALE_PROMPT,
       workflowStatus: 'resumed',
       recommendations: products,
+      travelerProfile: { dietary_notes: 'Vegetarian' },
       memoryFacts: [
         {
           key: 'lodging_preference',
@@ -969,8 +983,11 @@ describe('Experience presentation polish', () => {
 
     render(<RecoveryWorkspace state={state} />);
 
-    expect(screen.getByText('Boutique hotels')).toBeInTheDocument();
+    expect(screen.getAllByText('Boutique hotels').length).toBeGreaterThan(0);
     expect(screen.queryByText('boutique > chain')).not.toBeInTheDocument();
+    expect(screen.getByText('Vegetarian')).toBeInTheDocument();
+    expect(screen.queryByText(/Shellfish allergy/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/benefits checked/)).not.toBeInTheDocument();
     expect(
       within(screen.getByRole('article', { name: 'Recovery option 2' }))
         .getByText('6 places across 2 stays'),

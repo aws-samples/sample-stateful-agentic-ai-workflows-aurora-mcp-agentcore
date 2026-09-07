@@ -6,6 +6,7 @@ import {
   deriveMcpContracts,
   deriveWorkflowState,
   getPhaseProof,
+  hasDurableCheckpoint,
 } from '../showcaseProof';
 
 function span(overrides: Partial<ShowcaseTraceSpan>): ShowcaseTraceSpan {
@@ -70,6 +71,7 @@ describe('showcase proof helpers', () => {
         span({ name: 'Hybrid candidates fetched', details: '25 unique candidates (semantic=25, lexical=3)' }),
         span({ name: 'Cohere rerank applied', details: 'Reranked to top 5 trips' }),
         span({ name: 'Aurora RLS scoped transaction', details: 'traveler_id set' }),
+        span({ name: 'Workload traveler grant allowed', fields: [{ label: 'authorization.decision', value: 'allow' }] }),
         span({ name: 'Checkpoint · PostgresSaver.put', details: 'Workflow state serialized' }),
       ],
     });
@@ -144,4 +146,24 @@ it('recognizes old Aurora receipts but respects an explicit non-durable flag', (
   const legacy = span({ name: 'Checkpoint · AuroraDataApiSaver.put', fields: [{ label: 'checkpointer', value: 'AuroraDataApiSaver' }] });
   expect(deriveWorkflowState([legacy]).durable).toBe(true);
   expect(deriveWorkflowState([{ ...legacy, fields: [...legacy.fields, { label: 'checkpoint_durable', value: 'false' }] }]).durable).toBe(false);
+});
+
+
+it('does not treat a failed checkpoint operation as a durable save', () => {
+  expect(hasDurableCheckpoint([span({
+    name: 'Checkpoint · AuroraDataApiSaver.put',
+    status: 'error',
+    fields: [{ label: 'checkpoint_durable', value: 'true' }],
+  })])).toBe(false);
+});
+
+it('requires the actual runtime call and an allowed grant with RLS, beyond identity alone', () => {
+  const evidence = deriveAuroraEvidence({ selectedPhase: 4, recommendations: [], traceSpans: [
+    span({ name: 'AgentCore Identity resolved' }),
+    span({ name: 'AgentCore Runtime failed', status: 'error' }),
+    span({ name: 'Aurora RLS scoped transaction' }),
+    span({ name: 'Workload traveler grant denied', fields: [{ label: 'authorization.decision', value: 'deny' }] }),
+  ] });
+  expect(evidence.find(item => item.key === 'runtime')?.status).toBe('ready');
+  expect(evidence.find(item => item.key === 'rls')?.status).toBe('ready');
 });

@@ -45,3 +45,35 @@ def test_cors_origins_accepts_explicit_allowlist():
 def test_cors_origins_rejects_wildcard():
     with pytest.raises(ValueError, match="wildcard CORS"):
         parse_cors_origins("https://app.example,*")
+
+
+def test_error_handler_preserves_http_authentication_challenge():
+    from fastapi import FastAPI, HTTPException
+    from backend.main import http_exception_handler
+
+    sample = FastAPI()
+    sample.add_exception_handler(HTTPException, http_exception_handler)
+
+    @sample.get("/protected")
+    async def protected():
+        raise HTTPException(401, "Sign in required", headers={"WWW-Authenticate": "Bearer"})
+
+    response = TestClient(sample).get("/protected")
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+    assert response.json() == {"error": "Sign in required"}
+
+
+@pytest.mark.parametrize("path", ["/api/packages", "/api/products", "/api/packages/demo", "/api/products/demo"])
+def test_catalog_outage_returns_safe_retryable_error(monkeypatch, path):
+    import backend.routers.products as products
+
+    async def unavailable(*args, **kwargs):
+        raise RuntimeError("internal database endpoint and diagnostic detail")
+
+    monkeypatch.setattr(products, "_list_packages", unavailable)
+    monkeypatch.setattr(products, "_get_package", unavailable)
+    response = TestClient(app).get(path)
+    assert response.status_code == 503
+    assert response.json() == {"error": products.CATALOG_UNAVAILABLE}
+    assert "internal database" not in response.text

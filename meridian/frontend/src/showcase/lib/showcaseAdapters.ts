@@ -101,7 +101,7 @@ export interface ShowcaseTraceSpan {
   category: string;
   type: string;
   status: string;
-  latencyMs: number;
+  latencyMs: number | null;
   agent?: string;
   file?: string;
   component?: string;
@@ -130,7 +130,7 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     capability: 'Tool',
     takeaway: 'Expose Aurora through named tool contracts with explicit inputs and results.',
     proofPoint: 'MCP tool invoked',
-    adds: 'Same Aurora - now reached through versioned, IAM-authed MCP tools instead of hand-written SQL.',
+    adds: 'Named MCP tools reuse the same Aurora catalog, with explicit inputs and results.',
     tech: 'postgres-mcp + meridian-concierge',
   },
   {
@@ -140,7 +140,7 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     capability: 'Intent',
     takeaway: 'Match traveler intent with vectors, text search, reranking, and specialist routing.',
     proofPoint: 'pgvector + rerank',
-    adds: 'Adds intent: pgvector + tsvector candidates, reranked. Matches what you mean, not what you type.',
+    adds: 'Combines matches by meaning and keywords, then reranks the results.',
     tech: 'Cohere Embed v4 + Rerank 3.5',
   },
   {
@@ -150,8 +150,8 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     capability: 'Trust',
     takeaway: 'Authenticate the workload, authorize Alex, then apply RLS and audit every turn.',
     proofPoint: 'Workload grant + RLS',
-    adds: 'Adds trust + memory: authenticates the workload, grants access to Alex, then scopes Aurora rows.',
-    tech: 'AgentCore + Aurora authz + RLS',
+    adds: 'Checks the agent’s identity and permission to access Alex’s saved preferences.',
+    tech: 'AgentCore · Aurora authorization · RLS',
   },
   {
     label: 'Workflow',
@@ -160,8 +160,8 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     capability: 'Durable Workflow',
     takeaway: 'Make multi-step work explicit, inspectable, checkpointed, and resumable.',
     proofPoint: 'Checkpoint written',
-    adds: 'Adds durability: LangGraph externalizes execution state through PostgresSaver in Aurora, so a restarted worker can resume the same thread.',
-    tech: 'LangGraph + PostgresSaver',
+    adds: 'LangGraph saves progress in Aurora so a replacement worker can resume the same thread.',
+    tech: 'LangGraph · Aurora PostgreSQL',
   },
 ];
 
@@ -259,7 +259,7 @@ export function chatResponseToTraceSpans(response: ChatResponse | null | undefin
 
 export function activityToShowcaseTraceSpan(activity: ActivityEntry, index: number, prompt: string): ShowcaseTraceSpan {
   const telemetry = activity.telemetry;
-  const latencyMs = activity.execution_time_ms ?? activity.executionTimeMs ?? 48 + index * 19;
+  const latencyMs = activity.execution_time_ms ?? activity.executionTimeMs ?? null;
   const status = telemetry?.status ?? (activity.activity_type === 'error' ? 'error' : 'ok');
   const category = telemetry?.category ?? inferCategory(activity);
   const sql = activity.sql_query ?? activity.sqlQuery;
@@ -308,8 +308,8 @@ export function healthResponseToStatus(response: unknown): BackendStatus {
     'embedding_model_id' in response &&
     'checkpoint_backend' in response;
   if (!isMeridianHealth) return 'offline';
-  const status = 'status' in response ? String(response.status).toLowerCase() : 'healthy';
-  return status.includes('healthy') || status.includes('ok') ? 'online' : 'offline';
+  const status = 'status' in response ? String(response.status).toLowerCase() : '';
+  return status === 'healthy' || status === 'ok' ? 'online' : 'offline';
 }
 
 export function productsFromChatResponse(response: ChatResponse): Product[] {

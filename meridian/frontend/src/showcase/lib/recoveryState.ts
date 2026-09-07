@@ -18,7 +18,7 @@ function spanText(
   index: number,
 ): string {
   const span = (state.traceSpans ?? [])[index];
-  if (!span) return '';
+  if (!span || span.status !== 'ok') return '';
   return [
     span.name,
     span.details,
@@ -84,7 +84,7 @@ export function deriveRecoveryEvidence(
       ),
     ),
     loyaltyObserved: texts.some((text) =>
-      /loyalty|traveler profile|airline premier|tier applied/.test(text),
+      /loyalty|airline premier|tier applied/.test(text),
     ),
     memoryObserved: texts.some((text) =>
       /aurora recall|traveler memory|memoryagent|preference context|recall spans/.test(

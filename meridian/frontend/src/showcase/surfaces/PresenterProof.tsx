@@ -115,10 +115,10 @@ export function PresenterProof({
   if (error && !document) {
     return (
       <section className="mds-proof-surface" aria-label="System evidence">
-        <header className="mc-evidence-intro"><h1>System evidence</h1><p>Follow the recovery from first execution to persisted state.</p></header>
+        <header className="mc-evidence-intro"><h1>System evidence</h1><p>See which worker ran and what Aurora saved.</p></header>
         <div className="mds-proof-empty" role="status">
           <AuroraIcon size={22} aria-hidden="true" />
-          <h2>No journey to prove yet.</h2>
+          <h2>Journey evidence is unavailable.</h2>
           <p>{error}</p>
           {onOpenRecovery && <button type="button" className="mds-proof-refresh" onClick={onOpenRecovery}>Open recovery desk</button>}
           <button type="button" className="mds-proof-refresh" onClick={onRefresh}>
@@ -132,7 +132,7 @@ export function PresenterProof({
   if (!document) {
     return (
       <section className="mds-proof-surface" aria-label="System evidence">
-        <header className="mc-evidence-intro"><h1>System evidence</h1><p>Executions, checkpoints, authorization, and business results. Read from Aurora.</p></header>
+        <header className="mc-evidence-intro"><h1>System evidence</h1><p>Read the saved steps, access checks, and package hold from Aurora.</p></header>
         <div className="mds-proof-empty" role="status" aria-busy={loading}>
           <AuroraIcon size={22} aria-hidden="true" />
           <h2>Reading the journey from Aurora…</h2>
@@ -330,7 +330,7 @@ export function PresenterProof({
         <span>Aurora · MCP · AgentCore · Strands · LangGraph</span>
         <span>
           Read from {document.checkpoint_backend.kind}
-          {document.checkpoint_backend.durable ? ' · durable' : ' · in-process'}
+          {document.checkpoint_backend.durable ? ' · survives restart' : document.checkpoint_backend.kind === 'MemorySaver (in-process)' ? ' · worker memory only' : ' · durability not verified'}
         </span>
       </footer>
     </section>

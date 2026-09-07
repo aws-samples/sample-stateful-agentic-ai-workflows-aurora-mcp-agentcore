@@ -151,7 +151,7 @@ describe('Presenter proof', () => {
         onRefresh={onRefresh}
       />,
     );
-    expect(screen.getByText('No journey to prove yet.')).toBeInTheDocument();
+    expect(screen.getByText('Journey evidence is unavailable.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Check again/ }));
     expect(onRefresh).toHaveBeenCalledOnce();
   });

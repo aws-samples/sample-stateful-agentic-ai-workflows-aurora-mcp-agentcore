@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   SHOWCASE_EXAMPLE_PROMPTS,
+  activityToShowcaseTraceSpan,
   genericizeLoyaltyText,
   healthResponseToStatus,
   showcasePromptLabel,
 } from '../showcaseAdapters';
+
+it('leaves missing trace timing unrecorded while preserving measured zero', () => {
+  const activity = { id: 'a', timestamp: '', activity_type: 'tool_call' as const, title: 'Search' };
+  expect(activityToShowcaseTraceSpan(activity, 8, 'Tokyo').latencyMs).toBeNull();
+  expect(activityToShowcaseTraceSpan({ ...activity, execution_time_ms: 0 }, 8, 'Tokyo').latencyMs).toBe(0);
+});
 
 describe('SHOWCASE_EXAMPLE_PROMPTS phase ladder', () => {
   it('uses the SQL failure to tee up custom MCP tools', () => {
@@ -61,6 +68,11 @@ describe('SHOWCASE_EXAMPLE_PROMPTS phase ladder', () => {
 });
 
 describe('healthResponseToStatus', () => {
+  it.each(['unhealthy', 'not ok', 'broken', undefined])('rejects an unready status: %s', (status) => {
+    expect(healthResponseToStatus({
+      status, bedrock_model_id: 'model', embedding_model_id: 'embedding', checkpoint_backend: 'AuroraDataApiSaver',
+    })).toBe('offline');
+  });
   it('only accepts the Meridian backend health contract', () => {
     expect(
       healthResponseToStatus({

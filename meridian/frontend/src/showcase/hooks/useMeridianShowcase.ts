@@ -92,7 +92,7 @@ export interface MeridianShowcaseState {
   comparisonOpen: boolean;
   memoryFacts: LongTermMemoryFact[];
   travelerProfile: TravelerProfile | null;
-  /** Traveler context for the opening product view only. Read once at load so
+  /** Traveler context for the opening product view only. Refreshed so
    *  the talk can open on real personalization; never gates chat requests and
    *  never populates the memory drawers. */
   previewFacts: LongTermMemoryFact[];
@@ -111,6 +111,9 @@ export interface MeridianShowcaseState {
   error: string | null;
   backendStatus: BackendStatus;
   backendHealth: BackendHealth | null;
+  connectionIssue: string | null;
+  connectionRefreshing: boolean;
+  refreshConnection: () => Promise<void>;
   isFallbackMode: boolean;
   conversationId: string | null;
   workflowStatus: ChatResponse['workflow_status'] | null;
@@ -255,6 +258,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [error, setError] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
   const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
+  const [connectionIssue, setConnectionIssue] = useState<string | null>(null);
+  const [connectionRefreshing, setConnectionRefreshing] = useState(false);
+  const connectionController = useRef<AbortController | null>(null);
+  const connectionGeneration = useRef(0);
   // No fallback mode - /showcase is live-Aurora-only. The flag remains in
   // state so existing consumers that read it still type-check, but it stays
   // false for the lifetime of the session.
@@ -321,45 +328,58 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     };
   }, [clearReplayTimers]);
 
-  useEffect(() => {
-    const loadHealth = async () => {
-      try {
-        const health = await fetchHealth<BackendHealth>();
-        if (!mounted.current) return;
-        setBackendHealth(health);
-        setBackendStatus(healthResponseToStatus(health));
-      } catch {
-        if (!mounted.current) return;
-        setBackendStatus('offline');
-        // Runtime health stays in the technical activity rail. The audience
-        // only sees an error banner after an attempted chat or plan action.
+  // Process health alone cannot prove Aurora access. Re-read the catalog and
+  // opening traveler context together, including after an AWS session expires.
+  // This never enables memory for the first three ladder phases.
+  const refreshConnection = useCallback(async () => {
+    const generation = ++connectionGeneration.current;
+    connectionController.current?.abort();
+    const controller = new AbortController();
+    connectionController.current = controller;
+    setConnectionRefreshing(true);
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
+    try {
+      const [health, trips, profile] = await Promise.allSettled([
+        fetchHealth<BackendHealth>(controller.signal),
+        fetchProducts(undefined, 50, false, controller.signal),
+        fetchMemoryProfile(SHOWCASE_TRAVELER_ID, controller.signal),
+      ]);
+      if (!mounted.current || generation !== connectionGeneration.current) return;
+      const serverReady = health.status === 'fulfilled' && healthResponseToStatus(health.value) === 'online';
+      const tripsReady = trips.status === 'fulfilled';
+      const profileReady = profile.status === 'fulfilled';
+      if (health.status === 'fulfilled') setBackendHealth(health.value);
+      if (tripsReady) setCatalog(trips.value);
+      if (profileReady) {
+        setPreviewFacts(memoryResponseToFacts(profile.value));
+        setPreviewProfile(profile.value.profile ?? null);
       }
-    };
-
-    void loadHealth();
-    const interval = setInterval(loadHealth, 30000);
-    return () => clearInterval(interval);
+      setBackendStatus(serverReady && tripsReady && profileReady ? 'online' : 'offline');
+      setConnectionIssue(
+        !serverReady ? 'Meridian could not connect to its service.'
+          : !tripsReady && !profileReady ? 'Live trips and traveler details are unavailable.'
+            : !tripsReady ? 'Live trip data is unavailable.'
+              : !profileReady ? 'Traveler details are unavailable.' : null,
+      );
+    } finally {
+      window.clearTimeout(timeout);
+      if (mounted.current && generation === connectionGeneration.current) {
+        setConnectionRefreshing(false);
+      }
+    }
   }, []);
 
   useEffect(() => {
-    // One read at load so the opening product view can show real preference
-    // matches rather than invented ones. This never sets memoryEnabled: Phase
-    // 1-3 chat requests still go out with memory off and the memory drawers
-    // stay empty, so nothing about the ladder changes.
-    const loadPreview = async () => {
-      try {
-        const profile = await fetchMemoryProfile(SHOWCASE_TRAVELER_ID);
-        if (!mounted.current) return;
-        setPreviewFacts(memoryResponseToFacts(profile));
-        setPreviewProfile(profile.profile ?? null);
-      } catch {
-        // Aurora unreachable: the cold open falls back to the disconnected
-        // copy rather than showing preferences we cannot source.
-      }
+    void refreshConnection();
+    const interval = window.setInterval(() => {
+      if (!document.hidden) void refreshConnection();
+    }, 30000);
+    return () => {
+      window.clearInterval(interval);
+      connectionGeneration.current += 1;
+      connectionController.current?.abort();
     };
-
-    void loadPreview();
-  }, []);
+  }, [refreshConnection]);
 
   // The showcase starts with traveler context disconnected. Production makes
   // memory an explicit capability: enabling it performs the real Aurora read,
@@ -391,24 +411,6 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     } finally {
       if (mounted.current) setMemoryLoading(false);
     }
-  }, []);
-
-  // Load the catalog once so the product view can rotate through real Aurora
-  // rows. A failure here is not worth surfacing: the view falls back to the
-  // current recommendation set.
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const rows = await fetchProducts(undefined, 50);
-        if (!cancelled && mounted.current) setCatalog(rows);
-      } catch {
-        if (!cancelled && mounted.current) setCatalog([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const replayTrace = useCallback(() => {
@@ -846,7 +848,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, []);
 
   const totalLatencyMs = useMemo(
-    () => traceSpans.reduce((total, span) => total + span.latencyMs, 0),
+    () => traceSpans.reduce((total, span) => total + (span.latencyMs ?? 0), 0),
     [traceSpans],
   );
 
@@ -884,6 +886,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     error,
     backendStatus,
     backendHealth,
+    connectionIssue,
+    connectionRefreshing,
+    refreshConnection,
     isFallbackMode,
     conversationId,
     workflowStatus,

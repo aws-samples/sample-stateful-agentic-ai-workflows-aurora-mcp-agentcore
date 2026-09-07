@@ -125,6 +125,8 @@ export function useJourney(
       return;
     }
     let cancelled = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 20000);
     let resolvedFromList: string | null = null;
 
     const load = async () => {
@@ -134,7 +136,7 @@ export function useJourney(
       try {
         let id = journeyId;
         if (!id || (threadId && document?.active_thread_id !== threadId)) {
-          const journeys = await fetchJourneys(threadId ? 50 : 1);
+          const journeys = await fetchJourneys(threadId ? 50 : 1, controller.signal);
           const match = threadId ? journeys.find(item => item.active_thread_id === threadId) : journeys[0];
           if (!match) {
             if (!cancelled) {
@@ -148,7 +150,7 @@ export function useJourney(
           id = match.journey_id;
           resolvedFromList = id;
         }
-        const doc = await fetchJourneyDocument(id);
+        const doc = await fetchJourneyDocument(id, controller.signal);
         if (cancelled) return;
         if (threadId && doc.active_thread_id !== threadId) throw new Error('The journey does not match this recovery thread. Re-read after the workflow saves its progress.');
         setDocument(doc);
@@ -158,8 +160,9 @@ export function useJourney(
         // cancels the very run that was about to deliver the document.
         if (resolvedFromList) resolve.current(resolvedFromList);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setError(controller.signal.aborted ? 'Reading the saved journey took too long. Check the connection and try again.' : err instanceof Error ? err.message : String(err));
       } finally {
+        window.clearTimeout(timeout);
         if (!cancelled) setLoading(false);
       }
     };
@@ -167,6 +170,8 @@ export function useJourney(
     void load();
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
     };
   }, [journeyId, enabled, nonce, threadId, document?.journey_id, document?.active_thread_id]);
 

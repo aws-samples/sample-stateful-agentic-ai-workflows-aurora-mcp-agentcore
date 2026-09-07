@@ -83,6 +83,20 @@
 .mds-root .mds-desktop-app.is-discovery .mds-desktop-dock { flex: 0 0 auto; padding: 17px 30px 20px; background: var(--mc-surface); border-top: 1px solid var(--mc-line); }
 .mds-root .mds-desktop-app.is-discovery .mds-desktop-right.is-concierge { grid-column: 3; grid-row: 2; padding: 28px 24px; overflow-y: auto; background: var(--mc-surface); border-left: 1px solid var(--mc-line); display: block; }
 .mds-root .mc-workspace { padding: 30px; color: var(--mc-ink); }
+.mds-root .mds-desktop-scroll:focus-visible,
+.mds-root .mds-continuity-rail:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: -3px; }
+.mds-root .mc-connection-notice { display: flex; align-items: center; flex-shrink: 0; gap: 12px; padding: 16px 24px; color: var(--mc-caution); background: var(--mc-caution-bg); font-size: calc(12px * var(--mc-type-scale)); line-height: 1.5; }
+.mds-root .mc-connection-notice > svg { flex-shrink: 0; }
+.mds-root .mc-connection-notice > div { min-width: 0; }
+.mds-root .mc-connection-notice p { margin: 4px 0 0; }
+.mds-root .mc-connection-notice button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 8px; min-height: 44px; margin-left: auto; padding: 8px 12px; border: 1px solid currentColor; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.mds-root .mc-connection-notice button:disabled { cursor: wait; opacity: .7; }
+.mds-root .mc-connection-notice button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+@media (max-width: 860px) {
+  .mds-root .mc-connection-notice { flex-wrap: wrap; align-items: flex-start; padding: 16px 18px; }
+  .mds-root .mc-connection-notice > div { flex: 1; }
+  .mds-root .mc-connection-notice button { margin-left: 32px; }
+}
 .mds-root .mc-welcome { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 28px; }
 .mds-root .mc-welcome p { margin: 0 0 7px; color: var(--mc-muted); font-size: calc(14px * var(--mc-type-scale)); }
 .mds-root .mc-welcome h1 { margin: 0 0 9px; font-size: calc(30px * var(--mc-type-scale)); line-height: 1.2; font-weight: 520; letter-spacing: -0.035em; text-wrap: balance; }

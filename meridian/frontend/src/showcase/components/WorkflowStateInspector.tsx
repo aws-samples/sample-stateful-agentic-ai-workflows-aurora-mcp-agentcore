@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { LangGraphMark } from './LangGraphMark';
-import { ChevronDown, DatabaseZap, GitBranch } from 'lucide-react';
+import { ChevronDown, GitBranch } from 'lucide-react';
+import { AuroraIcon } from './ServiceMark';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { deriveWorkflowState } from '../lib/showcaseProof';
 
@@ -66,12 +67,12 @@ export function WorkflowStateInspector({ state }: { state: MeridianShowcaseState
           </div>
 
           <div className="mds-workflow-checkpoint">
-            <DatabaseZap size={14} strokeWidth={2.1} aria-hidden="true" />
+            <AuroraIcon size={14} aria-hidden="true" />
             <span>
               {workflow.checkpointCount
                 ? workflow.durable
                   ? `${workflow.checkpointCount} durable write${workflow.checkpointCount === 1 ? '' : 's'} to ${workflow.table}`
-                  : `${workflow.checkpointCount} ephemeral write${workflow.checkpointCount === 1 ? '' : 's'} in process memory`
+                  : `${workflow.checkpointCount} write${workflow.checkpointCount === 1 ? '' : 's'} in worker memory; lost on restart`
                 : `writes to ${workflow.table} after worker nodes`}
             </span>
           </div>
