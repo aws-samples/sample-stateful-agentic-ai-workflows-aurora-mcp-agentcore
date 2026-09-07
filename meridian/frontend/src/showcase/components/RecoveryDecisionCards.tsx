@@ -1,3 +1,5 @@
+import { HoldReceipt } from './HoldReceipt';
+import { AuroraIcon } from './ServiceMark';
 import {
 AlertTriangle,
   ArrowRight,
@@ -6,12 +8,10 @@ AlertTriangle,
   CheckCircle2,
   Circle,
   Clock3,
-  Database,
   FileCheck2,
   GitCompareArrows,
   Headphones,
   Loader2,
-  Lock,
   LockKeyhole,
   Plane,
   Route,
@@ -81,7 +81,9 @@ interface CheckpointedPlanCardProps {
   /** A committed courtesy hold, when the recovery path reached the hold node. */
   holdId?: string;
   holdExpiresAt?: string;
-  holdSeatsRemaining?: string;
+  holdCreatedAt?: string;
+  holdObservedAt?: string;
+  holdStatus?: string;
 }
 
 interface RecoveryLaunchCardProps {
@@ -260,7 +262,7 @@ export function RecoveryLaunchCard({
       detail: 'Retrieve and rerank live Tokyo options.',
     },
     {
-      icon: Database,
+      icon: AuroraIcon,
       label: 'Save an Aurora checkpoint',
       detail: 'Persist the shortlist before verification.',
     },
@@ -331,10 +333,10 @@ export function RecoveryLaunchCard({
                 <AlertTriangle size={22} />
               </span>
               <div>
-                <h2>Your flight has been canceled.</h2>
+                <h2>Let’s get your trip moving again.</h2>
                 <p>
-                  You reported a canceled JFK-to-Tokyo flight. Meridian can
-                  rebuild the trip plan and preserve its workflow state.
+                  Search live alternatives, save the shortlist in Aurora, and
+                  resume to verify availability. You decide what happens next.
                 </p>
               </div>
               <button
@@ -539,7 +541,7 @@ export function RecommendedRecoveryPlanCard({
         </span>
         <span className={`mds-decision-status is-${stage}`}>
           {stage === 'running' && <Loader2 size={13} aria-hidden="true" />}
-          {stage === 'checkpointed' && <Database size={13} aria-hidden="true" />}
+          {stage === 'checkpointed' && <AuroraIcon size={13} aria-hidden="true" />}
           {stage === 'ready' && <Check size={13} aria-hidden="true" />}
           {stageBadge(stage)}
         </span>
@@ -579,7 +581,7 @@ export function RecommendedRecoveryPlanCard({
               {availabilityLabel(product, evidence.availabilityObserved)}
             </span>
             <span className={evidence.checkpointObserved ? 'is-verified' : ''}>
-              <Database size={14} aria-hidden="true" />
+              <AuroraIcon size={14} aria-hidden="true" />
               {evidence.checkpointObserved
                 ? 'Plan state saved'
                 : 'Checkpoint created during recovery'}
@@ -666,7 +668,7 @@ export function RecommendedRecoveryPlanCard({
           disabled={primaryAction.disabled}
         >
           {stage === 'checkpointed' ? (
-            <Database size={16} aria-hidden="true" />
+            <AuroraIcon size={16} aria-hidden="true" />
           ) : stage === 'ready' ? (
             <CheckCircle2 size={16} aria-hidden="true" />
           ) : (
@@ -931,62 +933,10 @@ export function AgentProofCard({
         />
       </ul>
       <button type="button" onClick={onViewProof}>
-        View system proof
+        View system evidence
         <ArrowRight size={15} aria-hidden="true" />
       </button>
     </article>
-  );
-}
-
-/**
- * A live countdown on the committed hold.
- *
- * This is what makes the durability claim tangible: the seats are reserved in
- * Aurora with a TTL, so after the worker is killed and the thread resumes, the
- * clock is still running and the inventory is still decremented. Workflow
- * position surviving is abstract; a reservation surviving is not.
- */
-function HoldCountdown({
-  holdId,
-  expiresAt,
-  seatsRemaining,
-}: {
-  holdId: string;
-  expiresAt?: string;
-  seatsRemaining?: string;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (!expiresAt) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [expiresAt]);
-
-  const msLeft = expiresAt ? new Date(expiresAt).getTime() - now : 0;
-  const expired = Boolean(expiresAt) && msLeft <= 0;
-  const clock = expiresAt
-    ? `${Math.floor(Math.max(msLeft, 0) / 60000)}:${String(
-        Math.floor((Math.max(msLeft, 0) % 60000) / 1000),
-      ).padStart(2, '0')}`
-    : null;
-
-  return (
-    <div className={`mds-hold-receipt${expired ? ' is-expired' : ''}`}>
-      <span className="mds-hold-receipt-head">
-        <Lock size={13} aria-hidden="true" />
-        Seats held in Aurora
-      </span>
-      <code>{holdId}</code>
-      {clock && (
-        <span className="mds-hold-receipt-clock" role="timer" aria-live="off">
-          {expired ? 'hold expired' : `${clock} left`}
-        </span>
-      )}
-      {seatsRemaining && (
-        <span className="mds-hold-receipt-stock">{seatsRemaining} seats left</span>
-      )}
-    </div>
   );
 }
 
@@ -999,7 +949,9 @@ export function CheckpointedPlanCard({
   durable,
   holdId,
   holdExpiresAt,
-  holdSeatsRemaining,
+  holdCreatedAt,
+  holdObservedAt,
+  holdStatus,
 }: CheckpointedPlanCardProps) {
   const searchDone = evidence.searchObserved;
   const rankDone = evidence.alternativesObserved;
@@ -1023,7 +975,7 @@ export function CheckpointedPlanCard({
     >
       <header className="mds-decision-card-head">
         <span className="mds-decision-card-kicker">
-          <Database size={17} aria-hidden="true" />
+          <AuroraIcon size={17} aria-hidden="true" />
           Checkpointed plan
         </span>
         <span className={`mds-checkpoint-badge is-${stage}`}>{status}</span>
@@ -1033,17 +985,25 @@ export function CheckpointedPlanCard({
         <strong>{threadId}</strong>
       </div>
       {holdId && (
-        <HoldCountdown
+        <HoldReceipt
           holdId={holdId}
           expiresAt={holdExpiresAt}
-          seatsRemaining={holdSeatsRemaining}
+          createdAt={holdCreatedAt}
+          observedAt={holdObservedAt}
+          status={holdStatus}
         />
+      )}
+      {!holdId && (stage === 'checkpointed' || stage === 'ready') && (
+        <div className="mc-hold-pending">
+          <strong>{stage === 'checkpointed' ? 'Shortlist saved. No inventory held yet.' : 'No package hold recorded.'}</strong>
+          <p>{stage === 'checkpointed' ? 'Resume verifies package availability, then requests a timed hold. Its clock starts when Aurora creates the booking.' : 'The checkpoint records workflow progress. A hold needs its own booking receipt.'}</p>
+        </div>
       )}
       {/* The claim this phase makes lives or dies on which store ran, so name
           it here rather than only in the trace rail. */}
       <div className={`mds-checkpoint-receipt${durable ? ' is-durable' : ''}`}>
         <span className="mds-checkpoint-receipt-store">
-          <Database size={13} aria-hidden="true" />
+          <AuroraIcon size={13} aria-hidden="true" />
           {checkpointStore || 'checkpointer not observed'}
         </span>
         {durable ? (

@@ -18,7 +18,7 @@ from backend.agents.orchestration_05.packages import (
     top_ranked_package,
 )
 
-DEFAULT_QUANTITY = 2
+DEFAULT_QUANTITY = 1
 
 
 @dataclass
@@ -156,6 +156,7 @@ def prepare_hold_node(state: dict) -> Dict[str, Any]:
     return {
         "hold_intent": {
             "hold_request_id": intent.hold_request_id,
+            "booking_id": f"hold_{intent.hold_request_id.removeprefix('hrq_')}",
             "package_id": intent.package_id,
             "duration": intent.duration,
             "quantity": intent.quantity,

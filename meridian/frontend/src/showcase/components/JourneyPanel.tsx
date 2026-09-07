@@ -1,3 +1,4 @@
+import { AuroraIcon } from './ServiceMark';
 import { useState } from 'react';
 import {
   AlertTriangle,
@@ -8,7 +9,6 @@ import {
   ChevronDown,
   Circle,
   Clock3,
-  Database,
   Heart,
   Loader2,
   MapPin,
@@ -152,7 +152,7 @@ export function JourneyPanel({
             {recoveryStage === 'ready'
               ? <Check size={12} />
               : recoveryStage === 'checkpointed'
-                ? <Database size={12} />
+                ? <AuroraIcon size={12} />
               : recoveryStage === 'running'
                 ? <Loader2 size={12} />
                 : <AlertTriangle size={12} />}
@@ -173,7 +173,7 @@ export function JourneyPanel({
               {recoveryStage === 'ready' ? (
                 <Check size={14} aria-hidden="true" />
               ) : recoveryStage === 'checkpointed' ? (
-                <Database size={14} aria-hidden="true" />
+                <AuroraIcon size={14} aria-hidden="true" />
               ) : recoveryStage === 'running' ? (
                 <Loader2 size={14} aria-hidden="true" />
               ) : (

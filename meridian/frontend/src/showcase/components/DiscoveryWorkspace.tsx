@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { AlertTriangle, ArrowRight, Check, Clock3, Compass, Heart, MapPin, RotateCcw } from 'lucide-react';
 import { ShowcaseMarkdown } from './ChatTranscript';
 import { ConciergeBell } from '../icons/TravelIcons';
@@ -73,7 +73,7 @@ function TripCard({ product, state, featured = false }: {
     <article className={`mc-trip${featured ? ' is-featured' : ''}`} aria-label={product.name}>
       <div className="mc-trip-image">
         {photo ? <img src={photo} alt="" width="1600" height="900" loading={featured ? 'eager' : 'lazy'}
-          fetchPriority={featured ? 'high' : 'auto'} onError={event => { event.currentTarget.style.visibility = 'hidden'; }} /> : null}
+          {...{ fetchpriority: featured ? 'high' : 'auto' }} onError={event => { event.currentTarget.style.visibility = 'hidden'; }} /> : null}
         <span className="mc-trip-image-fallback" aria-hidden="true"><MapPin size={28} /></span>
         <button type="button" className="mc-save" onClick={() => state.saveTrip(product)}
           aria-pressed={saved} aria-label={`${saved ? 'Unsave' : 'Save'} ${product.name}`}>
@@ -88,7 +88,7 @@ function TripCard({ product, state, featured = false }: {
         <div className="mc-trip-meta"><Clock3 size={14} aria-hidden="true" />{product.available_sizes?.[0] ?? 'Flexible duration'}<span>·</span>{product.brand}</div>
         <footer>
           <span className="mc-price"><small>From </small><strong>{money(product.price)}</strong><small> / traveler</small></span>
-          <button type="button" className="mc-trip-open" onClick={() => state.openTripDetails(product)} aria-label={`Explore ${product.name}`}>
+          <button type="button" className="mc-trip-open" onClick={() => state.openTripDetails(product)} aria-label={`${featured ? 'Explore this trip' : 'Details'}: ${product.name}`}>
             {featured ? 'Explore this trip' : 'Details'}<ArrowRight size={16} aria-hidden="true" />
           </button>
         </footer>
@@ -110,7 +110,14 @@ export function DiscoveryWorkspace({ state, onClear, greeting, onDiscover }: {
   const hasTurn = state.messages.length > 0;
   // A zero-result search stays empty. Bundled inspiration is only for the opening.
   const pool = hasTurn ? state.recommendations : state.catalog.length ? state.catalog : CATALOG_PREVIEW;
-  const options = pool.slice(0, 3);
+  const options = useMemo(() => {
+    if (hasTurn) return pool.slice(0, 3);
+    const profile = state.travelerProfile ?? state.previewProfile;
+    const facts = state.memoryFacts.length ? state.memoryFacts : state.previewFacts;
+    const score = (product: Product) => derivePersonalization(product, profile, facts, 7)
+      .reduce((sum, pill) => sum + (pill.id === 'goal' ? 4 : pill.tone === 'match' ? 1 : pill.tone === 'caution' ? -2 : 0), 0);
+    return [...pool].sort((a, b) => score(b) - score(a)).slice(0, 3);
+  }, [pool, hasTurn, state.travelerProfile, state.previewProfile, state.memoryFacts, state.previewFacts]);
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (hasTurn) endRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'instant' });
@@ -121,7 +128,7 @@ export function DiscoveryWorkspace({ state, onClear, greeting, onDiscover }: {
       <header className="mc-welcome">
         <div><p>Good {greeting}, Alex.</p><h1>{hasTurn ? 'Let’s make it your kind of trip.' : 'Where would you like to go?'}</h1>
         <span>{hasTurn ? 'A little planning. More to look forward to.' : 'Somewhere new. Something familiar. A trip that’s yours.'}</span></div>
-        <button type="button" className="mc-text-button mc-walkthrough" onClick={onClear} aria-label="Start the capability ladder at Phase 1">How it works<ArrowRight size={15} aria-hidden="true" /></button>
+        <button type="button" className="mc-text-button mc-walkthrough" onClick={onClear} aria-label="How it works: start the capability ladder at Phase 1">How it works<ArrowRight size={15} aria-hidden="true" /></button>
       </header>
 
       <ol className="mc-conversation" aria-label="Conversation with Meridian">

@@ -52,7 +52,7 @@ describe('SHOWCASE_EXAMPLE_PROMPTS phase ladder', () => {
 
   it('uses concise projector labels without changing submitted prompts', () => {
     expect(showcasePromptLabel(SHOWCASE_EXAMPLE_PROMPTS[4][1])).toBe(
-      'Recall my Tokyo plan',
+      'Recall my plan & preferences',
     );
     expect(showcasePromptLabel(SHOWCASE_EXAMPLE_PROMPTS[5][2])).toBe(
       'Canceled flight replan',

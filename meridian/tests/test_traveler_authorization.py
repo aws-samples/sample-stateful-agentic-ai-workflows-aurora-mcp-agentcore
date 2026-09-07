@@ -179,3 +179,13 @@ def test_scoped_session_rejects_unscoped_fallback_outside_development(
     assert db.executed == []
     assert db.commits == []
     assert db.rollbacks == []
+
+
+@pytest.mark.asyncio
+async def test_cancelled_traveler_transaction_rolls_back():
+    db = _ScopedDb(allowed=True)
+    with pytest.raises(asyncio.CancelledError):
+        async with db.scoped_session(traveler_id="trv_meridian_demo", authorization=AUTHORIZATION):
+            raise asyncio.CancelledError()
+    assert db.rollbacks == ["tx-authz"]
+    assert db.commits == []

@@ -29,7 +29,6 @@ import os
 import signal
 import subprocess
 import sys
-import time
 import uuid
 from pathlib import Path
 
@@ -47,9 +46,7 @@ from backend.agents.orchestration_05.workflow import (  # noqa: E402
 from backend.db.journey_store import (  # noqa: E402
     ScopedDb,
     bind_thread,
-    claim_execution,
     create_journey,
-    renew_lease,
 )
 from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
 
@@ -76,7 +73,7 @@ def scoped(client):
     )
 
 
-async def _run_workflow(thread_id: str, *, resume: bool) -> dict:
+async def _run_workflow(thread_id: str, *, resume: bool, after_pause=None) -> dict:
     """Run the real graph, with the app's own retrieval functions."""
     from backend.agents.orchestration_05.workflow import OrchestrationAgent
     from backend.routers.chat import (
@@ -90,57 +87,26 @@ async def _run_workflow(thread_id: str, *, resume: bool) -> dict:
         availability_fn=retrieval_availability_search,
         memory_recall_fn=workflow_memory_recall,
     )
-    return await workflow.run(
-        QUERY, traveler_id=TRAVELER, conversation_id=thread_id, resume=resume
+    from backend.agents.orchestration_05 import execution
+    execution.LEASE_SECONDS = LEASE_SECONDS
+    execution.HEARTBEAT_SECONDS = max(1, LEASE_SECONDS // 3)
+    return await execution.run_http_workflow(
+        workflow, QUERY, TRAVELER, thread_id, resume=resume,
+        travelers_count=2, after_pause=after_pause,
     )
-
-
-# --------------------------------------------------------------- worker one
-
-
-async def _heartbeat(client, execution_id: str) -> None:
-    """Keep the lease alive for as long as this worker is.
-
-    Without this the lease is a timeout on the whole execution rather than a
-    liveness signal: any run longer than the lease gets taken over while it is
-    still working. It is also what makes the kill mean something, because a
-    SIGKILLed worker stops renewing and loses the slot on its own.
-    """
-    interval = max(1, LEASE_SECONDS // 3)
-    while True:
-        await asyncio.sleep(interval)
-        if not await renew_lease(client, execution_id, lease_seconds=LEASE_SECONDS):
-            return  # The slot was taken; stop pretending to hold it.
 
 
 async def _worker_one(journey_id: str, thread_id: str) -> None:
-    """Claim the slot, run to the interrupt, then idle until killed."""
-    os.environ["LANGGRAPH_DEMO_INTERRUPT_AFTER"] = "search"
-    client = get_rds_data_client()
+    """Keep a worker alive after committing its hold, until the driver kills it."""
+    os.environ["LANGGRAPH_DEMO_INTERRUPT_AFTER"] = "hold"
 
-    claim = await claim_execution(
-        client, journey_id, thread_id, WORKER_INSTANCE_ID, lease_seconds=LEASE_SECONDS
-    )
-    heartbeat = asyncio.create_task(_heartbeat(client, claim.execution_id))
-    print(
-        json.dumps(
-            {
-                "event": "claimed",
-                "worker_id": WORKER_INSTANCE_ID,
-                "execution_id": claim.execution_id,
-                "attempt": claim.attempt,
-            }
-        ),
-        flush=True,
-    )
+    async def wait_for_kill(state, claim):
+        print(json.dumps({"event": "claimed", "worker_id": claim.worker_id,
+                          "execution_id": claim.execution_id, "attempt": claim.attempt}), flush=True)
+        print(json.dumps({"event": "paused", "status": state["workflow_status"]}), flush=True)
+        await asyncio.Event().wait()
 
-    state = await _run_workflow(thread_id, resume=False)
-    print(
-        json.dumps({"event": "paused", "status": state.get("workflow_status")}),
-        flush=True,
-    )
-
-    await heartbeat  # Hold the lease, by renewing it, until SIGKILL.
+    await _run_workflow(thread_id, resume=False, after_pause=wait_for_kill)
 
 
 # ------------------------------------------------------------------- driver
@@ -161,7 +127,7 @@ async def _read_committed_checkpoint(client, thread_id: str) -> dict | None:
 async def _holds_for(client, journey_id: str) -> list[dict]:
     return await client.execute(
         """
-        SELECT hr.hold_request_id, hr.booking_id, b.status
+        SELECT hr.hold_request_id, hr.booking_id, b.status, b.hold_expires_at::TEXT AS hold_expires_at
           FROM hold_requests hr
           JOIN bookings b ON b.booking_id = hr.booking_id
          WHERE hr.journey_id = %s
@@ -242,42 +208,31 @@ async def main(keep: bool) -> int:
             return 1
         say("aurora", f"committed checkpoint {committed['checkpoint_id']}", GREEN)
 
+        original_holds = await _holds_for(client, journey_id)
+        if len(original_holds) != 1:
+            say("abort", "the worker must commit one hold before interruption", RED)
+            return 1
+        say("hold", f"original expiry {original_holds[0]['hold_expires_at']}")
         say("kill", f"SIGKILL {child.pid}", RED)
         os.kill(child.pid, signal.SIGKILL)
         child.wait(timeout=10)
         say("kill", f"worker 1 is gone (exit {child.returncode})", RED)
 
-        refused = await claim_execution(
-            client, journey_id, thread_id, WORKER_INSTANCE_ID
-        )
-        if refused.claimed:
-            say(
-                "worker 2",
-                "claimed immediately - worker 1's lease was already stale",
-                RED,
-            )
-        else:
-            say(
-                "worker 2",
-                f"refused: {refused.conflict['worker_id']} still holds the lease",
-            )
-
-        say("wait", f"{LEASE_SECONDS + 2}s for the dead worker's lease to expire", DIM)
-        time.sleep(LEASE_SECONDS + 2)
-
-        taken = await claim_execution(client, journey_id, thread_id, WORKER_INSTANCE_ID)
-        if not taken.claimed:
-            say("abort", "takeover refused after the lease expired", RED)
-            return 1
-        say(
-            "worker 2",
-            f"claimed attempt {taken.attempt} as {WORKER_INSTANCE_ID} "
-            f"(was {first_worker})",
-            GREEN,
-        )
-
+        from fastapi import HTTPException
         os.environ.pop("LANGGRAPH_DEMO_INTERRUPT_AFTER", None)
-        state = await _run_workflow(thread_id, resume=True)
+        for attempt in range(60):
+            try:
+                state = await _run_workflow(thread_id, resume=True)
+                break
+            except HTTPException as exc:
+                if exc.status_code != 409:
+                    raise
+                if attempt == 0:
+                    say("worker 2", "takeover refused until the lease and any interrupted transaction clear")
+                await asyncio.sleep(3)
+        else:
+            say("abort", "takeover remained unavailable; inspect the journey execution", RED)
+            return 1
         say("resume", f"workflow {state.get('workflow_status')} on the same thread", GREEN)
         say(
             "resume",
@@ -288,9 +243,15 @@ async def main(keep: bool) -> int:
         say("aurora", f"holds recorded for this journey: {len(holds)}", GREEN)
         for row in holds:
             say("hold", f"{row['hold_request_id']} -> {row['booking_id']} ({row['status']})")
-        if len(holds) > 1:
-            say("abort", "a restart produced more than one hold", RED)
+        if len(holds) != 1:
+            say("abort", "expected exactly one hold after restart", RED)
             return 1
+        if (holds[0]["booking_id"], holds[0]["hold_expires_at"]) != (
+            original_holds[0]["booking_id"], original_holds[0]["hold_expires_at"]
+        ):
+            say("abort", "the booking identity or original expiry changed", RED)
+            return 1
+        say("hold", "same booking and original expiry after restart", GREEN)
 
         history = await client.execute(
             "SELECT count(*) AS n FROM checkpoints WHERE thread_id = %s", (thread_id,)

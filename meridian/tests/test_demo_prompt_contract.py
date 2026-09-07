@@ -24,26 +24,14 @@ from scripts.travel_catalog import (
 )
 
 
-COMPARE_AND_FX = (
-    "Compare three trip types side by side and convert their prices to euros."
-)
-MCP_SEASONAL = (
-    "What is the off-season price range for Tokyo trips in November?"
-)
-RETRIEVAL_INTENT = (
-    "I want a quiet, romantic escape in wine country, ideally with a villa."
-)
-TUSCANY_AVAILABILITY = (
-    "Which trip lengths are still available for Tuscany Wine & Wellness?"
-)
-MEMORY_RECALL = (
-    "Recall my October Tokyo plan and use my saved preferences to recommend "
-    "the next step."
-)
-WORKFLOW_PLAN = (
-    "My JFK-to-Tokyo flight was cancelled. Rework the trip, then check "
-    "duration availability for the best three options."
-)
+from backend.demo_prompts import PROMPT_LADDER
+
+COMPARE_AND_FX = PROMPT_LADDER[1].tee_up
+MCP_SEASONAL = PROMPT_LADDER[2].works[1]
+RETRIEVAL_INTENT = PROMPT_LADDER[2].tee_up
+TUSCANY_AVAILABILITY = PROMPT_LADDER[3].works[1]
+MEMORY_RECALL = PROMPT_LADDER[3].tee_up
+WORKFLOW_PLAN = PROMPT_LADDER[4].tee_up
 WORKFLOW_PLAN_KYOTO = (
     "Plan the Kyoto extension: find matching packages, then verify available "
     "duration options."

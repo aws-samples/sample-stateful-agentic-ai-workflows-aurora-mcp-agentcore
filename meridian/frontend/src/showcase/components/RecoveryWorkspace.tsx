@@ -1,6 +1,6 @@
+import { AuroraIcon } from './ServiceMark';
 import {
   AlertTriangle,
-  Database,
   Sparkles,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -14,6 +14,7 @@ import {
 import { deriveWorkflowState } from '../lib/showcaseProof';
 import { prefersReducedMotion } from '../lib/prefersReducedMotion';
 import { RecoveryBriefing } from './RecoveryBriefing';
+import { RecoveryBoardingPass } from './RecoveryBoardingPass';
 import {
   AgentProofCard,
   CheckpointedPlanCard,
@@ -66,10 +67,12 @@ export function RecoveryWorkspace({
   state,
   onOpenProof = () => {},
   showComposer = true,
+  showHeading = true,
 }: {
   state: MeridianShowcaseState;
   onOpenProof?: () => void;
   showComposer?: boolean;
+  showHeading?: boolean;
 }) {
   const recoveryStage = deriveRecoveryStage(state);
   const recoveryEvidence = deriveRecoveryEvidence(state);
@@ -211,16 +214,15 @@ export function RecoveryWorkspace({
       }${hasConversation ? ' has-conversation' : ''} is-layout-${recoveryLayout}`}
     >
       <header className={`mds-recovery-overview is-${recoveryStage}`}>
-        <div className="mds-recovery-overview-title">
+        {showHeading && <div className="mds-recovery-overview-title">
           <h1>Alex&apos;s JFK to Tokyo recovery</h1>
           <span className="mds-recovery-cancelled-badge">
             <AlertTriangle size={14} aria-hidden="true" />
             Traveler-reported disruption
           </span>
-        </div>
+        </div>}
         <div className="mds-recovery-overview-meta">
-          <span>Request: rework a canceled JFK-to-Tokyo trip</span>
-          <i aria-hidden="true" />
+          {showHeading && <><span>Request: rework a canceled JFK-to-Tokyo trip</span><i aria-hidden="true" /></>}
           <strong>{recoveryStatusLabel}</strong>
         </div>
         {(recoveryStage === 'checkpointed' ||
@@ -229,7 +231,7 @@ export function RecoveryWorkspace({
             className={`mds-recovery-receipt is-${recoveryStage}`}
             role="status"
           >
-            <Database size={14} aria-hidden="true" />
+            <AuroraIcon size={14} aria-hidden="true" />
             <span>
               {recoveryStage === 'checkpointed'
                 ? durableCheckpoint
@@ -244,6 +246,8 @@ export function RecoveryWorkspace({
           </div>
         )}
       </header>
+
+      <RecoveryBoardingPass state={state} />
 
       {layoutReviewEnabled && (
         <section
@@ -364,7 +368,9 @@ export function RecoveryWorkspace({
                 durable={workflowProof.durable}
                 holdId={workflowProof.holdId}
                 holdExpiresAt={workflowProof.holdExpiresAt}
-                holdSeatsRemaining={workflowProof.holdSeatsRemaining}
+                holdCreatedAt={workflowProof.holdCreatedAt}
+                holdObservedAt={workflowProof.holdObservedAt}
+                holdStatus={workflowProof.holdStatus}
                 resumedAfterRestart={state.workflowResumedAfterRestart}
               />
             </div>

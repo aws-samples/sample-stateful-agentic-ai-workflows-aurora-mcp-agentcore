@@ -1,0 +1,143 @@
+/* Preparation controls belong outside the audience's application. */
+.mds-root { --mc-controls-height: 64px; }
+.mds-root[data-fullscreen='true'] { --mc-controls-height: 0px; }
+.mc-presenter-controls {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  height: var(--mc-controls-height);
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--mc-line);
+  background: var(--mc-ground);
+  color: var(--mc-ink);
+  font-size: 13px;
+}
+.mc-presenter-controls[hidden] { display: none; }
+.mc-presenter-caption { display: grid; gap: 3px; flex-shrink: 0; }
+.mc-presenter-caption strong { display: flex; align-items: center; gap: 8px; font-weight: 550; }
+.mc-presenter-caption > span { color: var(--mc-muted); font-size: 12px; }
+.mc-presenter-actions { display: flex; align-items: center; gap: 12px; }
+.mc-projector-option { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
+.mc-projector-option input { width: 17px; height: 17px; accent-color: var(--mc-action); }
+.mds-root .mc-presenter-actions button,
+.mc-room-check summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--mc-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mc-ink);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mds-root .mc-presenter-actions button:hover,
+.mc-room-check summary:hover { background: var(--mc-soft); }
+.mds-root .mc-presenter-actions button[aria-pressed='true'] { color: var(--mc-accent); border-color: var(--mc-accent); }
+.mds-root .mc-presenter-actions .mc-present-button { background: var(--mc-action); color: var(--mc-on-action); border-color: var(--mc-action); }
+.mds-root .mc-presenter-actions .mc-present-button:hover { filter: brightness(1.08); }
+.mc-presenter-controls :is(button, input, summary):focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 3px; }
+.mc-room-check summary { list-style: none; }
+.mc-room-check summary::-webkit-details-marker { display: none; }
+.mc-room-check > div,
+.mc-presenter-error {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 24px;
+  width: min(390px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--mc-line);
+  border-radius: 12px;
+  background: var(--mc-surface);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.mc-room-check ul { padding-left: 20px; margin: 12px 0; }
+.mc-room-check li + li { margin-top: 10px; }
+.mc-room-check p { margin: 12px 0 0; color: var(--mc-muted); }
+.mc-presenter-error { margin: 0; color: var(--mc-caution); background: var(--mc-caution-bg); }
+.mc-audience-brand { display: none; }
+
+/* A CSS guard hides controls immediately, before React receives the event. */
+:root:fullscreen .mc-presenter-controls { display: none; }
+:root:fullscreen .mds-root { --mc-controls-height: 0px; }
+@media (display-mode: fullscreen) {
+  .mc-presenter-controls { display: none; }
+  .mds-root { --mc-controls-height: 0px; }
+}
+
+@media (min-width: 1241px) {
+  .mds-root[data-theme] .mds-desktop-app.is-projector {
+    height: calc(100dvh - var(--mc-controls-height));
+    min-height: 0;
+  }
+  .mds-root[data-theme] .mds-desktop-app .mds-desktop-sidebar { height: 100%; }
+  .mds-root[data-theme] .mds-desktop-app.is-projector .mds-desktop-main { height: 100%; min-height: 0; }
+  .mds-root[data-audience-layout='true'] .mds-desktop-app.is-projector {
+    grid-template-columns: 0 minmax(0, 1fr) var(--mds-right-rail);
+    transition: none;
+  }
+  .mds-root[data-audience-layout='true'] .mds-desktop-app .mds-desktop-right { grid-column: 3; }
+}
+.mds-root[data-audience-layout='true'] .mds-desktop-app .mds-desktop-sidebar { display: none; }
+.mds-root[data-audience-layout='true'] .mds-shell-header {
+  grid-column: 1 / -1;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 30px;
+}
+.mds-root[data-audience-layout='true'] .mc-audience-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 23px;
+  font-weight: 550;
+  letter-spacing: -0.035em;
+  color: var(--mc-ink);
+}
+
+/* Readability is opt-in for the preview and enabled by default on stage. */
+.mds-root[data-projector-readability='true'] {
+  --mc-type-scale: 1.3;
+  --mc-muted: #c3cede;
+  --mc-line: #445570;
+}
+.mds-root[data-theme='light'][data-projector-readability='true'] {
+  --mc-muted: #40526c;
+  --mc-line: #b9c6d8;
+}
+.mds-root[data-projector-readability='true'] :is(
+  .mds-proof-worker-role, .mds-proof-worker-note, .mds-proof-worker-state,
+  .mds-proof-store-rows dt, .mds-proof-store-rows dd, .mds-proof-store-foot,
+  .mds-proof-fact-label, .mds-proof-head-meta, .mds-proof-tab,
+  .mds-continuity-steps li small, .mc-hold-proof-note
+) { font-size: max(18px, calc(14px * var(--mc-type-scale))); }
+.mds-root[data-projector-readability='true'] .mds-proof-foot { font-size: 16px; color: var(--mc-muted); }
+
+@media (min-width: 861px) and (max-width: 1240px) {
+  .mds-root[data-audience-layout='true'] .mds-desktop-app.is-projector { grid-template-columns: 0 minmax(0, 1fr); }
+  .mds-root[data-audience-layout='true'] .mds-desktop-app.is-discovery { grid-template-columns: 0 minmax(0, 1fr) 268px; }
+}
+@media (max-width: 1180px) {
+  .mc-presenter-controls { height: auto; flex-wrap: wrap; gap: 8px; padding: 12px 18px; }
+  .mc-presenter-caption { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 12px; }
+  .mc-presenter-actions { flex-wrap: wrap; width: 100%; }
+  .mds-root[data-audience-layout='true'] .mds-shell-header { gap: 14px; }
+  .mds-root[data-audience-layout='true'] .mc-audience-brand > span { display: none; }
+}
+@media (max-width: 860px) {
+  .mc-presenter-caption { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .mc-presenter-actions { gap: 8px; }
+  .mc-projector-option { min-height: 36px; }
+  .mds-root .mc-presenter-actions button, .mc-room-check summary { padding: 0 10px; }
+  .mds-root[data-audience-layout='true'] .mds-shell-header { display: flex; flex-wrap: nowrap; }
+  .mds-root[data-audience-layout='true'] .mc-audience-brand { flex: 0 0 auto; }
+  .mds-root[data-audience-layout='true'] .mds-shell-surface-nav { flex: 1; overflow-x: auto; }
+  .mds-root[data-projector-readability='true'] { --mc-type-scale: 1.1; }
+}

@@ -177,7 +177,7 @@ Point to the trace: RDS connection → parameterized filter SQL → package rows
 
 | Query | Why it fails |
 | ----- | ------------ |
-| `Compare three trip types side by side and convert their prices to euros.` | SQL can return rows, but **comparison + per-package currency conversion is a business operation**, not a `WHERE` clause. |
+| `Compare three trip types and convert each price to euros.` | SQL can return rows, but **comparison + per-package currency conversion is a business operation**, not a `WHERE` clause. |
 
 > **Pause.** "The user didn't ask a bad SQL question. They asked for an *operation* SQL
 > doesn't own. Who owns reusable tools? That's Phase 2."
@@ -201,7 +201,7 @@ Point to the trace: RDS connection → parameterized filter SQL → package rows
 
 | Query | Notes |
 | ----- | ----- |
-| `Compare three trip types side by side and convert their prices to euros.` | `compare_packages` + one `currency_convert` call per package — the exact operation SQL couldn't own |
+| `Compare three trip types and convert each price to euros.` | `compare_packages` + one `currency_convert` call per package — the exact operation SQL couldn't own |
 | `What is the off-season price range for Tokyo trips in November?` | `seasonal_price_band` (low/median/high) |
 
 Point back to Phase 1: **same prompt, now it lands** — because it's a tool contract now.
@@ -210,7 +210,7 @@ Point back to Phase 1: **same prompt, now it lands** — because it's a tool con
 
 | Query | Why it fails |
 | ----- | ------------ |
-| `I want a quiet, romantic escape in wine country, ideally with a villa.` | Mood/intent. Better tools, richer domain logic — the **intent gap is untouched**. |
+| `Find a quiet, romantic wine-country retreat with a private villa.` | Mood/intent. Better tools, richer domain logic — the **intent gap is untouched**. |
 
 > "The interface got portable and IAM-authed. The intelligence didn't. Matching a *mood*
 > needs embeddings, not tools. That's Phase 3."
@@ -240,7 +240,7 @@ it authorizes the workload against `traveler_identity_bindings` **before** RLS s
 **Open by typing the Phase-2 failure a third time, then narrate the trace while it runs**
 (~15–20s: embed → pgvector + tsvector → rerank). Do not stand in silence.
 
-> `I want a quiet, romantic escape in wine country, ideally with a villa.`
+> `Find a quiet, romantic wine-country retreat with a private villa.`
 > → Tuscany Wine & Wellness, Amalfi Coast Villa Week, Douro / Tokyo Ryokan — each with a
 > clear rank label.
 
@@ -261,14 +261,14 @@ trip_packages ──► pgvector cosine + tsvector ts_rank ──► Cohere Rera
 
 | Query | Expected |
 | ----- | -------- |
-| `I want a quiet, romantic escape in wine country, ideally with a villa.` | The intent match MCP couldn't produce |
+| `Find a quiet, romantic wine-country retreat with a private villa.` | The intent match MCP couldn't produce |
 | `Family-friendly beach resort with snorkeling` | Rerank fixes order (Costa del Sol, Cancún, Maldives) |
 
 **Third failure — the honest one (rehearse this, do not apologize):**
 
 | Query | What happens |
 | ----- | ------------ |
-| `Recall my October Tokyo plan and use my saved preferences to recommend the next step.` | Zero products. A reasoning span states: *"I'm pure retrieval — no memory of prior turns. That's the next phase."* |
+| `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` | Zero products. A reasoning span states: *"I'm pure retrieval — no memory of prior turns. That's the next phase."* |
 
 > "It understands what you *mean*. It has no idea who *you* are, and it can't remember a
 > thing. And we can't ship this reading any traveler's data. That's Phase 4."
@@ -291,10 +291,10 @@ trip_packages ──► pgvector cosine + tsvector ts_rank ──► Cohere Rera
 
 ### Beat 1 — memory lands (the payoff to Phase 3's honest failure)
 
-1. **Seed the thread:** `Find a Tokyo culture trip for two using my saved preferences.`
+1. **Seed the thread:** `Find Tokyo trips that fit my saved preferences.`
    The reply weaves in the shellfish allergy, JFK no-red-eyes, boutique preference — all
    pulled from Aurora **before** answering. None of it was typed.
-2. **The recall that failed a phase ago now works:** `Recall my October Tokyo plan and use my saved preferences to recommend the next step.`
+2. **The recall that failed a phase ago now works:** `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.`
    `recall_session_context` + `recall_similar_interactions` return the Tokyo thread. *Point
    back to the Phase-3 failure.*
 
@@ -463,31 +463,31 @@ the graph makes that plan survivable and auditable."*
 ### Phase 1 — works / breaks
 | Works | Breaks |
 | ----- | ------ |
-| Show me city trips under $2,000 per traveler. | Compare three trip types side by side and convert their prices to euros. |
+| Show me city trips under $2,000 per traveler. | Compare three trip types and convert each price to euros. |
 | Show me beach trips under $2,500 per traveler. | |
 
 ### Phase 2 — works / breaks
 | Works | Breaks |
 | ----- | ------ |
-| Compare three trip types side by side and convert their prices to euros. | I want a quiet, romantic escape in wine country, ideally with a villa. |
+| Compare three trip types and convert each price to euros. | Find a quiet, romantic wine-country retreat with a private villa. |
 | What is the off-season price range for Tokyo trips in November? | |
 
 ### Phase 3 — works / breaks
 | Works | Breaks (honest, on purpose) |
 | ----- | --------------------------- |
-| I want a quiet, romantic escape in wine country, ideally with a villa. | Recall my October Tokyo plan and use my saved preferences to recommend the next step. |
+| Find a quiet, romantic wine-country retreat with a private villa. | Recall my Tokyo plan and saved preferences: home airport, food needs, and budget. |
 | Family-friendly beach resort with snorkeling | |
 
 ### Phase 4 — as Alex Morgan
-- Find a Tokyo culture trip for two using my saved preferences.
-- Recall my October Tokyo plan and use my saved preferences to recommend the next step.
+- Find Tokyo trips that fit my saved preferences.
+- Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.
 - **Governance probe:** RLS tab → Re-run (ALLOW Alex · DENY Jordan · 17 of 22).
 - **Hand-off:** My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.
 
 ### Phase 5 — Workflow
 - My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options. *(plan → search → availability)*
 - Which trip lengths are still available for Amalfi Coast Villa Week? *(availability)*
-- Recall my October Tokyo plan and use my saved preferences to recommend the next step. *(memory_recall)*
+- Recall my Tokyo plan and saved preferences: home airport, food needs, and budget. *(memory_recall)*
 
 ---
 
@@ -508,7 +508,7 @@ curl -s -X POST http://localhost:8000/api/chat \
 # Phase 3 — semantic
 curl -s -X POST http://localhost:8000/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"message":"I want a quiet, romantic escape in wine country, ideally with a villa.","phase":3}' | jq '.message, (.products | length)'
+  -d '{"message":"Find a quiet, romantic wine-country retreat with a private villa.","phase":3}' | jq '.message, (.products | length)'
 
 # Phase 4 — memory + search
 curl -s -X POST http://localhost:8000/api/chat \

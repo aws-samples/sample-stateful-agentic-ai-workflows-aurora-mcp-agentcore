@@ -87,7 +87,7 @@ describe('Presenter proof', () => {
     render(
       <PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
     );
-    expect(screen.getByText('The plan didn’t.')).toBeInTheDocument();
+    expect(screen.getByText('The checkpoint remains.')).toBeInTheDocument();
   });
 
   it('names both the stopped worker and the one holding the lease', () => {
@@ -100,17 +100,18 @@ describe('Presenter proof', () => {
     expect(screen.getByText(/attempt 2 · running/)).toBeInTheDocument();
   });
 
-  it('reports one hold record as no duplicate hold', () => {
+  it('distinguishes a hold created after replacement from a surviving hold', () => {
     render(
       <PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Business result' }));
     const panel = screen.getByRole('tabpanel');
-    expect(within(panel).getByText('No duplicate hold')).toBeInTheDocument();
+    expect(within(panel).getByText('Replacement execution')).toBeInTheDocument();
+    expect(within(panel).getByText(/does not yet prove an existing hold survived/)).toBeInTheDocument();
     expect(within(panel).getByText('1')).toBeInTheDocument();
   });
 
-  it('flags more than one hold rather than reporting success', () => {
+  it('reports the record count without treating distinct requests as duplicate holds', () => {
     const doc = makeDocument();
     render(
       <PresenterProof
@@ -123,7 +124,7 @@ describe('Presenter proof', () => {
       />,
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Business result' }));
-    expect(screen.getByText(/2 holds — investigate/)).toBeInTheDocument();
+    expect(within(screen.getByRole('tabpanel')).getByText('2')).toBeInTheDocument();
   });
 
   it('shows a dash where the database holds no evidence', () => {
@@ -154,4 +155,13 @@ describe('Presenter proof', () => {
     fireEvent.click(screen.getByRole('button', { name: /Check again/ }));
     expect(onRefresh).toHaveBeenCalledOnce();
   });
+});
+
+
+it('does not call an expired worker live or a second attempt a successful resume', () => {
+  const doc = makeDocument();
+  render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+  expect(screen.queryByText('Holding the lease')).not.toBeInTheDocument();
+  expect(screen.getByText('Lease not verified')).toBeInTheDocument();
+  expect(screen.getByText('Successful resume not verified')).toBeInTheDocument();
 });

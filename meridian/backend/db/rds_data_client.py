@@ -497,9 +497,14 @@ class RDSDataClient:
             yield tx
             self.commit_transaction(tx)
             transaction_finished = True
-        except Exception:
+        except BaseException:
+            # Cancellation must release RLS/lease row locks too. CancelledError
+            # is a BaseException; otherwise Data API waits for its idle timeout.
             if not transaction_finished:
-                self.rollback_transaction(tx)
+                try:
+                    self.rollback_transaction(tx)
+                except Exception:
+                    logger.exception("Failed to roll back interrupted traveler transaction")
             raise
 
 

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import type { ChatFilters } from '../hooks/useMeridianShowcase';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
-import { showcasePromptLabel } from '../lib/showcaseAdapters';
+import { PHASE_QUERY_BOUNDARIES, SHOWCASE_PHASES, showcasePromptLabel } from '../lib/showcaseAdapters';
 
 type ChipKey = 'travelers' | 'dates' | 'spa' | 'flights';
 
@@ -54,6 +54,8 @@ export function ChatComposer({
   const stretchStillUnasked =
     Boolean(stretchPrompt) && state.lastPrompt !== stretchPrompt;
 
+  const nextPhase = SHOWCASE_PHASES.find(phase => phase.phase === state.selectedPhase + 1);
+  const boundaryReached = proofMode && nextPhase && stretchPrompt && state.lastPrompt?.startsWith(stretchPrompt) && !state.isLoading;
   const queryStarters = compact || recoveryMode
     ? []
     : conversationStarted
@@ -63,7 +65,7 @@ export function ChatComposer({
       : proofMode
         ? state.selectedPhase <= 3
           ? [state.phaseExamples[0], state.phaseExamples[2]].filter(Boolean)
-          : state.phaseExamples.slice(0, 3)
+          : [state.phaseExamples[1], state.phaseExamples[2]].filter(Boolean)
         : conciergeMode
           ? ['A quiet wine country escape for two', 'Help me plan a culture trip to Tokyo']
           : state.phaseExamples.slice(0, 2);
@@ -102,10 +104,11 @@ export function ChatComposer({
                 aria-label={accessibleLabel}
                 title={
                   isStretch
-                    ? `Stretch query - exposes ${state.phaseLabel}'s limits: ${prompt}`
+                    ? `${PHASE_QUERY_BOUNDARIES[state.selectedPhase]} ${prompt}`
                     : prompt
                 }
               >
+                {proofMode && <small>{isStretch ? `Needs ${nextPhase?.label}` : state.selectedPhase === 4 ? 'Uses traveler context' : 'Works here'}</small>}
                 <span>{promptLabel}</span>
               </button>
             );
@@ -116,6 +119,16 @@ export function ChatComposer({
               <b>AgentCore carries context across turns; Workflow externalizes the dependent plan into Aurora checkpoints.</b>
             </span>
           )}
+        </div>
+      )}
+      {proofMode && !compact && !recoveryMode && (
+        <div className="mc-query-boundary">
+          <p>{PHASE_QUERY_BOUNDARIES[state.selectedPhase]}</p>
+          {boundaryReached && <button type="button" onClick={() => {
+            state.setSelectedPhase(nextPhase.phase);
+            void state.applyPhaseExample(stretchPrompt, false, nextPhase.phase);
+            if (nextPhase.phase === 4) void state.setMemoryEnabled(true);
+          }}>Continue in {nextPhase.label}<Navigation2 size={15} aria-hidden="true" /></button>}
         </div>
       )}
       <form className={`mds-chat-composer${compact ? ' is-compact' : ''}`} onSubmit={onSubmit}>

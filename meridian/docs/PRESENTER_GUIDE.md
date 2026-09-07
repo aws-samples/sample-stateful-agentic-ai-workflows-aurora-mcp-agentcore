@@ -41,6 +41,15 @@ npm run dev
 
 Open [`http://localhost:5173/showcase`](http://localhost:5173/showcase).
 
+Use the **Presenter controls** bar while preparing with your co-presenter:
+
+- **Preview audience layout** widens the workspace and hides the service sidebar while keeping preparation controls available.
+- **Projector readability** increases type size and secondary-text contrast in the preview and fullscreen. Leave it enabled for the room check.
+- **Room check** lists the checks to perform on the actual projector. Check a trip price and an evidence label from the back of the room.
+- Select **Present fullscreen** before sharing. The entire preparation bar and any open room-check panel disappear; the Meridian brand, four views, and evidence remain usable. Press **Esc** to return to the windowed layout. The current conversation and preparation settings are preserved.
+
+Use the app's fullscreen button for the demo. Controls are visible on a shared windowed screen, so stop sharing before exiting fullscreen. This is a preparation toolbar, not a separate private presenter monitor.
+
 Verify:
 
 - `/health` reports `status: healthy`.
@@ -74,9 +83,9 @@ airtime, not a stall: narrate the trace panel as the spans land.
 | Phase | Run this query | Point to | Transition |
 | --- | --- | --- | --- |
 | **1 - SQL** | `Show me city trips under $2,000 per traveler.` | Parameterized SQL, live rows, inventory | Structured filters work, but business operations need a contract. |
-| **2 - MCP** | `Compare three trip types side by side and convert their prices to euros.` | MCP tool discovery, comparison, FX conversion | Tools improve interoperability, not semantic understanding. |
-| **3 - Retrieval** | `I want a quiet, romantic escape in wine country, ideally with a villa.` | pgvector, full-text candidates, Cohere rerank | Intent works, but the system still needs trusted memory. |
-| **4 - Production** | `Recall my October Tokyo plan and use my saved preferences to recommend the next step.` | Memory facts, identity, ALLOW/DENY, RLS, audit | A multi-step disruption plan now needs durable execution state. |
+| **2 - MCP** | `Compare three trip types and convert each price to euros.` | MCP tool discovery, comparison, FX conversion | Tools improve interoperability, not semantic understanding. |
+| **3 - Retrieval** | `Find a quiet, romantic wine-country retreat with a private villa.` | pgvector, full-text candidates, Cohere rerank | Intent works, but the system still needs trusted memory. |
+| **4 - Production** | `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` | Memory facts, identity, ALLOW/DENY, RLS, audit | A multi-step disruption plan now needs durable execution state. |
 | **5 - Workflow** | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` | Named graph nodes, checkpoints, same-thread resume | The plan survives process interruption because state is externalized. |
 
 ## Presentation Flow

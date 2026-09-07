@@ -46,6 +46,9 @@ export interface WorkflowStateProof {
   holdId: string;
   holdExpiresAt: string;
   holdSeatsRemaining: string;
+  holdCreatedAt: string;
+  holdObservedAt: string;
+  holdStatus: string;
 }
 
 export const PHASE_PROOFS: Record<Phase, PhaseProof> = {
@@ -132,7 +135,7 @@ export function deriveAuroraEvidence({
       : checkpointSpans.some((span) => /memorysaver/i.test(spanText(span)))
         ? 'MemorySaver (in-process)'
         : 'not observed');
-  const durableCheckpoint = /postgressaver/i.test(checkpointKind);
+  const durableCheckpoint = hasDurableCheckpoint(traceSpans);
   const checkpointStore =
     traceSpans
       .map((span) => fieldValue(span, 'checkpoint_store'))
@@ -255,6 +258,14 @@ export function deriveMcpContracts(traceSpans: ShowcaseTraceSpan[]): McpContract
   return observed.length ? observed : defaultMcpContracts();
 }
 
+/** Explicit run telemetry wins; known legacy saver names are only a fallback. */
+export function hasDurableCheckpoint(traceSpans: ShowcaseTraceSpan[]): boolean {
+  const spans = traceSpans.filter(isCheckpointSpan);
+  const explicit = spans.flatMap(span => span.fields.filter(field => field.label === 'checkpoint_durable'));
+  if (explicit.length) return explicit[explicit.length - 1].value === 'true';
+  return spans.some(span => /\b(AuroraDataApiSaver|AsyncPostgresSaver|PostgresSaver)\b/i.test(fieldValue(span, 'checkpointer') ?? span.name));
+}
+
 export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowStateProof {
   const visited = unique(
     traceSpans
@@ -271,7 +282,7 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
     traceSpans
       .map((span) => fieldValue(span, 'checkpointer'))
       .find(Boolean) ?? 'not observed';
-  const durable = /postgressaver/i.test(checkpoint);
+  const durable = hasDurableCheckpoint(traceSpans);
   const table =
     traceSpans
       .map((span) => fieldValue(span, 'checkpoint_store'))
@@ -279,6 +290,8 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
     (checkpoint.toLowerCase().includes('memorysaver')
       ? 'process memory'
       : durable ? 'checkpoints' : 'not observed');
+  const holdSpan = [...traceSpans].reverse().find(span => fieldValue(span, 'hold_id'));
+  const holdField = (key: string) => holdSpan ? fieldValue(holdSpan, key) ?? '' : '';
   const nextNode = path.find((node) => !visited.includes(node)) ?? 'complete';
 
   return {
@@ -293,14 +306,12 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
       traceSpans
         .map((span) => fieldValue(span, 'thread_id'))
         .find(Boolean) ?? '',
-    holdId:
-      traceSpans.map((span) => fieldValue(span, 'hold_id')).find(Boolean) ?? '',
-    holdExpiresAt:
-      traceSpans.map((span) => fieldValue(span, 'expires_at')).find(Boolean) ?? '',
-    holdSeatsRemaining:
-      traceSpans
-        .map((span) => fieldValue(span, 'seats_remaining'))
-        .find(Boolean) ?? '',
+    holdId: holdField('hold_id'),
+    holdExpiresAt: holdField('expires_at'),
+    holdCreatedAt: holdField('hold_created_at'),
+    holdObservedAt: holdField('hold_observed_at'),
+    holdStatus: holdField('hold_status'),
+    holdSeatsRemaining: holdField('seats_remaining'),
     checkpoint,
     checkpointCount: checkpointSpans.length,
     table,

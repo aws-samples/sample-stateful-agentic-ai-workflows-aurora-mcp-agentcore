@@ -1,3 +1,5 @@
+import { MapPin, ArrowRight } from 'lucide-react';
+import { tripVisualPhoto } from '../lib/tripVisualPhoto';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import type { Product } from '../../types';
 import { SHOWCASE_EXAMPLE_PROMPTS, SHOWCASE_PHASES } from '../lib/showcaseAdapters';
@@ -28,9 +30,11 @@ export function NavPanelDrawer({
   state,
   panel,
   onClose,
+  travelerMode = false,
 }: {
   state: MeridianShowcaseState;
   panel: NavPanelId | null;
+  travelerMode?: boolean;
   onClose: () => void;
 }) {
   if (!panel) return null;
@@ -47,7 +51,7 @@ export function NavPanelDrawer({
       closeLabel={`Close ${PANEL_TITLE[panel]}`}
     >
       {panel === 'trips' && <TripsPanel state={state} onClose={onClose} />}
-      {panel === 'discover' && <DiscoverPanel state={state} onClose={onClose} />}
+      {panel === 'discover' && (travelerMode ? <TravelDiscoverPanel state={state} onClose={onClose} /> : <DiscoverPanel state={state} onClose={onClose} />)}
       {panel === 'profile' && <ProfilePanel state={state} />}
       {panel === 'messages' && <MessagesPanel state={state} />}
     </ShowcaseSheet>
@@ -109,7 +113,7 @@ function TripRow({
       type="button"
       className="mds-navpanel-trip"
       onClick={() => {
-        state.selectTrip(product);
+        state.openTripDetails(product);
         onClose();
       }}
     >
@@ -124,6 +128,14 @@ function TripRow({
       </div>
     </button>
   );
+}
+
+function TravelDiscoverPanel({ state, onClose }: { state: MeridianShowcaseState; onClose: () => void }) {
+  return <div className="mc-discover-panel"><p>Find your next change of scenery. Explore the collection, or give your concierge a direction.</p>
+    <div className="mc-discover-prompts">{['A coastal escape for two', 'A long weekend in a new city', 'A quiet wine country stay'].map(prompt => <button type="button" key={prompt} onClick={() => { state.setCurrentPrompt(prompt); onClose(); }}>{prompt}<ArrowRight size={15} aria-hidden="true" /></button>)}</div>
+    <div className="mc-discover-list">{state.catalog.map(product => <button type="button" key={product.product_id} onClick={() => { onClose(); state.openTripDetails(product); }}>
+      <img src={tripVisualPhoto(product).src ?? ''} alt="" width="100" height="80" loading="lazy" /><span><small><MapPin size={12} aria-hidden="true" />{product.destination ?? product.category}</small><strong>{product.name}</strong><em>From {money(product.price)} / traveler</em></span><ArrowRight size={16} aria-hidden="true" /></button>)}</div>
+  </div>;
 }
 
 // --- Discover: curated starter prompts across all five modes ------------

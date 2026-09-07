@@ -44,12 +44,12 @@ import hashlib
 import uuid
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, TypedDict
 from urllib.parse import quote
 
 from backend.agents.orchestration_05.hold_intent import prepare_hold_node
-from backend.db.journey_store import ScopedDb, ensure_journey
+from backend.db.journey_store import ExecutionLeaseLostError, ScopedDb, ensure_journey
 from backend.agents.orchestration_05.packages import (
     first_available_duration,
     package_to_dict,
@@ -62,6 +62,7 @@ logger = logging.getLogger(__name__)
 # fail to import when langgraph isn't installed (e.g. in Phase 1-4 unit
 # tests).  The Phase 5 router only imports this module when a request hits
 # /api/chat with phase=5.
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END  # noqa: E402
 from langgraph.checkpoint.memory import MemorySaver  # noqa: E402
 
@@ -391,14 +392,20 @@ class WorkflowState(TypedDict, total=False):
     response: str
     activities: List[Dict[str, Any]]
     availability_checks: int
+    travelers_count: int
+    resumed_from_checkpoint: str
     workflow_status: str
     resumed_after_restart: bool
     hold_id: str
     hold_expires_at: str
+    hold_created_at: str
+    hold_observed_at: str
+    hold_status: str
     hold_package: str
     hold_duration: str
     hold_seats_remaining: int
     hold_intent: Dict[str, Any]
+    execution_id: str
     journey_id: str
 
 
@@ -588,6 +595,7 @@ class OrchestrationAgent:
                     "status": "ok",
                     "fields": [
                         {"label": "checkpointer", "value": self.checkpointer_kind},
+                        {"label": "checkpoint_durable", "value": "true"},
                         {"label": "checkpoint_store", "value": "checkpoints"},
                         {
                             "label": "checkpoint_tables",
@@ -612,6 +620,7 @@ class OrchestrationAgent:
                 "status": "ok",
                 "fields": [
                     {"label": "checkpointer", "value": self.checkpointer_kind},
+                    {"label": "checkpoint_durable", "value": "false"},
                     {"label": "checkpoint_store", "value": "process memory"},
                     {"label": "durability", "value": "ephemeral"},
                 ],
@@ -956,7 +965,7 @@ class OrchestrationAgent:
             "availability_checks": availability_checks,
         }
 
-    async def _node_hold(self, state: WorkflowState) -> WorkflowState:
+    async def _node_hold(self, state: WorkflowState, config: RunnableConfig = None) -> WorkflowState:
         """Worker node: place a courtesy hold on the top-ranked option.
 
         This is what makes the durability claim concrete. The previous nodes
@@ -992,8 +1001,6 @@ class OrchestrationAgent:
         # Terms come from the checkpointed intent, so the hold that runs is the
         # hold that was fingerprinted. Falling back to deriving them again
         # keeps a direct call to this node working.
-        # Alex travels as a party of two; the demo traveler's profile is the
-        # source of truth for this in Phase 4, and the workflow inherits it.
         intent = state.get("hold_intent") or prepare_hold_node(state).get(
             "hold_intent", {}
         )
@@ -1003,10 +1010,13 @@ class OrchestrationAgent:
             or target.get("package_id")
         )
         duration = str(intent.get("duration") or first_available_duration(target))
-        quantity = int(intent.get("quantity") or 2)
+        quantity = int(intent.get("quantity") or state.get("travelers_count") or 1)
         unit_price = float(intent.get("unit_price") or target.get("price") or 0)
-        hold_id = _hold_key(state.get("conversation_id") or "", package_id, duration)
-        expires_at = _utc_now() + timedelta(minutes=HOLD_MINUTES)
+        # New business intents own a booking ID. Older checkpoints retain the
+        # original thread/package key so their replay still finds the same row.
+        hold_id = str(intent.get("booking_id") or _hold_key(
+            state.get("conversation_id") or "", package_id, duration
+        ))
         thread_id = str(state.get("conversation_id") or "")
         hold_request_id = str(intent.get("hold_request_id") or hold_id)
         fingerprint = str(intent.get("fingerprint") or "")
@@ -1022,6 +1032,16 @@ class OrchestrationAgent:
                 authorization=get_agentcore_identity().authorization_context(),
             ) as transaction_id:
                 scoped = ScopedDb(db, transaction_id)
+                execution_id = (config or {}).get("configurable", {}).get("execution_id")
+                if execution_id:
+                    live = await scoped.execute(
+                        "SELECT execution_id FROM journey_executions WHERE execution_id = %s "
+                        "AND status = 'running' AND lease_expires_at > CURRENT_TIMESTAMP FOR UPDATE",
+                        (execution_id,),
+                    )
+                    if not live:
+                        raise ExecutionLeaseLostError("Execution lease expired before the hold")
+                    await scoped.execute("SELECT set_config('app.execution_id', %s, true)", (execution_id,))
                 journey_id = state.get("journey_id") or await ensure_journey(
                     scoped,
                     traveler_id,
@@ -1035,7 +1055,8 @@ class OrchestrationAgent:
                     FROM create_courtesy_hold(
                         %s::TEXT, %s::TEXT, %s::TEXT, %s::TEXT, %s::TEXT,
                         %s::TEXT, %s::TEXT,
-                        %s::INTEGER, %s::NUMERIC, %s::NUMERIC, %s::TIMESTAMPTZ
+                        %s::INTEGER, %s::NUMERIC, %s::NUMERIC,
+                        CURRENT_TIMESTAMP + (%s::INTEGER * INTERVAL '1 minute')
                     )
                     """,
                     (
@@ -1049,18 +1070,42 @@ class OrchestrationAgent:
                         quantity,
                         unit_price,
                         unit_price * quantity,
-                        expires_at.isoformat(),
+                        HOLD_MINUTES,
                     ),
                     transaction_id=transaction_id,
                 )
-        except Exception as exc:  # noqa: BLE001 - degrade, never break the demo
+                row = rows[0] if rows else {}
+                hold_id = str(row.get("booking_id") or hold_id)
+                # Replays return the original booking. Read its timestamps,
+                # never report a new TTL calculated by the replacement worker.
+                receipts = await db.execute(
+                    """
+                    SELECT status, created_at::TIMESTAMPTZ::TEXT AS created_at,
+                           hold_expires_at::TEXT AS hold_expires_at,
+                           CURRENT_TIMESTAMP::TEXT AS observed_at
+                      FROM bookings
+                     WHERE booking_id = %s AND traveler_id = %s
+                    """,
+                    (hold_id, traveler_id),
+                    transaction_id=transaction_id,
+                )
+                if not receipts or not receipts[0].get("hold_expires_at"):
+                    raise RuntimeError("persisted hold receipt unavailable")
+                receipt = receipts[0]
+                expires_at = str(receipt["hold_expires_at"])
+                created_at = str(receipt["created_at"])
+                observed_at = str(receipt["observed_at"])
+                hold_status = str(receipt["status"])
+        except ExecutionLeaseLostError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - inventory refusal leaves the plan unheld
             reason = "inventory changed" if "insufficient_inventory" in str(exc) else str(exc)[:120]
             logger.warning("courtesy hold not placed: %s", exc)
             activities.append(
                 _activity(
                     "error",
                     "Workflow node: hold not placed",
-                    details=f"No seats were reserved ({reason}). The plan continues unheld.",
+                    details=f"No package inventory was held ({reason}). The plan continues unheld.",
                 )
             )
             elapsed = int((_utc_now() - start).total_seconds() * 1000)
@@ -1071,7 +1116,7 @@ class OrchestrationAgent:
         replayed = bool(row.get("replayed"))
         # A replay returns the existing booking without re-counting inventory,
         # so its seat columns are null by design.
-        remaining = int(row.get("seats_remaining") or 0)
+        remaining = row.get("seats_remaining")
         elapsed = int((_utc_now() - start).total_seconds() * 1000)
         activities.append(
             _activity(
@@ -1085,7 +1130,7 @@ class OrchestrationAgent:
                     if replayed
                     else (
                         f"Held {quantity} x {duration} on {package_id} until "
-                        f"{expires_at.strftime('%H:%M:%SZ')} · {remaining} seats left"
+                        f"{expires_at} · {remaining} package spots left"
                     )
                 ),
                 sql_query=(
@@ -1112,8 +1157,11 @@ class OrchestrationAgent:
                         {"label": "package", "value": package_id},
                         {"label": "duration", "value": duration},
                         {"label": "seats_held", "value": str(quantity)},
-                        {"label": "seats_remaining", "value": str(remaining)},
-                        {"label": "expires_at", "value": expires_at.isoformat()},
+                        {"label": "seats_remaining", "value": str(remaining) if remaining is not None else ""},
+                        {"label": "expires_at", "value": expires_at},
+                        {"label": "hold_created_at", "value": created_at},
+                        {"label": "hold_observed_at", "value": observed_at},
+                        {"label": "hold_status", "value": hold_status},
                     ],
                 },
             )
@@ -1123,7 +1171,10 @@ class OrchestrationAgent:
             "activities": activities,
             "journey_id": journey_id,
             "hold_id": hold_id,
-            "hold_expires_at": expires_at.isoformat(),
+            "hold_expires_at": expires_at,
+            "hold_created_at": created_at,
+            "hold_observed_at": observed_at,
+            "hold_status": hold_status,
             "hold_package": package_id,
             # Part of the idempotency key, so compensation can recompute it.
             "hold_duration": duration,
@@ -1287,7 +1338,7 @@ class OrchestrationAgent:
 
     @staticmethod
     def _authorize_thread(prior, thread_id: str, traveler_id: str) -> None:
-        """Refuse to resume a workflow thread belonging to another traveler.
+        """Refuse to continue a workflow thread belonging to another traveler.
 
         Re-checked on every resume rather than once at creation, so a traveler
         whose access was revoked between the interrupt and the resume is denied
@@ -1311,12 +1362,19 @@ class OrchestrationAgent:
         conversation_id: str,
         *,
         resume: bool = False,
+        travelers_count: int = 1,
+        journey_id: Optional[str] = None,
+        execution_id: Optional[str] = None,
     ) -> WorkflowState:
+        if not isinstance(travelers_count, int) or isinstance(travelers_count, bool) or not 1 <= travelers_count <= 20:
+            raise ValueError("travelers_count must be an integer between 1 and 20")
         thread_id = conversation_id or f"phase5-{uuid.uuid4().hex[:8]}"
-        config = {"configurable": {"thread_id": thread_id}}
+        config = {"configurable": {"thread_id": thread_id, "execution_id": execution_id}}
         self.interrupt_after = self._interrupt_after_for_query(query)
         initial: WorkflowState = {
             "query": query,
+            "journey_id": journey_id,
+            "travelers_count": travelers_count,
             "traveler_id": traveler_id,
             "conversation_id": thread_id,
             "worker_instance_id": WORKER_INSTANCE_ID,
@@ -1325,27 +1383,35 @@ class OrchestrationAgent:
             # conversation inherited the last run's hold_id from the persisted
             # state, and a later failure released a hold that had nothing to do
             # with it.
+            "resumed_from_checkpoint": None,
+            "resumed_after_restart": False,
+            "workflow_status": None,
+            "response": "",
+            "hold_intent": None,
+            "hold_duration": None,
+            "packages": [],
+            "availability_checks": 0,
             "hold_id": None,
             "hold_expires_at": None,
+            "hold_created_at": None,
+            "hold_observed_at": None,
+            "hold_status": None,
             "hold_package": None,
             "hold_seats_remaining": None,
         }
         checkpoint_backend = await self._ensure_checkpoint_backend()
+        self.graph = self._build_graph()
         await self._preflight_checkpoint_connection(checkpoint_backend)
 
         resumed_nodes: List[str] = []
         resumed_after_restart = False
-        if resume:
-            prior = await self.graph.aget_state(config)
-            # Resuming replays a thread's persisted state, which carries the
-            # traveler it was created for. The caller's identity is checked at
-            # the edge, but that proves who they are, not that this thread is
-            # theirs - and on resume the initial state is discarded entirely,
-            # so nothing downstream would compare them. A thread id is not a
-            # capability: knowing one must not be enough to continue someone
-            # else's workflow.
+        # A new turn can target an existing thread too. Check its owner before
+        # either invocation mode can change the persisted state.
+        prior = await self.graph.aget_state(config)
+        if resume or prior.values:
             self._authorize_thread(prior, thread_id, traveler_id)
 
+        if resume:
             resumed_nodes = list(prior.next)
             if not resumed_nodes:
                 raise RuntimeError(
@@ -1370,19 +1436,20 @@ class OrchestrationAgent:
                 result = await self.graph.ainvoke(
                     initial, config=config, durability="sync"
                 )
+        except ExecutionLeaseLostError:
+            # The replacement owns recovery now; this worker cannot compensate.
+            raise
         except Exception:
             failed_state = await self.graph.aget_state(config)
             values = dict(failed_state.values or {})
-            # Release only what this run holds. The key is derived from the
-            # thread, package and duration, so recomputing it here and
-            # comparing is enough to tell this run's hold from an older one
-            # still sitting in the thread's persisted state.
+            # Release only this intent's booking. Older saved intents use the
+            # legacy thread/package/duration key for replay compatibility.
             package = values.get("hold_package")
             duration = values.get("hold_duration")
-            expected = (
+            intent = values.get("hold_intent") or {}
+            expected = intent.get("booking_id") or (
                 _hold_key(thread_id, str(package), str(duration))
-                if package and duration
-                else None
+                if package and duration else None
             )
             await self._release_hold(values, expected_hold_id=expected)
             raise
@@ -1406,6 +1473,7 @@ class OrchestrationAgent:
                         "component": "LangGraph durable execution",
                         "status": "held",
                         "fields": [
+                            {"label": "checkpoint_durable", "value": str(self._uses_durable_saver).lower()},
                             {"label": "thread_id", "value": thread_id},
                             {"label": "next_node", "value": next_nodes},
                             {
@@ -1447,7 +1515,8 @@ class OrchestrationAgent:
                             "component": "LangGraph durable execution",
                             "status": "ok",
                             "fields": [
-                                {"label": "thread_id", "value": thread_id},
+                                {"label": "checkpoint_durable", "value": str(self._uses_durable_saver).lower()},
+                            {"label": "thread_id", "value": thread_id},
                                 {
                                     "label": "resumed_nodes",
                                     "value": ", ".join(resumed_nodes),
@@ -1479,6 +1548,13 @@ class OrchestrationAgent:
 
         result["activities"] = activities
         result["conversation_id"] = thread_id
+        if not current.next:
+            result["resumed_from_checkpoint"] = (
+                prior.config["configurable"].get("checkpoint_id") if resume else None
+            )
+            result["worker_instance_id"] = WORKER_INSTANCE_ID
+            result["execution_id"] = execution_id
+            await self.graph.aupdate_state(config, result, as_node="synthesize")
         return result
 
 

@@ -1,5 +1,5 @@
-/** Meridian aircraft brand tile, bundled and optimized for reliable loading. */
-export const MERIDIAN_MARK_SRC = '/brand/meridian-mark.jpg';
+/** Meridian monogram, shared by the app shell and favicon. */
+export const MERIDIAN_MARK_SRC = '/brand/meridian-mark.svg';
 
 /** Brand mark URL (local asset; size handled via CSS). */
 export function meridianLogoUrl(_sizePx?: number): string {

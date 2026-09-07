@@ -28,7 +28,7 @@ export const SURFACES: { id: SurfaceId; label: string; blurb: string }[] = [
   },
   {
     id: 'proof',
-    label: 'Presenter proof',
+    label: 'System evidence',
     blurb: 'Evidence read back from Aurora',
   },
 ];
@@ -104,6 +104,7 @@ export function useJourney(
   journeyId: string | null,
   onResolveId: (id: string) => void,
   enabled: boolean,
+  threadId?: string | null,
 ): JourneyState {
   const [document, setDocument] = useState<JourneyDocument | null>(null);
   const [loading, setLoading] = useState(false);
@@ -120,7 +121,7 @@ export function useJourney(
     // surface immediately re-reads the document it just loaded, which costs a
     // few seconds of Data API round trips and leaves the control saying
     // "Reading" over data that is already on screen.
-    if (journeyId && document?.journey_id === journeyId && nonce === loadedNonce.current) {
+    if ((threadId ? document?.active_thread_id === threadId : journeyId && document?.journey_id === journeyId) && nonce === loadedNonce.current) {
       return;
     }
     let cancelled = false;
@@ -129,24 +130,27 @@ export function useJourney(
     const load = async () => {
       setLoading(true);
       setError(null);
+      if (threadId && document?.active_thread_id !== threadId) setDocument(null);
       try {
         let id = journeyId;
-        if (!id) {
-          const journeys = await fetchJourneys(1);
-          if (!journeys.length) {
+        if (!id || (threadId && document?.active_thread_id !== threadId)) {
+          const journeys = await fetchJourneys(threadId ? 50 : 1);
+          const match = threadId ? journeys.find(item => item.active_thread_id === threadId) : journeys[0];
+          if (!match) {
             if (!cancelled) {
               setDocument(null);
               setError(
-                'No journey has been recorded yet. Run a Phase 5 recovery, or scripts/kill_and_resume_demo.py, to create one.',
+                threadId ? 'No journey has been recorded for this recovery yet. Re-read after the workflow saves its progress.' : 'No journey has been recorded yet. Start a recovery to create one.',
               );
             }
             return;
           }
-          id = journeys[0].journey_id;
+          id = match.journey_id;
           resolvedFromList = id;
         }
         const doc = await fetchJourneyDocument(id);
         if (cancelled) return;
+        if (threadId && doc.active_thread_id !== threadId) throw new Error('The journey does not match this recovery thread. Re-read after the workflow saves its progress.');
         setDocument(doc);
         loadedNonce.current = nonce;
         // Publish the id only once the document is committed. Writing it into
@@ -164,7 +168,7 @@ export function useJourney(
     return () => {
       cancelled = true;
     };
-  }, [journeyId, enabled, nonce, document?.journey_id]);
+  }, [journeyId, enabled, nonce, threadId, document?.journey_id, document?.active_thread_id]);
 
   return {
     journeyId,

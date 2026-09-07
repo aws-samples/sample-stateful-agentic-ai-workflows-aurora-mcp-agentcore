@@ -131,3 +131,17 @@ describe('showcase proof helpers', () => {
     expect(checkpoint?.detail).toContain('Aurora durability not observed');
   });
 });
+
+it.each(['AuroraDataApiSaver', 'AsyncPostgresSaver (Aurora)', 'NextSaver'])('uses explicit durable telemetry for %s', (kind) => {
+  const trace = [span({ name: `Checkpoint · ${kind}.put`, fields: [
+    { label: 'checkpointer', value: kind }, { label: 'checkpoint_durable', value: 'true' },
+  ] })];
+  expect(deriveWorkflowState(trace).durable).toBe(true);
+  expect(deriveAuroraEvidence({ selectedPhase: 5, traceSpans: trace, recommendations: [] }).find(item => item.key === 'checkpoint')?.value).toContain('saved to Aurora');
+});
+
+it('recognizes old Aurora receipts but respects an explicit non-durable flag', () => {
+  const legacy = span({ name: 'Checkpoint · AuroraDataApiSaver.put', fields: [{ label: 'checkpointer', value: 'AuroraDataApiSaver' }] });
+  expect(deriveWorkflowState([legacy]).durable).toBe(true);
+  expect(deriveWorkflowState([{ ...legacy, fields: [...legacy.fields, { label: 'checkpoint_durable', value: 'false' }] }]).durable).toBe(false);
+});

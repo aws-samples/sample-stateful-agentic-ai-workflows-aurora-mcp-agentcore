@@ -16,7 +16,7 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
 
   const saved = state.savedTripIds.has(product.product_id);
   const compared = state.comparedTrips.some((item) => item.product_id === product.product_id);
-  const party = state.travelerProfile?.party_size ?? 1;
+  const party = state.travelersCount;
   const availability = Object.entries(product.availability ?? {});
   const highlights = product.highlights?.length
     ? product.highlights
@@ -49,7 +49,7 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
           <div className="mds-trip-facts">
             <div><span>Package</span><b>${product.price.toLocaleString()} / traveler</b></div>
             <div><span>Duration</span><b>{duration(product)}</b></div>
-            <div><span>Party estimate</span><b>${(product.price * party).toLocaleString()}</b></div>
+            <div><span>Estimate for {party} {party === 1 ? 'traveler' : 'travelers'}</span><b>${(product.price * party).toLocaleString()}</b></div>
           </div>
           <section className="mds-trip-section">
             <h3>What is included</h3>

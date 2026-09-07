@@ -1,3 +1,4 @@
+import { isObserved, type JourneyDocument } from '../journey/types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   deleteMemoryFact,
@@ -120,6 +121,7 @@ export interface MeridianShowcaseState {
   embedLabel: string;
   totalLatencyMs: number;
   phaseExamples: string[];
+  travelersCount: number;
   chatFilters: ChatFilters;
   setChatFilters: (next: ChatFilters) => void;
   resetChatFilters: () => void;
@@ -153,6 +155,7 @@ export interface MeridianShowcaseState {
   closeActionDrawer: () => void;
   clearError: () => void;
   clearChat: () => void;
+  restoreJourney: (document: JourneyDocument) => void;
   // True only when the latest bot reply's typewriter has finished
   // revealing. While false, downstream surfaces (recommendation grid)
   // wait so they don't appear before the message reads as complete.
@@ -204,6 +207,15 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   // Start the showcase at Phase 1 (SQL) so a stage walk-through can begin
   // with the simplest data path - direct SQL filters over Aurora - and
   // progressively introduce MCP, Retrieval, Production, and Workflow.
+  const requestGeneration = useRef(0);
+  const chatController = useRef<AbortController | null>(null);
+  const invalidateChatRequest = useCallback(() => {
+    requestGeneration.current += 1;
+    chatController.current?.abort();
+    chatController.current = null;
+  }, []);
+  useEffect(() => invalidateChatRequest, [invalidateChatRequest]);
+  const conversationPhaseRef = useRef<Phase | null>(null);
   const [selectedPhase, setSelectedPhaseState] = useState<Phase>(1);
   const [phaseHint, setPhaseHint] = useState<MeridianShowcaseState['phaseHint']>(null);
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
@@ -255,6 +267,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [lastPrompt, setLastPrompt] = useState<string | null>(null);
   const [actionDrawer, setActionDrawer] = useState<ActionDrawerState | null>(null);
   const [chatFilters, setChatFiltersState] = useState<ChatFilters>(EMPTY_FILTERS);
+  const [conversationTravelers, setConversationTravelers] = useState<number | null>(null);
+  const travelersCount = chatFilters.travelers || conversationTravelers || travelerProfile?.party_size || previewProfile?.party_size || 1;
   const replayTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const mounted = useRef(true);
 
@@ -386,7 +400,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     let cancelled = false;
     void (async () => {
       try {
-        const rows = await fetchProducts(undefined, 12);
+        const rows = await fetchProducts(undefined, 50);
         if (!cancelled && mounted.current) setCatalog(rows);
       } catch {
         if (!cancelled && mounted.current) setCatalog([]);
@@ -460,10 +474,34 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setSelectedTrip(products.length ? products[0] : null);
   }, []);
 
+  const restoreJourney = useCallback((document: JourneyDocument) => {
+    if (isLoading || conversationId || messages.length || document.traveler_id !== SHOWCASE_TRAVELER_ID || !isObserved(document.workflow)) return;
+    const saved = document.workflow;
+    if (!saved.conversation_id || saved.conversation_id !== document.active_thread_id) return;
+    setSelectedPhaseState(5);
+    conversationPhaseRef.current = 5;
+    setLastPrompt(saved.query);
+    setCurrentPrompt('');
+    setConversationTravelers(saved.travelers_count);
+    applyChatResponse(saved.query, {
+      message: saved.message,
+      conversation_id: saved.conversation_id,
+      workflow_status: saved.workflow_status,
+      workflow_resumed_after_restart: saved.resumed_after_restart,
+      activities: saved.activities,
+      products: isObserved(document.recommendations) ? document.recommendations.items as Product[] : [],
+    });
+    setLatestStreamComplete(true);
+  }, [applyChatResponse, conversationId, isLoading, messages.length]);
+
   const submitPrompt = useCallback(
     async (overridePrompt?: string, phaseOverride?: Phase) => {
       const baseRaw = (overridePrompt ?? currentPrompt).trim();
-      if (!baseRaw || isLoading) return;
+      if (!baseRaw || isLoading || chatController.current) return;
+      const generation = ++requestGeneration.current;
+      const controller = new AbortController();
+      chatController.current = controller;
+      const isCurrent = () => mounted.current && generation === requestGeneration.current;
       const requestPhase = phaseOverride ?? selectedPhase;
 
       // Decorate the user's prompt with the active action-chip filters so
@@ -504,35 +542,43 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           ...(requestPhase >= 4
             ? {
                 customer_id: SHOWCASE_TRAVELER_ID,
-                memory_enabled: memoryEnabled,
+                // Concierge uses Production without advancing the teaching ladder.
+                // Its opening profile is a real Aurora read; use that context on
+                // this request without switching on the ladder's memory toggle.
+                memory_enabled: memoryEnabled || (phaseOverride === 4 && Boolean(previewProfile)),
                 conversation_id:
-                  requestPhase === selectedPhase
+                  conversationPhaseRef.current === requestPhase
                     ? conversationId ?? undefined
                     : undefined,
               }
             : {}),
           ...(requestPhase === 5
-            ? { resume: resumeRequested || undefined }
+            ? { resume: resumeRequested || undefined, travelers_count: travelersCount }
             : {}),
-        });
-        if (!mounted.current) return;
+        }, controller.signal);
+        if (!isCurrent()) return;
         setBackendStatus('online');
+        conversationPhaseRef.current = requestPhase;
         applyChatResponse(decorated, response);
+        setConversationTravelers(travelersCount);
         // Filters are per-turn - clear them after a successful submit so
         // the next prompt starts clean (matches the intuition of every
         // major chat product).
         setChatFiltersState(EMPTY_FILTERS);
       } catch {
-        if (!mounted.current) return;
+        if (!isCurrent()) return;
         setBackendStatus('offline');
         setError(
           'Live chat request failed. Confirm Meridian FastAPI and Aurora are available, then try again.',
         );
       } finally {
-        if (mounted.current) setIsLoading(false);
+        if (isCurrent()) {
+          chatController.current = null;
+          setIsLoading(false);
+        }
       }
     },
-    [applyChatResponse, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, memoryEnabled, selectedPhase, workflowStatus],
+    [applyChatResponse, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, memoryEnabled, previewProfile, selectedPhase, travelersCount, workflowStatus],
   );
 
   const applyPhaseExample = useCallback(
@@ -567,6 +613,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       return;
     }
 
+    invalidateChatRequest();
+    setIsLoading(false);
     setSelectedPhaseState(phase);
 
     // Surface the "what this rung adds" callout only when advancing to a
@@ -596,6 +644,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setReplayIndex(-1);
     setIsReplaying(false);
     setConversationId(null);
+    setConversationTravelers(null);
     setWorkflowStatus(null);
     setWorkflowResumedAfterRestart(false);
     setActionDrawer(null);
@@ -612,7 +661,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     }
     // No auto-prompt: leave the composer empty so the presenter types
     // intent freshly for each phase walkthrough.
-  }, [selectedPhase, clearReplayTimers]);
+  }, [selectedPhase, clearReplayTimers, invalidateChatRequest]);
 
   const dismissPhaseHint = useCallback(() => {
     setPhaseHint(null);
@@ -642,7 +691,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         const response = await processOrder({
           product_id: product.product_id,
           size: product.available_sizes?.[0] ?? undefined,
-          quantity: travelerProfile?.party_size ?? 1,
+          quantity: travelersCount,
           phase: selectedPhase,
           traveler_id: SHOWCASE_TRAVELER_ID,
           action: 'hold',
@@ -676,7 +725,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (mounted.current) setIsLoading(false);
       }
     },
-    [isLoading, selectedPhase, travelerProfile?.party_size],
+    [isLoading, selectedPhase, travelersCount],
   );
 
   const planTrip = useCallback((product: Product) => {
@@ -766,6 +815,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     // saved trip set are intentionally preserved - the presenter usually
     // wants to keep their phase choice + remembered preferences when
     // wiping the visible conversation.
+    invalidateChatRequest();
+    setIsLoading(false);
     clearReplayTimers();
     setMessages([]);
     setCurrentPrompt('');
@@ -778,6 +829,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setReplayIndex(-1);
     setIsReplaying(false);
     setConversationId(null);
+    setConversationTravelers(null);
     setWorkflowStatus(null);
     setWorkflowResumedAfterRestart(false);
     setActionDrawer(null);
@@ -785,7 +837,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setError(null);
     setChatFiltersState(EMPTY_FILTERS);
     setLatestStreamComplete(true);
-  }, [clearReplayTimers]);
+  }, [clearReplayTimers, invalidateChatRequest]);
 
   // Lifted by ChatMessage when its typewriter reaches the end of the
   // text (or whenever a non-streaming render path completes).
@@ -843,6 +895,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     totalLatencyMs,
     phaseExamples: SHOWCASE_EXAMPLE_PROMPTS[selectedPhase] ?? [],
     chatFilters,
+    travelersCount,
     setChatFilters: setChatFiltersState,
     resetChatFilters: () => setChatFiltersState(EMPTY_FILTERS),
     setCurrentPrompt,
@@ -874,6 +927,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     closeActionDrawer: () => setActionDrawer(null),
     clearError: () => setError(null),
     clearChat,
+    restoreJourney,
     latestStreamComplete,
     markLatestStreamComplete,
   };

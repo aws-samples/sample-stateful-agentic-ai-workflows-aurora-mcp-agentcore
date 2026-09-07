@@ -1,0 +1,569 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-06T19:57:43.852651+00:00",
+  "title": "Design System: Meridian",
+  "extensions": {
+    "colorMeta": {
+      "service-navy": {
+        "role": "primary",
+        "displayName": "Service Navy",
+        "tonalRamp": [
+          "oklch(15% 0.0564 259.28)",
+          "oklch(26% 0.0564 259.28)",
+          "oklch(38% 0.0564 259.28)",
+          "oklch(49% 0.0564 259.28)",
+          "oklch(61% 0.0564 259.28)",
+          "oklch(72% 0.0564 259.28)",
+          "oklch(84% 0.0564 259.28)",
+          "oklch(95% 0.0564 259.28)"
+        ]
+      },
+      "service-text": {
+        "role": "primary",
+        "displayName": "Service Text",
+        "tonalRamp": [
+          "oklch(15% 0.0111 269.55)",
+          "oklch(26% 0.0111 269.55)",
+          "oklch(38% 0.0111 269.55)",
+          "oklch(49% 0.0111 269.55)",
+          "oklch(61% 0.0111 269.55)",
+          "oklch(72% 0.0111 269.55)",
+          "oklch(84% 0.0111 269.55)",
+          "oklch(95% 0.0111 269.55)"
+        ]
+      },
+      "service-muted": {
+        "role": "primary",
+        "displayName": "Service Muted",
+        "tonalRamp": [
+          "oklch(15% 0.0418 257.51)",
+          "oklch(26% 0.0418 257.51)",
+          "oklch(38% 0.0418 257.51)",
+          "oklch(49% 0.0418 257.51)",
+          "oklch(61% 0.0418 257.51)",
+          "oklch(72% 0.0418 257.51)",
+          "oklch(84% 0.0418 257.51)",
+          "oklch(95% 0.0418 257.51)"
+        ]
+      },
+      "service-active": {
+        "role": "primary",
+        "displayName": "Service Active",
+        "tonalRamp": [
+          "oklch(15% 0.0772 254.45)",
+          "oklch(26% 0.0772 254.45)",
+          "oklch(38% 0.0772 254.45)",
+          "oklch(49% 0.0772 254.45)",
+          "oklch(61% 0.0772 254.45)",
+          "oklch(72% 0.0772 254.45)",
+          "oklch(84% 0.0772 254.45)",
+          "oklch(95% 0.0772 254.45)"
+        ]
+      },
+      "service-hover": {
+        "role": "primary",
+        "displayName": "Service Hover",
+        "tonalRamp": [
+          "oklch(15% 0.0720 256.94)",
+          "oklch(26% 0.0720 256.94)",
+          "oklch(38% 0.0720 256.94)",
+          "oklch(49% 0.0720 256.94)",
+          "oklch(61% 0.0720 256.94)",
+          "oklch(72% 0.0720 256.94)",
+          "oklch(84% 0.0720 256.94)",
+          "oklch(95% 0.0720 256.94)"
+        ]
+      },
+      "light-ground": {
+        "role": "neutral",
+        "displayName": "Light Ground",
+        "tonalRamp": [
+          "oklch(15% 0.0045 258.32)",
+          "oklch(26% 0.0045 258.32)",
+          "oklch(38% 0.0045 258.32)",
+          "oklch(49% 0.0045 258.32)",
+          "oklch(61% 0.0045 258.32)",
+          "oklch(72% 0.0045 258.32)",
+          "oklch(84% 0.0045 258.32)",
+          "oklch(95% 0.0045 258.32)"
+        ]
+      },
+      "light-surface": {
+        "role": "neutral",
+        "displayName": "Light Surface",
+        "tonalRamp": [
+          "oklch(15% 0.0000 89.88)",
+          "oklch(26% 0.0000 89.88)",
+          "oklch(38% 0.0000 89.88)",
+          "oklch(49% 0.0000 89.88)",
+          "oklch(61% 0.0000 89.88)",
+          "oklch(72% 0.0000 89.88)",
+          "oklch(84% 0.0000 89.88)",
+          "oklch(95% 0.0000 89.88)"
+        ]
+      },
+      "light-soft": {
+        "role": "neutral",
+        "displayName": "Light Soft",
+        "tonalRamp": [
+          "oklch(15% 0.0091 258.34)",
+          "oklch(26% 0.0091 258.34)",
+          "oklch(38% 0.0091 258.34)",
+          "oklch(49% 0.0091 258.34)",
+          "oklch(61% 0.0091 258.34)",
+          "oklch(72% 0.0091 258.34)",
+          "oklch(84% 0.0091 258.34)",
+          "oklch(95% 0.0091 258.34)"
+        ]
+      },
+      "light-ink": {
+        "role": "neutral",
+        "displayName": "Light Ink",
+        "tonalRamp": [
+          "oklch(15% 0.0539 258.63)",
+          "oklch(26% 0.0539 258.63)",
+          "oklch(38% 0.0539 258.63)",
+          "oklch(49% 0.0539 258.63)",
+          "oklch(61% 0.0539 258.63)",
+          "oklch(72% 0.0539 258.63)",
+          "oklch(84% 0.0539 258.63)",
+          "oklch(95% 0.0539 258.63)"
+        ]
+      },
+      "light-muted": {
+        "role": "neutral",
+        "displayName": "Light Muted",
+        "tonalRamp": [
+          "oklch(15% 0.0450 257.92)",
+          "oklch(26% 0.0450 257.92)",
+          "oklch(38% 0.0450 257.92)",
+          "oklch(49% 0.0450 257.92)",
+          "oklch(61% 0.0450 257.92)",
+          "oklch(72% 0.0450 257.92)",
+          "oklch(84% 0.0450 257.92)",
+          "oklch(95% 0.0450 257.92)"
+        ]
+      },
+      "light-line": {
+        "role": "neutral",
+        "displayName": "Light Line",
+        "tonalRamp": [
+          "oklch(15% 0.0156 257.20)",
+          "oklch(26% 0.0156 257.20)",
+          "oklch(38% 0.0156 257.20)",
+          "oklch(49% 0.0156 257.20)",
+          "oklch(61% 0.0156 257.20)",
+          "oklch(72% 0.0156 257.20)",
+          "oklch(84% 0.0156 257.20)",
+          "oklch(95% 0.0156 257.20)"
+        ]
+      },
+      "light-accent": {
+        "role": "primary",
+        "displayName": "Light Accent",
+        "tonalRamp": [
+          "oklch(15% 0.1400 259.28)",
+          "oklch(26% 0.1400 259.28)",
+          "oklch(38% 0.1400 259.28)",
+          "oklch(49% 0.1400 259.28)",
+          "oklch(61% 0.1400 259.28)",
+          "oklch(72% 0.1400 259.28)",
+          "oklch(84% 0.1400 259.28)",
+          "oklch(95% 0.1400 259.28)"
+        ]
+      },
+      "light-action": {
+        "role": "primary",
+        "displayName": "Light Action",
+        "tonalRamp": [
+          "oklch(15% 0.1487 259.78)",
+          "oklch(26% 0.1487 259.78)",
+          "oklch(38% 0.1487 259.78)",
+          "oklch(49% 0.1487 259.78)",
+          "oklch(61% 0.1487 259.78)",
+          "oklch(72% 0.1487 259.78)",
+          "oklch(84% 0.1487 259.78)",
+          "oklch(95% 0.1487 259.78)"
+        ]
+      },
+      "dark-ground": {
+        "role": "neutral",
+        "displayName": "Dark Ground",
+        "tonalRamp": [
+          "oklch(15% 0.0428 260.17)",
+          "oklch(26% 0.0428 260.17)",
+          "oklch(38% 0.0428 260.17)",
+          "oklch(49% 0.0428 260.17)",
+          "oklch(61% 0.0428 260.17)",
+          "oklch(72% 0.0428 260.17)",
+          "oklch(84% 0.0428 260.17)",
+          "oklch(95% 0.0428 260.17)"
+        ]
+      },
+      "dark-surface": {
+        "role": "neutral",
+        "displayName": "Dark Surface",
+        "tonalRamp": [
+          "oklch(15% 0.0460 259.14)",
+          "oklch(26% 0.0460 259.14)",
+          "oklch(38% 0.0460 259.14)",
+          "oklch(49% 0.0460 259.14)",
+          "oklch(61% 0.0460 259.14)",
+          "oklch(72% 0.0460 259.14)",
+          "oklch(84% 0.0460 259.14)",
+          "oklch(95% 0.0460 259.14)"
+        ]
+      },
+      "dark-soft": {
+        "role": "neutral",
+        "displayName": "Dark Soft",
+        "tonalRamp": [
+          "oklch(15% 0.0492 258.28)",
+          "oklch(26% 0.0492 258.28)",
+          "oklch(38% 0.0492 258.28)",
+          "oklch(49% 0.0492 258.28)",
+          "oklch(61% 0.0492 258.28)",
+          "oklch(72% 0.0492 258.28)",
+          "oklch(84% 0.0492 258.28)",
+          "oklch(95% 0.0492 258.28)"
+        ]
+      },
+      "dark-ink": {
+        "role": "neutral",
+        "displayName": "Dark Ink",
+        "tonalRamp": [
+          "oklch(15% 0.0120 259.82)",
+          "oklch(26% 0.0120 259.82)",
+          "oklch(38% 0.0120 259.82)",
+          "oklch(49% 0.0120 259.82)",
+          "oklch(61% 0.0120 259.82)",
+          "oklch(72% 0.0120 259.82)",
+          "oklch(84% 0.0120 259.82)",
+          "oklch(95% 0.0120 259.82)"
+        ]
+      },
+      "dark-muted": {
+        "role": "neutral",
+        "displayName": "Dark Muted",
+        "tonalRamp": [
+          "oklch(15% 0.0343 256.78)",
+          "oklch(26% 0.0343 256.78)",
+          "oklch(38% 0.0343 256.78)",
+          "oklch(49% 0.0343 256.78)",
+          "oklch(61% 0.0343 256.78)",
+          "oklch(72% 0.0343 256.78)",
+          "oklch(84% 0.0343 256.78)",
+          "oklch(95% 0.0343 256.78)"
+        ]
+      },
+      "dark-line": {
+        "role": "neutral",
+        "displayName": "Dark Line",
+        "tonalRamp": [
+          "oklch(15% 0.0481 259.13)",
+          "oklch(26% 0.0481 259.13)",
+          "oklch(38% 0.0481 259.13)",
+          "oklch(49% 0.0481 259.13)",
+          "oklch(61% 0.0481 259.13)",
+          "oklch(72% 0.0481 259.13)",
+          "oklch(84% 0.0481 259.13)",
+          "oklch(95% 0.0481 259.13)"
+        ]
+      },
+      "dark-accent": {
+        "role": "primary",
+        "displayName": "Dark Accent",
+        "tonalRamp": [
+          "oklch(15% 0.0953 262.70)",
+          "oklch(26% 0.0953 262.70)",
+          "oklch(38% 0.0953 262.70)",
+          "oklch(49% 0.0953 262.70)",
+          "oklch(61% 0.0953 262.70)",
+          "oklch(72% 0.0953 262.70)",
+          "oklch(84% 0.0953 262.70)",
+          "oklch(95% 0.0953 262.70)"
+        ]
+      },
+      "dark-action": {
+        "role": "primary",
+        "displayName": "Dark Action",
+        "tonalRamp": [
+          "oklch(15% 0.1577 260.62)",
+          "oklch(26% 0.1577 260.62)",
+          "oklch(38% 0.1577 260.62)",
+          "oklch(49% 0.1577 260.62)",
+          "oklch(61% 0.1577 260.62)",
+          "oklch(72% 0.1577 260.62)",
+          "oklch(84% 0.1577 260.62)",
+          "oklch(95% 0.1577 260.62)"
+        ]
+      },
+      "on-action": {
+        "role": "primary",
+        "displayName": "On Action",
+        "tonalRamp": [
+          "oklch(15% 0.0070 268.55)",
+          "oklch(26% 0.0070 268.55)",
+          "oklch(38% 0.0070 268.55)",
+          "oklch(49% 0.0070 268.55)",
+          "oklch(61% 0.0070 268.55)",
+          "oklch(72% 0.0070 268.55)",
+          "oklch(84% 0.0070 268.55)",
+          "oklch(95% 0.0070 268.55)"
+        ]
+      },
+      "light-caution": {
+        "role": "secondary",
+        "displayName": "Light Caution",
+        "tonalRamp": [
+          "oklch(15% 0.0904 69.37)",
+          "oklch(26% 0.0904 69.37)",
+          "oklch(38% 0.0904 69.37)",
+          "oklch(49% 0.0904 69.37)",
+          "oklch(61% 0.0904 69.37)",
+          "oklch(72% 0.0904 69.37)",
+          "oklch(84% 0.0904 69.37)",
+          "oklch(95% 0.0904 69.37)"
+        ]
+      },
+      "light-caution-bg": {
+        "role": "secondary",
+        "displayName": "Light Caution Bg",
+        "tonalRamp": [
+          "oklch(15% 0.0209 79.10)",
+          "oklch(26% 0.0209 79.10)",
+          "oklch(38% 0.0209 79.10)",
+          "oklch(49% 0.0209 79.10)",
+          "oklch(61% 0.0209 79.10)",
+          "oklch(72% 0.0209 79.10)",
+          "oklch(84% 0.0209 79.10)",
+          "oklch(95% 0.0209 79.10)"
+        ]
+      },
+      "dark-caution": {
+        "role": "secondary",
+        "displayName": "Dark Caution",
+        "tonalRamp": [
+          "oklch(15% 0.0887 77.87)",
+          "oklch(26% 0.0887 77.87)",
+          "oklch(38% 0.0887 77.87)",
+          "oklch(49% 0.0887 77.87)",
+          "oklch(61% 0.0887 77.87)",
+          "oklch(72% 0.0887 77.87)",
+          "oklch(84% 0.0887 77.87)",
+          "oklch(95% 0.0887 77.87)"
+        ]
+      },
+      "dark-caution-bg": {
+        "role": "secondary",
+        "displayName": "Dark Caution Bg",
+        "tonalRamp": [
+          "oklch(15% 0.0195 70.28)",
+          "oklch(26% 0.0195 70.28)",
+          "oklch(38% 0.0195 70.28)",
+          "oklch(49% 0.0195 70.28)",
+          "oklch(61% 0.0195 70.28)",
+          "oklch(72% 0.0195 70.28)",
+          "oklch(84% 0.0195 70.28)",
+          "oklch(95% 0.0195 70.28)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Section heading",
+        "purpose": "Shared service and teaching surfaces."
+      },
+      "headline": {
+        "displayName": "Featured trip title",
+        "purpose": "Prominent destination content."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Travel conversation and explanation."
+      },
+      "label": {
+        "displayName": "Supporting label",
+        "purpose": "Useful labels and action text."
+      },
+      "evidence-label": {
+        "displayName": "Essential evidence metadata",
+        "purpose": "Worker metadata, store rows, and fact labels remain at least 16px."
+      },
+      "mono": {
+        "displayName": "Evidence identifier",
+        "purpose": "Observed technical identifiers, alongside sans-serif explanation."
+      }
+    },
+    "shadows": [
+      {
+        "name": "task-surface",
+        "value": "none",
+        "purpose": "Primary task cards and navigation establish depth with tone and borders."
+      }
+    ],
+    "motion": [
+      {
+        "name": "travel-action",
+        "value": "background-color 160ms ease-out, color 160ms ease-out",
+        "purpose": "Save, explore, and text-action response only when reduced motion is not requested."
+      },
+      {
+        "name": "loading-dots",
+        "value": "mc-thinking 1.4s ease-in-out infinite alternate",
+        "purpose": "Waiting indicator changes opacity to .35, only when reduced motion is not requested."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "compact",
+        "value": "860px"
+      },
+      {
+        "name": "condensed-desktop",
+        "value": "1240px"
+      }
+    ],
+    "typeScale": {
+      "desktop": 1.18,
+      "compact": 1.04
+    },
+    "focus": {
+      "value": "2px solid var(--mc-accent)",
+      "offset": "4px",
+      "purpose": "Traveler workspace, brief, header, and sidebar buttons."
+    },
+    "tonalRampUsage": "Generated OKLCH preview ramps extend the recorded colors for the panel; they are not additional production CSS tokens.",
+    "serviceMarks": {
+      "aurora": {
+        "path": "meridian/frontend/public/brand/aurora.svg",
+        "source": "User-supplied aws-amazon-aurora.svg",
+        "renderer": "ServiceMark and shared AuroraIcon",
+        "minimumAuroraIconSize": "20px",
+        "preservedAssetColor": "#C925D1",
+        "purpose": "Official Aurora service tile retains its supplied color; it does not introduce a Meridian action color."
+      }
+    }
+  },
+  "components": [
+    {
+      "name": "Primary action",
+      "kind": "button",
+      "description": "Filled action used by the featured trip; theme variables select its palette.",
+      "html": "<button class=\"ds-primary\" type=\"button\">Explore this trip<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14m-6-6 6 6-6 6\"/></svg></button>",
+      "css": ".ds-primary{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:10px 14px;border:0;border-radius:6px;background:var(--mc-action,#2358ae);color:var(--mc-on-action,#f8faff);font-size:calc(12px * var(--mc-type-scale,1.18));font-weight:600;cursor:pointer;}.ds-primary:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;}.ds-primary:disabled{opacity:.55;cursor:wait;}@media(prefers-reduced-motion:no-preference){.ds-primary{transition:background-color 160ms ease-out,color 160ms ease-out;}}",
+      "refersTo": "button-primary"
+    },
+    {
+      "name": "Text action",
+      "kind": "button",
+      "description": "A quieter route to a secondary task.",
+      "html": "<button class=\"ds-text\" type=\"button\">Explore more<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14m-6-6 6 6-6 6\"/></svg></button>",
+      "css": ".ds-text{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:9px 0;border:0;background:none;color:var(--mc-accent,#2457a7);font-size:calc(12px * var(--mc-type-scale,1.18));font-weight:550;cursor:pointer;}.ds-text:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;}@media(prefers-reduced-motion:no-preference){.ds-text{transition:background-color 160ms ease-out,color 160ms ease-out;}}",
+      "refersTo": "button-text"
+    },
+    {
+      "name": "Save trip",
+      "kind": "button",
+      "description": "Stable light circular control on photography, with a pressed heart state.",
+      "html": "<button class=\"ds-save\" type=\"button\" aria-label=\"Save trip\" aria-pressed=\"false\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z\"/></svg></button>",
+      "css": ".ds-save{display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:50%;background:#f8faff;color:#233c5e;cursor:pointer;}.ds-save:hover,.ds-save[aria-pressed=\"true\"]{background:#dceaff;color:#1d52a5;}.ds-save[aria-pressed=\"true\"] svg{fill:currentColor;}.ds-save:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;}@media(prefers-reduced-motion:no-preference){.ds-save{transition:background-color 160ms ease-out,color 160ms ease-out;}}"
+    },
+    {
+      "name": "Conversation composer",
+      "kind": "input",
+      "description": "The flexible request field and its distinct send action.",
+      "html": "<form class=\"ds-composer\"><input class=\"ds-request\" aria-label=\"Travel request\" placeholder=\"Where would you like to go?\"/><button class=\"ds-send\" type=\"button\" aria-label=\"Send request\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14m-6-6 6 6-6 6\"/></svg></button></form>",
+      "css": ".ds-composer{display:flex;align-items:center;gap:13px;padding:8px 10px 8px 16px;min-height:62px;background:var(--mc-soft,#edf1f7);border:1px solid var(--mc-line,#dce3ed);border-radius:10px;}.ds-request{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);min-width:0;width:100%;color:var(--mc-ink,#152640);background:none;border:0;font-size:calc(14px * var(--mc-type-scale,1.18));padding:6px 0;caret-color:var(--mc-accent,#2457a7);}.ds-request::placeholder{color:var(--mc-muted,#566780);opacity:1;}.ds-send{display:grid;place-items:center;width:40px;height:40px;flex-shrink:0;border:0;border-radius:7px;background:var(--mc-action,#2358ae);color:var(--mc-on-action,#f8faff);}.ds-send:disabled{background:var(--mc-line,#dce3ed);color:var(--mc-muted,#566780);opacity:1;}@media(max-width:860px){.ds-request{font-size:calc(16px * var(--mc-type-scale,1.04));}}",
+      "refersTo": "composer"
+    },
+    {
+      "name": "Service navigation",
+      "kind": "nav",
+      "description": "The navy service rail maintains the same colors in both themes.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Meridian services\"><button class=\"ds-nav-item ds-active\" type=\"button\" aria-current=\"page\">Concierge</button><button class=\"ds-nav-item\" type=\"button\">Trips</button><button class=\"ds-nav-item\" type=\"button\">Discover</button></nav>",
+      "css": ".ds-nav{display:grid;gap:4px;padding:12px;background:#10213c;}.ds-nav-item{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);text-align:left;min-height:44px;border:0;border-radius:7px;background:transparent;color:#afc1db;font-size:calc(13px * var(--mc-type-scale,1.18));font-weight:500;cursor:pointer;}.ds-nav-item.ds-active{background:#23436a;color:#f4f7ff;}.ds-nav-item:hover{background:#1a3458;color:#f4f7ff;}.ds-nav-item:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;}",
+      "refersTo": "navigation"
+    },
+    {
+      "name": "Suggested prompt",
+      "kind": "chip",
+      "description": "A concise operable prompt above the composer.",
+      "html": "<button class=\"ds-chip\" type=\"button\">A relaxing trip</button>",
+      "css": ".ds-chip{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);min-height:30px;padding:6px 10px;border:1px solid var(--mc-line,#dce3ed);border-radius:5px;background:none;color:var(--mc-ink,#152640);font-size:calc(11px * var(--mc-type-scale,1.18));cursor:pointer;}",
+      "refersTo": "prompt-chip"
+    },
+    {
+      "name": "Travel brief",
+      "kind": "card",
+      "description": "Quiet grouped facts in the same surface and type language as the traveler rail.",
+      "html": "<section class=\"ds-brief\"><h2>Your travel brief</h2><dl><div><dt>Travel dates</dt><dd>Open to ideas</dd></div><div><dt>Usual budget</dt><dd>Not set</dd></div></dl></section>",
+      "css": ".ds-brief{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);padding:24px;background:var(--mc-surface,#ffffff);color:var(--mc-ink,#152640);border-radius:12px;}.ds-brief h2{margin:0 0 22px;font-size:calc(16px * var(--mc-type-scale,1.18));font-weight:570;}.ds-brief dl{display:grid;gap:17px;margin:0;}.ds-brief dl>div{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}.ds-brief dt{color:var(--mc-muted,#566780);font-size:calc(12px * var(--mc-type-scale,1.18));}.ds-brief dd{margin:0;max-width:60%;text-align:right;font-size:calc(12px * var(--mc-type-scale,1.18));font-weight:550;}",
+      "refersTo": "card"
+    },
+    {
+      "name": "Caution notice",
+      "kind": "custom",
+      "description": "Explicit status language accompanies the warm caution colors.",
+      "html": "<div class=\"ds-caution\" role=\"status\"><strong>Flight canceled. Your journey doesn\u2019t end here.</strong><p>We\u2019ll work through the alternatives and keep your preferences in the plan.</p></div>",
+      "css": ".ds-caution{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);padding:18px 21px;border-radius:9px;color:var(--mc-caution,#80551d);background:var(--mc-caution-bg,#fbf2e4);}.ds-caution strong{font-size:calc(15px * var(--mc-type-scale,1.18));font-weight:600;}.ds-caution p{font-size:calc(12px * var(--mc-type-scale,1.18));margin:6px 0 0;line-height:1.5;}"
+    },
+    {
+      "name": "Observed-state fact",
+      "kind": "custom",
+      "description": "Evidence preserves a readable label and shows missing data explicitly.",
+      "html": "<div class=\"ds-fact\"><span class=\"ds-fact-label\">Hold records</span><span class=\"ds-fact-value\">\u2014</span></div>",
+      "css": ".ds-fact{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);display:grid;gap:8px;color:var(--mc-ink,#152640);}.ds-fact-label{color:var(--mc-muted,#566780);font-size:max(16px,calc(14px * var(--mc-type-scale,1.18)));}.ds-fact-value{font-size:calc(20px * var(--mc-type-scale,1.18));overflow-wrap:anywhere;}"
+    },
+    {
+      "name": "Architecture and evidence disclosure",
+      "kind": "custom",
+      "description": "Each capability phase has one takeaway and sentence; this native disclosure keeps supporting architecture closed initially.",
+      "html": "<details class=\"ds-details\"><summary>Architecture &amp; evidence <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg></summary><dl><div><dt>Technology</dt><dd>LangGraph \u00b7 Aurora PostgreSQL</dd></div><div><dt>Verify in the trace</dt><dd>Checkpoint, thread ID, and resume result</dd></div></dl></details>",
+      "css": ".ds-details{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,sans-serif);color:var(--mc-ink,#152640);}.ds-details summary{display:flex;align-items:center;gap:12px;width:fit-content;min-height:44px;list-style:none;cursor:pointer;color:var(--mc-accent,#2457a7);font-size:calc(13px * var(--mc-type-scale,1.18));font-weight:550;}.ds-details summary::-webkit-details-marker{display:none;}.ds-details[open] summary svg{transform:rotate(180deg);}.ds-details summary:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;border-radius:4px;}.ds-details dl{display:grid;gap:12px;margin:0;font-size:calc(13px * var(--mc-type-scale,1.18));line-height:1.6;}.ds-details dl>div{display:grid;grid-template-columns:150px 1fr;gap:14px;}.ds-details dt{color:var(--mc-muted,#566780);}.ds-details dd{margin:0;}@media(max-width:860px){.ds-details dl>div{grid-template-columns:1fr;gap:3px;}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Capable airline service",
+    "overview": "Meridian pairs calm navy navigation with cool silver and white task surfaces, useful destination photography, and clear travel details. The user's United Airlines and Delta Airlines references establish the level of service polish. Meridian keeps its own name, assets, and palette.\n\nThe interface is a working travel application: readable facts, a useful next action, and the traveler's returned preferences establish confidence. The dark theme carries the same hierarchy and component language. Presenter evidence uses this shared system while making observed state and missing evidence explicit.",
+    "keyCharacteristics": [
+      "Navy service navigation and blue actions anchor both themes.",
+      "Geist variable type supports readable travel details and presentation use.",
+      "Real destination photography gives travel content its visual identity.",
+      "Tonal surfaces, fine borders, and modest corners organize the work.",
+      "State labels distinguish saved progress, loading, missing evidence, and reported disruption."
+    ],
+    "rules": [
+      {
+        "name": "The Theme Pair Rule",
+        "body": "Use the semantic theme roles together. Keep the navy service navigation stable while changing the canvas, reading colors, borders, accents, and caution treatments as a complete set.",
+        "section": "colors"
+      },
+      {
+        "name": "The Projector Rule",
+        "body": "The current desktop scale is (1.18); at widths up to (860px) the compact scale is (1.04). Preserve the evidence-label minimum when adjusting the scale. Small incidental captions in older code are not a target for new information that the audience must read.",
+        "section": "typography"
+      },
+      {
+        "name": "The Task Surface Rule",
+        "body": "Use a tonal change or a fine dividing line to separate adjacent work. Add visual weight in proportion to the task's importance, with the primary action and the useful travel content leading.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use the shared semantic color pairs in both themes.",
+      "Do make travel facts, the next action, and returned preferences easy to read.",
+      "Do use the bundled destination photographs and established icon language.",
+      "Do preserve visible keyboard focus, explicit action names, and compact layout flow.",
+      "Do distinguish reported disruption, saved workflow state, observed evidence, and missing data.",
+      "Do retain projector scaling and the minimum size for essential evidence metadata."
+    ],
+    "donts": [
+      "Don't turn the airline references into invented partnerships or airline-issued documents.",
+      "Don't make sample catalog content look like a live airline booking or ticket feed.",
+      "Don't replace missing flight, seat, preference, or execution data with fabricated facts.",
+      "Don't promote decorative glows, heavy framing, or unrelated legacy palettes into new surfaces.",
+      "Don't make technical implementation detail compete with the traveler's immediate task."
+    ]
+  }
+}

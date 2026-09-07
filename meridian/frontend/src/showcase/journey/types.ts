@@ -1,3 +1,5 @@
+import type { ActivityEntry } from '../../types';
+
 /** The evidence document served by `GET /api/journeys/{journey_id}`.
  *
  * Mirrors the contract in the journey shell spec, section 4. Every section is
@@ -46,6 +48,8 @@ export type JourneyHold = {
   booking_id: string;
   created_by_execution_id: string | null;
   hold_expires_at: string | null;
+  hold_created_at?: string | null;
+  observed_at?: string | null;
   package_id: string | null;
   duration: string | null;
   travelers_count: number | null;
@@ -80,11 +84,26 @@ export type JourneyRecommendation = {
 };
 
 export type JourneyDocument = {
+  /** Browser receive time for an advancing database clock, added by the API client. */
+  received_at?: number;
+  observed_at?: string | null;
   journey_id: string;
   traveler_id: string;
   status: string;
   checkpoint_backend: { kind: string; durable: boolean };
   active_thread_id: string | null;
+  workflow?: Evidence<{
+    conversation_id: string;
+    query: string;
+    message: string;
+    workflow_status: 'paused' | 'resumed' | 'complete';
+    next_nodes: string[];
+    activities: ActivityEntry[];
+    travelers_count: number;
+    execution_id?: string | null;
+    resumed_from_checkpoint?: string | null;
+    resumed_after_restart: boolean;
+  }>;
   executions: Evidence<{ items: JourneyExecution[] }>;
   checkpoint: Evidence<JourneyCheckpoint>;
   selected_plan: Evidence<{ package_id: string }>;

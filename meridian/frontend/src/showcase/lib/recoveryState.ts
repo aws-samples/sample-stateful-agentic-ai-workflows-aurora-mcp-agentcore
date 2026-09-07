@@ -1,3 +1,4 @@
+import { hasDurableCheckpoint } from './showcaseProof';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 
 export type RecoveryStage = 'action' | 'running' | 'checkpointed' | 'ready';
@@ -66,9 +67,7 @@ export function deriveRecoveryEvidence(
   const checkpointSpans = texts.filter((text) =>
     /checkpoint|postgres.?saver|workflow state/.test(text),
   );
-  const durableFromTrace = checkpointSpans.some((text) =>
-    /postgressaver|durability aurora|checkpoint_store checkpoints/.test(text),
-  );
+
 
   return {
     searchObserved:
@@ -94,6 +93,6 @@ export function deriveRecoveryEvidence(
     ),
     checkpointObserved: checkpointSpans.length > 0,
     durableCheckpoint:
-      state.backendHealth?.checkpoint_durable === true || durableFromTrace,
+      hasDurableCheckpoint(state.traceSpans ?? []),
   };
 }

@@ -2,6 +2,8 @@ import { Component, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { DesktopMeridianApp } from './DesktopMeridianApp';
 import { useMeridianShowcase } from './hooks/useMeridianShowcase';
+import { usePresentationMode } from './hooks/usePresentationMode';
+import { PresenterControls } from './components/PresenterControls';
 import './meridianShowcase.css';
 import './recoveryWorkspace.css';
 import './discoveryWorkspace.css';
@@ -9,6 +11,7 @@ import './recoveryDecisionRefresh.css';
 import './presenterProof.css';
 import './surfaceSwitch.css';
 import './airlineConcierge.css';
+import './presentationMode.css';
 
 type ShowcaseTheme = 'dark' | 'light';
 
@@ -57,6 +60,8 @@ class ShowcaseErrorBoundary extends Component<
 
 export function MeridianDeviceShowcase() {
   const state = useMeridianShowcase();
+  const presentation = usePresentationMode();
+  const audienceLayout = presentation.fullscreen || presentation.preview;
   // Theme is session-local and scoped through CSS tokens.
   const [theme, setTheme] = useState<ShowcaseTheme>(initialTheme);
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
@@ -77,9 +82,13 @@ export function MeridianDeviceShowcase() {
     <main
       className="mds-root mds-fullbleed-route"
       data-theme={theme}
+      data-audience-layout={audienceLayout ? 'true' : undefined}
+      data-fullscreen={presentation.fullscreen ? 'true' : undefined}
+      data-projector-readability={audienceLayout && presentation.projector ? 'true' : undefined}
       aria-label="Meridian product showcase"
     >
       <ShowcaseErrorBoundary>
+        <PresenterControls mode={presentation} />
         <DesktopMeridianApp
           state={state}
           theme={theme}

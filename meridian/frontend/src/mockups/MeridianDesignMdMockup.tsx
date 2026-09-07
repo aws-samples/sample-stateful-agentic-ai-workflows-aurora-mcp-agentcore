@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import ReactDOM from 'react-dom/client'
+import { AuroraIcon } from '../showcase/components/ServiceMark'
 import {
   ArrowRight,
   ArrowUpRight,
@@ -7,7 +8,6 @@ import {
   CheckCircle2,
   Clock3,
   Compass,
-  Database,
   Headphones,
   Heart,
   Hotel,
@@ -345,7 +345,7 @@ function RecoveryView() {
           <p>Traveler approval remains required before any reservation changes.</p>
         </div>
         <div className="mdm-checkpoint-summary">
-          <Database size={17} aria-hidden="true" />
+          <AuroraIcon size={17} aria-hidden="true" />
           <span>
             <strong>Checkpoint saved in Aurora</strong>
             Thread mrd-7f3a · safe to resume
@@ -479,7 +479,7 @@ function RecoveryView() {
           <article className="mdm-progress-panel">
             <header>
               <span>
-                <Database size={17} aria-hidden="true" />
+                <AuroraIcon size={17} aria-hidden="true" />
                 Checkpointed plan
               </span>
               <small>Ready</small>

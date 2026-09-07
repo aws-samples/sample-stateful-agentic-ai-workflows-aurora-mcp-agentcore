@@ -47,7 +47,7 @@ function findScrollParent(node: HTMLElement | null): HTMLElement | null {
   while (cur) {
     const style = window.getComputedStyle(cur);
     const oy = style.overflowY;
-    if ((oy === 'auto' || oy === 'scroll') && cur.scrollHeight > cur.clientHeight) {
+    if (oy === 'auto' || oy === 'scroll') {
       return cur;
     }
     cur = cur.parentElement;
@@ -68,23 +68,45 @@ export function ChatTranscript({
     ? state.messages.slice(-3)
     : state.messages.slice(-VISIBLE_TURN_LIMIT);
   const containerRef = useRef<HTMLDivElement>(null);
-  const lastMessageCountRef = useRef(visibleMessages.length);
+  const scrollerRef = useRef<HTMLElement | null>(null);
+  const followLatestRef = useRef(true);
 
-  // Scroll the nearest scrollable parent so the unified main column stays in sync.
+  // Record the reader's intent before a streamed reply or result cards grow.
+  // Measuring only after growth mistakes a pinned reader for someone in history.
   useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    if (visibleMessages.length === lastMessageCountRef.current) return;
-    lastMessageCountRef.current = visibleMessages.length;
-
     const scroller = findScrollParent(container);
+    scrollerRef.current = scroller;
     if (!scroller) return;
-    const distanceFromBottom =
-      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-    if (distanceFromBottom < 240) {
-      scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' });
-    }
-  }, [visibleMessages.length]);
+    let frame = 0;
+    const trackPosition = () => {
+      followLatestRef.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 96;
+    };
+    const followGrowth = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (followLatestRef.current) scroller.scrollTop = scroller.scrollHeight;
+      });
+    };
+    scroller.addEventListener('scroll', trackPosition, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(followGrowth);
+    observer?.observe(container);
+    followGrowth();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      scroller.removeEventListener('scroll', trackPosition);
+    };
+  }, []);
+
+  const latestMessage = visibleMessages[visibleMessages.length - 1];
+  useLayoutEffect(() => {
+    if (latestMessage?.role !== 'user') return;
+    followLatestRef.current = true;
+    const scroller = scrollerRef.current;
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  }, [latestMessage]);
 
   return (
     <div ref={containerRef} className={`mds-chat-transcript${compact ? ' is-compact' : ''}`} aria-live="polite">

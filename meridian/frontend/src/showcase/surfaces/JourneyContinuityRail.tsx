@@ -1,4 +1,6 @@
-import { Check, Circle, Database, ShieldCheck } from 'lucide-react';
+import { hasLiveLease, hasVerifiedResume, useEvidenceClock } from '../journey/evidence';
+import { AuroraIcon } from '../components/ServiceMark';
+import { Check, Circle, ShieldCheck } from 'lucide-react';
 
 import type { JourneyDocument } from '../journey/types';
 import { isObserved } from '../journey/types';
@@ -17,7 +19,7 @@ type Step = {
  * of the journey in Aurora or it is not, so a presenter cannot get ahead of
  * the system and the system cannot claim a step it did not take.
  */
-function stepsFor(document: JourneyDocument | null): Step[] {
+function stepsFor(document: JourneyDocument | null, now: number): Step[] {
   if (!document) {
     return [
       { id: 'auth', label: 'Traveler authorized', detail: 'No journey yet', done: false },
@@ -30,10 +32,10 @@ function stepsFor(document: JourneyDocument | null): Step[] {
 
   const executions = isObserved(document.executions) ? document.executions.items : [];
   const abandoned = executions.filter((e) => e.status === 'abandoned');
-  const running = executions.find((e) => e.status === 'running');
+  const running = executions.find((e) => hasLiveLease(e, now));
   const auth = document.authorization;
   const checkpoint = document.checkpoint;
-  const hold = document.hold;
+  const resumed = hasVerifiedResume(document);
 
   return [
     {
@@ -73,12 +75,8 @@ function stepsFor(document: JourneyDocument | null): Step[] {
     {
       id: 'resumed',
       label: 'Saved plan resumed',
-      detail: isObserved(hold)
-        ? `${hold.hold_records} hold on the same thread`
-        : executions.length > 1
-          ? `attempt ${executions[executions.length - 1].attempt}`
-          : 'Not resumed yet',
-      done: executions.length > 1,
+      detail: resumed ? 'Completed from the saved checkpoint' : 'Successful resume not verified',
+      done: resumed,
     },
   ];
 }
@@ -90,7 +88,8 @@ export function JourneyContinuityRail({
   document: JourneyDocument | null;
   error: string | null;
 }) {
-  const steps = stepsFor(document);
+  const now = useEvidenceClock(document);
+  const steps = stepsFor(document, now);
 
   return (
     <div className="mds-continuity-rail">
@@ -123,7 +122,7 @@ export function JourneyContinuityRail({
 
       <footer className="mds-continuity-foot">
         <span className="mds-continuity-foot-head">
-          <Database size={15} aria-hidden="true" />
+          <AuroraIcon size={15} aria-hidden="true" />
           One durable place.
         </span>
         <p>

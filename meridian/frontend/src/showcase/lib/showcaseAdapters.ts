@@ -41,44 +41,52 @@ export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
   1: [
     'Show me city trips under $2,000 per traveler.',
     'Show me beach trips under $2,500 per traveler.',
-    'Compare three trip types side by side and convert their prices to euros.',
+    'Compare three trip types and convert each price to euros.',
   ],
   // Custom MCP tools solve comparison, FX, and seasonality; mood intent remains retrieval's job.
   2: [
-    'Compare three trip types side by side and convert their prices to euros.',
+    'Compare three trip types and convert each price to euros.',
     'What is the off-season price range for Tokyo trips in November?',
-    'I want a quiet, romantic escape in wine country, ideally with a villa.',
+    'Find a quiet, romantic wine-country retreat with a private villa.',
   ],
   // Intent routing works; persisted conversation memory is still out of scope.
   3: [
-    'I want a quiet, romantic escape in wine country, ideally with a villa.',
+    'Find a quiet, romantic wine-country retreat with a private villa.',
     'Which trip lengths are still available for Tuscany Wine & Wellness?',
-    'Recall my October Tokyo plan and use my saved preferences to recommend the next step.',
+    'Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.',
   ],
   // Tokyo proves memory and RLS; the flight disruption is the same prompt Phase 5
   // owns - Production answers it in one turn, teeing up the checkpointed A/B.
   4: [
-    'Find a Tokyo culture trip for two using my saved preferences.',
-    'Recall my October Tokyo plan and use my saved preferences to recommend the next step.',
+    'Find Tokyo trips that fit my saved preferences.',
+    'Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.',
     SHOWCASE_FINALE_PROMPT,
   ],
   // Each prompt lands on a distinct branch: availability, memory_recall, plan.
   5: [
     'Which trip lengths are still available for Amalfi Coast Villa Week?',
-    'Recall my October Tokyo plan and use my saved preferences to recommend the next step.',
+    'Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.',
     SHOWCASE_FINALE_PROMPT,
   ],
+};
+
+export const PHASE_QUERY_BOUNDARIES: Record<Phase, string> = {
+  1: 'This phase filters catalog rows. MCP adds comparison and currency tools.',
+  2: 'These tools take explicit inputs. Retrieval adds matches by meaning.',
+  3: 'Search uses this request. Production adds authorized traveler memory.',
+  4: 'Memory saves the conversation. Workflow also saves which step runs next.',
+  5: 'Pause, then resume the same thread. Airline ticketing remains outside this demo.',
 };
 
 const SHOWCASE_PROMPT_LABELS: Record<string, string> = {
   [SHOWCASE_EXAMPLE_PROMPTS[1][0]]: 'City trips under $2,000',
   [SHOWCASE_EXAMPLE_PROMPTS[1][1]]: 'Beach trips under $2,500',
-  [SHOWCASE_EXAMPLE_PROMPTS[1][2]]: 'Compare 3 trip types in EUR',
+  [SHOWCASE_EXAMPLE_PROMPTS[1][2]]: 'Compare trips in euros',
   [SHOWCASE_EXAMPLE_PROMPTS[2][1]]: 'Tokyo off-season pricing',
   [SHOWCASE_EXAMPLE_PROMPTS[2][2]]: 'Romantic wine-country villa',
   [SHOWCASE_EXAMPLE_PROMPTS[3][1]]: 'Tuscany trip lengths',
-  [SHOWCASE_EXAMPLE_PROMPTS[3][2]]: 'Recall my Tokyo plan',
-  [SHOWCASE_EXAMPLE_PROMPTS[4][0]]: 'Tokyo trip using preferences',
+  [SHOWCASE_EXAMPLE_PROMPTS[3][2]]: 'Recall my plan & preferences',
+  [SHOWCASE_EXAMPLE_PROMPTS[4][0]]: 'Tokyo with my preferences',
   [SHOWCASE_FINALE_PROMPT]: 'Canceled flight replan',
   [SHOWCASE_EXAMPLE_PROMPTS[5][0]]: 'Amalfi trip lengths',
 };
@@ -120,7 +128,7 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     phase: 2,
     description: 'Catalog access through MCP tools',
     capability: 'Tool',
-    takeaway: 'Expose Aurora through governed tool contracts that agents can call safely.',
+    takeaway: 'Expose Aurora through named tool contracts with explicit inputs and results.',
     proofPoint: 'MCP tool invoked',
     adds: 'Same Aurora - now reached through versioned, IAM-authed MCP tools instead of hand-written SQL.',
     tech: 'postgres-mcp + meridian-concierge',

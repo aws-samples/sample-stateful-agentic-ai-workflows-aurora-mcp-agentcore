@@ -113,9 +113,10 @@ export async function fetchProduct(productId: string): Promise<Product> {
 /**
  * Send a chat message to the AI assistant
  */
-export async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
+export async function sendChatMessage(request: ChatRequest, signal?: AbortSignal): Promise<ChatResponse> {
   const response = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
+    signal,
     headers: apiHeaders(true),
     body: JSON.stringify(request),
   });
@@ -343,5 +344,6 @@ export async function fetchJourneyDocument(
   if (!response.ok) {
     throw new Error(`Failed to read journey ${journeyId}: ${response.statusText}`);
   }
-  return response.json();
+  const document = (await response.json()) as JourneyDocument;
+  return { ...document, received_at: Date.now() };
 }

@@ -18,6 +18,7 @@ BIND_THREAD_SQL = """
 INSERT INTO journey_threads (thread_id, journey_id)
 VALUES (%s, %s)
 ON CONFLICT (thread_id) DO NOTHING
+RETURNING journey_id
 """
 
 ACTIVATE_THREAD_SQL = """
@@ -33,9 +34,12 @@ SELECT journey_id FROM journey_threads WHERE thread_id = %s
 ABANDON_EXPIRED_SQL = """
 UPDATE journey_executions
    SET status = 'abandoned', ended_at = CURRENT_TIMESTAMP
- WHERE thread_id = %s
-   AND status = 'running'
-   AND lease_expires_at < CURRENT_TIMESTAMP
+ WHERE execution_id IN (
+     SELECT execution_id FROM journey_executions
+      WHERE thread_id = %s AND status = 'running'
+        AND lease_expires_at <= CURRENT_TIMESTAMP
+      FOR UPDATE SKIP LOCKED
+ )
 """
 
 NEXT_ATTEMPT_SQL = """
@@ -67,14 +71,19 @@ RENEW_SQL = """
 UPDATE journey_executions
    SET lease_expires_at = CURRENT_TIMESTAMP + (%s || ' seconds')::interval
  WHERE execution_id = %s AND status = 'running'
+   AND lease_expires_at > CURRENT_TIMESTAMP
 RETURNING execution_id
 """
 
 RELEASE_SQL = """
 UPDATE journey_executions
    SET status = %s, ended_at = CURRENT_TIMESTAMP, lease_expires_at = NULL
- WHERE execution_id = %s
+ WHERE execution_id = %s AND status = 'running'
 """
+
+
+class ExecutionLeaseLostError(RuntimeError):
+    """This execution no longer owns the right to change business state."""
 
 
 class ScopedDb:
@@ -134,6 +143,8 @@ async def bind_thread(db: Any, journey_id: str, thread_id: str) -> None:
         thread_id: The LangGraph thread id.
     """
     await db.execute(BIND_THREAD_SQL, (thread_id, journey_id))
+    if await journey_for_thread(db, thread_id) != journey_id:
+        raise PermissionError("The workflow thread is already bound to another journey")
     await db.execute(ACTIVATE_THREAD_SQL, (thread_id, journey_id))
 
 
@@ -168,6 +179,9 @@ async def ensure_journey(
     Returns:
         The journey id the thread is bound to.
     """
+    # Serialize the first binding, including the interval before any checkpoint
+    # exists. RLS then verifies the winning binding belongs to this traveler.
+    await db.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (thread_id,))
     existing = await journey_for_thread(db, thread_id)
     if existing:
         return existing
@@ -203,6 +217,11 @@ async def claim_execution(
             not an error: the insert declines and returns no row.
     """
     await db.execute(ABANDON_EXPIRED_SQL, (thread_id,))
+    # A killed Data API worker may leave a short-lived transaction lock.
+    # Do not wait on its unique-index entry while Aurora rolls that back.
+    owner = await db.execute(CURRENT_OWNER_SQL, (thread_id,))
+    if owner:
+        return ExecutionClaim(None, 0, worker_id, False, dict(owner[0]))
     rows = await db.execute(NEXT_ATTEMPT_SQL, (thread_id,))
     attempt = int(rows[0]["next_attempt"]) if rows else 1
     execution_id = f"exe_{uuid.uuid4().hex[:12]}"

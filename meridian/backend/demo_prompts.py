@@ -31,51 +31,45 @@ PROMPT_LADDER: Dict[int, PhasePrompts] = {
             "Show me beach trips under $2,500 per traveler.",
         ],
         tee_up=(
-            "Compare three trip types side by side and convert their prices "
-            "to euros."
+            "Compare three trip types and convert each price to euros."
         ),
         tee_up_label="Compare 3 trip types in EUR",
     ),
     2: PhasePrompts(
         works=[
-            "Compare three trip types side by side and convert their prices "
-            "to euros.",
+            "Compare three trip types and convert each price to euros.",
             "What is the off-season price range for Tokyo trips in November?",
         ],
         tee_up=(
-            "I want a quiet, romantic escape in wine country, ideally with a "
-            "villa."
+            "Find a quiet, romantic wine-country retreat with a private villa."
         ),
         tee_up_label="Describe a mood, not a filter",
     ),
     3: PhasePrompts(
         works=[
-            "I want a quiet, romantic escape in wine country, ideally with a "
-            "villa.",
+            "Find a quiet, romantic wine-country retreat with a private villa.",
             "Which trip lengths are still available for Tuscany Wine & "
             "Wellness?",
         ],
         tee_up=(
-            "Recall my October Tokyo plan and use my saved preferences to "
-            "recommend the next step."
+            "Recall my Tokyo plan and saved preferences: home airport, food needs, and budget."
         ),
         tee_up_label="Ask it to remember me",
     ),
     4: PhasePrompts(
         works=[
-            "Find a Tokyo culture trip for two using my saved preferences.",
-            "Recall my October Tokyo plan and use my saved preferences to "
-            "recommend the next step.",
+            "Find Tokyo trips that fit my saved preferences.",
+            "Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.",
         ],
         tee_up=(
-            "My JFK-to-Tokyo flight was cancelled. Rework the trip, then "
+            "My JFK-to-Tokyo flight was canceled. Rework the trip, then "
             "check duration availability for the best three options."
         ),
         tee_up_label="Break it with a multi-step plan",
     ),
     5: PhasePrompts(
         works=[
-            "My JFK-to-Tokyo flight was cancelled. Rework the trip, then "
+            "My JFK-to-Tokyo flight was canceled. Rework the trip, then "
             "check duration availability for the best three options.",
             "Which trip lengths are still available for Amalfi Coast Villa "
             "Week?",

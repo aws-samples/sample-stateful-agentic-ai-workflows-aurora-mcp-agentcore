@@ -1,5 +1,8 @@
+import { hasLiveLease, hasVerifiedResume, useEvidenceClock } from '../journey/evidence';
+import { HoldReceipt } from '../components/HoldReceipt';
+import { AuroraIcon } from '../components/ServiceMark';
 import { useState } from 'react';
-import { Database, RefreshCw, ShieldCheck, Terminal } from 'lucide-react';
+import { ArrowRight, RefreshCw, ShieldCheck, Terminal } from 'lucide-react';
 
 import type { JourneyDocument, JourneyExecution } from '../journey/types';
 import { isObserved } from '../journey/types';
@@ -51,14 +54,16 @@ function WorkerCard({
   role,
   execution,
   fallback,
+  now,
 }: {
   role: string;
   execution: JourneyExecution | null;
   fallback: string;
+  now: number;
 }) {
   const status = execution?.status ?? 'none';
   const stopped = status === 'abandoned' || status === 'failed';
-  const running = status === 'running';
+  const running = hasLiveLease(execution, now);
   return (
     <div
       className={`mds-proof-worker${stopped ? ' is-stopped' : ''}${
@@ -71,10 +76,10 @@ function WorkerCard({
       <span className="mds-proof-worker-note">
         {execution
           ? stopped
-            ? 'Stopped after the save'
+            ? status === 'abandoned' ? 'Lease expired; execution abandoned' : 'Execution failed'
             : running
               ? 'Holding the lease'
-              : status
+              : status === 'running' ? execution?.lease_expires_at ? 'Lease expired' : 'Lease not verified' : status
           : 'No execution recorded'}
       </span>
       <span className="mds-proof-worker-state">
@@ -96,21 +101,26 @@ export function PresenterProof({
   loading,
   error,
   onRefresh,
+  onOpenRecovery,
 }: {
   document: JourneyDocument | null;
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
+  onOpenRecovery?: () => void;
 }) {
   const [tab, setTab] = useState<TabId>('checkpoint');
+  const now = useEvidenceClock(document);
 
   if (error && !document) {
     return (
-      <section className="mds-proof-surface" aria-label="Presenter proof">
+      <section className="mds-proof-surface" aria-label="System evidence">
+        <header className="mc-evidence-intro"><h1>System evidence</h1><p>Follow the recovery from first execution to persisted state.</p></header>
         <div className="mds-proof-empty" role="status">
-          <Database size={22} aria-hidden="true" />
+          <AuroraIcon size={22} aria-hidden="true" />
           <h2>No journey to prove yet.</h2>
           <p>{error}</p>
+          {onOpenRecovery && <button type="button" className="mds-proof-refresh" onClick={onOpenRecovery}>Open recovery desk</button>}
           <button type="button" className="mds-proof-refresh" onClick={onRefresh}>
             <RefreshCw size={15} aria-hidden="true" /> Check again
           </button>
@@ -121,9 +131,10 @@ export function PresenterProof({
 
   if (!document) {
     return (
-      <section className="mds-proof-surface" aria-label="Presenter proof">
-        <div className="mds-proof-empty" role="status" aria-busy="true">
-          <Database size={22} aria-hidden="true" />
+      <section className="mds-proof-surface" aria-label="System evidence">
+        <header className="mc-evidence-intro"><h1>System evidence</h1><p>Executions, checkpoints, authorization, and business results. Read from Aurora.</p></header>
+        <div className="mds-proof-empty" role="status" aria-busy={loading}>
+          <AuroraIcon size={22} aria-hidden="true" />
           <h2>Reading the journey from Aurora…</h2>
         </div>
       </section>
@@ -136,24 +147,26 @@ export function PresenterProof({
   const checkpoint = document.checkpoint;
   const hold = document.hold;
   const auth = document.authorization;
-  const restarted = executions.length > 1;
+  const restarted = Boolean(first && latest && first.worker_id !== latest.worker_id);
+  const resumed = hasVerifiedResume(document);
 
   return (
-    <section className="mds-proof-surface" aria-label="Presenter proof">
+    <section className="mds-proof-surface" aria-label="System evidence">
       <header className="mds-proof-head">
         <div>
           <h1>
-            {restarted ? 'The worker changed.' : 'The plan is saved.'}
-            <span>{restarted ? 'The plan didn’t.' : 'Now stop the worker.'}</span>
+            {restarted ? 'The worker changed.' : isObserved(checkpoint) ? 'The plan is saved.' : 'The journey has started.'}
+            <span>{resumed ? 'The saved plan resumed.' : isObserved(checkpoint) ? 'The checkpoint remains.' : 'The evidence follows.'}</span>
           </h1>
         </div>
         <div className="mds-proof-head-meta">
           <p>A Tokyo recovery plan.</p>
-          <p>One checkpoint. One durable hold.</p>
+          <p>{isObserved(checkpoint) ? 'Checkpoint recorded.' : 'Awaiting checkpoint.'} {isObserved(hold) ? `${hold.hold_records} hold record${hold.hold_records === 1 ? '' : 's'}.` : 'No hold recorded.'}</p>
           <button
             type="button"
             className="mds-proof-refresh"
             onClick={onRefresh}
+            disabled={loading}
             aria-label="Re-read this journey from Aurora"
           >
             <RefreshCw size={15} aria-hidden="true" />
@@ -163,13 +176,13 @@ export function PresenterProof({
       </header>
 
       <div className="mds-proof-flow">
-        <WorkerCard role="Original worker" execution={first} fallback="none yet" />
+        <WorkerCard now={now} role="Original worker" execution={first} fallback="none yet" />
         <span className="mds-proof-arrow" aria-hidden="true">
-          →
+          <ArrowRight size={22} />
         </span>
         <div className="mds-proof-store">
           <div className="mds-proof-store-head">
-            <Database size={19} aria-hidden="true" />
+            <AuroraIcon size={19} aria-hidden="true" />
             <strong>{document.checkpoint_backend.kind}</strong>
           </div>
           <dl className="mds-proof-store-rows">
@@ -196,9 +209,9 @@ export function PresenterProof({
           </p>
         </div>
         <span className="mds-proof-arrow" aria-hidden="true">
-          →
+          <ArrowRight size={22} />
         </span>
-        <WorkerCard role="Replacement worker" execution={latest} fallback="waiting" />
+        <WorkerCard now={now} role={restarted ? "Replacement worker" : "Latest execution"} execution={latest} fallback="waiting" />
       </div>
 
       <div className="mds-proof-tabs" role="tablist" aria-label="Evidence">
@@ -211,6 +224,17 @@ export function PresenterProof({
             aria-selected={tab === id}
             aria-controls={`proof-panel-${id}`}
             className={`mds-proof-tab${tab === id ? ' is-active' : ''}`}
+            tabIndex={tab === id ? 0 : -1}
+            onKeyDown={event => {
+              const current = TABS.findIndex(item => item.id === tab);
+              const next = event.key === 'ArrowRight' ? (current + 1) % TABS.length
+                : event.key === 'ArrowLeft' ? (current + TABS.length - 1) % TABS.length
+                : event.key === 'Home' ? 0 : event.key === 'End' ? TABS.length - 1 : -1;
+              if (next < 0) return;
+              event.preventDefault();
+              setTab(TABS[next].id);
+              window.document.getElementById(`proof-tab-${TABS[next].id}`)?.focus();
+            }}
             onClick={() => setTab(id)}
           >
             {label}
@@ -244,8 +268,8 @@ export function PresenterProof({
             />
             <Fact
               label="Resume result"
-              tone={restarted ? 'good' : 'muted'}
-              value={restarted ? 'Same thread, same hold' : 'Not resumed yet'}
+              tone={resumed ? 'good' : 'muted'}
+              value={resumed ? 'Completed from saved checkpoint' : 'Successful resume not verified'}
             />
           </div>
         )}
@@ -274,36 +298,30 @@ export function PresenterProof({
         )}
 
         {tab === 'business' && (
-          <div className="mds-proof-facts">
-            <Fact
-              label="Hold ID"
-              mono
-              value={isObserved(hold) ? hold.booking_id : DASH}
-            />
-            <Fact
-              label="Hold records"
-              tone={isObserved(hold) && hold.hold_records === 1 ? 'good' : undefined}
-              value={isObserved(hold) ? String(hold.hold_records) : DASH}
-            />
-            <Fact
-              label="Travel party"
-              value={
-                isObserved(hold) && hold.travelers_count
-                  ? `${hold.travelers_count} travelers`
-                  : DASH
-              }
-            />
-            <Fact
-              label="After restart"
-              tone={isObserved(hold) && hold.hold_records === 1 ? 'good' : undefined}
-              value={
-                !isObserved(hold)
-                  ? DASH
-                  : hold.hold_records === 1
-                    ? 'No duplicate hold'
-                    : `${hold.hold_records} holds — investigate`
-              }
-            />
+          <div className="mc-hold-evidence">
+            {isObserved(hold) ? (
+              <>
+                <HoldReceipt holdId={hold.booking_id} createdAt={hold.hold_created_at} expiresAt={hold.hold_expires_at} observedAt={hold.observed_at} receivedAt={document.received_at} status={hold.status} />
+                <div className="mds-proof-facts">
+                  <Fact label="Request identity" mono value={hold.hold_request_id} />
+                  <Fact label="Travel party" value={hold.travelers_count ? `${hold.travelers_count} travelers` : DASH} />
+                  <Fact label="Created by" value={hold.created_by_execution_id === first?.execution_id ? 'Original execution' : hold.created_by_execution_id === latest?.execution_id ? 'Replacement execution' : hold.created_by_execution_id || 'Not recorded'} />
+                  <Fact label="Hold records in journey" value={String(hold.hold_records)} />
+                </div>
+                <p className="mc-hold-proof-note">
+                  {restarted && hold.created_by_execution_id === first?.execution_id
+                    ? 'This booking was created by the original execution and is still readable after the replacement started.'
+                    : restarted && hold.created_by_execution_id === latest?.execution_id
+                      ? 'The replacement execution created this hold. This run proves checkpoint recovery; it does not yet prove an existing hold survived a restart.'
+                      : 'To prove hold durability, stop the worker after the hold is committed, resume the same thread, then re-read the booking ID and original expiry.'}
+                </p>
+              </>
+            ) : (
+              <div className="mc-hold-pending">
+                <strong>No package hold recorded.</strong>
+                <p>A saved shortlist is a workflow checkpoint. The hold begins after availability verification, when Aurora commits the booking.</p>
+              </div>
+            )}
           </div>
         )}
       </div>

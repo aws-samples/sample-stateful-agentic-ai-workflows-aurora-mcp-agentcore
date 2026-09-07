@@ -84,6 +84,7 @@ class ChatRequest(BaseModel):
     customer_id: Optional[str] = Field(default=None, min_length=1, max_length=50)
     conversation_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
     resume: bool = False
+    travelers_count: int = Field(default=1, ge=1, le=20, strict=True)
     memory_enabled: bool = True
 
 
@@ -1741,6 +1742,7 @@ async def orchestration_workflow(
     conversation_id: Optional[str] = None,
     *,
     resume: bool = False,
+    travelers_count: int = 1,
 ) -> tuple[List[Product], List[ActivityEntry], str, str, str, bool]:
     """
     Phase 5: LangGraph StateGraph orchestrates classify → branch → synthesize.
@@ -1761,11 +1763,14 @@ async def orchestration_workflow(
         memory_recall_fn=workflow_memory_recall,
     )
     try:
-        final_state = await workflow.run(
+        from backend.agents.orchestration_05.execution import run_http_workflow
+        final_state = await run_http_workflow(
+            workflow,
             query,
             traveler_id=traveler_id,
             conversation_id=conversation_id or "",
             resume=resume,
+            travelers_count=travelers_count,
         )
     except WorkflowAuthorizationError as exc:
         # Refused, not broken: the thread exists and belongs to someone else.
@@ -2420,6 +2425,7 @@ async def chat(
                 traveler_id=request.customer_id or DEMO_TRAVELER_ID,
                 conversation_id=request.conversation_id,
                 resume=resume_workflow,
+                travelers_count=request.travelers_count,
             )
             activities.extend(workflow_activities)
             workflow_memory_facts: List[MemoryFact] = []
@@ -2481,6 +2487,9 @@ async def chat(
                 request.phase,
                 turn_started,
             )
+        except HTTPException:
+            # Preserve authorization/conflict HTTP status from the workflow.
+            raise
         except TravelerAuthorizationError as e:
             log_error("workflow_authorization", error=str(e))
             raise HTTPException(status_code=403, detail=str(e)) from e
@@ -2492,48 +2501,11 @@ async def chat(
                 "orchestration_workflow failed (ref=%s)", error_ref
             )
             log_error("orchestration_workflow", error=str(e), ref=error_ref)
-            error_detail = str(e)
-            checkpoint_unavailable = any(
-                marker in error_detail.lower()
-                for marker in (
-                    "connection",
-                    "checkpoint",
-                    "postgres",
-                    "aurora",
-                    "pool",
-                )
-            )
-            activities.append(create_activity(
-                activity_type="error",
-                title="LangGraph workflow error",
-                details=(
-                    "The Aurora checkpoint connection is unavailable."
-                    if checkpoint_unavailable
-                    else "The workflow stopped before changing the trip."
-                )
-                + f" Reference {error_ref} — see backend logs for the stack.",
-                agent_name="OrchestrationAgent",
-                agent_file="agents/orchestration_05/workflow.py",
-            ))
-            return _complete_chat_turn(
-                ChatResponse(
-                message=(
-                    "Recovery stopped safely before changing the trip because "
-                    "the Aurora checkpoint connection is unavailable. Restore "
-                    "the checkpoint connection, then retry recovery."
-                    if checkpoint_unavailable
-                    else "Recovery stopped safely before changing the trip. "
-                    "Retry the workflow or inspect the failed step in Agent proof."
-                ),
-                products=None,
-                order=None,
-                activities=activities,
-                follow_ups=["Retry recovery"],
-            ),
-                request.phase,
-                turn_started,
-                error=str(e),
-            )
+            raise HTTPException(
+                status_code=503,
+                detail=("Recovery was interrupted. Re-read the saved journey before retrying. "
+                        f"Reference {error_ref}."),
+            ) from e
 
     # Phase 3: live Strands supervisor (Bedrock-driven tool delegation).
     phase3_fn = retrieval_supervisor_search

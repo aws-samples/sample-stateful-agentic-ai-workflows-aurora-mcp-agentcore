@@ -15,13 +15,13 @@ from backend.agentcore.identity import get_agentcore_identity
 
 JOURNEY_SQL = """
 SELECT journey_id, traveler_id, checkpoint_backend, active_thread_id, status,
-       created_at, updated_at
+       created_at, updated_at, CURRENT_TIMESTAMP::TEXT AS observed_at
   FROM journeys WHERE journey_id = %s
 """
 
 EXECUTIONS_SQL = """
-SELECT execution_id, attempt, worker_id, status, started_at, ended_at,
-       lease_expires_at
+SELECT execution_id, attempt, worker_id, status, started_at::TEXT, ended_at::TEXT,
+       lease_expires_at::TEXT
   FROM journey_executions WHERE journey_id = %s
  ORDER BY attempt
 """
@@ -35,7 +35,9 @@ SELECT checkpoint_id, parent_checkpoint_id, checkpoint_ns,
 
 HOLD_SQL = """
 SELECT hr.hold_request_id, hr.booking_id, hr.execution_id, hr.created_at,
-       b.status, b.hold_expires_at, bl.package_id, bl.duration,
+       b.status, b.created_at::TIMESTAMPTZ::TEXT AS hold_created_at,
+       b.hold_expires_at::TEXT AS hold_expires_at,
+       CURRENT_TIMESTAMP::TEXT AS observed_at, bl.package_id, bl.duration,
        bl.travelers_count
   FROM hold_requests hr
   JOIN bookings b ON b.booking_id = hr.booking_id
@@ -72,22 +74,42 @@ def _channel(values: Any, name: str) -> Any:
     return values.get(name) if isinstance(values, dict) else None
 
 
-async def _channel_values(client: Any, thread_id: str) -> Dict[str, Any]:
-    """Load the checkpoint's channel values through the saver.
-
-    `aput` stores channel values in `checkpoint_blobs`, not inline in the
-    `checkpoints` JSONB, so reading the row alone yields nothing. Going through
-    the saver reuses the windowed read that the rest of the system relies on
-    rather than reimplementing blob reassembly here.
-    """
+async def _workflow_snapshot(client: Any, thread_id: str, checkpoint_id: str):
+    """Read pending nodes and values using the same graph definition, without running it."""
+    from backend.agents.orchestration_05.workflow import OrchestrationAgent
     from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
 
-    tup = await AuroraDataApiSaver(client).aget_tuple(
-        {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
-    )
-    if tup is None:
-        return {}
-    return dict(tup.checkpoint.get("channel_values") or {})
+    async def read_only(*args, **kwargs):
+        raise RuntimeError("Journey inspection cannot execute workflow nodes")
+
+    workflow = OrchestrationAgent(read_only, read_only)
+    workflow.checkpointer = AuroraDataApiSaver(client)
+    workflow.graph = workflow._build_graph()
+    return await workflow.graph.aget_state({"configurable": {"thread_id": thread_id, "checkpoint_id": checkpoint_id}})
+
+
+def _workflow_document(snapshot, checkpoint):
+    if snapshot is None or not snapshot.values:
+        return _unavailable("no saved workflow to restore")
+    values = snapshot.values
+    pending = list(snapshot.next)
+    return {
+        "status": "observed",
+        "source": _channel_source(checkpoint, "workflow"),
+        "conversation_id": values.get("conversation_id"),
+        "query": values.get("query", ""),
+        "message": (
+            "Your shortlist is saved. Resume to continue from the checkpoint."
+            if pending else values.get("response", "Workflow finished.")
+        ),
+        "workflow_status": "paused" if pending else (values.get("workflow_status") or "complete"),
+        "next_nodes": pending,
+        "activities": values.get("activities", []),
+        "travelers_count": values.get("travelers_count") or (values.get("hold_intent") or {}).get("quantity", 1),
+        "execution_id": values.get("execution_id"),
+        "resumed_from_checkpoint": values.get("resumed_from_checkpoint"),
+        "resumed_after_restart": bool(values.get("resumed_after_restart")),
+    }
 
 
 async def assemble_journey_document(
@@ -130,6 +152,7 @@ async def assemble_journey_document(
 
         thread_id = journey["active_thread_id"]
         document: Dict[str, Any] = {
+            "observed_at": _iso(journey.get("observed_at")),
             "journey_id": journey["journey_id"],
             "traveler_id": journey["traveler_id"],
             "status": journey["status"],
@@ -142,11 +165,13 @@ async def assemble_journey_document(
 
         document["executions"] = await _executions(q, journey_id)
         checkpoint = await _checkpoint(q, thread_id)
-        inline = (
-            await _channel_values(client, thread_id)
+        snapshot = (
+            await _workflow_snapshot(client, thread_id, checkpoint["checkpoint_id"])
             if checkpoint.get("status") == "committed"
-            else {}
+            else None
         )
+        inline = dict(snapshot.values) if snapshot else {}
+        document["workflow"] = _workflow_document(snapshot, checkpoint)
         document["checkpoint"] = checkpoint
         document["selected_plan"] = _selected_plan(checkpoint, inline)
         document["recommendations"] = _recommendations(checkpoint, inline)
@@ -208,25 +233,31 @@ def _channel_source(checkpoint: Dict[str, Any], channel: str) -> str:
 def _selected_plan(checkpoint: Dict[str, Any], inline: Any) -> Dict[str, Any]:
     if checkpoint.get("status") != "committed":
         return _unavailable("no committed checkpoint to read a selection from")
-    package_id = _channel(inline, "selected_package")
-    if not package_id:
-        return _unavailable("the checkpoint carries no selected_package channel")
-    return {
-        "status": "observed",
-        "source": _channel_source(checkpoint, "selected_package"),
-        "package_id": package_id,
-    }
+    intent = _channel(inline, "hold_intent") or {}
+    for channel, package_id in (
+        ("hold_package", _channel(inline, "hold_package")),
+        ("selected_package", _channel(inline, "selected_package")),
+        ("hold_intent", intent.get("package_id")),
+    ):
+        if package_id:
+            return {
+                "status": "observed",
+                "source": _channel_source(checkpoint, channel),
+                "package_id": package_id,
+            }
+    return _unavailable("the checkpoint carries no selected package or hold intent")
 
 
 def _recommendations(checkpoint: Dict[str, Any], inline: Any) -> Dict[str, Any]:
     if checkpoint.get("status") != "committed":
         return _unavailable("no committed checkpoint to read recommendations from")
-    items = _channel(inline, "packages") or _channel(inline, "recommendations")
+    channel = "packages" if _channel(inline, "packages") else "recommendations"
+    items = _channel(inline, channel)
     if not items:
         return _unavailable("the checkpoint carries no recommendation channel")
     return {
         "status": "observed",
-        "source": _channel_source(checkpoint, "recommendations"),
+        "source": _channel_source(checkpoint, channel),
         "items": items,
     }
 
@@ -234,6 +265,12 @@ def _recommendations(checkpoint: Dict[str, Any], inline: Any) -> Dict[str, Any]:
 def _pending_decision(checkpoint: Dict[str, Any], inline: Any) -> Dict[str, Any]:
     if checkpoint.get("status") != "committed":
         return _unavailable("no committed checkpoint to read a pending step from")
+    # Retain hold_intent for idempotent replay, but never present a completed
+    # operation as a new decision merely because its intent is still saved.
+    if _channel(inline, "hold_id"):
+        return _unavailable("the hold intent has already produced a booking")
+    if _channel(inline, "workflow_status") in ("complete", "resumed"):
+        return _unavailable("the workflow has finished with no pending hold decision")
     intent = _channel(inline, "hold_intent")
     if not intent:
         return _unavailable("the checkpoint carries no pending hold intent")
@@ -280,14 +317,16 @@ async def _hold(q, journey_id: str) -> Dict[str, Any]:
         "hold_request_id": row["hold_request_id"],
         "booking_id": row["booking_id"],
         "created_by_execution_id": row["execution_id"],
+        "hold_created_at": _iso(row.get("hold_created_at")),
+        "observed_at": _iso(row.get("observed_at")),
         "hold_expires_at": _iso(row["hold_expires_at"]),
         "package_id": row["package_id"],
         "duration": row["duration"],
         "travelers_count": (
             int(row["travelers_count"]) if row["travelers_count"] is not None else None
         ),
-        # Every retry of one request replays the first hold, so this is 1 for a
-        # journey that survived a restart. More than 1 would be the bug.
+        # A journey can contain multiple distinct requests; this count alone
+        # does not establish whether any one request was replayed.
         "hold_records": len(rows),
     }
 

@@ -13,7 +13,7 @@ export function ConciergeRail({ state, onSaved, onRecovery }: {
 }) {
   const profile = state.travelerProfile ?? state.previewProfile;
   const filters = state.chatFilters;
-  const party = filters.travelers || profile?.party_size;
+  const party = state.travelersCount;
   const budget = profile?.budget_max;
   const dates = filters.startDate
     ? `${dateLabel(filters.startDate)}${filters.endDate ? ` – ${dateLabel(filters.endDate)}` : ' onward'}`

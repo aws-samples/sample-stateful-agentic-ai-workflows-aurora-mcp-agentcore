@@ -7,9 +7,8 @@
  * padlock, a check, a chevron - stays on the shared icon set, because a
  * service logo there would say something untrue.
  *
- * AWS ships these as tiles: a coloured square with a white glyph, drawn at
- * several sizes with the glyph tuned to each. Below 17px the large artwork
- * turns to mush, so the small variant is swapped in automatically.
+ * Aurora uses the supplied AWS SVG unchanged. AgentCore switches to its
+ * small artwork below 17px so its glyph stays legible.
  */
 
 const MARKS = {
@@ -34,18 +33,20 @@ export function ServiceMark({
   name,
   size = 17,
   title,
+  className,
 }: {
   name: ServiceMarkName;
   size?: number;
   /** Set only when the mark is the sole label for something. */
   title?: string;
+  className?: string;
 }) {
   const mark = MARKS[name];
   const src = size < SMALL_BREAKPOINT ? mark.smallSrc : mark.src;
 
   return (
     <img
-      className="mds-service-mark"
+      className={`mds-service-mark${className ? ` ${className}` : ''}`}
       src={src}
       width={size}
       height={size}
@@ -56,4 +57,9 @@ export function ServiceMark({
       decoding="async"
     />
   );
+}
+
+/** Aurora tile used wherever the interface previously used a database cylinder. */
+export function AuroraIcon({ size = 20, className }: { size?: number; className?: string }) {
+  return <ServiceMark name="aurora" size={Math.max(size, 20)} className={className} />;
 }

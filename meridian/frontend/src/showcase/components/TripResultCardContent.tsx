@@ -1,3 +1,4 @@
+import { AuroraIcon } from './ServiceMark';
 import type { ReactNode } from 'react';
 import {
   ArrowRight,
@@ -6,7 +7,6 @@ import {
   Bookmark,
   BusFront,
   CheckCircle2,
-  Database,
   GitCompareArrows,
   HeartHandshake,
   MapPin,
@@ -28,7 +28,7 @@ type SignalTone = 'blue' | 'green' | 'yellow' | 'violet';
 interface TripSignal {
   label: string;
   tone: SignalTone;
-  icon: typeof Sparkles;
+  icon: typeof Sparkles | typeof AuroraIcon;
 }
 
 function includesAny(source: string, patterns: RegExp[]): boolean {
@@ -64,7 +64,7 @@ function tripSignals(
       ));
 
   if (checkpointObserved) {
-    signals.push({ label: 'Checkpointed', tone: 'blue', icon: Database });
+    signals.push({ label: 'Checkpointed', tone: 'blue', icon: AuroraIcon });
   }
   if (travelerContextObserved) {
     signals.push({ label: 'Memory match', tone: 'violet', icon: Sparkles });

@@ -139,6 +139,7 @@ export interface ChatRequest {
   customer_id?: string;
   conversation_id?: string;
   resume?: boolean;
+  travelers_count?: number;
   memory_enabled?: boolean;
 }
 

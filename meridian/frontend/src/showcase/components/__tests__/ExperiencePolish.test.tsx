@@ -13,6 +13,9 @@ import {
 import { deriveRecoveryStage } from '../../lib/recoveryState';
 import { DesktopMeridianApp } from '../../DesktopMeridianApp';
 import { ChatComposer } from '../ChatComposer';
+import { DiscoveryWorkspace } from '../DiscoveryWorkspace';
+import { ConciergeRail } from '../../surfaces/ConciergeRail';
+import { RecoveryBoardingPass } from '../RecoveryBoardingPass';
 import { ChatTranscript } from '../ChatTranscript';
 import { JourneyPanel } from '../JourneyPanel';
 import { RecoveryRouteMap } from '../RecoveryRouteMap';
@@ -23,6 +26,8 @@ function makeState(
   overrides: Partial<MeridianShowcaseState> = {},
 ): MeridianShowcaseState {
   return {
+    travelersCount: overrides.chatFilters?.travelers || 2,
+    restoreJourney: vi.fn(),
     selectedPhase: 1,
     phaseLabel: 'SQL',
     phaseExamples: SHOWCASE_EXAMPLE_PROMPTS[1],
@@ -67,8 +72,10 @@ function makeState(
     chatFilters: EMPTY_FILTERS,
     setChatFilters: vi.fn(),
     resetChatFilters: vi.fn(),
+    clearChat: vi.fn(),
     setCurrentPrompt: vi.fn(),
     setSelectedPhase: vi.fn(),
+    setMemoryEnabled: vi.fn(),
     submitPrompt: vi.fn(),
     applyPhaseExample: vi.fn(),
     openTripDetails: vi.fn(),
@@ -120,7 +127,7 @@ describe('Experience presentation polish', () => {
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'Start the capability ladder at Phase 1',
+        name: 'How it works: start the capability ladder at Phase 1',
       }),
     );
 
@@ -136,9 +143,13 @@ describe('Experience presentation polish', () => {
   });
 
   it('puts the five phases at the top level with the product entry un-numbered', () => {
+    window.history.replaceState(null, '', '/showcase');
+    const clearChat = vi.fn();
+    const setSelectedPhase = vi.fn();
+    const setMemoryEnabled = vi.fn();
     render(
       <DesktopMeridianApp
-        state={makeState({ selectedPhase: 3 })}
+        state={makeState({ selectedPhase: 3, clearChat, setSelectedPhase, setMemoryEnabled })}
         theme="dark"
         onToggleTheme={vi.fn()}
       />,
@@ -150,6 +161,9 @@ describe('Experience presentation polish', () => {
     fireEvent.click(
       within(surfaces).getByRole('button', { name: /^Capability ladder/ }),
     );
+    expect(clearChat).toHaveBeenCalledOnce();
+    expect(setSelectedPhase).toHaveBeenCalledWith(1);
+    expect(setMemoryEnabled).toHaveBeenCalledWith(false);
 
     const nav = screen.getByRole('navigation', {
       name: 'Capability ladder phases',
@@ -379,7 +393,7 @@ describe('Experience presentation polish', () => {
     expect(stretch).toHaveClass('is-stretch');
   });
 
-  it('keeps projector query starters in stable two and three column groups', () => {
+  it('shows one successful query and one boundary query in each phase', () => {
     const { container, rerender } = render(
       <ChatComposer state={makeState()} proofMode />,
     );
@@ -402,8 +416,8 @@ describe('Experience presentation polish', () => {
     );
 
     starters = container.querySelector('.mds-chat-query-starters');
-    expect(starters).toHaveClass('has-3');
-    expect(starters?.querySelectorAll('.mds-chat-starter-chip')).toHaveLength(3);
+    expect(starters).toHaveClass('has-2');
+    expect(starters?.querySelectorAll('.mds-chat-starter-chip')).toHaveLength(2);
   });
 
   it('progresses the current trip from disruption through recovery', () => {
@@ -504,7 +518,7 @@ describe('Experience presentation polish', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole('heading', {
-        name: 'Your flight has been canceled.',
+        name: 'Let’s get your trip moving again.',
       }),
     ).toBeInTheDocument();
     expect(screen.getByText('Traveler-reported disruption')).toBeInTheDocument();
@@ -553,7 +567,7 @@ describe('Experience presentation polish', () => {
     ).toHaveTextContent('Building the recovery plan');
     expect(
       screen.queryByRole('heading', {
-        name: 'Your flight has been canceled.',
+        name: 'Let’s get your trip moving again.',
       }),
     ).not.toBeInTheDocument();
     expect(
@@ -779,7 +793,7 @@ describe('Experience presentation polish', () => {
 
     expect(screen.getByRole('button', { name: 'Start recovery' })).toBeInTheDocument();
     expect(
-      screen.getByText('Your flight has been canceled.'),
+      screen.getByText('Let’s get your trip moving again.'),
     ).toBeInTheDocument();
     expect(screen.queryByText('Alternative pending')).not.toBeInTheDocument();
     expect(screen.queryByText('No live result observed yet')).not.toBeInTheDocument();
@@ -982,4 +996,63 @@ describe('Experience presentation polish', () => {
         .toHaveAttribute('src', src);
     });
   });
+});
+
+
+describe('Concierge travel states', () => {
+  it('opens System evidence from the recovery proof action', async () => {
+    window.history.replaceState(null, '', '/showcase?view=recovery');
+    render(
+      <DesktopMeridianApp
+        state={makeState({
+          selectedPhase: 5,
+          phaseLabel: 'Workflow',
+          lastPrompt: SHOWCASE_FINALE_PROMPT,
+          workflowStatus: 'paused',
+        })}
+        theme="dark"
+        onToggleTheme={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'View system evidence' }));
+    expect(new URL(window.location.href).searchParams.get('view')).toBe('proof');
+    expect(await screen.findByRole('region', { name: 'System evidence' })).toBeInTheDocument();
+  });
+
+  it('does not replace an empty live search with unrelated preview recommendations', () => {
+    render(<DiscoveryWorkspace state={makeState({ messages: [{ role: 'user', text: 'Find trips to the moon' }, { role: 'bot', text: 'No matches found.' }], recommendations: [] })} greeting="morning" onClear={vi.fn()} />);
+    expect(screen.getByText('A different direction?')).toBeInTheDocument();
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+  });
+
+  it('reflects saved state and allows removing the same trip', () => {
+    const saveTrip = vi.fn();
+    const state = makeState({ saveTrip, savedTripIds: new Set(['WEL-005']), travelerProfile: null });
+    render(<DiscoveryWorkspace state={state} greeting="morning" onClear={vi.fn()} />);
+    const button = screen.getByRole('button', { name: 'Unsave Tuscany Wine & Wellness' });
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(button);
+    expect(saveTrip).toHaveBeenCalledWith(expect.objectContaining({ product_id: 'WEL-005' }));
+  });
+
+  it('carries the active party and date selections into the trip brief', () => {
+    render(<ConciergeRail state={makeState({ chatFilters: { ...EMPTY_FILTERS, travelers: 3, startDate: '2026-10-12', endDate: '2026-10-19' } })} />);
+    expect(screen.getByText('3 adults')).toBeInTheDocument();
+    expect(screen.getByText('Oct 12 – Oct 19')).toBeInTheDocument();
+  });
+
+  it('renders the reported itinerary without inventing a flight or seat assignment', () => {
+    render(<RecoveryBoardingPass state={makeState()} />);
+    expect(screen.getByText('Not provided')).toBeInTheDocument();
+    expect(screen.getByText('Not valid for boarding')).toBeInTheDocument();
+    expect(screen.getByText('Traveler-reported')).toBeInTheDocument();
+  });
+});
+
+it('carries the boundary question into the next capability without running it in the old phase', () => {
+  const state = makeState({ lastPrompt: SHOWCASE_EXAMPLE_PROMPTS[1][2], messages: [{ role: 'bot', text: 'Switch to MCP.' }] });
+  render(<ChatComposer state={state} proofMode />);
+  fireEvent.click(screen.getByRole('button', { name: 'Continue in MCP' }));
+  expect(state.setSelectedPhase).toHaveBeenCalledWith(2);
+  expect(state.applyPhaseExample).toHaveBeenCalledWith(SHOWCASE_EXAMPLE_PROMPTS[2][0], false, 2);
 });

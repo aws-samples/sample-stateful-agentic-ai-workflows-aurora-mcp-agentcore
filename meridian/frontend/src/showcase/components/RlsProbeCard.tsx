@@ -1,3 +1,4 @@
+import { AuroraIcon } from './ServiceMark';
 /**
  * RlsProbeCard - Phase 4 workload authorization and RLS proof panel.
  *
@@ -13,7 +14,7 @@
  */
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { BadgeCheck, Database, Fingerprint, RefreshCw, ShieldX } from 'lucide-react';
+import { BadgeCheck, Fingerprint, RefreshCw, ShieldX } from 'lucide-react';
 import { fetchRlsProbe, type RlsProbeResponse } from '../../api/client';
 import { prefersReducedMotion } from '../lib/prefersReducedMotion';
 
@@ -100,7 +101,7 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
           </div>
 
           <div className="mds-rls-layer-label">
-            <Database size={14} aria-hidden="true" />
+            <AuroraIcon size={14} aria-hidden="true" />
             <span>3 · Aurora RLS filters the authorized traveler scope</span>
           </div>
 
