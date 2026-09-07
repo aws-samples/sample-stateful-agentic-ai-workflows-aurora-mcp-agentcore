@@ -147,7 +147,7 @@ class EmbeddingService:
             text = text[: self.MAX_TEXT_LENGTH]
 
         last_error: Optional[Exception] = None
-        for attempt in range(self.EMBEDDING_ATTEMPTS):
+        for _ in range(self.EMBEDDING_ATTEMPTS):
             try:
                 embedding = self._invoke_model(self.corpus_model_id, text, input_type)
             except Exception as exc:  # noqa: BLE001 - retried, then surfaced

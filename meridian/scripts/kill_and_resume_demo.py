@@ -40,7 +40,6 @@ load_dotenv()
 
 from backend.agentcore.identity import get_agentcore_identity  # noqa: E402
 from backend.agents.orchestration_05.workflow import (  # noqa: E402
-    WORKER_INSTANCE_ID,
     initialize_checkpoint_backend,
 )
 from backend.db.journey_store import (  # noqa: E402
