@@ -442,15 +442,19 @@ the graph makes that plan survivable and auditable."*
 After reviewing the hold receipt, select **View system evidence**. Show what
 this run actually recorded. Then select **Session takeaways**.
 
-> “A useful agent needs the right context, permission to use it, and a way to
-> continue when work stops. Aurora brings search, traveler context, and workflow
-> progress into one database. Find the right context. Check access before use.
-> Save enough to continue. Those are the three patterns to take with you.”
+The closing headline is **A canceled flight. A clear way forward.**
+
+> “Alex needs relevant options, preferences carried into the plan, and time
+> to decide. Aurora keeps the search, traveler context, checkpoints, and holds
+> in one database. AgentCore runs the concierge with session memory and workload
+> identity; traveler grants and Aurora RLS control access. MCP connects the tools.
+> LangGraph resumes the saved work. Together, those patterns give the traveler
+> a clear next step.”
 
 Select **Open for questions**.
 
-> “What needs to be remembered in your workflow? Who may access it? What should
-> happen if a worker stops? Where would you use this?”
+> “What would you build for your customers? From disrupted trips to delayed
+> orders, which customer journey needs a better way forward?”
 
 Leave the Q&A screen up. **Explore the live evidence** returns to the same
 journey for deeper questions; **Build from the sample** opens the repository.

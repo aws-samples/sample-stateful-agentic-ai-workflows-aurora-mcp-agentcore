@@ -1038,7 +1038,7 @@ describe('Concierge travel states', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Session takeaways' }));
     expect(await screen.findByRole('region', { name: 'Session takeaways' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open for questions' }));
-    expect(screen.getByRole('heading', { name: 'Where would you use this?' })).toHaveFocus();
+    expect(screen.getByRole('heading', { name: /What would you build\s+for your customers\?/ })).toHaveFocus();
     fireEvent.click(screen.getByRole('button', { name: 'Explore the live evidence' }));
     expect(await screen.findByRole('region', { name: 'System evidence' })).toBeInTheDocument();
     expect(new URL(window.location.href).searchParams.get('journey')).toBe('same-journey');

@@ -298,5 +298,11 @@ the booking. The direct clock uses device time and names that limitation.
 System evidence ends with Session takeaways, leading to an audience-facing
 close and Q&A. Keep four permanent tabs. The close is an intentional detour,
 with a return to the same evidence or Concierge. Large Geist typography,
-three plain-language patterns, and a repository link carry the ending.
+the customer recovery outcome, and a repository link carry the ending.
+The headline is “A canceled flight. A clear way forward.” Three service-led
+takeaways name Aurora, AgentCore, and MCP + LangGraph, each pairing a simple
+benefit with one technical explanation. Keep Aurora’s data and access controls
+distinct from AgentCore’s runtime, memory, and workload identity. Use the
+official AWS marks beside their names, with no repeated technology list in
+the footer. Q&A asks what the audience would build for their customers.
 Preparation controls stay hidden in fullscreen; the closing content remains.

@@ -622,16 +622,19 @@
 .mds-root .mc-session-handoff { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 24px; margin-top: 36px; padding: 28px 0 10px; border-top: 1px solid var(--mc-line); }
 
 /* A deliberate close, with space for the room's next conversation. */
-.mds-root .mc-session-close { display: flex; flex-direction: column; gap: 48px; min-height: calc(100dvh - var(--mc-controls-height) - 150px); width: min(1280px, 100%); margin: 0 auto; padding: clamp(16px, 4vh, 48px) clamp(0px, 3vw, 42px) 0; }
+.mds-root .mc-session-close { display: flex; flex-direction: column; gap: 24px; min-height: calc(100dvh - var(--mc-controls-height) - 150px); width: min(1280px, 100%); margin: 0 auto; padding: clamp(16px, 4vh, 48px) clamp(0px, 3vw, 42px) 0; }
 .mds-root .mc-session-close h1 { white-space: pre-line; margin: 0; font-size: clamp(40px, 4.3vw, 72px); font-weight: 550; letter-spacing: -0.035em; line-height: 1.08; }
 .mds-root .mc-session-close h1:focus { outline: none; }
 .mds-root .mc-session-lead { max-width: 52ch; margin: 24px 0 0; font-size: calc(20px * var(--mc-type-scale)); color: var(--mc-muted); line-height: 1.5; }
-.mds-root .mc-session-patterns { margin: 36px 0; }
-.mds-root .mc-session-patterns > div { display: grid; grid-template-columns: minmax(200px, 0.8fr) minmax(0, 1.5fr); gap: 24px; padding: 18px 0; border-top: 1px solid var(--mc-line); }
-.mds-root .mc-session-patterns dt { font-size: calc(18px * var(--mc-type-scale)); font-weight: 550; line-height: 1.5; }
+.mds-root .mc-session-patterns { margin: 24px 0; }
+.mds-root .mc-session-patterns > div { display: grid; grid-template-columns: minmax(200px, 0.8fr) minmax(0, 1.5fr); gap: 24px; padding: 16px 0; border-top: 1px solid var(--mc-line); }
+.mds-root .mc-session-patterns dt { display: flex; align-items: flex-start; gap: 12px; font-size: calc(18px * var(--mc-type-scale)); font-weight: 550; line-height: 1.5; }
+.mds-root .mc-session-patterns dt :is(img, svg) { flex-shrink: 0; margin-top: 3px; }
 .mds-root .mc-session-patterns dd { margin: 0; color: var(--mc-muted); font-size: calc(16px * var(--mc-type-scale)); line-height: 1.6; max-width: 65ch; }
+.mds-root .mc-session-patterns dd strong { color: var(--mc-ink); font-weight: 550; font-size: calc(18px * var(--mc-type-scale)); }
+.mds-root .mc-session-patterns dd p { margin: 5px 0 0; font-size: calc(14px * var(--mc-type-scale)); }
 .mds-root .mc-session-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px 26px; }
-.mds-root .mc-session-close-foot { margin-top: auto; border-top: 1px solid var(--mc-line); padding: 22px 0; display: grid; gap: 12px; font-size: calc(13px * var(--mc-type-scale)); color: var(--mc-muted); }
+.mds-root .mc-session-close-foot { margin-top: auto; border-top: 1px solid var(--mc-line); padding: 16px 0; display: grid; gap: 12px; font-size: calc(13px * var(--mc-type-scale)); color: var(--mc-muted); }
 .mds-root .mc-session-close-foot > span, .mds-root .mc-session-close-foot a { display: flex; align-items: center; gap: 12px; }
 .mds-root .mc-session-close-foot > span svg { flex-shrink: 0; }
 .mds-root .mc-session-close-foot > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 24px; }

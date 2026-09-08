@@ -63,7 +63,8 @@ a checkpoint, then hands the same plan to the Recovery desk. These are
 boundaries of this demo's configured phases, rather than limits of SQL or MCP.
 
 From System evidence, **Session takeaways → Open for questions** closes the
-talk with three reusable patterns and a return to the same live evidence.
+talk with the traveler’s recovery outcome and three takeaways centered on
+Aurora, AgentCore, and MCP + LangGraph, with a return to the same live evidence.
 Hold receipts show the saved expiry and a countdown: 15 minutes for a recovery
 workflow hold, or 12 hours for the separate trip-details action. See the
 [presenter guide](meridian/docs/PRESENTER_GUIDE.md#7-handoff-from-saved-progress-to-traveler-recovery)

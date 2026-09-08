@@ -222,20 +222,40 @@ Keep the two hold policies distinct:
 ### 8. Close, Then Open the Room (60–90 Seconds)
 
 From **System evidence**, select **Session takeaways**, available in fullscreen
-too. The audience sees three reusable patterns. This closing screen summarizes
-the architecture; it does not assert that a particular run succeeded.
+too. The headline is **A canceled flight. A clear way forward.** Lead with the
+service Alex needs: relevant alternatives, preferences carried into the plan,
+and a package hold that gives time to decide. This summarizes the intended
+customer experience; System evidence establishes what this run actually did.
 
-> “A useful agent needs the right context, permission to use it, and a way
-> to continue when work stops. Aurora brings search, traveler context, and
-> workflow progress into one database. MCP gives the agents named tools.
-> AgentCore and Strands support the agent runtime, while LangGraph makes
-> the steps and checkpoints explicit. These are the patterns you can reuse
-> in your own application.”
+> “Alex needs a way forward after a canceled flight: options that fit, a plan
+> that keeps the details, and time to decide. Aurora brings the search, traveler
+> context, checkpoints, and holds into one PostgreSQL database. AgentCore gives
+> the concierge a managed runtime, session memory, and workload identity.
+> Traveler grants and RLS in Aurora control which records it can use. MCP
+> connects the tools, and LangGraph continues from the saved step. That is how
+> these building blocks support a recovery experience the traveler can follow.”
+
+Point to three takeaways:
+
+- **Amazon Aurora: Find the options. Keep the plan.** Hybrid retrieval,
+  traveler context, workflow checkpoints, and business records share one
+  database. This is the consolidation argument from the session abstract.
+- **Amazon Bedrock AgentCore: Run the concierge. Carry context forward.**
+  Runtime, Memory, and Identity support the agent. Identity identifies the
+  workload; application grants and Aurora RLS enforce traveler access.
+- **MCP + LangGraph: Resume from the saved step.** Named tool contracts and
+  checkpointed execution connect the recovery steps. Stable hold request IDs
+  protect retries; a checkpoint alone does not make every action exactly-once.
+
+For deeper questions, explain that Strands implements the agent tool loop;
+MCP standardizes the tool interface; LangGraph owns explicit workflow steps.
+Keep those implementation details in the discussion rather than adding more
+rows to the closing screen.
 
 Select **Open for questions** and pause:
 
-> “What needs to be remembered in your workflow? Who may access it? What
-> should happen if a worker stops? Where would you use this?”
+> “What would you build for your customers? From disrupted trips to delayed
+> orders, which customer journey needs a better way forward?”
 
 **Explore the live evidence** returns to the same journey for technical
 questions. **Back to takeaways** revisits the three patterns. **Build from

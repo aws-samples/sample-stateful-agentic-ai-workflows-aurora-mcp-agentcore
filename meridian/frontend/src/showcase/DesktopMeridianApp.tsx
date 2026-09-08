@@ -456,7 +456,7 @@ export function DesktopMeridianApp({
               onOpenRecovery={() => setView('recovery')}
             />
             <footer className="mc-session-handoff">
-              <div><h2>Bring the patterns together.</h2><p>Search, access checks, and saved progress: the building blocks behind Meridian.</p></div>
+              <div><h2>Bring it back to the traveler.</h2><p>How Aurora and AgentCore turn saved context into a clear next step.</p></div>
               <button type="button" className="mc-session-primary" onClick={() => setClosing(true)}>Session takeaways <ArrowRight size={18} aria-hidden="true" /></button>
             </footer>
             </>
