@@ -17,7 +17,7 @@ describe('PhaseSelector', () => {
 
     const selector = screen.getByRole('group', { name: 'Planning phase' });
     const production = screen.getByRole('button', {
-      name: /Trust - Production: Workload grants, traveler memory, and RLS/i,
+      name: /Trust - Production: Runtime-owned tools, Cedar policy, traveler memory, and RLS/i,
     });
 
     expect(selector).toContainElement(production);

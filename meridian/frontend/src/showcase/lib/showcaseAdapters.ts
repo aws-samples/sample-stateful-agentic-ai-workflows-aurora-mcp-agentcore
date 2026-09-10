@@ -146,12 +146,12 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
   {
     label: 'Production',
     phase: 4,
-    description: 'Workload grants, traveler memory, and RLS',
+    description: 'Runtime-owned tools, Cedar policy, traveler memory, and RLS',
     capability: 'Trust',
-    takeaway: 'Authenticate the workload, authorize Alex, then apply RLS and audit every turn.',
-    proofPoint: 'Workload grant + RLS',
-    adds: 'Checks the agent’s identity and permission to access Alex’s saved preferences.',
-    tech: 'AgentCore · Aurora authorization · RLS',
+    takeaway: 'Authenticate the workload, authorize Alex, let the agent call governed tools, and audit every turn.',
+    proofPoint: 'Cedar decision + RLS',
+    adds: 'The agent runs in AgentCore Runtime, calls Aurora tools through AgentCore Gateway, and Cedar policy checks every call before it runs.',
+    tech: 'AgentCore Runtime · Gateway · Policy · Memory · Aurora RLS',
   },
   {
     label: 'Workflow',

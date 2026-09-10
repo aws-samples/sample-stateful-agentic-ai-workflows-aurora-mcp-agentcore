@@ -5299,6 +5299,35 @@
   color: var(--mds-on-surface-faint);
 }
 
+/* The row is a div with button semantics so its detail can carry a real link. */
+.mds-span-row {
+  cursor: pointer;
+  font: inherit;
+}
+
+.mds-span-row:focus-visible {
+  outline: 2px solid var(--mds-blue);
+  outline-offset: 2px;
+}
+
+/* A Cedar denial or a failed tool call reads in the danger color, not as a failure of the trace. */
+.mds-span-row.is-denied .mds-span-check,
+.mds-span-row.is-failed .mds-span-check {
+  border-color: var(--mds-danger);
+  color: var(--mds-danger);
+}
+
+.mds-span-row.is-denied .mds-span-meta,
+.mds-span-row.is-failed .mds-span-meta {
+  color: var(--mds-danger);
+}
+
+.mds-span-detail a {
+  color: var(--mds-blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .mds-span-check {
   width: 30px;
   height: 30px;

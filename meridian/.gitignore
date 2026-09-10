@@ -71,3 +71,6 @@ logs/
 *.pdf
 ~$*
 !docs/.gitkeep
+
+# Local verification output and dev-server logs
+.local/

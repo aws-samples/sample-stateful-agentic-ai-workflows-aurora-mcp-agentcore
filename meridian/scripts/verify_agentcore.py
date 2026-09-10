@@ -80,7 +80,7 @@ def check_policy_engine(control, gateway_id: str) -> tuple[bool, str, str]:
     """Return (ok, identifier, status) for the gateway's policy engine association."""
     gateway = control.get_gateway(gatewayIdentifier=gateway_id)
     config = gateway.get("policyEngineConfiguration") or {}
-    engine_arn = config.get("policyEngineArn") or ""
+    engine_arn = config.get("arn") or config.get("policyEngineArn") or ""
     if not engine_arn:
         return False, "no policy engine on the gateway", "MISSING"
     engine_id = engine_arn.rsplit("/", 1)[-1]

@@ -61,7 +61,15 @@ export type TraceSpanCategory =
   | 'synthesis'
   | 'security';
 
-export type TraceSpanStatus = 'ok' | 'cache_hit' | 'streaming' | 'held' | 'delegated' | 'preview';
+export type TraceSpanStatus =
+  | 'ok'
+  | 'cache_hit'
+  | 'streaming'
+  | 'held'
+  | 'delegated'
+  | 'preview'
+  | 'denied'
+  | 'error';
 
 export interface TraceTelemetryField {
   label: string;
@@ -206,6 +214,8 @@ export interface OrderRequest {
   phase: Phase;
   traveler_id?: string;
   action?: 'hold';
+  /** Phase 4 holds run inside the conversation's AgentCore Memory session. */
+  conversation_id?: string;
 }
 
 export interface OrderResponse {

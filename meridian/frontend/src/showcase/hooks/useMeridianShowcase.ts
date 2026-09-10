@@ -713,6 +713,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           phase: selectedPhase,
           traveler_id: SHOWCASE_TRAVELER_ID,
           action: 'hold',
+          conversation_id: conversationId ?? undefined,
         });
         if (!mounted.current) return;
         if (response.order) {
@@ -750,7 +751,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (mounted.current && generation === requestGeneration.current) setIsLoading(false);
       }
     },
-    [isLoading, selectedPhase, travelersCount, tripHolds, openTripDetails],
+    [isLoading, selectedPhase, travelersCount, tripHolds, openTripDetails, conversationId],
   );
 
   const planTrip = useCallback((product: Product) => {

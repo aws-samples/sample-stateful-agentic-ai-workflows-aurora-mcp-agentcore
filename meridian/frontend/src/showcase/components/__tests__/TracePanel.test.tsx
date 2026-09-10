@@ -165,4 +165,30 @@ describe('TracePanel collapse behavior', () => {
     fireEvent.click(memory);
     expect(setTraceTab).toHaveBeenCalledWith('memory');
   });
+
+  it('renders a Cedar denial as denied by policy and links the CloudWatch trace', () => {
+    const denied: ShowcaseTraceSpan = {
+      id: 'span-deny',
+      name: 'Hold refused by Cedar policy',
+      category: 'security',
+      type: 'security',
+      status: 'denied',
+      latencyMs: 210,
+      agent: 'ProductionAgent',
+      file: 'meridian_agentcore/app/MeridianConcierge/main.py',
+      details: 'No Cedar policy permits this hold, so the gateway denied it by default.',
+      fields: [
+        { label: 'trace_console', value: 'https://us-east-1.console.aws.amazon.com/cloudwatch/home' },
+        { label: 'tool', value: 'MeridianHolds___create_courtesy_hold', mono: true },
+      ],
+    };
+    render(<TracePanel state={makeState({ traceSpans: [denied], expandedSpanId: 'span-deny' })} />);
+
+    expect(screen.getByText(/Denied by policy/)).toBeInTheDocument();
+    const row = screen.getByRole('button', { name: /Hold refused by Cedar policy/ });
+    expect(row).toHaveClass('is-denied');
+    const link = screen.getByRole('link', { name: 'Open in CloudWatch' });
+    expect(link).toHaveAttribute('href', 'https://us-east-1.console.aws.amazon.com/cloudwatch/home');
+    expect(link).toHaveAttribute('target', '_blank');
+  });
 });

@@ -456,19 +456,32 @@ function TraceSpanRow({
 }) {
   // Stagger row entry so dense traces read as a sequence, not a flash.
   const animationDelay = `${Math.min(index * 35, 480)}ms`;
+  const denied = span.status === 'denied';
+  const failed = span.status === 'error';
+  const statusLabel = denied ? 'Denied by policy' : failed ? 'Failed' : span.status;
 
+  // A div with button semantics: the expanded detail can carry a real link
+  // (the CloudWatch trace), which HTML does not allow inside a <button>.
   return (
-    <button
-      type="button"
-      className={`mds-span-row${active ? ' is-active' : ''}${visible ? '' : ' is-pending'}`}
+    <div
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
+      className={`mds-span-row${active ? ' is-active' : ''}${visible ? '' : ' is-pending'}${denied ? ' is-denied' : ''}${failed ? ' is-failed' : ''}`}
       style={{ animationDelay }}
       onClick={onToggle}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onToggle();
+        }
+      }}
     >
       <span className="mds-span-check">{index + 1}</span>
       <span className="mds-span-main">
         <span className="mds-span-title">{span.name}</span>
         <span className="mds-span-meta">
-          {span.category} · {span.status} · {span.latencyMs === null ? 'timing not recorded' : `${span.latencyMs}ms`}
+          {span.category} · {statusLabel} · {span.latencyMs === null ? 'timing not recorded' : `${span.latencyMs}ms`}
           {span.component ? ` · ${span.component}` : ''}
         </span>
         {(span.agent || span.file) && (
@@ -482,12 +495,22 @@ function TraceSpanRow({
             {span.sql && <code>{span.sql}</code>}
             {span.fields.map((field) => (
               <small key={`${span.id}-${field.label}`}>
-                {field.label}: {field.value}
+                {field.label}: <SpanFieldValue value={field.value} />
               </small>
             ))}
           </span>
         )}
       </span>
-    </button>
+    </div>
+  );
+}
+
+/** Field values that are URLs (the CloudWatch trace link) open in a new tab. */
+function SpanFieldValue({ value }: { value: string }) {
+  if (!/^https:\/\//.test(value)) return <>{value}</>;
+  return (
+    <a href={value} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
+      {value.includes('console.aws.amazon.com') ? 'Open in CloudWatch' : value}
+    </a>
   );
 }

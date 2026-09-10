@@ -13,6 +13,23 @@ it('leaves missing trace timing unrecorded while preserving measured zero', () =
   expect(activityToShowcaseTraceSpan({ ...activity, execution_time_ms: 0 }, 8, 'Tokyo').latencyMs).toBe(0);
 });
 
+it('keeps a Cedar denial span as denied in the security category', () => {
+  const span = activityToShowcaseTraceSpan(
+    {
+      id: 'deny',
+      timestamp: '',
+      activity_type: 'security' as const,
+      title: 'Hold refused by Cedar policy',
+      telemetry: { category: 'security', component: 'Bedrock AgentCore Policy', status: 'denied', fields: [] },
+    },
+    0,
+    'hold it',
+  );
+  expect(span.status).toBe('denied');
+  expect(span.category).toBe('security');
+  expect(span.component).toBe('Bedrock AgentCore Policy');
+});
+
 describe('SHOWCASE_EXAMPLE_PROMPTS phase ladder', () => {
   it('uses the SQL failure to tee up custom MCP tools', () => {
     const sqlBreak = SHOWCASE_EXAMPLE_PROMPTS[1][2].toLowerCase();

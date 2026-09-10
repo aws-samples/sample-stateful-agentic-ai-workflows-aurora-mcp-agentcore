@@ -31,11 +31,11 @@ const BRIEFS: Record<Phase, {
     pattern: 'pgvector finds similar descriptions; PostgreSQL full-text search finds words. Cohere reranks the combined candidates.',
   },
   4: {
-    title: 'Remember the traveler. Control access.',
-    description: 'Use saved preferences only after checking who may access them.',
-    route: ['Workload identity', 'Traveler context + RLS', 'Personalized response'],
-    evidence: 'Traveler authorization, row scope, and audit event',
-    pattern: 'Workload identity identifies the agent. A traveler grant allows access, RLS limits the rows, and an audit record captures the decision.',
+    title: 'Remember the traveler. Govern the action.',
+    description: 'Use saved preferences only after checking who may access them, and let policy decide every tool call.',
+    route: ['Workload identity', 'Runtime + Gateway tools', 'Cedar decision', 'RLS write + audit'],
+    evidence: 'Traveler authorization, Cedar allow or deny, hold row, and audit event',
+    pattern: 'Workload identity identifies the agent. A traveler grant allows access. The agent calls tools through the gateway, Cedar policy sees the arguments before code runs, RLS limits the rows, and an audit record captures each decision.',
   },
   5: {
     title: 'Resume work after interruption.',
