@@ -21,6 +21,8 @@ export interface MeridianWebBackendStackProps extends StackProps {
   environment: Record<string, string>;
   /** The App Runner instance role from MeridianWebRolesStack, deployed and propagated first. */
   instanceRole: iam.IRole;
+  /** The ECR access role from MeridianWebRolesStack, likewise deployed ahead. */
+  accessRole: iam.IRole;
 }
 
 /**
@@ -38,7 +40,7 @@ export class MeridianWebBackendStack extends Stack {
 
   constructor(scope: Construct, id: string, props: MeridianWebBackendStackProps) {
     super(scope, id, props);
-    const { environment, instanceRole } = props;
+    const { environment, instanceRole, accessRole } = props;
 
     // App Runner needs the complete secret ARN (with its suffix) to read the token at
     // deployment; scripts/publish.py creates the secret and passes the ARN through.
@@ -68,6 +70,7 @@ export class MeridianWebBackendStack extends Stack {
         },
       }),
       instanceRole,
+      accessRole,
       cpu: apprunner.Cpu.ONE_VCPU,
       memory: apprunner.Memory.TWO_GB,
       autoDeploymentsEnabled: false,

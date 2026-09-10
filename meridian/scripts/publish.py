@@ -44,7 +44,7 @@ OUTPUTS = LOCAL / "cdk-outputs.json"
 STACK = "MeridianWeb"
 ROLES_STACK = "MeridianWebRoles"
 BACKEND_STACK = "MeridianWebBackend"
-# IAM propagation. App Runner fails to deploy a service whose instance role was created moments earlier.
+# IAM propagation. App Runner fails to deploy a service whose roles were created moments earlier.
 ROLE_PROPAGATION_SECONDS = 90
 # App Runner service creation fails intermittently in this account with no application
 # log; the same definition deploys minutes later. The backend stack is retried on its own.
@@ -97,15 +97,18 @@ def build_frontend() -> None:
     run(["npm", "run", "build"], FRONTEND)
 
 
-def stack_is_live(region: str, name: str) -> bool:
-    """True when the stack exists and is not a failed creation CDK will replace."""
+def stack_version(region: str, name: str) -> str | None:
+    """The stack's last change time, or None when it does not exist or is a failed creation."""
     try:
         stacks = boto3.client("cloudformation", region_name=region).describe_stacks(StackName=name)
     except ClientError as exc:
         if "does not exist" in str(exc):
-            return False
+            return None
         raise
-    return stacks["Stacks"][0]["StackStatus"] not in {"ROLLBACK_COMPLETE", "DELETE_IN_PROGRESS", "DELETE_COMPLETE"}
+    stack = stacks["Stacks"][0]
+    if stack["StackStatus"] in {"ROLLBACK_COMPLETE", "DELETE_IN_PROGRESS", "DELETE_COMPLETE"}:
+        return None
+    return str(stack.get("LastUpdatedTime") or stack["CreationTime"])
 
 
 def deploy_stack(engine: str, region: str, secret_arn: str) -> dict:
@@ -127,10 +130,10 @@ def deploy_stack(engine: str, region: str, secret_arn: str) -> dict:
         "AWS_REGION": region,
         "CDK_DEFAULT_REGION": region,
     }
-    roles_are_new = not stack_is_live(region, ROLES_STACK)
+    roles_before = stack_version(region, ROLES_STACK)
     cdk_deploy(ROLES_STACK, env)
-    if roles_are_new:
-        print(f"Waiting {ROLE_PROPAGATION_SECONDS}s for the new App Runner instance role to propagate...")
+    if stack_version(region, ROLES_STACK) != roles_before:
+        print(f"Waiting {ROLE_PROPAGATION_SECONDS}s for the App Runner roles to propagate...")
         time.sleep(ROLE_PROPAGATION_SECONDS)
     for attempt in range(1, BACKEND_ATTEMPTS + 1):
         try:

@@ -127,9 +127,10 @@ function that enforces basic auth, injects the backend bearer token on `/api/*`
 and `/health`, and rewrites `/showcase` and friends to `index.html`. The
 backend runs with `ENVIRONMENT=production`, so it refuses any caller without
 the token; the App Runner URL is not an open door. Three stacks, deployed in
-order: `MeridianWebRoles` holds the App Runner instance role and goes first,
-because App Runner cannot deploy a service whose role was created moments
-earlier (`publish.py` waits 90 seconds after creating it); `MeridianWebBackend`
+order: `MeridianWebRoles` holds the App Runner instance and ECR access roles and
+goes first, because App Runner cannot deploy a service whose roles were created
+moments earlier (`publish.py` waits 90 seconds whenever it changes them);
+`MeridianWebBackend`
 is the App Runner service, retried up to three times on its own because App
 Runner service creation fails intermittently here with no application log;
 `MeridianWeb` is the site. App Runner checks readiness over TCP:

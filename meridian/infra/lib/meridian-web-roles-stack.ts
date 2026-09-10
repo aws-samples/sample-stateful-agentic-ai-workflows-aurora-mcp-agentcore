@@ -7,18 +7,20 @@ export interface MeridianWebRolesStackProps extends StackProps {
 }
 
 /**
- * The App Runner instance role, in its own stack.
+ * The App Runner roles, in their own stack.
  *
- * App Runner reads the api-token secret and hands the container its
- * credentials through this role while it deploys the service. When the role is
- * created in the same CloudFormation deployment as the service, App Runner
- * fails every time with "Failed to deploy your application image" and no
- * application log, because IAM has not propagated the role yet; the same
- * service definition succeeds against a role that has existed for a minute.
- * scripts/publish.py deploys this stack first and waits after creating it.
+ * App Runner pulls the image with the access role and hands the container its
+ * credentials and the api-token secret through the instance role while it
+ * deploys the service. When either role is created in the same CloudFormation
+ * deployment as the service, App Runner fails with "Failed to deploy your
+ * application image" and no application log, because IAM has not propagated
+ * the role yet; the same service definition succeeds against roles that have
+ * existed for a minute. scripts/publish.py deploys this stack first and waits
+ * whenever it created or changed it.
  */
 export class MeridianWebRolesStack extends Stack {
   readonly instanceRole: iam.Role;
+  readonly accessRole: iam.Role;
 
   constructor(scope: Construct, id: string, props: MeridianWebRolesStackProps) {
     super(scope, id, props);
@@ -62,6 +64,13 @@ export class MeridianWebRolesStack extends Stack {
       }),
     );
 
+    this.accessRole = new iam.Role(this, 'BackendAccessRole', {
+      assumedBy: new iam.ServicePrincipal('build.apprunner.amazonaws.com'),
+      description: 'Meridian backend on App Runner: pull the image from the CDK assets repository',
+      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSAppRunnerServicePolicyForECRAccess')],
+    });
+
     new CfnOutput(this, 'InstanceRoleArn', { value: this.instanceRole.roleArn });
+    new CfnOutput(this, 'AccessRoleArn', { value: this.accessRole.roleArn });
   }
 }

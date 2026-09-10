@@ -20,13 +20,14 @@ const environment = loadServiceEnvironment(region);
 const roles = new MeridianWebRolesStack(app, 'MeridianWebRoles', {
   env,
   environment,
-  description: 'Meridian travel concierge: the App Runner instance role, deployed ahead of the service',
+  description: 'Meridian travel concierge: the App Runner roles, deployed ahead of the service',
 });
 
 const backend = new MeridianWebBackendStack(app, 'MeridianWebBackend', {
   env,
   environment,
   instanceRole: roles.instanceRole,
+  accessRole: roles.accessRole,
   description: 'Meridian travel concierge: FastAPI backend on App Runner',
 });
 backend.addStackDependency(roles);
