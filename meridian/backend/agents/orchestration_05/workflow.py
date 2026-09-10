@@ -1124,6 +1124,8 @@ class OrchestrationAgent:
                     "fields": [
                         {"label": "gateway_tool", "value": HOLD_TOOL, "mono": True},
                         {"label": "cedar_decision", "value": "allow"},
+                        {"label": "cedar_policy", "value": "meridian_hold_governance", "mono": True},
+                        {"label": "policy_mode", "value": "ENFORCE"},
                         {"label": "workload", "value": str(governance.get("subject") or ""), "mono": True},
                         {"label": "traveler_grant", "value": str(governance.get("decision") or "")},
                         {"label": "hold_id", "value": hold_id, "mono": True},
@@ -1224,7 +1226,11 @@ class OrchestrationAgent:
                 "fields": [
                     {"label": "gateway_tool", "value": HOLD_TOOL, "mono": True},
                     {"label": "gateway_error", "value": raw or "", "mono": True},
-                ],
+                ] + ([
+                    {"label": "cedar_decision", "value": "deny"},
+                    {"label": "cedar_policy", "value": "meridian_hold_governance", "mono": True},
+                    {"label": "policy_mode", "value": "ENFORCE"},
+                ] if denied else []),
             },
         )
 

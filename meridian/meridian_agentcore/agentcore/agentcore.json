@@ -44,6 +44,10 @@
         {
           "name": "MERIDIAN_POLICY_ENGINE_ID",
           "value": "meridianv2_MeridianGovernance-b2uv1vlg3k"
+        },
+        {
+          "name": "MERIDIAN_POLICY_MODE",
+          "value": "ENFORCE"
         }
       ]
     }

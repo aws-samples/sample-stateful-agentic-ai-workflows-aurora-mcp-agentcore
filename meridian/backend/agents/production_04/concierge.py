@@ -189,13 +189,18 @@ class ProductionAgent:
     # ------------------------------------------------------------- identity
 
     def _identity_spans(self, scope: Any, traveler_id: str) -> None:
+        configured = bool(scope.workload_identity)
         self._log(
             "reasoning",
-            "AgentCore Identity resolved",
-            details=f"workload={scope.workload_identity or '-'} · token={scope.token_status}",
+            "AgentCore Identity resolved" if configured else "Workload identity · AWS STS",
+            details=(
+                f"workload={scope.workload_identity} · token={scope.token_status}"
+                if configured
+                else "AgentCore Identity is not configured; the backend acts as its IAM principal"
+            ),
             telemetry={
                 "category": "security",
-                "component": "Bedrock AgentCore Identity",
+                "component": "Bedrock AgentCore Identity" if configured else "AWS STS",
                 "status": "ok" if scope.token_status == "live" else "delegated",
                 "fields": [
                     {"label": "iam_identity", "value": scope.iam_identity, "mono": True},

@@ -55,12 +55,12 @@
   --mds-experience-border: rgba(214, 200, 176, 0.2);
   --mds-chrome-sidebar-border: rgba(214, 200, 176, 0.14);
   --mds-chrome-sidebar-background:
-    radial-gradient(circle at 0% 74%, rgba(246, 183, 60, 0.06), transparent 40%),
+    radial-gradient(circle at 0% 74%, rgb(var(--mds-recovery-yellow-rgb) / 0.06), transparent 40%),
     linear-gradient(180deg, rgba(14, 12, 10, 0.97), rgba(10, 9, 8, 0.95));
   --mds-chrome-brand: #ffffff;
   --mds-chrome-brand-border: rgb(var(--mds-recovery-yellow-rgb) / 0.45);
   --mds-chrome-brand-shadow:
-    0 0 0 2px rgba(246, 183, 60, 0.14),
+    0 0 0 2px rgb(var(--mds-recovery-yellow-rgb) / 0.14),
     0 5px 18px rgba(0, 0, 0, 0.4);
   --mds-chrome-nav: #cfc8bc;
   --mds-chrome-nav-hover: #ffffff;
@@ -76,8 +76,8 @@
   --mds-chrome-account-border: rgba(214, 200, 176, 0.14);
   --mds-chrome-account: #fbf9f4;
   --mds-chrome-account-muted: #b6aea2;
-  --mds-chrome-avatar-border: rgba(246, 183, 60, 0.55);
-  --mds-chrome-avatar-shadow: 0 0 0 3px rgba(246, 183, 60, 0.08);
+  --mds-chrome-avatar-border: rgb(var(--mds-recovery-yellow-rgb) / 0.55);
+  --mds-chrome-avatar-shadow: 0 0 0 3px rgb(var(--mds-recovery-yellow-rgb) / 0.08);
   --mds-chrome-status: #cfc8bc;
   --mds-chrome-control: #c3bcb0;
   --mds-chrome-control-border: rgba(214, 200, 176, 0.2);
@@ -138,24 +138,25 @@
 /* ============================================================================
    LIGHT THEME — "Daylight" (break-glass for low-contrast rooms / projectors)
    Overrides only the token values; every component re-skins automatically.
-   Palette from docs/design/meridian-daylight-mockup.html, with --mds-muted
-   darkened vs the mockup for projector legibility.
+   Palette from docs/design/meridian-daylight-mockup.html, moved from a cool
+   blue-grey ground to warm paper so it pairs with the warm dark theme and
+   keeps its contrast on a projector; --mds-muted darkened for legibility.
    ========================================================================== */
 .mds-root[data-theme="light"] {
-  --mds-bg: #e9eef4;
-  --mds-bg-2: #dde5ee;
-  --mds-shell: #eef2f7;
+  --mds-bg: #f1eee8;
+  --mds-bg-2: #e8e4dc;
+  --mds-shell: #f5f3ee;
   --mds-shell-elevated: #ffffff;
-  --mds-tooltip-bg: #12263c;
-  --mds-tooltip-fg: #f4f8fc;
-  --mds-tooltip-border: rgba(15, 23, 42, 0.28);
-  --mds-panel: rgba(255, 255, 255, 0.84);
-  --mds-panel-2: rgba(255, 255, 255, 0.94);
-  --mds-line: rgba(15, 23, 42, 0.14);
-  --mds-line-strong: rgba(15, 23, 42, 0.22);
-  --mds-ink: #0f172a;
-  --mds-muted: #475569;   /* darkened from mockup #64748b for projector contrast */
-  --mds-dim: #58677a;
+  --mds-tooltip-bg: #1f1c18;
+  --mds-tooltip-fg: #fbf9f4;
+  --mds-tooltip-border: rgba(31, 28, 24, 0.28);
+  --mds-panel: rgba(255, 255, 255, 0.86);
+  --mds-panel-2: rgba(255, 255, 255, 0.95);
+  --mds-line: rgba(31, 28, 24, 0.13);
+  --mds-line-strong: rgba(31, 28, 24, 0.22);
+  --mds-ink: #1c1a17;
+  --mds-muted: #5a554d;   /* darkened for projector contrast */
+  --mds-dim: #6b665e;
   --mds-blue: #1f6feb;
   --mds-blue-rgb: 31 111 235;
   --mds-green-rgb: 21 128 61;
@@ -177,47 +178,47 @@
   --mds-memory-line: rgba(122, 81, 0, 0.48);
   --mds-chrome-sidebar-border: #e7e3dc;
   --mds-chrome-sidebar-background: rgba(255, 255, 255, 0.82);
-  --mds-chrome-brand: #0a2342;
+  --mds-chrome-brand: #1c1a17;
   --mds-chrome-brand-border: rgba(31, 111, 235, 0.24);
   --mds-chrome-brand-shadow: 0 3px 12px rgba(31, 111, 235, 0.12);
-  --mds-chrome-nav: #536174;
-  --mds-chrome-nav-hover: #0a2342;
+  --mds-chrome-nav: #5a554d;
+  --mds-chrome-nav-hover: #1c1a17;
   --mds-chrome-nav-hover-background: rgba(31, 111, 235, 0.05);
   --mds-chrome-nav-hover-border: rgba(31, 111, 235, 0.1);
-  --mds-chrome-nav-active: #0a2342;
+  --mds-chrome-nav-active: #1c1a17;
   --mds-chrome-nav-active-background:
     linear-gradient(90deg, rgb(var(--mds-blue-rgb) / 0.12), rgb(var(--mds-blue-rgb) / 0.045));
   --mds-chrome-nav-active-border: rgba(31, 111, 235, 0.08);
   --mds-chrome-nav-active-shadow: none;
   --mds-chrome-account-border: #ebe7e0;
-  --mds-chrome-account: #0a2342;
-  --mds-chrome-account-muted: #6c7988;
+  --mds-chrome-account: #1c1a17;
+  --mds-chrome-account-muted: #6b665e;
   --mds-chrome-avatar-border: rgb(var(--mds-blue-rgb) / 0.5);
   --mds-chrome-avatar-shadow: 0 0 0 3px rgb(var(--mds-blue-rgb) / 0.07);
-  --mds-chrome-status: #657180;
-  --mds-chrome-control: #657180;
+  --mds-chrome-status: #6b665e;
+  --mds-chrome-control: #6b665e;
   --mds-chrome-control-border: #e4e1da;
   --mds-chrome-control-background: rgba(255, 255, 255, 0.86);
   --mds-chrome-main-background: rgba(251, 250, 247, 0.72);
-  --mds-chrome-breadcrumb: #1d2939;
+  --mds-chrome-breadcrumb: #1c1a17;
   --mds-chrome-right-border: #e5e2dc;
   --mds-chrome-right-background: rgba(253, 252, 249, 0.92);
   --mds-side-panel-background: var(--mds-panel);
   --mds-side-panel-border: var(--mds-line);
   --mds-side-panel-shadow: var(--mds-shadow-2);
 
-  --mds-on-surface: #0f172a;
-  --mds-on-surface-soft: #334155;
-  --mds-on-surface-faint: #526176;
-  --mds-fill-1: rgba(15, 23, 42, 0.03);
-  --mds-fill-2: rgba(15, 23, 42, 0.06);
-  --mds-fill-3: rgba(15, 23, 42, 0.10);
+  --mds-on-surface: #1c1a17;
+  --mds-on-surface-soft: #3a3631;
+  --mds-on-surface-faint: #5a554d;
+  --mds-fill-1: rgba(31, 28, 24, 0.03);
+  --mds-fill-2: rgba(31, 28, 24, 0.06);
+  --mds-fill-3: rgba(31, 28, 24, 0.10);
   --mds-card: #ffffff;
-  --mds-scrim: rgba(15, 23, 42, 0.32);
+  --mds-scrim: rgba(31, 28, 24, 0.32);
   --mds-blue-soft: rgba(31, 111, 235, 0.10);
   --mds-blue-line: rgba(31, 111, 235, 0.35);
-  --mds-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --mds-shadow-2: 0 8px 30px rgba(15, 23, 42, 0.12);
+  --mds-shadow-1: 0 1px 2px rgba(31, 28, 24, 0.06);
+  --mds-shadow-2: 0 8px 30px rgba(31, 28, 24, 0.12);
 }
 
 /* If the browser/projector can't do backdrop-filter, glass panels would
@@ -1346,7 +1347,7 @@
 .mds-phase-selector button.is-active {
   color: #ffffff;
   background: var(--mds-blue);
-  box-shadow: 0 0 28px var(--mds-blue-line), inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
 }
 
 .mds-aurora-strip.is-collapsed {

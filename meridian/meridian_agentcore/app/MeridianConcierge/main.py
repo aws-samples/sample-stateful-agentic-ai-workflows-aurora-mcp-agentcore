@@ -40,6 +40,7 @@ MEMORY_ID = os.environ["MEMORY_MERIDIAN_SESSION_ID"]
 MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "global.anthropic.claude-sonnet-5")
 GATEWAY_ID = os.getenv("MERIDIAN_GATEWAY_ID", GATEWAY_URL.split("//")[-1].split(".")[0])
 POLICY_ENGINE_ID = os.getenv("MERIDIAN_POLICY_ENGINE_ID", "")
+POLICY_MODE = os.getenv("MERIDIAN_POLICY_MODE", "ENFORCE")
 SESSION_NAMESPACE = "/users/{actorId}/sessions/{sessionId}"
 FOLLOW_UPS = [
     "Compare the top options",
@@ -107,6 +108,7 @@ def turn_context(payload: dict) -> tuple[TurnContext, dict | None]:
         budget_ceiling_cents=int(payload.get("budget_ceiling_cents") or 0),
         gateway_id=GATEWAY_ID,
         policy_engine_id=POLICY_ENGINE_ID,
+        policy_mode=POLICY_MODE,
     )
     return turn, hold_target
 

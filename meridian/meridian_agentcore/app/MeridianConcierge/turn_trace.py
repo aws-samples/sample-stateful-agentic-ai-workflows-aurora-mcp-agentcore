@@ -25,6 +25,14 @@ POLICY_REASONS = {
     ),
 }
 HOLD_LIMITS = {"holdMinutes": 720, "travelers": 6}
+# The policy that must permit each tool. The engine is default deny with one permit
+# per action, so a call that ran was permitted by this policy and a denied call
+# found no permit in it. The gateway reports the decision, not the policy name.
+POLICY_FOR = {
+    "semantic_trip_search": "meridian_read_tools",
+    "get_package_details": "meridian_read_tools",
+    "create_courtesy_hold": "meridian_hold_governance",
+}
 SPANS = {
     "semantic_trip_search": (
         "search",
@@ -55,6 +63,7 @@ class TurnContext:
     budget_ceiling_cents: int
     gateway_id: str
     policy_engine_id: str
+    policy_mode: str = "ENFORCE"
 
 
 def short(tool_name: str) -> str:
@@ -178,6 +187,8 @@ class TraceHooks(HookProvider):
                 {"label": "auth", "value": "SigV4"},
                 {"label": "gateway", "value": self.turn.gateway_id, "mono": True},
                 {"label": "policy_engine", "value": self.turn.policy_engine_id, "mono": True},
+                {"label": "policy_mode", "value": self.turn.policy_mode},
+                {"label": "cedar_policy", "value": POLICY_FOR[name], "mono": True},
             ],
         }))
         self.started[event.tool_use["toolUseId"]] = time.monotonic()
@@ -216,7 +227,12 @@ class TraceHooks(HookProvider):
             self.hold_settled = True
             self.emit("hold", {"hold": self.hold, "policyDecision": "allow"})
         summary = payload.get("summary") or f"{name} returned"
-        fields = [{"label": "result", "value": summary}]
+        fields = [
+            {"label": "result", "value": summary},
+            {"label": "cedar_decision", "value": "allow"},
+            {"label": "cedar_policy", "value": POLICY_FOR[name], "mono": True},
+            {"label": "policy_mode", "value": self.turn.policy_mode},
+        ]
         governance = payload.get("governance")
         if governance:
             fields.append(
@@ -261,7 +277,11 @@ class TraceHooks(HookProvider):
                     "mono": True,
                 },
                 {"label": "gateway_error", "value": text, "mono": True},
-            ],
+            ] + ([
+                {"label": "cedar_decision", "value": "deny"},
+                {"label": "cedar_policy", "value": POLICY_FOR[name], "mono": True},
+                {"label": "policy_mode", "value": self.turn.policy_mode},
+            ] if denied else []),
         }, elapsed))
         if name == "create_courtesy_hold":
             self.hold = None

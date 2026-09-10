@@ -147,11 +147,14 @@
   flex: 0 0 23px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--mds-line-strong);
+  /* Inverted chips: ink on the theme's ground, so the numerals read from the
+     back of a room without a glow. */
+  border: 1px solid transparent;
   border-radius: 50%;
-  color: var(--mds-muted);
-  background: var(--mds-fill-1);
-  font-size: calc(11px * var(--mds-fs));
+  color: var(--mds-bg);
+  background: var(--mds-ink);
+  font-size: calc(11.5px * var(--mds-fs));
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
   transition:
     color 160ms ease,
@@ -190,7 +193,7 @@
 /* Already climbed: the capability is still running underneath. */
 .mds-ladder-nav-rung.is-carried .mds-ladder-nav-index {
   border-color: var(--mds-blue-line);
-  color: var(--mds-blue);
+  color: var(--mds-ink);
   background: var(--mds-blue-soft);
 }
 
@@ -202,9 +205,8 @@
 
 .mds-ladder-nav-rung.is-active .mds-ladder-nav-index {
   border-color: var(--mds-blue);
-  color: #201c16;
+  color: #ffffff;
   background: var(--mds-blue);
-  box-shadow: 0 0 14px var(--mds-blue-line);
 }
 
 .mds-ladder-nav-rung.is-active .mds-ladder-nav-copy small {
