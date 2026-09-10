@@ -122,19 +122,10 @@ Do not present `MemorySaver` as durable. It is an in-process fallback only.
 Run once before going live:
 
 ```bash
-cd ..
-meridian/venv/bin/python - <<'PY'
-import sys
-sys.path.insert(0,'meridian')
-from dotenv import load_dotenv
-load_dotenv('meridian/.env')
-from backend.agentcore.gateway import AgentCoreGatewayAdapter
-ad = AgentCoreGatewayAdapter()
-tools, _ = ad.list_tools()
-print("tools:", [t.get("name") for t in tools])
-pkgs, _ = ad.semantic_trip_search("wine week in europe", 3)
-print("packages:", len(pkgs))
-PY
+cd meridian
+venv/bin/python scripts/verify_agentcore.py        # every row green, policy engine ACTIVE · ENFORCE
+venv/bin/python scripts/smoke_gateway_tools.py     # three tools listed, one package read through the gateway
+venv/bin/python scripts/smoke_production_turn.py   # PASS unconfirmed denied · PASS confirmed held · PASS over budget denied
 ```
 
 ## 6) Quick recovery playbook

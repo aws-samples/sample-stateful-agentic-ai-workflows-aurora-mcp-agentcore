@@ -57,6 +57,8 @@ Verify:
 - Alex Morgan's profile loads with JFK, party of two, and both loyalty programs.
 - The first SQL query returns product cards with images and live inventory.
 - Phase 4 shows an authenticated subject and traveler authorization decision.
+- `python scripts/verify_agentcore.py` reports Runtime, Gateway and Memory ready, the policy engine `ACTIVE · ENFORCE`, three gateway tools, and observability on.
+- `python scripts/smoke_production_turn.py` ends with three PASS lines: unconfirmed denied, confirmed held, over budget denied.
 - Phase 5 reports `checkpoint_durable: true` with `AuroraDataApiSaver` or `PostgresSaver (Aurora · pooled)`. `MemorySaver` cannot prove restart recovery.
 
 Use the dark theme in a dim room and the light theme when projector contrast is
@@ -86,7 +88,7 @@ completed response; the UI does not stream live step completion while it waits.
 | **1 - SQL** | `Show me city trips under $2,000 per traveler.` | Parameterized SQL, live rows, inventory | Structured filters work, but business operations need a contract. |
 | **2 - MCP** | `Compare three trip types and convert each price to euros.` | MCP tool discovery, comparison, FX conversion | Tools improve interoperability, not semantic understanding. |
 | **3 - Retrieval** | `Find a quiet, romantic wine-country retreat with a private villa.` | pgvector, full-text candidates, Cohere rerank | Intent works, but the system still needs trusted memory. |
-| **4 - Production** | `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` | Memory facts, identity, ALLOW/DENY, RLS, audit | A multi-step disruption plan now needs durable execution state. |
+| **4 - Production** | `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` then click **Hold** on a trip, then type `Hold the first option for two travelers now.` | Memory facts, identity, ALLOW/DENY, RLS, audit, the runtime's gateway tool calls, one Cedar permit and one Cedar deny | A multi-step disruption plan now needs durable execution state. |
 | **5 - Workflow** | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` | Named graph nodes, checkpoints, same-thread resume | The plan survives process interruption because state is externalized. |
 
 ## Presentation Flow
@@ -149,9 +151,12 @@ Describe the control chain in order:
 2. Authorize that subject for Alex's traveler record.
 3. Set the traveler scope and least-privilege database role.
 4. Let Aurora RLS filter rows.
-5. Audit the authorization decision and data access.
+5. Hand the authorized context to the agent in AgentCore Runtime, which discovers its tools from AgentCore Gateway over MCP with its own signed identity.
+6. Let the gateway's Cedar policy engine decide every tool call on the arguments the runtime pinned: the traveler id, the confirmation flag and the budget ceiling come from the request, never from the model.
+7. Audit the authorization decision and data access; the hold Lambda proves its own grant before it writes.
 
-Use the Alex ALLOW and Jordan DENY results as the negative control.
+Use the Alex ALLOW and Jordan DENY results as the negative control, then click
+**Hold** for the Cedar permit and type a hold request for the Cedar deny.
 
 Be precise: this sample authorizes a workload to access a traveler record. A
 shared application must also authenticate the human user and bind the verified
@@ -304,6 +309,15 @@ Keep these statements explicit:
   loss. Use a verified Aurora checkpointer for the durable workflow claim.
 - **The sample plans recovery; it does not issue an airline ticket.** A real
   booking workflow would add payment, approval, and carrier integration steps.
+- **Cedar governs tool arguments; it does not authenticate the human.** The
+  gateway sees the confirmation flag, the budget ceiling and the traveler id
+  that the runtime pinned from the authorized request. The click on **Hold** is
+  the confirmation. A deny is the engine finding no permit for those arguments;
+  the runtime explains which condition failed from the same arguments.
+- **One permit, four conditions, default deny.** The hold policy is a single
+  `permit` with `when` conditions. There is no separate `forbid`: a forbid
+  created alongside its permit fails Cedar validation as overly restrictive
+  when CloudFormation creates them in parallel.
 
 ## Readiness Checklist
 
@@ -311,6 +325,8 @@ Keep these statements explicit:
 - [ ] Confirm all five phase prompts return their expected proof.
 - [ ] Confirm product cards have images, inventory, and aligned actions.
 - [ ] Confirm Alex ALLOW and Jordan DENY are both visible.
+- [ ] Confirm `scripts/verify_agentcore.py` exits 0 and `scripts/smoke_production_turn.py` prints three PASS lines.
+- [ ] Confirm a **Hold** click in Phase 4 shows the Cedar permit and a hold id, and a typed hold shows **Denied by policy**.
 - [ ] Confirm recalled facts come from Aurora and are highlighted in the reply.
 - [ ] Confirm `/health` reports a durable checkpoint backend for Phase 5.
 - [ ] Confirm resume continues the same workflow thread after a backend restart.
@@ -324,6 +340,13 @@ Keep these statements explicit:
 - **Memory profile is empty:** check the session, traveler authorization, and seed records. Re-seed only a fresh disposable database; preserve an existing demo journey.
 - **Checkpoint proof says MemorySaver:** restore the checkpoint connection and
   restart with `LANGGRAPH_CHECKPOINT_REQUIRED=true`.
+- **A Hold click is refused with "traveler_not_authorized":** the holds Lambda
+  role lost its grant. Run `python scripts/bind_gateway_workload.py` from
+  `meridian/` and click again.
+- **Phase 4 says the platform is not configured or the gateway lists fewer
+  than three tools:** run `python scripts/verify_agentcore.py`; if the policy
+  engine row is MISSING, `agentcore deploy -y` from `meridian_agentcore`
+  reattaches it.
 - **Live service is unavailable:** use the committed screenshot in this
   repository and walk through System evidence using saved screenshots or exported records. Label that walkthrough as recorded; do not imply it is a live run.
 

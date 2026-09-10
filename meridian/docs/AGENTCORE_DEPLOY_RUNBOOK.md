@@ -8,15 +8,18 @@ demo. Designed to be runnable in one sitting (~15 min hands-on,
 
 | Resource | Name | Purpose at the chalk talk |
 |---|---|---|
-| **Memory** | `meridian_session` | `create_event` write + `list_events` read on every Phase 4 turn — visible in trace |
-| **Gateway** | `meridian-aurora` | Managed MCP endpoint fronting `semantic_trip_search` Lambda — `tools/list` + `tools/call` spans land in trace |
-| **Runtime** | `MeridianConcierge` | Hosts the agent module; runtime ARN appears in the AgentCore Identity span |
+| **Runtime** | `MeridianConcierge` | The Phase 4 agent: Strands tool loop over the gateway, AgentCore Memory session, ADOT spans, streamed trace |
+| **Memory** | `meridian_session` | The agent's session store; the Strands session manager restores it and writes each turn back |
+| **Gateway** | `meridian-aurora` | Managed MCP endpoint, AWS_IAM inbound, Cedar policy engine attached in ENFORCE mode |
+| **Gateway target** | `SemanticTripSearchLambda` | `semantic_trip_search(query, limit)` over Aurora pgvector |
+| **Gateway target** | `MeridianHolds` | CDK-built Lambda: `get_package_details(packageId)` and `create_courtesy_hold(...)` with the identity chain |
+| **Policy engine** | `MeridianGovernance` | `meridian_read_tools` permits the reads; `meridian_hold_governance` permits the hold only when confirmed, at most 12 hours, at most 6 travelers, within budget |
 
-All three are declared in
+All of them are declared in
 [`meridian_agentcore/agentcore/agentcore.json`](../meridian_agentcore/agentcore/agentcore.json).
-Memory uses the `SEMANTIC` strategy: `create_event` writes are mirrored into
-the session namespace and surfaced via `retrieve_memory_records` /
-`list_memory_records` (the recall path the Phase 4 trace shows).
+Never rename `meridian_session`: a rename replaces the memory and drops the
+seeded Tokyo history. Memory uses the `SEMANTIC` strategy over
+`/users/{actorId}/sessions/{sessionId}`; the runtime is the actor's session.
 
 ## Prerequisites
 
@@ -54,18 +57,30 @@ npm run cdk -- bootstrap aws://$(aws sts get-caller-identity --query Account --o
 ## Deploy
 
 ```bash
-cd meridian/meridian_agentcore
+cd meridian
 
-# Validate the spec first so we catch typos before CDK spins up:
+# 1. The holds Lambda reads its Aurora settings from SSM (values come from .env):
+python scripts/publish_gateway_parameters.py
+
+cd meridian_agentcore
+
+# 2. Validate the spec first so we catch typos before CDK spins up:
 agentcore validate --json
-agentcore package --runtime MeridianConcierge
 
-# Synth + deploy. Expect 5–8 min the first time:
+# 3. Synth + deploy. Expect 5–8 min the first time:
 #   - Memory: ~1 min
-#   - Gateway + Lambda target: ~2–3 min
-#   - Runtime (ECR push + microVM): ~3–4 min
+#   - Gateway, the two Lambda targets, the policy engine: ~2–3 min
+#   - Runtime (code zip + microVM): ~3–4 min
 agentcore deploy -y
+
+# 4. The holds Lambda is a workload: grant its execution role access to Alex.
+cd .. && python scripts/bind_gateway_workload.py
 ```
+
+On a fresh account, deploy in two passes: first with `policyEngines: []` and
+no `policyEngineConfiguration` on the gateway (the policies validate against the
+target's tool schema, which must exist), then restore both and deploy again.
+Updates to an existing stack are a single `agentcore deploy -y`.
 
 `agentcore deploy` writes the live ARNs back into
 `meridian_agentcore/agentcore/.cli/deployed-state.json`. The Meridian backend
@@ -92,19 +107,37 @@ AgentCore data-plane calls.
 ## Verify
 
 ```bash
-# Confirm all three resources are healthy:
-agentcore status
+cd meridian
+
+# Runtime, Gateway, Memory, policy engine (ACTIVE · ENFORCE), three tools, observability:
+python scripts/verify_agentcore.py
+
+# tools/list plus one get_package_details call, signed from this laptop:
+python scripts/smoke_gateway_tools.py CTY-002
+
+# The governed path end to end: search, unconfirmed hold denied, confirmed hold held,
+# over-budget hold denied. Prints three PASS lines and saves every event under
+# .local/verification/.
+python scripts/smoke_production_turn.py
 
 # Tail Runtime logs while you click a Phase 4 pill in the showcase:
-agentcore logs --runtime MeridianConcierge --follow
+cd meridian_agentcore && agentcore logs --runtime MeridianConcierge --follow
 ```
 
 In the showcase trace panel you should see (real, not faked):
-- `AgentCore Identity resolved` — workload identity envelope
-- `AgentCore Gateway · tools/list` — real MCP discovery
-- `AgentCore Gateway · tools/call → semantic_trip_search` — real tool invocation
-- `AgentCore Memory · create_event` — real write into Memory
-- `AgentCore Memory · list_events` (recall pill) — real read
+- `AgentCore Identity resolved` and `Workload traveler grant allowed`
+- `AgentCore Runtime · turn started`
+- `AgentCore Gateway · tools/list` with three tools, SigV4
+- `AgentCore Memory · session restored` with the event count
+- `AgentCore Gateway · tools/call → semantic_trip_search` and its result
+- On a Hold click: `tools/call → create_courtesy_hold`, its result with the
+  Lambda's workload subject and `traveler_grant: allow`, and the hold receipt
+- On a typed hold: `Hold refused by Cedar policy · Denied by policy`
+- `AgentCore Runtime · turn complete` with the trace id and a CloudWatch link
+
+Spans for that trace id are in the runtime log group
+`/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT`, stream `spans`, with
+the application logs in the per-session `runtime-logs-*` streams.
 
 ## Rollback / cleanup
 

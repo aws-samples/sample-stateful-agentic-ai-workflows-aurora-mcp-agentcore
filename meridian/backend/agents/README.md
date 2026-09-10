@@ -10,7 +10,8 @@ Five orchestration phases, each teaching a different builder pattern on the **sa
 | 3 | Search Agent | `retrieval_03/search_agent.py` | `@tool` semantic search (pgvector) |
 | 3 | Package Agent | `retrieval_03/package_agent.py` | `@tool` details + departure availability |
 | 3 | Booking Agent | `retrieval_03/booking_agent.py` | `@tool` totals + Aurora booking writes |
-| 4 | **Production Agent** | `production_04/concierge.py` | Strands concierge + RLS + AgentCore |
+| 4 | **Production Agent** | `production_04/concierge.py` | Identity, traveler grant, RLS read and write around the managed runtime |
+| 4 | Concierge runtime | `../../meridian_agentcore/app/MeridianConcierge/main.py` | Strands agent in AgentCore Runtime: tools from AgentCore Gateway over MCP, AgentCore Memory session, Cedar-governed hold |
 | 4 | Traveler Memory Agent | `production_04/memory_agent.py` | `@tool` recall / persist for Aurora memory |
 | 5 | **Orchestration Agent** | `orchestration_05/workflow.py` | LangGraph `StateGraph` + pooled PostgresSaver |
 
@@ -21,7 +22,7 @@ Five orchestration phases, each teaching a different builder pattern on the **sa
 | 1 | `sql_search()` — procedural keyword SQL | No (reference only) |
 | 2 | `mcp_search()` — MCP only (postgres-mcp-server) | No (reference only) |
 | 3 | `retrieval_supervisor_search()` — Strands + Bedrock delegation | **Yes** (supervisor + SearchAgent) |
-| 4 | `production_search()` → `ProductionAgent.process_turn()` + AgentCore Gateway | **Yes** (concierge + TravelerMemoryAgent) |
+| 4 | `production_search()` → `ProductionAgent.process_turn()` → AgentCore Runtime (which calls the gateway tools); `production_hold()` → `process_hold()` for the one-click hold | **Yes** (concierge + TravelerMemoryAgent; the runtime agent lives in `meridian_agentcore/app/MeridianConcierge`) |
 | 5 | `orchestration_workflow()` → `OrchestrationAgent` | LangGraph (not Strands) |
 
 **Presenter note:** Phases 1–2 agent modules are the **canonical Strands structure** to show on screen; the live API uses the same SQL/MCP mechanics without the LLM loop so demos stay reliable. Phases 3–5 import agent modules at runtime.

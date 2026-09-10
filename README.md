@@ -48,7 +48,7 @@ without hiding the implementation behind a generic chat interface:
 | **1 · SQL** | Query | Parameterized filters over Aurora through the RDS Data API |
 | **2 · MCP** | Governed tools | PostgreSQL MCP plus typed comparison, FX, loyalty, and availability tools |
 | **3 · Retrieval** | Intent | Cohere Embed v4, pgvector, full-text search, and Cohere Rerank 3.5 |
-| **4 · Production** | Traveler context and access controls | Recalled preferences, workload-to-traveler grants, RLS, and audit trails |
+| **4 · Production** | Governed agent actions with traveler context | The agent runs in AgentCore Runtime, calls Aurora tools through AgentCore Gateway, Cedar policy decides each call, and RLS and audit trails bound every read and write |
 | **5 · Workflow** | Durability | Aurora checkpoint, worker restart, same-thread resume, and an unchanged package-hold receipt |
 
 The demo traveler is **Alex Morgan** (`trv_meridian_demo`), a JFK-based
@@ -157,7 +157,7 @@ worker restart must preserve the same booking ID and original 15-minute expiry.
 - **Backend:** FastAPI, Strands Agents, LangGraph
 - **Models:** Claude Sonnet 5 on Amazon Bedrock, Cohere Embed v4, Cohere Rerank 3.5
 - **Data:** Aurora PostgreSQL 18+, pgvector, RDS Data API, pooled psycopg, identity bindings, Row-Level Security
-- **Protocols and services:** Model Context Protocol, Bedrock AgentCore Runtime, Gateway, Memory, and IAM or AgentCore workload identity
+- **Protocols and services:** Model Context Protocol, Bedrock AgentCore Runtime, Gateway, Policy (Cedar), Memory, and Observability, with IAM or AgentCore workload identity
 
 This sample authorizes AWS or AgentCore workload identities. A shared hosted
 application must also authenticate its end users and bind the verified user

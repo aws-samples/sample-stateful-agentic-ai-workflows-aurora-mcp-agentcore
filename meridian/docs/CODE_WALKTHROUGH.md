@@ -84,18 +84,49 @@ The reranker model id isn't in this file — the call delegates to
 
 ---
 
-## Phase 4 — Production · two files
+## Phase 4 — Production · four files
 
-### A. `backend/agents/production_04/concierge.py` — open to line 180 (`process_turn`)
+### A. `backend/agents/production_04/concierge.py` — open at `process_turn`
 
-| Lines | Show | Say |
-|---|---|---|
-| **255–387** | prepared query vector + first `scoped_session(...)` | "Prepare the embedding first, then authorize and run a short RLS read unit." |
-| **422–507** | Runtime, AgentCore Memory, and Gateway | "The read unit is already committed; no DB transaction waits on an external service." |
-| **552–621** | second `scoped_session(...)` + `persist_turn` + audit | "Reauthorize, write, and commit in a separate short RLS unit." |
-| **626–653** | `record_turn()` after commit | "Mirror to AgentCore Memory as a separate consistency domain." |
+| Show | Say |
+|---|---|
+| `_authorized_read` | "Prepare the embedding first, then authorize the workload for Alex and run one short RLS read unit. It commits before anything external runs." |
+| `_runtime_turn` | "The authorized context and the budget ceiling go to the managed runtime. Every span the runtime streams back is replayed into this trace." |
+| `_write_unit` | "Reauthorize, persist the turn, audit, commit: a separate short RLS unit." |
+| `process_hold` | "The Hold click arrives here. The backend never writes the hold; it hands `hold_confirmed=True` and the exact terms to the runtime." |
 
-> The trace panel now shows **all 18 spans** for a Phase 4 turn (Identity → Runtime → Memory r/w → Aurora `@tools` → Gateway → persist → polish) — the AgentCore spans reach the UI via the `collect` callback wired in `process_turn`.
+### B. `meridian_agentcore/app/MeridianConcierge/main.py` — the agent in AgentCore Runtime
+
+| Show | Say |
+|---|---|
+| `MCPClient(url=GATEWAY_URL, auth_provider=GatewaySigV4(...))` | "The agent discovers its tools from AgentCore Gateway over MCP, signed with its own execution role. No bearer token, no secret." |
+| `memory_manager` | "AgentCore Memory is the agent's own session: the Strands session manager restores it and writes each turn back." |
+| `Agent(..., tools=tools, hooks=[hooks], session_manager=...)` | "Strands runs the tool loop. The hooks turn every call into a span." |
+| `pump` and the `result` event | "Spans, packages, the hold outcome and the trace id stream back over SSE." |
+
+### C. `meridian_agentcore/app/MeridianConcierge/turn_trace.py` — the pinned hold contract
+
+| Show | Say |
+|---|---|
+| `_pin_hold_arguments` | "The model proposes the hold. The traveler id, the confirmation flag, the budget ceiling and the journey reference are overwritten from the authorized request before the gateway sees them." |
+| `friendly_denial` and `hold_deny_reasons` | "Cedar denies by default. We name the failed condition from the same arguments the policy saw, and hand that to the model so the reply is honest." |
+| `hold_settled` | "One decision per turn. A refused hold is explained, not retried." |
+
+### D. `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py` — the governed write
+
+| Show | Say |
+|---|---|
+| `_authorize` | "The Lambda is a workload too. It proves its own grant in `traveler_identity_bindings` and audits the decision, allow or deny." |
+| `_scope` | "Same GUCs, same `SET LOCAL ROLE meridian_app` as the backend, inside one Data API transaction." |
+| `create_courtesy_hold` and `HOLD_SQL` | "The same idempotent SQL function Phase 5 uses. A retried tool call replays the booking instead of taking a second one." |
+
+And in `meridian_agentcore/agentcore/agentcore.json`, the `MeridianGovernance` engine:
+one permit for the two read tools, one permit for `create_courtesy_hold` with four
+conditions on `context.input`, attached to the gateway in `ENFORCE` mode.
+
+> The trace panel shows the whole turn: Identity, grant, RLS read, Runtime turn started,
+> Gateway tools/list, Memory session restored, each gateway tool call and result (or the
+> Cedar denial), Runtime turn complete with the trace id and CloudWatch link, persist, audit.
 
 ### C. `backend/db/rds_data_client.py` — `scoped_session()` (authorization + RLS)
 

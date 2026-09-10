@@ -19,7 +19,9 @@ depend on a long-lived database connection to remember prior work.
 | Managed session and semantic memory across turns, when configured | Bedrock AgentCore Memory | AgentCore APIs |
 | LangGraph execution position, channel values, and pending writes | Aurora PostgreSQL | `AuroraDataApiSaver` over RDS Data API, or `AsyncPostgresSaver` over pooled psycopg |
 | Journey ownership, execution leases, and hold-request identity | Aurora PostgreSQL | Scoped RDS Data API transactions |
-| In-turn model reasoning | Agent process | Transient by design |
+| Phase 4 courtesy hold placed by the agent | Aurora PostgreSQL | AgentCore Gateway tool under Cedar policy, then the `MeridianHolds` Lambda in one scoped Data API transaction |
+| Phase 4 agent conversation | Bedrock AgentCore Memory | The runtime's Strands session manager |
+| In-turn model reasoning | AgentCore Runtime microVM | Transient by design; spans and the trace id persist in CloudWatch |
 
 The RDS Data API remains a connectionless, IAM-authorized HTTPS transport. It
 uses database credentials stored in Secrets Manager to read and write durable
@@ -38,7 +40,7 @@ an MCP server can use the Data API or PostgreSQL wire protocol internally.
 | SQL | Parameterized catalog reads through the Data API |
 | MCP | Governed tools whose current database implementation uses the Data API |
 | Retrieval | Structured, pgvector, and full-text retrieval from durable Aurora data |
-| Production | AgentCore context plus authorized, RLS-scoped Aurora memory and audit |
+| Production | Authorized, RLS-scoped Aurora memory and audit around an AgentCore Runtime turn; the agent's tools come from AgentCore Gateway, Cedar policy decides each call, and the governed hold is one scoped Data API transaction in the gateway Lambda |
 | Workflow | The same domain-data paths composed by LangGraph, with durable Aurora checkpoints and persisted execution and hold records |
 
 Phase 5 supports two checkpoint transports. Set

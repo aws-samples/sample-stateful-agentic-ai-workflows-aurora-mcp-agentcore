@@ -137,7 +137,7 @@ Controls are visible on a shared windowed screen, so stop sharing first.
 | **1 · SQL** | Query | Direct Aurora rows returned through RDS Data API filters |
 | **2 · MCP** | Tool | Aurora access through MCP plus custom domain tools such as package comparison, FX conversion, and seasonal pricing |
 | **3 · Retrieval** | Intent | Hybrid pgvector + full-text candidates reranked by Cohere, with specialist-agent routing |
-| **4 · Production** | Trust | Recalled preferences, AgentCore integration, workload-to-traveler grants, Aurora RLS, and auditable per-turn scope |
+| **4 · Production** | Trust | The agent in AgentCore Runtime discovers its tools from AgentCore Gateway, Cedar policy decides every call in ENFORCE mode, recalled preferences arrive under workload-to-traveler grants and Aurora RLS, and a one-click courtesy hold is either permitted or refused by policy before any code runs |
 | **5 · Workflow** | Durable Workflow | Aurora checkpoint, process restart, same-thread resume, and preserved hold identity and expiry |
 
 ### Where state lives
@@ -148,6 +148,7 @@ Controls are visible on a shared windowed screen, so stop sharing first.
 | Managed session and semantic context across turns, when configured | Bedrock AgentCore Memory | AgentCore APIs |
 | LangGraph execution position and pending writes | Aurora PostgreSQL | `AuroraDataApiSaver` over RDS Data API, or `AsyncPostgresSaver` over pooled psycopg |
 | Journey binding, worker leases, and hold-request identities | Aurora PostgreSQL | Scoped RDS Data API transactions |
+| Phase 4 courtesy hold placed by the agent | Aurora PostgreSQL | AgentCore Gateway tool, Cedar policy, then the `MeridianHolds` Lambda in one scoped Data API transaction |
 
 MCP defines the governed tool contract, not the database transport. A Data API
 transaction keeps RLS role and traveler scope together for one unit of work; it
@@ -195,10 +196,13 @@ meridian/
 │   │   ├── retrieval_03/     # Phase 3 supervisor + specialists
 │   │   ├── production_04/    # Phase 4 AgentCore + memory
 │   │   └── orchestration_05/ # Phase 5 LangGraph workflow
-│   ├── agentcore/            # AgentCore Runtime, Gateway, Memory, Identity adapters
+│   ├── agentcore/            # AgentCore Runtime (streaming), Gateway (checks), Identity adapters
 │   ├── db/                   # RDS client, embeddings, schema
 │   ├── memory/               # Aurora-backed memory store
 │   └── mcp/                  # MCP clients and custom memory server
+├── meridian_agentcore/       # AgentCore CLI project: agentcore.json is the source of truth
+│   ├── app/MeridianConcierge/            # The Phase 4 agent: main.py, turn_trace.py, prompts.py
+│   └── agentcore/gateway_targets/        # semantic_trip_search and meridian_holds Lambda targets
 ├── frontend/src/
 │   ├── showcase/             # Primary /showcase experience
 │   ├── stage/                # Presenter playback surface
@@ -248,16 +252,22 @@ missing artwork.
 
 ## Governance Boundary
 
-Stateful reads and writes use three independent controls:
+Stateful reads and writes use five independent controls:
 
 1. AgentCore Identity or AWS STS authenticates the workload.
 2. Aurora `traveler_identity_bindings` authorizes that subject for the requested traveler. Missing grants fail before the RLS scope is set.
 3. Aurora RLS filters rows to the authorized traveler under the least-privilege `meridian_app` role.
+4. AgentCore Gateway serves the agent's tools over MCP with SigV4, and its Cedar policy engine (`MeridianGovernance`, ENFORCE mode) decides every tool call on the arguments before any Lambda runs. Reads are permitted; a courtesy hold is permitted only when the traveler confirmed it, for at most 12 hours and 6 travelers, within the traveler's saved budget ceiling. Nothing else permits the hold, so every other call is denied by default.
+5. The `MeridianHolds` Lambda is itself a workload: its execution role holds its own grant in `traveler_identity_bindings`, sets the traveler scope, steps down to `meridian_app`, and calls the `create_courtesy_hold` SQL function, so a retried tool call replays the same booking.
 
-Both ALLOW and DENY decisions are written to `traveler_access_audit`; completed
-turns link the authorization subject to the RLS scope in `agent_iam_audit`.
-The showcase RLS tab proves the chain live by allowing Alex and denying the
-same workload access to the decoy traveler.
+The runtime pins the traveler id, the confirmation flag, the budget ceiling and
+the journey reference onto every hold call from the request the backend
+authorized. The model proposes the hold; it cannot confirm it or move the
+ceiling. Both ALLOW and DENY decisions are written to `traveler_access_audit`;
+completed turns link the authorization subject to the RLS scope in
+`agent_iam_audit`. The showcase RLS tab proves the chain live by allowing Alex
+and denying the same workload access to the decoy traveler, and the trace panel
+shows each Cedar decision as the gateway returned it.
 
 This is workload authorization. In a shared hosted application, authenticate
 the end user separately and bind the verified user subject, such as a Cognito
@@ -272,7 +282,7 @@ sample does not authenticate Alex as a human user.
 | `GET` | `/api/memory/{traveler_id}` | Traveler profile and preference facts |
 | `GET` | `/api/packages` | Trip catalog in native schema shape |
 | `GET` | `/api/products` | Product-shaped catalog for UI compatibility |
-| `POST` | `/api/chat/order` | Demo booking flow |
+| `POST` | `/api/chat/order` | Courtesy hold. In Phase 4 the click is the confirmation: the runtime asks the gateway, Cedar decides, and the `MeridianHolds` Lambda writes; `order` is null when the hold was refused and the activities carry the decision |
 | `GET` | `/api/journeys` | List the authorized traveler's journeys |
 | `GET` | `/api/journeys/{journey_id}` | Read the saved workflow, checkpoint, executions, authorization, and hold evidence |
 | `GET` | `/health`, `/api/health` | Backend health, checkpoint backend, and actual durability |
@@ -291,7 +301,8 @@ Key environment variables are documented in `.env.example`.
 | `EMBEDDING_DIMENSION` | Default: `1024` |
 | `AURORA_CLUSTER_ARN`, `AURORA_SECRET_ARN`, `AURORA_DATABASE` | RDS Data API connection |
 | `RLS_APP_ROLE` | Least-privilege role used for scoped Aurora RLS sessions |
-| `AGENTCORE_*` | Phase 4 Runtime, Gateway, Memory, and Identity configuration |
+| `AGENTCORE_*` | Phase 4 Runtime, Gateway, Memory, and Identity configuration, synced from the CLI deployment state |
+| `MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS` | Hold budget ceiling the Cedar policy compares against when the traveler has no saved budget fact. Default: `400000` |
 | `LANGGRAPH_CHECKPOINT_DATA_API` | Opt into `AuroraDataApiSaver`; used when no checkpoint DSN resolves |
 | `LANGGRAPH_CHECKPOINT_DSN` or discrete `LANGGRAPH_CHECKPOINT_*` connection settings | Select `AsyncPostgresSaver` over a bounded PostgreSQL pool |
 | `LANGGRAPH_CHECKPOINT_REQUIRED` | Fail closed when no durable checkpoint backend is available |
@@ -303,7 +314,9 @@ Key environment variables are documented in `.env.example`.
 | ----- | ---------- |
 | Frontend | React 18, Vite, TypeScript |
 | Backend | FastAPI, Python 3.13 |
-| Agents | Strands Agents for Phases 1–4 |
+| Agents | Strands Agents for Phases 1–4; the Phase 4 agent runs inside Bedrock AgentCore Runtime with tools from AgentCore Gateway over MCP |
+| Governance | Bedrock AgentCore Policy (Cedar, ENFORCE) on the gateway, plus the identity chain and Aurora RLS below |
+| Observability | AWS Distro for OpenTelemetry on the runtime; spans and logs land in the runtime's CloudWatch log group with the trace id shown in the UI |
 | Workflow | LangGraph `StateGraph`, Aurora checkpoints, worker leases, and idempotent package holds |
 | Database | Aurora PostgreSQL 18+, RDS Data API, pgvector HNSW, identity bindings, Row-Level Security |
 | Embeddings and rerank | Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`us.cohere.rerank-v3-5:0`) on Bedrock |

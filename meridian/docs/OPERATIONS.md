@@ -23,15 +23,17 @@ day before is fine.
 
 | Resource | Name | Purpose at the talk |
 |---|---|---|
-| **Memory** | `meridian_session` | `create_event` write + recall read every Phase 4 turn — visible in trace |
-| **Gateway** | `meridian-aurora` | Managed MCP endpoint fronting the `semantic_trip_search` Lambda — `tools/list` + `tools/call` spans |
-| **Runtime** | `MeridianConcierge` | Produces the traveler-facing decision from authorized memory context and live Gateway candidates |
+| **Runtime** | `MeridianConcierge` | The Phase 4 agent: Strands tool loop over the gateway, AgentCore Memory session, ADOT spans, streamed trace |
+| **Memory** | `meridian_session` | The agent's session store; restored and written by the Strands session manager |
+| **Gateway** | `meridian-aurora` | Managed MCP endpoint, AWS_IAM inbound, Cedar policy engine attached in ENFORCE mode |
+| **Gateway targets** | `SemanticTripSearchLambda`, `MeridianHolds` | `semantic_trip_search`; `get_package_details` and the identity-checked `create_courtesy_hold` |
+| **Policy engine** | `MeridianGovernance` | Permits the reads; permits the hold only when confirmed, at most 12 hours, at most 6 travelers, within budget |
 
-All three are declared in
+All of them are declared in
 [`meridian_agentcore/agentcore/agentcore.json`](../meridian_agentcore/agentcore/agentcore.json).
-Memory uses the **`SEMANTIC`** strategy: `create_event` writes are mirrored into
-the session namespace and surfaced via `retrieve_memory_records` /
-`list_memory_records` (the recall path the Phase 4 trace shows).
+Never rename `meridian_session`: a rename replaces the memory and drops the
+seeded Tokyo history. Memory uses the **`SEMANTIC`** strategy over
+`/users/{actorId}/sessions/{sessionId}`.
 
 ## Prerequisites
 
@@ -53,15 +55,27 @@ node --version
 ## Deploy
 
 ```bash
-cd meridian/meridian_agentcore
+cd meridian
+
+# The holds Lambda reads its Aurora settings from SSM (values come from .env):
+python scripts/publish_gateway_parameters.py
+
+cd meridian_agentcore
 
 # Validate the config against the current CLI schema first:
 agentcore validate --json
-agentcore package --runtime MeridianConcierge
 
 # Synth + deploy (idempotent — updates the existing stack in place):
 agentcore deploy -y
+
+# The holds Lambda is a workload: grant its execution role access to Alex.
+cd .. && python scripts/bind_gateway_workload.py
 ```
+
+On a fresh account, deploy in two passes: first with `policyEngines: []` and
+no `policyEngineConfiguration` on the gateway, then restore both and deploy
+again. The Cedar policies validate against the `MeridianHolds` tool schema, so
+the target must exist first.
 
 `agentcore deploy` writes the live ARNs to
 `meridian_agentcore/agentcore/.cli/deployed-state.json`. The backend reads them
@@ -82,16 +96,23 @@ Restart the backend; the next Phase 4 turn uses real AgentCore data-plane calls.
 ## Verify
 
 ```bash
-agentcore status --json     # all three resources: deploymentState "deployed"
+cd meridian
+python scripts/verify_agentcore.py        # Runtime, Gateway, Memory, policy engine ACTIVE · ENFORCE, 3 tools, observability
+python scripts/smoke_gateway_tools.py     # tools/list + get_package_details signed from this laptop
+python scripts/smoke_production_turn.py   # search, unconfirmed hold denied, confirmed hold held, over budget denied
 ```
 
 In the showcase trace panel you should see (real, not faked):
-- `AgentCore Identity resolved` — workload identity envelope
-- `AgentCore Gateway · tools/list` — real MCP discovery
-- `AgentCore Gateway · tools/call → semantic_trip_search` — real tool invocation
-- `AgentCore Runtime · concierge decision` — managed Runtime output consumed by the backend
-- `AgentCore Memory · create_event` — real write
-- `AgentCore Memory · list/retrieve` (recall) — real read
+- `AgentCore Identity resolved` and `Workload traveler grant allowed`
+- `AgentCore Runtime · turn started`, then `AgentCore Gateway · tools/list` with three tools
+- `AgentCore Memory · session restored` with the event count
+- `AgentCore Gateway · tools/call → semantic_trip_search` and its result
+- On a Hold click: `tools/call → create_courtesy_hold`, its result with the Lambda's workload subject and `traveler_grant: allow`, and the hold receipt
+- On a typed hold: `Hold refused by Cedar policy · Denied by policy`
+- `AgentCore Runtime · turn complete` with the trace id and a CloudWatch link
+
+Spans for the trace id land in `/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT`,
+stream `spans`; application logs carry the same trace id in the `runtime-logs-*` streams.
 
 > Transaction-search trace indexing takes **~10 min** after deploy to fully
 > activate. Don't judge missing trace spans in the first few minutes.
@@ -134,7 +155,9 @@ agentcore status --json                     # resources healthy
 cd ../.. && grep "AGENTCORE_" .env          # env has the 4 keys below
 ```
 Expected `.env` keys: `AGENTCORE_RUNTIME_ARN`, `AGENTCORE_GATEWAY_URL`,
-`AGENTCORE_GATEWAY_SEARCH_TOOL`, `AGENTCORE_MEMORY_ID`.
+`AGENTCORE_GATEWAY_SEARCH_TOOL`, `AGENTCORE_MEMORY_ID`. Then run
+`venv/bin/python scripts/verify_agentcore.py` and expect every row green,
+including `Policy engine … ACTIVE · ENFORCE` and `Gateway tools … 3 tools`.
 
 ## 2) Start the durable stack
 
@@ -185,11 +208,17 @@ Primary surface:
 curl -s http://localhost:8000/health | jq .                       # Sonnet 5 + cohere.embed-v4:0
 curl -s http://localhost:8000/api/memory/trv_meridian_demo | jq . # Alex Morgan facts
 
-# Phase 4 smoke — exercises Bedrock → AgentCore Gateway → Aurora end to end:
+# Phase 4 smoke — identity, RLS, AgentCore Runtime, Gateway tools, Cedar, Aurora end to end:
 curl -s -X POST http://localhost:8000/api/chat \
   -H "Content-Type: application/json" \
   -d '{"phase":4,"message":"A slow week somewhere we can drink good wine","customer_id":"trv_meridian_demo"}' \
-  | jq '.message, .conversation_id, (.products | length)'
+  | jq '.message, .conversation_id, (.products | length), [.activities[].title]'
+
+# Governed hold smoke — the click is the confirmation; expect an order with a HLD- id:
+curl -s -X POST http://localhost:8000/api/chat/order \
+  -H "Content-Type: application/json" \
+  -d '{"phase":4,"product_id":"TKY-001","quantity":2,"traveler_id":"trv_meridian_demo","action":"hold"}' \
+  | jq '.order.order_id, .order.hold_expires_at, [.activities[] | select(.telemetry.status=="denied" or .activity_type=="order") | .title]'
 ```
 
 For the stage proof, `/health` must include:
@@ -205,19 +234,16 @@ For the stage proof, `/health` must include:
 If it reports `MemorySaver`, stop. That is an honest local fallback, not the
 Aurora durability proof.
 
-## 4) Gateway smoke test (direct — run once before going live)
+## 4) Gateway and governed-path smoke tests (direct — run once before going live)
 
 ```bash
 cd meridian
-venv/bin/python - <<'PY'
-import sys; sys.path.insert(0, '.')
-from dotenv import load_dotenv; load_dotenv('.env')
-from backend.agentcore.gateway import AgentCoreGatewayAdapter
-ad = AgentCoreGatewayAdapter()
-tools, _ = ad.list_tools(); print("tools:", [t.get("name") for t in tools])
-pkgs, _ = ad.semantic_trip_search("wine week in europe", 3); print("packages:", len(pkgs))
-PY
+venv/bin/python scripts/smoke_gateway_tools.py CTY-002   # tools/list + get_package_details from this laptop
+venv/bin/python scripts/smoke_production_turn.py         # runtime → gateway → Cedar → Aurora; expect three PASS lines
 ```
+
+The second script places one real 12-hour hold on a Tokyo package for Alex.
+Holds expire on their own; `tests/test_order_hold.py` shows how to purge one.
 
 ## 5) Prove pause, restart, and resume
 
@@ -251,8 +277,23 @@ agentcore add gateway-target --name SemanticTripSearchLambda --gateway meridian-
 agentcore deploy -y
 ```
 
-**Phase 4 returns zero packages** — check `rg "AGENTCORE_GATEWAY_SEARCH_TOOL" .env`
-equals `SemanticTripSearchLambda___semantic_trip_search`; restart backend after any `.env` change.
+**Phase 4 returns zero packages** — the runtime found nothing or the gateway
+search tool is missing. Run `venv/bin/python scripts/verify_agentcore.py`
+(expect three tools) and `agentcore logs --runtime MeridianConcierge --follow`
+while repeating the prompt.
+
+**A Hold click answers `traveler_not_authorized`** — the holds Lambda role lost
+its grant: `venv/bin/python scripts/bind_gateway_workload.py`.
+
+**Every hold is denied, including a confirmed one** — the policy engine may be
+detached (`verify_agentcore.py` shows `Policy engine … MISSING`): redeploy with
+`agentcore deploy -y`. If it shows `ACTIVE · ENFORCE`, read the denied span's
+`arguments` field: the ceiling comes from Alex's `budget_cap` fact ($3,200 per
+person) times the party size, and packages above it are refused on purpose.
+
+**Runtime replies but the trace has no gateway spans** — the runtime is on an
+older version. `agentcore status` shows the version; `agentcore deploy -y`
+publishes the current `app/MeridianConcierge` code.
 
 **UI issues** — restart frontend dev server; hard refresh (`Cmd+Shift+R`).
 
@@ -289,6 +330,18 @@ Hard-won notes from getting Phase 4 live. Most map to a recovery step above.
 - **Config schema drifts with the CLI.** `agentcore.json` must use a project
   `name` that starts with a letter and is alphanumeric (`meridianv2`), and a
   memory strategy from `SEMANTIC | SUMMARIZATION | USER_PREFERENCE | EPISODIC`.
+- **Cedar has no floats and needs required arguments.** Amounts are integer
+  cents, and every argument a policy names is `required` in the tool schema.
+- **A `forbid` deployed next to its `permit` fails validation.** CloudFormation
+  creates policies in parallel; the forbid is validated before the permit exists
+  and is rejected as overly restrictive. One permit with all conditions deploys.
+- **The CDK `lambda` target has no environment variables.** The holds Lambda
+  reads its Aurora settings from SSM (`scripts/publish_gateway_parameters.py`).
+- **The gateway Lambda is a workload.** Grant its role in
+  `traveler_identity_bindings` with `scripts/bind_gateway_workload.py`.
+- **The model retries a refused hold.** The runtime hook settles the hold once
+  per turn and hands the model the explained decision instead of the raw error.
+  See [AGENTCORE_LEARNINGS.md](AGENTCORE_LEARNINGS.md) for the full list.
 
 ## Why two folders (`meridian/` and `meridian/meridian_agentcore/`)?
 
