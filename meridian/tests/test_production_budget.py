@@ -10,6 +10,16 @@ def test_budget_fact_with_a_range_uses_the_upper_bound_per_traveler():
     assert budget_ceiling_from_facts(facts, travelers=2) == 700000
 
 
+def test_alex_seeded_cap_wins_over_the_per_person_range():
+    facts = [
+        {"key": "per_person_range", "value": "Prefers $2k-3.5k per person"},
+        {"key": "budget_cap", "value": "$3,200"},
+        {"key": "home_airport", "value": "JFK"},
+    ]
+    assert budget_ceiling_from_facts(facts, travelers=2) == 640000
+    assert budget_ceiling_from_facts(facts[:1], travelers=1) == 350000
+
+
 def test_plain_dollar_amount_is_read_as_is():
     facts = [{"key": "allergy", "value": "Shellfish"}, {"key": "budget", "value": "$4,000 max"}]
     assert budget_ceiling_from_facts(facts, travelers=1) == 400000

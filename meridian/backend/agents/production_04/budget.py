@@ -12,7 +12,9 @@ import re
 
 DEFAULT_ENV = "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS"
 DEFAULT_CENTS = 400000
-BUDGET_KEYS = ("budget", "budget_ceiling", "budget_range")
+# Alex's seeded facts carry budget_cap ("$3,200") and per_person_range
+# ("Prefers $2k-3.5k per person"). The cap wins when both are present.
+BUDGET_KEYS = ("budget_cap", "budget", "budget_ceiling", "budget_range", "per_person_range")
 AMOUNT = re.compile(r"\$?\s*(\d+(?:\.\d+)?)\s*(k)?", re.I)
 
 
@@ -36,9 +38,9 @@ def budget_ceiling_from_facts(facts: list[dict], travelers: int) -> int:
         The largest dollar figure in the budget fact, per person, times the party
         size, in cents. Falls back to ``MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS``.
     """
-    for fact in facts:
-        if str(fact.get("key", "")).lower() in BUDGET_KEYS:
-            amounts = _dollars(str(fact.get("value", "")))
-            if amounts:
-                return int(round(max(amounts) * 100)) * max(1, int(travelers))
+    by_key = {str(fact.get("key", "")).lower(): str(fact.get("value", "")) for fact in facts}
+    for key in BUDGET_KEYS:
+        amounts = _dollars(by_key.get(key, ""))
+        if amounts:
+            return int(round(max(amounts) * 100)) * max(1, int(travelers))
     return int(os.getenv(DEFAULT_ENV, str(DEFAULT_CENTS)))
