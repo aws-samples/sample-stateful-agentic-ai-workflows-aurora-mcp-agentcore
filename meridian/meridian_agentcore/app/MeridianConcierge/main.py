@@ -28,7 +28,8 @@ from strands.models.bedrock import BedrockModel
 from strands.tools.mcp import MCPClient
 
 from gateway_auth import GatewaySigV4
-from prompts import system_prompt, turn_prompt
+from hold_execution import execute_confirmed_hold
+from prompts import narration_prompt, system_prompt, turn_prompt
 from turn_trace import TraceHooks, TurnContext, activity
 
 app = BedrockAgentCoreApp()
@@ -146,6 +147,18 @@ def tools_span(tools: list) -> dict:
     )
 
 
+def drain(queue):
+    """Yield the events the hooks queued during a platform-executed tool call."""
+    while not queue.empty():
+        kind, item = queue.get_nowait()
+        if kind == "activity":
+            yield {"type": "activity", **item}
+        elif kind == "hold":
+            yield {"type": "hold", **item}
+        elif kind == "packages":
+            yield {"type": "packages", "packages": item}
+
+
 async def pump(queue, task):
     """Yield runtime events until the agent finishes; return the answer and usage."""
     answer, usage = "", {}
@@ -184,20 +197,36 @@ async def run(payload: dict):
         tools = gateway.list_tools_sync()
         yield {"type": "activity", **tools_span(tools)}
         yield {"type": "activity", **memory_span(turn.traveler_id, turn.conversation_id)}
+        outcome = None
+        if turn.hold_confirmed and hold_target:
+            # The click is the confirmation: the platform places the governed call with
+            # the exact confirmed terms, and the model narrates what the gateway decided.
+            outcome = execute_confirmed_hold(
+                hooks,
+                lambda tool_use_id, name, args: gateway.call_tool_sync(
+                    tool_use_id=tool_use_id, name=name, arguments=args
+                ),
+                hold_target,
+            )
+            for event in drain(queue):
+                yield event
         agent = Agent(
             model=BedrockModel(model_id=MODEL_ID, region_name=REGION, max_tokens=1500),
             system_prompt=system_prompt(turn.hold_confirmed, hold_target),
-            tools=tools,
+            tools=[] if outcome is not None else tools,
             hooks=[hooks],
             session_manager=memory_manager(turn.traveler_id, turn.conversation_id),
             callback_handler=None,
         )
-        prompt = turn_prompt(
-            str(payload.get("prompt", "")),
-            str(payload.get("memory_context", "")),
-            hold_target,
-            turn.hold_confirmed,
-        )
+        if outcome is not None:
+            prompt = narration_prompt(outcome, hold_target)
+        else:
+            prompt = turn_prompt(
+                str(payload.get("prompt", "")),
+                str(payload.get("memory_context", "")),
+                hold_target,
+                turn.hold_confirmed,
+            )
         task = asyncio.create_task(drive(agent, prompt, queue))
         answer, usage = "", {}
         async for event in pump(queue, task):

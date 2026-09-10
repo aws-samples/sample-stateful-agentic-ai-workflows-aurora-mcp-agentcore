@@ -8,7 +8,15 @@ from pathlib import Path
 RUNTIME = Path(__file__).resolve().parents[1] / "meridian_agentcore" / "app" / "MeridianConcierge"
 sys.path.insert(0, str(RUNTIME))
 
-from prompts import system_prompt, turn_prompt  # noqa: E402
+from prompts import narration_prompt, system_prompt, turn_prompt  # noqa: E402
+
+
+def test_confirmed_turn_has_no_tools_and_narrates_the_platform_decision():
+    target = {"package_id": "CTY-002", "duration": "5 nights", "travelers": 2}
+    system = system_prompt(hold_confirmed=True, hold_target=target)
+    assert "already placed" in system and "no tools" in system
+    prompt = narration_prompt("Hold HLD-9 is held for CTY-002", target)
+    assert "HLD-9" in prompt and "CTY-002" in prompt and "gateway's decision" in prompt
 
 
 def test_system_prompt_names_the_tools_and_the_confirmation_rule():

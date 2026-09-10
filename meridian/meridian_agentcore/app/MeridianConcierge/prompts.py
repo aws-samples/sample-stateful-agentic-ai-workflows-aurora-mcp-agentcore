@@ -33,15 +33,27 @@ UNCONFIRMED = (
     "tell the traveler exactly why it was refused and that the Hold button on a trip confirms it."
 )
 CONFIRMED = (
-    "The traveler has confirmed a hold on this turn with the Hold button. Call "
-    "create_courtesy_hold exactly once now with the given terms, even if an earlier turn in "
-    "this conversation was refused; the gateway decides afresh with this turn's confirmation "
-    "and ceiling. Then report the hold id, expiry and remaining places, or the exact refusal."
+    "The traveler has confirmed a hold on this turn with the Hold button, and the platform "
+    "has already placed that exact call through the gateway; the gateway's decision for this "
+    "turn is in the message below. You have no tools on this turn. Report the outcome to the "
+    "traveler in two or three sentences: the hold id, expiry and remaining places when it was "
+    "placed, or the exact reason and what would make the hold possible when it was refused. "
+    "Earlier turns in this conversation do not change this turn's outcome."
 )
 
 
 def system_prompt(hold_confirmed: bool, hold_target: dict | None) -> str:
     return BASE + "\n" + (CONFIRMED if hold_confirmed and hold_target else UNCONFIRMED)
+
+
+def narration_prompt(outcome: str, hold_target: dict | None) -> str:
+    """The turn prompt for a confirmed hold the platform already executed."""
+    return (
+        "The traveler confirmed a courtesy hold with the Hold button for these terms:\n"
+        + json.dumps(hold_target or {}, ensure_ascii=False)
+        + "\n\nThe gateway's decision on this turn:\n"
+        + outcome
+    )
 
 
 def turn_prompt(
