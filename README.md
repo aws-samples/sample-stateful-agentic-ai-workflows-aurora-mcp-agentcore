@@ -66,7 +66,10 @@ From System evidence, **Session takeaways → Open for questions** closes the
 talk with the traveler’s recovery outcome and three takeaways centered on
 Aurora, AgentCore, and MCP + LangGraph, with a return to the same live evidence.
 Hold receipts show the saved expiry and a countdown: 15 minutes for a recovery
-workflow hold, or 12 hours for the separate trip-details action. See the
+workflow hold, or 12 hours for the separate trip-details action. The recovery
+desk then carries the held package back to the concierge, where the traveler
+confirms and the same governed chain turns the hold into a confirmed booking:
+catalog inventory in Meridian's own database, no supplier and no payment. See the
 [presenter guide](meridian/docs/PRESENTER_GUIDE.md#7-handoff-from-saved-progress-to-traveler-recovery)
 for the handoff, hold policies, and closing script.
 
@@ -146,7 +149,7 @@ the details and teardown.
 | ------- | ----- | ------- |
 | Concierge | `/showcase?view=concierge` | Traveler discovery, conversation, preferences, and trip details |
 | Capability ladder | `/showcase?view=ladder` | Five phases with boundary queries, architecture, and live traces |
-| Recovery desk | `/showcase?view=recovery` | Canceled-trip scenario, saved shortlist, resume, and package-hold receipt |
+| Recovery desk | `/showcase?view=recovery` | Canceled-trip scenario, saved shortlist, resume, package-hold receipt, and the handoff back to the concierge for confirmation |
 | System evidence | `/showcase?view=proof` | Aurora readback of checkpoints, executions, authorization, and holds |
 | Demo Stage | `/demo-stage`, `/stage` | Kiosk loop and presenter playback |
 
