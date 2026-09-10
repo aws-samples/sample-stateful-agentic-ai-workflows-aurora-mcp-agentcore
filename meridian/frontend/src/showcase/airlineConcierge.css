@@ -425,7 +425,7 @@
 .mds-root .mc-evidence-intro p { color: var(--mc-muted); margin: 0; font-size: calc(14px * var(--mc-type-scale)); }
 .mds-root .mds-recovery-overview h1 { font-family: var(--mds-font); font-size: calc(32px * var(--mc-type-scale)); line-height: 1.2; font-weight: 550; }
 .mds-root .mds-recovery-overview-meta { font-size: calc(13px * var(--mc-type-scale)); }
-.mds-root .mds-recovery-overview-meta strong { color: var(--mc-muted); font-weight: 500; }
+.mds-root .mds-recovery-overview-meta strong { color: var(--mc-ink); font-weight: 600; }
 .mds-root .mds-recovery-cancelled-badge { display: none; }
 .mds-root .mds-recovery-workspace { color: var(--mc-ink); }
 .mds-root .mds-recovery-workspace .mds-decision-card { border-color: var(--mc-line); background: var(--mc-surface); box-shadow: none; border-radius: 12px; }

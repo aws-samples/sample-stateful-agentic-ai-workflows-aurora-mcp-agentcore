@@ -102,8 +102,8 @@ export function JourneyContinuityRail({
       </header>
 
       <h2 className="mds-continuity-claim">
-        A worker can stop.
-        <span>The journey shouldn’t.</span>
+        Workers can fail.
+        <span>The journey continues.</span>
       </h2>
 
       <ol className="mds-continuity-steps">

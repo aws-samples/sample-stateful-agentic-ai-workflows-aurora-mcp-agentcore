@@ -686,7 +686,7 @@
   padding: 0 18px;
   border: 0;
   border-radius: 10px;
-  color: #1a1611;
+  color: #ffffff;
   background: linear-gradient(180deg, #73afff, #2f8cff);
   font-family: inherit;
   font-size: calc(13px * var(--mds-fs));
@@ -1570,7 +1570,7 @@
   padding: 3px 10px;
   border-radius: 999px;
   background: rgb(var(--mds-blue-rgb) / 0.92);
-  color: #1a1611;
+  color: #ffffff;
   font-size: calc(11.5px * var(--mds-fs));
   font-weight: 800;
   letter-spacing: 0.02em;
@@ -4301,7 +4301,7 @@
   padding: 0 16px;
   border: 0;
   border-radius: 10px;
-  color: #1a1611;
+  color: #ffffff;
   background: linear-gradient(180deg, #73afff, #2f8cff);
   font-family: inherit;
   font-size: calc(13px * var(--mds-fs));
@@ -4351,7 +4351,7 @@
   place-items: center;
   border: 0;
   border-radius: 12px;
-  color: #1a1611;
+  color: #ffffff;
   background: linear-gradient(180deg, #73afff, #2f8cff);
   box-shadow: 0 6px 18px rgb(var(--mds-blue-rgb) / 0.34);
   transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease, background 150ms ease;
@@ -5285,7 +5285,7 @@
 }
 
 .mds-trace-tabs button.is-active {
-  color: #1a1611;
+  color: #ffffff;
   background: var(--mds-blue);
 }
 
@@ -5576,7 +5576,7 @@
   min-height: 30px;
   border: 0;
   border-radius: 8px;
-  color: #1a1611;
+  color: #ffffff;
   background: var(--mds-blue);
   font-size: calc(12px * var(--mds-fs));
   font-weight: 800;
@@ -6115,7 +6115,7 @@
 .mds-hold-receipt { flex-direction:column; border-color:var(--mds-blue-line); }
 .mds-trip-modal-actions,.mds-journey-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .mds-trip-modal-actions button,.mds-journey-actions button,.mds-compare-copy button { min-height:40px; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:0 14px; border:1px solid var(--mds-line-strong); border-radius:6px; color:var(--mds-on-surface); background:var(--mds-card); font-weight:700; }
-.mds-trip-modal-actions .is-primary,.mds-compare-copy .is-primary { color:#1a1611; background:var(--mds-blue); margin-left:auto; }
+.mds-trip-modal-actions .is-primary,.mds-compare-copy .is-primary { color:#ffffff; background:var(--mds-blue); margin-left:auto; }
 .mds-compare-modal { padding:26px; }.mds-compare-modal>header { display:flex; justify-content:space-between; }.mds-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.mds-compare-grid article { position:relative; overflow:hidden; border:1px solid var(--mds-line); border-radius:8px; background:var(--mds-card); }.mds-compare-copy { display:grid; gap:12px; padding:16px; }.mds-compare-copy dl { display:grid; gap:6px; }.mds-compare-copy dl div { display:flex; justify-content:space-between; }.mds-compare-remove { position:absolute; top:8px; right:8px; z-index:2; width:30px; height:30px; border:0; border-radius:50%; }
 
 /* Enter-only, mirroring the Radix drawers (mds-sheet-*): close stays instant
