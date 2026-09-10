@@ -31,8 +31,7 @@ test('AgentCoreStack synthesizes the checked-in Meridian specification', () => {
   expect(spec.policyEngines).toHaveLength(1);
   expect(spec.policyEngines[0].policies.map((p: { name: string }) => p.name)).toEqual([
     'meridian_read_tools',
-    'meridian_hold_requires_confirmation',
-    'meridian_hold_within_budget',
+    'meridian_hold_governance',
   ]);
   const resources = template.toJSON().Resources ?? {};
   const types = Object.values(resources).map(r => (r as { Type: string }).Type);

@@ -19,13 +19,12 @@ from strands.hooks import AfterToolCallEvent, BeforeToolCallEvent, HookProvider
 
 AGENT_FILE = "meridian_agentcore/app/MeridianConcierge/main.py"
 POLICY_REASONS = {
-    "meridian_hold_requires_confirmation": (
-        "A courtesy hold runs only after the traveler confirms it, for 12 hours or less."
-    ),
-    "meridian_hold_within_budget": (
-        "The hold total must stay within the traveler's saved budget ceiling."
+    "meridian_hold_governance": (
+        "A courtesy hold runs only after the traveler confirms it, for 12 hours or less, "
+        "for at most 6 travelers, and within the traveler's saved budget ceiling."
     ),
 }
+HOLD_LIMITS = {"holdMinutes": 720, "travelers": 6}
 SPANS = {
     "semantic_trip_search": (
         "search",
@@ -81,13 +80,36 @@ def activity(activity_type, title, details=None, telemetry=None, elapsed_ms=None
     }
 
 
-def friendly_denial(text: str) -> str:
+def hold_deny_reasons(args: dict) -> list[str]:
+    """Name the hold conditions the arguments fail, in the order the policy states them."""
+    reasons = []
+    if args.get("travelerConfirmed") is not True:
+        reasons.append("the traveler has not confirmed this hold")
+    if int(args.get("holdMinutes") or 0) > HOLD_LIMITS["holdMinutes"]:
+        reasons.append("the hold is longer than 12 hours")
+    if int(args.get("travelers") or 0) > HOLD_LIMITS["travelers"]:
+        reasons.append("more than 6 travelers")
+    total, ceiling = int(args.get("totalCents") or 0), int(args.get("budgetCeilingCents") or 0)
+    if total > ceiling:
+        reasons.append(
+            f"the total ${total / 100:,.2f} exceeds the saved budget ceiling ${ceiling / 100:,.2f}"
+        )
+    return reasons
+
+
+def friendly_denial(text: str, args: dict | None = None) -> str:
     """Turn the gateway's policy error into a sentence; the raw text stays in the span."""
     named = re.search(r"denied due to ([A-Za-z0-9_]+?)(?:-[a-z0-9]+_?)?\]", text)
     if named:
         policy = named.group(1)
         return f"Refused by Cedar policy {policy}. {POLICY_REASONS.get(policy, '')}".strip()
     if "No policy applies" in text or "denied by default" in text:
+        reasons = hold_deny_reasons(args) if args else []
+        if reasons:
+            return (
+                "No Cedar policy permits this hold, so the gateway denied it by default: "
+                + "; ".join(reasons) + "."
+            )
         return "No Cedar policy permits this call, so the gateway denied it by default."
     return text
 
@@ -202,7 +224,11 @@ class TraceHooks(HookProvider):
         ))
 
     def _failure(self, name, text, denied, elapsed, tool_use) -> None:
-        summary = friendly_denial(text) if denied else (text or "The gateway returned no result.")
+        args = tool_use.get("input") or {}
+        if denied:
+            summary = friendly_denial(text, args if name == "create_courtesy_hold" else None)
+        else:
+            summary = text or "The gateway returned no result."
         if denied and name == "create_courtesy_hold":
             title = "Hold refused by Cedar policy"
         elif denied:

@@ -202,16 +202,10 @@
           "statement": "permit(principal, action in [AgentCore::Action::\"SemanticTripSearchLambda___semantic_trip_search\", AgentCore::Action::\"MeridianHolds___get_package_details\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:619763002613:gateway/meridianv2-meridian-aurora-temzt21jg0\");"
         },
         {
-          "name": "meridian_hold_requires_confirmation",
-          "description": "A courtesy hold runs only after the traveler confirmed it, for at most 12 hours and at most 6 travelers.",
+          "name": "meridian_hold_governance",
+          "description": "A courtesy hold runs only after the traveler confirmed it, for at most 12 hours, at most 6 travelers, and within the traveler's saved budget ceiling. Nothing else permits the hold, so any other call is denied by default.",
           "validationMode": "FAIL_ON_ANY_FINDINGS",
-          "statement": "permit(principal, action == AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:619763002613:gateway/meridianv2-meridian-aurora-temzt21jg0\") when { context.input.travelerConfirmed == true && context.input.holdMinutes <= 720 && context.input.travelers <= 6 };"
-        },
-        {
-          "name": "meridian_hold_within_budget",
-          "description": "Forbid any hold whose total exceeds the traveler's saved budget ceiling.",
-          "validationMode": "FAIL_ON_ANY_FINDINGS",
-          "statement": "forbid(principal, action == AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:619763002613:gateway/meridianv2-meridian-aurora-temzt21jg0\") when { context.input.totalCents > context.input.budgetCeilingCents };"
+          "statement": "permit(principal, action == AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:619763002613:gateway/meridianv2-meridian-aurora-temzt21jg0\") when { context.input.travelerConfirmed == true && context.input.holdMinutes <= 720 && context.input.travelers <= 6 && context.input.totalCents <= context.input.budgetCeilingCents };"
         }
       ]
     }
