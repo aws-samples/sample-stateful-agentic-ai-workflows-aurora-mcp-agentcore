@@ -39,15 +39,15 @@
      render on the same navy surface so the two demo steps read as one product
      rather than two apps. Amber stays the disruption accent against it.
      Geometry and type scale still differ per step — see recoveryWorkspace.css. */
-  --mds-app-surface: #031023;
+  --mds-app-surface: #0b1424;
   --mds-recovery-yellow: #f6b73c;
   --mds-recovery-yellow-strong: #d99a18;
   --mds-recovery-red: #ef4444;
   --mds-recovery-blue: #2f8cff;
   --mds-recovery-green: #32cf86;
-  --mds-recovery-rail: #071425;
-  --mds-experience-panel: #071a30;
-  --mds-experience-panel-raised: #0a2038;
+  --mds-recovery-rail: #0e1727;
+  --mds-experience-panel: #111c2e;
+  --mds-experience-panel-raised: #16233a;
   --mds-experience-border: rgba(109, 147, 182, 0.24);
   --mds-chrome-sidebar-border: rgba(125, 162, 199, 0.18);
   --mds-chrome-sidebar-background:
