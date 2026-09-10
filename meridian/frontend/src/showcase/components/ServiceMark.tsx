@@ -7,8 +7,9 @@
  * padlock, a check, a chevron - stays on the shared icon set, because a
  * service logo there would say something untrue.
  *
- * Aurora uses the supplied AWS SVG unchanged. AgentCore switches to its
- * small artwork below 17px so its glyph stays legible.
+ * Aurora, AgentCore and Bedrock use the official AWS architecture icons
+ * unchanged, shown plain and never inside a second tile. AgentCore switches to
+ * its small artwork below 17px so its glyph stays legible.
  */
 
 const MARKS = {
@@ -21,6 +22,11 @@ const MARKS = {
     src: '/brand/agentcore.svg',
     smallSrc: '/brand/agentcore-sm.svg',
     label: 'Amazon Bedrock AgentCore',
+  },
+  bedrock: {
+    src: '/brand/bedrock.svg',
+    smallSrc: '/brand/bedrock.svg',
+    label: 'Amazon Bedrock',
   },
 } as const;
 

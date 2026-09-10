@@ -171,7 +171,7 @@ export function WorkflowGraph({ state }: { state: MeridianShowcaseState }) {
     return (
       <div className="mds-wfgraph is-unmatched" role="status">
         <div className="mds-wfgraph-head">
-          <span className="mds-wfgraph-title"><LangGraphMark size={15} />LangGraph route</span>
+          <span className="mds-wfgraph-title"><LangGraphMark size={18} />LangGraph route</span>
         </div>
         <p className="mds-wfgraph-empty">
           Workflow spans received, but node labels were not recognized. Check
@@ -192,7 +192,7 @@ export function WorkflowGraph({ state }: { state: MeridianShowcaseState }) {
   return (
     <div className="mds-wfgraph" role="img" aria-label="LangGraph workflow path">
       <div className="mds-wfgraph-head">
-        <span className="mds-wfgraph-title"><LangGraphMark size={15} />LangGraph route</span>
+        <span className="mds-wfgraph-title"><LangGraphMark size={18} />LangGraph route</span>
         {intent && <span className="mds-wfgraph-intent">intent: {intent}</span>}
       </div>
 

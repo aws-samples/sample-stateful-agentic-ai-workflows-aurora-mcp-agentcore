@@ -17,11 +17,11 @@ export function SessionClose({ onEvidence, onConcierge }: {
       <p className="mc-session-lead">{questions ? 'Your questions on Aurora, AgentCore, and bringing these patterns to your application.' : 'Help Alex find relevant alternatives, carry preferences forward, and hold a package while deciding.'}</p>
       {questions ? <p className="mc-session-discussion">From disrupted trips to delayed orders, which customer journey needs a better way forward?</p> : <dl className="mc-session-patterns">
         <div>
-          <dt><ServiceMark name="aurora" size={30} /><span>Amazon Aurora</span></dt>
+          <dt><ServiceMark name="aurora" size={36} /><span>Amazon Aurora</span></dt>
           <dd><strong>Find the options. Keep the plan.</strong><p>One PostgreSQL database for hybrid search, traveler context, checkpoints, and holds.</p></dd>
         </div>
         <div>
-          <dt><ServiceMark name="agentcore" size={30} /><span>Amazon Bedrock AgentCore</span></dt>
+          <dt><ServiceMark name="agentcore" size={36} /><span>Amazon Bedrock AgentCore</span></dt>
           <dd><strong>Run the concierge. Carry context forward.</strong><p>Managed runtime, session memory, and workload identity. Traveler grants and RLS stay in Aurora.</p></dd>
         </div>
         <div>

@@ -274,12 +274,18 @@
 }
 
 .mds-brief-services article {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
   padding: 14px 16px;
   border: 1px solid var(--mds-line);
   border-radius: 14px;
   background: var(--mds-fill-1);
+}
+
+.mds-brief-services article > div {
+  display: grid;
+  gap: 6px;
 }
 
 .mds-brief-services p {

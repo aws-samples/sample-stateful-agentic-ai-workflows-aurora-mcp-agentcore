@@ -591,9 +591,9 @@
 /* Inline code sits in the white bubble, so it takes ink on a light fill. Code
    blocks keep the dark console treatment (see .mds-md pre above). */
 .mds-root[data-theme="light"] .mds-md code {
-  border-color: rgb(var(--mds-blue-rgb) / 0.4);
-  background: rgb(var(--mds-blue-rgb) / 0.1);
-  color: var(--mds-blue);
+  border-color: #d6d6d6;
+  background: #f1f1f1;
+  color: #111111;
 }
 .mds-root[data-theme="light"] .mds-md pre code {
   background: transparent;
@@ -2087,13 +2087,14 @@
   font-style: italic;
 }
 
-/* Tool and column names inside a reply: a proper highlight chip, not a
-   whisper, so the audience can read the identifier from the back row. */
+/* Tool and column names inside a reply: a neutral keycap, readable from the
+   back row and free of the colours that carry meaning elsewhere (blue acts,
+   green works, amber needs the next phase). */
 .mds-md code {
   padding: 2px 8px;
-  border: 1px solid rgb(var(--mds-blue-rgb) / 0.55);
+  border: 1px solid rgba(255, 250, 240, 0.26);
   border-radius: 6px;
-  background: rgb(var(--mds-blue-rgb) / 0.24);
+  background: rgba(255, 250, 240, 0.13);
   color: #ffffff;
   font-family: var(--mds-font-mono);
   font-size: 0.92em;
@@ -4547,21 +4548,13 @@
   border-bottom: 1px solid var(--mds-line);
 }
 
+/* The service mark stands on its own, the way the official icons are meant to
+   be shown: no tile, no border, just a slightly larger mark. */
 .mds-memory-control-icon {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--mds-blue-line);
-  border-radius: 8px;
-  color: var(--mds-blue);
-  background: var(--mds-blue-soft);
-}
-
-.mds-memory-control.is-enabled .mds-memory-control-icon {
-  border-color: color-mix(in srgb, var(--mds-green) 38%, transparent);
-  color: var(--mds-green);
-  background: color-mix(in srgb, var(--mds-green) 11%, transparent);
 }
 
 .mds-memory-control-copy {

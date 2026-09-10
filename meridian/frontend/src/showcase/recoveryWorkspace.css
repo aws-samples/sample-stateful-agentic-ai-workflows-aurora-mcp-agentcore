@@ -14,8 +14,9 @@
    runs well above the product default. */
 .mds-desktop-app.is-projector {
   /* Content scale: replies, trip cards, trace spans - the things a room reads
-     from the back. */
-  --mds-fs: 1.32;
+     from the back. Kept close to the concierge's own scale so the five phases
+     and the finale read as one product rather than a zoomed-in copy. */
+  --mds-fs: 1.16;
   /* Chrome scale: panel titles, rail labels, stat tiles. Scaling these as hard
      as content overflowed the rail and truncated values mid-word. */
   --mds-fs-chrome: 1.08;
@@ -271,7 +272,7 @@
 }
 
 .mds-desktop-app.is-projector.is-proof .mds-message-bubble {
-  font-size: calc(17px * var(--mds-fs));
+  font-size: calc(16px * var(--mds-fs));
   line-height: 1.5;
 }
 

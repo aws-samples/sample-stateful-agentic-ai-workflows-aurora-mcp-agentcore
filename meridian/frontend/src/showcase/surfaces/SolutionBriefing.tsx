@@ -1,4 +1,5 @@
 import { ArrowRight } from 'lucide-react';
+import { ServiceMark, type ServiceMarkName } from '../components/ServiceMark';
 
 /**
  * Solution briefing: what Meridian is, what it runs on, and where the
@@ -48,6 +49,15 @@ const CONTROLS: [string, string][] = [
   ['Decide every tool call', 'AgentCore Gateway serves the tools over MCP with SigV4; its Cedar policy engine, MeridianGovernance in ENFORCE mode, decides each call on the arguments before any Lambda runs.'],
   ['Make the writer a workload too', 'The MeridianHolds Lambda holds its own grant, sets the traveler scope, steps down to meridian_app and calls create_courtesy_hold, so a retried call replays the same booking.'],
 ];
+
+const SERVICE_MARKS: Record<string, ServiceMarkName> = {
+  'Amazon Aurora PostgreSQL': 'aurora',
+  'Amazon Bedrock AgentCore Runtime': 'agentcore',
+  'Amazon Bedrock AgentCore Gateway': 'agentcore',
+  'Amazon Bedrock AgentCore Policy': 'agentcore',
+  'Amazon Bedrock AgentCore Memory': 'agentcore',
+  'Amazon Bedrock': 'bedrock',
+};
 
 const SERVICES: [string, string][] = [
   ['Amazon Aurora PostgreSQL', 'Catalog, traveler profile and preferences, identity bindings and audit, LangGraph checkpoints, journeys, leases and holds. pgvector HNSW for retrieval; RLS for scope; the RDS Data API as the connectionless transport.'],
@@ -268,7 +278,10 @@ export function SolutionBriefing({ onOpenLadder }: { onOpenLadder: () => void })
         <h2>Key AWS services</h2>
         <div className="mds-brief-services">
           {SERVICES.map(([name, role]) => (
-            <article key={name}><h3>{name}</h3><p>{role}</p></article>
+            <article key={name}>
+              {SERVICE_MARKS[name] && <ServiceMark name={SERVICE_MARKS[name]} size={36} />}
+              <div><h3>{name}</h3><p>{role}</p></div>
+            </article>
           ))}
         </div>
       </section>

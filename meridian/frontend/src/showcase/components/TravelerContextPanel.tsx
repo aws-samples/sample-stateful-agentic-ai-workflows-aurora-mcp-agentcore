@@ -159,7 +159,7 @@ export function TravelerContextPanel({
         <>
           <div className={`mds-memory-control${memoryOn ? ' is-enabled' : ''}`}>
             <span className="mds-memory-control-icon" aria-hidden="true">
-              <ServiceMark name="aurora" size={24} />
+              <ServiceMark name="aurora" size={34} />
             </span>
             <span className="mds-memory-control-copy">
               <strong>Use traveler context</strong>
