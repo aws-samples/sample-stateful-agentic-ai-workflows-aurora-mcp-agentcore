@@ -142,6 +142,7 @@ class TraceHooks(HookProvider):
         self.turn = turn
         self.started: dict[str, float] = {}
         self.hold: dict | None = None
+        self.hold_settled = False
         self.packages: list[dict] = []
 
     def register_hooks(self, registry, **kwargs) -> None:
@@ -157,6 +158,14 @@ class TraceHooks(HookProvider):
             return
         args = event.tool_use.setdefault("input", {})
         if name == "create_courtesy_hold":
+            if self.hold_settled:
+                # The gateway already decided this hold on this turn. Retrying with
+                # the same pinned arguments cannot change a Cedar decision.
+                event.cancel_tool = (
+                    "The gateway already decided this hold on this turn. Do not call "
+                    "create_courtesy_hold again; explain the outcome to the traveler."
+                )
+                return
             self._pin_hold_arguments(args)
         kind, title, summary = SPANS[name]
         self.emit("activity", activity(kind, title, summary, {
@@ -201,6 +210,7 @@ class TraceHooks(HookProvider):
             self.emit("packages", self.packages)
         if name == "create_courtesy_hold":
             self.hold = payload.get("hold")
+            self.hold_settled = True
             self.emit("hold", {"hold": self.hold, "policyDecision": "allow"})
         summary = payload.get("summary") or f"{name} returned"
         fields = [{"label": "result", "value": summary}]
@@ -251,6 +261,7 @@ class TraceHooks(HookProvider):
         }, elapsed))
         if name == "create_courtesy_hold":
             self.hold = None
+            self.hold_settled = True
             self.emit("hold", {
                 "hold": None,
                 "refused": summary,

@@ -19,6 +19,10 @@ Work in this order and call one tool at a time:
 Ground every statement in tool results and the authorized traveler context. Never invent
 seats, prices, flight times or confirmations. Write two to four sentences for the traveler,
 no headings, no lists, and mention the strongest saved-preference match when it applies.
+
+If the gateway refuses a hold, the decision is final for this turn: do not call
+create_courtesy_hold again with different arguments. Tell the traveler exactly what the
+refusal said and what would make the hold possible.
 """
 
 UNCONFIRMED = (

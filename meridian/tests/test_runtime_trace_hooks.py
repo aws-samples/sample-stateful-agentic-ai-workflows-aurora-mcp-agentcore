@@ -197,6 +197,26 @@ def test_lambda_business_error_is_a_failed_span_not_a_denial():
     assert refused["policyDecision"] is None
 
 
+def test_a_second_hold_attempt_after_a_decision_is_cancelled_not_retried():
+    queue = asyncio.Queue()
+    hooks = TraceHooks(queue, _turn())
+    first = _event("MeridianHolds___create_courtesy_hold", {"packageId": "CTY-002"}, "t1")
+    hooks.before(first)
+    first.result = {
+        "status": "error",
+        "content": [{"text": "[No policy applies to the request (denied by default).]"}],
+    }
+    hooks.after(first)
+    assert hooks.hold_settled is True
+    retry = _event("MeridianHolds___create_courtesy_hold", {"packageId": "CTY-002"}, "t2")
+    hooks.before(retry)
+    assert "already decided" in retry.cancel_tool
+    assert "t2" not in hooks.started
+    spans_before = len(_drain(queue))
+    hooks.after(retry)
+    assert len(_drain(queue)) == 0 and spans_before >= 2
+
+
 def test_friendly_denial_names_the_policy_or_the_default_deny():
     named = friendly_denial(
         "x [Policy evaluation denied due to meridian_hold_requires_confirmation-k2j_]"
