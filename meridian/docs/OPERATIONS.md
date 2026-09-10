@@ -100,6 +100,7 @@ cd meridian
 python scripts/verify_agentcore.py        # Runtime, Gateway, Memory, policy engine ACTIVE · ENFORCE, 3 tools, observability
 python scripts/smoke_gateway_tools.py     # tools/list + get_package_details signed from this laptop
 python scripts/smoke_production_turn.py   # search, unconfirmed hold denied, confirmed hold held, over budget denied
+python scripts/kill_and_resume_demo.py    # Phase 5: hold through the gateway, SIGKILL the worker, resume with the same booking
 ```
 
 In the showcase trace panel you should see (real, not faked):
@@ -300,6 +301,12 @@ Holds expire on their own; `tests/test_order_hold.py` shows how to purge one.
 This is the title claim made visible: the worker process disappears, while the
 execution position survives in Aurora's `checkpoints`, `checkpoint_blobs`, and
 `checkpoint_writes` tables.
+
+The scripted version of the same proof is `venv/bin/python scripts/kill_and_resume_demo.py`:
+worker one places the hold through the gateway tool, is SIGKILLed, a second
+worker is refused until the lease clears, and the resumed run reports one hold
+with the same booking id and the original expiry. `DEMO_LEASE_SECONDS` (default
+20) sets the lease; a cold worker needs most of that before its first heartbeat.
 
 ## 6) Recovery playbook
 
