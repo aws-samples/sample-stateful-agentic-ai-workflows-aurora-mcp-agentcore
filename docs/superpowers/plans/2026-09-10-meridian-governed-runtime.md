@@ -2157,3 +2157,30 @@ git add -A meridian/frontend/src
 git commit -m "Default the showcase to the light theme and calm the dark surfaces"
 git push origin main
 ```
+
+---
+
+### Task 16: Publish Meridian behind CloudFront with basic auth (added 10 Sep 2026)
+
+**Files:**
+- Create: `meridian/Dockerfile`, `meridian/.dockerignore` (backend image for App Runner, built with Finch; `uv` from PyPI because the Finch VM cannot reach ghcr.io)
+- Create: `meridian/infra/` CDK app (`package.json`, `tsconfig.json`, `cdk.json`, `bin/meridian-web.ts`, `lib/meridian-web-stack.ts`, `functions/viewer-request.js`)
+- Create: `meridian/scripts/publish.py`
+- Modify: `meridian/.gitignore` (`infra/node_modules`, `infra/dist`, `infra/cdk.out`, `.local/`)
+
+**Architecture:** the Vite build lives in a private S3 bucket behind CloudFront (OAC). The FastAPI backend runs as a container on App Runner (1 vCPU, 2 GB, min 1 instance) with an instance role scoped to Bedrock invoke, the Aurora Data API on one cluster, one Aurora secret, and `InvokeAgentRuntime` on the Meridian runtime. One CloudFront distribution serves both: `/api/*` and `/health` go to App Runner with a 60 s origin timeout, everything else to S3. A CloudFront Function on viewer-request enforces basic auth, injects the backend bearer token on API paths, strips it elsewhere, and rewrites SPA routes to `/index.html`; both credentials live in a CloudFront KeyValueStore, never in code or templates. The backend refuses any caller without the bearer token, so the App Runner URL is not an open door.
+
+**Lessons recorded:** the stack must be pinned to the region of Aurora, AgentCore and the token secret (`MERIDIAN_WEB_REGION`, default `us-east-1`); the shell's default profile region was `us-west-2` and the first deploy landed there. App Runner needs the complete secret ARN for `RuntimeEnvironmentSecrets`. The publish script writes the token to Secrets Manager (never reads it), builds and deploys, then writes the KeyValueStore through the AWS CLI because the KeyValueStore data plane needs SigV4A.
+
+- [ ] Deploy succeeds in `us-east-1`; `.local/published.json` holds the URL, user, password and token (chmod 600, gitignored).
+- [ ] `curl -u` against the URL returns the showcase HTML, `/health` returns healthy, and a Phase 1 chat turn returns products through CloudFront.
+- [ ] Docs: root README and `meridian/README.md` get a "Publish behind CloudFront" section; `OPERATIONS.md` Part 1 gets the publish steps and teardown (`npx cdk destroy MeridianWeb`).
+
+### Task 17: Route the Phase 5 workflow hold through the gateway (agreed 10 Sep 2026)
+
+**Files:**
+- Modify: `meridian/meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py` and the tool definition in `agentcore.json`: optional `holdRequestId` and `executionId` arguments; when `executionId` is present the Lambda verifies the running lease inside its transaction and sets `app.execution_id`, and `holdRequestId` replaces the derived request id so a resumed workflow replays the same booking.
+- Modify: `meridian/backend/agents/orchestration_05/workflow.py`: the hold node calls the gateway tool (SigV4, `backend/agentcore/gateway.py`) with the checkpointed intent instead of `create_courtesy_hold` SQL; `travelerConfirmed` comes from the traveler's recovery-desk decision the workflow checkpointed.
+- Tests: `tests/test_holds_lambda.py` (lease and replay), `tests/test_phase5_workflow.py` (gateway call with the checkpointed intent), and the live `tests/test_hold_request_identity_aurora.py` stays green.
+
+- [ ] One write path for holds; Cedar sees the Phase 5 hold; the restart proof still shows one booking id and the original expiry.

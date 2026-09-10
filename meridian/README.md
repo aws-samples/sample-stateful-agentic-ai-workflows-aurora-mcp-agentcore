@@ -98,6 +98,26 @@ http://localhost:5173/showcase
 
 The showcase requires the backend and Aurora. Memory facts, trace spans, RLS proof, and trip results come from live API calls.
 
+### Publish behind CloudFront
+
+`infra/` is a CDK app that publishes the same application to a password-protected
+CloudFront URL: the Vite build in a private S3 bucket, the backend as a container
+on AWS App Runner, one distribution in front of both, and a CloudFront Function
+that enforces basic auth and injects the backend bearer token on `/api/*`. The
+credentials live in a CloudFront KeyValueStore and the token in Secrets Manager;
+neither is in code or in a template.
+
+```bash
+cd meridian
+finch vm start                      # or Docker; the backend image is built locally
+python scripts/publish.py           # writes the secret, builds, deploys, fills the KeyValueStore
+```
+
+The script prints the URL and writes the password and token to
+`.local/published.json` (gitignored). Re-run it to redeploy; pass
+`--skip-frontend` to reuse `frontend/dist`. Tear down with
+`cd infra && npx cdk destroy MeridianWeb`.
+
 For an existing database created before identity binding was added:
 
 ```bash

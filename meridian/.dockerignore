@@ -1,0 +1,7 @@
+# Only the backend, its dependencies and the SQL examples go into the image.
+*
+!backend/
+!examples/
+!requirements.txt
+backend/**/__pycache__/
+backend/**/*.pyc

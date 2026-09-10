@@ -1,0 +1,28 @@
+{
+  "name": "meridian-web-infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CDK app that publishes Meridian behind CloudFront: the Vite build on S3 and the FastAPI backend on App Runner",
+  "bin": {
+    "meridian-web": "dist/bin/meridian-web.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "npm run build && cdk",
+    "synth": "npm run build && cdk synth",
+    "deploy": "npm run build && cdk deploy --require-approval never",
+    "diff": "npm run build && cdk diff",
+    "clean": "rm -rf dist cdk.out"
+  },
+  "devDependencies": {
+    "@types/node": "~24.13.3",
+    "aws-cdk": "~2.1126.0",
+    "typescript": "~5.9.3"
+  },
+  "dependencies": {
+    "@aws-cdk/aws-apprunner-alpha": "2.265.0-alpha.0",
+    "aws-cdk-lib": "~2.265.0",
+    "constructs": "~10.7.0"
+  }
+}

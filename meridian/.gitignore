@@ -74,3 +74,8 @@ logs/
 
 # Local verification output and dev-server logs
 .local/
+
+# CloudFront/App Runner CDK app build output
+infra/node_modules/
+infra/dist/
+infra/cdk.out/

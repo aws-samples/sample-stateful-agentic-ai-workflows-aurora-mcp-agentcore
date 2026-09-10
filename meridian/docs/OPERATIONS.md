@@ -117,6 +117,45 @@ stream `spans`; application logs carry the same trace id in the `runtime-logs-*`
 > Transaction-search trace indexing takes **~10 min** after deploy to fully
 > activate. Don't judge missing trace spans in the first few minutes.
 
+## Publish behind CloudFront
+
+The CDK app in `infra/` publishes the app to a password-protected CloudFront URL:
+the Vite build in a private S3 bucket (origin access control), the backend as a
+container on App Runner (1 vCPU, 2 GB, one instance kept warm), and a viewer
+function that enforces basic auth, injects the backend bearer token on `/api/*`
+and `/health`, and rewrites `/showcase` and friends to `index.html`. The
+backend runs with `ENVIRONMENT=production`, so it refuses any caller without
+the token; the App Runner URL is not an open door.
+
+```bash
+cd meridian
+finch vm start                      # Docker works too; the image is built for linux/amd64
+python scripts/publish.py           # secret → frontend build → cdk deploy → KeyValueStore
+python scripts/publish.py --skip-frontend   # redeploy after backend changes
+```
+
+What the script does, in order: mints a basic-auth password and a bearer token
+(or reuses the ones in `.local/published.json`), writes the token to Secrets
+Manager (`meridian/web/api-token`, never read back), builds `frontend/dist`,
+runs `cdk deploy MeridianWeb` in the region of Aurora and AgentCore with the
+non-secret settings copied from `.env`, writes the two credentials to the
+CloudFront KeyValueStore through the AWS CLI, and records the URL. The instance
+role is scoped to Bedrock invoke, the Aurora Data API on one cluster, one Aurora
+secret, and `InvokeAgentRuntime` on the Meridian runtime.
+
+Verify with the credentials from `.local/published.json`:
+
+```bash
+curl -s -u meridian:PASSWORD https://<distribution>.cloudfront.net/health | jq .
+curl -s -u meridian:PASSWORD -X POST https://<distribution>.cloudfront.net/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"phase":1,"message":"Show me city trips under $2,000 per traveler.","customer_id":"trv_meridian_demo"}' \
+  | jq '(.products | length), [.activities[].title]'
+```
+
+Tear down with `cd meridian/infra && npx cdk destroy MeridianWeb`; the secret
+and the credentials file stay unless you delete them.
+
 ## If AgentCore fails on stage
 
 The Phase 4 code path does **not** pretend to run Production mode without

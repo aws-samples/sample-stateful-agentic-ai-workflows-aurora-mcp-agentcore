@@ -120,6 +120,26 @@ and cannot demonstrate recovery after a worker restart.
 The [release review](meridian/docs/RELEASE_REVIEW.md) records the latest checks,
 plain-language explanations, and live rehearsal results.
 
+### Publish behind CloudFront
+
+For a shared screen without a laptop on stage, publish the same app to a
+password-protected CloudFront URL. The CDK app in `meridian/infra/` puts the
+Vite build in a private S3 bucket and runs the FastAPI backend as a container on
+AWS App Runner, both behind one distribution. A CloudFront Function enforces
+basic auth at the edge and injects the backend bearer token on `/api/*`, so the
+App Runner URL itself refuses anonymous callers.
+
+```bash
+cd meridian
+finch vm start                      # or Docker; the image is built locally
+python scripts/publish.py           # secret, frontend build, cdk deploy, KeyValueStore
+```
+
+The script prints the URL and writes the basic-auth password and the bearer
+token to `meridian/.local/published.json` (gitignored). Re-run it to redeploy.
+See [OPERATIONS.md](meridian/docs/OPERATIONS.md#publish-behind-cloudfront) for
+the details and teardown.
+
 ## Demo Surfaces
 
 | Surface | Route | Purpose |
