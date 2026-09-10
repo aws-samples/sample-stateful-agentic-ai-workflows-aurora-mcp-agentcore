@@ -103,6 +103,10 @@ python scripts/smoke_production_turn.py   # search, unconfirmed hold denied, con
 python scripts/kill_and_resume_demo.py    # Phase 5: hold through the gateway, SIGKILL the worker, resume with the same booking
 ```
 
+For the published site, request `/` without credentials (expect 401) and `/health`
+with the basic credential from `.local/published.json` (expect 200 and
+`"checkpoint_durable": true`).
+
 In the showcase trace panel you should see (real, not faked):
 - `AgentCore Identity resolved` and `Workload traveler grant allowed`
 - `AgentCore Runtime · turn started`, then `AgentCore Gateway · tools/list` with three tools

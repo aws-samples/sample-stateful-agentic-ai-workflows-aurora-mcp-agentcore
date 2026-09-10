@@ -39,8 +39,21 @@ it. ADOT spans and application logs carry the trace id shown in the UI.
   booking id with the original expiry. Aurora recorded one hold and nine
   checkpoints on the thread.
 
-Open items from this pass: the CloudFront and App Runner deployment in
-`infra/` is being brought up.
+- Published behind CloudFront with basic authentication: the site answers 401
+  without credentials and 200 with them, `/health` reports the durable
+  `AuroraDataApiSaver`, and the backend runs on App Runner as a service created
+  by `scripts/publish.py` from a bare definition (see
+  `docs/AGENTCORE_LEARNINGS.md` for why CloudFormation could not create it).
+- Every governed span now names the Cedar decision, the policy that decided
+  it and the enforcement mode (`cedar_decision`, `cedar_policy`,
+  `policy_mode`), verified on a search, a package read, a permitted hold and
+  an over-budget refusal; the identity span says AWS STS when AgentCore
+  Identity is not configured.
+- Solution briefing surface added to the header; warm near-black dark theme;
+  plain white light theme; globe-and-meridian mark; Room check removed;
+  activity stepper markers visible in both themes.
+
+Open items from this pass: none.
 
 ---
 

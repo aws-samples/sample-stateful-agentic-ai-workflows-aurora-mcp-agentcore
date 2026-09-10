@@ -360,12 +360,15 @@ Two clicks, one typed prompt, two Cedar decisions.
 1. **Permit.** Open a recommended trip and click **Hold**. The click is the confirmation.
    The trace shows `AgentCore Gateway · tools/call → create_courtesy_hold` with the pinned
    arguments (`travelerConfirmed: true`, the budget ceiling in cents, the journey reference),
-   then `create_courtesy_hold · result` carrying the Lambda's own workload subject and its
-   `traveler_grant: allow`, then the hold receipt with a 12-hour expiry.
+   then `create_courtesy_hold · result` carrying `cedar_decision: allow`,
+   `cedar_policy: meridian_hold_governance`, `policy_mode: ENFORCE`, the Lambda's own
+   workload subject and its `traveler_grant: allow`, then the hold receipt with a 12-hour
+   expiry. The read tools carry the same three fields with `meridian_read_tools`.
 2. **Deny.** Type `Hold the first option for two travelers now.` The agent still attempts
    the tool, but nothing confirmed it, so the gateway's Cedar engine denies by default. The
-   span reads **Hold refused by Cedar policy · Denied by policy**, names the failed
-   condition, and the reply tells Alex the Hold button is the confirmation.
+   span reads **Hold refused by Cedar policy · Denied by policy** with `cedar_decision: deny`
+   and `cedar_policy: meridian_hold_governance`, names the failed condition, and the reply
+   tells Alex the Hold button is the confirmation.
 
 > "The model proposed both holds. It could not confirm either: the runtime pins the
 > confirmation, the traveler id and the budget ceiling from the request the backend
