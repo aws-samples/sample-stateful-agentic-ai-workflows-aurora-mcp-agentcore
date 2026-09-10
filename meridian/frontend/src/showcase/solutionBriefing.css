@@ -1,0 +1,292 @@
+/* ---------------------------------------------------------------------------
+   Solution briefing
+   ---------------------------------------------------------------------------
+   A reading surface, projected or not: measured line length, generous type,
+   theme tokens only so it reads the same in light and dark.
+------------------------------------------------------------------------------ */
+
+.mds-brief {
+  display: grid;
+  gap: clamp(26px, 3vw, 40px);
+  max-width: 980px;
+  margin: 0 auto;
+  padding: clamp(20px, 3vw, 40px) clamp(16px, 2.4vw, 32px) 64px;
+  color: var(--mds-ink);
+  font-size: calc(16px * var(--mds-fs));
+  line-height: 1.55;
+}
+
+.mds-brief p {
+  margin: 0 0 12px;
+  color: var(--mds-on-surface-soft);
+}
+
+.mds-brief p:last-child {
+  margin-bottom: 0;
+}
+
+.mds-brief code {
+  font-family: var(--mds-font-mono);
+  font-size: 0.92em;
+  color: var(--mds-ink);
+  background: var(--mds-fill-2);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+.mds-brief-head {
+  display: grid;
+  gap: 10px;
+  padding-bottom: clamp(18px, 2vw, 26px);
+  border-bottom: 1px solid var(--mds-line-strong);
+}
+
+.mds-brief-eyebrow {
+  color: var(--mds-muted);
+  font-size: calc(13px * var(--mds-fs));
+  letter-spacing: 0.02em;
+}
+
+.mds-brief-head h1 {
+  margin: 0;
+  font-family: var(--mds-serif);
+  font-size: clamp(34px, 4.4vw, 54px);
+  font-weight: 500;
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+}
+
+.mds-brief-head p {
+  max-width: 62ch;
+  font-size: calc(17px * var(--mds-fs));
+}
+
+.mds-brief-section {
+  display: grid;
+  gap: 12px;
+}
+
+.mds-brief-section h2 {
+  margin: 0;
+  font-family: var(--mds-serif);
+  font-size: clamp(24px, 2.6vw, 32px);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+
+.mds-brief-section h3 {
+  margin: 0;
+  font-size: calc(16px * var(--mds-fs));
+  font-weight: 650;
+}
+
+.mds-brief-section > p {
+  max-width: 68ch;
+}
+
+.mds-brief-index {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--mds-blue-line);
+  color: var(--mds-blue);
+  font-family: var(--mds-font-mono);
+  font-size: 13px;
+}
+
+.mds-brief-phases,
+.mds-brief-steps {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mds-brief-phases li,
+.mds-brief-steps li {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1px solid var(--mds-line);
+  border-radius: 14px;
+  background: var(--mds-fill-1);
+}
+
+.mds-brief-phases strong,
+.mds-brief-steps strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.mds-brief-phase-name {
+  display: block;
+  color: var(--mds-muted);
+  font-family: var(--mds-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+.mds-brief-link {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--mds-blue-line);
+  border-radius: 999px;
+  background: var(--mds-blue-soft);
+  color: var(--mds-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mds-brief-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.mds-brief-panel {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  padding: 18px;
+  border: 1px solid var(--mds-line-strong);
+  border-radius: 16px;
+  background: var(--mds-panel);
+}
+
+.mds-brief-boundary {
+  padding: 14px 16px;
+  border-left: 3px solid var(--mds-memory);
+  border-radius: 6px;
+  background: var(--mds-memory-soft);
+  color: var(--mds-ink) !important;
+  max-width: none !important;
+}
+
+.mds-brief-tools,
+.mds-brief-policies,
+.mds-brief-services {
+  display: grid;
+  gap: 12px;
+}
+
+.mds-brief-tool {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1px solid var(--mds-line);
+  border-radius: 14px;
+  background: var(--mds-fill-1);
+}
+
+.mds-brief-tool code {
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.mds-brief-kind {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-family: var(--mds-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mds-green);
+  border: 1px solid rgb(var(--mds-green-rgb) / 0.4);
+}
+
+.mds-brief-kind.is-write {
+  color: var(--mds-memory);
+  border-color: var(--mds-memory-line);
+}
+
+.mds-brief-policy {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid var(--mds-line-strong);
+  border-radius: 16px;
+  background: var(--mds-panel);
+}
+
+.mds-brief-policy pre {
+  margin: 4px 0 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border-radius: 10px;
+  background: var(--mds-card);
+  color: var(--mds-ink);
+  font-family: var(--mds-font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.mds-brief-flow {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--mds-line);
+  border-radius: 14px;
+  background: var(--mds-fill-1);
+  overflow-x: auto;
+}
+
+.mds-brief-flow > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: calc(14px * var(--mds-fs));
+}
+
+.mds-brief-flow span,
+.mds-brief-flow strong {
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--mds-line-strong);
+  background: var(--mds-panel-2);
+}
+
+.mds-brief-flow strong {
+  border-color: var(--mds-blue-line);
+  color: var(--mds-ink);
+}
+
+.mds-brief-flow b {
+  color: var(--mds-muted);
+  font-weight: 500;
+}
+
+.mds-brief-services {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.mds-brief-services article {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--mds-line);
+  border-radius: 14px;
+  background: var(--mds-fill-1);
+}
+
+.mds-brief-services p {
+  font-size: calc(14px * var(--mds-fs));
+}
+
+@media (max-width: 640px) {
+  .mds-brief-tool { flex-direction: column; }
+  .mds-brief-tool code { white-space: normal; }
+}

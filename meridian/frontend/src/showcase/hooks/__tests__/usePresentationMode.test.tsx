@@ -43,7 +43,6 @@ describe('Presenter controls', () => {
     });
     render(<Harness />);
     fireEvent.click(screen.getByRole('checkbox', { name: 'Projector readability' }));
-    fireEvent.click(screen.getByText('Room check'));
     fireEvent.click(screen.getByRole('button', { name: 'Present fullscreen' }));
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Presenter controls' })).toBeNull());
     expect(screen.getByLabelText('Audience layout')).toHaveTextContent('true');

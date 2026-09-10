@@ -35,7 +35,7 @@
   border-color: var(--mds-experience-border);
   border-radius: 8px;
   background: var(--mds-experience-panel);
-  box-shadow: 0 10px 26px rgba(0, 5, 14, 0.16);
+  box-shadow: 0 10px 26px rgba(8, 6, 3, 0.16);
 }
 
 .mds-recovery-workspace .mds-decision-card-head {
@@ -84,7 +84,7 @@
   min-height: 24px;
   padding: 0 8px;
   border-radius: 5px;
-  background: rgba(4, 18, 30, 0.82);
+  background: rgba(20, 16, 12, 0.82);
   backdrop-filter: none;
   font-size: calc(9px * var(--mds-fs));
 }
@@ -383,7 +383,7 @@
   margin: 9px 12px 0;
   padding: 8px 9px;
   border-radius: 5px;
-  background: rgba(4, 16, 33, 0.26);
+  background: rgba(19, 16, 11, 0.26);
 }
 
 .mds-recovery-workspace .mds-checkpoint-thread small {
@@ -410,7 +410,7 @@
   .mds-decision-card {
   border-color: #dedbd4;
   background: #ffffff;
-  box-shadow: 0 8px 22px rgba(31, 43, 55, 0.08);
+  box-shadow: 0 8px 22px rgba(48, 43, 34, 0.08);
 }
 
 .mds-root[data-theme="light"]

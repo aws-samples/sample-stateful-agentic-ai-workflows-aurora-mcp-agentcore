@@ -32,6 +32,7 @@ import type { NavPanelId } from './components/NavPanelDrawer';
 import { RecoveryWorkspace } from './components/RecoveryWorkspace';
 import { WorkflowWorkspace } from './components/WorkflowWorkspace';
 import { SessionClose } from './surfaces/SessionClose';
+import { SolutionBriefing } from './surfaces/SolutionBriefing';
 import { TracePanel } from './components/TracePanel';
 import { TravelerContextPanel } from './components/TravelerContextPanel';
 import { TripDetailDrawer } from './components/TripDetailDrawer';
@@ -140,6 +141,7 @@ export function DesktopMeridianApp({
   const isLadder = !closing && view === 'ladder';
   const isProof = !closing && view === 'proof';
   const isRecovery = !closing && view === 'recovery';
+  const isBriefing = !closing && view === 'briefing';
   const isWorkflow = isLadder && state.selectedPhase === 5;
   const runtimeStatus =
     state.backendStatus === 'online'
@@ -227,7 +229,7 @@ export function DesktopMeridianApp({
       className={`mds-desktop-app is-projector ${
         isProduct
           ? 'is-discovery'
-          : isProof || closing
+          : isProof || closing || isBriefing
             ? 'is-presenter-proof'
             : isRecovery
               ? 'is-experience is-finale'
@@ -429,6 +431,8 @@ export function DesktopMeridianApp({
                 ? 'close'
                 : isProof
                 ? 'proof'
+                : isBriefing
+                  ? 'briefing'
                 : isProduct
                   ? 'product'
                   : isRecovery
@@ -446,7 +450,9 @@ export function DesktopMeridianApp({
             }
           >
           {isLadder && <CapabilityBrief phase={state.selectedPhase} />}
-          {closing ? <SessionClose onEvidence={() => setView('proof')} onConcierge={openProduct} /> : isProof ? (
+          {closing ? <SessionClose onEvidence={() => setView('proof')} onConcierge={openProduct} /> : isBriefing ? (
+            <SolutionBriefing onOpenLadder={() => setView('ladder')} />
+          ) : isProof ? (
             <>
             <PresenterProof
               document={journey.document}

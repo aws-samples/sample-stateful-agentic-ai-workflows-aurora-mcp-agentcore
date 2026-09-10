@@ -1,4 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="13" fill="#153b6a"/>
-  <path d="M12 47V17h7l13 17 13-17h7v30h-8V30L32 45 20 30v17Z" fill="#f4f7ff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Meridian">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#221f1a"/>
+      <stop offset="1" stop-color="#0c0b09"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#tile)"/>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="14.25" fill="none" stroke="#fbf9f4" stroke-opacity="0.14" stroke-width="1.5"/>
+  <!-- globe -->
+  <circle cx="32" cy="33" r="17.5" fill="none" stroke="#fbf9f4" stroke-width="2.1"/>
+  <!-- the meridian -->
+  <ellipse cx="32" cy="33" rx="7.2" ry="17.5" fill="none" stroke="#fbf9f4" stroke-opacity="0.92" stroke-width="1.7"/>
+  <!-- equator and one parallel -->
+  <line x1="14.5" y1="33" x2="49.5" y2="33" stroke="#fbf9f4" stroke-opacity="0.55" stroke-width="1.3"/>
+  <path d="M18.6 24.2 Q32 20.4 45.4 24.2" fill="none" stroke="#fbf9f4" stroke-opacity="0.35" stroke-width="1.1"/>
+  <!-- the pole: where every meridian meets -->
+  <circle cx="32" cy="15.5" r="2.6" fill="#f6b73c"/>
 </svg>

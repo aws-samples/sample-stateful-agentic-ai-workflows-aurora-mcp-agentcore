@@ -143,12 +143,12 @@ view and journey stay in the URL so refresh can restore the saved workflow.
 ### Presenting on a shared screen
 
 The windowed **Presenter controls** bar contains **Preview audience layout**,
-**Projector readability**, **Room check**, and **Present fullscreen**. Preview
+**Projector readability** and **Present fullscreen**. Preview
 widens the workspace while leaving the preparation controls available. Projector
 readability increases type size and secondary-text contrast in both themes.
 
 Select **Present fullscreen** before sharing. The entire preparation bar,
-including an open room-check panel, and the service sidebar disappear. The
+and the service sidebar disappear. The
 Meridian brand, surface navigation, conversation, and evidence remain available.
 Press **Esc** to restore the windowed layout and your preparation choices.
 Controls are visible on a shared windowed screen, so stop sharing first.

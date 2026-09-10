@@ -1,19 +1,23 @@
 .mds-root {
-  /* ---- Dark theme (default) ---- */
-  --mds-bg: #05080d;
-  --mds-bg-2: #0a111a;
-  --mds-shell: #04080d;
-  --mds-shell-elevated: #081018;
-  --mds-tooltip-bg: rgba(5, 12, 20, 0.98);
-  --mds-tooltip-fg: #eaf2fb;
-  --mds-tooltip-border: rgba(151, 185, 218, 0.22);
-  --mds-panel: rgba(10, 17, 25, 0.74);
-  --mds-panel-2: rgba(18, 29, 40, 0.78);
-  --mds-line: rgba(255, 255, 255, 0.06);
-  --mds-line-strong: rgba(255, 255, 255, 0.11);
-  --mds-ink: #f5f8fb;
-  --mds-muted: #91a0ae;
-  --mds-dim: #607080;
+  /* ---- Dark theme: warm near-black for a projector in a dark room ----
+     Surfaces sit just off black with a warm cast, text is bright warm white,
+     and secondary text stays well above the usual dark-mode dimness so labels
+     survive a projector. Accents (blue action, green success, amber memory)
+     are unchanged. The light theme below overrides every token it needs. */
+  --mds-bg: #0b0a09;
+  --mds-bg-2: #12100e;
+  --mds-shell: #0a0908;
+  --mds-shell-elevated: #14120f;
+  --mds-tooltip-bg: rgba(16, 14, 12, 0.98);
+  --mds-tooltip-fg: #fbf9f4;
+  --mds-tooltip-border: rgba(214, 200, 176, 0.24);
+  --mds-panel: rgba(20, 18, 15, 0.8);
+  --mds-panel-2: rgba(30, 27, 23, 0.82);
+  --mds-line: rgba(255, 250, 240, 0.09);
+  --mds-line-strong: rgba(255, 250, 240, 0.16);
+  --mds-ink: #fbf9f4;
+  --mds-muted: #cbc4b8;
+  --mds-dim: #948c80;
   --mds-blue: #2f8cff;
   /* Hue triples for alpha variants. Writing rgb(var(--x) / .12) instead of a
      raw rgba() keeps every tint of an accent on one themed source, so the
@@ -36,55 +40,55 @@
   --mds-memory-line: rgb(var(--mds-recovery-yellow-rgb) / 0.72);
 
   /* Shared app-surface palette. The capability ladder and the Stateful Recovery finale
-     render on the same navy surface so the two demo steps read as one product
+     render on the same warm-black surface so the two demo steps read as one product
      rather than two apps. Amber stays the disruption accent against it.
      Geometry and type scale still differ per step — see recoveryWorkspace.css. */
-  --mds-app-surface: #0b1424;
+  --mds-app-surface: #0d0c0a;
   --mds-recovery-yellow: #f6b73c;
   --mds-recovery-yellow-strong: #d99a18;
   --mds-recovery-red: #ef4444;
   --mds-recovery-blue: #2f8cff;
   --mds-recovery-green: #32cf86;
-  --mds-recovery-rail: #0e1727;
-  --mds-experience-panel: #111c2e;
-  --mds-experience-panel-raised: #16233a;
-  --mds-experience-border: rgba(109, 147, 182, 0.24);
-  --mds-chrome-sidebar-border: rgba(125, 162, 199, 0.18);
+  --mds-recovery-rail: #131110;
+  --mds-experience-panel: #1a1815;
+  --mds-experience-panel-raised: #232019;
+  --mds-experience-border: rgba(214, 200, 176, 0.2);
+  --mds-chrome-sidebar-border: rgba(214, 200, 176, 0.14);
   --mds-chrome-sidebar-background:
-    radial-gradient(circle at 0% 74%, rgba(31, 111, 235, 0.12), transparent 40%),
-    linear-gradient(180deg, rgba(2, 13, 29, 0.96), rgba(3, 16, 35, 0.94));
+    radial-gradient(circle at 0% 74%, rgba(246, 183, 60, 0.06), transparent 40%),
+    linear-gradient(180deg, rgba(14, 12, 10, 0.97), rgba(10, 9, 8, 0.95));
   --mds-chrome-brand: #ffffff;
   --mds-chrome-brand-border: rgb(var(--mds-recovery-yellow-rgb) / 0.45);
   --mds-chrome-brand-shadow:
-    0 0 0 2px rgb(var(--mds-blue-rgb) / 0.11),
-    0 5px 18px rgba(0, 0, 0, 0.34);
-  --mds-chrome-nav: #a8b4c5;
-  --mds-chrome-nav-hover: #eef7ff;
-  --mds-chrome-nav-hover-background: rgb(var(--mds-blue-rgb) / 0.06);
-  --mds-chrome-nav-hover-border: rgb(var(--mds-blue-rgb) / 0.12);
-  --mds-chrome-nav-active: #f7fbff;
+    0 0 0 2px rgba(246, 183, 60, 0.14),
+    0 5px 18px rgba(0, 0, 0, 0.4);
+  --mds-chrome-nav: #cfc8bc;
+  --mds-chrome-nav-hover: #ffffff;
+  --mds-chrome-nav-hover-background: rgba(255, 250, 240, 0.05);
+  --mds-chrome-nav-hover-border: rgba(255, 250, 240, 0.1);
+  --mds-chrome-nav-active: #ffffff;
   --mds-chrome-nav-active-background:
-    linear-gradient(90deg, rgb(var(--mds-blue-rgb) / 0.12), rgba(24, 68, 102, 0.1));
-  --mds-chrome-nav-active-border: rgb(var(--mds-blue-rgb) / 0.28);
+    linear-gradient(90deg, rgba(255, 250, 240, 0.12), rgba(255, 250, 240, 0.06));
+  --mds-chrome-nav-active-border: rgba(255, 250, 240, 0.18);
   --mds-chrome-nav-active-shadow:
-    inset 0 0 24px rgb(var(--mds-blue-rgb) / 0.025),
-    0 0 22px rgba(31, 111, 235, 0.07);
-  --mds-chrome-account-border: rgba(125, 162, 199, 0.16);
-  --mds-chrome-account: #f4f8fb;
-  --mds-chrome-account-muted: #8999ac;
-  --mds-chrome-avatar-border: rgb(var(--mds-blue-rgb) / 0.5);
-  --mds-chrome-avatar-shadow: 0 0 0 3px rgb(var(--mds-blue-rgb) / 0.07);
-  --mds-chrome-status: #aeb9c8;
-  --mds-chrome-control: #9bacbf;
-  --mds-chrome-control-border: rgba(143, 174, 204, 0.2);
-  --mds-chrome-control-background: rgba(6, 20, 40, 0.7);
+    inset 0 0 24px rgba(255, 250, 240, 0.02),
+    0 0 22px rgba(0, 0, 0, 0.25);
+  --mds-chrome-account-border: rgba(214, 200, 176, 0.14);
+  --mds-chrome-account: #fbf9f4;
+  --mds-chrome-account-muted: #b6aea2;
+  --mds-chrome-avatar-border: rgba(246, 183, 60, 0.55);
+  --mds-chrome-avatar-shadow: 0 0 0 3px rgba(246, 183, 60, 0.08);
+  --mds-chrome-status: #cfc8bc;
+  --mds-chrome-control: #c3bcb0;
+  --mds-chrome-control-border: rgba(214, 200, 176, 0.2);
+  --mds-chrome-control-background: rgba(20, 18, 15, 0.7);
   --mds-chrome-main-background: transparent;
   --mds-chrome-breadcrumb: #ffffff;
-  --mds-chrome-right-border: rgba(125, 162, 199, 0.17);
-  --mds-chrome-right-background: #031023;
+  --mds-chrome-right-border: rgba(214, 200, 176, 0.16);
+  --mds-chrome-right-background: #0f0e0c;
   --mds-side-panel-background:
-    linear-gradient(180deg, rgba(10, 16, 24, 0.72), rgba(7, 12, 19, 0.8));
-  --mds-side-panel-border: rgba(255, 255, 255, 0.08);
+    linear-gradient(180deg, rgba(20, 18, 15, 0.78), rgba(13, 12, 10, 0.85));
+  --mds-side-panel-border: rgba(255, 250, 240, 0.1);
   --mds-side-panel-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
 
   /* Semantic surface tokens — these flip in light mode. In dark they equal
@@ -96,12 +100,12 @@
        --mds-card             : opaque card/inset background
        --mds-scrim            : dark scrims over imagery */
   --mds-on-surface: #ffffff;
-  --mds-on-surface-soft: rgba(255, 255, 255, 0.78);
-  --mds-on-surface-faint: rgba(255, 255, 255, 0.5);
-  --mds-fill-1: rgba(255, 255, 255, 0.03);
-  --mds-fill-2: rgba(255, 255, 255, 0.06);
-  --mds-fill-3: rgba(255, 255, 255, 0.12);
-  --mds-card: #07172e;
+  --mds-on-surface-soft: rgba(255, 252, 245, 0.86);
+  --mds-on-surface-faint: rgba(255, 252, 245, 0.62);
+  --mds-fill-1: rgba(255, 250, 240, 0.04);
+  --mds-fill-2: rgba(255, 250, 240, 0.08);
+  --mds-fill-3: rgba(255, 250, 240, 0.14);
+  --mds-card: #171512;
   --mds-scrim: rgba(0, 0, 0, 0.5);
   --mds-blue-soft: rgba(47, 140, 255, 0.12);
   --mds-blue-line: rgba(47, 140, 255, 0.32);
@@ -449,7 +453,7 @@
 }
 
 /* THE MAIN STAGE BACKGROUND. .mds-desktop-app carries the dark base gradient
-   (#040a13…) with warm/cool halos, and a ::before screen-blend overlay. This
+   (#0d0a07…) with warm/cool halos, and a ::before screen-blend overlay. This
    is the big dark region (sidebar + main are transparent grid columns over it).
    Repaint it as the pale daylight wash and neutralize the screen-blend halo. */
 .mds-root[data-theme="light"] .mds-desktop-app {
@@ -621,7 +625,7 @@
   display: grid;
   place-items: center;
   padding: 32px;
-  background: linear-gradient(140deg, #030812 0%, #061323 44%, #0a111f 70%, #130c10 100%);
+  background: linear-gradient(140deg, #0b0906 0%, #16120d 44%, #15120d 70%, #130c10 100%);
   color: var(--mds-ink);
   font-family: var(--mds-font);
 }
@@ -634,7 +638,7 @@
   padding: 28px 30px;
   border: 1px solid rgba(255, 129, 95, 0.32);
   border-radius: 16px;
-  background: rgba(8, 14, 22, 0.92);
+  background: rgba(17, 14, 10, 0.92);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
 }
 
@@ -672,7 +676,7 @@
   padding: 0 18px;
   border: 0;
   border-radius: 10px;
-  color: #07172e;
+  color: #1a1611;
   background: linear-gradient(180deg, #73afff, #2f8cff);
   font-family: inherit;
   font-size: calc(13px * var(--mds-fs));
@@ -689,7 +693,7 @@
     radial-gradient(circle at 10% 16%, rgba(31, 111, 235, 0.2), transparent 42%),
     radial-gradient(circle at 92% 46%, rgba(255, 124, 43, 0.16), transparent 34%),
     radial-gradient(circle at 85% 8%, rgba(255, 176, 75, 0.1), transparent 38%),
-    linear-gradient(140deg, #030812 0%, #061323 44%, #0a111f 70%, #130c10 100%);
+    linear-gradient(140deg, #0b0906 0%, #16120d 44%, #15120d 70%, #130c10 100%);
 }
 
 .mds-debug-banner {
@@ -745,10 +749,10 @@
   overflow: hidden;
   border: 0;
   border-radius: 0;
-  /* Shared navy shell — matches the Stateful Recovery finale so both demo steps sit on
+  /* Shared warm-black shell — matches the Stateful Recovery finale so both demo steps sit on
      one surface. Blue-only halos keep amber as the disruption color. */
   background:
-    radial-gradient(ellipse 58% 70% at 45% 42%, rgba(8, 53, 93, 0.26), transparent 70%),
+    radial-gradient(ellipse 58% 70% at 45% 42%, rgba(51, 46, 37, 0.26), transparent 70%),
     radial-gradient(ellipse 32% 50% at 0% 88%, rgb(var(--mds-blue-rgb) / 0.12), transparent 72%),
     var(--mds-app-surface);
   box-shadow: none;
@@ -889,7 +893,7 @@
   background:
     radial-gradient(ellipse 90% 60% at 0% 95%, rgb(var(--mds-blue-rgb) / 0.18), transparent 65%),
     radial-gradient(circle at 0% 22%, rgb(var(--mds-blue-rgb) / 0.10), transparent 60%),
-    linear-gradient(180deg, rgba(3, 10, 17, 0.78), rgba(4, 12, 19, 0.62));
+    linear-gradient(180deg, rgba(13, 10, 6, 0.78), rgba(14, 12, 8, 0.62));
   overflow: hidden;
 }
 
@@ -1014,7 +1018,7 @@
   background:
     radial-gradient(circle at 52% 30%, #ffd7c4 0 13%, transparent 14%),
     radial-gradient(circle at 50% 47%, #c87a59 0 20%, transparent 21%),
-    linear-gradient(160deg, #193d55, #e7a07b 62%, #1a2735);
+    linear-gradient(160deg, #3d372c, #e7a07b 62%, #2b261f);
 }
 
 .mds-avatar.is-photo {
@@ -1130,7 +1134,7 @@
   flex-direction: column;
   gap: 10px;
   padding: 14px 34px 22px;
-  background: linear-gradient(180deg, transparent 0%, rgba(4, 9, 15, 0.45) 30%, rgba(4, 9, 15, 0.78) 100%);
+  background: linear-gradient(180deg, transparent 0%, rgba(12, 9, 6, 0.45) 30%, rgba(12, 9, 6, 0.78) 100%);
   /* Subtle hairline so the dock visually separates from scrolling content
      without feeling boxed-in. */
   border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -1311,7 +1315,7 @@
   padding: 4px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 14px;
-  background: rgba(4, 12, 20, 0.58);
+  background: rgba(15, 12, 8, 0.58);
   box-shadow: inset 0 0 0 1px rgb(var(--mds-blue-rgb) / 0.08);
 }
 
@@ -1556,7 +1560,7 @@
   padding: 3px 10px;
   border-radius: 999px;
   background: rgb(var(--mds-blue-rgb) / 0.92);
-  color: #07172e;
+  color: #1a1611;
   font-size: calc(11.5px * var(--mds-fs));
   font-weight: 800;
   letter-spacing: 0.02em;
@@ -2156,7 +2160,7 @@
   border: 1px solid rgb(var(--mds-blue-rgb) / 0.32);
   border-radius: 999px;
   color: #e7faff;
-  background: rgba(13, 39, 76, 0.78);
+  background: rgba(42, 37, 29, 0.78);
   font-size: calc(12.5px * var(--mds-fs));
   font-weight: 540;
   font-variant-numeric: tabular-nums;
@@ -2168,7 +2172,7 @@
 .mds-msg-result-chip:hover,
 .mds-msg-result-chip:focus-visible {
   border-color: rgb(var(--mds-blue-rgb) / 0.7);
-  background: rgba(20, 47, 84, 0.88);
+  background: rgba(50, 45, 36, 0.88);
   transform: translateY(-1px);
   outline: none;
 }
@@ -2235,7 +2239,7 @@
 .mds-followup-chip:hover,
 .mds-followup-chip:focus-visible {
   border-color: rgb(var(--mds-blue-rgb) / 0.7);
-  background: rgba(20, 47, 84, 0.9);
+  background: rgba(50, 45, 36, 0.9);
   transform: translateY(-1px);
   outline: none;
 }
@@ -2338,7 +2342,7 @@
   height: 220px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
-  background: linear-gradient(180deg, rgba(8, 14, 21, 0.82), rgba(6, 11, 18, 0.94));
+  background: linear-gradient(180deg, rgba(17, 14, 10, 0.82), rgba(14, 11, 8, 0.94));
   text-align: left;
   cursor: default;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
@@ -2393,11 +2397,11 @@
   pointer-events: none;
   background: linear-gradient(
     180deg,
-    rgba(3, 8, 14, 0) 0%,
-    rgba(3, 8, 14, 0) 36%,
-    rgba(3, 8, 14, 0.36) 58%,
-    rgba(3, 8, 14, 0.82) 84%,
-    rgba(2, 6, 10, 0.94) 100%
+    rgba(11, 8, 5, 0) 0%,
+    rgba(11, 8, 5, 0) 36%,
+    rgba(11, 8, 5, 0.36) 58%,
+    rgba(11, 8, 5, 0.82) 84%,
+    rgba(9, 6, 4, 0.94) 100%
   );
 }
 
@@ -2505,7 +2509,7 @@
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 7px;
   color: #f3f9ff;
-  background: rgba(10, 18, 26, 0.62);
+  background: rgba(21, 18, 13, 0.62);
   backdrop-filter: blur(6px);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 620;
@@ -2513,7 +2517,7 @@
 
 .mds-msg-card-actions button:hover:not(:disabled) {
   border-color: rgb(var(--mds-blue-rgb) / 0.55);
-  background: rgba(15, 38, 72, 0.78);
+  background: rgba(41, 37, 29, 0.78);
 }
 
 /* Shared, catalog-grounded result card used in Experience and System proof.
@@ -2532,7 +2536,7 @@
   border: 1px solid rgba(157, 203, 235, 0.16);
   border-radius: 18px;
   color: #ffffff;
-  background: #06111d;
+  background: #14100c;
   box-shadow:
     0 22px 80px rgba(0, 0, 0, 0.34),
     inset 0 1px rgba(255, 255, 255, 0.04);
@@ -2594,9 +2598,9 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(2, 7, 14, 0.34), transparent 36%),
-    linear-gradient(90deg, rgba(2, 8, 14, 0.18), transparent 50%),
-    linear-gradient(0deg, rgba(3, 9, 18, 0.96), rgba(3, 9, 18, 0.12) 72%);
+    linear-gradient(180deg, rgba(10, 7, 4, 0.34), transparent 36%),
+    linear-gradient(90deg, rgba(11, 8, 5, 0.18), transparent 50%),
+    linear-gradient(0deg, rgba(12, 9, 6, 0.96), rgba(12, 9, 6, 0.12) 72%);
 }
 
 .mds-trip-result-destination,
@@ -2610,7 +2614,7 @@
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
   color: #dcecff;
-  background: rgba(9, 20, 33, 0.66);
+  background: rgba(23, 19, 15, 0.66);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   font-size: calc(10.5px * var(--mds-fs));
@@ -2628,7 +2632,7 @@
 .mds-trip-result-card.is-priority .mds-trip-result-destination {
   border-color: rgba(49, 215, 255, 0.32);
   color: #68e9ff;
-  background: rgba(8, 30, 43, 0.7);
+  background: rgba(30, 26, 20, 0.7);
 }
 
 /* Solid mint pill so the rank verdict pops against any photo. */
@@ -2666,9 +2670,9 @@
     linear-gradient(
       180deg,
       transparent 18%,
-      rgba(3, 9, 18, 0.08) 34%,
-      rgba(3, 9, 18, 0.78) 62%,
-      rgba(3, 9, 18, 0.98) 100%
+      rgba(12, 9, 6, 0.08) 34%,
+      rgba(12, 9, 6, 0.78) 62%,
+      rgba(12, 9, 6, 0.98) 100%
     );
 }
 
@@ -2941,7 +2945,7 @@
   border: 1px solid rgba(255, 255, 255, 0.17);
   border-radius: 13px;
   color: #dceeff;
-  background: rgba(5, 17, 31, 0.64);
+  background: rgba(19, 16, 12, 0.64);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   font-size: calc(12.5px * var(--mds-fs));
@@ -3071,7 +3075,7 @@
   border: 1px solid rgb(var(--mds-recovery-yellow-rgb) / 0.28);
   border-radius: 8px;
   background:
-    linear-gradient(145deg, rgba(10, 25, 44, 0.98), rgba(5, 16, 31, 0.99));
+    linear-gradient(145deg, rgba(28, 24, 18, 0.98), rgba(19, 16, 11, 0.99));
   box-shadow:
     0 22px 44px rgba(0, 0, 0, 0.28),
     inset 0 1px rgba(255, 255, 255, 0.03);
@@ -3088,8 +3092,8 @@
   inset: 0;
   content: "";
   background:
-    linear-gradient(90deg, transparent 52%, rgba(5, 16, 31, 0.92)),
-    linear-gradient(0deg, rgba(3, 10, 20, 0.58), transparent 60%);
+    linear-gradient(90deg, transparent 52%, rgba(19, 16, 11, 0.92)),
+    linear-gradient(0deg, rgba(13, 10, 7, 0.58), transparent 60%);
 }
 
 .mds-inline-concierge-media img {
@@ -3108,7 +3112,7 @@
   border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 5px;
   color: #ffffff;
-  background: rgba(4, 12, 23, 0.68);
+  background: rgba(15, 12, 8, 0.68);
   font-size: calc(10px * var(--mds-fs));
   font-weight: 760;
   -webkit-backdrop-filter: blur(8px);
@@ -3219,7 +3223,7 @@
   border: 1px solid rgba(126, 157, 188, 0.26);
   border-radius: 6px;
   color: #cbd8e6;
-  background: rgba(7, 21, 39, 0.76);
+  background: rgba(24, 20, 15, 0.76);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 720;
 }
@@ -3385,7 +3389,7 @@
   height: 320px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(8, 14, 21, 0.82), rgba(6, 11, 18, 0.94));
+  background: linear-gradient(180deg, rgba(17, 14, 10, 0.82), rgba(14, 11, 8, 0.94));
   text-align: left;
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.38);
   cursor: pointer;
@@ -3425,13 +3429,13 @@
      and a deep bottom ramp seats the title/price over any photo. Reads the
      same in both themes — the photo + scrim are theme-independent. */
   background:
-    linear-gradient(180deg, rgba(3, 8, 14, 0.28) 0%, rgba(3, 8, 14, 0) 22%),
+    linear-gradient(180deg, rgba(11, 8, 5, 0.28) 0%, rgba(11, 8, 5, 0) 22%),
     linear-gradient(180deg,
-      rgba(3, 8, 14, 0.0) 0%,
-      rgba(3, 8, 14, 0.0) 34%,
-      rgba(3, 8, 14, 0.38) 58%,
-      rgba(3, 8, 14, 0.82) 82%,
-      rgba(2, 6, 10, 0.96) 100%);
+      rgba(11, 8, 5, 0.0) 0%,
+      rgba(11, 8, 5, 0.0) 34%,
+      rgba(11, 8, 5, 0.38) 58%,
+      rgba(11, 8, 5, 0.82) 82%,
+      rgba(9, 6, 4, 0.96) 100%);
 }
 
 .mds-rec-overlay {
@@ -3494,7 +3498,7 @@
   padding: 3px 9px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px;
-  background: rgba(8, 14, 21, 0.5);
+  background: rgba(17, 14, 10, 0.5);
   backdrop-filter: blur(6px);
   color: #e2ecf3;
 }
@@ -3567,7 +3571,7 @@
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
   color: #f3f9ff;
-  background: rgba(10, 18, 26, 0.62);
+  background: rgba(21, 18, 13, 0.62);
   backdrop-filter: blur(8px);
   font-size: calc(11px * var(--mds-fs));
   font-weight: 640;
@@ -3576,7 +3580,7 @@
 
 .mds-rec-overlay .mds-rec-actions button:hover {
   border-color: rgb(var(--mds-blue-rgb) / 0.55);
-  background: rgba(15, 38, 72, 0.78);
+  background: rgba(41, 37, 29, 0.78);
 }
 
 .mds-trip-visual {
@@ -3622,11 +3626,11 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(7, 14, 22, 0.06) 0%, rgba(4, 8, 14, 0.55) 78%, rgba(3, 6, 10, 0.82) 100%);
+  background: linear-gradient(180deg, rgba(17, 14, 10, 0.06) 0%, rgba(11, 9, 5, 0.55) 78%, rgba(9, 7, 4, 0.82) 100%);
 }
 
 .mds-trip-visual-douro {
-  background: linear-gradient(150deg, #365a63 0 36%, #d2a15f 37% 50%, #283947 51% 100%);
+  background: linear-gradient(150deg, #365a63 0 36%, #d2a15f 37% 50%, #3e382d 51% 100%);
 }
 
 .mds-trip-visual-alsace {
@@ -3641,11 +3645,11 @@
    graceful fallback when a live image_url is slow or blocked on venue wifi, so
    a Tokyo or Paris card reads as itself rather than an unrelated vineyard. */
 .mds-trip-visual-city {
-  background: linear-gradient(165deg, #3a4a63 0 38%, #c98d6b 39% 52%, #1c2635 53% 100%);
+  background: linear-gradient(165deg, #3a4a63 0 38%, #c98d6b 39% 52%, #2b261f 53% 100%);
 }
 
 .mds-trip-visual-mountain {
-  background: linear-gradient(180deg, #7fa6c4 0 40%, #d7d2c4 41% 54%, #37505a 55% 100%);
+  background: linear-gradient(180deg, #7fa6c4 0 40%, #d7d2c4 41% 54%, #544c3e 55% 100%);
 }
 
 .mds-trip-visual-landscape {
@@ -3693,7 +3697,7 @@
   bottom: 8%;
   height: 54%;
   border-radius: 50% 50% 0 0;
-  background: rgba(28, 50, 58, 0.68);
+  background: rgba(52, 46, 37, 0.68);
 }
 
 .mds-trip-field {
@@ -3773,7 +3777,7 @@
   padding: 0 14px;
   border-color: rgba(255, 255, 255, 0.18);
   color: var(--mds-on-surface);
-  background: rgba(15, 26, 36, 0.82);
+  background: rgba(29, 25, 19, 0.82);
   font-size: calc(13px * var(--mds-fs));
   font-weight: 600;
 }
@@ -3904,7 +3908,7 @@
   border: 1px solid rgb(var(--mds-blue-rgb) / 0.34);
   border-radius: 999px;
   color: rgba(231, 250, 255, 0.92);
-  background: rgba(13, 39, 76, 0.42);
+  background: rgba(42, 37, 29, 0.42);
   font-size: calc(13px * var(--mds-fs));
   font-weight: 540;
   letter-spacing: 0.005em;
@@ -3916,7 +3920,7 @@
   border-style: solid;
   border-color: rgb(var(--mds-blue-rgb) / 0.7);
   color: var(--mds-on-surface);
-  background: rgba(20, 47, 84, 0.78);
+  background: rgba(50, 45, 36, 0.78);
   transform: translateY(-1px);
   outline: none;
 }
@@ -3992,7 +3996,7 @@
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
   color: var(--mds-on-surface);
-  background: rgba(9, 17, 27, 0.78);
+  background: rgba(20, 17, 13, 0.78);
   font-size: calc(13.5px * var(--mds-fs));
   font-weight: 580;
   letter-spacing: 0.005em;
@@ -4004,7 +4008,7 @@
 .mds-chat-action-chip:focus-visible {
   border-color: rgb(var(--mds-blue-rgb) / 0.55);
   color: var(--mds-on-surface);
-  background: rgba(15, 32, 44, 0.88);
+  background: rgba(34, 30, 23, 0.88);
   transform: translateY(-1px);
   outline: none;
 }
@@ -4037,7 +4041,7 @@
 /* Active state - chip lights up cyan when its filter is set. */
 .mds-chat-action-chip.is-active {
   border-color: rgb(var(--mds-blue-rgb) / 0.7);
-  background: rgba(20, 47, 84, 0.85);
+  background: rgba(50, 45, 36, 0.85);
   color: var(--mds-on-surface);
 }
 
@@ -4093,7 +4097,7 @@
   padding: 14px 14px 12px;
   border: 1px solid rgb(var(--mds-blue-rgb) / 0.28);
   border-radius: 14px;
-  background: rgba(8, 14, 22, 0.96);
+  background: rgba(17, 14, 10, 0.96);
   box-shadow: 0 22px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
   backdrop-filter: blur(14px);
   animation: mds-msg-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -4110,7 +4114,7 @@
   margin-top: -6px;
   border-right: 1px solid rgb(var(--mds-blue-rgb) / 0.28);
   border-bottom: 1px solid rgb(var(--mds-blue-rgb) / 0.28);
-  background: rgba(8, 14, 22, 0.96);
+  background: rgba(17, 14, 10, 0.96);
   transform: rotate(45deg);
 }
 
@@ -4136,7 +4140,7 @@
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 50%;
   color: var(--mds-on-surface);
-  background: rgba(15, 26, 36, 0.6);
+  background: rgba(29, 25, 19, 0.6);
   font-size: calc(18px * var(--mds-fs));
   font-weight: 600;
   line-height: 1;
@@ -4146,7 +4150,7 @@
 
 .mds-popover-step-btn:hover:not(:disabled) {
   border-color: rgb(var(--mds-blue-rgb) / 0.55);
-  background: rgba(20, 47, 84, 0.78);
+  background: rgba(50, 45, 36, 0.78);
 }
 
 .mds-popover-step-btn:disabled {
@@ -4205,7 +4209,7 @@
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
   color: var(--mds-on-surface);
-  background: rgba(11, 20, 31, 0.78);
+  background: rgba(23, 20, 15, 0.78);
   font-family: inherit;
   font-size: calc(13.5px * var(--mds-fs));
   font-weight: 540;
@@ -4254,7 +4258,7 @@
   padding: 0 16px;
   border: 0;
   border-radius: 10px;
-  color: #07172e;
+  color: #1a1611;
   background: linear-gradient(180deg, #73afff, #2f8cff);
   font-family: inherit;
   font-size: calc(13px * var(--mds-fs));
@@ -4276,7 +4280,7 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 17px;
   color: #edf6ff;
-  background: linear-gradient(180deg, rgba(11, 20, 31, 0.8), rgba(7, 14, 22, 0.84));
+  background: linear-gradient(180deg, rgba(23, 20, 15, 0.8), rgba(17, 14, 10, 0.84));
   /* Right padding reserves room for the inset send button (40px + insets). */
   padding: 0 60px 0 16px;
   outline: none;
@@ -4304,7 +4308,7 @@
   place-items: center;
   border: 0;
   border-radius: 12px;
-  color: #07172e;
+  color: #1a1611;
   background: linear-gradient(180deg, #73afff, #2f8cff);
   box-shadow: 0 6px 18px rgb(var(--mds-blue-rgb) / 0.34);
   transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease, background 150ms ease;
@@ -4357,7 +4361,7 @@
   border-left: 1px solid var(--mds-line);
   background:
     radial-gradient(circle at 90% 0%, rgba(137, 156, 168, 0.08), transparent 34%),
-    linear-gradient(180deg, rgba(8, 14, 21, 0.96), rgba(4, 9, 15, 0.98));
+    linear-gradient(180deg, rgba(17, 14, 10, 0.96), rgba(12, 9, 6, 0.98));
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -4822,7 +4826,7 @@
   margin: 4px 0 12px;
   padding: 12px 12px 10px;
   border-radius: 12px;
-  background: linear-gradient(180deg, rgba(13, 30, 38, 0.42), rgba(8, 16, 24, 0.55));
+  background: linear-gradient(180deg, rgba(31, 27, 21, 0.42), rgba(19, 16, 11, 0.55));
   border: 1px solid rgb(var(--mds-blue-rgb) / 0.12);
 }
 
@@ -5241,7 +5245,7 @@
 }
 
 .mds-trace-tabs button.is-active {
-  color: #07172e;
+  color: #1a1611;
   background: var(--mds-blue);
 }
 
@@ -5453,7 +5457,7 @@
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 16px;
-  background: rgba(6, 12, 18, 0.94);
+  background: rgba(15, 12, 8, 0.94);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
   transform: translateY(calc(100% - 74px));
   transition: transform 180ms ease;
@@ -5532,7 +5536,7 @@
   min-height: 30px;
   border: 0;
   border-radius: 8px;
-  color: #07172e;
+  color: #1a1611;
   background: var(--mds-blue);
   font-size: calc(12px * var(--mds-fs));
   font-weight: 800;
@@ -5555,7 +5559,7 @@
   padding: 20px;
   overflow-y: auto;
   border-left: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(5, 10, 16, 0.97);
+  background: rgba(13, 10, 7, 0.97);
   box-shadow: -30px 0 80px rgba(0, 0, 0, 0.42);
 }
 
@@ -6041,7 +6045,7 @@
 .mds-surface-switch button { min-height:32px; padding:0 13px; border:0; border-radius:6px; color:var(--mds-muted); background:transparent; font-weight:700; }
 .mds-surface-switch button.is-active { color:var(--mds-on-surface); background:var(--mds-card); box-shadow:var(--mds-shadow-1); }
 .mds-toast { position:fixed; left:50%; bottom:24px; z-index:100; transform:translateX(-50%); padding:11px 16px; border:1px solid var(--mds-blue-line); border-radius:8px; color:var(--mds-on-surface); background:var(--mds-shell-elevated); box-shadow:var(--mds-shadow-2); }
-.mds-modal-backdrop { position:fixed; inset:0; z-index:90; display:grid; place-items:center; padding:24px; background:rgba(2,6,12,.72); backdrop-filter:blur(10px); }
+.mds-modal-backdrop { position:fixed; inset:0; z-index:90; display:grid; place-items:center; padding:24px; background:rgba(9, 7, 4, .72); backdrop-filter:blur(10px); }
 .mds-trip-modal,.mds-compare-modal { position:relative; width:min(1040px,100%); max-height:min(860px,calc(100dvh - 48px)); overflow:auto; border:1px solid var(--mds-line-strong); border-radius:8px; color:var(--mds-ink); background:var(--mds-shell-elevated); box-shadow:0 28px 80px rgba(0,0,0,.5); }
 .mds-trip-modal { display:grid; grid-template-columns:minmax(300px,.9fr) minmax(420px,1.1fr); }
 .mds-trip-modal-visual { position:relative; min-height:620px; }
@@ -6071,7 +6075,7 @@
 .mds-hold-receipt { flex-direction:column; border-color:var(--mds-blue-line); }
 .mds-trip-modal-actions,.mds-journey-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .mds-trip-modal-actions button,.mds-journey-actions button,.mds-compare-copy button { min-height:40px; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:0 14px; border:1px solid var(--mds-line-strong); border-radius:6px; color:var(--mds-on-surface); background:var(--mds-card); font-weight:700; }
-.mds-trip-modal-actions .is-primary,.mds-compare-copy .is-primary { color:#07172e; background:var(--mds-blue); margin-left:auto; }
+.mds-trip-modal-actions .is-primary,.mds-compare-copy .is-primary { color:#1a1611; background:var(--mds-blue); margin-left:auto; }
 .mds-compare-modal { padding:26px; }.mds-compare-modal>header { display:flex; justify-content:space-between; }.mds-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.mds-compare-grid article { position:relative; overflow:hidden; border:1px solid var(--mds-line); border-radius:8px; background:var(--mds-card); }.mds-compare-copy { display:grid; gap:12px; padding:16px; }.mds-compare-copy dl { display:grid; gap:6px; }.mds-compare-copy dl div { display:flex; justify-content:space-between; }.mds-compare-remove { position:absolute; top:8px; right:8px; z-index:2; width:30px; height:30px; border:0; border-radius:50%; }
 
 /* Enter-only, mirroring the Radix drawers (mds-sheet-*): close stays instant
@@ -6592,7 +6596,7 @@
   gap: 1px;
   margin-left: 5px;
   padding-left: 5px;
-  border-left: 1px solid rgba(15, 23, 42, 0.18);
+  border-left: 1px solid rgba(28, 24, 19, 0.18);
   font-size: calc(9.5px * var(--mds-fs));
   font-weight: 800;
   letter-spacing: 0;

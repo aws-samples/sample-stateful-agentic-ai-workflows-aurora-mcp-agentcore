@@ -44,9 +44,8 @@ Open [`http://localhost:5173/showcase`](http://localhost:5173/showcase).
 Use the **Presenter controls** bar while preparing with your co-presenter:
 
 - **Preview audience layout** widens the workspace and hides the service sidebar while keeping preparation controls available.
-- **Projector readability** increases type size and secondary-text contrast in the preview and fullscreen. Leave it enabled for the room check.
-- **Room check** lists the checks to perform on the actual projector. Check a trip price and an evidence label from the back of the room.
-- Select **Present fullscreen** before sharing. The entire preparation bar and any open room-check panel disappear; the Meridian brand, four views, and evidence remain usable. Press **Esc** to return to the windowed layout. The current conversation and preparation settings are preserved.
+- **Projector readability** increases type size and secondary-text contrast in the preview and fullscreen. Leave it enabled on a projector.
+- Select **Present fullscreen** before sharing. The entire preparation bar disappears; the Meridian brand, four views, and evidence remain usable. Press **Esc** to return to the windowed layout. The current conversation and preparation settings are preserved.
 
 Use the app's fullscreen button for the demo. Controls are visible on a shared windowed screen, so stop sharing before exiting fullscreen. This is a preparation toolbar, not a separate private presenter monitor.
 

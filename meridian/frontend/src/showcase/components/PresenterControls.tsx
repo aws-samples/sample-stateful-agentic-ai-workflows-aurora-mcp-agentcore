@@ -1,4 +1,4 @@
-import { Expand, Monitor, ClipboardCheck } from 'lucide-react';
+import { Expand, Monitor } from 'lucide-react';
 import type { PresentationMode } from '../hooks/usePresentationMode';
 
 export function PresenterControls({ mode }: { mode: PresentationMode }) {
@@ -16,19 +16,6 @@ export function PresenterControls({ mode }: { mode: PresentationMode }) {
         <button type="button" aria-pressed={mode.preview} onClick={() => mode.setPreview(!mode.preview)}>
           Preview audience layout
         </button>
-        <details className="mc-room-check">
-          <summary><ClipboardCheck size={17} aria-hidden="true" /> Room check</summary>
-          <div>
-            <strong>Before you share</strong>
-            <ul>
-              <li>Check a trip price and an evidence label from the back of the room.</li>
-              <li>Confirm Meridian is live and rehearse the next query.</li>
-              <li>Close: Workflow checkpoint → Recovery desk → System evidence → Session takeaways → Questions.</li>
-              <li>Select Present fullscreen, then share. Exit fullscreen after sharing stops.</li>
-            </ul>
-            <p>These controls are visible whenever you share the windowed screen.</p>
-          </div>
-        </details>
         <button className="mc-present-button" type="button" onClick={() => void mode.present()}>
           <Expand size={17} aria-hidden="true" /> Present fullscreen
         </button>

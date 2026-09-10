@@ -12,6 +12,7 @@ import './presenterProof.css';
 import './surfaceSwitch.css';
 import './airlineConcierge.css';
 import './presentationMode.css';
+import './solutionBriefing.css';
 
 type ShowcaseTheme = 'dark' | 'light';
 

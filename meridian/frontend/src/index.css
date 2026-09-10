@@ -54,7 +54,7 @@ textarea {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   color: #f5f8fb;
-  background: #031023;
+  background: #0d0c0a;
 }
 
 .route-skeleton-sidebar {
@@ -63,7 +63,7 @@ textarea {
   gap: 14px;
   padding: 22px 18px;
   border-right: 1px solid rgba(125, 162, 199, 0.18);
-  background: #071425;
+  background: #12100e;
 }
 
 .route-skeleton i,

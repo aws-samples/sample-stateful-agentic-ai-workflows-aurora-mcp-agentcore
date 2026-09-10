@@ -8,7 +8,7 @@ import type { JourneyDocument } from './types';
  * Named descriptively. A/B/C were design-review labels and do not belong in
  * the shipped interface.
  */
-export type SurfaceId = 'concierge' | 'ladder' | 'recovery' | 'proof';
+export type SurfaceId = 'concierge' | 'ladder' | 'recovery' | 'proof' | 'briefing';
 
 export const SURFACES: { id: SurfaceId; label: string; blurb: string }[] = [
   {
@@ -30,6 +30,11 @@ export const SURFACES: { id: SurfaceId; label: string; blurb: string }[] = [
     id: 'proof',
     label: 'System evidence',
     blurb: 'Evidence read back from Aurora',
+  },
+  {
+    id: 'briefing',
+    label: 'Solution briefing',
+    blurb: 'How it is built, where the boundaries sit',
   },
 ];
 

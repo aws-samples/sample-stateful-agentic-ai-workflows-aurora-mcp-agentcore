@@ -149,7 +149,7 @@
   min-height: 0;
   overflow: hidden;
   border-radius: 8px;
-  background: #061425;
+  background: #16130e;
   isolation: isolate;
 }
 
@@ -188,9 +188,9 @@
   background:
     linear-gradient(
       180deg,
-      rgba(2, 10, 19, 0.2) 0%,
-      rgba(2, 10, 19, 0.04) 34%,
-      rgba(2, 10, 19, 0.92) 100%
+      rgba(12, 10, 6, 0.2) 0%,
+      rgba(12, 10, 6, 0.04) 34%,
+      rgba(12, 10, 6, 0.92) 100%
     );
 }
 
@@ -206,7 +206,7 @@
   border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 50%;
   color: #ffffff;
-  background: rgba(2, 12, 23, 0.72);
+  background: rgba(14, 11, 8, 0.72);
   transition:
     color 160ms ease,
     background-color 160ms ease,
@@ -215,7 +215,7 @@
 
 .mds-discovery-save:hover {
   color: #ff9f99;
-  background: rgba(2, 12, 23, 0.9);
+  background: rgba(14, 11, 8, 0.9);
 }
 
 .mds-discovery-save:active {
@@ -281,7 +281,7 @@
   border: 1px solid rgba(255, 255, 255, 0.17);
   border-radius: 5px;
   color: rgba(255, 255, 255, 0.88);
-  background: rgba(2, 12, 23, 0.54);
+  background: rgba(14, 11, 8, 0.54);
   font-size: calc(9px * var(--mds-fs));
   font-weight: 600;
 }

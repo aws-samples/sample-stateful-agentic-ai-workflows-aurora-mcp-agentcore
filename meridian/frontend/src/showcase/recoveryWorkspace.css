@@ -25,8 +25,8 @@
 }
 
 .mds-root[data-theme="dark"] .mds-desktop-app.is-projector {
-  --mds-muted: #aeb9c7;
-  --mds-dim: #8495a8;
+  --mds-muted: #d2cbbf;
+  --mds-dim: #a39b8e;
 }
 
 .mds-desktop-app.is-projector .mds-top-actions {
@@ -202,7 +202,7 @@
 
 .mds-ladder-nav-rung.is-active .mds-ladder-nav-index {
   border-color: var(--mds-blue);
-  color: #052329;
+  color: #201c16;
   background: var(--mds-blue);
   box-shadow: 0 0 14px var(--mds-blue-line);
 }
@@ -721,10 +721,10 @@
   background:
     linear-gradient(
       180deg,
-      rgba(3, 16, 35, 0.72),
-      rgba(3, 16, 35, 0.98) 28%
+      rgba(19, 15, 11, 0.72),
+      rgba(19, 15, 11, 0.98) 28%
     );
-  box-shadow: 0 -16px 32px rgba(0, 7, 18, 0.22);
+  box-shadow: 0 -16px 32px rgba(10, 7, 4, 0.22);
 }
 
 .mds-desktop-app:is(.is-proof, .is-experience) .mds-desktop-scroll {
@@ -747,7 +747,7 @@
   padding: 3px;
   border-radius: 8px;
   border-color: rgba(127, 163, 197, 0.18);
-  background: rgba(5, 18, 38, 0.58);
+  background: rgba(21, 18, 13, 0.58);
 }
 
 .mds-desktop-app.is-experience .mds-surface-switch button {
@@ -782,7 +782,7 @@
   padding: 6px 8px 6px 14px;
   border: 1px solid rgba(112, 151, 188, 0.18);
   border-radius: 10px;
-  background: rgba(6, 20, 38, 0.72);
+  background: rgba(23, 19, 14, 0.72);
 }
 
 .mds-recovery-layout-review > span {
@@ -812,7 +812,7 @@
   padding: 3px;
   border: 1px solid rgba(112, 151, 188, 0.2);
   border-radius: 8px;
-  background: rgba(3, 13, 27, 0.72);
+  background: rgba(16, 13, 9, 0.72);
 }
 
 .mds-recovery-layout-review button {
@@ -1012,7 +1012,7 @@
 
 .mds-recovery-command.is-running .mds-recovery-warning {
   border-color: rgb(var(--mds-blue-rgb) / 0.48);
-  color: #031b35;
+  color: #1c1812;
   background: linear-gradient(145deg, #7db7ff, #2f8cff);
   box-shadow:
     0 0 0 9px rgb(var(--mds-blue-rgb) / 0.05),
@@ -1293,7 +1293,7 @@
   font-size: calc(10px * var(--mds-fs));
   font-weight: 800;
   paint-order: stroke;
-  stroke: #071a30;
+  stroke: #1c1813;
   stroke-width: 3px;
   stroke-linejoin: round;
 }
@@ -1336,7 +1336,7 @@
 }
 
 .mds-recovery-command.is-running .mds-recovery-start {
-  color: #02272b;
+  color: #221e17;
   border-color: #73afff;
   background: linear-gradient(150deg, #73afff, #2f8cff);
   box-shadow: 0 7px 18px rgb(var(--mds-blue-rgb) / 0.24);
@@ -1474,7 +1474,7 @@
 }
 
 .mds-recovery-action-card-button:hover:not(:disabled) {
-  background: rgba(20, 65, 91, 0.22);
+  background: rgba(63, 56, 46, 0.22);
 }
 
 .mds-recovery-action-card-title {
@@ -1788,7 +1788,7 @@
   color: #d6dee8 !important;
   border: 1px solid rgba(143, 158, 176, 0.28);
   border-radius: 7px;
-  background: rgba(6, 18, 34, 0.58);
+  background: rgba(21, 17, 13, 0.58);
   box-shadow: 0 7px 18px rgba(0, 0, 0, 0.16);
 }
 
@@ -2209,7 +2209,7 @@
   padding: 0 16px 0 13px;
   border-color: rgba(119, 154, 188, 0.26);
   color: #acb8c7;
-  background: rgba(4, 17, 35, 0.72);
+  background: rgba(20, 16, 12, 0.72);
   font-size: calc(13px * var(--mds-fs));
 }
 
@@ -2227,7 +2227,7 @@
   gap: 0;
   padding: 20px 16px;
   border-left-color: rgba(125, 162, 199, 0.17);
-  background: #031023;
+  background: #130f0b;
 }
 
 .mds-desktop-app.is-experience .mds-journey-panel {
@@ -2374,7 +2374,7 @@
 .mds-desktop-app.is-experience .mds-current-trip-loyalty {
   min-height: 42px;
   padding: 9px 12px;
-  background: rgba(12, 29, 51, 0.8);
+  background: rgba(32, 28, 22, 0.8);
   font-size: calc(13px * var(--mds-fs));
 }
 
@@ -2388,7 +2388,7 @@
   padding: 0 8px;
   border: 1px solid rgba(116, 151, 184, 0.14);
   border-radius: 6px;
-  background: rgba(5, 18, 36, 0.48);
+  background: rgba(21, 17, 13, 0.48);
   font-size: calc(11px * var(--mds-fs));
 }
 
@@ -2564,7 +2564,7 @@
   border: 0;
   border-top: 1px solid rgba(116, 151, 184, 0.14);
   color: #5ca0ff;
-  background: rgba(4, 18, 36, 0.38);
+  background: rgba(20, 17, 13, 0.38);
   font-size: calc(13px * var(--mds-fs));
   font-weight: 700;
 }
@@ -2961,7 +2961,7 @@
       rgba(244, 247, 250, 0.74),
       rgba(244, 247, 250, 0.98) 28%
     );
-  box-shadow: 0 -16px 32px rgba(35, 55, 78, 0.08);
+  box-shadow: 0 -16px 32px rgba(60, 54, 43, 0.08);
 }
 
 .mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-chat-composer-wrap.is-recovery .mds-chat-action-chip {
@@ -3571,7 +3571,7 @@
   border-color: rgb(var(--mds-recovery-yellow-rgb) / 0.26);
   background:
     linear-gradient(135deg, rgb(var(--mds-recovery-yellow-rgb) / 0.055), transparent 38%),
-    linear-gradient(180deg, rgba(13, 31, 49, 0.96), rgba(7, 19, 33, 0.98));
+    linear-gradient(180deg, rgba(33, 29, 23, 0.96), rgba(22, 18, 14, 0.98));
 }
 
 .mds-recovery-launch-card.is-compact {
@@ -3581,9 +3581,9 @@
   border-color: rgb(var(--mds-blue-rgb) / 0.34);
   background:
     linear-gradient(90deg, rgb(var(--mds-blue-rgb) / 0.1), transparent 42%),
-    linear-gradient(180deg, rgba(12, 30, 48, 0.97), rgba(7, 19, 33, 0.98));
+    linear-gradient(180deg, rgba(32, 28, 22, 0.97), rgba(22, 18, 14, 0.98));
   box-shadow:
-    0 12px 28px rgba(0, 8, 20, 0.16),
+    0 12px 28px rgba(11, 8, 5, 0.16),
     inset 0 1px rgba(255, 255, 255, 0.035);
 }
 
@@ -3886,7 +3886,7 @@
 
 .mds-recovery-launch-card.is-running .mds-mobile-disruption-primary {
   border-color: #79b8ff;
-  color: #04213b;
+  color: #211d16;
   background: linear-gradient(145deg, #88c5ff, #2f8cff);
   box-shadow: 0 12px 28px rgb(var(--mds-blue-rgb) / 0.2);
 }
@@ -3905,7 +3905,7 @@
   overflow: hidden;
   border: 1px solid rgba(108, 154, 200, 0.22);
   border-radius: 10px;
-  background: #071426;
+  background: #17130f;
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.045);
 }
 
@@ -3914,8 +3914,8 @@
   inset: 0;
   content: "";
   background:
-    linear-gradient(90deg, rgba(5, 17, 30, 0.2), transparent 55%),
-    linear-gradient(0deg, rgba(5, 17, 30, 0.28), transparent 45%);
+    linear-gradient(90deg, rgba(19, 16, 12, 0.2), transparent 55%),
+    linear-gradient(0deg, rgba(19, 16, 12, 0.28), transparent 45%);
   pointer-events: none;
 }
 
@@ -4194,7 +4194,7 @@
   border: 2px solid #53677c;
   border-radius: 50%;
   color: #71869a;
-  background: #0a1b2e;
+  background: #1d1914;
 }
 
 .mds-recovery-launch-steps li.is-ready > span {
@@ -4290,7 +4290,7 @@
 
 .mds-recovery-launch-card.is-running .mds-recovery-launch-actions button {
   border-color: #72b4ff;
-  color: #04213b;
+  color: #211d16;
   background: linear-gradient(145deg, #82c2ff, #2f8cff);
   box-shadow: 0 10px 24px rgb(var(--mds-blue-rgb) / 0.2);
 }
@@ -4365,7 +4365,7 @@
   color: #e9eff5;
   font-family: var(--mds-font);
   background:
-    linear-gradient(180deg, rgba(13, 31, 49, 0.92), rgba(8, 20, 34, 0.94));
+    linear-gradient(180deg, rgba(33, 29, 23, 0.92), rgba(23, 19, 14, 0.94));
   box-shadow:
     0 16px 50px rgba(0, 0, 0, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -4469,7 +4469,7 @@
   overflow: hidden;
   margin: 8px 18px 0;
   border-radius: 11px;
-  background: #071426;
+  background: #17130f;
 }
 
 .mds-recommended-plan-media .mds-trip-visual {
@@ -4481,8 +4481,8 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(2, 9, 18, 0.24), transparent 65%),
-    linear-gradient(0deg, rgba(2, 9, 18, 0.72), transparent 58%);
+    linear-gradient(90deg, rgba(12, 9, 6, 0.24), transparent 65%),
+    linear-gradient(0deg, rgba(12, 9, 6, 0.72), transparent 58%);
 }
 
 .mds-recommended-plan-media > em {
@@ -4496,7 +4496,7 @@
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 999px;
   color: #f4fbf7;
-  background: rgba(4, 18, 30, 0.7);
+  background: rgba(20, 16, 12, 0.7);
   backdrop-filter: blur(8px);
   font-size: calc(10px * var(--mds-fs));
   font-style: normal;
@@ -4661,7 +4661,7 @@
   border: 1px solid rgba(126, 160, 196, 0.3);
   border-radius: 999px;
   color: #c3d0de;
-  background: rgba(9, 22, 40, 0.5);
+  background: rgba(25, 21, 16, 0.5);
   font-size: calc(11.5px * var(--mds-fs));
   font-weight: 650;
   line-height: 1.25;
@@ -4876,7 +4876,7 @@
 .mds-decision-card-actions .is-primary {
   min-width: 188px;
   border: 1px solid rgba(160, 213, 255, 0.62);
-  color: #04263f;
+  color: #252019;
   background: linear-gradient(180deg, #6ec2ff, #2f9bff);
   box-shadow: 0 12px 26px rgba(47, 155, 255, 0.28);
 }
@@ -5014,7 +5014,7 @@
   overflow: hidden;
   border-top: 1px solid rgba(112, 151, 188, 0.1);
   border-bottom: 1px solid rgba(112, 151, 188, 0.14);
-  background: #071426;
+  background: #17130f;
 }
 
 .mds-flight-option-card-media .mds-trip-visual {
@@ -5028,7 +5028,7 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(0deg, rgba(3, 11, 23, 0.72), transparent 68%);
+    linear-gradient(0deg, rgba(14, 11, 8, 0.72), transparent 68%);
   pointer-events: none;
 }
 
@@ -5157,7 +5157,7 @@
 .mds-flight-option-card > footer .is-primary {
   border: 1px solid rgba(129, 171, 215, 0.36);
   color: #e2edf8;
-  background: rgba(24, 47, 78, 0.5);
+  background: rgba(51, 45, 36, 0.5);
   font-size: calc(12.5px * var(--mds-fs));
   font-weight: 760;
 }
@@ -5210,7 +5210,7 @@
   margin: 8px 14px 0;
   border: 1px solid rgba(139, 174, 209, 0.16);
   border-radius: 10px;
-  background: #071426;
+  background: #17130f;
 }
 
 .mds-concierge-hotel-media > img,
@@ -5228,8 +5228,8 @@
 
 .mds-concierge-hotel-media-shade {
   background:
-    linear-gradient(90deg, rgba(2, 9, 18, 0.72), rgba(2, 9, 18, 0.08) 72%),
-    linear-gradient(0deg, rgba(2, 9, 18, 0.82), transparent 72%);
+    linear-gradient(90deg, rgba(12, 9, 6, 0.72), rgba(12, 9, 6, 0.08) 72%),
+    linear-gradient(0deg, rgba(12, 9, 6, 0.82), transparent 72%);
 }
 
 .mds-concierge-hotel-media > em {
@@ -5243,7 +5243,7 @@
   border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: 999px;
   color: #f3f7fb;
-  background: rgba(3, 12, 24, 0.58);
+  background: rgba(15, 12, 8, 0.58);
   backdrop-filter: blur(8px);
   font-size: calc(9.5px * var(--mds-fs));
   font-style: normal;
@@ -5510,7 +5510,7 @@
   padding: 9px 12px;
   border: 1px solid rgba(112, 151, 188, 0.16);
   border-radius: 10px;
-  background: rgba(4, 16, 33, 0.4);
+  background: rgba(19, 16, 11, 0.4);
 }
 
 .mds-checkpoint-thread small {
@@ -5572,7 +5572,7 @@
   height: 13px;
   border: 2px solid #607286;
   border-radius: 50%;
-  background: #07182f;
+  background: #1b1711;
 }
 
 .mds-checkpoint-progress li.is-done {
@@ -5585,7 +5585,7 @@
 
 .mds-checkpoint-progress li.is-done i {
   border-color: #43ceab;
-  background: #07182f;
+  background: #1b1711;
   box-shadow: 0 0 0 3px rgb(var(--mds-teal-rgb) / 0.12);
 }
 
