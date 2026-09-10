@@ -7,15 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from backend.agentcore.errors import AgentCoreNotConfiguredError
-from backend.agentcore.gateway import (
-    AgentCoreGatewayAdapter,
-    _extract_packages_from_mcp_result,
-    get_agentcore_gateway,
-)
-from backend.agentcore.memory import AgentCoreMemoryAdapter
-from backend.agentcore.runtime import AgentCoreRuntimeAdapter, get_agentcore_runtime
 from backend.agentcore import cli_config
+from backend.agentcore.errors import AgentCoreNotConfiguredError
+from backend.agentcore.gateway import AgentCoreGatewayAdapter, get_agentcore_gateway
+from backend.agentcore.runtime import AgentCoreRuntimeAdapter, get_agentcore_runtime, parse_sse
 
 
 @pytest.fixture
@@ -36,90 +31,125 @@ def unconfigured_agentcore(tmp_path, monkeypatch):
     cli_config.resolve_agentcore_config.cache_clear()
 
 
+def _adapter():
+    return AgentCoreRuntimeAdapter(
+        runtime_arn="arn:aws:bedrock-agentcore:us-east-1:123:runtime/x", region="us-east-1"
+    )
+
+
+def _streaming_client(*chunks: bytes):
+    body = MagicMock()
+    body.read.side_effect = [*chunks, b""]
+    client = MagicMock()
+    client.invoke_agent_runtime.return_value = {
+        "response": body,
+        "ResponseMetadata": {"RequestId": "r"},
+    }
+    return client
+
+
 def test_runtime_unconfigured_raises(unconfigured_agentcore):
     adapter = AgentCoreRuntimeAdapter(runtime_arn=None)
     with pytest.raises(AgentCoreNotConfiguredError):
-        adapter.invoke_turn("conv-1", "trv_demo", "hello", "", [])
+        adapter.invoke_turn("conv-1", "trv_demo", "hello", "", budget_ceiling_cents=0, travelers_count=1)
 
 
-def test_runtime_configured_invoke_live():
-    adapter = AgentCoreRuntimeAdapter(
-        runtime_arn="arn:aws:bedrock-agentcore:us-east-1:123:runtime/x",
-        region="us-east-1",
+def test_parse_sse_unwraps_the_double_encoded_json_lines():
+    inner = json.dumps({"type": "activity", "title": "x"})
+    raw = (
+        f"data: {json.dumps(inner)}\n\n"
+        'data: {"type": "result", "message": "Tokyo fits.", "recommended_package_ids": ["CTY-002"], '
+        '"follow_ups": [], "hold": null, "trace_id": "abc", "usage": {}, "elapsed_ms": 12}\n\n'
+        ": keepalive\n\n"
+    ).encode()
+    events = parse_sse(raw)
+    assert [event["type"] for event in events] == ["activity", "result"]
+    assert events[0]["title"] == "x"
+
+
+def test_runtime_invoke_collects_spans_packages_and_hold():
+    adapter = _adapter()
+    adapter._client = _streaming_client(
+        b'data: {"type": "activity", "id": "a1", "timestamp": "t", "activity_type": "search", '
+        b'"title": "s"}\n\n'
+        b'data: {"type": "packages", "packages": [{"package_id": "CTY-002", "name": "Tokyo"}]}\n\n'
+        b'data: {"type": "hold", "hold": {"bookingId": "HLD-1", "status": "held"}, '
+        b'"policyDecision": "allow"}\n\n',
+        b'data: {"type": "token", "text": "Held."}\n\n'
+        b'data: {"type": "result", "message": "Held.", "recommended_package_ids": ["CTY-002"], '
+        b'"follow_ups": ["Compare"], "hold": {"bookingId": "HLD-1", "status": "held"}, '
+        b'"trace_id": "abc", "usage": {"inputTokens": 1}, "elapsed_ms": 5}\n\n',
     )
-    mock_client = MagicMock()
-    mock_client.invoke_agent_runtime.return_value = {
-        "response": [
-            b'{"message":"Tokyo fits your saved preferences.",'
-            b'"recommended_package_ids":["CTY-002"],'
-            b'"follow_ups":["Compare options"]}'
-        ]
-    }
-    adapter._client = mock_client
-
     decision = adapter.invoke_turn(
-        "conv-2",
+        "conv-1",
         "trv_demo",
-        "Find Tokyo",
-        "prefers boutique hotels",
-        [{"package_id": "CTY-002", "name": "Tokyo Culture"}],
+        "hold it",
+        "ctx",
+        budget_ceiling_cents=700000,
+        travelers_count=2,
+        hold_confirmed=True,
+        hold_target={
+            "package_id": "CTY-002",
+            "duration": "7 nights",
+            "travelers": 2,
+            "unit_price_cents": 250000,
+        },
     )
-    assert decision.invoke_status == "live"
-    assert decision.message == "Tokyo fits your saved preferences."
+    assert decision.message == "Held."
+    assert decision.packages[0]["package_id"] == "CTY-002"
     assert decision.recommended_package_ids == ["CTY-002"]
+    assert decision.hold["bookingId"] == "HLD-1"
+    assert decision.policy_decision == "allow"
+    assert decision.trace_id == "abc"
+    assert decision.usage == {"inputTokens": 1}
+    assert [span["title"] for span in decision.activities] == ["s"]
+    assert "type" not in decision.activities[0]
     assert len(decision.runtime_session_id) >= 33
-    assert decision.runtime_session_id.startswith("rt-")
-    mock_client.invoke_agent_runtime.assert_called_once()
-    kwargs = mock_client.invoke_agent_runtime.call_args.kwargs
+    kwargs = adapter._client.invoke_agent_runtime.call_args.kwargs
+    assert kwargs["accept"] == "text/event-stream"
     assert kwargs["runtimeSessionId"] == decision.runtime_session_id
     payload = json.loads(kwargs["payload"])
     assert payload["event"] == "concierge_turn"
-    assert payload["candidates"][0]["package_id"] == "CTY-002"
+    assert payload["hold_confirmed"] is True
+    assert payload["budget_ceiling_cents"] == 700000
+    assert payload["hold_target"]["package_id"] == "CTY-002"
 
 
-def test_runtime_unwraps_agentcore_sse_json_string():
-    payload = json.dumps(
-        {
-            "message": "Tokyo fits your saved preferences.",
-            "recommended_package_ids": ["TKY-003"],
-            "follow_ups": ["Compare options"],
-        }
+def test_runtime_refused_hold_keeps_the_refusal_and_the_policy_decision():
+    adapter = _adapter()
+    adapter._client = _streaming_client(
+        b'data: {"type": "hold", "hold": null, "refused": "Refused by Cedar policy x.", '
+        b'"policyDecision": "deny"}\n\n'
+        b'data: {"type": "result", "message": "I could not hold it.", '
+        b'"recommended_package_ids": [], "follow_ups": [], "hold": null, "trace_id": null, '
+        b'"usage": {}, "elapsed_ms": 1}\n\n',
     )
-
-    parsed = AgentCoreRuntimeAdapter._parse_decision(
-        f"data: {json.dumps(payload)}\n\n".encode()
+    decision = adapter.invoke_turn(
+        "conv-1", "trv_demo", "hold it", "", budget_ceiling_cents=1, travelers_count=1
     )
+    assert decision.hold is None
+    assert decision.hold_refused == "Refused by Cedar policy x."
+    assert decision.policy_decision == "deny"
 
-    assert parsed["message"] == "Tokyo fits your saved preferences."
-    assert parsed["recommended_package_ids"] == ["TKY-003"]
+
+def test_runtime_error_event_raises():
+    adapter = _adapter()
+    adapter._client = _streaming_client(b'data: {"type": "error", "message": "boom"}\n\n')
+    with pytest.raises(RuntimeError, match="boom"):
+        adapter.invoke_turn("conv-1", "trv_demo", "x", "", budget_ceiling_cents=0, travelers_count=1)
+
+
+def test_runtime_without_a_message_raises():
+    adapter = _adapter()
+    adapter._client = _streaming_client(b'data: {"type": "token", "text": "partial"}\n\n')
+    with pytest.raises(RuntimeError, match="no concierge message"):
+        adapter.invoke_turn("conv-1", "trv_demo", "x", "", budget_ceiling_cents=0, travelers_count=1)
 
 
 def test_gateway_unconfigured_raises(unconfigured_agentcore):
     adapter = AgentCoreGatewayAdapter(gateway_url="")
     with pytest.raises(AgentCoreNotConfiguredError):
         adapter.list_tools()
-
-
-def test_gateway_extract_packages_from_mcp_text_content():
-    raw = {
-        "result": {
-            "content": [
-                {
-                    "type": "text",
-                    "text": json.dumps(
-                        {
-                            "packages": [
-                                {"package_id": "CTY-002", "name": "Tokyo Culture & Cuisine"}
-                            ]
-                        }
-                    ),
-                }
-            ]
-        }
-    }
-    packages = _extract_packages_from_mcp_result(raw)
-    assert len(packages) == 1
-    assert packages[0]["package_id"] == "CTY-002"
 
 
 @patch("backend.agentcore.gateway.urllib.request.urlopen")
@@ -138,79 +168,6 @@ def test_gateway_mcp_tools_list(mock_urlopen):
     tools, _raw = adapter.list_tools()
     assert len(tools) == 1
     assert tools[0]["name"] == "search___trip"
-
-
-def test_memory_namespace_matches_deployed_template():
-    assert (
-        AgentCoreMemoryAdapter._namespace("trv_demo", "conv_123")
-        == "/users/trv_demo/sessions/conv_123"
-    )
-
-
-def test_memory_record_turn_uses_template_namespace():
-    adapter = AgentCoreMemoryAdapter(memory_id="mem-abc", region="us-east-1")
-    mock_client = MagicMock()
-    mock_client.create_event.return_value = {"event": {"eventId": "evt-1"}}
-    adapter._client = mock_client
-
-    result = adapter.record_turn("trv_demo", "conv_123", "hello", "hi")
-
-    assert result["event_id"] == "evt-1"
-    kwargs = mock_client.create_event.call_args.kwargs
-    assert kwargs["actorId"] == "trv_demo"
-    assert kwargs["sessionId"] == "conv_123"
-    assert kwargs["metadata"]["namespace"]["stringValue"] == "/users/trv_demo/sessions/conv_123"
-
-
-def test_semantic_recall_uses_template_namespace():
-    adapter = AgentCoreMemoryAdapter(memory_id="mem-abc", region="us-east-1")
-    mock_client = MagicMock()
-    mock_client.retrieve_memory_records.return_value = {"memoryRecordSummaries": []}
-    adapter._client = mock_client
-
-    adapter.semantic_recall("trv_demo", "conv_123", "tokyo")
-
-    assert (
-        mock_client.retrieve_memory_records.call_args.kwargs["namespace"]
-        == "/users/trv_demo/sessions/conv_123"
-    )
-
-
-def test_session_tier_reads_events_not_extracted_records():
-    """The session tier must read back the turn that was just mirrored.
-
-    ``list_memory_records`` only returns records the SEMANTIC strategy has
-    already extracted, which lands minutes later — so during a live session it
-    reported zero events immediately after a successful ``create_event``.
-    """
-    adapter = AgentCoreMemoryAdapter(memory_id="mem-abc", region="us-east-1")
-    mock_client = MagicMock()
-    mock_client.list_events.return_value = {
-        "events": [
-            {
-                "eventTimestamp": "2026-09-04T00:00:00Z",
-                "payload": [
-                    {"conversational": {"role": "USER", "content": {"text": "tokyo?"}}},
-                    {
-                        "conversational": {
-                            "role": "ASSISTANT",
-                            "content": {"text": "Here are five."},
-                        }
-                    },
-                ],
-            }
-        ]
-    }
-    adapter._client = mock_client
-
-    turns = adapter.list_recent_turns("trv_demo", "conv_123", limit=6)
-
-    mock_client.list_memory_records.assert_not_called()
-    kwargs = mock_client.list_events.call_args.kwargs
-    assert kwargs["actorId"] == "trv_demo"
-    assert kwargs["sessionId"] == "conv_123"
-    assert [turn["text"] for turn in turns] == ["tokyo?", "Here are five."]
-    assert [turn["role"] for turn in turns] == ["USER", "ASSISTANT"]
 
 
 def test_singleton_getters():
