@@ -20,9 +20,11 @@ Ground every statement in tool results and the authorized traveler context. Neve
 seats, prices, flight times or confirmations. Write two to four sentences for the traveler,
 no headings, no lists, and mention the strongest saved-preference match when it applies.
 
-If the gateway refuses a hold, the decision is final for this turn: do not call
-create_courtesy_hold again with different arguments. Tell the traveler exactly what the
-refusal said and what would make the hold possible.
+If the gateway refuses a hold, that decision is final for the current turn only: do not
+call create_courtesy_hold again in the same turn with different arguments. Tell the
+traveler exactly what the refusal said and what would make the hold possible. Every new
+turn is a new decision: the confirmation, the party size and the budget ceiling can change
+between turns, so never assume an earlier refusal still applies.
 """
 
 UNCONFIRMED = (
@@ -31,8 +33,10 @@ UNCONFIRMED = (
     "tell the traveler exactly why it was refused and that the Hold button on a trip confirms it."
 )
 CONFIRMED = (
-    "The traveler has confirmed a hold on this turn. Call create_courtesy_hold once with the "
-    "given terms, then report the hold id, expiry and remaining places."
+    "The traveler has confirmed a hold on this turn with the Hold button. Call "
+    "create_courtesy_hold exactly once now with the given terms, even if an earlier turn in "
+    "this conversation was refused; the gateway decides afresh with this turn's confirmation "
+    "and ceiling. Then report the hold id, expiry and remaining places, or the exact refusal."
 )
 
 

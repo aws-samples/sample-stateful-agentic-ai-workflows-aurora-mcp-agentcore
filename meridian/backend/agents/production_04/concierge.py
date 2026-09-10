@@ -539,19 +539,21 @@ class ProductionAgent:
             read, traveler_id, message, decision.message, shown, "production_hold"
         )
         held = decision.hold or {}
+        if decision.hold:
+            status = "held"
+        elif decision.policy_decision == "deny":
+            status = "denied"
+        else:
+            status = "error"
         self._log(
             "result",
             "Courtesy hold persisted" if decision.hold else "Courtesy hold not placed",
             details=(
                 f"Hold #{held.get('bookingId')} · expires {held.get('expiresAt')}"
                 if decision.hold
-                else (decision.hold_refused or "The gateway returned no hold.")
+                else (decision.hold_refused or "The runtime did not call the hold tool.")
             ),
-            telemetry={
-                "category": "synthesis",
-                "component": "ProductionAgent",
-                "status": "held" if decision.hold else "denied",
-            },
+            telemetry={"category": "synthesis", "component": "ProductionAgent", "status": status},
         )
         return HoldOutcome(
             hold=decision.hold,
