@@ -76,6 +76,66 @@ def _status_ok(status: str | None) -> bool:
     return bool(status) and status.upper() in READY_STATES
 
 
+def check_policy_engine(control, gateway_id: str) -> tuple[bool, str, str]:
+    """Return (ok, identifier, status) for the gateway's policy engine association."""
+    gateway = control.get_gateway(gatewayIdentifier=gateway_id)
+    config = gateway.get("policyEngineConfiguration") or {}
+    engine_arn = config.get("policyEngineArn") or ""
+    if not engine_arn:
+        return False, "no policy engine on the gateway", "MISSING"
+    engine_id = engine_arn.rsplit("/", 1)[-1]
+    engine = control.get_policy_engine(policyEngineId=engine_id)
+    mode = config.get("mode", "UNKNOWN")
+    ok = _status_ok(engine.get("status")) and mode == "ENFORCE"
+    return ok, engine_id, f"{engine.get('status', 'UNKNOWN')} · {mode}"
+
+
+def check_gateway_tools(cfg) -> tuple[bool, str, str]:
+    """List the gateway's MCP tools with a SigV4-signed request from this laptop."""
+    from backend.agentcore.gateway import AgentCoreGatewayAdapter
+
+    tools, _ = AgentCoreGatewayAdapter(gateway_url=cfg.gateway_url, region=cfg.region).list_tools()
+    names = sorted(tool["name"] for tool in tools)
+    expected = {
+        "SemanticTripSearchLambda___semantic_trip_search",
+        "MeridianHolds___get_package_details",
+        "MeridianHolds___create_courtesy_hold",
+    }
+    ok = expected.issubset(names)
+    return ok, ", ".join(names) or "none", f"{len(names)} tools"
+
+
+def check_observability(control, runtime_id: str) -> tuple[bool, str, str]:
+    """ADOT spans reach CloudWatch only when the runtime carries the observability flag."""
+    runtime = control.get_agent_runtime(agentRuntimeId=runtime_id)
+    env = runtime.get("environmentVariables") or {}
+    enabled = env.get("AGENT_OBSERVABILITY_ENABLED") == "true"
+    log_group = f"/aws/bedrock-agentcore/runtimes/{runtime_id}-DEFAULT"
+    return enabled, log_group, "READY" if enabled else "OFF"
+
+
+def governance_rows(control, cfg, table) -> bool:
+    """Add the policy, tools and observability rows; return True when all are good."""
+    checks = []
+    if cfg.gateway_url:
+        gateway_id = _gateway_id_from_url(cfg.gateway_url)
+        checks.append(("Policy engine", lambda: check_policy_engine(control, gateway_id)))
+        checks.append(("Gateway tools", lambda: check_gateway_tools(cfg)))
+    if cfg.runtime_arn:
+        runtime_id = _runtime_id_from_arn(cfg.runtime_arn)
+        checks.append(("Observability", lambda: check_observability(control, runtime_id)))
+    all_ok = True
+    for label, check in checks:
+        try:
+            ok, identifier, status = check()
+        except (ClientError, BotoCoreError, RuntimeError) as exc:
+            ok, identifier, status = False, "unreachable", f"✗ {str(exc)[:60]}"
+        all_ok &= ok
+        mark = "[green]✓ {}[/green]" if ok else "[yellow]! {}[/yellow]"
+        table.add_row(label, identifier, mark.format(status))
+    return all_ok
+
+
 def main() -> int:
     cfg = resolve_agentcore_config()
 
@@ -170,13 +230,15 @@ def main() -> int:
     )
     table.add_row("Identity", identity_note, "[green]✓ ok[/green]")
 
+    all_ok &= governance_rows(control, cfg, table)
+
     console.print(table)
     console.print()
 
     if all_ok:
         console.print(
-            "[bold green]All set.[/bold green] Runtime + Gateway + Memory are reachable "
-            "and READY — no redeploy needed.\n"
+            "[bold green]All set.[/bold green] Runtime, Gateway, Memory, policy engine, "
+            "gateway tools and observability are all live. No redeploy needed.\n"
         )
         return 0
 
