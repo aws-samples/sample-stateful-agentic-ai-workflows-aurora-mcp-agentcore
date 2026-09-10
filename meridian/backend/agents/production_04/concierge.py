@@ -47,7 +47,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from backend.agentcore.cli_config import require_agentcore_platform
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agentcore.runtime import RuntimeDecision, get_agentcore_runtime
-from backend.agents.budget import budget_ceiling_from_facts
+from backend.agents.budget import BUDGET_KEYS, budget_ceiling_from_facts
 from backend.agents.production_04.memory_agent import (
     ActivityEntry as MemoryActivity,
     MemoryAgent as TravelerMemorySpecialist,
@@ -110,6 +110,32 @@ class HoldOutcome:
     message: str
     conv_id: str
     trace_id: Optional[str]
+
+
+def _with_budget_fact(
+    facts: List[Dict[str, Any]], budget_facts: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Keep the fact the ceiling comes from in the context the reply is built on.
+
+    The specialist ranks preferences by confidence and truncates, which drops
+    Alex's saved budget. The gateway still enforces a ceiling derived from it, so
+    a reply written without it tells the traveler that no budget is on file while
+    the policy is holding them to one.
+
+    Args:
+        facts: The ranked facts the specialist returned for this turn.
+        budget_facts: The full preference set the ceiling is derived from.
+
+    Returns:
+        ``facts`` unchanged when it already carries a budget fact, otherwise with
+        the first budget fact from the full set appended.
+    """
+    if {str(fact.get("key", "")).lower() for fact in facts} & set(BUDGET_KEYS):
+        return facts
+    for fact in budget_facts:
+        if str(fact.get("key", "")).lower() in BUDGET_KEYS:
+            return [*facts, fact]
+    return facts
 
 
 @dataclass
@@ -320,7 +346,7 @@ class ProductionAgent:
             self.traveler_memory._transaction_id = None
             self.traveler_memory._prepared_query_vector = None
             self.traveler_memory._query_vector_prepared = False
-        facts = prefs.get("facts", [])
+        facts = _with_budget_fact(prefs.get("facts", []), budget_facts)
         context = self.store.format_memory_context(
             profile, session.get("turns", []), facts, similar.get("interactions", [])
         )

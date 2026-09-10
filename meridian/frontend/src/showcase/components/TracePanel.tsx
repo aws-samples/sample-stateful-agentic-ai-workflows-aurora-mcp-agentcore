@@ -9,15 +9,20 @@ import { WorkflowStateInspector } from './WorkflowStateInspector';
 import { IconTooltip } from './ShowcaseTooltip';
 import { deriveAuroraEvidence, isPhaseProofObserved } from '../lib/showcaseProof';
 
-// Maps raw trace spans into five audience-readable progress steps.
+// Maps raw trace spans into five audience-readable progress steps. A span is
+// claimed by the first step that matches it, so a step whose spans are all
+// claimed by an earlier one can never land. That is why the runtime's opening
+// and closing spans are matched by name here rather than by their shared
+// category: "turn started" is the request being understood, "turn complete" is
+// the model having evaluated the options.
 const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTraceSpan) => boolean }[] = [
   {
     id: 'understand',
     label: 'Understanding request',
     matches: (s) =>
-      ['orchestration', 'security', 'runtime'].includes(s.category) ||
+      ['orchestration', 'security'].includes(s.category) ||
       s.type === 'delegation' ||
-      /classify|identity|scope|session|routing|strands agent|supervisor/i.test(s.name),
+      /classify|identity|scope|session|routing|strands agent|supervisor|turn started/i.test(s.name),
   },
   {
     id: 'recall',
@@ -37,7 +42,8 @@ const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTrac
     id: 'curate',
     label: 'Evaluating options',
     matches: (s) =>
-      s.category === 'model' || /rerank|rank|compose|synthes|claude|opus|reasoning/i.test(s.name),
+      s.category === 'model' ||
+      /rerank|rank|compose|synthes|claude|opus|reasoning|turn complete/i.test(s.name),
   },
   {
     id: 'optimize',

@@ -166,8 +166,8 @@
   --mds-yellow: #9a6700;
   --mds-green: #15803d;
   --mds-danger: #dc2626;
-  --mds-memory: #8a5a00;
-  --mds-memory-soft: rgb(var(--mds-recovery-yellow-rgb) / 0.16);
+  --mds-memory: #40300a;
+  --mds-memory-soft: rgb(var(--mds-recovery-yellow-rgb) / 0.22);
 
   /* Daylight counterpart to the shared app-surface palette. */
   --mds-app-surface: #ffffff;

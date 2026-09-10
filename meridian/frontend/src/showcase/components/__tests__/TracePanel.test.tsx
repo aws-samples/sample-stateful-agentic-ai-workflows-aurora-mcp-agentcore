@@ -156,6 +156,45 @@ describe('TracePanel collapse behavior', () => {
     expect(screen.getByText('Evaluating options').closest('li')).toHaveClass('is-pending');
   });
 
+  it('lands every step of a completed production turn', () => {
+    // Regression: the runtime's opening and closing spans share the "runtime"
+    // category, so the first step claimed both and "Evaluating options" could
+    // never land on any Phase 4 turn. A finished turn showed a grey step
+    // between green ones, reading as if the agent skipped a stage.
+    const span = (id: string, category: string, name: string): ShowcaseTraceSpan => ({
+      ...traceSpan, id, category, name, sql: undefined, type: 'tool_call',
+    });
+    const state = makeState({
+      traceSpans: [
+        span('s1', 'security', 'Workload traveler grant allowed'),
+        span('s2', 'memory_long', 'Strands @tool recall_traveler_preferences'),
+        span('s3', 'gateway', 'AgentCore Gateway · tools/call → semantic_trip_search'),
+        span('s4', 'runtime', 'AgentCore Runtime · turn complete'),
+        span('s5', 'synthesis', 'Composed the reply'),
+      ],
+    });
+    render(<TracePanel state={state} />);
+
+    for (const label of [
+      'Understanding request',
+      'Recalling traveler context',
+      'Querying live travel data',
+      'Evaluating options',
+      'Preparing response',
+    ]) {
+      expect(screen.getByText(label).closest('li')).toHaveClass('is-done');
+    }
+  });
+
+  it('still credits the opening step to the runtime turn that started it', () => {
+    const state = makeState({
+      traceSpans: [{ ...traceSpan, id: 'r1', category: 'runtime', name: 'AgentCore Runtime · turn started', sql: undefined }],
+    });
+    render(<TracePanel state={state} />);
+    expect(screen.getByText('Understanding request').closest('li')).toHaveClass('is-done');
+    expect(screen.getByText('Evaluating options').closest('li')).toHaveClass('is-pending');
+  });
+
   it('exposes trace filters as pressed controls', () => {
     const setTraceTab = vi.fn();
     render(<TracePanel state={makeState({ setTraceTab })} />);
