@@ -1,3 +1,43 @@
+# Meridian release review - September 10, 2026
+
+Production (Phase 4) now runs its tool loop inside Bedrock AgentCore Runtime.
+The agent discovers three tools from AgentCore Gateway over MCP with SigV4,
+keeps its conversation in AgentCore Memory through the Strands session manager,
+and every tool call passes the `MeridianGovernance` Cedar policy engine in
+ENFORCE mode before a Lambda runs. A courtesy hold placed with the Hold button
+is executed by the platform with pinned arguments and either permitted or
+refused by policy; a hold typed into chat is refused because nothing confirmed
+it. ADOT spans and application logs carry the trace id shown in the UI.
+
+## Verification, September 10
+
+- Backend: 349 offline tests pass (`pytest -m "not database"`), ruff clean.
+  Frontend: 178 vitest tests pass, ESLint and `tsc` clean, production build.
+  AgentCore CDK: the jest synth test passes with the two targets and the policy engine.
+- `scripts/verify_agentcore.py`: Runtime READY, Gateway READY, Memory ACTIVE,
+  policy engine `ACTIVE · ENFORCE`, three gateway tools, observability READY.
+- `scripts/smoke_production_turn.py` against the deployed runtime: search turn
+  (trace `6aa23b994d66c9fe0c16b2fa14f8ab73`), unconfirmed hold denied by
+  default with the reason named, confirmed hold `HLD-1A8FF643` held, over-budget
+  hold denied with the total and ceiling named. 26 spans for the first trace in
+  the runtime log group's `spans` stream.
+- Browser, Phase 4 on the ladder as Alex: the Tokyo recall turn shows 23 spans
+  including tools/list (three tools), Memory session restored, the runtime's
+  own `semantic_trip_search` and `get_package_details` calls, and Runtime turn
+  complete with the trace id. Clicking Hold on Tokyo Culture & Cuisine placed
+  `HLD-D4063CC1` ($4,998 for two travelers against Alex's $6,400 ceiling from
+  the `budget_cap` fact); the earlier attempt with the default $4,000 ceiling
+  was refused with "Denied by policy" rendered on the span.
+- Phases 1, 2, 3 and 5 exercised against the backend: SQL filters, MCP compare
+  and currency conversion, hybrid retrieval with rerank, and the workflow
+  paused after an `AuroraDataApiSaver` checkpoint then resumed on the same thread.
+
+Open items from this pass: the Phase 5 workflow hold still writes to Aurora
+directly (agreed to route it through the gateway next), and the CloudFront and
+App Runner deployment in `infra/` is being brought up.
+
+---
+
 # Meridian release review - September 7, 2026
 
 The code, UI checks, and fresh live rehearsal below pass. The initial review found an expired AWS session in the running backend. After the session was refreshed, restarting Uvicorn restored live catalog and traveler reads. The browser again shows Meridian live. Reconnect retries service reads; restarting the backend reloads its AWS clients.
