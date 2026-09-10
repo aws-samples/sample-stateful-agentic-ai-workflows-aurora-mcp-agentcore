@@ -588,8 +588,16 @@
 .mds-root[data-theme="light"] .mds-navpanel-section-head em {
   color: var(--mds-on-surface-faint);
 }
-/* Code spans stay on the dark console treatment, so their light cyan text is
-   correct — leave .mds-md code / pre code as-is. */
+/* Inline code sits in the white bubble, so it takes ink on a light fill. Code
+   blocks keep the dark console treatment (see .mds-md pre above). */
+.mds-root[data-theme="light"] .mds-md code {
+  background: var(--mds-fill-2);
+  color: var(--mds-ink);
+}
+.mds-root[data-theme="light"] .mds-md pre code {
+  background: transparent;
+  color: #d4f9ff;
+}
 /* Semantic warm text (errors, fallback badge) — darken for light contrast. */
 .mds-root[data-theme="light"] .mds-error-banner,
 .mds-root[data-theme="light"] .mds-error-dismiss {
