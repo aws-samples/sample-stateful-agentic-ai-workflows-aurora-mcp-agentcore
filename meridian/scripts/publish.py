@@ -28,6 +28,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import boto3
@@ -41,6 +42,9 @@ LOCAL = MERIDIAN / ".local"
 PUBLISHED = LOCAL / "published.json"
 OUTPUTS = LOCAL / "cdk-outputs.json"
 STACK = "MeridianWeb"
+ROLES_STACK = "MeridianWebRoles"
+# IAM propagation. App Runner fails to deploy a service whose instance role was created moments earlier.
+ROLE_PROPAGATION_SECONDS = 90
 SECRET_NAME = "meridian/web/api-token"
 USER = "meridian"
 
@@ -89,22 +93,46 @@ def build_frontend() -> None:
     run(["npm", "run", "build"], FRONTEND)
 
 
+def stack_is_live(region: str, name: str) -> bool:
+    """True when the stack exists and is not a failed creation CDK will replace."""
+    try:
+        stacks = boto3.client("cloudformation", region_name=region).describe_stacks(StackName=name)
+    except ClientError as exc:
+        if "does not exist" in str(exc):
+            return False
+        raise
+    return stacks["Stacks"][0]["StackStatus"] not in {"ROLLBACK_COMPLETE", "DELETE_IN_PROGRESS", "DELETE_COMPLETE"}
+
+
 def deploy_stack(engine: str, region: str, secret_arn: str) -> dict:
-    """Deploy the CDK stack in the same region as Aurora, AgentCore and the token secret."""
+    """Deploy the CDK stacks in the same region as Aurora, AgentCore and the token secret.
+
+    The instance role is deployed on its own first. App Runner fails to deploy a
+    service whose role was created in the same CloudFormation run, so after the
+    roles stack is created the script waits for IAM to propagate the role before
+    deploying the service.
+    """
     run(["npm", "ci"], INFRA)
     run(["npm", "run", "build"], INFRA)
     LOCAL.mkdir(exist_ok=True)
+    env = {
+        "CDK_DOCKER": engine,
+        "MERIDIAN_WEB_REGION": region,
+        "MERIDIAN_API_TOKEN_SECRET_ARN": secret_arn,
+        "AWS_DEFAULT_REGION": region,
+        "AWS_REGION": region,
+        "CDK_DEFAULT_REGION": region,
+    }
+    roles_are_new = not stack_is_live(region, ROLES_STACK)
+    run(["npx", "cdk", "deploy", ROLES_STACK, "--exclusively", "--require-approval", "never"], INFRA, env=env)
+    if roles_are_new:
+        print(f"Waiting {ROLE_PROPAGATION_SECONDS}s for the new App Runner instance role to propagate...")
+        time.sleep(ROLE_PROPAGATION_SECONDS)
     run(
-        ["npx", "cdk", "deploy", STACK, "--require-approval", "never", "--outputs-file", str(OUTPUTS)],
+        ["npx", "cdk", "deploy", STACK, "--exclusively", "--require-approval", "never",
+         "--outputs-file", str(OUTPUTS)],
         INFRA,
-        env={
-            "CDK_DOCKER": engine,
-            "MERIDIAN_WEB_REGION": region,
-            "MERIDIAN_API_TOKEN_SECRET_ARN": secret_arn,
-            "AWS_DEFAULT_REGION": region,
-            "AWS_REGION": region,
-            "CDK_DEFAULT_REGION": region,
-        },
+        env=env,
     )
     return json.loads(OUTPUTS.read_text())[STACK]
 

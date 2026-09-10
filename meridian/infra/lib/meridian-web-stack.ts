@@ -85,14 +85,25 @@ export function serviceEnvironment(dotenv: Record<string, string>, region: strin
   return env;
 }
 
-export class MeridianWebStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
-    super(scope, id, props);
+// Compiled to infra/dist/lib, so three levels up is meridian/.
+const meridianDir = path.resolve(__dirname, '..', '..', '..');
 
-    // Compiled to infra/dist/lib, so three levels up is meridian/.
-    const meridianDir = path.resolve(__dirname, '..', '..', '..');
-    const dotenv = readDotenv(path.join(meridianDir, '.env'));
-    const environment = serviceEnvironment(dotenv, this.region);
+/** The App Runner environment for this region, read from meridian/.env. */
+export function loadServiceEnvironment(region: string): Record<string, string> {
+  return serviceEnvironment(readDotenv(path.join(meridianDir, '.env')), region);
+}
+
+export interface MeridianWebStackProps extends StackProps {
+  /** From loadServiceEnvironment(); shared with the roles stack. */
+  environment: Record<string, string>;
+  /** The App Runner instance role from MeridianWebRolesStack, deployed and propagated first. */
+  instanceRole: iam.IRole;
+}
+
+export class MeridianWebStack extends Stack {
+  constructor(scope: Construct, id: string, props: MeridianWebStackProps) {
+    super(scope, id, props);
+    const { environment, instanceRole } = props;
 
     // App Runner needs the complete secret ARN (with its suffix) to read the token at
     // deployment; scripts/publish.py creates the secret and passes the ARN through.
@@ -101,44 +112,6 @@ export class MeridianWebStack extends Stack {
       throw new Error(`MERIDIAN_API_TOKEN_SECRET_ARN is not set; run scripts/publish.py, which creates ${API_TOKEN_SECRET_NAME}`);
     }
     const apiToken = secretsmanager.Secret.fromSecretCompleteArn(this, 'ApiToken', apiTokenArn);
-
-    const instanceRole = new iam.Role(this, 'BackendRole', {
-      assumedBy: new iam.ServicePrincipal('tasks.apprunner.amazonaws.com'),
-      description: 'Meridian backend on App Runner: Bedrock, Aurora Data API, AgentCore Runtime',
-    });
-    instanceRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream', 'bedrock:CountTokens'],
-        resources: [
-          'arn:aws:bedrock:*::foundation-model/*',
-          `arn:aws:bedrock:*:${this.account}:inference-profile/*`,
-        ],
-      }),
-    );
-    instanceRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: [
-          'rds-data:ExecuteStatement',
-          'rds-data:BatchExecuteStatement',
-          'rds-data:BeginTransaction',
-          'rds-data:CommitTransaction',
-          'rds-data:RollbackTransaction',
-        ],
-        resources: [environment.AURORA_CLUSTER_ARN],
-      }),
-    );
-    instanceRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ['secretsmanager:GetSecretValue'],
-        resources: [environment.AURORA_SECRET_ARN],
-      }),
-    );
-    instanceRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ['bedrock-agentcore:InvokeAgentRuntime'],
-        resources: [environment.AGENTCORE_RUNTIME_ARN, `${environment.AGENTCORE_RUNTIME_ARN}/runtime-endpoint/*`],
-      }),
-    );
 
     const image = new ecrAssets.DockerImageAsset(this, 'BackendImage', {
       directory: meridianDir,
@@ -163,8 +136,13 @@ export class MeridianWebStack extends Stack {
       cpu: apprunner.Cpu.ONE_VCPU,
       memory: apprunner.Memory.TWO_GB,
       autoDeploymentsEnabled: false,
-      healthCheck: apprunner.HealthCheck.http({
-        path: '/health',
+      // TCP on purpose. Every deployment configured with an HTTP health check on
+      // /health at a 10 second interval failed in us-east-1 before App Runner
+      // provisioned an instance, with no application log, while the same image
+      // and command passed a TCP check. Uvicorn binds the port only after the lifespan startup finishes,
+      // and that startup initialises the Aurora checkpoint backend, so an open
+      // port already means the backend is ready.
+      healthCheck: apprunner.HealthCheck.tcp({
         interval: Duration.seconds(10),
         timeout: Duration.seconds(5),
         healthyThreshold: 1,

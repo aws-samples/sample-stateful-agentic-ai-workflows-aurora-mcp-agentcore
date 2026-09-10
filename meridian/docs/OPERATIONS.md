@@ -126,7 +126,13 @@ container on App Runner (1 vCPU, 2 GB, one instance kept warm), and a viewer
 function that enforces basic auth, injects the backend bearer token on `/api/*`
 and `/health`, and rewrites `/showcase` and friends to `index.html`. The
 backend runs with `ENVIRONMENT=production`, so it refuses any caller without
-the token; the App Runner URL is not an open door.
+the token; the App Runner URL is not an open door. Two stacks: `MeridianWebRoles`
+holds the App Runner instance role and is deployed first, because App Runner
+cannot deploy a service whose role was created moments earlier; `publish.py`
+waits 90 seconds after creating it. App Runner checks readiness over TCP:
+uvicorn opens the port only after startup has initialised the Aurora checkpoint
+backend, and an HTTP check with a 10 second interval failed every deployment
+before an instance was provisioned.
 
 ```bash
 cd meridian
@@ -138,8 +144,8 @@ python scripts/publish.py --skip-frontend   # redeploy after backend changes
 What the script does, in order: mints a basic-auth password and a bearer token
 (or reuses the ones in `.local/published.json`), writes the token to Secrets
 Manager (`meridian/web/api-token`, never read back), builds `frontend/dist`,
-runs `cdk deploy MeridianWeb` in the region of Aurora and AgentCore with the
-non-secret settings copied from `.env`, writes the two credentials to the
+deploys `MeridianWebRoles` and then `MeridianWeb` in the region of Aurora and
+AgentCore with the non-secret settings copied from `.env`, writes the two credentials to the
 CloudFront KeyValueStore through the AWS CLI, and records the URL. The instance
 role is scoped to Bedrock invoke, the Aurora Data API on one cluster, one Aurora
 secret, and `InvokeAgentRuntime` on the Meridian runtime.

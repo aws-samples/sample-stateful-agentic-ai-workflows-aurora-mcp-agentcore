@@ -24,6 +24,17 @@ Short notes from getting Phase 4 fully live with AgentCore Runtime + Gateway + M
 - **Observability is two env vars away**: the CLI already wraps the entrypoint with `opentelemetry-instrument`; `AGENT_OBSERVABILITY_ENABLED=true`, `OTEL_PYTHON_DISTRO=aws_distro` and `OTEL_PYTHON_CONFIGURATOR=aws_configurator` put spans and logs, with the trace id, into the runtime's log group (`spans` and `otel-rt-logs` streams).
 - **`GetGateway` returns the engine under `policyEngineConfiguration.arn`**, not `policyEngineArn`.
 
+## What We Learned Publishing Behind CloudFront (September 2026)
+
+- **Phase 5 holds go through the gateway too**: the workflow node passes its checkpointed `holdRequestId`, `bookingId` and `executionId`; the Lambda re-checks the worker lease with `SELECT ... FOR UPDATE` inside the write transaction, so Cedar sees every hold and a restarted worker replays the same booking.
+- **A cold worker needs a lease longer than its first nodes**: the search and availability nodes block the event loop for several seconds, so the first heartbeat is late; `scripts/kill_and_resume_demo.py` defaults to a 20 second lease for that reason.
+- **Pin the CDK region**: the shell default here is us-west-2 and the first stack landed there. `bin/meridian-web.ts` pins `us-east-1`.
+- **App Runner wants the complete secret ARN** (with the six character suffix) to read a Secrets Manager value at deployment; a partial ARN fails with "unable to retrieve secret from asm".
+- **App Runner needs its instance role to exist before the service is deployed**: a service whose role was created seconds earlier fails with "Failed to deploy your application image" and no application log, and the identical definition succeeds once the role is a minute old. The role lives in its own stack (`MeridianWebRoles`); `scripts/publish.py` deploys it first and waits 90 seconds after creating it.
+- **An HTTP health check with a 10 second interval and 5 second timeout failed the same way** in every attempt, while the defaults (5 s, 2 s) and a TCP check passed. The stack uses `HealthCheck.tcp`; uvicorn binds the port only after the lifespan startup, which initialises the checkpoint backend, so an open port means the backend is ready.
+- **App Runner does not run the start command through a shell**: quotes are literal and `sh -c '...'` fails. To probe a container, use a whitespace free `python -c exec(bytes.fromhex(...).decode())` command that serves the health port itself and logs what the real command does.
+- **The Finch VM cannot reach ghcr.io**, so uv is installed from PyPI in the Dockerfile, and its ECR push flakes until the VM is restarted.
+
 ## Do We Need Both `meridian` and `meridian_agentcore`?
 
 Yes, for now:
