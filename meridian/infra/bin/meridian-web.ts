@@ -2,7 +2,7 @@
 import { App } from 'aws-cdk-lib';
 import { MeridianWebBackendStack } from '../lib/meridian-web-backend-stack';
 import { MeridianWebRolesStack } from '../lib/meridian-web-roles-stack';
-import { MeridianWebStack, loadServiceEnvironment } from '../lib/meridian-web-stack';
+import { MeridianWebStack, backendHost, loadServiceEnvironment } from '../lib/meridian-web-stack';
 
 const app = new App();
 
@@ -13,28 +13,26 @@ const region = process.env.MERIDIAN_WEB_REGION ?? 'us-east-1';
 const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region };
 const environment = loadServiceEnvironment(region);
 
-// Three stacks, deployed in this order by scripts/publish.py: the instance
-// role (which App Runner needs to exist, and to have propagated, before the
-// service), the App Runner backend (retried on its own when App Runner fails
-// to deploy), and the site behind CloudFront.
-const roles = new MeridianWebRolesStack(app, 'MeridianWebRoles', {
+// scripts/publish.py deploys these in order: the App Runner roles (which must
+// exist, and have propagated, before the service), the backend image, then the
+// App Runner service through the SDK, and finally the site behind CloudFront,
+// which needs the service host.
+new MeridianWebRolesStack(app, 'MeridianWebRoles', {
   env,
   environment,
   description: 'Meridian travel concierge: the App Runner roles, deployed ahead of the service',
 });
 
-const backend = new MeridianWebBackendStack(app, 'MeridianWebBackend', {
+new MeridianWebBackendStack(app, 'MeridianWebBackend', {
   env,
   environment,
-  instanceRole: roles.instanceRole,
-  accessRole: roles.accessRole,
-  description: 'Meridian travel concierge: FastAPI backend on App Runner',
+  description: 'Meridian travel concierge: the FastAPI backend image for App Runner',
 });
-backend.addStackDependency(roles);
 
-const web = new MeridianWebStack(app, 'MeridianWeb', {
-  env,
-  service: backend.service,
-  description: 'Meridian travel concierge: Vite build on S3 behind CloudFront, routing the API to App Runner',
-});
-web.addStackDependency(backend);
+if (process.env.MERIDIAN_BACKEND_HOST) {
+  new MeridianWebStack(app, 'MeridianWeb', {
+    env,
+    backendHost: backendHost(),
+    description: 'Meridian travel concierge: Vite build on S3 behind CloudFront, routing the API to App Runner',
+  });
+}

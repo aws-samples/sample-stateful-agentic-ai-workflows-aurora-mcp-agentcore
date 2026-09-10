@@ -49,5 +49,6 @@ ENV HOST=0.0.0.0 \
 
 EXPOSE 8000
 
-CMD ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", \
-     "--proxy-headers", "--forwarded-allow-ips", "*", "--timeout-keep-alive", "75"]
+# backend/launch.py opens port 8000 at once and hands the socket to uvicorn;
+# App Runner refused deployments whose port stayed closed while the app loaded.
+CMD ["python", "-m", "backend.launch"]

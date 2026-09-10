@@ -1,18 +1,6 @@
 import * as path from 'node:path';
-import * as apprunner from '@aws-cdk/aws-apprunner-alpha';
-import {
-  CfnOutput,
-  IgnoreMode,
-  Stack,
-  Tags,
-  type StackProps,
-  aws_apprunner as apprunnerCfn,
-  aws_ecr_assets as ecrAssets,
-  aws_iam as iam,
-  aws_secretsmanager as secretsmanager,
-} from 'aws-cdk-lib';
+import { CfnOutput, IgnoreMode, Stack, type StackProps, aws_ecr_assets as ecrAssets } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import { API_TOKEN_SECRET_NAME } from './meridian-web-stack';
 
 // Compiled to infra/dist/lib, so three levels up is meridian/.
 const meridianDir = path.resolve(__dirname, '..', '..', '..');
@@ -20,36 +8,22 @@ const meridianDir = path.resolve(__dirname, '..', '..', '..');
 export interface MeridianWebBackendStackProps extends StackProps {
   /** From loadServiceEnvironment(); the non-secret App Runner environment. */
   environment: Record<string, string>;
-  /** The App Runner instance role from MeridianWebRolesStack, deployed and propagated first. */
-  instanceRole: iam.IRole;
-  /** The ECR access role from MeridianWebRolesStack, likewise deployed ahead. */
-  accessRole: iam.IRole;
 }
 
 /**
- * The FastAPI backend on App Runner, in its own stack.
+ * The backend image, built from meridian/Dockerfile and pushed to the CDK
+ * assets repository.
  *
- * App Runner service creation fails intermittently in this account ("Failed
- * to deploy your application image" with no application log, for images and
- * commands that deploy fine minutes later). Keeping the service apart from
- * the CloudFront distribution and the site bucket lets scripts/publish.py
- * retry just this stack, and lets a backend change redeploy without touching
- * the distribution.
+ * The App Runner service itself is created by scripts/publish.py with the
+ * SDK, not by CloudFormation. In us-east-1 App Runner refused to deploy any
+ * service whose CreateService call carried an optional setting, and the
+ * CloudFormation resource handler always sends a tag list, so every stack
+ * created service failed while the same definition sent by the SDK ran. This
+ * stack publishes the image and the environment the script needs.
  */
 export class MeridianWebBackendStack extends Stack {
-  readonly service: apprunner.Service;
-
   constructor(scope: Construct, id: string, props: MeridianWebBackendStackProps) {
     super(scope, id, props);
-    const { environment, instanceRole, accessRole } = props;
-
-    // App Runner needs the complete secret ARN (with its suffix) to read the token at
-    // deployment; scripts/publish.py creates the secret and passes the ARN through.
-    const apiTokenArn = process.env.MERIDIAN_API_TOKEN_SECRET_ARN;
-    if (!apiTokenArn) {
-      throw new Error(`MERIDIAN_API_TOKEN_SECRET_ARN is not set; run scripts/publish.py, which creates ${API_TOKEN_SECRET_NAME}`);
-    }
-    const apiToken = secretsmanager.Secret.fromSecretCompleteArn(this, 'ApiToken', apiTokenArn);
 
     const image = new ecrAssets.DockerImageAsset(this, 'BackendImage', {
       directory: meridianDir,
@@ -58,43 +32,7 @@ export class MeridianWebBackendStack extends Stack {
       ignoreMode: IgnoreMode.DOCKER,
     });
 
-    this.service = new apprunner.Service(this, 'Backend', {
-      serviceName: 'meridian-web',
-      source: apprunner.Source.fromAsset({
-        asset: image,
-        imageConfiguration: {
-          port: 8000,
-          environmentVariables: environment,
-          environmentSecrets: {
-            MERIDIAN_API_TOKEN: apprunner.Secret.fromSecretsManager(apiToken),
-          },
-        },
-      }),
-      instanceRole,
-      accessRole,
-      cpu: apprunner.Cpu.ONE_VCPU,
-      memory: apprunner.Memory.TWO_GB,
-      autoDeploymentsEnabled: false,
-      // Every optional setting is left at App Runner's default on purpose. In
-      // us-east-1 a service created with any of a custom auto scaling
-      // configuration, a health check at a 10 second interval, an explicit
-      // default egress configuration or an empty tag list failed to deploy every
-      // time, with no application log, while the identical service without the
-      // setting deployed at the same moment. The default health check is TCP,
-      // and uvicorn binds the port only after the lifespan startup has
-      // initialised the Aurora checkpoint backend, so an open port already means
-      // the backend is ready.
-    });
-    apiToken.grantRead(instanceRole);
-
-    // The L2 always writes the default egress configuration, and CloudFormation
-    // sends an empty tag list unless the resource carries a tag; both broke the
-    // deployment (see above).
-    const cfnService = this.service.node.defaultChild as apprunnerCfn.CfnService;
-    cfnService.addPropertyDeletionOverride('NetworkConfiguration');
-    Tags.of(this.service).add('project', 'meridian');
-
-    new CfnOutput(this, 'BackendUrl', { value: `https://${this.service.serviceUrl}` });
-    new CfnOutput(this, 'BackendServiceArn', { value: this.service.serviceArn });
+    new CfnOutput(this, 'ImageUri', { value: image.imageUri });
+    new CfnOutput(this, 'ServiceEnvironment', { value: JSON.stringify(props.environment) });
   }
 }

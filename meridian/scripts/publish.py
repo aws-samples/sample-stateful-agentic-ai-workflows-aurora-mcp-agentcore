@@ -46,9 +46,11 @@ ROLES_STACK = "MeridianWebRoles"
 BACKEND_STACK = "MeridianWebBackend"
 # IAM propagation. App Runner fails to deploy a service whose roles were created moments earlier.
 ROLE_PROPAGATION_SECONDS = 90
-# App Runner service creation fails intermittently in this account with no application
-# log; the same definition deploys minutes later. The backend stack is retried on its own.
-BACKEND_ATTEMPTS = 3
+SERVICE_NAME = "meridian-web"
+# App Runner service creation has failed intermittently here with no application log;
+# a failed creation is deleted and tried again.
+SERVICE_ATTEMPTS = 3
+SERVICE_WAIT_SECONDS = 600
 SECRET_NAME = "meridian/web/api-token"
 USER = "meridian"
 
@@ -76,7 +78,7 @@ def load_published() -> dict:
 
 
 def ensure_secret(region: str, token: str) -> str:
-    """Write the bearer token to Secrets Manager without ever reading it back; return its ARN."""
+    """Keep the bearer token on record in Secrets Manager, never reading it back; return its ARN."""
     client = boto3.client("secretsmanager", region_name=region)
     try:
         arn = client.describe_secret(SecretId=SECRET_NAME)["ARN"]
@@ -111,13 +113,121 @@ def stack_version(region: str, name: str) -> str | None:
     return str(stack.get("LastUpdatedTime") or stack["CreationTime"])
 
 
-def deploy_stack(engine: str, region: str, secret_arn: str) -> dict:
-    """Deploy the CDK stacks, in order, in the region of Aurora, AgentCore and the token secret.
+def cdk_deploy(stack: str, env: dict) -> dict:
+    run(
+        ["npx", "cdk", "deploy", stack, "--exclusively", "--require-approval", "never",
+         "--outputs-file", str(OUTPUTS)],
+        INFRA,
+        env=env,
+    )
+    return json.loads(OUTPUTS.read_text())[stack]
 
-    The instance role goes first; App Runner cannot deploy a service whose role was
-    created in the same CloudFormation run, so after the roles stack is created the
-    script waits for IAM to propagate it. The App Runner backend is deployed next and
-    retried on its own when App Runner fails, and the site behind CloudFront last.
+
+def find_service(client) -> dict | None:
+    for summary in client.list_services()["ServiceSummaryList"]:
+        if summary["ServiceName"] == SERVICE_NAME:
+            return client.describe_service(ServiceArn=summary["ServiceArn"])["Service"]
+    return None
+
+
+def wait_for_service(client, service_arn: str) -> str:
+    """Poll until the service leaves OPERATION_IN_PROGRESS; return its status."""
+    for _ in range(SERVICE_WAIT_SECONDS // 15):
+        status = client.describe_service(ServiceArn=service_arn)["Service"]["Status"]
+        if status != "OPERATION_IN_PROGRESS":
+            return status
+        time.sleep(15)
+    return "OPERATION_IN_PROGRESS"
+
+
+def wait_for_deletion(client, service_arn: str) -> None:
+    """Poll until the service is gone; App Runner reports DELETED before it stops describing it."""
+    for _ in range(SERVICE_WAIT_SECONDS // 15):
+        try:
+            status = client.describe_service(ServiceArn=service_arn)["Service"]["Status"]
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ResourceNotFoundException":
+                return
+            raise
+        if status == "DELETED":
+            return
+        time.sleep(15)
+
+
+def service_definition(image_uri: str, environment: dict, roles: dict, token: str) -> dict:
+    """The App Runner service, with no optional setting.
+
+    App Runner in us-east-1 refused to deploy any service whose CreateService
+    call carried a custom auto scaling configuration, a health check interval,
+    an explicit egress configuration, a tag list, or a Secrets Manager reference
+    for the token, and CloudFormation always sends a tag list, so the service is
+    created here with the SDK and the token travels as a runtime environment
+    variable. It guards only the App Runner origin behind CloudFront, and the
+    same value already sits in the CloudFront KeyValueStore.
+    """
+    return {
+        "SourceConfiguration": {
+            "AuthenticationConfiguration": {"AccessRoleArn": roles["AccessRoleArn"]},
+            "AutoDeploymentsEnabled": False,
+            "ImageRepository": {
+                "ImageIdentifier": image_uri,
+                "ImageRepositoryType": "ECR",
+                "ImageConfiguration": {
+                    "Port": "8000",
+                    "RuntimeEnvironmentVariables": {**environment, "MERIDIAN_API_TOKEN": token},
+                },
+            },
+        },
+        "InstanceConfiguration": {"Cpu": "1024", "Memory": "2048", "InstanceRoleArn": roles["InstanceRoleArn"]},
+    }
+
+
+def ensure_service(region: str, image_uri: str, environment: dict, roles: dict, token: str) -> dict:
+    """Create or update the App Runner service and wait until it runs.
+
+    A failed creation is deleted and retried; App Runner service creation has
+    failed intermittently here with no application log.
+    """
+    client = boto3.client("apprunner", region_name=region)
+    definition = service_definition(image_uri, environment, roles, token)
+    for attempt in range(1, SERVICE_ATTEMPTS + 1):
+        service = find_service(client)
+        if service and service["Status"] == "OPERATION_IN_PROGRESS":
+            print("App Runner is still working on the backend; waiting...")
+            service["Status"] = wait_for_service(client, service["ServiceArn"])
+        if service and service["Status"] in {"CREATE_FAILED", "DELETE_FAILED"}:
+            print(f"removing the backend service left in {service['Status']}")
+            client.delete_service(ServiceArn=service["ServiceArn"])
+            wait_for_deletion(client, service["ServiceArn"])
+            service = None
+        if service is None:
+            print(f"creating the App Runner service (attempt {attempt} of {SERVICE_ATTEMPTS})")
+            service = client.create_service(ServiceName=SERVICE_NAME, **definition)["Service"]
+        else:
+            current = service["SourceConfiguration"]["ImageRepository"]
+            same = (
+                current["ImageIdentifier"] == image_uri
+                and current["ImageConfiguration"].get("RuntimeEnvironmentVariables") == definition["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"]["RuntimeEnvironmentVariables"]
+            )
+            if same and service["Status"] == "RUNNING":
+                print("the backend already runs this image with this configuration")
+                return service
+            print("updating the App Runner service with the new image or configuration")
+            service = client.update_service(ServiceArn=service["ServiceArn"], **definition)["Service"]
+        status = wait_for_service(client, service["ServiceArn"])
+        if status == "RUNNING":
+            return client.describe_service(ServiceArn=service["ServiceArn"])["Service"]
+        print(f"App Runner reported {status} for the backend")
+    raise SystemExit("App Runner did not bring the backend up; see the service event log in CloudWatch")
+
+
+def deploy_stack(engine: str, region: str, token: str) -> dict:
+    """Deploy the roles, the image, the App Runner service and the site, in that order.
+
+    The roles go first; App Runner cannot deploy a service whose roles were created
+    moments earlier, so after the roles stack is created or changed the script
+    waits for IAM to propagate them. The image stack pushes the backend image, the
+    service is created with the SDK, and the site stack needs the service host.
     """
     run(["npm", "ci"], INFRA)
     run(["npm", "run", "build"], INFRA)
@@ -125,36 +235,25 @@ def deploy_stack(engine: str, region: str, secret_arn: str) -> dict:
     env = {
         "CDK_DOCKER": engine,
         "MERIDIAN_WEB_REGION": region,
-        "MERIDIAN_API_TOKEN_SECRET_ARN": secret_arn,
         "AWS_DEFAULT_REGION": region,
         "AWS_REGION": region,
         "CDK_DEFAULT_REGION": region,
     }
     roles_before = stack_version(region, ROLES_STACK)
-    cdk_deploy(ROLES_STACK, env)
+    roles = cdk_deploy(ROLES_STACK, env)
     if stack_version(region, ROLES_STACK) != roles_before:
         print(f"Waiting {ROLE_PROPAGATION_SECONDS}s for the App Runner roles to propagate...")
         time.sleep(ROLE_PROPAGATION_SECONDS)
-    for attempt in range(1, BACKEND_ATTEMPTS + 1):
-        try:
-            cdk_deploy(BACKEND_STACK, env)
-            break
-        except subprocess.CalledProcessError:
-            if attempt == BACKEND_ATTEMPTS:
-                raise
-            print(f"App Runner did not deploy the backend (attempt {attempt} of {BACKEND_ATTEMPTS}); retrying...")
-    cdk_deploy(STACK, env)
-    outputs = json.loads(OUTPUTS.read_text())
-    return {**outputs[BACKEND_STACK], **outputs[STACK]}
-
-
-def cdk_deploy(stack: str, env: dict) -> None:
-    run(
-        ["npx", "cdk", "deploy", stack, "--exclusively", "--require-approval", "never",
-         "--outputs-file", str(OUTPUTS)],
-        INFRA,
-        env=env,
+    backend = cdk_deploy(BACKEND_STACK, env)
+    service = ensure_service(
+        region, backend["ImageUri"], json.loads(backend["ServiceEnvironment"]), roles, token
     )
+    site = cdk_deploy(STACK, {**env, "MERIDIAN_BACKEND_HOST": service["ServiceUrl"]})
+    return {
+        **site,
+        "BackendUrl": f"https://{service['ServiceUrl']}",
+        "BackendServiceArn": service["ServiceArn"],
+    }
 
 
 def write_access_store(region: str, kvs_arn: str, published: dict) -> None:
@@ -189,19 +288,6 @@ def write_access_store(region: str, kvs_arn: str, published: dict) -> None:
     print("wrote basic credential and bearer token to the KeyValueStore")
 
 
-def redeploy_backend(region: str, service_arn: str) -> None:
-    """App Runner reads the secret at deployment, so a new token needs a new deployment."""
-    client = boto3.client("apprunner", region_name=region)
-    try:
-        client.start_deployment(ServiceArn=service_arn)
-        print("started an App Runner deployment so the backend picks up the token")
-    except ClientError as error:
-        code = error.response.get("Error", {}).get("Code", "")
-        if code != "InvalidStateException":
-            raise
-        print("App Runner is already deploying; the new token applies when it finishes")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--skip-frontend", action="store_true", help="reuse frontend/dist")
@@ -211,19 +297,20 @@ def main() -> int:
     env = {**dotenv_values(MERIDIAN / ".env"), **os.environ}
     region = env.get("AWS_DEFAULT_REGION", "us-east-1")
     published = load_published()
-    token_is_new = not PUBLISHED.exists() or published.get("tokenPublished") != published["token"]
-    secret_arn = ensure_secret(region, published["token"])
+    ensure_secret(region, published["token"])
 
     if not args.skip_frontend and not args.skip_deploy:
         build_frontend()
     if not args.skip_deploy:
-        outputs = deploy_stack(container_engine(), region, secret_arn)
+        outputs = deploy_stack(container_engine(), region, published["token"])
     else:
-        outputs = json.loads(OUTPUTS.read_text())[STACK]
+        outputs = {
+            **json.loads(OUTPUTS.read_text())[STACK],
+            "BackendUrl": published["backendUrl"],
+            "BackendServiceArn": published["backendServiceArn"],
+        }
 
     write_access_store(region, outputs["AccessStoreArn"], published)
-    if token_is_new and PUBLISHED.exists():
-        redeploy_backend(region, outputs["BackendServiceArn"])
 
     published.update({
         "url": outputs["SiteUrl"],

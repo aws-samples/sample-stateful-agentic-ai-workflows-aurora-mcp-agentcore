@@ -10,13 +10,12 @@ export interface MeridianWebRolesStackProps extends StackProps {
  * The App Runner roles, in their own stack.
  *
  * App Runner pulls the image with the access role and hands the container its
- * credentials and the api-token secret through the instance role while it
- * deploys the service. When either role is created in the same CloudFormation
+ * credentials through the instance role while it deploys the service. When either role is created in the same CloudFormation
  * deployment as the service, App Runner fails with "Failed to deploy your
  * application image" and no application log, because IAM has not propagated
  * the role yet; the same service definition succeeds against roles that have
- * existed for a minute. scripts/publish.py deploys this stack first and waits
- * whenever it created or changed it.
+ * existed for a minute. scripts/publish.py deploys this stack first, waits
+ * whenever it created or changed it, and creates the service with these roles.
  */
 export class MeridianWebRolesStack extends Stack {
   readonly instanceRole: iam.Role;

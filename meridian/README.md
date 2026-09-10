@@ -116,7 +116,10 @@ python scripts/publish.py           # writes the secret, builds, deploys, fills 
 The script prints the URL and writes the password and token to
 `.local/published.json` (gitignored). Re-run it to redeploy; pass
 `--skip-frontend` to reuse `frontend/dist`. Tear down with
-`cd infra && npx cdk destroy MeridianWeb MeridianWebBackend MeridianWebRoles`.
+`cd infra && npx cdk destroy MeridianWeb`, delete the App Runner service
+`meridian-web`, then `npx cdk destroy MeridianWebBackend MeridianWebRoles`.
+The container starts through `backend/launch.py`, which opens the port before
+the application loads; see `docs/AGENTCORE_LEARNINGS.md` for why.
 
 For an existing database created before identity binding was added:
 

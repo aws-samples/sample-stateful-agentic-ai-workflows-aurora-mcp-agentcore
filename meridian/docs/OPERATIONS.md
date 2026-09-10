@@ -126,18 +126,27 @@ container on App Runner (1 vCPU, 2 GB, one instance kept warm), and a viewer
 function that enforces basic auth, injects the backend bearer token on `/api/*`
 and `/health`, and rewrites `/showcase` and friends to `index.html`. The
 backend runs with `ENVIRONMENT=production`, so it refuses any caller without
-the token; the App Runner URL is not an open door. Three stacks, deployed in
-order: `MeridianWebRoles` holds the App Runner instance and ECR access roles and
-goes first, because App Runner cannot deploy a service whose roles were created
-moments earlier (`publish.py` waits 90 seconds whenever it changes them);
-`MeridianWebBackend`
-is the App Runner service, retried up to three times on its own because App
-Runner service creation fails intermittently here with no application log;
-`MeridianWeb` is the site. The service definition is deliberately minimal
-(default health check, scaling and egress, one real tag): App Runner in
-us-east-1 failed every deployment that carried any optional setting. The
-default health check is TCP, and uvicorn opens the port only after startup has
-initialised the Aurora checkpoint backend.
+the token; the App Runner URL is not an open door. `publish.py` deploys three
+stacks and one SDK-created service, in order: `MeridianWebRoles` holds the App
+Runner instance and ECR access roles and goes first, because App Runner cannot
+deploy a service whose roles were created moments earlier (the script waits 90
+seconds whenever it changes them); `MeridianWebBackend` builds and pushes the
+backend image; the App Runner service `meridian-web` is then created or updated
+with the SDK and the script waits until it runs, deleting and retrying a failed
+creation; `MeridianWeb` is the site, routed to the service host. The service
+carries no optional setting at all: App Runner in us-east-1 refused every
+deployment that had a custom auto scaling configuration, a health check
+interval, an explicit egress configuration, a tag list, or a Secrets Manager
+reference for the token, and CloudFormation always sends a tag list, which is
+why the service is not a stack resource. The bearer token therefore reaches the
+container as a runtime environment variable (the same value already sits in the
+CloudFront KeyValueStore, and it guards only the origin behind CloudFront); the
+secret in Secrets Manager remains the operator's record of it. The
+container starts through `backend/launch.py`, which opens port 8000 at once and
+hands the socket to uvicorn, because App Runner also refused deployments whose
+port stayed closed for the thirty seconds the backend needs to load on one vCPU;
+the default TCP health check passes immediately and requests wait in the backlog
+until startup has initialised the Aurora checkpoint backend.
 
 ```bash
 cd meridian
@@ -149,8 +158,9 @@ python scripts/publish.py --skip-frontend   # redeploy after backend changes
 What the script does, in order: mints a basic-auth password and a bearer token
 (or reuses the ones in `.local/published.json`), writes the token to Secrets
 Manager (`meridian/web/api-token`, never read back), builds `frontend/dist`,
-deploys `MeridianWebRoles`, `MeridianWebBackend` and `MeridianWeb` in the region of
-Aurora and AgentCore with the non-secret settings copied from `.env`, writes the two credentials to the
+deploys `MeridianWebRoles` and `MeridianWebBackend`, creates or updates the App
+Runner service, deploys `MeridianWeb`, all in the region of Aurora and AgentCore
+with the non-secret settings copied from `.env`, writes the two credentials to the
 CloudFront KeyValueStore through the AWS CLI, and records the URL. The instance
 role is scoped to Bedrock invoke, the Aurora Data API on one cluster, one Aurora
 secret, and `InvokeAgentRuntime` on the Meridian runtime.
@@ -165,7 +175,9 @@ curl -s -u meridian:PASSWORD -X POST https://<distribution>.cloudfront.net/api/c
   | jq '(.products | length), [.activities[].title]'
 ```
 
-Tear down with `cd meridian/infra && npx cdk destroy MeridianWeb MeridianWebBackend MeridianWebRoles`; the secret
+Tear down with `cd meridian/infra && npx cdk destroy MeridianWeb`, then
+`aws apprunner delete-service --service-arn <backendServiceArn from .local/published.json>`,
+then `npx cdk destroy MeridianWebBackend MeridianWebRoles`; the secret
 and the credentials file stay unless you delete them.
 
 ## If AgentCore fails on stage

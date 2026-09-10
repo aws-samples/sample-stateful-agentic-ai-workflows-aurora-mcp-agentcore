@@ -1,6 +1,5 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as apprunner from '@aws-cdk/aws-apprunner-alpha';
 import {
   CfnOutput,
   Duration,
@@ -89,16 +88,25 @@ export function loadServiceEnvironment(region: string): Record<string, string> {
   return serviceEnvironment(readDotenv(path.join(meridianDir, '.env')), region);
 }
 
+/** The App Runner service host the distribution routes the API to, e.g. abc.us-east-1.awsapprunner.com. */
+export function backendHost(): string {
+  const host = process.env.MERIDIAN_BACKEND_HOST;
+  if (!host) {
+    throw new Error('MERIDIAN_BACKEND_HOST is not set; run scripts/publish.py, which creates the App Runner service first');
+  }
+  return host;
+}
+
 export interface MeridianWebStackProps extends StackProps {
-  /** The backend from MeridianWebBackendStack; the distribution routes the API to it. */
-  service: apprunner.Service;
+  /** The App Runner service host from backendHost(). */
+  backendHost: string;
 }
 
 /** The site: the Vite build in S3, CloudFront with the viewer function, and the KeyValueStore. */
 export class MeridianWebStack extends Stack {
   constructor(scope: Construct, id: string, props: MeridianWebStackProps) {
     super(scope, id, props);
-    const { service } = props;
+    const { backendHost: apiHost } = props;
 
     const site = new s3.Bucket(this, 'Site', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -120,7 +128,7 @@ export class MeridianWebStack extends Stack {
       code: cloudfront.FunctionCode.fromFile({ filePath: path.join(__dirname, '..', '..', 'functions', 'viewer-request.js') }),
     });
 
-    const api = new origins.HttpOrigin(service.serviceUrl, {
+    const api = new origins.HttpOrigin(apiHost, {
       protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
       readTimeout: Duration.seconds(60),
       keepaliveTimeout: Duration.seconds(60),
