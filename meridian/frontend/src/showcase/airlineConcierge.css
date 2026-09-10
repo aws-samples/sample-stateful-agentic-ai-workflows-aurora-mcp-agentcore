@@ -19,12 +19,12 @@
   --mc-caution-bg: #352d24;
 }
 .mds-root[data-theme='light'] {
-  --mc-ground: #f5f3ee;
+  --mc-ground: #ffffff;
   --mc-surface: #ffffff;
-  --mc-soft: #efece5;
-  --mc-ink: #1c1a17;
-  --mc-muted: #5a554d;
-  --mc-line: #e3dfd7;
+  --mc-soft: #f2f2f2;
+  --mc-ink: #111111;
+  --mc-muted: #555555;
+  --mc-line: #e2e2e2;
   --mc-accent: #2457a7;
   --mc-action: #2358ae;
   --mc-caution: #80551d;
