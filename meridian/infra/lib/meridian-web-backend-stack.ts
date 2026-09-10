@@ -2,10 +2,11 @@ import * as path from 'node:path';
 import * as apprunner from '@aws-cdk/aws-apprunner-alpha';
 import {
   CfnOutput,
-  Duration,
   IgnoreMode,
   Stack,
+  Tags,
   type StackProps,
+  aws_apprunner as apprunnerCfn,
   aws_ecr_assets as ecrAssets,
   aws_iam as iam,
   aws_secretsmanager as secretsmanager,
@@ -74,26 +75,24 @@ export class MeridianWebBackendStack extends Stack {
       cpu: apprunner.Cpu.ONE_VCPU,
       memory: apprunner.Memory.TWO_GB,
       autoDeploymentsEnabled: false,
-      // TCP on purpose. Every deployment configured with an HTTP health check on
-      // /health at a 10 second interval failed in us-east-1 before App Runner
-      // provisioned an instance, while the same image and command passed a TCP
-      // check. Uvicorn binds the port only after the lifespan startup finishes,
-      // and that startup initialises the Aurora checkpoint backend, so an open
-      // port already means the backend is ready.
-      healthCheck: apprunner.HealthCheck.tcp({
-        interval: Duration.seconds(10),
-        timeout: Duration.seconds(5),
-        healthyThreshold: 1,
-        unhealthyThreshold: 5,
-      }),
-      autoScalingConfiguration: new apprunner.AutoScalingConfiguration(this, 'BackendScaling', {
-        autoScalingConfigurationName: 'meridian-web',
-        minSize: 1,
-        maxSize: 2,
-        maxConcurrency: 25,
-      }),
+      // Every optional setting is left at App Runner's default on purpose. In
+      // us-east-1 a service created with any of a custom auto scaling
+      // configuration, a health check at a 10 second interval, an explicit
+      // default egress configuration or an empty tag list failed to deploy every
+      // time, with no application log, while the identical service without the
+      // setting deployed at the same moment. The default health check is TCP,
+      // and uvicorn binds the port only after the lifespan startup has
+      // initialised the Aurora checkpoint backend, so an open port already means
+      // the backend is ready.
     });
     apiToken.grantRead(instanceRole);
+
+    // The L2 always writes the default egress configuration, and CloudFormation
+    // sends an empty tag list unless the resource carries a tag; both broke the
+    // deployment (see above).
+    const cfnService = this.service.node.defaultChild as apprunnerCfn.CfnService;
+    cfnService.addPropertyDeletionOverride('NetworkConfiguration');
+    Tags.of(this.service).add('project', 'meridian');
 
     new CfnOutput(this, 'BackendUrl', { value: `https://${this.service.serviceUrl}` });
     new CfnOutput(this, 'BackendServiceArn', { value: this.service.serviceArn });

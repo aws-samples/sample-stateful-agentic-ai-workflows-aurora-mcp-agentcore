@@ -133,10 +133,11 @@ moments earlier (`publish.py` waits 90 seconds whenever it changes them);
 `MeridianWebBackend`
 is the App Runner service, retried up to three times on its own because App
 Runner service creation fails intermittently here with no application log;
-`MeridianWeb` is the site. App Runner checks readiness over TCP:
-uvicorn opens the port only after startup has initialised the Aurora checkpoint
-backend, and an HTTP check with a 10 second interval failed every deployment
-before an instance was provisioned.
+`MeridianWeb` is the site. The service definition is deliberately minimal
+(default health check, scaling and egress, one real tag): App Runner in
+us-east-1 failed every deployment that carried any optional setting. The
+default health check is TCP, and uvicorn opens the port only after startup has
+initialised the Aurora checkpoint backend.
 
 ```bash
 cd meridian
