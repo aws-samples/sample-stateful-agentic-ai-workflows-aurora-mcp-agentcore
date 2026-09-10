@@ -20,7 +20,6 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
   const activeHold = hold?.order.status === 'held' && knownExpiry && !expired;
   const confirmed = hold?.order.status === 'confirmed';
   const confirming = Boolean(hold) && state.bookingPrompt?.order.order_id === hold?.order.order_id;
-  const profile = state.travelerProfile ?? state.previewProfile;
   if (!open || !product) return null;
 
   const saved = state.savedTripIds.has(product.product_id);
@@ -60,7 +59,7 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
             <BookingConfirmation
               product={product}
               hold={hold}
-              budget={profile?.budget_max}
+              budgetPerTravelerCents={state.budgetCeilingPerTravelerCents}
               busy={state.isLoading}
               onConfirm={() => void state.confirmTrip(product)}
               onCancel={state.dismissBookingConfirmation}

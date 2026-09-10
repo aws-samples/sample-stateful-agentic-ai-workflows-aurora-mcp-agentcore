@@ -1,13 +1,14 @@
 import { ShieldCheck } from 'lucide-react';
 import type { Product } from '../../types';
 import type { TripHold } from '../hooks/useMeridianShowcase';
+import { BudgetCeiling } from './BudgetCeiling';
 
 /** The traveler's confirmation, restated in full before the platform carries it to the gateway. */
-export function BookingConfirmation({ product, hold, budget, busy, onConfirm, onCancel }: {
+export function BookingConfirmation({ product, hold, budgetPerTravelerCents, busy, onConfirm, onCancel }: {
   product: Product;
   hold: TripHold;
-  /** The traveler's usual budget from the profile, as the travel brief shows it. */
-  budget?: number | null;
+  /** The saved per-traveler cap; the policy judges this total against it times the party. */
+  budgetPerTravelerCents?: number | null;
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -25,7 +26,7 @@ export function BookingConfirmation({ product, hold, budget, busy, onConfirm, on
         <div><dt>Duration</dt><dd>{line?.size ?? 'As held'}</dd></div>
         <div><dt>Travelers</dt><dd>{quantity}</dd></div>
         <div><dt>Total</dt><dd>${hold.order.total.toLocaleString('en-US')}</dd></div>
-        <div><dt>Usual budget</dt><dd>{budget != null && Number.isFinite(Number(budget)) ? `Up to $${Number(budget).toLocaleString('en-US')}` : 'Not set'}</dd></div>
+        <div><dt>Budget ceiling</dt><dd><BudgetCeiling perTravelerCents={budgetPerTravelerCents} travelers={quantity} /></dd></div>
         <div><dt>Hold</dt><dd>{hold.order.order_id}</dd></div>
       </dl>
       <p>

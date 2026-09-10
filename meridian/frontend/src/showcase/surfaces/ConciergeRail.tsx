@@ -2,6 +2,7 @@ import { ArrowRight, CalendarDays, Check, Heart, Plane, ShieldCheck, UsersRound,
 import { ALEX_IMAGE_URL } from '../lib/personas';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { TripHoldReceipt } from '../components/TripHoldReceipt';
+import { BudgetCeiling } from '../components/BudgetCeiling';
 
 function dateLabel(value: string) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(`${value}T12:00:00`));
@@ -15,7 +16,6 @@ export function ConciergeRail({ state, onSaved, onRecovery }: {
   const profile = state.travelerProfile ?? state.previewProfile;
   const filters = state.chatFilters;
   const party = state.travelersCount;
-  const budget = profile?.budget_max;
   const dates = filters.startDate
     ? `${dateLabel(filters.startDate)}${filters.endDate ? ` – ${dateLabel(filters.endDate)}` : ' onward'}`
     : 'Open to ideas';
@@ -33,7 +33,7 @@ export function ConciergeRail({ state, onSaved, onRecovery }: {
     <dl className="mc-brief-details">
       <div><dt><UsersRound size={16} aria-hidden="true" />Travelers</dt><dd>{party ? `${party} ${party === 1 ? 'adult' : 'adults'}` : 'Not set'}</dd></div>
       <div><dt><CalendarDays size={16} aria-hidden="true" />Travel dates</dt><dd>{dates}</dd></div>
-      <div><dt>Usual budget</dt><dd>{budget != null && Number.isFinite(Number(budget)) ? `Up to $${Number(budget).toLocaleString('en-US')}` : 'Not set'}</dd></div>
+      <div><dt>Usual budget</dt><dd><BudgetCeiling perTravelerCents={state.budgetCeilingPerTravelerCents} travelers={party} /></dd></div>
     </dl>
     <section className="mc-preferences" aria-label="Remembered preferences"><h3><Check size={16} aria-hidden="true" />The details that matter</h3>
       {preferences.length ? <ul>{preferences.map(({ value, icon: Icon }) => <li key={value}><Icon size={16} aria-hidden="true" /><span>{value}</span></li>)}</ul> : <p>Share your seat, dining, and stay preferences with the concierge.</p>}

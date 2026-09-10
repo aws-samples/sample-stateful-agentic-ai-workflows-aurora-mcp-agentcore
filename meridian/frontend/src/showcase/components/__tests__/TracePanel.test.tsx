@@ -22,6 +22,7 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
   return {
     tripHolds: [],
     bookingPrompt: null,
+    budgetCeilingPerTravelerCents: 320000,
     travelersCount: 1,
     restoreJourney: vi.fn(),
     selectedPhase: 1,

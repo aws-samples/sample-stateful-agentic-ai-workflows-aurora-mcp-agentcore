@@ -251,8 +251,10 @@ TRAVELER_PROFILES = [
     {
         "traveler_id": DEMO_TRAVELER_ID,
         "party_size": 2,
+        # Matches the budget_cap preference fact the gateway policy reads, so the
+        # profile column and the saved fact cannot drift into two different budgets.
         "budget_min": 2000.0,
-        "budget_max": 3500.0,
+        "budget_max": 3200.0,
         "preferred_cabin": "economy_plus",
         "seat_preference": "Window on short-haul · aisle on long-haul",
         "dietary_notes": "Shellfish allergy — exclude seafood dining",

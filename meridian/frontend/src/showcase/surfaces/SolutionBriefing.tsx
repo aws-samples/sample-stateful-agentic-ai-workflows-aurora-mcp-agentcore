@@ -24,7 +24,7 @@ const MODEL_DECIDES: [string, string][] = [
 
 const CODE_DECIDES: [string, string][] = [
   ['Who the caller is', 'STS or AgentCore Identity names the workload; Aurora binds that subject to a traveler before any row is read.'],
-  ['What a hold may cost', 'The budget ceiling comes from the traveler’s saved budget fact, read under RLS; the runtime pins it onto the hold call. The model never chooses it.'],
+  ['What a hold may cost', 'The budget ceiling comes from the traveler’s saved budget fact, read under RLS; the runtime pins it onto the hold call. The model never chooses it. The travel brief and the confirmation dialog show that same saved cap and the party ceiling derived from it, so what a traveler reads is the basis Cedar judged.'],
   ['Whether a hold runs', 'The traveler’s confirmation flag and the ceiling travel as tool arguments; Cedar evaluates them before the Lambda runs.'],
   ['Whether a booking is confirmed', 'The traveler confirms the held trip in the concierge. The backend reads the booking total under RLS, the runtime pins the confirmation and the ceiling, Cedar decides, and Aurora flips the same booking row from held to confirmed. No supplier, no payment.'],
   ['Inventory and replay', 'create_courtesy_hold in Aurora takes the capacity lock, decrements seats and replays an identical request instead of holding twice.'],

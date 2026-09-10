@@ -109,6 +109,8 @@ export interface MeridianShowcaseState {
    *  never populates the memory drawers. */
   previewFacts: LongTermMemoryFact[];
   previewProfile: TravelerProfile | null;
+  /** The saved per-traveler cap the gateway policy multiplies by the party size. */
+  budgetCeilingPerTravelerCents: number | null;
   memoryEnabled: boolean;
   memoryLoading: boolean;
   memoryToggleError: string | null;
@@ -265,6 +267,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   // authorizes the workload, so the ladder still earns its reveal.
   const [previewFacts, setPreviewFacts] = useState<LongTermMemoryFact[]>([]);
   const [previewProfile, setPreviewProfile] = useState<TravelerProfile | null>(null);
+  // Read from the same saved fact the gateway policy reads, so the budget on
+  // screen is the basis Cedar judged rather than a second, unrelated number.
+  const [budgetCeilingPerTravelerCents, setBudgetCeiling] = useState<number | null>(null);
   const [memoryEnabled, setMemoryEnabledState] = useState(false);
   const [memoryLoading, setMemoryLoading] = useState(false);
   const [memoryToggleError, setMemoryToggleError] = useState<string | null>(null);
@@ -379,6 +384,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       if (profileReady) {
         setPreviewFacts(memoryResponseToFacts(profile.value));
         setPreviewProfile(profile.value.profile ?? null);
+        setBudgetCeiling(profile.value.budget_ceiling_per_traveler_cents ?? null);
       }
       setBackendStatus(serverReady && tripsReady && profileReady ? 'online' : 'offline');
       setConnectionIssue(
@@ -425,6 +431,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       if (!mounted.current) return;
       setMemoryFacts(memoryResponseToFacts(profile));
       setTravelerProfile(profile.profile ?? null);
+      setBudgetCeiling(profile.budget_ceiling_per_traveler_cents ?? null);
       setMemoryEnabledState(true);
     } catch {
       if (!mounted.current) return;
@@ -1007,6 +1014,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     travelerProfile,
     previewFacts,
     previewProfile,
+    budgetCeilingPerTravelerCents,
     memoryEnabled,
     memoryLoading,
     memoryToggleError,

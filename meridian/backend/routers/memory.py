@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.agentcore.identity import get_agentcore_identity
+from backend.agents.budget import budget_ceiling_per_traveler_cents
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.http_auth import (
@@ -21,6 +22,13 @@ from backend.http_auth import (
 from backend.memory.store import DEMO_TRAVELER_ID, get_memory_store
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
+
+# The gateway policy derives its ceiling from the traveler's whole preference
+# set, so the ceiling this endpoint reports has to be read at the same breadth.
+# The drawer keeps showing the highest-confidence handful it always showed;
+# reading wider only changes which facts the ceiling is computed from.
+GOVERNANCE_FACT_LIMIT = 50
+DISPLAY_FACT_LIMIT = 8
 
 
 class MemoryFactResponse(BaseModel):
@@ -34,6 +42,10 @@ class MemoryProfileResponse(BaseModel):
     traveler_id: str
     facts: List[MemoryFactResponse]
     profile: Optional[dict] = None
+    # The saved per-traveler cap the gateway policy multiplies by the party. The
+    # UI shows this rather than the profile's budget column, so what a traveler
+    # reads on screen is the basis Cedar actually judged. None when unsaved.
+    budget_ceiling_per_traveler_cents: Optional[int] = None
 
 
 class MemoryFactUpdate(BaseModel):
@@ -56,7 +68,9 @@ async def get_memory_profile(
             agent_type="memory_agent",
             authorization=get_agentcore_identity().authorization_context(),
         ) as tx:
-            facts = await store.recall_preferences(traveler_id, transaction_id=tx)
+            facts = await store.recall_preferences(
+                traveler_id, limit=GOVERNANCE_FACT_LIMIT, transaction_id=tx
+            )
             profile = await store.recall_profile(traveler_id, transaction_id=tx)
     except TravelerAuthorizationError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
@@ -69,9 +83,10 @@ async def get_memory_profile(
                 source=f.get("source"),
                 confidence=f.get("confidence"),
             )
-            for f in facts
+            for f in facts[:DISPLAY_FACT_LIMIT]
         ],
         profile=profile,
+        budget_ceiling_per_traveler_cents=budget_ceiling_per_traveler_cents(facts),
     )
 
 

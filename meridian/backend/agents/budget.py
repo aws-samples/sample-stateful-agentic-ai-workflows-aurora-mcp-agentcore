@@ -30,6 +30,28 @@ def _dollars(text: str) -> list[float]:
     return values
 
 
+def budget_ceiling_per_traveler_cents(facts: list[dict]) -> int | None:
+    """Return the saved per-traveler cap in cents, or None when nothing is saved.
+
+    This is the figure the traveler actually saved. The party ceiling the policy
+    judges is this times the party size, so any surface that shows a budget can
+    show the same basis the gateway used instead of a second, unrelated number.
+
+    Args:
+        facts: Aurora preference facts as ``{"key": ..., "value": ...}`` dicts.
+
+    Returns:
+        The largest dollar figure in the first budget fact present, in cents, or
+        ``None`` when the traveler has saved no budget fact at all.
+    """
+    by_key = {str(fact.get("key", "")).lower(): str(fact.get("value", "")) for fact in facts}
+    for key in BUDGET_KEYS:
+        amounts = _dollars(by_key.get(key, ""))
+        if amounts:
+            return int(round(max(amounts) * 100))
+    return None
+
+
 def budget_ceiling_from_facts(facts: list[dict], travelers: int) -> int:
     """Return the per-trip ceiling in cents from the traveler's saved budget fact.
 
@@ -39,11 +61,10 @@ def budget_ceiling_from_facts(facts: list[dict], travelers: int) -> int:
 
     Returns:
         The largest dollar figure in the budget fact, per person, times the party
-        size, in cents. Falls back to ``MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS``.
+        size, in cents. Falls back to ``MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS``,
+        which is a whole-trip default and is not multiplied by the party.
     """
-    by_key = {str(fact.get("key", "")).lower(): str(fact.get("value", "")) for fact in facts}
-    for key in BUDGET_KEYS:
-        amounts = _dollars(by_key.get(key, ""))
-        if amounts:
-            return int(round(max(amounts) * 100)) * max(1, int(travelers))
+    per_traveler = budget_ceiling_per_traveler_cents(facts)
+    if per_traveler is not None:
+        return per_traveler * max(1, int(travelers))
     return int(os.getenv(DEFAULT_ENV, str(DEFAULT_CENTS)))

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from backend.agents.budget import budget_ceiling_from_facts
+from backend.agents.budget import (
+    budget_ceiling_from_facts,
+    budget_ceiling_per_traveler_cents,
+)
 
 
 def test_budget_fact_with_a_range_uses_the_upper_bound_per_traveler():
@@ -33,3 +36,21 @@ def test_no_budget_fact_falls_back_to_the_default(monkeypatch):
 def test_unparseable_budget_falls_back_to_the_default(monkeypatch):
     monkeypatch.delenv("MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS", raising=False)
     assert budget_ceiling_from_facts([{"key": "budget", "value": "flexible"}], travelers=3) == 400000
+
+
+def test_the_per_traveler_cap_is_the_party_ceiling_divided_by_the_party():
+    """What the UI shows and what Cedar judges have to be the same basis."""
+    facts = [
+        {"key": "per_person_range", "value": "Prefers $2k-3.5k per person"},
+        {"key": "budget_cap", "value": "$3,200"},
+    ]
+    per_traveler = budget_ceiling_per_traveler_cents(facts)
+    assert per_traveler == 320000
+    assert per_traveler * 2 == budget_ceiling_from_facts(facts, travelers=2)
+    assert per_traveler * 5 == budget_ceiling_from_facts(facts, travelers=5)
+
+
+def test_an_unsaved_budget_is_none_rather_than_the_trip_default():
+    """The default is a whole-trip figure, so showing it per traveler would lie."""
+    assert budget_ceiling_per_traveler_cents([]) is None
+    assert budget_ceiling_per_traveler_cents([{"key": "budget", "value": "flexible"}]) is None

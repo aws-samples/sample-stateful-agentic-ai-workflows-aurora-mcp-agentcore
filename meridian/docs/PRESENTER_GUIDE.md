@@ -205,6 +205,12 @@ hold receipt near the itinerary. Open **View system evidence** to read the
 checkpoint, worker executions, access decision, and hold back from Aurora.
 Only claim a worker restart when the recorded executions show it.
 
+Alex's budget appears as two numbers that belong together: a saved cap of
+$3,200 per traveler and the $6,400 party ceiling derived from it. Cedar judges a
+hold or a booking against the party ceiling, which is the figure the concierge
+speaks. The travel brief and the confirmation dialog print both, so a total of
+$4,998 for two travelers reads as within budget rather than over it.
+
 Keep the two hold policies distinct:
 
 - The recovery workflow requests a **15-minute package hold** after resume.

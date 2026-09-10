@@ -190,6 +190,8 @@ export interface MemoryProfileResponse {
   traveler_id: string;
   facts: LongTermMemoryFact[];
   profile?: TravelerProfile;
+  /** The saved per-traveler cap the gateway policy multiplies by the party size. */
+  budget_ceiling_per_traveler_cents?: number | null;
 }
 
 export interface Message {

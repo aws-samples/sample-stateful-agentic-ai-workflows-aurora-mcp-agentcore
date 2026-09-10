@@ -672,3 +672,7 @@
 /* A confirmed booking keeps the receipt shape; the countdown becomes the confirmation. */
 .mds-root .mc-hold-receipt.is-confirmed { border-color: rgb(var(--mds-green-rgb) / 0.45); }
 .mds-root .mc-hold-receipt.is-confirmed [role='timer'] { color: var(--mds-green); }
+
+/* The party ceiling under the per-traveler cap, so the brief and the concierge's
+   sentence carry the same two numbers. */
+.mds-root .mc-brief-details .mc-budget-basis { display: block; margin-top: 3px; color: var(--mc-muted); font-weight: 400; font-size: 0.92em; }

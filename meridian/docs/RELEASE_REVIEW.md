@@ -47,6 +47,18 @@ payment. The gateway now serves four tools and the engine holds three policies.
   booking id with the original expiry. Aurora recorded one hold and nine
   checkpoints on the thread.
 
+- Budget shown and budget enforced are now one number. The travel brief used to
+  print the profile's `budget_max` of $3,500 with no unit while Cedar judged a
+  $6,400 party ceiling derived from the saved `budget_cap` fact of $3,200 per
+  traveler, so a confirmed $4,998 trip read as over budget on screen. The memory
+  endpoint now returns the saved per-traveler cap, computed by the same helper
+  the gateway path uses and read at the same breadth (the endpoint previously
+  saw only the eight highest-confidence facts, which excluded the budget one).
+  The brief and the confirmation dialog render it through one component as
+  `$3,200 per traveler` with `$6,400 for 2 travelers` beneath. The seeded
+  `budget_max` was aligned to the cap so the profile column and the saved fact
+  cannot drift apart again.
+
 - Booking confirmation through the governed chain: a Phase 4 hold on CTY-002
   (`HLD-8DF6B278`, 5 nights, 2 travelers, $4,998 against the $6,400 ceiling)
   was confirmed through `POST /api/chat/book`. The trace shows
