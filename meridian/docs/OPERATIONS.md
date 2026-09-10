@@ -158,6 +158,7 @@ cd meridian
 finch vm start                      # Docker works too; the image is built for linux/amd64
 python scripts/publish.py           # secret → frontend build → cdk deploy → KeyValueStore
 python scripts/publish.py --skip-frontend   # redeploy after backend changes
+python scripts/bind_web_backend_role.py     # once per roles stack: grant the instance role access to Alex
 ```
 
 What the script does, in order: mints a basic-auth password and a bearer token
@@ -169,6 +170,12 @@ with the non-secret settings copied from `.env`, writes the two credentials to t
 CloudFront KeyValueStore through the AWS CLI, and records the URL. The instance
 role is scoped to Bedrock invoke, the Aurora Data API on one cluster, one Aurora
 secret, and `InvokeAgentRuntime` on the Meridian runtime.
+
+That instance role is a workload like the holds Lambda. Run
+`scripts/bind_web_backend_role.py` once after the roles stack exists (it binds the
+role's RoleId in `traveler_identity_bindings`); until then every Phase 4 and
+Phase 5 request on the published site fails with
+`aws_iam subject is not authorized for traveler trv_meridian_demo`.
 
 Verify with the credentials from `.local/published.json`:
 
@@ -358,6 +365,10 @@ while repeating the prompt.
 
 **A Hold click answers `traveler_not_authorized`** — the holds Lambda role lost
 its grant: `venv/bin/python scripts/bind_gateway_workload.py`.
+
+**Phase 4 or 5 on the published site answers `aws_iam subject is not authorized
+for traveler`** — the App Runner instance role has no grant:
+`venv/bin/python scripts/bind_web_backend_role.py`.
 
 **Every hold is denied, including a confirmed one** — the policy engine may be
 detached (`verify_agentcore.py` shows `Policy engine … MISSING`): redeploy with

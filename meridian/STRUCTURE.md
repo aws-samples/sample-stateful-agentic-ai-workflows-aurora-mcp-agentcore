@@ -47,7 +47,7 @@ SQL/MCP/Retrieval modes execute inside `chat.py` (`sql_search`, `mcp_search`, `r
 | `backend/memory/` | Aurora traveler memory store + audit writer |
 | `backend/agentcore/` | Bedrock AgentCore Runtime (streaming client), Gateway (laptop-side checks), Identity — real API calls only |
 | `meridian_agentcore/` | AgentCore CLI project: the deployed agent, the gateway Lambda targets, and `agentcore.json` |
-| `scripts/publish_gateway_parameters.py`, `scripts/bind_gateway_workload.py` | Publish the Aurora settings the holds Lambda reads from SSM; grant its execution role access to Alex |
+| `scripts/publish_gateway_parameters.py`, `scripts/bind_gateway_workload.py`, `scripts/bind_web_backend_role.py` | Publish the Aurora settings the holds Lambda reads from SSM; grant the Lambda's execution role and the published backend's App Runner role access to Alex |
 | `scripts/verify_agentcore.py`, `scripts/smoke_gateway_tools.py`, `scripts/smoke_production_turn.py` | Pre-session checks: platform status, gateway tools, and the governed hold path end to end |
 | `backend/agents/production_04/` | Live concierge + memory agents |
 | `backend/agents/orchestration_05/` | LangGraph `OrchestrationAgent` (StateGraph + pooled PostgresSaver + restart/resume) |

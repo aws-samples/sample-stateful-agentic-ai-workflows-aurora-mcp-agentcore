@@ -2904,12 +2904,16 @@ TRAVELER_BOOKING_SQL = """
 
 
 async def _traveler_booking(traveler_id: str, booking_id: str) -> dict:
-    """The booking and its line as Aurora holds them, read under the traveler's RLS scope."""
+    """The booking and its line as Aurora holds them, read under the traveler's RLS scope.
+
+    The grant is checked for the same identity envelope the concierge turn uses,
+    so the read authorizes exactly where the hold and the confirmation do.
+    """
     db = get_rds_data_client()
     async with db.scoped_session(
         traveler_id=traveler_id,
         agent_type="concierge_agent",
-        authorization=get_agentcore_identity().authorization_context(),
+        authorization=get_agentcore_identity().scope_for_turn().authorization,
     ) as transaction_id:
         rows = await db.execute(
             TRAVELER_BOOKING_SQL, (booking_id, traveler_id), transaction_id=transaction_id

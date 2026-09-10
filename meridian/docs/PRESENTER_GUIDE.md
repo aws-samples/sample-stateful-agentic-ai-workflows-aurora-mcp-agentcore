@@ -348,6 +348,9 @@ Keep these statements explicit:
 - **A Hold click is refused with "traveler_not_authorized":** the holds Lambda
   role lost its grant. Run `python scripts/bind_gateway_workload.py` from
   `meridian/` and click again.
+- **The published site answers "aws_iam subject is not authorized for
+  traveler" on Phase 4 or 5:** the App Runner instance role has no grant. Run
+  `python scripts/bind_web_backend_role.py` from `meridian/`.
 - **Phase 4 says the platform is not configured or the gateway lists fewer
   than four tools:** run `python scripts/verify_agentcore.py`; if the policy
   engine row is MISSING, `agentcore deploy -y` from `meridian_agentcore`
