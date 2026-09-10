@@ -1,0 +1,83 @@
+[
+  {
+    "name": "get_package_details",
+    "description": "Read one Meridian trip package with its live durations, availability and highlights.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "description": "Catalog package id, for example CTY-002."
+        }
+      },
+      "required": ["packageId"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "create_courtesy_hold",
+    "description": "Place a courtesy hold on one package duration for the authorized traveler. No payment. Cedar policy decides on the arguments before this runs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "travelerId": {
+          "type": "string",
+          "description": "Traveler id. The platform pins this to the authorized traveler."
+        },
+        "packageId": {
+          "type": "string",
+          "description": "Catalog package id from the search results."
+        },
+        "duration": {
+          "type": "string",
+          "description": "Duration label exactly as the catalog publishes it, for example 7 nights."
+        },
+        "travelers": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "description": "Number of travelers on the hold."
+        },
+        "unitPriceCents": {
+          "type": "integer",
+          "description": "Price per traveler in cents from the catalog."
+        },
+        "totalCents": {
+          "type": "integer",
+          "description": "unitPriceCents multiplied by travelers."
+        },
+        "holdMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 720,
+          "description": "How long the hold lasts. 720 is twelve hours."
+        },
+        "travelerConfirmed": {
+          "type": "boolean",
+          "description": "Set by the platform from the traveler's confirmation, never by the model."
+        },
+        "budgetCeilingCents": {
+          "type": "integer",
+          "description": "The traveler's saved budget ceiling in cents, set by the platform."
+        },
+        "journeyRef": {
+          "type": "string",
+          "description": "Stable journey reference for replay, set by the platform."
+        }
+      },
+      "required": [
+        "travelerId",
+        "packageId",
+        "duration",
+        "travelers",
+        "unitPriceCents",
+        "totalCents",
+        "holdMinutes",
+        "travelerConfirmed",
+        "budgetCeilingCents",
+        "journeyRef"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

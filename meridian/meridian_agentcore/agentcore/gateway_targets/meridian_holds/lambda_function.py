@@ -1,0 +1,342 @@
+"""Gateway target: get_package_details and create_courtesy_hold.
+
+The gateway passes tool arguments as the event and the tool name in the client
+context. Before any traveler-scoped write, this function authorizes its own
+execution role against traveler_identity_bindings, records the decision in
+traveler_access_audit, pins the RLS scope and steps down to meridian_app, all
+inside one Data API transaction. The hold itself is the SQL function
+create_courtesy_hold from migration 008, so a retried tool call replays the
+same booking instead of taking a second one.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+
+import boto3
+
+PARAMETERS = (
+    "/meridian/aurora/cluster_arn",
+    "/meridian/aurora/secret_arn",
+    "/meridian/aurora/database",
+)
+APP_ROLE = "meridian_app"
+AGENT_TYPE = "concierge_agent"
+HOLD_BACKEND = "gateway"
+PACKAGE_SQL = (
+    "SELECT package_id, name, operator, destination, region, price_per_person, "
+    "durations, availability, highlights FROM trip_packages WHERE package_id = :package_id"
+)
+BINDING_SQL = (
+    "SELECT binding_id FROM traveler_identity_bindings WHERE identity_provider = :provider "
+    "AND subject_id = :subject AND traveler_id = :traveler AND status = 'active' "
+    "AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP) LIMIT 1"
+)
+AUDIT_SQL = (
+    "INSERT INTO traveler_access_audit (audit_id, identity_provider, subject_id, principal, "
+    "requested_traveler_id, decision, reason) VALUES (:audit_id, :provider, :subject, "
+    ":principal, :traveler, :decision, :reason)"
+)
+HOLD_SQL = (
+    "SELECT booking_id, status, replayed, seats_available, seats_reserved, seats_remaining "
+    "FROM create_courtesy_hold(:booking_id::TEXT, :traveler::TEXT, :journey::TEXT, "
+    ":request_id::TEXT, :fingerprint::TEXT, :package_id::TEXT, :duration::TEXT, "
+    ":quantity::INTEGER, :unit_price::NUMERIC, :total::NUMERIC, :expires_at::TIMESTAMPTZ)"
+)
+BUSINESS_ERRORS = (
+    "insufficient_inventory",
+    "invalid_package_inventory",
+    "journey_not_owned",
+    "traveler_scope_mismatch",
+    "booking_agent_not_authorized",
+    "invalid_hold_quantity",
+    "hold_request_parameter_mismatch",
+)
+
+
+@dataclass(frozen=True)
+class AuroraConfig:
+    cluster_arn: str
+    secret_arn: str
+    database: str
+
+
+CONFIG: AuroraConfig | None = None
+SUBJECT: tuple[str, str, str] | None = None
+RDS = None
+
+
+def _load_config() -> AuroraConfig:
+    response = boto3.client("ssm").get_parameters(Names=list(PARAMETERS))
+    values = {p["Name"]: p["Value"] for p in response.get("Parameters", [])}
+    missing = [name for name in PARAMETERS if name not in values]
+    if missing:
+        raise RuntimeError(
+            f"Missing SSM parameters {missing}; run scripts/publish_gateway_parameters.py"
+        )
+    return AuroraConfig(values[PARAMETERS[0]], values[PARAMETERS[1]], values[PARAMETERS[2]])
+
+
+def _load_subject() -> tuple[str, str, str]:
+    caller = boto3.client("sts").get_caller_identity()
+    return "aws_iam", caller.get("UserId", "").split(":", 1)[0], caller.get("Arn", "unknown")
+
+
+def _boot() -> None:
+    global CONFIG, SUBJECT, RDS
+    if CONFIG is None:
+        CONFIG = _load_config()
+    if SUBJECT is None:
+        SUBJECT = _load_subject()
+    if RDS is None:
+        RDS = boto3.client("rds-data")
+
+
+def _parameters(values: dict) -> list[dict]:
+    params = []
+    for key, value in values.items():
+        if isinstance(value, bool):
+            field = {"booleanValue": value}
+        elif isinstance(value, int):
+            field = {"longValue": value}
+        else:
+            field = {"stringValue": str(value)}
+        params.append({"name": key, "value": field})
+    return params
+
+
+def query(sql: str, values: dict | None = None, tx: str | None = None) -> list[dict]:
+    kwargs = {
+        "resourceArn": CONFIG.cluster_arn,
+        "secretArn": CONFIG.secret_arn,
+        "database": CONFIG.database,
+        "sql": sql,
+        "formatRecordsAs": "JSON",
+        "parameters": _parameters(values or {}),
+    }
+    if tx:
+        kwargs["transactionId"] = tx
+    response = RDS.execute_statement(**kwargs)
+    rows = json.loads(response.get("formattedRecords") or "[]")
+    for row in rows:
+        for key in ("durations", "availability", "highlights"):
+            if isinstance(row.get(key), str):
+                row[key] = json.loads(row[key])
+    return rows
+
+
+def _transaction(operation: str, tx: str) -> None:
+    method = getattr(RDS, f"{operation}_transaction")
+    method(resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, transactionId=tx)
+
+
+def normalize_terms(package_id: str, duration: str, quantity: int, unit_price: Decimal) -> dict:
+    """The same canonical form as backend/agents/orchestration_05/hold_intent.py."""
+    price = Decimal(unit_price).quantize(Decimal("0.01"))
+    return {
+        "package_id": package_id.strip().lower(),
+        "duration": " ".join(duration.split()).lower(),
+        "quantity": int(quantity),
+        "unit_price": str(price),
+        "total_amount": str(price * int(quantity)),
+    }
+
+
+def fingerprint(terms: dict) -> str:
+    canonical = json.dumps(terms, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+def get_package_details(args: dict) -> dict:
+    package_id = str(args.get("packageId", "")).strip()
+    rows = query(PACKAGE_SQL, {"package_id": package_id})
+    if not rows:
+        return {"error": f"Unknown package {package_id}"}
+    package = rows[0]
+    availability = package.get("availability") or {}
+    open_slots = ", ".join(f"{k}: {v} places" for k, v in availability.items())
+    return {
+        "package": package,
+        "summary": f"{package.get('name')} · {open_slots or 'no published durations'}",
+    }
+
+
+def _authorize(traveler_id: str, tx: str) -> dict:
+    provider, subject_id, principal = SUBJECT
+    binding = query(
+        BINDING_SQL, {"provider": provider, "subject": subject_id, "traveler": traveler_id}, tx
+    )
+    allowed = bool(binding)
+    decision = "allow" if allowed else "deny"
+    query(AUDIT_SQL, {
+        "audit_id": f"authz_{uuid.uuid4().hex[:12]}",
+        "provider": provider,
+        "subject": subject_id,
+        "principal": principal,
+        "traveler": traveler_id,
+        "decision": decision,
+        "reason": "active identity binding" if allowed else "no active identity binding",
+    }, tx)
+    return {"allowed": allowed, "decision": decision, "subject": subject_id, "principal": principal}
+
+
+def _scope(traveler_id: str, tx: str) -> None:
+    query(
+        "SELECT set_config('app.current_traveler_id', :traveler, true)",
+        {"traveler": traveler_id},
+        tx,
+    )
+    query("SELECT set_config('app.agent_type', :agent, true)", {"agent": AGENT_TYPE}, tx)
+    query(f"SET LOCAL ROLE {APP_ROLE}", None, tx)
+
+
+def _journey(traveler_id: str, journey_ref: str, tx: str) -> str:
+    query("SELECT pg_advisory_xact_lock(hashtextextended(:thread, 0))", {"thread": journey_ref}, tx)
+    rows = query(
+        "SELECT journey_id FROM journey_threads WHERE thread_id = :thread", {"thread": journey_ref}, tx
+    )
+    if rows:
+        return str(rows[0]["journey_id"])
+    journey_id = f"jrn_{uuid.uuid4().hex[:12]}"
+    query(
+        "INSERT INTO journeys (journey_id, traveler_id, checkpoint_backend) VALUES (:j, :t, :b)",
+        {"j": journey_id, "t": traveler_id, "b": HOLD_BACKEND},
+        tx,
+    )
+    query(
+        "INSERT INTO journey_threads (thread_id, journey_id) VALUES (:thread, :j) "
+        "ON CONFLICT (thread_id) DO NOTHING",
+        {"thread": journey_ref, "j": journey_id},
+        tx,
+    )
+    query(
+        "UPDATE journeys SET active_thread_id = :thread, updated_at = CURRENT_TIMESTAMP "
+        "WHERE journey_id = :j",
+        {"thread": journey_ref, "j": journey_id},
+        tx,
+    )
+    return journey_id
+
+
+def _hold_terms(args: dict) -> dict:
+    unit_price = Decimal(int(args["unitPriceCents"])) / Decimal(100)
+    terms = normalize_terms(
+        str(args["packageId"]), str(args["duration"]), int(args["travelers"]), unit_price
+    )
+    key = f"{args['journeyRef']}|{terms['package_id']}|{terms['duration']}|{terms['quantity']}"
+    digest = hashlib.sha256(key.encode()).hexdigest()[:12]
+    return {
+        "terms": terms,
+        "unit_price": str(unit_price.quantize(Decimal("0.01"))),
+        "request_id": f"hrq_{digest}",
+        "fingerprint": fingerprint(terms),
+        "booking_id": f"HLD-{uuid.uuid4().hex[:8].upper()}",
+    }
+
+
+def _hold_row(args: dict, hold: dict, journey_id: str, expires_at: datetime, tx: str) -> dict:
+    rows = query(HOLD_SQL, {
+        "booking_id": hold["booking_id"],
+        "traveler": str(args["travelerId"]),
+        "journey": journey_id,
+        "request_id": hold["request_id"],
+        "fingerprint": hold["fingerprint"],
+        "package_id": str(args["packageId"]).strip(),
+        "duration": " ".join(str(args["duration"]).split()),
+        "quantity": int(args["travelers"]),
+        "unit_price": hold["unit_price"],
+        "total": hold["terms"]["total_amount"],
+        "expires_at": expires_at.isoformat(),
+    }, tx)
+    return rows[0]
+
+
+def create_courtesy_hold(args: dict) -> dict:
+    traveler_id = str(args["travelerId"])
+    hold = _hold_terms(args)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=int(args["holdMinutes"]))
+    tx = RDS.begin_transaction(
+        resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, database=CONFIG.database
+    )["transactionId"]
+    try:
+        governance = _authorize(traveler_id, tx)
+        if not governance["allowed"]:
+            _transaction("rollback", tx)
+            _record_denied_audit(governance, traveler_id)
+            return {"error": "traveler_not_authorized", "governance": governance}
+        _scope(traveler_id, tx)
+        journey_id = _journey(traveler_id, str(args["journeyRef"]), tx)
+        row = _hold_row(args, hold, journey_id, expires_at, tx)
+        _transaction("commit", tx)
+    except Exception as error:  # noqa: BLE001 - the SQL function raises named business errors
+        _transaction("rollback", tx)
+        return {"error": _named_error(error)}
+    result = {
+        "bookingId": row["booking_id"],
+        "status": row["status"],
+        "replayed": bool(row["replayed"]),
+        "journeyId": journey_id,
+        "holdRequestId": hold["request_id"],
+        "expiresAt": expires_at.isoformat(),
+        "seatsAvailable": row.get("seats_available"),
+        "seatsRemaining": row.get("seats_remaining"),
+        "totalAmount": hold["terms"]["total_amount"],
+        "packageId": str(args["packageId"]).strip(),
+        "duration": " ".join(str(args["duration"]).split()),
+        "travelers": int(args["travelers"]),
+    }
+    verb = "Replayed" if result["replayed"] else "Held"
+    return {
+        "hold": result,
+        "governance": governance,
+        "summary": (
+            f"{verb} {result['packageId']} ({result['duration']}) for {result['travelers']} "
+            f"traveler(s) as {result['bookingId']}, expires {expires_at.strftime('%H:%M UTC')}"
+        ),
+    }
+
+
+def _record_denied_audit(governance: dict, traveler_id: str) -> None:
+    """A DENY is evidence: keep the audit row even though the hold transaction rolled back."""
+    provider, subject_id, principal = SUBJECT
+    query(AUDIT_SQL, {
+        "audit_id": f"authz_{uuid.uuid4().hex[:12]}",
+        "provider": provider,
+        "subject": subject_id,
+        "principal": principal,
+        "traveler": traveler_id,
+        "decision": "deny",
+        "reason": "no active identity binding",
+    })
+
+
+def _named_error(error: Exception) -> str:
+    text = str(error)
+    for name in BUSINESS_ERRORS:
+        if name in text:
+            return name
+    return text[:300]
+
+
+TOOLS = {"get_package_details": get_package_details, "create_courtesy_hold": create_courtesy_hold}
+
+
+def lambda_handler(event, context):
+    _boot()
+    custom = getattr(getattr(context, "client_context", None), "custom", None) or {}
+    tool = custom.get("bedrockAgentCoreToolName", "")
+    name = tool.split("___")[-1]
+    if name not in TOOLS:
+        raise ValueError(f"Unknown Meridian tool: {tool or '(none)'}")
+    result = TOOLS[name](event or {})
+    print(json.dumps({
+        "meridian_tool": name,
+        "ok": "error" not in result,
+        "gatewayRequestId": custom.get("bedrockAgentCoreAwsRequestId"),
+    }), flush=True)
+    return result
