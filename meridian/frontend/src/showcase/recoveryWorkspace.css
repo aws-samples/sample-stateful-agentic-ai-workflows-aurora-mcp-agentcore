@@ -205,9 +205,9 @@
 }
 
 .mds-ladder-nav-rung.is-active .mds-ladder-nav-index {
-  border-color: var(--mds-blue);
-  color: #ffffff;
-  background: var(--mds-blue);
+  border-color: var(--mc-action);
+  color: var(--mc-on-action);
+  background: var(--mc-action);
 }
 
 .mds-ladder-nav-rung.is-active .mds-ladder-nav-copy small {

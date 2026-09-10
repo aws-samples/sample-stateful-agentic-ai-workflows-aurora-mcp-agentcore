@@ -127,3 +127,38 @@ def test_receipt_is_read_only() -> None:
         assert statement not in receipt.upper(), (
             f"session_receipt must stay read-only; found {statement}"
         )
+
+
+# The concierge and recovery surfaces remap --mds-blue to --mc-accent, a pale
+# text accent tuned for reading on a dark ground. Filling a control with it and
+# writing white on top leaves white on near-white: the "Find hotel options"
+# button shipped that way twice, and the active phase chip in the side nav sat
+# at 1.71:1 against its own label. Filled controls take --mc-action, which
+# carries --mc-on-action and is what every other filled control uses.
+#
+# Only the surface sheets are scanned. meridianShowcase.css is the base layer,
+# and its blue fills are overridden per surface by exactly these sheets, so
+# reading it in isolation reports controls that render correctly. Decorative
+# fills carry no label, hence the pairing rather than the fill alone.
+SURFACE_SHEETS = (
+    "recoveryWorkspace.css",
+    "recoveryDecisionRefresh.css",
+    "discoveryWorkspace.css",
+)
+BLOCK = re.compile(r"\{([^{}]*)\}")
+ACCENT_FILL = re.compile(r"background(?:-color)?\s*:\s*var\(\s*--mds-blue\s*\)")
+LIGHT_TEXT = re.compile(r"color\s*:\s*(#fff(?:fff)?\b|white\b)", re.IGNORECASE)
+
+
+@pytest.mark.parametrize("name", SURFACE_SHEETS)
+def test_light_text_is_never_written_on_the_pale_accent(name: str) -> None:
+    offenders = [
+        " ".join(body.split())[:90]
+        for body in BLOCK.findall(_sheet(name))
+        if ACCENT_FILL.search(body) and LIGHT_TEXT.search(body)
+    ]
+    assert not offenders, (
+        f"{name} fills {len(offenders)} control(s) with var(--mds-blue) and writes "
+        f"white on them, which resolves to white on the pale text accent. Use "
+        f"var(--mc-action) with var(--mc-on-action). Offending blocks: {offenders}"
+    )

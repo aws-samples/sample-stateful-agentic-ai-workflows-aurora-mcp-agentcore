@@ -221,11 +221,15 @@
   white-space: nowrap;
 }
 
+/* Inside the recovery workspace --mds-blue resolves to the pale text accent
+   (--mc-accent), so filling a button with it and writing white on top leaves
+   white on near-white. Filled actions take the action blue explicitly, the same
+   token every other surface fills with. */
 .mds-recovery-workspace .mds-decision-card-actions .is-primary {
   min-width: 168px;
-  border-color: var(--mds-blue);
-  color: #ffffff;
-  background: var(--mds-blue);
+  border-color: var(--mc-action);
+  color: var(--mc-on-action);
+  background: var(--mc-action);
   box-shadow: none;
 }
 
@@ -237,9 +241,9 @@
   .mds-recommended-plan-card.is-ready
   .mds-decision-card-actions
   .is-primary {
-  border-color: var(--mds-blue);
-  color: #ffffff;
-  background: var(--mds-blue);
+  border-color: var(--mc-action);
+  color: var(--mc-on-action);
+  background: var(--mc-action);
   box-shadow: none;
 }
 
@@ -361,9 +365,9 @@
 .mds-recovery-workspace
   .mds-concierge-assistance-actions
   button.is-primary {
-  border-color: var(--mds-blue);
-  color: #ffffff;
-  background: var(--mds-blue);
+  border-color: var(--mc-action);
+  color: var(--mc-on-action);
+  background: var(--mc-action);
   box-shadow: none;
 }
 

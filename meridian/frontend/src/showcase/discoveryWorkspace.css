@@ -331,10 +331,10 @@
   justify-content: center;
   gap: 7px;
   padding: 0 12px;
-  border: 1px solid var(--mds-blue);
+  border: 1px solid var(--mc-action);
   border-radius: 6px;
-  color: #ffffff;
-  background: var(--mds-blue);
+  color: var(--mc-on-action);
+  background: var(--mc-action);
   font-size: calc(11px * var(--mds-fs));
   font-weight: 670;
   white-space: nowrap;
