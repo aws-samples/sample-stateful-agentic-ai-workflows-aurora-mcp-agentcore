@@ -2,9 +2,12 @@
 Bedrock AgentCore Gateway adapter for Phase 4 (managed MCP).
 
 AgentCore Gateway converts APIs, Lambda functions, and existing MCP servers
-into a **single MCP endpoint** agents can call.  Phase 4 uses it as the
-managed tool plane for trip search — the same semantic search capability as
-Phase 3, but routed through Gateway instead of inline Python.
+into a **single MCP endpoint** agents can call.  In Phase 4 the agent inside
+AgentCore Runtime discovers and calls the gateway tools itself (semantic trip
+search, package details, the governed courtesy hold), and the gateway's Cedar
+policies decide on every call.  This adapter is the laptop-side client the
+backend keeps for pre-session checks and smoke tests: ``tools/list`` and a
+single ``tools/call`` signed with the caller's own credentials.
 
 Configuration (preferred — @aws/agentcore CLI):
 
@@ -166,50 +169,16 @@ class AgentCoreGatewayAdapter:
         return summaries, raw
 
     def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """MCP ``tools/call`` — invoke one Gateway-hosted tool."""
+        """MCP ``tools/call`` from the laptop, for smoke tests and pre-session checks.
+
+        The Phase 4 turn itself never calls tools from here: the agent inside
+        AgentCore Runtime discovers and calls them, and the gateway's Cedar
+        policies decide on every call.
+        """
         return self._mcp_request(
             "tools/call",
             params={"name": tool_name, "arguments": arguments},
         )
-
-    def semantic_trip_search(
-        self,
-        query: str,
-        limit: int = 5,
-    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        """Call the Gateway search tool — real MCP tools/call to Aurora-backed search."""
-        raw = self.call_tool(
-            self.search_tool,
-            {"query": query, "limit": limit},
-        )
-        packages = _extract_packages_from_mcp_result(raw)
-        return packages, {"status": "ok", "tool": self.search_tool, "raw": raw}
-
-
-def _extract_packages_from_mcp_result(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Parse MCP tools/call result into trip package dicts."""
-    result = raw.get("result") or {}
-    content = result.get("content") or []
-
-    # MCP content blocks: [{type: "text", text: "..."}]
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        text = block.get("text")
-        if not text:
-            continue
-        try:
-            parsed = json.loads(text)
-            if isinstance(parsed, dict) and "packages" in parsed:
-                return parsed["packages"]
-            if isinstance(parsed, list):
-                return parsed
-        except json.JSONDecodeError:
-            continue
-
-    if isinstance(result, dict) and "packages" in result:
-        return result["packages"]
-    return []
 
 
 _adapter: Optional[AgentCoreGatewayAdapter] = None

@@ -1832,9 +1832,10 @@ async def production_search(
     customer_id: str,
     conversation_id: Optional[str] = None,
     limit: int = 5,
+    travelers_count: int = 1,
 ) -> tuple[List[Product], List[ActivityEntry], str, str, List[MemoryFact]]:
     """
-    Production mode: Memory recall + Gateway search + Runtime decision + persist turn.
+    Production mode: identity + RLS recall, then the AgentCore Runtime owns the tool loop.
 
     Requires deployed AgentCore Runtime, Gateway, and Memory — see ``agentcore/README.md``.
     """
@@ -1848,6 +1849,7 @@ async def production_search(
         tid,
         conversation_id,
         limit,
+        travelers_count=travelers_count,
     )
     activities = [_memory_activity_to_entry(a) for a in raw_activities]
     for act in activities:
@@ -2305,6 +2307,7 @@ async def chat(
                 customer_id=request.customer_id or DEMO_TRAVELER_ID,
                 conversation_id=request.conversation_id,
                 limit=5,
+                travelers_count=request.travelers_count,
             )
             activities.extend(search_activities)
             needs_workflow = _needs_checkpointed_workflow(request.message)
@@ -2776,6 +2779,9 @@ class OrderRequest(BaseModel):
     phase: Literal[1, 2, 3, 4, 5]
     traveler_id: str = Field(default="trv_meridian_demo", min_length=1, max_length=50)
     action: Literal["hold"] = "hold"
+    # Phase 4 holds run inside the conversation's AgentCore Memory session, so
+    # the showcase passes the active conversation id along with the hold.
+    conversation_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
 
 
 class OrderResponse(BaseModel):
@@ -2783,6 +2789,91 @@ class OrderResponse(BaseModel):
     message: str
     order: Optional[Order] = None
     activities: List[ActivityEntry]
+
+
+HOLD_PACKAGE_SQL = """
+    SELECT package_id, name, operator, price_per_person, description,
+           image_url, trip_type, durations, availability
+    FROM trip_packages
+    WHERE package_id = %s
+"""
+
+
+async def _package_for_hold(product_id: str) -> tuple[dict, dict]:
+    """Return (catalog row, API product) for a hold, or raise 404."""
+    rows = await get_rds_data_client().execute(HOLD_PACKAGE_SQL, (product_id,))
+    if not rows:
+        raise HTTPException(status_code=404, detail="That trip package is no longer available.")
+    return rows[0], row_to_api_product(rows[0])
+
+
+def _requested_duration(row: dict, requested: Optional[str]) -> str:
+    durations = row.get("durations") or []
+    duration = requested or (durations[0] if durations else None)
+    if not duration or duration not in durations:
+        raise HTTPException(
+            status_code=422, detail="Select one of the package's published durations."
+        )
+    return duration
+
+
+def _order_from_hold(pkg: dict, request: "OrderRequest", duration: str, hold: dict) -> Order:
+    total = round(float(pkg["price"]) * request.quantity, 2)
+    return Order(
+        order_id=str(hold["bookingId"]),
+        items=[OrderItem(product_id=pkg["product_id"], name=pkg["name"], size=duration,
+                         quantity=request.quantity, unit_price=pkg["price"])],
+        subtotal=total,
+        tax=0.0,
+        shipping=0.0,
+        total=total,
+        status=str(hold.get("status") or "held"),
+        estimated_delivery=None,
+        departure_date=None,
+        hold_expires_at=hold.get("expiresAt"),
+        payment_required=False,
+    )
+
+
+async def production_hold(request: "OrderRequest") -> OrderResponse:
+    """Phase 4 hold: the runtime asks the gateway, Cedar decides, the Lambda writes.
+
+    The traveler's click is the confirmation. The backend passes it to the runtime
+    as ``hold_confirmed``; the runtime pins it onto the tool call; the gateway's
+    Cedar policy permits the hold only with it. Nothing here writes to Aurora.
+    """
+    from backend.agents.production_04.concierge import HoldTarget, create_production_agent
+
+    row, pkg = await _package_for_hold(request.product_id)
+    duration = _requested_duration(row, request.size)
+    target = HoldTarget(
+        package_id=pkg["product_id"],
+        duration=duration,
+        travelers=request.quantity,
+        unit_price_cents=int(round(float(pkg["price"]) * 100)),
+    )
+    try:
+        outcome = await create_production_agent().process_hold(
+            request.traveler_id, request.conversation_id, target
+        )
+    except TravelerAuthorizationError as e:
+        log_error(context="hold_authorization", error=str(e), phase=4)
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except Exception as e:
+        log_error(context="production_hold", error=str(e), phase=4)
+        raise HTTPException(
+            status_code=503,
+            detail="The governed hold could not be completed. Check the AgentCore platform.",
+        ) from e
+    activities = [_memory_activity_to_entry(a) for a in outcome.activities]
+    for act in activities:
+        log_activity_entry(act)
+    if not outcome.hold:
+        return OrderResponse(message=outcome.message, order=None, activities=activities)
+    order = _order_from_hold(pkg, request, duration, outcome.hold)
+    log_order(phase=4, order_id=order.order_id, product_id=request.product_id,
+              total=order.total, status=order.status)
+    return OrderResponse(message=outcome.message, order=order, activities=activities)
 
 
 @router.post("/order", response_model=OrderResponse)
@@ -2803,6 +2894,8 @@ async def process_order(
     """
     traveler_id = authorize_traveler(principal, request.traveler_id)
     request = request.model_copy(update={"traveler_id": traveler_id})
+    if request.phase == 4:
+        return await production_hold(request)
     activities = []
     start_time = datetime.now(timezone.utc)
 

@@ -141,7 +141,7 @@ def test_policy_denial_is_a_denied_security_span_and_a_refused_hold():
         "content": [{
             "text": (
                 "Tool Execution Denied: [Policy evaluation denied due to "
-                "meridian_hold_within_budget-abc12de_]"
+                "meridian_hold_governance-abc12de_]"
             )
         }],
     }
@@ -151,10 +151,32 @@ def test_policy_denial_is_a_denied_security_span_and_a_refused_hold():
     assert result["telemetry"]["status"] == "denied"
     assert result["telemetry"]["category"] == "security"
     assert result["title"] == "Hold refused by Cedar policy"
-    assert "meridian_hold_within_budget" in result["details"]
+    assert "meridian_hold_governance" in result["details"]
     refused = [span for kind, span in items if kind == "hold"][0]
     assert refused["policyDecision"] == "deny"
     assert hooks.hold is None
+
+
+def test_default_deny_names_the_hold_conditions_the_arguments_failed():
+    queue = asyncio.Queue()
+    hooks = TraceHooks(queue, _turn(hold_confirmed=False, budget_ceiling_cents=300000))
+    event = _event(
+        "MeridianHolds___create_courtesy_hold",
+        {"packageId": "CTY-002", "travelers": 2, "holdMinutes": 720, "totalCents": 500000},
+    )
+    hooks.before(event)
+    event.result = {
+        "status": "error",
+        "content": [{"text": "Tool Execution Denied: [No policy applies to the request (denied by default).]"}],
+    }
+    hooks.after(event)
+    items = _drain(queue)
+    result = [span for kind, span in items if kind == "activity"][-1]
+    assert result["telemetry"]["status"] == "denied"
+    assert "has not confirmed" in result["details"]
+    assert "$5,000.00 exceeds the saved budget ceiling $3,000.00" in result["details"]
+    refused = [span for kind, span in items if kind == "hold"][0]
+    assert refused["policyDecision"] == "deny"
 
 
 def test_lambda_business_error_is_a_failed_span_not_a_denial():

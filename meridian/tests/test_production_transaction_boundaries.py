@@ -1,9 +1,10 @@
-"""Production turns must not hold RLS transactions across external calls."""
+"""Production turns must not hold RLS transactions across the runtime call."""
 
 import asyncio
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
+from backend.agentcore.runtime import RuntimeDecision
 from backend.agents.production_04 import concierge as concierge_mod
 from backend.agents.production_04.concierge import ProductionAgent
 
@@ -26,6 +27,15 @@ class FakeDB:
             self.events.append(f"{tx}:commit")
         finally:
             self.active_tx = None
+
+    async def execute(self, _sql, params=(), **_kwargs):
+        assert self.active_tx is None
+        self.events.append("aurora:hydrate")
+        return [
+            {"package_id": package_id, "name": "Tokyo Replan", "price_per_person": 2500.0,
+             "durations": ["7 nights"], "availability": {"7 nights": 4}}
+            for package_id in params
+        ]
 
 
 class FakeStore:
@@ -54,9 +64,9 @@ class FakeStore:
     def format_memory_context(*_args):
         return "Alex flies from JFK"
 
-    async def write_audit(self, *, transaction_id, **_kwargs):
+    async def write_audit(self, *, transaction_id, **kwargs):
         assert transaction_id == self.db.active_tx
-        self.events.append("aurora:audit")
+        self.events.append(f"aurora:audit:{kwargs.get('operation')}")
 
 
 class FakeMemoryAgent:
@@ -83,12 +93,9 @@ class FakeMemoryAgent:
         self.events.append("aurora:preferences")
         return {
             "facts": [
-                {
-                    "key": "home_airport",
-                    "value": "JFK",
-                    "source": "profile",
-                    "confidence": 1.0,
-                }
+                {"key": "home_airport", "value": "JFK", "source": "profile", "confidence": 1.0},
+                {"key": "budget", "value": "Prefers $2k-3.5k per person", "source": "profile",
+                 "confidence": 0.9},
             ]
         }
 
@@ -104,103 +111,83 @@ class FakeMemoryAgent:
         self.events.append("aurora:persist")
 
 
-def test_production_turn_releases_transactions_before_external_calls(monkeypatch):
-    events = []
+def build_agent(events, decision, calls):
     db = FakeDB(events)
-    store = FakeStore(db, events)
-    memory_agent = FakeMemoryAgent(db, events)
-
     agent = ProductionAgent.__new__(ProductionAgent)
     agent.activity_callback = lambda _entry: None
-    agent.store = store
+    agent.store = FakeStore(db, events)
     agent.db = db
-    agent.traveler_memory = memory_agent
+    agent.traveler_memory = FakeMemoryAgent(db, events)
     agent.identity = SimpleNamespace(
         scope_for_turn=lambda: SimpleNamespace(
             iam_identity="arn:aws:sts::123:assumed-role/demo/session",
             workload_identity="workload/demo",
             resource_provider="meridian",
             token_status="live",
-            authorization=SimpleNamespace(
-                provider="agentcore_workload",
-                subject_id="workload/demo",
-            ),
+            authorization=SimpleNamespace(provider="agentcore_workload", subject_id="workload/demo"),
         )
     )
 
-    def external(name, result):
-        def call(*_args, **_kwargs):
-            assert db.active_tx is None
-            events.append(name)
-            return result
-
-        return call
-
-    agent.agentcore_runtime = SimpleNamespace(
-        invoke_turn=external(
-            "external:runtime",
-            SimpleNamespace(
-                runtime_session_id="runtime-session-id",
-                invoke_status="ready",
-                runtime_arn="arn:runtime",
-                qualifier="DEFAULT",
-                isolation="microVM",
-                message="Tokyo options grounded in traveler context.",
-                recommended_package_ids=["pkg-1"],
-                follow_ups=[],
-            ),
-        )
-    )
-    agent.agentcore_memory = SimpleNamespace(
-        memory_id="memory-id",
-        _namespace=lambda traveler_id, conversation_id: (
-            f"/users/{traveler_id}/sessions/{conversation_id}"
-        ),
-        list_recent_turns=external("external:memory-list", []),
-        semantic_recall=external("external:memory-recall", []),
-        record_turn=external(
-            "external:memory-write",
-            {"status": "ok", "event_id": "evt-1"},
-        ),
-    )
-
-    async def fake_search(_message, _limit):
+    def invoke_turn(*args, **kwargs):
         assert db.active_tx is None
-        events.append("external:gateway")
-        return (
-            [
-                SimpleNamespace(
-                    package_id="pkg-1",
-                    name="Tokyo Replan",
-                )
-            ],
-            [],
-        )
+        events.append("external:runtime")
+        calls.append((args, kwargs))
+        return decision
 
-    agent._search_packages = fake_search
-    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda: None)
+    agent.agentcore_runtime = SimpleNamespace(invoke_turn=invoke_turn)
+    return agent
+
+
+def runtime_decision(**overrides):
+    base = dict(
+        runtime_arn="arn:aws:bedrock-agentcore:us-east-1:1:runtime/rt-1",
+        runtime_session_id="runtime-session-id",
+        qualifier="DEFAULT",
+        message="Tokyo options grounded in traveler context.",
+        recommended_package_ids=["pkg-1"],
+        follow_ups=[],
+        activities=[{"id": "rt-1", "timestamp": "t", "activity_type": "search",
+                     "title": "AgentCore Gateway · tools/call → semantic_trip_search"}],
+        packages=[{"package_id": "pkg-1", "name": "Tokyo Replan", "similarity": 0.9}],
+        trace_id="abc123",
+        usage={"inputTokens": 10, "outputTokens": 5},
+        elapsed_ms=1200,
+    )
+    base.update(overrides)
+    return RuntimeDecision(**base)
+
+
+def test_production_turn_releases_transactions_before_the_runtime_call(monkeypatch):
+    events, calls = [], []
+    agent = build_agent(events, runtime_decision(), calls)
+    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
 
     result = asyncio.run(
-        agent.process_turn(
-            "Rework my Tokyo trip",
-            "trv_meridian_demo",
-            None,
-            5,
-        )
+        agent.process_turn("Rework my Tokyo trip", "trv_meridian_demo", None, 5, travelers_count=2)
     )
 
-    assert result[3] == "conv-test"
-    assert db.tx_count == 2
+    packages, activities, message, conv_id, facts = result
+    assert conv_id == "conv-test"
+    assert message == "Tokyo options grounded in traveler context."
+    assert packages[0].package_id == "pkg-1"
+    assert packages[0].similarity == 0.9
+    assert packages[0].availability == {"7 nights": 4}
+    assert facts[1]["key"] == "budget"
+    assert agent.db.tx_count == 2
     read_commit = events.index("tx-1:commit")
-    write_commit = events.index("tx-2:commit")
-    for external_event in (
-        "external:runtime",
-        "external:memory-list",
-        "external:memory-recall",
-        "external:gateway",
-    ):
-        assert events.index(external_event) > read_commit
-        assert events.index(external_event) < events.index("tx-2:open")
-    assert events.index("external:memory-write") > write_commit
-    assert memory_agent._transaction_id is None
-    assert memory_agent._prepared_turn_vectors is None
+    write_open = events.index("tx-2:open")
+    runtime_call = events.index("external:runtime")
+    assert read_commit < runtime_call < write_open
+    assert events.index("aurora:hydrate") < write_open
+    assert "aurora:audit:production_turn" in events
+    _args, kwargs = calls[0]
+    assert kwargs["budget_ceiling_cents"] == 700000
+    assert kwargs["travelers_count"] == 2
+    assert "hold_confirmed" not in kwargs
+    titles = [entry.title for entry in activities]
+    assert "AgentCore Gateway · tools/call → semantic_trip_search" in titles
+    assert "AgentCore Runtime · turn complete" in titles
+    runtime_span = next(a for a in activities if a.title == "AgentCore Runtime · turn complete")
+    labels = {f["label"]: f["value"] for f in runtime_span.telemetry["fields"]}
+    assert labels["trace_id"] == "abc123"
+    assert labels["trace_console"].endswith("rt-1-DEFAULT")

@@ -11,10 +11,13 @@ Resource ARNs/URLs resolve via ``backend/agentcore/cli_config.py`` from
 ``agentcore status --json``.
 
 Phase 4 platform story:
-  Runtime  — session-isolated agent hosting
-  Gateway  — managed MCP (tools/list + tools/call)
-  Memory   — managed session store
+  Runtime  — session-isolated agent hosting; the agent owns the tool loop and
+             its AgentCore Memory session (see meridian_agentcore/app/MeridianConcierge)
+  Gateway  — managed MCP (tools/list + tools/call) with Cedar policy in ENFORCE mode
   Identity — workload identity + resource credentials
+
+The backend keeps three adapters: the runtime client that streams the turn, the
+gateway client used only for laptop-side checks, and the identity envelope.
 
 AWS docs:
   - AgentCore overview:
@@ -30,7 +33,6 @@ from backend.agentcore.cli_config import (
 )
 from backend.agentcore.gateway import get_agentcore_gateway
 from backend.agentcore.identity import get_agentcore_identity
-from backend.agentcore.memory import get_agentcore_memory
 from backend.agentcore.runtime import get_agentcore_runtime
 
 __all__ = [
@@ -39,6 +41,5 @@ __all__ = [
     "resolve_agentcore_config",
     "get_agentcore_gateway",
     "get_agentcore_identity",
-    "get_agentcore_memory",
     "get_agentcore_runtime",
 ]
