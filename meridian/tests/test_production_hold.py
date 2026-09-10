@@ -36,7 +36,7 @@ def test_confirmed_hold_is_sent_to_the_runtime_and_recorded(monkeypatch):
     assert kwargs["hold_target"] == {
         "package_id": "CTY-002", "duration": "7 nights", "travelers": 2, "unit_price_cents": 250000,
     }
-    assert kwargs["budget_ceiling_cents"] == 700000
+    assert kwargs["budget_ceiling_cents"] == 640000
     assert events.index("tx-1:commit") < events.index("external:runtime") < events.index("tx-2:open")
     assert "aurora:audit:production_hold" in events
     titles = [entry.title for entry in outcome.activities]

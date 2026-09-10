@@ -120,6 +120,7 @@ class AuthorizedRead:
     conv_id: str
     memory_context: str
     memory_facts: List[Dict[str, Any]]
+    budget_facts: List[Dict[str, Any]]
 
 
 class ProductionAgent:
@@ -281,6 +282,11 @@ class ProductionAgent:
                 similar = await self.traveler_memory.recall_similar_interactions(
                     traveler_id, message
                 )
+                # The specialist recalls the top facts by confidence for the reply; the
+                # budget ceiling the policy compares against needs every fact.
+                budget_facts = await self.store.recall_preferences(
+                    traveler_id, limit=50, transaction_id=read_tx
+                )
         finally:
             self.traveler_memory._transaction_id = None
             self.traveler_memory._prepared_query_vector = None
@@ -289,7 +295,13 @@ class ProductionAgent:
         context = self.store.format_memory_context(
             profile, session.get("turns", []), facts, similar.get("interactions", [])
         )
-        return AuthorizedRead(scope=scope, conv_id=conv_id, memory_context=context, memory_facts=facts)
+        return AuthorizedRead(
+            scope=scope,
+            conv_id=conv_id,
+            memory_context=context,
+            memory_facts=facts,
+            budget_facts=budget_facts,
+        )
 
     # -------------------------------------------------------------- runtime
 
@@ -335,7 +347,7 @@ class ProductionAgent:
             traveler_id,
             message,
             read.memory_context,
-            budget_ceiling_cents=budget_ceiling_from_facts(read.memory_facts, travelers),
+            budget_ceiling_cents=budget_ceiling_from_facts(read.budget_facts, travelers),
             travelers_count=travelers,
             **hold,
         )

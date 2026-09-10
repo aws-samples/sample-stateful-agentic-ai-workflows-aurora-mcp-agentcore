@@ -60,6 +60,15 @@ class FakeStore:
         self.events.append("aurora:profile")
         return {"home_airport": "JFK"}
 
+    async def recall_preferences(self, _traveler_id, limit=8, transaction_id=None):
+        assert transaction_id == self.db.active_tx
+        assert limit >= 20, "the budget ceiling must see every fact, not the top eight"
+        self.events.append("aurora:budget-facts")
+        return [
+            {"key": "home_airport", "value": "JFK", "source": "profile", "confidence": 1.0},
+            {"key": "budget_cap", "value": "$3,200", "source": "search_analytics", "confidence": 0.88},
+        ]
+
     @staticmethod
     def format_memory_context(*_args):
         return "Alex flies from JFK"
@@ -181,8 +190,9 @@ def test_production_turn_releases_transactions_before_the_runtime_call(monkeypat
     assert events.index("aurora:hydrate") < write_open
     assert "aurora:audit:production_turn" in events
     _args, kwargs = calls[0]
-    assert kwargs["budget_ceiling_cents"] == 700000
+    assert kwargs["budget_ceiling_cents"] == 640000
     assert kwargs["travelers_count"] == 2
+    assert events.index("aurora:budget-facts") < events.index("tx-1:commit")
     assert "hold_confirmed" not in kwargs
     titles = [entry.title for entry in activities]
     assert "AgentCore Gateway · tools/call → semantic_trip_search" in titles
