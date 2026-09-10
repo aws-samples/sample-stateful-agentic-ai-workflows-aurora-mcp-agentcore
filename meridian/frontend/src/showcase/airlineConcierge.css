@@ -216,6 +216,9 @@
 .mds-root .is-discovery .mds-chat-action-chip.is-active { color: var(--mc-accent); }
 .mds-root .is-discovery .mds-chip-pop { background: var(--mc-surface); color: var(--mc-ink); border-color: var(--mc-line); }
 .mds-root .is-discovery .mds-trip-modal { background: var(--mc-surface); color: var(--mc-ink); }
+/* Inside the concierge --mds-blue is the pale text accent, so filled actions take
+   the action blue explicitly: white on blue, the same as every other surface. */
+.mds-root .is-discovery :is(.mds-trip-modal-actions .is-primary, .mds-compare-copy .is-primary, .mds-popover-primary, .mds-trip-confirm button) { background: var(--mc-action); border-color: var(--mc-action); color: var(--mc-on-action); }
 .mds-root .is-discovery .mds-trip-modal-body h2 { font-family: var(--mds-font); }
 .mds-root .is-discovery .mds-trip-facts b { color: var(--mc-ink); }
 .mds-root .is-discovery .mds-toast { background: var(--mc-ink); color: var(--mc-ground); }
