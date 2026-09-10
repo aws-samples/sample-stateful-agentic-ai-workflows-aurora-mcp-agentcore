@@ -23,7 +23,7 @@
         { "name": "OTEL_RESOURCE_ATTRIBUTES", "value": "service.name=meridian-concierge" },
         { "name": "BEDROCK_MODEL_ID", "value": "global.anthropic.claude-sonnet-5" },
         { "name": "MERIDIAN_GATEWAY_ID", "value": "meridianv2-meridian-aurora-temzt21jg0" },
-        { "name": "MERIDIAN_POLICY_ENGINE_ID", "value": "MeridianGovernance" }
+        { "name": "MERIDIAN_POLICY_ENGINE_ID", "value": "meridianv2_MeridianGovernance-b2uv1vlg3k" }
       ]
     }
   ],
