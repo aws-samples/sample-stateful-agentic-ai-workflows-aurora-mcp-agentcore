@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backend.agents.production_04.budget import budget_ceiling_from_facts
+from backend.agents.budget import budget_ceiling_from_facts
 
 
 def test_budget_fact_with_a_range_uses_the_upper_bound_per_traveler():

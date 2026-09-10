@@ -47,7 +47,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from backend.agentcore.cli_config import require_agentcore_platform
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agentcore.runtime import RuntimeDecision, get_agentcore_runtime
-from backend.agents.production_04.budget import budget_ceiling_from_facts
+from backend.agents.budget import budget_ceiling_from_facts
 from backend.agents.production_04.memory_agent import (
     ActivityEntry as MemoryActivity,
     MemoryAgent as TravelerMemorySpecialist,

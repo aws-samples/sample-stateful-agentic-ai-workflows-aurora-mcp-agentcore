@@ -3,6 +3,9 @@
 The ceiling is an integer number of cents because Cedar has no floating point
 type. It comes from the traveler's saved budget fact in Aurora, read under RLS
 by the backend before the runtime turn, so the model never chooses it.
+
+Shared by the Phase 4 concierge and the Phase 5 workflow, and kept outside
+the Phase 4 package so importing it does not load that agent stack.
 """
 
 from __future__ import annotations

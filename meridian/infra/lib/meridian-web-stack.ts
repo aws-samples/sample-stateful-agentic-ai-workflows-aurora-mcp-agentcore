@@ -4,17 +4,13 @@ import * as apprunner from '@aws-cdk/aws-apprunner-alpha';
 import {
   CfnOutput,
   Duration,
-  IgnoreMode,
   RemovalPolicy,
   Stack,
   type StackProps,
   aws_cloudfront as cloudfront,
   aws_cloudfront_origins as origins,
-  aws_ecr_assets as ecrAssets,
-  aws_iam as iam,
   aws_s3 as s3,
   aws_s3_deployment as s3deploy,
-  aws_secretsmanager as secretsmanager,
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
@@ -94,68 +90,15 @@ export function loadServiceEnvironment(region: string): Record<string, string> {
 }
 
 export interface MeridianWebStackProps extends StackProps {
-  /** From loadServiceEnvironment(); shared with the roles stack. */
-  environment: Record<string, string>;
-  /** The App Runner instance role from MeridianWebRolesStack, deployed and propagated first. */
-  instanceRole: iam.IRole;
+  /** The backend from MeridianWebBackendStack; the distribution routes the API to it. */
+  service: apprunner.Service;
 }
 
+/** The site: the Vite build in S3, CloudFront with the viewer function, and the KeyValueStore. */
 export class MeridianWebStack extends Stack {
   constructor(scope: Construct, id: string, props: MeridianWebStackProps) {
     super(scope, id, props);
-    const { environment, instanceRole } = props;
-
-    // App Runner needs the complete secret ARN (with its suffix) to read the token at
-    // deployment; scripts/publish.py creates the secret and passes the ARN through.
-    const apiTokenArn = process.env.MERIDIAN_API_TOKEN_SECRET_ARN;
-    if (!apiTokenArn) {
-      throw new Error(`MERIDIAN_API_TOKEN_SECRET_ARN is not set; run scripts/publish.py, which creates ${API_TOKEN_SECRET_NAME}`);
-    }
-    const apiToken = secretsmanager.Secret.fromSecretCompleteArn(this, 'ApiToken', apiTokenArn);
-
-    const image = new ecrAssets.DockerImageAsset(this, 'BackendImage', {
-      directory: meridianDir,
-      file: 'Dockerfile',
-      platform: ecrAssets.Platform.LINUX_AMD64,
-      ignoreMode: IgnoreMode.DOCKER,
-    });
-
-    const service = new apprunner.Service(this, 'Backend', {
-      serviceName: 'meridian-web',
-      source: apprunner.Source.fromAsset({
-        asset: image,
-        imageConfiguration: {
-          port: 8000,
-          environmentVariables: environment,
-          environmentSecrets: {
-            MERIDIAN_API_TOKEN: apprunner.Secret.fromSecretsManager(apiToken),
-          },
-        },
-      }),
-      instanceRole,
-      cpu: apprunner.Cpu.ONE_VCPU,
-      memory: apprunner.Memory.TWO_GB,
-      autoDeploymentsEnabled: false,
-      // TCP on purpose. Every deployment configured with an HTTP health check on
-      // /health at a 10 second interval failed in us-east-1 before App Runner
-      // provisioned an instance, with no application log, while the same image
-      // and command passed a TCP check. Uvicorn binds the port only after the lifespan startup finishes,
-      // and that startup initialises the Aurora checkpoint backend, so an open
-      // port already means the backend is ready.
-      healthCheck: apprunner.HealthCheck.tcp({
-        interval: Duration.seconds(10),
-        timeout: Duration.seconds(5),
-        healthyThreshold: 1,
-        unhealthyThreshold: 5,
-      }),
-      autoScalingConfiguration: new apprunner.AutoScalingConfiguration(this, 'BackendScaling', {
-        autoScalingConfigurationName: 'meridian-web',
-        minSize: 1,
-        maxSize: 2,
-        maxConcurrency: 25,
-      }),
-    });
-    apiToken.grantRead(instanceRole);
+    const { service } = props;
 
     const site = new s3.Bucket(this, 'Site', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -219,8 +162,6 @@ export class MeridianWebStack extends Stack {
 
     new CfnOutput(this, 'SiteUrl', { value: `https://${distribution.distributionDomainName}` });
     new CfnOutput(this, 'DistributionId', { value: distribution.distributionId });
-    new CfnOutput(this, 'BackendUrl', { value: `https://${service.serviceUrl}` });
-    new CfnOutput(this, 'BackendServiceArn', { value: service.serviceArn });
     new CfnOutput(this, 'AccessStoreArn', { value: access.keyValueStoreArn });
     new CfnOutput(this, 'ApiTokenSecretName', { value: API_TOKEN_SECRET_NAME });
   }

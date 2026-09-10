@@ -116,7 +116,7 @@ python scripts/publish.py           # writes the secret, builds, deploys, fills 
 The script prints the URL and writes the password and token to
 `.local/published.json` (gitignored). Re-run it to redeploy; pass
 `--skip-frontend` to reuse `frontend/dist`. Tear down with
-`cd infra && npx cdk destroy MeridianWeb`.
+`cd infra && npx cdk destroy MeridianWeb MeridianWebBackend MeridianWebRoles`.
 
 For an existing database created before identity binding was added:
 

@@ -54,7 +54,10 @@ from backend.agents.orchestration_05.governed_hold import (
     hold_arguments,
     place_governed_hold,
 )
-from backend.agents.production_04.budget import budget_ceiling_from_facts
+# Shared with Phase 4 but deliberately outside its package: this module is
+# imported at startup, and importing the Phase 4 concierge stack there breaks
+# the App Runner deployment (see docs/AGENTCORE_LEARNINGS.md).
+from backend.agents.budget import budget_ceiling_from_facts
 from backend.db.journey_store import ExecutionLeaseLostError, ScopedDb, ensure_journey
 from backend.agents.orchestration_05.packages import (
     first_available_duration,

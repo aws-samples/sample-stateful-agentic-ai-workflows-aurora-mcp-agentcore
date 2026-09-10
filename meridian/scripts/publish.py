@@ -43,8 +43,12 @@ PUBLISHED = LOCAL / "published.json"
 OUTPUTS = LOCAL / "cdk-outputs.json"
 STACK = "MeridianWeb"
 ROLES_STACK = "MeridianWebRoles"
+BACKEND_STACK = "MeridianWebBackend"
 # IAM propagation. App Runner fails to deploy a service whose instance role was created moments earlier.
 ROLE_PROPAGATION_SECONDS = 90
+# App Runner service creation fails intermittently in this account with no application
+# log; the same definition deploys minutes later. The backend stack is retried on its own.
+BACKEND_ATTEMPTS = 3
 SECRET_NAME = "meridian/web/api-token"
 USER = "meridian"
 
@@ -105,12 +109,12 @@ def stack_is_live(region: str, name: str) -> bool:
 
 
 def deploy_stack(engine: str, region: str, secret_arn: str) -> dict:
-    """Deploy the CDK stacks in the same region as Aurora, AgentCore and the token secret.
+    """Deploy the CDK stacks, in order, in the region of Aurora, AgentCore and the token secret.
 
-    The instance role is deployed on its own first. App Runner fails to deploy a
-    service whose role was created in the same CloudFormation run, so after the
-    roles stack is created the script waits for IAM to propagate the role before
-    deploying the service.
+    The instance role goes first; App Runner cannot deploy a service whose role was
+    created in the same CloudFormation run, so after the roles stack is created the
+    script waits for IAM to propagate it. The App Runner backend is deployed next and
+    retried on its own when App Runner fails, and the site behind CloudFront last.
     """
     run(["npm", "ci"], INFRA)
     run(["npm", "run", "build"], INFRA)
@@ -124,17 +128,30 @@ def deploy_stack(engine: str, region: str, secret_arn: str) -> dict:
         "CDK_DEFAULT_REGION": region,
     }
     roles_are_new = not stack_is_live(region, ROLES_STACK)
-    run(["npx", "cdk", "deploy", ROLES_STACK, "--exclusively", "--require-approval", "never"], INFRA, env=env)
+    cdk_deploy(ROLES_STACK, env)
     if roles_are_new:
         print(f"Waiting {ROLE_PROPAGATION_SECONDS}s for the new App Runner instance role to propagate...")
         time.sleep(ROLE_PROPAGATION_SECONDS)
+    for attempt in range(1, BACKEND_ATTEMPTS + 1):
+        try:
+            cdk_deploy(BACKEND_STACK, env)
+            break
+        except subprocess.CalledProcessError:
+            if attempt == BACKEND_ATTEMPTS:
+                raise
+            print(f"App Runner did not deploy the backend (attempt {attempt} of {BACKEND_ATTEMPTS}); retrying...")
+    cdk_deploy(STACK, env)
+    outputs = json.loads(OUTPUTS.read_text())
+    return {**outputs[BACKEND_STACK], **outputs[STACK]}
+
+
+def cdk_deploy(stack: str, env: dict) -> None:
     run(
-        ["npx", "cdk", "deploy", STACK, "--exclusively", "--require-approval", "never",
+        ["npx", "cdk", "deploy", stack, "--exclusively", "--require-approval", "never",
          "--outputs-file", str(OUTPUTS)],
         INFRA,
         env=env,
     )
-    return json.loads(OUTPUTS.read_text())[STACK]
 
 
 def write_access_store(region: str, kvs_arn: str, published: dict) -> None:

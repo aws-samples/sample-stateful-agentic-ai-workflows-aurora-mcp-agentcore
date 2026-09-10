@@ -22,7 +22,7 @@ chat composer live inside step 2; the landing view has neither.
 Production and Orchestration modes import agent / workflow modules at runtime:
 
 - `backend/agents/production_04/concierge.py` — identity, traveler grant, RLS read and write around the managed runtime; `process_hold()` for the one-click hold
-- `backend/agents/production_04/budget.py` — the hold budget ceiling the Cedar policy compares against
+- `backend/agents/budget.py` — the hold budget ceiling the Cedar policy compares against, shared by Phases 4 and 5
 - `backend/agents/production_04/memory_agent.py` — `@tool` recall/persist methods
 - `backend/agents/orchestration_05/workflow.py` — LangGraph `StateGraph` + shared pooled `PostgresSaver`/ephemeral `MemorySaver`
 - `backend/agentcore/runtime.py`, `backend/agentcore/identity.py` — Bedrock AgentCore adapters (streaming runtime client, identity envelope)
