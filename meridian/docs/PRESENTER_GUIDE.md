@@ -24,6 +24,15 @@ The central message is:
 
 ## Before the Demo
 
+If you are presenting from the published site rather than localhost, get the
+address and confirm it is up. The password lands on the clipboard and is never
+printed, so this is safe to run once you are already sharing your screen:
+
+```bash
+cd meridian
+python scripts/published.py --open
+```
+
 Start the backend:
 
 ```bash

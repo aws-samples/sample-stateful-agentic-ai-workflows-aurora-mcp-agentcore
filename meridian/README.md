@@ -117,6 +117,16 @@ The script prints the URL and writes the password and token to
 `.local/published.json` (gitignored). Re-run it to redeploy; pass
 `--skip-frontend` to reuse `frontend/dist`.
 
+The address and its credentials name one AWS account, and this repository is
+public, so none of them are committed. Read them back on the machine that
+published, which also checks the site is up and puts the password on the
+clipboard without printing it, so it is safe to run on a shared screen:
+
+```bash
+python scripts/published.py          # address, user, status; password copied
+python scripts/published.py --open   # also open it in the browser
+```
+
 The App Runner instance role is a workload like the gateway Lambda, so it needs
 its own grant before it can set a traveler scope. Run this once after the roles
 stack exists, or every Phase 4 and Phase 5 request on the published site fails
