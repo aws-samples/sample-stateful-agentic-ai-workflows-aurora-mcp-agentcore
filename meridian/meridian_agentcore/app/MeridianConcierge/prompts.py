@@ -46,11 +46,18 @@ def system_prompt(hold_confirmed: bool, hold_target: dict | None) -> str:
     return BASE + "\n" + (CONFIRMED if hold_confirmed and hold_target else UNCONFIRMED)
 
 
-def narration_prompt(outcome: str, hold_target: dict | None) -> str:
+def narration_prompt(outcome: str, hold_target: dict | None, budget_ceiling_cents: int = 0) -> str:
     """The turn prompt for a confirmed hold the platform already executed."""
+    ceiling = (
+        f"${budget_ceiling_cents / 100:,.2f} for this party"
+        if budget_ceiling_cents
+        else "not set"
+    )
     return (
         "The traveler confirmed a courtesy hold with the Hold button for these terms:\n"
         + json.dumps(hold_target or {}, ensure_ascii=False)
+        + f"\n\nThe saved budget ceiling the policy used on this turn: {ceiling}. Earlier "
+        "turns may have used a different ceiling; only this one applies now."
         + "\n\nThe gateway's decision on this turn:\n"
         + outcome
     )

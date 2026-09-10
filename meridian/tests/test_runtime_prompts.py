@@ -15,8 +15,9 @@ def test_confirmed_turn_has_no_tools_and_narrates_the_platform_decision():
     target = {"package_id": "CTY-002", "duration": "5 nights", "travelers": 2}
     system = system_prompt(hold_confirmed=True, hold_target=target)
     assert "already placed" in system and "no tools" in system
-    prompt = narration_prompt("Hold HLD-9 is held for CTY-002", target)
+    prompt = narration_prompt("Hold HLD-9 is held for CTY-002", target, 640000)
     assert "HLD-9" in prompt and "CTY-002" in prompt and "gateway's decision" in prompt
+    assert "$6,400.00 for this party" in prompt and "only this one applies now" in prompt
 
 
 def test_system_prompt_names_the_tools_and_the_confirmation_rule():

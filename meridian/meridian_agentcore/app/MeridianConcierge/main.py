@@ -219,7 +219,7 @@ async def run(payload: dict):
             callback_handler=None,
         )
         if outcome is not None:
-            prompt = narration_prompt(outcome, hold_target)
+            prompt = narration_prompt(outcome, hold_target, turn.budget_ceiling_cents)
         else:
             prompt = turn_prompt(
                 str(payload.get("prompt", "")),
