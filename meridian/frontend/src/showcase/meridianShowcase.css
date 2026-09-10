@@ -591,8 +591,9 @@
 /* Inline code sits in the white bubble, so it takes ink on a light fill. Code
    blocks keep the dark console treatment (see .mds-md pre above). */
 .mds-root[data-theme="light"] .mds-md code {
-  background: var(--mds-fill-2);
-  color: var(--mds-ink);
+  border-color: rgb(var(--mds-blue-rgb) / 0.4);
+  background: rgb(var(--mds-blue-rgb) / 0.1);
+  color: var(--mds-blue);
 }
 .mds-root[data-theme="light"] .mds-md pre code {
   background: transparent;
@@ -1927,7 +1928,7 @@
   padding: 13px 16px;
   border: 0;
   border-radius: 16px;
-  color: #f0f5fa;
+  color: #ffffff;
   background: rgba(255, 255, 255, 0.06);
   font-size: calc(14.5px * var(--mds-fs));
   font-weight: 460;
@@ -1938,16 +1939,19 @@
   transition: box-shadow 220ms ease, background 220ms ease;
 }
 
+/* Alex's turn: a clean blue with pure white text, weighted up a notch so it
+   reads on a projector in a dark room. */
 .mds-message.user .mds-message-bubble {
   border-radius: 16px 16px 4px 16px;
-  background: rgba(36, 69, 112, 0.62);
-  color: var(--mds-on-surface);
+  background: rgb(var(--mds-blue-rgb) / 0.42);
+  color: #ffffff;
+  font-weight: 500;
 }
 
 .mds-message.bot .mds-message-bubble {
   border-radius: 16px 16px 16px 4px;
   background: rgba(255, 255, 255, 0.05);
-  color: #f0f5fa;
+  color: #ffffff;
 }
 
 /* The pre-reply "thinking" bubble gets a cyan left-border accent so the
@@ -2083,13 +2087,17 @@
   font-style: italic;
 }
 
+/* Tool and column names inside a reply: a proper highlight chip, not a
+   whisper, so the audience can read the identifier from the back row. */
 .mds-md code {
-  padding: 1px 6px;
-  border-radius: 5px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #d4f9ff;
+  padding: 2px 8px;
+  border: 1px solid rgb(var(--mds-blue-rgb) / 0.55);
+  border-radius: 6px;
+  background: rgb(var(--mds-blue-rgb) / 0.24);
+  color: #ffffff;
   font-family: var(--mds-font-mono);
   font-size: 0.92em;
+  font-weight: 600;
 }
 
 .mds-md pre {
