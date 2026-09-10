@@ -385,6 +385,11 @@
   border-color: rgba(154, 103, 0, 0.30);
   color: var(--mds-yellow);
 }
+.mds-root[data-theme="light"] .mds-chat-starter-chip.is-works {
+  background: rgb(var(--mds-green-rgb) / 0.07);
+  border-color: rgb(var(--mds-green-rgb) / 0.4);
+  color: var(--mds-on-surface);
+}
 .mds-root[data-theme="light"] .mds-chat-phase-framing {
   background: rgba(15, 23, 42, 0.04);
   border-color: var(--mds-line);
@@ -3930,6 +3935,31 @@
 /* Stretch query: third pill in each phase that exposes the phase's
    limit. Amber dashed border + a leading arrow so it's visually distinct
    from the two known-good queries. */
+/* A prompt this phase answers: green, the same signal as a completed step.
+   The stretch prompt below stays amber: it needs the next rung. */
+.mds-chat-starter-chip.is-works {
+  border-color: rgb(var(--mds-green-rgb) / 0.55);
+  color: var(--mds-on-surface);
+  background: rgb(var(--mds-green-rgb) / 0.1);
+}
+
+.mds-chat-starter-chip.is-works small {
+  color: var(--mds-green);
+}
+
+.mds-chat-starter-chip.is-works small::before {
+  content: "\2713";
+  margin-right: 5px;
+  font-weight: 700;
+}
+
+.mds-chat-starter-chip.is-works:hover,
+.mds-chat-starter-chip.is-works:focus-visible {
+  border-color: rgb(var(--mds-green-rgb) / 0.85);
+  background: rgb(var(--mds-green-rgb) / 0.18);
+  outline: none;
+}
+
 .mds-chat-starter-chip.is-stretch {
   border-style: dashed;
   border-color: rgb(var(--mds-recovery-yellow-rgb) / 0.45);

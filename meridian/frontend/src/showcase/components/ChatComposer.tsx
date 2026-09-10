@@ -98,7 +98,7 @@ export function ChatComposer({
               <button
                 key={prompt}
                 type="button"
-                className={`mds-chat-starter-chip${isStretch ? ' is-stretch' : ''}`}
+                className={`mds-chat-starter-chip${isStretch ? ' is-stretch' : proofMode ? ' is-works' : ''}`}
                 disabled={state.isLoading}
                 onClick={() => void state.applyPhaseExample(prompt, true, conciergeMode ? 4 : undefined)}
                 aria-label={accessibleLabel}
