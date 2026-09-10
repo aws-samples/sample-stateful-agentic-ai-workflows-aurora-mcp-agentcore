@@ -24,6 +24,13 @@ Short notes from getting Phase 4 fully live with AgentCore Runtime + Gateway + M
 - **Observability is two env vars away**: the CLI already wraps the entrypoint with `opentelemetry-instrument`; `AGENT_OBSERVABILITY_ENABLED=true`, `OTEL_PYTHON_DISTRO=aws_distro` and `OTEL_PYTHON_CONFIGURATOR=aws_configurator` put spans and logs, with the trace id, into the runtime's log group (`spans` and `otel-rt-logs` streams).
 - **`GetGateway` returns the engine under `policyEngineConfiguration.arn`**, not `policyEngineArn`.
 
+- **Run the global `agentcore` binary, not `npx agentcore`.** On this machine `npx agentcore`
+  resolves a stale cached 0.16.0 whose bundled CDK toolkit cannot read the cloud assembly
+  schema the project's `aws-cdk-lib` emits ("Maximum schema version supported is 53.x.x, but
+  found 54.0.0"). The installed `agentcore` 0.27.0 deploys the same project without any
+  version pin. Adding a tool and a policy that names it still takes two deploys: the tool
+  first, then the policy, because the policy validates against the gateway's actions.
+
 ## What We Learned Publishing Behind CloudFront (September 2026)
 
 - **Phase 5 holds go through the gateway too**: the workflow node passes its checkpointed `holdRequestId`, `bookingId` and `executionId`; the Lambda re-checks the worker lease with `SELECT ... FOR UPDATE` inside the write transaction, so Cedar sees every hold and a restarted worker replays the same booking.

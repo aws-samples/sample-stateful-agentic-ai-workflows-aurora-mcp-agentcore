@@ -12,8 +12,8 @@ demo. Designed to be runnable in one sitting (~15 min hands-on,
 | **Memory** | `meridian_session` | The agent's session store; the Strands session manager restores it and writes each turn back |
 | **Gateway** | `meridian-aurora` | Managed MCP endpoint, AWS_IAM inbound, Cedar policy engine attached in ENFORCE mode |
 | **Gateway target** | `SemanticTripSearchLambda` | `semantic_trip_search(query, limit)` over Aurora pgvector |
-| **Gateway target** | `MeridianHolds` | CDK-built Lambda: `get_package_details(packageId)` and `create_courtesy_hold(...)` with the identity chain |
-| **Policy engine** | `MeridianGovernance` | `meridian_read_tools` permits the reads; `meridian_hold_governance` permits the hold only when confirmed, at most 12 hours, at most 6 travelers, within budget |
+| **Gateway target** | `MeridianHolds` | CDK-built Lambda: `get_package_details(packageId)`, `create_courtesy_hold(...)` and `confirm_booking(...)` with the identity chain |
+| **Policy engine** | `MeridianGovernance` | `meridian_read_tools` permits the reads; `meridian_hold_governance` permits the hold only when confirmed, at most 12 hours, at most 6 travelers, within budget; `meridian_booking_governance` permits the confirmation only when confirmed and within budget |
 
 All of them are declared in
 [`meridian_agentcore/agentcore/agentcore.json`](../meridian_agentcore/agentcore/agentcore.json).
@@ -109,7 +109,7 @@ AgentCore data-plane calls.
 ```bash
 cd meridian
 
-# Runtime, Gateway, Memory, policy engine (ACTIVE · ENFORCE), three tools, observability:
+# Runtime, Gateway, Memory, policy engine (ACTIVE · ENFORCE), four tools, observability:
 python scripts/verify_agentcore.py
 
 # tools/list plus one get_package_details call, signed from this laptop:
@@ -127,11 +127,13 @@ cd meridian_agentcore && agentcore logs --runtime MeridianConcierge --follow
 In the showcase trace panel you should see (real, not faked):
 - `AgentCore Identity resolved` and `Workload traveler grant allowed`
 - `AgentCore Runtime · turn started`
-- `AgentCore Gateway · tools/list` with three tools, SigV4
+- `AgentCore Gateway · tools/list` with four tools, SigV4
 - `AgentCore Memory · session restored` with the event count
 - `AgentCore Gateway · tools/call → semantic_trip_search` and its result
 - On a Hold click: `tools/call → create_courtesy_hold`, its result with the
   Lambda's workload subject and `traveler_grant: allow`, and the hold receipt
+- On a Confirm click: `tools/call → confirm_booking`, its result under
+  `meridian_booking_governance`, and the receipt as **Confirmed booking**
 - On a typed hold: `Hold refused by Cedar policy · Denied by policy`
 - `AgentCore Runtime · turn complete` with the trace id and a CloudWatch link
 

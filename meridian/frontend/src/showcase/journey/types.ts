@@ -50,6 +50,8 @@ export type JourneyHold = {
   hold_expires_at: string | null;
   hold_created_at?: string | null;
   observed_at?: string | null;
+  /** Set once the traveler confirmed the booking; catalog inventory only, no payment. */
+  confirmed_at?: string | null;
   package_id: string | null;
   duration: string | null;
   travelers_count: number | null;

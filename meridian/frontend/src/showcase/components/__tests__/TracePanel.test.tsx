@@ -21,6 +21,7 @@ const traceSpan: ShowcaseTraceSpan = {
 function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShowcaseState {
   return {
     tripHolds: [],
+    bookingPrompt: null,
     travelersCount: 1,
     restoreJourney: vi.fn(),
     selectedPhase: 1,
@@ -92,6 +93,10 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     openTripDetails: vi.fn(),
     closeTripDetails: vi.fn(),
     holdTrip: vi.fn(),
+    requestBookingConfirmation: vi.fn(),
+    dismissBookingConfirmation: vi.fn(),
+    confirmTrip: vi.fn(),
+    adoptJourneyHold: vi.fn(),
     planTrip: vi.fn(),
     saveTrip: vi.fn(),
     compareTrip: vi.fn(),

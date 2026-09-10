@@ -1,11 +1,12 @@
-"""The confirmed hold is executed by the platform, not proposed by the model.
+"""Confirmed writes are executed by the platform, not proposed by the model.
 
-When the traveler clicks Hold, the terms are already exact and the confirmation
-is already given. Leaving that call to the model would make a confirmed action
-depend on the model's willingness, and a model that remembers an earlier
-refusal in the same conversation will decline to try again. So the runtime
-places the call itself, through the same gateway tool, with the same pinned
-arguments and the same Cedar decision, and the model only narrates the outcome.
+When the traveler clicks Hold or Confirm, the terms are already exact and the
+confirmation is already given. Leaving that call to the model would make a
+confirmed action depend on the model's willingness, and a model that remembers
+an earlier refusal in the same conversation will decline to try again. So the
+runtime places the call itself, through the same gateway tool, with the same
+pinned arguments and the same Cedar decision, and the model only narrates the
+outcome.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import uuid
 from types import SimpleNamespace
 
 HOLD_TOOL = "MeridianHolds___create_courtesy_hold"
+BOOKING_TOOL = "MeridianHolds___confirm_booking"
 HOLD_MINUTES = 720
 
 
@@ -31,6 +33,40 @@ def confirmed_hold_arguments(hold_target: dict) -> dict:
     }
 
 
+def confirmed_booking_arguments(booking_target: dict) -> dict:
+    """Tool arguments for the held booking the traveler confirmed with the Confirm button."""
+    return {
+        "bookingId": str(booking_target["booking_id"]),
+        "totalCents": int(booking_target["total_cents"]),
+    }
+
+
+def _platform_call(hooks, call_tool, tool_name: str, arguments: dict, prefix: str):
+    """Run one governed tool call through the hooks; return the event and any cancellation."""
+    event = SimpleNamespace(
+        tool_use={
+            "name": tool_name,
+            "toolUseId": f"{prefix}-{uuid.uuid4().hex[:12]}",
+            "input": arguments,
+        },
+        cancel_tool=False,
+        result=None,
+    )
+    hooks.before(event)
+    if event.cancel_tool:
+        return event, str(event.cancel_tool)
+    event.result = call_tool(event.tool_use["toolUseId"], tool_name, event.tool_use["input"])
+    hooks.after(event)
+    return event, None
+
+
+def _result_text(event) -> str:
+    content = event.result.get("content") if isinstance(event.result, dict) else None
+    return " ".join(
+        block.get("text", "") for block in (content or []) if isinstance(block, dict)
+    ).strip()
+
+
 def execute_confirmed_hold(hooks, call_tool, hold_target: dict, tool_name: str = HOLD_TOOL) -> str:
     """Call the governed hold tool once with pinned arguments and return the explained outcome.
 
@@ -45,20 +81,11 @@ def execute_confirmed_hold(hooks, call_tool, hold_target: dict, tool_name: str =
     Returns:
         The one-line summary the model narrates: the hold, or the explained refusal.
     """
-    event = SimpleNamespace(
-        tool_use={
-            "name": tool_name,
-            "toolUseId": f"hold-{uuid.uuid4().hex[:12]}",
-            "input": confirmed_hold_arguments(hold_target),
-        },
-        cancel_tool=False,
-        result=None,
+    event, cancelled = _platform_call(
+        hooks, call_tool, tool_name, confirmed_hold_arguments(hold_target), "hold"
     )
-    hooks.before(event)
-    if event.cancel_tool:
-        return str(event.cancel_tool)
-    event.result = call_tool(event.tool_use["toolUseId"], tool_name, event.tool_use["input"])
-    hooks.after(event)
+    if cancelled:
+        return cancelled
     if hooks.hold:
         hold = hooks.hold
         return (
@@ -67,8 +94,36 @@ def execute_confirmed_hold(hooks, call_tool, hold_target: dict, tool_name: str =
             f"${hold.get('totalAmount')}, expires {hold.get('expiresAt')}, "
             f"{hold.get('seatsRemaining')} places remaining."
         )
-    content = event.result.get("content") if isinstance(event.result, dict) else None
-    text = " ".join(
-        block.get("text", "") for block in (content or []) if isinstance(block, dict)
-    ).strip()
-    return text or "The gateway did not place the hold and gave no reason."
+    return _result_text(event) or "The gateway did not place the hold and gave no reason."
+
+
+def execute_confirmed_booking(
+    hooks, call_tool, booking_target: dict, tool_name: str = BOOKING_TOOL
+) -> str:
+    """Call the governed confirm tool once with pinned arguments and return the explained outcome.
+
+    Args:
+        hooks: The turn's TraceHooks, as for ``execute_confirmed_hold``.
+        call_tool: As for ``execute_confirmed_hold``.
+        booking_target: ``{"booking_id", "total_cents", "package_id", "duration", "travelers"}``;
+            only the id and the total go to the tool, the rest describes the booking.
+        tool_name: The gateway tool name, target-prefixed.
+
+    Returns:
+        The one-line summary the model narrates: the confirmation, or the explained refusal.
+    """
+    event, cancelled = _platform_call(
+        hooks, call_tool, tool_name, confirmed_booking_arguments(booking_target), "booking"
+    )
+    if cancelled:
+        return cancelled
+    if hooks.booking:
+        booking = hooks.booking
+        return (
+            f"Booking {booking.get('bookingId')} is {booking.get('status')} for "
+            f"{booking.get('packageId')} ({booking.get('duration')}, "
+            f"{booking.get('travelers')} traveler(s)), total ${booking.get('totalAmount')}, "
+            f"confirmed {booking.get('confirmedAt')}. Catalog inventory is booked in Meridian's "
+            "database; no supplier was contacted and no payment was taken."
+        )
+    return _result_text(event) or "The gateway did not confirm the booking and gave no reason."

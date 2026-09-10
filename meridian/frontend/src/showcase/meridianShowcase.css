@@ -7293,3 +7293,14 @@
   margin-right: 6px;
   vertical-align: -2px;
 }
+
+/* Booking confirmation inside the trip drawer: the traveler's decision, restated in full. */
+.mds-trip-confirm { display:grid; gap:14px; padding:18px; border:1px solid var(--mds-blue-line); border-radius:8px; background:var(--mds-fill-1); }
+.mds-trip-confirm header { display:flex; align-items:center; gap:10px; color:var(--mds-on-surface); }
+.mds-trip-confirm h3 { margin:0; font-size:calc(17px * var(--mds-fs)); color:var(--mds-on-surface); }
+.mds-trip-confirm dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px 16px; margin:0; }
+.mds-trip-confirm dt { color:var(--mds-muted); font-size:calc(12px * var(--mds-fs)); }
+.mds-trip-confirm dd { margin:2px 0 0; color:var(--mds-on-surface); font-weight:600; overflow-wrap:anywhere; }
+.mds-trip-confirm p { margin:0; color:var(--mds-on-surface-soft); line-height:1.5; }
+.mds-trip-confirm .mds-trip-modal-actions { justify-content:flex-end; }
+@media (max-width:600px) { .mds-trip-confirm dl { grid-template-columns:repeat(2,minmax(0,1fr)); } }

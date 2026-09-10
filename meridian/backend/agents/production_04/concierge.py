@@ -113,6 +113,30 @@ class HoldOutcome:
 
 
 @dataclass
+class BookingTarget:
+    """The held booking the traveler confirmed with the Confirm button, as Aurora holds it."""
+
+    booking_id: str
+    total_cents: int
+    package_id: str
+    duration: str
+    travelers: int
+
+
+@dataclass
+class BookingOutcome:
+    """What the governed confirmation produced, allow or deny."""
+
+    booking: Optional[Dict[str, Any]]
+    refused: Optional[str]
+    policy_decision: Optional[str]
+    activities: List[Any]
+    message: str
+    conv_id: str
+    trace_id: Optional[str]
+
+
+@dataclass
 class AuthorizedRead:
     """What the short RLS read unit produced for one turn."""
 
@@ -575,6 +599,63 @@ class ProductionAgent:
         return HoldOutcome(
             hold=decision.hold,
             refused=decision.hold_refused,
+            policy_decision=decision.policy_decision,
+            activities=activities,
+            message=decision.message,
+            conv_id=read.conv_id,
+            trace_id=decision.trace_id,
+        )
+
+    async def process_booking(
+        self, traveler_id: str, conversation_id: Optional[str], target: BookingTarget
+    ) -> BookingOutcome:
+        """Confirm the held booking the traveler approved, through the runtime and the gateway.
+
+        Args:
+            traveler_id: Traveler identifier (RLS scope).
+            conversation_id: The conversation the booking belongs to, or None to start one.
+            target: The held booking as Aurora holds it, read under RLS by the caller.
+
+        Returns:
+            The booking outcome. ``booking`` is None when Cedar denied the call or Aurora
+            refused it; ``refused`` then carries the reason.
+        """
+        require_agentcore_platform(require_memory=False)
+        activities: List[Any] = []
+        self._collect(activities)
+        message = (
+            f"Confirm booking {target.booking_id}: {target.package_id} ({target.duration}) "
+            f"for {target.travelers} traveler(s), total ${target.total_cents / 100:,.2f}."
+        )
+        read = await self._authorized_read(message, traveler_id, conversation_id)
+        decision = await self._runtime_turn(
+            read, message, traveler_id, target.travelers,
+            booking_confirmed=True, booking_target=asdict(target),
+        )
+        shown = [{"package_id": target.package_id, "name": target.package_id}]
+        await self._write_unit(
+            read, traveler_id, message, decision.message, shown, "production_booking"
+        )
+        booked = decision.booking or {}
+        if decision.booking:
+            status = "confirmed"
+        elif decision.policy_decision == "deny":
+            status = "denied"
+        else:
+            status = "error"
+        self._log(
+            "result",
+            "Booking confirmed in Aurora" if decision.booking else "Booking not confirmed",
+            details=(
+                f"Booking #{booked.get('bookingId')} · confirmed {booked.get('confirmedAt')}"
+                if decision.booking
+                else (decision.booking_refused or "The runtime did not call the confirm tool.")
+            ),
+            telemetry={"category": "synthesis", "component": "ProductionAgent", "status": status},
+        )
+        return BookingOutcome(
+            booking=decision.booking,
+            refused=decision.booking_refused,
             policy_decision=decision.policy_decision,
             activities=activities,
             message=decision.message,

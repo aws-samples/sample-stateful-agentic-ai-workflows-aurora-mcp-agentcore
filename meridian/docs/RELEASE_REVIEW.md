@@ -9,6 +9,14 @@ is executed by the platform with pinned arguments and either permitted or
 refused by policy; a hold typed into chat is refused because nothing confirmed
 it. ADOT spans and application logs carry the trace id shown in the UI.
 
+Later on September 10 the journey was brought home. A held trip is confirmed
+the same way it was held: the traveler confirms in the concierge, the backend
+reads the booking total under RLS, the runtime executes `confirm_booking` with
+the pinned confirmation and ceiling, the `meridian_booking_governance` Cedar
+policy decides, and the `confirm_booking` SQL function in Aurora turns the same
+booking row from `held` to `confirmed`. Catalog inventory only; no supplier, no
+payment. The gateway now serves four tools and the engine holds three policies.
+
 ## Verification, September 10
 
 - Backend: 349 offline tests pass (`pytest -m "not database"`), ruff clean.
@@ -38,6 +46,20 @@ it. ADOT spans and application logs carry the trace id shown in the UI.
   takeover waited for the lease, and the resumed worker replayed the same
   booking id with the original expiry. Aurora recorded one hold and nine
   checkpoints on the thread.
+
+- Booking confirmation through the governed chain: a Phase 4 hold on CTY-002
+  (`HLD-8DF6B278`, 5 nights, 2 travelers, $4,998 against the $6,400 ceiling)
+  was confirmed through `POST /api/chat/book`. The trace shows
+  `tools/call → confirm_booking` with `travelerConfirmed: true` and
+  `totalCents: 499800`, then `confirm_booking · result` with
+  `cedar_decision: allow`, `cedar_policy: meridian_booking_governance`,
+  `policy_mode: ENFORCE` and the Lambda's `traveler_grant: allow`; Aurora
+  reported the row `confirmed` at 15:00:19 UTC. A second confirmation of the
+  same booking replayed the original record. Migration 010 adds the
+  `confirm_booking` function; `scripts/verify_agentcore.py` reports four tools
+  and the three policies ACTIVE. Lambda, runtime, backend and frontend tests
+  cover the new tool, the pinned booking contract, the route and the
+  confirmation dialog.
 
 - Published behind CloudFront with basic authentication: the site answers 401
   without credentials and 200 with them, `/health` reports the durable

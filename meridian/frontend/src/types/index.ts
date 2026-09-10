@@ -135,6 +135,10 @@ export interface Order {
   status: string;
   estimated_delivery?: string;
   hold_expires_at?: string;
+  /** When Aurora created the hold; with the expiry it names the hold window. */
+  hold_created_at?: string;
+  /** Set once Aurora has confirmed the booking. Catalog inventory only; no payment. */
+  confirmed_at?: string;
   departure_date?: string;
   payment_required?: boolean;
 }
@@ -219,6 +223,20 @@ export interface OrderRequest {
 }
 
 export interface OrderResponse {
+  message: string;
+  order?: Order;
+  activities: ActivityEntry[];
+}
+
+export interface BookingRequest {
+  booking_id: string;
+  phase: 4;
+  traveler_id?: string;
+  /** The confirmation runs inside the conversation's AgentCore Memory session. */
+  conversation_id?: string;
+}
+
+export interface BookingResponse {
   message: string;
   order?: Order;
   activities: ActivityEntry[];

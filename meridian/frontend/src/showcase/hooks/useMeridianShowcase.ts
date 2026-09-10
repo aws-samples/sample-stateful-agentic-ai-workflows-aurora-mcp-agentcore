@@ -1,6 +1,7 @@
-import { isObserved, type JourneyDocument } from '../journey/types';
+import { isObserved, type JourneyDocument, type JourneyHold } from '../journey/types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  confirmBooking,
   deleteMemoryFact,
   fetchHealth,
   fetchMemoryProfile,
@@ -42,7 +43,7 @@ import {
 } from '../lib/tripWorkspace';
 
 export interface ActionDrawerState {
-  kind: 'hold' | 'plan' | 'compare' | 'save';
+  kind: 'hold' | 'book' | 'plan' | 'compare' | 'save';
   product: Product;
   message: string;
   order?: OrderResponse['order'];
@@ -53,6 +54,12 @@ export interface TripHold {
   productId: string;
   order: NonNullable<OrderResponse['order']>;
 }
+
+/** A hold placed elsewhere (the recovery workflow) that the concierge can adopt. */
+export type AdoptableHold = Pick<
+  JourneyHold,
+  'booking_id' | 'package_id' | 'duration' | 'travelers_count' | 'hold_expires_at' | 'hold_created_at' | 'confirmed_at'
+> & { status: string };
 
 // Refinement filters captured by the action-chip popovers below the
 // composer. They get appended to whatever prompt the presenter types
@@ -127,6 +134,8 @@ export interface MeridianShowcaseState {
   actionDrawer: ActionDrawerState | null;
   /** Confirmed direct holds stay visible when drawers close or the ladder changes. */
   tripHolds: TripHold[];
+  /** The held trip waiting for the traveler's confirmation in the trip drawer. */
+  bookingPrompt: TripHold | null;
   modelLabel: string;
   embedLabel: string;
   totalLatencyMs: number;
@@ -153,6 +162,12 @@ export interface MeridianShowcaseState {
   openTripDetails: (product: Product) => void;
   closeTripDetails: () => void;
   holdTrip: (product: Product) => Promise<void>;
+  requestBookingConfirmation: (product: Product) => void;
+  dismissBookingConfirmation: () => void;
+  /** Confirm the held trip. The click is the traveler's confirmation; the platform carries it. */
+  confirmTrip: (product: Product) => Promise<void>;
+  /** Bring a hold the recovery workflow placed into the concierge as a held trip. */
+  adoptJourneyHold: (hold: AdoptableHold) => boolean;
   planTrip: (product: Product) => void;
   saveTrip: (product: Product) => void;
   compareTrip: (product: Product) => void;
@@ -238,6 +253,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [tripDetailsOpen, setTripDetailsOpen] = useState(false);
   const [tripHolds, setTripHolds] = useState<TripHold[]>([]);
   const holdPending = useRef(false);
+  const [bookingPrompt, setBookingPrompt] = useState<TripHold | null>(null);
+  const bookingPending = useRef(false);
   const [workspace, setWorkspace] = useState(loadTripWorkspace);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [memoryFacts, setMemoryFacts] = useState<LongTermMemoryFact[]>([]);
@@ -754,6 +771,100 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     [isLoading, selectedPhase, travelersCount, tripHolds, openTripDetails, conversationId],
   );
 
+  const requestBookingConfirmation = useCallback((product: Product) => {
+    const hold = tripHolds.find(item => item.productId === product.product_id);
+    if (!hold || hold.order.status !== 'held') return;
+    setSelectedTrip(product);
+    setTripDetailsOpen(true);
+    setBookingPrompt(hold);
+  }, [tripHolds]);
+
+  const dismissBookingConfirmation = useCallback(() => setBookingPrompt(null), []);
+
+  const confirmTrip = useCallback(
+    async (product: Product) => {
+      const hold = tripHolds.find(item => item.productId === product.product_id);
+      if (!hold || isLoading || bookingPending.current) return;
+      bookingPending.current = true;
+      const generation = requestGeneration.current;
+      setBookingPrompt(null);
+      setIsLoading(true);
+      setLatestStreamComplete(false);
+      setError(null);
+      const prompt = `Confirm the held trip: ${product.name}`;
+      try {
+        const response = await confirmBooking({
+          booking_id: hold.order.order_id,
+          phase: 4,
+          traveler_id: SHOWCASE_TRAVELER_ID,
+          conversation_id: conversationId ?? undefined,
+        });
+        if (!mounted.current) return;
+        if (response.order) {
+          const order = response.order;
+          setTripHolds(prior => prior.map(item => item.productId === product.product_id ? { productId: product.product_id, order } : item));
+        }
+        // Keep the confirmed receipt, but do not insert a late reply into a new phase.
+        if (generation !== requestGeneration.current) return;
+        setMessages((prior) => [
+          ...prior,
+          { role: 'bot', type: response.order ? 'order' : 'text', text: response.message, order: response.order },
+        ]);
+        const nextTrace = chatResponseToTraceSpans(
+          { message: response.message, activities: response.activities, order: response.order },
+          prompt,
+        );
+        setTraceSpans(prior => selectedPhase === 5 ? [...prior, ...nextTrace] : nextTrace);
+        setExpandedSpanId(nextTrace[0]?.id ?? null);
+        setActionDrawer({
+          kind: 'book',
+          product,
+          message: response.message,
+          order: response.order,
+          live: true,
+        });
+        setWorkspaceNotice(response.order?.status === 'confirmed' ? `${product.name} is confirmed for Alex.` : response.message);
+      } catch {
+        if (!mounted.current || generation !== requestGeneration.current) return;
+        setBackendStatus('offline');
+        setError(
+          `Unable to confirm ${product.name}: the live booking service is unavailable. Restart the FastAPI backend.`,
+        );
+      } finally {
+        bookingPending.current = false;
+        if (mounted.current && generation === requestGeneration.current) setIsLoading(false);
+      }
+    },
+    [conversationId, isLoading, selectedPhase, tripHolds],
+  );
+
+  const adoptJourneyHold = useCallback((hold: AdoptableHold) => {
+    const product = recommendations.find(item => item.product_id === hold.package_id)
+      ?? catalog.find(item => item.product_id === hold.package_id);
+    if (!product) return false;
+    const quantity = hold.travelers_count ?? travelersCount;
+    const total = product.price * quantity;
+    const order: TripHold['order'] = {
+      order_id: hold.booking_id,
+      items: [{ product_id: product.product_id, name: product.name, size: hold.duration ?? product.available_sizes?.[0], quantity, unit_price: product.price }],
+      subtotal: total,
+      tax: 0,
+      shipping: 0,
+      total,
+      status: hold.status,
+      hold_expires_at: hold.hold_expires_at ?? undefined,
+      hold_created_at: hold.hold_created_at ?? undefined,
+      confirmed_at: hold.confirmed_at ?? undefined,
+      payment_required: false,
+    };
+    setTripHolds(prior => [...prior.filter(item => item.productId !== product.product_id), { productId: product.product_id, order }]);
+    setSelectedTrip(product);
+    setTripDetailsOpen(true);
+    setActionDrawer(null);
+    setBookingPrompt(null);
+    return true;
+  }, [catalog, recommendations, travelersCount]);
+
   const planTrip = useCallback((product: Product) => {
     openTripDetails(product);
   }, [openTripDetails]);
@@ -920,6 +1031,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     lastPrompt,
     actionDrawer,
     tripHolds,
+    bookingPrompt,
     modelLabel: runConfigModelLabel(selectedPhase, backendHealth),
     embedLabel: runConfigEmbedLabel(selectedPhase, backendHealth),
     totalLatencyMs,
@@ -943,8 +1055,13 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     closeTripDetails: () => {
       setTripDetailsOpen(false);
       setActionDrawer(null);
+      setBookingPrompt(null);
     },
     holdTrip,
+    requestBookingConfirmation,
+    dismissBookingConfirmation,
+    confirmTrip,
+    adoptJourneyHold,
     planTrip,
     saveTrip,
     compareTrip,

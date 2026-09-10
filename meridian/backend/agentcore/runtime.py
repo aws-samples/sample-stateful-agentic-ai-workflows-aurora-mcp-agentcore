@@ -4,8 +4,8 @@ Bedrock AgentCore Runtime adapter for Phase 4.
 Requires a live Runtime deployed via @aws/agentcore CLI. Calls
 ``invoke_agent_runtime`` on every turn with ``accept: text/event-stream`` and
 collects the JSON events the runtime yields: the spans for every gateway tool
-call it made, the packages it found, the hold it placed or was refused, and the
-traveler-facing message.
+call it made, the packages it found, the hold or booking it placed or was
+refused, and the traveler-facing message.
 
 AWS docs:
   - AgentCore Runtime overview:
@@ -54,6 +54,8 @@ class RuntimeDecision:
     packages: list[dict[str, Any]] = field(default_factory=list)
     hold: Optional[dict[str, Any]] = None
     hold_refused: Optional[str] = None
+    booking: Optional[dict[str, Any]] = None
+    booking_refused: Optional[str] = None
     policy_decision: Optional[str] = None
     trace_id: Optional[str] = None
     usage: dict[str, Any] = field(default_factory=dict)
@@ -177,6 +179,8 @@ class AgentCoreRuntimeAdapter:
         travelers_count: int,
         hold_confirmed: bool = False,
         hold_target: Optional[dict[str, Any]] = None,
+        booking_confirmed: bool = False,
+        booking_target: Optional[dict[str, Any]] = None,
     ) -> RuntimeDecision:
         """Run one concierge turn inside AgentCore Runtime and collect its events.
 
@@ -189,6 +193,9 @@ class AgentCoreRuntimeAdapter:
             travelers_count: Party size for this turn.
             hold_confirmed: True only when the traveler clicked Hold on a trip.
             hold_target: The exact hold terms when ``hold_confirmed`` is True.
+            booking_confirmed: True only when the traveler clicked Confirm on a held trip.
+            booking_target: The held booking's identity and total when
+                ``booking_confirmed`` is True.
 
         Returns:
             The decision with every span, package, hold outcome and usage the runtime reported.
@@ -208,6 +215,8 @@ class AgentCoreRuntimeAdapter:
             "travelers_count": int(travelers_count),
             "hold_confirmed": bool(hold_confirmed),
             "hold_target": hold_target,
+            "booking_confirmed": bool(booking_confirmed),
+            "booking_target": booking_target,
             "timestamp": _utc_timestamp(),
         }).encode()
         try:
@@ -244,6 +253,10 @@ class AgentCoreRuntimeAdapter:
                 decision.hold = event.get("hold")
                 decision.hold_refused = event.get("refused")
                 decision.policy_decision = event.get("policyDecision")
+            elif kind == "booking":
+                decision.booking = event.get("booking")
+                decision.booking_refused = event.get("refused")
+                decision.policy_decision = event.get("policyDecision")
             elif kind == "error":
                 raise RuntimeError(f"AgentCore Runtime error: {event.get('message')}")
             elif kind == "result":
@@ -264,6 +277,8 @@ def _apply_result(decision: RuntimeDecision, event: dict[str, Any]) -> None:
     decision.elapsed_ms = int(event.get("elapsed_ms") or 0)
     if event.get("hold") and not decision.hold:
         decision.hold = event.get("hold")
+    if event.get("booking") and not decision.booking:
+        decision.booking = event.get("booking")
 
 
 _adapter: Optional[AgentCoreRuntimeAdapter] = None

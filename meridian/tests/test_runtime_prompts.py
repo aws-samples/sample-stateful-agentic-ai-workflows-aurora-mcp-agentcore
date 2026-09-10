@@ -45,3 +45,13 @@ def test_unconfirmed_turn_prompt_never_carries_hold_terms():
     target = {"package_id": "CTY-002"}
     text = turn_prompt("Hold it", "", target, hold_confirmed=False)
     assert "CTY-002" not in text
+
+
+def test_confirmed_booking_turn_has_no_tools_and_says_no_payment():
+    booking = {"booking_id": "HLD-9", "total_cents": 499800, "package_id": "CTY-002"}
+    system = system_prompt(False, None, booking_confirmed=True, booking_target=booking)
+    assert "Confirm button" in system and "no tools" in system and "takes no payment" in system
+    assert "confirm_booking" in system_prompt(False, None)
+    prompt = narration_prompt("Booking HLD-9 is confirmed", booking, 640000, action="booking")
+    assert prompt.startswith("The traveler confirmed the booking of a held package")
+    assert "HLD-9" in prompt and "499800" in prompt and "$6,400.00 for this party" in prompt

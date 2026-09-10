@@ -9,12 +9,14 @@ function utcTime(value?: string | null): string {
 
 /** The persisted booking is the receipt; the countdown only visualizes its TTL. */
 export function HoldReceipt({
-  holdId, createdAt, expiresAt, observedAt, receivedAt, status, kind = 'workflow', compact = false,
+  holdId, createdAt, expiresAt, observedAt, receivedAt, confirmedAt, status, kind = 'workflow', compact = false,
 }: {
   holdId: string;
   createdAt?: string | null;
   expiresAt?: string | null;
   observedAt?: string | null;
+  /** Aurora's confirmation time once the traveler confirmed the booking. */
+  confirmedAt?: string | null;
   status?: string;
   /** Client time captured when this database response arrived, not on mount. */
   receivedAt?: number;
@@ -25,6 +27,7 @@ export function HoldReceipt({
   const windowMinutes = (timestamp(expiresAt) - timestamp(createdAt)) / 60000;
   const knownWindow = Number.isFinite(windowMinutes) && windowMinutes > 0;
   const held = status === 'held';
+  const confirmed = status === 'confirmed';
   const showHours = kind === 'direct' || windowMinutes >= 60 || remaining >= 3600000;
   const seconds = Math.ceil(remaining / 1000);
   const minutes = Math.floor(seconds / 60);
@@ -34,28 +37,35 @@ export function HoldReceipt({
     : kind === 'direct' ? '12-hour' : null;
   const dates = <dl>
     {createdAt && <div><dt>Created in Aurora</dt><dd>{utcTime(createdAt)}</dd></div>}
-    <div><dt>Expires in Aurora</dt><dd>{utcTime(expiresAt)}</dd></div>
+    {confirmed
+      ? <div><dt>Confirmed in Aurora</dt><dd>{utcTime(confirmedAt)}</dd></div>
+      : <div><dt>Expires in Aurora</dt><dd>{utcTime(expiresAt)}</dd></div>}
   </dl>;
+  const tone = confirmed ? ' is-confirmed' : expired || !held ? ' is-inactive' : '';
 
   return (
-    <section className={`mc-hold-receipt${expired || !held ? ' is-inactive' : ''}${compact ? ' is-compact' : ''}`} aria-label="Aurora hold receipt">
+    <section className={`mc-hold-receipt${tone}${compact ? ' is-compact' : ''}`} aria-label={confirmed ? 'Aurora booking receipt' : 'Aurora hold receipt'}>
       <header>
         <strong><AuroraIcon size={20} aria-hidden="true" />
-          {windowLabel ? `${windowLabel} package hold` : 'Package hold receipt'}
+          {confirmed ? 'Confirmed booking' : windowLabel ? `${windowLabel} package hold` : 'Package hold receipt'}
         </strong>
         <span role="timer" aria-live="off">
-          {status && !held ? `Status: ${status}` : expired ? 'Expired' : held && knownExpiry ? <><span>{clock}</span> <small>remaining</small></> : 'Status not verified'}
+          {confirmed ? 'Confirmed' : status && !held ? `Status: ${status}` : expired ? 'Expired' : held && knownExpiry ? <><span>{clock}</span> <small>remaining</small></> : 'Status not verified'}
         </span>
       </header>
       {!compact && dates}
-      <p>{held && expired ? 'This hold no longer counts against package capacity.' : 'Package inventory only. Flight seats are not reserved.'}</p>
+      <p>{confirmed
+        ? 'Catalog inventory is booked in Meridian’s database. No supplier was contacted and no payment was taken.'
+        : held && expired ? 'This hold no longer counts against package capacity.' : 'Package inventory only. Flight seats are not reserved.'}</p>
       <details>
-        <summary>{compact ? 'Expiry and receipt' : 'How to verify this hold'}</summary>
+        <summary>{confirmed ? 'Booking record' : compact ? 'Expiry and receipt' : 'How to verify this hold'}</summary>
         {compact && dates}
-        <p>{kind === 'direct' ? 'The hold service returns the saved expiry. This clock continues when you close the receipt or switch views.' : <>The window is expiry minus creation time, read from <code>bookings</code>. A retry uses the same request and original expiry; it does not restart the clock.</>}</p>
-        <p>At expiry, inventory queries exclude this hold. The booking row remains as evidence.</p>
+        {confirmed
+          ? <p>The hold became this booking in place: same <code>bookings</code> row, status <code>confirmed</code>. A retried confirmation returns the original record and changes nothing.</p>
+          : <p>{kind === 'direct' ? 'The hold service returns the saved expiry. This clock continues when you close the receipt or switch views.' : <>The window is expiry minus creation time, read from <code>bookings</code>. A retry uses the same request and original expiry; it does not restart the clock.</>}</p>}
+        {!confirmed && <p>At expiry, inventory queries exclude this hold. The booking row remains as evidence.</p>}
         <p>Booking <code>{holdId}</code></p>
-        <p>{hasServerClock ? `Database read: ${utcTime(observedAt)}. Countdown estimated from that read.` : 'Countdown uses this device’s clock and the expiry on the saved receipt.'}</p>
+        {!confirmed && <p>{hasServerClock ? `Database read: ${utcTime(observedAt)}. Countdown estimated from that read.` : 'Countdown uses this device’s clock and the expiry on the saved receipt.'}</p>}
       </details>
     </section>
   );

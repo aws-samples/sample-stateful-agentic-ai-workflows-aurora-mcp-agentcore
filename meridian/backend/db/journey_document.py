@@ -37,6 +37,7 @@ HOLD_SQL = """
 SELECT hr.hold_request_id, hr.booking_id, hr.execution_id, hr.created_at,
        b.status, b.created_at::TIMESTAMPTZ::TEXT AS hold_created_at,
        b.hold_expires_at::TEXT AS hold_expires_at,
+       b.confirmed_at::TIMESTAMPTZ::TEXT AS confirmed_at,
        CURRENT_TIMESTAMP::TEXT AS observed_at, bl.package_id, bl.duration,
        bl.travelers_count
   FROM hold_requests hr
@@ -325,6 +326,7 @@ async def _hold(q, journey_id: str) -> Dict[str, Any]:
         "hold_created_at": _iso(row.get("hold_created_at")),
         "observed_at": _iso(row.get("observed_at")),
         "hold_expires_at": _iso(row["hold_expires_at"]),
+        "confirmed_at": _iso(row.get("confirmed_at")),
         "package_id": row["package_id"],
         "duration": row["duration"],
         "travelers_count": (

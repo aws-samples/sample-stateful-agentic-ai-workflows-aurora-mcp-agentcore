@@ -28,7 +28,7 @@ from strands.models.bedrock import BedrockModel
 from strands.tools.mcp import MCPClient
 
 from gateway_auth import GatewaySigV4
-from hold_execution import execute_confirmed_hold
+from hold_execution import execute_confirmed_booking, execute_confirmed_hold
 from prompts import narration_prompt, system_prompt, turn_prompt
 from turn_trace import TraceHooks, TurnContext, activity
 
@@ -99,8 +99,10 @@ def memory_span(traveler_id: str, conversation_id: str) -> dict:
     )
 
 
-def turn_context(payload: dict) -> tuple[TurnContext, dict | None]:
+def turn_context(payload: dict) -> tuple[TurnContext, dict | None, dict | None]:
+    """The authorized turn plus the hold or booking terms the traveler confirmed, if any."""
     hold_target = payload.get("hold_target") or None
+    booking_target = payload.get("booking_target") or None
     turn = TurnContext(
         traveler_id=str(payload.get("traveler_id") or "trv_meridian_demo"),
         conversation_id=str(payload.get("conversation_id") or "conv-unknown"),
@@ -109,8 +111,9 @@ def turn_context(payload: dict) -> tuple[TurnContext, dict | None]:
         gateway_id=GATEWAY_ID,
         policy_engine_id=POLICY_ENGINE_ID,
         policy_mode=POLICY_MODE,
+        booking_confirmed=bool(payload.get("booking_confirmed")) and booking_target is not None,
     )
-    return turn, hold_target
+    return turn, hold_target, booking_target
 
 
 def start_span(turn: TurnContext) -> dict:
@@ -126,6 +129,7 @@ def start_span(turn: TurnContext) -> dict:
                 {"label": "trace_id", "value": trace_id() or "pending", "mono": True},
                 {"label": "model", "value": MODEL_ID, "mono": True},
                 {"label": "hold_confirmed", "value": str(turn.hold_confirmed).lower()},
+                {"label": "booking_confirmed", "value": str(turn.booking_confirmed).lower()},
             ],
         },
     )
@@ -155,8 +159,8 @@ def drain(queue):
         kind, item = queue.get_nowait()
         if kind == "activity":
             yield {"type": "activity", **item}
-        elif kind == "hold":
-            yield {"type": "hold", **item}
+        elif kind in ("hold", "booking"):
+            yield {"type": kind, **item}
         elif kind == "packages":
             yield {"type": "packages", "packages": item}
 
@@ -170,8 +174,8 @@ async def pump(queue, task):
             yield {"type": "activity", **item}
         elif kind == "packages":
             yield {"type": "packages", "packages": item}
-        elif kind == "hold":
-            yield {"type": "hold", **item}
+        elif kind in ("hold", "booking"):
+            yield {"type": kind, **item}
         elif kind == "part":
             data = item.get("data")
             if data:
@@ -188,9 +192,27 @@ async def pump(queue, task):
     yield {"type": "answer", "text": answer, "usage": usage}
 
 
+def confirmed_action(hooks, gateway, turn: TurnContext, hold_target, booking_target):
+    """Place the write the traveler confirmed, if any; return (summary, action, terms).
+
+    The click is the confirmation: the platform places the governed call with the
+    exact confirmed terms, and the model narrates what the gateway decided.
+    """
+
+    def call_tool(tool_use_id, name, args):
+        return gateway.call_tool_sync(tool_use_id=tool_use_id, name=name, arguments=args)
+
+    if turn.booking_confirmed and booking_target:
+        outcome = execute_confirmed_booking(hooks, call_tool, booking_target)
+        return outcome, "booking", booking_target
+    if turn.hold_confirmed and hold_target:
+        return execute_confirmed_hold(hooks, call_tool, hold_target), "hold", hold_target
+    return None, "hold", hold_target
+
+
 async def run(payload: dict):
     started = time.monotonic()
-    turn, hold_target = turn_context(payload)
+    turn, hold_target, booking_target = turn_context(payload)
     queue: asyncio.Queue = asyncio.Queue()
     hooks = TraceHooks(queue, turn)
     gateway = MCPClient(url=GATEWAY_URL, auth_provider=GatewaySigV4(SESSION, REGION))
@@ -199,29 +221,23 @@ async def run(payload: dict):
         tools = gateway.list_tools_sync()
         yield {"type": "activity", **tools_span(tools)}
         yield {"type": "activity", **memory_span(turn.traveler_id, turn.conversation_id)}
-        outcome = None
-        if turn.hold_confirmed and hold_target:
-            # The click is the confirmation: the platform places the governed call with
-            # the exact confirmed terms, and the model narrates what the gateway decided.
-            outcome = execute_confirmed_hold(
-                hooks,
-                lambda tool_use_id, name, args: gateway.call_tool_sync(
-                    tool_use_id=tool_use_id, name=name, arguments=args
-                ),
-                hold_target,
-            )
-            for event in drain(queue):
-                yield event
+        outcome, action, target = confirmed_action(
+            hooks, gateway, turn, hold_target, booking_target
+        )
+        for event in drain(queue):
+            yield event
         agent = Agent(
             model=BedrockModel(model_id=MODEL_ID, region_name=REGION, max_tokens=1500),
-            system_prompt=system_prompt(turn.hold_confirmed, hold_target),
+            system_prompt=system_prompt(
+                turn.hold_confirmed, hold_target, turn.booking_confirmed, booking_target
+            ),
             tools=[] if outcome is not None else tools,
             hooks=[hooks],
             session_manager=memory_manager(turn.traveler_id, turn.conversation_id),
             callback_handler=None,
         )
         if outcome is not None:
-            prompt = narration_prompt(outcome, hold_target, turn.budget_ceiling_cents)
+            prompt = narration_prompt(outcome, target, turn.budget_ceiling_cents, action)
         else:
             prompt = turn_prompt(
                 str(payload.get("prompt", "")),
@@ -246,6 +262,7 @@ async def run(payload: dict):
         ],
         "follow_ups": FOLLOW_UPS,
         "hold": hooks.hold,
+        "booking": hooks.booking,
         "trace_id": trace_id(),
         "usage": usage,
         "elapsed_ms": round((time.monotonic() - started) * 1000),

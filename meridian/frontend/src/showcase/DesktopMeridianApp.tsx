@@ -529,6 +529,7 @@ export function DesktopMeridianApp({
               state={state}
               journeyDocument={journey.document}
               onOpenProof={() => { journey.refresh(); setView('proof'); }}
+              onOpenConcierge={(hold) => { if (state.adoptJourneyHold(hold)) openProduct(); }}
               showHeading={!isLadder}
             />
           )}

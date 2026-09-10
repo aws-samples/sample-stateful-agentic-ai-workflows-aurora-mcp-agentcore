@@ -59,3 +59,15 @@ describe('Aurora hold receipt', () => {
     expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
   });
 });
+
+describe('Aurora booking receipt', () => {
+  it('reads as a confirmed booking with no countdown and no payment', () => {
+    render(<HoldReceipt holdId="HLD-9" kind="direct" status="confirmed" expiresAt="2026-09-07T12:00:00Z" confirmedAt="2026-09-07 01:02:03+00" />);
+    expect(screen.getByRole('region', { name: 'Aurora booking receipt' })).toHaveClass('is-confirmed');
+    expect(screen.getByText('Confirmed booking')).toBeInTheDocument();
+    expect(screen.getByRole('timer')).toHaveTextContent('Confirmed');
+    expect(screen.getByText('2026-09-07 01:02:03 UTC')).toBeInTheDocument();
+    expect(screen.getByText(/no payment was taken/)).toBeInTheDocument();
+    expect(screen.queryByText(/remaining/)).not.toBeInTheDocument();
+  });
+});

@@ -12,7 +12,9 @@ describe('SolutionBriefing', () => {
     }
     expect(screen.getByText('meridian_hold_governance')).toBeInTheDocument();
     expect(screen.getByText('MeridianHolds___create_courtesy_hold')).toBeInTheDocument();
-    expect(screen.getByText(/context\.input\.totalCents <= context\.input\.budgetCeilingCents/)).toBeInTheDocument();
+    expect(screen.getAllByText(/context\.input\.totalCents <= context\.input\.budgetCeilingCents/)).toHaveLength(2);
+    expect(screen.getByText('meridian_booking_governance')).toBeInTheDocument();
+    expect(screen.getByText('MeridianHolds___confirm_booking')).toBeInTheDocument();
   });
 
   it('hands off to the capability ladder', () => {

@@ -26,8 +26,8 @@ day before is fine.
 | **Runtime** | `MeridianConcierge` | The Phase 4 agent: Strands tool loop over the gateway, AgentCore Memory session, ADOT spans, streamed trace |
 | **Memory** | `meridian_session` | The agent's session store; restored and written by the Strands session manager |
 | **Gateway** | `meridian-aurora` | Managed MCP endpoint, AWS_IAM inbound, Cedar policy engine attached in ENFORCE mode |
-| **Gateway targets** | `SemanticTripSearchLambda`, `MeridianHolds` | `semantic_trip_search`; `get_package_details` and the identity-checked `create_courtesy_hold` |
-| **Policy engine** | `MeridianGovernance` | Permits the reads; permits the hold only when confirmed, at most 12 hours, at most 6 travelers, within budget |
+| **Gateway targets** | `SemanticTripSearchLambda`, `MeridianHolds` | `semantic_trip_search`; `get_package_details` and the identity-checked `create_courtesy_hold` and `confirm_booking` |
+| **Policy engine** | `MeridianGovernance` | Permits the reads; permits the hold only when confirmed, at most 12 hours, at most 6 travelers, within budget; permits the booking confirmation only when confirmed and within budget |
 
 All of them are declared in
 [`meridian_agentcore/agentcore/agentcore.json`](../meridian_agentcore/agentcore/agentcore.json).
@@ -109,10 +109,11 @@ with the basic credential from `.local/published.json` (expect 200 and
 
 In the showcase trace panel you should see (real, not faked):
 - `AgentCore Identity resolved` and `Workload traveler grant allowed`
-- `AgentCore Runtime · turn started`, then `AgentCore Gateway · tools/list` with three tools
+- `AgentCore Runtime · turn started`, then `AgentCore Gateway · tools/list` with four tools
 - `AgentCore Memory · session restored` with the event count
 - `AgentCore Gateway · tools/call → semantic_trip_search` and its result
 - On a Hold click: `tools/call → create_courtesy_hold`, its result with the Lambda's workload subject and `traveler_grant: allow`, and the hold receipt
+- On a Confirm click: `tools/call → confirm_booking`, its result under `meridian_booking_governance`, and the receipt as **Confirmed booking** (same booking id, status `confirmed`)
 - On a typed hold: `Hold refused by Cedar policy · Denied by policy`
 - `AgentCore Runtime · turn complete` with the trace id and a CloudWatch link
 
@@ -352,7 +353,7 @@ agentcore deploy -y
 
 **Phase 4 returns zero packages** — the runtime found nothing or the gateway
 search tool is missing. Run `venv/bin/python scripts/verify_agentcore.py`
-(expect three tools) and `agentcore logs --runtime MeridianConcierge --follow`
+(expect four tools) and `agentcore logs --runtime MeridianConcierge --follow`
 while repeating the prompt.
 
 **A Hold click answers `traveler_not_authorized`** — the holds Lambda role lost

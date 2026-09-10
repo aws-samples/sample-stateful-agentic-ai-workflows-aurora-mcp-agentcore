@@ -160,7 +160,7 @@ Controls are visible on a shared windowed screen, so stop sharing first.
 | **1 · SQL** | Query | Direct Aurora rows returned through RDS Data API filters |
 | **2 · MCP** | Tool | Aurora access through MCP plus custom domain tools such as package comparison, FX conversion, and seasonal pricing |
 | **3 · Retrieval** | Intent | Hybrid pgvector + full-text candidates reranked by Cohere, with specialist-agent routing |
-| **4 · Production** | Trust | The agent in AgentCore Runtime discovers its tools from AgentCore Gateway, Cedar policy decides every call in ENFORCE mode, recalled preferences arrive under workload-to-traveler grants and Aurora RLS, and a one-click courtesy hold is either permitted or refused by policy before any code runs |
+| **4 · Production** | Trust | The agent in AgentCore Runtime discovers its tools from AgentCore Gateway, Cedar policy decides every call in ENFORCE mode, recalled preferences arrive under workload-to-traveler grants and Aurora RLS, a one-click courtesy hold is either permitted or refused by policy before any code runs, and the held trip is confirmed the same way when the traveler says yes |
 | **5 · Workflow** | Durable Workflow | Aurora checkpoint, process restart, same-thread resume, and preserved hold identity and expiry |
 
 ### Where state lives
@@ -172,6 +172,7 @@ Controls are visible on a shared windowed screen, so stop sharing first.
 | LangGraph execution position and pending writes | Aurora PostgreSQL | `AuroraDataApiSaver` over RDS Data API, or `AsyncPostgresSaver` over pooled psycopg |
 | Journey binding, worker leases, and hold-request identities | Aurora PostgreSQL | Scoped RDS Data API transactions |
 | Phase 4 courtesy hold placed by the agent | Aurora PostgreSQL | AgentCore Gateway tool, Cedar policy, then the `MeridianHolds` Lambda in one scoped Data API transaction |
+| Phase 4 booking confirmation | Aurora PostgreSQL | AgentCore Gateway tool, Cedar policy, then the `MeridianHolds` Lambda turning the held booking row into `confirmed`; catalog inventory only, no supplier, no payment |
 
 MCP defines the governed tool contract, not the database transport. A Data API
 transaction keeps RLS role and traveler scope together for one unit of work; it
@@ -280,8 +281,8 @@ Stateful reads and writes use five independent controls:
 1. AgentCore Identity or AWS STS authenticates the workload.
 2. Aurora `traveler_identity_bindings` authorizes that subject for the requested traveler. Missing grants fail before the RLS scope is set.
 3. Aurora RLS filters rows to the authorized traveler under the least-privilege `meridian_app` role.
-4. AgentCore Gateway serves the agent's tools over MCP with SigV4, and its Cedar policy engine (`MeridianGovernance`, ENFORCE mode) decides every tool call on the arguments before any Lambda runs. Reads are permitted; a courtesy hold is permitted only when the traveler confirmed it, for at most 12 hours and 6 travelers, within the traveler's saved budget ceiling. Nothing else permits the hold, so every other call is denied by default.
-5. The `MeridianHolds` Lambda is itself a workload: its execution role holds its own grant in `traveler_identity_bindings`, sets the traveler scope, steps down to `meridian_app`, and calls the `create_courtesy_hold` SQL function, so a retried tool call replays the same booking. Both the Phase 4 concierge and the Phase 5 workflow place their holds through this one tool; nothing in the application writes a hold directly. The workflow passes its checkpointed request id, booking id and execution id, so the Lambda verifies the worker's lease inside the write transaction and a restarted worker replays the same booking with its original expiry.
+4. AgentCore Gateway serves the agent's tools over MCP with SigV4, and its Cedar policy engine (`MeridianGovernance`, ENFORCE mode) decides every tool call on the arguments before any Lambda runs. Reads are permitted; a courtesy hold is permitted only when the traveler confirmed it, for at most 12 hours and 6 travelers, within the traveler's saved budget ceiling. A booking confirmation is permitted only when the traveler confirmed it and its total is within the same ceiling. Nothing else permits either write, so every other call is denied by default.
+5. The `MeridianHolds` Lambda is itself a workload: its execution role holds its own grant in `traveler_identity_bindings`, sets the traveler scope, steps down to `meridian_app`, and calls the `create_courtesy_hold` or `confirm_booking` SQL function, so a retried tool call replays the same booking or the same confirmation. Both the Phase 4 concierge and the Phase 5 workflow place their holds through this one tool; nothing in the application writes a hold directly. The workflow passes its checkpointed request id, booking id and execution id, so the Lambda verifies the worker's lease inside the write transaction and a restarted worker replays the same booking with its original expiry.
 
 The runtime pins the traveler id, the confirmation flag, the budget ceiling and
 the journey reference onto every hold call from the request the backend

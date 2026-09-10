@@ -256,3 +256,97 @@ def test_fingerprint_matches_the_backend_canonical_form():
 
     backend_terms = normalize_hold_terms("cty-002 ", " 7  Nights", 2, Decimal("2500.00"))
     assert holds.fingerprint(terms) == fingerprint_terms(backend_terms)
+
+
+def _booking_args():
+    return {
+        "travelerId": "trv_meridian_demo",
+        "bookingId": "HLD-1",
+        "totalCents": 500000,
+        "travelerConfirmed": True,
+        "budgetCeilingCents": 700000,
+        "journeyRef": "concierge:conv-1",
+    }
+
+
+BOOKING_RECEIPT = [{
+    "status": "confirmed",
+    "created_at": "2026-09-10 12:00:00+00",
+    "confirmed_at": "2026-09-10 13:00:00+00",
+    "hold_expires_at": "2026-09-11 00:00:00+00",
+    "total_amount": "5000.00",
+    "package_id": "CTY-002",
+    "duration": "7 nights",
+    "travelers_count": 2,
+    "observed_at": "2026-09-10 13:00:01+00",
+}]
+
+
+def test_confirm_booking_sets_scope_steps_down_and_returns_the_confirmed_row(config, monkeypatch):
+    api = FakeDataApi({
+        "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        "FROM confirm_booking": [{
+            "booking_id": "HLD-1", "status": "confirmed", "replayed": False,
+            "confirmed_at": "2026-09-10 13:00:00+00",
+            "hold_expires_at": "2026-09-11 00:00:00+00", "total_amount": "5000.00",
+        }],
+        "FROM bookings b": BOOKING_RECEIPT,
+    })
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(_booking_args(), _context("MeridianHolds___confirm_booking"))
+    booking = result["booking"]
+    assert booking["bookingId"] == "HLD-1"
+    assert booking["status"] == "confirmed"
+    assert booking["replayed"] is False
+    assert booking["confirmedAt"] == "2026-09-10 13:00:00+00"
+    assert booking["expiresAt"] == "2026-09-11 00:00:00+00"
+    assert booking["totalAmount"] == "5000.00"
+    assert booking["packageId"] == "CTY-002" and booking["travelers"] == 2
+    assert result["governance"]["decision"] == "allow"
+    assert "Confirmed booking HLD-1" in result["summary"]
+    joined = "\n".join(api.statements)
+    assert joined.index("traveler_access_audit") < joined.index("SET LOCAL ROLE meridian_app")
+    assert joined.index("SET LOCAL ROLE meridian_app") < joined.index("FROM confirm_booking")
+    assert joined.index("FROM confirm_booking") < joined.index("FROM bookings b")
+    assert api.tx == ["begin", "commit"]
+    params = api.parameters[api.statements.index(holds.CONFIRM_SQL)]
+    assert params == {"booking_id": "HLD-1", "traveler": "trv_meridian_demo", "total": "5000.00"}
+
+
+def test_confirm_booking_replays_an_already_confirmed_booking(config, monkeypatch):
+    api = FakeDataApi({
+        "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        "FROM confirm_booking": [{
+            "booking_id": "HLD-1", "status": "confirmed", "replayed": True,
+            "confirmed_at": "2026-09-10 13:00:00+00",
+            "hold_expires_at": "2026-09-11 00:00:00+00", "total_amount": "5000.00",
+        }],
+        "FROM bookings b": BOOKING_RECEIPT,
+    })
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(_booking_args(), _context("MeridianHolds___confirm_booking"))
+    assert result["booking"]["replayed"] is True
+    assert result["summary"].startswith("Already confirmed booking HLD-1")
+
+
+def test_confirm_booking_reports_business_errors_by_name(config, monkeypatch):
+    class Failing(FakeDataApi):
+        def execute_statement(self, **kwargs):
+            if "FROM confirm_booking" in kwargs["sql"]:
+                raise RuntimeError("ERROR: hold_expired")
+            return super().execute_statement(**kwargs)
+
+    api = Failing({"FROM traveler_identity_bindings": [{"binding_id": "b"}]})
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(_booking_args(), _context("MeridianHolds___confirm_booking"))
+    assert result == {"error": "hold_expired"}
+    assert api.tx == ["begin", "rollback"]
+
+
+def test_confirm_booking_refuses_when_the_workload_has_no_grant(config, monkeypatch):
+    api = FakeDataApi({"FROM traveler_identity_bindings": []})
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(_booking_args(), _context("MeridianHolds___confirm_booking"))
+    assert result["error"] == "traveler_not_authorized"
+    assert api.tx == ["begin", "rollback"]
+    assert not any("confirm_booking" in s for s in api.statements)

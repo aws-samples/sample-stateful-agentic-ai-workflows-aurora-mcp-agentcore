@@ -1,10 +1,11 @@
 import {
   AlertTriangle,
+  ArrowRight,
   Sparkles,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { ChatComposer } from './ChatComposer';
-import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import type { AdoptableHold, MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { SHOWCASE_FINALE_PROMPT } from '../lib/showcaseAdapters';
 import {
   deriveRecoveryEvidence,
@@ -67,12 +68,15 @@ function initialRecoveryLayout(): RecoveryLayout {
 export function RecoveryWorkspace({
   state,
   onOpenProof = () => {},
+  onOpenConcierge,
   showComposer = true,
   showHeading = true,
   journeyDocument,
 }: {
   state: MeridianShowcaseState;
   onOpenProof?: () => void;
+  /** Take the held package back to the concierge, where the traveler confirms the trip. */
+  onOpenConcierge?: (hold: AdoptableHold) => void;
   showComposer?: boolean;
   showHeading?: boolean;
   journeyDocument?: JourneyDocument | null;
@@ -169,6 +173,19 @@ export function RecoveryWorkspace({
     state.messages.length > 0 || state.isLoading || Boolean(state.error);
   const workflowProof = deriveWorkflowState(state.traceSpans);
   const savedHold = journeyDocument?.active_thread_id === state.conversationId && isObserved(journeyDocument?.hold) ? journeyDocument.hold : null;
+  const handoffHold: AdoptableHold | null = savedHold?.status === 'held'
+    ? savedHold
+    : !savedHold && workflowProof.holdId && workflowProof.holdStatus === 'held' && topRecoveryOption
+      ? {
+        booking_id: workflowProof.holdId,
+        package_id: topRecoveryOption.product_id,
+        duration: null,
+        travelers_count: null,
+        hold_expires_at: workflowProof.holdExpiresAt || null,
+        hold_created_at: workflowProof.holdCreatedAt || null,
+        status: 'held',
+      }
+      : null;
   const recoveryStatusLabel =
     recoveryStage === 'ready'
       ? 'Recovery plan ready'
@@ -239,6 +256,17 @@ export function RecoveryWorkspace({
         status={savedHold?.status ?? workflowProof.holdStatus}
         compact
       />}
+      {handoffHold && onOpenConcierge && (
+        <div className="mds-recovery-handoff">
+          <div>
+            <strong>Bring it home.</strong>
+            <span>The package is held. Alex confirms the trip with the concierge; the booking policy decides before Aurora confirms.</span>
+          </div>
+          <button type="button" className="mc-session-primary" onClick={() => onOpenConcierge(handoffHold)}>
+            Take it back to Alex<ArrowRight size={16} aria-hidden="true" />
+          </button>
+        </div>
+      )}
       {state.tripHolds?.slice(-1).map(hold => <TripHoldReceipt key={hold.order.order_id} hold={hold} compact />)}
 
       {layoutReviewEnabled && (

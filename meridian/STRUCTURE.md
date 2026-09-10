@@ -26,8 +26,8 @@ Production and Orchestration modes import agent / workflow modules at runtime:
 - `backend/agents/production_04/memory_agent.py` — `@tool` recall/persist methods
 - `backend/agents/orchestration_05/workflow.py` — LangGraph `StateGraph` + shared pooled `PostgresSaver`/ephemeral `MemorySaver`
 - `backend/agentcore/runtime.py`, `backend/agentcore/identity.py` — Bedrock AgentCore adapters (streaming runtime client, identity envelope)
-- `meridian_agentcore/app/MeridianConcierge/` — the Phase 4 agent deployed to AgentCore Runtime: `main.py` (tool loop, memory session, SSE events), `turn_trace.py` (spans and the pinned hold contract), `prompts.py`, `gateway_auth.py`
-- `meridian_agentcore/agentcore/gateway_targets/meridian_holds/` — the `MeridianHolds` gateway Lambda (`get_package_details`, `create_courtesy_hold`)
+- `meridian_agentcore/app/MeridianConcierge/` — the Phase 4 agent deployed to AgentCore Runtime: `main.py` (tool loop, memory session, SSE events), `turn_trace.py` (spans and the pinned hold and booking contract), `hold_execution.py` (platform-executed hold and confirmation), `prompts.py`, `gateway_auth.py`
+- `meridian_agentcore/agentcore/gateway_targets/meridian_holds/` — the `MeridianHolds` gateway Lambda (`get_package_details`, `create_courtesy_hold`, `confirm_booking`)
 - `meridian_agentcore/agentcore/agentcore.json` — runtime, memory, gateway targets, and the `MeridianGovernance` Cedar policy engine
 
 SQL/MCP/Retrieval modes execute inside `chat.py` (`sql_search`, `mcp_search`, `retrieval_search`). The matching files under `backend/agents/sql_01`, `backend/agents/mcp_02`, and `backend/agents/retrieval_03` are the imported mode implementations.

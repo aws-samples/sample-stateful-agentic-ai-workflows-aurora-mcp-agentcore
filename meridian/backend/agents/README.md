@@ -11,7 +11,7 @@ Five orchestration phases, each teaching a different builder pattern on the **sa
 | 3 | Package Agent | `retrieval_03/package_agent.py` | `@tool` details + departure availability |
 | 3 | Booking Agent | `retrieval_03/booking_agent.py` | `@tool` totals + Aurora booking writes |
 | 4 | **Production Agent** | `production_04/concierge.py` | Identity, traveler grant, RLS read and write around the managed runtime |
-| 4 | Concierge runtime | `../../meridian_agentcore/app/MeridianConcierge/main.py` | Strands agent in AgentCore Runtime: tools from AgentCore Gateway over MCP, AgentCore Memory session, Cedar-governed hold |
+| 4 | Concierge runtime | `../../meridian_agentcore/app/MeridianConcierge/main.py` | Strands agent in AgentCore Runtime: tools from AgentCore Gateway over MCP, AgentCore Memory session, Cedar-governed hold and booking confirmation |
 | 4 | Traveler Memory Agent | `production_04/memory_agent.py` | `@tool` recall / persist for Aurora memory |
 | 5 | **Orchestration Agent** | `orchestration_05/workflow.py` | LangGraph `StateGraph` + Aurora checkpoints; the hold node places its courtesy hold through the AgentCore Gateway tool under Cedar (`orchestration_05/governed_hold.py`) |
 

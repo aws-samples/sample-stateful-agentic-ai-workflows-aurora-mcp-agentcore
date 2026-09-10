@@ -12,7 +12,7 @@ const PHASES: [string, string, string][] = [
   ['SQL', 'Ground the assistant in live rows.', 'Parameterised filters over trip_packages in Aurora PostgreSQL through the RDS Data API. The trace shows the SQL that ran and the rows it returned.'],
   ['MCP', 'Give the agent tools it can reuse.', 'Search, compare and currency conversion behind named MCP tool contracts. The trace shows each tool name, its inputs and its result.'],
   ['Retrieval', 'Find trips by meaning.', 'pgvector similarity and full-text search fused into one candidate list, then reranked by Cohere Rerank 3.5 on Bedrock. The trace shows candidate scores and the rerank order.'],
-  ['Production', 'Run the concierge on managed infrastructure under policy.', 'A Strands agent in Bedrock AgentCore Runtime calls its tools through AgentCore Gateway over MCP; a Cedar policy engine decides every call; AgentCore Memory carries the conversation. A courtesy hold is a governed write.'],
+  ['Production', 'Run the concierge on managed infrastructure under policy.', 'A Strands agent in Bedrock AgentCore Runtime calls its tools through AgentCore Gateway over MCP; a Cedar policy engine decides every call; AgentCore Memory carries the conversation. A courtesy hold and its confirmation are governed writes.'],
   ['Workflow', 'Make multi-step work survive a dead worker.', 'A LangGraph state graph checkpoints every node into Aurora, holds a worker lease, and places its hold through the same gateway tool. Kill the worker; a second one resumes the same thread and finds one hold.'],
 ];
 
@@ -26,6 +26,7 @@ const CODE_DECIDES: [string, string][] = [
   ['Who the caller is', 'STS or AgentCore Identity names the workload; Aurora binds that subject to a traveler before any row is read.'],
   ['What a hold may cost', 'The budget ceiling comes from the traveler’s saved budget fact, read under RLS; the runtime pins it onto the hold call. The model never chooses it.'],
   ['Whether a hold runs', 'The traveler’s confirmation flag and the ceiling travel as tool arguments; Cedar evaluates them before the Lambda runs.'],
+  ['Whether a booking is confirmed', 'The traveler confirms the held trip in the concierge. The backend reads the booking total under RLS, the runtime pins the confirmation and the ceiling, Cedar decides, and Aurora flips the same booking row from held to confirmed. No supplier, no payment.'],
   ['Inventory and replay', 'create_courtesy_hold in Aurora takes the capacity lock, decrements seats and replays an identical request instead of holding twice.'],
 ];
 
@@ -33,6 +34,7 @@ const TOOLS: [string, string, string][] = [
   ['SemanticTripSearchLambda___semantic_trip_search', 'Read', 'Embeds the query with Cohere Embed v4, searches pgvector and full-text indexes in Aurora, and returns ranked packages with scores.'],
   ['MeridianHolds___get_package_details', 'Read', 'One package with its live durations, availability and highlights, read under the traveler’s RLS scope.'],
   ['MeridianHolds___create_courtesy_hold', 'Write', 'Places a courtesy hold on one package duration. Requires the traveler id, confirmation flag, budget ceiling and journey reference the platform pinned; accepts a checkpointed request id, booking id and worker execution id for replay.'],
+  ['MeridianHolds___confirm_booking', 'Write', 'Confirms a held booking for the authorized traveler: catalog inventory in Meridian’s database only, no supplier and no payment. Requires the booking id and the total Aurora holds, plus the traveler id, confirmation flag, budget ceiling and journey reference the platform pinned. A retry returns the original confirmation.'],
 ];
 
 const POLICIES: [string, string, string][] = [
@@ -40,6 +42,8 @@ const POLICIES: [string, string, string][] = [
    'permit(principal,\n  action in [AgentCore::Action::"SemanticTripSearchLambda___semantic_trip_search",\n             AgentCore::Action::"MeridianHolds___get_package_details"],\n  resource == AgentCore::Gateway::"arn:aws:bedrock-agentcore:us-east-1:...:gateway/meridianv2-meridian-aurora-temzt21jg0");'],
   ['meridian_hold_governance', 'A courtesy hold runs only after the traveler confirmed it, for at most 12 hours, for at most 6 travelers, and within the traveler’s saved budget ceiling. Nothing else permits the hold, so any other call is denied by default.',
    'permit(principal,\n  action == AgentCore::Action::"MeridianHolds___create_courtesy_hold",\n  resource == AgentCore::Gateway::"arn:aws:bedrock-agentcore:us-east-1:...:gateway/meridianv2-meridian-aurora-temzt21jg0")\nwhen {\n  context.input.travelerConfirmed == true &&\n  context.input.holdMinutes <= 720 &&\n  context.input.travelers <= 6 &&\n  context.input.totalCents <= context.input.budgetCeilingCents\n};'],
+  ['meridian_booking_governance', 'A held booking is confirmed only after the traveler confirmed it and only when its total is within the traveler’s saved budget ceiling. Aurora enforces that the booking is held, unexpired and owned by the traveler. Nothing else permits confirm_booking, so any other call is denied by default.',
+   'permit(principal,\n  action == AgentCore::Action::"MeridianHolds___confirm_booking",\n  resource == AgentCore::Gateway::"arn:aws:bedrock-agentcore:us-east-1:...:gateway/meridianv2-meridian-aurora-temzt21jg0")\nwhen {\n  context.input.travelerConfirmed == true &&\n  context.input.totalCents <= context.input.budgetCeilingCents\n};'],
 ];
 
 const CONTROLS: [string, string][] = [
@@ -47,7 +51,7 @@ const CONTROLS: [string, string][] = [
   ['Authorize the traveler', 'traveler_identity_bindings in Aurora grants that subject a traveler. A missing grant fails before any row-level scope is set, and both allow and deny land in traveler_access_audit.'],
   ['Scope every row', 'Row-Level Security filters rows to the authorized traveler under the least-privilege meridian_app role, inside one Data API transaction.'],
   ['Decide every tool call', 'AgentCore Gateway serves the tools over MCP with SigV4; its Cedar policy engine, MeridianGovernance in ENFORCE mode, decides each call on the arguments before any Lambda runs.'],
-  ['Make the writer a workload too', 'The MeridianHolds Lambda holds its own grant, sets the traveler scope, steps down to meridian_app and calls create_courtesy_hold, so a retried call replays the same booking.'],
+  ['Make the writer a workload too', 'The MeridianHolds Lambda holds its own grant, sets the traveler scope, steps down to meridian_app and calls create_courtesy_hold or confirm_booking, so a retried call replays the same booking or the same confirmation.'],
 ];
 
 const SERVICE_MARKS: Record<string, ServiceMarkName> = {
@@ -62,7 +66,7 @@ const SERVICE_MARKS: Record<string, ServiceMarkName> = {
 const SERVICES: [string, string][] = [
   ['Amazon Aurora PostgreSQL', 'Catalog, traveler profile and preferences, identity bindings and audit, LangGraph checkpoints, journeys, leases and holds. pgvector HNSW for retrieval; RLS for scope; the RDS Data API as the connectionless transport.'],
   ['Amazon Bedrock AgentCore Runtime', 'Hosts the Phase 4 Strands agent in its own microVM with the AWS Distro for OpenTelemetry attached.'],
-  ['Amazon Bedrock AgentCore Gateway', 'Serves the three tools over MCP with IAM authorization and names them Target___tool.'],
+  ['Amazon Bedrock AgentCore Gateway', 'Serves the four tools over MCP with IAM authorization and names them Target___tool.'],
   ['Amazon Bedrock AgentCore Policy', 'Cedar policy engine attached to the gateway in ENFORCE mode; default deny.'],
   ['Amazon Bedrock AgentCore Memory', 'Semantic memory strategy over the concierge session, namespaced per traveler and conversation.'],
   ['Amazon Bedrock', 'Claude Sonnet 5 for the agents, Cohere Embed v4 and Cohere Rerank 3.5 for retrieval.'],
@@ -102,8 +106,8 @@ export function SolutionBriefing({ onOpenLadder }: { onOpenLadder: () => void })
         <h2>Overview</h2>
         <p>
           Alex Morgan asks for a trip. The answer has to respect what Alex told the concierge
-          weeks ago, stay inside a saved budget, come from live inventory, and leave behind a
-          record that a second worker or a second person can pick up. The same Aurora cluster
+          weeks ago, stay inside a saved budget, come from live inventory, end in a booking Alex
+          confirmed, and leave behind a record that a second worker or a second person can pick up. The same Aurora cluster
           holds the catalog, the traveler’s memory, the authorization bindings, the workflow
           checkpoints and the holds, so every proof on the System evidence surface is read back
           from the database rather than narrated.
@@ -150,17 +154,17 @@ export function SolutionBriefing({ onOpenLadder }: { onOpenLadder: () => void })
         </div>
         <p className="mds-brief-boundary">
           <strong>Boundary:</strong> the runtime overwrites the traveler id, the confirmation flag,
-          the budget ceiling and the journey reference on every hold call from the request the
-          backend authorized. A confirmed hold is placed by the platform before the model speaks;
-          the model narrates the receipt. The model proposes the hold; it cannot confirm it or move
-          the ceiling.
+          the budget ceiling and the journey reference on every hold and booking call from the
+          request the backend authorized. A confirmed hold or booking is placed by the platform
+          before the model speaks; the model narrates the receipt. The model proposes; it cannot
+          confirm on the traveler’s behalf or move the ceiling.
         </p>
       </section>
 
       <section className="mds-brief-section">
         <h2>Tools over MCP</h2>
         <p>
-          Three tools, two Lambda targets, one gateway. The runtime discovers them with an MCP
+          Four tools, two Lambda targets, one gateway. The runtime discovers them with an MCP
           <code> tools/list</code> call and invokes them with <code>tools/call</code>, signing each
           request with SigV4 from its own execution role. The Phase 5 workflow calls the hold tool
           the same way from the backend.
@@ -180,7 +184,7 @@ export function SolutionBriefing({ onOpenLadder }: { onOpenLadder: () => void })
         <p>
           Policy in AgentCore attaches a Cedar policy engine, <code>MeridianGovernance</code>, to
           the gateway in ENFORCE mode. The engine is default deny: a tool call runs only when a
-          policy permits it. Two policies govern Meridian, written as they are provisioned.
+          policy permits it. Three policies govern Meridian, written as they are provisioned.
         </p>
         <div className="mds-brief-policies">
           {POLICIES.map(([name, plain, statement]) => (
@@ -194,7 +198,7 @@ export function SolutionBriefing({ onOpenLadder }: { onOpenLadder: () => void })
         <p>
           The arguments those conditions read, <code>travelerConfirmed</code>,
           <code> holdMinutes</code>, <code>travelers</code>, <code>totalCents</code> and
-          <code> budgetCeilingCents</code>, are required by the tool schema, and the amounts are
+          <code> budgetCeilingCents</code>, are required by the tool schemas, and the amounts are
           integer cents because Cedar has no floating point type. A denied call comes back to the
           agent as an explained refusal and renders on the trace as <em>Denied by policy</em>.
         </p>
@@ -261,6 +265,15 @@ export function SolutionBriefing({ onOpenLadder }: { onOpenLadder: () => void })
           Lambda writes under the traveler’s scope. No payment is taken and nothing is sent to a
           supplier; the inventory is fictional and the seats return when the hold expires.
         </p>
+        <p>
+          Confirmation brings the journey home. The recovery desk hands the held package back to
+          the concierge, Alex confirms the trip in a dialog that restates the package, party, total
+          and saved budget, and the platform carries that click as the <code>travelerConfirmed</code>
+          argument of <code>confirm_booking</code>. Cedar decides, and the <code>confirm_booking</code>
+          function in Aurora turns the same booking row from <code>held</code> to <code>confirmed</code>
+          only while the hold is unexpired and the total matches. It books catalog inventory in
+          Meridian’s database; no supplier is contacted and no payment is taken.
+        </p>
       </section>
 
       <section className="mds-brief-section">
@@ -269,7 +282,7 @@ export function SolutionBriefing({ onOpenLadder }: { onOpenLadder: () => void })
           <div><span>Browser</span><b>→</b><span>CloudFront</span><b>→</b><span>App Runner</span><b>→</b><strong>FastAPI backend</strong></div>
           <div><strong>Phases 1 to 3</strong><b>→</b><span>SQL, MCP tools, hybrid retrieval</span><b>→</b><span>Aurora PostgreSQL via the RDS Data API</span><b>→</b><span>Bedrock embeddings and rerank</span></div>
           <div><strong>Phase 4</strong><b>→</b><span>AgentCore Runtime (Strands)</span><b>→</b><span>AgentCore Gateway + Cedar</span><b>→</b><span>Lambda targets</span><b>→</b><span>Aurora under RLS</span><b>+</b><span>AgentCore Memory</span></div>
-          <div><strong>Phase 5</strong><b>→</b><span>LangGraph in the backend</span><b>→</b><span>Aurora checkpoints and leases</span><b>→</b><span>the same gateway hold tool</span></div>
+          <div><strong>Phase 5</strong><b>→</b><span>LangGraph in the backend</span><b>→</b><span>Aurora checkpoints and leases</span><b>→</b><span>the same gateway hold tool</span><b>→</b><span>back to the concierge for confirmation</span></div>
           <div><strong>OpenTelemetry</strong><b>→</b><span>ADOT on the runtime</span><b>→</b><span>CloudWatch spans and trace ids</span></div>
         </div>
       </section>

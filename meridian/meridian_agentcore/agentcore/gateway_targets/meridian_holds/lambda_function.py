@@ -1,4 +1,4 @@
-"""Gateway target: get_package_details and create_courtesy_hold.
+"""Gateway target: get_package_details, create_courtesy_hold and confirm_booking.
 
 The gateway passes tool arguments as the event and the tool name in the client
 context. Before any traveler-scoped write, this function authorizes its own
@@ -6,7 +6,9 @@ execution role against traveler_identity_bindings, records the decision in
 traveler_access_audit, pins the RLS scope and steps down to meridian_app, all
 inside one Data API transaction. The hold itself is the SQL function
 create_courtesy_hold from migration 008, so a retried tool call replays the
-same booking instead of taking a second one.
+same booking instead of taking a second one. Confirmation is confirm_booking
+from migration 010: it books catalog inventory in this database, takes no
+payment, and a retry reports the original confirmation.
 """
 
 from __future__ import annotations
@@ -48,6 +50,19 @@ HOLD_SQL = (
     ":request_id::TEXT, :fingerprint::TEXT, :package_id::TEXT, :duration::TEXT, "
     ":quantity::INTEGER, :unit_price::NUMERIC, :total::NUMERIC, :expires_at::TIMESTAMPTZ)"
 )
+CONFIRM_SQL = (
+    "SELECT booking_id, status, replayed, confirmed_at::TEXT AS confirmed_at, "
+    "hold_expires_at::TEXT AS hold_expires_at, total_amount::TEXT AS total_amount "
+    "FROM confirm_booking(:booking_id::TEXT, :traveler::TEXT, :total::NUMERIC)"
+)
+BOOKING_RECEIPT_SQL = (
+    "SELECT b.status, b.created_at::TIMESTAMPTZ::TEXT AS created_at, "
+    "b.confirmed_at::TIMESTAMPTZ::TEXT AS confirmed_at, "
+    "b.hold_expires_at::TEXT AS hold_expires_at, b.total_amount::TEXT AS total_amount, "
+    "bl.package_id, bl.duration, bl.travelers_count, CURRENT_TIMESTAMP::TEXT AS observed_at "
+    "FROM bookings b LEFT JOIN booking_lines bl ON bl.booking_id = b.booking_id "
+    "WHERE b.booking_id = :b AND b.traveler_id = :t"
+)
 BUSINESS_ERRORS = (
     "execution_lease_lost",
     "insufficient_inventory",
@@ -57,6 +72,10 @@ BUSINESS_ERRORS = (
     "booking_agent_not_authorized",
     "invalid_hold_quantity",
     "hold_request_parameter_mismatch",
+    "booking_not_found",
+    "booking_amount_mismatch",
+    "booking_not_held",
+    "hold_expired",
 )
 
 
@@ -342,6 +361,65 @@ def create_courtesy_hold(args: dict) -> dict:
     }
 
 
+def _booking_receipt(booking_id: str, traveler_id: str, tx: str) -> dict:
+    """The persisted booking and its line, read under the traveler's scope after confirmation."""
+    rows = query(BOOKING_RECEIPT_SQL, {"b": booking_id, "t": traveler_id}, tx)
+    if not rows or rows[0].get("status") != "confirmed":
+        raise RuntimeError("persisted booking receipt unavailable")
+    return rows[0]
+
+
+def confirm_booking(args: dict) -> dict:
+    """Confirm the held booking the traveler approved. Cedar decided on the arguments already."""
+    traveler_id = str(args["travelerId"])
+    booking_id = str(args["bookingId"]).strip()
+    total = str((Decimal(int(args["totalCents"])) / Decimal(100)).quantize(Decimal("0.01")))
+    tx = RDS.begin_transaction(
+        resourceArn=CONFIG.cluster_arn, secretArn=CONFIG.secret_arn, database=CONFIG.database
+    )["transactionId"]
+    try:
+        governance = _authorize(traveler_id, tx)
+        if not governance["allowed"]:
+            _transaction("rollback", tx)
+            _record_denied_audit(governance, traveler_id)
+            return {"error": "traveler_not_authorized", "governance": governance}
+        _scope(traveler_id, tx)
+        query(
+            "SELECT set_config('app.thread_id', :t, true)", {"t": str(args["journeyRef"])}, tx
+        )
+        row = query(
+            CONFIRM_SQL, {"booking_id": booking_id, "traveler": traveler_id, "total": total}, tx
+        )[0]
+        receipt = _booking_receipt(booking_id, traveler_id, tx)
+        _transaction("commit", tx)
+    except Exception as error:  # noqa: BLE001 - the SQL function raises named business errors
+        _transaction("rollback", tx)
+        return {"error": _named_error(error)}
+    result = {
+        "bookingId": booking_id,
+        "status": str(receipt["status"]),
+        "replayed": bool(row["replayed"]),
+        "confirmedAt": str(receipt["confirmed_at"]),
+        "createdAt": str(receipt["created_at"]),
+        "expiresAt": str(receipt["hold_expires_at"]),
+        "observedAt": str(receipt["observed_at"]),
+        "totalAmount": str(receipt["total_amount"]),
+        "packageId": receipt.get("package_id"),
+        "duration": receipt.get("duration"),
+        "travelers": receipt.get("travelers_count"),
+    }
+    verb = "Already confirmed" if result["replayed"] else "Confirmed"
+    return {
+        "booking": result,
+        "governance": governance,
+        "summary": (
+            f"{verb} booking {booking_id} for {result['packageId']} ({result['duration']}, "
+            f"{result['travelers']} traveler(s)), total ${result['totalAmount']}, "
+            f"confirmed {result['confirmedAt']}"
+        ),
+    }
+
+
 def _record_denied_audit(governance: dict, traveler_id: str) -> None:
     """A DENY is evidence: keep the audit row even though the hold transaction rolled back."""
     provider, subject_id, principal = SUBJECT
@@ -364,7 +442,11 @@ def _named_error(error: Exception) -> str:
     return text[:300]
 
 
-TOOLS = {"get_package_details": get_package_details, "create_courtesy_hold": create_courtesy_hold}
+TOOLS = {
+    "get_package_details": get_package_details,
+    "create_courtesy_hold": create_courtesy_hold,
+    "confirm_booking": confirm_booking,
+}
 
 
 def lambda_handler(event, context):

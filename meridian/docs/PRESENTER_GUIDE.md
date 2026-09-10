@@ -210,6 +210,12 @@ Keep the two hold policies distinct:
 - The recovery workflow requests a **15-minute package hold** after resume.
   Its receipt uses booking creation and expiry timestamps. A saved shortlist
   alone does not reserve inventory.
+- **Confirm this trip for Alex** appears on a held trip. The dialog restates the
+  package, duration, party, total and saved budget; **Yes, confirm this trip**
+  sends `confirm_booking` through the gateway and the receipt reads
+  **Confirmed booking** everywhere it appears. **Take it back to Alex** on the
+  Recovery desk brings the workflow's hold into the concierge for the same
+  confirmation. Catalog inventory only; no supplier, no payment.
 - **Request 12-hour hold** in trip details creates a separate courtesy hold.
   Its countdown appears in the drawer, the Concierge travel brief, and the
   Recovery desk. Closing a drawer or moving between views keeps the original
@@ -343,7 +349,7 @@ Keep these statements explicit:
   role lost its grant. Run `python scripts/bind_gateway_workload.py` from
   `meridian/` and click again.
 - **Phase 4 says the platform is not configured or the gateway lists fewer
-  than three tools:** run `python scripts/verify_agentcore.py`; if the policy
+  than four tools:** run `python scripts/verify_agentcore.py`; if the policy
   engine row is MISSING, `agentcore deploy -y` from `meridian_agentcore`
   reattaches it.
 - **Live service is unavailable:** use the committed screenshot in this

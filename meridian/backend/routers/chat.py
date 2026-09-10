@@ -154,8 +154,10 @@ class Order(BaseModel):
     status: str
     estimated_delivery: Optional[str] = None
     hold_expires_at: Optional[str] = None
+    hold_created_at: Optional[str] = None
     departure_date: Optional[str] = None
     payment_required: bool = False
+    confirmed_at: Optional[str] = None
 
 
 class MemoryFact(BaseModel):
@@ -2831,6 +2833,7 @@ def _order_from_hold(pkg: dict, request: "OrderRequest", duration: str, hold: di
         estimated_delivery=None,
         departure_date=None,
         hold_expires_at=hold.get("expiresAt"),
+        hold_created_at=hold.get("createdAt"),
         payment_required=False,
     )
 
@@ -2874,6 +2877,129 @@ async def production_hold(request: "OrderRequest") -> OrderResponse:
     log_order(phase=4, order_id=order.order_id, product_id=request.product_id,
               total=order.total, status=order.status)
     return OrderResponse(message=outcome.message, order=order, activities=activities)
+
+
+class BookingRequest(BaseModel):
+    """Request model for confirming a held package. Catalog inventory only, no payment."""
+    booking_id: str = Field(min_length=1, max_length=50)
+    phase: Literal[4] = 4
+    traveler_id: str = Field(default="trv_meridian_demo", min_length=1, max_length=50)
+    conversation_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
+
+
+class BookingResponse(BaseModel):
+    """Response model for a booking confirmation."""
+    message: str
+    order: Optional[Order] = None
+    activities: List[ActivityEntry]
+
+
+TRAVELER_BOOKING_SQL = """
+    SELECT b.booking_id, b.status, b.total_amount, b.hold_expires_at, b.confirmed_at,
+           bl.package_id, bl.duration, bl.travelers_count, bl.unit_price
+      FROM bookings b
+      JOIN booking_lines bl ON bl.booking_id = b.booking_id
+     WHERE b.booking_id = %s AND b.traveler_id = %s
+"""
+
+
+async def _traveler_booking(traveler_id: str, booking_id: str) -> dict:
+    """The booking and its line as Aurora holds them, read under the traveler's RLS scope."""
+    db = get_rds_data_client()
+    async with db.scoped_session(
+        traveler_id=traveler_id,
+        agent_type="concierge_agent",
+        authorization=get_agentcore_identity().authorization_context(),
+    ) as transaction_id:
+        rows = await db.execute(
+            TRAVELER_BOOKING_SQL, (booking_id, traveler_id), transaction_id=transaction_id
+        )
+    if not rows:
+        raise HTTPException(status_code=404, detail="That booking is not on record for you.")
+    return rows[0]
+
+
+def _order_from_booking(pkg: dict, line: dict, booking: dict) -> Order:
+    quantity = int(line["travelers_count"])
+    unit_price = float(line["unit_price"])
+    total = float(booking.get("totalAmount") or line["total_amount"])
+    return Order(
+        order_id=str(booking["bookingId"]),
+        items=[OrderItem(product_id=pkg["product_id"], name=pkg["name"],
+                         size=str(line["duration"]), quantity=quantity, unit_price=unit_price)],
+        subtotal=total,
+        tax=0.0,
+        shipping=0.0,
+        total=total,
+        status=str(booking.get("status") or "confirmed"),
+        estimated_delivery=None,
+        departure_date=None,
+        hold_expires_at=booking.get("expiresAt"),
+        hold_created_at=booking.get("createdAt"),
+        payment_required=False,
+        confirmed_at=booking.get("confirmedAt"),
+    )
+
+
+async def production_booking(request: "BookingRequest") -> BookingResponse:
+    """Phase 4 confirmation: the runtime asks the gateway, Cedar decides, Aurora confirms.
+
+    The traveler's click is the confirmation. The backend reads the held booking
+    under RLS so the total the policy judges is the total Aurora holds, then
+    passes the confirmation to the runtime as ``booking_confirmed``. Nothing
+    here writes to Aurora: the SQL function behind the gateway tool flips the
+    booking from held to confirmed, or refuses by name.
+    """
+    from backend.agents.production_04.concierge import BookingTarget, create_production_agent
+
+    line = await _traveler_booking(request.traveler_id, request.booking_id)
+    _row, pkg = await _package_for_hold(str(line["package_id"]))
+    target = BookingTarget(
+        booking_id=str(line["booking_id"]),
+        total_cents=int(round(float(line["total_amount"]) * 100)),
+        package_id=pkg["product_id"],
+        duration=str(line["duration"]),
+        travelers=int(line["travelers_count"]),
+    )
+    try:
+        outcome = await create_production_agent().process_booking(
+            request.traveler_id, request.conversation_id, target
+        )
+    except TravelerAuthorizationError as e:
+        log_error(context="booking_authorization", error=str(e), phase=4)
+        raise HTTPException(status_code=403, detail=str(e)) from e
+    except Exception as e:
+        log_error(context="production_booking", error=str(e), phase=4)
+        raise HTTPException(
+            status_code=503,
+            detail="The governed booking could not be completed. Check the AgentCore platform.",
+        ) from e
+    activities = [_memory_activity_to_entry(a) for a in outcome.activities]
+    for act in activities:
+        log_activity_entry(act)
+    if not outcome.booking:
+        return BookingResponse(message=outcome.message, order=None, activities=activities)
+    order = _order_from_booking(pkg, line, outcome.booking)
+    log_order(phase=4, order_id=order.order_id, product_id=pkg["product_id"],
+              total=order.total, status=order.status)
+    return BookingResponse(message=outcome.message, order=order, activities=activities)
+
+
+@router.post("/book", response_model=BookingResponse)
+async def confirm_booking(
+    request: BookingRequest,
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> BookingResponse:
+    """
+    Confirm a held trip package for the authorized traveler.
+
+    Books catalog inventory in the Meridian database. No supplier is contacted
+    and no payment is authorized or captured. The gateway's Cedar policy decides
+    on the traveler's confirmation and the saved budget before Aurora confirms.
+    """
+    traveler_id = authorize_traveler(principal, request.traveler_id)
+    request = request.model_copy(update={"traveler_id": traveler_id})
+    return await production_booking(request)
 
 
 @router.post("/order", response_model=OrderResponse)

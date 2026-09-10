@@ -2,6 +2,8 @@
  * API client for Meridian backend
  */
 import type {
+  BookingRequest,
+  BookingResponse,
   ChatRequest,
   ChatResponse,
   LongTermMemoryFact,
@@ -206,6 +208,20 @@ export async function searchProducts(query: string, phase: 1 | 2 | 3 = 3): Promi
 /**
  * Process an order for a product
  */
+export async function confirmBooking(request: BookingRequest): Promise<BookingResponse> {
+  const response = await fetch(`${API_BASE}/chat/book`, {
+    method: 'POST',
+    headers: apiHeaders(true),
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Booking request failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
 export async function processOrder(request: OrderRequest): Promise<OrderResponse> {
   const response = await fetch(`${API_BASE}/chat/order`, {
     method: 'POST',

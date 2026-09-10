@@ -218,7 +218,7 @@
 .mds-root .is-discovery .mds-trip-modal { background: var(--mc-surface); color: var(--mc-ink); }
 /* Inside the concierge --mds-blue is the pale text accent, so filled actions take
    the action blue explicitly: white on blue, the same as every other surface. */
-.mds-root .is-discovery :is(.mds-trip-modal-actions .is-primary, .mds-compare-copy .is-primary, .mds-popover-primary, .mds-trip-confirm button) { background: var(--mc-action); border-color: var(--mc-action); color: var(--mc-on-action); }
+.mds-root .is-discovery :is(.mds-trip-modal-actions .is-primary, .mds-compare-copy .is-primary, .mds-popover-primary, .mds-trip-confirm .is-primary) { background: var(--mc-action); border-color: var(--mc-action); color: var(--mc-on-action); }
 .mds-root .is-discovery .mds-trip-modal-body h2 { font-family: var(--mds-font); }
 .mds-root .is-discovery .mds-trip-facts b { color: var(--mc-ink); }
 .mds-root .is-discovery .mds-toast { background: var(--mc-ink); color: var(--mc-ground); }
@@ -668,3 +668,7 @@
   .mds-root .mc-session-close { min-height: 0; padding: 14px 0 0; }
   .mds-root .mc-session-close h1 { font-size: 42px; }
 }
+
+/* A confirmed booking keeps the receipt shape; the countdown becomes the confirmation. */
+.mds-root .mc-hold-receipt.is-confirmed { border-color: rgb(var(--mds-green-rgb) / 0.45); }
+.mds-root .mc-hold-receipt.is-confirmed [role='timer'] { color: var(--mds-green); }

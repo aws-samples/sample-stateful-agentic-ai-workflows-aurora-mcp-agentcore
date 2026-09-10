@@ -4,6 +4,7 @@ import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { useDialogA11y } from '../hooks/useDialogA11y';
 import { TripVisual } from './TripVisual';
 import { TripHoldReceipt } from './TripHoldReceipt';
+import { BookingConfirmation } from './BookingConfirmation';
 import { useHoldClock } from '../hooks/useHoldClock';
 
 function duration(product: Product) {
@@ -17,6 +18,9 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
   const hold = state.tripHolds?.find(item => item.productId === product?.product_id);
   const { expired, knownExpiry } = useHoldClock(hold?.order.hold_expires_at);
   const activeHold = hold?.order.status === 'held' && knownExpiry && !expired;
+  const confirmed = hold?.order.status === 'confirmed';
+  const confirming = Boolean(hold) && state.bookingPrompt?.order.order_id === hold?.order.order_id;
+  const profile = state.travelerProfile ?? state.previewProfile;
   if (!open || !product) return null;
 
   const saved = state.savedTripIds.has(product.product_id);
@@ -51,7 +55,17 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
             <h2 id="trip-detail-title">{product.name}</h2>
             <p>{product.description}</p>
           </header>
-          {hold && <TripHoldReceipt hold={hold} />}
+          {hold && !confirming && <TripHoldReceipt hold={hold} />}
+          {hold && confirming && (
+            <BookingConfirmation
+              product={product}
+              hold={hold}
+              budget={profile?.budget_max}
+              busy={state.isLoading}
+              onConfirm={() => void state.confirmTrip(product)}
+              onCancel={state.dismissBookingConfirmation}
+            />
+          )}
           <div className="mds-trip-facts">
             <div><span>Package</span><b>${product.price.toLocaleString()} / traveler</b></div>
             <div><span>Duration</span><b>{duration(product)}</b></div>
@@ -73,7 +87,11 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
           </section>
           <div className="mds-trip-disclosure">
             <ShieldCheck size={17} />
-            A courtesy hold reserves catalog inventory for 12 hours. No payment is charged.
+            {confirmed
+              ? 'This trip is confirmed in Meridian’s database. No supplier was contacted and no payment was taken.'
+              : activeHold
+                ? 'Confirming books the held catalog inventory in Meridian’s database. No payment is charged.'
+                : 'A courtesy hold reserves catalog inventory for 12 hours. No payment is charged.'}
           </div>
           {!hold && state.actionDrawer?.product.product_id === product.product_id && (
             <div className="mds-hold-receipt" role="status">
@@ -88,9 +106,18 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
             <button type="button" onClick={() => state.compareTrip(product)} aria-pressed={compared}>
               <GitCompareArrows size={17} />{compared ? 'Comparing' : 'Compare'}
             </button>
-            <button className="is-primary" type="button" onClick={() => void state.holdTrip(product)} disabled={state.isLoading || activeHold}>
-              {state.isLoading ? 'Creating hold...' : activeHold ? 'Package held' : 'Request 12-hour hold'}
-            </button>
+            {!confirming && (
+              <button
+                className="is-primary"
+                type="button"
+                onClick={() => activeHold ? state.requestBookingConfirmation(product) : void state.holdTrip(product)}
+                disabled={state.isLoading || confirmed}
+              >
+                {state.isLoading
+                  ? activeHold ? 'Confirming...' : 'Creating hold...'
+                  : confirmed ? 'Trip confirmed' : activeHold ? 'Confirm this trip for Alex' : 'Request 12-hour hold'}
+              </button>
+            )}
           </footer>
         </div>
       </section>

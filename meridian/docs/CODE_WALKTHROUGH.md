@@ -119,10 +119,12 @@ The reranker model id isn't in this file — the call delegates to
 | `_authorize` | "The Lambda is a workload too. It proves its own grant in `traveler_identity_bindings` and audits the decision, allow or deny." |
 | `_scope` | "Same GUCs, same `SET LOCAL ROLE meridian_app` as the backend, inside one Data API transaction." |
 | `create_courtesy_hold` and `HOLD_SQL` | "The idempotent SQL function behind every hold. The Phase 5 workflow calls this same tool with its checkpointed request id and its execution lease, so a retried tool call or a restarted worker replays the booking instead of taking a second one." |
+| `confirm_booking` and `CONFIRM_SQL` | "The same chain confirms the trip. `confirm_booking` in Aurora turns the held row into `confirmed` only while the hold is unexpired and the total matches; a retry returns the original confirmation. Catalog inventory only, no supplier, no payment." |
 
 And in `meridian_agentcore/agentcore/agentcore.json`, the `MeridianGovernance` engine:
 one permit for the two read tools, one permit for `create_courtesy_hold` with four
-conditions on `context.input`, attached to the gateway in `ENFORCE` mode.
+conditions on `context.input`, one permit for `confirm_booking` with two, attached to
+the gateway in `ENFORCE` mode.
 
 > The trace panel shows the whole turn: Identity, grant, RLS read, Runtime turn started,
 > Gateway tools/list, Memory session restored, each gateway tool call and result (or the

@@ -57,8 +57,8 @@ Rehearse hitting **minute 45**. The 15 minutes you did not spend is what turns a
 | `backend/agents/retrieval_03/supervisor.py` | Strands supervisor + specialist agents |
 | `backend/agents/production_04/concierge.py` | Production concierge (identity → authz → RLS read → AgentCore Runtime → RLS write) |
 | `meridian_agentcore/app/MeridianConcierge/main.py` | The Phase 4 agent inside AgentCore Runtime: gateway tools over MCP, AgentCore Memory session, streamed spans |
-| `meridian_agentcore/app/MeridianConcierge/turn_trace.py` | Pins the hold contract onto every `create_courtesy_hold` call and turns Cedar decisions into spans |
-| `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py` | Gateway Lambda: `get_package_details` and the identity-checked, RLS-scoped `create_courtesy_hold` |
+| `meridian_agentcore/app/MeridianConcierge/turn_trace.py` | Pins the hold and booking contract onto every `create_courtesy_hold` and `confirm_booking` call and turns Cedar decisions into spans |
+| `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py` | Gateway Lambda: `get_package_details` and the identity-checked, RLS-scoped `create_courtesy_hold` and `confirm_booking` |
 | `meridian_agentcore/agentcore/agentcore.json` | Runtime, gateway targets, and the `MeridianGovernance` Cedar policies (ENFORCE) |
 | `backend/agents/orchestration_05/workflow.py` | LangGraph StateGraph + checkpointer |
 | `frontend/src/showcase/` | Live demo surface (`/showcase`) |
@@ -315,7 +315,7 @@ Point to the memory spans: `recall_session_context`, `recall_traveler_preference
 > call passes the gateway's Cedar policy before any Lambda runs. A separate short write
 > transaction then reauthorizes, persists, and audits."
 
-Point to the runtime spans: `AgentCore Gateway · tools/list` (three tools, SigV4),
+Point to the runtime spans: `AgentCore Gateway · tools/list` (four tools, SigV4),
 `AgentCore Memory · session restored`, `tools/call → semantic_trip_search`, and
 `AgentCore Runtime · turn complete` with the trace id and the CloudWatch link.
 
@@ -355,7 +355,7 @@ it's: run your scoped queries as a role that's always covered."*
 
 ### Beat 2b — the governed hold (policy decides before code runs)
 
-Two clicks, one typed prompt, two Cedar decisions.
+Three clicks, one typed prompt, three Cedar decisions.
 
 1. **Permit.** Open a recommended trip and click **Hold**. The click is the confirmation.
    The trace shows `AgentCore Gateway · tools/call → create_courtesy_hold` with the pinned
@@ -369,13 +369,22 @@ Two clicks, one typed prompt, two Cedar decisions.
    span reads **Hold refused by Cedar policy · Denied by policy** with `cedar_decision: deny`
    and `cedar_policy: meridian_hold_governance`, names the failed condition, and the reply
    tells Alex the Hold button is the confirmation.
+3. **Bring it home.** Open the held trip (from the Recovery desk, **Take it back to Alex**
+   brings the workflow's hold into the concierge) and click **Confirm this trip for Alex**.
+   The dialog restates the package, duration, party, total and saved budget; **Yes, confirm
+   this trip** is the confirmation. The trace shows `tools/call → confirm_booking` with
+   `travelerConfirmed: true` and the total Aurora holds, then `confirm_booking · result` with
+   `cedar_decision: allow` and `cedar_policy: meridian_booking_governance`, and the receipt
+   becomes **Confirmed booking**: same booking id, status `confirmed`, catalog inventory in
+   the demo database, no supplier, no payment.
 
 > "The model proposed both holds. It could not confirm either: the runtime pins the
 > confirmation, the traveler id and the budget ceiling from the request the backend
 > authorized. Cedar sees those arguments before the Lambda runs. One permit names the four
-> conditions; nothing else permits the hold, so everything else is denied by default. The
-> Lambda then does what our backend does: proves its own grant, sets the RLS scope, steps
-> down, and calls the same idempotent hold function. Same governance chain, one more hop."
+> hold conditions and one names the two booking conditions; nothing else permits either
+> write, so everything else is denied by default. The Lambda then does what our backend
+> does: proves its own grant, sets the RLS scope, steps down, and calls the same idempotent
+> hold or confirm function. Same governance chain, one more hop."
 
 Optional second deny, the budget rule: Alex's saved `budget_cap` is $3,200 per person, so the
 ceiling for two travelers is $6,400. Ask for `Tokyo Ryokan & Onsen Slow Week` ($3,899 per
@@ -406,9 +415,9 @@ backend and rendered on screen**, not narrated. Click into Phase 5 and run the s
 ### Optional code walkthrough
 - `backend/agents/production_04/concierge.py` → identity → `scoped_session(authorization=…)` → memory → `invoke_turn` → `persist_turn`
 - `meridian_agentcore/app/MeridianConcierge/main.py` → `MCPClient` with SigV4, `AgentCoreMemorySessionManager`, the SSE events
-- `meridian_agentcore/app/MeridianConcierge/turn_trace.py` → `_pin_hold_arguments`, `friendly_denial`, `hold_settled`
-- `meridian_agentcore/agentcore/agentcore.json` → the `MeridianGovernance` policies (one permit for reads, one permit with four conditions for the hold)
-- `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py` → `_authorize`, `_scope`, `create_courtesy_hold`
+- `meridian_agentcore/app/MeridianConcierge/turn_trace.py` → `_pin_arguments`, `friendly_denial`, `hold_settled`, `booking_settled`
+- `meridian_agentcore/agentcore/agentcore.json` → the `MeridianGovernance` policies (one permit for reads, one with four conditions for the hold, one with two conditions for the booking)
+- `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py` → `_authorize`, `_scope`, `create_courtesy_hold`, `confirm_booking`
 - `backend/db/rds_data_client.py` → `check_traveler_authorization`, `scoped_session`
 - `examples/rls_for_agents.sql` + `examples/rls_app_role.sql` → the policies and the app role
 
@@ -548,6 +557,7 @@ distinct 15-minute workflow / 12-hour direct hold policies.
 - **Governance probe:** RLS tab → Re-run (ALLOW Alex · DENY Jordan · 17 of 22).
 - **Governed hold, permit:** click **Hold** on a recommended trip. The trace shows `create_courtesy_hold` through the gateway, the Cedar allow, the Lambda's own traveler grant, and the hold receipt.
 - **Governed hold, deny:** `Hold the first option for two travelers now.` typed in chat. No click means no confirmation; Cedar denies by default and the reply says why.
+- **Governed booking, permit:** open the held trip (or **Take it back to Alex** on the Recovery desk) → **Confirm this trip for Alex** → **Yes, confirm this trip**. The trace shows `confirm_booking` through the gateway, the Cedar allow under `meridian_booking_governance`, and the receipt reads **Confirmed booking**.
 - **Hand-off:** My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.
 
 ### Phase 5 — Workflow

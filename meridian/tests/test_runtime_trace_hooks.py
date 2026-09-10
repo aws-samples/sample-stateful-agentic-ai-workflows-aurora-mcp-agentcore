@@ -228,3 +228,77 @@ def test_friendly_denial_names_the_policy_or_the_default_deny():
     assert "denied it by default" in friendly_denial(
         "[No policy applies to the request (denied by default).]"
     )
+
+
+def test_booking_arguments_are_pinned_to_the_turn_not_the_model():
+    hooks = TraceHooks(
+        asyncio.Queue(), _turn(booking_confirmed=False, budget_ceiling_cents=350000)
+    )
+    event = _event(
+        "MeridianHolds___confirm_booking",
+        {
+            "travelerId": "trv_someone_else",
+            "bookingId": "HLD-1",
+            "totalCents": 500000,
+            "travelerConfirmed": True,
+            "budgetCeilingCents": 9999999,
+            "journeyRef": "concierge:other",
+        },
+    )
+    hooks.before(event)
+    assert event.cancel_tool is False
+    args = event.tool_use["input"]
+    assert args["travelerId"] == "trv_meridian_demo"
+    assert args["travelerConfirmed"] is False
+    assert args["budgetCeilingCents"] == 350000
+    assert args["journeyRef"] == "concierge:conv-1"
+    labels = {f["label"]: f["value"] for f in _drain(hooks.queue)[0][1]["telemetry"]["fields"]}
+    assert labels["cedar_policy"] == "meridian_booking_governance"
+
+
+def test_successful_confirmation_emits_booking_and_result_span():
+    queue = asyncio.Queue()
+    hooks = TraceHooks(queue, _turn(booking_confirmed=True))
+    event = _event("MeridianHolds___confirm_booking", {"bookingId": "HLD-1", "totalCents": 1})
+    hooks.before(event)
+    payload = {
+        "booking": {"bookingId": "HLD-1", "status": "confirmed", "replayed": False,
+                    "confirmedAt": "2026-09-10 13:00:00+00", "totalAmount": "5000.00"},
+        "summary": "Confirmed booking HLD-1",
+        "governance": {"subject": "AROA1", "decision": "allow"},
+    }
+    event.result = {"status": "success", "content": [{"text": json.dumps(payload)}]}
+    hooks.after(event)
+    items = _drain(queue)
+    booking = [item for kind, item in items if kind == "booking"][0]
+    assert booking["policyDecision"] == "allow" and booking["booking"]["status"] == "confirmed"
+    assert hooks.booking["bookingId"] == "HLD-1" and hooks.booking_settled is True
+    assert hooks.hold is None and hooks.hold_settled is False
+    result = [span for kind, span in items if kind == "activity"][-1]
+    labels = {field["label"]: field["value"] for field in result["telemetry"]["fields"]}
+    assert labels["cedar_decision"] == "allow"
+    assert labels["cedar_policy"] == "meridian_booking_governance"
+
+
+def test_default_deny_names_the_booking_conditions_the_arguments_failed():
+    queue = asyncio.Queue()
+    hooks = TraceHooks(queue, _turn(booking_confirmed=False, budget_ceiling_cents=300000))
+    event = _event("MeridianHolds___confirm_booking", {"bookingId": "HLD-1", "totalCents": 500000})
+    hooks.before(event)
+    event.result = {
+        "status": "error",
+        "content": [{"text": "Tool Execution Denied: [No policy applies to the request (denied by default).]"}],
+    }
+    hooks.after(event)
+    items = _drain(queue)
+    result = [span for kind, span in items if kind == "activity"][-1]
+    assert result["title"] == "Booking refused by Cedar policy"
+    assert result["details"].startswith("No Cedar policy permits this booking")
+    assert "has not confirmed this booking" in result["details"]
+    assert "12 hours" not in result["details"]
+    assert "$5,000.00 exceeds the saved budget ceiling $3,000.00" in result["details"]
+    refused = [item for kind, item in items if kind == "booking"][0]
+    assert refused["policyDecision"] == "deny" and refused["booking"] is None
+    retry = _event("MeridianHolds___confirm_booking", {"bookingId": "HLD-1"}, "t2")
+    hooks.before(retry)
+    assert "already decided this booking" in retry.cancel_tool

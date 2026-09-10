@@ -301,12 +301,13 @@ export function PresenterProof({
           <div className="mc-hold-evidence">
             {isObserved(hold) ? (
               <>
-                <HoldReceipt holdId={hold.booking_id} createdAt={hold.hold_created_at} expiresAt={hold.hold_expires_at} observedAt={hold.observed_at} receivedAt={document.received_at} status={hold.status} />
+                <HoldReceipt holdId={hold.booking_id} createdAt={hold.hold_created_at} expiresAt={hold.hold_expires_at} observedAt={hold.observed_at} receivedAt={document.received_at} confirmedAt={hold.confirmed_at} status={hold.status} />
                 <div className="mds-proof-facts">
                   <Fact label="Request identity" mono value={hold.hold_request_id} />
                   <Fact label="Travel party" value={hold.travelers_count ? `${hold.travelers_count} travelers` : DASH} />
                   <Fact label="Created by" value={hold.created_by_execution_id === first?.execution_id ? 'Original execution' : hold.created_by_execution_id === latest?.execution_id ? 'Replacement execution' : hold.created_by_execution_id || 'Not recorded'} />
                   <Fact label="Hold records in journey" value={String(hold.hold_records)} />
+                  <Fact label="Confirmed" value={hold.confirmed_at ? `${shortTime(hold.confirmed_at)} · catalog inventory, no payment` : 'Not yet confirmed by the traveler'} />
                 </div>
                 <p className="mc-hold-proof-note">
                   {restarted && hold.created_by_execution_id === first?.execution_id

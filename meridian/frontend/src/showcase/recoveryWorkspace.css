@@ -6208,3 +6208,9 @@
     min-width: 0;
   }
 }
+
+/* Bring it home: the held package goes back to the concierge for the traveler's confirmation. */
+.mds-recovery-handoff { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 18px; padding:16px 18px; border:1px solid var(--mds-line-strong); border-radius:8px; background:var(--mds-card); }
+.mds-recovery-handoff > div { display:grid; gap:4px; min-width:0; flex:1 1 320px; }
+.mds-recovery-handoff strong { font-size:calc(15px * var(--mds-fs)); color:var(--mds-on-surface); }
+.mds-recovery-handoff span { color:var(--mds-on-surface-soft); font-size:calc(13px * var(--mds-fs)); line-height:1.5; }

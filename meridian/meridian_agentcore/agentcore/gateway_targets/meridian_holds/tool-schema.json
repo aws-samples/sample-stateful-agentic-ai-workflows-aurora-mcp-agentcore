@@ -10,7 +10,9 @@
           "description": "Catalog package id, for example CTY-002."
         }
       },
-      "required": ["packageId"],
+      "required": [
+        "packageId"
+      ],
       "additionalProperties": false
     }
   },
@@ -85,6 +87,48 @@
         "unitPriceCents",
         "totalCents",
         "holdMinutes",
+        "travelerConfirmed",
+        "budgetCeilingCents",
+        "journeyRef"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "confirm_booking",
+    "description": "Confirm the traveler's held booking. Books catalog inventory in the Meridian database only; no supplier, no payment. Cedar policy decides on the arguments before this runs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "travelerId": {
+          "type": "string",
+          "description": "Traveler id. The platform pins this to the authorized traveler."
+        },
+        "bookingId": {
+          "type": "string",
+          "description": "The held booking id from the hold receipt."
+        },
+        "totalCents": {
+          "type": "integer",
+          "description": "The booking total in cents as Aurora holds it, set by the platform."
+        },
+        "travelerConfirmed": {
+          "type": "boolean",
+          "description": "Set by the platform from the traveler's confirmation, never by the model."
+        },
+        "budgetCeilingCents": {
+          "type": "integer",
+          "description": "The traveler's saved budget ceiling in cents, set by the platform."
+        },
+        "journeyRef": {
+          "type": "string",
+          "description": "Stable journey reference for the audit trail, set by the platform."
+        }
+      },
+      "required": [
+        "travelerId",
+        "bookingId",
+        "totalCents",
         "travelerConfirmed",
         "budgetCeilingCents",
         "journeyRef"

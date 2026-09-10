@@ -1,9 +1,10 @@
 """Trace hooks: every gateway tool call becomes a span the showcase can render.
 
-The hooks also pin the hold contract to the turn. The model proposes a hold; the
-traveler id, the confirmation flag, the budget ceiling and the journey reference
-always come from the request the backend authorized, never from the model. The
-gateway's Cedar policies then decide with those values.
+The hooks also pin the governed-write contract to the turn. The model proposes a
+hold or a booking confirmation; the traveler id, the confirmation flag, the
+budget ceiling and the journey reference always come from the request the
+backend authorized, never from the model. The gateway's Cedar policies then
+decide with those values.
 """
 
 from __future__ import annotations
@@ -23,6 +24,10 @@ POLICY_REASONS = {
         "A courtesy hold runs only after the traveler confirms it, for 12 hours or less, "
         "for at most 6 travelers, and within the traveler's saved budget ceiling."
     ),
+    "meridian_booking_governance": (
+        "A held booking is confirmed only after the traveler confirms it and only when its "
+        "total is within the traveler's saved budget ceiling."
+    ),
 }
 HOLD_LIMITS = {"holdMinutes": 720, "travelers": 6}
 # The policy that must permit each tool. The engine is default deny with one permit
@@ -32,7 +37,11 @@ POLICY_FOR = {
     "semantic_trip_search": "meridian_read_tools",
     "get_package_details": "meridian_read_tools",
     "create_courtesy_hold": "meridian_hold_governance",
+    "confirm_booking": "meridian_booking_governance",
 }
+# The governed writes, named by the outcome each one settles. A turn decides
+# each of them at most once.
+GOVERNED = {"create_courtesy_hold": "hold", "confirm_booking": "booking"}
 SPANS = {
     "semantic_trip_search": (
         "search",
@@ -49,6 +58,11 @@ SPANS = {
         "AgentCore Gateway · tools/call → create_courtesy_hold",
         "Cedar decides on the arguments, then one atomic Aurora write",
     ),
+    "confirm_booking": (
+        "order",
+        "AgentCore Gateway · tools/call → confirm_booking",
+        "Cedar decides on the arguments, then the held booking becomes confirmed in Aurora",
+    ),
 }
 DENIAL_PATTERN = re.compile(r"policy|denied|not authori[sz]ed|forbid", re.I)
 
@@ -64,6 +78,11 @@ class TurnContext:
     gateway_id: str
     policy_engine_id: str
     policy_mode: str = "ENFORCE"
+    booking_confirmed: bool = False
+
+    def confirmed(self, kind: str) -> bool:
+        """Whether the traveler confirmed this kind of governed write on this turn."""
+        return self.booking_confirmed if kind == "booking" else self.hold_confirmed
 
 
 def short(tool_name: str) -> str:
@@ -89,15 +108,16 @@ def activity(activity_type, title, details=None, telemetry=None, elapsed_ms=None
     }
 
 
-def hold_deny_reasons(args: dict) -> list[str]:
-    """Name the hold conditions the arguments fail, in the order the policy states them."""
+def deny_reasons(args: dict, kind: str = "hold") -> list[str]:
+    """Name the conditions the arguments fail, in the order the policy states them."""
     reasons = []
     if args.get("travelerConfirmed") is not True:
-        reasons.append("the traveler has not confirmed this hold")
-    if int(args.get("holdMinutes") or 0) > HOLD_LIMITS["holdMinutes"]:
-        reasons.append("the hold is longer than 12 hours")
-    if int(args.get("travelers") or 0) > HOLD_LIMITS["travelers"]:
-        reasons.append("more than 6 travelers")
+        reasons.append(f"the traveler has not confirmed this {kind}")
+    if kind == "hold":
+        if int(args.get("holdMinutes") or 0) > HOLD_LIMITS["holdMinutes"]:
+            reasons.append("the hold is longer than 12 hours")
+        if int(args.get("travelers") or 0) > HOLD_LIMITS["travelers"]:
+            reasons.append("more than 6 travelers")
     total, ceiling = int(args.get("totalCents") or 0), int(args.get("budgetCeilingCents") or 0)
     if total > ceiling:
         reasons.append(
@@ -106,17 +126,17 @@ def hold_deny_reasons(args: dict) -> list[str]:
     return reasons
 
 
-def friendly_denial(text: str, args: dict | None = None) -> str:
+def friendly_denial(text: str, args: dict | None = None, kind: str = "hold") -> str:
     """Turn the gateway's policy error into a sentence; the raw text stays in the span."""
     named = re.search(r"denied due to ([A-Za-z0-9_]+?)(?:-[a-z0-9]+_?)?\]", text)
     if named:
         policy = named.group(1)
         return f"Refused by Cedar policy {policy}. {POLICY_REASONS.get(policy, '')}".strip()
     if "No policy applies" in text or "denied by default" in text:
-        reasons = hold_deny_reasons(args) if args else []
+        reasons = deny_reasons(args, kind) if args else []
         if reasons:
             return (
-                "No Cedar policy permits this hold, so the gateway denied it by default: "
+                f"No Cedar policy permits this {kind}, so the gateway denied it by default: "
                 + "; ".join(reasons) + "."
             )
         return "No Cedar policy permits this call, so the gateway denied it by default."
@@ -144,7 +164,7 @@ def _error_text(result: dict, payload: dict | None) -> str:
 
 
 class TraceHooks(HookProvider):
-    """Emit spans for every tool call and pin the hold arguments to the turn."""
+    """Emit spans for every tool call and pin the governed-write arguments to the turn."""
 
     def __init__(self, queue, turn: TurnContext) -> None:
         self.queue = queue
@@ -152,6 +172,8 @@ class TraceHooks(HookProvider):
         self.started: dict[str, float] = {}
         self.hold: dict | None = None
         self.hold_settled = False
+        self.booking: dict | None = None
+        self.booking_settled = False
         self.packages: list[dict] = []
 
     def register_hooks(self, registry, **kwargs) -> None:
@@ -161,23 +183,31 @@ class TraceHooks(HookProvider):
     def emit(self, kind: str, payload) -> None:
         self.queue.put_nowait((kind, payload))
 
+    def _is_settled(self, kind: str) -> bool:
+        return bool(getattr(self, f"{kind}_settled"))
+
+    def _settle(self, kind: str, outcome: dict | None) -> None:
+        setattr(self, kind, outcome)
+        setattr(self, f"{kind}_settled", True)
+
     def before(self, event) -> None:
         name = short(event.tool_use["name"])
         if name not in SPANS:
             return
         args = event.tool_use.setdefault("input", {})
-        if name == "create_courtesy_hold":
-            if self.hold_settled:
-                # The gateway already decided this hold on this turn. Retrying with
+        kind = GOVERNED.get(name)
+        if kind:
+            if self._is_settled(kind):
+                # The gateway already decided this write on this turn. Retrying with
                 # the same pinned arguments cannot change a Cedar decision.
                 event.cancel_tool = (
-                    "The gateway already decided this hold on this turn. Do not call "
-                    "create_courtesy_hold again; explain the outcome to the traveler."
+                    f"The gateway already decided this {kind} on this turn. Do not call "
+                    f"{name} again; explain the outcome to the traveler."
                 )
                 return
-            self._pin_hold_arguments(args)
-        kind, title, summary = SPANS[name]
-        self.emit("activity", activity(kind, title, summary, {
+            self._pin_arguments(kind, args)
+        span_kind, title, summary = SPANS[name]
+        self.emit("activity", activity(span_kind, title, summary, {
             "category": "gateway",
             "component": "Bedrock AgentCore Gateway",
             "status": "ok",
@@ -193,9 +223,9 @@ class TraceHooks(HookProvider):
         }))
         self.started[event.tool_use["toolUseId"]] = time.monotonic()
 
-    def _pin_hold_arguments(self, args: dict) -> None:
+    def _pin_arguments(self, kind: str, args: dict) -> None:
         args["travelerId"] = self.turn.traveler_id
-        args["travelerConfirmed"] = self.turn.hold_confirmed
+        args["travelerConfirmed"] = self.turn.confirmed(kind)
         args["budgetCeilingCents"] = self.turn.budget_ceiling_cents
         args["journeyRef"] = f"concierge:{self.turn.conversation_id}"
 
@@ -222,10 +252,10 @@ class TraceHooks(HookProvider):
         if name == "semantic_trip_search":
             self.packages = payload.get("packages") or []
             self.emit("packages", self.packages)
-        if name == "create_courtesy_hold":
-            self.hold = payload.get("hold")
-            self.hold_settled = True
-            self.emit("hold", {"hold": self.hold, "policyDecision": "allow"})
+        kind = GOVERNED.get(name)
+        if kind:
+            self._settle(kind, payload.get(kind))
+            self.emit(kind, {kind: payload.get(kind), "policyDecision": "allow"})
         summary = payload.get("summary") or f"{name} returned"
         fields = [
             {"label": "result", "value": summary},
@@ -253,14 +283,15 @@ class TraceHooks(HookProvider):
         ))
 
     def _failure(self, name, text, denied, elapsed, tool_use) -> str:
-        """Emit the failed span and the hold outcome; return the explained summary."""
+        """Emit the failed span and the governed outcome; return the explained summary."""
         args = tool_use.get("input") or {}
+        kind = GOVERNED.get(name)
         if denied:
-            summary = friendly_denial(text, args if name == "create_courtesy_hold" else None)
+            summary = friendly_denial(text, args if kind else None, kind or "hold")
         else:
             summary = text or "The gateway returned no result."
-        if denied and name == "create_courtesy_hold":
-            title = "Hold refused by Cedar policy"
+        if denied and kind:
+            title = f"{kind.capitalize()} refused by Cedar policy"
         elif denied:
             title = "Tool call denied by policy"
         else:
@@ -283,11 +314,10 @@ class TraceHooks(HookProvider):
                 {"label": "policy_mode", "value": self.turn.policy_mode},
             ] if denied else []),
         }, elapsed))
-        if name == "create_courtesy_hold":
-            self.hold = None
-            self.hold_settled = True
-            self.emit("hold", {
-                "hold": None,
+        if kind:
+            self._settle(kind, None)
+            self.emit(kind, {
+                kind: None,
                 "refused": summary,
                 "error": text,
                 "policyDecision": "deny" if denied else None,
