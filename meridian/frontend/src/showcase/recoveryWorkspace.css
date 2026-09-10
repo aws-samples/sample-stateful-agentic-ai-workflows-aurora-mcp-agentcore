@@ -4378,9 +4378,11 @@
   font-family: var(--mds-font);
 }
 
+/* A button waiting on the workflow keeps its colour: white on the full blue at
+   a modest fade, so it never reads as a different, paler style. */
 .mds-decision-card button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+  cursor: progress;
+  opacity: 0.72;
 }
 
 .mds-decision-card-head {
