@@ -177,6 +177,9 @@ def test_default_deny_names_the_hold_conditions_the_arguments_failed():
     assert "$5,000.00 exceeds the saved budget ceiling $3,000.00" in result["details"]
     refused = [span for kind, span in items if kind == "hold"][0]
     assert refused["policyDecision"] == "deny"
+    # The model receives the explained decision, not the raw gateway text.
+    assert event.result["status"] == "error"
+    assert event.result["content"][0]["text"] == result["details"]
 
 
 def test_lambda_business_error_is_a_failed_span_not_a_denial():

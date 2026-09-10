@@ -202,7 +202,10 @@ class TraceHooks(HookProvider):
             self._success(name, payload, elapsed)
             return
         text = _error_text(result, payload)
-        self._failure(name, text, bool(DENIAL_PATTERN.search(text)), elapsed, event.tool_use)
+        summary = self._failure(name, text, bool(DENIAL_PATTERN.search(text)), elapsed, event.tool_use)
+        # Hand the model the explained decision so its reply names the real reason;
+        # the raw gateway text stays in the span for the audience.
+        event.result = {**result, "status": "error", "content": [{"text": summary}]}
 
     def _success(self, name: str, payload: dict, elapsed: int) -> None:
         if name == "semantic_trip_search":
@@ -233,7 +236,8 @@ class TraceHooks(HookProvider):
             elapsed,
         ))
 
-    def _failure(self, name, text, denied, elapsed, tool_use) -> None:
+    def _failure(self, name, text, denied, elapsed, tool_use) -> str:
+        """Emit the failed span and the hold outcome; return the explained summary."""
         args = tool_use.get("input") or {}
         if denied:
             summary = friendly_denial(text, args if name == "create_courtesy_hold" else None)
@@ -268,3 +272,4 @@ class TraceHooks(HookProvider):
                 "error": text,
                 "policyDecision": "deny" if denied else None,
             })
+        return summary
