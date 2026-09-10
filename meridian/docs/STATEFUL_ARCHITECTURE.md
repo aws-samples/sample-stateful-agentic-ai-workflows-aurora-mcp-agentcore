@@ -19,7 +19,7 @@ depend on a long-lived database connection to remember prior work.
 | Managed session and semantic memory across turns, when configured | Bedrock AgentCore Memory | AgentCore APIs |
 | LangGraph execution position, channel values, and pending writes | Aurora PostgreSQL | `AuroraDataApiSaver` over RDS Data API, or `AsyncPostgresSaver` over pooled psycopg |
 | Journey ownership, execution leases, and hold-request identity | Aurora PostgreSQL | Scoped RDS Data API transactions |
-| Phase 4 courtesy hold placed by the agent | Aurora PostgreSQL | AgentCore Gateway tool under Cedar policy, then the `MeridianHolds` Lambda in one scoped Data API transaction |
+| Courtesy holds, from the Phase 4 agent and the Phase 5 workflow | Aurora PostgreSQL | AgentCore Gateway tool under Cedar policy, then the `MeridianHolds` Lambda in one scoped Data API transaction; the workflow passes its checkpointed request id, booking id and execution id so the Lambda checks the worker's lease and a resumed worker replays the same booking |
 | Phase 4 agent conversation | Bedrock AgentCore Memory | The runtime's Strands session manager |
 | In-turn model reasoning | AgentCore Runtime microVM | Transient by design; spans and the trace id persist in CloudWatch |
 

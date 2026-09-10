@@ -2183,4 +2183,4 @@ git push origin main
 - Modify: `meridian/backend/agents/orchestration_05/workflow.py`: the hold node calls the gateway tool (SigV4, `backend/agentcore/gateway.py`) with the checkpointed intent instead of `create_courtesy_hold` SQL; `travelerConfirmed` comes from the traveler's recovery-desk decision the workflow checkpointed.
 - Tests: `tests/test_holds_lambda.py` (lease and replay), `tests/test_phase5_workflow.py` (gateway call with the checkpointed intent), and the live `tests/test_hold_request_identity_aurora.py` stays green.
 
-- [ ] One write path for holds; Cedar sees the Phase 5 hold; the restart proof still shows one booking id and the original expiry.
+- [x] One write path for holds; Cedar sees the Phase 5 hold; the restart proof still shows one booking id and the original expiry.

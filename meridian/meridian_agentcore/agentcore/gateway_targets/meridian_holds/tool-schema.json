@@ -63,6 +63,18 @@
         "journeyRef": {
           "type": "string",
           "description": "Stable journey reference for replay, set by the platform."
+        },
+        "holdRequestId": {
+          "type": "string",
+          "description": "Optional. A caller that checkpointed its own hold intent passes its request id so a resumed run replays the same booking."
+        },
+        "bookingId": {
+          "type": "string",
+          "description": "Optional. The booking id the caller checkpointed for this request."
+        },
+        "executionId": {
+          "type": "string",
+          "description": "Optional. A workflow worker's execution id; the hold is written only while that worker still holds its lease."
         }
       },
       "required": [

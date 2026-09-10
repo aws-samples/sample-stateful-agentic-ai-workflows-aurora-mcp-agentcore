@@ -32,9 +32,15 @@ it. ADOT spans and application logs carry the trace id shown in the UI.
   and currency conversion, hybrid retrieval with rerank, and the workflow
   paused after an `AuroraDataApiSaver` checkpoint then resumed on the same thread.
 
-Open items from this pass: the Phase 5 workflow hold still writes to Aurora
-directly (agreed to route it through the gateway next), and the CloudFront and
-App Runner deployment in `infra/` is being brought up.
+- Phase 5 hold routed through the gateway: `scripts/kill_and_resume_demo.py`
+  placed its hold through `MeridianHolds___create_courtesy_hold` (Cedar allow,
+  the Lambda's workload subject on the span), worker one was SIGKILLed, the
+  takeover waited for the lease, and the resumed worker replayed the same
+  booking id with the original expiry. Aurora recorded one hold and nine
+  checkpoints on the thread.
+
+Open items from this pass: the CloudFront and App Runner deployment in
+`infra/` is being brought up.
 
 ---
 

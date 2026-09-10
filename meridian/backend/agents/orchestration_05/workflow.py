@@ -49,6 +49,12 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, TypedDict
 from urllib.parse import quote
 
 from backend.agents.orchestration_05.hold_intent import prepare_hold_node
+from backend.agents.orchestration_05.governed_hold import (
+    HOLD_TOOL,
+    hold_arguments,
+    place_governed_hold,
+)
+from backend.agents.production_04.budget import budget_ceiling_from_facts
 from backend.db.journey_store import ExecutionLeaseLostError, ScopedDb, ensure_journey
 from backend.agents.orchestration_05.packages import (
     first_available_duration,
@@ -966,19 +972,22 @@ class OrchestrationAgent:
         }
 
     async def _node_hold(self, state: WorkflowState, config: RunnableConfig = None) -> WorkflowState:
-        """Worker node: place a courtesy hold on the top-ranked option.
+        """Worker node: place a courtesy hold on the top-ranked option through the gateway.
 
         This is what makes the durability claim concrete. The previous nodes
         checkpoint *workflow position*; this one commits a row with real
-        consequences - inventory is decremented and the hold carries a TTL. A
-        worker can now die between here and ``synthesize`` and the hold is
-        still there on resume, with time remaining, because it lives in Aurora
-        rather than in the process.
+        consequences: inventory is decremented and the hold carries a TTL. A
+        worker can die between here and ``synthesize`` and the hold is still
+        there on resume, with time remaining, because it lives in Aurora rather
+        than in the process.
 
-        ``create_courtesy_hold`` takes an advisory lock, counts confirmed and
-        unexpired holds against capacity, and refuses to oversell. It also
-        rejects a traveler scope that does not match the RLS setting, so the
-        Phase 4 governance chain still applies inside the workflow.
+        The write goes through AgentCore Gateway, so the Cedar policy that
+        governs the Phase 4 agent decides this hold too, and the ``MeridianHolds``
+        Lambda runs ``create_courtesy_hold`` under its own traveler grant. The
+        worker verifies its lease here and passes its execution id so the Lambda
+        verifies it again inside the write transaction; the checkpointed request
+        and booking ids make a replacement worker replay the same booking with
+        the original expiry.
         """
         start = _utc_now()
         activities = list(state.get("activities", []))
@@ -1019,104 +1028,64 @@ class OrchestrationAgent:
         ))
         thread_id = str(state.get("conversation_id") or "")
         hold_request_id = str(intent.get("hold_request_id") or hold_id)
-        fingerprint = str(intent.get("fingerprint") or "")
+        execution_id = (config or {}).get("configurable", {}).get("execution_id")
+        terms = {
+            "package_id": package_id,
+            "duration": duration,
+            "quantity": quantity,
+            "unit_price": unit_price,
+            "hold_request_id": hold_request_id,
+            "booking_id": hold_id,
+        }
 
         try:
-            from backend.agentcore.identity import get_agentcore_identity
-            from backend.db.rds_data_client import get_rds_data_client
-
-            db = get_rds_data_client()
-            async with db.scoped_session(
+            journey_id, ceiling = await self._prepare_governed_hold(
+                traveler_id, thread_id, execution_id, quantity, state
+            )
+            arguments = hold_arguments(
+                terms,
                 traveler_id=traveler_id,
-                agent_type="booking_agent",
-                authorization=get_agentcore_identity().authorization_context(),
-            ) as transaction_id:
-                scoped = ScopedDb(db, transaction_id)
-                execution_id = (config or {}).get("configurable", {}).get("execution_id")
-                if execution_id:
-                    live = await scoped.execute(
-                        "SELECT execution_id FROM journey_executions WHERE execution_id = %s "
-                        "AND status = 'running' AND lease_expires_at > CURRENT_TIMESTAMP FOR UPDATE",
-                        (execution_id,),
-                    )
-                    if not live:
-                        raise ExecutionLeaseLostError("Execution lease expired before the hold")
-                    await scoped.execute("SELECT set_config('app.execution_id', %s, true)", (execution_id,))
-                journey_id = state.get("journey_id") or await ensure_journey(
-                    scoped,
-                    traveler_id,
-                    thread_id,
-                    self.checkpointer_kind,
-                )
-                rows = await db.execute(
-                    """
-                    SELECT booking_id, status, replayed,
-                           seats_available, seats_reserved, seats_remaining
-                    FROM create_courtesy_hold(
-                        %s::TEXT, %s::TEXT, %s::TEXT, %s::TEXT, %s::TEXT,
-                        %s::TEXT, %s::TEXT,
-                        %s::INTEGER, %s::NUMERIC, %s::NUMERIC,
-                        CURRENT_TIMESTAMP + (%s::INTEGER * INTERVAL '1 minute')
-                    )
-                    """,
-                    (
-                        hold_id,
-                        traveler_id,
-                        journey_id,
-                        hold_request_id,
-                        fingerprint,
-                        package_id,
-                        duration,
-                        quantity,
-                        unit_price,
-                        unit_price * quantity,
-                        HOLD_MINUTES,
-                    ),
-                    transaction_id=transaction_id,
-                )
-                row = rows[0] if rows else {}
-                hold_id = str(row.get("booking_id") or hold_id)
-                # Replays return the original booking. Read its timestamps,
-                # never report a new TTL calculated by the replacement worker.
-                receipts = await db.execute(
-                    """
-                    SELECT status, created_at::TIMESTAMPTZ::TEXT AS created_at,
-                           hold_expires_at::TEXT AS hold_expires_at,
-                           CURRENT_TIMESTAMP::TEXT AS observed_at
-                      FROM bookings
-                     WHERE booking_id = %s AND traveler_id = %s
-                    """,
-                    (hold_id, traveler_id),
-                    transaction_id=transaction_id,
-                )
-                if not receipts or not receipts[0].get("hold_expires_at"):
-                    raise RuntimeError("persisted hold receipt unavailable")
-                receipt = receipts[0]
-                expires_at = str(receipt["hold_expires_at"])
-                created_at = str(receipt["created_at"])
-                observed_at = str(receipt["observed_at"])
-                hold_status = str(receipt["status"])
+                journey_ref=thread_id,
+                budget_ceiling_cents=ceiling,
+                hold_minutes=HOLD_MINUTES,
+                execution_id=execution_id,
+            )
+            outcome = await asyncio.to_thread(place_governed_hold, self._gateway_call, arguments)
         except ExecutionLeaseLostError:
             raise
-        except Exception as exc:  # noqa: BLE001 - inventory refusal leaves the plan unheld
-            reason = "inventory changed" if "insufficient_inventory" in str(exc) else str(exc)[:120]
+        except Exception as exc:  # noqa: BLE001 - a failed gateway call leaves the plan unheld
             logger.warning("courtesy hold not placed: %s", exc)
-            activities.append(
-                _activity(
-                    "error",
-                    "Workflow node: hold not placed",
-                    details=f"No package inventory was held ({reason}). The plan continues unheld.",
-                )
-            )
+            activities.append(self._hold_not_placed(str(exc)[:120], denied=False, raw=str(exc)))
             elapsed = int((_utc_now() - start).total_seconds() * 1000)
             activities.append(self._checkpoint_activity("hold", elapsed))
             return {"activities": activities}
 
-        row = (rows[0] or {}) if rows else {}
-        replayed = bool(row.get("replayed"))
+        if not outcome.placed:
+            denied = outcome.policy_decision == "deny"
+            if denied:
+                reason = "Cedar policy refused the hold"
+            elif outcome.error == "insufficient_inventory":
+                reason = "inventory changed"
+            else:
+                reason = outcome.error or "the gateway returned no hold"
+            logger.warning("courtesy hold not placed: %s", outcome.raw_error or reason)
+            activities.append(self._hold_not_placed(reason, denied=denied, raw=outcome.raw_error))
+            elapsed = int((_utc_now() - start).total_seconds() * 1000)
+            activities.append(self._checkpoint_activity("hold", elapsed))
+            return {"activities": activities}
+
+        hold = outcome.hold or {}
+        hold_id = str(hold.get("bookingId") or hold_id)
+        journey_id = str(hold.get("journeyId") or journey_id)
+        replayed = bool(hold.get("replayed"))
         # A replay returns the existing booking without re-counting inventory,
         # so its seat columns are null by design.
-        remaining = row.get("seats_remaining")
+        remaining = hold.get("seatsRemaining")
+        expires_at = str(hold.get("expiresAt"))
+        created_at = str(hold.get("createdAt"))
+        observed_at = str(hold.get("observedAt"))
+        hold_status = str(hold.get("status"))
+        governance = outcome.governance or {}
         elapsed = int((_utc_now() - start).total_seconds() * 1000)
         activities.append(
             _activity(
@@ -1134,6 +1103,10 @@ class OrchestrationAgent:
                     )
                 ),
                 sql_query=(
+                    "-- AgentCore Gateway tools/call " + HOLD_TOOL + "\n"
+                    "-- Cedar: meridian_hold_governance (ENFORCE) decides on the arguments\n"
+                    "-- MeridianHolds Lambda: traveler grant, RLS scope, SET LOCAL ROLE meridian_app,\n"
+                    "--   lease check for this execution, then\n"
                     "SELECT booking_id, status, replayed,\n"
                     "       seats_available, seats_reserved, seats_remaining\n"
                     "FROM create_courtesy_hold($1 .. $11);\n"
@@ -1142,10 +1115,14 @@ class OrchestrationAgent:
                 ),
                 execution_time_ms=elapsed,
                 telemetry={
-                    "category": "database",
-                    "component": "Aurora PostgreSQL",
+                    "category": "gateway",
+                    "component": "AgentCore Gateway · MeridianHolds Lambda · Aurora",
                     "status": "ok",
                     "fields": [
+                        {"label": "gateway_tool", "value": HOLD_TOOL, "mono": True},
+                        {"label": "cedar_decision", "value": "allow"},
+                        {"label": "workload", "value": str(governance.get("subject") or ""), "mono": True},
+                        {"label": "traveler_grant", "value": str(governance.get("decision") or "")},
                         {"label": "hold_id", "value": hold_id, "mono": True},
                         {
                             "label": "hold_request_id",
@@ -1180,6 +1157,73 @@ class OrchestrationAgent:
             "hold_duration": duration,
             "hold_seats_remaining": remaining,
         }
+
+    async def _prepare_governed_hold(
+        self,
+        traveler_id: str,
+        thread_id: str,
+        execution_id: Optional[str],
+        quantity: int,
+        state: WorkflowState,
+    ) -> tuple[str, int]:
+        """Verify the worker lease, bind the journey, and size the budget ceiling.
+
+        Two short RLS units, both committed before the gateway is called: the
+        booking-agent unit checks the lease and binds the thread to its journey;
+        the concierge unit reads every saved preference so the ceiling the Cedar
+        policy compares against comes from Alex's own facts.
+        """
+        from backend.agentcore.identity import get_agentcore_identity
+        from backend.db.rds_data_client import get_rds_data_client
+        from backend.memory.store import get_memory_store
+
+        db = get_rds_data_client()
+        authorization = get_agentcore_identity().authorization_context()
+        async with db.scoped_session(
+            traveler_id=traveler_id, agent_type="booking_agent", authorization=authorization
+        ) as transaction_id:
+            scoped = ScopedDb(db, transaction_id)
+            if execution_id:
+                live = await scoped.execute(
+                    "SELECT execution_id FROM journey_executions WHERE execution_id = %s "
+                    "AND status = 'running' AND lease_expires_at > CURRENT_TIMESTAMP FOR UPDATE",
+                    (execution_id,),
+                )
+                if not live:
+                    raise ExecutionLeaseLostError("Execution lease expired before the hold")
+            journey_id = state.get("journey_id") or await ensure_journey(
+                scoped, traveler_id, thread_id, self.checkpointer_kind
+            )
+        async with db.scoped_session(
+            traveler_id=traveler_id, agent_type="concierge_agent", authorization=authorization
+        ) as transaction_id:
+            facts = await get_memory_store().recall_preferences(
+                traveler_id, limit=50, transaction_id=transaction_id
+            )
+        return str(journey_id), budget_ceiling_from_facts(facts, quantity)
+
+    @staticmethod
+    def _gateway_call(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        from backend.agentcore.gateway import get_agentcore_gateway
+
+        return get_agentcore_gateway().call_tool(name, arguments)
+
+    @staticmethod
+    def _hold_not_placed(reason: str, *, denied: bool, raw: Optional[str]) -> Dict[str, Any]:
+        return _activity(
+            "security" if denied else "error",
+            "Workflow node: hold not placed",
+            details=f"No package inventory was held ({reason}). The plan continues unheld.",
+            telemetry={
+                "category": "security" if denied else "tool",
+                "component": "Bedrock AgentCore Policy" if denied else "Bedrock AgentCore Gateway",
+                "status": "denied" if denied else "error",
+                "fields": [
+                    {"label": "gateway_tool", "value": HOLD_TOOL, "mono": True},
+                    {"label": "gateway_error", "value": raw or "", "mono": True},
+                ],
+            },
+        )
 
     async def _release_hold(
         self, state: WorkflowState, *, expected_hold_id: Optional[str] = None

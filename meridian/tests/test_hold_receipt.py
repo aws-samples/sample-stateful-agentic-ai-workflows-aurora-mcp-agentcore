@@ -3,6 +3,7 @@
 These tests use an in-memory stand-in for the database, with no AWS calls.
 """
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
@@ -60,13 +61,14 @@ def test_recommendation_evidence_cites_its_actual_checkpoint_channel(channel):
 
 
 @pytest.mark.parametrize("replayed", [False, True])
-def test_hold_reports_saved_receipt_even_when_it_is_old(monkeypatch, replayed):
-    calls = []
+def test_hold_reports_the_gateway_receipt_even_when_it_is_old(monkeypatch, replayed):
+    """The node asks the gateway for the hold and reports the receipt it returns."""
+    gateway_calls = []
     receipt = {
         "status": "held",
-        "created_at": "2026-09-06 12:00:00+00",
-        "hold_expires_at": "2026-09-06 12:15:00+00",
-        "observed_at": "2026-09-06 12:20:00+00",
+        "createdAt": "2026-09-06 12:00:00+00",
+        "expiresAt": "2026-09-06 12:15:00+00",
+        "observedAt": "2026-09-06 12:20:00+00",
     }
 
     @asynccontextmanager
@@ -75,33 +77,90 @@ def test_hold_reports_saved_receipt_even_when_it_is_old(monkeypatch, replayed):
         yield "transaction-test"
 
     async def execute(sql, params, **kwargs):
-        calls.append((sql, params))
-        assert kwargs["transaction_id"] == "transaction-test"
-        if "create_courtesy_hold" in sql:
-            return [{"booking_id": "persisted-booking", "status": "held", "replayed": replayed,
-                     "seats_remaining": None if replayed else 5}]
-        assert "FROM bookings" in sql
-        assert params == ("persisted-booking", "traveler-test")
-        return [receipt]
+        assert "create_courtesy_hold" not in sql, "the node must not write the hold itself"
+        assert "journey_executions" in sql and params == ("exe-test",)
+        return [{"execution_id": "exe-test"}]
+
+    async def recall_preferences(traveler_id, limit, transaction_id):
+        assert (traveler_id, limit, transaction_id) == ("traveler-test", 50, "transaction-test")
+        return [{"key": "budget_cap", "value": "$3,200"}]
+
+    def call_tool(name, arguments):
+        gateway_calls.append((name, arguments))
+        return {"jsonrpc": "2.0", "id": "1", "result": {"isError": False, "content": [{
+            "type": "text",
+            "text": json.dumps({
+                "hold": {"bookingId": "persisted-booking", "journeyId": "journey-test",
+                         "replayed": replayed, "seatsRemaining": None if replayed else 5,
+                         **receipt},
+                "governance": {"decision": "allow", "subject": "AROA-holds-lambda"},
+            }),
+        }]}}
 
     monkeypatch.setattr("backend.db.rds_data_client.get_rds_data_client", lambda: SimpleNamespace(scoped_session=scoped_session, execute=execute))
     monkeypatch.setattr("backend.agentcore.identity.get_agentcore_identity", lambda: SimpleNamespace(authorization_context=lambda: {}))
+    monkeypatch.setattr("backend.memory.store.get_memory_store", lambda: SimpleNamespace(recall_preferences=recall_preferences))
+    monkeypatch.setattr("backend.agentcore.gateway.get_agentcore_gateway", lambda: SimpleNamespace(call_tool=call_tool))
     agent = OrchestrationAgent.__new__(OrchestrationAgent)
     agent.checkpointer_kind = "unit-test"
     agent.checkpointer_durable = False
     result = asyncio.run(agent._node_hold({
         "traveler_id": "traveler-test", "conversation_id": "thread-test", "journey_id": "journey-test",
         "packages": [{"product_id": "PKG-1", "price": 100, "available_sizes": ["2 nights"]}],
-        "hold_intent": {"package_id": "PKG-1", "duration": "2 nights", "quantity": 2, "unit_price": 100, "hold_request_id": "request-test", "fingerprint": "test"},
-    }))
+        "hold_intent": {"package_id": "PKG-1", "duration": "2 nights", "quantity": 2, "unit_price": 100, "hold_request_id": "request-test", "booking_id": "HLD-TEST", "fingerprint": "test"},
+    }, {"configurable": {"execution_id": "exe-test"}}))
+    name, arguments = gateway_calls[0]
+    assert name == "MeridianHolds___create_courtesy_hold"
+    assert arguments["holdRequestId"] == "request-test"
+    assert arguments["bookingId"] == "HLD-TEST"
+    assert arguments["executionId"] == "exe-test"
+    assert arguments["journeyRef"] == "thread-test"
+    assert arguments["totalCents"] == 20000
+    assert arguments["budgetCeilingCents"] == 640000
+    assert arguments["travelerConfirmed"] is True
     assert result["hold_id"] == "persisted-booking"
-    assert result["hold_expires_at"] == receipt["hold_expires_at"]
-    assert result["hold_created_at"] == receipt["created_at"]
-    assert result["hold_observed_at"] == receipt["observed_at"]
+    assert result["journey_id"] == "journey-test"
+    assert result["hold_expires_at"] == receipt["expiresAt"]
+    assert result["hold_created_at"] == receipt["createdAt"]
+    assert result["hold_observed_at"] == receipt["observedAt"]
     assert result["hold_seats_remaining"] == (None if replayed else 5)
     fields = {f["label"]: f["value"] for f in result["activities"][0]["telemetry"]["fields"]}
-    assert fields["expires_at"] == receipt["hold_expires_at"]
+    assert fields["expires_at"] == receipt["expiresAt"]
     assert fields["replayed"] == ("yes" if replayed else "no")
+    assert fields["cedar_decision"] == "allow"
+    assert fields["workload"] == "AROA-holds-lambda"
+
+
+def test_a_policy_denial_leaves_the_plan_unheld(monkeypatch):
+    @asynccontextmanager
+    async def scoped_session(**kwargs):
+        yield "transaction-test"
+
+    async def recall_preferences(traveler_id, limit, transaction_id):
+        return []
+
+    def call_tool(name, arguments):
+        return {"jsonrpc": "2.0", "id": "1", "result": {"isError": True, "content": [{
+            "type": "text", "text": "Tool Execution Denied: [No policy applies (denied by default).]",
+        }]}}
+
+    monkeypatch.setattr("backend.db.rds_data_client.get_rds_data_client", lambda: SimpleNamespace(scoped_session=scoped_session))
+    monkeypatch.setattr("backend.agentcore.identity.get_agentcore_identity", lambda: SimpleNamespace(authorization_context=lambda: {}))
+    monkeypatch.setattr("backend.memory.store.get_memory_store", lambda: SimpleNamespace(recall_preferences=recall_preferences))
+    monkeypatch.setattr("backend.agentcore.gateway.get_agentcore_gateway", lambda: SimpleNamespace(call_tool=call_tool))
+    agent = OrchestrationAgent.__new__(OrchestrationAgent)
+    agent.checkpointer_kind = "unit-test"
+    agent.checkpointer_durable = False
+    result = asyncio.run(agent._node_hold({
+        "traveler_id": "traveler-test", "conversation_id": "thread-test", "journey_id": "journey-test",
+        "packages": [{"product_id": "PKG-1", "price": 100, "available_sizes": ["2 nights"]}],
+        "hold_intent": {"package_id": "PKG-1", "duration": "2 nights", "quantity": 2, "unit_price": 100, "hold_request_id": "request-test", "booking_id": "HLD-TEST", "fingerprint": "test"},
+    }))
+    assert "hold_id" not in result
+    denial = result["activities"][0]
+    assert denial["telemetry"]["status"] == "denied"
+    assert "Cedar policy refused" in denial["details"]
+    assert result["activities"][-1]["telemetry"]["fields"]
 
 
 def test_evidence_document_exposes_the_booking_timestamps():

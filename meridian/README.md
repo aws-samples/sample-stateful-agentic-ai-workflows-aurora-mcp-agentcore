@@ -278,7 +278,7 @@ Stateful reads and writes use five independent controls:
 2. Aurora `traveler_identity_bindings` authorizes that subject for the requested traveler. Missing grants fail before the RLS scope is set.
 3. Aurora RLS filters rows to the authorized traveler under the least-privilege `meridian_app` role.
 4. AgentCore Gateway serves the agent's tools over MCP with SigV4, and its Cedar policy engine (`MeridianGovernance`, ENFORCE mode) decides every tool call on the arguments before any Lambda runs. Reads are permitted; a courtesy hold is permitted only when the traveler confirmed it, for at most 12 hours and 6 travelers, within the traveler's saved budget ceiling. Nothing else permits the hold, so every other call is denied by default.
-5. The `MeridianHolds` Lambda is itself a workload: its execution role holds its own grant in `traveler_identity_bindings`, sets the traveler scope, steps down to `meridian_app`, and calls the `create_courtesy_hold` SQL function, so a retried tool call replays the same booking.
+5. The `MeridianHolds` Lambda is itself a workload: its execution role holds its own grant in `traveler_identity_bindings`, sets the traveler scope, steps down to `meridian_app`, and calls the `create_courtesy_hold` SQL function, so a retried tool call replays the same booking. Both the Phase 4 concierge and the Phase 5 workflow place their holds through this one tool; nothing in the application writes a hold directly. The workflow passes its checkpointed request id, booking id and execution id, so the Lambda verifies the worker's lease inside the write transaction and a restarted worker replays the same booking with its original expiry.
 
 The runtime pins the traveler id, the confirmation flag, the budget ceiling and
 the journey reference onto every hold call from the request the backend
@@ -337,7 +337,7 @@ Key environment variables are documented in `.env.example`.
 | Agents | Strands Agents for Phases 1–4; the Phase 4 agent runs inside Bedrock AgentCore Runtime with tools from AgentCore Gateway over MCP |
 | Governance | Bedrock AgentCore Policy (Cedar, ENFORCE) on the gateway, plus the identity chain and Aurora RLS below |
 | Observability | AWS Distro for OpenTelemetry on the runtime; spans and logs land in the runtime's CloudWatch log group with the trace id shown in the UI |
-| Workflow | LangGraph `StateGraph`, Aurora checkpoints, worker leases, and idempotent package holds |
+| Workflow | LangGraph `StateGraph`, Aurora checkpoints, worker leases, and courtesy holds placed through the governed gateway tool |
 | Database | Aurora PostgreSQL 18+, RDS Data API, pgvector HNSW, identity bindings, Row-Level Security |
 | Embeddings and rerank | Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`us.cohere.rerank-v3-5:0`) on Bedrock |
 | LLM | Claude Sonnet 5 on Amazon Bedrock (`global.anthropic.claude-sonnet-5`) |

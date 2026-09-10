@@ -17,13 +17,34 @@
       "networkMode": "PUBLIC",
       "protocol": "HTTP",
       "envVars": [
-        { "name": "AGENT_OBSERVABILITY_ENABLED", "value": "true" },
-        { "name": "OTEL_PYTHON_DISTRO", "value": "aws_distro" },
-        { "name": "OTEL_PYTHON_CONFIGURATOR", "value": "aws_configurator" },
-        { "name": "OTEL_RESOURCE_ATTRIBUTES", "value": "service.name=meridian-concierge" },
-        { "name": "BEDROCK_MODEL_ID", "value": "global.anthropic.claude-sonnet-5" },
-        { "name": "MERIDIAN_GATEWAY_ID", "value": "meridianv2-meridian-aurora-temzt21jg0" },
-        { "name": "MERIDIAN_POLICY_ENGINE_ID", "value": "meridianv2_MeridianGovernance-b2uv1vlg3k" }
+        {
+          "name": "AGENT_OBSERVABILITY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OTEL_PYTHON_DISTRO",
+          "value": "aws_distro"
+        },
+        {
+          "name": "OTEL_PYTHON_CONFIGURATOR",
+          "value": "aws_configurator"
+        },
+        {
+          "name": "OTEL_RESOURCE_ATTRIBUTES",
+          "value": "service.name=meridian-concierge"
+        },
+        {
+          "name": "BEDROCK_MODEL_ID",
+          "value": "global.anthropic.claude-sonnet-5"
+        },
+        {
+          "name": "MERIDIAN_GATEWAY_ID",
+          "value": "meridianv2-meridian-aurora-temzt21jg0"
+        },
+        {
+          "name": "MERIDIAN_POLICY_ENGINE_ID",
+          "value": "meridianv2_MeridianGovernance-b2uv1vlg3k"
+        }
       ]
     }
   ],
@@ -72,7 +93,9 @@
                     "description": "Catalog package id, for example CTY-002."
                   }
                 },
-                "required": ["packageId"],
+                "required": [
+                  "packageId"
+                ],
                 "additionalProperties": false
               }
             },
@@ -125,6 +148,18 @@
                   "journeyRef": {
                     "type": "string",
                     "description": "Stable journey reference for replay, set by the platform."
+                  },
+                  "holdRequestId": {
+                    "type": "string",
+                    "description": "Optional. A caller that checkpointed its own hold intent passes its request id so a resumed run replays the same booking."
+                  },
+                  "bookingId": {
+                    "type": "string",
+                    "description": "Optional. The booking id the caller checkpointed for this request."
+                  },
+                  "executionId": {
+                    "type": "string",
+                    "description": "Optional. A workflow worker's execution id; the hold is written only while that worker still holds its lease."
                   }
                 },
                 "required": [
@@ -158,7 +193,9 @@
               "Statement": [
                 {
                   "Effect": "Allow",
-                  "Action": ["ssm:GetParameters"],
+                  "Action": [
+                    "ssm:GetParameters"
+                  ],
                   "Resource": "arn:aws:ssm:us-east-1:619763002613:parameter/meridian/aurora/*"
                 },
                 {
@@ -173,7 +210,9 @@
                 },
                 {
                   "Effect": "Allow",
-                  "Action": ["secretsmanager:GetSecretValue"],
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
                   "Resource": "arn:aws:secretsmanager:us-east-1:619763002613:secret:meridian-demo-credentials-W0pH9X"
                 }
               ]

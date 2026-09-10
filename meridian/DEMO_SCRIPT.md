@@ -440,6 +440,11 @@ In the trace, point to:
 - `Workflow node: classify → plan`
 - `Workflow node: search` → `Checkpoint · …put`
 - `Workflow node: availability` (step 2 of 2) → `Checkpoint · …put`
+- `Workflow node: hold` → `AgentCore Gateway · MeridianHolds Lambda · Aurora` with
+  `cedar_decision: allow`, the Lambda's workload subject, and the hold id. The workflow
+  places its hold through the same gateway tool and Cedar policy as the concierge,
+  passing its checkpointed request id and its execution lease, so a restarted worker
+  replays the same booking instead of taking a second one.
 - `Workflow node: synthesize`
 
 ### Prove durable state (this protects the 5.0)

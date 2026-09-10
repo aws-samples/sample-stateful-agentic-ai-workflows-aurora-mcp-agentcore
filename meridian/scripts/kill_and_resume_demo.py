@@ -50,7 +50,10 @@ from backend.db.journey_store import (  # noqa: E402
 from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
 
 TRAVELER = os.getenv("DEMO_TRAVELER_ID", "trv_meridian_demo")
-LEASE_SECONDS = int(os.getenv("DEMO_LEASE_SECONDS", "9"))
+# A cold worker spends several seconds in the search and availability nodes
+# before its first heartbeat, so the lease must outlast that or the proof
+# fails before the hold is placed. Twenty seconds keeps the takeover wait short.
+LEASE_SECONDS = int(os.getenv("DEMO_LEASE_SECONDS", "20"))
 QUERY = (
     "My flight was cancelled, rework the trip and show duration availability."
 )

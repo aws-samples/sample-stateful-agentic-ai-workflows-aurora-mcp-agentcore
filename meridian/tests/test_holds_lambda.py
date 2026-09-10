@@ -119,6 +119,14 @@ def test_hold_refuses_when_the_workload_has_no_grant(config, monkeypatch):
     assert not any("create_courtesy_hold" in s for s in api.statements)
 
 
+RECEIPT = [{
+    "status": "held",
+    "created_at": "2026-09-10 12:00:00+00",
+    "hold_expires_at": "2026-09-11 00:00:00+00",
+    "observed_at": "2026-09-10 12:00:01+00",
+}]
+
+
 def test_hold_sets_scope_steps_down_and_returns_the_row(config, monkeypatch):
     api = FakeDataApi({
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
@@ -131,23 +139,69 @@ def test_hold_sets_scope_steps_down_and_returns_the_row(config, monkeypatch):
             "seats_reserved": 2,
             "seats_remaining": 2,
         }],
+        "FROM bookings": RECEIPT,
     })
     monkeypatch.setattr(holds, "RDS", api)
     result = holds.lambda_handler(_hold_args(), _context("MeridianHolds___create_courtesy_hold"))
     assert result["hold"]["bookingId"] == "HLD-1"
     assert result["hold"]["seatsRemaining"] == 2
     assert result["hold"]["journeyId"] == "jrn_1"
+    assert result["hold"]["expiresAt"] == "2026-09-11 00:00:00+00"
+    assert result["hold"]["createdAt"] == "2026-09-10 12:00:00+00"
     assert result["governance"]["decision"] == "allow"
     joined = "\n".join(api.statements)
     assert "set_config('app.current_traveler_id'" in joined
+    assert "set_config('app.thread_id'" in joined
     assert "SET LOCAL ROLE meridian_app" in joined
     assert joined.index("traveler_access_audit") < joined.index("SET LOCAL ROLE")
     assert joined.index("SET LOCAL ROLE") < joined.index("FROM create_courtesy_hold")
+    assert joined.index("FROM create_courtesy_hold") < joined.index("FROM bookings")
+    assert "journey_executions" not in joined
     assert api.tx == ["begin", "commit"]
     hold_params = api.parameters[api.statements.index(holds.HOLD_SQL)]
     assert hold_params["unit_price"] == "2500.00"
     assert hold_params["total"] == "5000.00"
     assert hold_params["request_id"].startswith("hrq_")
+
+
+def test_a_workflow_caller_replays_its_checkpointed_identity_under_its_lease(config, monkeypatch):
+    api = FakeDataApi({
+        "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        "FROM journey_threads": [{"journey_id": "jrn_1"}],
+        "FROM journey_executions": [{"execution_id": "exe_1"}],
+        "FROM create_courtesy_hold": [{
+            "booking_id": "HLD-CHK", "status": "held", "replayed": True,
+            "seats_available": None, "seats_reserved": None, "seats_remaining": None,
+        }],
+        "FROM bookings": RECEIPT,
+    })
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_hold_args(), "journeyRef": "phase5-thread", "holdRequestId": "hrq_checkpointed",
+            "bookingId": "HLD-CHK", "executionId": "exe_1"}
+    result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+    assert result["hold"]["replayed"] is True
+    assert result["hold"]["bookingId"] == "HLD-CHK"
+    assert result["hold"]["holdRequestId"] == "hrq_checkpointed"
+    hold_params = api.parameters[api.statements.index(holds.HOLD_SQL)]
+    assert hold_params["request_id"] == "hrq_checkpointed"
+    assert hold_params["booking_id"] == "HLD-CHK"
+    joined = "\n".join(api.statements)
+    assert "FOR UPDATE" in joined and "set_config('app.execution_id'" in joined
+    assert joined.index("journey_executions") < joined.index("FROM create_courtesy_hold")
+
+
+def test_a_lost_lease_refuses_the_hold_before_any_write(config, monkeypatch):
+    api = FakeDataApi({
+        "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        "FROM journey_threads": [{"journey_id": "jrn_1"}],
+        "FROM journey_executions": [],
+    })
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_hold_args(), "executionId": "exe_gone"}
+    result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+    assert result["error"] == "execution_lease_lost"
+    assert not any("create_courtesy_hold" in s for s in api.statements)
+    assert api.tx == ["begin", "rollback"]
 
 
 def test_new_journey_is_created_for_an_unknown_reference(config, monkeypatch):
@@ -157,6 +211,7 @@ def test_new_journey_is_created_for_an_unknown_reference(config, monkeypatch):
             "booking_id": "HLD-2", "status": "held", "replayed": False,
             "seats_available": 4, "seats_reserved": 1, "seats_remaining": 3,
         }],
+        "FROM bookings": RECEIPT,
     })
     monkeypatch.setattr(holds, "RDS", api)
     result = holds.lambda_handler(_hold_args(), _context("MeridianHolds___create_courtesy_hold"))

@@ -49,6 +49,7 @@ HOLD_SQL = (
     ":quantity::INTEGER, :unit_price::NUMERIC, :total::NUMERIC, :expires_at::TIMESTAMPTZ)"
 )
 BUSINESS_ERRORS = (
+    "execution_lease_lost",
     "insufficient_inventory",
     "invalid_package_inventory",
     "journey_not_owned",
@@ -224,6 +225,12 @@ def _journey(traveler_id: str, journey_ref: str, tx: str) -> str:
 
 
 def _hold_terms(args: dict) -> dict:
+    """Terms, identity and fingerprint for the hold.
+
+    A caller that checkpointed its own intent (the Phase 5 workflow) passes
+    ``holdRequestId`` and ``bookingId`` so a resumed run replays the same
+    booking; otherwise both derive from the journey and the terms.
+    """
     unit_price = Decimal(int(args["unitPriceCents"])) / Decimal(100)
     terms = normalize_terms(
         str(args["packageId"]), str(args["duration"]), int(args["travelers"]), unit_price
@@ -233,10 +240,37 @@ def _hold_terms(args: dict) -> dict:
     return {
         "terms": terms,
         "unit_price": str(unit_price.quantize(Decimal("0.01"))),
-        "request_id": f"hrq_{digest}",
+        "request_id": str(args.get("holdRequestId") or f"hrq_{digest}"),
         "fingerprint": fingerprint(terms),
-        "booking_id": f"HLD-{uuid.uuid4().hex[:8].upper()}",
+        "booking_id": str(args.get("bookingId") or f"HLD-{uuid.uuid4().hex[:8].upper()}"),
     }
+
+
+def _claim_execution(execution_id: str, tx: str) -> None:
+    """A workflow worker must still own its lease when the hold is written."""
+    rows = query(
+        "SELECT execution_id FROM journey_executions WHERE execution_id = :e "
+        "AND status = 'running' AND lease_expires_at > CURRENT_TIMESTAMP FOR UPDATE",
+        {"e": execution_id},
+        tx,
+    )
+    if not rows:
+        raise RuntimeError("execution_lease_lost")
+    query("SELECT set_config('app.execution_id', :e, true)", {"e": execution_id}, tx)
+
+
+def _receipt(booking_id: str, traveler_id: str, tx: str) -> dict:
+    """The persisted receipt, so a replay reports the original expiry, not a new one."""
+    rows = query(
+        "SELECT status, created_at::TIMESTAMPTZ::TEXT AS created_at, "
+        "hold_expires_at::TEXT AS hold_expires_at, CURRENT_TIMESTAMP::TEXT AS observed_at "
+        "FROM bookings WHERE booking_id = :b AND traveler_id = :t",
+        {"b": booking_id, "t": traveler_id},
+        tx,
+    )
+    if not rows or not rows[0].get("hold_expires_at"):
+        raise RuntimeError("persisted hold receipt unavailable")
+    return rows[0]
 
 
 def _hold_row(args: dict, hold: dict, journey_id: str, expires_at: datetime, tx: str) -> dict:
@@ -270,19 +304,26 @@ def create_courtesy_hold(args: dict) -> dict:
             _record_denied_audit(governance, traveler_id)
             return {"error": "traveler_not_authorized", "governance": governance}
         _scope(traveler_id, tx)
-        journey_id = _journey(traveler_id, str(args["journeyRef"]), tx)
+        journey_ref = str(args["journeyRef"])
+        query("SELECT set_config('app.thread_id', :t, true)", {"t": journey_ref}, tx)
+        if args.get("executionId"):
+            _claim_execution(str(args["executionId"]), tx)
+        journey_id = _journey(traveler_id, journey_ref, tx)
         row = _hold_row(args, hold, journey_id, expires_at, tx)
+        receipt = _receipt(str(row["booking_id"]), traveler_id, tx)
         _transaction("commit", tx)
     except Exception as error:  # noqa: BLE001 - the SQL function raises named business errors
         _transaction("rollback", tx)
         return {"error": _named_error(error)}
     result = {
         "bookingId": row["booking_id"],
-        "status": row["status"],
+        "status": str(receipt["status"]),
         "replayed": bool(row["replayed"]),
         "journeyId": journey_id,
         "holdRequestId": hold["request_id"],
-        "expiresAt": expires_at.isoformat(),
+        "expiresAt": str(receipt["hold_expires_at"]),
+        "createdAt": str(receipt["created_at"]),
+        "observedAt": str(receipt["observed_at"]),
         "seatsAvailable": row.get("seats_available"),
         "seatsRemaining": row.get("seats_remaining"),
         "totalAmount": hold["terms"]["total_amount"],
@@ -296,7 +337,7 @@ def create_courtesy_hold(args: dict) -> dict:
         "governance": governance,
         "summary": (
             f"{verb} {result['packageId']} ({result['duration']}) for {result['travelers']} "
-            f"traveler(s) as {result['bookingId']}, expires {expires_at.strftime('%H:%M UTC')}"
+            f"traveler(s) as {result['bookingId']}, expires {result['expiresAt']}"
         ),
     }
 
