@@ -514,11 +514,6 @@
   border-color: var(--mds-line);
   box-shadow: var(--mds-shadow-1);
 }
-/* Step labels are a hardcoded near-white (#e6f4f9) — invisible on the white
-   panel. Flip to slate ink so the live trace steps read. */
-.mds-root[data-theme="light"] .mds-thinking-copy {
-  color: var(--mds-on-surface-soft);
-}
 
 /* Phase tabs (SQL · MCP · Retrieval · Production · Workflow): inactive label is
    a hardcoded #aeb9c4 that's far too faint on light. Darken to the soft slate
@@ -4863,14 +4858,17 @@
 }
 
 .mds-thinking-rail::before {
+  /* One continuous rail: each segment spans the row's padding so the
+     segments meet, and it is drawn from a theme line so it is visible on
+     both the dark and the paper panel. */
   content: "";
   position: absolute;
   left: 50%;
-  top: -7px;
-  bottom: -7px;
+  top: -9px;
+  bottom: -9px;
   width: 2px;
   margin-left: -1px;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--mds-line-strong);
   border-radius: 2px;
   transition: background 240ms ease;
 }
@@ -4883,49 +4881,51 @@
   bottom: 50%;
 }
 
+/* Every step keeps a visible marker: a hollow ring until it lands. */
 .mds-thinking-dot {
   position: relative;
   z-index: 2;
-  width: 9px;
-  height: 9px;
+  box-sizing: border-box;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.16);
-  box-shadow: 0 0 0 0 rgb(var(--mds-blue-rgb) / 0);
-  transition: background 220ms ease, box-shadow 220ms ease, transform 220ms ease;
+  border: 2px solid var(--mds-on-surface-faint);
+  background: var(--mds-panel-2);
+  transition: background 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
 }
 
-/* Completed phase: solid green dot and bright copy. */
+/* Completed phase: solid green marker and full ink. */
 .mds-thinking-item.is-done {
-  color: #e6f4f9;
+  color: var(--mds-on-surface);
 }
 
 .mds-thinking-item.is-done .mds-thinking-dot {
+  border-color: var(--mds-green);
   background: var(--mds-green);
-  box-shadow: 0 0 8px rgb(var(--mds-green-rgb) / 0.55);
 }
 
 .mds-thinking-item.is-done .mds-thinking-rail::before {
-  background: linear-gradient(180deg, rgb(var(--mds-green-rgb) / 0.85), rgb(var(--mds-blue-rgb) / 0.55));
+  background: var(--mds-green);
 }
 
-/* Active phase: cyan dot, pulse, and full-bright copy. */
+/* Active phase: blue marker with a pulse, full ink. */
 .mds-thinking-item.is-active {
   color: var(--mds-on-surface);
 }
 
 .mds-thinking-item.is-active .mds-thinking-dot {
+  border-color: var(--mds-blue);
   background: var(--mds-blue);
-  box-shadow: 0 0 0 5px rgb(var(--mds-blue-rgb) / 0.18);
   animation: mds-thinking-pulse 1.1s ease-in-out infinite;
 }
 
 .mds-thinking-item.is-active .mds-thinking-rail::before {
-  background: linear-gradient(180deg, var(--mds-blue), rgb(var(--mds-blue-rgb) / 0.18));
+  background: linear-gradient(180deg, var(--mds-green), var(--mds-line-strong));
 }
 
-/* Pending phases sit muted until their turn arrives. */
+/* Pending phases sit muted until their turn arrives, marker still visible. */
 .mds-thinking-item.is-pending {
-  color: rgba(220, 232, 240, 0.62);
+  color: var(--mds-on-surface-faint);
 }
 
 .mds-thinking-copy {
