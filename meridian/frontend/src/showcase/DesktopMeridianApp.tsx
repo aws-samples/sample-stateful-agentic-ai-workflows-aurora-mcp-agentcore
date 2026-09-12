@@ -234,7 +234,7 @@ export function DesktopMeridianApp({
             : isRecovery
               ? 'is-experience is-finale'
               : 'is-proof is-ladder'
-      }${isRecoveryView ? ' is-continuity-rail' : ''}${
+      }${isBriefing ? ' is-solution-briefing' : ''}${isRecoveryView ? ' is-continuity-rail' : ''}${
         sidebarCollapsed ? ' is-sidebar-collapsed' : ''
       }${
         railCollapsed ? ' is-rail-collapsed' : ''

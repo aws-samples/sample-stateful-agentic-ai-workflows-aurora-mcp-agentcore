@@ -13,6 +13,7 @@ import './surfaceSwitch.css';
 import './airlineConcierge.css';
 import './presentationMode.css';
 import './solutionBriefing.css';
+import './recoveryChecks.css';
 
 type ShowcaseTheme = 'dark' | 'light';
 

@@ -743,7 +743,7 @@ describe('Experience presentation polish', () => {
 
     expect(screen.getByText('Request')).toBeInTheDocument();
     expect(screen.getByText('Checkpoint ready')).toBeInTheDocument();
-    expect(screen.getAllByText('Tokyo Executive Stopover')).toHaveLength(2);
+    expect(within(screen.getByRole('region', { name: 'Recovery briefing' })).getByText('Tokyo Executive Stopover')).toBeVisible();
     expect(screen.getByText('$1,949 / traveler')).toBeInTheDocument();
 
     const summary = screen.getByText('Full agent response').closest('summary');

@@ -1,0 +1,51 @@
+/* Onward's compact trip context and inspectable execution steps. */
+.mc-recovery-checks { color:var(--mc-ink); border-block:1px solid var(--mc-line); padding:18px 0; }
+.mc-recovery-checks-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:14px; }
+.mc-recovery-checks-head h2 { margin:0; font-size:20px; }
+.mc-recovery-checks-head>span { color:var(--mc-muted); font-size:12px; }
+.mc-recovery-check-list { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:0; padding:0; list-style:none; }
+.mc-recovery-check-list button { display:flex; align-items:center; width:100%; min-height:68px; gap:10px; padding:10px; text-align:left; font:inherit; background:var(--mc-soft); border:1px solid transparent; border-radius:7px; color:var(--mc-ink); cursor:pointer; }
+.mc-recovery-check-list button>span:nth-child(2) { flex:1; min-width:0; }
+.mc-recovery-check-list strong { display:block; font-size:13px; font-weight:550; }
+.mc-recovery-check-list small { display:block; font-size:12px; color:var(--mc-muted); margin-top:4px; }
+.mc-recovery-check-list svg { flex:none; color:var(--mc-muted); }
+.mc-recovery-check-index { display:grid; place-items:center; width:24px; height:24px; flex:none; border:1px solid var(--mc-line); border-radius:50%; font-size:12px; color:var(--mc-muted); }
+.mc-recovery-check-list .is-observed small { color:var(--mc-accent); }
+.mc-recovery-check-list .is-denied small { color:var(--mc-caution); }
+.mc-recovery-check-list .is-selected { border-color:var(--mc-accent); }
+.mc-recovery-check-list .is-selected svg { transform:rotate(180deg); }
+.mc-recovery-check-list button:hover { border-color:var(--mc-line); }
+.mc-recovery-checks button:focus-visible,.mc-trip-context>summary:focus-visible { outline:2px solid var(--mc-accent); outline-offset:3px; }
+.mc-recovery-check-detail { margin-top:14px; padding:16px 18px; background:var(--mc-soft); border-radius:7px; }
+.mc-recovery-check-detail[hidden] { display:none; }
+.mc-recovery-check-detail p { margin:0; color:var(--mc-muted); font-size:14px; line-height:1.6; max-width:90ch; }
+.mc-recovery-check-detail dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px 24px; margin:14px 0; font-size:12px; }
+.mc-recovery-check-detail dt { color:var(--mc-muted); }
+.mc-recovery-check-detail dd { margin:4px 0 0; overflow-wrap:anywhere; }
+.mc-recovery-check-detail button { display:flex; align-items:center; gap:8px; padding:10px 0 0; background:none; border:0; color:var(--mc-accent); font:inherit; font-size:13px; cursor:pointer; }
+.mc-trip-context { border:1px solid var(--mc-line); border-radius:8px; background:var(--mc-surface); }
+.mc-trip-context>summary { display:flex; align-items:center; gap:16px; padding:16px 20px; cursor:pointer; list-style:none; color:var(--mc-ink); }
+.mc-trip-context>summary::-webkit-details-marker { display:none; }
+.mc-trip-context-route { display:flex; align-items:center; gap:12px; font-size:20px; }
+.mc-trip-context-route strong { font-weight:550; }
+.mc-trip-context-note { display:grid; gap:3px; margin-left:auto; color:var(--mc-caution); font-size:13px; }
+.mc-trip-context-note small { color:var(--mc-muted); font-size:12px; }
+.mc-trip-context>summary>svg { flex:none; color:var(--mc-muted); }
+.mc-trip-context[open]>summary>svg:last-child { transform:rotate(180deg); }
+.mc-trip-context .mc-disrupted-journey { padding:0 16px 16px; }
+.mc-trip-context .mc-cancellation-alert { display:none; }
+@media (max-width:1240px) {
+  .mc-recovery-check-list { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:640px) {
+  .mc-recovery-checks-head { display:block; }
+  .mc-recovery-checks-head>span { display:block; margin-top:6px; }
+  .mc-recovery-check-list { gap:7px; }
+  .mc-recovery-check-list button { gap:7px; padding:10px 8px; }
+  .mc-recovery-check-index { display:none; }
+  .mc-recovery-check-detail dl { grid-template-columns:1fr; }
+  .mc-trip-context>summary { padding:14px; gap:12px; flex-wrap:wrap; }
+  .mc-trip-context-route { font-size:18px; }
+  .mc-trip-context-note { order:3; flex-basis:100%; margin-left:0; }
+  .mc-trip-context>summary>svg:last-child { margin-left:auto; }
+}

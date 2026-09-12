@@ -1,315 +1,185 @@
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, ChevronDown } from 'lucide-react';
+import { useRef, type ReactNode } from 'react';
 import { ServiceMark, type ServiceMarkName } from '../components/ServiceMark';
+import { BriefingArchitecture } from './BriefingArchitecture';
+import { CODE_DECIDES, CONTROLS, MODEL_DECIDES, PHASES, POLICIES, SERVICES, SERVICE_MARKS, TOOLS } from './solutionBriefingContent';
 
-/**
- * Solution briefing: what Meridian is, what it runs on, and where the
- * boundaries sit. Every statement here describes the deployed system as it is
- * wired today; nothing is aspirational. Copy that names a resource, a policy or
- * an argument uses the real identifier so a reader can find it in the code.
- */
-
-const PHASES: [string, string, string][] = [
-  ['SQL', 'Ground the assistant in live rows.', 'Parameterised filters over trip_packages in Aurora PostgreSQL through the RDS Data API. The trace shows the SQL that ran and the rows it returned.'],
-  ['MCP', 'Give the agent tools it can reuse.', 'Search, compare and currency conversion behind named MCP tool contracts. The trace shows each tool name, its inputs and its result.'],
-  ['Retrieval', 'Find trips by meaning.', 'pgvector similarity and full-text search fused into one candidate list, then reranked by Cohere Rerank 3.5 on Bedrock. The trace shows candidate scores and the rerank order.'],
-  ['Production', 'Run the concierge on managed infrastructure under policy.', 'A Strands agent in Bedrock AgentCore Runtime calls its tools through AgentCore Gateway over MCP; a Cedar policy engine decides every call; AgentCore Memory carries the conversation. A courtesy hold and its confirmation are governed writes.'],
-  ['Workflow', 'Make multi-step work survive a dead worker.', 'A LangGraph state graph checkpoints every node into Aurora, holds a worker lease, and places its hold through the same gateway tool. Kill the worker; a second one resumes the same thread and finds one hold.'],
+const SECTIONS = [
+  ['architecture', 'Architecture'], ['data', 'Prepared data'], ['phases', 'Five phases'],
+  ['policy', 'Governed actions'], ['state', 'Memory & recovery'], ['evidence', 'Evidence'],
+] as const;
+const PREPARATION: [string, string, ServiceMarkName, string, string][] = [
+  ['Packages, durations and seats', 'Load typed records with consistent package IDs', 'aurora', 'Aurora catalog', 'Prices, duration inventory and highlights'],
+  ['Package descriptions', 'Create embeddings with Cohere Embed v4 on Bedrock', 'aurora', 'Aurora search indexes', 'pgvector similarity + full-text search'],
+  ['Traveler facts and budgets', 'Store preferences; bind workload to traveler', 'aurora', 'Aurora under row-level security', 'Saved context and the authorized budget cap'],
+  ['Tool contracts and business rules', 'Define MCP schemas and Cedar policies', 'agentcore', 'AgentCore Gateway + Policy', 'Validated inputs and a permit before execution'],
 ];
 
-const MODEL_DECIDES: [string, string][] = [
-  ['Interpretation', 'What the traveler is asking for: destination, duration, party size, the preferences worth recalling.'],
-  ['Sequencing', 'Which gateway tool to call next, with which arguments drawn from the search results.'],
-  ['Prose', 'The reply the traveler reads, written from the tool results and the recalled facts.'],
-];
-
-const CODE_DECIDES: [string, string][] = [
-  ['Who the caller is', 'STS or AgentCore Identity names the workload; Aurora binds that subject to a traveler before any row is read.'],
-  ['What a hold may cost', 'The budget ceiling comes from the traveler’s saved budget fact, read under RLS; the runtime pins it onto the hold call. The model never chooses it. The travel brief and the confirmation dialog show that same saved cap and the party ceiling derived from it, so what a traveler reads is the basis Cedar judged.'],
-  ['Whether a hold runs', 'The traveler’s confirmation flag and the ceiling travel as tool arguments; Cedar evaluates them before the Lambda runs.'],
-  ['Whether a booking is confirmed', 'The traveler confirms the held trip in the concierge. The backend reads the booking total under RLS, the runtime pins the confirmation and the ceiling, Cedar decides, and Aurora flips the same booking row from held to confirmed. No supplier, no payment.'],
-  ['Inventory and replay', 'create_courtesy_hold in Aurora takes the capacity lock, decrements seats and replays an identical request instead of holding twice.'],
-];
-
-const TOOLS: [string, string, string][] = [
-  ['SemanticTripSearchLambda___semantic_trip_search', 'Read', 'Embeds the query with Cohere Embed v4, searches pgvector and full-text indexes in Aurora, and returns ranked packages with scores.'],
-  ['MeridianHolds___get_package_details', 'Read', 'One package with its live durations, availability and highlights, read under the traveler’s RLS scope.'],
-  ['MeridianHolds___create_courtesy_hold', 'Write', 'Places a courtesy hold on one package duration. Requires the traveler id, confirmation flag, budget ceiling and journey reference the platform pinned; accepts a checkpointed request id, booking id and worker execution id for replay.'],
-  ['MeridianHolds___confirm_booking', 'Write', 'Confirms a held booking for the authorized traveler: catalog inventory in Meridian’s database only, no supplier and no payment. Requires the booking id and the total Aurora holds, plus the traveler id, confirmation flag, budget ceiling and journey reference the platform pinned. A retry returns the original confirmation.'],
-];
-
-const POLICIES: [string, string, string][] = [
-  ['meridian_read_tools', 'Any authenticated caller may search packages and read package details.',
-   'permit(principal,\n  action in [AgentCore::Action::"SemanticTripSearchLambda___semantic_trip_search",\n             AgentCore::Action::"MeridianHolds___get_package_details"],\n  resource == AgentCore::Gateway::"arn:aws:bedrock-agentcore:us-east-1:...:gateway/meridianv2-meridian-aurora-temzt21jg0");'],
-  ['meridian_hold_governance', 'A courtesy hold runs only after the traveler confirmed it, for at most 12 hours, for at most 6 travelers, and within the traveler’s saved budget ceiling. Nothing else permits the hold, so any other call is denied by default.',
-   'permit(principal,\n  action == AgentCore::Action::"MeridianHolds___create_courtesy_hold",\n  resource == AgentCore::Gateway::"arn:aws:bedrock-agentcore:us-east-1:...:gateway/meridianv2-meridian-aurora-temzt21jg0")\nwhen {\n  context.input.travelerConfirmed == true &&\n  context.input.holdMinutes <= 720 &&\n  context.input.travelers <= 6 &&\n  context.input.totalCents <= context.input.budgetCeilingCents\n};'],
-  ['meridian_booking_governance', 'A held booking is confirmed only after the traveler confirmed it and only when its total is within the traveler’s saved budget ceiling. Aurora enforces that the booking is held, unexpired and owned by the traveler. Nothing else permits confirm_booking, so any other call is denied by default.',
-   'permit(principal,\n  action == AgentCore::Action::"MeridianHolds___confirm_booking",\n  resource == AgentCore::Gateway::"arn:aws:bedrock-agentcore:us-east-1:...:gateway/meridianv2-meridian-aurora-temzt21jg0")\nwhen {\n  context.input.travelerConfirmed == true &&\n  context.input.totalCents <= context.input.budgetCeilingCents\n};'],
-];
-
-const CONTROLS: [string, string][] = [
-  ['Authenticate the workload', 'AgentCore Identity or AWS STS names the caller: the backend, the runtime, or the holds Lambda, each with its own role.'],
-  ['Authorize the traveler', 'traveler_identity_bindings in Aurora grants that subject a traveler. A missing grant fails before any row-level scope is set, and both allow and deny land in traveler_access_audit.'],
-  ['Scope every row', 'Row-Level Security filters rows to the authorized traveler under the least-privilege meridian_app role, inside one Data API transaction.'],
-  ['Decide every tool call', 'AgentCore Gateway serves the tools over MCP with SigV4; its Cedar policy engine, MeridianGovernance in ENFORCE mode, decides each call on the arguments before any Lambda runs.'],
-  ['Make the writer a workload too', 'The MeridianHolds Lambda holds its own grant, sets the traveler scope, steps down to meridian_app and calls create_courtesy_hold or confirm_booking, so a retried call replays the same booking or the same confirmation.'],
-];
-
-const SERVICE_MARKS: Record<string, ServiceMarkName> = {
-  'Amazon Aurora PostgreSQL': 'aurora',
-  'Amazon Bedrock AgentCore Runtime': 'agentcore',
-  'Amazon Bedrock AgentCore Gateway': 'agentcore',
-  'Amazon Bedrock AgentCore Policy': 'agentcore',
-  'Amazon Bedrock AgentCore Memory': 'agentcore',
-  'Amazon Bedrock': 'bedrock',
-};
-
-const SERVICES: [string, string][] = [
-  ['Amazon Aurora PostgreSQL', 'Catalog, traveler profile and preferences, identity bindings and audit, LangGraph checkpoints, journeys, leases and holds. pgvector HNSW for retrieval; RLS for scope; the RDS Data API as the connectionless transport.'],
-  ['Amazon Bedrock AgentCore Runtime', 'Hosts the Phase 4 Strands agent in its own microVM with the AWS Distro for OpenTelemetry attached.'],
-  ['Amazon Bedrock AgentCore Gateway', 'Serves the four tools over MCP with IAM authorization and names them Target___tool.'],
-  ['Amazon Bedrock AgentCore Policy', 'Cedar policy engine attached to the gateway in ENFORCE mode; default deny.'],
-  ['Amazon Bedrock AgentCore Memory', 'Semantic memory strategy over the concierge session, namespaced per traveler and conversation.'],
-  ['Amazon Bedrock', 'Claude Sonnet 5 for the agents, Cohere Embed v4 and Cohere Rerank 3.5 for retrieval.'],
-  ['AWS Lambda', 'The semantic search target and the MeridianHolds target behind the gateway.'],
-  ['Amazon CloudWatch', 'ADOT spans and structured logs in the runtime’s log group; every Phase 4 span in the trace panel links to its trace id.'],
-  ['AWS App Runner and Amazon CloudFront', 'The published site: the FastAPI backend as a container, the Vite build in S3, basic authentication and the API bearer token at the edge.'],
-];
-
-function Steps({ items }: { items: [string, string][] }) {
-  return (
-    <ol className="mds-brief-steps">
-      {items.map(([title, body], i) => (
-        <li key={title}>
-          <span className="mds-brief-index">{i + 1}</span>
-          <div><strong>{title}</strong><p>{body}</p></div>
-        </li>
-      ))}
-    </ol>
-  );
+function Detail({ title, children }: { title: string; children: ReactNode }) {
+  return <details className="mds-brief-detail">
+    <summary>{title}<ChevronDown size={16} aria-hidden="true" /></summary>
+    <div className="mds-brief-detail-body">{children}</div>
+  </details>;
+}
+function Flow({ label, steps }: { label: string; steps: [string, string][] }) {
+  return <ol className="mds-brief-flow" aria-label={label}>{steps.map(([title, detail], index) => (
+    <li key={title}>
+      {index > 0 && <ArrowRight className="mds-brief-flow-arrow" size={20} aria-hidden="true" />}
+      <div><strong>{title}</strong><span>{detail}</span></div>
+    </li>
+  ))}</ol>;
+}
+function Facts({ items }: { items: [string, string][] }) {
+  return <dl className="mds-brief-facts">{items.map(([title, body]) => (
+    <div key={title}><dt>{title}</dt><dd>{body}</dd></div>
+  ))}</dl>;
+}
+function SectionHeading({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+  return <div className="mds-brief-section-heading">
+    <h2 id={`brief-${id}-heading`} tabIndex={-1}>{title}</h2><p>{children}</p>
+  </div>;
 }
 
 export function SolutionBriefing({ onOpenLadder }: { onOpenLadder: () => void }) {
+  const briefingRef = useRef<HTMLElement>(null);
+  const navigate = (id: string) => {
+    const heading = briefingRef.current?.querySelector<HTMLElement>(`#brief-${id}-heading`);
+    heading?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    heading?.focus({ preventScroll: true });
+  };
   return (
-    <section className="mds-brief" aria-labelledby="mds-brief-title">
+    <section className="mds-brief" aria-labelledby="mds-brief-title" ref={briefingRef}>
       <header className="mds-brief-head">
-        <span className="mds-brief-eyebrow">re:Invent 2026 · fictional inventory, live AWS execution</span>
-        <h1 id="mds-brief-title">Solution briefing</h1>
-        <p>
-          Meridian is a travel concierge that keeps its state in Aurora PostgreSQL and its
-          judgment under policy. Five phases take one traveler from a SQL query to a governed
-          hold placed by a managed agent, and then to a workflow that survives the worker
-          that ran it. This is how it is built and where the boundaries sit.
-        </p>
+        <div><h1 id="mds-brief-title">Solution briefing</h1>
+          <p>Remember the traveler. Govern the action. Resume the journey.</p>
+          <span className="mds-brief-note">Fictional inventory · architecture and implementation guide</span>
+        </div>
+        <button className="mds-brief-link" type="button" onClick={onOpenLadder}>Open the capability ladder <ArrowRight size={17} aria-hidden="true" /></button>
       </header>
-
-      <section className="mds-brief-section">
-        <h2>Overview</h2>
-        <p>
-          Alex Morgan asks for a trip. The answer has to respect what Alex told the concierge
-          weeks ago, stay inside a saved budget, come from live inventory, end in a booking Alex
-          confirmed, and leave behind a record that a second worker or a second person can pick up. The same Aurora cluster
-          holds the catalog, the traveler’s memory, the authorization bindings, the workflow
-          checkpoints and the holds, so every proof on the System evidence surface is read back
-          from the database rather than narrated.
-        </p>
-        <p>
-          <strong>The claim this demonstrates:</strong> an agent is only as trustworthy as the
-          state it reads and the boundary it acts through. Retrieval quality, identity,
-          policy and durability are separate controls, and each one is checkable on stage.
-        </p>
-      </section>
-
-      <section className="mds-brief-section">
-        <h2>The five phases</h2>
-        <ol className="mds-brief-phases">
-          {PHASES.map(([name, claim, body], i) => (
-            <li key={name}>
-              <span className="mds-brief-index">{i + 1}</span>
-              <div>
-                <span className="mds-brief-phase-name">{name}</span>
-                <strong>{claim}</strong>
-                <p>{body}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-        <button type="button" className="mds-brief-link" onClick={onOpenLadder}>
-          Open the capability ladder <ArrowRight size={16} aria-hidden="true" />
-        </button>
-      </section>
-
-      <section className="mds-brief-section">
-        <h2>What the model decides, and what the code decides</h2>
-        <div className="mds-brief-columns">
-          <div className="mds-brief-panel">
-            <h3>The model decides</h3>
-            <p>Three things, and nothing else.</p>
-            <Steps items={MODEL_DECIDES} />
-          </div>
-          <div className="mds-brief-panel">
-            <h3>The platform decides</h3>
-            <p>Each is code or policy the model cannot reach.</p>
-            <Steps items={CODE_DECIDES} />
-          </div>
+      <nav className="mds-brief-nav" aria-label="Solution briefing sections">
+        {SECTIONS.map(([id, label]) => <button key={id} type="button" aria-controls={`brief-${id}`} onClick={() => navigate(id)}>{label}</button>)}
+      </nav>
+      <section id="brief-architecture" className="mds-brief-section" aria-labelledby="brief-architecture-heading">
+        <SectionHeading id="architecture" title="The request, the tools and the state">Managed concierge and durable workflow share one governed write path.</SectionHeading>
+        <div className="mds-brief-architecture-grid">
+          <BriefingArchitecture />
+          <aside className="mds-brief-access" aria-label="Architecture boundaries">
+            <h3>At each boundary</h3>
+            <Facts items={[
+              ['Viewer → application', 'CloudFront delivers the site; App Runner hosts FastAPI.'],
+              ['Workload → traveler', 'Identity bindings authorize the caller before Aurora applies row-level security.'],
+              ['Agent → tool', 'IAM-signed MCP calls pass through AgentCore Gateway and Cedar policy.'],
+              ['Worker → state', 'Aurora checkpoints, worker leases and replay-safe holds preserve progress.'],
+            ]} />
+          </aside>
         </div>
-        <p className="mds-brief-boundary">
-          <strong>Boundary:</strong> the runtime overwrites the traveler id, the confirmation flag,
-          the budget ceiling and the journey reference on every hold and booking call from the
-          request the backend authorized. A confirmed hold or booking is placed by the platform
-          before the model speaks; the model narrates the receipt. The model proposes; it cannot
-          confirm on the traveler’s behalf or move the ceiling.
-        </p>
+        <Detail title="Inspect service roles and delivery">
+          <div className="mds-brief-services">{SERVICES.map(([name, role]) => <article key={name}>
+            {SERVICE_MARKS[name] && <ServiceMark name={SERVICE_MARKS[name]} size={28} />}
+            <div><h3>{name}</h3><p>{role}</p></div>
+          </article>)}</div>
+          <p>The published path uses CloudFront for viewer access and API routing, S3 for the static site, and App Runner for the backend. Local development uses Vite and the same FastAPI application. The AgentCore resources are declared in <code>agentcore.json</code>.</p>
+        </Detail>
       </section>
-
-      <section className="mds-brief-section">
-        <h2>Tools over MCP</h2>
-        <p>
-          Four tools, two Lambda targets, one gateway. The runtime discovers them with an MCP
-          <code> tools/list</code> call and invokes them with <code>tools/call</code>, signing each
-          request with SigV4 from its own execution role. The Phase 5 workflow calls the hold tool
-          the same way from the backend.
-        </p>
-        <div className="mds-brief-tools">
-          {TOOLS.map(([name, kind, body]) => (
-            <article key={name} className="mds-brief-tool">
-              <span className={`mds-brief-kind is-${kind.toLowerCase()}`}>{kind}</span>
-              <div><strong><code>{name}</code></strong><p>{body}</p></div>
-            </article>
-          ))}
+      <section id="brief-data" className="mds-brief-section" aria-labelledby="brief-data-heading">
+        <SectionHeading id="data" title="Prepare the data before the question">Seed records and configured policies become inputs the tools can trust.</SectionHeading>
+        <div className="mds-brief-preparation" role="table" aria-label="Source records, preparation and prepared stores">
+          <div className="mds-brief-prep-head" role="row"><span role="columnheader">Source</span><span role="columnheader">Preparation</span><span role="columnheader">Ready for the tools</span></div>
+          {PREPARATION.map(([source, action, mark, store, detail]) => <div className="mds-brief-prep-row" role="row" key={source}>
+            <strong role="cell">{source}</strong>
+            <span role="cell"><ArrowRight size={18} aria-hidden="true" />{action}</span>
+            <div role="cell"><ArrowRight size={18} aria-hidden="true" /><ServiceMark name={mark} size={28} /><div><strong>{store}</strong><small>{detail}</small></div></div>
+          </div>)}
+        </div>
+        <Flow label="Retrieval sequence" steps={[
+          ['Words + meaning', 'Aurora full-text search and pgvector'],
+          ['Fuse + rerank', 'Combine candidates; Bedrock reranks'],
+          ['Verify the option', 'Check duration inventory and budget'],
+        ]} />
+        <Detail title="Inspect the data and retrieval boundaries">
+          <p><code>scripts/travel_catalog.py</code> supplies the fictional packages, travelers and preferences. <code>scripts/seed_data.py</code> loads Aurora and embeds package descriptions. The query and corpus must use the same embedding model.</p>
+          <p>Similarity finds candidates; it does not prove availability. Prices and seats are read from Aurora. The saved budget comes from the authorized traveler’s preferences. Checkpoints, worker leases and new holds are written during execution.</p>
+        </Detail>
+      </section>
+      <section id="brief-phases" className="mds-brief-section" aria-labelledby="brief-phases-heading">
+        <SectionHeading id="phases" title="Five phases, one traveler">Each phase adds a capability and a piece of inspectable evidence.</SectionHeading>
+        <ol className="mds-brief-phases">{[
+          ['SQL', 'Ground in live rows', 'Parameterized Aurora queries', 'SQL + returned rows'],
+          ['MCP', 'Reuse named tools', 'Search, compare and currency', 'Tool inputs + results'],
+          ['Retrieval', 'Search by meaning', 'Hybrid retrieval + reranking', 'Candidate scores + order'],
+          ['Production', 'Act under policy', 'Runtime, Gateway and Memory', 'Cedar decision + receipt'],
+          ['Workflow', 'Resume saved work', 'LangGraph + Aurora checkpoints', 'Same thread + one hold'],
+        ].map(([name, title, service, proof], index) => <li key={name}>
+          <div className="mds-brief-phase-label"><span>{index + 1}</span><h3>{name}</h3></div>
+          <strong>{title}</strong><p>{service}</p><small>{proof}</small>
+        </li>)}</ol>
+        <div className="mds-brief-boundaries"><Facts items={[
+          ['Model', 'Interprets the request, sequences tools and writes grounded prose.'],
+          ['Application', 'Binds the traveler, pins confirmation and budget, and validates inventory.'],
+          ['Policy', 'Decides whether each gateway tool call may execute.'],
+        ]} /></div>
+        <div className="mds-brief-detail-pair">
+          <Detail title="Inspect the phase-by-phase implementation"><Facts items={PHASES.map(([name, claim, body]) => [name, `${claim} ${body}`])} /></Detail>
+          <Detail title="Inspect model and platform responsibilities"><h3>The model decides</h3><Facts items={MODEL_DECIDES} /><h3>The platform decides</h3><Facts items={CODE_DECIDES} /></Detail>
         </div>
       </section>
-
-      <section className="mds-brief-section">
-        <h2>Governance with Cedar</h2>
-        <p>
-          Policy in AgentCore attaches a Cedar policy engine, <code>MeridianGovernance</code>, to
-          the gateway in ENFORCE mode. The engine is default deny: a tool call runs only when a
-          policy permits it. Three policies govern Meridian, written as they are provisioned.
-        </p>
-        <div className="mds-brief-policies">
-          {POLICIES.map(([name, plain, statement]) => (
-            <article key={name} className="mds-brief-policy">
-              <h3><code>{name}</code></h3>
-              <p>{plain}</p>
-              <pre>{statement}</pre>
-            </article>
-          ))}
-        </div>
-        <p>
-          The arguments those conditions read, <code>travelerConfirmed</code>,
-          <code> holdMinutes</code>, <code>travelers</code>, <code>totalCents</code> and
-          <code> budgetCeilingCents</code>, are required by the tool schemas, and the amounts are
-          integer cents because Cedar has no floating point type. A denied call comes back to the
-          agent as an explained refusal and renders on the trace as <em>Denied by policy</em>.
-        </p>
-        <p className="mds-brief-boundary">
-          <strong>Boundary:</strong> the policies govern the fictional Meridian inventory. They show
-          where such rules belong, outside the agent’s code and enforced on every call.
-        </p>
-      </section>
-
-      <section className="mds-brief-section">
-        <h2>Identity, authorization and row-level security</h2>
-        <p>Stateful reads and writes pass five independent controls.</p>
-        <Steps items={CONTROLS} />
-        <p>
-          The RLS tab proves the chain live: the same workload is allowed for Alex and denied for the
-          decoy traveler, and both decisions are in <code>traveler_access_audit</code>.
-        </p>
-      </section>
-
-      <section className="mds-brief-section">
-        <h2>Memory</h2>
-        <p>
-          Long-term facts about the traveler (a shellfish allergy, a budget cap, a preference for
-          boutique hotels) live in Aurora as <code>traveler_preferences</code> and are recalled under
-          RLS. The Phase 4 conversation itself is held by AgentCore Memory with a semantic strategy,
-          namespaced per traveler and conversation, so the runtime restores context across turns
-          without the backend replaying transcripts.
-        </p>
-      </section>
-
-      <section className="mds-brief-section">
-        <h2>Durable workflow</h2>
-        <p>
-          Phase 5 is a LangGraph state graph: classify, search, availability, hold, synthesize. Every
-          node commits a checkpoint to Aurora through the Data API saver; the worker holds a lease in
-          <code> journey_executions</code> and renews it while it runs. The hold node verifies its
-          lease, then places the hold through the gateway tool with its checkpointed request id,
-          booking id and execution id, so the Lambda checks the lease again inside the write
-          transaction and a restarted worker replays the same booking with its original expiry.
-        </p>
-        <p>
-          The scripted proof kills worker one after the hold, watches a second worker be refused
-          until the lease clears, and reads back one hold, one booking id and the original expiry.
-          The System evidence surface shows the same facts for the session on stage.
-        </p>
-      </section>
-
-      <section className="mds-brief-section">
-        <h2>Observability</h2>
-        <p>
-          The runtime is instrumented with the AWS Distro for OpenTelemetry. Model calls, gateway tool
-          calls and Memory operations become spans in the agent’s CloudWatch log group, and the
-          trace panel is fed from those spans rather than from a script: each Phase 4 span carries
-          its trace id and a link into CloudWatch. The Phase 5 trace shows the LangGraph nodes, the
-          checkpoint writes and the Cedar decision on the workflow’s hold.
-        </p>
-      </section>
-
-      <section className="mds-brief-section">
-        <h2>Holds</h2>
-        <p>
-          A courtesy hold reserves seats on one package duration for twelve hours. It is a governed
-          write: the traveler confirms, the platform pins the arguments, Cedar decides, and the
-          Lambda writes under the traveler’s scope. No payment is taken and nothing is sent to a
-          supplier; the inventory is fictional and the seats return when the hold expires.
-        </p>
-        <p>
-          Confirmation brings the journey home. The recovery desk hands the held package back to
-          the concierge, Alex confirms the trip in a dialog that restates the package, party, total
-          and saved budget, and the platform carries that click as the <code>travelerConfirmed</code>
-          argument of <code>confirm_booking</code>. Cedar decides, and the <code>confirm_booking</code>
-          function in Aurora turns the same booking row from <code>held</code> to <code>confirmed</code>
-          only while the hold is unexpired and the total matches. It books catalog inventory in
-          Meridian’s database; no supplier is contacted and no payment is taken.
-        </p>
-      </section>
-
-      <section className="mds-brief-section">
-        <h2>Architecture</h2>
-        <div className="mds-brief-flow" role="img" aria-label="Browser to CloudFront to App Runner, which runs the FastAPI backend. Phases 1 to 3 read Aurora through the RDS Data API and MCP servers. Phase 4 invokes the AgentCore Runtime agent, which calls Bedrock and the gateway tools under Cedar, backed by two Lambda functions over Aurora, with AgentCore Memory for the session. Phase 5 runs LangGraph in the backend with Aurora checkpoints and calls the same gateway tool for its hold. OpenTelemetry spans go to CloudWatch.">
-          <div><span>Browser</span><b>→</b><span>CloudFront</span><b>→</b><span>App Runner</span><b>→</b><strong>FastAPI backend</strong></div>
-          <div><strong>Phases 1 to 3</strong><b>→</b><span>SQL, MCP tools, hybrid retrieval</span><b>→</b><span>Aurora PostgreSQL via the RDS Data API</span><b>→</b><span>Bedrock embeddings and rerank</span></div>
-          <div><strong>Phase 4</strong><b>→</b><span>AgentCore Runtime (Strands)</span><b>→</b><span>AgentCore Gateway + Cedar</span><b>→</b><span>Lambda targets</span><b>→</b><span>Aurora under RLS</span><b>+</b><span>AgentCore Memory</span></div>
-          <div><strong>Phase 5</strong><b>→</b><span>LangGraph in the backend</span><b>→</b><span>Aurora checkpoints and leases</span><b>→</b><span>the same gateway hold tool</span><b>→</b><span>back to the concierge for confirmation</span></div>
-          <div><strong>OpenTelemetry</strong><b>→</b><span>ADOT on the runtime</span><b>→</b><span>CloudWatch spans and trace ids</span></div>
+      <section id="brief-policy" className="mds-brief-section" aria-labelledby="brief-policy-heading">
+        <SectionHeading id="policy" title="A confirmed action, then a policy decision">AgentCore Policy evaluates Cedar before a gateway target runs.</SectionHeading>
+        <Flow label="Governed action sequence" steps={[
+          ['Traveler confirms', 'Platform pins identity, budget and intent'],
+          ['Gateway + Cedar', 'An applicable permit is required'],
+          ['Lambda → Aurora', 'Write under traveler scope; return a receipt'],
+        ]} />
+        <div className="mds-brief-policy-rules"><Facts items={[
+          ['Courtesy hold', 'Confirmed · up to 12 hours · up to 6 travelers · within saved budget'],
+          ['Booking confirmation', 'Confirmed · within saved budget; Aurora checks ownership and expiry'],
+          ['Denied call', 'Target does not run. The trace shows the refusal and its reason.'],
+        ]} /></div>
+        <p className="mds-brief-note">These are Meridian catalog reservations. No supplier is contacted and no payment is taken.</p>
+        <div className="mds-brief-detail-pair">
+          <Detail title="Read the three Cedar policies">
+            <p><code>MeridianGovernance</code> is configured in ENFORCE mode. These are the configured policies, with the account portion of the gateway ARN abbreviated.</p>
+            {POLICIES.map(([name, plain, statement]) => <article className="mds-brief-policy" key={name}><h3><code>{name}</code></h3><p>{plain}</p><pre>{statement}</pre></article>)}
+          </Detail>
+          <Detail title="Inspect the four MCP tools">
+            <p>Two Lambda targets, one gateway. The runtime discovers tools with <code>tools/list</code> and invokes them with <code>tools/call</code>. The Phase 5 worker uses the same hold tool.</p>
+            {TOOLS.map(([name, kind, body]) => <article className="mds-brief-tool" key={name}><span className={`mds-brief-kind is-${kind.toLowerCase()}`}>{kind}</span><div><h3><code>{name}</code></h3><p>{body}</p></div></article>)}
+          </Detail>
         </div>
       </section>
-
-      <section className="mds-brief-section">
-        <h2>Key AWS services</h2>
-        <div className="mds-brief-services">
-          {SERVICES.map(([name, role]) => (
-            <article key={name}>
-              {SERVICE_MARKS[name] && <ServiceMark name={SERVICE_MARKS[name]} size={36} />}
-              <div><h3>{name}</h3><p>{role}</p></div>
-            </article>
-          ))}
-        </div>
+      <section id="brief-state" className="mds-brief-section" aria-labelledby="brief-state-heading">
+        <SectionHeading id="state" title="Remember context. Resume execution.">Traveler preferences, conversation context and workflow progress have different jobs.</SectionHeading>
+        <div className="mds-brief-state-grid">{([
+          ['aurora', 'Traveler facts', 'Aurora preferences', 'Saved preferences and budget, read under the traveler’s row-level scope.'],
+          ['agentcore', 'Conversation context', 'AgentCore Memory', 'Phase 4 session context with a semantic strategy, scoped to traveler and conversation.'],
+          ['aurora', 'Execution state', 'Aurora + LangGraph', 'Checkpoints, worker leases and hold intent let a new worker continue the same thread.'],
+        ] satisfies [ServiceMarkName, string, string, string][]).map(([mark, title, service, body]) => <article key={title}><ServiceMark name={mark} size={30} /><div><h3>{title}</h3><span>{service}</span><p>{body}</p></div></article>)}</div>
+        <Flow label="Durable recovery sequence" steps={[
+          ['Save progress', 'Checkpoint each workflow node in Aurora'],
+          ['Replace the worker', 'Resume after the previous lease clears'],
+          ['Replay safely', 'Reuse the hold request and booking IDs'],
+          ['Return to the traveler', 'Confirm the held trip in Concierge'],
+        ]} />
+        <Detail title="Inspect durability and authorization controls">
+          <p>The LangGraph sequence is classify, search, availability, hold and synthesize. The worker renews its lease in <code>journey_executions</code>. Before a hold, both the worker and the Lambda check the lease; the Lambda checks again inside the write transaction.</p>
+          <p>The checkpointed request ID and booking ID let a resumed worker retrieve the existing hold with its original expiry. The recovery proof must read back the same booking and hold count; a successful response alone does not prove replay safety.</p>
+          <Facts items={CONTROLS} />
+        </Detail>
       </section>
-
-      <section className="mds-brief-section">
-        <h2>Delivery and access</h2>
-        <p>
-          The site is published behind CloudFront with basic authentication and a bearer token
-          injected at the edge for the API; the backend runs as a container on App Runner in the same
-          region as Aurora and AgentCore, and reaches them with its own instance role. Locally the same
-          backend runs on port 8000 behind the Vite dev server. The AgentCore project is declarative:
-          the runtime, gateway, targets, policy engine and memory are one <code>agentcore.json</code>
-          deployed with the AgentCore CLI and CDK.
-        </p>
+      <section id="brief-evidence" className="mds-brief-section" aria-labelledby="brief-evidence-heading">
+        <SectionHeading id="evidence" title="Follow the result back to its evidence">The briefing explains the design. System evidence shows what the current session observed.</SectionHeading>
+        <div className="mds-brief-evidence"><Facts items={[
+          ['Retrieval', 'SQL, tool inputs, candidates and the returned rank order'],
+          ['Authorization', 'Traveler binding, RLS scope and allow/deny audit records'],
+          ['Policy', 'Gateway decision, pinned arguments and the hold or booking receipt'],
+          ['Durability', 'Thread, checkpoint, worker lease and persisted hold identity'],
+        ]} /></div>
+        <Detail title="Inspect observability and proof boundaries">
+          <p>ADOT instruments the Phase 4 runtime. Model calls, gateway calls and Memory operations produce CloudWatch spans; trace IDs connect those operations to the displayed run. Phase 5 adds workflow nodes, checkpoints and its gateway hold decision.</p>
+          <p>The Recovery desk and System evidence surface read the active journey. Missing records remain unavailable; they are not inferred from narration. This briefing does not make service calls or report a live policy decision.</p>
+        </Detail>
       </section>
+      <footer className="mds-brief-footer"><p>State belongs to the journey. Decisions remain inspectable.</p><span>Meridian · Aurora PostgreSQL, MCP and AgentCore</span></footer>
     </section>
   );
 }

@@ -1,7 +1,7 @@
 import {
   AlertTriangle,
   ArrowRight,
-  Sparkles,
+  ChevronDown,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { ChatComposer } from './ChatComposer';
@@ -14,6 +14,7 @@ import {
 import { deriveWorkflowState } from '../lib/showcaseProof';
 import { prefersReducedMotion } from '../lib/prefersReducedMotion';
 import { RecoveryBriefing } from './RecoveryBriefing';
+import { RecoveryChecks } from './RecoveryChecks';
 import { RecoveryBoardingPass } from './RecoveryBoardingPass';
 import { TripHoldReceipt } from './TripHoldReceipt';
 import { HoldReceipt } from './HoldReceipt';
@@ -245,7 +246,16 @@ export function RecoveryWorkspace({
         </div>
       </header>
 
-      <RecoveryBoardingPass state={state} />
+      <details className="mc-trip-context">
+        <summary>
+          <span className="mc-trip-context-route"><strong>JFK</strong><ArrowRight size={19} aria-hidden="true" /><strong>Tokyo</strong></span>
+          <span className="mc-trip-context-note">Original flight canceled<small>Traveler-reported · inspect itinerary</small></span>
+          <ChevronDown size={18} aria-hidden="true" />
+        </summary>
+        <RecoveryBoardingPass state={state} />
+      </details>
+
+      {hasConversation && <RecoveryChecks state={state} journeyDocument={journeyDocument} onOpenProof={onOpenProof} />}
 
       {(savedHold || workflowProof.holdId) && <HoldReceipt
         holdId={savedHold?.booking_id ?? workflowProof.holdId}
@@ -404,7 +414,7 @@ export function RecoveryWorkspace({
           aria-label="Recovery briefing"
         >
           <div className="mds-recovery-briefing-head">
-            <span><Sparkles size={16} />Recovery briefing</span>
+            <span>Recovery briefing</span>
             <button
               type="button"
               onClick={state.clearChat}
