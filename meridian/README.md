@@ -214,6 +214,11 @@ starting a new workflow.
 
 ![Solution briefing with the shared Runtime and workflow paths through Gateway policy, Lambda targets, and Aurora](docs/meridian-solution-briefing.png)
 
+The architecture uses seven original SVG service icons from the July 31, 2026
+AWS architecture deck across its nine AWS nodes. The [asset provenance](frontend/public/brand/aws-2026-07-31/README.md)
+records the source slides and files. The diagram preserves their official
+colors and proportions in both themes.
+
 </details>
 
 <details>

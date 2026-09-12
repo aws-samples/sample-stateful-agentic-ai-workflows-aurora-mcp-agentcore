@@ -47,7 +47,11 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from backend.agentcore.cli_config import require_agentcore_platform
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agentcore.runtime import RuntimeDecision, get_agentcore_runtime
-from backend.agents.budget import BUDGET_KEYS, budget_ceiling_from_facts
+from backend.agents.budget import (
+    BUDGET_KEYS,
+    budget_ceiling_from_facts,
+    budget_ceiling_per_traveler_cents,
+)
 from backend.agents.production_04.memory_agent import (
     ActivityEntry as MemoryActivity,
     MemoryAgent as TravelerMemorySpecialist,
@@ -396,13 +400,28 @@ class ProductionAgent:
     async def _runtime_turn(
         self, read: AuthorizedRead, message: str, traveler_id: str, travelers: int, **hold
     ) -> RuntimeDecision:
+        ceiling = budget_ceiling_from_facts(read.budget_facts, travelers)
+        per_traveler = budget_ceiling_per_traveler_cents(read.budget_facts)
+        saved_budget = (
+            f"Saved budget cap: ${per_traveler / 100:,.2f} per traveler."
+            if per_traveler is not None
+            else "No saved per-traveler budget is available; the platform default applies."
+        )
+        # Put the current, calculated basis before recalled prose so it survives
+        # context truncation and cannot be confused with an earlier party size.
+        budget_context = (
+            f"Current turn pricing basis:\nParty size: {travelers} traveler(s).\n"
+            f"{saved_budget}\nWhole-party policy ceiling: ${ceiling / 100:,.2f}.\n"
+            "Catalog prices are per traveler. Compare the catalog price multiplied by "
+            "this party size with the whole-party ceiling, not with a per-traveler cap."
+        )
         decision = await asyncio.to_thread(
             self.agentcore_runtime.invoke_turn,
             read.conv_id,
             traveler_id,
             message,
-            read.memory_context,
-            budget_ceiling_cents=budget_ceiling_from_facts(read.budget_facts, travelers),
+            f"{budget_context}\n\n{read.memory_context}",
+            budget_ceiling_cents=ceiling,
             travelers_count=travelers,
             **hold,
         )

@@ -191,6 +191,8 @@ worker restart must preserve the same booking ID and original 15-minute expiry.
 
 Captured from the local application on September 12, 2026. The briefing explains
 the configured design; System evidence reports what a journey actually observed.
+The architecture uses the original SVG service icons from the July 31, 2026
+AWS architecture deck, with their official colors and proportions preserved.
 See the [application guide](meridian/README.md#screenshots) for prepared-data and
 Recovery desk screenshots.
 

@@ -47,11 +47,27 @@ The lost reply is an explicit test injection at the worker boundary. These
 results demonstrate the tested retry schedules, not exactly-once execution or
 all possible failure modes.
 
-Backend validation after these fixes: 429 offline tests passed, 6 skipped,
+The final presentation pass also corrected ambiguous pricing context. A live
+Concierge reply had compared a two-person trip total with the saved per-person
+cap. Every Production turn now puts the current party size, saved per-traveler
+cap, and calculated whole-party ceiling ahead of recalled prose. A new live
+turn correctly described $5,598 for two travelers as below the $6,400 ceiling.
+This clarifies model context; Gateway still receives the same enforced integer
+ceiling. No Runtime deployment was required.
+
+The Solution briefing architecture now uses seven original SVG assets from
+`AWS-Architecture-Icons-Deck_For-Dark-BG_07312026.pptx` across all nine AWS
+nodes. Browser checks verified the assets, text fit, both themes, and contained
+horizontal scrolling at 390 pixels. Both READMEs and the briefing screenshot
+were updated.
+
+Backend validation after these fixes: 432 offline tests passed, 6 skipped,
 110 database tests deselected; Ruff passed. The four new graph regressions
 cover disconnection, RPC failure, unreadable replies, and missing receipts.
 Three parser cases cover the observed RPC denial and two non-policy errors.
-Frontend source and dependencies are unchanged from the prior 200-test pass.
+Pricing regressions cover the two-person case, changed party sizes, and the
+unsaved-budget fallback. Frontend lint, the three briefing tests, TypeScript,
+and the production build passed; dependencies are unchanged.
 
 The local backend and existing deployed Gateway were exercised together.
 The hosted application, Runtime, Lambda, IAM, and infrastructure were not

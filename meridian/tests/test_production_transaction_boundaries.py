@@ -4,6 +4,8 @@ import asyncio
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
+import pytest
+
 from backend.agentcore.runtime import RuntimeDecision
 from backend.agents.production_04 import concierge as concierge_mod
 from backend.agents.production_04.concierge import ProductionAgent
@@ -189,9 +191,11 @@ def test_production_turn_releases_transactions_before_the_runtime_call(monkeypat
     assert read_commit < runtime_call < write_open
     assert events.index("aurora:hydrate") < write_open
     assert "aurora:audit:production_turn" in events
-    _args, kwargs = calls[0]
+    args, kwargs = calls[0]
     assert kwargs["budget_ceiling_cents"] == 640000
     assert kwargs["travelers_count"] == 2
+    assert "Saved budget cap: $3,200.00 per traveler." in args[3]
+    assert "Whole-party policy ceiling: $6,400.00." in args[3]
     assert events.index("aurora:budget-facts") < events.index("tx-1:commit")
     assert "hold_confirmed" not in kwargs
     titles = [entry.title for entry in activities]
@@ -201,3 +205,37 @@ def test_production_turn_releases_transactions_before_the_runtime_call(monkeypat
     labels = {f["label"]: f["value"] for f in runtime_span.telemetry["fields"]}
     assert labels["trace_id"] == "abc123"
     assert labels["trace_console"].endswith("rt-1-DEFAULT")
+
+
+@pytest.mark.parametrize(
+    ("facts", "travelers", "saved_basis", "ceiling"),
+    [
+        ([{"key": "budget_cap", "value": "$3,200"}], 1, "$3,200.00 per traveler", 320000),
+        ([{"key": "budget_cap", "value": "$3,200"}], 3, "$3,200.00 per traveler", 960000),
+        ([], 3, "No saved per-traveler budget", 400000),
+    ],
+)
+def test_runtime_budget_narration_matches_enforced_ceiling(
+    monkeypatch, facts, travelers, saved_basis, ceiling
+):
+    """A fresh party size and the unsaved fallback must reach prose and policy together."""
+    monkeypatch.delenv("MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS", raising=False)
+    calls = []
+    agent = build_agent([], runtime_decision(), calls)
+    read = concierge_mod.AuthorizedRead(
+        scope=None,
+        conv_id="conv-test",
+        memory_context="Earlier trip context. " * 400,
+        memory_facts=[],
+        budget_facts=facts,
+    )
+
+    asyncio.run(agent._runtime_turn(read, "Find trips", "trv_meridian_demo", travelers))
+
+    args, kwargs = calls[0]
+    context = args[3][:6000]  # The Runtime adapter's context limit.
+    assert saved_basis in context
+    assert f"Party size: {travelers} traveler(s)." in context
+    assert f"Whole-party policy ceiling: ${ceiling / 100:,.2f}." in context
+    assert kwargs["budget_ceiling_cents"] == ceiling
+    assert kwargs["travelers_count"] == travelers
