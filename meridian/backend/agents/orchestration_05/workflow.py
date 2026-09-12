@@ -51,6 +51,7 @@ from urllib.parse import quote
 from backend.agents.orchestration_05.hold_intent import prepare_hold_node
 from backend.agents.orchestration_05.governed_hold import (
     HOLD_TOOL,
+    HoldOutcomeUnknown,
     hold_arguments,
     place_governed_hold,
 )
@@ -1041,29 +1042,36 @@ class OrchestrationAgent:
             "booking_id": hold_id,
         }
 
+        journey_id, ceiling = await self._prepare_governed_hold(
+            traveler_id, thread_id, execution_id, quantity, state
+        )
+        arguments = hold_arguments(
+            terms,
+            traveler_id=traveler_id,
+            journey_ref=thread_id,
+            budget_ceiling_cents=ceiling,
+            hold_minutes=HOLD_MINUTES,
+            execution_id=execution_id,
+        )
         try:
-            journey_id, ceiling = await self._prepare_governed_hold(
-                traveler_id, thread_id, execution_id, quantity, state
-            )
-            arguments = hold_arguments(
-                terms,
-                traveler_id=traveler_id,
-                journey_ref=thread_id,
-                budget_ceiling_cents=ceiling,
-                hold_minutes=HOLD_MINUTES,
-                execution_id=execution_id,
-            )
             outcome = await asyncio.to_thread(place_governed_hold, self._gateway_call, arguments)
-        except ExecutionLeaseLostError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - a failed gateway call leaves the plan unheld
-            logger.warning("courtesy hold not placed: %s", exc)
-            activities.append(self._hold_not_placed(str(exc)[:120], denied=False, raw=str(exc)))
-            elapsed = int((_utc_now() - start).total_seconds() * 1000)
-            activities.append(self._checkpoint_activity("hold", elapsed))
-            return {"activities": activities}
+        except Exception as exc:  # noqa: BLE001 - a lost reply cannot prove no write
+            logger.warning("courtesy hold outcome unknown: %s", exc)
+            # Failing the node leaves prepare_hold's durable intent pending.
+            # Resume reuses that identity and reads/replays the original write.
+            raise HoldOutcomeUnknown(
+                "The hold outcome is unknown. Re-read the saved journey and resume "
+                "the same hold request."
+            ) from exc
 
         if not outcome.placed:
+            if outcome.policy_decision is None or (
+                outcome.policy_decision == "allow" and not outcome.error
+            ):
+                raise HoldOutcomeUnknown(
+                    "The hold outcome is unknown. The Gateway returned no reliable "
+                    "receipt or refusal; resume the same saved hold request."
+                )
             denied = outcome.policy_decision == "deny"
             if denied:
                 reason = "Cedar policy refused the hold"
@@ -1489,8 +1497,9 @@ class OrchestrationAgent:
                 result = await self.graph.ainvoke(
                     initial, config=config, durability="sync"
                 )
-        except ExecutionLeaseLostError:
-            # The replacement owns recovery now; this worker cannot compensate.
+        except (ExecutionLeaseLostError, HoldOutcomeUnknown):
+            # A replacement owns recovery after lease loss. An unknown write
+            # outcome must be reconciled with the same intent before compensation.
             raise
         except Exception:
             failed_state = await self.graph.aget_state(config)

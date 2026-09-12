@@ -4,6 +4,59 @@ The L300 review was committed and pushed to `main` at `5ddee61`. These are
 source and local-runtime results; this pass did not deploy the hosted
 application or AgentCore resources.
 
+## After-landing verification - September 12 UTC
+
+The previously pending `0bfd224` commit was pushed and its remote SHA verified.
+Live preflight passed against the existing environment: Aurora PostgreSQL 18.3,
+pgvector 0.8.1, HTTPS Data API with certificate verification, a private database
+instance, and no world-open security-group ingress. Runtime version 12 was
+READY, Memory ACTIVE, and Gateway READY with AWS_IAM authentication, four
+expected tools, and an ACTIVE policy engine in ENFORCE mode.
+
+The response-loss rehearsal exposed and fixed two gaps:
+
+- A failed or unreadable Gateway reply could complete the graph without proving
+  whether a hold committed. It now raises an unknown-outcome error, preserves
+  the pending hold intent, and allows same-request resume without compensation.
+- This Gateway returned policy refusals as JSON-RPC error `-32002`. The local
+  parser now recognizes that code together with the `Tool Execution Denied:`
+  prefix. Other RPC and IAM errors remain distinct.
+
+Live rehearsal results:
+
+- `kill_and_resume_demo.py`: the first worker committed its hold checkpoint,
+  was SIGKILLed, and a replacement was refused until the lease cleared. Resume
+  retained one booking and its original expiry.
+- `lost_response_demo.py`: the CLI discarded an actual Gateway acknowledgement
+  after the hold committed. The failed worker retained its prepared intent
+  without a hold acknowledgement; a different worker resumed and succeeded
+  with the same request, booking, and original expiry.
+- The lost-response run also verified unconfirmed and over-budget calls were
+  denied by Gateway policy. The permitted call was supported by Aurora readback.
+- Each rehearsal removed its isolated records. No existing booking was
+  confirmed or released.
+- Browser: Concierge completed a real Phase 4 Runtime turn through Gateway
+  semantic search and package-detail tools, returning five trips in 30 seconds.
+  The existing September 10 journey and business receipt rendered in 3.4
+  seconds. These are individual observations, not latency guarantees.
+- The requested local URL on port 5176 showed Meridian live, with health,
+  catalog, and traveler reads returning HTTP 200 through port 8013 and no
+  browser page errors.
+
+The lost reply is an explicit test injection at the worker boundary. These
+results demonstrate the tested retry schedules, not exactly-once execution or
+all possible failure modes.
+
+Backend validation after these fixes: 429 offline tests passed, 6 skipped,
+110 database tests deselected; Ruff passed. The four new graph regressions
+cover disconnection, RPC failure, unreadable replies, and missing receipts.
+Three parser cases cover the observed RPC denial and two non-policy errors.
+Frontend source and dependencies are unchanged from the prior 200-test pass.
+
+The local backend and existing deployed Gateway were exercised together.
+The hosted application, Runtime, Lambda, IAM, and infrastructure were not
+redeployed or modified by this verification.
+
 ## README follow-up
 
 The documentation cross-check found a second write path: Phase 3's supervisor
@@ -80,13 +133,13 @@ The full browser journey readback took 51 seconds on the tested connection.
 Treat that as a single observation, not a latency guarantee. Preload evidence
 and rehearse on the presentation network.
 
-## Remaining proof and deployment boundaries
+## Initial review boundaries
 
-Run a fresh process-death rehearsal and the separate lost-response-before-
-checkpoint scenario against intended rehearsal inventory before presenting
-those claims for this build. Revalidate deployed Cedar behavior after deploying
-the relevant source. The hard-kill script alone does not prove the lost-response
-window or exactly-once execution.
+The initial review left process-death and lost-response rehearsals outstanding.
+The after-landing section above records their subsequent completion. Revalidate
+the hosted application after deployment; the local source push does not deploy
+it. The hard-kill script alone does not prove the lost-response window or
+exactly-once execution.
 
 No security group, public database ingress, TLS verification, IAM policy, or
 database permission was changed. Local validation used the existing HTTPS Data

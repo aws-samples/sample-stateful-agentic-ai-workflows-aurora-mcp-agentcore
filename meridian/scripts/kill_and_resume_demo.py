@@ -75,7 +75,9 @@ def scoped(client):
     )
 
 
-async def _run_workflow(thread_id: str, *, resume: bool, after_pause=None) -> dict:
+async def _run_workflow(
+    thread_id: str, *, resume: bool, after_pause=None, gateway_call_wrapper=None,
+) -> dict:
     """Run the real graph, with the app's own retrieval functions."""
     from backend.agents.orchestration_05.workflow import OrchestrationAgent
     from backend.routers.chat import (
@@ -89,6 +91,8 @@ async def _run_workflow(thread_id: str, *, resume: bool, after_pause=None) -> di
         availability_fn=retrieval_availability_search,
         memory_recall_fn=workflow_memory_recall,
     )
+    if gateway_call_wrapper is not None:
+        workflow._gateway_call = gateway_call_wrapper(workflow._gateway_call)
     from backend.agents.orchestration_05 import execution
     execution.LEASE_SECONDS = LEASE_SECONDS
     execution.HEARTBEAT_SECONDS = max(1, LEASE_SECONDS // 3)

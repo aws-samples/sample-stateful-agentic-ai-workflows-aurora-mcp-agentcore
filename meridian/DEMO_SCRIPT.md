@@ -212,7 +212,7 @@ A checkpoint and a Gateway side effect are **not one distributed transaction**.
 The design accepts retried execution and makes the business write idempotent.
 Do not call this exactly-once execution.
 
-### Two different rehearsals
+### Rehearse the failure windows
 
 **Browser pause/restart:** stop and restart the backend without clearing the
 browser, restore the same journey, then resume. This proves that execution state
@@ -225,6 +225,19 @@ commits the hold, kills its own worker, waits for lease expiry, resumes, checks
 the receipt and cleans up its records. This verifies a hold surviving a crash;
 it does not by itself inject a lost Gateway response before checkpointing. Do
 not describe it as that stronger failure test.
+
+**Response lost after the business commit:** run
+`python scripts/lost_response_demo.py` with the same durable configuration.
+Its CLI-only wrapper receives a real committed hold from Gateway, discards the
+acknowledgement, and raises a timeout. The first execution fails with `hold`
+still pending. A replacement worker retries the saved intent and receives the
+same booking and original expiry. The script also checks Cedar's unconfirmed
+and over-budget denials, then removes its records.
+
+Explain the injection precisely: the downstream write and retry are real;
+the lost response is simulated at the worker boundary. Unknown responses stay
+resumable. A confirmed policy refusal remains distinct from an unknown outcome.
+See [the setup and commands](README.md#rehearse-recovery-failures).
 
 On System evidence inspect the successful execution ID, `resumed_from_checkpoint`,
 worker IDs, hold creator, booking ID, expiry and observation time. A second

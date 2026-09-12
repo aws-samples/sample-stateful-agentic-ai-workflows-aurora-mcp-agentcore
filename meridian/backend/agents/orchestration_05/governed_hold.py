@@ -17,9 +17,13 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
 HOLD_TOOL = "MeridianHolds___create_courtesy_hold"
-# Gateway's Policy denial envelope. IAM and target authorization errors are
-# different boundaries and must never be presented as a Cedar decision.
+# Gateway Policy denial envelopes: tool-result errors and the observed JSON-RPC
+# -32002 response. IAM and target errors must not become Cedar decisions.
 DENIAL = re.compile(r"^(?:AuthorizeActionException\s*-\s*)?Tool Execution Denied:", re.I)
+
+
+class HoldOutcomeUnknown(RuntimeError):
+    """A hold may have committed; preserve its checkpointed identity for retry."""
 
 
 @dataclass(frozen=True)
@@ -94,8 +98,12 @@ def place_governed_hold(call_tool: Callable[[str, Dict[str, Any]], Dict[str, Any
     result = response.get("result") or {}
     text = _text(response)
     if rpc_error or result.get("isError"):
-        message = text or json.dumps(rpc_error or result)[:300]
-        denied = bool(result.get("isError") and DENIAL.match(message.strip()))
+        rpc_message = rpc_error.get("message") if isinstance(rpc_error, dict) else None
+        message = text or (rpc_message if isinstance(rpc_message, str) else "") or json.dumps(rpc_error or result)[:300]
+        policy_envelope = bool(result.get("isError")) or (
+            isinstance(rpc_error, dict) and rpc_error.get("code") == -32002
+        )
+        denied = bool(policy_envelope and DENIAL.match(message.strip()))
         return GovernedHold(None, {}, message, "deny" if denied else None, message)
     try:
         payload = json.loads(text) if text else {}

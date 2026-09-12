@@ -101,6 +101,7 @@ python scripts/verify_agentcore.py        # Runtime, Gateway, Memory, policy eng
 python scripts/smoke_gateway_tools.py     # tools/list + get_package_details signed from this laptop
 python scripts/smoke_production_turn.py   # search, unconfirmed hold denied, confirmed hold held, over budget denied
 python scripts/kill_and_resume_demo.py    # Phase 5: hold through the gateway, SIGKILL the worker, resume with the same booking
+python scripts/lost_response_demo.py      # discard a real hold reply, then retry the persisted intent
 ```
 
 For the published site, request `/` without credentials (expect 401) and `/health`
@@ -336,7 +337,12 @@ worker is refused until the lease clears, and the resumed run reports one hold
 with the same booking id and the original expiry. `DEMO_LEASE_SECONDS` (default
 20) sets the lease; a cold worker needs most of that before its first heartbeat.
 This script kills after the hold is checkpointed. It does not inject a lost
-response between the business commit and checkpoint commit. See
+response between the business commit and checkpoint commit. Run
+`venv/bin/python scripts/lost_response_demo.py` for that separate simulation:
+the CLI discards a real committed Gateway response, checks the pending intent,
+verifies two Cedar refusals, and resumes on another worker. Both scripts clean
+their own rehearsal records. Use the explicit
+[Data API rehearsal configuration](../README.md#rehearse-recovery-failures). See
 [`DEMO_SCRIPT.md`](../DEMO_SCRIPT.md) for the three failure windows.
 
 ## 6) Recovery playbook

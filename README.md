@@ -139,7 +139,8 @@ a worker restart. Phase 4, Phase 5 holds, and every clicked hold also require th
 
 Use the [L300 runbook](meridian/DEMO_SCRIPT.md) for the pause/resume sequence,
 three failure windows, and the distinction between process-death and
-lost-response rehearsals. The [release review](meridian/docs/RELEASE_REVIEW.md)
+lost-response rehearsals. The [recovery rehearsal commands](meridian/README.md#rehearse-recovery-failures)
+exercise both failures against isolated demo records. The [release review](meridian/docs/RELEASE_REVIEW.md)
 records dated validation and its deployment boundaries.
 
 ### Publish behind CloudFront

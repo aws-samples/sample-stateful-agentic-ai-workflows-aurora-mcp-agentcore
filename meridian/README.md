@@ -318,6 +318,33 @@ a business write are separate transactions, so this is retry-safe business
 behavior, not exactly-once execution. See the dated
 [release review](docs/RELEASE_REVIEW.md) for checks performed and remaining rehearsal.
 
+### Rehearse recovery failures
+
+From `meridian/`, use the existing configured Aurora database and Gateway.
+These scripts create their own journey, checkpoint, and hold records, then
+remove them. They do not reset the catalog or release other bookings.
+
+```bash
+source venv/bin/activate
+export LANGGRAPH_CHECKPOINT_DSN=
+export LANGGRAPH_AUTO_CHECKPOINT_DSN=false
+export LANGGRAPH_CHECKPOINT_DATA_API=true
+export LANGGRAPH_CHECKPOINT_REQUIRED=true
+python scripts/kill_and_resume_demo.py
+python scripts/lost_response_demo.py
+```
+
+The first script kills a worker after the hold checkpoint. The second discards
+a real Gateway hold acknowledgement at the worker and injects a timeout before
+the hold node can checkpoint it. Aurora and Gateway calls remain real; the
+response loss is deliberately simulated.
+
+Expected results: a replacement worker resumes the saved intent, one hold
+remains, and its request ID, booking ID, and original expiry are unchanged.
+The lost-response script also verifies Cedar denies unconfirmed and over-budget
+calls using that same request identity. Unknown Gateway outcomes fail the node
+and leave it resumable; they do not finish the graph as an unheld plan.
+
 ## Architecture
 
 ```text

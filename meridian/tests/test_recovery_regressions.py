@@ -1,4 +1,7 @@
 """Real graph regressions with an isolated saver and no live business actions."""
+import json
+from unittest.mock import AsyncMock
+
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -109,6 +112,68 @@ async def test_resume_preserves_the_checkpointed_business_intent(workflow_factor
     result = await second.run("Resume workflow from checkpoint", "alice", "paused-thread", resume=True)
     assert seen == [paused["hold_intent"]]
     assert result["hold_id"] == paused["hold_intent"]["booking_id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["disconnect", "rpc_error", "unreadable", "empty"])
+async def test_lost_hold_response_keeps_the_original_intent_resumable(workflow_factory, failure):
+    receipts = {}
+    calls = []
+
+    def gateway(tool, arguments):
+        calls.append(arguments)
+        request_id = arguments["holdRequestId"]
+        replayed = request_id in receipts
+        receipt = receipts.setdefault(request_id, {
+            "bookingId": arguments["bookingId"],
+            "status": "held",
+            "expiresAt": "2026-09-12T20:15:00Z",
+            "createdAt": "2026-09-12T20:00:00Z",
+            "observedAt": "2026-09-12T20:00:01Z",
+        })
+        if not replayed:
+            # The business transaction committed; its response never reached
+            # the hold node. A completed graph would make this impossible to resume.
+            if failure == "disconnect":
+                raise TimeoutError("reply lost after business commit")
+            if failure == "rpc_error":
+                return {"error": {"code": -32000, "message": "Gateway HTTP 503"}}
+            return {"result": {"content": [{
+                "type": "text", "text": "truncated" if failure == "unreadable" else "{}",
+            }]}}
+        return {"result": {"content": [{
+            "type": "text",
+            "text": json.dumps({"hold": {**receipt, "replayed": True}}),
+        }]}}
+
+    def worker():
+        workflow = workflow_factory()
+        workflow._prepare_governed_hold = AsyncMock(return_value=("journey", 200000))
+        workflow._gateway_call = gateway
+        return workflow
+
+    first = worker()
+    with pytest.raises(RuntimeError, match="hold outcome is unknown"):
+        await first.run(
+            "My flight was canceled. Rework my Tokyo trip and check availability.",
+            "alice", "lost-response-thread", travelers_count=2,
+        )
+    saved = await first.graph.aget_state({
+        "configurable": {"thread_id": "lost-response-thread"},
+    })
+    assert saved.next == ("hold",)
+    assert not saved.values.get("hold_id")
+    intent = saved.values["hold_intent"]
+
+    second = worker()
+    resumed = await second.run(
+        "Resume workflow from checkpoint", "alice", "lost-response-thread", resume=True,
+    )
+    assert len(receipts) == 1
+    assert len(calls) == 2
+    assert calls[0]["holdRequestId"] == calls[1]["holdRequestId"] == intent["hold_request_id"]
+    assert resumed["hold_id"] == intent["booking_id"]
+    assert resumed["hold_expires_at"] == receipts[intent["hold_request_id"]]["expiresAt"]
 
 
 @pytest.mark.asyncio

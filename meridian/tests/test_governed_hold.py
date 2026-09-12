@@ -116,3 +116,17 @@ def test_documented_gateway_policy_denial_is_recognized():
         ), {"packageId": "TKY-003"}
     )
     assert outcome.policy_decision == "deny"
+
+
+@pytest.mark.parametrize("code,message,expected", [
+    (-32002, "Tool Execution Denied: Tool call not allowed due to policy enforcement "
+     "[No policy applies to the request (denied by default).]", "deny"),
+    (-32002, "AccessDeniedException: not authorized to invoke this gateway", None),
+    (-32000, "Tool Execution Denied: proxy error, not the Gateway policy envelope", None),
+])
+def test_jsonrpc_denial_requires_both_the_gateway_code_and_message(code, message, expected):
+    outcome = place_governed_hold(
+        lambda *_: _response(error={"code": code, "message": message}), {},
+    )
+    assert outcome.policy_decision == expected
+    assert not outcome.placed
