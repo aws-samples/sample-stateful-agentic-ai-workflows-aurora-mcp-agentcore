@@ -72,7 +72,7 @@ class RetrievalAgent:
         Args:
             search_agent: Search agent for semantic / hybrid trip search
             package_agent: Package agent for trip details and departure availability
-            booking_agent: Booking agent for reservation processing
+            booking_agent: Read-only trip pricing specialist
             activity_callback: Optional callback for reporting agent activities
         """
         self.search_agent = search_agent
@@ -109,18 +109,19 @@ class RetrievalAgent:
 You have three specialized agents you can delegate to:
 1. Search Agent - For finding trip packages via semantic text search
 2. Package Agent - For package details and departure availability
-3. Booking Agent - For calculating totals and processing reservations
+3. Booking Agent - For read-only price estimates
 
 Your role is to:
 - Understand traveler requests
 - Delegate to the appropriate specialized agent
-- Coordinate multi-step workflows (e.g., search -> availability -> book)
+- Coordinate search, availability checks, and price estimates
 - Synthesize responses from multiple agents
 
 Guidelines:
 - For trip discovery, delegate to Search Agent
 - For package details or departure slots, delegate to Package Agent
-- For bookings and pricing, delegate to Booking Agent
+- For pricing, delegate to Booking Agent
+- For holds and bookings, use Meridian's governed confirmation flow
 - You can delegate to multiple agents in sequence for complex requests"""
     
     def _log_activity(
@@ -222,17 +223,16 @@ Guidelines:
         return result
     
     @tool
-    async def _delegate_to_booking(self, action: str, customer_id: Optional[str] = None, items: Optional[List[dict]] = None) -> dict:
+    async def _delegate_to_booking(self, action: str, items: Optional[List[dict]] = None) -> dict:
         """
-        Delegate to the Booking Agent for booking calculations or reservations.
+        Delegate to the read-only pricing specialist.
         
         Args:
-            action: 'calculate' or 'process'
-            customer_id: Traveler identifier (for process)
+            action: 'calculate'; all write actions are refused
             items: Booking line items (package_id, travelers_count, duration)
             
         Returns:
-            Booking information from Booking Agent
+            Price estimate, or an error directing writes to the governed flow
         """
         start_time = datetime.now(timezone.utc)
         
@@ -244,10 +244,14 @@ Guidelines:
         
         if action == "calculate":
             result = await self.booking_agent.calculate_booking_total(items or [])
-        elif action == "process":
-            result = await self.booking_agent.process_booking(customer_id, items or [])
         else:
-            result = {"error": f"Unknown action: {action}"}
+            result = {
+                "error": "governed_booking_required",
+                "message": (
+                    "Retrieval tools only read catalog data and estimate prices. "
+                    "Use Meridian's governed hold and booking confirmation flow."
+                ),
+            }
         
         execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
         

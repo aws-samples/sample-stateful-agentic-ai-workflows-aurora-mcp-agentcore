@@ -368,7 +368,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     const controller = new AbortController();
     connectionController.current = controller;
     setConnectionRefreshing(true);
-    const timeout = window.setTimeout(() => controller.abort(), 12000);
+    // Scoped profile reads need several service round trips. Keep a deadline,
+    // but allow slower presentation networks to complete a valid read.
+    const timeout = window.setTimeout(() => controller.abort(), 45000);
     try {
       const [health, trips, profile] = await Promise.allSettled([
         fetchHealth<BackendHealth>(controller.signal),
@@ -396,6 +398,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     } finally {
       window.clearTimeout(timeout);
       if (mounted.current && generation === connectionGeneration.current) {
+        connectionController.current = null;
         setConnectionRefreshing(false);
       }
     }
@@ -404,7 +407,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   useEffect(() => {
     void refreshConnection();
     const interval = window.setInterval(() => {
-      if (!document.hidden) void refreshConnection();
+      if (!document.hidden && !connectionController.current) void refreshConnection();
     }, 30000);
     return () => {
       window.clearInterval(interval);

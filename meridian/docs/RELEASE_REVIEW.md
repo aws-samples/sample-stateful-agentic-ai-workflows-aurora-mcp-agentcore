@@ -1,3 +1,103 @@
+# Meridian release review - September 12, 2026
+
+The L300 review was committed and pushed to `main` at `5ddee61`. These are
+source and local-runtime results; this pass did not deploy the hosted
+application or AgentCore resources.
+
+## README follow-up
+
+The documentation cross-check found a second write path: Phase 3's supervisor
+could delegate a model-selected `process` action to a legacy specialist that
+inserted confirmed booking rows directly. That writer and the reference SQL
+agent's writer were removed. Phase 3 retains read-only pricing; the supervisor
+refuses write actions even if a specialist later regains such a method.
+
+Readiness now allows 45 seconds for scoped catalog/profile reads, and periodic
+polling does not cancel an active check. A successful profile read on the flight
+connection took about 19 seconds, exceeding the previous 12-second deadline.
+The check still times out and reports unavailable data if it cannot complete.
+
+Both READMEs, the agent guide, and the repository map now describe the five
+views and governed booking path. Four current screenshots show Concierge,
+Solution briefing, Prepared data, and the initial Recovery desk.
+
+Follow-up validation:
+
+- Backend: 422 offline tests passed, 6 skipped, 110 database tests deselected.
+  Ruff passed. Regression tests cover rejected write delegation, retained
+  read-only pricing, and the SQL/pricing tool allowlists.
+- Frontend: 200 tests in 35 files passed; lint, TypeScript, and production build
+  passed. New cases cover slow successful readiness and its failure deadline.
+- Screenshots: local app, light theme, 1600 × 1000 fullscreen; the preparation
+  image is a section capture. Health, catalog, and profile returned HTTP 200.
+  No API fixtures, generated mockups, or business writes were used.
+
+Further live backend and AWS rehearsal was deferred until after landing at the
+presenter's request. This follow-up does not change the deployment or
+business-flow proof boundaries below.
+
+## Initial review changes
+
+- All clicked holds now use Runtime, Gateway policy, and the holds Lambda,
+  regardless of the selected ladder phase. The direct SQL fallback was removed.
+- Journey listing checks the workload grant and uses the restricted traveler
+  scope. Missing or revoked authorization fails closed.
+- Cancellation rolls back pending checkpoint writes and drains in-flight Data
+  API statements before cleanup. Independent checkpoint reads use bounded
+  concurrency; pending-write order is preserved.
+- Recovery handoff requires a matching persisted receipt and retains its price,
+  duration, party, and total. Trip details show those recorded terms.
+- Failed evidence refreshes label the retained observation; changing journeys
+  clears old data. IAM and target errors are not mislabeled as Cedar denials.
+- Complete local AgentCore configuration skips redundant CLI discovery, and
+  transaction-local scope settings use one Data API round trip.
+- Solution briefing and the L300 runbook explain the three failure windows and
+  the distinction between contextual memory, checkpoints, and business records.
+  Dogwood remains an [assessed extension](DOGWOOD_POLICY_ASSESSMENT.md).
+- The CDK lockfile uses `js-yaml` 3.15.2. GitHub confirmed Dependabot alert #62
+  fixed after the push.
+
+## Validation at `5ddee61`
+
+- Backend: 416 offline tests passed, 6 skipped; 110 database tests deselected.
+  Ruff passed for backend, scripts, and tests.
+- Frontend: 198 tests in 35 files passed; lint, TypeScript, and production build
+  passed. CDK build, one synth test, and formatting passed.
+- Frontend and CDK npm audits reported zero findings. The pinned Python
+  requirements audit reported zero known vulnerabilities.
+- Three selected live Aurora saver tests passed: large pending-write round
+  trip, append-failure rollback, and cancellation after an accepted segment
+  followed by a successful retry. Fixtures removed their temporary rows.
+- A live query confirmed the restricted role, pinned traveler/agent/provider,
+  row security enabled, and active RLS.
+- Browser checks covered all five views at desktop, projector, and mobile
+  sizes. Receipt handoff and confirmation review used an explicit UI fixture
+  with no business writes; failed-refresh labeling was also checked.
+- The browser read the existing Aurora journey and confirmed booking records
+  from September 10. This was historical readback, not a new recovery execution.
+
+The full browser journey readback took 51 seconds on the tested connection.
+Treat that as a single observation, not a latency guarantee. Preload evidence
+and rehearse on the presentation network.
+
+## Remaining proof and deployment boundaries
+
+Run a fresh process-death rehearsal and the separate lost-response-before-
+checkpoint scenario against intended rehearsal inventory before presenting
+those claims for this build. Revalidate deployed Cedar behavior after deploying
+the relevant source. The hard-kill script alone does not prove the lost-response
+window or exactly-once execution.
+
+No security group, public database ingress, TLS verification, IAM policy, or
+database permission was changed. Local validation used the existing HTTPS Data
+API connection with loopback-only application listeners.
+
+The [README screenshots](../README.md#screenshots) show the current local
+interface. Screenshots and source push are separate from hosted deployment or
+live business-flow proof.
+
+---
+
 # Meridian release review - September 10, 2026
 
 Production (Phase 4) now runs its tool loop inside Bedrock AgentCore Runtime.

@@ -79,8 +79,7 @@ class SQLAgent:
                 self._lookup_trip_package,
                 self._search_trip_packages,
                 self._check_departure_availability,
-                self._calculate_booking_total,
-                self._process_booking
+                self._calculate_booking_total
             ],
             system_prompt=self._get_system_prompt()
         )
@@ -93,13 +92,13 @@ Your capabilities:
 - Look up trip package details by ID or search the catalog
 - Check departure availability and duration options
 - Calculate booking totals with tax and fees
-- Process bookings for travelers
+- Provide read-only price estimates
 
 Guidelines:
 - Be friendly and helpful
 - Provide accurate trip information (destination, operator, price per person)
 - Recommend packages based on traveler needs
-- Always confirm booking details before processing
+- Use Meridian's governed confirmation flow for holds and bookings
 - If a package is sold out, suggest alternatives
 
 Trip types in the catalog:
@@ -330,69 +329,7 @@ Trip types in the catalog:
             "total": float(total),
             "free_shipping_applied": shipping == 0
         }
-    
-    @tool
-    async def _process_booking(
-        self,
-        customer_id: str,
-        items: List[dict]
-    ) -> dict:
-        """
-        Process a new booking for a traveler.
 
-        Args:
-            traveler_id: Traveler identifier
-            items: List of items with package_id, travelers_count, optional duration
-        """
-        start_time = datetime.now(timezone.utc)
-
-        totals = await self._calculate_booking_total(items)
-
-        booking_id = f"BKG-{uuid.uuid4().hex[:8].upper()}"
-
-        insert_booking = """
-            INSERT INTO bookings (booking_id, traveler_id, status, total_amount)
-            VALUES (%s, %s, 'confirmed', %s)
-        """
-        await self.db.execute(insert_booking, (booking_id, customer_id, totals['total']))
-
-        for item in totals['items']:
-            insert_line = """
-                INSERT INTO booking_lines (booking_id, package_id, duration, travelers_count, unit_price)
-                VALUES (%s, %s, %s, %s, %s)
-            """
-            await self.db.execute(insert_line, (
-                booking_id,
-                item['package_id'],
-                item.get('duration'),
-                item['travelers_count'],
-                item['unit_price']
-            ))
-
-        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-
-        self._log_activity(
-            activity_type="booking",
-            title=f"Booking processed: {booking_id}",
-            details=f"Traveler: {customer_id}, Total: ${totals['total']:.2f}",
-            sql_query="INSERT INTO bookings...; INSERT INTO booking_lines...",
-            execution_time_ms=execution_time
-        )
-
-        from datetime import timedelta
-        departure_window = datetime.now(timezone.utc) + timedelta(days=30)
-
-        return {
-            "booking_id": booking_id,
-            "status": "confirmed",
-            "items": totals['items'],
-            "subtotal": totals['subtotal'],
-            "tax": totals['tax'],
-            "shipping": totals['shipping'],
-            "total": totals['total'],
-            "estimated_departure": departure_window.strftime("%B %d, %Y")
-        }
-    
 
 def create_sql_agent(
     activity_callback: Optional[Callable[[ActivityEntry], Any]] = None

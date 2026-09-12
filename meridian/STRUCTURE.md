@@ -6,31 +6,38 @@
 frontend/src/main.tsx
   → /showcase, /device-showcase → showcase/MeridianDeviceShowcase.tsx
   → /demo-stage, /stage         → stage/DemoStage.tsx
-  → api/client.ts → backend :8000
+  → api/client.ts → configured backend origin (local quick start: 127.0.0.1:8013)
 
 backend/main.py
   → routers/chat.py        # Phases 1–5 (inline search + Phase 4 concierge + Phase 5 LangGraph)
   → routers/products.py    # GET /api/packages (+ legacy /api/products)
   → routers/memory.py      # GET /api/memory/{traveler_id} (authorized + RLS-scoped)
+  → routers/journeys.py    # authorized journey list and persisted evidence
   → routers/diagnostics.py # POST /api/diagnostics/rls-probe (ALLOW/DENY + scoped counts)
 ```
 
-The showcase is a three-step journey — Discovery (Experience), Capability
-ladder (Architecture), Stateful recovery (Proof). The five phase pills and the
-chat composer live inside step 2; the landing view has neither.
+The five views are Concierge, Capability ladder, Recovery desk, System evidence,
+and Solution briefing. The ladder exposes the five implementation phases.
+Concierge has its own conversation; the briefing supplies compact architecture,
+prepared-data, policy, and recovery explanations.
 
-Production and Orchestration modes import agent / workflow modules at runtime:
+Retrieval, Production, and Workflow import agent modules at runtime:
 
+- `backend/agents/retrieval_03/` — the Strands supervisor delegates catalog search, availability, and read-only price estimates
 - `backend/agents/production_04/concierge.py` — identity, traveler grant, RLS read and write around the managed runtime; `process_hold()` for the one-click hold
 - `backend/agents/budget.py` — the hold budget ceiling the Cedar policy compares against, shared by Phases 4 and 5
 - `backend/agents/production_04/memory_agent.py` — `@tool` recall/persist methods
-- `backend/agents/orchestration_05/workflow.py` — LangGraph `StateGraph` + shared pooled `PostgresSaver`/ephemeral `MemorySaver`
+- `backend/agents/orchestration_05/workflow.py` — LangGraph `StateGraph` + `AuroraDataApiSaver` or pooled `AsyncPostgresSaver`; in-process `MemorySaver` cannot prove restart recovery
 - `backend/agentcore/runtime.py`, `backend/agentcore/identity.py` — Bedrock AgentCore adapters (streaming runtime client, identity envelope)
 - `meridian_agentcore/app/MeridianConcierge/` — the Phase 4 agent deployed to AgentCore Runtime: `main.py` (tool loop, memory session, SSE events), `turn_trace.py` (spans and the pinned hold and booking contract), `hold_execution.py` (platform-executed hold and confirmation), `prompts.py`, `gateway_auth.py`
 - `meridian_agentcore/agentcore/gateway_targets/meridian_holds/` — the `MeridianHolds` gateway Lambda (`get_package_details`, `create_courtesy_hold`, `confirm_booking`)
 - `meridian_agentcore/agentcore/agentcore.json` — runtime, memory, gateway targets, and the `MeridianGovernance` Cedar policy engine
 
-SQL/MCP/Retrieval modes execute inside `chat.py` (`sql_search`, `mcp_search`, `retrieval_search`). The matching files under `backend/agents/sql_01`, `backend/agents/mcp_02`, and `backend/agents/retrieval_03` are the imported mode implementations.
+The live SQL and MCP phases use `chat.py`'s `sql_search` and `mcp_search`.
+Their Strands modules are reference implementations. Phase 3 uses
+`retrieval_supervisor_search` and imports the retrieval specialists. These
+catalog agents cannot write a booking; all clicked holds and confirmations
+use the governed path.
 
 > `chat.py` carries the hybrid lexical/semantic candidate query a second time
 > for the direct Phase 3 and Phase 5 paths. Keep it in step with
@@ -50,8 +57,9 @@ SQL/MCP/Retrieval modes execute inside `chat.py` (`sql_search`, `mcp_search`, `r
 | `scripts/publish_gateway_parameters.py`, `scripts/bind_gateway_workload.py`, `scripts/bind_web_backend_role.py` | Publish the Aurora settings the holds Lambda reads from SSM; grant the Lambda's execution role and the published backend's App Runner role access to Alex |
 | `scripts/verify_agentcore.py`, `scripts/smoke_gateway_tools.py`, `scripts/smoke_production_turn.py` | Pre-session checks: platform status, gateway tools, and the governed hold path end to end |
 | `backend/agents/production_04/` | Live concierge + memory agents |
-| `backend/agents/orchestration_05/` | LangGraph `OrchestrationAgent` (StateGraph + pooled PostgresSaver + restart/resume) |
-| `backend/agents/sql_01,mcp_02,retrieval_03/` | SQL, MCP, and Retrieval mode agents |
+| `backend/agents/orchestration_05/` | LangGraph `OrchestrationAgent` (durable checkpoints, worker leases, governed holds, and restart/resume) |
+| `backend/agents/sql_01,mcp_02/` | Reference Strands agents for SQL and MCP |
+| `backend/agents/retrieval_03/` | Live retrieval supervisor and read-only specialists |
 | `backend/routers/` | FastAPI routes |
 | `backend/demo_prompts.py` | The five-phase presenter prompt ladder (single source of truth) |
 | `examples/rls_for_agents.sql` | Aurora RLS policies + authorization/RLS audit view |

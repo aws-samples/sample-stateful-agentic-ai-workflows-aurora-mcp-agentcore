@@ -150,6 +150,48 @@ const healthyService = {
 };
 
 describe('Live connection readiness', () => {
+  it('lets a slow profile read finish without periodic polling canceling it', async () => {
+    vi.useFakeTimers();
+    let resolveProfile!: (value: Awaited<ReturnType<typeof fetchMemoryProfile>>) => void;
+    vi.mocked(fetchHealth).mockResolvedValue(healthyService);
+    vi.mocked(fetchMemoryProfile).mockImplementationOnce(() => new Promise(resolve => { resolveProfile = resolve; }));
+    const { result, unmount } = renderHook(() => useMeridianShowcase());
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(31000); });
+      const signal = vi.mocked(fetchMemoryProfile).mock.calls[0][1];
+      expect(signal?.aborted).toBe(false);
+      expect(fetchMemoryProfile).toHaveBeenCalledTimes(1);
+      expect(result.current.connectionRefreshing).toBe(true);
+      await act(async () => {
+        resolveProfile({ traveler_id: 'trv_meridian_demo', profile: { home_airport: 'JFK' }, facts: [] });
+      });
+      expect(result.current.backendStatus).toBe('online');
+      expect(result.current.connectionRefreshing).toBe(false);
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it('still aborts a stalled readiness read and reports unavailable details', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetchHealth).mockResolvedValue(healthyService);
+    vi.mocked(fetchMemoryProfile).mockImplementationOnce((_, signal) => new Promise((__, reject) => {
+      signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+    }));
+    const { result, unmount } = renderHook(() => useMeridianShowcase());
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(45000); });
+      expect(vi.mocked(fetchMemoryProfile).mock.calls[0][1]?.aborted).toBe(true);
+      expect(result.current.connectionRefreshing).toBe(false);
+      expect(result.current.backendStatus).toBe('offline');
+      expect(result.current.connectionIssue).toBe('Traveler details are unavailable.');
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it.each(['catalog', 'profile'] as const)('does not report live when the %s read fails', async (dependency) => {
     vi.mocked(fetchHealth).mockResolvedValue(healthyService);
     if (dependency === 'catalog') vi.mocked(fetchProducts).mockRejectedValueOnce(new Error('Unavailable'));

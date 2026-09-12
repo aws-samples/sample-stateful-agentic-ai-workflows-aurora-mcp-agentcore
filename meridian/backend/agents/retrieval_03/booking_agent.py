@@ -1,7 +1,7 @@
 """
-Phase 3 Booking Agent - Specialized in trip booking processing.
+Phase 3 Booking Agent - Read-only trip price estimates.
 
-Implements booking operations using:
+Reads catalog prices using:
 - RDS Data API for Aurora PostgreSQL access
 - Claude via Amazon Bedrock (configurable model_id)
 
@@ -14,7 +14,7 @@ AWS docs:
 
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Callable, Any, Optional, List
 
@@ -39,7 +39,7 @@ class ActivityEntry(BaseModel):
 
 
 class BookingAgent:
-    """Booking Agent specialized in trip reservation processing."""
+    """Read-only pricing specialist; booking writes require the governed flow."""
 
     def __init__(self, activity_callback: Optional[Callable[[ActivityEntry], Any]] = None):
         self.activity_callback = activity_callback or (lambda x: None)
@@ -52,22 +52,20 @@ class BookingAgent:
 
         self.agent = Agent(
             model=self.model,
-            tools=[self._calculate_booking_total_tool, self._process_booking_tool],
+            tools=[self._calculate_booking_total_tool],
             system_prompt=self._get_system_prompt()
         )
 
     def _get_system_prompt(self) -> str:
-        return """You are a Booking Agent specialized in processing trip reservations.
+        return """You are Meridian's read-only trip pricing specialist.
 
 Your capabilities:
-- Calculate booking totals including tax and service fees
-- Create booking records in Aurora
+- Calculate sample estimates from catalog prices using the pricing tool
 
 Guidelines:
-- Always show price breakdown before confirming
-- Apply reduced fees for bookings over $2,000 per person
-- Tax rate is 8.5%
-- Confirm traveler count and duration before finalizing"""
+- Present the tool's price breakdown as an estimate, not a reservation
+- A price estimate does not hold capacity or confirm a booking
+- Direct hold and booking requests to Meridian's governed confirmation flow"""
 
     def _log_activity(
         self,
@@ -93,11 +91,6 @@ Guidelines:
     async def _calculate_booking_total_tool(self, items: List[dict]) -> dict:
         """Calculate booking total for trip line items."""
         return await self.calculate_booking_total(items)
-
-    @tool
-    async def _process_booking_tool(self, customer_id: str, items: List[dict]) -> dict:
-        """Process a new trip booking."""
-        return await self.process_booking(customer_id, items)
 
     async def calculate_booking_total(self, items: List[dict]) -> dict:
         """Calculate booking total including tax and service fee."""
@@ -145,56 +138,6 @@ Guidelines:
             "shipping": float(service_fee),
             "total": float(total),
             "free_service_fee_applied": service_fee == 0
-        }
-
-    async def process_booking(self, customer_id: str, items: List[dict]) -> dict:
-        """Process a new trip booking."""
-        start_time = datetime.now(timezone.utc)
-
-        totals = await self.calculate_booking_total(items)
-
-        booking_id = f"BKG-{uuid.uuid4().hex[:8].upper()}"
-
-        insert_booking = """
-            INSERT INTO bookings (booking_id, traveler_id, status, total_amount)
-            VALUES (%s, %s, 'confirmed', %s)
-        """
-        await self.db.execute(insert_booking, (booking_id, customer_id, totals['total']))
-
-        for item in totals['items']:
-            insert_line = """
-                INSERT INTO booking_lines (booking_id, package_id, duration, travelers_count, unit_price)
-                VALUES (%s, %s, %s, %s, %s)
-            """
-            await self.db.execute(insert_line, (
-                booking_id,
-                item['package_id'],
-                item.get('duration'),
-                item['travelers_count'],
-                item['unit_price']
-            ))
-
-        execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-
-        self._log_activity(
-            activity_type="booking",
-            title=f"Booking processed: {booking_id}",
-            details=f"Traveler: {customer_id}, Total: ${totals['total']:.2f}",
-            sql_query="INSERT INTO bookings...; INSERT INTO booking_lines...",
-            execution_time_ms=execution_time
-        )
-
-        departure_date = datetime.now(timezone.utc) + timedelta(days=30)
-
-        return {
-            "booking_id": booking_id,
-            "status": "confirmed",
-            "items": totals['items'],
-            "subtotal": totals['subtotal'],
-            "tax": totals['tax'],
-            "shipping": totals['shipping'],
-            "total": totals['total'],
-            "estimated_departure": departure_date.strftime("%B %d, %Y")
         }
 
 
