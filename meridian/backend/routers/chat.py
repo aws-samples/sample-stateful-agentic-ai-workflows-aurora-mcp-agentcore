@@ -24,6 +24,7 @@ AWS docs (by phase):
 """
 
 import logging
+import asyncio
 import re
 import uuid
 from datetime import datetime, timezone
@@ -31,14 +32,7 @@ from typing import Literal, Optional, List, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from decimal import Decimal
-
 from backend.agentcore.identity import get_agentcore_identity
-from backend.agents.orchestration_05.hold_intent import (
-    fingerprint_terms,
-    normalize_hold_terms,
-)
-from backend.db.journey_store import ScopedDb, ensure_journey
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.db.embedding_service import get_embedding_service
@@ -1198,7 +1192,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     ))
     
     embedding_service = get_embedding_service()
-    query_embedding = embedding_service.generate_text_embedding(query)
+    query_embedding = await asyncio.to_thread(embedding_service.generate_text_embedding, query)
     embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
 
     embedding_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
@@ -1308,7 +1302,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     ranked_rows = candidate_rows
     rerank_failed = False
     try:
-        ranked = embedding_service.rerank_documents(query, docs, top_n=limit)
+        ranked = await asyncio.to_thread(embedding_service.rerank_documents, query, docs, top_n=limit)
         ranked_rows = [candidate_rows[item["index"]] for item in ranked if item["index"] < len(candidate_rows)]
     except Exception:
         rerank_failed = True
@@ -3011,316 +3005,12 @@ async def process_order(
     request: OrderRequest,
     principal: HttpPrincipal = Depends(require_http_principal),
 ) -> OrderResponse:
-    """
-    Create a persisted 12-hour courtesy hold for a trip package.
+    """Place every clicked hold through Runtime, Gateway, Cedar and the holds Lambda.
 
-    The endpoint:
-    1. Product lookup
-    2. Inventory check
-    3. Aurora-backed hold persistence
-    4. Hold receipt generation
-
-    No payment is authorized or captured.
+    The phase selects the demonstration view, never the authorization path.
+    Missing AgentCore configuration fails closed; no direct SQL write fallback.
+    Phase 5 automatic holds still use their checkpointed workflow intent.
     """
     traveler_id = authorize_traveler(principal, request.traveler_id)
     request = request.model_copy(update={"traveler_id": traveler_id})
-    if request.phase == 4:
-        return await production_hold(request)
-    activities = []
-    start_time = datetime.now(timezone.utc)
-
-    # Determine agent config based on phase
-    phase_configs = {
-        1: ("SQLAgent", "agents/sql_01/agent.py"),
-        2: ("MCPAgent", "agents/mcp_02/agent.py"),
-        3: ("BookingAgent", "agents/retrieval_03/booking_agent.py"),
-        # Phase 4 booking is driven by the concierge orchestrator; the BookingAgent
-        # in phase 3 is reused as the booking specialist.
-        4: ("BookingAgent", "agents/retrieval_03/booking_agent.py"),
-        5: ("WorkflowAgent", "agents/orchestration_05/workflow.py"),
-    }
-    agent_name, agent_file = phase_configs[request.phase]
-
-    try:
-        db = get_rds_data_client()
-
-        # Step 1: Product lookup
-        activities.append(create_activity(
-            activity_type="search",
-            title="Looking up package details",
-            details=f"Package ID: {request.product_id}",
-            agent_name=agent_name,
-            agent_file=agent_file
-        ))
-
-        sql = """
-            SELECT package_id, name, operator, price_per_person, description,
-                   image_url, trip_type, durations, availability
-            FROM trip_packages
-            WHERE package_id = %s
-        """
-        results = await db.execute(sql, (request.product_id,))
-
-        if not results:
-            activities.append(create_activity(
-                activity_type="error",
-                title="Package not found",
-                details=f"No package with ID {request.product_id}",
-                agent_name=agent_name,
-                agent_file=agent_file
-            ))
-            return OrderResponse(
-                message="Sorry, I couldn't find that trip package. It may no longer be available.",
-                order=None,
-                activities=activities
-            )
-
-        product = results[0]
-        pkg = row_to_api_product(product)
-        lookup_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-
-        activities.append(create_activity(
-            activity_type="result",
-            title=f"Found: {pkg['name']}",
-            details=f"${pkg['price']:.2f} pp — {pkg['brand']}",
-            execution_time_ms=lookup_time,
-            agent_name=agent_name,
-            agent_file=agent_file
-        ))
-
-        # Step 2: Inventory check
-        activities.append(create_activity(
-            activity_type="availability",
-            title="Checking availability",
-            details=f"Duration: {request.size or 'default'}, Travelers: {request.quantity}",
-            agent_name=agent_name,
-            agent_file=agent_file
-        ))
-
-        durations = product.get("durations") or []
-        availability = product.get("availability") or {}
-        requested_duration = request.size or (durations[0] if durations else None)
-        if not requested_duration or requested_duration not in durations:
-            raise HTTPException(
-                status_code=422,
-                detail="Select one of the package's published durations.",
-            )
-        raw_capacity = availability.get(requested_duration)
-        if isinstance(raw_capacity, bool) or not isinstance(raw_capacity, (int, float)):
-            raise HTTPException(
-                status_code=409,
-                detail="Live inventory is unavailable for that duration.",
-            )
-        seats_available = int(raw_capacity)
-        departures_available = (
-            seats_available > 0 and request.quantity <= seats_available
-        )
-
-        availability_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000) - lookup_time
-
-        activities.append(create_activity(
-            activity_type="availability",
-            title="Departure available" if departures_available else "No departures available",
-            details=(
-                f"{seats_available} package places published for "
-                f"{requested_duration}"
-            ),
-            execution_time_ms=availability_time,
-            agent_name=agent_name,
-            agent_file=agent_file
-        ))
-
-        if not departures_available:
-            return OrderResponse(
-                message=(
-                    f"Sorry, {product['name']} does not have enough places for "
-                    f"{request.quantity} traveler(s) on {requested_duration}."
-                ),
-                order=None,
-                activities=activities
-            )
-
-        # Step 3: Persist a courtesy hold. No payment operation occurs.
-        activities.append(create_activity(
-            activity_type="order",
-            title="Creating courtesy hold",
-            details="No payment authorization or capture",
-            agent_name=agent_name,
-            agent_file=agent_file
-        ))
-
-        # The package price remains an estimate until a traveler confirms.
-        subtotal = pkg['price'] * request.quantity
-        tax = 0.0
-        shipping = 0.0
-        total = round(subtotal, 2)
-
-        payment_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000) - lookup_time - availability_time
-
-        activities.append(create_activity(
-            activity_type="order",
-            title="Courtesy hold prepared",
-            details=f"Estimated trip total ${total:.2f}; payment not required",
-            execution_time_ms=payment_time,
-            agent_name=agent_name,
-            agent_file=agent_file
-        ))
-
-        # Step 4: Create the hold record.
-        order_id = f"HLD-{uuid.uuid4().hex[:8].upper()}"
-
-        activities.append(create_activity(
-            activity_type="order",
-            title="Courtesy hold persisted",
-            details=f"Hold #{order_id}",
-            agent_name=agent_name,
-            agent_file=agent_file
-        ))
-
-        # Estimate a departure for the demo catalog and set a real expiry.
-        from datetime import timedelta
-        days_to_departure = max(config.order.min_delivery_days, 45)
-        departure_date = (datetime.now(timezone.utc) + timedelta(days=days_to_departure)).strftime("%B %d, %Y")
-        hold_expires_at = datetime.now(timezone.utc) + timedelta(hours=12)
-
-        async with db.scoped_session(
-            traveler_id=request.traveler_id,
-            agent_type="booking_agent",
-            authorization=get_agentcore_identity().authorization_context(),
-        ) as transaction_id:
-            try:
-                # A direct order is a one-step journey: it carries no
-                # checkpointed workflow state, so its request identity is
-                # derived from the order it is placing.
-                journey_id = await ensure_journey(
-                    ScopedDb(db, transaction_id),
-                    request.traveler_id,
-                    f"order-{order_id}",
-                    "direct",
-                )
-                fingerprint = fingerprint_terms(
-                    normalize_hold_terms(
-                        pkg["product_id"],
-                        requested_duration,
-                        request.quantity,
-                        Decimal(str(pkg["price"])),
-                    )
-                )
-                hold_result = await db.execute(
-                    """
-                    SELECT booking_id, status, replayed,
-                           seats_available, seats_reserved, seats_remaining
-                    FROM create_courtesy_hold(
-                        %s::TEXT,
-                        %s::TEXT,
-                        %s::TEXT,
-                        %s::TEXT,
-                        %s::TEXT,
-                        %s::TEXT,
-                        %s::TEXT,
-                        %s::INTEGER,
-                        %s::NUMERIC,
-                        %s::NUMERIC,
-                        %s::TIMESTAMPTZ
-                    )
-                    """,
-                    (
-                        order_id,
-                        request.traveler_id,
-                        journey_id,
-                        f"hrq_{order_id}",
-                        fingerprint,
-                        pkg["product_id"],
-                        requested_duration,
-                        request.quantity,
-                        pkg["price"],
-                        total,
-                        hold_expires_at.isoformat(),
-                    ),
-                    transaction_id=transaction_id,
-                )
-            except Exception as exc:
-                if "insufficient_inventory" in str(exc):
-                    raise HTTPException(
-                        status_code=409,
-                        detail=(
-                            "Inventory changed before the hold was saved. "
-                            "Refresh the package and choose an available duration."
-                        ),
-                    ) from exc
-                raise
-
-        # A replay returns the existing booking and leaves the seat columns null.
-        remaining = int((hold_result[0].get("seats_remaining") or 0)) if hold_result else 0
-
-        order = Order(
-            order_id=order_id,
-            items=[
-                OrderItem(
-                    product_id=pkg['product_id'],
-                    name=pkg['name'],
-                    size=requested_duration,
-                    quantity=request.quantity,
-                    unit_price=pkg['price']
-                )
-            ],
-            subtotal=subtotal,
-            tax=tax,
-            shipping=shipping,
-            total=total,
-            status="held",
-            estimated_delivery=departure_date,
-            departure_date=departure_date,
-            hold_expires_at=hold_expires_at.isoformat(),
-            payment_required=False,
-        )
-
-        total_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-
-        activities.append(create_activity(
-            activity_type="result",
-            title="Hold receipt ready",
-            details=f"Expires {hold_expires_at.isoformat()}",
-            execution_time_ms=total_time,
-            agent_name=agent_name,
-            agent_file=agent_file
-        ))
-
-        message = (
-            f"I placed **{pkg['name']}** on a 12-hour courtesy hold.\n\n"
-            f"**Hold #{order_id}**\n"
-            f"- Estimated package total: ${total:.2f}\n"
-            f"- Travelers: {request.quantity}\n"
-            f"- Duration: {requested_duration}\n"
-            f"- Remaining package places: {remaining}\n"
-            f"- Suggested departure: {departure_date}\n"
-            f"- Payment charged: No\n\n"
-            "Review the itinerary and final terms before confirming with an operator."
-        )
-
-        # Log successful order
-        log_order(
-            phase=request.phase,
-            order_id=order_id,
-            product_id=request.product_id,
-            total=total,
-            status="held"
-        )
-
-        return OrderResponse(
-            message=message,
-            order=order,
-            activities=activities
-        )
-
-    except HTTPException:
-        raise
-    except TravelerAuthorizationError as e:
-        log_error(context="order_authorization", error=str(e), phase=request.phase)
-        raise HTTPException(status_code=403, detail=str(e)) from e
-    except Exception as e:
-        log_error(context="order_processing", error=str(e), phase=request.phase)
-        raise HTTPException(
-            status_code=503,
-            detail="The courtesy hold could not be created. Try again shortly.",
-        ) from e
+    return await production_hold(request)

@@ -58,7 +58,7 @@ export interface TripHold {
 /** A hold placed elsewhere (the recovery workflow) that the concierge can adopt. */
 export type AdoptableHold = Pick<
   JourneyHold,
-  'booking_id' | 'package_id' | 'duration' | 'travelers_count' | 'hold_expires_at' | 'hold_created_at' | 'confirmed_at'
+  'booking_id' | 'package_id' | 'duration' | 'travelers_count' | 'unit_price' | 'total_amount' | 'hold_expires_at' | 'hold_created_at' | 'confirmed_at'
 > & { status: string };
 
 // Refinement filters captured by the action-chip popovers below the
@@ -848,12 +848,16 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const adoptJourneyHold = useCallback((hold: AdoptableHold) => {
     const product = recommendations.find(item => item.product_id === hold.package_id)
       ?? catalog.find(item => item.product_id === hold.package_id);
-    if (!product) return false;
-    const quantity = hold.travelers_count ?? travelersCount;
-    const total = product.price * quantity;
+    const quantity = hold.travelers_count;
+    if (!product || !hold.duration || quantity == null || !Number.isInteger(quantity) || quantity <= 0
+      || !hold.unit_price?.trim() || !hold.total_amount?.trim()) return false;
+    const unitPrice = Number(hold.unit_price);
+    const total = Number(hold.total_amount);
+    if (!Number.isFinite(unitPrice) || !Number.isFinite(total) || unitPrice < 0 || total < 0
+      || Math.round(unitPrice * 100) * quantity !== Math.round(total * 100)) return false;
     const order: TripHold['order'] = {
       order_id: hold.booking_id,
-      items: [{ product_id: product.product_id, name: product.name, size: hold.duration ?? product.available_sizes?.[0], quantity, unit_price: product.price }],
+      items: [{ product_id: product.product_id, name: product.name, size: hold.duration, quantity, unit_price: unitPrice }],
       subtotal: total,
       tax: 0,
       shipping: 0,
@@ -870,7 +874,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setActionDrawer(null);
     setBookingPrompt(null);
     return true;
-  }, [catalog, recommendations, travelersCount]);
+  }, [catalog, recommendations]);
 
   const planTrip = useCallback((product: Product) => {
     openTripDetails(product);

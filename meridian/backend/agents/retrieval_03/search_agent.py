@@ -20,6 +20,7 @@ AWS docs:
 """
 
 import json
+import asyncio
 import os
 import uuid
 from datetime import datetime, timezone
@@ -184,8 +185,8 @@ When searching:
         query_embedding = None
         embedding_error: Optional[str] = None
         try:
-            query_embedding = self.embedding_service.generate_text_embedding(
-                query, input_type="search_query"
+            query_embedding = await asyncio.to_thread(
+                self.embedding_service.generate_text_embedding, query, input_type="search_query"
             )
         except EmbeddingUnavailable as exc:
             embedding_error = str(exc)
@@ -437,7 +438,9 @@ When searching:
         ]
         ranked = []
         try:
-            ranked = self.embedding_service.rerank_documents(query, docs, top_n=limit)
+            ranked = await asyncio.to_thread(
+                self.embedding_service.rerank_documents, query, docs, top_n=limit
+            )
         except Exception as exc:
             # Graceful degradation: if the reranker is unavailable, we keep the
             # merged hybrid order rather than failing the request.

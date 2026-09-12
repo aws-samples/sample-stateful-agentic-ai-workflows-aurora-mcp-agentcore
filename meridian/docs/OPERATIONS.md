@@ -97,7 +97,7 @@ Restart the backend; the next Phase 4 turn uses real AgentCore data-plane calls.
 
 ```bash
 cd meridian
-python scripts/verify_agentcore.py        # Runtime, Gateway, Memory, policy engine ACTIVE · ENFORCE, 3 tools, observability
+python scripts/verify_agentcore.py        # Runtime, Gateway, Memory, policy engine ACTIVE · ENFORCE, 4 tools, observability
 python scripts/smoke_gateway_tools.py     # tools/list + get_package_details signed from this laptop
 python scripts/smoke_production_turn.py   # search, unconfirmed hold denied, confirmed hold held, over budget denied
 python scripts/kill_and_resume_demo.py    # Phase 5: hold through the gateway, SIGKILL the worker, resume with the same booking
@@ -227,70 +227,61 @@ aws sts get-caller-identity                 # AWS auth works
 cd meridian/meridian_agentcore
 agentcore status --json                     # resources healthy
 
-cd ../.. && grep "AGENTCORE_" .env          # env has the 4 keys below
+cd ..
+venv/bin/python scripts/verify_agentcore.py  # checks resolved configuration without printing .env
 ```
 Expected `.env` keys: `AGENTCORE_RUNTIME_ARN`, `AGENTCORE_GATEWAY_URL`,
 `AGENTCORE_GATEWAY_SEARCH_TOOL`, `AGENTCORE_MEMORY_ID`. Then run
 `venv/bin/python scripts/verify_agentcore.py` and expect every row green,
-including `Policy engine … ACTIVE · ENFORCE` and `Gateway tools … 3 tools`.
+including `Policy engine … ACTIVE · ENFORCE` and `Gateway tools … 4 tools`.
 
 ## 2) Start the durable stack
 
-Terminal 1 — private Aurora checkpoint tunnel:
-```bash
-cd meridian
-./scripts/start_checkpoint_tunnel.sh
-```
+For a laptop, use the existing HTTPS Data API endpoint. Aurora stays private;
+no public PostgreSQL ingress or security-group change is needed. Keep certificate
+verification enabled and bind local servers to loopback, including on public Wi-Fi.
 
-Keep that terminal open. It forwards local port `15432` through the SSM host to
-Aurora port `5432`.
-
-Terminal 2 — fail-closed backend with the real checkpoint store:
+Terminal 1 — fail-closed backend:
 ```bash
 cd meridian
 source venv/bin/activate
-export LANGGRAPH_CHECKPOINT_HOST=127.0.0.1
-export LANGGRAPH_CHECKPOINT_PORT=15432
-export LANGGRAPH_CHECKPOINT_DATABASE=meridian
-export LANGGRAPH_CHECKPOINT_DSN='postgresql://checkpoint_user:password@127.0.0.1:15432/meridian?sslmode=require'
-export LANGGRAPH_CHECKPOINT_REQUIRED=true
-export LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP=true
-export LANGGRAPH_DEMO_INTERRUPT_AFTER=search
-uvicorn backend.main:app --host 127.0.0.1 --port 8000
+LANGGRAPH_CHECKPOINT_DSN= LANGGRAPH_AUTO_CHECKPOINT_DSN=false \
+LANGGRAPH_CHECKPOINT_DATA_API=true LANGGRAPH_CHECKPOINT_REQUIRED=true \
+LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP=true \
+uvicorn backend.main:app --host 127.0.0.1 --port 8013
 ```
 
-Inject `LANGGRAPH_CHECKPOINT_DSN` from a dedicated least-privilege checkpoint
-credential before starting the backend. The application does not retrieve
-database passwords from Secrets Manager.
-
-The API permits unauthenticated calls only from loopback in development. Before
-binding to a network interface, use an OIDC-aware reverse proxy or
-backend-for-frontend that keeps `MERIDIAN_API_TOKEN` server-side, and set an
-explicit `CORS_ORIGINS` allow-list.
-
-Terminal 3 — frontend:
+Terminal 2 — frontend:
 ```bash
 cd meridian/frontend
-npm run dev -- --host --port 5173
+VITE_API_ORIGIN=http://127.0.0.1:8013 npm run dev -- --host 127.0.0.1 --port 5176 --strictPort
 ```
 
-Primary surface:
-- **Device Showcase:** `http://localhost:5173/showcase`
+Open `http://127.0.0.1:5176/showcase`. The checks below use the backend on 8013.
+Verify existing listeners before choosing ports.
+
+An existing private SSM tunnel with a separately supplied checkpoint DSN can
+instead use pooled `AsyncPostgresSaver`. Keep the DB private and configure TLS
+certificate/hostname verification for that connection. The application does not
+retrieve database passwords. Do not copy a password into the runbook.
+
+Before exposing an API to other people, configure HTTP authentication and an
+explicit CORS allow-list. Local preview does not require a network bind.
 
 ## 3) Health checks (must pass)
 
 ```bash
-curl -s http://localhost:8000/health | jq .                       # Sonnet 5 + cohere.embed-v4:0
-curl -s http://localhost:8000/api/memory/trv_meridian_demo | jq . # Alex Morgan facts
+curl -s http://127.0.0.1:8013/health | jq .                       # Sonnet 5 + cohere.embed-v4:0
+curl -s http://127.0.0.1:8013/api/memory/trv_meridian_demo | jq . # Alex Morgan facts
 
 # Phase 4 smoke — identity, RLS, AgentCore Runtime, Gateway tools, Cedar, Aurora end to end:
-curl -s -X POST http://localhost:8000/api/chat \
+curl -s -X POST http://127.0.0.1:8013/api/chat \
   -H "Content-Type: application/json" \
   -d '{"phase":4,"message":"A slow week somewhere we can drink good wine","customer_id":"trv_meridian_demo"}' \
   | jq '.message, .conversation_id, (.products | length), [.activities[].title]'
 
 # Governed hold smoke — the click is the confirmation; expect an order with a HLD- id:
-curl -s -X POST http://localhost:8000/api/chat/order \
+curl -s -X POST http://127.0.0.1:8013/api/chat/order \
   -H "Content-Type: application/json" \
   -d '{"phase":4,"product_id":"TKY-001","quantity":2,"traveler_id":"trv_meridian_demo","action":"hold"}' \
   | jq '.order.order_id, .order.hold_expires_at, [.activities[] | select(.telemetry.status=="denied" or .activity_type=="order") | .title]'
@@ -300,7 +291,7 @@ For the stage proof, `/health` must include:
 
 ```json
 {
-  "checkpoint_backend": "PostgresSaver (Aurora · pooled)",
+  "checkpoint_backend": "AuroraDataApiSaver",
   "checkpoint_durable": true,
   "checkpoint_required": true
 }
@@ -322,14 +313,16 @@ Holds expire on their own; `tests/test_order_hold.py` shows how to purge one.
 
 ## 5) Prove pause, restart, and resume
 
-1. Open `http://localhost:5173/showcase`, choose **Workflow**, and run:
+1. Open `http://127.0.0.1:5176/showcase`, choose **Capability ladder**, then
+   **Workflow**, and run:
    `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`
 2. Confirm the reply says the workflow paused and the proof names
-   `PostgresSaver (Aurora · pooled)` with `next=availability`.
-3. Stop only Terminal 2 with `Ctrl+C`. Leave the browser and tunnel open.
-4. Restart the same backend command in Terminal 2.
+   the configured durable backend with `next=availability`.
+3. Stop only the backend with `Ctrl+C`. Leave the browser and frontend running.
+4. Restart the same backend command with the durable settings from section 2.
 5. Confirm `/health` is durable again.
-6. Click **Resume workflow from checkpoint** in the existing conversation.
+6. Select **Continue at recovery desk**, then **Resume and request hold** in
+   the existing conversation. This requests a 15-minute package hold.
 7. Confirm `Workflow resumed from checkpoint` uses the same `thread_id` and
    continues at `availability`; the `search` node must not run twice.
 
@@ -337,11 +330,14 @@ This is the title claim made visible: the worker process disappears, while the
 execution position survives in Aurora's `checkpoints`, `checkpoint_blobs`, and
 `checkpoint_writes` tables.
 
-The scripted version of the same proof is `venv/bin/python scripts/kill_and_resume_demo.py`:
+For a separate hard-kill rehearsal, run `venv/bin/python scripts/kill_and_resume_demo.py`:
 worker one places the hold through the gateway tool, is SIGKILLed, a second
 worker is refused until the lease clears, and the resumed run reports one hold
 with the same booking id and the original expiry. `DEMO_LEASE_SECONDS` (default
 20) sets the lease; a cold worker needs most of that before its first heartbeat.
+This script kills after the hold is checkpointed. It does not inject a lost
+response between the business commit and checkpoint commit. See
+[`DEMO_SCRIPT.md`](../DEMO_SCRIPT.md) for the three failure windows.
 
 ## 6) Recovery playbook
 
@@ -391,7 +387,7 @@ publishes the current `app/MeridianConcierge` code.
 - The kiosk auto-loops real `/api/chat` calls on a timer → real Bedrock + Aurora
   spend. Stop it when not actively demoing.
 - Never narrate durable recovery unless `/health` says
-  `"checkpoint_durable": true` and the trace names PostgresSaver.
+  `"checkpoint_durable": true` and the trace names the configured Aurora saver.
 
 ---
 

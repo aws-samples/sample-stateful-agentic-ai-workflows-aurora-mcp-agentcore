@@ -27,6 +27,7 @@ class _ScopedDb(RDSDataClient):
     def __init__(self, allowed: bool) -> None:
         self.allowed = allowed
         self.executed: list[str] = []
+        self.parameters: list[tuple | None] = []
         self.commits: list[str] = []
         self.rollbacks: list[str] = []
 
@@ -41,6 +42,7 @@ class _ScopedDb(RDSDataClient):
 
     async def execute(self, query, params=None, transaction_id=None):
         self.executed.append(" ".join(query.split()))
+        self.parameters.append(params)
         return []
 
     async def check_traveler_authorization(
@@ -155,6 +157,11 @@ def test_scoped_session_authorizes_then_sets_rls_scope() -> None:
     assert any("app.current_traveler_id" in query for query in db.executed)
     assert any("app.authorization_subject" in query for query in db.executed)
     assert any("SET LOCAL ROLE meridian_app" in query for query in db.executed)
+    assert len(db.executed) == 2
+    assert db.parameters[0] == (
+        "on", "trv_meridian_demo", "concierge_agent", "aws_iam", "AROATESTROLE",
+    )
+    assert db.executed[0].count(", true)") == 5
     assert db.commits == ["tx-authz"]
 
 

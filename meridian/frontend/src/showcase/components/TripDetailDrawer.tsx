@@ -24,7 +24,13 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
 
   const saved = state.savedTripIds.has(product.product_id);
   const compared = state.comparedTrips.some((item) => item.product_id === product.product_id);
-  const party = state.travelersCount;
+  const receiptItem = activeHold || confirmed
+    ? hold?.order.items.find(item => item.product_id === product.product_id)
+    : undefined;
+  const party = receiptItem?.quantity ?? state.travelersCount;
+  const unitPrice = receiptItem?.unit_price ?? product.price;
+  const tripDuration = receiptItem?.size ?? duration(product);
+  const total = receiptItem && hold ? hold.order.total : product.price * party;
   const availability = Object.entries(product.availability ?? {});
   const highlights = product.highlights?.length
     ? product.highlights
@@ -66,9 +72,9 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
             />
           )}
           <div className="mds-trip-facts">
-            <div><span>Package</span><b>${product.price.toLocaleString()} / traveler</b></div>
-            <div><span>Duration</span><b>{duration(product)}</b></div>
-            <div><span>Estimate for {party} {party === 1 ? 'traveler' : 'travelers'}</span><b>${(product.price * party).toLocaleString()}</b></div>
+            <div><span>Package</span><b>${unitPrice.toLocaleString()} / traveler</b></div>
+            <div><span>Duration</span><b>{tripDuration}</b></div>
+            <div><span>{receiptItem ? 'Recorded total' : 'Estimate'} for {party} {party === 1 ? 'traveler' : 'travelers'}</span><b>${total.toLocaleString()}</b></div>
           </div>
           <section className="mds-trip-section">
             <h3>What is included</h3>

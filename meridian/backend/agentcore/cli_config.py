@@ -301,7 +301,18 @@ def resolve_agentcore_config() -> AgentCoreDeployedConfig:
                 merged[key] = value
         sources.append("deployed-state.json")
 
-    status_data = _run_agentcore_status_json(project_dir)
+    # CLI status is a discovery fallback, not a mandatory network preflight.
+    # A fully configured app must not block its first traveler read on a
+    # subprocess that can take 30 seconds on a slow or unavailable connection.
+    platform_configured = all(
+        _first_str(os.getenv(env_name), merged.get(field_name))
+        for field_name, env_name in (
+            ("runtime_arn", "AGENTCORE_RUNTIME_ARN"),
+            ("gateway_url", "AGENTCORE_GATEWAY_URL"),
+            ("memory_id", "AGENTCORE_MEMORY_ID"),
+        )
+    )
+    status_data = None if platform_configured else _run_agentcore_status_json(project_dir)
     if status_data:
         for key, value in _parse_status_json(status_data).items():
             if value and not merged.get(key):

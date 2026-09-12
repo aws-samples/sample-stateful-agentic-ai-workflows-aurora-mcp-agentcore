@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 
 from backend.agents.orchestration_05.governed_hold import (
     HOLD_TOOL,
@@ -91,3 +92,27 @@ def test_a_transport_error_is_reported_as_is():
     )
     assert not outcome.placed and outcome.policy_decision is None
     assert "503" in outcome.error
+
+
+@pytest.mark.parametrize("message", [
+    "AccessDeniedException: not authorized to invoke this gateway",
+    "The Lambda's workload is not authorized for traveler",
+    "An upstream policy service is unavailable",
+])
+def test_other_authorization_failures_are_not_cedar_decisions(message):
+    outcome = place_governed_hold(
+        lambda *_: _response(text=message, is_error=True), {"packageId": "TKY-003"}
+    )
+    assert outcome.policy_decision is None
+    assert not outcome.placed
+
+
+def test_documented_gateway_policy_denial_is_recognized():
+    outcome = place_governed_hold(
+        lambda *_: _response(
+            text="AuthorizeActionException - Tool Execution Denied: Tool call not allowed "
+                 "due to policy enforcement [No policy applies to the request (denied by default).]",
+            is_error=True,
+        ), {"packageId": "TKY-003"}
+    )
+    assert outcome.policy_decision == "deny"

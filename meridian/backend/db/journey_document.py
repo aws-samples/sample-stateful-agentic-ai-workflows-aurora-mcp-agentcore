@@ -39,7 +39,7 @@ SELECT hr.hold_request_id, hr.booking_id, hr.execution_id, hr.created_at,
        b.hold_expires_at::TEXT AS hold_expires_at,
        b.confirmed_at::TIMESTAMPTZ::TEXT AS confirmed_at,
        CURRENT_TIMESTAMP::TEXT AS observed_at, bl.package_id, bl.duration,
-       bl.travelers_count
+       bl.travelers_count, bl.unit_price, b.total_amount
   FROM hold_requests hr
   JOIN bookings b ON b.booking_id = hr.booking_id
   LEFT JOIN booking_lines bl ON bl.booking_id = hr.booking_id
@@ -319,7 +319,7 @@ async def _hold(q, journey_id: str) -> Dict[str, Any]:
         "status": row["status"],
         # The claim the demo makes, stated as data rather than as prose.
         "label": "one hold for this request",
-        "source": "hold_requests + bookings",
+        "source": "hold_requests + bookings + booking_lines",
         "hold_request_id": row["hold_request_id"],
         "booking_id": row["booking_id"],
         "created_by_execution_id": row["execution_id"],
@@ -329,6 +329,9 @@ async def _hold(q, journey_id: str) -> Dict[str, Any]:
         "confirmed_at": _iso(row.get("confirmed_at")),
         "package_id": row["package_id"],
         "duration": row["duration"],
+        # Preserve the booked amounts, including when catalog prices change.
+        "unit_price": _iso(row.get("unit_price")),
+        "total_amount": _iso(row.get("total_amount")),
         "travelers_count": (
             int(row["travelers_count"]) if row["travelers_count"] is not None else None
         ),

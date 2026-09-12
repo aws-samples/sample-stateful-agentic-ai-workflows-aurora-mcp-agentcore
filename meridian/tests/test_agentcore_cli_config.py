@@ -92,6 +92,8 @@ def test_legacy_config_directory_override_uses_cli_project_root(tmp_path: Path, 
 
     monkeypatch.setenv("AGENTCORE_PROJECT_DIR", str(config_dir))
     monkeypatch.delenv("AGENTCORE_SKIP_CLI_SYNC", raising=False)
+    for name in ("AGENTCORE_RUNTIME_ARN", "AGENTCORE_GATEWAY_URL", "AGENTCORE_MEMORY_ID"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(cli_config.subprocess, "run", fake_run)
 
     cfg = cli_config.resolve_agentcore_config()
@@ -100,6 +102,38 @@ def test_legacy_config_directory_override_uses_cli_project_root(tmp_path: Path, 
     assert cli_config.deployed_state_path() == config_dir / ".cli" / "deployed-state.json"
     assert cfg.cli_project_dir == str(project_dir)
     assert calls[0][1]["cwd"] == str(project_dir)
+
+
+@pytest.mark.parametrize("source", ["environment", "deployed-state"])
+def test_complete_local_config_does_not_run_cli_status(tmp_path, monkeypatch, source):
+    monkeypatch.setenv("AGENTCORE_PROJECT_DIR", str(tmp_path))
+    monkeypatch.delenv("AGENTCORE_SKIP_CLI_SYNC", raising=False)
+    values = {
+        "AGENTCORE_RUNTIME_ARN": "arn:runtime:local",
+        "AGENTCORE_GATEWAY_URL": "https://gateway.example/mcp",
+        "AGENTCORE_MEMORY_ID": "memory-local",
+    }
+    for name, value in values.items():
+        if source == "environment":
+            monkeypatch.setenv(name, value)
+        else:
+            monkeypatch.delenv(name, raising=False)
+    if source == "deployed-state":
+        cli_dir = tmp_path / "agentcore" / ".cli"
+        cli_dir.mkdir(parents=True)
+        (cli_dir / "deployed-state.json").write_text(json.dumps({
+            "runtimeArn": values["AGENTCORE_RUNTIME_ARN"],
+            "gatewayUrl": values["AGENTCORE_GATEWAY_URL"],
+            "memoryId": values["AGENTCORE_MEMORY_ID"],
+        }))
+
+    def unexpected_cli(*args, **kwargs):
+        pytest.fail("Configured application attempted a CLI network preflight")
+
+    monkeypatch.setattr(cli_config.subprocess, "run", unexpected_cli)
+    cfg = cli_config.resolve_agentcore_config()
+    assert cfg.runtime_arn == values["AGENTCORE_RUNTIME_ARN"]
+    assert cfg.memory_id == values["AGENTCORE_MEMORY_ID"]
 
 
 def test_parse_status_json_current_cli_shape():

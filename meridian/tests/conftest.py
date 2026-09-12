@@ -4,6 +4,7 @@ Pytest configuration for Meridian tests.
 Configures Hypothesis settings and shared fixtures for property-based testing.
 """
 import os
+import socket
 import pytest
 from hypothesis import settings, Verbosity, Phase
 
@@ -12,6 +13,45 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import boto3
+
+
+@pytest.fixture(autouse=True)
+def isolated_unit_environment(request, monkeypatch):
+    """Unit tests must not adopt a presenter's .env or reach a live service.
+
+    Database-marked rehearsals keep their explicit live configuration. A unit
+    test can override these defaults or inject a client, but any unmocked
+    network attempt fails even if application error handling catches it.
+    """
+    if request.node.get_closest_marker("database"):
+        yield
+        return
+    for name, value in {
+        "AWS_ACCESS_KEY_ID": "unit-test",
+        "AWS_SECRET_ACCESS_KEY": "unit-test",
+        "AWS_EC2_METADATA_DISABLED": "true",
+        "AGENTCORE_SKIP_CLI_SYNC": "1",
+        "LANGGRAPH_CHECKPOINT_DATA_API": "false",
+        "LANGGRAPH_AUTO_CHECKPOINT_DSN": "false",
+        "LANGGRAPH_CHECKPOINT_REQUIRED": "false",
+        "LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP": "false",
+    }.items():
+        monkeypatch.setenv(name, value)
+    for name in ("AWS_SESSION_TOKEN", "LANGGRAPH_CHECKPOINT_DSN", "LANGGRAPH_DEMO_INTERRUPT_AFTER"):
+        monkeypatch.delenv(name, raising=False)
+
+    attempted = []
+    connect = socket.socket.connect
+
+    def refuse_network(sock, address):
+        if sock.family in (socket.AF_INET, socket.AF_INET6):
+            attempted.append(address)
+            raise AssertionError("Unit test attempted an unmocked network connection")
+        return connect(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", refuse_network)
+    yield
+    assert not attempted, "Unit test attempted an unmocked network connection"
 
 
 # Configure Hypothesis default settings

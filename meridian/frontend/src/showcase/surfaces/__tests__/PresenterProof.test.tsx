@@ -83,6 +83,13 @@ function makeDocument(overrides: Partial<JourneyDocument> = {}): JourneyDocument
 const noop = () => {};
 
 describe('Presenter proof', () => {
+  it('labels the retained observation when a refresh fails', () => {
+    render(<PresenterProof document={makeDocument()} loading={false}
+      error="Connection interrupted" onRefresh={noop} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Showing the last successful observation');
+    expect(screen.getByRole('alert')).toHaveTextContent('Connection interrupted');
+  });
+
   it('reads the headline off whether a worker was actually replaced', () => {
     render(
       <PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,

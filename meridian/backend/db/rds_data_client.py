@@ -16,6 +16,7 @@ AWS docs:
 """
 
 import os
+import asyncio
 import json
 import logging
 import re
@@ -242,7 +243,27 @@ class RDSDataClient:
         )
         if transaction_id:
             kwargs["transactionId"] = transaction_id
-        response = self.client.execute_statement(**kwargs)
+        # Let lease heartbeats and other HTTP requests run during Data API I/O.
+        # Cancelling to_thread does not stop its underlying request: drain it
+        # before the caller rolls back the transaction or releases its lease.
+        operation = asyncio.create_task(
+            asyncio.to_thread(self.client.execute_statement, **kwargs)
+        )
+        try:
+            response = await asyncio.shield(operation)
+        except asyncio.CancelledError:
+            # Shutdown can cancel a task more than once. Keep shielding the
+            # SDK request until it finishes even if another cancellation arrives.
+            while not operation.done():
+                try:
+                    await asyncio.shield(operation)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if not operation.cancelled():
+                operation.exception()  # Retrieve any SDK error; cancellation wins.
+            raise
         
         # Extract column names from metadata
         column_metadata = response.get("columnMetadata", [])
@@ -433,34 +454,26 @@ class RDSDataClient:
                     transaction_finished = True
                     raise TravelerAuthorizationError(decision)
 
-            # Force row_security ON for this transaction (belt-and-suspenders;
-            # harmless once the role switch below does the real work).
-            await self.execute("SET LOCAL row_security = on", transaction_id=tx)
-            # Set the GUCs FIRST, while still on the privileged connection, so
-            # set_config is guaranteed to succeed.
+            # Pin all transaction-local settings in one Data API round trip.
+            # On a high-latency connection, separate calls for each setting
+            # can exhaust the browser's read timeout before any data is read.
+            settings = [("row_security", "on")]
             if traveler_id is not None:
-                await self.execute(
-                    "SELECT set_config('app.current_traveler_id', %s, true)",
-                    (traveler_id,),
-                    transaction_id=tx,
-                )
+                settings.append(("app.current_traveler_id", traveler_id))
             if agent_type is not None:
-                await self.execute(
-                    "SELECT set_config('app.agent_type', %s, true)",
-                    (agent_type,),
-                    transaction_id=tx,
-                )
+                settings.append(("app.agent_type", agent_type))
             if authorization is not None:
-                await self.execute(
-                    "SELECT set_config('app.authorization_provider', %s, true)",
-                    (authorization.provider,),
-                    transaction_id=tx,
-                )
-                await self.execute(
-                    "SELECT set_config('app.authorization_subject', %s, true)",
-                    (authorization.subject_id,),
-                    transaction_id=tx,
-                )
+                settings.extend([
+                    ("app.authorization_provider", authorization.provider),
+                    ("app.authorization_subject", authorization.subject_id),
+                ])
+            await self.execute(
+                "SELECT " + ", ".join(
+                    f"set_config('{name}', %s, true)" for name, _ in settings
+                ),
+                tuple(value for _, value in settings),
+                transaction_id=tx,
+            )
             # Step off the privileged master role for the rest of this
             # transaction by switching to the least-privilege app role (which
             # IS subject to RLS). SET LOCAL ROLE is transaction-scoped and

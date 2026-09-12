@@ -19,8 +19,9 @@ the other. The Data API caps a returned row at 64 KB, so values -- in both
 appended segments and read through windowed ``substring`` calls.
 """
 
+import asyncio
 import json
-from typing import Any, AsyncIterator, Optional, Sequence
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Sequence
 
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
@@ -33,6 +34,24 @@ from langgraph.checkpoint.base import (
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from backend.db.blob_windows import split_for_write, window_offsets
+
+
+async def _bounded_reads(items: Sequence, read: Callable[[Any], Awaitable[Any]]) -> list:
+    """Read independent blobs with bounded fan-out and drain every started read."""
+    semaphore = asyncio.Semaphore(4)
+
+    async def limited(item):
+        async with semaphore:
+            return await read(item)
+
+    results = await asyncio.gather(
+        *(limited(item) for item in items), return_exceptions=True
+    )
+    for result in results:
+        if isinstance(result, BaseException):
+            raise result
+    return results
+
 
 UPSERT_BLOB_SQL = """
 INSERT INTO checkpoint_blobs
@@ -262,14 +281,18 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
         self, thread_id: str, ns: str, channel_versions: dict
     ) -> dict[str, Any]:
         """Rehydrate every channel value named by a checkpoint's versions."""
-        values: dict[str, Any] = {}
-        for channel, version in channel_versions.items():
-            version = str(version)
-            found = await self._read_blob(thread_id, ns, channel, version)
+        async def read(item):
+            channel, version = item
+            found = await self._read_blob(thread_id, ns, channel, str(version))
             if found is not None:
                 blob_type, payload = found
-                values[channel] = self.serde.loads_typed((blob_type, payload))
-        return values
+                return channel, self.serde.loads_typed((blob_type, payload))
+            return None
+
+        # These are immutable versioned blobs read outside a transaction.
+        # Keep writes and individual segmented-blob reads sequential.
+        loaded = await _bounded_reads(list(channel_versions.items()), read)
+        return dict(item for item in loaded if item is not None)
 
     async def aget_tuple(self, config: dict) -> Optional[CheckpointTuple]:
         """Load one checkpoint and rehydrate its channel values.
@@ -462,7 +485,9 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
                         APPEND_WRITE_SQL, (segment,) + key, transaction_id=transaction_id
                     )
             self.client.commit_transaction(transaction_id)
-        except Exception:
+        except BaseException:
+            # Cancellation is a BaseException. A cancelled worker must release
+            # this transaction too, or takeover can block on its row lock.
             self.client.rollback_transaction(transaction_id)
             raise
 
@@ -478,8 +503,7 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
         rows = await self.client.execute(
             SELECT_WRITES_META_SQL, (thread_id, ns, checkpoint_id)
         )
-        pending = []
-        for row in rows:
+        async def read(row):
             channel = row["channel"]
             blob_type = row.get("type")
             if not blob_type:
@@ -494,10 +518,10 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
                 )
             key = (thread_id, ns, checkpoint_id, row["task_id"], row["idx"])
             payload = await self._read_write_blob(key, channel, int(row["n"]))
-            pending.append(
-                (row["task_id"], channel, self.serde.loads_typed((blob_type, payload)))
-            )
-        return pending
+            return row["task_id"], channel, self.serde.loads_typed((blob_type, payload))
+
+        # gather preserves the metadata query's order, including reserved indices.
+        return await _bounded_reads(rows, read)
 
     async def _read_write_blob(self, key: tuple, channel: str, total: int) -> bytes:
         """Reassemble one pending-write blob from windowed ``substring`` reads.

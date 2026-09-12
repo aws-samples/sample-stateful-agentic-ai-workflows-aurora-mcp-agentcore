@@ -176,17 +176,7 @@ export function RecoveryWorkspace({
   const savedHold = journeyDocument?.active_thread_id === state.conversationId && isObserved(journeyDocument?.hold) ? journeyDocument.hold : null;
   const handoffHold: AdoptableHold | null = savedHold?.status === 'held'
     ? savedHold
-    : !savedHold && workflowProof.holdId && workflowProof.holdStatus === 'held' && topRecoveryOption
-      ? {
-        booking_id: workflowProof.holdId,
-        package_id: topRecoveryOption.product_id,
-        duration: null,
-        travelers_count: null,
-        hold_expires_at: workflowProof.holdExpiresAt || null,
-        hold_created_at: workflowProof.holdCreatedAt || null,
-        status: 'held',
-      }
-      : null;
+    : null;
   const recoveryStatusLabel =
     recoveryStage === 'ready'
       ? 'Recovery plan ready'
@@ -199,7 +189,7 @@ export function RecoveryWorkspace({
     recoveryStage === 'ready'
       ? 'Review this plan'
       : recoveryStage === 'checkpointed'
-        ? 'Resume and verify'
+        ? 'Resume and request hold'
         : 'Start recovery';
   const alternativeProducts = Array.from({ length: 3 }, (_, index) =>
     state.recommendations?.[index + 1] ?? null,
@@ -246,6 +236,11 @@ export function RecoveryWorkspace({
         </div>
       </header>
 
+      {(recoveryStage === 'checkpointed' || recoveryStage === 'action') && <p className="mc-recovery-action-note">
+        Recovery checks package availability and requests a 15-minute courtesy hold on the leading option.
+        No payment is taken; booking confirmation happens later in Concierge.
+      </p>}
+
       <details className="mc-trip-context">
         <summary>
           <span className="mc-trip-context-route"><strong>JFK</strong><ArrowRight size={19} aria-hidden="true" /><strong>Tokyo</strong></span>
@@ -277,6 +272,10 @@ export function RecoveryWorkspace({
           </button>
         </div>
       )}
+      {!savedHold && workflowProof.holdId && <div className="mds-recovery-handoff">
+        <div><strong>Read the receipt before continuing.</strong><span>Verify the held package, party, duration and total from Aurora.</span></div>
+        <button type="button" className="mc-session-primary" onClick={onOpenProof}>Read booking receipt<ArrowRight size={16} aria-hidden="true" /></button>
+      </div>}
       {state.tripHolds?.slice(-1).map(hold => <TripHoldReceipt key={hold.order.order_id} hold={hold} compact />)}
 
       {layoutReviewEnabled && (

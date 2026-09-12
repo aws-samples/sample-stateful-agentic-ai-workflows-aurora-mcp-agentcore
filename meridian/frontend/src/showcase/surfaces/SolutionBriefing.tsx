@@ -146,6 +146,10 @@ export function SolutionBriefing({ onOpenLadder }: { onOpenLadder: () => void })
             {TOOLS.map(([name, kind, body]) => <article className="mds-brief-tool" key={name}><span className={`mds-brief-kind is-${kind.toLowerCase()}`}>{kind}</span><div><h3><code>{name}</code></h3><p>{body}</p></div></article>)}
           </Detail>
         </div>
+        <Detail title="Discuss temporal policy with Dogwood">
+          <p>Cedar is configured today. Dogwood is an assessed extension, not enabled here: require a successful lookup of the same package within five minutes before a hold, in the same authenticated policy session.</p>
+          <p>Persist the policy session across restarts and keep caller identities explicit. Combine the temporal condition with the existing hold conditions; an older, broader permit must not still admit the call. Aurora still validates capacity and replay, and the application still establishes traveler approval.</p>
+        </Detail>
       </section>
       <section id="brief-state" className="mds-brief-section" aria-labelledby="brief-state-heading">
         <SectionHeading id="state" title="Remember context. Resume execution.">Traveler preferences, conversation context and workflow progress have different jobs.</SectionHeading>
@@ -161,9 +165,17 @@ export function SolutionBriefing({ onOpenLadder }: { onOpenLadder: () => void })
           ['Return to the traveler', 'Confirm the held trip in Concierge'],
         ]} />
         <Detail title="Inspect durability and authorization controls">
-          <p>The LangGraph sequence is classify, search, availability, hold and synthesize. The worker renews its lease in <code>journey_executions</code>. Before a hold, both the worker and the Lambda check the lease; the Lambda checks again inside the write transaction.</p>
+          <p>The recovery sequence is classify, search, availability, prepare_hold, hold and synthesize. The prepare_hold node checkpoints the request and booking IDs before the write. The worker renews its lease in <code>journey_executions</code>. Before a hold, both the worker and the Lambda check the lease; the Lambda checks again inside the write transaction.</p>
           <p>The checkpointed request ID and booking ID let a resumed worker retrieve the existing hold with its original expiry. The recovery proof must read back the same booking and hold count; a successful response alone does not prove replay safety.</p>
           <Facts items={CONTROLS} />
+        </Detail>
+        <Detail title="Walk through three failure windows">
+          <Facts items={[
+            ['Before the hold', 'Resume the saved graph after lease takeover. The checkpoint carries the intended request and booking IDs.'],
+            ['Write committed, response lost', 'Retry the same intent. Aurora returns the existing booking with its original expiry. A permitted call alone does not establish whether the write committed.'],
+            ['After the hold checkpoint', 'Continue the remaining nodes. Compare the saved hold with the persisted booking and the successful execution receipt.'],
+          ]} />
+          <p>A checkpoint and a Gateway write are not one transaction. The workflow may retry; Aurora makes the business effect idempotent. A hard process-death rehearsal and a lost-response rehearsal test different failure windows.</p>
         </Detail>
       </section>
       <section id="brief-evidence" className="mds-brief-section" aria-labelledby="brief-evidence-heading">

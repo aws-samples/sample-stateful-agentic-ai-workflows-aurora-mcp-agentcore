@@ -23,6 +23,7 @@
 .mc-recovery-check-detail dt { color:var(--mc-muted); }
 .mc-recovery-check-detail dd { margin:4px 0 0; overflow-wrap:anywhere; }
 .mc-recovery-check-detail button { display:flex; align-items:center; gap:8px; padding:10px 0 0; background:none; border:0; color:var(--mc-accent); font:inherit; font-size:13px; cursor:pointer; }
+.mc-recovery-action-note { margin:0; max-width:90ch; color:var(--mc-muted); font-size:calc(14px * var(--mc-type-scale, 1)); line-height:1.6; }
 .mc-trip-context { border:1px solid var(--mc-line); border-radius:8px; background:var(--mc-surface); }
 .mc-trip-context>summary { display:flex; align-items:center; gap:16px; padding:16px 20px; cursor:pointer; list-style:none; color:var(--mc-ink); }
 .mc-trip-context>summary::-webkit-details-marker { display:none; }

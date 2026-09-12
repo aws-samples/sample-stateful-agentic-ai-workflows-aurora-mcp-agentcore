@@ -55,6 +55,9 @@ export type JourneyHold = {
   package_id: string | null;
   duration: string | null;
   travelers_count: number | null;
+  /** Decimal amounts from the booking record, never recalculated from the catalog. */
+  unit_price?: string | null;
+  total_amount?: string | null;
   hold_records: number;
 };
 

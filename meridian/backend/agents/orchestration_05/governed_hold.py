@@ -17,7 +17,9 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
 HOLD_TOOL = "MeridianHolds___create_courtesy_hold"
-DENIAL = re.compile(r"policy|denied|not authori[sz]ed|forbid", re.I)
+# Gateway's Policy denial envelope. IAM and target authorization errors are
+# different boundaries and must never be presented as a Cedar decision.
+DENIAL = re.compile(r"^(?:AuthorizeActionException\s*-\s*)?Tool Execution Denied:", re.I)
 
 
 @dataclass(frozen=True)
@@ -93,7 +95,7 @@ def place_governed_hold(call_tool: Callable[[str, Dict[str, Any]], Dict[str, Any
     text = _text(response)
     if rpc_error or result.get("isError"):
         message = text or json.dumps(rpc_error or result)[:300]
-        denied = bool(DENIAL.search(message))
+        denied = bool(result.get("isError") and DENIAL.match(message.strip()))
         return GovernedHold(None, {}, message, "deny" if denied else None, message)
     try:
         payload = json.loads(text) if text else {}

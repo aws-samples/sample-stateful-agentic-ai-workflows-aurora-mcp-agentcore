@@ -37,7 +37,7 @@ it('ends a stalled read and allows a fresh request after the timeout', async () 
       signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
     }));
     const { result, unmount } = renderHook(() => useJourney('journey', vi.fn(), true));
-    await act(async () => { await vi.advanceTimersByTimeAsync(20000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toContain('took too long');
     vi.mocked(fetchJourneyDocument).mockResolvedValue({ journey_id: 'journey', active_thread_id: 'thread' } as JourneyDocument);
@@ -48,4 +48,19 @@ it('ends a stalled read and allows a fresh request after the timeout', async () 
   } finally {
     vi.useRealTimers();
   }
+});
+
+it('does not retain a previous journey when a newly selected journey fails to load', async () => {
+  vi.mocked(fetchJourneyDocument).mockResolvedValueOnce({
+    journey_id: 'journey-a', active_thread_id: 'thread-a',
+  } as JourneyDocument);
+  const resolve = vi.fn();
+  const { result, rerender } = renderHook(
+    ({ id }) => useJourney(id, resolve, true), { initialProps: { id: 'journey-a' } },
+  );
+  await waitFor(() => expect(result.current.document?.journey_id).toBe('journey-a'));
+  vi.mocked(fetchJourneyDocument).mockRejectedValue(new Error('Journey unavailable'));
+  rerender({ id: 'journey-b' });
+  await waitFor(() => expect(result.current.error).toBe('Journey unavailable'));
+  expect(result.current.document).toBeNull();
 });

@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from backend.agentcore.identity import get_agentcore_identity
 from backend.db.journey_document import assemble_journey_document
 from backend.db.rds_data_client import get_rds_data_client
 from backend.http_auth import HttpPrincipal, authorize_traveler, require_http_principal
@@ -43,7 +44,17 @@ async def list_journeys(
     """
     owner = authorize_traveler(principal, traveler_id)
     client = get_rds_data_client()
-    rows = await client.execute(LATEST_JOURNEYS_SQL, (owner, limit))
+    try:
+        async with client.scoped_session(
+            traveler_id=owner,
+            agent_type="booking_agent",
+            authorization=get_agentcore_identity().authorization_context(),
+        ) as tx:
+            rows = await client.execute(
+                LATEST_JOURNEYS_SQL, (owner, limit), transaction_id=tx
+            )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return {
         "traveler_id": owner,
         "journeys": [

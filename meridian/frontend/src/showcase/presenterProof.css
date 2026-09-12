@@ -406,6 +406,15 @@
   font-size: 12px;
 }
 
+.mds-proof-read-error {
+  padding: 12px 16px;
+  border: 1px solid var(--proof-line);
+  border-radius: 8px;
+  color: var(--proof-ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 /* --------------------------------------------------------------- narrow */
 
 @media (max-width: 900px) {

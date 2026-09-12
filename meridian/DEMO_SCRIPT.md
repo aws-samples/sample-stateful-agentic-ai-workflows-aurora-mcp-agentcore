@@ -1,665 +1,270 @@
-# Meridian Demo Script
+# Meridian L300 chalk talk
 
 ## Build stateful agentic AI workflows with Aurora, MCP, and AgentCore
 
-**Duration:** 60 minutes (≈45 min content + ~15 min distributed Q&A)
-**Format:** Live web demo + optional code walkthrough
-**Tagline:** Plan. Fly. Land.
+**Duration:** 60 minutes: 45 minutes of walkthrough and 15 minutes of distributed discussion.
+**Route:** Concierge → Capability ladder → Recovery desk → System evidence.
+Use Solution briefing for the diagrams and implementation disclosures.
 
----
+> Statefulness lives in durable stores, not database connections.
 
-## The shape of the talk
+The audience should leave able to place an authorization check, a checkpoint,
+and a business transaction at the correct boundary. The five phases are
+configured teaching examples. SQL can express business logic; MCP can expose
+semantic search; Strands can participate in durable workflows. Meridian adds
+those capabilities deliberately so the audience can inspect each addition.
 
-One product, one Aurora cluster, a capability ladder climbed one rung at a time:
+## Timing and whiteboard
 
+| Segment | Minutes | Question for the room |
+| --- | ---: | --- |
+| Concierge and architecture | 5 | What must survive when this process disappears? |
+| SQL, MCP and retrieval | 8 | Which checks belong in the tool, regardless of the model? |
+| Identity, memory and Cedar | 10 | Who is allowed to choose the traveler, budget and confirmation? |
+| Recovery and failure windows | 15 | What happens if the write commits but the response is lost? |
+| Evidence and design tradeoffs | 7 | Which record supports each claim? |
+
+Draw three paths, adding labels as the demonstration reaches them:
+
+```text
+Browser → FastAPI → AgentCore Runtime / Strands → Gateway / Cedar → Lambda → Aurora
+             └──→ LangGraph worker ────────────────────────┘
+                       │
+                       └──→ Aurora checkpoints + execution leases + hold intent
+
+AgentCore Memory: conversation context for the Runtime
+Aurora: traveler facts, authorization, workflow progress and business records
 ```
-Query  →  Tool  →  Intent  →  Trust  →  Durable Workflow
- SQL      MCP     Retrieval  Production   Workflow
-```
 
-Each rung earns its place by fixing the exact thing the previous rung could not do.
-There are **four failures** that drive the story, and rehearsing them is the whole game:
+The browser has a separate HTTP access boundary. The sample uses a shared demo
+principal bound to Alex; it is not a multi-user identity implementation. The
+backend, runtime and Lambda are separate AWS workloads with separate roles.
 
-1. **SQL** can filter rows but cannot own a business operation (compare + FX).
-2. **MCP** gives portable tools but cannot infer intent (mood/vibe).
-3. **Retrieval** understands intent but has no memory and no row-level trust.
-4. **Production** remembers and governs, but plans multi-step work "in its head" — it
-   cannot pause, checkpoint, and resume. That is the **flight-disruption** hand-off to
-   Workflow.
+## Secure preflight
 
-**Timing budget** (leave the rest as distributed Q&A slack — do not fill it):
+Keep Aurora private. Laptop access uses the **HTTPS RDS Data API**, with normal
+certificate verification and IAM authorization. No public PostgreSQL ingress or
+security-group change is required for this path. Keep both local servers bound
+to `127.0.0.1`, including while on public or aircraft Wi-Fi.
 
-| Segment | Target | Running |
-| ------- | -----: | ------: |
-| Setup — the ladder | 4 min | 4 |
-| Phase 1 · SQL | 7 min | 11 |
-| Phase 2 · MCP | 7 min | 18 |
-| Phase 3 · Retrieval | 8 min | 26 |
-| Phase 4 · Production (governance climax) | 12 min | 38 |
-| Coda · Durable Workflow (flight disruption) | 6 min | 44 |
-| Close | 1 min | 45 |
+Use the existing configured Aurora database. Do not run schema initialization,
+seed/reset scripts, deploy commands, or release existing bookings as part of a
+last-minute health check.
 
-Rehearse hitting **minute 45**. The 15 minutes you did not spend is what turns a rushed
-4.75 into a 5.0 — it is airtime for the questions each phase provokes.
-
----
-
-## Key files
-
-| File | Purpose |
-| ---- | ------- |
-| `backend/routers/chat.py` | Live chat for all five phases (`sql_search`, `mcp_search`, `retrieval_*`, `production_search`, `orchestration_workflow`) |
-| `backend/db/schema.sql` | Travel-native Aurora schema (`trip_packages`, travelers, memory tables) |
-| `backend/db/rds_data_client.py` | RDS Data API client + `scoped_session()` (authorization → RLS) |
-| `backend/db/embedding_service.py` | Cohere Embed v4 on Bedrock (1024d) |
-| `backend/mcp/mcp_client.py` | postgres-mcp client (Phase 2) |
-| `backend/mcp/concierge_server.py` | Custom `meridian-concierge` MCP server (domain tools) |
-| `backend/agents/retrieval_03/supervisor.py` | Strands supervisor + specialist agents |
-| `backend/agents/production_04/concierge.py` | Production concierge (identity → authz → RLS read → AgentCore Runtime → RLS write) |
-| `meridian_agentcore/app/MeridianConcierge/main.py` | The Phase 4 agent inside AgentCore Runtime: gateway tools over MCP, AgentCore Memory session, streamed spans |
-| `meridian_agentcore/app/MeridianConcierge/turn_trace.py` | Pins the hold and booking contract onto every `create_courtesy_hold` and `confirm_booking` call and turns Cedar decisions into spans |
-| `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py` | Gateway Lambda: `get_package_details` and the identity-checked, RLS-scoped `create_courtesy_hold` and `confirm_booking` |
-| `meridian_agentcore/agentcore/agentcore.json` | Runtime, gateway targets, and the `MeridianGovernance` Cedar policies (ENFORCE) |
-| `backend/agents/orchestration_05/workflow.py` | LangGraph StateGraph + checkpointer |
-| `frontend/src/showcase/` | Live demo surface (`/showcase`) |
-
----
-
-## Pre-demo setup (~5 minutes before)
-
-**Terminal 1 — backend**
+From `meridian/`, with the existing environment configured:
 
 ```bash
-cd meridian
 source venv/bin/activate
-uvicorn backend.main:app --reload --port 8000
+LANGGRAPH_CHECKPOINT_DSN= LANGGRAPH_AUTO_CHECKPOINT_DSN=false \
+LANGGRAPH_CHECKPOINT_DATA_API=true LANGGRAPH_CHECKPOINT_REQUIRED=true \
+LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP=true \
+uvicorn backend.main:app --host 127.0.0.1 --port 8013
 ```
 
-**Terminal 2 — frontend**
+In a separate terminal, from `meridian/frontend/`:
 
 ```bash
-cd meridian/frontend
-npm run dev
+VITE_API_ORIGIN=http://127.0.0.1:8013 npm run dev -- --host 127.0.0.1 --port 5176 --strictPort
 ```
 
-**Verify**
-
-- http://localhost:5173/showcase loads the live concierge
-- http://localhost:8000/health returns `"status":"healthy"`
-- `GET /api/memory/trv_meridian_demo` returns Alex Morgan profile facts
-- Alex Morgan's context is visible on the landing (Experience) view
-- Click **2 · Capability ladder** in the journey header — the phase pills,
-  Aurora evidence strip, trace panel, and prompt box live there. The landing
-  view has no phase selector and no composer, so every "Select: Phase N"
-  instruction below assumes you are already on this screen.
-- **Warm the cluster:** run one Phase 1 query. Aurora Serverless v2 scales from 0.5 ACU;
-  the first query after idle can take a few seconds or, if the cluster is mid-maintenance,
-  error. Never let the *first* thing the room sees be a cold-start stall.
-- **Know the warm timings.** Phase 1 lands in ~1s and Phase 2 in ~2s, but Phases 3–5
-  take **13–25 seconds** because each turn makes two Bedrock round trips (specialist
-  routing plus the concierge rewrite) on top of embedding, pgvector, and rerank.
-  That is not a stall — narrate the trace spans as they land. Rehearse talking
-  through it rather than standing in silence.
-
-**If Aurora was reset**
+Verify listener ownership before choosing ports. Open
+`http://127.0.0.1:5176/showcase?view=briefing`.
 
 ```bash
-python scripts/init_aurora_schema.py
-python scripts/seed_data.py
+curl --fail http://127.0.0.1:8013/health
+python scripts/test_aurora_connection.py
+python scripts/verify_agentcore.py
 ```
 
-**Optional — provision AgentCore for Phase 4 (@aws/agentcore CLI, Node-based)**
+For this Data API path, health must report `AuroraDataApiSaver` and
+`checkpoint_durable: true`. `MemorySaver` cannot support the restart claim.
+An existing private tunnel and pooled `AsyncPostgresSaver` are another supported
+path; name the backend that actually ran. Do not open port 5432 publicly to fix
+a rehearsal failure.
+
+Check the actual Gateway mode and four tools. An unavailable Runtime, Gateway
+or policy engine is a failed preflight, not permission to demonstrate an
+ungoverned fallback. `status: healthy` alone only proves the application answers.
+
+Use **Projector readability**, then **Present fullscreen**. Rehearse a cold and
+warm request on the current network; quote the timings from this run. Keep the
+architecture diagram open while a slow request completes.
+
+## 1. Concierge and the three state questions
+
+Show Alex's returned traveler context and one trip recommendation. Separate the
+sample travel inventory from the AWS execution. No supplier is contacted and no
+payment is taken.
+
+Ask which state must survive each event:
+
+| Event | Required state | Authoritative record |
+| --- | --- | --- |
+| Another conversational turn | Relevant preferences and prior context | Aurora facts; configured AgentCore Memory session |
+| Worker termination | Execution position and saved task output | Aurora LangGraph checkpoint and pending writes |
+| Retried hold | Original business intent, booking and expiry | `hold_requests`, `bookings`, `booking_lines` |
+
+A conversation ID, a checkpoint ID and a booking ID identify different things.
+A remembered sentence is not a booking receipt.
+
+## 2. Capability ladder in eight minutes
+
+Use one working prompt and carry the boundary prompt forward. Avoid spending
+most of an L300 session on progressively nicer search results.
+
+| Phase | Working prompt | Boundary to discuss |
+| --- | --- | --- |
+| SQL | Show me city trips under $2,000 per traveler. | The configured filter path does not implement comparison plus FX. |
+| MCP | Compare three trip types and convert each price to euros. | A tool protocol does not choose a retrieval strategy. |
+| Retrieval | Find a quiet, romantic wine-country retreat with a private villa. | Ranked candidates do not establish identity, availability or a committed hold. |
+| Production | Recall my Tokyo plan and saved preferences: home airport, food needs, and budget. | Managed conversation context is not the workflow's recovery checkpoint. |
+
+Trace: query embedding → independent semantic and lexical candidates → fusion
+and reranking → returned packages. Explain that the query and corpus must use
+the same embedding space. Quote returned rankings, not a promised fixed order.
+A lexical fallback must be labeled as such; it does not prove semantic search.
+
+Source: `backend/routers/chat.py`, `backend/agents/retrieval_03/search_agent.py`,
+`backend/db/embedding_service.py` and `backend/mcp/concierge_server.py`.
+
+## 3. Identity, memory and Cedar
+
+Draw the authorization order:
+
+```text
+HTTP caller → authorized traveler claim
+AWS workload → traveler_identity_bindings → restricted role + RLS → scoped SQL
+Runtime/worker → Gateway policy decision → Lambda grant + RLS → atomic write
+```
+
+Run the RLS probe and inspect its actual positive and negative controls. Do not
+memorize row counts: prior demonstrations can add records. Explain that RLS
+protects the queries executed under the restricted role; it is not a universal
+claim about every administrative principal or every application endpoint.
+
+For the governed hold, show the arguments pinned by application code: traveler,
+confirmation, party, budget and journey. Cedar evaluates the supplied context;
+it does not discover human intent or independently read the saved budget.
+
+| Demonstration | Expected evidence |
+| --- | --- |
+| Typed hold without confirmation | Actual Gateway policy refusal; no booking receipt |
+| Confirmed hold within configured limits | Policy permission followed by a persisted booking receipt |
+| Confirmed request over budget or over six travelers | Policy refusal before the target writes |
+| IAM or traveler-grant failure | Access failure at that boundary, not a fabricated Cedar decision |
+
+All clicked holds now use the governed path irrespective of the UI phase.
+The HTTP phase number selects a demonstration view, not a weaker authorization
+path. The Phase 5 worker uses the same Gateway hold tool with its persisted
+intent and current execution lease.
+
+The recovery demonstration treats starting/resuming disruption recovery as a
+request for an automatic 15-minute courtesy hold on the leading eligible option.
+The UI says this explicitly. A separate Concierge confirmation turns that hold
+into a confirmed catalog booking. For a real travel product, persist approval of
+exact terms and bind it to the verified end user before committing a purchase.
+
+Source: `backend/http_auth.py`, `backend/db/rds_data_client.py`,
+`meridian_agentcore/app/MeridianConcierge/turn_trace.py`, and
+`meridian_agentcore/agentcore/agentcore.json`.
+
+### Optional discussion: Cedar plus Dogwood
+
+Cedar is configured today. Dogwood is an **assessed extension**, not enabled or
+validated in this deployment. Proposed rule: a hold must follow a successful
+lookup of the same package within five minutes in the same authenticated policy
+session. That is an ordering condition, not proof of approval or fresh inventory.
+
+Persist and propagate the policy session; do not assume the Runtime and backend
+share history just because they reuse a string. Replace the existing hold permit
+with the combined condition so the earlier permit cannot still admit the call.
+Test an isolated engine; do not weaken the live Gateway to `LOG_ONLY`.
+See [the integration assessment](docs/DOGWOOD_POLICY_ASSESSMENT.md).
+
+## 4. Recovery: spend time at the failure windows
+
+Run the canonical disruption prompt:
+
+> My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.
+
+The recovery path is:
+
+```text
+classify → search → availability → prepare_hold → hold → synthesize
+                                     │            │
+                           checkpoint intent      Gateway → Aurora transaction
+                           request + booking IDs
+```
+
+Meridian pauses this recovery after `search` by default. Open Recovery desk,
+inspect the shortlist, and explain **Resume and request hold** before selecting
+it. The saved intent must be checkpointed before the hold tool executes.
+
+| Failure window | Recovery behavior to inspect | Evidence required |
+| --- | --- | --- |
+| Before the business write | Resume from the saved graph position after lease takeover | Same thread, pending node and successful replacement execution |
+| Write committed, response lost | Retry the same intent; Aurora returns the existing booking | Same request ID, booking ID and original expiry; one booking for that request |
+| Checkpoint saved after the hold | Continue remaining nodes without placing another hold | Saved hold channel and persisted booking |
+| Competing worker while lease is live | Refuse the second execution | HTTP 409 and one running execution |
+| Policy refusal or target failure | Do not invent a hold | Correct boundary/error plus actual booking readback |
+
+A checkpoint and a Gateway side effect are **not one distributed transaction**.
+The design accepts retried execution and makes the business write idempotent.
+Do not call this exactly-once execution.
+
+### Two different rehearsals
+
+**Browser pause/restart:** stop and restart the backend without clearing the
+browser, restore the same journey, then resume. This proves that execution state
+survives a replacement process when a durable saver is active. A normal shutdown
+is not the same failure as SIGKILL.
+
+**Hard process death after the hold:** run `python scripts/kill_and_resume_demo.py`
+in the configured rehearsal environment. It creates temporary demo records,
+commits the hold, kills its own worker, waits for lease expiry, resumes, checks
+the receipt and cleans up its records. This verifies a hold surviving a crash;
+it does not by itself inject a lost Gateway response before checkpointing. Do
+not describe it as that stronger failure test.
+
+On System evidence inspect the successful execution ID, `resumed_from_checkpoint`,
+worker IDs, hold creator, booking ID, expiry and observation time. A second
+execution alone does not prove a successful resume. One displayed hold does not
+prove all retry schedules are safe.
+
+Source: `backend/agents/orchestration_05/workflow.py`, `hold_intent.py`,
+`execution.py`, `backend/db/journey_store.py`, and
+`scripts/migrations/008_hold_request_identity.sql`.
+
+## 5. Close with tradeoffs and evidence
+
+- Short authorization transactions commit before slow model calls; writes
+  reauthorize. Scope is transaction-local, not a long-lived database session.
+- Aurora owns capacity, uniqueness and replay. Policy owns admission to the
+  tool. AgentCore Memory supplies context. None replaces the others.
+- `AuroraDataApiSaver` is a sample adapter with bounded blob windows and explicit
+  compatibility limits, including no metadata filtering in `alist`. Discuss
+  pooled PostgreSQL checkpointing when throughput and adapter maintenance matter.
+- The sample still needs production choices for end-user identity, approval
+  records, rate limits, load behavior, retention and supplier/payment integration.
+- Live evidence must be from the build and environment being shown. A historical
+  successful rehearsal is useful backup material, labeled with its date.
+
+If a refresh fails, System evidence identifies the retained observation. If the
+network fails, continue with Solution briefing and source. Do not infer success
+from a completed-looking screen or silently change the network or policy boundary.
+
+## Validation before sharing
 
 ```bash
-npm install -g @aws/agentcore
-cd meridian_agentcore
-agentcore validate --json
-agentcore package --runtime MeridianConcierge
-agentcore deploy -y
-cd .. && python scripts/sync_agentcore_env.py --write
+# From meridian/: offline tests cannot make unmocked network connections.
+venv/bin/python -m pytest -m "not database"
+venv/bin/ruff check backend scripts tests
+
+# From meridian/frontend/:
+npm run lint
+npm run test:run
+npm run build
 ```
 
-Without deployed AgentCore Runtime/Gateway/Memory, Phase 4 surfaces an explicit
-"AgentCore platform not configured" message instead of pretending to run Production mode.
-
-**Required for the Phase 5 durability proof — start the checkpoint tunnel first**
-
-The "prove durable state" moment (Phase 5) needs Aurora-backed checkpoints, not
-`MemorySaver`. This cannot be stood up mid-talk. Before going live, follow
-`docs/OPERATIONS.md` §2 "Start the durable stack": run
-`scripts/start_checkpoint_tunnel.sh` in its own terminal (forwards local
-`15432` → Aurora `5432`), then launch the backend with
-`LANGGRAPH_CHECKPOINT_REQUIRED=true` and `LANGGRAPH_DEMO_INTERRUPT_AFTER=search`.
-Confirm `/health` reports `"checkpoint_backend": "PostgresSaver (Aurora · pooled)"`
-and `"checkpoint_durable": true`. If it says `MemorySaver`, the resume finale is
-not durable — fix it before the room sees Phase 5.
-
----
-
-## Setup — the ladder (4 min)
-
-**Select:** `Phase 1 · SQL` (start clean).
-
-> "Meridian is an agentic **travel concierge** — not a chatbot bolted onto a search box.
-> Same Aurora cluster, same Strands `@tool` pattern, the whole way up. We climb one ladder:
-> **Query → Tool → Intent → Trust → Durable Workflow**. Watch each rung fail at exactly one
-> thing, and watch the next rung fix it."
-
-Point to the five phase pills (grouped as one ladder):
-
-| Phase | Capability | Mode | Proof point |
-| ----- | ---------- | ---- | ----------- |
-| 1 | Query | SQL | SQL executed |
-| 2 | Tool | MCP | MCP tool invoked |
-| 3 | Intent | Retrieval | pgvector + rerank |
-| 4 | Trust | Production | Workload grant + RLS |
-| 5 | Durable Workflow | Workflow | Checkpoint written |
-
-> "Phases 1–3 build the retrieval stack. Phase 4 makes it trustworthy — it remembers Alex
-> Morgan and physically cannot read anyone else's data. Phase 5 makes multi-step work
-> survivable: a flight gets canceled mid-plan, and the workflow picks up where it left off."
-
----
-
-## Phase 1 · SQL (7 min)
-
-**Select:** `Phase 1 · SQL`
-
-> "The smallest agent that talks to Aurora: one Strands `Agent`, a few `@tool` methods,
-> direct RDS Data API. Fast and debuggable — it owns exact filters, nothing more."
-
-**Works:**
-
-| Query | What happens |
-| ----- | ------------ |
-| `Show me city trips under $2,000 per traveler.` | Trip-type + per-traveler price filter on `trip_packages` |
-| `Show me beach trips under $2,500 per traveler.` | Same filter shape |
-
-Point to the trace: RDS connection → parameterized filter SQL → package rows.
-
-**First failure (rehearse this):**
-
-| Query | Why it fails |
-| ----- | ------------ |
-| `Compare three trip types and convert each price to euros.` | SQL can return rows, but **comparison + per-package currency conversion is a business operation**, not a `WHERE` clause. |
-
-> **Pause.** "The user didn't ask a bad SQL question. They asked for an *operation* SQL
-> doesn't own. Who owns reusable tools? That's Phase 2."
-
-### Optional code walkthrough
-- `backend/routers/chat.py` → `sql_search`
-- `backend/search_utils.py` → `parse_search_query`, `execute_keyword_search`
-- IDE: `backend/agents/sql_01/agent.py` — `Agent(tools=[...])`, five `@tool` methods
-
----
-
-## Phase 2 · MCP (7 min)
-
-**Select:** `Phase 2 · MCP`
-
-> "Phase 2 changes the **interface**, not the intelligence. The agent discovers and invokes
-> reusable MCP tools: a generic `postgres-mcp-server` for SQL transport, plus our own
-> `meridian-concierge` server for domain operations SQL can't express."
-
-**Works:**
-
-| Query | Notes |
-| ----- | ----- |
-| `Compare three trip types and convert each price to euros.` | `compare_packages` + one `currency_convert` call per package — the exact operation SQL couldn't own |
-| `What is the off-season price range for Tokyo trips in November?` | `seasonal_price_band` (low/median/high) |
-
-Point back to Phase 1: **same prompt, now it lands** — because it's a tool contract now.
-
-**Second failure (rehearse this):**
-
-| Query | Why it fails |
-| ----- | ------------ |
-| `Find a quiet, romantic wine-country retreat with a private villa.` | Mood/intent. Better tools, richer domain logic — the **intent gap is untouched**. |
-
-> "The interface got portable and IAM-authed. The intelligence didn't. Matching a *mood*
-> needs embeddings, not tools. That's Phase 3."
-
-### Custom MCP memory server (sidebar, only if time — skip to protect minute 45)
-The abstract calls out *"MCP servers for contextual memory."* We ship two servers:
-
-| Server | Source | Tools |
-| ------ | ------ | ----- |
-| `awslabs.postgres-mcp-server` | public, via `uvx` | `connect_to_database`, `run_query` |
-| `meridian-memory` | this repo | `recall_traveler_profile`, `recall_preferences`, `recall_recent_turns`, `semantic_recall_interactions`, `persist_turn`, `persist_preference` |
-
-Every memory-server tool opens `db.scoped_session(traveler_id, agent_type='memory_agent')`:
-it authorizes the workload against `traveler_identity_bindings` **before** RLS scope is set.
-
-### Optional code walkthrough
-- `backend/mcp/mcp_client.py` — pins `awslabs.postgres-mcp-server@1.0.9`
-- `backend/mcp/concierge_server.py` — the custom FastMCP domain server
-- IDE: `backend/agents/mcp_02/agent.py` — `MCPClient` + runtime tool discovery
-
----
-
-## Phase 3 · Retrieval (8 min)
-
-**Select:** `Phase 3 · Retrieval`
-
-**Open by typing the Phase-2 failure a third time, then narrate the trace while it runs**
-(~15–20s: embed → pgvector + tsvector → rerank). Do not stand in silence.
-
-> `Find a quiet, romantic wine-country retreat with a private villa.`
-> → Tuscany Wine & Wellness, Amalfi Coast Villa Week, Douro / Tokyo Ryokan — each with a
-> clear rank label.
-
-**Let it land.** Then explain what changed:
-
-```
-query ──► embed (Cohere Embed v4, 1024d)
-trip_packages ──► pgvector cosine + tsvector ts_rank ──► Cohere Rerank 3.5 → top K
-```
-
-1. **Embed** — Cohere Embed v4, 1024 dimensions.
-2. **Hybrid candidates** — pgvector cosine on `embedding` + tsvector on `search_vector`.
-3. **Rerank** — Cohere Rerank 3.5 re-scores against the original query → top K.
-4. **Supervisor + specialists** — a Strands `RetrievalAgent` delegates to `SearchAgent`,
-   `PackageAgent`, `BookingAgent`. Different specialist, different tool, visible in the trace.
-
-**Demo:**
-
-| Query | Expected |
-| ----- | -------- |
-| `Find a quiet, romantic wine-country retreat with a private villa.` | The intent match MCP couldn't produce |
-| `Family-friendly beach resort with snorkeling` | Rerank fixes order (Costa del Sol, Cancún, Maldives) |
-
-**Third failure — the honest one (rehearse this, do not apologize):**
-
-| Query | What happens |
-| ----- | ------------ |
-| `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` | Zero products. A reasoning span states: *"I'm pure retrieval — no memory of prior turns. That's the next phase."* |
-
-> "It understands what you *mean*. It has no idea who *you* are, and it can't remember a
-> thing. And we can't ship this reading any traveler's data. That's Phase 4."
-
-### Optional code walkthrough
-- `backend/routers/chat.py` → `retrieval_supervisor_search`
-- `backend/db/embedding_service.py` → `cohere.embed-v4:0`, `output_dimension: 1024`
-- IDE: `backend/agents/retrieval_03/supervisor.py` + `search_agent.py`
-
----
-
-## Phase 4 · Production — the governance climax (12 min)
-
-**Select:** `Phase 4 · Production` (or **Chat as Alex Morgan → Phase 4** on the persona card)
-
-> "Retrieval was intelligence. Production is **trust plus memory**. We authenticate the
-> workload, authorize it for Alex, then let Aurora RLS scope every query. Alex Morgan flies
-> from JFK, party of two, shellfish allergy, boutique over chain, Marriott Bonvoy Platinum.
-> None of that is in the prompt — it's in Aurora."
-
-### Beat 1 — memory lands (the payoff to Phase 3's honest failure)
-
-1. **Seed the thread:** `Find Tokyo trips that fit my saved preferences.`
-   The reply weaves in the shellfish allergy, JFK no-red-eyes, boutique preference — all
-   pulled from Aurora **before** answering. None of it was typed.
-2. **The recall that failed a phase ago now works:** `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.`
-   `recall_session_context` + `recall_similar_interactions` return the Tokyo thread. *Point
-   back to the Phase-3 failure.*
-
-Point to the memory spans: `recall_session_context`, `recall_traveler_preferences`,
-`recall_similar_interactions`, `persist_turn`.
-
-> "Two memory tiers. **AgentCore Memory** is the managed session layer: the agent inside
-> AgentCore Runtime restores its conversation from it and writes each turn back through the
-> Strands session manager. **Aurora** is the durable system of record: preferences,
-> interaction embeddings for semantic recall over pgvector, RLS-scoped per traveler. Reads
-> run in one short transaction that authorizes the workload for Alex, pins Alex, and steps
-> down to a least-privilege role. We commit before invoking the Runtime. The Runtime
-> discovers its tools from AgentCore Gateway over MCP, signed with its own role, and every
-> call passes the gateway's Cedar policy before any Lambda runs. A separate short write
-> transaction then reauthorizes, persists, and audits."
-
-Point to the runtime spans: `AgentCore Gateway · tools/list` (four tools, SigV4),
-`AgentCore Memory · session restored`, `tools/call → semantic_trip_search`, and
-`AgentCore Runtime · turn complete` with the trace id and the CloudWatch link.
-
-### Beat 2 — the governance probe (this is the climax)
-
-Open the **RLS tab** and hit **Re-run probe**.
-
-The probe proves the full chain, in order:
-
-1. **Authenticated workload** — the AgentCore/STS subject.
-2. **Traveler grant** — `ALLOW · Alex Morgan` from `traveler_identity_bindings`.
-3. **Negative control** — the same workload gets `DENY · Jordan Lee` (no active binding).
-4. **RLS collapse** — the same `COUNT(*)` runs scoped vs unscoped; `traveler_preferences`
-   drops from **22 of 22** to **17 of 22**. The bar animates the rows disappearing.
-
-> **20-sec narration:** "First, this workload is authenticated. Second, Aurora's binding
-> table lets it claim Alex and *denies* the same workload when it claims Jordan — before any
-> RLS scope is set, and both decisions are audited. Only then do we set the traveler scope.
-> Now watch the same query collapse from all preference rows to Alex's rows."
-
-**The teaching beat (point at 17 of 22):** *"Even if the LLM writes a query that forgets to
-filter, it physically cannot leak another traveler's data."*
-
-**State the distinction explicitly:** *"RLS does not authenticate Alex. It enforces the row
-scope the binding made legitimate for this workload. This demo authorizes a workload — a
-shared hosted app would also verify the end-user token and bind that subject. This demo does
-not authenticate Alex as a human."*
-
-**Why the step-down role matters (the reusable lesson):** *"The Data API connects as the
-cluster master, which owns these tables and isn't subject to RLS. So inside the transaction
-we `SET LOCAL ROLE` to a role that owns nothing and has no special attributes — subject to
-the policy by construction. The best practice isn't juggling owner/FORCE/superuser flags;
-it's: run your scoped queries as a role that's always covered."*
-
-> See PRESENTER_GUIDE.md for the current Q&A: missing traveler scope matches no
-> traveler rows; compare the actual scoped counts and verify the restricted role.
-
-### Beat 2b — the governed hold (policy decides before code runs)
-
-Three clicks, one typed prompt, three Cedar decisions.
-
-1. **Permit.** Open a recommended trip and click **Hold**. The click is the confirmation.
-   The trace shows `AgentCore Gateway · tools/call → create_courtesy_hold` with the pinned
-   arguments (`travelerConfirmed: true`, the budget ceiling in cents, the journey reference),
-   then `create_courtesy_hold · result` carrying `cedar_decision: allow`,
-   `cedar_policy: meridian_hold_governance`, `policy_mode: ENFORCE`, the Lambda's own
-   workload subject and its `traveler_grant: allow`, then the hold receipt with a 12-hour
-   expiry. The read tools carry the same three fields with `meridian_read_tools`.
-2. **Deny.** Type `Hold the first option for two travelers now.` The agent still attempts
-   the tool, but nothing confirmed it, so the gateway's Cedar engine denies by default. The
-   span reads **Hold refused by Cedar policy · Denied by policy** with `cedar_decision: deny`
-   and `cedar_policy: meridian_hold_governance`, names the failed condition, and the reply
-   tells Alex the Hold button is the confirmation.
-3. **Bring it home.** Open the held trip (from the Recovery desk, **Take it back to Alex**
-   brings the workflow's hold into the concierge) and click **Confirm this trip for Alex**.
-   The dialog restates the package, duration, party, total and saved budget; **Yes, confirm
-   this trip** is the confirmation. The trace shows `tools/call → confirm_booking` with
-   `travelerConfirmed: true` and the total Aurora holds, then `confirm_booking · result` with
-   `cedar_decision: allow` and `cedar_policy: meridian_booking_governance`, and the receipt
-   becomes **Confirmed booking**: same booking id, status `confirmed`, catalog inventory in
-   the demo database, no supplier, no payment.
-
-> "The model proposed both holds. It could not confirm either: the runtime pins the
-> confirmation, the traveler id and the budget ceiling from the request the backend
-> authorized. Cedar sees those arguments before the Lambda runs. One permit names the four
-> hold conditions and one names the two booking conditions; nothing else permits either
-> write, so everything else is denied by default. The Lambda then does what our backend
-> does: proves its own grant, sets the RLS scope, steps down, and calls the same idempotent
-> hold or confirm function. Same governance chain, one more hop."
-
-Optional second deny, the budget rule: Alex's saved `budget_cap` is $3,200 per person, so the
-ceiling for two travelers is $6,400. Ask for `Tokyo Ryokan & Onsen Slow Week` ($3,899 per
-person) and click **Hold**. Cedar refuses it and the span says the $7,798 total exceeds the
-saved budget ceiling. The same click on the Indie Neighborhood Walk ($1,599) is permitted.
-
-### Beat 3 — the multi-step boundary (sets up the Coda)
-
-Click the third Phase 4 pill (the disruption prompt):
-
-> `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`
-
-Production recalls Alex, authorizes, and finds candidate trips — then **stops and refuses to
-fake it.** The trace shows a **"Checkpointed workflow required"** span and the reply says it
-won't collapse two dependent steps (rework the itinerary, then check package-duration
-availability for the best three options) into one fluent paragraph. This is Phase 4's honest break: it *recognizes* the
-multi-step boundary rather than pretending both steps completed atomically.
-
-> "It recalled everything about Alex and found alternatives — then it stopped. A canceled
-> flight is two dependent steps: rework the trip, then check duration inventory for the best three options.
-> Production won't pretend it ran both inside one turn. When a booking pipeline hangs off step
-> 1 finishing before step 2 runs, you want that explicit, checkpointed, and resumable. That's
-> Phase 5."
-
-The "Run this in Workflow" follow-up is the hand-off — the boundary is **detected in the
-backend and rendered on screen**, not narrated. Click into Phase 5 and run the same prompt.
-
-### Optional code walkthrough
-- `backend/agents/production_04/concierge.py` → identity → `scoped_session(authorization=…)` → memory → `invoke_turn` → `persist_turn`
-- `meridian_agentcore/app/MeridianConcierge/main.py` → `MCPClient` with SigV4, `AgentCoreMemorySessionManager`, the SSE events
-- `meridian_agentcore/app/MeridianConcierge/turn_trace.py` → `_pin_arguments`, `friendly_denial`, `hold_settled`, `booking_settled`
-- `meridian_agentcore/agentcore/agentcore.json` → the `MeridianGovernance` policies (one permit for reads, one with four conditions for the hold, one with two conditions for the booking)
-- `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py` → `_authorize`, `_scope`, `create_courtesy_hold`, `confirm_booking`
-- `backend/db/rds_data_client.py` → `check_traveler_authorization`, `scoped_session`
-- `examples/rls_for_agents.sql` + `examples/rls_app_role.sql` → the policies and the app role
-
----
-
-## Coda · Durable Workflow — the flight-disruption replan (6 min)
-
-**Select:** `Phase 5 · Workflow`
-
-> "Strands picks tools when the LLM picks the call. LangGraph owns control flow when **we**
-> want it explicit, branchable, and resumable. Same Aurora, same search and memory functions
-> — now through named, checkpointed nodes."
-
-```
-            ┌─→ search ──────────┐   (intent == "plan": search → availability)
-classify ──┼─→ availability ────┤
-            └─→ memory_recall ───┤
-                                synthesize → END
-```
-
-**Select Run to checkpoint.** It runs the disruption prompt Production handed off:
-
-> `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`
-
-Classify routes it to **plan**. `search` finds matching Tokyo trips and saves a
-checkpoint. With the demo pause enabled, the workflow stops here. Select
-**Continue at recovery desk** to carry the same thread and shortlist into the
-traveler view, then **Resume and verify** to check package-duration inventory
-and continue to `synthesize`. Changing desks does not start another search.
-
-In the trace, point to:
-- `Workflow node: classify → plan`
-- `Workflow node: search` → `Checkpoint · …put`
-- `Workflow node: availability` (step 2 of 2) → `Checkpoint · …put`
-- `Workflow node: hold` → `AgentCore Gateway · MeridianHolds Lambda · Aurora` with
-  `cedar_decision: allow`, the Lambda's workload subject, and the hold id. The workflow
-  places its hold through the same gateway tool and Cedar policy as the concierge,
-  passing its checkpointed request id and its execution lease, so a restarted worker
-  replays the same booking instead of taking a second one.
-- `Workflow node: synthesize`
-
-### Prove durable state (this protects the 5.0)
-
-Run the backend through `scripts/start_checkpoint_tunnel.sh` with
-`LANGGRAPH_CHECKPOINT_REQUIRED=true` and
-`LANGGRAPH_DEMO_INTERRUPT_AFTER=search`.
-
-1. Run the disruption prompt. The graph pauses after `search`; point to
-   `PostgresSaver (Aurora · pooled)` and `next=availability`.
-2. Stop and restart the backend. Do not clear the browser.
-3. Select **Continue at recovery desk**, then **Resume and verify**.
-4. Point to `Workflow resumed from checkpoint`: the same `thread_id` continues
-   at `availability`, backed by Aurora's `checkpoints`, `checkpoint_blobs`, and
-   `checkpoint_writes` tables.
-
-> "The Data API remains connectionless, but every turn reads and writes durable state in
-> Aurora. AgentCore Memory carries conversational context across turns. When execution
-> becomes multi-step, LangGraph externalizes workflow state through PostgresSaver into
-> Aurora. We terminated the worker, restarted it, and resumed from the last committed node."
-
-> **Transport, one sentence:** "Domain SQL uses the IAM-authorized Data API with database
-> credentials in Secrets Manager. Durable, high-frequency checkpoints use a bounded
-> PostgreSQL pool. MCP defines the tool contract, not the database transport."
-
-**If asked "so did it rebook the flight?"** Be candid: *"No — it composes the durable
-workflow a production system hangs the rebooking step on. The agent can plan it in one turn;
-the graph makes that plan survivable and auditable."*
-
-### Optional code walkthrough
-- `backend/agents/orchestration_05/workflow.py` → `StateGraph`, conditional edges, `_checkpoint_activity` (names the real store)
-- **Env:** `LANGGRAPH_CHECKPOINT_HOST=127.0.0.1`, `LANGGRAPH_CHECKPOINT_PORT=15432`,
-  `LANGGRAPH_CHECKPOINT_REQUIRED=true` → shared pooled PostgresSaver. `MemorySaver` is
-  local-only degraded mode.
-
----
-
-## Close and Open for Questions (1 min)
-
-After reviewing the hold receipt, select **View system evidence**. Show what
-this run actually recorded. Then select **Session takeaways**.
-
-The closing headline is **A canceled flight. A clear way forward.**
-
-> “Alex needs relevant options, preferences carried into the plan, and time
-> to decide. Aurora keeps the search, traveler context, checkpoints, and holds
-> in one database. AgentCore runs the concierge with session memory and workload
-> identity; traveler grants and Aurora RLS control access. MCP connects the tools.
-> LangGraph resumes the saved work. Together, those patterns give the traveler
-> a clear next step.”
-
-Select **Open for questions**.
-
-> “What would you build for your customers? From disrupted trips to delayed
-> orders, which customer journey needs a better way forward?”
-
-Leave the Q&A screen up. **Explore the live evidence** returns to the same
-journey for deeper questions; **Build from the sample** opens the repository.
-These audience controls work in fullscreen. Presenter preparation notes stay
-hidden. See [PRESENTER_GUIDE.md](docs/PRESENTER_GUIDE.md) for the handoff and the
-distinct 15-minute workflow / 12-hour direct hold policies.
-
-### When teams use each pattern
-
-| Phase | Good for |
-| ----- | -------- |
-| 1 · SQL | MVPs, internal tools, deterministic reporting |
-| 2 · MCP | Standardizing DB/tool access across agents and frameworks |
-| 3 · Retrieval | Customer-facing natural-language search at scale |
-| 4 · Production | Returning users, preferences, compliance, per-turn audit |
-| 5 · Workflow | Long-running, branching, checkpointed, resumable work |
-
----
-
-## Query cheat sheet
-
-### Phase 1 — works / breaks
-| Works | Breaks |
-| ----- | ------ |
-| Show me city trips under $2,000 per traveler. | Compare three trip types and convert each price to euros. |
-| Show me beach trips under $2,500 per traveler. | |
-
-### Phase 2 — works / breaks
-| Works | Breaks |
-| ----- | ------ |
-| Compare three trip types and convert each price to euros. | Find a quiet, romantic wine-country retreat with a private villa. |
-| What is the off-season price range for Tokyo trips in November? | |
-
-### Phase 3 — works / breaks
-| Works | Breaks (honest, on purpose) |
-| ----- | --------------------------- |
-| Find a quiet, romantic wine-country retreat with a private villa. | Recall my Tokyo plan and saved preferences: home airport, food needs, and budget. |
-| Family-friendly beach resort with snorkeling | |
-
-### Phase 4 — as Alex Morgan
-- Find Tokyo trips that fit my saved preferences.
-- Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.
-- **Governance probe:** RLS tab → Re-run (ALLOW Alex · DENY Jordan · 17 of 22).
-- **Governed hold, permit:** click **Hold** on a recommended trip. The trace shows `create_courtesy_hold` through the gateway, the Cedar allow, the Lambda's own traveler grant, and the hold receipt.
-- **Governed hold, deny:** `Hold the first option for two travelers now.` typed in chat. No click means no confirmation; Cedar denies by default and the reply says why.
-- **Governed booking, permit:** open the held trip (or **Take it back to Alex** on the Recovery desk) → **Confirm this trip for Alex** → **Yes, confirm this trip**. The trace shows `confirm_booking` through the gateway, the Cedar allow under `meridian_booking_governance`, and the receipt reads **Confirmed booking**.
-- **Hand-off:** My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.
-
-### Phase 5 — Workflow
-- My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options. *(plan → search → availability)*
-- Which trip lengths are still available for Amalfi Coast Villa Week? *(availability)*
-- Recall my Tokyo plan and saved preferences: home airport, food needs, and budget. *(memory_recall)*
-
----
-
-## curl quick tests
-
-```bash
-# Health
-curl -s http://localhost:8000/health | jq .
-
-# Memory profile
-curl -s http://localhost:8000/api/memory/trv_meridian_demo | jq .
-
-# Phase 1 — filter
-curl -s -X POST http://localhost:8000/api/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"Show me city trips under $2,000 per traveler.","phase":1}' | jq '.message, (.products | length)'
-
-# Phase 3 — semantic
-curl -s -X POST http://localhost:8000/api/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"Find a quiet, romantic wine-country retreat with a private villa.","phase":3}' | jq '.message, (.products | length)'
-
-# Phase 4 — memory + search
-curl -s -X POST http://localhost:8000/api/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"Tokyo trip for two in October","phase":4,"customer_id":"trv_meridian_demo"}' \
-  | jq '.message, .conversation_id, (.products | length), (.memory_facts | length)'
-
-# Phase 5 — flight-disruption replan (plan → search → availability)
-curl -s -X POST http://localhost:8000/api/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.","phase":5,"customer_id":"trv_meridian_demo"}' \
-  | jq '.message, (.activities[].title)'
-```
-
----
-
-## Troubleshooting
-
-**Backend not responding**
-
-```bash
-curl -s http://localhost:8000/health
-uvicorn backend.main:app --reload --port 8000
-```
-
-**`InternalServerErrorException` from the Data API on every query**
-
-- The Serverless v2 cluster is scaling from idle or is mid-maintenance (`status: upgrading`).
-  Check with `aws rds describe-db-clusters --db-cluster-identifier meridian-demo --query 'DBClusters[0].Status'`.
-  Wait for `available`; warm it with one Phase 1 query before the talk.
-
-**Phase 3/4 slow on first query**
-
-- First embedding call to Bedrock adds ~1–3s. Normal for cold path.
-
-**`ValidationException: invalid model identifier` (embeddings)**
-
-- Set `EMBEDDING_MODEL=cohere.embed-v4:0` and `EMBEDDING_DIMENSION=1024` in `.env`.
-
-**Phase 5 checkpoint span reads MemorySaver**
-
-- Do not present this as the durable proof. Start `scripts/start_checkpoint_tunnel.sh`,
-  restart the backend with `LANGGRAPH_CHECKPOINT_REQUIRED=true`, and verify `/health`
-  reports `"checkpoint_durable": true`.
-
-**Phase 4: "error loading memory"**
-
-- `python scripts/seed_data.py`; verify `travelers` row `trv_meridian_demo` exists.
-
-**Frontend shows Offline**
-
-- Backend must be on port 8000; CORS allows localhost:5173.
-
----
-
-## Demo traveler reference
-
-| Field | Value |
-| ----- | ----- |
-| ID | `trv_meridian_demo` |
-| Name | Alex Morgan |
-| Home | JFK |
-| Party | 2 |
-| Goal | Tokyo culture trip — Oct 12–19 |
-| Dietary | Shellfish allergy |
-| Budget | ~$2k–3.5k per person |
-| Negative control | Jordan Lee (no binding → DENY) |
-
----
-
-## Resources
-
-- [README.md](README.md) — setup and architecture
-- [docs/PRESENTER_GUIDE.md](docs/PRESENTER_GUIDE.md) — full narration + code reference + Q&A
-- [backend/db/schema.sql](backend/db/schema.sql) — full DDL
-- [Strands Agents](https://github.com/strands-agents/sdk-python)
-- [Amazon Bedrock — Cohere Embed v4](https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed-v4.html)
-- [Model Context Protocol](https://modelcontextprotocol.io/)
+Live database tests and the process-death rehearsal are separate proof. Run them
+only against the intended rehearsal inventory and retain their actual results.

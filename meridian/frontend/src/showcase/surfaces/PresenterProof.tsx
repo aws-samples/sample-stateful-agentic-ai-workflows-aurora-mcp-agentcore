@@ -175,6 +175,11 @@ export function PresenterProof({
         </div>
       </header>
 
+      {error && <p className="mds-proof-read-error" role="alert">
+        Re-read failed. Showing the last successful observation
+        {document.observed_at ? ` (${shortTime(document.observed_at)})` : ''}. {error}
+      </p>}
+
       <div className="mds-proof-flow">
         <WorkerCard now={now} role="Original worker" execution={first} fallback="none yet" />
         <span className="mds-proof-arrow" aria-hidden="true">

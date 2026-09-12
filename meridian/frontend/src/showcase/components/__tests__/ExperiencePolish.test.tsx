@@ -20,7 +20,9 @@ import { ChatTranscript } from '../ChatTranscript';
 import { JourneyPanel } from '../JourneyPanel';
 import { RecoveryRouteMap } from '../RecoveryRouteMap';
 import { RecoveryWorkspace } from '../RecoveryWorkspace';
+import type { JourneyDocument } from '../../journey/types';
 import { TripResultCardContent } from '../TripResultCardContent';
+import { TripDetailDrawer } from '../TripDetailDrawer';
 import { SessionClose } from '../../surfaces/SessionClose';
 
 function makeState(
@@ -752,17 +754,74 @@ describe('Experience presentation polish', () => {
     expect(summary?.parentElement).toHaveAttribute('open');
 
     expect(
-      screen.getAllByRole('button', { name: 'Resume and verify' }),
+      screen.getAllByRole('button', { name: 'Resume and request hold' }),
     ).toHaveLength(1);
     expect(
       screen.queryByRole('button', { name: 'Resume recovery' }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Resume and verify' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Resume and request hold' }));
     expect(submitPrompt).toHaveBeenCalledWith(
       'Resume workflow from checkpoint',
       5,
     );
     expect(screen.queryByText('ALEX')).not.toBeInTheDocument();
+  });
+
+  it('requires a matching persisted receipt before handing a hold to Concierge', () => {
+    const onOpenProof = vi.fn();
+    const onOpenConcierge = vi.fn();
+    const state = makeState({
+      conversationId: 'current-thread',
+      traceSpans: [{
+        id: 'hold', name: 'Courtesy hold', category: 'orchestration',
+        type: 'tool_call', status: 'ok', latencyMs: 1, component: 'Gateway',
+        fields: [{ label: 'hold_id', value: 'HLD-current' }],
+      }],
+    });
+    const { rerender } = render(<RecoveryWorkspace state={state}
+      onOpenProof={onOpenProof} onOpenConcierge={onOpenConcierge} />);
+    expect(screen.queryByRole('button', { name: 'Take it back to Alex' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Read booking receipt' }));
+    expect(onOpenProof).toHaveBeenCalledOnce();
+
+    const hold = {
+      status: 'held', booking_id: 'HLD-current', package_id: 'CTY-002',
+      duration: '3 nights', travelers_count: 2, unit_price: '2000.00',
+      total_amount: '4000.00', hold_expires_at: '2099-01-01T00:00:00Z',
+    };
+    const document = { active_thread_id: 'different-thread', hold } as JourneyDocument;
+    rerender(<RecoveryWorkspace state={state} journeyDocument={document}
+      onOpenProof={onOpenProof} onOpenConcierge={onOpenConcierge} />);
+    expect(screen.queryByRole('button', { name: 'Take it back to Alex' })).not.toBeInTheDocument();
+
+    rerender(<RecoveryWorkspace state={state}
+      journeyDocument={{ ...document, active_thread_id: 'current-thread' }}
+      onOpenProof={onOpenProof} onOpenConcierge={onOpenConcierge} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Take it back to Alex' }));
+    expect(onOpenConcierge).toHaveBeenCalledWith(hold);
+  });
+
+  it('shows recorded terms in trip details when catalog prices and party have changed', () => {
+    const product = {
+      product_id: 'CTY-002', name: 'Tokyo trip', price: 2499,
+      available_sizes: ['5 nights'], description: '', image_url: '',
+      brand: 'Meridian', category: 'city',
+    };
+    const state = makeState({
+      selectedTrip: product, tripDetailsOpen: true, travelersCount: 4,
+      tripHolds: [{ productId: product.product_id, order: {
+        order_id: 'HLD-recorded', status: 'held', hold_expires_at: '2099-01-01T00:00:00Z',
+        items: [{ product_id: product.product_id, name: product.name, size: '3 nights', quantity: 2, unit_price: 2000 }],
+        subtotal: 4000, total: 4000, tax: 0, shipping: 0,
+      } }],
+    });
+    const { container } = render(<TripDetailDrawer state={state} />);
+    const facts = container.querySelector('.mds-trip-facts');
+    expect(facts).toHaveTextContent('$2,000 / traveler');
+    expect(facts).toHaveTextContent('3 nights');
+    expect(facts).toHaveTextContent('Recorded total for 2 travelers');
+    expect(facts).toHaveTextContent('$4,000');
+    expect(facts).not.toHaveTextContent('$2,499');
   });
 
   it('uses honest placeholders before recovery and the live top result afterward', () => {
@@ -1027,7 +1086,7 @@ describe('Concierge travel states', () => {
     expect(state.submitPrompt).not.toHaveBeenCalled();
     expect(state.clearChat).not.toHaveBeenCalled();
     expect(state.setSelectedPhase).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Resume and verify' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Resume and request hold' }));
     expect(state.submitPrompt).toHaveBeenCalledWith('Resume workflow from checkpoint', 5);
   });
 

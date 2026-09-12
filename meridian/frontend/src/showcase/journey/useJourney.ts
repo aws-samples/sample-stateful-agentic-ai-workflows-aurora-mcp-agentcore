@@ -131,13 +131,17 @@ export function useJourney(
     }
     let cancelled = false;
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 20000);
+    // A full checkpoint rehydrates several bounded Data API blob windows.
+    // Allow for that read over a slow connection while retaining a hard limit.
+    const timeout = window.setTimeout(() => controller.abort(), 60000);
     let resolvedFromList: string | null = null;
 
     const load = async () => {
       setLoading(true);
       setError(null);
-      if (threadId && document?.active_thread_id !== threadId) setDocument(null);
+      // Keep same-journey data during a refresh, but never show a previous
+      // journey under a newly selected URL if the new read fails.
+      if (threadId ? document?.active_thread_id !== threadId : document?.journey_id !== journeyId) setDocument(null);
       try {
         let id = journeyId;
         if (!id || (threadId && document?.active_thread_id !== threadId)) {

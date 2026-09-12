@@ -15,6 +15,7 @@ Requires migration 007 and AWS credentials.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -205,6 +206,36 @@ async def test_a_large_pending_write_round_trips_byte_identically(
     _, encoded = saver.serde.dumps_typed(payload)
     assert len(split_for_write(encoded)) == 3, "test setup must span three windows"
 
+    replayed = await cluster.reader().aget_tuple(cluster.config())
+    values = {channel: value for _task, channel, value in replayed.pending_writes}
+    assert values["messages"] == payload
+
+
+async def test_cancellation_after_append_rolls_back_and_allows_retry(
+    cluster: Cluster,
+) -> None:
+    """A worker cancelled after Aurora accepts a segment leaves no partial row."""
+    class CancelAfterAppend(TransactionalFault):
+        async def execute(self, sql, params=(), **kwargs):
+            result = await self.client.execute(sql, params, **kwargs)
+            if self.fail_on in sql:
+                raise asyncio.CancelledError()
+            return result
+
+    await _seed_checkpoint(cluster)
+    saver = AuroraDataApiSaver(
+        CancelAfterAppend(cluster.client, "UPDATE checkpoint_writes SET blob")
+    )
+    payload = "c" * (MAX_ROW_BYTES * 2 + 11)
+    with pytest.raises(asyncio.CancelledError):
+        await saver.aput_writes(
+            _write_config(cluster), [("messages", payload)], "cancelled-task"
+        )
+    assert await cluster.rows("checkpoint_writes") == 0
+
+    await cluster.saver().aput_writes(
+        _write_config(cluster), [("messages", payload)], "cancelled-task"
+    )
     replayed = await cluster.reader().aget_tuple(cluster.config())
     values = {channel: value for _task, channel, value in replayed.pending_writes}
     assert values["messages"] == payload

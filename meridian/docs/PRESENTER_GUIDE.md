@@ -22,6 +22,9 @@ The central message is:
 > Remember what the traveler wants. Save where the work stopped. Check who
 > may read or change it. Show the database records that prove each claim.
 
+For the current L300 timing, secure laptop startup and failure-window discussion,
+use [DEMO_SCRIPT.md](../DEMO_SCRIPT.md).
+
 ## Before the Demo
 
 If you are presenting from the published site rather than localhost, get the
@@ -38,17 +41,23 @@ Start the backend:
 ```bash
 cd meridian
 source venv/bin/activate
-uvicorn backend.main:app --reload --port 8000
+export LANGGRAPH_CHECKPOINT_DSN=
+export LANGGRAPH_AUTO_CHECKPOINT_DSN=false
+export LANGGRAPH_CHECKPOINT_DATA_API=true
+export LANGGRAPH_CHECKPOINT_REQUIRED=true
+export LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP=true
+uvicorn backend.main:app --host 127.0.0.1 --port 8013
 ```
 
 Start the frontend:
 
 ```bash
 cd meridian/frontend
-npm run dev
+VITE_API_ORIGIN=http://127.0.0.1:8013 npm run dev -- --host 127.0.0.1 --port 5176 --strictPort
 ```
 
-Open [`http://localhost:5173/showcase`](http://localhost:5173/showcase).
+Open `http://127.0.0.1:5176/showcase`. Use the existing HTTPS Data API connection
+with certificate verification; no database ingress change is needed.
 
 Use the **Presenter controls** bar while preparing with your co-presenter:
 
@@ -65,7 +74,7 @@ Verify:
 - Alex Morgan's profile loads with JFK, party of two, and both loyalty programs.
 - The first SQL query returns product cards with images and live inventory.
 - Phase 4 shows an authenticated subject and traveler authorization decision.
-- `python scripts/verify_agentcore.py` reports Runtime, Gateway and Memory ready, the policy engine `ACTIVE · ENFORCE`, three gateway tools, and observability on.
+- `python scripts/verify_agentcore.py` reports Runtime, Gateway and Memory ready, the policy engine `ACTIVE · ENFORCE`, four gateway tools, and observability on.
 - `python scripts/smoke_production_turn.py` ends with three PASS lines: unconfirmed denied, confirmed held, over budget denied.
 - Phase 5 reports `checkpoint_durable: true` with `AuroraDataApiSaver` or `PostgresSaver (Aurora · pooled)`. `MemorySaver` cannot prove restart recovery.
 
@@ -84,12 +93,10 @@ Then open **Capability ladder** for the five phases, boundary queries, and
 technical evidence. Use **Architecture & evidence** to open the deeper explanation
 when needed; keep it closed while introducing a phase.
 
-**Expect a pause on Phases 3 to 5.** On a warm cluster, Phase 1 returns in
-about a second and Phase 2 in about two. Phases 3 and 4 take roughly 13 to 25
-seconds because each turn makes two Bedrock round trips (specialist routing
-and the concierge rewrite) on top of embedding, pgvector, and rerank. That is
-time to explain the request path. The chat endpoint returns the trace with its
-completed response; the UI does not stream live step completion while it waits.
+**Allow time for live service calls.** Latency depends on model turns, retrieval,
+tool calls and cold starts; measure it during rehearsal. Use the wait to explain
+the request path. The chat endpoint returns the trace with its completed response;
+the UI does not stream live step completion while it waits.
 
 | Phase | Run this query | Point to | Transition |
 | --- | --- | --- | --- |
@@ -209,7 +216,7 @@ When the workflow pauses, say:
 
 Select **Continue at recovery desk**. This changes the view without sending
 another chat request, clearing the shortlist, or changing the thread.
-Then select **Resume and verify**. Point to the available packages and the
+Then select **Resume and request hold**. Point to the available packages and the
 hold receipt near the itinerary. Open **View system evidence** to read the
 checkpoint, worker executions, access decision, and hold back from Aurora.
 Only claim a worker restart when the recorded executions show it.
@@ -323,8 +330,8 @@ Keep these statements explicit:
   which traveler scope the workload may claim before RLS is set.
 - **AgentCore Memory and Aurora have different jobs.** AgentCore carries managed
   session context; Aurora is the durable, RLS-scoped system of record.
-- **Data API is connectionless, not stateless.** State lives in committed rows,
-  memory records, and checkpoints.
+- **Data API is a connectionless transport.** Durable state lives in Aurora
+  rows, memory records and checkpoints, not the API connection.
 - **MemorySaver is a local fallback.** It does not prove recovery after process
   loss. Use a verified Aurora checkpointer for the durable workflow claim.
 - **The sample plans recovery; it does not issue an airline ticket.** A real
@@ -335,9 +342,9 @@ Keep these statements explicit:
   the confirmation. A deny is the engine finding no permit for those arguments;
   the runtime explains which condition failed from the same arguments.
 - **One permit, four conditions, default deny.** The hold policy is a single
-  `permit` with `when` conditions. There is no separate `forbid`: a forbid
-  created alongside its permit fails Cedar validation as overly restrictive
-  when CloudFormation creates them in parallel.
+  `permit` with `when` conditions. There is no separate `forbid`: a second permit does not constrain the first. Assess the complete policy set
+  before introducing a stricter or temporal rule. A forbid can be valid when
+  deliberately designed and validated against the Gateway schema.
 
 ## Readiness Checklist
 

@@ -64,7 +64,9 @@ SPANS = {
         "Cedar decides on the arguments, then the held booking becomes confirmed in Aurora",
     ),
 }
-DENIAL_PATTERN = re.compile(r"policy|denied|not authori[sz]ed|forbid", re.I)
+DENIAL_PATTERN = re.compile(
+    r"^(?:AuthorizeActionException\s*-\s*)?Tool Execution Denied:", re.I
+)
 
 
 @dataclass(frozen=True)
@@ -243,7 +245,8 @@ class TraceHooks(HookProvider):
             self._success(name, payload, elapsed)
             return
         text = _error_text(result, payload)
-        summary = self._failure(name, text, bool(DENIAL_PATTERN.search(text)), elapsed, event.tool_use)
+        denied = payload is None and bool(DENIAL_PATTERN.match(text.strip()))
+        summary = self._failure(name, text, denied, elapsed, event.tool_use)
         # Hand the model the explained decision so its reply names the real reason;
         # the raw gateway text stays in the span for the audience.
         event.result = {**result, "status": "error", "content": [{"text": summary}]}

@@ -57,13 +57,16 @@ describe('Booking confirmation', () => {
     expect(confirmBooking).not.toHaveBeenCalled();
 
     let adopted = false;
-    act(() => { adopted = result.current.adoptJourneyHold({ booking_id: 'HLD-5', package_id: 'CTY-002', duration: '5 nights', travelers_count: 2, hold_expires_at: '2099-01-01T00:00:00Z', status: 'held' }); });
+    act(() => { adopted = result.current.adoptJourneyHold({ booking_id: 'HLD-5', package_id: 'CTY-002', duration: '3 nights', travelers_count: 2, unit_price: '2000.00', total_amount: '4000.00', hold_expires_at: '2099-01-01T00:00:00Z', status: 'held' }); });
     expect(adopted).toBe(true);
-    expect(result.current.tripHolds[0]).toMatchObject({ productId: 'CTY-002', order: { order_id: 'HLD-5', status: 'held', total: 4998 } });
+    expect(result.current.tripHolds[0]).toMatchObject({ productId: 'CTY-002', order: { order_id: 'HLD-5', status: 'held', total: 4000, items: [{ size: '3 nights', unit_price: 2000, quantity: 2 }] } });
     expect(result.current.selectedTrip?.product_id).toBe('CTY-002');
     expect(result.current.tripDetailsOpen).toBe(true);
     act(() => { adopted = result.current.adoptJourneyHold({ booking_id: 'HLD-6', package_id: 'UNKNOWN', duration: null, travelers_count: null, hold_expires_at: null, status: 'held' }); });
     expect(adopted).toBe(false);
+    act(() => { adopted = result.current.adoptJourneyHold({ booking_id: 'incomplete', package_id: 'CTY-002', duration: null, travelers_count: null, hold_expires_at: null, status: 'held' }); });
+    expect(adopted).toBe(false);
+    expect(result.current.tripHolds[0].order.order_id).toBe('HLD-5');
 
     vi.mocked(confirmBooking).mockResolvedValue({ message: 'That hold has expired.', activities: [] });
     await act(async () => { await result.current.confirmTrip(tokyo); });

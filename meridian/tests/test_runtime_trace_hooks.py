@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,6 +13,25 @@ RUNTIME = Path(__file__).resolve().parents[1] / "meridian_agentcore" / "app" / "
 sys.path.insert(0, str(RUNTIME))
 
 from turn_trace import TraceHooks, TurnContext, friendly_denial, short  # noqa: E402
+
+
+@pytest.mark.parametrize("message", [
+    "AccessDeniedException: not authorized to invoke this gateway",
+    "The target workload was denied access to this traveler",
+    "An upstream policy service is unavailable",
+])
+def test_non_policy_errors_never_become_cedar_denials(message):
+    queue = asyncio.Queue()
+    hooks = TraceHooks(queue, _turn())
+    event = _event("MeridianHolds___create_courtesy_hold", {"packageId": "CTY-002"})
+    hooks.before(event)
+    event.result = {"status": "error", "content": [{"text": message}]}
+    hooks.after(event)
+    items = _drain(queue)
+    result = [span for kind, span in items if kind == "activity"][-1]
+    assert result["telemetry"]["status"] == "error"
+    assert not any(field["label"] == "cedar_decision" for field in result["telemetry"]["fields"])
+    assert [span for kind, span in items if kind == "hold"][0]["policyDecision"] is None
 
 
 def _turn(**overrides):
