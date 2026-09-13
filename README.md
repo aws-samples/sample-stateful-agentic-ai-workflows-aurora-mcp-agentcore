@@ -227,8 +227,8 @@ requirements before production use.
 
 ## Validation
 
-The GitHub Actions workflow runs backend, frontend, and AgentCore CDK checks on
-every push to `main`. Run the same commands locally:
+The GitHub Actions workflow runs backend, frontend, AgentCore CDK, and hosted
+web infrastructure checks on every push to `main`. Run the same commands locally:
 
 ```bash
 cd meridian
@@ -253,6 +253,13 @@ npm ci
 npm run build
 npm test -- --runInBand
 npm run format:check
+npm audit --audit-level=high
+```
+
+```bash
+cd meridian/infra
+npm ci
+npm test
 npm audit --audit-level=high
 ```
 

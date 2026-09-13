@@ -170,7 +170,9 @@ Runner service, deploys `MeridianWeb`, all in the region of Aurora and AgentCore
 with the non-secret settings copied from `.env`, writes the two credentials to the
 CloudFront KeyValueStore through the AWS CLI, and records the URL. The instance
 role is scoped to Bedrock invoke, the Aurora Data API on one cluster, one Aurora
-secret, and `InvokeAgentRuntime` on the Meridian runtime.
+secret, `InvokeAgentRuntime` on the Meridian runtime, and `InvokeGateway` on the
+configured Meridian Gateway. Phase 5 runs in App Runner and needs that direct
+Gateway permission for its governed hold; Phase 4 uses the Runtime's own role.
 
 That instance role is a workload like the holds Lambda. Run
 `scripts/bind_web_backend_role.py` once after the roles stack exists (it binds the

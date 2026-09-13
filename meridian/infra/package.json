@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test tests/*.test.cjs",
     "watch": "tsc -w",
     "cdk": "npm run build && cdk",
     "synth": "npm run build && cdk synth",

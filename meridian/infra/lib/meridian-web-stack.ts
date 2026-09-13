@@ -36,7 +36,7 @@ const ENV_PASSTHROUGH = [
   'STRANDS_ORCHESTRATION',
 ] as const;
 
-const REQUIRED_ENV = ['AURORA_CLUSTER_ARN', 'AURORA_SECRET_ARN', 'AURORA_DATABASE', 'AGENTCORE_RUNTIME_ARN'];
+const REQUIRED_ENV = ['AURORA_CLUSTER_ARN', 'AURORA_SECRET_ARN', 'AURORA_DATABASE', 'AGENTCORE_RUNTIME_ARN', 'AGENTCORE_GATEWAY_URL'];
 
 /** Read KEY=value lines from meridian/.env without a dotenv dependency. */
 export function readDotenv(file: string): Record<string, string> {

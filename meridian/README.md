@@ -535,6 +535,15 @@ PYTHON_DOTENV_DISABLED=1 python -m pytest -m "not database"
 python -m pip_audit -r requirements.txt
 ```
 
+```bash
+cd meridian/infra
+npm ci
+npm test
+```
+
+The hosted infrastructure tests check the Recovery desk's Gateway permission
+and reject invalid or unbounded Gateway endpoints.
+
 Install `ruff` and `pip-audit` for the CI quality checks; run
 `ruff check backend scripts tests` from `meridian/`. Non-database tests disable
 live checkpoint configuration and reject unmocked network connections; the

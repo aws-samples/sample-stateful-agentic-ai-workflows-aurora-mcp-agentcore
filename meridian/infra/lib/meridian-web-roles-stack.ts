@@ -1,9 +1,25 @@
-import { CfnOutput, Stack, type StackProps, aws_iam as iam } from 'aws-cdk-lib';
+import { ArnFormat, CfnOutput, Stack, type StackProps, aws_iam as iam } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 export interface MeridianWebRolesStackProps extends StackProps {
   /** The App Runner environment from serviceEnvironment(); supplies the ARNs the role may touch. */
   environment: Record<string, string>;
+}
+
+function gatewayArn(stack: Stack, endpoint: string): string {
+  const url = new URL(endpoint);
+  const host = /^([a-z0-9-]+)\.gateway\.bedrock-agentcore\.([a-z0-9-]+)\.amazonaws\.com(?:\.cn)?$/.exec(url.hostname);
+  if (!host || url.protocol !== 'https:' || url.username || url.password || url.port
+      || !['', '/', '/mcp', '/mcp/'].includes(url.pathname) || url.search || url.hash) {
+    throw new Error('AGENTCORE_GATEWAY_URL must be a standard HTTPS AgentCore Gateway endpoint');
+  }
+  return stack.formatArn({
+    service: 'bedrock-agentcore',
+    region: host[2],
+    resource: 'gateway',
+    resourceName: host[1],
+    arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+  });
 }
 
 /**
@@ -60,6 +76,14 @@ export class MeridianWebRolesStack extends Stack {
       new iam.PolicyStatement({
         actions: ['bedrock-agentcore:InvokeAgentRuntime'],
         resources: [environment.AGENTCORE_RUNTIME_ARN, `${environment.AGENTCORE_RUNTIME_ARN}/runtime-endpoint/*`],
+      }),
+    );
+    // Phase 5 runs in this backend and invokes the governed hold tool directly.
+    // Phase 4's Runtime role has its own Gateway permission.
+    this.instanceRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['bedrock-agentcore:InvokeGateway'],
+        resources: [gatewayArn(this, environment.AGENTCORE_GATEWAY_URL)],
       }),
     );
 
