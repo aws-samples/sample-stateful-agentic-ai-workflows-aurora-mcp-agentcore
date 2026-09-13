@@ -2,7 +2,7 @@ import type { JourneyDocument } from '../../journey/types';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useMeridianShowcase } from '../useMeridianShowcase';
-import { fetchHealth, fetchMemoryProfile, fetchProducts, processOrder, sendChatMessage } from '../../../api/client';
+import { deleteMemoryFact, fetchHealth, fetchMemoryProfile, fetchProducts, processOrder, sendChatMessage, updateMemoryFact } from '../../../api/client';
 
 vi.mock('../../../api/client', () => ({
   fetchHealth: vi.fn(), fetchMemoryProfile: vi.fn(), fetchProducts: vi.fn(), sendChatMessage: vi.fn(),
@@ -24,6 +24,49 @@ beforeEach(() => {
 });
 
 describe('Concierge request context', () => {
+  it.each(['update', 'delete'] as const)('refreshes the displayed budget after a preference %s', async action => {
+    vi.mocked(fetchMemoryProfile).mockResolvedValue({
+      traveler_id: 'trv_meridian_demo', profile: { party_size: 2 },
+      facts: [{ key: 'budget_cap', value: '$3,200' }], budget_ceiling_per_traveler_cents: 320000,
+    });
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.budgetCeilingPerTravelerCents).toBe(320000));
+    await act(async () => { await result.current.setMemoryEnabled(true); });
+    vi.mocked(updateMemoryFact).mockResolvedValue({ key: 'budget_cap', value: '$2,000' });
+    vi.mocked(deleteMemoryFact).mockResolvedValue(undefined);
+    vi.mocked(fetchMemoryProfile).mockResolvedValue({
+      traveler_id: 'trv_meridian_demo', profile: { party_size: 2 },
+      facts: action === 'update' ? [{ key: 'budget_cap', value: '$2,000' }] : [],
+      budget_ceiling_per_traveler_cents: action === 'update' ? 200000 : null,
+    });
+    await act(async () => {
+      if (action === 'update') await result.current.updateMemoryPreference('budget_cap', '$2,000');
+      else await result.current.deleteMemoryPreference('budget_cap');
+    });
+    await waitFor(() => expect(result.current.budgetCeilingPerTravelerCents).toBe(action === 'update' ? 200000 : null));
+    expect(result.current.previewFacts.some(fact => fact.value === '$3,200')).toBe(false);
+  });
+
+  it.each(['disable', 'phase'] as const)('ignores a pending memory read after %s', async action => {
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+    act(() => result.current.setSelectedPhase(4));
+    let resolveProfile!: (value: Awaited<ReturnType<typeof fetchMemoryProfile>>) => void;
+    vi.mocked(fetchMemoryProfile).mockImplementationOnce(() => new Promise(resolve => { resolveProfile = resolve; }));
+    let pending!: Promise<void>;
+    act(() => { pending = result.current.setMemoryEnabled(true); });
+    if (action === 'phase') act(() => result.current.setSelectedPhase(1));
+    else await act(async () => { await result.current.setMemoryEnabled(false); });
+    await act(async () => {
+      resolveProfile({ traveler_id: 'trv_meridian_demo', profile: { home_airport: 'JFK' }, facts: [{ key: 'seat', value: 'window', confidence: 1 }] });
+      await pending;
+    });
+    expect(result.current.memoryEnabled).toBe(false);
+    expect(result.current.memoryLoading).toBe(false);
+    expect(result.current.memoryFacts).toEqual([]);
+    expect(result.current.travelerProfile).toBeNull();
+  });
+
   it('uses recalled context and the same production conversation without advancing the ladder', async () => {
     const { result } = renderHook(() => useMeridianShowcase());
     await waitFor(() => expect(result.current.previewProfile?.home_airport).toBe('JFK'));
@@ -150,6 +193,17 @@ const healthyService = {
 };
 
 describe('Live connection readiness', () => {
+  it('does not let a successful SQL reply hide an unavailable traveler read', async () => {
+    vi.mocked(fetchHealth).mockResolvedValue(healthyService);
+    vi.mocked(fetchMemoryProfile).mockRejectedValue(new Error('Traveler read unavailable'));
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.connectionRefreshing).toBe(false));
+    await act(async () => { await result.current.submitPrompt('City trips under $2,000'); });
+    await waitFor(() => expect(result.current.connectionRefreshing).toBe(false));
+    expect(result.current.backendStatus).toBe('offline');
+    expect(result.current.connectionIssue).toBe('Traveler details are unavailable.');
+  });
+
   it('lets a slow profile read finish without periodic polling canceling it', async () => {
     vi.useFakeTimers();
     let resolveProfile!: (value: Awaited<ReturnType<typeof fetchMemoryProfile>>) => void;

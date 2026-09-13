@@ -1,3 +1,5 @@
+import './briefingArchitecture.css';
+
 /** Phase 5 runs in FastAPI and shares Phase 4's governed hold path. */
 export function BriefingArchitecture() {
   const node = (x: number, y: number, width: number, title: string, lines: string[], icon?: string, accent = false) => (

@@ -2,28 +2,28 @@
 name: Meridian
 description: A capable travel concierge with calm airline service clarity.
 colors:
-  service-navy: "#10213c"
-  service-text: "#f4f7ff"
-  service-muted: "#afc1db"
-  service-active: "#23436a"
-  service-hover: "#1a3458"
-  light-ground: "#f3f5f8"
+  service-ground: "#25201a"
+  service-text: "#ffffff"
+  service-muted: "#d2cbbf"
+  service-active: "#3d372f"
+  service-hover: "#34302a"
+  light-ground: "#ffffff"
   light-surface: "#ffffff"
-  light-soft: "#edf1f7"
-  light-ink: "#152640"
-  light-muted: "#566780"
-  light-line: "#dce3ed"
+  light-soft: "#f2f2f2"
+  light-ink: "#111111"
+  light-muted: "#555555"
+  light-line: "#e2e2e2"
   light-accent: "#2457a7"
   light-action: "#2358ae"
-  dark-ground: "#101c30"
-  dark-surface: "#16243a"
-  dark-soft: "#1c2c44"
-  dark-ink: "#edf2fa"
-  dark-muted: "#aab9ce"
-  dark-line: "#304059"
-  dark-accent: "#a0c1ff"
+  dark-ground: "#0e0d0b"
+  dark-surface: "#181613"
+  dark-soft: "#221f1a"
+  dark-ink: "#fbf9f4"
+  dark-muted: "#cbc4b8"
+  dark-line: "#3a352e"
+  dark-accent: "#a9c7ff"
   dark-action: "#3268c6"
-  on-action: "#f8faff"
+  on-action: "#ffffff"
   light-caution: "#80551d"
   light-caution-bg: "#fbf2e4"
   dark-caution: "#edc68a"
@@ -97,7 +97,7 @@ components:
     rounded: "{rounded.panel}"
     padding: "8px 10px 8px 16px"
   navigation:
-    backgroundColor: "{colors.service-navy}"
+    backgroundColor: "{colors.service-ground}"
     textColor: "{colors.service-muted}"
     rounded: "{rounded.navigation}"
   navigation-active:
@@ -125,13 +125,13 @@ components:
 
 **Creative North Star: "Capable airline service"**
 
-Meridian pairs calm navy navigation with cool silver and white task surfaces, useful destination photography, and clear travel details. The user's United Airlines and Delta Airlines references establish the level of service polish. Meridian keeps its own name, assets, and palette.
+Meridian pairs warm near-black navigation with white task surfaces, useful destination photography, and clear travel details. The user's United Airlines and Delta Airlines references establish the level of service polish. Meridian keeps its own name, assets, and palette.
 
 The interface is a working travel application: readable facts, a useful next action, and the traveler's returned preferences establish confidence. The dark theme carries the same hierarchy and component language. Presenter evidence uses this shared system while making observed state and missing evidence explicit.
 
 **Key Characteristics:**
 
-- Navy service navigation and blue actions anchor both themes.
+- Warm near-black service navigation and blue actions anchor both themes.
 - Geist variable type supports readable travel details and presentation use.
 - Real destination photography gives travel content its visual identity.
 - Tonal surfaces, fine borders, and modest corners organize the work.
@@ -141,11 +141,11 @@ The implemented source of visual authority is `meridian/frontend/src/showcase/ai
 
 ## Colors
 
-The palette combines deep service navy, cool neutral surfaces, clear blue actions, and warm caution states. Frontmatter contains the canonical values; the live theme uses the matching `--mc-*` CSS properties.
+The palette combines warm near-black navigation, neutral task surfaces, clear blue actions, and warm caution states. Frontmatter contains the canonical values; the live theme uses the matching `--mc-*` CSS properties.
 
 ### Primary
 
-- **Service Navy** remains on navigation in both themes; Service Text and Service Muted establish its text hierarchy. Service Active and Service Hover communicate navigation state.
+- **Service Ground** remains on navigation in both themes; Service Text and Service Muted establish its text hierarchy. Service Active and Service Hover communicate navigation state.
 - **Action Blue** fills primary actions. **Accent Blue** identifies links, selected tabs, focus, and useful icons. These roles have separate light and dark values so text accents stay legible without forcing an overly bright action fill.
 - **On Action** is the shared light foreground for filled primary controls.
 
@@ -159,9 +159,9 @@ Official service artwork keeps its supplied colors. In particular, the user-supp
 
 - **Ground** is the outer application canvas. **Surface** contains active tasks and travel details; **Soft** separates subordinate information within them.
 - **Ink** is the reading color; **Muted** carries secondary information. **Line** separates adjacent areas and outlines fields without heavy framing.
-- Light mode uses cool silver and white. Dark mode replaces each neutral role with its navy counterpart while preserving the same information hierarchy.
+- Light mode uses white and neutral gray. Dark mode replaces each neutral role with warm near-black surfaces and warm-white text while preserving the same information hierarchy.
 
-**The Theme Pair Rule.** Use the semantic theme roles together. Keep the navy service navigation stable while changing the canvas, reading colors, borders, accents, and caution treatments as a complete set.
+**The Theme Pair Rule.** Use the semantic theme roles together. Keep the warm near-black service navigation stable while changing the canvas, reading colors, borders, accents, and caution treatments as a complete set.
 
 ## Typography
 
@@ -183,7 +183,7 @@ The hierarchy is compact and composed rather than oversized. Medium variable wei
 
 The desktop shell uses a service sidebar, a central task area, and a contextual right rail. Expanded navigation is (220px), collapsed navigation is (76px), and the discovery brief rail is (306px). The header is (72px) tall. Above (1240px), the shell stays within the viewport: the conversation and activity own their scroll areas and the composer stays visible. Growing replies follow the latest turn only while the reader is at the bottom; reading history must preserve the reader's position.
 
-At widths from (861px) through (1240px), discovery uses icon navigation and a narrower brief rail (268px). At widths up to (860px), it becomes a single column: compact navy navigation, a horizontally scrollable surface selector, content, composer, then traveler brief. The compact navigation bar is (66px), and the surface selector is (54px). The selected surface is scrolled into view.
+At widths from (861px) through (1240px), discovery uses icon navigation and a narrower brief rail (268px). At widths up to (860px), it becomes a single column: compact service navigation, a horizontally scrollable surface selector, content, composer, then traveler brief. The compact navigation bar is (66px), and the surface selector is (54px). The selected surface is scrolled into view.
 
 Reusable workspace spacing follows the frontmatter's observed increments. Wide content commonly uses the workspace inset; compact content uses the inset spacing. Use explicit gaps and shared alignment rather than adding framing around every paragraph.
 
@@ -191,7 +191,7 @@ Trip collections combine a prominent photograph and trip summary with smaller su
 
 ## Elevation & Depth
 
-The main surfaces are flat at rest. Surface tone, fine borders, and the fixed navy navigation establish depth. Navigation, primary controls, recovery decision cards, and teaching surfaces explicitly remove decorative shadows. Destination photographs provide depth where they communicate the trip itself.
+The main surfaces are flat at rest. Surface tone, fine borders, and the fixed dark navigation establish depth. Navigation, primary controls, recovery decision cards, and teaching surfaces explicitly remove decorative shadows. Destination photographs provide depth where they communicate the trip itself.
 
 **The Task Surface Rule.** Use a tonal change or a fine dividing line to separate adjacent work. Add visual weight in proportion to the task's importance, with the primary action and the useful travel content leading.
 
@@ -229,7 +229,7 @@ The traveler brief uses portrait, departure context, aligned definition lists, r
 
 ### Navigation
 
-Navy service navigation provides consistent orientation. Its active item uses a slightly lighter fill; the hover state retains the same calm color family. The surface selector uses an accent underline and plain labels rather than enclosed pills. Compact service navigation uses the existing useful icon actions with accessible names.
+Dark service navigation provides consistent orientation. Its active item uses a slightly lighter fill; the hover state retains the same calm color family. The surface selector uses an accent underline and plain labels rather than enclosed pills. Compact service navigation uses the existing useful icon actions with accessible names.
 
 Capability phase navigation uses intrinsic-width horizontal items and scrolls the active phase into view. Preserve each readable label rather than forcing five labels into equal narrow columns.
 
@@ -249,34 +249,15 @@ Evidence uses readable worker cards, persisted-state rows, and labeled facts. Id
 
 Travel actions use brief color transitions (160ms ease-out) only when reduced motion is not requested. Loading dots use an opacity animation (1.4s ease-in-out, alternating), under the same preference guard. Motion communicates response and waiting rather than establishing a decorative theme. Errors retain the conversation and offer retry; empty recommendations remain empty and explain a useful next step.
 
-## Do's and Don'ts
-
-### Do:
-
-- **Do** use the shared semantic color pairs in both themes.
-- **Do** make travel facts, the next action, and returned preferences easy to read.
-- **Do** use the bundled destination photographs and established icon language.
-- **Do** preserve visible keyboard focus, explicit action names, and compact layout flow.
-- **Do** distinguish reported disruption, saved workflow state, observed evidence, and missing data.
-- **Do** retain projector scaling and the minimum size for essential evidence metadata.
-
-### Don't:
-
-- **Don't** turn the airline references into invented partnerships or airline-issued documents.
-- **Don't** make sample catalog content look like a live airline booking or ticket feed.
-- **Don't** replace missing flight, seat, preference, or execution data with fabricated facts.
-- **Don't** promote decorative glows, heavy framing, or unrelated legacy palettes into new surfaces.
-- **Don't** make technical implementation detail compete with the traveler's immediate task.
-
 ### Presentation controls
 
-Windowed preparation uses a compact toolbar above the app: audience-layout preview, projector readability, room check, and Present fullscreen. The toolbar and its open disclosures disappear in fullscreen. It is visible to anyone viewing the windowed screen; it is not a private speaker-notes channel. Keep all preparation copy inside that toolbar.
+Windowed preparation uses a compact toolbar above the app: audience-layout preview, projector readability, and Present fullscreen. The toolbar disappears in fullscreen. It is visible to anyone viewing the windowed screen; it is not a private speaker-notes channel. Keep all preparation copy inside that toolbar.
 
-The audience layout hides the service sidebar and moves the Meridian mark into the shared header. The four surface tabs and contextual evidence remain available. At desktop sizes, projector readability uses a (1.3) type scale, essential evidence labels of at least (18px), and higher-contrast secondary colors in both themes. Windowed preview retains the toolbar; fullscreen uses the recovered height for the active workspace. Exiting fullscreen restores the presenter's preview and readability choices without remounting the conversation.
+The audience layout hides the service sidebar and moves the Meridian mark into the shared header. The five surface tabs and contextual evidence remain available. At desktop sizes, projector readability uses a (1.3) type scale, essential evidence labels of at least (18px), and higher-contrast secondary colors in both themes. Windowed preview retains the toolbar; fullscreen uses the recovered height for the active workspace. Exiting fullscreen restores the presenter's preview and readability choices without remounting the conversation.
 
 ### Shared typography and hold evidence
 
-All four surfaces use Geist Variable for headings, body copy, and controls. Shared headings use weight 520 and -0.035em tracking; labels use 550. Geist Mono remains reserved for technical identifiers and SQL. The legacy serif token aliases the shared sans family.
+All five surfaces use Geist Variable for headings, body copy, and controls. Shared headings use weight 520 and -0.035em tracking; labels use 550. Geist Mono remains reserved for technical identifiers and SQL. The legacy serif token aliases the shared sans family. The secondary kiosk also uses the bundled Geist families; its architecture tab shares the briefing's vector diagram and official AWS service artwork.
 
 The recovery checkpoint and package hold are separate facts. A checkpoint before inventory verification explicitly says no inventory is held yet. The hold receipt shows booking creation, expiry, and the calculated duration. System evidence reads these timestamps from Aurora and anchors its countdown to the browser receive time, so changing tabs cannot restart it. A replacement-created hold is distinguished from one that existed before replacement. Expired holds remain visible as records and no longer count against package capacity.
 
@@ -296,7 +277,7 @@ app session. Refreshing clears local direct-hold receipts, while Aurora keeps
 the booking. The direct clock uses device time and names that limitation.
 
 System evidence ends with Session takeaways, leading to an audience-facing
-close and Q&A. Keep four permanent tabs. The close is an intentional detour,
+close and Q&A. Keep five permanent tabs, including Solution briefing. The close is an intentional detour,
 with a return to the same evidence or Concierge. Large Geist typography,
 the customer recovery outcome, and a repository link carry the ending.
 The headline is “A canceled flight. A clear way forward.” Three service-led
@@ -306,3 +287,22 @@ distinct from AgentCore’s runtime, memory, and workload identity. Use the
 official AWS marks beside their names, with no repeated technology list in
 the footer. Q&A asks what the audience would build for their customers.
 Preparation controls stay hidden in fullscreen; the closing content remains.
+
+## Do's and Don'ts
+
+### Do:
+
+- **Do** use the shared semantic color pairs in both themes.
+- **Do** make travel facts, the next action, and returned preferences easy to read.
+- **Do** use the bundled destination photographs and established icon language.
+- **Do** preserve visible keyboard focus, explicit action names, and compact layout flow.
+- **Do** distinguish reported disruption, saved workflow state, observed evidence, and missing data.
+- **Do** retain projector scaling and the minimum size for essential evidence metadata.
+
+### Don't:
+
+- **Don't** turn the airline references into invented partnerships or airline-issued documents.
+- **Don't** make sample catalog content look like a live airline booking or ticket feed.
+- **Don't** replace missing flight, seat, preference, or execution data with fabricated facts.
+- **Don't** promote decorative glows, heavy framing, or unrelated legacy palettes into new surfaces.
+- **Don't** make technical implementation detail compete with the traveler's immediate task.

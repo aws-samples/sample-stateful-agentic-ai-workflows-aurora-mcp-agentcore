@@ -21,17 +21,6 @@
 .mds-brief-section-heading h2:focus { outline:none; }
 .mds-brief-section-heading p { max-width:60ch; font-size:13px; }
 .mds-brief-architecture-grid { display:grid; grid-template-columns:minmax(0,1fr) 230px; gap:26px; }
-.mds-brief-architecture { margin:0; min-width:0; }
-.mds-brief-arch-scroll { overflow-x:auto; border-radius:10px; background:var(--mc-soft); }
-.mds-brief-architecture svg { display:block; width:100%; min-width:820px; font:12px var(--mds-font); fill:var(--mc-muted); }
-.mds-brief-arch-node rect { fill:var(--mc-surface); stroke:var(--mc-line); }
-.mds-brief-arch-node.is-accent rect { stroke:var(--mc-accent); stroke-opacity:.6; }
-.mds-brief-architecture .mds-brief-arch-title { fill:var(--mc-ink); font-size:13px; font-weight:550; }
-.mds-brief-architecture .mds-brief-arch-label { font-size:11px; }
-.mds-brief-arch-edges { fill:none; stroke:var(--mc-muted); stroke-width:1.25; }
-.mds-brief-arch-edges .is-secondary { stroke-dasharray:5 4; }
-.mds-brief-architecture marker path { fill:var(--mc-muted); }
-.mds-brief-architecture figcaption { margin-top:10px; font-size:12px; color:var(--mc-muted); }
 .mds-brief-facts { display:grid; margin:0; gap:14px; }
 .mds-brief-facts dt { font-weight:550; color:var(--mc-ink); }
 .mds-brief-facts dd { margin:4px 0 0; color:var(--mc-muted); }

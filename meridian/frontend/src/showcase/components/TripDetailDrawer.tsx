@@ -104,6 +104,7 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
               <span>{state.actionDrawer.message}</span>
             </div>
           )}
+          {state.error && <div className="mds-error-banner" role="alert">{state.error}</div>}
           <footer className="mds-trip-modal-actions">
             <button type="button" onClick={() => state.saveTrip(product)} aria-pressed={saved}>
               <Bookmark size={17} />{saved ? 'Saved' : 'Save trip'}

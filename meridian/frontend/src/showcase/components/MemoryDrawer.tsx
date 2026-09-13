@@ -28,17 +28,17 @@ export function MemoryDrawer({ state, open, onClose }: { state: MeridianShowcase
             <div>
               <span>{fact.key.replace(/_/g, ' ')}</span>
               {editing === fact.key ? (
-                <input value={value} onChange={(e) => setValue(e.target.value)} aria-label={`Edit ${fact.key}`} autoFocus />
+                <input value={value} disabled={busy !== null} onChange={(e) => setValue(e.target.value)} aria-label={`Edit ${fact.key}`} autoFocus />
               ) : <b>{fact.value}</b>}
               <small>{fact.source ?? 'memory'} · confidence {fact.confidence?.toFixed(2) ?? 'n/a'}</small>
             </div>
             <div>
               {editing === fact.key ? (
-                <button type="button" disabled={!value.trim() || busy === fact.key} onClick={async () => { setBusy(fact.key); if (await state.updateMemoryPreference(fact.key, value.trim())) setEditing(null); setBusy(null); }} aria-label={`Save ${fact.key}`}><Check size={15} /></button>
+                <button type="button" disabled={!value.trim() || busy !== null} onClick={async () => { setBusy(fact.key); if (await state.updateMemoryPreference(fact.key, value.trim())) setEditing(null); setBusy(null); }} aria-label={`Save ${fact.key}`}><Check size={15} /></button>
               ) : (
-                <button type="button" onClick={() => { setEditing(fact.key); setValue(fact.value); }} aria-label={`Edit ${fact.key}`}><Pencil size={15} /></button>
+                <button type="button" disabled={busy !== null} onClick={() => { setEditing(fact.key); setValue(fact.value); }} aria-label={`Edit ${fact.key}`}><Pencil size={15} /></button>
               )}
-              <button type="button" disabled={busy === fact.key} onClick={async () => { setBusy(fact.key); await state.deleteMemoryPreference(fact.key); setBusy(null); }} aria-label={`Forget ${fact.key}`}><Trash2 size={15} /></button>
+              <button type="button" disabled={busy !== null} onClick={async () => { setBusy(fact.key); await state.deleteMemoryPreference(fact.key); setBusy(null); }} aria-label={`Forget ${fact.key}`}><Trash2 size={15} /></button>
             </div>
           </div>
         ))}

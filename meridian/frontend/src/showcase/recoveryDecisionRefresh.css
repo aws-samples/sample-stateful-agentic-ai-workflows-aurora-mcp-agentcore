@@ -425,6 +425,37 @@
   background: transparent;
 }
 
+/* Status text needs the daylight tokens too, including restored journeys. */
+.mds-root[data-theme="light"] .mds-recovery-overview-meta strong {
+  color: var(--mds-yellow);
+}
+
+.mds-root[data-theme="light"] .mds-recovery-workspace :is(
+  .mds-recovery-overview.is-ready .mds-recovery-overview-meta strong,
+  .mds-decision-status.is-ready,
+  .mds-checkpoint-badge.is-ready
+) {
+  color: var(--mds-green);
+}
+
+.mds-root[data-theme="light"] .mds-recovery-workspace :is(
+  .mds-recovery-overview.is-checkpointed .mds-recovery-overview-meta strong,
+  .mds-decision-status.is-checkpointed,
+  .mds-checkpoint-badge.is-checkpointed
+) {
+  color: rgb(var(--mds-teal-rgb));
+}
+
+.mds-root[data-theme="light"] .mds-recovery-workspace :is(
+  .mds-recovery-overview.is-running .mds-recovery-overview-meta strong,
+  .mds-decision-status.is-running,
+  .mds-checkpoint-badge.is-running,
+  .mds-recommended-plan-title small,
+  .mds-flight-option-card > header > span
+) {
+  color: var(--mc-accent);
+}
+
 @media (min-width: 1280px) {
   .mds-recovery-workspace .mds-recommended-plan-card {
     display: grid;

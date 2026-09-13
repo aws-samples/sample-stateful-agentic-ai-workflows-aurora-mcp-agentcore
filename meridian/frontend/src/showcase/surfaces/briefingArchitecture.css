@@ -1,0 +1,11 @@
+.mds-brief-architecture { margin:0; min-width:0; }
+.mds-brief-arch-scroll { overflow-x:auto; border-radius:10px; background:var(--mc-soft); }
+.mds-brief-architecture svg { display:block; width:100%; min-width:820px; font:12px var(--mds-font); fill:var(--mc-muted); }
+.mds-brief-arch-node rect { fill:var(--mc-surface); stroke:var(--mc-line); }
+.mds-brief-arch-node.is-accent rect { stroke:var(--mc-accent); stroke-opacity:.6; }
+.mds-brief-architecture .mds-brief-arch-title { fill:var(--mc-ink); font-size:13px; font-weight:550; }
+.mds-brief-architecture .mds-brief-arch-label { font-size:11px; }
+.mds-brief-arch-edges { fill:none; stroke:var(--mc-muted); stroke-width:1.25; }
+.mds-brief-arch-edges .is-secondary { stroke-dasharray:5 4; }
+.mds-brief-architecture marker path { fill:var(--mc-muted); }
+.mds-brief-architecture figcaption { margin-top:10px; font-size:12px; color:var(--mc-muted); }

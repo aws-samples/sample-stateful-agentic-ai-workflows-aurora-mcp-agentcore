@@ -69,7 +69,7 @@ function stepsFor(document: JourneyDocument | null, now: number): Step[] {
         ? `${abandoned[0].worker_id} abandoned`
         : running
           ? `${running.worker_id} still running`
-          : 'No execution yet',
+          : executions.length ? 'No worker interruption recorded' : 'No execution yet',
       done: abandoned.length > 0,
     },
     {

@@ -1,161 +1,147 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-06T19:57:43.852651+00:00",
+  "generatedAt": "2026-09-13T08:55:05.286800+00:00",
   "title": "Design System: Meridian",
   "extensions": {
     "colorMeta": {
-      "service-navy": {
-        "role": "primary",
-        "displayName": "Service Navy",
-        "tonalRamp": [
-          "oklch(15% 0.0564 259.28)",
-          "oklch(26% 0.0564 259.28)",
-          "oklch(38% 0.0564 259.28)",
-          "oklch(49% 0.0564 259.28)",
-          "oklch(61% 0.0564 259.28)",
-          "oklch(72% 0.0564 259.28)",
-          "oklch(84% 0.0564 259.28)",
-          "oklch(95% 0.0564 259.28)"
-        ]
-      },
       "service-text": {
         "role": "primary",
         "displayName": "Service Text",
         "tonalRamp": [
-          "oklch(15% 0.0111 269.55)",
-          "oklch(26% 0.0111 269.55)",
-          "oklch(38% 0.0111 269.55)",
-          "oklch(49% 0.0111 269.55)",
-          "oklch(61% 0.0111 269.55)",
-          "oklch(72% 0.0111 269.55)",
-          "oklch(84% 0.0111 269.55)",
-          "oklch(95% 0.0111 269.55)"
+          "oklch(15% 0.0000 0.00)",
+          "oklch(26% 0.0000 0.00)",
+          "oklch(38% 0.0000 0.00)",
+          "oklch(49% 0.0000 0.00)",
+          "oklch(61% 0.0000 0.00)",
+          "oklch(72% 0.0000 0.00)",
+          "oklch(84% 0.0000 0.00)",
+          "oklch(95% 0.0000 0.00)"
         ]
       },
       "service-muted": {
         "role": "primary",
         "displayName": "Service Muted",
         "tonalRamp": [
-          "oklch(15% 0.0418 257.51)",
-          "oklch(26% 0.0418 257.51)",
-          "oklch(38% 0.0418 257.51)",
-          "oklch(49% 0.0418 257.51)",
-          "oklch(61% 0.0418 257.51)",
-          "oklch(72% 0.0418 257.51)",
-          "oklch(84% 0.0418 257.51)",
-          "oklch(95% 0.0418 257.51)"
+          "oklch(15% 0.0182 81.33)",
+          "oklch(26% 0.0182 81.33)",
+          "oklch(38% 0.0182 81.33)",
+          "oklch(49% 0.0182 81.33)",
+          "oklch(61% 0.0182 81.33)",
+          "oklch(72% 0.0182 81.33)",
+          "oklch(84% 0.0182 81.33)",
+          "oklch(95% 0.0182 81.33)"
         ]
       },
       "service-active": {
         "role": "primary",
         "displayName": "Service Active",
         "tonalRamp": [
-          "oklch(15% 0.0772 254.45)",
-          "oklch(26% 0.0772 254.45)",
-          "oklch(38% 0.0772 254.45)",
-          "oklch(49% 0.0772 254.45)",
-          "oklch(61% 0.0772 254.45)",
-          "oklch(72% 0.0772 254.45)",
-          "oklch(84% 0.0772 254.45)",
-          "oklch(95% 0.0772 254.45)"
+          "oklch(15% 0.0160 75.08)",
+          "oklch(26% 0.0160 75.08)",
+          "oklch(38% 0.0160 75.08)",
+          "oklch(49% 0.0160 75.08)",
+          "oklch(61% 0.0160 75.08)",
+          "oklch(72% 0.0160 75.08)",
+          "oklch(84% 0.0160 75.08)",
+          "oklch(95% 0.0160 75.08)"
         ]
       },
       "service-hover": {
         "role": "primary",
         "displayName": "Service Hover",
         "tonalRamp": [
-          "oklch(15% 0.0720 256.94)",
-          "oklch(26% 0.0720 256.94)",
-          "oklch(38% 0.0720 256.94)",
-          "oklch(49% 0.0720 256.94)",
-          "oklch(61% 0.0720 256.94)",
-          "oklch(72% 0.0720 256.94)",
-          "oklch(84% 0.0720 256.94)",
-          "oklch(95% 0.0720 256.94)"
+          "oklch(15% 0.0119 78.13)",
+          "oklch(26% 0.0119 78.13)",
+          "oklch(38% 0.0119 78.13)",
+          "oklch(49% 0.0119 78.13)",
+          "oklch(61% 0.0119 78.13)",
+          "oklch(72% 0.0119 78.13)",
+          "oklch(84% 0.0119 78.13)",
+          "oklch(95% 0.0119 78.13)"
         ]
       },
       "light-ground": {
         "role": "neutral",
         "displayName": "Light Ground",
         "tonalRamp": [
-          "oklch(15% 0.0045 258.32)",
-          "oklch(26% 0.0045 258.32)",
-          "oklch(38% 0.0045 258.32)",
-          "oklch(49% 0.0045 258.32)",
-          "oklch(61% 0.0045 258.32)",
-          "oklch(72% 0.0045 258.32)",
-          "oklch(84% 0.0045 258.32)",
-          "oklch(95% 0.0045 258.32)"
+          "oklch(15% 0.0000 0.00)",
+          "oklch(26% 0.0000 0.00)",
+          "oklch(38% 0.0000 0.00)",
+          "oklch(49% 0.0000 0.00)",
+          "oklch(61% 0.0000 0.00)",
+          "oklch(72% 0.0000 0.00)",
+          "oklch(84% 0.0000 0.00)",
+          "oklch(95% 0.0000 0.00)"
         ]
       },
       "light-surface": {
         "role": "neutral",
         "displayName": "Light Surface",
         "tonalRamp": [
-          "oklch(15% 0.0000 89.88)",
-          "oklch(26% 0.0000 89.88)",
-          "oklch(38% 0.0000 89.88)",
-          "oklch(49% 0.0000 89.88)",
-          "oklch(61% 0.0000 89.88)",
-          "oklch(72% 0.0000 89.88)",
-          "oklch(84% 0.0000 89.88)",
-          "oklch(95% 0.0000 89.88)"
+          "oklch(15% 0.0000 0.00)",
+          "oklch(26% 0.0000 0.00)",
+          "oklch(38% 0.0000 0.00)",
+          "oklch(49% 0.0000 0.00)",
+          "oklch(61% 0.0000 0.00)",
+          "oklch(72% 0.0000 0.00)",
+          "oklch(84% 0.0000 0.00)",
+          "oklch(95% 0.0000 0.00)"
         ]
       },
       "light-soft": {
         "role": "neutral",
         "displayName": "Light Soft",
         "tonalRamp": [
-          "oklch(15% 0.0091 258.34)",
-          "oklch(26% 0.0091 258.34)",
-          "oklch(38% 0.0091 258.34)",
-          "oklch(49% 0.0091 258.34)",
-          "oklch(61% 0.0091 258.34)",
-          "oklch(72% 0.0091 258.34)",
-          "oklch(84% 0.0091 258.34)",
-          "oklch(95% 0.0091 258.34)"
+          "oklch(15% 0.0000 0.00)",
+          "oklch(26% 0.0000 0.00)",
+          "oklch(38% 0.0000 0.00)",
+          "oklch(49% 0.0000 0.00)",
+          "oklch(61% 0.0000 0.00)",
+          "oklch(72% 0.0000 0.00)",
+          "oklch(84% 0.0000 0.00)",
+          "oklch(95% 0.0000 0.00)"
         ]
       },
       "light-ink": {
         "role": "neutral",
         "displayName": "Light Ink",
         "tonalRamp": [
-          "oklch(15% 0.0539 258.63)",
-          "oklch(26% 0.0539 258.63)",
-          "oklch(38% 0.0539 258.63)",
-          "oklch(49% 0.0539 258.63)",
-          "oklch(61% 0.0539 258.63)",
-          "oklch(72% 0.0539 258.63)",
-          "oklch(84% 0.0539 258.63)",
-          "oklch(95% 0.0539 258.63)"
+          "oklch(15% 0.0000 0.00)",
+          "oklch(26% 0.0000 0.00)",
+          "oklch(38% 0.0000 0.00)",
+          "oklch(49% 0.0000 0.00)",
+          "oklch(61% 0.0000 0.00)",
+          "oklch(72% 0.0000 0.00)",
+          "oklch(84% 0.0000 0.00)",
+          "oklch(95% 0.0000 0.00)"
         ]
       },
       "light-muted": {
         "role": "neutral",
         "displayName": "Light Muted",
         "tonalRamp": [
-          "oklch(15% 0.0450 257.92)",
-          "oklch(26% 0.0450 257.92)",
-          "oklch(38% 0.0450 257.92)",
-          "oklch(49% 0.0450 257.92)",
-          "oklch(61% 0.0450 257.92)",
-          "oklch(72% 0.0450 257.92)",
-          "oklch(84% 0.0450 257.92)",
-          "oklch(95% 0.0450 257.92)"
+          "oklch(15% 0.0000 0.00)",
+          "oklch(26% 0.0000 0.00)",
+          "oklch(38% 0.0000 0.00)",
+          "oklch(49% 0.0000 0.00)",
+          "oklch(61% 0.0000 0.00)",
+          "oklch(72% 0.0000 0.00)",
+          "oklch(84% 0.0000 0.00)",
+          "oklch(95% 0.0000 0.00)"
         ]
       },
       "light-line": {
         "role": "neutral",
         "displayName": "Light Line",
         "tonalRamp": [
-          "oklch(15% 0.0156 257.20)",
-          "oklch(26% 0.0156 257.20)",
-          "oklch(38% 0.0156 257.20)",
-          "oklch(49% 0.0156 257.20)",
-          "oklch(61% 0.0156 257.20)",
-          "oklch(72% 0.0156 257.20)",
-          "oklch(84% 0.0156 257.20)",
-          "oklch(95% 0.0156 257.20)"
+          "oklch(15% 0.0000 0.00)",
+          "oklch(26% 0.0000 0.00)",
+          "oklch(38% 0.0000 0.00)",
+          "oklch(49% 0.0000 0.00)",
+          "oklch(61% 0.0000 0.00)",
+          "oklch(72% 0.0000 0.00)",
+          "oklch(84% 0.0000 0.00)",
+          "oklch(95% 0.0000 0.00)"
         ]
       },
       "light-accent": {
@@ -190,98 +176,98 @@
         "role": "neutral",
         "displayName": "Dark Ground",
         "tonalRamp": [
-          "oklch(15% 0.0428 260.17)",
-          "oklch(26% 0.0428 260.17)",
-          "oklch(38% 0.0428 260.17)",
-          "oklch(49% 0.0428 260.17)",
-          "oklch(61% 0.0428 260.17)",
-          "oklch(72% 0.0428 260.17)",
-          "oklch(84% 0.0428 260.17)",
-          "oklch(95% 0.0428 260.17)"
+          "oklch(15% 0.0045 84.59)",
+          "oklch(26% 0.0045 84.59)",
+          "oklch(38% 0.0045 84.59)",
+          "oklch(49% 0.0045 84.59)",
+          "oklch(61% 0.0045 84.59)",
+          "oklch(72% 0.0045 84.59)",
+          "oklch(84% 0.0045 84.59)",
+          "oklch(95% 0.0045 84.59)"
         ]
       },
       "dark-surface": {
         "role": "neutral",
         "displayName": "Dark Surface",
         "tonalRamp": [
-          "oklch(15% 0.0460 259.14)",
-          "oklch(26% 0.0460 259.14)",
-          "oklch(38% 0.0460 259.14)",
-          "oklch(49% 0.0460 259.14)",
-          "oklch(61% 0.0460 259.14)",
-          "oklch(72% 0.0460 259.14)",
-          "oklch(84% 0.0460 259.14)",
-          "oklch(95% 0.0460 259.14)"
+          "oklch(15% 0.0067 78.16)",
+          "oklch(26% 0.0067 78.16)",
+          "oklch(38% 0.0067 78.16)",
+          "oklch(49% 0.0067 78.16)",
+          "oklch(61% 0.0067 78.16)",
+          "oklch(72% 0.0067 78.16)",
+          "oklch(84% 0.0067 78.16)",
+          "oklch(95% 0.0067 78.16)"
         ]
       },
       "dark-soft": {
         "role": "neutral",
         "displayName": "Dark Soft",
         "tonalRamp": [
-          "oklch(15% 0.0492 258.28)",
-          "oklch(26% 0.0492 258.28)",
-          "oklch(38% 0.0492 258.28)",
-          "oklch(49% 0.0492 258.28)",
-          "oklch(61% 0.0492 258.28)",
-          "oklch(72% 0.0492 258.28)",
-          "oklch(84% 0.0492 258.28)",
-          "oklch(95% 0.0492 258.28)"
+          "oklch(15% 0.0103 80.60)",
+          "oklch(26% 0.0103 80.60)",
+          "oklch(38% 0.0103 80.60)",
+          "oklch(49% 0.0103 80.60)",
+          "oklch(61% 0.0103 80.60)",
+          "oklch(72% 0.0103 80.60)",
+          "oklch(84% 0.0103 80.60)",
+          "oklch(95% 0.0103 80.60)"
         ]
       },
       "dark-ink": {
         "role": "neutral",
         "displayName": "Dark Ink",
         "tonalRamp": [
-          "oklch(15% 0.0120 259.82)",
-          "oklch(26% 0.0120 259.82)",
-          "oklch(38% 0.0120 259.82)",
-          "oklch(49% 0.0120 259.82)",
-          "oklch(61% 0.0120 259.82)",
-          "oklch(72% 0.0120 259.82)",
-          "oklch(84% 0.0120 259.82)",
-          "oklch(95% 0.0120 259.82)"
+          "oklch(15% 0.0069 88.64)",
+          "oklch(26% 0.0069 88.64)",
+          "oklch(38% 0.0069 88.64)",
+          "oklch(49% 0.0069 88.64)",
+          "oklch(61% 0.0069 88.64)",
+          "oklch(72% 0.0069 88.64)",
+          "oklch(84% 0.0069 88.64)",
+          "oklch(95% 0.0069 88.64)"
         ]
       },
       "dark-muted": {
         "role": "neutral",
         "displayName": "Dark Muted",
         "tonalRamp": [
-          "oklch(15% 0.0343 256.78)",
-          "oklch(26% 0.0343 256.78)",
-          "oklch(38% 0.0343 256.78)",
-          "oklch(49% 0.0343 256.78)",
-          "oklch(61% 0.0343 256.78)",
-          "oklch(72% 0.0343 256.78)",
-          "oklch(84% 0.0343 256.78)",
-          "oklch(95% 0.0343 256.78)"
+          "oklch(15% 0.0183 81.32)",
+          "oklch(26% 0.0183 81.32)",
+          "oklch(38% 0.0183 81.32)",
+          "oklch(49% 0.0183 81.32)",
+          "oklch(61% 0.0183 81.32)",
+          "oklch(72% 0.0183 81.32)",
+          "oklch(84% 0.0183 81.32)",
+          "oklch(95% 0.0183 81.32)"
         ]
       },
       "dark-line": {
         "role": "neutral",
         "displayName": "Dark Line",
         "tonalRamp": [
-          "oklch(15% 0.0481 259.13)",
-          "oklch(26% 0.0481 259.13)",
-          "oklch(38% 0.0481 259.13)",
-          "oklch(49% 0.0481 259.13)",
-          "oklch(61% 0.0481 259.13)",
-          "oklch(72% 0.0481 259.13)",
-          "oklch(84% 0.0481 259.13)",
-          "oklch(95% 0.0481 259.13)"
+          "oklch(15% 0.0139 76.39)",
+          "oklch(26% 0.0139 76.39)",
+          "oklch(38% 0.0139 76.39)",
+          "oklch(49% 0.0139 76.39)",
+          "oklch(61% 0.0139 76.39)",
+          "oklch(72% 0.0139 76.39)",
+          "oklch(84% 0.0139 76.39)",
+          "oklch(95% 0.0139 76.39)"
         ]
       },
       "dark-accent": {
         "role": "primary",
         "displayName": "Dark Accent",
         "tonalRamp": [
-          "oklch(15% 0.0953 262.70)",
-          "oklch(26% 0.0953 262.70)",
-          "oklch(38% 0.0953 262.70)",
-          "oklch(49% 0.0953 262.70)",
-          "oklch(61% 0.0953 262.70)",
-          "oklch(72% 0.0953 262.70)",
-          "oklch(84% 0.0953 262.70)",
-          "oklch(95% 0.0953 262.70)"
+          "oklch(15% 0.0857 262.68)",
+          "oklch(26% 0.0857 262.68)",
+          "oklch(38% 0.0857 262.68)",
+          "oklch(49% 0.0857 262.68)",
+          "oklch(61% 0.0857 262.68)",
+          "oklch(72% 0.0857 262.68)",
+          "oklch(84% 0.0857 262.68)",
+          "oklch(95% 0.0857 262.68)"
         ]
       },
       "dark-action": {
@@ -302,14 +288,14 @@
         "role": "primary",
         "displayName": "On Action",
         "tonalRamp": [
-          "oklch(15% 0.0070 268.55)",
-          "oklch(26% 0.0070 268.55)",
-          "oklch(38% 0.0070 268.55)",
-          "oklch(49% 0.0070 268.55)",
-          "oklch(61% 0.0070 268.55)",
-          "oklch(72% 0.0070 268.55)",
-          "oklch(84% 0.0070 268.55)",
-          "oklch(95% 0.0070 268.55)"
+          "oklch(15% 0.0000 0.00)",
+          "oklch(26% 0.0000 0.00)",
+          "oklch(38% 0.0000 0.00)",
+          "oklch(49% 0.0000 0.00)",
+          "oklch(61% 0.0000 0.00)",
+          "oklch(72% 0.0000 0.00)",
+          "oklch(84% 0.0000 0.00)",
+          "oklch(95% 0.0000 0.00)"
         ]
       },
       "light-caution": {
@@ -366,6 +352,20 @@
           "oklch(72% 0.0195 70.28)",
           "oklch(84% 0.0195 70.28)",
           "oklch(95% 0.0195 70.28)"
+        ]
+      },
+      "service-ground": {
+        "role": "primary",
+        "displayName": "Service Ground",
+        "tonalRamp": [
+          "oklch(15% 0.0134 72.20)",
+          "oklch(26% 0.0134 72.20)",
+          "oklch(38% 0.0134 72.20)",
+          "oklch(49% 0.0134 72.20)",
+          "oklch(61% 0.0134 72.20)",
+          "oklch(72% 0.0134 72.20)",
+          "oklch(84% 0.0134 72.20)",
+          "oklch(95% 0.0134 72.20)"
         ]
       }
     },
@@ -451,7 +451,7 @@
       "kind": "button",
       "description": "Filled action used by the featured trip; theme variables select its palette.",
       "html": "<button class=\"ds-primary\" type=\"button\">Explore this trip<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14m-6-6 6 6-6 6\"/></svg></button>",
-      "css": ".ds-primary{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:10px 14px;border:0;border-radius:6px;background:var(--mc-action,#2358ae);color:var(--mc-on-action,#f8faff);font-size:calc(12px * var(--mc-type-scale,1.18));font-weight:600;cursor:pointer;}.ds-primary:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;}.ds-primary:disabled{opacity:.55;cursor:wait;}@media(prefers-reduced-motion:no-preference){.ds-primary{transition:background-color 160ms ease-out,color 160ms ease-out;}}",
+      "css": ".ds-primary{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:10px 14px;border:0;border-radius:6px;background:var(--mc-action,#2358ae);color:var(--mc-on-action,#ffffff);font-size:calc(12px * var(--mc-type-scale,1.18));font-weight:600;cursor:pointer;}.ds-primary:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;}.ds-primary:disabled{opacity:.55;cursor:wait;}@media(prefers-reduced-motion:no-preference){.ds-primary{transition:background-color 160ms ease-out,color 160ms ease-out;}}.ds-primary:hover:not(:disabled){background:color-mix(in srgb,var(--mc-action,#2358ae) 90%,black);}",
       "refersTo": "button-primary"
     },
     {
@@ -467,22 +467,22 @@
       "kind": "button",
       "description": "Stable light circular control on photography, with a pressed heart state.",
       "html": "<button class=\"ds-save\" type=\"button\" aria-label=\"Save trip\" aria-pressed=\"false\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z\"/></svg></button>",
-      "css": ".ds-save{display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:50%;background:#f8faff;color:#233c5e;cursor:pointer;}.ds-save:hover,.ds-save[aria-pressed=\"true\"]{background:#dceaff;color:#1d52a5;}.ds-save[aria-pressed=\"true\"] svg{fill:currentColor;}.ds-save:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;}@media(prefers-reduced-motion:no-preference){.ds-save{transition:background-color 160ms ease-out,color 160ms ease-out;}}"
+      "css": ".ds-save{display:grid;place-items:center;width:36px;height:36px;border:0;border-radius:50%;background:#f8faff;color:#413a2f;cursor:pointer;}.ds-save:hover,.ds-save[aria-pressed=\"true\"]{background:#dceaff;color:#1d52a5;}.ds-save[aria-pressed=\"true\"] svg{fill:currentColor;}.ds-save:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;}@media(prefers-reduced-motion:no-preference){.ds-save{transition:background-color 160ms ease-out,color 160ms ease-out;}}"
     },
     {
       "name": "Conversation composer",
       "kind": "input",
       "description": "The flexible request field and its distinct send action.",
       "html": "<form class=\"ds-composer\"><input class=\"ds-request\" aria-label=\"Travel request\" placeholder=\"Where would you like to go?\"/><button class=\"ds-send\" type=\"button\" aria-label=\"Send request\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14m-6-6 6 6-6 6\"/></svg></button></form>",
-      "css": ".ds-composer{display:flex;align-items:center;gap:13px;padding:8px 10px 8px 16px;min-height:62px;background:var(--mc-soft,#edf1f7);border:1px solid var(--mc-line,#dce3ed);border-radius:10px;}.ds-request{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);min-width:0;width:100%;color:var(--mc-ink,#152640);background:none;border:0;font-size:calc(14px * var(--mc-type-scale,1.18));padding:6px 0;caret-color:var(--mc-accent,#2457a7);}.ds-request::placeholder{color:var(--mc-muted,#566780);opacity:1;}.ds-send{display:grid;place-items:center;width:40px;height:40px;flex-shrink:0;border:0;border-radius:7px;background:var(--mc-action,#2358ae);color:var(--mc-on-action,#f8faff);}.ds-send:disabled{background:var(--mc-line,#dce3ed);color:var(--mc-muted,#566780);opacity:1;}@media(max-width:860px){.ds-request{font-size:calc(16px * var(--mc-type-scale,1.04));}}",
+      "css": ".ds-composer{display:flex;align-items:center;gap:13px;padding:8px 10px 8px 16px;min-height:62px;background:var(--mc-soft,#f2f2f2);border:1px solid var(--mc-line,#e2e2e2);border-radius:10px;}.ds-request{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);min-width:0;width:100%;color:var(--mc-ink,#111111);background:none;border:0;font-size:calc(14px * var(--mc-type-scale,1.18));padding:6px 0;caret-color:var(--mc-accent,#2457a7);}.ds-request::placeholder{color:var(--mc-muted,#555555);opacity:1;}.ds-send{display:grid;place-items:center;width:40px;height:40px;flex-shrink:0;border:0;border-radius:7px;background:var(--mc-action,#2358ae);color:var(--mc-on-action,#ffffff);}.ds-send:disabled{background:var(--mc-line,#e2e2e2);color:var(--mc-muted,#555555);opacity:1;}@media(max-width:860px){.ds-request{font-size:calc(16px * var(--mc-type-scale,1.04));}}",
       "refersTo": "composer"
     },
     {
       "name": "Service navigation",
       "kind": "nav",
-      "description": "The navy service rail maintains the same colors in both themes.",
-      "html": "<nav class=\"ds-nav\" aria-label=\"Meridian services\"><button class=\"ds-nav-item ds-active\" type=\"button\" aria-current=\"page\">Concierge</button><button class=\"ds-nav-item\" type=\"button\">Trips</button><button class=\"ds-nav-item\" type=\"button\">Discover</button></nav>",
-      "css": ".ds-nav{display:grid;gap:4px;padding:12px;background:#10213c;}.ds-nav-item{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);text-align:left;min-height:44px;border:0;border-radius:7px;background:transparent;color:#afc1db;font-size:calc(13px * var(--mc-type-scale,1.18));font-weight:500;cursor:pointer;}.ds-nav-item.ds-active{background:#23436a;color:#f4f7ff;}.ds-nav-item:hover{background:#1a3458;color:#f4f7ff;}.ds-nav-item:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;}",
+      "description": "The warm near-black service rail maintains the same colors in both themes.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Meridian services\"><button class=\"ds-nav-item ds-active\" type=\"button\" aria-current=\"page\">Concierge</button><button class=\"ds-nav-item\" type=\"button\">Saved trips</button><button class=\"ds-nav-item\" type=\"button\">Discover</button></nav>",
+      "css": ".ds-nav{display:grid;gap:4px;padding:12px;background:#25201a;}.ds-nav-item{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);text-align:left;min-height:44px;border:0;border-radius:7px;background:transparent;color:#d2cbbf;font-size:calc(13px * var(--mc-type-scale,1.18));font-weight:500;cursor:pointer;}.ds-nav-item.ds-active{background:#3d372f;color:#ffffff;}.ds-nav-item:hover{background:#34302a;color:#ffffff;}.ds-nav-item:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;}",
       "refersTo": "navigation"
     },
     {
@@ -490,7 +490,7 @@
       "kind": "chip",
       "description": "A concise operable prompt above the composer.",
       "html": "<button class=\"ds-chip\" type=\"button\">A relaxing trip</button>",
-      "css": ".ds-chip{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);min-height:30px;padding:6px 10px;border:1px solid var(--mc-line,#dce3ed);border-radius:5px;background:none;color:var(--mc-ink,#152640);font-size:calc(11px * var(--mc-type-scale,1.18));cursor:pointer;}",
+      "css": ".ds-chip{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);min-height:30px;padding:6px 10px;border:1px solid var(--mc-line,#e2e2e2);border-radius:5px;background:none;color:var(--mc-ink,#111111);font-size:calc(11px * var(--mc-type-scale,1.18));cursor:pointer;}",
       "refersTo": "prompt-chip"
     },
     {
@@ -498,7 +498,7 @@
       "kind": "card",
       "description": "Quiet grouped facts in the same surface and type language as the traveler rail.",
       "html": "<section class=\"ds-brief\"><h2>Your travel brief</h2><dl><div><dt>Travel dates</dt><dd>Open to ideas</dd></div><div><dt>Usual budget</dt><dd>Not set</dd></div></dl></section>",
-      "css": ".ds-brief{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);padding:24px;background:var(--mc-surface,#ffffff);color:var(--mc-ink,#152640);border-radius:12px;}.ds-brief h2{margin:0 0 22px;font-size:calc(16px * var(--mc-type-scale,1.18));font-weight:570;}.ds-brief dl{display:grid;gap:17px;margin:0;}.ds-brief dl>div{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}.ds-brief dt{color:var(--mc-muted,#566780);font-size:calc(12px * var(--mc-type-scale,1.18));}.ds-brief dd{margin:0;max-width:60%;text-align:right;font-size:calc(12px * var(--mc-type-scale,1.18));font-weight:550;}",
+      "css": ".ds-brief{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);padding:24px;background:var(--mc-surface,#ffffff);color:var(--mc-ink,#111111);border-radius:12px;}.ds-brief h2{margin:0 0 22px;font-size:calc(16px * var(--mc-type-scale,1.18));font-weight:570;}.ds-brief dl{display:grid;gap:17px;margin:0;}.ds-brief dl>div{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}.ds-brief dt{color:var(--mc-muted,#555555);font-size:calc(12px * var(--mc-type-scale,1.18));}.ds-brief dd{margin:0;max-width:60%;text-align:right;font-size:calc(12px * var(--mc-type-scale,1.18));font-weight:550;}",
       "refersTo": "card"
     },
     {
@@ -513,21 +513,21 @@
       "kind": "custom",
       "description": "Evidence preserves a readable label and shows missing data explicitly.",
       "html": "<div class=\"ds-fact\"><span class=\"ds-fact-label\">Hold records</span><span class=\"ds-fact-value\">\u2014</span></div>",
-      "css": ".ds-fact{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);display:grid;gap:8px;color:var(--mc-ink,#152640);}.ds-fact-label{color:var(--mc-muted,#566780);font-size:max(16px,calc(14px * var(--mc-type-scale,1.18)));}.ds-fact-value{font-size:calc(20px * var(--mc-type-scale,1.18));overflow-wrap:anywhere;}"
+      "css": ".ds-fact{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);display:grid;gap:8px;color:var(--mc-ink,#111111);}.ds-fact-label{color:var(--mc-muted,#555555);font-size:max(16px,calc(14px * var(--mc-type-scale,1.18)));}.ds-fact-value{font-size:calc(20px * var(--mc-type-scale,1.18));overflow-wrap:anywhere;}"
     },
     {
       "name": "Architecture and evidence disclosure",
       "kind": "custom",
       "description": "Each capability phase has one takeaway and sentence; this native disclosure keeps supporting architecture closed initially.",
       "html": "<details class=\"ds-details\"><summary>Architecture &amp; evidence <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg></summary><dl><div><dt>Technology</dt><dd>LangGraph \u00b7 Aurora PostgreSQL</dd></div><div><dt>Verify in the trace</dt><dd>Checkpoint, thread ID, and resume result</dd></div></dl></details>",
-      "css": ".ds-details{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,sans-serif);color:var(--mc-ink,#152640);}.ds-details summary{display:flex;align-items:center;gap:12px;width:fit-content;min-height:44px;list-style:none;cursor:pointer;color:var(--mc-accent,#2457a7);font-size:calc(13px * var(--mc-type-scale,1.18));font-weight:550;}.ds-details summary::-webkit-details-marker{display:none;}.ds-details[open] summary svg{transform:rotate(180deg);}.ds-details summary:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;border-radius:4px;}.ds-details dl{display:grid;gap:12px;margin:0;font-size:calc(13px * var(--mc-type-scale,1.18));line-height:1.6;}.ds-details dl>div{display:grid;grid-template-columns:150px 1fr;gap:14px;}.ds-details dt{color:var(--mc-muted,#566780);}.ds-details dd{margin:0;}@media(max-width:860px){.ds-details dl>div{grid-template-columns:1fr;gap:3px;}}"
+      "css": ".ds-details{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,sans-serif);color:var(--mc-ink,#111111);}.ds-details summary{display:flex;align-items:center;gap:12px;width:fit-content;min-height:44px;list-style:none;cursor:pointer;color:var(--mc-accent,#2457a7);font-size:calc(13px * var(--mc-type-scale,1.18));font-weight:550;}.ds-details summary::-webkit-details-marker{display:none;}.ds-details[open] summary svg{transform:rotate(180deg);}.ds-details summary:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;border-radius:4px;}.ds-details dl{display:grid;gap:12px;margin:0;font-size:calc(13px * var(--mc-type-scale,1.18));line-height:1.6;}.ds-details dl>div{display:grid;grid-template-columns:150px 1fr;gap:14px;}.ds-details dt{color:var(--mc-muted,#555555);}.ds-details dd{margin:0;}@media(max-width:860px){.ds-details dl>div{grid-template-columns:1fr;gap:3px;}}"
     }
   ],
   "narrative": {
     "northStar": "Capable airline service",
-    "overview": "Meridian pairs calm navy navigation with cool silver and white task surfaces, useful destination photography, and clear travel details. The user's United Airlines and Delta Airlines references establish the level of service polish. Meridian keeps its own name, assets, and palette.\n\nThe interface is a working travel application: readable facts, a useful next action, and the traveler's returned preferences establish confidence. The dark theme carries the same hierarchy and component language. Presenter evidence uses this shared system while making observed state and missing evidence explicit.",
+    "overview": "Meridian pairs warm near-black navigation with white task surfaces, useful destination photography, and clear travel details. The user's United Airlines and Delta Airlines references establish the level of service polish. Meridian keeps its own name, assets, and palette.\n\nThe interface is a working travel application: readable facts, a useful next action, and the traveler's returned preferences establish confidence. The dark theme carries the same hierarchy and component language. Presenter evidence uses this shared system while making observed state and missing evidence explicit.",
     "keyCharacteristics": [
-      "Navy service navigation and blue actions anchor both themes.",
+      "Warm near-black service navigation and blue actions anchor both themes.",
       "Geist variable type supports readable travel details and presentation use.",
       "Real destination photography gives travel content its visual identity.",
       "Tonal surfaces, fine borders, and modest corners organize the work.",
@@ -536,7 +536,7 @@
     "rules": [
       {
         "name": "The Theme Pair Rule",
-        "body": "Use the semantic theme roles together. Keep the navy service navigation stable while changing the canvas, reading colors, borders, accents, and caution treatments as a complete set.",
+        "body": "Use the semantic theme roles together. Keep the warm near-black service navigation stable while changing the canvas, reading colors, borders, accents, and caution treatments as a complete set.",
         "section": "colors"
       },
       {

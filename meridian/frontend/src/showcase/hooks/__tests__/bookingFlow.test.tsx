@@ -19,6 +19,8 @@ const held = { order_id: 'HLD-9', items: [{ product_id: 'CTY-002', name: 'Tokyo 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(processOrder).mockReset();
+  vi.mocked(confirmBooking).mockReset();
   vi.mocked(fetchHealth).mockResolvedValue({ status: 'healthy' });
   vi.mocked(fetchMemoryProfile).mockResolvedValue({ traveler_id: 'trv_meridian_demo', profile: { party_size: 2 }, facts: [] });
   vi.mocked(fetchProducts).mockResolvedValue([tokyo]);
@@ -26,6 +28,39 @@ beforeEach(() => {
 });
 
 describe('Booking confirmation', () => {
+  it('retries an unacknowledged direct hold with the same identity, even after clearing chat', async () => {
+    vi.mocked(processOrder)
+      .mockRejectedValueOnce(new Error('Response lost after commit'))
+      .mockResolvedValueOnce({ message: 'Replayed.', order: held, activities: [] });
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.travelersCount).toBe(2));
+    await act(async () => { await result.current.holdTrip(tokyo); });
+    const first = vi.mocked(processOrder).mock.calls[0][0];
+    expect(first.conversation_id).toEqual(expect.any(String));
+    expect(result.current.error).toMatch(/may have been saved/i);
+    act(() => result.current.clearChat());
+    await act(async () => { await result.current.holdTrip(tokyo); });
+    expect(vi.mocked(processOrder).mock.calls[1][0].conversation_id).toBe(first.conversation_id);
+    expect(result.current.tripHolds[0].order.order_id).toBe('HLD-9');
+  });
+
+  it('starts a new hold intent after a known hold expires', async () => {
+    vi.mocked(processOrder)
+      .mockResolvedValueOnce({ message: 'Held.', order: { ...held, hold_expires_at: '2000-01-01T00:00:00Z' }, activities: [] })
+      .mockRejectedValueOnce(new Error('Renewal response lost'))
+      .mockResolvedValueOnce({ message: 'Held again.', order: held, activities: [] });
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.travelersCount).toBe(2));
+    await act(async () => { await result.current.submitPrompt('Plan Tokyo', 4); });
+    await act(async () => { await result.current.holdTrip(tokyo); });
+    await act(async () => { await result.current.holdTrip(tokyo); });
+    await act(async () => { await result.current.holdTrip(tokyo); });
+    const [first, second] = vi.mocked(processOrder).mock.calls.map(([request]) => request);
+    expect(second.conversation_id).toEqual(expect.any(String));
+    expect(second.conversation_id).not.toBe(first.conversation_id);
+    expect(vi.mocked(processOrder).mock.calls[2][0].conversation_id).toBe(second.conversation_id);
+  });
+
   it('asks for confirmation on a held trip, then confirms it through the booking service', async () => {
     vi.mocked(processOrder).mockResolvedValue({ message: 'Held.', order: held, activities: [] });
     vi.mocked(confirmBooking).mockResolvedValue({ message: 'Confirmed.', order: { ...held, status: 'confirmed', confirmed_at: '2026-09-10 13:00:00+00' }, activities: [] });

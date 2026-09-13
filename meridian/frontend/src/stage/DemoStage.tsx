@@ -39,25 +39,15 @@ import {
 import { adaptChatResponseToScenario, sumLatency } from './utils/traceAdapter';
 import { sendChatMessage } from '../api/client';
 import { SHOWCASE_PHASES } from '../showcase/lib/showcaseAdapters';
+import { BriefingArchitecture } from '../showcase/surfaces/BriefingArchitecture';
 import type { StageScenario, StageSpan, StageSystemId, StageView } from './types';
 import type { Phase } from '../types';
 
 const KIOSK_SCENARIO_ORDER: StageScenario['id'][] = ['tokyo', 'recall', 'plan'];
 const KIOSK_DWELL_MS = 6500;
 const KIOSK_GITHUB_REPO = 'https://github.com/aws-samples/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore';
-const ARCHITECTURE_IMAGE_SRC = '/kiosk/architecture.png';
 const TRY_QR_IMAGE_SRC = '/kiosk/try-meridian-qr.png';
 type KioskTab = 'demo' | 'architecture' | 'try';
-
-// Chalk-talk session - shown on the "Try it live" pane to drive folks to
-// the deeper session. Keep in one place so the date/room is easy to edit.
-const CHALK_TALK = {
-  code: 'DAT301-R',
-  title: 'Build agentic workflows with Aurora and MCP',
-  time: '4:15 - 5:15 PM · Chalk talk',
-  room: 'Room 716A',
-  speakers: 'Shayon Sanyal & Aditya Samant',
-} as const;
 
 // Showcase is the participant surface. The stage remains available for
 // kiosk loops and presenter playback.
@@ -96,7 +86,6 @@ export function DemoStage() {
   // booth quietly reconnects instead of parking on an error string.
   const [retryTick, setRetryTick] = useState(0);
   const [activeTab, setActiveTab] = useState<KioskTab>('demo');
-  const [architectureMissing, setArchitectureMissing] = useState(false);
   const [qrMissing, setQrMissing] = useState(false);
   const phaseRef = useRef<Phase>(flags.phase);
   const conversationIdRef = useRef<string | null>(null);
@@ -412,8 +401,9 @@ export function DemoStage() {
     <div className={`ds-root${kiosk ? ' is-kiosk' : ''}`} data-view={view}>
       <div className="ds-shell">
         <StageTopBar
-          phaseLabel={scenarioData.phaseLabel}
+          phaseLabel={`Phase ${flags.phase} · ${phaseMeta?.capability ?? 'Meridian'}`}
           traceId={scenarioData.traceId}
+          traceStatus={loading ? 'Loading trace' : loadError ? 'Trace unavailable' : 'Recorded response'}
         />
         {kiosk && (
           <div className="ds-kiosk-tabs" role="tablist" aria-label="Kiosk screens">
@@ -521,59 +511,39 @@ export function DemoStage() {
             <div className="ds-kiosk-pane-head">
               <h2>Meridian architecture map</h2>
               <p>
-                End-to-end stack: booth UX, Strands orchestration, AgentCore runtime/gateway/memory,
-                and Aurora PostgreSQL + pgvector retrieval.
+                The same architecture as Solution briefing: managed tool calls,
+                governed actions, and durable Aurora workflow state.
               </p>
             </div>
             <div className="ds-kiosk-architecture">
-              <img
-                src={ARCHITECTURE_IMAGE_SRC}
-                alt="Meridian architecture diagram"
-                className="ds-kiosk-architecture-img"
-                width="3246"
-                height="1838"
-                onLoad={() => setArchitectureMissing(false)}
-                onError={() => setArchitectureMissing(true)}
-              />
-              {architectureMissing && (
-                <div className="ds-kiosk-missing">
-                  <b>Add your architecture board image</b>
-                  <span>
-                    Drop it at <code>meridian/frontend/public/kiosk/architecture-board.png</code>.
-                    PNG, JPG, or WEBP all work (just keep the filename aligned).
-                  </span>
-                </div>
-              )}
+              <BriefingArchitecture />
             </div>
           </section>
         ) : (
           <section className="ds-kiosk-pane">
             <div className="ds-kiosk-pane-head">
               <h2>Try Meridian yourself</h2>
-              <p>Open the showcase, scan the repo, or join our chalk talk.</p>
+              <p>Open the showcase, inspect the architecture, or explore the source.</p>
             </div>
 
-            {/* Chalk-talk invite - the deeper session this booth previews. */}
+            {/* Reusable source handoff; event schedules belong to the event guide. */}
             <a
               className="ds-kiosk-session"
               href={KIOSK_GITHUB_REPO}
               target="_blank"
               rel="noreferrer"
             >
-              <div className="ds-kiosk-session-badge">{CHALK_TALK.code}</div>
+              <div className="ds-kiosk-session-badge">Sample</div>
               <div className="ds-kiosk-session-body">
-                <div className="ds-kiosk-session-title">{CHALK_TALK.title}</div>
+                <div className="ds-kiosk-session-title">Build stateful agentic AI workflows with Aurora, MCP, and AgentCore</div>
                 <div className="ds-kiosk-session-meta">
-                  <span>{CHALK_TALK.time}</span>
-                  <span>·</span>
-                  <span>{CHALK_TALK.room}</span>
+                  <span>Setup guide, architecture, and recovery rehearsals</span>
                 </div>
-                <div className="ds-kiosk-session-speakers">{CHALK_TALK.speakers}</div>
               </div>
-              <div className="ds-kiosk-session-cta">Join us →</div>
+              <div className="ds-kiosk-session-cta">Open source →</div>
             </a>
 
-            {/* Jump to any of the three Meridian surfaces. */}
+            {/* Open the showcase or the kiosk. */}
             <div className="ds-kiosk-surfaces">
               {MERIDIAN_SURFACES.map((s) => (
                 <a key={s.path} className="ds-kiosk-surface" href={s.path}>
@@ -588,12 +558,11 @@ export function DemoStage() {
               <div className="ds-kiosk-try-hero">
                 <div className="ds-kiosk-rollup-label">Live at the booth</div>
                 <h3>
-                  Build agentic workflows with <em>Aurora and MCP</em>
+                  Build stateful workflows with <em>Aurora, MCP, and AgentCore</em>
                 </h3>
                 <p>
-                  Aurora PostgreSQL + pgvector, MCP tool servers, Strands orchestration, and
-                  AgentCore runtime/gateway/memory. Scan to clone the repo and run all three
-                  surfaces locally in minutes.
+                  Explore Concierge, the capability ladder, and disruption recovery.
+                  Follow the repository setup guide to connect the app to your configured AWS resources.
                 </p>
               </div>
               <div className="ds-kiosk-try-grid">
@@ -630,7 +599,7 @@ export function DemoStage() {
                       <pre className="ds-kiosk-snippet">
 {`cd meridian
 source venv/bin/activate
-uvicorn backend.main:app --reload --port 8000`}
+uvicorn backend.main:app --host 127.0.0.1 --port 8013`}
                       </pre>
                     </div>
                     <div className="ds-kiosk-meta-block">

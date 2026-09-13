@@ -1,4 +1,5 @@
 import { isObserved, type JourneyDocument, type JourneyHold } from '../journey/types';
+import { parseDatabaseTime } from '../journey/evidence';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   confirmBooking,
@@ -255,6 +256,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [tripDetailsOpen, setTripDetailsOpen] = useState(false);
   const [tripHolds, setTripHolds] = useState<TripHold[]>([]);
   const holdPending = useRef(false);
+  // Keep an unacknowledged hold's identity across retries and phase resets.
+  // The Gateway derives its replay key from this conversation and the terms.
+  const holdConversations = useRef(new Map<string, { conversationId: string; replacesBookingId?: string }>());
   const [bookingPrompt, setBookingPrompt] = useState<TripHold | null>(null);
   const bookingPending = useRef(false);
   const [workspace, setWorkspace] = useState(loadTripWorkspace);
@@ -272,6 +276,14 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [budgetCeilingPerTravelerCents, setBudgetCeiling] = useState<number | null>(null);
   const [memoryEnabled, setMemoryEnabledState] = useState(false);
   const [memoryLoading, setMemoryLoading] = useState(false);
+  const memoryReadGeneration = useRef(0);
+  const memoryReadController = useRef<AbortController | null>(null);
+  const invalidateMemoryRead = useCallback(() => {
+    memoryReadGeneration.current += 1;
+    memoryReadController.current?.abort();
+    memoryReadController.current = null;
+  }, []);
+  useEffect(() => invalidateMemoryRead, [invalidateMemoryRead]);
   const [memoryToggleError, setMemoryToggleError] = useState<string | null>(null);
   const [memoryMutationError, setMemoryMutationError] = useState<string | null>(null);
   const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
@@ -420,8 +432,12 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   // memory an explicit capability: enabling it performs the real Aurora read,
   // then subsequent chat requests carry memory_enabled=true.
   const setMemoryEnabled = useCallback(async (enabled: boolean) => {
+    invalidateMemoryRead();
+    const generation = memoryReadGeneration.current;
+    const isCurrent = () => mounted.current && generation === memoryReadGeneration.current;
     setMemoryToggleError(null);
     if (!enabled) {
+      setMemoryLoading(false);
       setMemoryEnabledState(false);
       setMemoryFacts([]);
       setTravelerProfile(null);
@@ -429,15 +445,18 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     }
 
     setMemoryLoading(true);
+    const controller = new AbortController();
+    memoryReadController.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 45000);
     try {
-      const profile = await fetchMemoryProfile(SHOWCASE_TRAVELER_ID);
-      if (!mounted.current) return;
+      const profile = await fetchMemoryProfile(SHOWCASE_TRAVELER_ID, controller.signal);
+      if (!isCurrent()) return;
       setMemoryFacts(memoryResponseToFacts(profile));
       setTravelerProfile(profile.profile ?? null);
       setBudgetCeiling(profile.budget_ceiling_per_traveler_cents ?? null);
       setMemoryEnabledState(true);
     } catch {
-      if (!mounted.current) return;
+      if (!isCurrent()) return;
       setMemoryEnabledState(false);
       setMemoryFacts([]);
       setTravelerProfile(null);
@@ -445,9 +464,13 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         'Traveler context could not be authorized. Confirm Aurora is available and try again.',
       );
     } finally {
-      if (mounted.current) setMemoryLoading(false);
+      window.clearTimeout(timeout);
+      if (isCurrent()) {
+        memoryReadController.current = null;
+        setMemoryLoading(false);
+      }
     }
-  }, []);
+  }, [invalidateMemoryRead]);
 
   const replayTrace = useCallback(() => {
     clearReplayTimers();
@@ -595,7 +618,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
             : {}),
         }, controller.signal);
         if (!isCurrent()) return;
-        setBackendStatus('online');
+        // One successful chat does not verify the catalog and traveler reads.
+        // Only the readiness check may mark all of Meridian's live data ready.
+        if (backendStatus === 'offline' && !connectionController.current) void refreshConnection();
         conversationPhaseRef.current = requestPhase;
         applyChatResponse(decorated, response);
         setConversationTravelers(travelersCount);
@@ -616,7 +641,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         }
       }
     },
-    [applyChatResponse, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, memoryEnabled, previewProfile, selectedPhase, travelersCount, workflowStatus],
+    [applyChatResponse, backendStatus, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, memoryEnabled, previewProfile, refreshConnection, selectedPhase, travelersCount, workflowStatus],
   );
 
   const applyPhaseExample = useCallback(
@@ -692,6 +717,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setChatFiltersState(EMPTY_FILTERS);
     setLatestStreamComplete(true);
     if (phase < 4) {
+      invalidateMemoryRead();
+      setMemoryLoading(false);
       setMemoryEnabledState(false);
       setMemoryFacts([]);
       setTravelerProfile(null);
@@ -699,7 +726,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     }
     // No auto-prompt: leave the composer empty so the presenter types
     // intent freshly for each phase walkthrough.
-  }, [selectedPhase, clearReplayTimers, invalidateChatRequest]);
+  }, [selectedPhase, clearReplayTimers, invalidateChatRequest, invalidateMemoryRead]);
 
   const dismissPhaseHint = useCallback(() => {
     setPhaseHint(null);
@@ -720,9 +747,23 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     async (product: Product) => {
       if (isLoading || holdPending.current) return;
       const existing = tripHolds.find(hold => hold.productId === product.product_id);
-      if (existing?.order.status === 'held' && Date.parse(existing.order.hold_expires_at ?? '') > Date.now()) {
+      if (existing?.order.status === 'confirmed'
+        || (existing?.order.status === 'held' && parseDatabaseTime(existing.order.hold_expires_at) > Date.now())) {
         openTripDetails(product);
         return;
+      }
+      const duration = product.available_sizes?.[0];
+      const intentKey = JSON.stringify([product.product_id, duration, travelersCount]);
+      const expired = existing && (existing.order.status === 'expired'
+        || parseDatabaseTime(existing.order.hold_expires_at) <= Date.now());
+      let holdIntent = holdConversations.current.get(intentKey);
+      if (!holdIntent || (expired && holdIntent.replacesBookingId !== existing.order.order_id)) {
+        // A known expired hold is a new request, even in the same chat.
+        holdIntent = {
+          conversationId: (!expired && conversationId) || `conv_hold_${crypto.randomUUID()}`,
+          replacesBookingId: expired ? existing.order.order_id : undefined,
+        };
+        holdConversations.current.set(intentKey, holdIntent);
       }
       holdPending.current = true;
       const generation = requestGeneration.current;
@@ -735,12 +776,12 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       try {
         const response = await processOrder({
           product_id: product.product_id,
-          size: product.available_sizes?.[0] ?? undefined,
+          size: duration,
           quantity: travelersCount,
           phase: selectedPhase,
           traveler_id: SHOWCASE_TRAVELER_ID,
           action: 'hold',
-          conversation_id: conversationId ?? undefined,
+          conversation_id: holdIntent.conversationId,
         });
         if (!mounted.current) return;
         if (response.order) {
@@ -771,7 +812,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (!mounted.current || generation !== requestGeneration.current) return;
         setBackendStatus('offline');
         setError(
-          `Unable to hold ${product.name}: the live hold service is unavailable. Restart the FastAPI backend.`,
+          `The hold response for ${product.name} was not received. It may have been saved. Retry this hold to check the same request.`,
         );
       } finally {
         holdPending.current = false;
@@ -838,7 +879,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (!mounted.current || generation !== requestGeneration.current) return;
         setBackendStatus('offline');
         setError(
-          `Unable to confirm ${product.name}: the live booking service is unavailable. Restart the FastAPI backend.`,
+          `The confirmation response for ${product.name} was not received. The booking may already be confirmed. Retry confirmation to check the same booking.`,
         );
       } finally {
         bookingPending.current = false;
@@ -926,6 +967,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
 
   const updateMemoryPreference = useCallback(async (key: string, value: string) => {
     const previous = memoryFacts;
+    const generation = memoryReadGeneration.current;
     setMemoryMutationError(null);
     setMemoryFacts((facts) => facts.map((fact) => (
       fact.key === key ? { ...fact, value, source: 'traveler_edit', confidence: 1 } : fact
@@ -933,32 +975,38 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     try {
       const updated = await updateMemoryFact(SHOWCASE_TRAVELER_ID, key, value);
       if (!mounted.current) return false;
-      setMemoryFacts((facts) => facts.map((fact) => (
-        fact.key === key ? updated : fact
-      )));
+      if (generation === memoryReadGeneration.current) {
+        setMemoryFacts((facts) => facts.map((fact) => (
+          fact.key === key ? updated : fact
+        )));
+      }
+      await refreshConnection();
       return true;
     } catch {
       if (!mounted.current) return false;
-      setMemoryFacts(previous);
+      if (generation === memoryReadGeneration.current) setMemoryFacts(previous);
       setMemoryMutationError('That preference could not be updated. Try again.');
       return false;
     }
-  }, [memoryFacts]);
+  }, [memoryFacts, refreshConnection]);
 
   const deleteMemoryPreference = useCallback(async (key: string) => {
     const previous = memoryFacts;
+    const generation = memoryReadGeneration.current;
     setMemoryMutationError(null);
     setMemoryFacts((facts) => facts.filter((fact) => fact.key !== key));
     try {
       await deleteMemoryFact(SHOWCASE_TRAVELER_ID, key);
+      if (!mounted.current) return false;
+      await refreshConnection();
       return true;
     } catch {
       if (!mounted.current) return false;
-      setMemoryFacts(previous);
+      if (generation === memoryReadGeneration.current) setMemoryFacts(previous);
       setMemoryMutationError('That preference could not be removed. Try again.');
       return false;
     }
-  }, [memoryFacts]);
+  }, [memoryFacts, refreshConnection]);
 
   const clearChat = useCallback(() => {
     // Reset every per-conversation surface back to its empty state. The

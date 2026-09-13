@@ -16,6 +16,21 @@ import { Construct } from 'constructs';
 /** The Secrets Manager name scripts/publish.py writes the API bearer token to. */
 export const API_TOKEN_SECRET_NAME = 'meridian/web/api-token';
 
+// The production bundle serves its scripts and fonts from the same origin.
+// React and Motion set inline styles; catalog photography may use HTTPS URLs.
+export const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+].join('; ');
+
 /** Non-secret settings copied from meridian/.env into the App Runner service. */
 const ENV_PASSTHROUGH = [
   'AURORA_CLUSTER_ARN',
@@ -128,6 +143,19 @@ export class MeridianWebStack extends Stack {
       code: cloudfront.FunctionCode.fromFile({ filePath: path.join(__dirname, '..', '..', 'functions', 'viewer-request.js') }),
     });
 
+    const responseHeaders = new cloudfront.ResponseHeadersPolicy(this, 'ResponseHeaders', {
+      securityHeadersBehavior: {
+        contentSecurityPolicy: { contentSecurityPolicy: CONTENT_SECURITY_POLICY, override: true },
+        contentTypeOptions: { override: true },
+        frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
+        referrerPolicy: { referrerPolicy: cloudfront.HeadersReferrerPolicy.NO_REFERRER, override: true },
+        strictTransportSecurity: {
+          accessControlMaxAge: Duration.days(365),
+          override: true,
+        },
+      },
+    });
+
     const api = new origins.HttpOrigin(apiHost, {
       protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY,
       readTimeout: Duration.seconds(60),
@@ -139,6 +167,7 @@ export class MeridianWebStack extends Stack {
       allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
       cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
       originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+      responseHeadersPolicy: responseHeaders,
       functionAssociations: [{ function: viewer, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST }],
     };
 
@@ -151,6 +180,7 @@ export class MeridianWebStack extends Stack {
         origin: origins.S3BucketOrigin.withOriginAccessControl(site),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        responseHeadersPolicy: responseHeaders,
         functionAssociations: [{ function: viewer, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST }],
       },
       additionalBehaviors: {
