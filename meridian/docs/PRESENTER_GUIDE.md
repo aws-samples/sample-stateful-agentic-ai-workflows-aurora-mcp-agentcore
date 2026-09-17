@@ -63,13 +63,13 @@ Use the **Presenter controls** bar while preparing with your co-presenter:
 
 - **Preview audience layout** widens the workspace and hides the service sidebar while keeping preparation controls available.
 - **Projector readability** increases type size and secondary-text contrast in the preview and fullscreen. Leave it enabled on a projector.
-- Select **Present fullscreen** before sharing. The entire preparation bar disappears; the Meridian brand, four views, and evidence remain usable. Press **Esc** to return to the windowed layout. The current conversation and preparation settings are preserved.
+- Select **Present fullscreen** before sharing. The entire preparation bar disappears; the Meridian brand, five views, and evidence remain usable. Press **Esc** to return to the windowed layout. The current conversation and preparation settings are preserved.
 
 Use the app's fullscreen button for the demo. Controls are visible on a shared windowed screen, so stop sharing before exiting fullscreen. This is a preparation toolbar, not a separate private presenter monitor.
 
 Verify:
 
-- `/health` reports `status: healthy`. This checks process configuration, so also confirm that live catalog and profile reads succeed. An expired AWS session can leave process health green while those reads fail.
+- `/api/health` reports `status: healthy`. This checks process configuration, so also confirm that live catalog and profile reads succeed. An expired AWS session can leave process health green while those reads fail.
 - The configured Bedrock model is `global.anthropic.claude-sonnet-5`.
 - Alex Morgan's profile loads with JFK, party of two, and both loyalty programs.
 - The first SQL query returns product cards with images and live inventory.
@@ -84,7 +84,7 @@ poor. Keep browser zoom at 100 percent.
 ## Suggested Run Of Show
 
 [`DEMO_SCRIPT.md`](../DEMO_SCRIPT.md) holds the authoritative timing budget:
-about 45 minutes of content in a 60-minute slot, leaving the balance as
+about 40 minutes of slides, code walkthrough, and live demo in a 60-minute slot, leaving the balance as
 distributed Q&A. Use the table below as the at-a-glance card and that budget
 for pacing.
 
@@ -103,14 +103,14 @@ the UI does not stream live step completion while it waits.
 | **1 - SQL** | `Show me city trips under $2,000 per traveler.` | Parameterized SQL, live rows, inventory | Structured filters work, but business operations need a contract. |
 | **2 - MCP** | `Compare three trip types and convert each price to euros.` | MCP tool discovery, comparison, FX conversion | Tools improve interoperability, not semantic understanding. |
 | **3 - Retrieval** | `Find a quiet, romantic wine-country retreat with a private villa.` | pgvector, full-text candidates, Cohere rerank | Intent works, but the system still needs trusted memory. |
-| **4 - Production** | `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` then click **Hold** on a trip, then type `Hold the first option for two travelers now.` | Memory facts, identity, ALLOW/DENY, RLS, audit, the runtime's gateway tool calls, one Cedar permit and one Cedar deny | A multi-step disruption plan now needs durable execution state. |
+| **4 - Production** | `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` then type `Hold the first option for two travelers now.` | Memory facts, identity, ALLOW/DENY, RLS, audit, the runtime's gateway tool calls, one Cedar deny; the recovery supplies the permit | A multi-step disruption plan now needs durable execution state. |
 | **5 - Workflow** | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` | Named graph nodes, checkpoints, same-thread resume | The plan survives process interruption because state is externalized. |
 
 ## Presentation Flow
 
 ### 1. Establish the Traveler Problem
 
-Start in **Experience**. Point out:
+Start in **Concierge**. Point out:
 
 - The canceled JFK to HND flight.
 - Alex's United Premier 1K and Marriott Bonvoy Platinum status.
@@ -123,7 +123,7 @@ gains capabilities phase by phase.
 
 Run the Phase 1 query and expand the result cards.
 
-In **System proof**, point to the parameterized filter and execution timing.
+In **System evidence**, point to the parameterized filter and execution timing.
 Explain that the RDS Data API is a connectionless transport to durable Aurora
 data. It does not make the application stateless.
 
@@ -246,10 +246,18 @@ Keep the two hold policies distinct:
 - The timer displays the expiry; Aurora enforces it. Inventory queries stop
   counting expired holds. Neither policy reserves flight seats or charges
   payment.
-- Direct-hold receipts stay in this browser session’s app state. Refreshing
-  clears that local display; the booking and its expiry remain in Aurora.
-  The 12-hour clock uses device time. Workflow receipts read back from
-  Aurora can use the database observation time.
+- Direct-hold intent and booking references persist on this device. Refreshing
+  reads their receipts back from Aurora; local storage is not evidence of a hold.
+  A retry first checks the same intent. Confirmation re-reads the booking before
+  calling the governed write, and an already confirmed booking is not confirmed again.
+  If the saved request cannot be read, resolve that failure before starting a new hold.
+  The 12-hour clock uses device time; Aurora enforces expiry. Workflow receipts
+  can also use the database observation time.
+- Chat, hold, and confirmation waits are bounded to 55 seconds. **Stop waiting**
+  ends the browser wait and preserves the recovery address or hold identity.
+  It does not cancel the server action. Use **Re-read this recovery** or retry the
+  same trip to reconcile an unknown outcome. **Open a saved recovery** is an
+  explicit selection; entering Recovery desk never adopts an unrelated latest journey.
 
 ### 8. Close, Then Open the Room (60–90 Seconds)
 
@@ -355,7 +363,7 @@ Keep these statements explicit:
 - [ ] Confirm `scripts/verify_agentcore.py` exits 0 and `scripts/smoke_production_turn.py` prints three PASS lines.
 - [ ] Confirm a **Hold** click in Phase 4 shows the Cedar permit and a hold id, and a typed hold shows **Denied by policy**.
 - [ ] Confirm recalled facts come from Aurora and are highlighted in the reply.
-- [ ] Confirm `/health` reports a durable checkpoint backend for Phase 5.
+- [ ] Confirm `/api/health` reports a durable checkpoint backend for Phase 5.
 - [ ] Confirm resume continues the same workflow thread after a backend restart.
 - [ ] Keep the light theme available for low-contrast projectors.
 

@@ -1,10 +1,10 @@
 # Meridian Operations
 
 Everything for running the demo: **deploy** AgentCore (day-before), **run the
-booth/kiosk** (day-of), and the **gotchas** we hit getting Phase 4 live.
+chalk talk** (day-of), and the **gotchas** we hit getting Phase 4 live.
 
 - Deploy procedure → [Part 1](#part-1--deploy-agentcore-day-before)
-- Booth / kiosk operation → [Part 2](#part-2--kiosk--booth-runbook-day-of)
+- Chalk-talk operation → [Part 2](#part-2--chalk-talk-runbook-day-of)
 - Lessons & gotchas → [Part 3](#part-3--learnings--gotchas)
 
 Default region for this demo: **`us-east-1`**. Replace sample account
@@ -104,7 +104,7 @@ python scripts/kill_and_resume_demo.py    # Phase 5: hold through the gateway, S
 python scripts/lost_response_demo.py      # discard a real hold reply, then retry the persisted intent
 ```
 
-For the published site, request `/` without credentials (expect 401) and `/health`
+For the published site, request `/` without credentials (expect 401) and `/api/health`
 with the basic credential from `.local/published.json` (expect 200 and
 `"checkpoint_durable": true`).
 
@@ -183,7 +183,7 @@ Phase 5 request on the published site fails with
 Verify with the credentials from `.local/published.json`:
 
 ```bash
-curl -s -u meridian:PASSWORD https://<distribution>.cloudfront.net/health | jq .
+curl -s -u meridian:PASSWORD https://<distribution>.cloudfront.net/api/health | jq .
 curl -s -u meridian:PASSWORD -X POST https://<distribution>.cloudfront.net/api/chat \
   -H "Content-Type: application/json" \
   -d '{"phase":1,"message":"Show me city trips under $2,000 per traveler.","customer_id":"trv_meridian_demo"}' \
@@ -218,9 +218,9 @@ agentcore deploy -y
 
 ---
 
-# PART 2 — Kiosk / booth runbook (day-of)
+# PART 2 — Chalk-talk runbook (day-of)
 
-Keep this open in one tab while operating the booth.
+Keep this open in one tab while presenting the chalk talk.
 
 ## 1) Preflight (10–15 min before)
 
@@ -274,7 +274,7 @@ explicit CORS allow-list. Local preview does not require a network bind.
 ## 3) Health checks (must pass)
 
 ```bash
-curl -s http://127.0.0.1:8013/health | jq .                       # Sonnet 5 + cohere.embed-v4:0
+curl -s http://127.0.0.1:8013/api/health | jq .                       # Sonnet 5 + cohere.embed-v4:0
 curl -s http://127.0.0.1:8013/api/memory/trv_meridian_demo | jq . # Alex Morgan facts
 
 # Phase 4 smoke — identity, RLS, AgentCore Runtime, Gateway tools, Cedar, Aurora end to end:
@@ -290,7 +290,7 @@ curl -s -X POST http://127.0.0.1:8013/api/chat/order \
   | jq '.order.order_id, .order.hold_expires_at, [.activities[] | select(.telemetry.status=="denied" or .activity_type=="order") | .title]'
 ```
 
-For the stage proof, `/health` must include:
+For the stage proof, `/api/health` must include:
 
 ```json
 {
@@ -323,7 +323,7 @@ Holds expire on their own; `tests/test_order_hold.py` shows how to purge one.
    the configured durable backend with `next=availability`.
 3. Stop only the backend with `Ctrl+C`. Leave the browser and frontend running.
 4. Restart the same backend command with the durable settings from section 2.
-5. Confirm `/health` is durable again.
+5. Confirm `/api/health` is durable again.
 6. Select **Continue at recovery desk**, then **Resume and request hold** in
    the existing conversation. This requests a 15-minute package hold.
 7. Confirm `Workflow resumed from checkpoint` uses the same `thread_id` and
@@ -391,10 +391,10 @@ publishes the current `app/MeridianConcierge` code.
 - Reuse the same deployed stack for both kiosk and the code walkthrough — avoid
   "fresh deploy theater" unless deploying is the explicit lesson.
 - One terminal on backend logs, one on frontend logs.
-- After any fix, rerun the Section 3 health checks before resuming booth traffic.
+- After any fix, rerun the Section 3 health checks before resuming the demo.
 - The kiosk auto-loops real `/api/chat` calls on a timer → real Bedrock + Aurora
   spend. Stop it when not actively demoing.
-- Never narrate durable recovery unless `/health` says
+- Never narrate durable recovery unless `/api/health` says
   `"checkpoint_durable": true` and the trace names the configured Aurora saver.
 
 ---
@@ -440,3 +440,12 @@ Hard-won notes from getting Phase 4 live. Most map to a recovery step above.
 
 The app reads deployed values from `.env` / the CLI deployed-state file at
 runtime. The split is intentional and fine; could be merged later if desired.
+
+
+### Waiting and readback policy
+
+The browser bounds chat, hold, and booking waits to 55 seconds, before CloudFront's 60-second origin timeout. A managed Runtime read has a 45-second socket timeout with one SDK attempt; this is not an end-to-end workflow deadline. A multi-step workflow can outlive the browser wait. Its saved thread remains addressable in the URL, and the UI requires readback before retrying an unknown recovery outcome. Stopping the wait does not revoke a committed transaction.
+
+Catalog routes, `/api/health`, `/openapi.json`, `/docs`, `/redoc`, and the API root use the existing HTTP principal requirement. `/health` is deliberately public and returns only process liveness (`status: healthy`); it does not establish Aurora readiness. For the hosted release, verify protected frontend/backend parity and headers before presenting. Local code validation is not deployment evidence.
+
+Direct-hold identities and booking references persist per traveler on the browser origin. Receipts are restored through authenticated, RLS-scoped reads from Aurora. Blocked storage prevents a new direct hold from being sent. Do not clear the browser's storage to work around an uncertain hold; inspect its journey and booking first.

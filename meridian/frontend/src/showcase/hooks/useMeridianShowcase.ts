@@ -8,9 +8,13 @@ import {
   fetchMemoryProfile,
   fetchProducts,
   processOrder,
+  readHold,
+  readBooking,
   sendChatMessage,
   updateMemoryFact,
 } from '../../api/client';
+import { runWithDeadline } from '../../api/request';
+import { holdIntentKey, loadBookingRecovery, saveBookingRecovery, type SavedHoldIntent } from '../lib/bookingRecovery';
 import type {
   ChatResponse,
   LongTermMemoryFact,
@@ -123,6 +127,8 @@ export interface MeridianShowcaseState {
   replayIndex: number;
   isReplaying: boolean;
   isLoading: boolean;
+  requestStartedAt: number | null;
+  stopWaiting: () => void;
   error: string | null;
   backendStatus: BackendStatus;
   backendHealth: BackendHealth | null;
@@ -229,6 +235,14 @@ export function decoratePromptWithFilters(prompt: string, filters: ChatFilters):
   return `${prompt} (${tail})`;
 }
 
+function clearWorkflowAddress() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('journey');
+  url.searchParams.delete('thread');
+  window.history.replaceState(null, '', url);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
 const PHASE_DELAYS: Record<Phase, number> = { 1: 420, 2: 360, 3: 300, 4: 280, 5: 260 };
 
 export function useMeridianShowcase(): MeridianShowcaseState {
@@ -243,6 +257,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     chatController.current = null;
   }, []);
   useEffect(() => invalidateChatRequest, [invalidateChatRequest]);
+  const unresolvedWorkflow = useRef<string | null>(null);
   const conversationPhaseRef = useRef<Phase | null>(null);
   const [selectedPhase, setSelectedPhaseState] = useState<Phase>(1);
   const [phaseHint, setPhaseHint] = useState<MeridianShowcaseState['phaseHint']>(null);
@@ -258,7 +273,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const holdPending = useRef(false);
   // Keep an unacknowledged hold's identity across retries and phase resets.
   // The Gateway derives its replay key from this conversation and the terms.
-  const holdConversations = useRef(new Map<string, { conversationId: string; replacesBookingId?: string }>());
+  const writeController = useRef<AbortController | null>(null);
   const [bookingPrompt, setBookingPrompt] = useState<TripHold | null>(null);
   const bookingPending = useRef(false);
   const [workspace, setWorkspace] = useState(loadTripWorkspace);
@@ -293,6 +308,12 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [replayIndex, setReplayIndex] = useState(-1);
   const [isReplaying, setIsReplaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [requestStartedAt, setRequestStartedAt] = useState<number | null>(null);
+  const stopWaiting = useCallback(() => {
+    chatController.current?.abort(new DOMException('Stopped waiting.', 'AbortError'));
+    writeController.current?.abort(new DOMException('Stopped waiting.', 'AbortError'));
+  }, []);
+  useEffect(() => () => writeController.current?.abort(), []);
   // True once the latest bot reply's typewriter has finished revealing.
   // Reset to false at the moment a new chat request fires; flipped back
   // to true by ChatMessage when its typewriter reaches the end of the
@@ -536,9 +557,12 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, []);
 
   const restoreJourney = useCallback((document: JourneyDocument) => {
-    if (isLoading || conversationId || messages.length || document.traveler_id !== SHOWCASE_TRAVELER_ID || !isObserved(document.workflow)) return;
+    if (isLoading || document.traveler_id !== SHOWCASE_TRAVELER_ID || !isObserved(document.workflow)) return;
     const saved = document.workflow;
+    unresolvedWorkflow.current = null;
     if (!saved.conversation_id || saved.conversation_id !== document.active_thread_id) return;
+    setError(null);
+    setMessages([]);
     setSelectedPhaseState(5);
     conversationPhaseRef.current = 5;
     setLastPrompt(saved.query);
@@ -553,12 +577,16 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       products: isObserved(document.recommendations) ? document.recommendations.items as Product[] : [],
     });
     setLatestStreamComplete(true);
-  }, [applyChatResponse, conversationId, isLoading, messages.length]);
+  }, [applyChatResponse, isLoading]);
 
   const submitPrompt = useCallback(
     async (overridePrompt?: string, phaseOverride?: Phase) => {
+      if ((phaseOverride ?? selectedPhase) === 5 && unresolvedWorkflow.current) {
+        setError('Re-read this recovery before retrying. Its last response was not received, so the current outcome must be checked first.');
+        return;
+      }
       const baseRaw = (overridePrompt ?? currentPrompt).trim();
-      if (!baseRaw || isLoading || chatController.current) return;
+      if (!baseRaw || isLoading || chatController.current || writeController.current) return;
       const generation = ++requestGeneration.current;
       const controller = new AbortController();
       chatController.current = controller;
@@ -576,12 +604,43 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setReplayIndex(-1);
       setIsReplaying(false);
       setIsLoading(true);
+      setRequestStartedAt(Date.now());
       // Reset stream-complete so downstream surfaces (recommendation
       // grid) wait until the typewriter finishes revealing this turn.
       setLatestStreamComplete(false);
       setError(null);
+      setTraceSpans([]);
       setLastPrompt(decorated);
       setCurrentPrompt('');
+
+      const resumeRequested = requestPhase === 5 && /^(resume|continue)( workflow)?( from checkpoint)?$/i.test(baseRaw);
+      const workflowThread = requestPhase === 5
+        ? (resumeRequested ? conversationId : `phase5-${crypto.randomUUID()}`)
+        : null;
+      if (requestPhase === 5) {
+        if (!workflowThread) {
+          setIsLoading(false);
+          chatController.current = null;
+          setError('Open the saved recovery before resuming.');
+          return;
+        }
+        // Save the address before dispatch, including when the response never arrives.
+        const url = new URL(window.location.href);
+        url.searchParams.set('thread', workflowThread);
+        url.searchParams.delete('journey');
+        window.history.replaceState(null, '', url);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        setSelectedPhaseState(5);
+        setConversationId(workflowThread);
+        conversationPhaseRef.current = 5;
+        if (!resumeRequested) {
+          setMessages([]);
+          setRecommendations([]);
+          setTraceSpans([]);
+          setWorkflowStatus(null);
+          setWorkflowResumedAfterRestart(false);
+        }
+      }
 
       // Echo the user's prompt into the transcript IMMEDIATELY so the
       // question doesn't disappear into a 5-12s dark hole while the
@@ -593,11 +652,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setMessages((prior) => [...prior, { role: 'user', text: decorated }]);
 
       try {
-        const resumeRequested =
-          requestPhase === 5 &&
-          workflowStatus === 'paused' &&
-          /resume|checkpoint/i.test(decorated);
-        const response = await sendChatMessage({
+        const response = await runWithDeadline(signal => sendChatMessage({
           message: decorated,
           phase: requestPhase,
           ...(requestPhase >= 4
@@ -607,16 +662,16 @@ export function useMeridianShowcase(): MeridianShowcaseState {
                 // Its opening profile is a real Aurora read; use that context on
                 // this request without switching on the ladder's memory toggle.
                 memory_enabled: memoryEnabled || (phaseOverride === 4 && Boolean(previewProfile)),
-                conversation_id:
+                conversation_id: workflowThread ?? (
                   conversationPhaseRef.current === requestPhase
                     ? conversationId ?? undefined
-                    : undefined,
+                    : undefined),
               }
             : {}),
           ...(requestPhase === 5
             ? { resume: resumeRequested || undefined, travelers_count: travelersCount }
             : {}),
-        }, controller.signal);
+        }, signal), controller.signal);
         if (!isCurrent()) return;
         // One successful chat does not verify the catalog and traveler reads.
         // Only the readiness check may mark all of Meridian's live data ready.
@@ -628,20 +683,23 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         // the next prompt starts clean (matches the intuition of every
         // major chat product).
         setChatFiltersState(EMPTY_FILTERS);
-      } catch {
+      } catch (err) {
         if (!isCurrent()) return;
-        setBackendStatus('offline');
-        setError(
-          'Live chat request failed. Confirm Meridian FastAPI and Aurora are available, then try again.',
-        );
+        if (requestPhase === 5) unresolvedWorkflow.current = workflowThread;
+        setError(requestPhase === 5
+          ? 'The recovery response was not received. The worker may still be running. Re-read this saved recovery before resuming; its address is preserved on refresh.'
+          : controller.signal.aborted || (err instanceof DOMException && err.name === 'TimeoutError')
+            ? 'Stopped waiting for the response. The service may still be completing this request. Check the connection before trying again.'
+            : err instanceof Error ? err.message : 'The response was not received. Check the connection and try again.');
       } finally {
         if (isCurrent()) {
           chatController.current = null;
           setIsLoading(false);
+          setRequestStartedAt(null);
         }
       }
     },
-    [applyChatResponse, backendStatus, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, memoryEnabled, previewProfile, refreshConnection, selectedPhase, travelersCount, workflowStatus],
+    [applyChatResponse, backendStatus, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, memoryEnabled, previewProfile, refreshConnection, selectedPhase, travelersCount, ],
   );
 
   const applyPhaseExample = useCallback(
@@ -677,6 +735,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     }
 
     invalidateChatRequest();
+    clearWorkflowAddress();
+    unresolvedWorkflow.current = null;
     setIsLoading(false);
     setSelectedPhaseState(phase);
 
@@ -743,9 +803,52 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setActionDrawer(null);
   }, []);
 
+  const rememberOrder = useCallback((productId: string, order: TripHold['order']) => {
+    // Display the returned receipt even if storage becomes unavailable later.
+    setTripHolds(prior => [...prior.filter(hold => hold.productId !== productId), { productId, order }]);
+    try {
+      const saved = loadBookingRecovery(SHOWCASE_TRAVELER_ID);
+      saved.bookings[productId] = order.order_id;
+      saveBookingRecovery(SHOWCASE_TRAVELER_ID, saved);
+    } catch {
+      setError('The receipt was returned, but its reference could not be saved on this device. Keep the booking ID before reloading.');
+    }
+  }, []);
+
+  // Rehydrate receipts from Aurora; browser storage is an address book, never proof.
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    const restore = async () => {
+      try {
+        const saved = loadBookingRecovery(SHOWCASE_TRAVELER_ID);
+        const intents = Object.values(saved.intents);
+        const productsWithIntent = new Set(intents.map(intent => intent.productId));
+        const reads = [
+          ...intents.map(async intent => ({ productId: intent.productId, response: await readHold(intent, controller.signal) })),
+          ...Object.entries(saved.bookings).filter(([id]) => !productsWithIntent.has(id))
+            .map(async ([productId, id]) => ({ productId, response: await readBooking(id, controller.signal) })),
+        ];
+        const results = await runWithDeadline(() => Promise.allSettled(reads), controller.signal);
+        if (cancelled) return;
+        let unresolved = false;
+        for (const result of results) {
+          if (result.status === 'fulfilled' && result.value.response.order) {
+            rememberOrder(result.value.productId, result.value.response.order);
+          } else unresolved = true;
+        }
+        if (unresolved) setError('A saved booking request still needs reconciliation. Open its trip and retry the same hold to check Aurora before sending it again.');
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Saved bookings could not be read.');
+      }
+    };
+    void restore();
+    return () => { cancelled = true; controller.abort(); };
+  }, [rememberOrder]);
+
   const holdTrip = useCallback(
     async (product: Product) => {
-      if (isLoading || holdPending.current) return;
+      if (isLoading || holdPending.current || writeController.current || chatController.current) return;
       const existing = tripHolds.find(hold => hold.productId === product.product_id);
       if (existing?.order.status === 'confirmed'
         || (existing?.order.status === 'held' && parseDatabaseTime(existing.order.hold_expires_at) > Date.now())) {
@@ -753,73 +856,78 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         return;
       }
       const duration = product.available_sizes?.[0];
-      const intentKey = JSON.stringify([product.product_id, duration, travelersCount]);
-      const expired = existing && (existing.order.status === 'expired'
-        || parseDatabaseTime(existing.order.hold_expires_at) <= Date.now());
-      let holdIntent = holdConversations.current.get(intentKey);
-      if (!holdIntent || (expired && holdIntent.replacesBookingId !== existing.order.order_id)) {
-        // A known expired hold is a new request, even in the same chat.
-        holdIntent = {
-          conversationId: (!expired && conversationId) || `conv_hold_${crypto.randomUUID()}`,
-          replacesBookingId: expired ? existing.order.order_id : undefined,
-        };
-        holdConversations.current.set(intentKey, holdIntent);
-      }
+      if (!duration) { setError('Load the published trip durations before requesting a hold.'); return; }
+      const intentKey = holdIntentKey(product.product_id, duration, travelersCount);
       holdPending.current = true;
+      const controller = new AbortController();
+      writeController.current = controller;
       const generation = requestGeneration.current;
       setSelectedTrip(product);
       setTripDetailsOpen(true);
       setIsLoading(true);
+      setRequestStartedAt(Date.now());
       setLatestStreamComplete(false);
       setError(null);
       const prompt = `Request a 12-hour courtesy hold: ${product.name}`;
       try {
-        const response = await processOrder({
-          product_id: product.product_id,
-          size: duration,
-          quantity: travelersCount,
-          phase: selectedPhase,
-          traveler_id: SHOWCASE_TRAVELER_ID,
-          action: 'hold',
-          conversation_id: holdIntent.conversationId,
-        });
+        const response = await runWithDeadline(async signal => {
+          const saved = loadBookingRecovery(SHOWCASE_TRAVELER_ID);
+          let intent: SavedHoldIntent | undefined = saved.intents[intentKey];
+          if (intent) {
+            // Read before every retry, including after refresh. A failed read
+            // is not permission to create a replacement intent.
+            const recorded = await readHold(intent, signal);
+            signal.throwIfAborted();
+            if (recorded.order) {
+              rememberOrder(product.product_id, recorded.order);
+              if (recorded.order.status !== 'expired') return recorded;
+              // This click can request a replacement only if the user already
+              // saw that this exact old receipt had expired.
+              if (!existing || existing.order.order_id !== recorded.order.order_id
+                || parseDatabaseTime(existing.order.hold_expires_at) > Date.now()) return recorded;
+              intent = undefined;
+            }
+          }
+          if (!intent) {
+            intent = {
+              conversationId: `conv_hold_${crypto.randomUUID()}`,
+              productId: product.product_id, duration, quantity: travelersCount,
+              replacesBookingId: existing?.order.order_id,
+            };
+            saved.intents[intentKey] = intent;
+            try { saveBookingRecovery(SHOWCASE_TRAVELER_ID, saved); }
+            catch { throw new Error('This device cannot save the hold request identity. Enable browser storage before requesting a hold.'); }
+          }
+          return processOrder({
+            product_id: intent.productId, size: intent.duration, quantity: intent.quantity,
+            phase: selectedPhase, traveler_id: SHOWCASE_TRAVELER_ID, action: 'hold',
+            conversation_id: intent.conversationId,
+          }, signal);
+        }, controller.signal);
         if (!mounted.current) return;
-        if (response.order) {
-          const order = response.order;
-          setTripHolds(prior => [...prior.filter(hold => hold.productId !== product.product_id), { productId: product.product_id, order }]);
-        }
-        // Keep a committed receipt, but do not insert a late reply into a new phase.
+        if (response.order) rememberOrder(product.product_id, response.order);
         if (generation !== requestGeneration.current) return;
-        setMessages((prior) => [
-          ...prior,
-          { role: 'bot', type: response.order ? 'order' : 'text', text: response.message, order: response.order },
-        ]);
+        setMessages(prior => [...prior, { role: 'bot', type: response.order ? 'order' : 'text', text: response.message, order: response.order }]);
         const nextTrace = chatResponseToTraceSpans(
-          { message: response.message, activities: response.activities, order: response.order },
-          prompt,
+          { message: response.message, activities: response.activities, order: response.order }, prompt,
         );
         setTraceSpans(prior => selectedPhase === 5 ? [...prior, ...nextTrace] : nextTrace);
         setExpandedSpanId(nextTrace[0]?.id ?? null);
-        setActionDrawer({
-          kind: 'hold',
-          product,
-          message: response.message,
-          order: response.order,
-          live: true,
-        });
-        setWorkspaceNotice(response.order?.status === 'held' ? `Courtesy hold created for ${product.name}.` : response.message);
-      } catch {
+        setActionDrawer({ kind: 'hold', product, message: response.message, order: response.order, live: true });
+        setWorkspaceNotice(response.order?.status === 'held' ? `Courtesy hold recorded for ${product.name}.` : response.message);
+      } catch (err) {
         if (!mounted.current || generation !== requestGeneration.current) return;
-        setBackendStatus('offline');
-        setError(
-          `The hold response for ${product.name} was not received. It may have been saved. Retry this hold to check the same request.`,
-        );
+        setError(`The hold response for ${product.name} was not received. It may have been saved. Retry this hold to check the same request. ${err instanceof Error ? err.message : ''}`);
       } finally {
         holdPending.current = false;
-        if (mounted.current && generation === requestGeneration.current) setIsLoading(false);
+        if (writeController.current === controller) writeController.current = null;
+        if (mounted.current && generation === requestGeneration.current) {
+          setIsLoading(false);
+          setRequestStartedAt(null);
+        }
       }
     },
-    [isLoading, selectedPhase, travelersCount, tripHolds, openTripDetails, conversationId],
+    [isLoading, selectedPhase, travelersCount, tripHolds, openTripDetails, rememberOrder],
   );
 
   const requestBookingConfirmation = useCallback((product: Product) => {
@@ -835,25 +943,34 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const confirmTrip = useCallback(
     async (product: Product) => {
       const hold = tripHolds.find(item => item.productId === product.product_id);
-      if (!hold || isLoading || bookingPending.current) return;
+      if (!hold || isLoading || bookingPending.current || writeController.current) return;
       bookingPending.current = true;
+      const controller = new AbortController();
+      writeController.current = controller;
       const generation = requestGeneration.current;
       setBookingPrompt(null);
       setIsLoading(true);
       setLatestStreamComplete(false);
       setError(null);
+      setRequestStartedAt(Date.now());
       const prompt = `Confirm the held trip: ${product.name}`;
       try {
-        const response = await confirmBooking({
+        const response = await runWithDeadline(async signal => {
+          const recorded = await readBooking(hold.order.order_id, signal);
+          signal.throwIfAborted();
+          if (!recorded.order) throw new Error('No booking receipt was returned.');
+          rememberOrder(product.product_id, recorded.order);
+          if (recorded.order.status !== 'held') return recorded;
+          return confirmBooking({
           booking_id: hold.order.order_id,
           phase: 4,
           traveler_id: SHOWCASE_TRAVELER_ID,
           conversation_id: conversationId ?? undefined,
-        });
+        }, signal);
+        }, controller.signal);
         if (!mounted.current) return;
         if (response.order) {
-          const order = response.order;
-          setTripHolds(prior => prior.map(item => item.productId === product.product_id ? { productId: product.product_id, order } : item));
+          rememberOrder(product.product_id, response.order);
         }
         // Keep the confirmed receipt, but do not insert a late reply into a new phase.
         if (generation !== requestGeneration.current) return;
@@ -883,10 +1000,14 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         );
       } finally {
         bookingPending.current = false;
-        if (mounted.current && generation === requestGeneration.current) setIsLoading(false);
+        if (writeController.current === controller) writeController.current = null;
+        if (mounted.current && generation === requestGeneration.current) {
+          setIsLoading(false);
+          setRequestStartedAt(null);
+        }
       }
     },
-    [conversationId, isLoading, selectedPhase, tripHolds],
+    [conversationId, isLoading, selectedPhase, tripHolds, rememberOrder],
   );
 
   const adoptJourneyHold = useCallback((hold: AdoptableHold) => {
@@ -912,13 +1033,13 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       confirmed_at: hold.confirmed_at ?? undefined,
       payment_required: false,
     };
-    setTripHolds(prior => [...prior.filter(item => item.productId !== product.product_id), { productId: product.product_id, order }]);
+    rememberOrder(product.product_id, order);
     setSelectedTrip(product);
     setTripDetailsOpen(true);
     setActionDrawer(null);
     setBookingPrompt(null);
     return true;
-  }, [catalog, recommendations]);
+  }, [catalog, recommendations, rememberOrder]);
 
   const planTrip = useCallback((product: Product) => {
     openTripDetails(product);
@@ -1015,6 +1136,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     // wants to keep their phase choice + remembered preferences when
     // wiping the visible conversation.
     invalidateChatRequest();
+    clearWorkflowAddress();
+    unresolvedWorkflow.current = null;
     setIsLoading(false);
     clearReplayTimers();
     setMessages([]);
@@ -1081,6 +1204,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     replayIndex,
     isReplaying,
     isLoading,
+    requestStartedAt,
+    stopWaiting,
     error,
     backendStatus,
     backendHealth,
@@ -1093,7 +1218,17 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     workflowResumedAfterRestart,
     lastPrompt,
     actionDrawer,
-    tripHolds,
+    // A scoped receipt may contain only the package ID. Use the public
+    // catalog for its display name while preserving every recorded amount.
+    tripHolds: tripHolds.map(hold => ({
+      ...hold,
+      order: { ...hold.order, items: hold.order.items.map(item => ({
+        ...item,
+        name: item.name === item.product_id
+          ? catalog.find(product => product.product_id === item.product_id)?.name ?? item.name
+          : item.name,
+      })) },
+    })),
     bookingPrompt,
     modelLabel: runConfigModelLabel(selectedPhase, backendHealth),
     embedLabel: runConfigEmbedLabel(selectedPhase, backendHealth),

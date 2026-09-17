@@ -20,6 +20,8 @@ import { BoardingPass, ConciergeBell } from './icons/TravelIcons';
 import { ChatComposer } from './components/ChatComposer';
 import { CapabilityBrief } from './components/CapabilityBrief';
 import { SURFACES, useJourney, useSurfaceUrlState } from './journey/useJourney';
+import { JourneyChooser } from './journey/JourneyChooser';
+import { RequestWaitNotice } from './components/RequestWaitNotice';
 import { PresenterProof } from './surfaces/PresenterProof';
 import { ConciergeRail } from './surfaces/ConciergeRail';
 import { JourneyContinuityRail } from './surfaces/JourneyContinuityRail';
@@ -92,15 +94,15 @@ export function DesktopMeridianApp({
   theme: ShowcaseTheme;
   onToggleTheme: () => void;
 }) {
-  const { view, journeyId, setView: writeView, setJourneyId } = useSurfaceUrlState();
+  const { view, journeyId, threadId, setView: writeView, setJourneyId, selectJourney } = useSurfaceUrlState();
   const [closing, setClosing] = useState(false);
   const setView = (next: typeof view) => { setClosing(false); writeView(next); };
   const isRecoveryView = view === 'recovery';
   const journey = useJourney(
     journeyId,
     setJourneyId,
-    view === 'proof' || isRecoveryView || (view === 'ladder' && state.selectedPhase === 5),
-    state.selectedPhase === 5 ? state.conversationId : null,
+    !state.isLoading && (view === 'proof' || isRecoveryView || (view === 'ladder' && state.selectedPhase === 5)),
+    state.selectedPhase === 5 ? state.conversationId || threadId : threadId,
   );
   const refreshJourney = journey.refresh;
   const latestWorkflowRead = useRef<string | null>(null);
@@ -112,11 +114,11 @@ export function DesktopMeridianApp({
       refreshJourney();
     }
   }, [state.selectedPhase, state.conversationId, state.workflowStatus, state.isLoading, refreshJourney]);
-  const restoredJourney = useRef<string | null>(null);
+  const restoredJourney = useRef<typeof journey.document>(null);
   useEffect(() => {
-    if (!isRecoveryView || !journey.document || restoredJourney.current === journey.document.journey_id) return;
-    if (!state.isLoading && !state.conversationId && !state.messages.length) {
-      restoredJourney.current = journey.document.journey_id;
+    if (!isRecoveryView || !journey.document || (restoredJourney.current === journey.document && !state.error)) return;
+    if (!state.isLoading && (state.selectedPhase !== 5 || state.conversationId !== journey.document.active_thread_id || state.error)) {
+      restoredJourney.current = journey.document;
       state.restoreJourney(journey.document);
     }
   }, [isRecoveryView, journey.document, state]);
@@ -193,6 +195,11 @@ export function DesktopMeridianApp({
     window.addEventListener('resize', revealActiveSurface);
     return () => window.removeEventListener('resize', revealActiveSurface);
   }, [view, state.selectedPhase]);
+
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (workspaceRef.current) workspaceRef.current.scrollTop = 0;
+  }, [view, closing]);
 
   const openProduct = () => setView('concierge');
   const openPhase = (phase: Phase) => {
@@ -377,6 +384,7 @@ export function DesktopMeridianApp({
       </header>
 
       <main className="mds-desktop-main">
+        <RequestWaitNotice state={state} onReadRecovery={() => { setView('recovery'); journey.refresh(); }} />
         {state.connectionIssue && <div className="mc-connection-notice" role="status">
           <AlertTriangle size={20} aria-hidden="true" />
           <div><strong>{state.connectionIssue}</strong><p>Displayed trips may be a preview or the last loaded results. Reconnect before planning.</p></div>
@@ -384,7 +392,12 @@ export function DesktopMeridianApp({
             <RefreshCw size={16} aria-hidden="true" />{state.connectionRefreshing ? 'Reconnecting…' : 'Reconnect'}
           </button>
         </div>}
-        <div className="mds-desktop-scroll" tabIndex={0} role="region" aria-label="Travel workspace">
+        <div ref={workspaceRef} className="mds-desktop-scroll" tabIndex={0} role="region" aria-label="Travel workspace">
+          {(isRecovery || isProof) && <JourneyChooser disabled={state.isLoading} onSelect={id => {
+            state.clearChat();
+            restoredJourney.current = null;
+            selectJourney(id);
+          }} />}
           {isLadder && (
           <nav className="mds-ladder-nav" aria-label="Capability ladder phases">
             <ol className="mds-ladder-nav-rungs" ref={phaseRowRef}>
@@ -440,6 +453,8 @@ export function DesktopMeridianApp({
                     : `phase-${state.selectedPhase}`
             }
             className="mds-view-swap"
+            onAnimationStart={() => { if (workspaceRef.current) workspaceRef.current.scrollTop = 0; }}
+            onAnimationComplete={() => { if (workspaceRef.current) workspaceRef.current.scrollTop = 0; }}
             initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
             animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
             exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
@@ -478,7 +493,7 @@ export function DesktopMeridianApp({
               {state.error && (
                 <div className="mds-error-banner" role="alert">
                   <span className="mds-error-banner-copy">
-                    Meridian could not reach the live concierge.
+                    {state.error}
                   </span>
                   <span className="mds-error-banner-actions">
                     {state.lastPrompt && (
@@ -524,6 +539,13 @@ export function DesktopMeridianApp({
                 </button>
               </div>}
             </>
+          ) : (journeyId || threadId) && !state.isLoading && (state.selectedPhase !== 5 || !state.conversationId) ? (
+            <section className="mds-proof-empty" aria-live="polite">
+              <h1>Open the saved recovery</h1>
+              <p>{journey.loading ? 'Reading this journey from Aurora…' : journey.error ?? 'This journey does not have a resumable workflow response yet. Re-read its progress before continuing.'}</p>
+              <button type="button" disabled={journey.loading} onClick={journey.refresh}>Re-read saved recovery</button>
+              <button type="button" disabled={journey.loading} onClick={state.clearChat}>Start a separate recovery</button>
+            </section>
           ) : (
             <RecoveryWorkspace
               state={state}
@@ -564,7 +586,7 @@ export function DesktopMeridianApp({
           className="mds-desktop-right is-continuity"
           aria-label="Journey continuity"
         >
-          <JourneyContinuityRail document={journey.document} error={journey.error} />
+          <JourneyContinuityRail document={journey.document} error={journey.error} loading={journey.loading || (state.selectedPhase === 5 && state.isLoading)} />
         </aside>
       )}
 

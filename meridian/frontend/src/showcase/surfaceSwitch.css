@@ -31,6 +31,16 @@
   display: none;
 }
 
+/* Keep five full labels inside the space left by the live-service indicator. */
+.mds-root .mds-shell-header .mds-surface-switch {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.mds-root .mds-shell-header .mds-surface-switch > li {
+  flex: 0 0 auto;
+}
+
 .mds-surface-tab {
   display: grid;
   gap: 2px;
@@ -1337,4 +1347,27 @@
   .mds-root .mds-desktop-app.is-continuity-rail:not(.is-sidebar-collapsed) {
     grid-template-columns: 260px minmax(0, 1fr);
   }
+}
+/* Slow requests remain escapable without claiming to cancel a business write. */
+.mc-request-wait { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 20px; border-bottom:1px solid var(--mc-line); background:var(--mc-soft); color:var(--mc-ink); }
+.mc-request-wait p { margin:4px 0 0; font-size:13px; color:var(--mc-muted); }
+.mc-request-wait button, .mc-saved-journeys button { border:1px solid var(--mc-line); border-radius:8px; background:var(--mc-surface); color:var(--mc-ink); padding:9px 12px; cursor:pointer; }
+.mc-request-wait button { flex-shrink:0; }
+.mc-saved-journeys { margin:12px 0; color:var(--mc-muted); }
+.mc-saved-journeys summary { cursor:pointer; padding:8px 0; }
+.mc-saved-journeys ul { display:grid; gap:8px; list-style:none; padding:0; }
+.mc-saved-journeys button { text-align:left; overflow-wrap:anywhere; }
+.mds-recovery-workspace section, .mds-recovery-workspace [data-console], .mds-brief-section { scroll-margin-top:80px; }
+@media (max-width:600px) { .mc-request-wait { flex-wrap:wrap; } }
+
+/* These rails stack below the workspace when their third grid column goes
+   away. The desktop row override must not paint them over the conversation. */
+@media (min-width:701px) and (max-width:1240px) {
+  .mds-root .mds-desktop-app.is-discovery .mds-desktop-right.is-concierge,
+  .mds-root .mds-desktop-app.is-continuity-rail .mds-desktop-right.is-continuity {
+    grid-column:2;
+    grid-row:3 !important;
+  }
+  .mds-root .mds-desktop-app .mds-desktop-main { grid-column:2; grid-row:2; }
+  .mds-root .mds-desktop-app .mds-desktop-sidebar { grid-column:1; grid-row:1 / -1; }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Check, ChevronDown, Copy, RefreshCw, RotateCcw } from 'lucide-react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { SHOWCASE_PHASES, type ShowcaseTraceSpan } from '../lib/showcaseAdapters';
@@ -43,7 +43,7 @@ const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTrac
     label: 'Evaluating options',
     matches: (s) =>
       s.category === 'model' ||
-      /rerank|rank|compose|synthes|claude|opus|reasoning|turn complete/i.test(s.name),
+      (s.category !== 'synthesis' && /rerank|rank|compose|synthes|claude|opus|reasoning|turn complete/i.test(s.name)),
   },
   {
     id: 'optimize',
@@ -363,29 +363,11 @@ function ThinkingPhases({ state }: { state: MeridianShowcaseState }) {
   const phaseBySpan = classifySpansToPhases(spans);
   const isStreaming = state.isLoading || state.isReplaying;
 
-  // Show immediate progress before the first real span arrives.
-  const [syntheticTick, setSyntheticTick] = useState(0);
-  const tickRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (state.isLoading && spans.length === 0) {
-      setSyntheticTick(0);
-      const start = Date.now();
-      const id = window.setInterval(() => {
-        const elapsed = Date.now() - start;
-        const next = Math.min(THINKING_PHASES.length - 1, Math.floor(elapsed / 380));
-        setSyntheticTick(next);
-      }, 200);
-      tickRef.current = id;
-      return () => {
-        window.clearInterval(id);
-        tickRef.current = null;
-      };
-    }
-    setSyntheticTick(0);
-    return undefined;
-  }, [state.isLoading, spans.length]);
+  // The HTTP response contains the trace only when the turn finishes.
+  // Elapsed time is not evidence that a tool or memory read completed.
+  const phases = THINKING_PHASES.filter(phase => phase.id !== 'recall' || state.selectedPhase >= 4);
 
-  const progress: PhaseProgress[] = THINKING_PHASES.map((phase) => ({
+  const progress: PhaseProgress[] = phases.map((phase) => ({
     status: 'pending',
     spanIds: spans.filter((span) => phaseBySpan.get(span.id) === phase.id).map((span) => span.id),
   }));
@@ -398,9 +380,9 @@ function ThinkingPhases({ state }: { state: MeridianShowcaseState }) {
         .map((span) => phaseBySpan.get(span.id))
         .filter((phaseId): phaseId is string => Boolean(phaseId));
       const reachedPhaseId = reachedPhaseIds[reachedPhaseIds.length - 1];
-      const reachedPhaseIndex = THINKING_PHASES.findIndex((p) => p.id === reachedPhaseId);
+      const reachedPhaseIndex = phases.findIndex((p) => p.id === reachedPhaseId);
       progress.forEach((p, idx) => {
-        if (idx < reachedPhaseIndex) p.status = 'done';
+        if (idx < reachedPhaseIndex && p.spanIds.length) p.status = 'done';
         else if (idx === reachedPhaseIndex) p.status = 'active';
         else p.status = 'pending';
       });
@@ -415,21 +397,16 @@ function ThinkingPhases({ state }: { state: MeridianShowcaseState }) {
       progress.forEach((p) => {
         p.status = p.spanIds.length ? 'done' : 'pending';
       });
-      progress[0].status = 'done';
-      progress[progress.length - 1].status = 'done';
+
     }
   } else if (state.isLoading) {
-    progress.forEach((p, idx) => {
-      if (idx < syntheticTick) p.status = 'done';
-      else if (idx === syntheticTick) p.status = 'active';
-      else p.status = 'pending';
-    });
+    progress[0].status = 'active';
   }
 
   return (
     <div className={`mds-thinking${isStreaming ? ' is-streaming' : ''}`} aria-live="polite">
       <ol className="mds-thinking-list">
-        {THINKING_PHASES.map((phase, idx) => {
+        {phases.map((phase, idx) => {
           const status = progress[idx].status;
           return (
             <li key={phase.id} className={`mds-thinking-item is-${status}`}>

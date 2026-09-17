@@ -46,12 +46,13 @@ export function RecoveryBriefing({
 }: {
   state: MeridianShowcaseState;
 }) {
-  const userMessage = recoveryRequest(state.messages);
-  const botMessage = latestMessage(state.messages, 'bot');
+  const current = state.selectedPhase === 5;
+  const userMessage = current ? recoveryRequest(state.messages) : null;
+  const botMessage = current ? latestMessage(state.messages, 'bot') : null;
   const products =
     botMessage?.products?.length
       ? botMessage.products
-      : state.recommendations ?? [];
+      : current ? state.recommendations ?? [] : [];
   const topProduct = products[0] ?? null;
   const followUps = botMessage?.follow_ups ?? [];
   const recoveryStage = deriveRecoveryStage(state);
@@ -82,8 +83,10 @@ export function RecoveryBriefing({
         <div className="mds-recovery-brief-running" role="status">
           <Loader2 size={20} aria-hidden="true" />
           <span>
-            <strong>Building the recovery plan</strong>
-            <small>Ranking alternatives and saving workflow progress.</small>
+            <strong>{state.workflowStatus === 'paused' ? 'Continuing the saved recovery' : 'Building the recovery plan'}</strong>
+            <small>{state.workflowStatus === 'paused'
+              ? 'Verifying availability and requesting the governed hold. The saved shortlist is reused.'
+              : 'Waiting for the search and saved workflow progress.'}</small>
           </span>
         </div>
       )}

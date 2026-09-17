@@ -2,6 +2,8 @@
 
 import asyncio
 
+import pytest
+
 from backend.http_auth import HttpPrincipal
 from backend.routers.chat import (
     ChatRequest,
@@ -111,7 +113,12 @@ def test_phase4_demo_query_returns_workflow_handoff(monkeypatch) -> None:
     assert any(a.title == "Checkpointed workflow required" for a in response.activities)
 
 
-def test_phase4_memory_off_stops_before_recall_or_writeback(monkeypatch) -> None:
+@pytest.mark.parametrize("message", [
+    "Recall my October Tokyo plan and use my saved preferences to recommend the next step.",
+    "What durations are available for Tokyo Culture & Cuisine?",
+    "My flight was cancelled. Rework the trip, then check duration availability.",
+])
+def test_phase4_memory_off_stops_before_recall_or_writeback(monkeypatch, message) -> None:
     called = False
 
     async def unexpected_production_search(*args, **kwargs):
@@ -124,16 +131,15 @@ def test_phase4_memory_off_stops_before_recall_or_writeback(monkeypatch) -> None
         unexpected_production_search,
     )
 
+    monkeypatch.setattr("backend.routers.chat.retrieval_availability_search", unexpected_production_search)
+    monkeypatch.setattr("backend.routers.chat._polish_and_record", unexpected_production_search)
     response = asyncio.run(
         chat(
             ChatRequest(
                 phase=4,
                 customer_id="trv_meridian_demo",
                 memory_enabled=False,
-                message=(
-                    "Recall my October Tokyo plan and use my saved preferences "
-                    "to recommend the next step."
-                ),
+                message=message,
             ),
             PRINCIPAL,
         )
@@ -150,8 +156,12 @@ def test_phase4_memory_off_stops_before_recall_or_writeback(monkeypatch) -> None
     )
 
 
+@pytest.mark.parametrize("message", [
+    "Recall my Tokyo plan and recommend the next step.",
+    "What durations are available for Tokyo Culture & Cuisine?",
+])
 def test_phase4_returns_managed_runtime_decision_without_local_rewrite(
-    monkeypatch,
+    monkeypatch, message,
 ) -> None:
     runtime_message = "Managed Runtime selected Tokyo Culture using Alex's saved context."
 
@@ -192,7 +202,7 @@ def test_phase4_returns_managed_runtime_decision_without_local_rewrite(
             ChatRequest(
                 phase=4,
                 customer_id="trv_meridian_demo",
-                message="Recall my Tokyo plan and recommend the next step.",
+                message=message,
             ),
             PRINCIPAL,
         )
@@ -200,3 +210,17 @@ def test_phase4_returns_managed_runtime_decision_without_local_rewrite(
 
     assert response.message == runtime_message
     assert response.conversation_id == "conv-runtime"
+
+
+def test_workflow_receipt_is_not_rewritten_by_a_prose_model(monkeypatch):
+    from unittest.mock import AsyncMock
+    saved = "Aurora recorded courtesy hold hold-one. Flight seats have not been reserved."
+    monkeypatch.setattr("backend.routers.chat.orchestration_workflow", AsyncMock(
+        return_value=([], [], saved, "saved-thread", "resumed", True)))
+    monkeypatch.setattr("backend.routers.chat._load_workflow_memory_facts", AsyncMock(return_value=[]))
+    polish = AsyncMock(side_effect=AssertionError("A receipt must not be rewritten"))
+    monkeypatch.setattr("backend.routers.chat._polish_and_record", polish)
+    response = asyncio.run(chat(ChatRequest(phase=5, message="Resume workflow from checkpoint",
+                                             conversation_id="saved-thread"), PRINCIPAL))
+    assert response.message == saved
+    polish.assert_not_awaited()

@@ -85,3 +85,28 @@ async def test_bound_thread_without_checkpoint_still_rejects_wrong_owner(lifecyc
     assert exc.value.status_code == 403
     lifecycle.run.assert_not_awaited()
     module.claim_execution.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_retried_start_cannot_overwrite_an_existing_checkpoint(lifecycle):
+    lifecycle.graph.aget_state.return_value = SimpleNamespace(values={"traveler_id": "alice"}, next=("availability",))
+    lifecycle._authorize_thread = lambda *args: None
+    with pytest.raises(HTTPException) as exc:
+        await module.run_http_workflow(lifecycle, "Tokyo", "alice", "thread")
+    assert exc.value.status_code == 409
+    assert "saved progress" in exc.value.detail
+    lifecycle.run.assert_not_awaited()
+    module.claim_execution.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_checkpoint_committed_before_claim_cannot_be_overwritten(lifecycle):
+    lifecycle.graph.aget_state.side_effect = [
+        SimpleNamespace(values={}, next=()),
+        SimpleNamespace(values={"traveler_id": "alice"}, next=("availability",)),
+    ]
+    with pytest.raises(HTTPException) as exc:
+        await module.run_http_workflow(lifecycle, "Tokyo", "alice", "thread")
+    assert exc.value.status_code == 409
+    lifecycle.run.assert_not_awaited()
+    assert module.release_execution.call_args.args[1:] == ("execution", "failed")

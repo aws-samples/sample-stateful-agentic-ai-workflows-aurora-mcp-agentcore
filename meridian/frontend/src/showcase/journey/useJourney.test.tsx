@@ -7,6 +7,22 @@ import type { JourneyDocument, JourneySummary } from './types';
 vi.mock('../../api/client', () => ({ fetchJourneyDocument: vi.fn(), fetchJourneys: vi.fn() }));
 beforeEach(() => vi.resetAllMocks());
 
+it('does not adopt an arbitrary latest journey when no recovery is selected', async () => {
+  const { result } = renderHook(() => useJourney(null, vi.fn(), true));
+  expect(result.current.document).toBeNull();
+  expect(result.current.loading).toBe(false);
+  expect(fetchJourneys).not.toHaveBeenCalled();
+  expect(fetchJourneyDocument).not.toHaveBeenCalled();
+});
+
+it('removes old evidence immediately when a new recovery begins', async () => {
+  vi.mocked(fetchJourneyDocument).mockResolvedValue({ journey_id: 'old', active_thread_id: 'old-thread' } as JourneyDocument);
+  const { result, rerender } = renderHook(({ enabled }) => useJourney('old', vi.fn(), enabled), { initialProps: { enabled: true } });
+  await waitFor(() => expect(result.current.document?.journey_id).toBe('old'));
+  rerender({ enabled: false });
+  expect(result.current.document).toBeNull();
+});
+
 it('loads evidence for the active recovery instead of an older journey in the URL', async () => {
   vi.mocked(fetchJourneys).mockResolvedValue([
     { journey_id: 'newest-unrelated', active_thread_id: 'other-thread' },

@@ -771,6 +771,7 @@ describe('Experience presentation polish', () => {
     const onOpenProof = vi.fn();
     const onOpenConcierge = vi.fn();
     const state = makeState({
+      selectedPhase: 5,
       conversationId: 'current-thread',
       traceSpans: [{
         id: 'hold', name: 'Courtesy hold', category: 'orchestration',
@@ -1169,4 +1170,18 @@ it('carries the boundary question into the next capability without running it in
   fireEvent.click(screen.getByRole('button', { name: 'Continue in MCP' }));
   expect(state.setSelectedPhase).toHaveBeenCalledWith(2);
   expect(state.applyPhaseExample).toHaveBeenCalledWith(SHOWCASE_EXAMPLE_PROMPTS[2][0], false, 2);
+});
+
+
+it('does not present a SQL result as a recovery plan', () => {
+  const product = { product_id: 'BCN-1', name: 'Unrelated Barcelona trip', price: 1599,
+    brand: 'Meridian', category: 'city', description: '', image_url: '' };
+  render(<RecoveryWorkspace state={makeState({
+    selectedPhase: 1,
+    recommendations: [product],
+    messages: [{ role: 'user', text: 'Show city trips' }, { role: 'bot', text: 'SQL results', products: [product] }],
+  })} />);
+  expect(screen.getByRole('button', { name: 'Start recovery' })).toBeInTheDocument();
+  expect(screen.queryByText('Unrelated Barcelona trip')).not.toBeInTheDocument();
+  expect(screen.queryByText('SQL results')).not.toBeInTheDocument();
 });

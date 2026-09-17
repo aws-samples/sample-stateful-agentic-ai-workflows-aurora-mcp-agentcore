@@ -21,6 +21,8 @@ async def run_http_workflow(workflow, query, traveler_id, conversation_id, *, re
     prior = await workflow.graph.aget_state({"configurable": {"thread_id": thread_id}})
     if resume or prior.values:
         workflow._authorize_thread(prior, thread_id, traveler_id)
+    if prior.values and not resume:
+        raise HTTPException(409, "This recovery already has saved progress. Read its journey and resume the same checkpoint, or start a new recovery.")
     if resume and not prior.next:
         raise HTTPException(409, "This workflow has no pending checkpoint to resume.")
     client = get_rds_data_client()
@@ -52,6 +54,13 @@ async def run_http_workflow(workflow, query, traveler_id, conversation_id, *, re
                         raise HTTPException(409, "The recovery worker lost its lease. Re-read the saved journey.")
 
     async def invoke():
+        # Another request may have completed between our first read and this
+        # claim. Re-check under the exclusive lease before a fresh invocation
+        # can replace its saved progress. Empty-thread reads are inexpensive.
+        if not resume:
+            claimed_state = await workflow.graph.aget_state({"configurable": {"thread_id": thread_id}})
+            if claimed_state.values:
+                raise HTTPException(409, "This recovery now has saved progress. Read its journey before resuming.")
         result = await workflow.run(
             query, traveler_id, thread_id, resume=resume, travelers_count=travelers_count,
             journey_id=journey_id, execution_id=claim.execution_id,

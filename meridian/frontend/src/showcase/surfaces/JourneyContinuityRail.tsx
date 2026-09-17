@@ -84,9 +84,11 @@ function stepsFor(document: JourneyDocument | null, now: number): Step[] {
 export function JourneyContinuityRail({
   document,
   error,
+  loading = false,
 }: {
   document: JourneyDocument | null;
   error: string | null;
+  loading?: boolean;
 }) {
   const now = useEvidenceClock(document);
   const steps = stepsFor(document, now);
@@ -133,12 +135,12 @@ export function JourneyContinuityRail({
           <code>thread: {document.active_thread_id}</code>
         ) : (
           <code className="mds-continuity-absent">
-            {error ? 'evidence unavailable' : 'reading…'}
+            {error ? 'evidence unavailable' : loading ? 'reading…' : 'no recovery selected'}
           </code>
         )}
         <span className="mds-continuity-source">
           <ShieldCheck size={13} aria-hidden="true" />
-          {error ? 'Read failed; any displayed evidence is from the last load.' : document ? 'Source: Aurora journey records.' : 'Aurora evidence has not loaded.'}
+          {error ? 'Read failed; any displayed evidence is from the last load.' : document ? 'Source: Aurora journey records.' : loading ? 'Waiting for current Aurora journey evidence.' : 'Start a recovery or open a saved journey.'}
         </span>
       </footer>
     </div>

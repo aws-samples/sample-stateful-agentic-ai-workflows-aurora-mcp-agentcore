@@ -42,8 +42,8 @@ describe('resolveBackendOriginFor', () => {
 describe('healthUrlsFor', () => {
   it('probes health only on the resolved backend origin', () => {
     expect(healthUrlsFor('https://api.meridian.example/')).toEqual([
-      'https://api.meridian.example/health',
       'https://api.meridian.example/api/health',
+      'https://api.meridian.example/health',
     ]);
   });
 

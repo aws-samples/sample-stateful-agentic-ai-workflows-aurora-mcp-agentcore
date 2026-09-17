@@ -173,3 +173,13 @@ def test_gateway_mcp_tools_list(mock_urlopen):
 def test_singleton_getters():
     assert get_agentcore_runtime() is get_agentcore_runtime()
     assert get_agentcore_gateway() is get_agentcore_gateway()
+
+
+@patch("backend.agentcore.runtime.boto3.client")
+def test_runtime_wait_is_bounded_and_invocations_are_not_retried_blindly(client):
+    adapter = _adapter()
+    adapter._get_client()
+    config = client.call_args.kwargs["config"]
+    assert config.read_timeout == 45
+    assert config.connect_timeout == 5
+    assert config.retries["total_max_attempts"] == 1

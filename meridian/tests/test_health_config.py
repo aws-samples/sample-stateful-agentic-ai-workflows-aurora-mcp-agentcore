@@ -26,7 +26,7 @@ def test_bedrock_model_label_sonnet_4_5():
 
 
 def test_health_includes_model_fields():
-    res = TestClient(app).get("/health")
+    res = TestClient(app).get("/api/health")
     assert res.status_code == 200
     body = res.json()
     assert "bedrock_model_id" in body
@@ -77,3 +77,18 @@ def test_catalog_outage_returns_safe_retryable_error(monkeypatch, path):
     assert response.status_code == 503
     assert response.json() == {"error": products.CATALOG_UNAVAILABLE}
     assert "internal database" not in response.text
+
+
+@pytest.mark.parametrize("path", ["/api/products", "/api/packages", "/api/products/demo", "/api/packages/demo", "/openapi.json", "/docs", "/redoc", "/api/health", "/"])
+def test_origin_routes_require_authentication(monkeypatch, path):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("MERIDIAN_ALLOW_INSECURE_LOCALHOST", "false")
+    monkeypatch.delenv("MERIDIAN_API_TOKEN", raising=False)
+    response = TestClient(app).get(path)
+    assert response.status_code == 503
+    assert "HTTP authentication is not configured" in response.json()["error"]
+
+
+def test_public_liveness_does_not_expose_configuration(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    assert TestClient(app).get("/health").json() == {"status": "healthy"}

@@ -145,9 +145,12 @@ class AgentCoreRuntimeAdapter:
                 "bedrock-agentcore",
                 region_name=self.region,
                 config=Config(
-                    retries={"total_max_attempts": 3, "mode": "adaptive"},
+                    # An invocation may commit a governed write before its
+                    # acknowledgement is lost. Reconcile persisted state before
+                    # an explicit retry; never replay the agent loop blindly.
+                    retries={"total_max_attempts": 1, "mode": "standard"},
                     connect_timeout=5,
-                    read_timeout=180,
+                    read_timeout=45,
                 ),
             )
         return self._client

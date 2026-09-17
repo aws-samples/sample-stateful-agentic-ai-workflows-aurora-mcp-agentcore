@@ -2,11 +2,11 @@ import type { JourneyDocument } from '../../journey/types';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useMeridianShowcase } from '../useMeridianShowcase';
-import { deleteMemoryFact, fetchHealth, fetchMemoryProfile, fetchProducts, processOrder, sendChatMessage, updateMemoryFact } from '../../../api/client';
+import { deleteMemoryFact, fetchHealth, fetchMemoryProfile, fetchProducts, processOrder, readHold, readBooking, sendChatMessage, updateMemoryFact } from '../../../api/client';
 
 vi.mock('../../../api/client', () => ({
   fetchHealth: vi.fn(), fetchMemoryProfile: vi.fn(), fetchProducts: vi.fn(), sendChatMessage: vi.fn(),
-  processOrder: vi.fn(), deleteMemoryFact: vi.fn(), updateMemoryFact: vi.fn(),
+  processOrder: vi.fn(), readHold: vi.fn(), readBooking: vi.fn(), deleteMemoryFact: vi.fn(), updateMemoryFact: vi.fn(),
 }));
 
 vi.mock('../../lib/tripWorkspace', async importOriginal => ({
@@ -17,6 +17,10 @@ vi.mock('../../lib/tripWorkspace', async importOriginal => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
+  window.history.replaceState(null, '', '/showcase');
+  vi.mocked(readHold).mockReset().mockResolvedValue({ message: 'Not recorded yet.', activities: [] });
+  vi.mocked(readBooking).mockReset().mockResolvedValue({ message: 'Read.', activities: [] });
   vi.mocked(fetchHealth).mockResolvedValue({ status: 'healthy' });
   vi.mocked(fetchMemoryProfile).mockResolvedValue({ traveler_id: 'trv_meridian_demo', profile: { home_airport: 'JFK' }, facts: [] });
   vi.mocked(fetchProducts).mockResolvedValue([]);
@@ -96,20 +100,20 @@ it('uses the same party for estimates and holds before and after clearing per-tu
   vi.mocked(processOrder).mockResolvedValue({ message: 'Held', activities: [] });
   const { result } = renderHook(() => useMeridianShowcase());
   await waitFor(() => expect(result.current.travelersCount).toBe(2));
-  const product = { product_id: 'tokyo', name: 'Tokyo', price: 100, brand: 'Meridian', category: 'city', description: '', image_url: '' };
+  const product = { product_id: 'tokyo', name: 'Tokyo', price: 100, brand: 'Meridian', category: 'city', description: '', image_url: '', available_sizes: ['5 nights'] };
   await act(async () => { await result.current.holdTrip(product); });
-  expect(processOrder).toHaveBeenLastCalledWith(expect.objectContaining({ quantity: 2 }));
+  expect(processOrder).toHaveBeenLastCalledWith(expect.objectContaining({ quantity: 2 }), expect.any(AbortSignal));
   act(() => result.current.setChatFilters({ ...result.current.chatFilters, travelers: 3 }));
   await act(async () => { await result.current.submitPrompt('Plan Tokyo', 5); });
   expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ travelers_count: 3 }), expect.any(AbortSignal));
   expect(result.current.chatFilters.travelers).toBe(0);
   expect(result.current.travelersCount).toBe(3);
   await act(async () => { await result.current.holdTrip(product); });
-  expect(processOrder).toHaveBeenLastCalledWith(expect.objectContaining({ quantity: 3 }));
+  expect(processOrder).toHaveBeenLastCalledWith(expect.objectContaining({ quantity: 3 }), expect.any(AbortSignal));
 });
 
 it('retains a confirmed hold and workflow evidence without placing it again on reopen', async () => {
-  const product = { product_id: 'tokyo', name: 'Tokyo', price: 100, brand: 'Meridian', category: 'city', description: '', image_url: '' };
+  const product = { product_id: 'tokyo', name: 'Tokyo', price: 100, brand: 'Meridian', category: 'city', description: '', image_url: '', available_sizes: ['5 nights'] };
   const order = { order_id: 'HLD-existing', items: [{ product_id: 'tokyo', name: 'Tokyo', quantity: 2, unit_price: 100 }], subtotal: 200, tax: 0, shipping: 0, total: 200, status: 'held', hold_expires_at: new Date(Date.now() + 43200000).toISOString() };
   vi.mocked(processOrder).mockResolvedValue({ message: 'Held', order, activities: [] });
   vi.mocked(sendChatMessage).mockResolvedValue({ message: 'Paused', workflow_status: 'paused', conversation_id: 'same-thread', activities: [{ id: 'saved', timestamp: new Date().toISOString(), activity_type: 'tool_call', title: 'Checkpoint · AuroraDataApiSaver.put', telemetry: { category: 'memory_short', component: 'AuroraDataApiSaver', status: 'ok', fields: [{ label: 'checkpoint_durable', value: 'true' }] } }] });
@@ -130,7 +134,7 @@ it('retains a confirmed hold and workflow evidence without placing it again on r
 });
 
 it('keeps a late hold receipt without overwriting a new phase conversation', async () => {
-  const product = { product_id: 'tokyo', name: 'Tokyo', price: 100, brand: 'Meridian', category: 'city', description: '', image_url: '' };
+  const product = { product_id: 'tokyo', name: 'Tokyo', price: 100, brand: 'Meridian', category: 'city', description: '', image_url: '', available_sizes: ['5 nights'] };
   let resolveHold!: (value: Awaited<ReturnType<typeof processOrder>>) => void;
   vi.mocked(processOrder).mockImplementation(() => new Promise(resolve => { resolveHold = resolve; }));
   const { result } = renderHook(() => useMeridianShowcase());
@@ -283,4 +287,21 @@ describe('Live connection readiness', () => {
     expect(result.current.backendStatus).toBe('online');
     expect(result.current.connectionIssue).toBeNull();
   });
+});
+
+
+it('addresses a recovery before dispatch and blocks blind replay after a lost response', async () => {
+  vi.mocked(sendChatMessage).mockRejectedValueOnce(new Error('Connection lost'));
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+  await act(async () => { await result.current.submitPrompt('My flight was canceled. Rework the trip.', 5); });
+  const request = vi.mocked(sendChatMessage).mock.calls[0][0];
+  expect(request.conversation_id).toMatch(/^phase5-/);
+  expect(new URL(window.location.href).searchParams.get('thread')).toBe(request.conversation_id);
+  expect(result.current.conversationId).toBe(request.conversation_id);
+  expect(result.current.selectedPhase).toBe(5);
+  act(() => result.current.clearError());
+  await act(async () => { await result.current.replayLastPrompt(); });
+  expect(sendChatMessage).toHaveBeenCalledTimes(1);
+  expect(result.current.error).toContain('Re-read this recovery');
 });

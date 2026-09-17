@@ -1350,7 +1350,9 @@ class OrchestrationAgent:
         )
         if intent == "plan":
             response = (
-                f"Planned the extension: searched the catalog, then checked "
+                ("Recovery plan: searched the catalog, then checked "
+                 if _is_recovery_request(state.get("query", ""))
+                 else "Planned the extension: searched the catalog, then checked ") +
                 f"live duration options for the top {availability_checks} "
                 f"choices — {checkpoint_clause}."
                 if packages
@@ -1371,6 +1373,21 @@ class OrchestrationAgent:
             response = f"Workflow returned {len(packages)} trips that match your request."
         else:
             response = "No matches yet — try broadening the destination or dates."
+
+        # Action status is application data. A prose model must not turn an
+        # existing hold into an offer to place another one, or imply a flight
+        # was reserved just because the traveler prefers a nonstop route.
+        if state.get("hold_id"):
+            response += (
+                f"\n\nAurora recorded courtesy hold {state['hold_id']} for "
+                f"{state.get('hold_package')}, {state.get('hold_duration')}. "
+                f"Recorded status: {state.get('hold_status') or 'held'}. "
+                f"Expires at {state.get('hold_expires_at')}. "
+                "Read the current receipt before confirming the trip."
+            )
+        elif _is_recovery_request(state.get("query", "")):
+            response += "\n\nNo courtesy hold was recorded by this workflow. Review the hold decision before continuing."
+        response += "\n\nAvailability refers to trip-package inventory. Flight seats and routes have not been checked or reserved."
 
         activities = list(state.get("activities", []))
         activities.append(
@@ -1563,6 +1580,11 @@ class OrchestrationAgent:
             result["workflow_status"] = "resumed" if resume else "complete"
             result["resumed_after_restart"] = resumed_after_restart
             if resume:
+                result["response"] = (
+                    f"Continued from the saved {', '.join(resumed_nodes)} checkpoint. "
+                    "The summary below describes the whole journey.\n\n"
+                    + result.get("response", "")
+                )
                 activities.append(
                     _activity(
                         "result",

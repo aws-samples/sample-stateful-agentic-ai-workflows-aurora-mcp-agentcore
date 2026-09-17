@@ -1,6 +1,7 @@
 /**
  * API client for Meridian backend
  */
+import { requestJson } from './request';
 import type {
   BookingRequest,
   BookingResponse,
@@ -76,7 +77,7 @@ function apiHeaders(json = false): HeadersInit {
 
 export function healthUrlsFor(origin: string): string[] {
   const normalized = trimTrailingSlash(origin);
-  return [`${normalized}/health`, `${normalized}/api/health`];
+  return [`${normalized}/api/health`, `${normalized}/health`];
 }
 
 const HEALTH_URL_CANDIDATES = healthUrlsFor(
@@ -116,18 +117,9 @@ export async function fetchProduct(productId: string): Promise<Product> {
  * Send a chat message to the AI assistant
  */
 export async function sendChatMessage(request: ChatRequest, signal?: AbortSignal): Promise<ChatResponse> {
-  const response = await fetch(`${API_BASE}/chat`, {
-    method: 'POST',
-    signal,
-    headers: apiHeaders(true),
-    body: JSON.stringify(request),
+  return requestJson(`${API_BASE}/chat`, {
+    method: 'POST', signal, headers: apiHeaders(true), body: JSON.stringify(request),
   });
-  
-  if (!response.ok) {
-    throw new Error(`Chat request failed: ${response.statusText}`);
-  }
-  
-  return response.json();
 }
 
 /**
@@ -208,32 +200,33 @@ export async function searchProducts(query: string, phase: 1 | 2 | 3 = 3): Promi
 /**
  * Process an order for a product
  */
-export async function confirmBooking(request: BookingRequest): Promise<BookingResponse> {
-  const response = await fetch(`${API_BASE}/chat/book`, {
-    method: 'POST',
-    headers: apiHeaders(true),
-    body: JSON.stringify(request),
+export async function confirmBooking(request: BookingRequest, signal?: AbortSignal): Promise<BookingResponse> {
+  return requestJson(`${API_BASE}/chat/book`, {
+    method: 'POST', signal, headers: apiHeaders(true), body: JSON.stringify(request),
   });
-
-  if (!response.ok) {
-    throw new Error(`Booking request failed: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
-export async function processOrder(request: OrderRequest): Promise<OrderResponse> {
-  const response = await fetch(`${API_BASE}/chat/order`, {
-    method: 'POST',
-    headers: apiHeaders(true),
-    body: JSON.stringify(request),
+export async function processOrder(request: OrderRequest, signal?: AbortSignal): Promise<OrderResponse> {
+  return requestJson(`${API_BASE}/chat/order`, {
+    method: 'POST', signal, headers: apiHeaders(true), body: JSON.stringify(request),
   });
+}
 
-  if (!response.ok) {
-    throw new Error(`Order request failed: ${response.statusText}`);
-  }
+export interface HoldLookup {
+  conversationId: string;
+  productId: string;
+  duration: string;
+  quantity: number;
+}
 
-  return response.json();
+export async function readHold(intent: HoldLookup, signal?: AbortSignal): Promise<OrderResponse> {
+  const params = new URLSearchParams({ conversation_id: intent.conversationId, product_id: intent.productId,
+    duration: intent.duration, quantity: String(intent.quantity) });
+  return requestJson(`${API_BASE}/chat/holds?${params}`, { signal });
+}
+
+export async function readBooking(bookingId: string, signal?: AbortSignal): Promise<OrderResponse> {
+  return requestJson(`${API_BASE}/chat/bookings/${encodeURIComponent(bookingId)}`, { signal });
 }
 
 /**
@@ -343,8 +336,10 @@ export async function fetchSessionReceipt(
  * The shell needs a journey id before it can read a document, and a demo
  * machine should not have to be told one by hand.
  */
-export async function fetchJourneys(limit = 10, signal?: AbortSignal): Promise<JourneySummary[]> {
-  const response = await fetch(`${API_BASE}/journeys?limit=${limit}`, { signal });
+export async function fetchJourneys(limit = 10, signal?: AbortSignal, threadId?: string): Promise<JourneySummary[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (threadId) params.set("thread_id", threadId);
+  const response = await fetch(`${API_BASE}/journeys?${params}`, { signal });
   if (!response.ok) {
     throw new Error(`Failed to list journeys: ${response.statusText}`);
   }

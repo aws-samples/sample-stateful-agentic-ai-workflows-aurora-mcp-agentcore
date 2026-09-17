@@ -55,6 +55,8 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     replayIndex: -1,
     isReplaying: false,
     isLoading: false,
+    requestStartedAt: null,
+    stopWaiting: vi.fn(),
     error: null,
     backendStatus: 'online',
     connectionIssue: null,
@@ -152,7 +154,7 @@ describe('TracePanel collapse behavior', () => {
     render(<TracePanel state={makeState()} />);
 
     expect(screen.getByText('Querying live travel data').closest('li')).toHaveClass('is-done');
-    expect(screen.getByText('Recalling traveler context').closest('li')).toHaveClass('is-pending');
+    expect(screen.queryByText('Recalling traveler context')).not.toBeInTheDocument();
     expect(screen.getByText('Evaluating options').closest('li')).toHaveClass('is-pending');
   });
 
@@ -165,6 +167,7 @@ describe('TracePanel collapse behavior', () => {
       ...traceSpan, id, category, name, sql: undefined, type: 'tool_call',
     });
     const state = makeState({
+      selectedPhase: 4,
       traceSpans: [
         span('s1', 'security', 'Workload traveler grant allowed'),
         span('s2', 'memory_long', 'Strands @tool recall_traveler_preferences'),

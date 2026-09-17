@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchJourneyDocument, fetchJourneys } from '../../api/client';
 import type { JourneyDocument } from './types';
 
-/** The four surfaces from the journey shell spec.
+/** The five surfaces from the journey shell spec.
  *
  * Named descriptively. A/B/C were design-review labels and do not belong in
  * the shipped interface.
@@ -40,19 +40,20 @@ export const SURFACES: { id: SurfaceId; label: string; blurb: string }[] = [
 
 const VALID = new Set<string>(SURFACES.map((s) => s.id));
 
-function readUrl(): { view: SurfaceId; journeyId: string | null } {
-  if (typeof window === 'undefined') return { view: 'concierge', journeyId: null };
+function readUrl(): { view: SurfaceId; journeyId: string | null; threadId: string | null } {
+  if (typeof window === 'undefined') return { view: 'concierge', journeyId: null, threadId: null };
   const params = new URLSearchParams(window.location.search);
   const view = params.get('view');
   return {
     view: view && VALID.has(view) ? (view as SurfaceId) : 'concierge',
     journeyId: params.get('journey'),
+    threadId: params.get('thread'),
   };
 }
 
 /** Keep the surface and journey in the URL so a refresh reloads backend state. */
 export function useSurfaceUrlState() {
-  const [{ view, journeyId }, setUrlState] = useState(readUrl);
+  const [{ view, journeyId, threadId }, setUrlState] = useState(readUrl);
 
   useEffect(() => {
     const onPop = () => setUrlState(readUrl());
@@ -60,16 +61,19 @@ export function useSurfaceUrlState() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  const write = useCallback((next: { view?: SurfaceId; journeyId?: string | null }) => {
+  const write = useCallback((next: { view?: SurfaceId; journeyId?: string | null; threadId?: string | null }) => {
     setUrlState((current) => {
       const merged = {
         view: next.view ?? current.view,
         journeyId: next.journeyId === undefined ? current.journeyId : next.journeyId,
+        threadId: next.threadId === undefined ? current.threadId : next.threadId,
       };
       const params = new URLSearchParams(window.location.search);
       params.set('view', merged.view);
       if (merged.journeyId) params.set('journey', merged.journeyId);
       else params.delete('journey');
+      if (merged.threadId) params.set('thread', merged.threadId);
+      else params.delete('thread');
       window.history.replaceState(
         null,
         '',
@@ -88,7 +92,8 @@ export function useSurfaceUrlState() {
     [write],
   );
 
-  return { view, journeyId, setView, setJourneyId };
+  const selectJourney = useCallback((id: string) => write({ journeyId: id, threadId: null }), [write]);
+  return { view, journeyId, threadId, setView, setJourneyId, selectJourney };
 }
 
 export type JourneyState = {
@@ -121,7 +126,12 @@ export function useJourney(
   const loadedNonce = useRef(0);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || (!journeyId && !threadId)) {
+      setDocument(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     // Publishing the resolved id changes this dependency. Without this the
     // surface immediately re-reads the document it just loaded, which costs a
     // few seconds of Data API round trips and leaves the control saying
@@ -145,8 +155,8 @@ export function useJourney(
       try {
         let id = journeyId;
         if (!id || (threadId && document?.active_thread_id !== threadId)) {
-          const journeys = await fetchJourneys(threadId ? 50 : 1, controller.signal);
-          const match = threadId ? journeys.find(item => item.active_thread_id === threadId) : journeys[0];
+          const journeys = await fetchJourneys(1, controller.signal, threadId ?? undefined);
+          const match = journeys.find(item => item.active_thread_id === threadId);
           if (!match) {
             if (!cancelled) {
               setDocument(null);
@@ -186,7 +196,9 @@ export function useJourney(
 
   return {
     journeyId,
-    document,
+    // Mask synchronously too: effects run after paint. An old green receipt
+    // must never flash under a new request while its read is being scheduled.
+    document: enabled && (threadId ? document?.active_thread_id === threadId : journeyId && document?.journey_id === journeyId) ? document : null,
     loading,
     error,
     refresh: useCallback(() => setNonce((n) => n + 1), []),

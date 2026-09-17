@@ -26,6 +26,7 @@ SELECT j.journey_id, j.status, j.checkpoint_backend, j.active_thread_id,
            AS execution_count
   FROM journeys j
  WHERE j.traveler_id = %s
+   AND (%s::text IS NULL OR j.active_thread_id = %s)
  ORDER BY j.created_at DESC
  LIMIT %s
 """
@@ -36,6 +37,7 @@ async def list_journeys(
     principal: HttpPrincipal = Depends(require_http_principal),
     traveler_id: Optional[str] = Query(default=None, max_length=50),
     limit: int = Query(default=10, ge=1, le=50),
+    thread_id: Optional[str] = Query(default=None, min_length=1, max_length=200),
 ) -> Dict[str, Any]:
     """List the caller's journeys, newest first.
 
@@ -51,7 +53,7 @@ async def list_journeys(
             authorization=get_agentcore_identity().authorization_context(),
         ) as tx:
             rows = await client.execute(
-                LATEST_JOURNEYS_SQL, (owner, limit), transaction_id=tx
+                LATEST_JOURNEYS_SQL, (owner, thread_id, thread_id, limit), transaction_id=tx
             )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc

@@ -9,3 +9,15 @@
 .mds-brief-arch-edges .is-secondary { stroke-dasharray:5 4; }
 .mds-brief-architecture marker path { fill:var(--mc-muted); }
 .mds-brief-architecture figcaption { margin-top:10px; font-size:12px; color:var(--mc-muted); }
+
+.mds-brief-arch-controls { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+.mds-brief-arch-controls button { border:1px solid var(--mc-line); padding:10px 14px; border-radius:8px; background:var(--mc-surface); color:var(--mc-ink); font:inherit; cursor:pointer; }
+.mds-brief-arch-controls button[aria-pressed="true"] { border-color:var(--mc-accent); color:var(--mc-accent); }
+.mds-brief-arch-focus h3 { font-size:26px; color:var(--mc-ink); margin:0 0 20px; }
+.mds-brief-arch-focus ol { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; list-style:none; padding:0; margin:0; }
+.mds-brief-arch-focus li { padding:22px; background:var(--mc-soft); border:1px solid var(--mc-line); border-radius:10px; }
+.mds-brief-arch-focus li > span { color:var(--mc-accent); font-size:18px; }
+.mds-brief-arch-focus h4 { font-size:22px; line-height:1.35; margin:14px 0 12px; color:var(--mc-ink); }
+.mds-brief-arch-focus p { font-size:18px; line-height:1.6; color:var(--mc-muted); margin:0; }
+.mds-brief-arch-focus .mds-brief-arch-boundary { margin-top:20px; padding-top:18px; border-top:1px solid var(--mc-line); color:var(--mc-ink); }
+@media (max-width:800px) { .mds-brief-arch-focus ol { grid-template-columns:1fr; } }

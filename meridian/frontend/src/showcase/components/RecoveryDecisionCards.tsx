@@ -152,7 +152,7 @@ function preferenceChips(
     const factValue = cleanPreference(usefulFact?.value);
     if (factValue && !chips.includes(factValue)) chips.push(factValue);
 
-    chips.push('Memory match');
+    chips.push('Context recalled');
   }
   if (evidence.loyaltyObserved) chips.push('Loyalty context');
   return chips.length ? chips.slice(0, 3) : ['Preference match pending'];
@@ -580,7 +580,7 @@ export function RecommendedRecoveryPlanCard({
       <div className="mds-decision-preference-row">
         <small>
           {evidence.memoryObserved
-            ? 'Traveler context applied'
+            ? 'Traveler context recalled'
             : 'Traveler context pending'}
         </small>
         <div>
@@ -605,12 +605,12 @@ export function RecommendedRecoveryPlanCard({
       {contextReasons.length > 0 && (
         <section
           className="mds-recovery-context-reasons"
-          aria-label="Why this plan fits Alex"
+          aria-label="Saved preferences to review"
         >
           <header>
             <span>
               <Sparkles size={15} aria-hidden="true" />
-              Why this fits Alex
+              Saved preferences to review
             </span>
             <em>Aurora traveler context</em>
           </header>
@@ -743,7 +743,7 @@ export function ConciergeAssistanceCard({
 }: ConciergeAssistanceCardProps) {
   const ready = stage === 'ready';
   const contextLabel = evidence.memoryObserved
-    ? 'Traveler context matched'
+    ? 'Traveler context recalled'
     : 'Traveler context available after recall';
   return (
     <article
@@ -778,7 +778,7 @@ export function ConciergeAssistanceCard({
         </div>
       </div>
       <div className="mds-concierge-context-chips">
-        {evidence.memoryObserved && <span className="is-violet">Memory match</span>}
+        {evidence.memoryObserved && <span className="is-violet">Context recalled</span>}
         {evidence.loyaltyObserved && <span>Loyalty context</span>}
         <span className={ready ? 'is-green' : ''}>
           {ready ? 'Lounge access' : 'Hotel options'}

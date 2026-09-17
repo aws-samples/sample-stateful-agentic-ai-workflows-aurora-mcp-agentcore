@@ -575,3 +575,20 @@ def test_failed_workflow_releases_a_committed_hold() -> None:
         )
     assert released, "a failing workflow must run the compensating release"
     assert scoped_to, "the release must be told which run's hold it is releasing"
+
+
+@pytest.mark.parametrize("held", [True, False])
+def test_recovery_summary_states_the_recorded_hold_outcome(held):
+    state = {"query": "My flight was canceled. Rework the trip.", "intent": "plan",
+             "packages": [{"product_id": "tokyo"}], "availability_checks": 1}
+    if held:
+        state.update(hold_id="hold-one", hold_package="tokyo", hold_duration="2 nights",
+                     hold_status="held", hold_expires_at="2099-01-01T10:00:00Z")
+    response = asyncio.run(_build_workflow()._node_synthesize(state))["response"]
+    assert "Recovery plan:" in response
+    assert "Flight seats and routes have not been checked or reserved" in response
+    if held:
+        assert "Aurora recorded courtesy hold hold-one" in response
+        assert "2099-01-01T10:00:00Z" in response
+    else:
+        assert "No courtesy hold was recorded" in response

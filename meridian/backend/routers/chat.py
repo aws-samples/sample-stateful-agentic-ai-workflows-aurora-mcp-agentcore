@@ -29,7 +29,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from typing import Literal, Optional, List, Any, Dict
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from backend.agentcore.identity import get_agentcore_identity
@@ -997,17 +997,11 @@ def _summarize_domain_result(tool: str, result: Any) -> str:
 
 
 # =============================================================================
-# Concierge polish wrapper for Phase 3 / 4 / 5 turns.
-#
-# The deterministic agents already produce a usable `raw_message` ("I
-# found 5 trips that closely match...") but that reads thin on stage.
-# We hand the raw message + structured product/memory context to the
-# Bedrock polish helper so the user-facing reply is a warm, narrative
-# concierge response that names specific trips and explains *why* they
-# fit (similarity scores for Phase 3, recalled preferences for Phase
-# 4, classified intent + node path for Phase 5). The polish model is
-# explicitly told to use only the facts in the context block - no
-# fabricated prices or destinations.
+# Search-response prose helper. Phase 4 returns its managed Runtime answer;
+# Phase 5 returns its checkpointed operational result without another rewrite.
+# Search prose receives the returned catalog facts and a grounding instruction.
+# That instruction is guidance, not a guarantee; structured receipts remain
+# authoritative for actions and inventory.
 # =============================================================================
 
 
@@ -1019,7 +1013,7 @@ async def _polish_phase_reply(
     activities: List[ActivityEntry],
     memory_facts: Optional[List[Any]] = None,  # MemoryFact pydantic OR dict
 ) -> tuple[str, Optional[str], Optional[str]]:
-    """Run the Bedrock polish over a Phase 3/4/5 reply.
+    """Run the Bedrock polish over a search reply.
 
     Returns (final_message, model_id_or_none, note_or_none). On failure
     (no model access, all fallbacks blocked) the raw_message is returned
@@ -2167,12 +2161,13 @@ async def chat(
     )
     activities = []
 
-    # Phase 3/4: availability query -> route to PackageAgent. Multi-step
+    # Only Phase 3 uses the local PackageAgent shortcut. Phase 4 must apply
+    # the context guard and execute through the managed Runtime below. Multi-step
     # planning prompts that also ask for availability should NOT be collapsed
     # into this single specialist path; Phase 4 uses them as the bridge to the
     # checkpointed Workflow mode.
     if (
-        request.phase in (3, 4)
+        request.phase == 3
         and is_availability_query(request.message)
         and not _needs_checkpointed_workflow(request.message)
     ):
@@ -2188,45 +2183,6 @@ async def chat(
             products, availability_activities, message = await retrieval_availability_search(request.message)
             activities.extend(availability_activities)
 
-            # Phase 4: hydrate the availability reply with traveler memory so
-            # it reads in the same concierge tone as the other Phase 4 turns.
-            # Phase 3 keeps the dry deterministic readout — that's part of
-            # what motivates the upgrade to Production.
-            polish_memory_facts: Optional[List[Any]] = None
-            if request.phase == 4:
-                try:
-                    from backend.memory.store import (
-                        DEMO_TRAVELER_ID,
-                        get_memory_store,
-                    )
-
-                    store = get_memory_store()
-                    traveler_id = request.customer_id or DEMO_TRAVELER_ID
-                    async with store.db.scoped_session(
-                        traveler_id=traveler_id,
-                        agent_type="concierge_agent",
-                        authorization=get_agentcore_identity().authorization_context(),
-                    ) as tx:
-                        facts = await store.recall_preferences(
-                            traveler_id,
-                            limit=12,
-                            transaction_id=tx,
-                        )
-                    polish_memory_facts = facts or None
-                except Exception as exc:
-                    log_error("availability_memory_fetch", error=str(exc))
-
-                message = await _polish_and_record(
-                    phase=4,
-                    mode_label="availability",
-                    agent_name="ProductionAgent",
-                    user_query=request.message,
-                    raw_message=message,
-                    products=products,
-                    activities=activities,
-                    memory_facts=polish_memory_facts,
-                )
-
             follow_ups = ["Show similar trips", "What other durations are available?", "Find alternatives"]
 
             return _complete_chat_turn(
@@ -2236,7 +2192,7 @@ async def chat(
                 order=None,
                 activities=activities,
                 follow_ups=follow_ups,
-                memory_facts=polish_memory_facts,
+                memory_facts=None,
             ),
                 request.phase,
                 turn_started,
@@ -2438,32 +2394,18 @@ async def chat(
                             activity_type="search",
                             title="Aurora recall: recovery context",
                             details=(
-                                "RLS-scoped home airport and dietary safety "
-                                "facts applied to the recovery plan"
+                                "Saved traveler preferences read under RLS "
+                                "for review alongside the recorded recovery"
                             ),
                             agent_name="OrchestrationAgent",
                             agent_file="backend/memory/store.py",
                         ))
                 except Exception as exc:
                     log_error("workflow_memory_fetch", error=str(exc))
-            if workflow_status == "paused":
-                message = raw_message
-            else:
-                message = await _polish_and_record(
-                    phase=5,
-                    mode_label="Workflow",
-                    agent_name="OrchestrationAgent",
-                    user_query=request.message,
-                    raw_message=raw_message,
-                    products=workflow_packages,
-                    activities=activities,
-                    memory_facts=workflow_memory_facts or None,
-                )
-                message = _append_recovery_memory_receipt(
-                    message,
-                    request.message,
-                    workflow_memory_facts,
-                )
+            # Return the checkpointed operational result verbatim. A second
+            # model rewrite can contradict the hold/lease result and adds an
+            # avoidable wait after the durable workflow already completed.
+            message = raw_message
             follow_ups = (
                 ["Resume workflow from checkpoint"]
                 if workflow_status == "paused"
@@ -2512,7 +2454,7 @@ async def chat(
 
     phase_configs = {
         1: ("SQLAgent", "Direct RDS Data API", sql_search, "agents/sql_01/agent.py"),
-        2: ("MCPAgent", "MCP (postgres-mcp-server)", mcp_search, "agents/mcp_02/agent.py"),
+        2: ("MCPAgent", "MCP tool routing", mcp_search, "agents/mcp_02/agent.py"),
         3: ("RetrievalAgent", phase3_method, phase3_fn, "agents/retrieval_03/supervisor.py"),
     }
 
@@ -2890,6 +2832,7 @@ class BookingResponse(BaseModel):
 
 TRAVELER_BOOKING_SQL = """
     SELECT b.booking_id, b.status, b.total_amount, b.hold_expires_at, b.confirmed_at,
+           b.created_at AS hold_created_at,
            bl.package_id, bl.duration, bl.travelers_count, bl.unit_price
       FROM bookings b
       JOIN booking_lines bl ON bl.booking_id = b.booking_id
@@ -2936,6 +2879,82 @@ def _order_from_booking(pkg: dict, line: dict, booking: dict) -> Order:
         hold_created_at=booking.get("createdAt"),
         payment_required=False,
         confirmed_at=booking.get("confirmedAt"),
+    )
+
+
+def _recorded_order(line: dict) -> Order:
+    """Render recorded amounts and status, never today's catalog price."""
+    def utc_instant(value):
+        if not value:
+            return None
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        # Data API returns PostgreSQL UTC timestamps without an offset.
+        # Explicit UTC prevents a browser in London/Tokyo shifting the TTL.
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    expires = utc_instant(line.get("hold_expires_at"))
+    created = utc_instant(line.get("hold_created_at"))
+    confirmed = utc_instant(line.get("confirmed_at"))
+    state = str(line["status"])
+    if state == "held" and expires:
+        if expires <= datetime.now(timezone.utc):
+            state = "expired"
+    return _order_from_booking(
+        {"product_id": line["package_id"], "name": line.get("name") or line["package_id"]},
+        line,
+        {"bookingId": line["booking_id"], "status": state,
+         "expiresAt": expires.isoformat() if expires else None,
+         "createdAt": created.isoformat() if created else None,
+         "confirmedAt": confirmed.isoformat() if confirmed else None},
+    )
+
+
+@router.get("/bookings/{booking_id}", response_model=OrderResponse)
+async def read_booking(
+    booking_id: str,
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> OrderResponse:
+    """Reconcile an acknowledgement loss without invoking a write or model."""
+    line = await _traveler_booking(principal.traveler_id, booking_id)
+    return OrderResponse(message="Booking read from Aurora.", order=_recorded_order(line), activities=[])
+
+
+@router.get("/holds", response_model=OrderResponse)
+async def read_hold(
+    conversation_id: str = Query(min_length=1, max_length=128),
+    product_id: str = Query(min_length=1, max_length=50),
+    duration: str = Query(min_length=1, max_length=50),
+    quantity: int = Query(ge=1, le=12),
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> OrderResponse:
+    """Look up this exact direct-hold intent under the authenticated traveler."""
+    db = get_rds_data_client()
+    async with db.scoped_session(
+        traveler_id=principal.traveler_id, agent_type="concierge_agent",
+        authorization=get_agentcore_identity().scope_for_turn().authorization,
+    ) as tx:
+        rows = await db.execute(
+            """SELECT b.booking_id, b.status, b.total_amount, b.hold_expires_at,
+                      b.created_at AS hold_created_at, b.confirmed_at,
+                      bl.package_id, bl.duration, bl.travelers_count, bl.unit_price
+                 FROM journeys j
+                 JOIN journey_threads jt ON jt.journey_id = j.journey_id
+                 JOIN hold_requests hr ON hr.journey_id = j.journey_id
+                 JOIN bookings b ON b.booking_id = hr.booking_id
+                 JOIN booking_lines bl ON bl.booking_id = b.booking_id
+                WHERE j.traveler_id = %s AND b.traveler_id = %s
+                  AND jt.thread_id = %s AND bl.package_id = %s
+                  AND bl.duration = %s AND bl.travelers_count = %s""",
+            (principal.traveler_id, principal.traveler_id, f"concierge:{conversation_id}",
+             product_id, duration, quantity), transaction_id=tx,
+        )
+    if len(rows) > 1:
+        raise HTTPException(409, "Multiple receipts match this intent. Inspect the saved journey before continuing.")
+    return OrderResponse(
+        message="Hold read from Aurora." if rows else "No committed hold is recorded for this intent yet.",
+        order=_recorded_order(rows[0]) if rows else None, activities=[],
     )
 
 

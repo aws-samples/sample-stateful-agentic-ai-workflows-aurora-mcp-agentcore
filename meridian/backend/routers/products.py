@@ -2,15 +2,16 @@
 
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.db.rds_data_client import get_rds_data_client
+from backend.http_auth import require_http_principal
 
-router = APIRouter(prefix="/api/packages", tags=["packages"])
+router = APIRouter(prefix="/api/packages", tags=["packages"], dependencies=[Depends(require_http_principal)])
 
 # Legacy path alias
-legacy_router = APIRouter(prefix="/api/products", tags=["products"])
+legacy_router = APIRouter(prefix="/api/products", tags=["products"], dependencies=[Depends(require_http_principal)])
 logger = logging.getLogger(__name__)
 CATALOG_UNAVAILABLE = "Trip data is temporarily unavailable. Please try again."
 

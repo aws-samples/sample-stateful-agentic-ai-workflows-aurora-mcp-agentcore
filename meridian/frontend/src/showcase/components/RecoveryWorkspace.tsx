@@ -67,7 +67,7 @@ function initialRecoveryLayout(): RecoveryLayout {
 }
 
 export function RecoveryWorkspace({
-  state,
+  state: sourceState,
   onOpenProof = () => {},
   onOpenConcierge,
   showComposer = true,
@@ -82,6 +82,11 @@ export function RecoveryWorkspace({
   showHeading?: boolean;
   journeyDocument?: JourneyDocument | null;
 }) {
+  const state = sourceState.selectedPhase === 5 ? sourceState : {
+    ...sourceState, messages: [], recommendations: [], traceSpans: [],
+    workflowStatus: null, workflowResumedAfterRestart: false, lastPrompt: null,
+    conversationId: null, error: null,
+  };
   const recoveryStage = deriveRecoveryStage(state);
   const recoveryEvidence = deriveRecoveryEvidence(state);
   const topRecoveryOption = state.recommendations?.[0] ?? null;
@@ -184,7 +189,7 @@ export function RecoveryWorkspace({
         ? 'Shortlist saved · ready to verify'
         : recoveryStage === 'running'
           ? 'Recovery in progress'
-          : 'Recovery ready to start';
+          : state.error ? 'Recovery needs reconciliation' : 'Recovery ready to start';
   const primaryActionLabel =
     recoveryStage === 'ready'
       ? 'Review this plan'
@@ -392,6 +397,12 @@ export function RecoveryWorkspace({
             </div>
           </section>
         </div>
+      ) : state.error && state.conversationId ? (
+        <section className="mds-recovery-launch-system" role="status">
+          <h2>Check this recovery before continuing.</h2>
+          <p>The last response was not received. Its thread is preserved; open System evidence or re-read this recovery to inspect saved progress.</p>
+          <button type="button" onClick={onOpenProof}>Open System evidence</button>
+        </section>
       ) : (
         <section
           className="mds-recovery-launch-system"
@@ -425,10 +436,10 @@ export function RecoveryWorkspace({
           {state.error && (
             <div className="mds-error-banner" role="alert">
               <span className="mds-error-banner-copy">
-                Meridian could not reach the live concierge.
+                {state.error}
               </span>
               <span className="mds-error-banner-actions">
-                {state.lastPrompt && (
+                {state.lastPrompt && !state.conversationId && (
                   <button
                     type="button"
                     className="mds-error-retry"

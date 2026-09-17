@@ -2,7 +2,7 @@
 
 ## Build stateful agentic AI workflows with Aurora, MCP, and AgentCore
 
-**Duration:** 60 minutes: 45 minutes of walkthrough and 15 minutes of distributed discussion.
+**Duration:** 60 minutes: 40 minutes of slides, code walkthrough, and live demo, plus 20 minutes for discussion and operational flex.
 **Route:** Concierge → Capability ladder → Recovery desk → System evidence.
 Use Solution briefing for the diagrams and implementation disclosures.
 
@@ -18,11 +18,12 @@ those capabilities deliberately so the audience can inspect each addition.
 
 | Segment | Minutes | Question for the room |
 | --- | ---: | --- |
-| Concierge and architecture | 5 | What must survive when this process disappears? |
+| Concierge and architecture | 4 | What must survive when this process disappears? |
 | SQL, MCP and retrieval | 8 | Which checks belong in the tool, regardless of the model? |
-| Identity, memory and Cedar | 10 | Who is allowed to choose the traveler, budget and confirmation? |
-| Recovery and failure windows | 15 | What happens if the write commits but the response is lost? |
-| Evidence and design tradeoffs | 7 | Which record supports each claim? |
+| Identity, memory and Cedar | 8 | Who is allowed to choose the traveler, budget and confirmation? |
+| Recovery and failure windows | 12 | What happens if the write commits but the response is lost? |
+| Evidence and design tradeoffs | 5 | Which record supports each claim? |
+| Takeaways | 3 | Where will you persist context, progress, and business state? |
 
 Draw three paths, adding labels as the demonstration reaches them:
 
@@ -39,6 +40,18 @@ Aurora: traveler facts, authorization, workflow progress and business records
 The browser has a separate HTTP access boundary. The sample uses a shared demo
 principal bound to Alex; it is not a multi-user identity implementation. The
 backend, runtime and Lambda are separate AWS workloads with separate roles.
+
+## Code, demo, and slides
+
+Keep the source visible at each boundary: `backend/routers/chat.py` for phase dispatch and context controls; `backend/http_auth.py` and `backend/db/rds_data_client.py` for caller/workload scope; `meridian_agentcore/app/MeridianConcierge/turn_trace.py` for pinned tool arguments; `backend/agents/orchestration_05/execution.py` and `workflow.py` for leases/checkpoints; and `scripts/migrations/008_hold_request_identity.sql` for transaction-level replay protection.
+
+Use the focused **Trusted context**, **Governed action**, and **Durable recovery** views in Solution briefing as visual companions to the code. The full architecture remains available. Label Alex's October itinerary as a fictional scenario; it is not a live flight feed.
+
+The Workflow closing message is composed from saved state, including the hold ID, status and expiry. It is not rewritten by a second model. Use this code boundary to explain why a fluent answer cannot override a transaction receipt.
+
+The full code and product flows remain available. For the 40-minute core, use one managed recall and one refusal; the recovery hold supplies the positive permit. The separate 12-hour hold, booking confirmation, deeper retrieval code, and a second live fault are optional discussion material. Cut optional demonstrations before compressing the checkpoint/transaction explanation.
+
+At minute 12 leave the capability ladder; at 20 start recovery; at 32 open evidence; at 37 close. A request stops waiting after 55 seconds and exposes **Stop waiting**. For a recovery, use **Re-read this recovery** before resuming; for a hold, retry the same trip to read its saved intent before any write. A browser timeout does not cancel a committed action.
 
 ## Secure preflight
 
@@ -71,7 +84,7 @@ Verify listener ownership before choosing ports. Open
 `http://127.0.0.1:5176/showcase?view=briefing`.
 
 ```bash
-curl --fail http://127.0.0.1:8013/health
+curl --fail http://127.0.0.1:8013/api/health
 python scripts/test_aurora_connection.py
 python scripts/verify_agentcore.py
 ```

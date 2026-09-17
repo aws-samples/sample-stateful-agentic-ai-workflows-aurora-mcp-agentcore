@@ -60,6 +60,10 @@ export function deriveRecoveryStage(state: MeridianShowcaseState): RecoveryStage
 export function deriveRecoveryEvidence(
   state: MeridianShowcaseState,
 ): RecoveryEvidence {
+  if (state.selectedPhase !== 5) return {
+    searchObserved: false, alternativesObserved: false, availabilityObserved: false,
+    loyaltyObserved: false, memoryObserved: false, checkpointObserved: false, durableCheckpoint: false,
+  };
   const texts = (state.traceSpans ?? []).map((_, index) =>
     spanText(state, index),
   );

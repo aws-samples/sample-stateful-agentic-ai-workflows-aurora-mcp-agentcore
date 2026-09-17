@@ -7,6 +7,10 @@ Meridian is a working travel concierge and L300 chalk-talk application for
 **Concierge → Capability ladder → Recovery desk → System evidence**.
 The fifth view, **Solution briefing**, explains prepared data, architecture,
 policy, and recovery through compact diagrams and expandable detail.
+The 60-minute session budgets **40 minutes for slides, source walkthrough, and
+live demonstration**, plus 20 minutes for discussion and operational flex.
+Solution briefing offers focused Trusted context, Governed action, and Durable
+recovery views alongside the full architecture.
 Domain-data operations use the RDS Data API. LangGraph persists workflow
 checkpoints in Aurora through `AuroraDataApiSaver` or a pooled
 `AsyncPostgresSaver`; AgentCore Memory supplies conversation context.
@@ -59,13 +63,16 @@ LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP=true \
 uvicorn backend.main:app --host 127.0.0.1 --port 8013
 ```
 
-Health check:
+Read the configured backend health:
 
 ```bash
-curl --fail http://127.0.0.1:8013/health
+curl --fail http://127.0.0.1:8013/api/health
 ```
 
 Expected result: `{"status":"healthy", ...}`.
+This route requires HTTP authentication outside permitted loopback development.
+Public `/health` exposes only `{"status":"healthy"}` and cannot establish
+Aurora connectivity or checkpoint durability.
 
 For the Data API recovery demonstration, also verify
 `checkpoint_backend: "AuroraDataApiSaver"` and `checkpoint_durable: true`.
@@ -82,6 +89,8 @@ Readiness checks allow up to 45 seconds; periodic polling waits for an active
 check to finish.
 After renewing an expired AWS session, restart the backend if its clients still
 use the expired session.
+After updating the source, restart an existing backend so its routes match the
+updated frontend, including the hold and booking readback endpoints.
 
 `requirements.in` is the human-maintained dependency specification.
 `requirements.txt` is the hash-pinned lock generated with:
@@ -200,6 +209,9 @@ the application loads; see `docs/AGENTCORE_LEARNINGS.md` for why.
 
 `/showcase` opens Concierge; `/device-showcase` remains an alias. The selected
 view and journey stay in the URL so refresh can restore the saved workflow.
+The thread address is allocated before a recovery starts. Opening Recovery desk
+does not adopt unrelated SQL results or the latest historical journey; use
+**Open a saved recovery** to choose a stored run.
 
 ### Screenshots
 
@@ -294,6 +306,11 @@ working queries are in [DEMO_SCRIPT.md](DEMO_SCRIPT.md).
 | Production | `Find Tokyo trips that fit my saved preferences.` | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` → Workflow |
 | Workflow | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` | `Resume workflow from checkpoint` after the pause |
 
+Phase 4's **Use traveler context** switch applies to availability questions as
+well as recall and planning. With context off, the turn stops before reading or
+writing traveler memory. With it on, the request goes through managed Runtime
+and Gateway rather than a local availability shortcut.
+
 ### What recovery proves
 
 The canceled itinerary is a preview and is not valid for boarding. Saving a
@@ -310,6 +327,9 @@ receipt into Concierge, preserving the recorded duration, party, unit price,
 and total even if the catalog changes.
 
 Refresh restores the saved thread, shortlist, traveler count, and resume action.
+The workflow's closing response uses saved state directly, including the hold
+outcome and expiry, without another model rewrite. Recalled preferences remain
+context to review; their presence does not prove a package meets every preference.
 System evidence distinguishes observed records, expired leases, completed holds,
 and unavailable evidence. Failed refreshes label retained observations; selecting
 a different journey clears the old evidence. Full checkpoint readback has a
@@ -322,6 +342,30 @@ the last window; it does not inject a lost Gateway response. A checkpoint and
 a business write are separate transactions, so this is retry-safe business
 behavior, not exactly-once execution. See the dated
 [release review](docs/RELEASE_REVIEW.md) for checks performed and remaining rehearsal.
+
+### Slow responses, direct holds, and browser reload
+
+The browser limits chat, hold, and confirmation waits to **55 seconds**, including
+response-body reads. The UI shows elapsed waiting and **Stop waiting**. The
+managed Runtime SDK uses one attempt with a 45-second socket read timeout; that
+is not an end-to-end workflow deadline. A server action may finish after the
+browser has stopped waiting.
+
+- For an uncertain recovery outcome, use **Re-read this recovery** before resuming
+  the same thread. Duplicate starts cannot overwrite its checkpoint.
+- Before a direct 12-hour hold is sent, the browser saves its intent ID and terms.
+  Reload or retry reads that exact intent under the authenticated traveler's RLS
+  scope. A failed read does not start a speculative write.
+- Booking confirmation first reads the persisted booking. An already-confirmed
+  result restores its receipt without submitting confirmation again.
+- Browser storage holds intent/booking references per traveler on that origin,
+  not receipt truth. The database supplies recorded prices, party, status, and
+  expiry with explicit UTC offsets. Keep storage intact while reconciling an
+  uncertain action; unavailable storage blocks a new direct hold.
+
+See the [September 17 hardening report](docs/CODE_HARDENING_2026-09-17.md) for
+regression coverage, live lost-response proof, and the unresolved intermittent
+lease-timeout observation. Validate latency again on the presentation network.
 
 ### Rehearse recovery failures
 
@@ -427,6 +471,8 @@ missing artwork.
 The HTTP access boundary binds each request to a traveler before workload
 authorization runs. Local loopback development and the hosted sample use a
 shared demo principal; they do not authenticate Alex as a human user.
+Catalog routes, detailed health, the API root, and schema/docs use this same
+HTTP boundary. Only minimal `/health` process liveness is public at the origin.
 Traveler-scoped operations and Gateway actions use these controls:
 
 1. AgentCore Identity or AWS STS authenticates the workload.
@@ -475,9 +521,13 @@ allow the call. Aurora remains responsible for capacity and idempotent writes.
 | `GET` | `/api/products` | Product-shaped catalog for UI compatibility |
 | `POST` | `/api/chat/order` | Clicked courtesy hold in every phase: Runtime → Gateway/Cedar → `MeridianHolds` Lambda. The phase never selects a direct SQL fallback; `order` is null when the hold is refused |
 | `POST` | `/api/chat/book` | Confirm a held trip. The backend reads the booking total under RLS so the policy judges what Aurora holds, then the runtime asks the gateway and the `MeridianHolds` Lambda flips the row from `held` to `confirmed`. Catalog inventory only: no supplier, no payment. `order` is null when the confirmation was refused |
-| `GET` | `/api/journeys` | List the authorized traveler's journeys |
+| `GET` | `/api/chat/holds` | Read a direct-hold receipt by exact `conversation_id`, `product_id`, `duration`, and `quantity` under the authenticated traveler; no model or booking write |
+| `GET` | `/api/chat/bookings/{booking_id}` | Read the traveler's recorded booking, amounts, and expiry for reload or confirmation reconciliation |
+| `GET` | `/api/journeys` | List the authorized traveler's journeys; optional `thread_id` selects an exact workflow and `limit` is 1–50 |
 | `GET` | `/api/journeys/{journey_id}` | Read the saved workflow, checkpoint, executions, authorization, and hold evidence |
-| `GET` | `/health`, `/api/health` | Backend health, checkpoint backend, and actual durability |
+| `GET` | `/api/health` | Protected backend configuration, checkpoint backend, and actual durability |
+| `GET` | `/health` | Public minimal process liveness; not database readiness |
+| `GET` | `/openapi.json`, `/docs`, `/redoc` | API schema and interactive documentation under the HTTP access boundary |
 
 Trace spans are returned inline on each `POST /api/chat` response as `ChatResponse.activities`.
 
@@ -563,4 +613,5 @@ catalog and AWS access; they write checkpoints, journeys, and holds. The root
 | [docs/STATEFUL_ARCHITECTURE.md](docs/STATEFUL_ARCHITECTURE.md) | Source of truth for state, transport, and slide messaging |
 | [docs/DOGWOOD_POLICY_ASSESSMENT.md](docs/DOGWOOD_POLICY_ASSESSMENT.md) | Temporal-policy proposal and required rehearsal; not enabled |
 | [docs/RELEASE_REVIEW.md](docs/RELEASE_REVIEW.md) | Dated validation, live proof, and deployment boundaries |
+| [docs/CODE_HARDENING_2026-09-17.md](docs/CODE_HARDENING_2026-09-17.md) | September 17 fixes, regression coverage, live evidence, and remaining delivery gates |
 | [STRUCTURE.md](STRUCTURE.md) | Live code vs reference-only layout |

@@ -10,7 +10,10 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+from backend.http_auth import require_http_principal
+from backend.authorization import TravelerAuthorizationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -97,6 +100,7 @@ app = FastAPI(
     description="Backend API for the Meridian agentic travel concierge demo",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url=None, redoc_url=None, openapi_url=None,
     responses={
         400: {"model": ErrorResponse, "description": "Bad Request"},
         500: {"model": ErrorResponse, "description": "Internal Server Error"},
@@ -164,7 +168,7 @@ def _health_payload() -> HealthResponse:
     )
 
 
-@app.get("/", response_model=HealthResponse)
+@app.get("/", response_model=HealthResponse, dependencies=[Depends(require_http_principal)])
 async def root() -> HealthResponse:
     """
     Root endpoint - returns basic service information.
@@ -172,18 +176,13 @@ async def root() -> HealthResponse:
     return _health_payload()
 
 
-@app.get("/health", response_model=HealthResponse)
-async def health_check() -> HealthResponse:
-    """
-    Health check endpoint for monitoring and load balancers.
-    
-    Returns:
-        HealthResponse with service status, version, and environment
-    """
-    return _health_payload()
+@app.get("/health")
+async def health_check() -> dict[str, str]:
+    """Public process liveness only; readiness/configuration require authentication."""
+    return {"status": "healthy"}
 
 
-@app.get("/api/health", response_model=HealthResponse)
+@app.get("/api/health", response_model=HealthResponse, dependencies=[Depends(require_http_principal)])
 async def api_health_check() -> HealthResponse:
     """
     API health check endpoint.
@@ -194,7 +193,30 @@ async def api_health_check() -> HealthResponse:
     return _health_payload()
 
 
+# The schema and interactive API consoles use the same origin boundary as data.
+@app.get("/openapi.json", include_in_schema=False, dependencies=[Depends(require_http_principal)])
+async def protected_openapi():
+    return app.openapi()
+
+
+@app.get("/docs", include_in_schema=False, dependencies=[Depends(require_http_principal)])
+async def protected_docs():
+    return get_swagger_ui_html(openapi_url="/openapi.json", title="Meridian API")
+
+
+@app.get("/redoc", include_in_schema=False, dependencies=[Depends(require_http_principal)])
+async def protected_redoc():
+    return get_redoc_html(openapi_url="/openapi.json", title="Meridian API")
+
+
 # Exception handlers for consistent error responses
+@app.exception_handler(TravelerAuthorizationError)
+async def traveler_authorization_exception_handler(request, exc: TravelerAuthorizationError):
+    """A revoked workload grant is a refusal, including on receipt readback."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(status_code=403, content={"error": "This traveler is not authorized for the current workload."})
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc: HTTPException):
     """Handle HTTP exceptions with consistent error format."""

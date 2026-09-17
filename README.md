@@ -25,6 +25,10 @@ reranking with MCP tools, Strands Agents, Bedrock AgentCore, and LangGraph.
 The catalog contains sample travel packages; it is not a live airline booking
 or ticketing feed.
 
+The L300 chalk talk combines slides, source walkthrough, and live demonstration:
+**40 minutes of core content within a 60-minute session**, leaving 20 minutes
+for questions and operational flex. The full application flows remain available.
+
 > **Statefulness lives in durable stores, not database connections.** The RDS
 > Data API is a connectionless transport for durable Aurora reads and writes;
 > LangGraph checkpoints persist execution state in Aurora through the
@@ -83,6 +87,23 @@ persisted booking are separate evidence.
 Phase 3 specialists read the catalog and estimate prices. They cannot write a
 booking; confirmation uses the governed flow.
 
+Phase 4 respects **Use traveler context**, including availability questions:
+when off, it performs no traveler-memory read or write; when on, the managed
+Runtime owns the turn. Workflow's closing status comes from saved execution
+state, so a prose rewrite cannot contradict its recorded hold outcome.
+
+### Recovering from a slow or lost response
+
+Chat, hold, and confirmation waits stop after 55 seconds, with an elapsed timer
+and **Stop waiting** control. Stopping the browser wait does not cancel a saved
+action. Recovery keeps its thread address in the URL; use **Re-read this recovery**
+before resuming. **Open a saved recovery** selects historical evidence explicitly.
+
+Direct-hold intent IDs and booking references survive reload on the same browser
+origin. The app reads the receipt from Aurora before retrying an uncertain hold
+or confirmation. Browser storage contains references, not authoritative receipts;
+blocked storage prevents a new direct hold from being dispatched.
+
 Cedar is configured in the sample. [Dogwood temporal policy](meridian/docs/DOGWOOD_POLICY_ASSESSMENT.md)
 is an assessed extension and is not enabled.
 
@@ -128,7 +149,7 @@ If either port is occupied, choose a free port and keep `VITE_API_ORIGIN`
 pointing to the backend. Database initialization and seeding are first-time
 setup, not a health check for an existing journey.
 
-Before demonstrating recovery, check `http://127.0.0.1:8013/health` for
+Before demonstrating recovery, check `http://127.0.0.1:8013/api/health` for
 `checkpoint_backend: "AuroraDataApiSaver"` and `checkpoint_durable: true`, then
 confirm live trips and Alex’s profile load. Health reports process configuration;
 catalog and profile reads verify the current AWS connection. The app offers
@@ -136,6 +157,10 @@ reconnect when those reads fail; readiness checks allow up to 45 seconds on
 slower networks. `MemorySaver` cannot demonstrate recovery after
 a worker restart. Phase 4, Phase 5 holds, and every clicked hold also require the
 [configured AgentCore platform](meridian/docs/OPERATIONS.md#part-1--deploy-agentcore-day-before).
+Public `/health` returns only `{"status":"healthy"}`. Detailed health requires
+the application's HTTP authentication outside permitted loopback development.
+Restart an already-running backend after updating the source so the new receipt
+routes and frontend run together.
 
 Use the [L300 runbook](meridian/DEMO_SCRIPT.md) for the pause/resume sequence,
 three failure windows, and the distinction between process-death and
@@ -149,8 +174,10 @@ For a shared screen without a laptop on stage, publish the same app to a
 password-protected CloudFront URL. The CDK app in `meridian/infra/` puts the
 Vite build in a private S3 bucket and runs the FastAPI backend as a container on
 AWS App Runner, both behind one distribution. A CloudFront Function enforces
-basic auth at the edge and injects the backend bearer token on `/api/*`, so the
-App Runner URL itself refuses anonymous callers.
+basic auth at the edge and injects the backend bearer token on `/api/*`. The
+App Runner origin requires HTTP authentication for application routes, including
+catalog, detailed health, and API schema/docs; only minimal `/health` liveness
+is public. A Git push runs source checks; it does not deploy the hosted app.
 
 ```bash
 cd meridian
@@ -171,7 +198,7 @@ the details and teardown.
 | Capability ladder | `/showcase?view=ladder` | Five phases with boundary queries, architecture, and live traces |
 | Recovery desk | `/showcase?view=recovery` | Canceled-trip scenario, saved shortlist, resume, package-hold receipt, and the handoff back to the concierge for confirmation |
 | System evidence | `/showcase?view=proof` | Aurora readback of checkpoints, executions, authorization, and holds |
-| Solution briefing | `/showcase?view=briefing` | Compact architecture, prepared-data flow, Cedar policies, failure windows, and expandable implementation detail |
+| Solution briefing | `/showcase?view=briefing` | Full architecture plus focused Trusted context, Governed action, and Durable recovery views; prepared-data flow, Cedar policies, and expandable implementation detail |
 | Demo Stage | `/demo-stage`, `/stage` | Kiosk loop and presenter playback |
 
 In windowed mode, **Presenter controls** provides an audience preview,
@@ -203,12 +230,13 @@ Recovery desk screenshots.
 | Doc | Purpose |
 | --- | ------- |
 | [meridian/README.md](meridian/README.md) | Full setup, architecture, API, phase prompts, and validation |
-| [meridian/DEMO_SCRIPT.md](meridian/DEMO_SCRIPT.md) | L300 chalk talk: 45 minutes of content, failure windows, and evidence |
+| [meridian/DEMO_SCRIPT.md](meridian/DEMO_SCRIPT.md) | L300 chalk talk: 40 minutes of slides, code, and demo; 20 minutes for discussion and flex |
 | [meridian/docs/PRESENTER_GUIDE.md](meridian/docs/PRESENTER_GUIDE.md) | Concise run of show, claim boundaries, and readiness checklist |
 | [meridian/docs/OPERATIONS.md](meridian/docs/OPERATIONS.md) | AgentCore deployment and day-of operations |
 | [meridian/docs/STATEFUL_ARCHITECTURE.md](meridian/docs/STATEFUL_ARCHITECTURE.md) | Durable-state, transport, and checkpoint architecture |
 | [meridian/docs/DOGWOOD_POLICY_ASSESSMENT.md](meridian/docs/DOGWOOD_POLICY_ASSESSMENT.md) | Temporal-policy proposal and required rehearsal; not enabled |
 | [meridian/docs/RELEASE_REVIEW.md](meridian/docs/RELEASE_REVIEW.md) | Dated checks, live evidence, and deployment boundaries |
+| [meridian/docs/CODE_HARDENING_2026-09-17.md](meridian/docs/CODE_HARDENING_2026-09-17.md) | September 17 fixes, regression results, live recovery evidence, and remaining delivery gates |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
 
 ## Tech Stack
