@@ -26,6 +26,7 @@ Top-level view changes reset the workspace position after the transition. The na
 
 - Backend: **459 passed**, 6 skipped, 110 database tests deselected. This is the isolated automated suite, not a claim that all database-marked tests ran.
 - Frontend: **219 passed across 36 files**. Final copy-only changes were checked again: 35 component tests passed.
+- The first source-publication CI run exposed a storage-failure test mock that did not intercept jsdom's `Storage` proxy. The mock now targets the method owner and asserts it was called. All 219 tests passed again with jsdom storage; all 9 booking-flow tests also passed with the newer-Node storage fallback. Application behavior was unchanged by this test correction.
 - TypeScript/production build, frontend lint, backend Ruff, and whitespace checks passed.
 - Regression coverage includes context-off availability, managed dispatch, deadlines covering response-body reads, caller cancellation, unknown-outcome retry blocking, lost hold/confirmation responses, reload restoration, storage failure, expired receipts, revoked grants, duplicate starts, and stale journey isolation.
 - Browser checks covered actual SQL-to-recovery navigation, Stop waiting with retained identity, restart/readback, a recorded recovery hold, receipt restoration after full reload, view positioning, focused architecture, and narrow layouts. No console warnings/errors were present at the final browser check. A physical projector/back-row check is still a separate rehearsal.

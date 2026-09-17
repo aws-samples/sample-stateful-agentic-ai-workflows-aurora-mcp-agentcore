@@ -180,11 +180,19 @@ it('stops waiting without discarding the hold identity or accepting a late reply
 });
 
 it('does not dispatch a hold if its identity cannot be saved', async () => {
-  const storage = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => { throw new Error('Storage full'); });
-  const { result } = renderHook(() => useMeridianShowcase());
-  await waitFor(() => expect(result.current.travelersCount).toBe(2));
-  await act(async () => { await result.current.holdTrip(tokyo); });
-  expect(processOrder).not.toHaveBeenCalled();
-  expect(result.current.error).toContain('cannot save the hold request identity');
-  storage.mockRestore();
+  // jsdom's Storage proxy does not support replacing methods on an instance.
+  // Spy on the method owner, including the fallback used by newer Node versions.
+  const target = Object.prototype.hasOwnProperty.call(window.localStorage, 'setItem')
+    ? window.localStorage : Object.getPrototypeOf(window.localStorage);
+  const setItem = vi.spyOn(target, 'setItem').mockImplementation(() => { throw new Error('Storage full'); });
+  try {
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.travelersCount).toBe(2));
+    await act(async () => { await result.current.holdTrip(tokyo); });
+    expect(setItem).toHaveBeenCalled();
+    expect(processOrder).not.toHaveBeenCalled();
+    expect(result.current.error).toContain('cannot save the hold request identity');
+  } finally {
+    setItem.mockRestore();
+  }
 });
