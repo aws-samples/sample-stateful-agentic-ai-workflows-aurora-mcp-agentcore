@@ -680,7 +680,7 @@ class OrchestrationAgent:
         builder.add_node("search", self._node_search)
         builder.add_node("availability", self._node_availability)
         builder.add_node("memory_recall", self._node_memory_recall)
-        builder.add_node("prepare_hold", prepare_hold_node)
+        builder.add_node("prepare_hold", self._node_prepare_hold)
         builder.add_node("hold", self._node_hold)
         builder.add_node("synthesize", self._node_synthesize)
 
@@ -794,6 +794,7 @@ class OrchestrationAgent:
                     "fields": [
                         {"label": "node", "value": "classify"},
                         {"label": "intent", "value": intent},
+                        {"label": "recovery", "value": str(_is_recovery_request(state["query"])).lower()},
                         {"label": "checkpointer", "value": self.checkpointer_kind},
                     ],
                 },
@@ -974,6 +975,20 @@ class OrchestrationAgent:
             "activities": activities,
             "availability_checks": availability_checks,
         }
+
+    async def _node_prepare_hold(self, state: WorkflowState) -> WorkflowState:
+        prepared = prepare_hold_node(state)
+        activities = list(state.get("activities", []))
+        activities.append(_activity(
+            "reasoning", "Workflow node: prepare_hold",
+            details="Stable hold intent prepared; the graph checkpoints it before the hold node."
+                if prepared.get("hold_intent") else "No eligible package; no hold intent prepared.",
+            telemetry={
+                "category": "orchestration", "component": "LangGraph StateGraph", "status": "ok",
+                "fields": [{"label": "node", "value": "prepare_hold"}],
+            },
+        ))
+        return {**prepared, "activities": activities}
 
     async def _node_hold(self, state: WorkflowState, config: RunnableConfig = None) -> WorkflowState:
         """Worker node: place a courtesy hold on the top-ranked option through the gateway.

@@ -1,184 +1,129 @@
-# Meridian — Code Walkthrough Cue Sheet
+# Meridian code walkthrough cue sheet
 
-Exact files + line ranges to keep open while presenting the live code, phase by
-phase, in reveal order. Pair this with [`PRESENTER_GUIDE.md`](./PRESENTER_GUIDE.md)
-(what to *say*) — this doc is what to *show*.
+Pair this with [DEMO_SCRIPT.md](../DEMO_SCRIPT.md) and the
+[presenter guide](PRESENTER_GUIDE.md). Budget 40 minutes for slides, code, and
+demo within the 60-minute session. All paths below are relative to `meridian/`.
+Search for named symbols rather than relying on line numbers that move.
 
-> All paths are relative to `meridian/`. Line numbers verified against the repo;
-> if you edit a file, re-check with `grep -n`. Format per row: **lines** ·
-> **what's on screen** · **the one line that sells it**.
+The live entry point is `backend/routers/chat.py`. The Strands classes in
+`backend/agents/sql_01/` and `backend/agents/mcp_02/` are reference implementations,
+not the code executed by the first two showcase examples.
 
-**Open these as tabs/splits in reveal order so you move left → right as the talk advances:**
+## 0-4 minutes: three kinds of state
 
+Open Concierge and the returned traveler profile. Alex's October Tokyo plan is
+a fictional scenario; package inventory is not an airline feed. Use Solution
+briefing's focused diagrams alongside the source.
+
+| State | Source | Point to make |
+| --- | --- | --- |
+| Traveler context | `backend/agents/production_04/concierge.py`, `process_turn` | Authorized Aurora facts and managed conversation context inform a turn. |
+| Workflow progress | `backend/agents/orchestration_05/workflow.py`, `initialize_checkpoint_backend` | A durable saver restores execution after process replacement. |
+| Business result | `scripts/migrations/008_hold_request_identity.sql` | A persisted intent and transaction constraints make a repeated write safe. |
+
+Remembering a sentence does not establish a booking. A connection is not durable state.
+
+## 4-12 minutes: SQL, MCP, retrieval
+
+### SQL: show the path that ran
+
+Run **Show me city trips under $2,000 per traveler.** Open `sql_search` in
+`backend/routers/chat.py`; follow `parse_search_query` and `execute_keyword_search`
+to their imported implementation. Show the parsed filter, parameterized values,
+returned rows and recorded time. This path performs direct RDS Data API filtering;
+it does not invoke the reference Strands SQL agent. SQL can express richer
+business logic; the limitation here is the sample's chosen filter interface.
+
+### MCP: identify the observed server
+
+Run **Compare three trip types and convert each price to euros.** Open
+`mcp_search` and `_call_domain_tool` in `backend/routers/chat.py`, then
+`compare_packages` and `currency_convert` in `backend/mcp/concierge_server.py`.
+
+This pure-domain prompt uses `meridian-concierge` and skips the generic PostgreSQL
+MCP query. Other catalog prompts use `mcp_session` from
+`backend/mcp/mcp_client.py`; show that branch only if its trace was observed.
+Do not describe two servers as having run when the trace contains one.
+The protocol supplies a reusable tool contract. SQL could implement the same
+operations. Currency conversion uses indicative rates, not settlement prices.
+
+### Retrieval: candidates before ranking
+
+Run **Find a quiet, romantic wine-country retreat with a private villa.** Open
+`retrieval_supervisor_search` in `backend/routers/chat.py`, then
+`SearchAgent.hybrid_search` in `backend/agents/retrieval_03/search_agent.py`.
+Show query embedding, semantic and lexical candidates, deduplication, and
+`rerank_documents`. The adapters are in `backend/db/embedding_service.py`.
+
+Use the models and ordering observed in this run. A relevant villa result does
+not establish private occupancy, dietary suitability, or a reservation unless
+those facts are explicitly recorded. Inspect any missing requested attribute as
+a gap. At minute 12, move to the authorization boundary.
+
+## 12-20 minutes: identity, memory, policy
+
+Enable **Use traveler context** and wait for **On** with the authorized profile
+before submitting the recall prompt. Context off intentionally returns without
+running the managed turn; the guard is in `chat` in `backend/routers/chat.py`.
+
+| Source and symbol | What to show |
+| --- | --- |
+| `backend/http_auth.py`, `require_http_principal` | Bind the HTTP request to its permitted traveler. The sample uses a shared demo principal, not human-user authentication. |
+| `backend/db/rds_data_client.py`, `scoped_session` | Check the workload grant, set transaction-local scope and enter the restricted RLS role. |
+| `backend/agents/production_04/concierge.py`, `process_turn` | Short authorization/read and write units surround the external managed call. |
+| `meridian_agentcore/app/MeridianConcierge/main.py` | Deployed Strands loop, Gateway tools, Memory session manager, and returned events. |
+| `meridian_agentcore/app/MeridianConcierge/turn_trace.py`, `_pin_hold_arguments` | Pin traveler, approval, party, budget and journey from the authorized request before policy evaluates them. |
+| `meridian_agentcore/agentcore/agentcore.json`, `MeridianGovernance` | Cedar read, hold and confirmation permits; verify deployed `ENFORCE` mode. |
+| `backend/routers/diagnostics.py` | Actual allow/deny controls, restricted-role counts, and RLS policy evidence. |
+
+Show one real refusal. An IAM or traveler-grant denial is not a Cedar decision.
+The positive governed write follows in recovery. Save the separate 12-hour hold
+for Q&A.
+
+## 20-32 minutes: checkpoint, replacement worker, same intent
+
+Run the canceled-flight prompt to its pause and keep the exact thread URL.
+The canonical recovery path has six nodes:
+
+```text
+classify -> search -> availability -> prepare_hold -> hold -> synthesize
+             pause                   durable intent   governed write
 ```
-backend/agents/sql_01/agent.py:83
-backend/agents/mcp_02/agent.py:82      backend/mcp/concierge_server.py:52
-backend/agents/retrieval_03/search_agent.py:111   backend/agents/retrieval_03/supervisor.py:95
-backend/agents/production_04/concierge.py:180      backend/agents/production_04/memory_agent.py:114
-backend/agents/orchestration_05/workflow.py:390
-```
 
-**The three "land the point" lines to bookmark** (jump-to-line is `Cmd/Ctrl-G`):
-`search_agent.py:264` (rerank fusion) · `concierge.py:265` (short RLS read unit) · `workflow.py:557` (the plan branch).
+The graph also registers `memory_recall` for another branch. It is not a
+five-node graph, and not every branch visits every node.
 
----
+| Source and symbol | What to show |
+| --- | --- |
+| `backend/agents/orchestration_05/workflow.py`, graph builder | Edges, pause configuration, and saver passed to `compile`. |
+| `backend/agents/orchestration_05/execution.py`, `run_http_workflow` | Duplicate-start guards, execution claim, heartbeat, and lease. |
+| `backend/agents/orchestration_05/hold_intent.py`, `prepare_hold_node` | Normalize terms and save stable request/booking identity before the hold node. |
+| `backend/agents/orchestration_05/workflow.py`, `_node_hold` | Invoke Gateway with the saved intent and current execution lease. |
+| `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py`, `create_courtesy_hold` | Reauthorize the workload and call Aurora's idempotent write. |
+| `scripts/migrations/008_hold_request_identity.sql` | Replay protection belongs in the same transaction as the business write. |
+| `backend/agents/orchestration_05/workflow.py`, `_node_synthesize` | Closing status comes from saved state, including hold outcome and expiry, without another model rewrite. |
 
-## Phase 1 — SQL · `backend/agents/sql_01/agent.py` (446 lines)
+Restart only the rehearsal backend, re-read the same thread, and select
+**Resume and request hold**. Inspect the replacement worker and one recorded
+15-minute hold. A graceful restart, a hard kill, and a lost response are distinct
+tests; use separately retained fault-injection evidence for the latter two.
+A checkpoint and business write are not one distributed transaction: the claim
+is resumable execution with an idempotent action, not universal exactly-once execution.
 
-**Open to line 83.**
+## 32-40 minutes: evidence and takeaways
 
-| Lines | Show | Say |
-|---|---|---|
-| **83–94** | `Agent(model=BedrockModel(...), tools=[...], system_prompt=...)` | "Five `@tool` methods, one agent. Bedrock reads the docstrings and picks which to call." |
-| **180–228** | `@tool _search_trip_packages` — the keyword search | "This is the one that fails our wine query — it's `ILIKE` keyword matching." |
+In System evidence, connect each claim to its record: thread, checkpoint,
+execution, worker, authorization, hold ID, amount and expiry. The reader is
+`backend/db/journey_store.py`; failed readback is not evidence of a new outcome.
+Close with the context/progress/business-state distinction.
 
-The five tools live at lines **142, 180, 230, 285, 342** if someone wants to see them all.
+Optional source for discussion:
 
----
+- `frontend/src/api/request.ts`: bounded browser waits, not transaction cancellation.
+- `frontend/src/showcase/lib/bookingRecovery.ts`: persisted retry references, not receipt truth.
+- `backend/routers/chat.py`, `read_hold` and `read_booking`: authenticated reconciliation.
+- `scripts/migrations/010_confirm_booking.sql`: confirmation of an unexpired catalog hold, without supplier booking or payment.
+- `scripts/lost_response_demo.py` and `scripts/kill_and_resume_demo.py`: distinct failure schedules and isolated-fixture cleanup.
 
-## Phase 2 — MCP · two files
-
-### A. `backend/agents/mcp_02/agent.py` (265 lines) — open to line 82
-
-| Lines | Show | Say |
-|---|---|---|
-| **82–90** | `MCPClient(... args=["awslabs.postgres-mcp-server@1.0.9"])` | "Same Aurora — now reached through a versioned, IAM-authed MCP server instead of hand-written SQL." |
-| **112–113** | `connect()` + `list_tools()` | "Tools are discovered at runtime, not hard-coded." |
-
-> The server is pinned to `@1.0.9` (matches the live runtime client at
-> `backend/mcp/mcp_client.py:118`). `@latest` drifted to auto-discovering the
-> Secrets Manager secret, which fails for a Serverless v2 secret with a random
-> suffix — the pin avoids that on stage.
-
-### B. `backend/mcp/concierge_server.py` — the custom domain server — open to line 52
-
-| Lines | Show | Say |
-|---|---|---|
-| **52** | `mcp = FastMCP("meridian-concierge")` | "And a *custom* MCP server for domain logic SQL can't express." |
-| **91 · 133 · 188 · 234 · 272** | `compare_packages` · `seasonal_price_band` · `region_inventory` · `currency_convert` · `loyalty_balance` | "Five domain tools — this is what the 'compare in EUR' and 'cheapest month' demos call." |
-
----
-
-## Phase 3 — Retrieval · two files
-
-### A. `backend/agents/retrieval_03/supervisor.py` (351 lines) — open to line 95
-
-| Lines | Show | Say |
-|---|---|---|
-| **94–97** | `Agent(tools=[...])` — three delegation tools | "The supervisor sees three tools, each routing to a specialist." |
-| **148 · 185 · 224** | `_delegate_to_search` / `_delegate_to_package` / `_delegate_to_booking` | "Bedrock picks the specialist — same `@tool` pattern, one level up." |
-
-### B. `backend/agents/retrieval_03/search_agent.py` (320 lines) — **the money slide; open to line 111**
-
-| Lines | Show | Say |
-|---|---|---|
-| **71** | `tools=[self._hybrid_search_tool]` | "From the agent's view it's **one** tool — `_hybrid_search_tool` (note the underscore)." |
-| **111–125** | the `@tool` wrapper → calls `hybrid_search()` | "The whole pipeline hides inside it." |
-| **139–156** | embed step (Cohere Embed v4, 1024d) | "Embed the query." |
-| **161–187** | `candidate_limit = max(limit * multiplier, 25)` + `semantic_trip_search(%s::vector, %s::integer)` | "pgvector semantic arm — about 25 candidates." |
-| **192–214** | `websearch_to_tsquery` + `ts_rank` lexical arm | "Full-text precision arm, in parallel." |
-| **219–266** | merge/dedup → `rerank_documents(...)` (Cohere Rerank 3.5) | "Fuse both pools, then the cross-encoder reranks to top K." |
-
-The reranker model id isn't in this file — the call delegates to
-`embedding_service.rerank_documents()` at line **264**; the id lives in config.
-
----
-
-## Phase 4 — Production · four files
-
-### A. `backend/agents/production_04/concierge.py` — open at `process_turn`
-
-| Show | Say |
-|---|---|
-| `_authorized_read` | "Prepare the embedding first, then authorize the workload for Alex and run one short RLS read unit. It commits before anything external runs." |
-| `_runtime_turn` | "The authorized context and the budget ceiling go to the managed runtime. Every span the runtime streams back is replayed into this trace." |
-| `_write_unit` | "Reauthorize, persist the turn, audit, commit: a separate short RLS unit." |
-| `process_hold` | "The Hold click arrives here. The backend never writes the hold; it hands `hold_confirmed=True` and the exact terms to the runtime." |
-
-### B. `meridian_agentcore/app/MeridianConcierge/main.py` — the agent in AgentCore Runtime
-
-| Show | Say |
-|---|---|
-| `MCPClient(url=GATEWAY_URL, auth_provider=GatewaySigV4(...))` | "The agent discovers its tools from AgentCore Gateway over MCP, signed with its own execution role. No bearer token, no secret." |
-| `memory_manager` | "AgentCore Memory is the agent's own session: the Strands session manager restores it and writes each turn back." |
-| `Agent(..., tools=tools, hooks=[hooks], session_manager=...)` | "Strands runs the tool loop. The hooks turn every call into a span." |
-| `pump` and the `result` event | "Spans, packages, the hold outcome and the trace id stream back over SSE." |
-
-### C. `meridian_agentcore/app/MeridianConcierge/turn_trace.py` — the pinned hold contract
-
-| Show | Say |
-|---|---|
-| `_pin_hold_arguments` | "The model proposes the hold. The traveler id, the confirmation flag, the budget ceiling and the journey reference are overwritten from the authorized request before the gateway sees them." |
-| `friendly_denial` and `hold_deny_reasons` | "Cedar denies by default. We name the failed condition from the same arguments the policy saw, and hand that to the model so the reply is honest." |
-| `hold_settled` | "One decision per turn. A refused hold is explained, not retried." |
-
-### D. `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py` — the governed write
-
-| Show | Say |
-|---|---|
-| `_authorize` | "The Lambda is a workload too. It proves its own grant in `traveler_identity_bindings` and audits the decision, allow or deny." |
-| `_scope` | "Same GUCs, same `SET LOCAL ROLE meridian_app` as the backend, inside one Data API transaction." |
-| `create_courtesy_hold` and `HOLD_SQL` | "The idempotent SQL function behind every hold. The Phase 5 workflow calls this same tool with its checkpointed request id and its execution lease, so a retried tool call or a restarted worker replays the booking instead of taking a second one." |
-| `confirm_booking` and `CONFIRM_SQL` | "The same chain confirms the trip. `confirm_booking` in Aurora turns the held row into `confirmed` only while the hold is unexpired and the total matches; a retry returns the original confirmation. Catalog inventory only, no supplier, no payment." |
-
-And in `meridian_agentcore/agentcore/agentcore.json`, the `MeridianGovernance` engine:
-one permit for the two read tools, one permit for `create_courtesy_hold` with four
-conditions on `context.input`, one permit for `confirm_booking` with two, attached to
-the gateway in `ENFORCE` mode.
-
-> The trace panel shows the whole turn: Identity, grant, RLS read, Runtime turn started,
-> Gateway tools/list, Memory session restored, each gateway tool call and result (or the
-> Cedar denial), Runtime turn complete with the trace id and CloudWatch link, persist, audit.
-
-### C. `backend/db/rds_data_client.py` — `scoped_session()` (authorization + RLS)
-
-| Lines | Show | Say |
-|---|---|---|
-| **check_traveler_authorization** | lookup in `traveler_identity_bindings` | "RLS trusts a traveler ID. This proves the authenticated subject may claim it first." |
-| **381** | `set_config('app.current_traveler_id', …, true)` | "Pin the traveler into a transaction-local GUC — the RLS policy's input." |
-| **425** | `SET LOCAL ROLE meridian_app` | "**The catch:** our Data API secret maps to the master role, which on this cluster isn't subject to RLS (row_security_active() = false — not superuser/BYPASSRLS, just the master). We step down to a least-privilege role so the policy bites. (Production: give the app its own non-master secret.)" |
-
-### D. RLS probe — `backend/routers/diagnostics.py` (`/api/diagnostics/rls-probe`)
-
-The Phase-4 **RLS tab** proves three layers: workload identity, `ALLOW Alex` /
-`DENY Jordan` authorization, then the same `COUNT(*)` scoped vs unscoped plus
-the live `pg_policies` USING clause.
-
-### B. `backend/agents/production_04/memory_agent.py` — open to line 77
-
-| Lines | Show | Say |
-|---|---|---|
-| **77–85** | `tools=[...]` | "Four memory tools." |
-| **114 · 158 · 185 · 231** | `recall_session_context` · `recall_traveler_preferences` · `recall_similar_interactions` · `persist_turn` | "Three read; `persist_turn` is the only writer, and it writes **Aurora only**." |
-
----
-
-## Phase 5 — Orchestration · `backend/agents/orchestration_05/workflow.py`
-
-**Open to line 530** — the graph build fits on one screen.
-
-| Lines | Show | Say |
-|---|---|---|
-| **532–537** | `StateGraph` + `add_node` ×5 | "Five named nodes: classify, search, availability, memory_recall, synthesize." |
-| **542–551** | `add_conditional_edges("classify", ...)` | "Classify fans out by intent." |
-| **557–564** | conditional edge **out of search** → `availability if intent=='plan' else synthesize` | "The plan path chains search → availability, two sequential steps." |
-| **196–307** | shared pool + `AsyncPostgresSaver.setup()` | "Initialize one bounded saver for the process, not one connection per request." |
-| **583–586** | `compile(checkpointer=self.checkpointer, interrupt_after=...)` | "Pause after a committed node, terminate the worker, then resume the same thread." |
-
-`_classify_intent` (line **390**) is good backup if asked "how does it know
-it's a plan?" The visible `INSERT INTO checkpoints` proof is emitted by
-the worker nodes (search / availability / memory_recall), not classify/synthesize.
-
----
-
-## Demo-then-code ordering (Slide 24)
-
-Run the **live showcase demo first** so the result lands with the audience, then
-switch to the editor to show it's real code, not staged. The single file to have
-scrolled-and-ready when you switch is `backend/agents/retrieval_03/search_agent.py` at line **111**.
-
-## Demo traveler (for reference)
-
-Seeded in Aurora (not the prompt): **Alex Morgan** · `trv_meridian_demo` · home
-airport **JFK** · party of 2 · Tokyo culture trip Oct 12–19 · shellfish allergy ·
-boutique-over-chain · Marriott Bonvoy Platinum Elite + United MileagePlus Premier 1K.
+If running late, cut extra searches and confirmations first. Preserve the
+checkpoint, replacement worker, governed write, and database receipt.

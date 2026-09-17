@@ -570,6 +570,11 @@ Key environment variables are documented in `.env.example`.
 
 ## Validation
 
+See the [17 September story-arc validation](docs/STORY_ARC_VALIDATION_2026-09-17.md)
+for the live rehearsal, failure-window evidence, repairs and remaining
+presentation gates, and the [code walkthrough](docs/CODE_WALKTHROUGH.md) for
+the 40-minute content route.
+
 ```bash
 cd meridian/frontend
 npm run lint

@@ -168,6 +168,7 @@ describe('TracePanel collapse behavior', () => {
     });
     const state = makeState({
       selectedPhase: 4,
+      memoryEnabled: true,
       traceSpans: [
         span('s1', 'security', 'Workload traveler grant allowed'),
         span('s2', 'memory_long', 'Strands @tool recall_traveler_preferences'),
@@ -187,6 +188,22 @@ describe('TracePanel collapse behavior', () => {
     ]) {
       expect(screen.getByText(label).closest('li')).toHaveClass('is-done');
     }
+  });
+
+  it('does not claim recall when the context switch is off', () => {
+    render(<TracePanel state={makeState({ selectedPhase: 4, memoryEnabled: false,
+      traceSpans: [{ ...traceSpan, category: 'memory_long', name: 'Traveler memory disabled for this run' }],
+    })} />);
+    expect(screen.queryByText('Recalling traveler context')).not.toBeInTheDocument();
+  });
+
+  it('does not credit a failed query or a checkpoint write as completed traveler recall', () => {
+    render(<TracePanel state={makeState({ selectedPhase: 5, traceSpans: [
+      { ...traceSpan, status: 'error' },
+      { ...traceSpan, id: 'cp', category: 'memory_short', name: 'Checkpoint persisted', sql: undefined },
+    ] })} />);
+    expect(screen.getByText('Querying live travel data').closest('li')).toHaveClass('is-pending');
+    expect(screen.getByText('Recalling traveler context').closest('li')).toHaveClass('is-pending');
   });
 
   it('still credits the opening step to the runtime turn that started it', () => {

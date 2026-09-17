@@ -581,6 +581,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
 
   const submitPrompt = useCallback(
     async (overridePrompt?: string, phaseOverride?: Phase) => {
+      if ((phaseOverride ?? selectedPhase) === 4 && memoryLoading) {
+        setError('Wait for traveler context to finish connecting before sending this request.');
+        return;
+      }
       if ((phaseOverride ?? selectedPhase) === 5 && unresolvedWorkflow.current) {
         setError('Re-read this recovery before retrying. Its last response was not received, so the current outcome must be checked first.');
         return;
@@ -658,6 +662,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           ...(requestPhase >= 4
             ? {
                 customer_id: SHOWCASE_TRAVELER_ID,
+                travelers_count: travelersCount,
                 // Concierge uses Production without advancing the teaching ladder.
                 // Its opening profile is a real Aurora read; use that context on
                 // this request without switching on the ladder's memory toggle.
@@ -669,7 +674,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
               }
             : {}),
           ...(requestPhase === 5
-            ? { resume: resumeRequested || undefined, travelers_count: travelersCount }
+            ? { resume: resumeRequested || undefined }
             : {}),
         }, signal), controller.signal);
         if (!isCurrent()) return;
@@ -699,7 +704,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         }
       }
     },
-    [applyChatResponse, backendStatus, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, memoryEnabled, previewProfile, refreshConnection, selectedPhase, travelersCount, ],
+    [applyChatResponse, backendStatus, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, memoryEnabled, memoryLoading, previewProfile, refreshConnection, selectedPhase, travelersCount, ],
   );
 
   const applyPhaseExample = useCallback(

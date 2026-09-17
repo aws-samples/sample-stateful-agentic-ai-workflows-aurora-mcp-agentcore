@@ -255,6 +255,10 @@ requirements before production use.
 
 ## Validation
 
+The [17 September story-arc validation](meridian/docs/STORY_ARC_VALIDATION_2026-09-17.md)
+records the live five-phase rehearsal, restart and lost-response proofs, fixes,
+40-minute pacing, and remaining hosted-release and presentation gates.
+
 The GitHub Actions workflow runs backend, frontend, AgentCore CDK, and hosted
 web infrastructure checks on every push to `main`. Run the same commands locally:
 

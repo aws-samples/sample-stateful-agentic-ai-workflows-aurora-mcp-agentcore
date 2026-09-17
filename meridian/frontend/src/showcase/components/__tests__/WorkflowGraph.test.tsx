@@ -27,6 +27,21 @@ function state(traceSpans: ShowcaseTraceSpan[], overrides: Partial<MeridianShowc
 }
 
 describe('WorkflowGraph', () => {
+  it('keeps the hold intent and governed write visible before recovery resumes', () => {
+    render(<WorkflowGraph state={state([
+      span({ id: 'classify', fields: [
+        { label: 'node', value: 'classify' },
+        { label: 'intent', value: 'plan' },
+        { label: 'recovery', value: 'true' },
+      ] }),
+      span({ id: 'search', name: 'Workflow node: search' }),
+    ])} />);
+
+    expect(screen.getByText('6 steps')).toBeInTheDocument();
+    expect(screen.getByText('Prepare hold intent')).toBeInTheDocument();
+    expect(screen.getByText('Request governed hold')).toBeInTheDocument();
+  });
+
   it('renders the routed LangGraph path with branch labels and checkpoint badges', () => {
     render(
       <WorkflowGraph

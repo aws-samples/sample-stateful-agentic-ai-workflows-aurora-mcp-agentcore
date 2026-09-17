@@ -358,6 +358,21 @@ def test_canonical_recovery_finale_pauses_without_hidden_env_toggle(
     assert result["workflow_status"] == "paused"
     assert result["packages"][0]["product_id"] == "tokyo-1"
     assert "Resume thread c-canonical-recovery" in result["response"]
+    classification = next(a for a in result["activities"] if "classify →" in a["title"])
+    assert {"label": "recovery", "value": "true"} in classification["telemetry"]["fields"]
+
+
+def test_prepare_hold_node_preserves_intent_and_reports_execution(monkeypatch):
+    intent = {"hold_request_id": "stable-request"}
+    monkeypatch.setattr(workflow_mod, "prepare_hold_node", lambda state: {"hold_intent": intent})
+    existing = [{"title": "earlier node"}]
+    result = asyncio.run(_build_workflow()._node_prepare_hold({"activities": existing}))
+    assert result["hold_intent"] is intent
+    assert existing == [{"title": "earlier node"}]
+    assert result["activities"][-1]["title"] == "Workflow node: prepare_hold"
+    assert result["activities"][-1]["telemetry"]["fields"] == [
+        {"label": "node", "value": "prepare_hold"}
+    ]
 
 
 def test_resume_detects_changed_worker_instance(

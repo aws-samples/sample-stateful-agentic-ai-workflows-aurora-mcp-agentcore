@@ -100,6 +100,7 @@ def check_gateway_tools(cfg) -> tuple[bool, str, str]:
         "SemanticTripSearchLambda___semantic_trip_search",
         "MeridianHolds___get_package_details",
         "MeridianHolds___create_courtesy_hold",
+        "MeridianHolds___confirm_booking",
     }
     ok = expected.issubset(names)
     return ok, ", ".join(names) or "none", f"{len(names)} tools"

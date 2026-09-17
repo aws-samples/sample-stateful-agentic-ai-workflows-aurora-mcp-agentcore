@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { AlertTriangle, ArrowRight, Check, Clock3, Compass, Heart, MapPin, RotateCcw } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Check, Clock3, Compass, Heart, MapPin, X } from 'lucide-react';
 import { ShowcaseMarkdown } from './ChatTranscript';
 import { ConciergeBell } from '../icons/TravelIcons';
 import type { Product } from '../../types';
@@ -138,8 +138,8 @@ export function DiscoveryWorkspace({ state, onClear, greeting, onDiscover }: {
         </li>)}
       </ol>
       {state.isLoading && <div className="mc-loading" role="status"><ConciergeBell size={18} /><span>Finding the right options for you…</span><span className="mc-loading-dots" aria-hidden="true">•••</span></div>}
-      {state.error && <div className="mc-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><strong>We couldn’t complete that request.</strong><p>Your conversation is still here. Please try again.</p></div>
-        <button type="button" onClick={() => { state.clearError(); void state.replayLastPrompt(); }} disabled={state.isLoading}><RotateCcw size={15} />Try again</button></div>}
+      {state.error && <div className="mc-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><strong>A request needs attention.</strong><p>{state.error}</p></div>
+        <button type="button" onClick={state.clearError} disabled={state.isLoading}><X size={15} />Dismiss</button></div>}
 
       {!state.isLoading && !state.error && options.length > 0 && <section className="mc-collection" aria-label={hasTurn ? 'Your trip recommendations' : 'Travel inspiration'}>
         <div className="mc-section-heading"><h2>{hasTurn ? 'Worth a closer look' : 'A little inspiration for your next chapter'}</h2>

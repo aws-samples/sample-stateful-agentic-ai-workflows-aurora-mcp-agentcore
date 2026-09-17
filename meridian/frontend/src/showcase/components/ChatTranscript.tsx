@@ -298,7 +298,15 @@ function FollowUpChips({
           key={prompt}
           type="button"
           className="mds-followup-chip"
-          onClick={() => void state.submitPrompt(prompt)}
+          disabled={state.isLoading}
+          onClick={() => {
+            if (prompt === 'Run this in Workflow' && state.lastPrompt) {
+              state.setSelectedPhase(5);
+              void state.applyPhaseExample(state.lastPrompt, true, 5);
+              return;
+            }
+            void state.submitPrompt(prompt);
+          }}
         >
           <ArrowRight size={13} strokeWidth={2.2} aria-hidden="true" />
           {prompt}
@@ -566,22 +574,22 @@ function InlineConciergeCard({
           {travelerContextObserved && (
             <span className="is-violet">
               <Sparkles size={12} aria-hidden="true" />
-              Memory match
+              Saved preferences
             </span>
           )}
           {travelerContextObserved && (
             <span>
               <ShieldCheck size={12} aria-hidden="true" />
-              Hotel Platinum
+              Review loyalty benefits
             </span>
           )}
           <span className="is-green">
             <BedDouble size={12} aria-hidden="true" />
-            Lounge access
+            Check lounge options
           </span>
           <span className="is-yellow">
             <BusFront size={12} aria-hidden="true" />
-            Airport transfer
+            Check transfer options
           </span>
         </div>
         <footer>

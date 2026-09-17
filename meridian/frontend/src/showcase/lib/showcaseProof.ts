@@ -57,9 +57,9 @@ export const PHASE_PROOFS: Record<Phase, PhaseProof> = {
     headline: 'Direct Aurora query',
     dataPath: 'Prompt -> SQL filters -> trip_packages',
     auroraCapability: 'RDS Data API executes scoped catalog reads.',
-    agentBoundary: 'Single SQL agent owns parsing and query execution.',
+    agentBoundary: 'The live route parses filters and executes the catalog query.',
     proof: 'SQL text and row count appear in the trace.',
-    source: 'backend/agents/sql_01/agent.py',
+    source: 'backend/routers/chat.py',
   },
   2: {
     phase: 2,
@@ -105,6 +105,15 @@ const WORKFLOW_PATHS: Record<string, string[]> = {
   availability: ['classify', 'availability', 'synthesize'],
   memory_recall: ['classify', 'memory_recall', 'synthesize'],
 };
+
+/** The classification trace declares recovery before any business write runs. */
+export function workflowPathFor(intent: string, spans: ShowcaseTraceSpan[]): string[] {
+  const observed = spans.filter(span => span.status === 'ok');
+  const recovery = observed.some(span => fieldValue(span, 'recovery') === 'true'
+    || ['prepare_hold', 'hold'].includes(workflowNodeFromSpan(span) ?? ''));
+  if (intent === 'plan' && recovery) return ['classify', 'search', 'availability', 'prepare_hold', 'hold', 'synthesize'];
+  return WORKFLOW_PATHS[intent] ?? ['classify', 'branch', 'synthesize'];
+}
 
 export function getPhaseProof(phase: Phase): PhaseProof {
   return PHASE_PROOFS[phase] ?? PHASE_PROOFS[5];
@@ -278,7 +287,7 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
     traceSpans
       .map((span) => fieldValue(span, 'intent'))
       .find(Boolean) ?? 'awaiting prompt';
-  const path = WORKFLOW_PATHS[intent] ?? ['classify', 'branch', 'synthesize'];
+  const path = workflowPathFor(intent, traceSpans);
   const checkpointSpans = traceSpans.filter(isCheckpointSpan);
   const checkpoint =
     traceSpans
@@ -408,7 +417,7 @@ function workflowNodeFromSpan(span: ShowcaseTraceSpan): string | null {
   if (span.status !== 'ok') return null;
   const field = fieldValue(span, 'node');
   if (field) return field;
-  const match = /Workflow node:\s*(classify|search|availability|memory_recall|synthes)/i.exec(span.name);
+  const match = /Workflow node:\s*(classify|search|availability|memory_recall|prepare_hold|hold|synthes)/i.exec(span.name);
   if (!match) return null;
   return match[1].startsWith('synthes') ? 'synthesize' : match[1];
 }

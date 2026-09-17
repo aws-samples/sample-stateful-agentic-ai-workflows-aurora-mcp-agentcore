@@ -781,10 +781,10 @@ export function ConciergeAssistanceCard({
         {evidence.memoryObserved && <span className="is-violet">Context recalled</span>}
         {evidence.loyaltyObserved && <span>Loyalty context</span>}
         <span className={ready ? 'is-green' : ''}>
-          {ready ? 'Lounge access' : 'Hotel options'}
+          {ready ? 'Check lounge options' : 'Hotel options'}
         </span>
         <span className={ready ? 'is-yellow' : ''}>
-          {ready ? 'Airport transfer' : 'Transfer support'}
+          {ready ? 'Check transfer options' : 'Transfer support'}
         </span>
       </div>
       <p>{contextLabel}. Nothing is booked automatically.</p>

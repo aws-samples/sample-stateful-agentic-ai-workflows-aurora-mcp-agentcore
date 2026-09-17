@@ -417,7 +417,7 @@ async def sql_search(query: str, limit: int = 5) -> tuple[List[Product], List[Ac
         title="Direct RDS Data API connection",
         details="Executing SQL query via HTTP endpoint",
         agent_name="SQLAgent",
-        agent_file="agents/sql_01/agent.py"
+        agent_file="backend/routers/chat.py"
     ))
 
     # Use shared search utilities
@@ -429,7 +429,7 @@ async def sql_search(query: str, limit: int = 5) -> tuple[List[Product], List[Ac
         title=search_title,
         sql_query=display_sql,
         agent_name="SQLAgent",
-        agent_file="agents/sql_01/agent.py"
+        agent_file="backend/routers/chat.py"
     ))
 
     execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
@@ -443,7 +443,7 @@ async def sql_search(query: str, limit: int = 5) -> tuple[List[Product], List[Ac
         title=f"Found {len(results)} trips",
         execution_time_ms=execution_time,
         agent_name="SQLAgent",
-        agent_file="agents/sql_01/agent.py"
+        agent_file="backend/routers/chat.py"
     ))
 
     # Convert results to Product models
@@ -720,14 +720,14 @@ async def mcp_search(
                 "run_query, connect_to_database, get_table_schema"
             ),
             agent_name="MCPAgent",
-            agent_file="agents/mcp_02/agent.py",
+            agent_file="backend/routers/chat.py",
         ))
         activities.append(create_activity(
             activity_type="mcp",
             title="postgres-mcp · connect_to_database",
             details="Aurora PostgreSQL via RDS Data API (rdsapi)",
             agent_name="MCPAgent",
-            agent_file="agents/mcp_02/agent.py",
+            agent_file="backend/routers/chat.py",
         ))
         sql, display_sql, search_title = build_search_sql(params, limit)
         async with mcp_session() as client:
@@ -738,7 +738,7 @@ async def mcp_search(
             details=f"Generic SQL tool: {search_title}",
             sql_query=display_sql,
             agent_name="MCPAgent",
-            agent_file="agents/mcp_02/agent.py",
+            agent_file="backend/routers/chat.py",
         ))
 
     # ----- Custom MCP server (meridian-concierge) -----
@@ -819,7 +819,7 @@ async def mcp_search(
                                 f"({', '.join(repr(p) for p in compared_ids)})"
                             ),
                             agent_name="MCPAgent",
-                            agent_file="agents/mcp_02/agent.py",
+                            agent_file="backend/routers/chat.py",
                         ))
                     except Exception as exc:
                         log_error("compare_hydrate", error=str(exc))
@@ -870,7 +870,7 @@ async def mcp_search(
         details=f"Retrieved {len(results)} rows in {execution_time}ms",
         execution_time_ms=execution_time,
         agent_name="MCPAgent",
-        agent_file="agents/mcp_02/agent.py",
+        agent_file="backend/routers/chat.py",
     ))
 
     product_dicts = results_to_packages(results)
@@ -2453,8 +2453,8 @@ async def chat(
     phase3_method = "Hybrid (pgvector + tsvector) + Cohere Rerank via Strands Supervisor"
 
     phase_configs = {
-        1: ("SQLAgent", "Direct RDS Data API", sql_search, "agents/sql_01/agent.py"),
-        2: ("MCPAgent", "MCP tool routing", mcp_search, "agents/mcp_02/agent.py"),
+        1: ("SQLAgent", "Direct RDS Data API", sql_search, "backend/routers/chat.py"),
+        2: ("MCPAgent", "MCP tool routing", mcp_search, "backend/routers/chat.py"),
         3: ("RetrievalAgent", phase3_method, phase3_fn, "agents/retrieval_03/supervisor.py"),
     }
 

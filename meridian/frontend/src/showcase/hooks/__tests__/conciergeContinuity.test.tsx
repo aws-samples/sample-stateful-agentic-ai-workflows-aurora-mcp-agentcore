@@ -28,6 +28,38 @@ beforeEach(() => {
 });
 
 describe('Concierge request context', () => {
+  it('sends the displayed party size to managed chat and preserves an explicit override', async () => {
+    vi.mocked(fetchMemoryProfile).mockResolvedValue({ traveler_id: 'trv_meridian_demo', profile: { party_size: 2 }, facts: [] });
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.travelersCount).toBe(2));
+    await act(async () => { await result.current.submitPrompt('Recall my plan', 4); });
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 4, travelers_count: 2 }), expect.any(AbortSignal));
+    act(() => result.current.setChatFilters({ ...result.current.chatFilters, travelers: 3 }));
+    await act(async () => { await result.current.submitPrompt('Plan for three', 4); });
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ travelers_count: 3 }), expect.any(AbortSignal));
+    await act(async () => { await result.current.submitPrompt('Keep the same party', 4); });
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ travelers_count: 3 }), expect.any(AbortSignal));
+  });
+
+  it('waits for context authorization instead of submitting a context-off turn while connecting', async () => {
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+    act(() => result.current.setSelectedPhase(4));
+    let finish!: (value: Awaited<ReturnType<typeof fetchMemoryProfile>>) => void;
+    vi.mocked(fetchMemoryProfile).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    let pending!: Promise<void>;
+    act(() => { pending = result.current.setMemoryEnabled(true); });
+    await act(async () => { await result.current.submitPrompt('Recall my plan'); });
+    expect(sendChatMessage).not.toHaveBeenCalled();
+    expect(result.current.error).toMatch(/finish connecting/);
+    await act(async () => {
+      finish({ traveler_id: 'trv_meridian_demo', profile: { party_size: 2 }, facts: [] });
+      await pending;
+    });
+    await act(async () => { await result.current.submitPrompt('Recall my plan'); });
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ memory_enabled: true, travelers_count: 2 }), expect.any(AbortSignal));
+  });
+
   it.each(['update', 'delete'] as const)('refreshes the displayed budget after a preference %s', async action => {
     vi.mocked(fetchMemoryProfile).mockResolvedValue({
       traveler_id: 'trv_meridian_demo', profile: { party_size: 2 },

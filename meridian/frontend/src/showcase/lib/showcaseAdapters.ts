@@ -149,7 +149,7 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     description: 'Runtime-owned tools, Cedar policy, traveler memory, and RLS',
     capability: 'Trust',
     takeaway: 'Authenticate the workload, authorize Alex, let the agent call governed tools, and audit every turn.',
-    proofPoint: 'Cedar decision + RLS',
+    proofPoint: 'Runtime + RLS',
     adds: 'The agent runs in AgentCore Runtime, calls Aurora tools through AgentCore Gateway, and Cedar policy checks every call before it runs.',
     tech: 'AgentCore Runtime · Gateway · Policy · Memory · Aurora RLS',
   },

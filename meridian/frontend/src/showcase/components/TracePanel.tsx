@@ -28,8 +28,9 @@ const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTrac
     id: 'recall',
     label: 'Recalling traveler context',
     matches: (s) =>
-      ['memory_short', 'memory_long'].includes(s.category) ||
-      /recall|memory|preferences|interaction/i.test(s.name),
+      !/checkpoint|persist|disabled/i.test(s.name) && (
+        ['memory_short', 'memory_long'].includes(s.category) ||
+        /recall|memory|preferences|interaction/i.test(s.name)),
   },
   {
     id: 'inventory',
@@ -63,6 +64,7 @@ interface PhaseProgress {
 function classifySpansToPhases(spans: ShowcaseTraceSpan[]): Map<string, string> {
   const map = new Map<string, string>();
   spans.forEach((span) => {
+    if (!['ok', 'delegated'].includes(span.status)) return;
     const matchedIdx = THINKING_PHASES.findIndex((phase) => phase.matches(span));
     if (matchedIdx >= 0) {
       map.set(span.id, THINKING_PHASES[matchedIdx].id);
@@ -365,7 +367,8 @@ function ThinkingPhases({ state }: { state: MeridianShowcaseState }) {
 
   // The HTTP response contains the trace only when the turn finishes.
   // Elapsed time is not evidence that a tool or memory read completed.
-  const phases = THINKING_PHASES.filter(phase => phase.id !== 'recall' || state.selectedPhase >= 4);
+  const phases = THINKING_PHASES.filter(phase => phase.id !== 'recall'
+    || state.selectedPhase === 5 || (state.selectedPhase === 4 && state.memoryEnabled));
 
   const progress: PhaseProgress[] = phases.map((phase) => ({
     status: 'pending',

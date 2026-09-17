@@ -89,6 +89,19 @@ function makeState(
   } as unknown as MeridianShowcaseState;
 }
 
+it('hands the original disruption request to Phase 5 from the follow-up chip', () => {
+  const state = makeState({
+    selectedPhase: 4,
+    lastPrompt: SHOWCASE_FINALE_PROMPT,
+    messages: [{ role: 'bot', text: 'Use Workflow for these dependent steps.', follow_ups: ['Run this in Workflow'] }],
+  });
+  render(<ChatTranscript state={state} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Run this in Workflow' }));
+  expect(state.setSelectedPhase).toHaveBeenCalledWith(5);
+  expect(state.applyPhaseExample).toHaveBeenCalledWith(SHOWCASE_FINALE_PROMPT, true, 5);
+  expect(state.submitPrompt).not.toHaveBeenCalled();
+});
+
 function getQueryStarter(prompt: string) {
   const label = showcasePromptLabel(prompt);
   const button = screen.getByText(label).closest('button');
@@ -102,6 +115,35 @@ function getQueryStarter(prompt: string) {
 }
 
 describe('Experience presentation polish', () => {
+  it('blocks prompt submission while traveler context is being authorized', () => {
+    const state = makeState({ selectedPhase: 4, memoryLoading: true, currentPrompt: 'Recall my plan' });
+    render(<ChatComposer state={state} proofMode />);
+    expect(screen.getByRole('textbox', { name: 'Ask Meridian anything' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Connecting traveler context');
+  });
+
+  it('does not infer lounge access or preference matching from unrelated catalog amenities', () => {
+    const product = { product_id: 'amenities', name: 'Villa week', brand: 'Meridian', price: 100, category: 'Wellness', description: 'Villa stay, late checkout, fast wi-fi, cooking class.', image_url: '', available_sizes: ['6 nights'] };
+    render(<TripResultCardContent product={product} state={makeState({ selectedPhase: 3 })} featured matchPct={null} matchLabel="Ranked #1" />);
+    expect(screen.getByText('Dining experiences')).toBeInTheDocument();
+    expect(screen.queryByText('Lounge access')).not.toBeInTheDocument();
+    expect(screen.queryByText('Dining match')).not.toBeInTheDocument();
+    expect(screen.queryByText('Traveler context recalled')).not.toBeInTheDocument();
+  });
+
+  it('shows booking reconciliation guidance without replaying an unrelated chat', () => {
+    const clearError = vi.fn();
+    const replayLastPrompt = vi.fn();
+    const error = 'A saved booking request still needs reconciliation. Open its trip and retry the same hold to check Aurora before sending it again.';
+    render(<DiscoveryWorkspace state={makeState({ error, clearError, replayLastPrompt })} greeting="morning" onClear={vi.fn()} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent(error);
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(clearError).toHaveBeenCalledOnce();
+    expect(replayLastPrompt).not.toHaveBeenCalled();
+  });
+
   it('starts with Concierge and clears into Phase 1 of the capability ladder', () => {
     const clearChat = vi.fn();
     const setSelectedPhase = vi.fn();
@@ -681,9 +723,9 @@ describe('Experience presentation polish', () => {
       </article>,
     );
 
-    expect(screen.getByText('Memory match')).toBeInTheDocument();
+    expect(screen.getByText('Traveler context recalled')).toBeInTheDocument();
     expect(screen.getByText('2 travelers')).toBeInTheDocument();
-    expect(screen.getByText('Preferred stay')).toBeInTheDocument();
+    expect(screen.getByText('Stay details listed')).toBeInTheDocument();
     expect(screen.getByText('Lounge access')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /View details/i })).toBeInTheDocument();
   });

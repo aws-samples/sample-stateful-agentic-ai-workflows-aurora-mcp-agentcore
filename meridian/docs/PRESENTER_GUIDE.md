@@ -157,7 +157,8 @@ trace should make both visible.
 
 ### 5. Production: Trusted Memory
 
-Run the Tokyo recall query in Phase 4. Point to recalled facts such as JFK and
+Enable **Use traveler context** and wait for **On** before running the Tokyo
+recall query in Phase 4. Point to recalled facts such as JFK and
 the shellfish allergy, then open the RLS proof.
 
 Describe the control chain in order:
@@ -170,8 +171,10 @@ Describe the control chain in order:
 6. Let the gateway's Cedar policy engine decide every tool call on the arguments the runtime pinned: the traveler id, the confirmation flag and the budget ceiling come from the request, never from the model.
 7. Audit the authorization decision and data access; the hold Lambda proves its own grant before it writes.
 
-Use the Alex ALLOW and Jordan DENY results as the negative control, then click
-**Hold** for the Cedar permit and type a hold request for the Cedar deny.
+Use the Alex ALLOW and Jordan DENY results as the traveler-authorization
+controls, then type a hold request for the Cedar refusal. The recovery hold
+provides the positive permit in the core route; save the separate clicked hold
+for discussion. A recall-only turn proves Runtime and RLS, not a Cedar tool decision.
 
 Be precise: this sample authorizes a workload to access a traveler record. A
 shared application must also authenticate the human user and bind the verified
@@ -195,6 +198,8 @@ Point to:
 - checkpoint write
 - `availability`
 - checkpoint write
+- `prepare_hold` and its checkpointed request/booking identity
+- `hold` through Gateway, Cedar, and the Aurora transaction
 - `synthesize`
 
 Explain the transport split:

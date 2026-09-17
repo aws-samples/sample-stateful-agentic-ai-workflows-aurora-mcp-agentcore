@@ -8,11 +8,12 @@
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { LangGraphMark } from './LangGraphMark';
 import type { ShowcaseTraceSpan } from '../lib/showcaseAdapters';
+import { workflowPathFor } from '../lib/showcaseProof';
 
-type NodeName = 'classify' | 'search' | 'availability' | 'memory_recall' | 'synthesize';
+type NodeName = 'classify' | 'search' | 'availability' | 'memory_recall' | 'prepare_hold' | 'hold' | 'synthesize';
 type GraphNodeName = 'start' | NodeName | 'end';
 
-const WORKFLOW_NODES: NodeName[] = ['classify', 'search', 'availability', 'memory_recall', 'synthesize'];
+const WORKFLOW_NODES: NodeName[] = ['classify', 'search', 'availability', 'memory_recall', 'prepare_hold', 'hold', 'synthesize'];
 
 const NODE_LABELS: Record<GraphNodeName, string> = {
   start: 'START',
@@ -20,18 +21,13 @@ const NODE_LABELS: Record<GraphNodeName, string> = {
   search: 'Retrieve packages',
   availability: 'Check availability',
   memory_recall: 'Recall memory',
+  prepare_hold: 'Prepare hold intent',
+  hold: 'Request governed hold',
   synthesize: 'Compose answer',
   end: 'END',
 };
 
-const INTENT_PATHS: Record<string, NodeName[]> = {
-  search: ['classify', 'search', 'synthesize'],
-  plan: ['classify', 'search', 'availability', 'synthesize'],
-  availability: ['classify', 'availability', 'synthesize'],
-  memory_recall: ['classify', 'memory_recall', 'synthesize'],
-};
-
-const NODE_RE = /Workflow node:\s*(classify|search|availability|memory_recall|synthes)/i;
+const NODE_RE = /Workflow node:\s*(classify|search|availability|memory_recall|prepare_hold|hold|synthes)/i;
 
 interface GraphActivation {
   litNodes: Set<GraphNodeName>;
@@ -66,6 +62,7 @@ function deriveActivation(
 
   spans.forEach((span, index) => {
     if (isReplaying && replayIndex >= 0 && index > replayIndex) return;
+    if (span.status !== 'ok') return;
 
     const node = spanNode(span);
     if (node) {
@@ -84,9 +81,8 @@ function deriveActivation(
     }
   });
 
-  const workflowPath: NodeName[] = intent && INTENT_PATHS[intent]
-    ? INTENT_PATHS[intent]
-    : ['classify', 'synthesize'];
+  const workflowPath = workflowPathFor(intent ?? '', spans)
+    .filter((node): node is NodeName => WORKFLOW_NODES.includes(node as NodeName));
   const pathNodes: GraphNodeName[] = ['start', ...workflowPath, 'end'];
 
   if (litNodes.size > 0) litNodes.add('start');

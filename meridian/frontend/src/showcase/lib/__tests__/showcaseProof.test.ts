@@ -34,6 +34,24 @@ const product: Product = {
 };
 
 describe('showcase proof helpers', () => {
+  it('requires the recorded intent and hold steps before calling recovery complete', () => {
+    const spans = [
+      span({ name: 'Workflow node: classify', fields: [
+        { label: 'intent', value: 'plan' }, { label: 'recovery', value: 'true' },
+      ] }),
+      span({ name: 'Workflow node: search' }),
+      span({ name: 'Workflow node: availability' }),
+    ];
+    expect(deriveWorkflowState(spans).nextNode).toBe('prepare_hold');
+    spans.push(span({ name: 'Workflow node: prepare_hold' }));
+    spans.push(span({ name: 'Workflow node: hold', status: 'error' }));
+    expect(deriveWorkflowState(spans).nextNode).toBe('hold');
+    spans.push(span({ name: 'Workflow node: hold' }));
+    spans.push(span({ name: 'Workflow node: synthesize' }));
+    expect(deriveWorkflowState(spans).nextNode).toBe('complete');
+    expect(deriveWorkflowState(spans).visited).toHaveLength(6);
+  });
+
   it('returns presenter-facing proof metadata for each phase', () => {
     expect(getPhaseProof(2).headline).toContain('MCP');
     expect(getPhaseProof(5).auroraCapability).toContain('checkpoints');

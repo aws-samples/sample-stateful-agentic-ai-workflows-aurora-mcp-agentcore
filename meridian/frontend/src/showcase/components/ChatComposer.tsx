@@ -31,9 +31,12 @@ export function ChatComposer({
   conciergeMode?: boolean;
 }) {
   const [openChip, setOpenChip] = useState<ChipKey | null>(null);
+  const contextConnecting = state.memoryLoading && (conciergeMode || state.selectedPhase === 4);
+  const requestBusy = state.isLoading || contextConnecting;
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
+    if (requestBusy) return;
     void state.submitPrompt(undefined, conciergeMode ? 4 : undefined);
   };
 
@@ -99,7 +102,7 @@ export function ChatComposer({
                 key={prompt}
                 type="button"
                 className={`mds-chat-starter-chip${isStretch ? ' is-stretch' : proofMode ? ' is-works' : ''}`}
-                disabled={state.isLoading}
+                disabled={requestBusy}
                 onClick={() => void state.applyPhaseExample(prompt, true, conciergeMode ? 4 : undefined)}
                 aria-label={accessibleLabel}
                 title={
@@ -131,6 +134,7 @@ export function ChatComposer({
           }}>Continue in {nextPhase.label}<Navigation2 size={15} aria-hidden="true" /></button>}
         </div>
       )}
+      {contextConnecting && <p role="status">Connecting traveler context. Wait for authorization before sending.</p>}
       <form className={`mds-chat-composer${compact ? ' is-compact' : ''}`} onSubmit={onSubmit}>
         {conciergeMode && <span className="mc-composer-icon" aria-hidden="true"><ConciergeBell size={21} strokeWidth={1.6} /></span>}
         <input
@@ -141,13 +145,13 @@ export function ChatComposer({
               ? 'Ask Meridian anything - find the fastest way to Tokyo tomorrow…'
               : conciergeMode ? 'Tell me what you have in mind…' : 'Ask Meridian anything - "a calm wine trip in October, under $2,500"…'
           }
-          disabled={state.isLoading}
+          disabled={requestBusy}
           aria-label="Ask Meridian anything"
         />
         <button
           type="submit"
           className="mds-chat-send"
-          disabled={state.isLoading || !state.currentPrompt.trim()}
+          disabled={requestBusy || !state.currentPrompt.trim()}
           aria-label="Send message"
         >
           {state.isLoading ? (

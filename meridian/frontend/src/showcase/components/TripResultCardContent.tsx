@@ -67,7 +67,7 @@ function tripSignals(
     signals.push({ label: 'Checkpointed', tone: 'blue', icon: AuroraIcon });
   }
   if (travelerContextObserved) {
-    signals.push({ label: 'Memory match', tone: 'violet', icon: Sparkles });
+    signals.push({ label: 'Traveler context recalled', tone: 'violet', icon: Sparkles });
   }
   if (travelerContextObserved && state.travelerProfile?.party_size) {
     const travelers = state.travelerProfile.party_size;
@@ -81,9 +81,9 @@ function tripSignals(
     travelerContextObserved &&
     includesAny(source, [/hotel/, /boutique/, /ryokan/, /villa/, /quiet floor/])
   ) {
-    signals.push({ label: 'Preferred stay', tone: 'violet', icon: BedDouble });
+    signals.push({ label: 'Stay details listed', tone: 'violet', icon: BedDouble });
   }
-  if (includesAny(source, [/lounge/, /late check-?out/, /fast wi-?fi/])) {
+  if (includesAny(source, [/lounge/])) {
     signals.push({ label: 'Lounge access', tone: 'green', icon: BadgeCheck });
   }
   if (includesAny(source, [/airport transfer/, /car service/, /seaplane transfer/])) {
@@ -93,14 +93,14 @@ function tripSignals(
     signals.length < (featured ? 4 : 3) &&
     includesAny(source, [/food/, /kaiseki/, /dinner/, /cuisine/, /wine/, /cooking/])
   ) {
-    signals.push({ label: 'Dining match', tone: 'green', icon: HeartHandshake });
+    signals.push({ label: 'Dining experiences', tone: 'green', icon: HeartHandshake });
   }
   if (
     travelerContextObserved &&
     signals.length < (featured ? 4 : 3) &&
     state.travelerProfile?.loyalty_programs
   ) {
-    signals.push({ label: 'Elite status recognized', tone: 'blue', icon: ShieldCheck });
+    signals.push({ label: 'Loyalty status on file', tone: 'blue', icon: ShieldCheck });
   }
 
   return signals.slice(0, featured ? 4 : 3);
