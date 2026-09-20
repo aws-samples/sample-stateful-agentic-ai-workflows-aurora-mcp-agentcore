@@ -1,5 +1,8 @@
 # Meridian Presenter Guide
 
+For the September 19 release, use the [presenter runbook](PRESENTER_RUNBOOK_2026-09-19.md)
+and [updated editable presentation](presentation/README.md). They record the current preflight, measured API timings, safe reset, and evidence limitations.
+
 This guide is the concise run-of-show for demonstrating Meridian. It focuses on
 what to run, what to point out, and which claims the application proves.
 

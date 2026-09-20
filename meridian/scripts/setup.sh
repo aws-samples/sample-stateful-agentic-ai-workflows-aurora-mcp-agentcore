@@ -29,7 +29,7 @@ echo ""
 
 echo "[4/8] Installing dependencies..."
 pip install --upgrade pip -q
-pip install -r requirements.txt -q --upgrade
+pip install --require-hashes -r requirements.txt -q
 echo ""
 
 echo "[5/8] Verifying installation..."
@@ -51,12 +51,13 @@ if python scripts/test_aurora_connection.py; then
   echo ""
   echo "[8/8] Initializing schema and seeding trip_packages..."
   python scripts/init_aurora_schema.py
+  python scripts/apply_migrations.py
   python scripts/seed_data.py
   echo ""
   echo "Setup complete. Start backend:"
-  echo "  uvicorn backend.main:app --reload --port 8000"
+  echo "  uvicorn backend.main:app --host 127.0.0.1 --port 8013"
   echo "Start frontend:"
-  echo "  cd frontend && npm install && npm run dev"
+  echo "  cd frontend && npm ci && npm run dev -- --host 127.0.0.1 --port 5176 --strictPort"
 else
   echo ""
   echo "Aurora connection failed — check .env and cluster status."

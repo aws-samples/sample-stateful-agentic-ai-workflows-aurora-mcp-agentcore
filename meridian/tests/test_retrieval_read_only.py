@@ -101,3 +101,31 @@ def test_catalog_agents_expose_only_read_tools(
     assert {tool.__name__ for tool in agent.agent.tools} == permitted_tools
     assert not hasattr(agent, "process_booking")
     assert not hasattr(agent, "_process_booking")
+
+
+@pytest.mark.asyncio
+async def test_pricing_estimate_is_catalog_price_times_party_with_no_invented_fees(monkeypatch):
+    # Catalog prices are per traveler and all-in. An estimate that adds a tax
+    # or service fee invents money the traveler will never be charged.
+    db = SimpleNamespace(
+        execute_one=AsyncMock(
+            return_value={
+                "package_id": "CTY-002",
+                "name": "Tokyo Culture & Cuisine",
+                "price_per_person": Decimal("2499"),
+            }
+        ),
+        execute=AsyncMock(side_effect=AssertionError("No write is permitted")),
+    )
+    _without_model_or_database(monkeypatch, booking_agent, db)
+    specialist = booking_agent.BookingAgent()
+
+    result = await specialist.calculate_booking_total(
+        [{"package_id": "CTY-002", "travelers_count": 2, "duration": "7 nights"}]
+    )
+
+    assert result["subtotal"] == 4998
+    assert result["total"] == result["subtotal"]
+    assert result["items"][0]["total"] == 4998
+    assert not {"tax", "shipping", "service_fee"} & result.keys()
+    assert "no tax or fees" in result["pricing_basis"]

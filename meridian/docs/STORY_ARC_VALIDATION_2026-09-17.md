@@ -1,5 +1,8 @@
 # Meridian story-arc validation · 17 September 2026
 
+> Superseded for current status by `READINESS_2026-09-19.md`, which closes the
+> hosted-parity gate listed at the end of this report.
+
 The core story completed against live AWS services using the local frontend and
 backend: Concierge → SQL → MCP → retrieval → governed context → checkpointed
 recovery → Aurora evidence → explicit catalog booking confirmation.

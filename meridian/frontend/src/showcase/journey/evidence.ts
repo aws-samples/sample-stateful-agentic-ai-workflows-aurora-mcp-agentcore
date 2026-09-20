@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import { isObserved, type JourneyDocument, type JourneyExecution } from './types';
 
 export function parseDatabaseTime(value?: string | null): number {
-  return value ? Date.parse(value.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00')) : NaN;
+  if (!value) return NaN;
+  const normalized = value.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00');
+  // Older Data API responses omit the zone on UTC timestamp columns.
+  return Date.parse(/[zZ]$|[+-]\d{2}:\d{2}$/.test(normalized) ? normalized : `${normalized}Z`);
 }
 
 export function useEvidenceClock(document: JourneyDocument | null): number {

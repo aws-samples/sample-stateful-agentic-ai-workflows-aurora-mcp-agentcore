@@ -26,6 +26,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Callable, Any, Optional
 
+from mcp import StdioServerParameters, stdio_client
 from strands import Agent
 from strands.models import BedrockModel
 from strands.tools.mcp import MCPClient
@@ -69,59 +70,48 @@ class MCPAgent:
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
         )
         
-        # Initialize MCP client for postgres-mcp-server
-        # The MCP server is configured without connection args - connection is established
-        # via connect_to_database tool with connection_method: "rdsapi"
+        # Strands MCPClient takes a transport factory. The stdio transport
+        # spawns awslabs.postgres-mcp-server with the same start-up flags the
+        # live Phase 2 client uses (backend/mcp/mcp_client.py), so the server
+        # already knows the cluster and no connect_to_database call is needed.
+        # Pinned to @1.0.9: @latest drifted to auto-discovering the Secrets
+        # Manager secret, which fails for a Serverless v2 secret whose name
+        # carries a random suffix; the pin avoids that on stage.
         self.mcp_client = MCPClient(
-            server_name="postgres-mcp-server",
-            command="uvx",
-            # Pinned to @1.0.9 to match the live runtime client
-            # (backend/mcp/mcp_client.py). @latest drifted to auto-discovering
-            # the Secrets Manager secret, which fails for a Serverless v2 secret
-            # whose name carries a random suffix; the pin avoids that on stage.
-            args=["awslabs.postgres-mcp-server@1.0.9"]
+            lambda: stdio_client(
+                StdioServerParameters(
+                    command="uvx",
+                    args=[
+                        "awslabs.postgres-mcp-server@1.0.9",
+                        f"--resource_arn={os.getenv('AURORA_CLUSTER_ARN', '')}",
+                        f"--secret_arn={os.getenv('AURORA_SECRET_ARN', '')}",
+                        f"--database={os.getenv('AURORA_DATABASE', 'meridian')}",
+                        f"--region={os.getenv('AWS_DEFAULT_REGION', 'us-east-1')}",
+                        "--readonly=True",
+                    ],
+                )
+            )
         )
-        
-        # Store connection parameters for database connection
-        self.db_config = {
-            "region": os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
-            "database_type": "APG",  # Aurora PostgreSQL
-            "connection_method": "rdsapi",
-            "cluster_identifier": os.getenv("AURORA_CLUSTER_IDENTIFIER", ""),
-            "db_endpoint": os.getenv("AURORA_CLUSTER_ENDPOINT", ""),
-            "database": os.getenv("AURORA_DATABASE", "meridian"),
-            "port": 5432
-        }
-        
-        # Create agent - tools will be auto-discovered from MCP server
-        self.agent = None  # Initialized in async context
-    
-    async def _initialize_agent(self):
-        """Initialize the agent with MCP tools."""
+
+        # Create agent - tools are discovered from the MCP server on first use
+        self.agent = None
+
+    def _initialize_agent(self):
+        """Start the MCP session and build the agent from the discovered tools."""
         if self.agent is not None:
             return
-        
-        # Connect to MCP server and discover tools
-        await self.mcp_client.connect()
-        mcp_tools = await self.mcp_client.list_tools()
-        
+
+        # Strands manages the MCP session on a background thread; start() opens
+        # it and list_tools_sync() runs tools/list against the running server.
+        self.mcp_client.start()
+        mcp_tools = self.mcp_client.list_tools_sync()
+
         self._log_activity(
             activity_type="mcp",
             title="MCP server connected",
             details=f"Discovered {len(mcp_tools)} tools from postgres-mcp-server"
         )
-        
-        # Establish database connection via MCP connect_to_database tool
-        # This uses RDS Data API (connection_method: "rdsapi")
-        connect_tool = next((t for t in mcp_tools if t.name == "connect_to_database"), None)
-        if connect_tool:
-            await connect_tool(**self.db_config)
-            self._log_activity(
-                activity_type="mcp",
-                title="Database connection established",
-                details=f"Connected to {self.db_config['database']} via RDS Data API"
-            )
-        
+
         # Create agent with discovered MCP tools
         self.agent = Agent(
             model=self.model,
@@ -133,10 +123,10 @@ class MCPAgent:
         """Get the system prompt for the travel concierge."""
         return """You are a helpful travel concierge for Meridian.
 
-You have access to database tools through MCP (Model Context Protocol) that allow you to:
+You have access to read-only database tools through MCP (Model Context Protocol) that allow you to:
 - Query trip_packages for catalog search and filters
 - Check departure availability on packages
-- Process bookings for travelers
+- Holds and bookings go through Meridian's governed confirmation flow, not SQL
 
 The database schema includes:
 - trip_packages: package_id, name, operator, price_per_person, description, image_url, trip_type, destination, durations, availability, embedding
@@ -149,7 +139,7 @@ Guidelines:
 - Be friendly and helpful
 - Use SQL queries through MCP tools for accurate trip information
 - Recommend packages based on traveler needs
-- Always confirm booking details before processing
+- Never claim to have placed a hold or booking
 
 Trip types:
 - City Breaks, Beach & Resort, Adventure & Outdoors, Wellness & Luxury, Family Trips, Business Travel"""
@@ -175,36 +165,10 @@ Trip types:
         )
         self.activity_callback(entry)
     
-    def _wrap_mcp_tool(self, tool_func, tool_name: str):
-        """Wrap an MCP tool to add activity logging."""
-        async def wrapped(*args, **kwargs):
-            start_time = datetime.now(timezone.utc)
-            
-            self._log_activity(
-                activity_type="mcp",
-                title=f"MCP tool invocation: {tool_name}",
-                details=f"Args: {kwargs}"
-            )
-            
-            result = await tool_func(*args, **kwargs)
-            
-            execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-            
-            self._log_activity(
-                activity_type="mcp",
-                title=f"MCP tool completed: {tool_name}",
-                details="Result received",
-                execution_time_ms=execution_time
-            )
-            
-            return result
-        
-        return wrapped
-    
-    async def close(self):
-        """Close MCP client connection."""
+    def close(self):
+        """Stop the MCP session and the server it spawned."""
         if self.mcp_client:
-            await self.mcp_client.disconnect()
+            self.mcp_client.stop(None, None, None)
 
 
 def create_mcp_agent(

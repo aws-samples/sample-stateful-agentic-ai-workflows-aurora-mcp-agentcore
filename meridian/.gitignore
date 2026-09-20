@@ -66,9 +66,11 @@ Thumbs.db
 *.sqlite3
 logs/
 
-# Decks & temporary Office lock files (keep generators, not artifacts)
+# Local decks and temporary Office files; the reviewed presentation is a release asset.
 *.pptx
 *.pdf
+!docs/presentation/Meridian-reInvent-chalk-talk.pptx
+!docs/presentation/Meridian-reInvent-chalk-talk.pdf
 ~$*
 !docs/.gitkeep
 

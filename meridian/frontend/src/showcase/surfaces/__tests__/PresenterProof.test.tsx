@@ -118,6 +118,16 @@ describe('Presenter proof', () => {
     expect(within(panel).getByText('1')).toBeInTheDocument();
   });
 
+  it('does not call a same-worker resume a replacement', () => {
+    const doc = makeDocument();
+    if (doc.executions.status !== 'observed') throw new Error('Missing fixture executions');
+    doc.executions.items[1].worker_id = doc.executions.items[0].worker_id;
+    render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Business result' }));
+    expect(within(screen.getByRole('tabpanel')).getByText('Resumed execution')).toBeInTheDocument();
+    expect(screen.queryByText('Replacement execution')).not.toBeInTheDocument();
+  });
+
   it('reports the record count without treating distinct requests as duplicate holds', () => {
     const doc = makeDocument();
     render(

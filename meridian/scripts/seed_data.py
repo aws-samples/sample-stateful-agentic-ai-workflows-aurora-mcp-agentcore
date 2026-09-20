@@ -13,6 +13,7 @@ import json
 import os
 import uuid
 import hashlib
+from contextlib import contextmanager
 from urllib.parse import urlparse
 
 import boto3
@@ -58,6 +59,7 @@ AURORA_REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
 CLUSTER_ARN = os.getenv("AURORA_CLUSTER_ARN")
 SECRET_ARN = os.getenv("AURORA_SECRET_ARN")
 DATABASE = os.getenv("AURORA_DATABASE", "meridian")
+_seed_transaction_id = None
 
 
 def _sanitize_loopback_proxy_env() -> None:
@@ -104,7 +106,29 @@ def run_sql(sql: str, parameters=None):
     )
     if parameters:
         kwargs["parameters"] = parameters
+    if _seed_transaction_id:
+        kwargs["transactionId"] = _seed_transaction_id
     return rds().execute_statement(**kwargs)
+
+
+@contextmanager
+def seed_transaction():
+    """Commit the whole seed or roll it back so a failed model call is retryable."""
+    global _seed_transaction_id
+    client = rds()
+    target = {"resourceArn": CLUSTER_ARN, "secretArn": SECRET_ARN}
+    _seed_transaction_id = client.begin_transaction(**target, database=DATABASE)["transactionId"]
+    try:
+        lock = run_sql("SELECT pg_try_advisory_xact_lock(hashtext('meridian-seed'))")
+        if not lock["records"][0][0]["booleanValue"]:
+            raise RuntimeError("Another seed is running in this database; retry after it finishes.")
+        yield
+        client.commit_transaction(**target, transactionId=_seed_transaction_id)
+    except BaseException:
+        client.rollback_transaction(**target, transactionId=_seed_transaction_id)
+        raise
+    finally:
+        _seed_transaction_id = None
 
 
 def embed(client, text: str) -> list[float]:
@@ -135,23 +159,17 @@ def package_text(pkg: dict) -> str:
     ])
 
 
-def clear_data():
-    for sql in [
-        "DELETE FROM booking_lines",
-        "DELETE FROM bookings",
-        "DELETE FROM trip_interactions",
-        "DELETE FROM conversation_messages",
-        "DELETE FROM conversations",
-        "DELETE FROM traveler_preferences",
-        "DELETE FROM traveler_profiles",
-        "DELETE FROM traveler_identity_bindings",
-        "DELETE FROM travelers",
-        "DELETE FROM trip_packages",
-    ]:
-        try:
-            run_sql(sql)
-        except Exception:
-            pass
+def require_empty_seed_tables():
+    """Refuse to overwrite a presenter's live catalog, grants or travel history."""
+    response = run_sql(
+        "SELECT EXISTS (SELECT 1 FROM trip_packages) OR EXISTS (SELECT 1 FROM travelers)"
+    )
+    if response["records"][0][0]["booleanValue"]:
+        raise SystemExit(
+            "Seeding requires an empty demo database. Existing data was left unchanged. "
+            "Use --catalog-only to refresh package data, or release_demo_bookings.py "
+            "to reset bookings without erasing journey history."
+        )
 
 
 def seed_packages(bedrock_client):
@@ -614,19 +632,32 @@ def seed_decoy_traveler():
 
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Seed a new Meridian demo database.")
+    parser.add_argument(
+        "--catalog-only", action="store_true",
+        help="refresh package descriptions, prices and vectors; preserve traveler and journey data",
+    )
+    args = parser.parse_args()
     if not CLUSTER_ARN or not SECRET_ARN:
-        console.print("[red]Missing Aurora credentials in .env[/red]")
-        return
+        raise SystemExit("Missing AURORA_CLUSTER_ARN or AURORA_SECRET_ARN")
     console.print("[bold]Seeding Meridian travel data[/bold]")
-    clear_data()
-    bc = bedrock()
-    n = seed_packages(bc)
-    seed_travelers()
-    identity_bindings = seed_identity_bindings()
-    seed_decoy_traveler()
-    seed_conversations(bc)
-    seed_trip_interactions(bc)
-    seed_bookings()
+    if args.catalog_only:
+        with seed_transaction():
+            n = seed_packages(bedrock())
+        console.print(f"Updated {n} catalog packages. Traveler and journey data unchanged.")
+        return
+    with seed_transaction():
+        require_empty_seed_tables()
+        bc = bedrock()
+        n = seed_packages(bc)
+        seed_travelers()
+        identity_bindings = seed_identity_bindings()
+        seed_decoy_traveler()
+        seed_conversations(bc)
+        seed_trip_interactions(bc)
+        seed_bookings()
     table = Table(title="Seed summary")
     table.add_column("Entity")
     table.add_column("Count")

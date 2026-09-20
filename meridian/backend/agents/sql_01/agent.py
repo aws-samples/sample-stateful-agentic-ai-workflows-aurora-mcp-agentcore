@@ -91,7 +91,7 @@ class SQLAgent:
 Your capabilities:
 - Look up trip package details by ID or search the catalog
 - Check departure availability and duration options
-- Calculate booking totals with tax and fees
+- Estimate booking totals from catalog prices
 - Provide read-only price estimates
 
 Guidelines:
@@ -276,14 +276,16 @@ Trip types in the catalog:
     @tool
     async def _calculate_booking_total(self, items: List[dict]) -> dict:
         """
-        Calculate booking total including tax and fees.
-        
+        Estimate the catalog total for trip line items.
+
+        Catalog prices are per traveler and all-in; no tax or fee is modeled.
+
         Args:
             items: List of items with package_id, travelers_count, and optional duration
                    Example: [{"package_id": "CTY-002", "travelers_count": 2, "duration": "7 nights"}]
-            
+
         Returns:
-            Booking total breakdown with subtotal, tax, fees, and total
+            Booking estimate with per-line totals, subtotal, and total
         """
         start_time = datetime.now(timezone.utc)
         
@@ -307,10 +309,7 @@ Trip types in the catalog:
                     "total": float(item_total)
                 })
         
-        # Calculate tax (8.5%) and shipping
-        tax = subtotal * Decimal('0.085')
-        shipping = Decimal('0') if subtotal >= Decimal('100') else Decimal('9.99')
-        total = subtotal + tax + shipping
+        total = subtotal
         
         execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
         
@@ -324,10 +323,8 @@ Trip types in the catalog:
         return {
             "items": item_details,
             "subtotal": float(subtotal),
-            "tax": float(tax),
-            "shipping": float(shipping),
             "total": float(total),
-            "free_shipping_applied": shipping == 0
+            "pricing_basis": "catalog price per traveler; no tax or fees are modeled",
         }
 
 

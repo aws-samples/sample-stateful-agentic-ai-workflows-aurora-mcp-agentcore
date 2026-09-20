@@ -1,62 +1,87 @@
+"""Plan cleanup of Meridian ancillary resources after its Aurora cluster is gone.
+
+Run without flags to inspect the plan. --apply schedules secret deletion with
+seven days of recovery and deletes the named subnet/security groups. Every AWS
+failure exits nonzero. Never run against the shared presenter cluster.
 """
-Cleanup remaining AWS resources for Meridian demo.
-Deletes secrets, subnet groups, and security groups.
-"""
+from __future__ import annotations
+
+import argparse
+import os
+
 import boto3
+from botocore.exceptions import ClientError
 from rich.console import Console
 
 console = Console()
 
 
-def cleanup_resources(region: str = "us-east-1"):
-    """Clean up remaining Meridian resources in the specified region."""
-    console.print(f"\n[bold blue]🧹 Cleaning up resources in {region}[/bold blue]\n")
-    
-    # Initialize clients
-    secretsmanager = boto3.client("secretsmanager", region_name=region)
+def _optional(call, missing_codes, **kwargs):
+    """Only a documented not-found response means a resource is absent."""
+    try:
+        return call(**kwargs)
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] in missing_codes:
+            return None
+        raise
+
+
+def cleanup_resources(region: str = "us-east-1", *, apply: bool = False) -> int:
+    """Plan or execute cleanup; preserve credentials while a cluster still exists."""
     rds = boto3.client("rds", region_name=region)
+    cluster = _optional(
+        rds.describe_db_clusters, {"DBClusterNotFoundFault"},
+        DBClusterIdentifier="meridian-demo",
+    )
+    if cluster:
+        raise RuntimeError(
+            "meridian-demo still exists. Its credential and network resources must be retained."
+        )
+    secrets = boto3.client("secretsmanager", region_name=region)
     ec2 = boto3.client("ec2", region_name=region)
-    
-    # Delete secret
-    console.print("[yellow]Deleting Secrets Manager secret...[/yellow]")
+    secret = _optional(
+        secrets.describe_secret, {"ResourceNotFoundException"},
+        SecretId="meridian-demo-credentials",
+    )
+    subnet = _optional(
+        rds.describe_db_subnet_groups, {"DBSubnetGroupNotFoundFault"},
+        DBSubnetGroupName="meridian-demo-subnet-group",
+    )
+    groups = ec2.describe_security_groups(
+        Filters=[{"Name": "group-name", "Values": ["meridian-demo-sg"]}]
+    )["SecurityGroups"]
+    if len(groups) > 1:
+        raise RuntimeError("Multiple meridian-demo-sg groups exist; inspect their VPC ownership.")
+
+    actions = []
+    if secret and not secret.get("DeletedDate"):
+        actions.append(("Schedule secret deletion (7-day recovery)", secrets.delete_secret,
+                        {"SecretId": secret["ARN"], "RecoveryWindowInDays": 7}))
+    if subnet:
+        actions.append(("Delete subnet group meridian-demo-subnet-group",
+                        rds.delete_db_subnet_group,
+                        {"DBSubnetGroupName": "meridian-demo-subnet-group"}))
+    for group in groups:
+        actions.append((f"Delete security group {group['GroupId']} in {group['VpcId']}",
+                        ec2.delete_security_group, {"GroupId": group["GroupId"]}))
+    for label, call, kwargs in actions:
+        console.print(label)
+        if apply:
+            call(**kwargs)
+    console.print("Cleanup completed." if apply else "Dry run only. Use --apply after reviewing ownership.")
+    return len(actions)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--region", default=os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
+    parser.add_argument("--apply", action="store_true", help="execute the reviewed cleanup plan")
+    args = parser.parse_args()
     try:
-        secretsmanager.delete_secret(
-            SecretId="meridian-demo-credentials",
-            ForceDeleteWithoutRecovery=True
-        )
-        console.print("[green]✅ Secret deleted[/green]")
-    except secretsmanager.exceptions.ResourceNotFoundException:
-        console.print("[dim]Secret already deleted or not found[/dim]")
-    except Exception as e:
-        console.print(f"[red]Error deleting secret: {e}[/red]")
-    
-    # Delete subnet group
-    console.print("[yellow]Deleting DB subnet group...[/yellow]")
-    try:
-        rds.delete_db_subnet_group(DBSubnetGroupName="meridian-demo-subnet-group")
-        console.print("[green]✅ Subnet group deleted[/green]")
-    except rds.exceptions.DBSubnetGroupNotFoundFault:
-        console.print("[dim]Subnet group already deleted or not found[/dim]")
-    except Exception as e:
-        console.print(f"[red]Error deleting subnet group: {e}[/red]")
-    
-    # Delete security group
-    console.print("[yellow]Deleting security group...[/yellow]")
-    try:
-        response = ec2.describe_security_groups(
-            Filters=[{"Name": "group-name", "Values": ["meridian-demo-sg"]}]
-        )
-        if response["SecurityGroups"]:
-            sg_id = response["SecurityGroups"][0]["GroupId"]
-            ec2.delete_security_group(GroupId=sg_id)
-            console.print(f"[green]✅ Security group {sg_id} deleted[/green]")
-        else:
-            console.print("[dim]Security group already deleted or not found[/dim]")
-    except Exception as e:
-        console.print(f"[red]Error deleting security group: {e}[/red]")
-    
-    console.print(f"\n[green]✅ Cleanup complete for {region}![/green]\n")
+        cleanup_resources(args.region, apply=args.apply)
+    except (ClientError, RuntimeError) as exc:
+        raise SystemExit(f"Cleanup incomplete: {exc}") from exc
 
 
 if __name__ == "__main__":
-    cleanup_resources("us-east-1")
+    main()

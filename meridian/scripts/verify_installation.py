@@ -87,3 +87,4 @@ else:
     print("\n💡 Run: pip install -r requirements.txt")
 
 print("\n" + "=" * 70)
+sys.exit(1 if failed else 0)

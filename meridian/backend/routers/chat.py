@@ -152,6 +152,7 @@ class Order(BaseModel):
     departure_date: Optional[str] = None
     payment_required: bool = False
     confirmed_at: Optional[str] = None
+    seats_remaining: Optional[int] = None
 
 
 class MemoryFact(BaseModel):
@@ -929,6 +930,17 @@ def _format_domain_reply(tool: str, result: Any) -> str:
                 f"(rate {rate})."
             )
         if tool == "loyalty_balance" and isinstance(result, dict):
+            if result.get("error") == "loyalty_balance_unavailable":
+                return (
+                    "Loyalty balance unavailable: no recorded balance for this "
+                    "program in the traveler's profile. No points total was inferred."
+                )
+            if result.get("error"):
+                return (
+                    "Loyalty lookup refused by meridian-concierge MCP: the workload "
+                    f"holds no grant for traveler {result.get('traveler_id')}. "
+                    "No balance was read."
+                )
             pts = result.get("points_balance", 0)
             tier = result.get("tier", "—")
             program = result.get("program", "")
@@ -985,6 +997,8 @@ def _summarize_domain_result(tool: str, result: Any) -> str:
                 return f"converted {len(conversions)} package prices to {result.get('to')}"
             return f"{result.get('amount')} {result.get('from')} = {result.get('converted')} {result.get('to')}"
         if tool == "loyalty_balance" and isinstance(result, dict):
+            if result.get("error"):
+                return f"refused · {result.get('error')}"
             pts = result.get("points_balance", 0) or 0
             return f"{pts:,} pts · tier={result.get('tier')}"
         if tool == "seasonal_price_band" and isinstance(result, dict):
@@ -2770,6 +2784,7 @@ def _order_from_hold(pkg: dict, request: "OrderRequest", duration: str, hold: di
         departure_date=None,
         hold_expires_at=hold.get("expiresAt"),
         hold_created_at=hold.get("createdAt"),
+        seats_remaining=hold.get("seatsRemaining"),
         payment_required=False,
     )
 

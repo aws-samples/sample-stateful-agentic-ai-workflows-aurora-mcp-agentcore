@@ -1,5 +1,8 @@
 # Meridian L300 chalk talk
 
+Current release: [editable deck and notes](docs/presentation/README.md) and
+[validated presenter runbook](docs/PRESENTER_RUNBOOK_2026-09-19.md). The runbook records current command timings and scoped reset procedures.
+
 ## Build stateful agentic AI workflows with Aurora, MCP, and AgentCore
 
 **Duration:** 60 minutes: 40 minutes of slides, code walkthrough, and live demo, plus 20 minutes for discussion and operational flex.

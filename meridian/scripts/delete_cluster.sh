@@ -6,14 +6,22 @@
 # - 1.6: Delete Aurora cluster and associated Secrets Manager secret
 # - 1.7: Handle non-existent resources gracefully (descriptive messages)
 
-set -e
+set -euo pipefail
 
 # Configuration
 CLUSTER_IDENTIFIER="meridian-demo"
 REGION="${AWS_DEFAULT_REGION:-us-east-1}"
-SECRET_NAME="meridian-demo-credentials"
-SUBNET_GROUP_NAME="meridian-demo-subnet-group"
-SG_NAME="meridian-demo-sg"
+
+# Destruction requires the caller to name the account explicitly. No AWS
+# calls or changes occur for the default plan. This cluster can host other
+# demo databases; never apply this plan to the shared presenter environment.
+if [ "$#" -ne 2 ] || [ "$1" != "--apply" ]; then
+    echo "Plan: delete ${CLUSTER_IDENTIFIER}-instance, snapshot and delete $CLUSTER_IDENTIFIER."
+    echo "Then separately inspect: python scripts/cleanup_resources.py"
+    echo "Apply only to an owned disposable cluster: $0 --apply EXPECTED_ACCOUNT_ID"
+    exit 0
+fi
+EXPECTED_ACCOUNT_ID="$2"
 
 # Colors for output
 RED='\033[0;31m'
@@ -63,22 +71,38 @@ if ! aws sts get-caller-identity &> /dev/null; then
 fi
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+if [ "$ACCOUNT_ID" != "$EXPECTED_ACCOUNT_ID" ]; then
+    log_error "Account mismatch. No resource was deleted."
+    exit 1
+fi
 log_success "AWS credentials valid. Account ID: $ACCOUNT_ID"
 
+# AccessDenied, expired credentials and service errors are never "not found".
+aws_exists() {
+    local missing_code="$1"
+    shift
+    local response
+    if response=$(aws "$@" 2>&1); then
+        return 0
+    elif [[ "$response" == *"($missing_code)"* ]]; then
+        return 1
+    fi
+    log_error "$response"
+    exit 1
+}
+
 # Track if any resources were found
-RESOURCES_FOUND=false
 
 # Step 1: Delete DB instance (if exists)
 log_info "Checking for DB instance '${CLUSTER_IDENTIFIER}-instance'..."
 
-if aws rds describe-db-instances --db-instance-identifier "${CLUSTER_IDENTIFIER}-instance" --region "$REGION" &> /dev/null; then
-    RESOURCES_FOUND=true
+if aws_exists DBInstanceNotFound rds describe-db-instances --db-instance-identifier "${CLUSTER_IDENTIFIER}-instance" --region "$REGION"; then
     log_info "Deleting DB instance '${CLUSTER_IDENTIFIER}-instance'..."
     
     aws rds delete-db-instance \
         --db-instance-identifier "${CLUSTER_IDENTIFIER}-instance" \
         --skip-final-snapshot \
-        --region "$REGION" > /dev/null 2>&1 || true
+        --region "$REGION" > /dev/null
     
     log_info "Waiting for DB instance to be deleted (this may take several minutes)..."
     
@@ -88,7 +112,8 @@ if aws rds describe-db-instances --db-instance-identifier "${CLUSTER_IDENTIFIER}
         --region "$REGION" 2>/dev/null; then
         log_success "DB instance deleted"
     else
-        log_warning "Instance deletion wait timed out, but deletion may still be in progress"
+        log_error "Instance deletion did not finish. Inspect AWS before continuing."
+        exit 1
     fi
 else
     log_warning "DB instance '${CLUSTER_IDENTIFIER}-instance' does not exist. Skipping."
@@ -97,14 +122,13 @@ fi
 # Step 2: Delete Aurora cluster (if exists)
 log_info "Checking for Aurora cluster '$CLUSTER_IDENTIFIER'..."
 
-if aws rds describe-db-clusters --db-cluster-identifier "$CLUSTER_IDENTIFIER" --region "$REGION" &> /dev/null; then
-    RESOURCES_FOUND=true
+if aws_exists DBClusterNotFoundFault rds describe-db-clusters --db-cluster-identifier "$CLUSTER_IDENTIFIER" --region "$REGION"; then
     log_info "Deleting Aurora cluster '$CLUSTER_IDENTIFIER'..."
     
     aws rds delete-db-cluster \
         --db-cluster-identifier "$CLUSTER_IDENTIFIER" \
-        --skip-final-snapshot \
-        --region "$REGION" > /dev/null 2>&1 || true
+        --final-db-snapshot-identifier "${CLUSTER_IDENTIFIER}-final-$(date -u +%Y%m%d%H%M%S)" \
+        --region "$REGION" > /dev/null
     
     log_info "Waiting for cluster to be deleted (this may take several minutes)..."
     
@@ -114,107 +138,15 @@ if aws rds describe-db-clusters --db-cluster-identifier "$CLUSTER_IDENTIFIER" --
         --region "$REGION" 2>/dev/null; then
         log_success "Aurora cluster deleted"
     else
-        log_warning "Cluster deletion wait timed out, but deletion may still be in progress"
+        log_error "Cluster deletion did not finish. Ancillary resources were retained."
+        exit 1
     fi
 else
     log_warning "Aurora cluster '$CLUSTER_IDENTIFIER' does not exist. Skipping."
 fi
 
-# Step 3: Delete Secrets Manager secret (if exists)
-log_info "Checking for Secrets Manager secret '$SECRET_NAME'..."
-
-if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region "$REGION" &> /dev/null; then
-    RESOURCES_FOUND=true
-    log_info "Deleting Secrets Manager secret '$SECRET_NAME'..."
-    
-    # Force delete without recovery window
-    aws secretsmanager delete-secret \
-        --secret-id "$SECRET_NAME" \
-        --force-delete-without-recovery \
-        --region "$REGION" > /dev/null 2>&1 || true
-    
-    log_success "Secrets Manager secret deleted"
-else
-    log_warning "Secrets Manager secret '$SECRET_NAME' does not exist. Skipping."
-fi
-
-# Step 4: Delete DB subnet group (if exists)
-log_info "Checking for DB subnet group '$SUBNET_GROUP_NAME'..."
-
-if aws rds describe-db-subnet-groups --db-subnet-group-name "$SUBNET_GROUP_NAME" --region "$REGION" &> /dev/null; then
-    RESOURCES_FOUND=true
-    log_info "Deleting DB subnet group '$SUBNET_GROUP_NAME'..."
-    
-    aws rds delete-db-subnet-group \
-        --db-subnet-group-name "$SUBNET_GROUP_NAME" \
-        --region "$REGION" > /dev/null 2>&1 || true
-    
-    log_success "DB subnet group deleted"
-else
-    log_warning "DB subnet group '$SUBNET_GROUP_NAME' does not exist. Skipping."
-fi
-
-# Step 5: Delete security group (if exists)
-log_info "Checking for security group '$SG_NAME'..."
-
-# Get default VPC
-DEFAULT_VPC=$(aws ec2 describe-vpcs \
-    --filters "Name=isDefault,Values=true" \
-    --region "$REGION" \
-    --query 'Vpcs[0].VpcId' \
-    --output text 2>/dev/null || echo "None")
-
-if [ "$DEFAULT_VPC" != "None" ] && [ -n "$DEFAULT_VPC" ]; then
-    SECURITY_GROUP_ID=$(aws ec2 describe-security-groups \
-        --filters "Name=group-name,Values=$SG_NAME" "Name=vpc-id,Values=$DEFAULT_VPC" \
-        --region "$REGION" \
-        --query 'SecurityGroups[0].GroupId' \
-        --output text 2>/dev/null || echo "None")
-    
-    if [ "$SECURITY_GROUP_ID" != "None" ] && [ -n "$SECURITY_GROUP_ID" ]; then
-        RESOURCES_FOUND=true
-        log_info "Deleting security group '$SG_NAME' ($SECURITY_GROUP_ID)..."
-        
-        aws ec2 delete-security-group \
-            --group-id "$SECURITY_GROUP_ID" \
-            --region "$REGION" > /dev/null 2>&1 || true
-        
-        log_success "Security group deleted"
-    else
-        log_warning "Security group '$SG_NAME' does not exist. Skipping."
-    fi
-else
-    log_warning "No default VPC found. Skipping security group deletion."
-fi
-
-# Output summary
-echo ""
-echo "=============================================="
-echo "  Deletion Summary"
-echo "=============================================="
-echo ""
-
-if [ "$RESOURCES_FOUND" = true ]; then
-    log_success "Meridian Aurora cluster and associated resources have been deleted."
-    echo ""
-    echo "Deleted resources:"
-    echo "  - Aurora cluster: $CLUSTER_IDENTIFIER"
-    echo "  - DB instance: ${CLUSTER_IDENTIFIER}-instance"
-    echo "  - Secrets Manager secret: $SECRET_NAME"
-    echo "  - DB subnet group: $SUBNET_GROUP_NAME"
-    echo "  - Security group: $SG_NAME"
-else
-    log_warning "No Meridian resources were found to delete."
-    echo ""
-    echo "The following resources were checked but not found:"
-    echo "  - Aurora cluster: $CLUSTER_IDENTIFIER"
-    echo "  - DB instance: ${CLUSTER_IDENTIFIER}-instance"
-    echo "  - Secrets Manager secret: $SECRET_NAME"
-    echo "  - DB subnet group: $SUBNET_GROUP_NAME"
-    echo "  - Security group: $SG_NAME"
-fi
-
-echo ""
-echo "=============================================="
-log_success "Deletion process complete!"
-echo ""
+# Network and secret deletion has a separate read-only plan and must not run
+# while the database is still alive. Retained final snapshots continue to cost.
+log_success "Database deletion finished. A final cluster snapshot was retained."
+echo "Review ancillary resources next: python scripts/cleanup_resources.py"
+echo "Final snapshots must be reviewed separately for retention and storage cost."

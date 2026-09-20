@@ -3940,7 +3940,6 @@
   color: var(--mds-on-surface);
   background: rgba(50, 45, 36, 0.78);
   transform: translateY(-1px);
-  outline: none;
 }
 
 .mds-chat-starter-chip:disabled {
@@ -3974,7 +3973,16 @@
 .mds-chat-starter-chip.is-works:focus-visible {
   border-color: rgb(var(--mds-green-rgb) / 0.85);
   background: rgb(var(--mds-green-rgb) / 0.18);
-  outline: none;
+}
+
+/* Keyboard focus needs its own ring. The hover styles above only shift the
+   border tint, which on a projector is not a visible focus indicator, and the
+   modifier classes below override that tint anyway. */
+.mds-chat-starter-chip:focus-visible,
+.mds-chat-starter-chip.is-works:focus-visible,
+.mds-chat-starter-chip.is-stretch:focus-visible {
+  outline: 2px solid var(--mds-blue);
+  outline-offset: 3px;
 }
 
 .mds-chat-starter-chip.is-stretch {

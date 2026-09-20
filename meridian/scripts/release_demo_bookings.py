@@ -32,14 +32,17 @@ DEMO_TRAVELER = "trv_meridian_demo"
 console = Console()
 
 
-async def release(traveler_id: str, confirmed_only: bool, dry_run: bool) -> int:
+async def release(
+    traveler_id: str, confirmed_only: bool, dry_run: bool, booking_id: str | None = None,
+) -> int:
     client = get_rds_data_client()
     status_filter = "AND status = 'confirmed'" if confirmed_only else ""
     rows = await client.execute(
         "SELECT booking_id, status, total_amount::TEXT AS total_amount, "
         "created_at::TIMESTAMPTZ::TEXT AS created_at FROM bookings "
-        f"WHERE traveler_id = %s {status_filter} ORDER BY created_at",
-        (traveler_id,),
+        f"WHERE traveler_id = %s {status_filter} "
+        "AND (%s::text IS NULL OR booking_id = %s) ORDER BY created_at",
+        (traveler_id, booking_id, booking_id),
     )
     if not rows:
         console.print(f"No bookings on record for {traveler_id}.")
@@ -51,11 +54,27 @@ async def release(traveler_id: str, confirmed_only: bool, dry_run: bool) -> int:
     if dry_run:
         console.print(f"Dry run: {len(rows)} booking(s) would be released.")
         return len(rows)
-    for row in rows:
-        booking_id = row["booking_id"]
-        await client.execute("DELETE FROM hold_requests WHERE booking_id = %s", (booking_id,))
-        await client.execute("DELETE FROM booking_lines WHERE booking_id = %s", (booking_id,))
-        await client.execute("DELETE FROM bookings WHERE booking_id = %s", (booking_id,))
+    tx = client.begin_transaction()
+    try:
+        for row in rows:
+            selected = row["booking_id"]
+            # Recheck ownership and status under a row lock before any deletion.
+            current = await client.execute_one(
+                "SELECT booking_id FROM bookings WHERE booking_id = %s "
+                f"AND traveler_id = %s {status_filter} FOR UPDATE",
+                (selected, traveler_id), transaction_id=tx,
+            )
+            if not current:
+                raise RuntimeError("A selected booking changed; retry the dry run before release.")
+            for table in ("hold_requests", "booking_lines", "bookings"):
+                await client.execute(
+                    f"DELETE FROM {table} WHERE booking_id = %s",
+                    (selected,), transaction_id=tx,
+                )
+        client.commit_transaction(tx)
+    except BaseException:
+        client.rollback_transaction(tx)
+        raise
     console.print(f"Released {len(rows)} booking(s) for {traveler_id}.")
     return len(rows)
 
@@ -67,8 +86,9 @@ def main() -> None:
         "--confirmed-only", action="store_true", help="leave active holds in place"
     )
     parser.add_argument("--dry-run", action="store_true", help="list without deleting")
+    parser.add_argument("--booking-id", help="release only this booking owned by the traveler")
     args = parser.parse_args()
-    asyncio.run(release(args.traveler, args.confirmed_only, args.dry_run))
+    asyncio.run(release(args.traveler, args.confirmed_only, args.dry_run, args.booking_id))
 
 
 if __name__ == "__main__":

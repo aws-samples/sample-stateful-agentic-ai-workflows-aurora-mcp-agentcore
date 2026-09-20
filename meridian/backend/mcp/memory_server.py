@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
 from typing import Any, Dict, List
 
 from mcp.server.fastmcp import FastMCP
@@ -190,8 +191,13 @@ async def persist_preference(
     confidence: float = 0.7,
     source: str = "mcp_client",
 ) -> Dict[str, Any]:
-    """Upsert a single durable preference fact for the traveler."""
+    """Upsert a single durable preference fact for the traveler.
+
+    ``preference_id`` is the table's primary key with no default, so a new fact
+    needs one allocated here. On conflict the existing row keeps its id.
+    """
     store = _store()
+    preference_id = f"pref_{uuid.uuid4().hex[:10]}"
     async with store.db.scoped_session(
         traveler_id=traveler_id,
         agent_type=DEFAULT_AGENT_TYPE,
@@ -200,17 +206,19 @@ async def persist_preference(
         await store.db.execute(
             """
             INSERT INTO traveler_preferences (
-                traveler_id, preference_type, preference_key, preference_value,
-                confidence, source, last_seen_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                preference_id, traveler_id, preference_type, preference_key,
+                preference_value, confidence, source, last_seen_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             ON CONFLICT (traveler_id, preference_type, preference_key)
             DO UPDATE SET
                 preference_value = EXCLUDED.preference_value,
                 confidence = EXCLUDED.confidence,
                 source = EXCLUDED.source,
+                signal_count = traveler_preferences.signal_count + 1,
                 last_seen_at = CURRENT_TIMESTAMP
             """,
             (
+                preference_id,
                 traveler_id,
                 preference_type,
                 preference_key,

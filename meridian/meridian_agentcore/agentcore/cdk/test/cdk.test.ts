@@ -39,5 +39,10 @@ test('AgentCoreStack synthesizes the checked-in Meridian specification', () => {
   expect(types).toContain('AWS::BedrockAgentCore::PolicyEngine');
   expect(types.filter(t => t === 'AWS::BedrockAgentCore::GatewayTarget')).toHaveLength(2);
   expect(types).toContain('AWS::Lambda::Function');
+  const rendered = JSON.stringify(resources);
+  expect(rendered).not.toContain('bedrock-agentcore:CheckAuthorizePermissions');
+  for (const action of ['AuthorizeAction', 'PartiallyAuthorizeActions', 'GetPolicyEngine']) {
+    expect(rendered).toContain(`bedrock-agentcore:${action}`);
+  }
   expect(Object.keys(resources).length).toBeGreaterThan(0);
 });

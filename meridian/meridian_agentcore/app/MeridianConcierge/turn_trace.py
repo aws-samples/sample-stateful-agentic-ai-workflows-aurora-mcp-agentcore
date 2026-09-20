@@ -64,8 +64,13 @@ SPANS = {
         "Cedar decides on the arguments, then the held booking becomes confirmed in Aurora",
     ),
 }
+# Strands reports an MCP tool exception as "Tool execution failed: <message>",
+# so the gateway's denial arrives behind that prefix. Without allowing for it
+# a Cedar refusal is rendered as a generic tool failure with no decision.
 DENIAL_PATTERN = re.compile(
-    r"^(?:AuthorizeActionException\s*-\s*)?Tool Execution Denied:", re.I
+    r"^(?:Tool execution failed:\s*)?(?:AuthorizeActionException\s*-\s*)?"
+    r"Tool Execution Denied:",
+    re.I,
 )
 
 

@@ -22,10 +22,10 @@ require domain rules, secondary lookups, or external context):
     - currency_convert(amount, from, to)  → indicative FX (deterministic table)
     - loyalty_balance(traveler_id, program) → points + tier readout
 
-Phase 2 (`backend/routers/chat.py:mcp_search`) attaches BOTH this server
-and `awslabs.postgres-mcp-server` so the trace visibly shows two MCP
-servers feeding one agent turn. That answers the workshop question:
-"what does a custom MCP get you that the public one can't?".
+The application comparison path (`backend/routers/chat.py:mcp_search`) uses
+this custom server. The separate reference MCPAgent uses the read-only
+`awslabs.postgres-mcp-server` SQL transport. Do not describe one comparison
+turn as using both servers.
 
 Memory tools intentionally do NOT live here. Traveler memory is
 Phase 4's story (Aurora RLS + AgentCore Memory) - putting it here
@@ -39,13 +39,14 @@ Run stand-alone (e.g. for Claude Desktop):
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from backend.agentcore.identity import get_agentcore_identity
+from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 
 logger = logging.getLogger(__name__)
@@ -68,20 +69,12 @@ _FX_PER_USD: Dict[str, float] = {
     "MXN": 17.1,
 }
 
-# Loyalty tier thresholds (points → tier label). Real systems plug into
-# Marriott Bonvoy / United MileagePlus APIs; the demo returns the same
-# shape so the agent can reason about tier without us shipping creds.
-_LOYALTY_TIERS = [
-    (0, "Member"),
-    (10_000, "Silver"),
-    (50_000, "Gold"),
-    (75_000, "Platinum"),
-    (125_000, "Titanium"),
-]
-
-
 def _db():
     return get_rds_data_client()
+
+
+def _authorization():
+    return get_agentcore_identity().authorization_context()
 
 
 # --------------------------------------------------------------------------- #
@@ -278,26 +271,44 @@ async def loyalty_balance(traveler_id: str, program: str) -> Dict[str, Any]:
         traveler_id: e.g. 'trv_meridian_demo'.
         program: e.g. 'Marriott Bonvoy', 'United MileagePlus'.
 
-    The demo traveler is read from Aurora ``traveler_profiles.loyalty_programs``.
-    Unknown travelers use a stable SHA-256-derived fallback so repeat runs never
-    change with Python's process-level hash seed.
+    The profile is read inside ``scoped_session`` so the workload must hold an
+    active grant for ``traveler_id`` before any row is touched; a traveler the
+    workload is not bound to is refused with a structured error rather than a
+    balance. A missing program or balance is unavailable; it must never be
+    replaced by a generated points total.
     """
-    row = await _db().execute_one(
-        """
-        SELECT loyalty_programs
-        FROM traveler_profiles
-        WHERE traveler_id = %s
-        """,
-        (traveler_id,),
-    )
+    db = _db()
+    try:
+        async with db.scoped_session(
+            traveler_id=traveler_id,
+            agent_type="concierge_agent",
+            authorization=_authorization(),
+        ) as tx:
+            row = await db.execute_one(
+                """
+                SELECT loyalty_programs
+                FROM traveler_profiles
+                WHERE traveler_id = %s
+                """,
+                (traveler_id,),
+                transaction_id=tx,
+            )
+    except TravelerAuthorizationError as exc:
+        return {
+            "traveler_id": traveler_id,
+            "program": program,
+            "error": "traveler_not_authorized",
+            "reason": str(exc),
+            "source": "traveler_identity_bindings",
+        }
     programs = (row or {}).get("loyalty_programs") or {}
-    requested = (program or "").lower()
+    requested = (program or "").strip().lower()
     if isinstance(programs, dict):
         for value in programs.values():
             if not isinstance(value, dict):
                 continue
             configured_program = str(value.get("program") or "")
-            if (
+            if requested and configured_program and value.get("points_balance") is not None and (
                 requested in configured_program.lower()
                 or configured_program.lower() in requested
             ):
@@ -312,23 +323,12 @@ async def loyalty_balance(traveler_id: str, program: str) -> Dict[str, Any]:
                     "source": "traveler_profiles.loyalty_programs",
                 }
 
-    digest = hashlib.sha256(f"{traveler_id}:{program}".encode("utf-8")).digest()
-    base = int.from_bytes(digest[:8], "big") % 200_000
-    tier_label = _LOYALTY_TIERS[0][1]
-    next_tier_at: Optional[int] = None
-    for i, (threshold, label) in enumerate(_LOYALTY_TIERS):
-        if base >= threshold:
-            tier_label = label
-            if i + 1 < len(_LOYALTY_TIERS):
-                next_tier_at = _LOYALTY_TIERS[i + 1][0]
     return {
         "traveler_id": traveler_id,
         "program": program,
-        "points_balance": base,
-        "tier": tier_label,
-        "next_tier_threshold": next_tier_at,
-        "points_to_next_tier": (next_tier_at - base) if next_tier_at else 0,
-        "source": "stable indicative fallback",
+        "error": "loyalty_balance_unavailable",
+        "reason": "No recorded balance for this program in the traveler's profile.",
+        "source": "traveler_profiles.loyalty_programs",
     }
 
 

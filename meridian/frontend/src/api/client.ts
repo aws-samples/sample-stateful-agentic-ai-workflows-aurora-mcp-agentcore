@@ -35,12 +35,12 @@ export function resolveBackendOriginFor(
 ): string {
   if (explicit?.trim()) return trimTrailingSlash(explicit.trim());
 
-  if (isDev || !location) return 'http://localhost:8000';
+  if (isDev || !location) return 'http://localhost:8013';
 
   const { protocol, hostname } = location;
   if (['localhost', '127.0.0.1', '[::1]', '::1'].includes(hostname)) {
     const localHostname = hostname === '::1' ? '[::1]' : hostname;
-    return `${protocol}//${localHostname}:8000`;
+    return `${protocol}//${localHostname}:8013`;
   }
 
   return `${protocol}//${hostname}`;
@@ -77,7 +77,9 @@ function apiHeaders(json = false): HeadersInit {
 
 export function healthUrlsFor(origin: string): string[] {
   const normalized = trimTrailingSlash(origin);
-  return [`${normalized}/api/health`, `${normalized}/health`];
+  // Public /health establishes process liveness only. It cannot replace a
+  // failed authenticated API check (including an expired presenter session).
+  return [`${normalized}/api/health`];
 }
 
 const HEALTH_URL_CANDIDATES = healthUrlsFor(
@@ -166,25 +168,10 @@ export async function deleteMemoryFact(travelerId: string, key: string): Promise
 }
 
 /**
- * Fetch backend health from the FastAPI root health endpoint.
+ * Fetch authenticated backend status with the same deadline as other API calls.
  */
 export async function fetchHealth<THealth = unknown>(signal?: AbortSignal): Promise<THealth> {
-  let lastError: Error | null = null;
-
-  for (const url of HEALTH_URL_CANDIDATES) {
-    try {
-      const response = await fetch(url, { signal });
-      if (!response.ok) {
-        throw new Error(`Health request failed: ${response.status} ${response.statusText}`);
-      }
-      return response.json();
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      lastError = error instanceof Error ? error : new Error('Unknown health request error');
-    }
-  }
-
-  throw lastError ?? new Error('Health request failed for all candidates');
+  return requestJson<THealth>(HEALTH_URL_CANDIDATES[0], { signal });
 }
 
 /**

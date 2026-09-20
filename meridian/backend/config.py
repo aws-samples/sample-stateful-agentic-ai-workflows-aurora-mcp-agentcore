@@ -12,7 +12,7 @@ AWS docs (env vars used across phases):
 
 import os
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict
 
 
 @dataclass
@@ -44,39 +44,6 @@ class SearchConfig:
         "business travel": "Business Travel",
         "business trip": "Business Travel",
     })
-
-
-@dataclass
-class OrderConfig:
-    """Order processing configuration."""
-
-    # Tax rate (8% = 0.08)
-    tax_rate: float = 0.08
-
-    # Shipping fee when below threshold
-    shipping_fee: float = 5.99
-
-    # Free shipping threshold
-    free_shipping_threshold: float = 50.0
-
-    # Delivery estimate range (business days)
-    min_delivery_days: int = 3
-    max_delivery_days: int = 5
-
-
-@dataclass
-class UploadConfig:
-    """File upload configuration."""
-
-    # Maximum image size in bytes (5MB)
-    max_image_size: int = 5 * 1024 * 1024
-
-    # Allowed image MIME types
-    allowed_image_types: List[str] = field(default_factory=lambda: [
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-    ])
 
 
 @dataclass
@@ -184,8 +151,6 @@ class Config:
     """Main configuration container."""
 
     search: SearchConfig = field(default_factory=SearchConfig)
-    order: OrderConfig = field(default_factory=OrderConfig)
-    upload: UploadConfig = field(default_factory=UploadConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
     bedrock: BedrockConfig = field(default_factory=BedrockConfig)
 

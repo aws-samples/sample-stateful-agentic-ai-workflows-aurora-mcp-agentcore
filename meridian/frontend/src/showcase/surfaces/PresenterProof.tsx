@@ -1,4 +1,4 @@
-import { hasLiveLease, hasVerifiedResume, useEvidenceClock } from '../journey/evidence';
+import { hasLiveLease, hasVerifiedResume, parseDatabaseTime, useEvidenceClock } from '../journey/evidence';
 import { HoldReceipt } from '../components/HoldReceipt';
 import { AuroraIcon } from '../components/ServiceMark';
 import { useState } from 'react';
@@ -19,7 +19,7 @@ const DASH = '—';
 
 function shortTime(value: string | null | undefined): string {
   if (!value) return DASH;
-  const parsed = new Date(value.replace(' ', 'T'));
+  const parsed = new Date(parseDatabaseTime(value));
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toISOString().slice(11, 19) + 'Z';
 }
@@ -310,7 +310,7 @@ export function PresenterProof({
                 <div className="mds-proof-facts">
                   <Fact label="Request identity" mono value={hold.hold_request_id} />
                   <Fact label="Travel party" value={hold.travelers_count ? `${hold.travelers_count} travelers` : DASH} />
-                  <Fact label="Created by" value={hold.created_by_execution_id === first?.execution_id ? 'Original execution' : hold.created_by_execution_id === latest?.execution_id ? 'Replacement execution' : hold.created_by_execution_id || 'Not recorded'} />
+                  <Fact label="Created by" value={hold.created_by_execution_id === first?.execution_id ? 'Original execution' : hold.created_by_execution_id === latest?.execution_id ? (first?.worker_id && latest?.worker_id && first.worker_id !== latest.worker_id ? 'Replacement execution' : 'Resumed execution') : hold.created_by_execution_id || 'Not recorded'} />
                   <Fact label="Hold records in journey" value={String(hold.hold_records)} />
                   <Fact label="Confirmed" value={hold.confirmed_at ? `${shortTime(hold.confirmed_at)} · catalog inventory, no payment` : 'Not yet confirmed by the traveler'} />
                 </div>

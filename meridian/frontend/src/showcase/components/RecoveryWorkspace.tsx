@@ -16,7 +16,6 @@ import { prefersReducedMotion } from '../lib/prefersReducedMotion';
 import { RecoveryBriefing } from './RecoveryBriefing';
 import { RecoveryChecks } from './RecoveryChecks';
 import { RecoveryBoardingPass } from './RecoveryBoardingPass';
-import { TripHoldReceipt } from './TripHoldReceipt';
 import { HoldReceipt } from './HoldReceipt';
 import { isObserved, type JourneyDocument } from '../journey/types';
 import {
@@ -281,7 +280,6 @@ export function RecoveryWorkspace({
         <div><strong>Read the receipt before continuing.</strong><span>Verify the held package, party, duration and total from Aurora.</span></div>
         <button type="button" className="mc-session-primary" onClick={onOpenProof}>Read booking receipt<ArrowRight size={16} aria-hidden="true" /></button>
       </div>}
-      {state.tripHolds?.slice(-1).map(hold => <TripHoldReceipt key={hold.order.order_id} hold={hold} compact />)}
 
       {layoutReviewEnabled && (
         <section

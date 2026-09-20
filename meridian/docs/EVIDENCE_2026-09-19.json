@@ -1,0 +1,299 @@
+{
+  "review_date": "2026-09-19 America/New_York",
+  "baseline_source": "42c1defce75289ba76ea727da72b59acf1ea33d2",
+  "scope": "Local final implementation against established live Aurora and AgentCore; no hosted deployment",
+  "raw_evidence": "Ignored local files; resource and workload details are not copied into public logs",
+  "checks": [
+    {
+      "path": ".local/release-review-2026-09-19/gates/backend-final-rerun.log",
+      "sha256": "6f462be8ae6b7b256fd001943a7c614333fa906654dc5638fb0fba05723de1c2",
+      "bytes": 75838,
+      "last_written_utc": "2026-09-20T01:08:08.516049+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/database-final.log",
+      "sha256": "fa44261f37352048e1fc977d46bb467dee2b1c6a8b9365b83be5fd2366b5d51a",
+      "bytes": 25785,
+      "last_written_utc": "2026-09-20T00:18:15.987433+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/backend-audit.log",
+      "sha256": "15950a68a7ed99c59779717acefdceb3f69cfd31bde67d2c954f2a3cea4d7955",
+      "bytes": 31,
+      "last_written_utc": "2026-09-19T23:45:25.708717+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/agentcore-policy-test.log",
+      "sha256": "3ba4d6998a0980bc0e7de4576ba0e7adad7e1870d40515dd9c3a32f774a0cf4b",
+      "bytes": 3483,
+      "last_written_utc": "2026-09-20T00:24:36.151649+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/agentcore-synth-final.log",
+      "sha256": "8db61826ab55e69957428a3ec9cf4cd58d41d93478b900374f13454d3d14dac2",
+      "bytes": 1413,
+      "last_written_utc": "2026-09-20T00:32:08.269657+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/agentcore-validate-final.log",
+      "sha256": "a18788a1530726e7c74604b4a6b8b0d543f5c05840ab4bc2d0a0664533f99758",
+      "bytes": 6,
+      "last_written_utc": "2026-09-20T00:39:29.131873+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/web-infra.log",
+      "sha256": "b589937948dce8b036bb4909100b222f33774f0131da588055b828f86a7f5d6f",
+      "bytes": 950,
+      "last_written_utc": "2026-09-19T23:44:53.529952+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/web-synth.log",
+      "sha256": "7444936738874c8aa663c0db44a2beb5e5a7365a6f96608500b78fdc3063c2cd",
+      "bytes": 435,
+      "last_written_utc": "2026-09-20T00:16:45.446868+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/cfn-lint-final.log",
+      "sha256": "f8b84bbf9fe47a8d5fccc62c9ae4783c9f75e15feb0c49e54e794679b3d910c7",
+      "bytes": 2924,
+      "last_written_utc": "2026-09-20T00:40:25.424384+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/bootstrap-lifecycle-retry.log",
+      "sha256": "4a4ff4386858f249d27099986206e113d12cd152073b8efb87dc6e2a38bd082d",
+      "bytes": 1095,
+      "last_written_utc": "2026-09-20T00:16:16.580624+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/agentcore-live.log",
+      "sha256": "db8336d67b84320770f0f503c9dc6fe951b8b8c62bb4a5a903ab7144b0174b16",
+      "bytes": 1547,
+      "last_written_utc": "2026-09-19T23:48:51.804030+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/kill-resume-final.log",
+      "sha256": "4bd55a5451801e71a6c1caafa41d801cdb6a4252b601c5532c33cb3cd9ea51b9",
+      "bytes": 1018,
+      "last_written_utc": "2026-09-20T00:20:44.250714+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/lost-response-final.log",
+      "sha256": "4f019ab44358b452dcef229435f3b39fbe669d52cde56bd3df0e3e3c998f40ac",
+      "bytes": 600,
+      "last_written_utc": "2026-09-20T00:22:34.208638+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/runtime-parity.json",
+      "sha256": "92eb023d37277c436b630f0b5b964d19c68cabba9f762d6e49981f26eba0ec7b",
+      "bytes": 1256,
+      "last_written_utc": "2026-09-20T00:17:57.717936+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/gitleaks-source.json",
+      "sha256": "df5f5c053f4d0d8ea73b6e551ed4b34bd303c80a542bf7f1e4984ee3e65ca89d",
+      "bytes": 1349,
+      "last_written_utc": "2026-09-20T00:41:09.120294+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/links.json",
+      "sha256": "4eaa17d421c251ae98ea682d0665306822d800a3035c3ba71da8630780799a2b",
+      "bytes": 51,
+      "last_written_utc": "2026-09-20T00:44:17.807962+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/clean-install.log",
+      "sha256": "42ed8f8df314dbda0d49d0687e8d0e84ad71612943c88d87cc306182d92a5d3a",
+      "bytes": 2940,
+      "last_written_utc": "2026-09-20T00:55:55.077802+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/clean-backend.log",
+      "sha256": "741312ed513263b10740221fe4a2147bad0457a681c2e9fa2f2b25f77967cd24",
+      "bytes": 75251,
+      "last_written_utc": "2026-09-20T00:58:29.653713+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/clean-frontend.log",
+      "sha256": "a3caa1c05497e2215978ee4a05d4523ec68675867a15c1fa31b5ddb8645aa97e",
+      "bytes": 3365,
+      "last_written_utc": "2026-09-20T00:58:48.970471+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/frontend-final.log",
+      "sha256": "9fd940cb404d749adec827555c5f38f1c738a24fb12280ca415cc46452baf4b2",
+      "bytes": 9010,
+      "last_written_utc": "2026-09-20T00:44:59.502491+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/live-e2e-final.log",
+      "sha256": "d30c55213df9c8867249968780aaa6f3f5cbb1c35c3e61b143320a95fade54ea",
+      "bytes": 7288,
+      "last_written_utc": "2026-09-20T00:43:19.207209+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/assets-final.json",
+      "sha256": "4b3b1f34fa6ba421292dd90e524133c5bd35d66871509c366135177a5c0295bd",
+      "bytes": 14241,
+      "last_written_utc": "2026-09-20T01:00:19.758938+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/browser-cleanup-plan.log",
+      "sha256": "8bff3baeb4bb05f7d8249051eb10feae61029844b6fcc5f0229eb416a0ca20b2",
+      "bytes": 113,
+      "last_written_utc": "2026-09-20T01:02:10.510339+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/browser-cleanup-final.log",
+      "sha256": "b905faf681119db1389512c3007163a8acb41cc83f1e9a7984b0827ad0fb51ce",
+      "bytes": 240,
+      "last_written_utc": "2026-09-20T01:03:36.093245+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/deck-validate-final.log",
+      "sha256": "bc7d617e77eb04a8facd47d98ca7fb47966bc800853f67a6c2f85ff82bbcba34",
+      "bytes": 24,
+      "last_written_utc": "2026-09-20T01:04:34.757860+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/impeccable-detect.json",
+      "sha256": "43f4f308d9508c2b4c7b4aaf95bc460dda8f9b5ab73bfb8a1f0c38c7202b76fc",
+      "bytes": 1070,
+      "last_written_utc": "2026-09-20T00:39:44.844524+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/backend-release.log",
+      "sha256": "613623a3215ca4e1c2453e8e64babbe4981bb18caeeb0c64a19078d9a528035e",
+      "bytes": 74968,
+      "last_written_utc": "2026-09-20T01:13:46.587158+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/loyalty-live-final.log",
+      "sha256": "1a5ab604c029bf37be9f7090cb896cedd1fb54e78897fd2862fb0e7b4b71c8e2",
+      "bytes": 4183,
+      "last_written_utc": "2026-09-20T01:08:02.859734+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/loyalty-live-retry.log",
+      "sha256": "a6371fa54b3b471746cebc34388d670e0b4dc0fd925fc779eaedb8917d0e3be6",
+      "bytes": 587,
+      "last_written_utc": "2026-09-20T01:13:33.346863+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/links-release.json",
+      "sha256": "a574750e1baf6c2b991caee06fcbf116439f21733e032d5328f915e9017ab84b",
+      "bytes": 106,
+      "last_written_utc": "2026-09-20T01:15:56.496017+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/gitleaks-release.json",
+      "sha256": "ea85a330001f5160bdeaf3feda5d0d5efd780f5281e4a2f0dd03bdc048527c8a",
+      "bytes": 1357,
+      "last_written_utc": "2026-09-20T01:15:58.165421+00:00"
+    }
+  ],
+  "outcomes": [
+    {
+      "command": "ruff check backend scripts tests meridian_agentcore/app meridian_agentcore/agentcore/gateway_targets",
+      "exit_code": 0
+    },
+    {
+      "command": "python -m pytest -m \"not database\"",
+      "exit_code": 0,
+      "result": "485 passed, 6 skipped, 110 deselected; exact final source clean-checkout check follows publication"
+    },
+    {
+      "command": "python -m pytest -m database",
+      "exit_code": 0,
+      "result": "106 passed, 4 skipped, 487 deselected; established Aurora"
+    },
+    {
+      "command": "npm run lint && npm run typecheck && npm run test:run && npm run build",
+      "exit_code": 0,
+      "cwd": "meridian/frontend",
+      "result": "237 tests; final local UI build VITE_API_ORIGIN=http://127.0.0.1:8027"
+    },
+    {
+      "command": "uv pip install --require-hashes -r requirements.txt; isolated npm ci/typecheck/build",
+      "exit_code": 0,
+      "result": "fresh dependencies, no copied .env"
+    },
+    {
+      "command": "python -m pip_audit -r requirements.txt; npm audit --audit-level=high (three Node projects)",
+      "exit_code": 0,
+      "result": "no known vulnerabilities; separate invocations"
+    },
+    {
+      "command": "agentcore validate; CDK tests/build/synth",
+      "exit_code": 0,
+      "result": "separate invocations; one AgentCore and seven web infrastructure tests"
+    },
+    {
+      "command": "cfn-lint synthesized templates",
+      "exit_code": 4,
+      "result": "10 W3005 redundant dependencies; zero errors"
+    },
+    {
+      "command": "python scripts/validate_demo.py --base-url http://127.0.0.1:8027",
+      "exit_code": 0,
+      "result": "31 steps; 171591 ms total HTTP; all within 55000 ms; own-record cleanup succeeded"
+    },
+    {
+      "command": "python scripts/kill_and_resume_demo.py",
+      "exit_code": 0,
+      "result": "actual SIGKILL -9, new worker, unique same hold/expiry; cleanup"
+    },
+    {
+      "command": "python scripts/lost_response_demo.py",
+      "exit_code": 0,
+      "result": "actual committed reply discarded, replay same hold/expiry; cleanup"
+    },
+    {
+      "command": "native PowerPoint open/export; OOXML validate.py --original DAT301-R-Toronto-Meridian.pptx",
+      "exit_code": 0,
+      "result": "25 slides; native rendering inspected; titles/alt text repaired; opening/closing reading order reviewed"
+    },
+    {
+      "command": "gitleaks dir release source export --redact",
+      "exit_code": 1,
+      "result": "two literal meridian:PASSWORD documentation examples; both reviewed as placeholders; no real credential finding"
+    },
+    {
+      "command": "impeccable detect --json changed frontend targets",
+      "exit_code": 2,
+      "result": "two advisory matches: standard Markdown quote border and existing route arrival easing; preserved approved design; no material layout issue from those findings"
+    },
+    {
+      "command": "read-only GET of every frontend/public asset",
+      "exit_code": 0,
+      "result": "every response HTTP 200, bytes match local source; see assets-final.json"
+    },
+    {
+      "command": "release_demo_bookings.py --booking-id hold_276e428b4950 (dry-run then apply); targeted journey purge/readback",
+      "exit_code": 0,
+      "result": "one owned booking released; own journey/conversation removed; disposable bootstrap database absent"
+    },
+    {
+      "command": "configured direct loyalty lookup against established Aurora",
+      "exit_code": 0,
+      "result": "known program: recorded 86240 points; unknown program: unavailable without invented balance; earlier unconfigured attempt failed before API call"
+    }
+  ],
+  "presentation_assets": [
+    {
+      "path": "docs/presentation/Meridian-reInvent-chalk-talk.pptx",
+      "sha256": "f6b5510dc9598b3f071317dc6b321872641cb8edc4604e00b0d875f16defbf36",
+      "bytes": 15626128
+    },
+    {
+      "path": "docs/presentation/Meridian-reInvent-chalk-talk.pdf",
+      "sha256": "829a0d8027ec082b7d55e6f4909b39225c5daf6cdd0a6525db5d2fb029399c1c",
+      "bytes": 1448060
+    }
+  ],
+  "final_local_build_assets": [
+    "BriefingArchitecture-BiFqKsty.js",
+    "index-L7B9U8p7.js",
+    "MeridianDeviceShowcase-d45L-rgS.js",
+    "DemoStage-JrKxulnJ.js"
+  ]
+}

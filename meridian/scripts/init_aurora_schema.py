@@ -98,43 +98,85 @@ def _apply(client, statements: list, tag: str, heading: str) -> None:
 def initialize_database() -> None:
     console.print("\n[bold blue]Initializing Meridian travel schema[/bold blue]")
     if not CLUSTER_ARN or not SECRET_ARN:
-        console.print("[red]Missing AURORA_CLUSTER_ARN or AURORA_SECRET_ARN[/red]")
-        return
+        raise SystemExit("Missing AURORA_CLUSTER_ARN or AURORA_SECRET_ARN")
 
     script = SCHEMA_PATH.read_text()
     statements = split_sql(script)
     client = boto3.client("rds-data", region_name=REGION)
-    console.print(f"[cyan]Running {len(statements)} statements from schema.sql[/cyan]\n")
-
-    for i, sql in enumerate(statements, 1):
-        first_line = next((ln.strip() for ln in sql.splitlines() if ln.strip() and not ln.strip().startswith("--")), sql[:60])
-        execute_sql(client, sql, f"[{i}/{len(statements)}] {first_line[:70]}")
-
-    # The two RLS files depend on each other, so neither can be applied whole
-    # before the other: rls_app_role.sql grants on agent_audit_log, which
-    # rls_for_agents.sql creates, while rls_for_agents.sql grants EXECUTE to
-    # meridian_app, which rls_app_role.sql creates. Applying the role file
-    # first made a fresh database fail on the grant; an already-seeded database
-    # hid it, because the table was left over from a previous run.
-    #
-    # Split it by dependency instead of by file: the role has to exist before
-    # anything grants to it, and the objects have to exist before anything
-    # grants on them.
-    role_setup, object_grants = [], []
-    if RLS_APP_ROLE_PATH.exists():
-        for sql in split_sql(RLS_APP_ROLE_PATH.read_text()):
-            (object_grants if _grants_on_objects(sql) else role_setup).append(sql)
-
-    _apply(client, role_setup, "rls-role", "Creating the least-privilege app role")
-    if RLS_PATH.exists():
-        _apply(
-            client,
-            split_sql(RLS_PATH.read_text()),
-            "rls",
-            "Applying RLS policies, functions, and audit log",
+    existing = client.execute_statement(
+        resourceArn=CLUSTER_ARN,
+        secretArn=SECRET_ARN,
+        database=DATABASE,
+        sql="SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public')",
+    )
+    if existing["records"][0][0]["booleanValue"]:
+        raise SystemExit(
+            "Initialization requires an empty database. Existing tables were left unchanged. "
+            "Use scripts/apply_migrations.py to upgrade an existing demo."
         )
-    _apply(client, object_grants, "rls-grant", "Granting table access to the app role")
+    transaction = client.begin_transaction(
+        resourceArn=CLUSTER_ARN, secretArn=SECRET_ARN, database=DATABASE,
+    )["transactionId"]
+    raw_client = client
 
+    class TransactionalClient:
+        def execute_statement(self, **kwargs):
+            return raw_client.execute_statement(**kwargs, transactionId=transaction)
+
+    client = TransactionalClient()
+    try:
+        lock = client.execute_statement(
+            resourceArn=CLUSTER_ARN, secretArn=SECRET_ARN, database=DATABASE,
+            sql="SELECT pg_try_advisory_xact_lock(hashtext('meridian-schema-init'))",
+        )
+        if not lock["records"][0][0]["booleanValue"]:
+            raise RuntimeError("Another schema initialization is running")
+        existing = client.execute_statement(
+            resourceArn=CLUSTER_ARN, secretArn=SECRET_ARN, database=DATABASE,
+            sql="SELECT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public')",
+        )
+        if existing["records"][0][0]["booleanValue"]:
+            raise RuntimeError("Initialization requires an empty database")
+        console.print(f"[cyan]Running {len(statements)} statements from schema.sql[/cyan]\n")
+
+        for i, sql in enumerate(statements, 1):
+            first_line = next((ln.strip() for ln in sql.splitlines() if ln.strip() and not ln.strip().startswith("--")), sql[:60])
+            execute_sql(client, sql, f"[{i}/{len(statements)}] {first_line[:70]}")
+
+        # The two RLS files depend on each other, so neither can be applied whole
+        # before the other: rls_app_role.sql grants on agent_audit_log, which
+        # rls_for_agents.sql creates, while rls_for_agents.sql grants EXECUTE to
+        # meridian_app, which rls_app_role.sql creates. Applying the role file
+        # first made a fresh database fail on the grant; an already-seeded database
+        # hid it, because the table was left over from a previous run.
+        #
+        # Split it by dependency instead of by file: the role has to exist before
+        # anything grants to it, and the objects have to exist before anything
+        # grants on them.
+        role_setup, object_grants = [], []
+        if RLS_APP_ROLE_PATH.exists():
+            for sql in split_sql(RLS_APP_ROLE_PATH.read_text()):
+                (object_grants if _grants_on_objects(sql) else role_setup).append(sql)
+
+        _apply(client, role_setup, "rls-role", "Creating the least-privilege app role")
+        if RLS_PATH.exists():
+            _apply(
+                client,
+                split_sql(RLS_PATH.read_text()),
+                "rls",
+                "Applying RLS policies, functions, and audit log",
+            )
+        _apply(client, object_grants, "rls-grant", "Granting table access to the app role")
+
+
+        raw_client.commit_transaction(
+            resourceArn=CLUSTER_ARN, secretArn=SECRET_ARN, transactionId=transaction,
+        )
+    except BaseException:
+        raw_client.rollback_transaction(
+            resourceArn=CLUSTER_ARN, secretArn=SECRET_ARN, transactionId=transaction,
+        )
+        raise
     console.print("\n[bold green]Schema ready[/bold green]")
 
 

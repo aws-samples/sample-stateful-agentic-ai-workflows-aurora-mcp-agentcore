@@ -9,6 +9,7 @@ a missing fact is indistinguishable from one that has the fact.
 The read has no workflow side effects.
 """
 
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from backend.agentcore.identity import get_agentcore_identity
@@ -67,7 +68,15 @@ def _unavailable(reason: str) -> Dict[str, Any]:
 
 
 def _iso(value: Any) -> Optional[str]:
-    return None if value is None else str(value)
+    if value is None:
+        return None
+    # Data API returns timestamp columns without an offset. This database uses
+    # UTC; make it explicit so a presenter's browser cannot reinterpret the
+    # recorded instant in its own local timezone.
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.isoformat()
 
 
 def checkpoint_backend_is_durable(kind: str) -> bool:
@@ -330,8 +339,8 @@ async def _hold(q, journey_id: str) -> Dict[str, Any]:
         "package_id": row["package_id"],
         "duration": row["duration"],
         # Preserve the booked amounts, including when catalog prices change.
-        "unit_price": _iso(row.get("unit_price")),
-        "total_amount": _iso(row.get("total_amount")),
+        "unit_price": str(row["unit_price"]) if row.get("unit_price") is not None else None,
+        "total_amount": str(row["total_amount"]) if row.get("total_amount") is not None else None,
         "travelers_count": (
             int(row["travelers_count"]) if row["travelers_count"] is not None else None
         ),

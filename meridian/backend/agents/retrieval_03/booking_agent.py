@@ -93,7 +93,11 @@ Guidelines:
         return await self.calculate_booking_total(items)
 
     async def calculate_booking_total(self, items: List[dict]) -> dict:
-        """Calculate booking total including tax and service fee."""
+        """Estimate the catalog total for trip line items.
+
+        Catalog prices are per traveler and all-in. No tax or fee is modeled,
+        so the estimate is exactly price times party size per line.
+        """
         start_time = datetime.now(timezone.utc)
 
         subtotal = Decimal('0')
@@ -116,9 +120,7 @@ Guidelines:
                     "total": float(item_total)
                 })
 
-        tax = subtotal * Decimal('0.085')
-        service_fee = Decimal('0') if subtotal >= Decimal('100') else Decimal('9.99')
-        total = subtotal + tax + service_fee
+        total = subtotal
 
         execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
@@ -132,12 +134,8 @@ Guidelines:
         return {
             "items": item_details,
             "subtotal": float(subtotal),
-            "tax": float(tax),
-            # NOTE: key kept as `shipping` to match the Order pydantic model on the
-            # API surface; surfaced in UI as "Service fee".
-            "shipping": float(service_fee),
             "total": float(total),
-            "free_service_fee_applied": service_fee == 0
+            "pricing_basis": "catalog price per traveler; no tax or fees are modeled",
         }
 
 

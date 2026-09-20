@@ -175,24 +175,25 @@ async def test_a_committed_checkpoint_is_reported_with_its_thread(
     from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
 
     saver = AuroraDataApiSaver(journey.client)
+    checkpoint_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": journey.thread_id, "checkpoint_ns": ""}}
     await saver.aput(
         config,
         {
             "v": 1,
-            "id": "cp_doc_01",
+            "id": checkpoint_id,
             "ts": "2026-09-06T02:13:41+00:00",
-            "channel_values": {"selected_package": "TKY-003"},
-            "channel_versions": {"selected_package": "1"},
+            "channel_values": {"hold_package": "TKY-003"},
+            "channel_versions": {"hold_package": "1"},
             "versions_seen": {},
         },
         {"step": 1},
-        {"selected_package": "1"},
+        {"hold_package": "1"},
     )
 
     doc = await _document(journey)
     assert doc["checkpoint"]["status"] == "committed"
-    assert doc["checkpoint"]["checkpoint_id"] == "cp_doc_01"
+    assert doc["checkpoint"]["checkpoint_id"] == checkpoint_id
     assert doc["checkpoint"]["thread_id"] == journey.thread_id
     assert doc["checkpoint"]["source"] == "checkpoints"
     assert doc["checkpoint"]["committed_at"].startswith("2026-09-06")
@@ -200,7 +201,7 @@ async def test_a_committed_checkpoint_is_reported_with_its_thread(
     plan = doc["selected_plan"]
     assert plan["package_id"] == "TKY-003"
     assert journey.thread_id in plan["source"]
-    assert "cp_doc_01" in plan["source"]
+    assert checkpoint_id in plan["source"]
 
 
 # --------------------------------------------------------------------- hold

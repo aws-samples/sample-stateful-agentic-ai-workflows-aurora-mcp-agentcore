@@ -12,6 +12,7 @@ Requires migrations 007 and 008 and AWS credentials.
 from __future__ import annotations
 
 import json
+import uuid
 from typing import AsyncIterator
 
 import pytest
@@ -21,6 +22,7 @@ from fastapi import HTTPException
 from backend.db.rds_data_client import get_rds_data_client
 from backend.http_auth import HttpPrincipal
 from backend.routers.chat import OrderRequest, process_order
+from backend.routers.memory import get_memory_profile
 
 pytestmark = pytest.mark.database
 
@@ -102,23 +104,40 @@ async def holds() -> AsyncIterator[_Holds]:
         await tracker.purge()
 
 
-async def _a_package_with_room(client, needed: int) -> tuple[str, str, int]:
-    """A package and duration in the live catalog with room for `needed` seats."""
+async def _a_package_with_room(client, needed: int, *, oversell=False) -> tuple[str, str, int]:
+    """Select live inventory inside the saved budget and Cedar party limit.
+
+    Budget and party denial are tested separately. Inventory tests must reach
+    Aurora's capacity check, and must count active holds as well as bookings.
+    """
+    profile = await get_memory_profile(TRAVELER, PRINCIPAL)
+    cap = profile.budget_ceiling_per_traveler_cents
+    assert cap is not None, "The live hold test needs the seeded per-traveler budget"
     rows = await client.execute(
         """
         SELECT package_id, availability FROM trip_packages
-         WHERE availability IS NOT NULL ORDER BY package_id
+         WHERE availability IS NOT NULL AND price_per_person * 100 <= %s
+         ORDER BY package_id
         """,
-        (),
+        (cap,),
     )
     for row in rows:
         availability = row["availability"]
         if isinstance(availability, str):
             availability = json.loads(availability)
         for duration, seats in (availability or {}).items():
-            if int(seats) >= needed:
-                return row["package_id"], duration, int(seats)
-    pytest.skip(f"no catalog package publishes {needed} places on one duration")
+            reserved = await client.execute_one(
+                "SELECT COALESCE(SUM(bl.travelers_count), 0) AS n "
+                "FROM booking_lines bl JOIN bookings b USING (booking_id) "
+                "WHERE bl.package_id = %s AND bl.duration = %s "
+                "AND (b.status = 'confirmed' OR (b.status = 'held' "
+                "AND b.hold_expires_at > CURRENT_TIMESTAMP))",
+                (row["package_id"], duration),
+            )
+            remaining = int(seats) - int(reserved["n"])
+            if remaining >= needed and (not oversell or remaining < 6):
+                return row["package_id"], duration, remaining
+    pytest.fail(f"No eligible live package with {needed} places; replenish demo inventory")
 
 
 async def test_a_hold_writes_a_booking_line_for_the_published_duration(
@@ -147,8 +166,10 @@ async def test_a_hold_is_recorded_under_a_journey_and_a_request_identity(
     """Without these the hold has no identity to be idempotent against."""
     package_id, duration, _seats = await _a_package_with_room(holds.client, 1)
 
+    request = OrderRequest(product_id=package_id, size=duration, quantity=1, phase=4,
+                           conversation_id=f"hold-test-{uuid.uuid4().hex[:12]}")
     response = await process_order(
-        OrderRequest(product_id=package_id, size=duration, quantity=1, phase=4),
+        request,
         PRINCIPAL,
     )
     assert response.order is not None
@@ -156,7 +177,10 @@ async def test_a_hold_is_recorded_under_a_journey_and_a_request_identity(
 
     identity = await holds.hold_request(order_id)
     assert identity["journey_id"].startswith("jrn_")
-    assert identity["hold_request_id"] == f"hrq_{order_id}"
+    assert identity["hold_request_id"].startswith("hrq_")
+    replay = await process_order(request, PRINCIPAL)
+    assert replay.order is not None and replay.order.order_id == order_id
+    assert await holds.hold_request(order_id) == identity
     assert identity["fingerprint"], "the hold must record a fingerprint of its terms"
     assert identity["traveler_id"] == TRAVELER, "the journey must belong to the caller"
 
@@ -172,16 +196,14 @@ async def test_the_response_reports_the_seats_the_database_counted(
     )
     assert response.order is not None
     holds.track(response.order.order_id)
-    assert f"Remaining package places: {seats - 2}" in response.message
+    assert response.order.seats_remaining == seats - 2
 
 
 async def test_asking_for_more_places_than_exist_reserves_nothing(
     holds: _Holds,
 ) -> None:
     """The route declines before the hold, and writes no booking either way."""
-    package_id, duration, seats = await _a_package_with_room(holds.client, 1)
-    if seats >= 12:
-        pytest.skip("cannot request more than 12 travelers, so cannot oversell this one")
+    package_id, duration, seats = await _a_package_with_room(holds.client, 1, oversell=True)
 
     before = await holds.client.execute(
         "SELECT count(*) AS n FROM booking_lines WHERE package_id = %s AND duration = %s",
@@ -195,7 +217,7 @@ async def test_asking_for_more_places_than_exist_reserves_nothing(
         PRINCIPAL,
     )
     assert response.order is None
-    assert "does not have enough places" in response.message
+    assert any(activity.details == "insufficient_inventory" for activity in response.activities)
 
     after = await holds.client.execute(
         "SELECT count(*) AS n FROM booking_lines WHERE package_id = %s AND duration = %s",

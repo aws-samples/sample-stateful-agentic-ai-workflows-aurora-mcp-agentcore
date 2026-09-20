@@ -1,6 +1,6 @@
 #!/bin/bash
 # Meridian Aurora PostgreSQL Cluster Provisioning Script
-# Creates an Aurora PostgreSQL 17.5 Serverless v2 cluster with pgvector support
+# Creates an Aurora PostgreSQL 17.9 Serverless v2 cluster with pgvector support
 #
 # AWS docs:
 #   Creating an Aurora cluster:
@@ -16,7 +16,7 @@
 #
 # Requirements implemented:
 # - 1.1: Aurora PostgreSQL 17.9 Serverless v2 cluster with identifier "meridian-demo" in us-east-1
-# - 1.2: Scaling from 0 to 64 ACUs
+# - 1.2: Scaling from 0.5 to 64 ACUs
 # - 1.3: RDS Data API enabled
 # - 1.4: Credentials stored in AWS Secrets Manager
 # - 1.5: pgvector 0.8.0 extension enabled
@@ -33,6 +33,15 @@ ENGINE_VERSION="17.9"
 MIN_CAPACITY=0.5
 MAX_CAPACITY=64
 SECRET_NAME="meridian-demo-credentials"
+
+# Provisioning is an explicit account-scoped action, never a health check.
+if [ "${1:-}" != "--apply" ] || [ -z "${2:-}" ]; then
+    echo "Plan: create $CLUSTER_IDENTIFIER in $REGION (Aurora $ENGINE_VERSION, encrypted, private, $MIN_CAPACITY-$MAX_CAPACITY ACUs)."
+    echo "This creates billable resources. After reviewing the account and prerequisites:"
+    echo "  bash scripts/create_cluster.sh --apply EXPECTED_ACCOUNT_ID"
+    exit 0
+fi
+EXPECTED_ACCOUNT_ID="$2"
 
 # Colors for output
 RED='\033[0;31m'
@@ -96,6 +105,10 @@ if ! aws sts get-caller-identity &> /dev/null; then
 fi
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+if [ "$ACCOUNT_ID" != "$EXPECTED_ACCOUNT_ID" ]; then
+    log_error "Account does not match EXPECTED_ACCOUNT_ID; no resources changed."
+    exit 1
+fi
 log_success "AWS credentials valid. Account ID: $ACCOUNT_ID"
 
 # Check if cluster already exists
@@ -134,6 +147,11 @@ if aws rds describe-db-clusters --db-cluster-identifier "$CLUSTER_IDENTIFIER" --
     echo ""
     exit 0
 fi
+
+# Fail before writes if the requested engine is unavailable in this region.
+aws rds describe-db-engine-versions --engine aurora-postgresql --engine-version "$ENGINE_VERSION" \
+    --region "$REGION" --query 'DBEngineVersions[0].EngineVersion' --output text | \
+    awk -v wanted="$ENGINE_VERSION" '$0 == wanted {found=1} END {exit !found}'
 
 # Generate secure password
 log_info "Generating secure database password..."
@@ -184,8 +202,7 @@ log_success "Using VPC: $DEFAULT_VPC"
 SUBNET_IDS=$(aws ec2 describe-subnets \
     --filters "Name=vpc-id,Values=$DEFAULT_VPC" \
     --region "$REGION" \
-    --query 'Subnets[*].SubnetId' \
-    --output text | tr '\t' '\n' | head -2 | tr '\n' ',' | sed 's/,$//')
+    --output json | jq -r '[.Subnets | sort_by(.AvailabilityZone) | group_by(.AvailabilityZone)[] | .[0].SubnetId][0:2] | join(",")')
 
 SUBNET_COUNT=$(echo "$SUBNET_IDS" | tr ',' '\n' | wc -l | tr -d ' ')
 
@@ -272,6 +289,8 @@ aws rds create-db-cluster \
     --vpc-security-group-ids "$SECURITY_GROUP_ID" \
     --serverless-v2-scaling-configuration "MinCapacity=$MIN_CAPACITY,MaxCapacity=$MAX_CAPACITY" \
     --enable-http-endpoint \
+    --storage-encrypted \
+    --backup-retention-period 7 \
     --region "$REGION" > /dev/null
 
 log_success "Cluster creation initiated"
@@ -284,6 +303,7 @@ aws rds create-db-instance \
     --db-cluster-identifier "$CLUSTER_IDENTIFIER" \
     --engine aurora-postgresql \
     --db-instance-class db.serverless \
+    --no-publicly-accessible \
     --region "$REGION" > /dev/null
 
 log_success "Instance creation initiated"

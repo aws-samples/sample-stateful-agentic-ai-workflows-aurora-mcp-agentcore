@@ -202,6 +202,37 @@ def test_default_deny_names_the_hold_conditions_the_arguments_failed():
     assert event.result["content"][0]["text"] == result["details"]
 
 
+def test_strands_wrapped_denial_is_still_a_cedar_denial():
+    # Strands reports an MCP tool exception as "Tool execution failed: <message>".
+    # The gateway's denial arrives behind that prefix on the deployed runtime, and
+    # it was being rendered as a generic tool failure with no policy decision.
+    queue = asyncio.Queue()
+    hooks = TraceHooks(queue, _turn(hold_confirmed=False, budget_ceiling_cents=640000))
+    event = _event(
+        "MeridianHolds___create_courtesy_hold",
+        {"packageId": "CTY-002", "travelers": 8, "holdMinutes": 720, "totalCents": 1999200},
+    )
+    hooks.before(event)
+    event.result = {
+        "status": "error",
+        "content": [{
+            "text": (
+                "Tool execution failed: Tool Execution Denied: Tool call not allowed due to "
+                "policy enforcement [No policy applies to the request (denied by default).]"
+            )
+        }],
+    }
+    hooks.after(event)
+    items = _drain(queue)
+    result = [span for kind, span in items if kind == "activity"][-1]
+    assert result["telemetry"]["status"] == "denied"
+    assert result["title"] == "Hold refused by Cedar policy"
+    assert "denied it by default" in result["details"]
+    refused = [span for kind, span in items if kind == "hold"][0]
+    assert refused["policyDecision"] == "deny"
+    assert hooks.hold is None
+
+
 def test_lambda_business_error_is_a_failed_span_not_a_denial():
     queue = asyncio.Queue()
     hooks = TraceHooks(queue, _turn(hold_confirmed=True))

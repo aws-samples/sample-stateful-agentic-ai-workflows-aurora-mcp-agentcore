@@ -6,6 +6,7 @@ import {
 } from '@aws/agentcore-cdk';
 import { CfnOutput, Stack, type StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
+import { correctPolicyPermissions } from './policy-compatibility';
 
 export interface AgentCoreStackProps extends StackProps {
   /**
@@ -52,6 +53,8 @@ export class AgentCoreStack extends Stack {
         projectTags: spec.tags,
       });
     }
+
+    correctPolicyPermissions(this);
 
     // Stack-level output
     new CfnOutput(this, 'StackNameOutput', {

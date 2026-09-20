@@ -867,6 +867,21 @@ describe('Experience presentation polish', () => {
     expect(facts).not.toHaveTextContent('$2,499');
   });
 
+  it('does not present a previous Concierge booking as a new recovery receipt', () => {
+    const state = makeState({
+      selectedPhase: 5,
+      tripHolds: [{ productId: 'CTY-002', order: {
+        order_id: 'HLD-previous-concierge', status: 'confirmed',
+        items: [{ product_id: 'CTY-002', name: 'Previous trip', size: '3 nights', quantity: 2, unit_price: 2000 }],
+        subtotal: 4000, total: 4000, tax: 0, shipping: 0,
+      } }],
+    });
+    render(<RecoveryWorkspace state={state} />);
+    expect(screen.getByRole('button', { name: 'Start recovery' })).toBeVisible();
+    expect(screen.queryByRole('region', { name: 'Aurora booking receipt' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Previous trip')).not.toBeInTheDocument();
+  });
+
   it('uses honest placeholders before recovery and the live top result afterward', () => {
     const product = {
       product_id: 'tokyo-executive-stopover',
