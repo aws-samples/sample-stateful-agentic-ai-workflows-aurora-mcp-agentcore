@@ -174,25 +174,19 @@ records dated validation and its deployment boundaries.
 
 ### Publish behind CloudFront
 
-For a shared screen without a laptop on stage, publish the same app to a
-password-protected CloudFront URL. The CDK app in `meridian/infra/` puts the
-Vite build in a private S3 bucket and runs the FastAPI backend as a container on
-AWS App Runner, both behind one distribution. A CloudFront Function enforces
-basic auth at the edge and injects the backend bearer token on `/api/*`. The
-App Runner origin requires HTTP authentication for application routes, including
-catalog, detailed health, and API schema/docs; only minimal `/health` liveness
-is public. A Git push runs source checks; it does not deploy the hosted app.
+Use the account-bound publisher for an **existing** deployment. It builds and
+shows the CDK diff by default; `--apply` executes it. App Runner resolves the
+origin token from Secrets Manager. Edge credentials are preserved.
 
 ```bash
 cd meridian
-finch vm start                      # or Docker; the image is built locally
-python scripts/publish.py           # secret, frontend build, cdk deploy, KeyValueStore
+python scripts/publish.py --account <account-id> --region us-east-1 --service-arn <existing-service-arn>
+# After reviewing the plan, repeat with --apply.
 ```
 
-The script prints the URL and writes the basic-auth password and the bearer
-token to `meridian/.local/published.json` (gitignored). Re-run it to redeploy.
-See [OPERATIONS.md](meridian/docs/OPERATIONS.md#publish-behind-cloudfront) for
-the details and teardown.
+The non-secret release receipt is `.local/hosted-release.json`. Read the
+[deployment and verification runbook](meridian/docs/DEPLOYMENT_FOLLOWUP.md) for runtime secret references,
+authenticated validation, new-account limitations and rollback.
 
 ## Demo Surfaces
 
@@ -257,7 +251,7 @@ subject, such as a Cognito `sub`, to the traveler record. Apply your
 organization's networking, observability, availability, and governance
 requirements before production use.
 
-New-cluster provisioning is currently disabled: the legacy credential path was removed pending the required secret-handling workflow and a reviewed replacement. `scripts/create_cluster.sh` only explains prerequisites; `--apply` fails before any AWS call. Use the established configured Aurora environment for rehearsal. See the [current readiness report](meridian/docs/READINESS_2026-09-20.md).
+The legacy `scripts/create_cluster.sh --apply` remains disabled. Use the read-only provisioning preflight and separate encrypted Aurora CDK entry point in the [deployment runbook](meridian/docs/DEPLOYMENT_FOLLOWUP.md). Fresh-account deployment, rollback and teardown still require an isolated rehearsal. See the [current readiness report](meridian/docs/READINESS_2026-09-20.md).
 
 ## Validation
 

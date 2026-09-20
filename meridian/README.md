@@ -155,37 +155,19 @@ For the pause/resume demonstration, set
 
 ### Publish behind CloudFront
 
-**Current status: blocked pending the required secret-handling workflow and
-review of the inherited publisher.** The commands below describe that existing
-procedure; they are not approved presenter preflight. The current hosted image
-and frontend are older than this source. See the [readiness report](docs/READINESS_2026-09-20.md)
-for the exact deployment boundary and prerequisites before execution.
-
-`infra/` is a CDK app that publishes the same application to a password-protected
-CloudFront URL: the Vite build in a private S3 bucket, the backend as a container
-on AWS App Runner, one distribution in front of both, and a CloudFront Function
-that enforces basic auth and injects the backend bearer token on `/api/*`. The
-credentials live in a CloudFront KeyValueStore and the token in Secrets Manager;
-neither is in code or in a template.
+Use the account-bound publisher for an **existing** deployment. It builds and
+shows the CDK diff by default; `--apply` executes it. App Runner resolves the
+origin token from Secrets Manager. Edge credentials are preserved.
 
 ```bash
 cd meridian
-finch vm start                      # or Docker; the backend image is built locally
-python scripts/publish.py           # writes the secret, builds, deploys, fills the KeyValueStore
+python scripts/publish.py --account <account-id> --region us-east-1 --service-arn <existing-service-arn>
+# After reviewing the plan, repeat with --apply.
 ```
 
-The script prints the URL and writes the password and token to
-`.local/published.json` (gitignored). Re-run it to redeploy; pass
-`--skip-frontend` to reuse `frontend/dist`.
-
-The address and credentials are deployment-specific and are not committed.
-The publisher's machine can open the site with the helper below. Prepare access
-before screen sharing; the helper copies the password to the clipboard.
-
-```bash
-python scripts/published.py          # address, user, status; password copied
-python scripts/published.py --open   # also open it in the browser
-```
+The non-secret release receipt is `.local/hosted-release.json`. Read the
+[deployment and verification runbook](docs/DEPLOYMENT_FOLLOWUP.md) for runtime secret references,
+authenticated validation, new-account limitations and rollback.
 
 The App Runner instance role is a workload like the gateway Lambda, so it needs
 its own grant before it can set a traveler scope. Run this once after the roles
@@ -585,7 +567,7 @@ Key environment variables are documented in `.env.example`.
 | MCP | `awslabs.postgres-mcp-server`, custom `meridian-concierge`, and `meridian-memory` MCP servers |
 | Memory and identity | Bedrock AgentCore Memory, AgentCore Identity, AWS IAM workload authorization |
 
-New-cluster provisioning is currently disabled: the legacy credential path was removed pending the required secret-handling workflow and a reviewed replacement. `scripts/create_cluster.sh` only explains prerequisites; `--apply` fails before any AWS call. Use the established configured Aurora environment for rehearsal. See the [current readiness report](docs/READINESS_2026-09-20.md).
+The legacy `scripts/create_cluster.sh --apply` remains disabled. Use the read-only provisioning preflight and separate encrypted Aurora CDK entry point in the [deployment runbook](docs/DEPLOYMENT_FOLLOWUP.md). Fresh-account deployment, rollback and teardown still require an isolated rehearsal. See the [current readiness report](docs/READINESS_2026-09-20.md).
 
 ## Validation
 

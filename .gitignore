@@ -54,9 +54,13 @@ logs/
 
 # Generated deployment artifacts
 .cache/
-cdk.out/
+cdk.out*/
 .cli/
 
 # Kiro specs (local development)
 .kiro/
 .claude/
+
+# Browser verification artifacts
+playwright-report/
+test-results/

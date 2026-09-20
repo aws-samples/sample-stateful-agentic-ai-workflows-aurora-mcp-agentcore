@@ -43,7 +43,7 @@ import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
 import type { Phase } from '../types';
 import { MERIDIAN_MARK_SRC } from '../lib/meridianBrand';
 import { ALEX_IMAGE_URL, ALEX_NAME } from './lib/personas';
-import { prefersReducedMotion } from './lib/prefersReducedMotion';
+import { usePrefersReducedMotion } from './lib/prefersReducedMotion';
 import { SHOWCASE_PHASES } from './lib/showcaseAdapters';
 
 type NavItemId = 'concierge' | 'trips' | 'discover' | 'profile' | 'preferences' | 'messages';
@@ -94,6 +94,7 @@ export function DesktopMeridianApp({
   theme: ShowcaseTheme;
   onToggleTheme: () => void;
 }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
   const { view, journeyId, threadId, setView: writeView, setJourneyId, selectJourney } = useSurfaceUrlState();
   const [closing, setClosing] = useState(false);
   const setView = (next: typeof view) => { setClosing(false); writeView(next); };

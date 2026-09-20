@@ -2,7 +2,7 @@
 //
 // Three jobs on every request:
 //   1. Basic auth at the edge. The expected credential lives in the CloudFront
-//      KeyValueStore under "basic", written by scripts/publish.py, never in code.
+//      KeyValueStore under "basic", preserved by releases and never in code.
 //   2. For API paths, replace the browser's Authorization header with the
 //      backend bearer token (KeyValueStore key "token"). The token never reaches
 //      the browser; the backend refuses any caller without it.

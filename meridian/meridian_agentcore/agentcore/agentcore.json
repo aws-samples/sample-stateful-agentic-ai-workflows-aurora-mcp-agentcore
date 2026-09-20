@@ -252,7 +252,7 @@
                     "rds-data:CommitTransaction",
                     "rds-data:RollbackTransaction"
                   ],
-                  "Resource": "arn:aws:rds:us-east-1:619763002613:cluster:meridian-demo"
+                  "Resource": "arn:aws:rds:us-east-1:619763002613:cluster:meridian-encrypted"
                 },
                 {
                   "Effect": "Allow",

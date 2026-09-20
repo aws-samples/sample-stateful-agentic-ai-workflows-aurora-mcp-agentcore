@@ -140,3 +140,35 @@
   .mds-root[data-audience-layout='true'] .mds-shell-surface-nav { flex: 1; overflow-x: auto; }
   .mds-root[data-projector-readability='true'] { --mc-type-scale: 1.1; }
 }
+
+/* Keep preparation quiet; disclose secondary settings without shrinking the app. */
+.mc-display-settings { position: relative; }
+.mc-display-settings > summary {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 44px; padding: 0 12px; border: 1px solid var(--mc-line);
+  border-radius: 6px; list-style: none; cursor: pointer; color: var(--mc-ink);
+}
+.mc-display-settings > summary::-webkit-details-marker { display: none; }
+.mc-display-settings > summary:hover { background: var(--mc-soft); }
+.mc-display-settings > summary:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 3px; }
+.mc-display-settings[open] > summary { color: var(--mc-accent); border-color: var(--mc-accent); }
+.mc-display-settings[open] > summary svg { transform: rotate(180deg); }
+.mc-display-settings-panel {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 40;
+  display: grid; gap: 16px; width: 260px; max-width: calc(100vw - 32px);
+  padding: 20px; border: 1px solid var(--mc-line); border-radius: 8px;
+  background: var(--mc-surface); box-shadow: 0 12px 28px rgb(0 0 0 / 0.1);
+}
+.mc-display-settings-panel .mc-projector-option { min-height: 44px; }
+.mds-root .mc-display-settings-panel button { white-space: normal; text-align: left; }
+@media (max-width: 1180px) {
+  .mc-presenter-controls { min-height: 64px; padding: 10px 18px; flex-wrap: nowrap; }
+  .mc-presenter-caption { display: grid; width: auto; gap: 3px; }
+  .mc-presenter-actions { flex-wrap: nowrap; width: auto; margin-left: auto; }
+}
+@media (max-width: 600px) {
+  .mc-presenter-caption { display: none; }
+  .mc-presenter-actions { width: 100%; justify-content: space-between; }
+  .mc-display-settings-panel { left: 0; right: auto; }
+  .mc-fullscreen-label { display: none; }
+}

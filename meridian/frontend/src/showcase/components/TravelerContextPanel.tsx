@@ -12,7 +12,7 @@ import {
 import { ServiceMark } from './ServiceMark';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { ALEX_IMAGE_URL, ALEX_NAME } from '../lib/personas';
-import { prefersReducedMotion } from '../lib/prefersReducedMotion';
+import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 
 // Snake-case schema keys read as "authentic Aurora data" for some fields
 // (no_red_eye, vegetarian_friendly) but feel awkward for multi-word
@@ -51,6 +51,7 @@ export function TravelerContextPanel({
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
 }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
   const memoryAvailable = state.selectedPhase >= 4;
   const memoryOn = memoryAvailable && state.memoryEnabled;
   const facts = memoryOn

@@ -47,6 +47,8 @@ jobs:
       - run: npm run test:run
       - run: npm run build
       - run: npm audit --audit-level=high
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:accessibility
 
   backend-container:
     runs-on: ubuntu-latest

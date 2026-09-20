@@ -16,9 +16,10 @@ import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { BadgeCheck, Fingerprint, RefreshCw, ShieldX } from 'lucide-react';
 import { fetchRlsProbe, type RlsProbeResponse } from '../../api/client';
-import { prefersReducedMotion } from '../lib/prefersReducedMotion';
+import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 
 export function RlsProbeCard({ travelerId }: { travelerId: string }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
   const [data, setData] = useState<RlsProbeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

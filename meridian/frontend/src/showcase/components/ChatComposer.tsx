@@ -142,8 +142,8 @@ export function ChatComposer({
           onChange={(event) => state.setCurrentPrompt(event.target.value)}
           placeholder={
             recoveryMode
-              ? 'Ask Meridian anything - find the fastest way to Tokyo tomorrow…'
-              : conciergeMode ? 'Tell me what you have in mind…' : 'Ask Meridian anything - "a calm wine trip in October, under $2,500"…'
+              ? 'Describe the trip you need to recover…'
+              : conciergeMode ? 'Tell me what you have in mind…' : 'Ask about a destination, budget, or duration…'
           }
           disabled={requestBusy}
           aria-label="Ask Meridian anything"

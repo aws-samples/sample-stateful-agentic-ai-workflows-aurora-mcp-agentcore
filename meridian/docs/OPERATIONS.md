@@ -105,7 +105,7 @@ python scripts/lost_response_demo.py      # discard a real hold reply, then retr
 ```
 
 For the published site, request `/` without credentials (expect 401) and `/api/health`
-with the basic credential from `.local/published.json` (expect 200 and
+with presenter access resolved through `asm-exec` as described in [the follow-up runbook](DEPLOYMENT_FOLLOWUP.md) (expect 200 and
 `"checkpoint_durable": true`).
 
 In the showcase trace panel you should see (real, not faked):
@@ -126,74 +126,18 @@ stream `spans`; application logs carry the same trace id in the `runtime-logs-*`
 
 ## Publish behind CloudFront
 
-The CDK app in `infra/` publishes the app to a password-protected CloudFront URL:
-the Vite build in a private S3 bucket (origin access control), the backend as a
-container on App Runner (1 vCPU, 2 GB, one instance kept warm), and a viewer
-function that enforces basic auth, injects the backend bearer token on `/api/*`
-and `/health`, and rewrites `/showcase` and friends to `index.html`. The
-backend runs with `ENVIRONMENT=production`, so it refuses any caller without
-the token; the App Runner URL is not an open door. `publish.py` deploys three
-stacks and one SDK-created service, in order: `MeridianWebRoles` holds the App
-Runner instance and ECR access roles and goes first, because App Runner cannot
-deploy a service whose roles were created moments earlier (the script waits 90
-seconds whenever it changes them); `MeridianWebBackend` builds and pushes the
-backend image; the App Runner service `meridian-web` is then created or updated
-with the SDK and the script waits until it runs, deleting and retrying a failed
-creation; `MeridianWeb` is the site, routed to the service host. The service
-carries no optional setting at all: App Runner in us-east-1 refused every
-deployment that had a custom auto scaling configuration, a health check
-interval, an explicit egress configuration, a tag list, or a Secrets Manager
-reference for the token, and CloudFormation always sends a tag list, which is
-why the service is not a stack resource. The bearer token therefore reaches the
-container as a runtime environment variable (the same value already sits in the
-CloudFront KeyValueStore, and it guards only the origin behind CloudFront); the
-secret in Secrets Manager remains the operator's record of it. The
-container starts through `backend/launch.py`, which opens port 8000 at once and
-hands the socket to uvicorn, because App Runner also refused deployments whose
-port stayed closed for the thirty seconds the backend needs to load on one vCPU;
-the default TCP health check passes immediately and requests wait in the backlog
-until startup has initialised the Aurora checkpoint backend.
+Follow the [deployment, hardening and rehearsal runbook](DEPLOYMENT_FOLLOWUP.md).
+The established publisher now requires an exact account/region/service target,
+plans before deployment, preserves edge credentials and references the origin
+token through App Runner's native Secrets Manager integration. It never deletes
+services on failure. The former credential-minting and automatic retry/deletion
+procedure is retired. The existing manually provisioned App Runner service stays
+outside CloudFormation; CDK owns its roles, image assets, site and distribution.
 
-```bash
-cd meridian
-finch vm start                      # Docker works too; the image is built for linux/amd64
-python scripts/publish.py           # secret → frontend build → cdk deploy → KeyValueStore
-python scripts/publish.py --skip-frontend   # redeploy after backend changes
-python scripts/bind_web_backend_role.py     # once per roles stack: grant the instance role access to Alex
-```
-
-What the script does, in order: mints a basic-auth password and a bearer token
-(or reuses the ones in `.local/published.json`), writes the token to Secrets
-Manager (`meridian/web/api-token`, never read back), builds `frontend/dist`,
-deploys `MeridianWebRoles` and `MeridianWebBackend`, creates or updates the App
-Runner service, deploys `MeridianWeb`, all in the region of Aurora and AgentCore
-with the non-secret settings copied from `.env`, writes the two credentials to the
-CloudFront KeyValueStore through the AWS CLI, and records the URL. The instance
-role is scoped to Bedrock invoke, the Aurora Data API on one cluster, one Aurora
-secret, `InvokeAgentRuntime` on the Meridian runtime, and `InvokeGateway` on the
-configured Meridian Gateway. Phase 5 runs in App Runner and needs that direct
-Gateway permission for its governed hold; Phase 4 uses the Runtime's own role.
-
-That instance role is a workload like the holds Lambda. Run
-`scripts/bind_web_backend_role.py` once after the roles stack exists (it binds the
-role's RoleId in `traveler_identity_bindings`); until then every Phase 4 and
-Phase 5 request on the published site fails with
-`aws_iam subject is not authorized for traveler trv_meridian_demo`.
-
-Verify with the credentials from `.local/published.json`:
-
-```bash
-curl -s -u meridian:PASSWORD https://<distribution>.cloudfront.net/api/health | jq .
-curl -s -u meridian:PASSWORD -X POST https://<distribution>.cloudfront.net/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{"phase":1,"message":"Show me city trips under $2,000 per traveler.","customer_id":"trv_meridian_demo"}' \
-  | jq '(.products | length), [.activities[].title]'
-```
-
-Tear down with `cd meridian/infra && npx cdk destroy MeridianWeb`, then
-`aws apprunner delete-service --service-arn <backendServiceArn from .local/published.json>`,
-then `npx cdk destroy MeridianWebBackend MeridianWebRoles`; the secret
-and the credentials file stay unless you delete them.
+The instance role still needs its existing traveler grant. New workload identities
+must be bound with `scripts/bind_web_backend_role.py` before they can access Alex.
+A successful deployment must be followed by authenticated bundle/image/header
+parity and scoped live-journey checks. Keep deployment receipts under `.local/`.
 
 ## If AgentCore fails on stage
 

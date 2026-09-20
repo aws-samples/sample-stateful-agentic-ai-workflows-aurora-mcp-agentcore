@@ -1,8 +1,8 @@
 """Plan cleanup of Meridian ancillary resources after its Aurora cluster is gone.
 
-Run without flags to inspect the plan. --apply schedules secret deletion with
-seven days of recovery and deletes the named subnet/security groups. Every AWS
-failure exits nonzero. Never run against the shared presenter cluster.
+Run without flags to inspect the plan. --apply deletes the named subnet/security
+groups. Credentials are retained because restored clusters may still use them.
+Every AWS failure exits nonzero. Never run against the shared presenter cluster.
 """
 from __future__ import annotations
 
@@ -37,12 +37,7 @@ def cleanup_resources(region: str = "us-east-1", *, apply: bool = False) -> int:
         raise RuntimeError(
             "meridian-demo still exists. Its credential and network resources must be retained."
         )
-    secrets = boto3.client("secretsmanager", region_name=region)
     ec2 = boto3.client("ec2", region_name=region)
-    secret = _optional(
-        secrets.describe_secret, {"ResourceNotFoundException"},
-        SecretId="meridian-demo-credentials",
-    )
     subnet = _optional(
         rds.describe_db_subnet_groups, {"DBSubnetGroupNotFoundFault"},
         DBSubnetGroupName="meridian-demo-subnet-group",
@@ -54,9 +49,7 @@ def cleanup_resources(region: str = "us-east-1", *, apply: bool = False) -> int:
         raise RuntimeError("Multiple meridian-demo-sg groups exist; inspect their VPC ownership.")
 
     actions = []
-    if secret and not secret.get("DeletedDate"):
-        actions.append(("Schedule secret deletion (7-day recovery)", secrets.delete_secret,
-                        {"SecretId": secret["ARN"], "RecoveryWindowInDays": 7}))
+    console.print("Retaining credentials: a restored cluster may still reference the original secret.")
     if subnet:
         actions.append(("Delete subnet group meridian-demo-subnet-group",
                         rds.delete_db_subnet_group,

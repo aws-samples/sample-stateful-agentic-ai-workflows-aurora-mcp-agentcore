@@ -1,5 +1,6 @@
 import { ArnFormat, CfnOutput, Stack, type StackProps, aws_iam as iam } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
+import { API_TOKEN_SECRET_NAME } from './meridian-web-stack';
 
 export interface MeridianWebRolesStackProps extends StackProps {
   /** The App Runner environment from serviceEnvironment(); supplies the ARNs the role may touch. */
@@ -69,7 +70,10 @@ export class MeridianWebRolesStack extends Stack {
     this.instanceRole.addToPolicy(
       new iam.PolicyStatement({
         actions: ['secretsmanager:GetSecretValue'],
-        resources: [environment.AURORA_SECRET_ARN],
+        resources: [environment.AURORA_SECRET_ARN, this.formatArn({
+          service: 'secretsmanager', resource: 'secret',
+          resourceName: `${API_TOKEN_SECRET_NAME}-??????`, arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+        })],
       }),
     );
     this.instanceRole.addToPolicy(

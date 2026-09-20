@@ -93,13 +93,11 @@ def test_cleanup_dry_run_and_failed_apply(monkeypatch, apply):
     if apply:
         with pytest.raises(ClientError, match="AccessDenied"):
             cleanup_resources.cleanup_resources(apply=True)
-        secrets.delete_secret.assert_called_once_with(
-            SecretId="secret-reference", RecoveryWindowInDays=7,
-        )
     else:
-        assert cleanup_resources.cleanup_resources() == 2
-        secrets.delete_secret.assert_not_called()
+        assert cleanup_resources.cleanup_resources() == 1
         rds.delete_db_subnet_group.assert_not_called()
+    # Deleting the source must not delete credentials used by a snapshot restore.
+    secrets.delete_secret.assert_not_called()
 
 
 @pytest.mark.asyncio

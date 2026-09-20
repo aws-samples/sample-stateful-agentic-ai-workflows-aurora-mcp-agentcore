@@ -1,5 +1,7 @@
 # Meridian source and demo readiness - 20 September 2026
 
+Subsequent execution: see the [deployment and UI follow-up](FOLLOWUP_2026-09-20.md). This report retains the earlier E2E observations and blockers as dated evidence.
+
 **Verdict: the repaired local application passes the executed source and live-service checks. Hosted release and complete presentation readiness remain blocked.** This pass extends the [September 19 review](READINESS_2026-09-19.md); historical checks below remain dated, rather than being presented as fresh execution. See the [acceptance matrix](ACCEPTANCE_MATRIX_2026-09-20.md), [presenter runbook](PRESENTER_RUNBOOK_2026-09-20.md), and [evidence inventory](EVIDENCE_2026-09-20.json).
 
 ## Scope, identity and review coverage

@@ -676,3 +676,26 @@
 /* The party ceiling under the per-traveler cap, so the brief and the concierge's
    sentence carry the same two numbers. */
 .mds-root .mc-brief-details .mc-budget-basis { display: block; margin-top: 3px; color: var(--mc-muted); font-weight: 400; font-size: 0.92em; }
+
+/* Shared navigation and evidence use the same quiet framing on every surface. */
+.mds-root[data-theme] .mds-desktop-app .mds-shell-header .mds-surface-tab {
+  border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  background: transparent; box-shadow: none;
+}
+.mds-root[data-theme] .mds-desktop-app .mds-shell-header .mds-surface-tab.is-active {
+  color: var(--mc-accent); border-bottom-color: var(--mc-accent);
+}
+.mds-root[data-theme] .mds-desktop-app .mds-desktop-right .mds-panel {
+  background: var(--mc-surface); border: 1px solid var(--mc-line); border-radius: 8px; box-shadow: none;
+}
+.mds-root[data-theme] .mds-desktop-right .mds-panel + .mds-panel { margin-top: 16px; }
+.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip {
+  background: var(--mc-surface); box-shadow: none; border-radius: 8px; border: 1px solid var(--mc-line);
+}
+.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip:hover:not(:disabled) {
+  background: var(--mc-soft); border-color: var(--mc-accent);
+}
+.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip.is-stretch { border-style: dashed; }
+.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip:focus-visible {
+  outline: 2px solid var(--mc-accent); outline-offset: 3px;
+}

@@ -753,23 +753,6 @@
   background: rgba(21, 18, 13, 0.58);
 }
 
-.mds-desktop-app.is-experience .mds-surface-switch button {
-  min-height: 30px;
-  padding: 0 18px;
-  border-radius: 6px;
-  color: #99a9bc;
-  font-size: calc(13px * var(--mds-fs));
-  font-weight: 650;
-}
-
-.mds-desktop-app.is-experience .mds-surface-switch button.is-active {
-  color: #4de4eb;
-  background: rgba(31, 111, 235, 0.25);
-  box-shadow:
-    inset 0 0 0 1px rgb(var(--mds-blue-rgb) / 0.34),
-    0 0 18px rgb(var(--mds-blue-rgb) / 0.08);
-}
-
 .mds-recovery-workspace {
   display: grid;
   gap: 15px;
@@ -2670,16 +2653,6 @@
 .mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-surface-switch {
   border-color: #e3e0da;
   background: #ffffff;
-}
-
-.mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-surface-switch button {
-  color: #5c6673;
-}
-
-.mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-surface-switch button.is-active {
-  color: #1f6feb;
-  background: #eef4ff;
-  box-shadow: inset 0 0 0 1px rgba(31, 111, 235, 0.16);
 }
 
 .mds-root[data-theme="light"] .mds-recovery-greeting h1 {

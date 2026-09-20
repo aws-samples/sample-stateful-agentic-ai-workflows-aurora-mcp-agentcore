@@ -1,4 +1,4 @@
-"""Live demo contract checks against a local Meridian backend.
+"""Live demo contract checks against a local or explicitly authorized hosted backend.
 
 Uses real Aurora, Bedrock, MCP, AgentCore Runtime and Gateway. Records each
 result and timing; never replaces unavailable services with fixtures. Deletes
@@ -314,13 +314,33 @@ if __name__ == "__main__":
     parser.add_argument("--base-url", default=BASE)
     parser.add_argument("--output", type=Path, default=OUT)
     parser.add_argument("--keep", action="store_true", help="Keep this run's database records for inspection")
+    parser.add_argument("--allow-hosted-demo-writes", action="store_true",
+                        help="Explicitly allow this script's scoped demo writes at the supplied HTTPS URL")
     args = parser.parse_args()
     BASE, OUT = args.base_url, args.output
     # This command creates test bookings. Do not silently target a hosted site.
     from urllib.parse import urlparse
-    if urlparse(BASE).hostname not in {"localhost", "127.0.0.1", "::1"}:
-        parser.error("Use a local backend configured for the authorized demo environment")
-    with httpx.Client(base_url=BASE, timeout=60.0) as client:
+    target = urlparse(BASE)
+    hosted = target.hostname not in {"localhost", "127.0.0.1", "::1"}
+    if target.username or target.password:
+        parser.error("Never put credentials in --base-url; use asm-exec environment references")
+    if hosted and (not args.allow_hosted_demo_writes or target.scheme != "https"):
+        parser.error("Hosted checks require HTTPS and --allow-hosted-demo-writes")
+    auth = None
+    headers = {}
+    basic = os.getenv("MERIDIAN_HOSTED_AUTH", "")
+    token = os.getenv("MERIDIAN_API_TOKEN", "")
+    if basic:
+        try:
+            credentials = json.loads(basic)
+            auth = httpx.BasicAuth(credentials["username"], credentials["password"])
+        except (ValueError, KeyError, TypeError):
+            parser.error("MERIDIAN_HOSTED_AUTH must be resolved by asm-exec to username/password JSON")
+    elif token and not token.startswith("{{resolve:"):
+        headers["Authorization"] = f"Bearer {token}"
+    if hosted and not (auth or headers):
+        parser.error("Hosted checks require authentication resolved through asm-exec")
+    with httpx.Client(base_url=BASE, timeout=60.0, auth=auth, headers=headers) as client:
         try:
             exit_code = main()
         finally:

@@ -28,6 +28,7 @@ describe('Presenter controls', () => {
 
   it('keeps preparation controls available during audience preview', () => {
     render(<Harness />);
+    fireEvent.click(screen.getByText('Display settings'));
     expect(screen.getByRole('checkbox', { name: 'Projector readability' })).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Preview audience layout' }));
     expect(screen.getByLabelText('Audience layout')).toHaveTextContent('true');
@@ -42,11 +43,13 @@ describe('Presenter controls', () => {
       value: vi.fn(async () => fullscreen(document.documentElement)),
     });
     render(<Harness />);
+    fireEvent.click(screen.getByText('Display settings'));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Projector readability' }));
     fireEvent.click(screen.getByRole('button', { name: 'Present fullscreen' }));
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Presenter controls' })).toBeNull());
     expect(screen.getByLabelText('Audience layout')).toHaveTextContent('true');
     act(() => fullscreen(null));
+    fireEvent.click(screen.getByText('Display settings'));
     expect(screen.getByRole('region', { name: 'Presenter controls' })).toBeVisible();
     expect(screen.getByRole('checkbox', { name: 'Projector readability' })).not.toBeChecked();
     expect(screen.getByLabelText('Audience layout')).toHaveTextContent('false');
@@ -54,6 +57,7 @@ describe('Presenter controls', () => {
 
   it('preserves an enabled windowed preview after fullscreen ends', () => {
     render(<Harness />);
+    fireEvent.click(screen.getByText('Display settings'));
     fireEvent.click(screen.getByRole('button', { name: 'Preview audience layout' }));
     act(() => fullscreen(document.documentElement));
     act(() => fullscreen(null));
@@ -67,6 +71,7 @@ describe('Presenter controls', () => {
       value: vi.fn().mockRejectedValue(new Error('Not allowed')),
     });
     render(<Harness />);
+    fireEvent.click(screen.getByText('Display settings'));
     fireEvent.click(screen.getByRole('button', { name: 'Present fullscreen' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Fullscreen could not start');
     expect(screen.getByRole('region', { name: 'Presenter controls' })).toBeVisible();
@@ -75,6 +80,7 @@ describe('Presenter controls', () => {
 
   it('explains when the Fullscreen API is unavailable', async () => {
     render(<Harness />);
+    fireEvent.click(screen.getByText('Display settings'));
     fireEvent.click(screen.getByRole('button', { name: 'Present fullscreen' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Fullscreen is unavailable');
   });
@@ -84,6 +90,7 @@ describe('Presenter controls', () => {
     Object.defineProperty(media, 'matches', { configurable: true, value: false });
     vi.spyOn(window, 'matchMedia').mockReturnValue(media);
     render(<Harness />);
+    fireEvent.click(screen.getByText('Display settings'));
     act(() => {
       Object.defineProperty(media, 'matches', { configurable: true, value: true });
       media.dispatchEvent(new Event('change'));

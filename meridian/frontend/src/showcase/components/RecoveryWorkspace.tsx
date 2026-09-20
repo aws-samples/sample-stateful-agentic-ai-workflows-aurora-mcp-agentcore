@@ -12,7 +12,7 @@ import {
   deriveRecoveryStage,
 } from '../lib/recoveryState';
 import { deriveWorkflowState } from '../lib/showcaseProof';
-import { prefersReducedMotion } from '../lib/prefersReducedMotion';
+import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 import { RecoveryBriefing } from './RecoveryBriefing';
 import { RecoveryChecks } from './RecoveryChecks';
 import { RecoveryBoardingPass } from './RecoveryBoardingPass';
@@ -81,6 +81,7 @@ export function RecoveryWorkspace({
   showHeading?: boolean;
   journeyDocument?: JourneyDocument | null;
 }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
   const state = sourceState.selectedPhase === 5 ? sourceState : {
     ...sourceState, messages: [], recommendations: [], traceSpans: [],
     workflowStatus: null, workflowResumedAfterRestart: false, lastPrompt: null,
@@ -132,7 +133,7 @@ export function RecoveryWorkspace({
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [state.isLoading]);
+  }, [state.isLoading, prefersReducedMotion]);
 
   const startRecovery = () => {
     state.setSelectedPhase(5);

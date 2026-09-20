@@ -104,13 +104,12 @@ export function MeridianDeviceShowcase() {
   }, [theme]);
 
   return (
-    <main
+    <div
       className="mds-root mds-fullbleed-route"
       data-theme={theme}
       data-audience-layout={audienceLayout ? 'true' : undefined}
       data-fullscreen={presentation.fullscreen ? 'true' : undefined}
       data-projector-readability={audienceLayout && presentation.projector ? 'true' : undefined}
-      aria-label="Meridian product showcase"
     >
       <ShowcaseErrorBoundary>
         <PresenterControls mode={presentation} />
@@ -120,7 +119,7 @@ export function MeridianDeviceShowcase() {
           onToggleTheme={toggleTheme}
         />
       </ShowcaseErrorBoundary>
-    </main>
+    </div>
   );
 }
 

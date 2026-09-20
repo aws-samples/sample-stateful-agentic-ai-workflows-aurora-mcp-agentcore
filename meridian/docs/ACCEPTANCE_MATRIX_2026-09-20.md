@@ -1,5 +1,7 @@
 # Meridian acceptance matrix - 20 September 2026
 
+See the [deployment and UI follow-up](FOLLOWUP_2026-09-20.md) for later fixes and verification. This matrix retains its original dated results.
+
 PASS applies only to the stated evidence. BLOCKED means missing access, authorization, execution or a human check; it is not a pass. FAIL records an observed unmet requirement. NOT APPLICABLE records an explicit scope/architecture exclusion. See the [readiness report](READINESS_2026-09-20.md), [evidence inventory](EVIDENCE_2026-09-20.json) and [runbook](PRESENTER_RUNBOOK_2026-09-20.md).
 
 | ID | Acceptance gate | Status | Evidence or exact limitation |

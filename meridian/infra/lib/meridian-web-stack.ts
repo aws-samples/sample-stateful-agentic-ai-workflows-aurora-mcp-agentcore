@@ -13,7 +13,7 @@ import {
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
-/** The Secrets Manager name scripts/publish.py writes the API bearer token to. */
+/** The existing origin token secret referenced by the established publisher. */
 export const API_TOKEN_SECRET_NAME = 'meridian/web/api-token';
 
 // The production bundle serves its scripts and fonts from the same origin.
@@ -107,7 +107,7 @@ export function loadServiceEnvironment(region: string): Record<string, string> {
 export function backendHost(): string {
   const host = process.env.MERIDIAN_BACKEND_HOST;
   if (!host) {
-    throw new Error('MERIDIAN_BACKEND_HOST is not set; run scripts/publish.py, which creates the App Runner service first');
+    throw new Error('MERIDIAN_BACKEND_HOST is not set; run scripts/publish.py with the existing App Runner service ARN');
   }
   return host;
 }
@@ -133,7 +133,7 @@ export class MeridianWebStack extends Stack {
 
     const access = new cloudfront.KeyValueStore(this, 'Access', {
       keyValueStoreName: 'meridian-web-access',
-      comment: 'Basic auth credential and the backend bearer token, written by scripts/publish.py',
+      comment: 'Established presenter access and backend origin token',
     });
     const viewer = new cloudfront.Function(this, 'Viewer', {
       functionName: 'meridian-web-viewer',

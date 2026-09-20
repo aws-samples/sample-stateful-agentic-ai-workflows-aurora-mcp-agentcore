@@ -14,12 +14,9 @@ export interface MeridianWebBackendStackProps extends StackProps {
  * The backend image, built from meridian/Dockerfile and pushed to the CDK
  * assets repository.
  *
- * The App Runner service itself is created by scripts/publish.py with the
- * SDK, not by CloudFormation. In us-east-1 App Runner refused to deploy any
- * service whose CreateService call carried an optional setting, and the
- * CloudFormation resource handler always sends a tag list, so every stack
- * created service failed while the same definition sent by the SDK ran. This
- * stack publishes the image and the environment the script needs.
+ * The established App Runner service was provisioned outside CloudFormation.
+ * scripts/publish.py updates that exact service without deleting/recreating it.
+ * This stack owns only the image and non-secret service configuration.
  */
 export class MeridianWebBackendStack extends Stack {
   constructor(scope: Construct, id: string, props: MeridianWebBackendStackProps) {

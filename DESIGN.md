@@ -247,11 +247,11 @@ Evidence uses readable worker cards, persisted-state rows, and labeled facts. Id
 
 ### Motion and feedback
 
-Travel actions use brief color transitions (160ms ease-out) only when reduced motion is not requested. Loading dots use an opacity animation (1.4s ease-in-out, alternating), under the same preference guard. Motion communicates response and waiting rather than establishing a decorative theme. Errors retain the conversation and offer retry; empty recommendations remain empty and explain a useful next step.
+Travel actions use brief color transitions (160ms ease-out) only when reduced motion is not requested. Loading dots use an opacity animation (1.4s ease-in-out, alternating), under the same preference guard. Motion preferences respond to system changes without a page reload, including typewriter text and automatic scrolling. Motion communicates response and waiting rather than establishing a decorative theme. Errors retain the conversation and offer retry; empty recommendations remain empty and explain a useful next step.
 
 ### Presentation controls
 
-Windowed preparation uses a compact toolbar above the app: audience-layout preview, projector readability, and Present fullscreen. The toolbar disappears in fullscreen. It is visible to anyone viewing the windowed screen; it is not a private speaker-notes channel. Keep all preparation copy inside that toolbar.
+Windowed preparation uses a compact toolbar above the app: Display settings groups audience-layout preview and projector readability in a keyboard-accessible disclosure, beside Present fullscreen. Escape closes settings and returns focus to the disclosure. The toolbar disappears in fullscreen. It is visible to anyone viewing the windowed screen; it is not a private speaker-notes channel. Keep all preparation copy inside that toolbar.
 
 The audience layout hides the service sidebar and moves the Meridian mark into the shared header. The five surface tabs and contextual evidence remain available. At desktop sizes, projector readability uses a (1.3) type scale, essential evidence labels of at least (18px), and higher-contrast secondary colors in both themes. Windowed preview retains the toolbar; fullscreen uses the recovered height for the active workspace. Exiting fullscreen restores the presenter's preview and readability choices without remounting the conversation.
 

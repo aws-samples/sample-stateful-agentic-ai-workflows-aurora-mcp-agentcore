@@ -20,7 +20,7 @@ import { typewriterCadence } from '../lib/streamingCadence';
 import { RankDeltaBadge } from './RankDeltaBadge';
 import { TripResultCardContent } from './TripResultCardContent';
 import { resultRankLabel } from '../lib/resultRankLabel';
-import { prefersReducedMotion } from '../lib/prefersReducedMotion';
+import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 
 // Keep a malformed markdown response from taking down the transcript.
 class MarkdownBoundary extends Component<
@@ -64,6 +64,7 @@ export function ChatTranscript({
   compact?: boolean;
   proofMode?: boolean;
 }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
   const visibleMessages = compact
     ? state.messages.slice(-3)
     : state.messages.slice(-VISIBLE_TURN_LIMIT);
@@ -171,6 +172,7 @@ const THINKING_PHRASES: Record<string, string[]> = {
 const THINKING_FALLBACK = ['Reading your request', 'Reasoning over your data', 'Composing the reply'];
 
 function ThinkingTicker({ phase }: { phase: string }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
   const phrases = THINKING_PHRASES[phase] ?? THINKING_FALLBACK;
   const [idx, setIdx] = useState(0);
   useEffect(() => {
@@ -181,7 +183,7 @@ function ThinkingTicker({ phase }: { phase: string }) {
       setIdx((i) => Math.min(i + 1, phrases.length - 1));
     }, 1250);
     return () => clearInterval(t);
-  }, [phase, phrases.length]);
+  }, [phase, phrases.length, prefersReducedMotion]);
   // Key on idx so each phrase swap replays the fade.
   return <span key={idx} className="mds-thinking-ticker">{phrases[idx]}…</span>;
 }
@@ -633,6 +635,7 @@ function InlineProductCard({
   rerankArmed: boolean;
   reranked: boolean;
 }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
   const preRerank = rerankArmed && !reranked;
   const matchLabel = resultRankLabel(state.selectedPhase, index, {
     preRerank,
@@ -679,6 +682,7 @@ function InlineProductCard({
 // Reveal small adaptive chunks so normal replies finish in about 2-2.5s
 // while long replies stay smooth and remain bounded for live presentation.
 function useTypewriterReveal(text: string): string {
+  const prefersReducedMotion = usePrefersReducedMotion();
   // Start with the first 6 chars already revealed so the bubble pops in
   // *with content*, not as an empty rectangle. The first chunk arriving
   // immediately is what makes the stream feel alive on slow renders.
@@ -723,7 +727,7 @@ function useTypewriterReveal(text: string): string {
       window.clearInterval(id);
       window.clearTimeout(failsafe);
     };
-  }, [text]);
+  }, [text, prefersReducedMotion]);
 
   return visible;
 }
