@@ -34,6 +34,7 @@ from strands.tools.mcp import MCPClient
 from pydantic import BaseModel
 
 from backend.config import config
+from backend.mcp.subprocess_env import aws_subprocess_env
 
 
 class ActivityEntry(BaseModel):
@@ -82,6 +83,7 @@ class MCPAgent:
             lambda: stdio_client(
                 StdioServerParameters(
                     command=sys.executable,
+                    env=aws_subprocess_env(),
                     args=[
                         "-m", "awslabs.postgres_mcp_server.server",
                         f"--resource_arn={os.getenv('AURORA_CLUSTER_ARN', '')}",

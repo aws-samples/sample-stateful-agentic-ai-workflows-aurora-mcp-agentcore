@@ -38,6 +38,8 @@ class _FakeClient:
 def test_reference_agent_builds_the_client_with_a_transport_factory(monkeypatch) -> None:
     monkeypatch.setenv("AURORA_CLUSTER_ARN", "arn:aws:rds:us-east-1:000000000000:cluster:x")
     monkeypatch.setenv("AURORA_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:000000000000:secret:y")
+    monkeypatch.setenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/test-role")
+    monkeypatch.setenv("MERIDIAN_API_TOKEN", "unrelated-test-token")
     monkeypatch.setattr(mcp_agent, "BedrockModel", lambda **kwargs: None)
     monkeypatch.setattr(mcp_agent, "Agent", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(mcp_agent, "MCPClient", _FakeClient)
@@ -56,6 +58,8 @@ def test_reference_agent_builds_the_client_with_a_transport_factory(monkeypatch)
     assert params.args[:2] == ["-m", "awslabs.postgres_mcp_server.server"]
     assert "--readonly=True" in params.args
     assert any(arg.startswith("--resource_arn=arn:aws:rds") for arg in params.args)
+    assert params.env["AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"] == "/test-role"
+    assert "MERIDIAN_API_TOKEN" not in params.env
 
     agent._initialize_agent()
     assert agent.mcp_client.started

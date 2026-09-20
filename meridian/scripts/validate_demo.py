@@ -295,9 +295,12 @@ async def cleanup() -> None:
     conversations = {step["conversation_id"] for step in steps if step.get("conversation_id")}
     bookings = {step["order"]["order_id"] for step in steps if step.get("order")}
     for thread in conversations:
-        rows = await db.execute("SELECT journey_id FROM journey_threads WHERE thread_id = %s", (thread,))
+        rows = await db.execute(
+            "SELECT journey_id, thread_id FROM journey_threads WHERE thread_id IN (%s, %s)",
+            (thread, f"concierge:{thread}"),
+        )
         for row in rows:
-            await _purge(db, row["journey_id"], thread)
+            await _purge(db, row["journey_id"], row["thread_id"])
     for booking in bookings:
         for table in ("hold_requests", "booking_lines", "bookings"):
             await db.execute(f"DELETE FROM {table} WHERE booking_id = %s", (booking,))

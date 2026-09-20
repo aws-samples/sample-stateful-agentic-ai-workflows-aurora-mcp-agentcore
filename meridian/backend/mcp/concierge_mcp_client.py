@@ -24,12 +24,15 @@ from typing import Any, Dict, List, Optional
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from backend.mcp.subprocess_env import aws_subprocess_env
+
 logger = logging.getLogger(__name__)
 
 
 def _server_params() -> StdioServerParameters:
     """Launch the concierge server in-process via `python -m`."""
     env = {
+        **aws_subprocess_env(),
         "AWS_DEFAULT_REGION": os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
         "AURORA_CLUSTER_ARN": os.getenv("AURORA_CLUSTER_ARN", ""),
         "AURORA_SECRET_ARN": os.getenv("AURORA_SECRET_ARN", ""),
@@ -37,10 +40,6 @@ def _server_params() -> StdioServerParameters:
         "MCP_CONCIERGE_LOG_LEVEL": os.getenv("MCP_CONCIERGE_LOG_LEVEL", "WARNING"),
         "PYTHONPATH": os.getenv("PYTHONPATH", ""),
     }
-    for k in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_PROFILE"):
-        if os.getenv(k):
-            env[k] = os.getenv(k)
-
     return StdioServerParameters(
         command=sys.executable,
         args=["-m", "backend.mcp.concierge_server"],
@@ -111,6 +110,8 @@ class MeridianConciergeMCPClient:
                 self._connected = False
                 self.session = None
             raise
+        if getattr(result, "isError", False):
+            raise RuntimeError("Meridian concierge MCP tool failed")
         decoded = _decode(result)
         logger.info(
             "[concierge MCP] <- %s shape=%s preview=%r",

@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from backend.mcp.subprocess_env import aws_subprocess_env
+
 
 @dataclass
 class MCPConnectionConfig:
@@ -135,20 +137,14 @@ class MCPPostgresClient:
         ]
 
         env = {
+            **aws_subprocess_env(),
             "AWS_REGION": self.config.aws_region,
+            "AWS_DEFAULT_REGION": self.config.aws_region,
             "FASTMCP_LOG_LEVEL": "ERROR",
         }
 
         if self.config.aws_profile:
             env["AWS_PROFILE"] = self.config.aws_profile
-
-        # Pass through AWS credentials if set
-        if os.getenv("AWS_ACCESS_KEY_ID"):
-            env["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
-        if os.getenv("AWS_SECRET_ACCESS_KEY"):
-            env["AWS_SECRET_ACCESS_KEY"] = os.getenv("AWS_SECRET_ACCESS_KEY")
-        if os.getenv("AWS_SESSION_TOKEN"):
-            env["AWS_SESSION_TOKEN"] = os.getenv("AWS_SESSION_TOKEN")
 
         return StdioServerParameters(
             command=sys.executable,

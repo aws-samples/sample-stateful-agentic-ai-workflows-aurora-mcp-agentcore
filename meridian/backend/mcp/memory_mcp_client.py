@@ -13,10 +13,12 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from backend.mcp.concierge_mcp_client import _decode
+from backend.mcp.subprocess_env import aws_subprocess_env
 
 
 def _server_params() -> StdioServerParameters:
     env = {
+        **aws_subprocess_env(),
         "AWS_DEFAULT_REGION": os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
         "AURORA_CLUSTER_ARN": os.getenv("AURORA_CLUSTER_ARN", ""),
         "AURORA_SECRET_ARN": os.getenv("AURORA_SECRET_ARN", ""),
@@ -24,14 +26,6 @@ def _server_params() -> StdioServerParameters:
         "MCP_MEMORY_LOG_LEVEL": os.getenv("MCP_MEMORY_LOG_LEVEL", "WARNING"),
         "PYTHONPATH": os.getenv("PYTHONPATH", "."),
     }
-    for key in (
-        "AWS_ACCESS_KEY_ID",
-        "AWS_SECRET_ACCESS_KEY",
-        "AWS_SESSION_TOKEN",
-        "AWS_PROFILE",
-    ):
-        if os.getenv(key):
-            env[key] = os.getenv(key, "")
     return StdioServerParameters(
         command=sys.executable,
         args=["-m", "backend.mcp.memory_server"],

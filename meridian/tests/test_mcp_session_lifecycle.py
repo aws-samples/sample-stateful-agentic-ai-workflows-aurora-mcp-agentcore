@@ -97,3 +97,14 @@ async def test_query_failure_is_not_reported_as_empty_results():
     ))
     with pytest.raises(RuntimeError, match="PostgreSQL MCP query failed"):
         await client.run_query("SELECT 1")
+
+
+@pytest.mark.asyncio
+async def test_concierge_tool_error_is_not_reported_as_no_matching_trips():
+    client = concierge_mcp_client.MeridianConciergeMCPClient()
+    client._connected = True
+    client.session = SimpleNamespace(call_tool=AsyncMock(
+        return_value=SimpleNamespace(isError=True, content=[]),
+    ))
+    with pytest.raises(RuntimeError, match="Meridian concierge MCP tool failed"):
+        await client.call("seasonal_price_band", {"destination": "Tokyo"})
