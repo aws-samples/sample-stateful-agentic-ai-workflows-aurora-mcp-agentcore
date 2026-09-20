@@ -18,9 +18,10 @@ MCP server source (awslabs):
 """
 
 import os
+import sys
 import json
 from typing import Optional, List, Dict, Any
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
 from mcp import ClientSession, StdioServerParameters
@@ -31,10 +32,10 @@ from mcp.client.stdio import stdio_client
 class MCPConnectionConfig:
     """Configuration for MCP postgres server connection."""
 
-    # Connection method: 'rdsapi', 'pgwire', or 'pgwire_iam'
+    # This application supports the pinned server's rdsapi startup contract.
     connection_method: str = "rdsapi"
 
-    # Database type: 'APG' (Aurora PostgreSQL) or 'RPG' (RDS PostgreSQL)
+    # Aurora PostgreSQL only.
     database_type: str = "APG"
 
     # Aurora cluster identifier (for rdsapi method)
@@ -100,6 +101,7 @@ class MCPPostgresClient:
         self.session: Optional[ClientSession] = None
         self._connected = False
         self._available_tools: List[Dict] = []
+        self._exit_stack: Optional[AsyncExitStack] = None
 
     def _get_server_params(self) -> StdioServerParameters:
         """Build server parameters for stdio transport.
@@ -114,20 +116,23 @@ class MCPPostgresClient:
         the Phase 2 `ParamValidationError: Invalid length for parameter
         secretArn, value: 4` (the literal string "None").
         """
-        args = ["awslabs.postgres-mcp-server@1.0.9"]
+        if self.config.connection_method != "rdsapi" or self.config.database_type != "APG":
+            raise ValueError("Phase 2 requires Aurora PostgreSQL through the RDS Data API")
+        if not self.config.cluster_arn or not self.config.secret_arn:
+            raise ValueError("Phase 2 requires AURORA_CLUSTER_ARN and AURORA_SECRET_ARN")
+        # The server and its SDK are installed from the application hash lock.
+        # Never resolve dependencies or download an executable during a turn.
+        args = ["-m", "awslabs.postgres_mcp_server.server"]
 
         # Pass the connection config as server-start flags. With these set,
         # run_query sends only {sql} and there is no per-call ambiguity.
-        if self.config.cluster_arn and self.config.secret_arn:
-            args += [
-                f"--resource_arn={self.config.cluster_arn}",
-                f"--secret_arn={self.config.secret_arn}",
-                f"--database={self.config.database_name}",
-                f"--region={self.config.aws_region}",
-                f"--readonly={'False' if self.config.allow_write_query else 'True'}",
-            ]
-        elif self.config.allow_write_query:
-            args.append("--allow_write_query")
+        args += [
+            f"--resource_arn={self.config.cluster_arn}",
+            f"--secret_arn={self.config.secret_arn}",
+            f"--database={self.config.database_name}",
+            f"--region={self.config.aws_region}",
+            f"--readonly={'False' if self.config.allow_write_query else 'True'}",
+        ]
 
         env = {
             "AWS_REGION": self.config.aws_region,
@@ -146,7 +151,7 @@ class MCPPostgresClient:
             env["AWS_SESSION_TOKEN"] = os.getenv("AWS_SESSION_TOKEN")
 
         return StdioServerParameters(
-            command="uvx",
+            command=sys.executable,
             args=args,
             env=env
         )
@@ -160,146 +165,45 @@ class MCPPostgresClient:
         if self._connected:
             return
 
-        server_params = self._get_server_params()
-
-        # Create stdio transport and session
-        self._stdio_context = stdio_client(server_params)
-        stdio_transport = await self._stdio_context.__aenter__()
-        self._read, self._write = stdio_transport
-
-        self._session_context = ClientSession(self._read, self._write)
-        self.session = await self._session_context.__aenter__()
-
-        # Initialize session
-        await self.session.initialize()
-
-        # Get available tools
-        tools_response = await self.session.list_tools()
-        self._available_tools = [
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "input_schema": tool.inputSchema
-            }
-            for tool in tools_response.tools
-        ]
-
-        self._connected = True
+        self._exit_stack = AsyncExitStack()
+        try:
+            read, write = await self._exit_stack.enter_async_context(
+                stdio_client(self._get_server_params())
+            )
+            self.session = await self._exit_stack.enter_async_context(ClientSession(read, write))
+            await self.session.initialize()
+            tools_response = await self.session.list_tools()
+            self._available_tools = [
+                {"name": tool.name, "description": tool.description, "input_schema": tool.inputSchema}
+                for tool in tools_response.tools
+            ]
+            self._connected = True
+        except BaseException:
+            await self.disconnect()
+            raise
 
     async def disconnect(self) -> None:
-        """Disconnect from the MCP server."""
-        if not self._connected:
-            return
-
-        if hasattr(self, '_session_context'):
-            await self._session_context.__aexit__(None, None, None)
-        if hasattr(self, '_stdio_context'):
-            await self._stdio_context.__aexit__(None, None, None)
-
+        """Close partial or complete startup in the same task that opened it."""
+        stack, self._exit_stack = self._exit_stack, None
         self._connected = False
         self.session = None
-
-    def _uses_startup_flags(self) -> bool:
-        """True when the server was started with --resource_arn/--secret_arn
-        flags (1.0.9 path), meaning the DB connection is already established
-        at startup and there is no separate connect_to_database step."""
-        return bool(self.config.cluster_arn and self.config.secret_arn)
+        if stack is not None:
+            await stack.aclose()
 
     async def connect_to_database(self) -> Dict[str, Any]:
-        """
-        Connect to the Aurora PostgreSQL database via MCP.
-
-        Uses the configured connection method (rdsapi, pgwire, or pgwire_iam).
-
-        Returns:
-            Connection result from MCP server
-        """
+        """Connection is configured at startup; 1.0.9 has no connection tool."""
         if not self._connected:
             await self.connect()
-
-        # 1.0.9 with startup flags is already connected — there is no
-        # connect_to_database tool to call. No-op so the session context
-        # manager (which always calls this) stays compatible.
-        if self._uses_startup_flags():
-            return {"message": "connected via server-start flags"}
-
-        # Build connection arguments - all parameters required by postgres-mcp-server
-        args = {
-            "database": self.config.database_name,
-            "database_type": self.config.database_type,
-            "connection_method": self.config.connection_method,
-            "region": self.config.aws_region,
-            "port": 5432,
-        }
-        
-        # cluster_identifier is required
-        if self.config.cluster_identifier:
-            args["cluster_identifier"] = self.config.cluster_identifier
-        else:
-            args["cluster_identifier"] = ""
-            
-        # db_endpoint - required param but can be empty for rdsapi
-        if self.config.database_endpoint:
-            args["db_endpoint"] = self.config.database_endpoint
-        else:
-            args["db_endpoint"] = ""
-
-        result = await self.session.call_tool("connect_to_database", args)
-        return self._parse_tool_result(result)
+        return {"message": "connected via server-start flags"}
 
     async def run_query(self, sql: str) -> List[Dict]:
-        """
-        Execute a SQL query through MCP.
-
-        Args:
-            sql: SQL query string
-
-        Returns:
-            List of result rows as dictionaries
-        """
+        """Execute SQL using the pinned server's tool contract."""
         if not self._connected:
             await self.connect()
-            await self.connect_to_database()
-
-        # On the 1.0.9 startup-flag path the server already holds the
-        # connection, so run_query takes only the SQL. (The legacy per-call
-        # connection shape below is kept for the non-flag fallback.)
-        if self._uses_startup_flags():
-            result = await self.session.call_tool("run_query", {"sql": sql})
-            return self._parse_query_result(result)
-
-        # Build query arguments - legacy MCP server required connection params
-        # with each query.
-        args = {"sql": sql}
-
-        # Add connection parameters based on method
-        if self.config.connection_method == "rdsapi":
-            args["connection_method"] = "rdsapi"
-            args["database"] = self.config.database_name
-            if self.config.cluster_identifier:
-                args["cluster_identifier"] = self.config.cluster_identifier
-            # db_endpoint is optional for rdsapi but may be required
-            if self.config.database_endpoint:
-                args["db_endpoint"] = self.config.database_endpoint
-        else:
-            args["connection_method"] = self.config.connection_method
-            args["database"] = self.config.database_name
-            args["db_endpoint"] = self.config.database_endpoint
-            args["cluster_identifier"] = self.config.cluster_identifier or ""
-
-        result = await self.session.call_tool("run_query", args)
+        result = await self.session.call_tool("run_query", {"sql": sql})
+        if getattr(result, "isError", False):
+            raise RuntimeError("PostgreSQL MCP query failed")
         return self._parse_query_result(result)
-
-    def _parse_tool_result(self, result) -> Dict[str, Any]:
-        """Parse a generic tool result."""
-        if hasattr(result, 'content') and result.content:
-            for content in result.content:
-                if hasattr(content, 'text'):
-                    try:
-                        return json.loads(content.text)
-                    except json.JSONDecodeError:
-                        return {"message": content.text}
-        return {"message": str(result)}
 
     @staticmethod
     def _decode_json_columns(row: Dict) -> Dict:
@@ -368,34 +272,18 @@ class MCPPostgresClient:
         return self._available_tools
 
 
-# Global client instance
-_mcp_client: Optional[MCPPostgresClient] = None
-
-
 def get_mcp_client() -> MCPPostgresClient:
-    """Get or create the global MCP client instance."""
-    global _mcp_client
-    if _mcp_client is None:
-        _mcp_client = MCPPostgresClient()
-    return _mcp_client
+    """Return a client owned by one request, never a cross-task stdio singleton."""
+    return MCPPostgresClient()
 
 
 @asynccontextmanager
 async def mcp_session():
-    """
-    Context manager for MCP session.
-
-    Handles connection lifecycle automatically.
-
-    Usage:
-        async with mcp_session() as client:
-            results = await client.run_query("SELECT * FROM trip_packages LIMIT 5")
-    """
+    """Open and close the transport in one task, including failed startup."""
     client = get_mcp_client()
     try:
         await client.connect()
         await client.connect_to_database()
         yield client
     finally:
-        # Keep connection alive for reuse
-        pass
+        await client.disconnect()

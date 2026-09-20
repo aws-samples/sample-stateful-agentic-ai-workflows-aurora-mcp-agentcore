@@ -9,6 +9,7 @@ that never existed, so anyone copying it on stage got a TypeError.
 from __future__ import annotations
 
 import inspect
+import sys
 from types import SimpleNamespace
 
 from strands.tools.mcp import MCPClient
@@ -51,8 +52,8 @@ def test_reference_agent_builds_the_client_with_a_transport_factory(monkeypatch)
     agent = mcp_agent.MCPAgent()
     agent.mcp_client.transport_factory()
     params = captured["params"]
-    assert params.command == "uvx"
-    assert params.args[0] == "awslabs.postgres-mcp-server@1.0.9"
+    assert params.command == sys.executable
+    assert params.args[:2] == ["-m", "awslabs.postgres_mcp_server.server"]
     assert "--readonly=True" in params.args
     assert any(arg.startswith("--resource_arn=arn:aws:rds") for arg in params.args)
 

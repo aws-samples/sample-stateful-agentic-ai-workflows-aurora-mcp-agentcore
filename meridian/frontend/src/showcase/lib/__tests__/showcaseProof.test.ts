@@ -80,6 +80,17 @@ describe('showcase proof helpers', () => {
     expect(contracts[0].auroraOperation).toContain('compare');
   });
 
+  it('does not count session setup as an executed SQL tool', () => {
+    const contracts = deriveMcpContracts([
+      span({ name: 'MCP server discovered: awslabs.postgres-mcp-server' }),
+      span({ name: 'postgres-mcp · session connected' }),
+      span({ name: 'postgres-mcp · run_query', sql: 'SELECT 1' }),
+    ]);
+    expect(contracts).toHaveLength(1);
+    expect(contracts[0].tool).toBe('run_query');
+    expect(contracts[0].observed).toBe(true);
+  });
+
   it('marks Aurora evidence as observed from the live trace shape', () => {
     const evidence = deriveAuroraEvidence({
       selectedPhase: 5,

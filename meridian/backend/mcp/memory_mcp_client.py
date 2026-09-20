@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import AsyncExitStack
+
 import asyncio
 import os
 import sys
@@ -44,44 +46,30 @@ class MeridianMemoryMCPClient:
         self.session: Optional[ClientSession] = None
         self._connected = False
         self._tools: List[Dict[str, Any]] = []
-        self._stdio_context = None
-        self._session_context = None
+        self._exit_stack: Optional[AsyncExitStack] = None
 
     async def connect(self) -> None:
         if self._connected:
             return
-        self._stdio_context = stdio_client(_server_params())
-        read, write = await self._stdio_context.__aenter__()
-        self._session_context = ClientSession(read, write)
-        self.session = await self._session_context.__aenter__()
-        await self.session.initialize()
-        response = await self.session.list_tools()
-        self._tools = [
-            {"name": tool.name, "description": tool.description}
-            for tool in response.tools
-        ]
-        self._connected = True
+        self._exit_stack = AsyncExitStack()
+        try:
+            read, write = await self._exit_stack.enter_async_context(stdio_client(_server_params()))
+            self.session = await self._exit_stack.enter_async_context(ClientSession(read, write))
+            await self.session.initialize()
+            response = await self.session.list_tools()
+            self._tools = [{"name": t.name, "description": t.description} for t in response.tools]
+            self._connected = True
+        except BaseException:
+            await self.disconnect()
+            raise
 
     async def disconnect(self) -> None:
-        session_context = self._session_context
-        stdio_context = self._stdio_context
+        """Unwind in the owning task; MCP bounds subprocess termination itself."""
+        stack, self._exit_stack = self._exit_stack, None
         self._connected = False
         self.session = None
-        self._session_context = None
-        self._stdio_context = None
-
-        async def close(context) -> None:
-            if context is not None:
-                try:
-                    await context.__aexit__(None, None, None)
-                except Exception:
-                    pass
-
-        for context in (session_context, stdio_context):
-            try:
-                await asyncio.wait_for(close(context), timeout=3.0)
-            except asyncio.TimeoutError:
-                pass
+        if stack is not None:
+            await stack.aclose()
 
     async def call(
         self,

@@ -95,12 +95,7 @@ export async function fetchProducts(category?: string, limit = 50, featured = fa
   params.set('limit', limit.toString());
   if (featured) params.set('featured', 'true');
   
-  const response = await fetch(`${API_BASE}/products?${params}`, { signal });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch products: ${response.statusText}`);
-  }
-  
-  const data: ProductListResponse = await response.json();
+  const data = await requestJson<ProductListResponse>(`${API_BASE}/products?${params}`, { signal });
   return data.products;
 }
 
@@ -108,11 +103,7 @@ export async function fetchProducts(category?: string, limit = 50, featured = fa
  * Fetch a single product by ID
  */
 export async function fetchProduct(productId: string): Promise<Product> {
-  const response = await fetch(`${API_BASE}/products/${productId}`);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch product: ${response.statusText}`);
-  }
-  return response.json();
+  return requestJson(`${API_BASE}/products/${encodeURIComponent(productId)}`);
 }
 
 /**
@@ -128,14 +119,10 @@ export async function sendChatMessage(request: ChatRequest, signal?: AbortSignal
  * Fetch long-term memory profile from Aurora (Phase 4)
  */
 export async function fetchMemoryProfile(travelerId = 'trv_meridian_demo', signal?: AbortSignal): Promise<MemoryProfileResponse> {
-  const response = await fetch(`${API_BASE}/memory/${travelerId}`, {
+  return requestJson(`${API_BASE}/memory/${encodeURIComponent(travelerId)}`, {
     headers: apiHeaders(),
     signal,
   });
-  if (!response.ok) {
-    throw new Error(`Memory profile request failed: ${response.statusText}`);
-  }
-  return response.json();
 }
 
 export async function updateMemoryFact(
@@ -143,7 +130,7 @@ export async function updateMemoryFact(
   key: string,
   value: string,
 ): Promise<LongTermMemoryFact> {
-  const response = await fetch(
+  return requestJson(
     `${API_BASE}/memory/${encodeURIComponent(travelerId)}/facts/${encodeURIComponent(key)}`,
     {
       method: 'PATCH',
@@ -151,20 +138,13 @@ export async function updateMemoryFact(
       body: JSON.stringify({ value }),
     },
   );
-  if (!response.ok) {
-    throw new Error(`Memory update failed: ${response.statusText}`);
-  }
-  return response.json();
 }
 
 export async function deleteMemoryFact(travelerId: string, key: string): Promise<void> {
-  const response = await fetch(
+  return requestJson(
     `${API_BASE}/memory/${encodeURIComponent(travelerId)}/facts/${encodeURIComponent(key)}`,
     { method: 'DELETE', headers: apiHeaders() },
   );
-  if (!response.ok) {
-    throw new Error(`Memory delete failed: ${response.statusText}`);
-  }
 }
 
 /**
@@ -266,15 +246,12 @@ export interface RlsProbeResponse {
 export async function fetchRlsProbe(
   travelerId = 'trv_meridian_demo',
 ): Promise<RlsProbeResponse> {
-  const response = await fetch(`${API_BASE}/diagnostics/rls-probe`, {
+  return requestJson(`${API_BASE}/diagnostics/rls-probe`, {
     method: 'POST',
     headers: apiHeaders(true),
     body: JSON.stringify({ traveler_id: travelerId }),
   });
-  if (!response.ok) {
-    throw new Error(`RLS probe failed: ${response.statusText}`);
-  }
-  return response.json();
+
 }
 
 export interface SessionReceiptLine {
@@ -301,7 +278,7 @@ export async function fetchSessionReceipt(
   windowMinutes = 90,
   conversationId: string | null = null,
 ): Promise<SessionReceiptResponse> {
-  const response = await fetch(`${API_BASE}/diagnostics/session-receipt`, {
+  return requestJson(`${API_BASE}/diagnostics/session-receipt`, {
     method: 'POST',
     headers: apiHeaders(true),
     body: JSON.stringify({
@@ -311,10 +288,7 @@ export async function fetchSessionReceipt(
       conversation_id: conversationId,
     }),
   });
-  if (!response.ok) {
-    throw new Error(`Session receipt failed: ${response.statusText}`);
-  }
-  return response.json();
+
 }
 
 /**
@@ -326,11 +300,7 @@ export async function fetchSessionReceipt(
 export async function fetchJourneys(limit = 10, signal?: AbortSignal, threadId?: string): Promise<JourneySummary[]> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (threadId) params.set("thread_id", threadId);
-  const response = await fetch(`${API_BASE}/journeys?${params}`, { signal });
-  if (!response.ok) {
-    throw new Error(`Failed to list journeys: ${response.statusText}`);
-  }
-  const data = (await response.json()) as { journeys: JourneySummary[] };
+  const data = await requestJson<{ journeys: JourneySummary[] }>(`${API_BASE}/journeys?${params}`, { signal });
   return data.journeys ?? [];
 }
 
@@ -339,13 +309,8 @@ export async function fetchJourneyDocument(
   journeyId: string,
   signal?: AbortSignal,
 ): Promise<JourneyDocument> {
-  const response = await fetch(
-    `${API_BASE}/journeys/${encodeURIComponent(journeyId)}`,
-    { signal },
+  const document = await requestJson<JourneyDocument>(
+    `${API_BASE}/journeys/${encodeURIComponent(journeyId)}`, { signal },
   );
-  if (!response.ok) {
-    throw new Error(`Failed to read journey ${journeyId}: ${response.statusText}`);
-  }
-  const document = (await response.json()) as JourneyDocument;
   return { ...document, received_at: Date.now() };
 }

@@ -5,9 +5,36 @@ import {
   healthUrlsFor,
   resolveBackendOriginFor,
   fetchHealth,
+  fetchJourneys,
+  fetchRlsProbe,
+  fetchSessionReceipt,
+  updateMemoryFact,
 } from './client';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+describe('bounded evidence and profile operations', () => {
+  it.each([
+    ['saved journeys', () => fetchJourneys()],
+    ['permission evidence', () => fetchRlsProbe()],
+    ['session receipt', () => fetchSessionReceipt()],
+    ['preference update', () => updateMemoryFact('demo', 'seat', 'aisle')],
+  ])('stops waiting for a stalled %s request', async (_label, operation) => {
+    vi.useFakeTimers();
+    let signal!: AbortSignal;
+    const fetch = vi.fn((_url, init) => {
+      signal = init.signal;
+      return new Promise(() => {});
+    });
+    vi.stubGlobal('fetch', fetch);
+    const assertion = expect(operation()).rejects.toMatchObject({ name: 'TimeoutError' });
+    await vi.advanceTimersByTimeAsync(55_000);
+    await assertion;
+    expect(signal.aborted).toBe(true);
+    expect(fetch).toHaveBeenCalledTimes(1); // No automatic replay of a possible write.
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
 
 describe('fetchHealth', () => {
   it.each([401, 403, 503])('does not mask an API failure (%s) with public liveness', async status => {

@@ -713,25 +713,21 @@ async def mcp_search(
     # that no code opened.
     results: List[Dict[str, Any]] = []
     if not pure_domain:
-        activities.append(create_activity(
-            activity_type="mcp",
-            title="MCP server discovered: awslabs.postgres-mcp-server",
-            details=(
-                "Generic SQL transport · tools/list returned "
-                "run_query, connect_to_database, get_table_schema"
-            ),
-            agent_name="MCPAgent",
-            agent_file="backend/routers/chat.py",
-        ))
-        activities.append(create_activity(
-            activity_type="mcp",
-            title="postgres-mcp · connect_to_database",
-            details="Aurora PostgreSQL via RDS Data API (rdsapi)",
-            agent_name="MCPAgent",
-            agent_file="backend/routers/chat.py",
-        ))
         sql, display_sql, search_title = build_search_sql(params, limit)
         async with mcp_session() as client:
+            activities.append(create_activity(
+                activity_type="mcp",
+                title="MCP server discovered: awslabs.postgres-mcp-server",
+                details="Generic SQL transport · tools/list returned " + ", ".join(
+                    tool["name"] for tool in client.available_tools
+                ),
+                agent_name="MCPAgent", agent_file="backend/routers/chat.py",
+            ))
+            activities.append(create_activity(
+                activity_type="mcp", title="postgres-mcp · session connected",
+                details="Aurora PostgreSQL via RDS Data API; connection configured at server startup",
+                agent_name="MCPAgent", agent_file="backend/routers/chat.py",
+            ))
             results = await client.run_query(sql)
         activities.append(create_activity(
             activity_type="mcp",
@@ -745,23 +741,19 @@ async def mcp_search(
     # ----- Custom MCP server (meridian-concierge) -----
     domain_text: Optional[str] = None
     if use_custom_mcp:
-        activities.append(create_activity(
-            activity_type="mcp",
-            title="MCP server discovered: meridian-concierge (custom)",
-            details=(
-                "Custom domain server · tools/list returned "
-                "compare_packages, seasonal_price_band, region_inventory, "
-                "currency_convert, loyalty_balance"
-            ),
-            agent_name="MCPAgent",
-            agent_file="backend/mcp/concierge_server.py",
-        ))
         try:
             domain_call = await _call_domain_tool(
                 query,
                 traveler_id=traveler_id,
             )
             if domain_call:
+                activities.append(create_activity(
+                    activity_type="mcp",
+                    title="MCP server discovered: meridian-concierge (custom)",
+                    details="Custom domain call completed; the executed tools and results follow.",
+                    agent_name="MCPAgent",
+                    agent_file="backend/mcp/concierge_server.py",
+                ))
                 # Normalize single-call and multi-call shapes into a list
                 # so we can log + format both uniformly.
                 if domain_call.get("tool") == "multi":

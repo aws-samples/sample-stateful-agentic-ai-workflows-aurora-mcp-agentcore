@@ -1,6 +1,6 @@
 # Meridian slide text and speaker notes
 
-[Editable PowerPoint](Meridian-reInvent-chalk-talk.pptx) · [PDF](Meridian-reInvent-chalk-talk.pdf) · [Presenter runbook](../PRESENTER_RUNBOOK_2026-09-19.md)
+[Editable PowerPoint](Meridian-reInvent-chalk-talk.pptx) · [PDF](Meridian-reInvent-chalk-talk.pdf) · [Presenter runbook](../PRESENTER_RUNBOOK_2026-09-20.md)
 
 All delivery timings are estimates. Explicit measured API timings are dated observations, not a timed human rehearsal. The runbook contains the final measured timings.
 

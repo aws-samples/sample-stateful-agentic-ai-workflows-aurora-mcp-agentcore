@@ -27,7 +27,6 @@ import asyncio
 import json
 import os
 import signal
-import subprocess
 import sys
 import uuid
 from pathlib import Path
@@ -168,6 +167,35 @@ async def _purge(client, journey_id: str, thread_id: str) -> None:
     await client.execute("DELETE FROM journeys WHERE journey_id = %s", (journey_id,))
 
 
+async def _wait_for_pause(child) -> str:
+    """Read startup events without blocking the event loop or waiting forever."""
+    first_worker = ""
+    while line := await child.stdout.readline():
+        line = line.decode().strip()
+        if not line.startswith("{"):
+            continue
+        event = json.loads(line)
+        if event.get("event") == "claimed":
+            first_worker = event["worker_id"]
+            say("worker 1", f"claimed attempt {event['attempt']} as {first_worker} "
+                f"(pid {child.pid}, lease {LEASE_SECONDS}s)")
+        elif event.get("event") == "paused":
+            if not first_worker or event.get("status") != "paused":
+                raise RuntimeError("Worker did not report a claimed, paused execution")
+            say("worker 1", "workflow paused at a checkpoint")
+            return first_worker
+    raise RuntimeError("Worker exited before reaching its pause; inspect the worker output")
+
+
+def _verify_replacement(state: dict, executions: list[dict], first_worker: str) -> None:
+    if state.get("workflow_status") != "resumed" or not state.get("resumed_after_restart"):
+        raise AssertionError("Replacement must finish a resume after worker restart")
+    if (len(executions) < 2 or executions[0]["worker_id"] != first_worker
+            or executions[-1]["worker_id"] == first_worker
+            or executions[-1]["status"] != "succeeded"):
+        raise AssertionError("Aurora must record a successful, different replacement worker")
+
+
 async def main(keep: bool) -> int:
     client = get_rds_data_client()
 
@@ -184,29 +212,13 @@ async def main(keep: bool) -> int:
         await bind_thread(db, journey_id, thread_id)
     say("journey", f"{journey_id} · thread {thread_id}")
 
-    child = subprocess.Popen(
-        [sys.executable, __file__, "--worker-one", journey_id, thread_id],
-        stdout=subprocess.PIPE,
-        text=True,
+    child = await asyncio.create_subprocess_exec(
+        sys.executable, __file__, "--worker-one", journey_id, thread_id,
+        stdout=asyncio.subprocess.PIPE,
         env={**os.environ, "PYTHONUNBUFFERED": "1"},
     )
-    first_worker = ""
     try:
-        for line in child.stdout:
-            line = line.strip()
-            if not line.startswith("{"):
-                continue
-            event = json.loads(line)
-            if event["event"] == "claimed":
-                first_worker = event["worker_id"]
-                say(
-                    "worker 1",
-                    f"claimed attempt {event['attempt']} as {first_worker} "
-                    f"(pid {child.pid}, lease {LEASE_SECONDS}s)",
-                )
-            elif event["event"] == "paused":
-                say("worker 1", f"workflow {event['status']} at a checkpoint")
-                break
+        first_worker = await asyncio.wait_for(_wait_for_pause(child), timeout=240)
 
         committed = await _read_committed_checkpoint(client, thread_id)
         if not committed:
@@ -221,7 +233,7 @@ async def main(keep: bool) -> int:
         say("hold", f"original expiry {original_holds[0]['hold_expires_at']}")
         say("kill", f"SIGKILL {child.pid}", RED)
         os.kill(child.pid, signal.SIGKILL)
-        child.wait(timeout=10)
+        await asyncio.wait_for(child.wait(), timeout=10)
         say("kill", f"worker 1 is gone (exit {child.returncode})", RED)
 
         from fastapi import HTTPException
@@ -239,6 +251,11 @@ async def main(keep: bool) -> int:
         else:
             say("abort", "takeover remained unavailable; inspect the journey execution", RED)
             return 1
+        executions = await client.execute(
+            "SELECT worker_id, status FROM journey_executions WHERE thread_id = %s ORDER BY attempt",
+            (thread_id,),
+        )
+        _verify_replacement(state, executions, first_worker)
         say("resume", f"workflow {state.get('workflow_status')} on the same thread", GREEN)
         say(
             "resume",
@@ -265,8 +282,9 @@ async def main(keep: bool) -> int:
         say("aurora", f"checkpoints on this thread: {history[0]['n']}")
         return 0
     finally:
-        if child.poll() is None:
+        if child.returncode is None:
             child.kill()
+            await child.wait()
         if keep:
             say("keep", f"left journey {journey_id} and thread {thread_id} in place", DIM)
         else:

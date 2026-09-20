@@ -123,7 +123,14 @@ def main() -> int:
            {"message": "Compare three trip types and convert each price to euros.", "phase": 1, "customer_id": TRAVELER},
            ok=ok, boundary=lambda b, s: "Switch to MCP" in b["message"], no_products=no_products)
 
-    # Phase 2
+    # Phase 2: exercise both the generic PostgreSQL server and custom tools.
+    record("p2_catalog_sql_transport", "POST", "/api/chat",
+           {"message": "Show me city trips under $2,000 per traveler.", "phase": 2, "customer_id": TRAVELER},
+           ok=ok, products=has_products,
+           generic_sql=lambda b, s: any(a.get("title") == "postgres-mcp · run_query" and a.get("sql_query")
+                                       for a in b["activities"]),
+           observed_tools=lambda b, s: any(a.get("title") == "MCP server discovered: awslabs.postgres-mcp-server"
+                                          and "run_query" in a.get("details", "") for a in b["activities"]))
     record("p2_compare_eur", "POST", "/api/chat",
            {"message": "Compare three trip types and convert each price to euros.", "phase": 2, "customer_id": TRAVELER},
            ok=ok, compared=lambda b, s: "Compared 3 packages" in b["message"] and "EUR" in b["message"],

@@ -22,6 +22,7 @@ MCP server (awslabs):
 """
 
 import os
+import sys
 import uuid
 from datetime import datetime, timezone
 from typing import Callable, Any, Optional
@@ -80,9 +81,9 @@ class MCPAgent:
         self.mcp_client = MCPClient(
             lambda: stdio_client(
                 StdioServerParameters(
-                    command="uvx",
+                    command=sys.executable,
                     args=[
-                        "awslabs.postgres-mcp-server@1.0.9",
+                        "-m", "awslabs.postgres_mcp_server.server",
                         f"--resource_arn={os.getenv('AURORA_CLUSTER_ARN', '')}",
                         f"--secret_arn={os.getenv('AURORA_SECRET_ARN', '')}",
                         f"--database={os.getenv('AURORA_DATABASE', 'meridian')}",

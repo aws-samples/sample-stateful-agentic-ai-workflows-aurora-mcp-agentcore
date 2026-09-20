@@ -392,7 +392,7 @@ export function DesktopMeridianApp({
             <RefreshCw size={16} aria-hidden="true" />{state.connectionRefreshing ? 'Reconnecting…' : 'Reconnect'}
           </button>
         </div>}
-        <div ref={workspaceRef} className="mds-desktop-scroll" tabIndex={0} role="region" aria-label="Travel workspace">
+        <div ref={workspaceRef} className="mds-desktop-scroll" tabIndex={0} role="region" aria-label="Travel workspace" data-dialog-focus-fallback>
           {(isRecovery || isProof) && <JourneyChooser disabled={state.isLoading} onSelect={id => {
             state.clearChat();
             restoredJourney.current = null;

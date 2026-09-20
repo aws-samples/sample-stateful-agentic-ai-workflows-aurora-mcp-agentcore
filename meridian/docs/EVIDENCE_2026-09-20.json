@@ -1,0 +1,1118 @@
+{
+  "observed_at": "2026-09-20T20:51:28.901744+00:00",
+  "baseline_sha": "b60405c1f1424cbb12cbc073f96b864e04d596b7",
+  "source_identity": "Containing Git revision; final remote receipt stays in the ignored evidence folder.",
+  "evidence_root": "meridian/.local/release-review-2026-09-20",
+  "boundaries": [
+    "Local final source with established live Aurora and AgentCore.",
+    "Hosted CloudFront/App Runner are older.",
+    "Final local container blocked by disk exhaustion; CI container check pending.",
+    "September 19 deck native accessibility and bootstrap tests retained for unchanged assets.",
+    "No timed human or room check; no new infrastructure or Studio publication."
+  ],
+  "checks": [
+    {
+      "name": "agentcore-infra",
+      "command": [
+        "/bin/zsh",
+        "-c",
+        "npm run build && npm test -- --runInBand && npm run format:check && npm audit --audit-level=high"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian/meridian_agentcore/agentcore/cdk",
+      "started_at": "2026-09-20T20:10:34.772919+00:00",
+      "ended_at": "2026-09-20T20:11:19.086673+00:00",
+      "exit_status": 0,
+      "log": "gates/agentcore-infra.log"
+    },
+    {
+      "name": "agentcore-validate",
+      "command": [
+        "agentcore",
+        "validate"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian/meridian_agentcore/agentcore",
+      "started_at": "2026-09-20T20:21:25.960338+00:00",
+      "ended_at": "2026-09-20T20:21:31.729085+00:00",
+      "exit_status": 0,
+      "log": "gates/agentcore-validate.log"
+    },
+    {
+      "name": "backend-audit-final",
+      "command": [
+        "venv/bin/python",
+        "-m",
+        "pip_audit",
+        "--progress-spinner",
+        "off"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:38:57.121829+00:00",
+      "ended_at": "2026-09-20T20:39:04.502462+00:00",
+      "exit_status": 0,
+      "log": "gates/backend-audit-final.log"
+    },
+    {
+      "name": "backend-final",
+      "command": [
+        "/bin/zsh",
+        "-c",
+        "venv/bin/ruff check backend scripts tests meridian_agentcore/app meridian_agentcore/agentcore/gateway_targets && venv/bin/python -m pytest -m \"not database\" -q && bash -n scripts/create_cluster.sh && bash scripts/create_cluster.sh"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:20:24.850963+00:00",
+      "ended_at": "2026-09-20T20:20:31.472015+00:00",
+      "exit_status": 0,
+      "log": "gates/backend-final.log"
+    },
+    {
+      "name": "backend-locked",
+      "command": [
+        "/bin/zsh",
+        "-c",
+        "venv/bin/ruff check backend scripts tests meridian_agentcore/app meridian_agentcore/agentcore/gateway_targets && venv/bin/python -m pytest -m \"not database\" -q && venv/bin/python -m pip_audit --progress-spinner off"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:36:54.439347+00:00",
+      "ended_at": "2026-09-20T20:37:21.255353+00:00",
+      "exit_status": 1,
+      "log": "gates/backend-locked.log"
+    },
+    {
+      "name": "backend-mcp-fix",
+      "command": [
+        "/bin/zsh",
+        "-c",
+        "venv/bin/ruff check backend scripts tests meridian_agentcore/app meridian_agentcore/agentcore/gateway_targets && venv/bin/python -m pytest -m \"not database\" -q"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:29:08.262309+00:00",
+      "ended_at": "2026-09-20T20:29:14.629202+00:00",
+      "exit_status": 0,
+      "log": "gates/backend-mcp-fix.log"
+    },
+    {
+      "name": "backend-offline",
+      "command": [
+        "venv/bin/python",
+        "-m",
+        "pytest",
+        "-m",
+        "not database",
+        "-q"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:09:01.276982+00:00",
+      "ended_at": "2026-09-20T20:09:08.249132+00:00",
+      "exit_status": 0,
+      "log": "gates/backend-offline.log"
+    },
+    {
+      "name": "backend-quality",
+      "command": [
+        "/bin/zsh",
+        "-c",
+        "venv/bin/ruff check backend scripts tests meridian_agentcore/app meridian_agentcore/agentcore/gateway_targets && venv/bin/python -m pip_audit -r requirements.txt"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:10:34.782580+00:00",
+      "ended_at": "2026-09-20T20:11:37.051403+00:00",
+      "exit_status": 0,
+      "log": "gates/backend-quality.log"
+    },
+    {
+      "name": "cfn-lint-final",
+      "command": [
+        "/bin/zsh",
+        "-c",
+        "cfn-lint infra/cdk.out/*.template.json meridian_agentcore/agentcore/cdk/cdk.out/*.template.json"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:41:44.156161+00:00",
+      "ended_at": "2026-09-20T20:41:47.621076+00:00",
+      "exit_status": 4,
+      "log": "gates/cfn-lint-final.log"
+    },
+    {
+      "name": "cfn-lint-full",
+      "command": [
+        "/bin/zsh",
+        "-c",
+        "venv/bin/cfn-lint infra/cdk.out/*.template.json meridian_agentcore/cdk/cdk.out/*.template.json"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:41:13.202726+00:00",
+      "ended_at": "2026-09-20T20:41:13.224764+00:00",
+      "exit_status": 1,
+      "log": "gates/cfn-lint-full.log"
+    },
+    {
+      "name": "cfn-lint",
+      "command": [
+        "cfn-lint",
+        "cdk.out/MeridianWebRoles.template.json",
+        "cdk.out/MeridianWebBackend.template.json",
+        "../meridian_agentcore/agentcore/cdk/cdk.out/AgentCore-meridianv2-default.template.json"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian/infra",
+      "started_at": "2026-09-20T20:23:04.579344+00:00",
+      "ended_at": "2026-09-20T20:23:07.308836+00:00",
+      "exit_status": 4,
+      "log": "gates/cfn-lint.log"
+    },
+    {
+      "name": "container-build-final",
+      "command": [
+        "finch",
+        "build",
+        "--platform",
+        "linux/amd64",
+        "-t",
+        "meridian-readiness:2026-09-20",
+        "."
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:41:43.051588+00:00",
+      "ended_at": "2026-09-20T20:46:26.848505+00:00",
+      "exit_status": 130,
+      "log": "gates/container-build-final.log"
+    },
+    {
+      "name": "container-build-retry",
+      "command": [
+        "finch",
+        "build",
+        "--platform",
+        "linux/amd64",
+        "-t",
+        "meridian-readiness:2026-09-20",
+        "."
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:35:27.473648+00:00",
+      "ended_at": "2026-09-20T20:41:02.848161+00:00",
+      "exit_status": 0,
+      "log": "gates/container-build-retry.log"
+    },
+    {
+      "name": "container-build",
+      "command": [
+        "finch",
+        "build",
+        "--platform",
+        "linux/amd64",
+        "-t",
+        "meridian-readiness:2026-09-20",
+        "."
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:25:37.143101+00:00",
+      "ended_at": "2026-09-20T20:28:47.813231+00:00",
+      "exit_status": 1,
+      "log": "gates/container-build.log"
+    },
+    {
+      "name": "deployment-identity-retry",
+      "command": [
+        "venv/bin/python",
+        ".local/release-review-2026-09-20/inspect_deployment.py"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:16:27.965087+00:00",
+      "ended_at": "2026-09-20T20:16:30.522383+00:00",
+      "exit_status": 0,
+      "log": "gates/deployment-identity-retry.log"
+    },
+    {
+      "name": "deployment-identity",
+      "command": [
+        "venv/bin/python",
+        ".local/release-review-2026-09-20/inspect_deployment.py"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:15:57.247379+00:00",
+      "ended_at": "2026-09-20T20:15:59.026216+00:00",
+      "exit_status": 1,
+      "log": "gates/deployment-identity.log"
+    },
+    {
+      "name": "frontend-final",
+      "command": [
+        "/bin/zsh",
+        "-c",
+        "npm run lint && npm run typecheck && npm run test:run && VITE_API_ORIGIN=http://127.0.0.1:8014 npm run build"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian/frontend",
+      "started_at": "2026-09-20T20:14:19.758469+00:00",
+      "ended_at": "2026-09-20T20:14:44.367354+00:00",
+      "exit_status": 0,
+      "log": "gates/frontend-final.log"
+    },
+    {
+      "name": "frontend-focus-final",
+      "command": [
+        "/bin/zsh",
+        "-c",
+        "npm run lint && npm run typecheck && npm run test:run && VITE_API_ORIGIN=http://127.0.0.1:8014 npm run build"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian/frontend",
+      "started_at": "2026-09-20T20:38:39.474100+00:00",
+      "ended_at": "2026-09-20T20:39:18.152338+00:00",
+      "exit_status": 0,
+      "log": "gates/frontend-focus-final.log"
+    },
+    {
+      "name": "frontend-release",
+      "command": [
+        "/bin/zsh",
+        "-c",
+        "npm run lint && npm run typecheck && npm run test:run && VITE_API_ORIGIN=http://127.0.0.1:8014 npm run build"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian/frontend",
+      "started_at": "2026-09-20T20:47:39.952694+00:00",
+      "ended_at": "2026-09-20T20:48:14.353629+00:00",
+      "exit_status": 0,
+      "log": "gates/frontend-release.log"
+    },
+    {
+      "name": "frontend",
+      "command": [
+        "/bin/zsh",
+        "-c",
+        "npm run lint && npm run typecheck && npm run test:run && npm run build && npm audit --audit-level=high"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian/frontend",
+      "started_at": "2026-09-20T20:09:01.312403+00:00",
+      "ended_at": "2026-09-20T20:09:28.984038+00:00",
+      "exit_status": 0,
+      "log": "gates/frontend.log"
+    },
+    {
+      "name": "kill-resume",
+      "command": [
+        "venv/bin/python",
+        "scripts/kill_and_resume_demo.py"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:16:29.085540+00:00",
+      "ended_at": "2026-09-20T20:17:16.862917+00:00",
+      "exit_status": 0,
+      "log": "gates/kill-resume.log"
+    },
+    {
+      "name": "live-database",
+      "command": [
+        "venv/bin/python",
+        "-m",
+        "pytest",
+        "-m",
+        "database",
+        "-q"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:17:17.103026+00:00",
+      "ended_at": "2026-09-20T20:20:27.326938+00:00",
+      "exit_status": 0,
+      "log": "gates/live-database.log"
+    },
+    {
+      "name": "live-e2e-final",
+      "command": [
+        "venv/bin/python",
+        "scripts/validate_demo.py",
+        "--base-url",
+        "http://127.0.0.1:8014",
+        "--output",
+        ".local/release-review-2026-09-20/gates/live-e2e-final.json"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:38:55.804223+00:00",
+      "ended_at": "2026-09-20T20:42:05.059044+00:00",
+      "exit_status": 0,
+      "log": "gates/live-e2e-final.log"
+    },
+    {
+      "name": "live-e2e",
+      "command": [
+        "venv/bin/python",
+        "scripts/validate_demo.py",
+        "--base-url",
+        "http://127.0.0.1:8014",
+        "--output",
+        ".local/release-review-2026-09-20/gates/live-e2e.json"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:12:59.884820+00:00",
+      "ended_at": "2026-09-20T20:15:50.336757+00:00",
+      "exit_status": 0,
+      "log": "gates/live-e2e.log"
+    },
+    {
+      "name": "locked-install",
+      "command": [
+        "venv/bin/python",
+        "-m",
+        "pip",
+        "install",
+        "--require-hashes",
+        "-r",
+        "requirements.txt"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:30:44.681112+00:00",
+      "ended_at": "2026-09-20T20:30:47.140697+00:00",
+      "exit_status": 0,
+      "log": "gates/locked-install.log"
+    },
+    {
+      "name": "lost-response",
+      "command": [
+        "venv/bin/python",
+        "scripts/lost_response_demo.py"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:18:31.761459+00:00",
+      "ended_at": "2026-09-20T20:19:12.321824+00:00",
+      "exit_status": 0,
+      "log": "gates/lost-response.log"
+    },
+    {
+      "name": "platform",
+      "command": [
+        "venv/bin/python",
+        "scripts/verify_agentcore.py"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:09:01.278877+00:00",
+      "ended_at": "2026-09-20T20:09:04.794905+00:00",
+      "exit_status": 0,
+      "log": "gates/platform.log"
+    },
+    {
+      "name": "restart-unit",
+      "command": [
+        "venv/bin/python",
+        "-m",
+        "pytest",
+        "tests/test_restart_demo_proof.py",
+        "-q"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian",
+      "started_at": "2026-09-20T20:12:58.430421+00:00",
+      "ended_at": "2026-09-20T20:13:01.559104+00:00",
+      "exit_status": 0,
+      "log": "gates/restart-unit.log"
+    },
+    {
+      "name": "web-infra-full",
+      "command": [
+        "npm",
+        "run",
+        "synth"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian/infra",
+      "started_at": "2026-09-20T20:39:47.123134+00:00",
+      "ended_at": "2026-09-20T20:40:00.408478+00:00",
+      "exit_status": 0,
+      "log": "gates/web-infra-full.log"
+    },
+    {
+      "name": "web-infra",
+      "command": [
+        "/bin/zsh",
+        "-c",
+        "npm test && npm run synth && npm audit --audit-level=high"
+      ],
+      "cwd": "/Users/shayons/Desktop/Workshops/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/meridian/infra",
+      "started_at": "2026-09-20T20:10:34.771454+00:00",
+      "ended_at": "2026-09-20T20:11:07.842864+00:00",
+      "exit_status": 0,
+      "log": "gates/web-infra.log"
+    }
+  ],
+  "files": [
+    {
+      "path": "backend-final.log",
+      "bytes": 94546,
+      "sha256": "e1c051b1289a53d97363daa1b802a97839936a82ea4b72a71ad0b399526c6cdb",
+      "modified_at": "2026-09-20T20:45:27.703090+00:00"
+    },
+    {
+      "path": "backend-reconnected.log",
+      "bytes": 3952,
+      "sha256": "4630f058c1966d9161ef76f4ac94de9ebc7dbd21a6771a6ccd1fb8c440229123",
+      "modified_at": "2026-09-20T20:51:17.039644+00:00"
+    },
+    {
+      "path": "backend.log",
+      "bytes": 124339,
+      "sha256": "887f8646a950788c1dfd4e65b65faba53609548621e5e49aa34adebfbcf71561",
+      "modified_at": "2026-09-20T20:38:38.196191+00:00"
+    },
+    {
+      "path": "browser/architecture-projector.png",
+      "bytes": 159494,
+      "sha256": "51bd94b7ae3c28ce7f562f58d53d7147f577c1c4f18fb352a1dc30507a25284b",
+      "modified_at": "2026-09-20T20:21:56.712854+00:00"
+    },
+    {
+      "path": "browser/booking-confirmed.png",
+      "bytes": 116377,
+      "sha256": "5069c5e538cb12b3dbc55555249e6e1ccd758405906d6080df447ea3a38cd58b",
+      "modified_at": "2026-09-20T20:36:41.135661+00:00"
+    },
+    {
+      "path": "browser/booking-confirmed.txt",
+      "bytes": 8685,
+      "sha256": "edc30895138767822f291f9d02197dee9fdc8e009811d7f53f5f36441d47b98e",
+      "modified_at": "2026-09-20T20:36:41.176473+00:00"
+    },
+    {
+      "path": "browser/booking-readback.json",
+      "bytes": 245,
+      "sha256": "a689a013e7336a70e6ab5c2afa19911bb586581429bbdd2ce64a9bf084659d8e",
+      "modified_at": "2026-09-20T20:39:50.146712+00:00"
+    },
+    {
+      "path": "browser/briefing-laptop.png",
+      "bytes": 112766,
+      "sha256": "876ff7a9c4b1bee75aa7dc303e8ea639fc90712536705cf3ec01887f5c67f9a5",
+      "modified_at": "2026-09-20T20:21:43.998398+00:00"
+    },
+    {
+      "path": "browser/briefing-mobile.png",
+      "bytes": 42709,
+      "sha256": "c0e1846619ef2a8a125116626d8e48d199291a12ca042d28d3a0150dd9cec6c8",
+      "modified_at": "2026-09-20T20:22:45.353731+00:00"
+    },
+    {
+      "path": "browser/concierge-laptop.png",
+      "bytes": 141610,
+      "sha256": "cd41797a45e891236082e3c9a7e53a02f83dc37ddb1a9df4fefaba9ecf117af2",
+      "modified_at": "2026-09-20T20:13:22.607520+00:00"
+    },
+    {
+      "path": "browser/concierge-mobile-final.png",
+      "bytes": 53642,
+      "sha256": "fd8389f3fe621ee548df8af0ea480de5b1d2f17728ed88d893c89274bb1c48e1",
+      "modified_at": "2026-09-20T20:41:54.204665+00:00"
+    },
+    {
+      "path": "browser/evidence-mobile.png",
+      "bytes": 36503,
+      "sha256": "b4465a813efcc0d94f1d6a50961fda53290e887adc0a48f750f59fd3215582f7",
+      "modified_at": "2026-09-20T20:25:59.561202+00:00"
+    },
+    {
+      "path": "browser/ladder-mobile-final.png",
+      "bytes": 40695,
+      "sha256": "ffa2c13445b99f52d74b111f3b31911b4e10498d33459b1e355619347a7921c5",
+      "modified_at": "2026-09-20T20:42:25.172444+00:00"
+    },
+    {
+      "path": "browser/ladder-sql.png",
+      "bytes": 103812,
+      "sha256": "fb8ff7c053c546a5e9605a376f27a27851d070f24d89af4479fceeb59dfa4cf4",
+      "modified_at": "2026-09-20T20:14:49.653777+00:00"
+    },
+    {
+      "path": "browser/layout-evidence.json",
+      "bytes": 20624,
+      "sha256": "842ee7003e4fbf91dbfff44af7f1e25d3e91b6d5ab6b9812b0931eed215d26fc",
+      "modified_at": "2026-09-20T20:42:25.173080+00:00"
+    },
+    {
+      "path": "browser/mcp-final.png",
+      "bytes": 104895,
+      "sha256": "a51aacfa20310e674767750d454801043ad02007494b955d836941ac2153a620",
+      "modified_at": "2026-09-20T20:44:36.667662+00:00"
+    },
+    {
+      "path": "browser/mcp-final.txt",
+      "bytes": 10249,
+      "sha256": "bc55b4da0197c790deb14d320e5995fe3b198be068851cef007353131014c34d",
+      "modified_at": "2026-09-20T20:44:36.695607+00:00"
+    },
+    {
+      "path": "browser/offline.png",
+      "bytes": 106552,
+      "sha256": "e68071ff9bf68531da0a035e15ba9a6806582ccff37084534061778afa7ed92d",
+      "modified_at": "2026-09-20T20:48:37.878175+00:00"
+    },
+    {
+      "path": "browser/offline.txt",
+      "bytes": 4541,
+      "sha256": "ce8dd31bb347800bb4dc7c1649a432b3c01fa628d6098cd639067a678cfcecc5",
+      "modified_at": "2026-09-20T20:48:37.915530+00:00"
+    },
+    {
+      "path": "browser/recovery-empty.png",
+      "bytes": 114995,
+      "sha256": "7289198bcf86dd63e444a4b2cb5d75f4d5ae0594ee4c218e4089cb37084e0c91",
+      "modified_at": "2026-09-20T20:15:23.664965+00:00"
+    },
+    {
+      "path": "browser/recovery-mobile.png",
+      "bytes": 40955,
+      "sha256": "6f2d8cd64d07e7a48d764a4b9091404c88656a88b5394e0791746c1d1d668e8c",
+      "modified_at": "2026-09-20T20:23:58.581255+00:00"
+    },
+    {
+      "path": "browser/recovery-paused.png",
+      "bytes": 140914,
+      "sha256": "4d75c61ae43575302984002f1d59ed04e5ec9f4b9a1834df3abb113287d5f07d",
+      "modified_at": "2026-09-20T20:16:36.814629+00:00"
+    },
+    {
+      "path": "browser/recovery-success.png",
+      "bytes": 133515,
+      "sha256": "c0aee1218d32354c56960b394b7273e5861dc90e52dcbb929804d04c00960b40",
+      "modified_at": "2026-09-20T20:20:37.308376+00:00"
+    },
+    {
+      "path": "browser/system-evidence-laptop.png",
+      "bytes": 81996,
+      "sha256": "b88bfbdfdb65731ad758366107b5fce59a4b1a203041b3dddf5f09e23217777d",
+      "modified_at": "2026-09-20T20:21:37.022668+00:00"
+    },
+    {
+      "path": "check_deck.py",
+      "bytes": 1000,
+      "sha256": "4792c282255d4a209be36e1a899eb36de223d2978d7ba73efe1ef73f4ef5c9e7",
+      "modified_at": "2026-09-20T20:18:30.985528+00:00"
+    },
+    {
+      "path": "frontend.log",
+      "bytes": 1183,
+      "sha256": "7ae17f3652c80c9b5850c097f40a57be1c4ba39ba49ab214f8777284d9bdc4d6",
+      "modified_at": "2026-09-20T20:45:27.467870+00:00"
+    },
+    {
+      "path": "gates/agentcore-infra.log",
+      "bytes": 3676,
+      "sha256": "f5017f55880f8dc0fa884c38fa74e70d9fe277cef162179b053b9ae34b339840",
+      "modified_at": "2026-09-20T20:11:19.081959+00:00"
+    },
+    {
+      "path": "gates/agentcore-infra.meta.json",
+      "bytes": 486,
+      "sha256": "615216500da73ec1a46d6d0f79ec657a6ae101c17e4d2ed6cb9b90ebf2f7155e",
+      "modified_at": "2026-09-20T20:11:19.087298+00:00"
+    },
+    {
+      "path": "gates/agentcore-validate.log",
+      "bytes": 6,
+      "sha256": "a18788a1530726e7c74604b4a6b8b0d543f5c05840ab4bc2d0a0664533f99758",
+      "modified_at": "2026-09-20T20:21:31.644487+00:00"
+    },
+    {
+      "path": "gates/agentcore-validate.meta.json",
+      "bytes": 391,
+      "sha256": "3cba10e49aa9f87fbabb6c6814644fece3d9191dba0d3dcc59ce67b62a0cd0ff",
+      "modified_at": "2026-09-20T20:21:31.729767+00:00"
+    },
+    {
+      "path": "gates/backend-audit-final.log",
+      "bytes": 31,
+      "sha256": "15950a68a7ed99c59779717acefdceb3f69cfd31bde67d2c954f2a3cea4d7955",
+      "modified_at": "2026-09-20T20:39:04.367803+00:00"
+    },
+    {
+      "path": "gates/backend-audit-final.meta.json",
+      "bytes": 418,
+      "sha256": "eebc31092d127a5099dbce2b4d9004d0deed2e48aea8bdfe2694b0cac266fd2d",
+      "modified_at": "2026-09-20T20:39:04.506434+00:00"
+    },
+    {
+      "path": "gates/backend-final.log",
+      "bytes": 76053,
+      "sha256": "6e79941894511c45d4b52c30baf2afe48bfb33378e238b7f59e7c182a9b1e724",
+      "modified_at": "2026-09-20T20:20:31.470887+00:00"
+    },
+    {
+      "path": "gates/backend-final.meta.json",
+      "bytes": 585,
+      "sha256": "b27760d840a8df1c50161ab340c5dcca99ba30e20c7d6caff10c43d3d277e046",
+      "modified_at": "2026-09-20T20:20:31.472471+00:00"
+    },
+    {
+      "path": "gates/backend-locked.log",
+      "bytes": 76803,
+      "sha256": "6e33b5d3fb95af1a44fb73c8dc9b5b66a16afd22ccefa3483f250195c590f6aa",
+      "modified_at": "2026-09-20T20:37:21.169212+00:00"
+    },
+    {
+      "path": "gates/backend-locked.meta.json",
+      "bytes": 571,
+      "sha256": "ffcecf8f0a1f7aa030401d9fbbc42d54f23836ac1701d3202f11ddede6e2c094",
+      "modified_at": "2026-09-20T20:37:21.256382+00:00"
+    },
+    {
+      "path": "gates/backend-mcp-fix.log",
+      "bytes": 75422,
+      "sha256": "65bd907dd5a2625fac87f87591394325f9c2540742c0021c15be5d2d4a17d3ca",
+      "modified_at": "2026-09-20T20:29:14.377572+00:00"
+    },
+    {
+      "path": "gates/backend-mcp-fix.meta.json",
+      "bytes": 518,
+      "sha256": "f707050a71f38287578711bd18a09d44b7ffd67c94f3c717c78fb97305750517",
+      "modified_at": "2026-09-20T20:29:14.629617+00:00"
+    },
+    {
+      "path": "gates/backend-offline.log",
+      "bytes": 74672,
+      "sha256": "ba84cfe73e920f100faafaf800fd1be74fe8ecc694837f491b3526eb70eaf526",
+      "modified_at": "2026-09-20T20:09:07.714778+00:00"
+    },
+    {
+      "path": "gates/backend-offline.meta.json",
+      "bytes": 410,
+      "sha256": "ac6cde5efa5a62528e81fc85fdeae28de2520c774f9dd4aee13f7aed811f255d",
+      "modified_at": "2026-09-20T20:09:08.250839+00:00"
+    },
+    {
+      "path": "gates/backend-quality.log",
+      "bytes": 50,
+      "sha256": "9a4318a6727769a2a41784975978d1fffbb4bc9d68a1333b3bb1c38eb5f346b6",
+      "modified_at": "2026-09-20T20:11:36.974395+00:00"
+    },
+    {
+      "path": "gates/backend-quality.meta.json",
+      "bytes": 518,
+      "sha256": "c853a171505dc3d8438ccf16a5f219b6b54eec65a1d0d05cc05723306ea92552",
+      "modified_at": "2026-09-20T20:11:37.052690+00:00"
+    },
+    {
+      "path": "gates/cfn-lint-final.log",
+      "bytes": 2924,
+      "sha256": "f8b84bbf9fe47a8d5fccc62c9ae4783c9f75e15feb0c49e54e794679b3d910c7",
+      "modified_at": "2026-09-20T20:41:47.288667+00:00"
+    },
+    {
+      "path": "gates/cfn-lint-final.meta.json",
+      "bytes": 450,
+      "sha256": "21c4b4c26dd80680459c7ae9069eef07348c26804b118397580211a293b17cb3",
+      "modified_at": "2026-09-20T20:41:47.621541+00:00"
+    },
+    {
+      "path": "gates/cfn-lint-full.log",
+      "bytes": 72,
+      "sha256": "8814d1f881536a66836096c422d70d13316823a3615897eef22518ebcd6a8a9f",
+      "modified_at": "2026-09-20T20:41:13.223635+00:00"
+    },
+    {
+      "path": "gates/cfn-lint-full.meta.json",
+      "bytes": 447,
+      "sha256": "9d79622fc752196626f321eec9870851039c6e16b5547395edf7ed75130bcd71",
+      "modified_at": "2026-09-20T20:41:13.225359+00:00"
+    },
+    {
+      "path": "gates/cfn-lint.log",
+      "bytes": 2414,
+      "sha256": "71e681b823cf4d6adf344bcf4b8ad466d32763296d5f118ea236221183987ff2",
+      "modified_at": "2026-09-20T20:23:06.943191+00:00"
+    },
+    {
+      "path": "gates/cfn-lint.meta.json",
+      "bytes": 519,
+      "sha256": "77e7fd7e29d8f77f6ff127bc7f3412e66a83bcead755edb874d0ba6f856c42c9",
+      "modified_at": "2026-09-20T20:23:07.309334+00:00"
+    },
+    {
+      "path": "gates/container-build-final.log",
+      "bytes": 28146,
+      "sha256": "e87a69560e50f5141e6f0be61b5e6fbe12d6dafb07d93ae5eb52aee2371865a8",
+      "modified_at": "2026-09-20T20:46:41.637871+00:00"
+    },
+    {
+      "path": "gates/container-build-final.meta.json",
+      "bytes": 456,
+      "sha256": "67379186e31c5e444a618910ae7e1b1bd9967e2ee8207a9c3c31ba08ca0c9b3e",
+      "modified_at": "2026-09-20T20:46:26.849822+00:00"
+    },
+    {
+      "path": "gates/container-build-retry.log",
+      "bytes": 28212,
+      "sha256": "066fc49440b96c52d4807854a2cc78d7c203bad0a2441e7c6b6915bf60fd84b6",
+      "modified_at": "2026-09-20T20:41:02.812336+00:00"
+    },
+    {
+      "path": "gates/container-build-retry.meta.json",
+      "bytes": 454,
+      "sha256": "60b111865ddf40a24cbdbf7f9a0a10a74f7a4891066dd0aeda31baa07ea0ff0a",
+      "modified_at": "2026-09-20T20:41:02.849708+00:00"
+    },
+    {
+      "path": "gates/container-build.log",
+      "bytes": 30728,
+      "sha256": "1a1386597062f1cd22b6be9963c9c390132feed75dacf4d2010e34177110a754",
+      "modified_at": "2026-09-20T20:28:47.795384+00:00"
+    },
+    {
+      "path": "gates/container-build.meta.json",
+      "bytes": 442,
+      "sha256": "c6580967e4cb2f56d84a9760a4593164bfefdb409deb0a3e9cd085a9c1208abc",
+      "modified_at": "2026-09-20T20:28:47.813816+00:00"
+    },
+    {
+      "path": "gates/container-engine.log",
+      "bytes": 838,
+      "sha256": "13fc0dafe280482702cb0aaea45220bc3e8248438663318baa99a50aa3ba6e9f",
+      "modified_at": "2026-09-20T20:23:37.442129+00:00"
+    },
+    {
+      "path": "gates/deck-transcript.json",
+      "bytes": 10447,
+      "sha256": "f5a61fdb05e1b4402f5a3136f9de0f2588fc910a2f7bac9920f8e27ddf1a2bfa",
+      "modified_at": "2026-09-20T20:18:31.583967+00:00"
+    },
+    {
+      "path": "gates/deck-validation.log",
+      "bytes": 2065,
+      "sha256": "a5b5c610deb5e3f7480a7601661c9cf8a7dcd206912d6772566604ccd2147b48",
+      "modified_at": "2026-09-20T20:18:31.584014+00:00"
+    },
+    {
+      "path": "gates/deployment-identity-retry.log",
+      "bytes": 1401,
+      "sha256": "98157cbbf08dd05b56677972bac976b4d9d1dde9b26dd24c6366c139dd04cb0e",
+      "modified_at": "2026-09-20T20:16:30.419799+00:00"
+    },
+    {
+      "path": "gates/deployment-identity-retry.meta.json",
+      "bytes": 428,
+      "sha256": "969bdc9e903602b9fe62a3b8ce47894dad77f65ec38e8202986b7ed10c6f35f4",
+      "modified_at": "2026-09-20T20:16:30.522892+00:00"
+    },
+    {
+      "path": "gates/deployment-identity.json",
+      "bytes": 1874,
+      "sha256": "709611efec6862085cb6266f9609ba469c7b83bb1b7f3c4d071e00572bfead48",
+      "modified_at": "2026-09-20T20:16:30.419630+00:00"
+    },
+    {
+      "path": "gates/deployment-identity.log",
+      "bytes": 685,
+      "sha256": "49167bb13eb3437f878c4fc8830fab4f46f63a33f1cac0d46521a102e16a6534",
+      "modified_at": "2026-09-20T20:15:58.947578+00:00"
+    },
+    {
+      "path": "gates/deployment-identity.meta.json",
+      "bytes": 416,
+      "sha256": "4ce522f5e24a568820ea1be35c0f0b15a38cfeb0ae93e44250ab40390a289b4d",
+      "modified_at": "2026-09-20T20:15:59.026628+00:00"
+    },
+    {
+      "path": "gates/frontend-final.log",
+      "bytes": 9009,
+      "sha256": "677e9188ddf208dc865a0109388e4fcd8db02acf10168df7d69e49ba2027602f",
+      "modified_at": "2026-09-20T20:14:44.342914+00:00"
+    },
+    {
+      "path": "gates/frontend-final.meta.json",
+      "bytes": 472,
+      "sha256": "3c64ad43a12ebcee12216841f34bceef28a38c50d9bef69053953e6a235db562",
+      "modified_at": "2026-09-20T20:14:44.367957+00:00"
+    },
+    {
+      "path": "gates/frontend-focus-final.log",
+      "bytes": 9191,
+      "sha256": "7bac12208e556792b3e7fa1d4051f5748cab4a38c2f20287dbd0f6e391a71f4a",
+      "modified_at": "2026-09-20T20:39:18.121582+00:00"
+    },
+    {
+      "path": "gates/frontend-focus-final.meta.json",
+      "bytes": 484,
+      "sha256": "7e549f0509896634048cfc114913b42b4112a44dae949dd245985d030659efb2",
+      "modified_at": "2026-09-20T20:39:18.153010+00:00"
+    },
+    {
+      "path": "gates/frontend-release.log",
+      "bytes": 9191,
+      "sha256": "374fa8e35cd7e07bd470dc1792386aa3e37f8bf4e56d5974360e027b6dff55cf",
+      "modified_at": "2026-09-20T20:48:14.320975+00:00"
+    },
+    {
+      "path": "gates/frontend-release.meta.json",
+      "bytes": 476,
+      "sha256": "a4cfc8f1711ded288a3924f8353c23e5a0934dfa8be8a8bffa6b22de89fa9c10",
+      "modified_at": "2026-09-20T20:48:14.356241+00:00"
+    },
+    {
+      "path": "gates/frontend.log",
+      "bytes": 9033,
+      "sha256": "28c4d1de0177c3ed6eeeb3a26478b6eb275b853b118e2a451716da19e660cd70",
+      "modified_at": "2026-09-20T20:09:28.978431+00:00"
+    },
+    {
+      "path": "gates/frontend.meta.json",
+      "bytes": 454,
+      "sha256": "c5acd7e20ba7b8052796ec8613b5d35fe9071598bc6d524bca987e8ed04702ea",
+      "modified_at": "2026-09-20T20:09:28.984649+00:00"
+    },
+    {
+      "path": "gates/gitleaks.json",
+      "bytes": 1713,
+      "sha256": "fa395142e093ab12d9d20bbafaef1575d8fcfd757522fe933d885b67fcaf2000",
+      "modified_at": "2026-09-20T20:24:19.269894+00:00"
+    },
+    {
+      "path": "gates/gitleaks.log",
+      "bytes": 79,
+      "sha256": "e729b90a93ca33f538343561e426439beef4d7e06c5b9b52d4d44250caef05d2",
+      "modified_at": "2026-09-20T20:24:19.269620+00:00"
+    },
+    {
+      "path": "gates/impeccable.json",
+      "bytes": 3,
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "modified_at": "2026-09-20T20:16:31.394047+00:00"
+    },
+    {
+      "path": "gates/kill-resume.log",
+      "bytes": 1020,
+      "sha256": "9027c508462ab66636c67e8868ade01774e470740956a198e11221e95487f7d6",
+      "modified_at": "2026-09-20T20:17:16.582381+00:00"
+    },
+    {
+      "path": "gates/kill-resume.meta.json",
+      "bytes": 377,
+      "sha256": "b4debd11d7408edee476d0eb9bea1b9d4806cd10ac01f3d53ed5bfaeb14f08ba",
+      "modified_at": "2026-09-20T20:17:16.863375+00:00"
+    },
+    {
+      "path": "gates/live-database.log",
+      "bytes": 23979,
+      "sha256": "e489b6e7fd66cde1a6603ef3744a10ca275acd9a30e6c7a2c894372b64d29579",
+      "modified_at": "2026-09-20T20:20:26.967063+00:00"
+    },
+    {
+      "path": "gates/live-database.meta.json",
+      "bytes": 402,
+      "sha256": "780d7ceb04e54ad9b5b2ba2d5666f88e7642aa9b72ad1b14fd9a71f3a74ea209",
+      "modified_at": "2026-09-20T20:20:27.327487+00:00"
+    },
+    {
+      "path": "gates/live-e2e-final.json",
+      "bytes": 63882,
+      "sha256": "0134643f54db523eb41c18e8ee939adaa0b1d411b4e94b4135129f09ba08fc54",
+      "modified_at": "2026-09-20T20:41:59.932554+00:00"
+    },
+    {
+      "path": "gates/live-e2e-final.log",
+      "bytes": 7655,
+      "sha256": "a50dfb05842a62f2e62799a3c6ab02796ee90bf18a43fed2ee17f3388b5d5aad",
+      "modified_at": "2026-09-20T20:42:04.858849+00:00"
+    },
+    {
+      "path": "gates/live-e2e-final.meta.json",
+      "bytes": 505,
+      "sha256": "3babacaf89a93140f197b9d3ad268a2d723e6bdca6f03675c7cbf5d252440538",
+      "modified_at": "2026-09-20T20:42:05.059966+00:00"
+    },
+    {
+      "path": "gates/live-e2e.json",
+      "bytes": 61730,
+      "sha256": "79f03b3d40f38cc63cb859077be27ca177e246aff03c1275940ed18b526fdc65",
+      "modified_at": "2026-09-20T20:15:46.233641+00:00"
+    },
+    {
+      "path": "gates/live-e2e.log",
+      "bytes": 7290,
+      "sha256": "ecd4d9e09ad525551b8f2399fe1f964c933d8a8a21baf071e9f0a0e2a6fdd776",
+      "modified_at": "2026-09-20T20:15:50.211028+00:00"
+    },
+    {
+      "path": "gates/live-e2e.meta.json",
+      "bytes": 487,
+      "sha256": "a8bca7f325b67d76de629161753c76e8cb861c629c850a221f5a9b4791a7a98a",
+      "modified_at": "2026-09-20T20:15:50.337436+00:00"
+    },
+    {
+      "path": "gates/locked-install.log",
+      "bytes": 16310,
+      "sha256": "c319c5b03f8311e74d2f90d78f99785ab50971cd5c2cae5e06c9681a0c317c28",
+      "modified_at": "2026-09-20T20:30:47.042535+00:00"
+    },
+    {
+      "path": "gates/locked-install.meta.json",
+      "bytes": 438,
+      "sha256": "c712bef2fbd0102764d0b10844f7ce837d93d21d36541c2fc47fd62bdad5e3a1",
+      "modified_at": "2026-09-20T20:30:47.141599+00:00"
+    },
+    {
+      "path": "gates/lost-response.log",
+      "bytes": 600,
+      "sha256": "c6c52252b915d0fcc899e5468010b0e1ef90cd14df2939c1819b93b733392235",
+      "modified_at": "2026-09-20T20:19:11.976939+00:00"
+    },
+    {
+      "path": "gates/lost-response.meta.json",
+      "bytes": 379,
+      "sha256": "78e4b905e72329ca31e6ee45587b5f94e17b46db3dc5d7679d7938390adf6ac6",
+      "modified_at": "2026-09-20T20:19:12.322683+00:00"
+    },
+    {
+      "path": "gates/mcp-live-query-retry.log",
+      "bytes": 4076,
+      "sha256": "cf5ee2b1c37ce2df4454f47a2fd435a9e30acdc680bfb5fd98fee83e53352818",
+      "modified_at": "2026-09-20T20:29:31.045653+00:00"
+    },
+    {
+      "path": "gates/mcp-live-query.log",
+      "bytes": 4846,
+      "sha256": "d08cb32eb40c0ef9defcba152a48072c339a851584a09351dd46e95f317b48ce",
+      "modified_at": "2026-09-20T20:26:25.600389+00:00"
+    },
+    {
+      "path": "gates/mcp-lock.log",
+      "bytes": 231977,
+      "sha256": "5db5bd5a252f4f8bd91ab5a241a32ccbe7938148c7b8f496fa12585e9833ffd6",
+      "modified_at": "2026-09-20T20:30:05.631651+00:00"
+    },
+    {
+      "path": "gates/mcp-warmup-pinned.log",
+      "bytes": 1556,
+      "sha256": "3c0df11fdc3270f40ea03d2f3e2cc7d4738ec0692b160877aa90e8c97e23fd7b",
+      "modified_at": "2026-09-20T20:24:57.336672+00:00"
+    },
+    {
+      "path": "gates/mcp-warmup.log",
+      "bytes": 1136,
+      "sha256": "a9b092ea9ebf67432977672ea3500887270fd82d401e9c5779f9be3e09f6718d",
+      "modified_at": "2026-09-20T20:23:39.465619+00:00"
+    },
+    {
+      "path": "gates/platform.log",
+      "bytes": 1547,
+      "sha256": "db8336d67b84320770f0f503c9dc6fe951b8b8c62bb4a5a903ab7144b0174b16",
+      "modified_at": "2026-09-20T20:09:04.721395+00:00"
+    },
+    {
+      "path": "gates/platform.meta.json",
+      "bytes": 367,
+      "sha256": "cb1f064485cad723bae6bb807045855d4ce61926afd35b9a7af7105658b72221",
+      "modified_at": "2026-09-20T20:09:04.795390+00:00"
+    },
+    {
+      "path": "gates/requirements-constraint-check.log",
+      "bytes": 234644,
+      "sha256": "873e15527f302a7e245cc0e2c425759273abd73010de8ce1b990a56a362e8cd3",
+      "modified_at": "2026-09-20T20:29:10.303530+00:00"
+    },
+    {
+      "path": "gates/requirements-constraint-check.txt",
+      "bytes": 234520,
+      "sha256": "92cc2c55519d1381ff7883f50cc5207afe3f64035a56ad59be0dadf824c90155",
+      "modified_at": "2026-09-20T20:29:10.304262+00:00"
+    },
+    {
+      "path": "gates/restart-unit.log",
+      "bytes": 1198,
+      "sha256": "0fcac47b54159c4cbb23ab86e48171b97e5409ebba777c615dac4f8a6b23b8b6",
+      "modified_at": "2026-09-20T20:13:01.326429+00:00"
+    },
+    {
+      "path": "gates/restart-unit.meta.json",
+      "bytes": 414,
+      "sha256": "0d7bfcfa2a7c696ab280a1741ceb7cfed1cff69eec9158a7f97944aa1ea8b067",
+      "modified_at": "2026-09-20T20:13:01.559534+00:00"
+    },
+    {
+      "path": "gates/slide-13.png",
+      "bytes": 39269,
+      "sha256": "625d38d206596312edd581b1c65b39ab72fc8f3fe3d2334b19ea779f146a27c2",
+      "modified_at": "2026-09-20T20:18:31.533025+00:00"
+    },
+    {
+      "path": "gates/slide-17.png",
+      "bytes": 49215,
+      "sha256": "0125efc25abb3b0797c60b9ec2cb01edd24312f18acbecaf4b0d662de6cf63cf",
+      "modified_at": "2026-09-20T20:18:31.545700+00:00"
+    },
+    {
+      "path": "gates/slide-21.png",
+      "bytes": 37085,
+      "sha256": "af7e29b282d1fa217e5c63cc03b94aeff9e0770d296d1aa1a6b6e72d20349126",
+      "modified_at": "2026-09-20T20:18:31.556861+00:00"
+    },
+    {
+      "path": "gates/slide-24.png",
+      "bytes": 44561,
+      "sha256": "940f9768a710a4cf45ed17a3bd13c433e35aedec154c126814e5d138efecdc57",
+      "modified_at": "2026-09-20T20:18:31.570820+00:00"
+    },
+    {
+      "path": "gates/slide-3.png",
+      "bytes": 42828,
+      "sha256": "563d859154e9d1caf10f480ecd770a187c24a1e6de751aaa2ed4471cea401ebd",
+      "modified_at": "2026-09-20T20:18:31.468974+00:00"
+    },
+    {
+      "path": "gates/slide-7.png",
+      "bytes": 136813,
+      "sha256": "a1a8f27af9a7bf08c0b7303230363b0ea663e8993491332f1d357036ebaefe1d",
+      "modified_at": "2026-09-20T20:18:31.520228+00:00"
+    },
+    {
+      "path": "gates/source-inventory.json",
+      "bytes": 87057,
+      "sha256": "c677563d299e7eda5c2abd3d46451d61f0a31ea949aa1c7545eaa4e862099e21",
+      "modified_at": "2026-09-20T20:24:18.814852+00:00"
+    },
+    {
+      "path": "gates/source-parity.json",
+      "bytes": 1179,
+      "sha256": "a73864005c21339c0e693025b48388a7fb70797c99e10bc03bf3645ddc8882e8",
+      "modified_at": "2026-09-20T20:19:43.648962+00:00"
+    },
+    {
+      "path": "gates/web-infra-full.log",
+      "bytes": 427,
+      "sha256": "576c770382e535a3386ccfe2dbc7ca0a8cfb29af8911418ad8fb8ec4d0ee2c55",
+      "modified_at": "2026-09-20T20:40:00.059634+00:00"
+    },
+    {
+      "path": "gates/web-infra-full.meta.json",
+      "bytes": 362,
+      "sha256": "9f4a11858d0badc609e751d2863797b2b3ed49395d963cfdf3dd5edc72172d51",
+      "modified_at": "2026-09-20T20:40:00.409235+00:00"
+    },
+    {
+      "path": "gates/web-infra.log",
+      "bytes": 1364,
+      "sha256": "483c48599a3632ba509b8b860a8307fc9e1b8d3ed6401047ff8fead4193bda6b",
+      "modified_at": "2026-09-20T20:11:07.837772+00:00"
+    },
+    {
+      "path": "gates/web-infra.meta.json",
+      "bytes": 408,
+      "sha256": "dadccd35624e70a3dc2e14996e9ed38d3a87b61d1e71f891a5146ff27919c92f",
+      "modified_at": "2026-09-20T20:11:07.843566+00:00"
+    },
+    {
+      "path": "identity.json",
+      "bytes": 387,
+      "sha256": "949ea0e0dc9ac902a7d42b0d593161246da912676a985fa613beac513fa9f7de",
+      "modified_at": "2026-09-20T20:08:36.288273+00:00"
+    },
+    {
+      "path": "inspect_deployment.py",
+      "bytes": 2287,
+      "sha256": "f03c12fd0381d7ce099786e6dfed51144fd0272641000fc890387e547eb70e0a",
+      "modified_at": "2026-09-20T20:16:27.905588+00:00"
+    },
+    {
+      "path": "preview.log",
+      "bytes": 132,
+      "sha256": "98288db289ec3f0e9553065dad8f98459e40b2372bcc9111e46d6b254db1bda1",
+      "modified_at": "2026-09-20T20:16:30.656985+00:00"
+    },
+    {
+      "path": "run_gate.py",
+      "bytes": 698,
+      "sha256": "88c8de68a701ea9142a8455029131645428ed5f05e7e2e06f71be725e0ee5caf",
+      "modified_at": "2026-09-20T20:09:01.011475+00:00"
+    }
+  ]
+}

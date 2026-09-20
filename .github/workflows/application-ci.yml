@@ -48,6 +48,17 @@ jobs:
       - run: npm run build
       - run: npm audit --audit-level=high
 
+  backend-container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the production backend and locked MCP server
+        run: docker build --tag meridian-ci ./meridian
+      - name: Load MCP from the final non-root image without network access
+        run: >-
+          docker run --rm --network none --entrypoint python meridian-ci
+          -m awslabs.postgres_mcp_server.server --help
+
   agentcore-cdk:
     runs-on: ubuntu-latest
     defaults:

@@ -129,3 +129,21 @@ async def test_booking_release_dry_run_never_opens_write_transaction(monkeypatch
     monkeypatch.setattr(release_demo_bookings, "get_rds_data_client", lambda: client)
     assert await release_demo_bookings.release("traveler", False, True, "owned") == 1
     client.begin_transaction.assert_not_called()
+
+
+def test_unreviewed_provisioning_stops_before_any_aws_call(tmp_path):
+    import os
+    import subprocess
+    from pathlib import Path
+
+    marker = tmp_path / "aws-called"
+    aws = tmp_path / "aws"
+    aws.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 1\n')
+    aws.chmod(0o755)
+    script = Path(__file__).resolve().parents[1] / "scripts/create_cluster.sh"
+    result = subprocess.run(["/bin/bash", str(script), "--apply", "123456789012"],
+                            env={**os.environ, "PATH": str(tmp_path)},
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 2
+    assert "Provisioning is disabled" in result.stderr
+    assert not marker.exists()

@@ -30,8 +30,8 @@ The L300 chalk talk combines slides, source walkthrough, and live demonstration:
 for questions and operational flex. The full application flows remain available.
 
 The current presentation is the [editable re:Invent deck](meridian/docs/presentation/Meridian-reInvent-chalk-talk.pptx),
-updated from DAT301-R Toronto. Use the [presenter runbook](meridian/docs/PRESENTER_RUNBOOK_2026-09-19.md)
-and [readiness report](meridian/docs/READINESS_2026-09-19.md) for tested behavior and remaining deployment checks.
+updated from DAT301-R Toronto. Use the [presenter runbook](meridian/docs/PRESENTER_RUNBOOK_2026-09-20.md)
+and [readiness report](meridian/docs/READINESS_2026-09-20.md) for tested behavior and remaining deployment checks.
 
 > **Statefulness lives in durable stores, not database connections.** The RDS
 > Data API is a connectionless transport for durable Aurora reads and writes;
@@ -257,17 +257,19 @@ subject, such as a Cognito `sub`, to the traveler record. Apply your
 organization's networking, observability, availability, and governance
 requirements before production use.
 
+New-cluster provisioning is currently disabled: the legacy credential path was removed pending the required secret-handling workflow and a reviewed replacement. `scripts/create_cluster.sh` only explains prerequisites; `--apply` fails before any AWS call. Use the established configured Aurora environment for rehearsal. See the [current readiness report](meridian/docs/READINESS_2026-09-20.md).
+
 ## Validation
 
-The [19 September readiness report](meridian/docs/READINESS_2026-09-19.md),
-its [acceptance matrix](meridian/docs/ACCEPTANCE_MATRIX_2026-09-19.md), and the
-[presenter runbook](meridian/docs/PRESENTER_RUNBOOK_2026-09-19.md) record the
+The [20 September readiness report](meridian/docs/READINESS_2026-09-20.md),
+its [acceptance matrix](meridian/docs/ACCEPTANCE_MATRIX_2026-09-20.md), and the
+[presenter runbook](meridian/docs/PRESENTER_RUNBOOK_2026-09-20.md) record the
 current validated state: repairs, live five-phase and recovery evidence with
-measured timings, the AgentCore runtime redeploy, and hosted publication. The
+measured timings, matching Runtime source, and the older hosted deployment. The
 [17 September story-arc validation](meridian/docs/STORY_ARC_VALIDATION_2026-09-17.md)
 records the earlier live rehearsal and failure-window proofs.
 
-The GitHub Actions workflow runs backend, frontend, AgentCore CDK, and hosted
+The GitHub Actions workflow runs backend, production container, frontend, AgentCore CDK, and hosted
 web infrastructure checks on every push to `main`. Run the same commands locally:
 
 ```bash
@@ -282,6 +284,7 @@ python -m pip_audit -r requirements.txt
 cd meridian/frontend
 npm ci
 npm run lint
+npm run typecheck
 npm run test:run
 npm run build
 npm audit --audit-level=high

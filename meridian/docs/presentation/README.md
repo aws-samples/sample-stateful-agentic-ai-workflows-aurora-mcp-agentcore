@@ -3,8 +3,8 @@
 - [Editable PowerPoint](Meridian-reInvent-chalk-talk.pptx)
 - [PDF rendering](Meridian-reInvent-chalk-talk.pdf)
 - [Searchable slide text and speaker notes](SLIDE_NOTES.md)
-- [Presenter runbook](../PRESENTER_RUNBOOK_2026-09-19.md)
-- [Readiness and evidence boundaries](../READINESS_2026-09-19.md)
+- [Presenter runbook](../PRESENTER_RUNBOOK_2026-09-20.md)
+- [Readiness and evidence boundaries](../READINESS_2026-09-20.md)
 
 The user selected `DAT301-R-Toronto-Meridian.pptx` as the latest approved presentation. This copy preserves its AWS template, masters, native editable shapes, title and closing artwork. The Toronto original remains unchanged in Downloads/Presentations/2026. Its SHA-256 is `2e23dad9b0a14c6d8dc5ca6f4fc4e123f17f366cde6efb1992a9b7f2c8b32c37`. The repository copy is now the editable source; no private generator or external original is needed to edit or present it.
 

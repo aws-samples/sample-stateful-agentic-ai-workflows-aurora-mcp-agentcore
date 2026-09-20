@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from typing import Any, Dict, List, Optional
 
 from mcp import ClientSession, StdioServerParameters
@@ -55,66 +55,31 @@ class MeridianConciergeMCPClient:
         self.session: Optional[ClientSession] = None
         self._connected = False
         self._tools: List[Dict[str, Any]] = []
-        self._stdio_context = None
-        self._session_context = None
+        self._exit_stack: Optional[AsyncExitStack] = None
 
     async def connect(self) -> None:
         if self._connected:
             return
         params = _server_params()
-        self._stdio_context = stdio_client(params)
-        read, write = await self._stdio_context.__aenter__()
-        self._session_context = ClientSession(read, write)
-        self.session = await self._session_context.__aenter__()
-        await self.session.initialize()
-        resp = await self.session.list_tools()
-        self._tools = [
-            {"name": t.name, "description": t.description} for t in resp.tools
-        ]
-        self._connected = True
-        logger.info(
-            "connected to meridian-concierge MCP - tools: %s",
-            [t["name"] for t in self._tools],
-        )
+        self._exit_stack = AsyncExitStack()
+        try:
+            read, write = await self._exit_stack.enter_async_context(stdio_client(params))
+            self.session = await self._exit_stack.enter_async_context(ClientSession(read, write))
+            await self.session.initialize()
+            response = await self.session.list_tools()
+            self._tools = [{"name": t.name, "description": t.description} for t in response.tools]
+            self._connected = True
+        except BaseException:
+            await self.disconnect()
+            raise
 
     async def disconnect(self) -> None:
-        """Tear down the session + subprocess. Idempotent; absorbs any
-        stack-level errors raised by anyio's cancel-scope checks (which
-        can fire when the disconnect happens on a different task than
-        the connect)."""
-        import asyncio
-
-        session_ctx = self._session_context
-        stdio_ctx = self._stdio_context
+        """Unwind in the owning task; MCP bounds subprocess termination itself."""
+        stack, self._exit_stack = self._exit_stack, None
         self._connected = False
         self.session = None
-        self._session_context = None
-        self._stdio_context = None
-
-        async def _close_session():
-            if session_ctx is not None:
-                try:
-                    await session_ctx.__aexit__(None, None, None)
-                except Exception:
-                    pass
-
-        async def _close_stdio():
-            if stdio_ctx is not None:
-                try:
-                    await stdio_ctx.__aexit__(None, None, None)
-                except Exception:
-                    pass
-
-        # Bound the teardown so a wedged subprocess can't block the next
-        # turn from spawning a fresh client.
-        try:
-            await asyncio.wait_for(_close_session(), timeout=3.0)
-        except asyncio.TimeoutError:
-            pass
-        try:
-            await asyncio.wait_for(_close_stdio(), timeout=3.0)
-        except asyncio.TimeoutError:
-            pass
+        if stack is not None:
+            await stack.aclose()
 
     async def call(self, tool: str, arguments: Dict[str, Any], timeout: float = 15.0) -> Any:
         """Call a tool with a hard timeout.

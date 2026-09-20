@@ -333,7 +333,7 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
 function contractFromSpan(span: ShowcaseTraceSpan): McpContract | null {
   const name = span.name;
   const text = spanText(span);
-  if (/server discovered/i.test(name)) return null;
+  if (/server discovered|session connected/i.test(name)) return null;
 
   if (/postgres-mcp/i.test(name)) {
     const tool = lastToken(name) || 'run_query';

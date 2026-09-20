@@ -51,7 +51,12 @@ export function useDialogA11y(open: boolean, onClose: () => void) {
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = previousOverflow;
-      previousFocus?.focus();
+      // Opening details can also change surfaces and remove the trigger.
+      // Return to the persistent workspace when that button no longer exists.
+      const target = previousFocus?.isConnected && previousFocus !== document.body
+        ? previousFocus
+        : document.querySelector<HTMLElement>('[data-dialog-focus-fallback]');
+      target?.focus({ preventScroll: true });
     };
   }, [open]);
 

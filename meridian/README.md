@@ -35,7 +35,7 @@ policy decision, or recovery execution.
 ## Prerequisites
 
 For the current presentation, use the [editable deck and notes](docs/presentation/README.md),
-[presenter runbook](docs/PRESENTER_RUNBOOK_2026-09-19.md), and [readiness report](docs/READINESS_2026-09-19.md).
+[presenter runbook](docs/PRESENTER_RUNBOOK_2026-09-20.md), and [readiness report](docs/READINESS_2026-09-20.md).
 
 - Python 3.13 (the version CI builds and tests against)
 - Node.js 22.12+ recommended (CI uses Node 22); Node 20.19+ is also supported
@@ -55,6 +55,7 @@ Use the existing prepared Aurora database. For a new database, complete
 cd meridian
 python -m venv venv
 source venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install --require-hashes -r requirements.txt
 
 [ -f .env ] || cp .env.example .env
@@ -96,12 +97,16 @@ After updating the source, restart an existing backend so its routes match the
 updated frontend, including the hold and booking readback endpoints.
 
 `requirements.in` is the human-maintained dependency specification.
-`requirements.txt` is the hash-pinned lock generated with:
+`requirements.txt` is the hash-pinned lock. It includes PostgreSQL MCP server
+1.0.9 and the compatible MCP 1.x SDK. Both Phase 2 clients launch that installed
+module with the active Python interpreter; no package download occurs during a
+request. The supported connection is Aurora PostgreSQL through RDS Data API,
+with both configured cluster and secret ARNs required at startup.
+
+Maintainers can regenerate the lock with `uv` installed:
 
 ```bash
-PIP_CONFIG_FILE=/dev/null pip-compile requirements.in \
-  --output-file requirements.txt --generate-hashes --strip-extras \
-  --index-url https://pypi.org/simple
+uv pip compile --generate-hashes --output-file requirements.txt requirements.in
 ```
 
 ### Frontend
@@ -149,6 +154,12 @@ For the pause/resume demonstration, set
 [L300 runbook](DEMO_SCRIPT.md) for the exact sequence and expected evidence.
 
 ### Publish behind CloudFront
+
+**Current status: blocked pending the required secret-handling workflow and
+review of the inherited publisher.** The commands below describe that existing
+procedure; they are not approved presenter preflight. The current hosted image
+and frontend are older than this source. See the [readiness report](docs/READINESS_2026-09-20.md)
+for the exact deployment boundary and prerequisites before execution.
 
 `infra/` is a CDK app that publishes the same application to a password-protected
 CloudFront URL: the Vite build in a private S3 bucket, the backend as a container
@@ -574,10 +585,12 @@ Key environment variables are documented in `.env.example`.
 | MCP | `awslabs.postgres-mcp-server`, custom `meridian-concierge`, and `meridian-memory` MCP servers |
 | Memory and identity | Bedrock AgentCore Memory, AgentCore Identity, AWS IAM workload authorization |
 
+New-cluster provisioning is currently disabled: the legacy credential path was removed pending the required secret-handling workflow and a reviewed replacement. `scripts/create_cluster.sh` only explains prerequisites; `--apply` fails before any AWS call. Use the established configured Aurora environment for rehearsal. See the [current readiness report](docs/READINESS_2026-09-20.md).
+
 ## Validation
 
-See the [19 September readiness report](docs/READINESS_2026-09-19.md) and
-[acceptance matrix](docs/ACCEPTANCE_MATRIX_2026-09-19.md) for the current
+See the [20 September readiness report](docs/READINESS_2026-09-20.md) and
+[acceptance matrix](docs/ACCEPTANCE_MATRIX_2026-09-20.md) for the current
 validated state, the [17 September story-arc validation](docs/STORY_ARC_VALIDATION_2026-09-17.md)
 for the earlier live rehearsal and failure-window evidence, and the
 [code walkthrough](docs/CODE_WALKTHROUGH.md) for the 40-minute content route.
@@ -585,6 +598,7 @@ for the earlier live rehearsal and failure-window evidence, and the
 ```bash
 cd meridian/frontend
 npm run lint
+npm run typecheck
 npm run test:run
 npm run build
 ```
@@ -592,6 +606,7 @@ npm run build
 ```bash
 cd meridian
 source venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install --require-hashes -r requirements.txt
 PYTHON_DOTENV_DISABLED=1 python -m pytest -m "not database"
 python -m pip_audit -r requirements.txt
@@ -626,7 +641,7 @@ catalog and AWS access; they write checkpoints, journeys, and holds. The root
 | [docs/DOGWOOD_POLICY_ASSESSMENT.md](docs/DOGWOOD_POLICY_ASSESSMENT.md) | Temporal-policy proposal and required rehearsal; not enabled |
 | [docs/RELEASE_REVIEW.md](docs/RELEASE_REVIEW.md) | Dated validation, live proof, and deployment boundaries |
 | [docs/CODE_HARDENING_2026-09-17.md](docs/CODE_HARDENING_2026-09-17.md) | September 17 fixes, regression coverage, live evidence, and remaining delivery gates |
-| [docs/READINESS_2026-09-19.md](docs/READINESS_2026-09-19.md) | September 19 readiness report: repairs, live validation, hosted publication, and what remains |
-| [docs/ACCEPTANCE_MATRIX_2026-09-19.md](docs/ACCEPTANCE_MATRIX_2026-09-19.md) | September 19 acceptance matrix with PASS, FAIL, BLOCKED, and NOT APPLICABLE gates |
-| [docs/PRESENTER_RUNBOOK_2026-09-19.md](docs/PRESENTER_RUNBOOK_2026-09-19.md) | Preflight, sequence with measured timings, reset, recovery, and labeled fallback |
+| [docs/READINESS_2026-09-20.md](docs/READINESS_2026-09-20.md) | September 20 readiness report: repairs, local/live validation, hosted parity blockers, and remaining checks |
+| [docs/ACCEPTANCE_MATRIX_2026-09-20.md](docs/ACCEPTANCE_MATRIX_2026-09-20.md) | September 19 acceptance matrix with PASS, FAIL, BLOCKED, and NOT APPLICABLE gates |
+| [docs/PRESENTER_RUNBOOK_2026-09-20.md](docs/PRESENTER_RUNBOOK_2026-09-20.md) | Preflight, sequence with measured timings, reset, recovery, and labeled fallback |
 | [STRUCTURE.md](STRUCTURE.md) | Live code vs reference-only layout |

@@ -30,3 +30,8 @@ it('keeps the server conflict explanation instead of a generic offline label', a
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ error: 'This recovery is already running.' }) }));
   await expect(requestJson('/chat')).rejects.toThrow('This recovery is already running.');
 });
+
+it('accepts an empty successful DELETE response without attempting JSON parsing', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+  await expect(requestJson('/memory/fact', { method: 'DELETE' })).resolves.toBeUndefined();
+});

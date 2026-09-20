@@ -41,6 +41,8 @@ export async function requestJson<T>(url: string, init: RequestInit = {}): Promi
       } catch { /* Non-JSON proxy failures still have a useful HTTP status. */ }
       throw new Error(detail);
     }
+    // DELETE endpoints legitimately return no JSON body.
+    if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;
   }, init.signal ?? undefined);
 }
