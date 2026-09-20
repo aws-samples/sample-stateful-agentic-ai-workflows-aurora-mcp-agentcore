@@ -189,6 +189,36 @@
       "sha256": "ea85a330001f5160bdeaf3feda5d0d5efd780f5281e4a2f0dd03bdc048527c8a",
       "bytes": 1357,
       "last_written_utc": "2026-09-20T01:15:58.165421+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/live-e2e-release.json",
+      "sha256": "fbe012d02c5ad3fac2b46da722c7b0b4d437a8e7524e407b4f4de8558f6e3d62",
+      "bytes": 61529,
+      "last_written_utc": "2026-09-20T01:19:09.519880+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/live-e2e-release.log",
+      "sha256": "bcc6c5fd92b0dca15f7b31b97e71f61cdbfefe4f087ce94f02e66bf463443bc8",
+      "bytes": 7307,
+      "last_written_utc": "2026-09-20T01:19:13.598969+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/clean-commit-backend.log",
+      "sha256": "261eb616253da1e624d8dbf3fb929740040649cd7fb94310cee6c32bf4117226",
+      "bytes": 74712,
+      "last_written_utc": "2026-09-20T01:17:32.730519+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/clean-commit-frontend.log",
+      "sha256": "571f510ef0eb80c6480a2313f8fe6712de62b0143c247479eeab7ab32f50204e",
+      "bytes": 3365,
+      "last_written_utc": "2026-09-20T01:17:40.534013+00:00"
+    },
+    {
+      "path": ".local/release-review-2026-09-19/gates/ci-implementation.json",
+      "sha256": "037450e18b87b5d9645dd1fe63f84110af537ddf84b6f373644dbb3ed459430f",
+      "bytes": 671,
+      "last_written_utc": "2026-09-20T01:21:35.257856+00:00"
     }
   ],
   "outcomes": [
@@ -199,7 +229,7 @@
     {
       "command": "python -m pytest -m \"not database\"",
       "exit_code": 0,
-      "result": "485 passed, 6 skipped, 110 deselected; exact final source clean-checkout check follows publication"
+      "result": "485 passed, 6 skipped, 110 deselected; repeated in clean detached implementation checkout without .env"
     },
     {
       "command": "python -m pytest -m database",
@@ -235,7 +265,7 @@
     {
       "command": "python scripts/validate_demo.py --base-url http://127.0.0.1:8027",
       "exit_code": 0,
-      "result": "31 steps; 171591 ms total HTTP; all within 55000 ms; own-record cleanup succeeded"
+      "result": "31 steps; 333600 ms total HTTP; longest 48170 ms; all within 55000 ms; own-record cleanup succeeded; final run 2026-09-20T01:19:09.518452Z"
     },
     {
       "command": "python scripts/kill_and_resume_demo.py",
@@ -276,6 +306,21 @@
       "command": "configured direct loyalty lookup against established Aurora",
       "exit_code": 0,
       "result": "known program: recorded 86240 points; unknown program: unavailable without invented balance; earlier unconfigured attempt failed before API call"
+    },
+    {
+      "command": "git ls-remote origin refs/heads/main",
+      "exit_code": 0,
+      "result": "9b4b73ea512387663611154f41a7bd4ba34070f4 independently verified after implementation push"
+    },
+    {
+      "command": "gh run view 35481035168",
+      "exit_code": 0,
+      "result": "Application CI success: backend, frontend, agentcore-cdk and web-infra"
+    },
+    {
+      "command": "gh run list --commit 9b4b73ea512387663611154f41a7bd4ba34070f4",
+      "exit_code": 0,
+      "result": "Application CI, CodeQL and Dependency Graph all completed successfully"
     }
   ],
   "presentation_assets": [
@@ -295,5 +340,18 @@
     "index-L7B9U8p7.js",
     "MeridianDeviceShowcase-d45L-rgS.js",
     "DemoStage-JrKxulnJ.js"
-  ]
+  ],
+  "tested_implementation_sha": "9b4b73ea512387663611154f41a7bd4ba34070f4",
+  "implementation_remote_verification": {
+    "branch": "origin/main",
+    "sha": "9b4b73ea512387663611154f41a7bd4ba34070f4",
+    "verified_utc": "2026-09-20T01:21:08.066640+00:00",
+    "method": "independent git ls-remote origin refs/heads/main"
+  },
+  "clean_checkout_build": {
+    "source_sha": "9b4b73ea512387663611154f41a7bd4ba34070f4",
+    "api_origin": "default loopback 8013; no .env",
+    "main_js": "index-K-EkMmCX.js",
+    "note": "browser-tested build uses explicit loopback API 8027, so bundle hashes differ"
+  }
 }

@@ -23,7 +23,7 @@ PASS applies only to the stated evidence. BLOCKED means missing access, authoriz
 | N1 | Narrative, technical claims, pacing and clean optional cuts | PASS | Problem → decision → demo → records → tradeoffs; slide notes/runbook; estimates distinguished from measured HTTP times |
 | N2 | Latest deck, diagrams, notes and screenshots synchronized | PASS | User-selected DAT301-R copy updated to 25 editable slides; native rendering; current screenshot dates; no old video relabeled |
 | N3 | Accessible slide titles and alt text | PASS | Native PowerPoint checks found zero missing titles/alt text after repair; opening/closing reading order reviewed; print PDF not certified accessible |
-| D1 | Startup, warm-up, required demo and persisted payoff | PASS | Final 31-step local HTTP run against real AWS; every contract passed within browser deadline; 171.6 s total HTTP |
+| D1 | Startup, warm-up, required demo and persisted payoff | PASS | Final 31-step local HTTP run against real AWS; every contract passed within browser deadline; 333.6 s total HTTP; longest call 48.170 s |
 | D2 | Worker death, duplicate request, lost response, transaction/concurrency behavior | PASS | Fresh SIGKILL/new worker and lost-response proofs; 106 live DB tests, atomic receipt/replay/inventory assertions |
 | D3 | Reset, rerun, nonempty protection and scoped cleanup | PASS | Disposable Aurora database bootstrap/rollback/retry; targeted booking cleanup; final E2E removed own records; unrelated data preserved |
 | D4 | Presenter preflight, exact inputs/results, recovery and fallback | PASS | Runbook, slide notes and source references; offline captures labeled; no human-timing claim |
@@ -31,11 +31,12 @@ PASS applies only to the stated evidence. BLOCKED means missing access, authoriz
 | I2 | Live established runtime permissions | PASS | Runtime, Gateway, RLS, actual model/tool calls and persisted reads/writes passed; applies to established demo identities only |
 | I3 | Fresh deployer PassRole, boundaries, quotas, new provisioning and teardown | BLOCKED | No authorized new infrastructure target; static checks and existing service success cannot prove this gate |
 | I4 | Existing environment encryption and retention hardening | FAIL | Aurora storage encryption off, deletion protection off, backup retention one day; requires authorized migration/retention decision |
-| A1 | Clean checkout installation and declared setup/build | BLOCKED | Isolated final-source checkout validation recorded during finalization; fresh cloud provisioning remains separate |
+| A1 | Clean checkout installation and declared setup/build | PASS | Detached committed implementation checkout: 485 offline tests, fresh npm ci/typecheck/build, no copied .env; hash-locked clean venv; fresh cloud provisioning remains separate |
 | A2 | Relative links, assets, lockfiles and release source secret scan | PASS | Resolved links, image loading, package validation; Gitleaks findings reviewed as two literal PASSWORD documentation placeholders |
 | A3 | Inaccessible external presentation material | NOT APPLICABLE | User selected local DAT301-R as latest; updated copy is tracked and editable; no other required external deck or recording identified |
 | P1 | Final application build versus live service proof | PASS | Local final backend with actual Aurora/Runtime/Gateway; frontend regression rerender after final receipt repair; runtime source-byte parity |
 | P2 | Hosted web final-source/image/bundle/header parity | BLOCKED | Old CloudFront bundle and App Runner image, missing source response-headers policy; deployment and authenticated revalidation required |
-| P3 | Exact staged review, commit, push and independent remote SHA | BLOCKED | Final source publication step; no source push implies hosted deployment |
+| P3 | Exact staged review, commit, push and independent remote SHA | PASS | Implementation `9b4b73ea512387663611154f41a7bd4ba34070f4` pushed and independently resolved on origin/main; final documentation revision is the containing Git commit, verified in the handoff; no hosted deployment implied |
+| P4 | GitHub Application CI on the published implementation | PASS | Backend, frontend, AgentCore CDK and web infrastructure jobs passed; run 35481035168 |
 | H1 | Timed human delivery, projector/back-row and room/network readiness | BLOCKED | Presenter and physical environment required; runbook checklist supplied |
 | W1 | Workshop Studio, packages, labs, pins and publication | NOT APPLICABLE | Explicitly outside revised user scope |

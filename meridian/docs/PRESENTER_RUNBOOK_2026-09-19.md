@@ -53,22 +53,22 @@ Enable **Projector readability** and use **Preview audience layout** before full
 
 ## Required sequence and observable results
 
-All talk timings are estimates. API timings below were measured in the final September 19 local run against live AWS; they vary with model/network conditions. The 31-call automated run spent **171.6 seconds in HTTP requests**, excluding cleanup and narration.
+All talk timings are estimates. API timings below were measured in the final September 19 local run against live AWS; they vary with model/network conditions. The 31-call automated run spent **333.6 seconds in HTTP requests**, excluding cleanup and narration. The earlier complete run took 171.6 seconds; the final run's longest request was 48.170 seconds. Leave room for model latency and prepare the dated fallback before the session.
 
 | Beat | Presenter action | Observable result | Measured request time |
 | --- | --- | --- | --- |
 | Problem, 0-4 min | Concierge: introduce Alex's canceled JFK-to-Tokyo trip | Fictional traveler/catalog; distinguish a package hold from a flight reservation | Static setup |
-| Capabilities, 4-12 min | Ladder, SQL: **City trips under $2,000** | Grounded rows, prices and SQL activity | 0.089 s |
-| SQL boundary | **Compare trips in euros** | Explains the phase boundary; no invented conversion | 0.001 s |
-| MCP | Switch to MCP, same prompt | Named comparison/conversion calls through `meridian-concierge`; configured demo FX rates | 2.326 s |
-| Retrieval | Switch to Retrieval, **Romantic wine-country villa** | Hybrid candidates, actual rerank metadata, shortlist | 17.907 s |
-| Retrieval boundary | **Recall my plan & preferences** | Explains that saved context requires Production | 0.002 s |
-| Authority, 12-20 min | Production, **Use traveler context** on, **Tokyo with my preferences** | Workload grant, Runtime turn, saved preferences; inspect Activity and RLS | 30.349 s first turn; 9.293 s recall |
-| Bridge | **Canceled flight replan**, then **Run this in Workflow** | Explicit handoff to durable Workflow | 23.293 s |
-| Durability, 20-32 min | Recovery desk: **Start recovery** | Shortlist saved, durable checkpoint, resume action | 8.186 s |
+| Capabilities, 4-12 min | Ladder, SQL: **City trips under $2,000** | Grounded rows, prices and SQL activity | 1.804 s |
+| SQL boundary | **Compare trips in euros** | Explains the phase boundary; no invented conversion | 0.004 s |
+| MCP | Switch to MCP, same prompt | Named comparison/conversion calls through `meridian-concierge`; configured demo FX rates | 13.767 s |
+| Retrieval | Switch to Retrieval, **Romantic wine-country villa** | Hybrid candidates, actual rerank metadata, shortlist | 36.472 s |
+| Retrieval boundary | **Recall my plan & preferences** | Explains that saved context requires Production | 0.004 s |
+| Authority, 12-20 min | Production, **Use traveler context** on, **Tokyo with my preferences** | Workload grant, Runtime turn, saved preferences; inspect Activity and RLS | 48.170 s first turn; 30.469 s recall |
+| Bridge | **Canceled flight replan**, then **Run this in Workflow** | Explicit handoff to durable Workflow | 46.270 s |
+| Durability, 20-32 min | Recovery desk: **Start recovery** | Shortlist saved, durable checkpoint, resume action | 45.268 s |
 | Reload | Reload the saved URL with its thread/journey parameters | Same paused journey read from Aurora | Readback, not a new run |
-| Resume | **Resume and request hold** | Same thread; availability checked; Cedar allowed; one 15-minute hold | 21.912 s |
-| Evidence, 32-37 min | System evidence: Checkpoint, Authorization, Business result | Saved checkpoint, attempts/worker IDs, authorization audit, same booking and expiry | 1.824 s journey read |
+| Resume | **Resume and request hold** | Same thread; availability checked; Cedar allowed; one 15-minute hold | 18.708 s |
+| Evidence, 32-37 min | System evidence: Checkpoint, Authorization, Business result | Saved checkpoint, attempts/worker IDs, authorization audit, same booking and expiry | 2.029 s journey read |
 | Close, 37-40 min | Three takeaways and source link | Separate context, authority and durability; invite discussion | Planned timing |
 
 A normal pause/reload/resume can use the same worker. Call it a **resumed execution**. It is not proof of worker death. For the actual worker-replacement demonstration, run the following from `meridian/`, preferably prepared in a separate terminal before the talk:
@@ -81,7 +81,7 @@ It kills only its own worker after a committed checkpoint, verifies the old leas
 
 ## Optional branches
 
-- **Handoff and confirmation:** Recovery desk → **Take it back to Alex** → review the trip → **Confirm this trip for Alex**. Expect the same booking to become confirmed in Aurora. Final direct confirmation measured 9.571 s. No supplier was contacted and no payment was taken.
+- **Handoff and confirmation:** Recovery desk → **Take it back to Alex** → review the trip → **Confirm this trip for Alex**. Expect the same booking to become confirmed in Aurora. Final direct confirmation measured 8.520 s. No supplier was contacted and no payment was taken.
 - **Lost response:** `python scripts/lost_response_demo.py` deliberately discards an actual committed Gateway response, retries the same intent, verifies one hold and unchanged expiry, then cleans its records. A timeout alone does not prove rollback.
 - **Denial:** use `python scripts/smoke_production_turn.py` for unconfirmed and over-budget policy checks. Do not secretly relax input constraints to turn a denial into a success. The automated suite also verifies an eight-traveler request is denied and creates no hold.
 - **Solution briefing:** architecture focus controls and temporal-policy discussion. Dogwood is assessed, not enabled. Online model-judge evaluation is not deployed.
