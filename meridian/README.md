@@ -35,7 +35,7 @@ policy decision, or recovery execution.
 ## Prerequisites
 
 For the current presentation, use the [editable deck and notes](docs/presentation/README.md),
-[presenter runbook](docs/PRESENTER_RUNBOOK_2026-09-20.md), and [readiness report](docs/READINESS_2026-09-20.md).
+[presenter runbook](docs/PRESENTER_RUNBOOK_2026-09-20.md), and [deployment follow-up](docs/FOLLOWUP_2026-09-20.md).
 
 - Python 3.13 (the version CI builds and tests against)
 - Node.js 22.12+ recommended (CI uses Node 22); Node 20.19+ is also supported
@@ -567,13 +567,15 @@ Key environment variables are documented in `.env.example`.
 | MCP | `awslabs.postgres-mcp-server`, custom `meridian-concierge`, and `meridian-memory` MCP servers |
 | Memory and identity | Bedrock AgentCore Memory, AgentCore Identity, AWS IAM workload authorization |
 
-The legacy `scripts/create_cluster.sh --apply` remains disabled. Use the read-only provisioning preflight and separate encrypted Aurora CDK entry point in the [deployment runbook](docs/DEPLOYMENT_FOLLOWUP.md). Fresh-account deployment, rollback and teardown still require an isolated rehearsal. See the [current readiness report](docs/READINESS_2026-09-20.md).
+The legacy `scripts/create_cluster.sh --apply` remains disabled. Use the read-only provisioning preflight and separate encrypted Aurora CDK entry point in the [deployment runbook](docs/DEPLOYMENT_FOLLOWUP.md). Fresh-account deployment, rollback and teardown still require an isolated rehearsal. See the [current follow-up report](docs/FOLLOWUP_2026-09-20.md).
 
 ## Validation
 
-See the [20 September readiness report](docs/READINESS_2026-09-20.md) and
-[acceptance matrix](docs/ACCEPTANCE_MATRIX_2026-09-20.md) for the current
-validated state, the [17 September story-arc validation](docs/STORY_ARC_VALIDATION_2026-09-17.md)
+See the [deployment follow-up](docs/FOLLOWUP_2026-09-20.md) for the latest
+hosted release, Aurora migration, UI and accessibility checks. The earlier
+[readiness report](docs/READINESS_2026-09-20.md) and
+[acceptance matrix](docs/ACCEPTANCE_MATRIX_2026-09-20.md) retain their original
+checkpoint results. See the [17 September story-arc validation](docs/STORY_ARC_VALIDATION_2026-09-17.md)
 for the earlier live rehearsal and failure-window evidence, and the
 [code walkthrough](docs/CODE_WALKTHROUGH.md) for the 40-minute content route.
 
@@ -623,7 +625,9 @@ catalog and AWS access; they write checkpoints, journeys, and holds. The root
 | [docs/DOGWOOD_POLICY_ASSESSMENT.md](docs/DOGWOOD_POLICY_ASSESSMENT.md) | Temporal-policy proposal and required rehearsal; not enabled |
 | [docs/RELEASE_REVIEW.md](docs/RELEASE_REVIEW.md) | Dated validation, live proof, and deployment boundaries |
 | [docs/CODE_HARDENING_2026-09-17.md](docs/CODE_HARDENING_2026-09-17.md) | September 17 fixes, regression coverage, live evidence, and remaining delivery gates |
+| [docs/FOLLOWUP_2026-09-20.md](docs/FOLLOWUP_2026-09-20.md) | Latest deployment, Aurora migration, UI polish, accessibility and remaining human checks |
+| [docs/DEPLOYMENT_FOLLOWUP.md](docs/DEPLOYMENT_FOLLOWUP.md) | Publisher, provisioning, encryption assessment, Finch recovery and rehearsal procedures |
 | [docs/READINESS_2026-09-20.md](docs/READINESS_2026-09-20.md) | September 20 readiness report: repairs, local/live validation, hosted parity blockers, and remaining checks |
-| [docs/ACCEPTANCE_MATRIX_2026-09-20.md](docs/ACCEPTANCE_MATRIX_2026-09-20.md) | September 19 acceptance matrix with PASS, FAIL, BLOCKED, and NOT APPLICABLE gates |
+| [docs/ACCEPTANCE_MATRIX_2026-09-20.md](docs/ACCEPTANCE_MATRIX_2026-09-20.md) | Earlier September 20 checkpoint with PASS, FAIL, BLOCKED, and NOT APPLICABLE gates |
 | [docs/PRESENTER_RUNBOOK_2026-09-20.md](docs/PRESENTER_RUNBOOK_2026-09-20.md) | Preflight, sequence with measured timings, reset, recovery, and labeled fallback |
 | [STRUCTURE.md](STRUCTURE.md) | Live code vs reference-only layout |
