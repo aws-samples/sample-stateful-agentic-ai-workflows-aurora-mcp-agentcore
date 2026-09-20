@@ -15,6 +15,16 @@ from botocore.exceptions import ClientError
 CONFIG = Config(connect_timeout=10, read_timeout=30, retries={"mode": "standard", "total_max_attempts": 3})
 
 
+def storage_encryption(cluster: dict) -> dict:
+    """The legacy boolean alone misses encryption with an AWS-owned key."""
+    mode = cluster.get("StorageEncryptionType")
+    if mode not in {"none", "sse-rds", "sse-kms"}:
+        raise ValueError("StorageEncryptionType unavailable; use a current RDS SDK/API before assessing encryption")
+    return {"type": mode, "encryptedAtRest": mode != "none",
+            "legacyStorageEncrypted": cluster.get("StorageEncrypted"),
+            "kmsKeyArn": cluster.get("KmsKeyId"), "encryptionMigrationNeeded": mode == "none"}
+
+
 def inspect(args) -> dict:
     session = boto3.Session(region_name=args.region)
     identity = session.client("sts", config=CONFIG).get_caller_identity()
@@ -90,6 +100,9 @@ def inspect(args) -> dict:
     check("rds_service_linked_role", service_role)
     check("cdk_bootstrap", bootstrap)
     check("deployer_pass_role", deployer)
+    if args.source_cluster:
+        check("source_encryption", lambda: storage_encryption(
+            rds.describe_db_clusters(DBClusterIdentifier=args.source_cluster)["DBClusters"][0]))
     return {"observedAt": datetime.now(timezone.utc).isoformat(), "account": args.account, "region": args.region,
             "checks": checks, "readyForRehearsal": all(c["status"] == "PASS" for c in checks),
             "notProven": ["Fresh-account deployment, rollback and teardown", "Organization SCPs and deployment session policies",
@@ -104,6 +117,7 @@ def main() -> int:
     parser.add_argument("--vpc-id", required=True)
     parser.add_argument("--subnet-ids", nargs="+", required=True)
     parser.add_argument("--engine-version", required=True)
+    parser.add_argument("--source-cluster", help="Inspect an existing cluster's actual encryption type before planning a migration")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     try:
