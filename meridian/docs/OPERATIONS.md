@@ -147,6 +147,15 @@ AgentCore. If Runtime, Gateway, or Memory are missing, the chat response shows
 resource list. Narrate it plainly: *"Production mode is the managed AgentCore
 path. We fail closed instead of silently swapping in a different architecture."*
 
+If the trace reports a connection closed before the Runtime response, an
+unconfirmed chat turn without a hold or booking target gets one automatic retry
+after 250ms. The same payload and conversation/session IDs are retained. The
+runtime pins the unconfirmed flags and Gateway policy denies inventory writes.
+This narrow recovery does not promise exactly-once conversation-memory recording.
+Holds and booking confirmations remain single-attempt invocations; reconcile their
+persisted outcome before a user retry. Timeouts, partial streams, permission
+errors and errors returned by the runtime are not retried by this rule.
+
 ## Teardown (after the event)
 
 Resources bill while they exist. When done:

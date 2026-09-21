@@ -345,8 +345,11 @@ behavior, not exactly-once execution. See the dated
 
 The browser limits chat, hold, and confirmation waits to **55 seconds**, including
 response-body reads. The UI shows elapsed waiting and **Stop waiting**. The
-managed Runtime SDK uses one attempt with a 45-second socket read timeout; that
-is not an end-to-end workflow deadline. A server action may finish after the
+managed Runtime SDK disables blanket retries and uses a 45-second socket read
+timeout; that is not an end-to-end workflow deadline. Unconfirmed chat turns
+without a hold or booking target get one retry if the connection closes before
+response headers arrive. Confirmed writes, timeouts and failures after streaming
+starts are never automatically replayed. A server action may finish after the
 browser has stopped waiting.
 
 - For an uncertain recovery outcome, use **Re-read this recovery** before resuming

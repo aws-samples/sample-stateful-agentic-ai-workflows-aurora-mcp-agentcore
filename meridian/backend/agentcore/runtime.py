@@ -22,13 +22,14 @@ import hashlib
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ConnectionClosedError
 
 from backend.agentcore.cli_config import resolve_agentcore_config
 from backend.agentcore.errors import AgentCoreNotConfiguredError
@@ -146,8 +147,8 @@ class AgentCoreRuntimeAdapter:
                 region_name=self.region,
                 config=Config(
                     # An invocation may commit a governed write before its
-                    # acknowledgement is lost. Reconcile persisted state before
-                    # an explicit retry; never replay the agent loop blindly.
+                    # acknowledgement is lost. Keep SDK retries disabled; only
+                    # the narrowly guarded chat retry in invoke_turn is allowed.
                     retries={"total_max_attempts": 1, "mode": "standard"},
                     connect_timeout=5,
                     read_timeout=45,
@@ -222,19 +223,42 @@ class AgentCoreRuntimeAdapter:
             "booking_target": booking_target,
             "timestamp": _utc_timestamp(),
         }).encode()
-        try:
-            response = self._get_client().invoke_agent_runtime(
-                agentRuntimeArn=arn,
-                runtimeSessionId=session_id,
-                payload=payload,
-                qualifier=self.qualifier,
-                contentType="application/json",
-                accept="text/event-stream",
-            )
-        except ClientError as exc:
-            code = exc.response.get("Error", {}).get("Code", "Unknown")
-            logger.error("invoke_agent_runtime failed: %s", code)
-            raise RuntimeError(f"AgentCore Runtime invoke failed: {code}") from exc
+        # A connection can close before response headers arrive, including when
+        # reusing an idle connection. Retry once only when this turn cannot
+        # authorize inventory writes: the runtime pins both confirmation flags
+        # into tool arguments and Gateway policy denies unconfirmed writes.
+        # Even a target without its confirmation flag opts out defensively.
+        retry_allowed = (
+            not hold_confirmed
+            and hold_target is None
+            and not booking_confirmed
+            and booking_target is None
+        )
+        for attempt in range(2 if retry_allowed else 1):
+            try:
+                response = self._get_client().invoke_agent_runtime(
+                    agentRuntimeArn=arn,
+                    runtimeSessionId=session_id,
+                    payload=payload,
+                    qualifier=self.qualifier,
+                    contentType="application/json",
+                    accept="text/event-stream",
+                )
+                break
+            except ConnectionClosedError:
+                if not retry_allowed or attempt:
+                    raise
+                logger.warning(
+                    "AgentCore connection closed before response; retrying "
+                    "unconfirmed chat turn once"
+                )
+                time.sleep(0.25)
+            except ClientError as exc:
+                code = exc.response.get("Error", {}).get("Code", "Unknown")
+                logger.error("invoke_agent_runtime failed: %s", code)
+                raise RuntimeError(f"AgentCore Runtime invoke failed: {code}") from exc
+        # Once a response exists, a broken stream or runtime error must surface.
+        # Replaying here could repeat work already performed by the runtime.
         return self._decision(arn, session_id, parse_sse(_read_stream(response)))
 
     def _decision(self, arn: str, session_id: str, events: list[dict[str, Any]]) -> RuntimeDecision:

@@ -6,6 +6,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError, ConnectionClosedError, ReadTimeoutError
 
 from backend.agentcore import cli_config
 from backend.agentcore.errors import AgentCoreNotConfiguredError
@@ -144,6 +145,87 @@ def test_runtime_without_a_message_raises():
     adapter._client = _streaming_client(b'data: {"type": "token", "text": "partial"}\n\n')
     with pytest.raises(RuntimeError, match="no concierge message"):
         adapter.invoke_turn("conv-1", "trv_demo", "x", "", budget_ceiling_cents=0, travelers_count=1)
+
+
+def _invoke_chat(adapter, **kwargs):
+    return adapter.invoke_turn(
+        "conv-1", "trv_demo", "Find Tokyo trips", "saved preferences",
+        budget_ceiling_cents=700000, travelers_count=2, **kwargs,
+    )
+
+
+@patch("backend.agentcore.runtime.time.sleep")
+def test_closed_connection_retries_chat_once_with_identical_context(sleep):
+    adapter = _adapter()
+    adapter._client = _streaming_client(
+        b'data: {"type":"result","message":"Tokyo fits."}\n\n'
+    )
+    response = adapter._client.invoke_agent_runtime.return_value
+    adapter._client.invoke_agent_runtime.side_effect = [
+        ConnectionClosedError(endpoint_url="https://runtime.example.com"), response,
+    ]
+
+    assert _invoke_chat(adapter).message == "Tokyo fits."
+    calls = adapter._client.invoke_agent_runtime.call_args_list
+    assert len(calls) == 2 and calls[0] == calls[1]
+    sleep.assert_called_once_with(0.25)
+
+
+@patch("backend.agentcore.runtime.time.sleep")
+def test_closed_connection_retry_is_bounded(sleep):
+    adapter = _adapter()
+    adapter._client = MagicMock()
+    adapter._client.invoke_agent_runtime.side_effect = ConnectionClosedError(
+        endpoint_url="https://runtime.example.com"
+    )
+    with pytest.raises(ConnectionClosedError):
+        _invoke_chat(adapter)
+    assert adapter._client.invoke_agent_runtime.call_count == 2
+    sleep.assert_called_once()
+
+
+@pytest.mark.parametrize("write_intent", [
+    {"hold_confirmed": True},
+    {"booking_confirmed": True},
+    {"hold_target": {}},
+    {"booking_target": {}},
+])
+@patch("backend.agentcore.runtime.time.sleep")
+def test_closed_connection_never_replays_a_write_intent(sleep, write_intent):
+    adapter = _adapter()
+    adapter._client = MagicMock()
+    adapter._client.invoke_agent_runtime.side_effect = ConnectionClosedError(
+        endpoint_url="https://runtime.example.com"
+    )
+    with pytest.raises(ConnectionClosedError):
+        _invoke_chat(adapter, **write_intent)
+    adapter._client.invoke_agent_runtime.assert_called_once()
+    sleep.assert_not_called()
+
+
+def test_broken_response_stream_does_not_restart_the_agent():
+    adapter = _adapter()
+    adapter._client = _streaming_client()
+    adapter._client.invoke_agent_runtime.return_value["response"].read.side_effect = [
+        b'data: {"type":"token","text":"partial"}\n\n',
+        ConnectionClosedError(endpoint_url="https://runtime.example.com"),
+    ]
+    with pytest.raises(ConnectionClosedError):
+        _invoke_chat(adapter)
+    adapter._client.invoke_agent_runtime.assert_called_once()
+
+
+@pytest.mark.parametrize("error,expected", [
+    (ReadTimeoutError(endpoint_url="https://runtime.example.com"), ReadTimeoutError),
+    (ClientError({"Error": {"Code": "AccessDeniedException"}}, "InvokeAgentRuntime"), RuntimeError),
+])
+def test_other_invocation_failures_are_not_retried(error, expected):
+    adapter = _adapter()
+    adapter._client = MagicMock()
+    adapter._client.invoke_agent_runtime.side_effect = error
+    with pytest.raises(expected):
+        _invoke_chat(adapter)
+    adapter._client.invoke_agent_runtime.assert_called_once()
 
 
 def test_gateway_unconfigured_raises(unconfigured_agentcore):
