@@ -43,7 +43,7 @@ for (const theme of ['light', 'dark']) {
       await expect(steps.getByText('AgentCore', { exact: true })).toHaveCount(2);
       await expect(steps.getByText('Aurora', { exact: true })).toHaveCount(1);
       await expect(steps.getByText('Bedrock', { exact: true })).toHaveCount(1);
-      expect(await steps.locator('img').evaluateAll(imgs => imgs.every(img => (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalWidth > 0))).toBe(true);
+      await expect.poll(() => steps.locator('img').evaluateAll(imgs => imgs.every(img => (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalWidth > 0))).toBe(true);
       await page.getByRole('button', { name: 'Replay trace', exact: true }).click();
       await expect(steps.locator('[aria-current="step"]')).toBeVisible();
       await expect(page.getByText('Replaying recorded activity')).toBeVisible();
