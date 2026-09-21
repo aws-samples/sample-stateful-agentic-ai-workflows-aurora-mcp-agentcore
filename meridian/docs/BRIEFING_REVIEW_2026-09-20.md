@@ -1,5 +1,9 @@
 # Solution briefing review - September 20, 2026
 
+Historical consolidation pass. The later [visual walkthrough review](BRIEFING_VISUALS_2026-09-20.md)
+restores visible preparation and five phase diagrams following presenter feedback.
+The word counts and page heights below describe this earlier pass, not the current UI.
+
 The briefing now presents the architecture first, then explains governance and
 recovery, with three expandable technical references. The five application
 surfaces remain available. This review covers the briefing, its shell behavior,

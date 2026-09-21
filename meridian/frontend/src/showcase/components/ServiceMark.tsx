@@ -13,6 +13,26 @@
  */
 
 const MARKS = {
+  'app-runner': {
+    src: '/brand/aws-2026-07-31/app-runner.svg',
+    smallSrc: '/brand/aws-2026-07-31/app-runner.svg',
+    label: 'AWS App Runner',
+  },
+  lambda: {
+    src: '/brand/aws-2026-07-31/lambda.svg',
+    smallSrc: '/brand/aws-2026-07-31/lambda.svg',
+    label: 'AWS Lambda',
+  },
+  cloudfront: {
+    src: '/brand/aws-2026-07-31/cloudfront.svg',
+    smallSrc: '/brand/aws-2026-07-31/cloudfront.svg',
+    label: 'Amazon CloudFront',
+  },
+  s3: {
+    src: '/brand/aws-2026-07-31/s3.svg',
+    smallSrc: '/brand/aws-2026-07-31/s3.svg',
+    label: 'Amazon S3',
+  },
   aurora: {
     src: '/brand/aurora.svg',
     smallSrc: '/brand/aurora.svg',

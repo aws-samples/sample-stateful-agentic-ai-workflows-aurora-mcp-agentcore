@@ -274,11 +274,45 @@ from governed writes. Bedrock models and AgentCore Memory have separate roles.
 Use the official AWS artwork unchanged. At narrow container widths, use a
 vertical semantic flow instead of shrinking or horizontally scrolling the SVG.
 
-Group implementation details into three native disclosures: data and phases,
-tools and policy, recovery and evidence. The default view should explain the
-solution without opening them. Keep exact tool names, Cedar statements, failure
-windows and proof boundaries in the reference. Link to the capability ladder
-and System evidence for the walkthrough and observed results.
+Follow the architecture with three visible preparation rows: package facts,
+package descriptions and traveler facts. Each reads from source records through
+preparation to the store ready for its tools. Align these stages in columns on
+wide screens, with fine rules between rows and directional connectors. Stack
+each row into its reading order on narrow screens. Package IDs connect typed
+facts, indexed descriptions and current inventory; semantic and full-text
+preparation remain distinct.
+
+Keep a visible diagram for each of the five phases. Pair SQL with MCP and
+Production with Workflow when space permits; give Retrieval its own full-width
+sequence. Its three service stages are Bedrock query embedding with Cohere
+Embed v4, Aurora meaning and word search through pgvector and tsvector, and
+Bedrock reranking with Cohere Rerank 3.5. Show the parallel search branches and
+merge and deduplicate candidates by package ID before reranking. The bundled Bali photograph
+and BCH-003 package describe an illustrative catalog candidate. They do not
+claim a measured rank, availability or a live result. Put that distinction beside
+the diagram and direct readers to the capability ladder for observed scores.
+
+Use the incumbent Geist families, semantic theme colors and flat surfaces.
+Shared alignment, open spacing and thin dividers organize these explanatory
+flows; reserve the compact image card for the destination example. The local
+heading hierarchy is (36px) for the page, (28px) for sections and (21px) for phase
+titles, with body copy at (16px) and line height (1.6). Page and section headings
+reduce to (30px) and (24px) below a (760px) content width. On desktop, projector readability
+raises step labels, their supporting text, phase evidence, search branches and
+the merge label to (18px). These are briefing treatments, not new global tokens.
+
+At narrower widths, paired phases become separate rows and the destination
+example moves below retrieval. The architecture uses its vertical semantic
+flow below a (900px) container width; preparation and retrieval stages stack
+below (640px), and the compact three-step phase diagrams stack below (480px).
+Preserve readable labels and the same logical order through these changes.
+
+Keep implementation detail in three native disclosures after the visible
+walkthrough: data and phases, tools and policy, recovery and evidence. They
+start closed. The default view explains the solution without opening them.
+Keep exact tool names, Cedar statements, failure windows and proof boundaries
+in the reference. Link to the capability ladder and System evidence for the
+walkthrough and observed results.
 
 ### Workflow handoff and session close
 

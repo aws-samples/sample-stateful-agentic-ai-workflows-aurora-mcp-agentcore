@@ -1,6 +1,7 @@
 import { ArrowRight, ChevronDown } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { BriefingArchitecture } from './BriefingArchitecture';
+import { BriefingPhases, BriefingPreparation } from './BriefingWalkthrough';
 import { CONTROLS, PHASES, POLICIES, TOOLS } from './solutionBriefingContent';
 
 function Detail({ title, children }: { title: string; children: ReactNode }) {
@@ -26,27 +27,8 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence }: { onOpenLadde
         <div className="mds-brief-section-heading"><h2 id="brief-architecture-heading">The architecture</h2><p>Two execution paths sharing governed tools and durable workflow state.</p></div>
         <BriefingArchitecture />
       </section>
-      <div className="mds-brief-contracts">
-        <section className="mds-brief-section" aria-labelledby="brief-policy-heading">
-          <h2 id="brief-policy-heading">Before an action runs</h2>
-          <ol className="mds-brief-action">
-            <li><strong>The traveler confirms.</strong> The application pins identity, intent and the saved budget ceiling.</li>
-            <li><strong>Cedar decides.</strong> Gateway requires a permit before the Lambda target executes.</li>
-            <li><strong>Aurora validates and records.</strong> The transaction checks traveler scope and inventory, then returns a receipt.</li>
-          </ol>
-          <p>A courtesy hold allows up to <strong>6 travelers</strong> for <strong>12 hours</strong>, within the saved budget. Booking confirmation also checks ownership and expiry.</p>
-          <p className="mds-brief-note">Fictional Meridian inventory. No supplier is contacted and no payment is taken.</p>
-        </section>
-        <section className="mds-brief-section" aria-labelledby="brief-state-heading">
-          <h2 id="brief-state-heading">What survives a restart</h2>
-          <Facts items={[
-            ['Traveler preferences · Aurora', 'Saved facts and budget, read under traveler-scoped row-level security.'],
-            ['Conversation context · AgentCore Memory', 'Phase 4 context, scoped to the traveler and conversation.'],
-            ['Workflow progress · Aurora + LangGraph', 'Checkpoints, worker leases and hold intent let a replacement worker resume the same thread.'],
-          ]} />
-          <p>A resumed hold reuses the saved request and booking IDs. Verify the persisted booking and hold count to prove replay safety.</p>
-        </section>
-      </div>
+      <BriefingPreparation />
+      <BriefingPhases />
       <section className="mds-brief-section mds-brief-reference" aria-labelledby="brief-reference-heading">
         <div className="mds-brief-section-heading"><h2 id="brief-reference-heading">Technical reference</h2><p>Open the implementation detail when you need it.</p></div>
         <Detail title="Data preparation & the five phases">

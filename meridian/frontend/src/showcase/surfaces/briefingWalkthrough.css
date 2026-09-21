@@ -1,0 +1,90 @@
+/* Small explanatory diagrams share the architecture's service marks and type. */
+.mds-brief-preparation { border-top:1px solid var(--mc-line); }
+.mds-brief-prep-labels,.mds-brief-prep-paths>li { display:grid; grid-template-columns:1fr 1.2fr 1.05fr; gap:48px; }
+.mds-brief-prep-labels { padding:0 0 10px; color:var(--mc-muted); font-size:14px; }
+.mds-brief-prep-paths { list-style:none; padding:0; margin:0; }
+.mds-brief-prep-paths>li { align-items:center; padding:20px 0; border-top:1px solid var(--mc-line); }
+.mds-brief-prep-paths h3 { font-size:17px; }
+.mds-brief-prep-paths p { font-size:15px; margin-top:4px; }
+.mds-brief-step { position:relative; display:flex; align-items:flex-start; gap:12px; min-width:0; }
+.mds-brief-step>.mds-brief-prep-connector { position:absolute; left:-34px; top:6px; color:var(--mc-muted); }
+.mds-brief-step :is(img,svg) { flex:none; }
+.mds-brief-step>svg { color:var(--mc-muted); }
+.mds-brief-step>div { min-width:0; }
+.mds-brief-step strong,.mds-brief-step span { display:block; overflow-wrap:anywhere; }
+.mds-brief-step strong { font-size:16px; line-height:1.4; }
+.mds-brief-step span { color:var(--mc-muted); font-size:14px; line-height:1.5; margin-top:4px; }
+.mds-brief-walkthrough { border-top:1px solid var(--mc-line); }
+.mds-brief-phase-pair { display:grid; grid-template-columns:1fr 1fr; gap:40px; }
+.mds-brief-phase { min-width:0; padding:24px 0; border-top:1px solid var(--mc-line); }
+.mds-brief-phase-heading { margin-bottom:22px; }
+.mds-brief-phase-heading h3 { font-size:21px; letter-spacing:-.02em; }
+.mds-brief-phase-heading p { margin-top:6px; }
+.mds-brief-phase>p { margin-top:20px; }
+.mds-brief .mds-brief-phase-evidence { font-size:14px; }
+.mds-brief-mini-flow { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:28px; padding:0; margin:0; list-style:none; }
+.mds-brief-mini-flow li { min-width:0; position:relative; }
+.mds-brief-mini-flow .mds-brief-step { flex-direction:column; gap:10px; }
+.mds-brief-mini-flow .mds-brief-connector { position:absolute; top:6px; left:-25px; color:var(--mc-muted); }
+.mds-brief-retrieval { margin:0; }
+.mds-brief-query { display:flex; align-items:center; gap:14px; padding:16px 20px; background:var(--mc-soft); }
+.mds-brief-query>svg { flex:none; color:var(--mc-muted); }
+.mds-brief .mds-brief-query p { color:var(--mc-ink); font-size:20px; text-wrap:balance; }
+.mds-brief-query span { display:block; font-size:14px; color:var(--mc-muted); margin-top:4px; }
+.mds-brief-retrieval-layout { display:grid; grid-template-columns:minmax(0,1fr) 240px; gap:36px; padding:24px 0 18px; align-items:center; }
+.mds-brief-search-flow { display:grid; grid-template-columns:.9fr 1.55fr 1fr; align-items:start; gap:34px; list-style:none; padding:0; margin:0; }
+.mds-brief-search-flow>li { position:relative; min-width:0; }
+.mds-brief-search-flow>li>.mds-brief-connector { position:absolute; left:-28px; top:10px; color:var(--mc-muted); }
+.mds-brief-search-flow p { font-size:15px; margin-top:14px; }
+.mds-brief-search-branches { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+.mds-brief-search-branches>div { padding:12px 0; border-block:1px solid var(--mc-line); }
+.mds-brief-search-branches strong,.mds-brief-search-branches span { display:block; font-size:14px; }
+.mds-brief-search-branches span { color:var(--mc-muted); margin-top:4px; }
+.mds-brief-search-flow .mds-brief-merge { margin-top:10px; font-size:14px; }
+.mds-brief-destination-output { position:relative; min-width:0; }
+.mds-brief-result-connector { position:absolute; left:-29px; top:14px; color:var(--mc-muted); }
+.mds-brief-destination { align-self:start; min-width:0; border:1px solid var(--mc-line); border-radius:8px; overflow:hidden; }
+.mds-brief-destination>img { display:block; width:100%; height:auto; aspect-ratio:16 / 9; object-fit:cover; }
+.mds-brief-destination>div { padding:12px 14px 14px; }
+.mds-brief-destination span { display:block; color:var(--mc-muted); font-size:12px; margin-bottom:5px; }
+.mds-brief-destination h4 { font-size:17px; }
+.mds-brief-destination p { font-size:14px; margin-top:6px; }
+.mds-brief-retrieval figcaption { max-width:100ch; font-size:14px; line-height:1.6; color:var(--mc-muted); }
+@container (max-width:1100px) {
+  .mds-brief-phase-pair { grid-template-columns:1fr; gap:0; }
+  .mds-brief-mini-flow .mds-brief-step { flex-direction:row; }
+  .mds-brief-retrieval-layout { grid-template-columns:minmax(0,1fr); gap:22px; }
+  .mds-brief-destination { display:flex; max-width:500px; }
+  .mds-brief-destination-output { padding-top:16px; }
+  .mds-brief-result-connector { left:16px; top:-10px; transform:rotate(90deg); }
+  .mds-brief-destination>img { width:40%; height:auto; align-self:stretch; }
+  .mds-brief-prep-labels,.mds-brief-prep-paths>li { gap:28px; }
+  .mds-brief-step>.mds-brief-prep-connector { left:-24px; width:16px; }
+}
+@media (min-width:1241px) {
+  .mds-root[data-projector-readability='true'] .mds-brief :is(.mds-brief-step strong,.mds-brief-step span,.mds-brief-phase-evidence,.mds-brief-search-branches strong,.mds-brief-search-branches span,.mds-brief-merge) { font-size:18px; }
+}
+@container (max-width:640px) {
+  .mds-brief-prep-labels { display:none; }
+  .mds-brief-prep-paths>li { grid-template-columns:1fr; gap:18px; }
+  .mds-brief-prep-paths>li>.mds-brief-step { padding-left:20px; }
+  .mds-brief-step>.mds-brief-prep-connector { left:0; top:0; transform:rotate(90deg); }
+  .mds-brief-mini-flow { gap:24px; }
+  .mds-brief-mini-flow .mds-brief-step { flex-direction:column; }
+  .mds-brief-mini-flow .mds-brief-step strong { font-size:15px; }
+  .mds-brief-search-flow { grid-template-columns:1fr; gap:32px; }
+  .mds-brief-search-flow>li { padding-left:30px; }
+  .mds-brief-search-flow>li>.mds-brief-connector { left:2px; top:-26px; transform:rotate(90deg); }
+  .mds-brief-search-flow>li:first-child { padding-left:30px; }
+  .mds-brief-query { padding:14px; }
+  .mds-brief .mds-brief-query p { font-size:18px; }
+  .mds-brief-destination { display:block; max-width:320px; margin-left:30px; }
+  .mds-brief-destination>img { width:100%; }
+  .mds-brief-result-connector { left:30px; }
+}
+@container (max-width:480px) {
+  .mds-brief-mini-flow { grid-template-columns:1fr; gap:30px; padding-left:4px; }
+  .mds-brief-mini-flow .mds-brief-step { flex-direction:row; }
+  .mds-brief-mini-flow .mds-brief-step strong { font-size:16px; }
+  .mds-brief-mini-flow .mds-brief-connector { top:-26px; left:5px; transform:rotate(90deg); }
+}

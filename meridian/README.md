@@ -6,13 +6,14 @@ Meridian is a working travel concierge and L300 chalk-talk application for
 **SQL → MCP → Retrieval → Production → Workflow**. The main walkthrough follows
 **Concierge → Capability ladder → Recovery desk → System evidence**.
 The fifth view, **Solution briefing**, leads with an always-visible architecture,
-followed by concise governance and recovery explanations. Three technical
-reference panels hold data preparation, phase details, tool contracts, Cedar
-policies, and recovery evidence. It has no nested tabs or diagram modes.
+source-to-store data preparation, and five compact phase diagrams. Phase 3 shows
+hybrid retrieval with a query, service icons, and an illustrative Bali destination
+candidate. Three technical references hold implementation details, tool contracts,
+Cedar policies, and recovery evidence. It has no nested tabs or diagram modes.
 The 60-minute session budgets **40 minutes for slides, source walkthrough, and
 live demonstration**, plus 20 minutes for discussion and operational flex.
 The briefing hides the traveler sidebar for reading and uses a vertical
-architecture flow on narrow screens. See the [briefing review](docs/BRIEFING_REVIEW_2026-09-20.md).
+architecture flow on narrow screens. See the [visual walkthrough review](docs/BRIEFING_VISUALS_2026-09-20.md).
 Domain-data operations use the RDS Data API. LangGraph persists workflow
 checkpoints in Aurora through `AuroraDataApiSaver` or a pooled
 `AsyncPostgresSaver`; AgentCore Memory supplies conversation context.
@@ -203,7 +204,7 @@ the application loads; see `docs/AGENTCORE_LEARNINGS.md` for why.
 | **Capability ladder** | `/showcase?view=ladder` | Five phases, boundary queries, architecture disclosure, and live evidence |
 | **Recovery desk** | `/showcase?view=recovery` | Canceled-trip scenario, checkpointed shortlist, resume, package-hold receipt, and the handoff that carries the held package back to the concierge for the traveler's confirmation |
 | **System evidence** | `/showcase?view=proof` | Readback of the selected journey's checkpoints, execution leases, authorization, and holds |
-| **Solution briefing** | `/showcase?view=briefing` | Architecture, governance and recovery, with three expandable technical references and no nested tabs |
+| **Solution briefing** | `/showcase?view=briefing` | Architecture, visible data preparation, five phase diagrams and a hybrid-search example; three expandable references, no nested tabs |
 | **Demo Stage** | `/demo-stage`, `/stage` | Kiosk loop and presenter playback surface |
 
 `/showcase` opens Concierge; `/device-showcase` remains an alias. The selected
@@ -228,6 +229,12 @@ The architecture uses original SVG service icons from the July 31, 2026
 AWS architecture deck. The [asset provenance](frontend/public/brand/aws-2026-07-31/README.md)
 records the source slides and files. The diagram preserves their official
 colors and proportions in both themes.
+
+![Phase 3 hybrid retrieval with Bedrock, Aurora, two search paths, reranking, and an illustrative Bali candidate](docs/meridian-briefing-retrieval.png)
+
+The example uses a seeded catalog photograph. It explains vector and full-text
+search, candidate deduplication by package ID, and reranking; it does not claim a
+live score or result position. Run the capability ladder for observed results.
 
 </details>
 

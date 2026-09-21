@@ -6,13 +6,13 @@
 .mds-brief { width:100%; min-width:0; box-sizing:border-box; max-width:1440px; margin:0 auto; padding:32px 40px 40px; color:var(--mc-ink); font:16px/1.6 var(--mds-font); container-type:inline-size; }
 .mds-brief p { margin:0; color:var(--mc-muted); }
 .mds-brief h1,.mds-brief h2,.mds-brief h3,.mds-brief h4 { margin:0; text-wrap:balance; }
-.mds-brief h2 { font-size:26px; line-height:1.25; font-weight:550; }
+.mds-brief h2 { font-size:28px; line-height:1.25; font-weight:520; letter-spacing:-.025em; }
 .mds-brief h3 { font-size:20px; line-height:1.4; font-weight:550; }
 .mds-brief h4 { font-size:16px; line-height:1.5; font-weight:550; }
 .mds-brief strong { font-weight:550; color:var(--mc-ink); }
 .mds-brief code { font:.9em/1.6 var(--mds-font-mono); overflow-wrap:anywhere; }
 .mds-brief-head { padding-bottom:28px; }
-.mds-brief-head h1 { font-size:36px; line-height:1.2; margin-bottom:10px; }
+.mds-brief-head h1 { font-size:36px; line-height:1.2; margin-bottom:12px; font-weight:520; letter-spacing:-.035em; }
 .mds-brief-head p { max-width:65ch; font-size:18px; }
 .mds-brief-link { display:inline-flex; align-items:center; justify-content:space-between; gap:12px; min-height:44px; padding:10px 0; border:0; background:none; color:var(--mc-accent); font:inherit; cursor:pointer; text-align:left; }
 .mds-brief a { color:var(--mc-accent); text-decoration:underline; text-underline-offset:3px; }
@@ -21,13 +21,7 @@
 .mds-brief-overview { padding-top:0; }
 .mds-brief-section-heading { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:8px 24px; margin-bottom:20px; }
 .mds-brief-section-heading p { font-size:15px; }
-.mds-brief-contracts { display:grid; grid-template-columns:1fr 1fr; gap:56px; border-block:1px solid var(--mc-line); }
-.mds-brief-contracts h2 { margin-bottom:22px; }
-.mds-brief-contracts .mds-brief-section>p { margin-top:20px; }
 .mds-brief .mds-brief-note { font-size:14px; }
-.mds-brief-action { display:grid; gap:14px; padding-left:22px; margin:0; }
-.mds-brief-action li { padding-left:4px; color:var(--mc-muted); }
-.mds-brief-action li::marker { color:var(--mc-accent); }
 .mds-brief-facts { display:grid; margin:0; gap:14px; }
 .mds-brief-facts dt { font-weight:550; color:var(--mc-ink); }
 .mds-brief-facts dd { margin:4px 0 0; color:var(--mc-muted); }
@@ -55,8 +49,6 @@
 .mds-brief-footer>p { font-size:15px; }
 .mds-brief-footer>div { display:flex; flex-wrap:wrap; gap:8px 36px; padding-top:8px; }
 @container (max-width:760px) {
-  .mds-brief-contracts { grid-template-columns:1fr; gap:0; }
-  .mds-brief-contracts .mds-brief-section+.mds-brief-section { border-top:1px solid var(--mc-line); }
   .mds-brief-head h1 { font-size:30px; }
   .mds-brief h2 { font-size:24px; }
 }

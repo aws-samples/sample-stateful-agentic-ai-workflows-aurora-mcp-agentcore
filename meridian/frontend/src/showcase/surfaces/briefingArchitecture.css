@@ -1,6 +1,8 @@
 .mds-brief-architecture { margin:0; min-width:0; container:architecture / inline-size; color:var(--mc-ink); }
-.mds-brief-arch-delivery { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 24px; margin:0; padding:16px 0; border-block:1px solid var(--mc-line); font-size:16px; }
-.mds-brief-arch-delivery span { color:var(--mc-muted); }
+.mds-brief-arch-delivery { display:flex; flex-wrap:wrap; gap:20px 56px; margin:0; padding:18px 0; border-block:1px solid var(--mc-line); font-size:15px; }
+.mds-brief-arch-delivery>span { display:flex; gap:12px; align-items:center; color:var(--mc-muted); }
+.mds-brief-arch-delivery strong { display:block; font-weight:550; color:var(--mc-ink); }
+.mds-brief-arch-delivery img { flex:none; }
 .mds-brief-arch-diagram { display:block; width:100%; height:auto; margin:12px 0; font:16px var(--mds-font); fill:var(--mc-muted); }
 .mds-brief-arch-node rect { fill:var(--mc-surface); stroke:var(--mc-line); stroke-width:1.5; }
 .mds-brief-arch-title { font-size:17px; font-weight:550; fill:var(--mc-ink); }

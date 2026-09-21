@@ -4,6 +4,19 @@ import { describe, expect, it, vi } from 'vitest';
 import { SolutionBriefing } from '../SolutionBriefing';
 
 describe('SolutionBriefing', () => {
+  it('explains preparation and all five phases without opening reference panels', () => {
+    render(<SolutionBriefing onOpenLadder={() => {}} onOpenEvidence={() => {}} />);
+    expect(screen.getByRole('heading', { name: 'Prepare the data before the question' })).toBeVisible();
+    for (const name of ['Phase 1 · SQL', 'Phase 2 · MCP', 'Phase 3 · Retrieval', 'Phase 4 · Production', 'Phase 5 · Workflow']) {
+      expect(screen.getByRole('heading', { name })).toBeVisible();
+    }
+    expect(screen.getByText('Query vector → pgvector')).toBeVisible();
+    expect(screen.getByText('Query text → tsvector')).toBeVisible();
+    expect(screen.getByText('Merge candidates by package ID')).toBeVisible();
+    expect(screen.getByText('Illustrative query · seeded catalog example')).toBeVisible();
+    expect(screen.getByRole('img', { name: 'Green rice terraces and palms in Bali' })).toHaveAttribute('src', '/travel/catalog/BCH-003.jpg');
+  });
+
   it('keeps the architecture available while inspecting policies and tools', () => {
     render(<SolutionBriefing onOpenLadder={() => {}} onOpenEvidence={() => {}} />);
     expect(screen.getByRole('heading', { level: 1, name: 'Solution briefing' })).toBeInTheDocument();

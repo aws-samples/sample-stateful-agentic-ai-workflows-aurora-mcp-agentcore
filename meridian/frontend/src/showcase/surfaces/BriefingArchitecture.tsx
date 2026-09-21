@@ -14,7 +14,11 @@ export function BriefingArchitecture() {
     </g>
   );
   return <figure className="mds-brief-architecture">
-    <p className="mds-brief-arch-delivery">Browser → CloudFront → application <span>Static site in S3 · API on App Runner</span></p>
+    <div className="mds-brief-arch-delivery" aria-label="Published application delivery">
+      <span><ServiceMark name="cloudfront" size={28} /><span><strong>CloudFront</strong>Browser access + API routing</span></span>
+      <span><ServiceMark name="s3" size={28} /><span><strong>Amazon S3</strong>Static application files</span></span>
+      <span><ServiceMark name="app-runner" size={28} /><span><strong>App Runner</strong>FastAPI application</span></span>
+    </div>
     <svg className="mds-brief-arch-diagram" viewBox="0 0 1120 410" role="img" aria-labelledby={`${id}-title ${id}-description`}>
       <title id={`${id}-title`}>Meridian request and state architecture</title>
       <desc id={`${id}-description`}>FastAPI on App Runner invokes the Phase 4 Strands agent in AgentCore Runtime and runs the Phase 5 LangGraph workflow itself. Both call AgentCore Gateway, where Cedar policy governs calls before Lambda tools access Aurora PostgreSQL. FastAPI also reads catalog and traveler data through the Data API and persists workflow checkpoints and leases in Aurora. Bedrock supplies models and retrieval; AgentCore Memory retains Phase 4 conversation context.</desc>
@@ -29,7 +33,8 @@ export function BriefingArchitecture() {
         <path className="is-secondary" d="M118 230V358H984V286" />
         <path className="is-secondary" d="M386 314V358" />
       </g>
-      {node(18, 118, 200, 'FastAPI', ['App Runner', 'Identity + confirmation'], 'app-runner')}
+      <text x={18} y={104} className="mds-brief-arch-label">Phases 1–3 · data + retrieval</text>
+      {node(18, 118, 200, 'FastAPI', ['SQL · MCP · retrieval', 'Identity + confirmation'], 'app-runner')}
       <text x={268} y={28} className="mds-brief-arch-label">Phase 4 · managed concierge</text>
       {node(268, 42, 236, 'AgentCore Runtime', ['Strands agent', 'Conversation context'], 'agentcore')}
       <text x={268} y={188} className="mds-brief-arch-label">Phase 5 · durable workflow</text>

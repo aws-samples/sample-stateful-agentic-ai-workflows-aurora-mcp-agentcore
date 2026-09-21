@@ -55,6 +55,11 @@ for (const theme of ['light', 'dark']) {
         ? page.getByRole('img', { name: /Meridian request and state architecture/ })
         : page.getByRole('list', { name: 'Meridian request and state architecture' });
       await expect(architecture).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Prepare the data before the question' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Phase 3 · Retrieval' })).toBeVisible();
+      const candidate = page.getByRole('img', { name: 'Green rice terraces and palms in Bali' });
+      await candidate.scrollIntoViewIfNeeded();
+      await expect.poll(() => candidate.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
       const summaries = page.locator('.mds-brief summary');
       await expect(summaries).toHaveCount(3);
       for (const summary of await summaries.all()) {
