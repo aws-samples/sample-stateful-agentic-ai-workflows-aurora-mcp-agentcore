@@ -467,7 +467,7 @@ export function DesktopMeridianApp({
           >
           {isLadder && <CapabilityBrief phase={state.selectedPhase} />}
           {closing ? <SessionClose onEvidence={() => setView('proof')} onConcierge={openProduct} /> : isBriefing ? (
-            <SolutionBriefing onOpenLadder={() => setView('ladder')} />
+            <SolutionBriefing onOpenLadder={() => setView('ladder')} onOpenEvidence={() => setView('proof')} />
           ) : isProof ? (
             <>
             <PresenterProof

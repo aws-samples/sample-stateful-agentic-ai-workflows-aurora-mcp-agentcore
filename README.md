@@ -196,7 +196,7 @@ authenticated validation, new-account limitations and rollback.
 | Capability ladder | `/showcase?view=ladder` | Five phases with boundary queries, architecture, and live traces |
 | Recovery desk | `/showcase?view=recovery` | Canceled-trip scenario, saved shortlist, resume, package-hold receipt, and the handoff back to the concierge for confirmation |
 | System evidence | `/showcase?view=proof` | Aurora readback of checkpoints, executions, authorization, and holds |
-| Solution briefing | `/showcase?view=briefing` | Full architecture plus focused Trusted context, Governed action, and Durable recovery views; prepared-data flow, Cedar policies, and expandable implementation detail |
+| Solution briefing | `/showcase?view=briefing` | Always-visible architecture, concise governance and recovery explanations, and three technical reference panels; no nested tabs |
 | Demo Stage | `/demo-stage`, `/stage` | Kiosk loop and presenter playback |
 
 In windowed mode, **Presenter controls** provides an audience preview,
@@ -214,12 +214,13 @@ worker restart must preserve the same booking ID and original 15-minute expiry.
 
 ![Meridian Solution briefing showing the application, Runtime, Gateway policy, Lambda tools, and Aurora architecture](meridian/docs/meridian-solution-briefing.png)
 
-Captured from the local application on September 12, 2026. The briefing explains
+Captured from the local application on September 20, 2026. The briefing explains
 the configured design; System evidence reports what a journey actually observed.
 The architecture uses the original SVG service icons from the July 31, 2026
 AWS architecture deck, with their official colors and proportions preserved.
-See the [application guide](meridian/README.md#screenshots) for prepared-data and
-Recovery desk screenshots.
+The reading view hides the traveler sidebar and adapts the architecture to a
+vertical flow on phones. See the [briefing review](meridian/docs/BRIEFING_REVIEW_2026-09-20.md)
+for the consolidation and validation results.
 
 </details>
 

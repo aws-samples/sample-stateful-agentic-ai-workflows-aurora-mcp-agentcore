@@ -1,23 +1,26 @@
-.mds-brief-architecture { margin:0; min-width:0; }
-.mds-brief-arch-scroll { overflow-x:auto; border-radius:10px; background:var(--mc-soft); }
-.mds-brief-architecture svg { display:block; width:100%; min-width:820px; font:12px var(--mds-font); fill:var(--mc-muted); }
-.mds-brief-arch-node rect { fill:var(--mc-surface); stroke:var(--mc-line); }
-.mds-brief-arch-node.is-accent rect { stroke:var(--mc-accent); stroke-opacity:.6; }
-.mds-brief-architecture .mds-brief-arch-title { fill:var(--mc-ink); font-size:13px; font-weight:550; }
-.mds-brief-architecture .mds-brief-arch-label { font-size:11px; }
-.mds-brief-arch-edges { fill:none; stroke:var(--mc-muted); stroke-width:1.25; }
-.mds-brief-arch-edges .is-secondary { stroke-dasharray:5 4; }
-.mds-brief-architecture marker path { fill:var(--mc-muted); }
-.mds-brief-architecture figcaption { margin-top:10px; font-size:12px; color:var(--mc-muted); }
-
-.mds-brief-arch-controls { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
-.mds-brief-arch-controls button { border:1px solid var(--mc-line); padding:10px 14px; border-radius:8px; background:var(--mc-surface); color:var(--mc-ink); font:inherit; cursor:pointer; }
-.mds-brief-arch-controls button[aria-pressed="true"] { border-color:var(--mc-accent); color:var(--mc-accent); }
-.mds-brief-arch-focus h3 { font-size:26px; color:var(--mc-ink); margin:0 0 20px; }
-.mds-brief-arch-focus ol { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; list-style:none; padding:0; margin:0; }
-.mds-brief-arch-focus li { padding:22px; background:var(--mc-soft); border:1px solid var(--mc-line); border-radius:10px; }
-.mds-brief-arch-focus li > span { color:var(--mc-accent); font-size:18px; }
-.mds-brief-arch-focus h4 { font-size:22px; line-height:1.35; margin:14px 0 12px; color:var(--mc-ink); }
-.mds-brief-arch-focus p { font-size:18px; line-height:1.6; color:var(--mc-muted); margin:0; }
-.mds-brief-arch-focus .mds-brief-arch-boundary { margin-top:20px; padding-top:18px; border-top:1px solid var(--mc-line); color:var(--mc-ink); }
-@media (max-width:800px) { .mds-brief-arch-focus ol { grid-template-columns:1fr; } }
+.mds-brief-architecture { margin:0; min-width:0; container:architecture / inline-size; color:var(--mc-ink); }
+.mds-brief-arch-delivery { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px 24px; margin:0; padding:16px 0; border-block:1px solid var(--mc-line); font-size:16px; }
+.mds-brief-arch-delivery span { color:var(--mc-muted); }
+.mds-brief-arch-diagram { display:block; width:100%; height:auto; margin:12px 0; font:16px var(--mds-font); fill:var(--mc-muted); }
+.mds-brief-arch-node rect { fill:var(--mc-surface); stroke:var(--mc-line); stroke-width:1.5; }
+.mds-brief-arch-title { font-size:17px; font-weight:550; fill:var(--mc-ink); }
+.mds-brief-arch-label { font-size:16px; fill:var(--mc-muted); }
+.mds-brief-arch-edges { fill:none; stroke:var(--mc-accent); stroke-width:1.6; }
+.mds-brief-arch-edges .is-secondary { stroke:var(--mc-muted); stroke-dasharray:5 5; }
+.mds-brief-arch-diagram marker { fill:var(--mc-muted); }
+.mds-brief-arch-support { display:flex; flex-wrap:wrap; gap:20px 56px; border-top:1px solid var(--mc-line); padding:20px 0 12px; }
+.mds-brief-arch-support>div { display:flex; align-items:center; gap:12px; }
+.mds-brief-arch-support img { flex:none; }
+.mds-brief-arch-support p { margin:0; font-size:15px; line-height:1.5; }
+.mds-brief-arch-support strong { display:block; color:var(--mc-ink); font-weight:550; }
+.mds-brief-arch-support span { color:var(--mc-muted); }
+.mds-brief-architecture figcaption { padding-top:8px; font-size:14px; line-height:1.6; color:var(--mc-muted); }
+.mds-brief-arch-mobile { display:none; }
+@container architecture (max-width:900px) {
+  .mds-brief-arch-diagram,.mds-brief-arch-legend { display:none; }
+  .mds-brief-arch-mobile { display:grid; gap:0; list-style:none; padding:8px 0; margin:0; }
+  .mds-brief-arch-mobile li { position:relative; padding:18px 0 18px 24px; margin-left:6px; border-left:2px solid var(--mc-line); font-size:16px; line-height:1.6; }
+  .mds-brief-arch-mobile li::before { content:''; position:absolute; left:-5px; top:27px; width:8px; height:8px; border-radius:50%; background:var(--mc-accent); }
+  .mds-brief-arch-mobile strong { font-weight:550; }
+  .mds-brief-arch-mobile p { margin:4px 0 0; color:var(--mc-muted); }
+}

@@ -5,12 +5,14 @@
 Meridian is a working travel concierge and L300 chalk-talk application for
 **SQL → MCP → Retrieval → Production → Workflow**. The main walkthrough follows
 **Concierge → Capability ladder → Recovery desk → System evidence**.
-The fifth view, **Solution briefing**, explains prepared data, architecture,
-policy, and recovery through compact diagrams and expandable detail.
+The fifth view, **Solution briefing**, leads with an always-visible architecture,
+followed by concise governance and recovery explanations. Three technical
+reference panels hold data preparation, phase details, tool contracts, Cedar
+policies, and recovery evidence. It has no nested tabs or diagram modes.
 The 60-minute session budgets **40 minutes for slides, source walkthrough, and
 live demonstration**, plus 20 minutes for discussion and operational flex.
-Solution briefing offers focused Trusted context, Governed action, and Durable
-recovery views alongside the full architecture.
+The briefing hides the traveler sidebar for reading and uses a vertical
+architecture flow on narrow screens. See the [briefing review](docs/BRIEFING_REVIEW_2026-09-20.md).
 Domain-data operations use the RDS Data API. LangGraph persists workflow
 checkpoints in Aurora through `AuroraDataApiSaver` or a pooled
 `AsyncPostgresSaver`; AgentCore Memory supplies conversation context.
@@ -201,7 +203,7 @@ the application loads; see `docs/AGENTCORE_LEARNINGS.md` for why.
 | **Capability ladder** | `/showcase?view=ladder` | Five phases, boundary queries, architecture disclosure, and live evidence |
 | **Recovery desk** | `/showcase?view=recovery` | Canceled-trip scenario, checkpointed shortlist, resume, package-hold receipt, and the handoff that carries the held package back to the concierge for the traveler's confirmation |
 | **System evidence** | `/showcase?view=proof` | Readback of the selected journey's checkpoints, execution leases, authorization, and holds |
-| **Solution briefing** | `/showcase?view=briefing` | Prepared-data flow, architecture, five phases, Cedar policies, recovery failure windows, and implementation detail |
+| **Solution briefing** | `/showcase?view=briefing` | Architecture, governance and recovery, with three expandable technical references and no nested tabs |
 | **Demo Stage** | `/demo-stage`, `/stage` | Kiosk loop and presenter playback surface |
 
 `/showcase` opens Concierge; `/device-showcase` remains an alias. The selected
@@ -212,28 +214,20 @@ does not adopt unrelated SQL results or the latest historical journey; use
 
 ### Screenshots
 
-These captures use the reviewed local application, the light theme, and a
-1600 × 1000 fullscreen viewport on September 12, 2026. No API fixtures or
-generated mockups were used. The preparation image captures the actual
-Prepared data section; the Recovery desk image shows its initial state before
-starting a new workflow.
+The briefing capture uses the reviewed local application in the light theme on
+September 20, 2026. The Recovery desk capture is from September 12 at a
+1600 × 1000 fullscreen viewport, before starting a workflow. These are actual
+interface captures, not generated mockups; the briefing itself makes no service calls.
 
 <details>
 <summary>Solution briefing: architecture and boundaries</summary>
 
 ![Solution briefing with the shared Runtime and workflow paths through Gateway policy, Lambda targets, and Aurora](docs/meridian-solution-briefing.png)
 
-The architecture uses seven original SVG service icons from the July 31, 2026
-AWS architecture deck across its nine AWS nodes. The [asset provenance](frontend/public/brand/aws-2026-07-31/README.md)
+The architecture uses original SVG service icons from the July 31, 2026
+AWS architecture deck. The [asset provenance](frontend/public/brand/aws-2026-07-31/README.md)
 records the source slides and files. The diagram preserves their official
 colors and proportions in both themes.
-
-</details>
-
-<details>
-<summary>Prepared data: source records, preparation, and stores</summary>
-
-![The prepared-data section maps packages, descriptions, traveler facts, and tool rules to Aurora and AgentCore stores, followed by the retrieval sequence](docs/meridian-data-preparation.png)
 
 </details>
 

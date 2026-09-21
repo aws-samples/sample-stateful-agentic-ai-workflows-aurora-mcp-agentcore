@@ -261,6 +261,25 @@ All five surfaces use Geist Variable for headings, body copy, and controls. Shar
 
 The recovery checkpoint and package hold are separate facts. A checkpoint before inventory verification explicitly says no inventory is held yet. The hold receipt shows booking creation, expiry, and the calculated duration. System evidence reads these timestamps from Aurora and anchors its countdown to the browser receive time, so changing tabs cannot restart it. A replacement-created hold is distinguished from one that existed before replacement. Expired holds remain visible as records and no longer count against package capacity.
 
+### Solution briefing
+
+The briefing is an architecture-first reading surface. Keep the five application
+tabs, hide the traveler sidebar only in this view, and show the Meridian mark in
+the header. Do not add section tabs, diagram modes, or nested disclosures.
+
+Keep one architecture visible above governance and recovery. Show Phase 4 in
+AgentCore Runtime and Phase 5 in FastAPI, converging on Gateway, Cedar policy,
+Lambda tools and Aurora. Distinguish direct Data API access and workflow state
+from governed writes. Bedrock models and AgentCore Memory have separate roles.
+Use the official AWS artwork unchanged. At narrow container widths, use a
+vertical semantic flow instead of shrinking or horizontally scrolling the SVG.
+
+Group implementation details into three native disclosures: data and phases,
+tools and policy, recovery and evidence. The default view should explain the
+solution without opening them. Keep exact tool names, Cedar statements, failure
+windows and proof boundaries in the reference. Link to the capability ladder
+and System evidence for the walkthrough and observed results.
+
 ### Workflow handoff and session close
 
 Phase 5 teaches the checkpoint with a three-step path and a single action:

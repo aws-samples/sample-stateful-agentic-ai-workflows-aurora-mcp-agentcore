@@ -1,5 +1,3 @@
-import type { ServiceMarkName } from '../components/ServiceMark';
-
 // Implementation details shared by the compact briefing and its disclosures.
 export const PHASES: [string, string, string][] = [
   ['SQL', 'Ground the assistant in live rows.', 'Parameterised filters over trip_packages in Aurora PostgreSQL through the RDS Data API. The trace shows the SQL that ran and the rows it returned.'],
@@ -7,20 +5,6 @@ export const PHASES: [string, string, string][] = [
   ['Retrieval', 'Find trips by meaning.', 'pgvector similarity and full-text search fused into one candidate list, then reranked by Cohere Rerank 3.5 on Bedrock. The trace shows candidate scores and the rerank order.'],
   ['Production', 'Run the concierge on managed infrastructure under policy.', 'A Strands agent in Bedrock AgentCore Runtime calls its tools through AgentCore Gateway over MCP; a Cedar policy engine decides every call; AgentCore Memory carries the conversation. A courtesy hold and its confirmation are governed writes.'],
   ['Workflow', 'Make multi-step work survive a dead worker.', 'A LangGraph state graph checkpoints every node into Aurora, holds a worker lease, and places its hold through the same gateway tool. Kill the worker; a second one resumes the same thread and finds one hold.'],
-];
-
-export const MODEL_DECIDES: [string, string][] = [
-  ['Interpretation', 'What the traveler is asking for: destination, duration, party size, the preferences worth recalling.'],
-  ['Sequencing', 'Which gateway tool to call next, with which arguments drawn from the search results.'],
-  ['Prose', 'The reply the traveler reads, written from the tool results and the recalled facts.'],
-];
-
-export const CODE_DECIDES: [string, string][] = [
-  ['Who the caller is', 'STS or AgentCore Identity names the workload; Aurora binds that subject to a traveler before any row is read.'],
-  ['What a hold may cost', 'The budget ceiling comes from the traveler’s saved budget fact, read under RLS; the runtime pins it onto the hold call. The model never chooses it. The travel brief and the confirmation dialog show that same saved cap and the party ceiling derived from it, so what a traveler reads is the basis Cedar judged.'],
-  ['Whether a hold runs', 'The traveler’s confirmation flag and the ceiling travel as tool arguments; Cedar evaluates them before the Lambda runs.'],
-  ['Whether a booking is confirmed', 'The traveler confirms the held trip in the concierge. The backend reads the booking total under RLS, the runtime pins the confirmation and the ceiling, Cedar decides, and Aurora flips the same booking row from held to confirmed. No supplier, no payment.'],
-  ['Inventory and replay', 'create_courtesy_hold in Aurora takes the capacity lock, decrements seats and replays an identical request instead of holding twice.'],
 ];
 
 export const TOOLS: [string, string, string][] = [
@@ -45,25 +29,4 @@ export const CONTROLS: [string, string][] = [
   ['Scope every row', 'Row-Level Security filters rows to the authorized traveler under the least-privilege meridian_app role, inside one Data API transaction.'],
   ['Decide every tool call', 'AgentCore Gateway serves the tools over MCP with SigV4; its Cedar policy engine, MeridianGovernance in ENFORCE mode, decides each call on the arguments before any Lambda runs.'],
   ['Make the writer a workload too', 'The MeridianHolds Lambda holds its own grant, sets the traveler scope, steps down to meridian_app and calls create_courtesy_hold or confirm_booking, so a retried call replays the same booking or the same confirmation.'],
-];
-
-export const SERVICE_MARKS: Record<string, ServiceMarkName> = {
-  'Amazon Aurora PostgreSQL': 'aurora',
-  'Amazon Bedrock AgentCore Runtime': 'agentcore',
-  'Amazon Bedrock AgentCore Gateway': 'agentcore',
-  'Amazon Bedrock AgentCore Policy': 'agentcore',
-  'Amazon Bedrock AgentCore Memory': 'agentcore',
-  'Amazon Bedrock': 'bedrock',
-};
-
-export const SERVICES: [string, string][] = [
-  ['Amazon Aurora PostgreSQL', 'Catalog, traveler profile and preferences, identity bindings and audit, LangGraph checkpoints, journeys, leases and holds. pgvector HNSW for retrieval; RLS for scope; the RDS Data API as the connectionless transport.'],
-  ['Amazon Bedrock AgentCore Runtime', 'Hosts the Phase 4 Strands agent in its own microVM with the AWS Distro for OpenTelemetry attached.'],
-  ['Amazon Bedrock AgentCore Gateway', 'Serves the four tools over MCP with IAM authorization and names them Target___tool.'],
-  ['Amazon Bedrock AgentCore Policy', 'Cedar policy engine attached to the gateway in ENFORCE mode; default deny.'],
-  ['Amazon Bedrock AgentCore Memory', 'Semantic memory strategy over the concierge session, namespaced per traveler and conversation.'],
-  ['Amazon Bedrock', 'Configured Bedrock models for the agents; Cohere Embed v4 and Cohere Rerank 3.5 for retrieval.'],
-  ['AWS Lambda', 'The semantic search target and the MeridianHolds target behind the gateway.'],
-  ['Amazon CloudWatch', 'ADOT spans and structured logs in the runtime’s log group; every Phase 4 span in the trace panel links to its trace id.'],
-  ['AWS App Runner and Amazon CloudFront', 'The published site: the FastAPI backend as a container, the Vite build in S3, basic authentication and the API bearer token at the edge.'],
 ];

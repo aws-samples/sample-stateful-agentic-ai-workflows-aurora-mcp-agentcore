@@ -44,3 +44,34 @@ test('reduced-motion preference can change without reloading the page', async ({
   await page.getByRole('button', { name: 'Recovery desk', exact: true }).click();
   await expect.poll(() => page.evaluate(() => document.getAnimations().filter(a => a.playState === 'running').length)).toBe(0);
 });
+
+for (const theme of ['light', 'dark']) {
+  test(`${theme} briefing: keyboard reference, readable architecture and surface handoffs`, async ({ page }) => {
+    for (const width of [1440, 900, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/showcase?view=briefing&theme=${theme}`);
+      await expect(page.locator('.mds-desktop-sidebar')).toBeHidden();
+      const architecture = width > 900
+        ? page.getByRole('img', { name: /Meridian request and state architecture/ })
+        : page.getByRole('list', { name: 'Meridian request and state architecture' });
+      await expect(architecture).toBeVisible();
+      const summaries = page.locator('.mds-brief summary');
+      await expect(summaries).toHaveCount(3);
+      for (const summary of await summaries.all()) {
+        await summary.focus();
+        await page.keyboard.press('Enter');
+        await expect(summary.locator('..')).toHaveAttribute('open', '');
+      }
+      await expect(page.getByText('meridian_hold_governance')).toBeVisible();
+      await expect(architecture).toBeVisible();
+      const audit = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
+      expect(audit.violations).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.getByRole('button', { name: 'Inspect system evidence' }).click();
+      await expect(page.locator('.mds-desktop-app')).not.toHaveClass(/is-solution-briefing/);
+      await page.getByRole('button', { name: 'Solution briefing', exact: true }).click();
+      await page.getByRole('button', { name: 'Open the capability ladder' }).click();
+      await expect(page.locator('.mds-desktop-app')).not.toHaveClass(/is-solution-briefing/);
+    }
+  });
+}

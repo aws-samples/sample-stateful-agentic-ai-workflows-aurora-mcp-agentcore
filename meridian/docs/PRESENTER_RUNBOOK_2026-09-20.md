@@ -53,7 +53,7 @@ python scripts/validate_demo.py --base-url http://127.0.0.1:8014
 
 This runs real AWS calls, creates uniquely scoped test records, checks 32 contracts, and removes its own conversations/holds by default. Expect no failures, no request above the 55-second browser deadline, and a successful cleanup line. Cloud service audit events retain their configured lifetime. It does not certify hosted parity. If a failure interrupts cleanup, use the recorded IDs to inspect and release only those records.
 
-Enable **Projector readability** and use **Preview audience layout** before fullscreen. The five surface tabs are Concierge, Capability ladder, Recovery desk, System evidence, and Solution briefing. Use focused architecture views rather than reading the entire diagram at once. Browser access is a single shared demo principal bound to Alex; there is no end-user account-switch demonstration.
+Enable **Projector readability** and use **Preview audience layout** before fullscreen. The five surface tabs are Concierge, Capability ladder, Recovery desk, System evidence, and Solution briefing. The briefing keeps the architecture visible: trace Runtime and LangGraph into the shared governed tool path, then explain the direct Aurora state path. Open its three technical references only as needed. Browser access is a single shared demo principal bound to Alex; there is no end-user account-switch demonstration.
 
 ## Required sequence and observable results
 
@@ -98,7 +98,7 @@ For code walkthroughs, open `backend/routers/chat.py` (phase boundaries and name
 - **Handoff and confirmation:** Recovery desk → **Take it back to Alex** → review the trip → **Confirm this trip for Alex**. Expect the same booking to become confirmed in Aurora. Final direct confirmation measured 8.948 s. No supplier was contacted and no payment was taken.
 - **Lost response:** `python scripts/lost_response_demo.py` deliberately discards an actual committed Gateway response, retries the same intent, verifies one hold and unchanged expiry, then cleans its records. A timeout alone does not prove rollback.
 - **Denial:** use `python scripts/smoke_production_turn.py` for unconfirmed and over-budget policy checks. Do not secretly relax input constraints to turn a denial into a success. The automated suite also verifies an eight-traveler request is denied and creates no hold.
-- **Solution briefing:** architecture focus controls and temporal-policy discussion. Dogwood is assessed, not enabled. Online model-judge evaluation is not deployed.
+- **Solution briefing:** always-visible architecture, governance and recovery overview, and three technical references. The tool-and-policy reference links to the Dogwood assessment; Dogwood is not enabled. Online model-judge evaluation is not deployed.
 
 ## Reset, interruption and recovery
 
