@@ -63,6 +63,8 @@ decorative card accent. It is retained for its diagram meaning.
 
 - ESLint and TypeScript checks pass.
 - 246 frontend tests pass across 38 files.
+- 533 backend and repository-contract tests pass (6 skipped, 110 database
+  tests deselected), including the prohibition on tracked deployment addresses.
 - Production frontend build passes.
 - All 10 Playwright accessibility tests pass: five surfaces in light/dark at
   1366/640/320px; keyboard settings and reduced motion; expanded briefing
@@ -85,7 +87,9 @@ checkpoints. All 10 browser accessibility tests also passed against the hosted
 site with live APIs. This UI release did not rerun the earlier 32-contract
 workflow rehearsal; those results remain separately dated in the release report.
 
-Live view: [Solution briefing](https://d17oi0iipsnk8v.cloudfront.net/showcase?view=briefing).
+Open `/showcase?view=briefing` on the configured hosted site. Deployment addresses
+remain in ignored local release records, as required by the repository's
+published-endpoint contract.
 
 The architecture explains the design, not live execution. Timed human delivery,
 screen-reader use and actual room/back-row readability remain the presenter
