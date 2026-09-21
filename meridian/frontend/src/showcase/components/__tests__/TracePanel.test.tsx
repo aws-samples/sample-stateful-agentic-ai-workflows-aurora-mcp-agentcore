@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MeridianShowcaseState } from '../../hooks/useMeridianShowcase';
 import type { ShowcaseTraceSpan } from '../../lib/showcaseAdapters';
@@ -143,7 +143,7 @@ describe('TracePanel collapse behavior', () => {
     );
 
     expect(screen.queryByText('Aurora SQL query')).not.toBeInTheDocument();
-    expect(screen.getByText('1 spans')).toBeInTheDocument();
+    expect(screen.getByText('1 events')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /expand activity panel/i })).toHaveAttribute(
       'aria-expanded',
       'false',
@@ -251,7 +251,7 @@ describe('TracePanel collapse behavior', () => {
     })} />);
     const recall = screen.getByText('Recalling traveler context').closest('li')!;
     expect(recall).toHaveTextContent('AgentCore');
-    expect(recall).not.toHaveTextContent('Bedrock');
+    expect(recall.querySelector('summary')).not.toHaveTextContent('Bedrock');
     expect(container.querySelectorAll('.mds-thinking-service img')).toHaveLength(3);
     expect(screen.getByText('Querying live travel data').closest('li')).toHaveTextContent('Aurora');
     expect(screen.getByText('Evaluating options').closest('li')).toHaveTextContent('Bedrock');
@@ -261,8 +261,9 @@ describe('TracePanel collapse behavior', () => {
     const setTraceTab = vi.fn();
     render(<TracePanel state={makeState({ setTraceTab })} />);
 
+    fireEvent.click(screen.getByText('Inspect evidence'));
     const filters = screen.getByRole('group', { name: 'Trace filters' });
-    const trace = screen.getByRole('button', { name: 'Trace' });
+    const trace = screen.getByRole('button', { name: 'Overview' });
     const memory = screen.getByRole('button', { name: 'Memory' });
 
     expect(filters).toContainElement(trace);
@@ -291,11 +292,54 @@ describe('TracePanel collapse behavior', () => {
     };
     render(<TracePanel state={makeState({ traceSpans: [denied], expandedSpanId: 'span-deny' })} />);
 
-    expect(screen.getByText(/Denied by policy/)).toBeInTheDocument();
-    const row = screen.getByRole('button', { name: /Hold refused by Cedar policy/ });
-    expect(row).toHaveClass('is-denied');
+    fireEvent.click(screen.getByText('Understanding request'));
+    fireEvent.click(screen.getByText('Hold refused by Cedar policy'));
+    expect(screen.getByText(/Denied by policy/)).toBeVisible();
+    expect(screen.getByText('Hold refused by Cedar policy').closest('details')).toHaveClass('is-denied');
     const link = screen.getByRole('link', { name: 'Open in CloudWatch' });
     expect(link).toHaveAttribute('href', 'https://us-east-1.console.aws.amazon.com/cloudwatch/home');
     expect(link).toHaveAttribute('target', '_blank');
   });
+  it('groups every Phase 3 event once, with searches and reranking under their actual responsibilities', () => {
+    const events = [
+      ['Processing with Hybrid (pgvector + tsvector) + Cohere Rerank via Strands Supervisor', 'model', 'RetrievalAgent'],
+      ['RetrievalAgent invoked (Strands + Bedrock)', 'model', 'RetrievalAgent'],
+      ['Supervisor processing search request', 'orchestration', 'RetrievalAgent'],
+      ['Delegating to Search Agent', 'orchestration', 'RetrievalAgent'],
+      ['Generating text embedding', 'data', 'SearchAgent'],
+      ['Text embedding generated', 'data', 'SearchAgent'],
+      ["Semantic search: 'quiet romantic wine-country retreat with private villa'", 'orchestration', 'SearchAgent'],
+      ['Catalog card details hydrated', 'orchestration', 'SearchAgent'],
+      ['Lexical candidates merged', 'orchestration', 'SearchAgent'],
+      ['Cohere rerank applied', 'model', 'SearchAgent'],
+      ['Search Agent completed', 'orchestration', 'RetrievalAgent'],
+      ['Supervisor completed coordination', 'orchestration', 'RetrievalAgent'],
+      ['Supervisor returned 5 trips', 'synthesis', 'RetrievalAgent'],
+      ['Bedrock · concierge polish (global.anthropic.claude-sonnet-5)', 'model', 'RetrievalAgent'],
+    ];
+    const { container } = render(<TracePanel state={makeState({ selectedPhase: 3, traceSpans: events.map(([name, category, agent], index) => ({
+      ...traceSpan, id: `retrieval-${index}`, name, category, agent, sql: undefined, latencyMs: null,
+    })) })} />);
+    expect(container.querySelectorAll('.mds-activity-event')).toHaveLength(14);
+    expect(container.querySelectorAll('.mds-span-list')).toHaveLength(0);
+    expect(container.querySelectorAll('.mds-activity-group[open]')).toHaveLength(0);
+    const search = screen.getByText('Querying live travel data').closest('li')!;
+    expect(search).toHaveTextContent('Aurora');
+    expect(search).toHaveTextContent('Bedrock');
+    for (const index of [4, 5, 6, 7, 8, 10]) expect(within(search).getByText(events[index][0])).toBeInTheDocument();
+    expect(within(screen.getByText('Evaluating options').closest('li')!).getByText('Cohere rerank applied')).toBeInTheDocument();
+    expect(within(screen.getByText('Preparing response').closest('li')!).getByText(events[13][0])).toBeInTheDocument();
+    expect(screen.queryByText(/timing not recorded/)).not.toBeInTheDocument();
+  });
+
+  it('preserves unknown events and does not claim a group is complete with unconfirmed evidence', () => {
+    render(<TracePanel state={makeState({ traceSpans: [traceSpan,
+      { ...traceSpan, id: 'unknown', name: 'A new kind of evidence', category: 'new_category', type: 'new_type', status: 'error', sql: undefined },
+      { ...traceSpan, id: 'uncertain', name: 'Aurora query status unknown', status: 'unknown' },
+    ] })} />);
+    expect(screen.getByText('Additional activity').closest('li')).toHaveClass('is-error');
+    expect(screen.getByText('Querying live travel data').closest('li')).toHaveClass('is-unconfirmed');
+    expect(screen.getByText('A new kind of evidence')).toBeInTheDocument();
+  });
+
 });

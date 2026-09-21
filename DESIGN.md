@@ -239,7 +239,9 @@ Capability phase navigation uses intrinsic-width horizontal items and scrolls th
 
 ### Capability disclosure
 
-Each of the five capability phases presents one takeaway heading and one explanatory sentence. The shared native disclosure, **Architecture & evidence**, starts closed and contains the request path, technology, and evidence to inspect. Its summary is a text action with a chevron, a minimum height (44px), and visible focus; the chevron turns when open. Compact layouts stack the path and definition lists. Avoid repeating the same capability explanation in several adjacent containers.
+Each of the five capability phases presents one takeaway heading and one explanatory sentence. The local heading uses a compact base (24px) with the shared type scale, rendering at (28.32px) on desktop. The shared native disclosure, **Architecture & evidence**, starts closed and contains the request path, technology, and evidence to inspect. Its summary is a text action with a chevron, a minimum height (36px, or 44px for coarse pointers), and visible focus; the chevron turns when open. Compact layouts stack the path and definition lists. Avoid repeating the same capability explanation in several adjacent containers.
+
+Capability query starters are compact inline suggestions above the composer. Their query and availability label wrap within the available width, with a minimum height (36px, or 44px for coarse pointers). Assistant prose keeps the shared conversation typography.
 
 ### Recovery and evidence
 
@@ -251,7 +253,9 @@ Evidence uses readable worker cards, persisted-state rows, and labeled facts. Id
 
 ### Activity
 
-Recorded activity uses independent markers with explicit status labels for completion, replay, upcoming, unconfirmed, failed, and blocked states. Service marks and names come from the spans represented in each step; keep the supplied AWS artwork separate from the ordinary state icons. While the HTTP request is pending, explain that activity appears with the response. Show only steps represented by returned trace spans, without partial gradient connectors implying progress. Replay status and service marks follow the spans actually reached, including revisited groups, rather than an assumed phase order.
+Activity is one grouped trace. Steps start collapsed, with a status marker, explicit status label, service marks, and a chevron. Opening a step reveals its recorded events, each shown once under its owning step with its original event number. Opening an event reveals its technical payload. Fine dividers separate steps; an inset rule connects the contained events. The separate **Inspect evidence** disclosure starts closed and contains supporting diagnostics.
+
+Recorded activity uses independent markers with explicit status labels for completion, replay, upcoming, unconfirmed, failed, and blocked states. Service marks and names come from the spans represented in each step; keep the supplied AWS artwork separate from the ordinary state icons. While the HTTP request is pending, explain that activity appears with the response. Show only steps represented by returned trace spans, without partial gradient connectors implying progress. Replay status, visible events, and service marks follow the spans actually reached, including revisited groups, rather than an assumed phase order.
 
 ### Motion and feedback
 

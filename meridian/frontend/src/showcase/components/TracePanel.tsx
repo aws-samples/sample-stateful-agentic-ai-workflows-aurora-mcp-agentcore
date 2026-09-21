@@ -10,65 +10,28 @@ import { IconTooltip } from './ShowcaseTooltip';
 import { ServiceMark, type ServiceMarkName } from './ServiceMark';
 import { deriveAuroraEvidence, isPhaseProofObserved } from '../lib/showcaseProof';
 
-// Maps raw trace spans into five audience-readable progress steps. A span is
-// claimed by the first step that matches it, so a step whose spans are all
-// claimed by an earlier one can never land. That is why the runtime's opening
-// and closing spans are matched by name here rather than by their shared
-// category: "turn started" is the request being understood, "turn complete" is
-// the model having evaluated the options.
-const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTraceSpan) => boolean }[] = [
-  {
-    id: 'understand',
-    label: 'Understanding request',
-    matches: (s) =>
-      /^Processing with/i.test(s.name) ||
-      ['orchestration', 'security'].includes(s.category) ||
-      s.type === 'delegation' ||
-      (!['memory_short', 'memory_long', 'synthesis'].includes(s.category) &&
-        /classify|identity|scope|session|routing|strands agent|supervisor|turn started/i.test(s.name)),
-  },
-  {
-    id: 'recall',
-    label: 'Recalling traveler context',
-    matches: (s) =>
-      s.category !== 'synthesis' && !/checkpoint|persist|disabled/i.test(s.name) && (
-        ['memory_short', 'memory_long'].includes(s.category) ||
-        /recall|memory|preferences|interaction/i.test(s.name)),
-  },
-  {
-    id: 'inventory',
-    label: 'Querying live travel data',
-    matches: (s) =>
-      s.category !== 'model' && !/rerank/i.test(s.name) && (
-        ['data', 'tool'].includes(s.category) ||
-        /sql|pgvector|run_query|tools\/call|gateway|availability|trip_packages|booking|hybrid|embed|cohere/i.test(s.name)),
-  },
-  {
-    id: 'curate',
-    label: 'Evaluating options',
-    matches: (s) =>
-      s.category === 'model' ||
-      (s.category !== 'synthesis' && /rerank|rank|compose|synthes|claude|opus|reasoning|turn complete/i.test(s.name)),
-  },
-  {
-    id: 'optimize',
-    label: 'Preparing response',
-    matches: (s) =>
-      s.category === 'synthesis' ||
-      s.type === 'result' ||
-      /persist|workflow node: synthes|memory-grounded|workflowstate|response ready/i.test(s.name),
-  },
+// Classify specific actions before generic categories: older retrieval events
+// arrive as "orchestration" even when they are database searches. Every event
+// belongs to exactly one group, including unrecognized or unsuccessful events.
+const ACTIVITY_GROUPS = [
+  { id: 'understand', label: 'Understanding request' },
+  { id: 'recall', label: 'Recalling traveler context' },
+  { id: 'inventory', label: 'Querying live travel data' },
+  { id: 'curate', label: 'Evaluating options' },
+  { id: 'optimize', label: 'Preparing response' },
+  { id: 'other', label: 'Additional activity' },
 ];
 
-function classifySpansToPhases(spans: ShowcaseTraceSpan[]): Map<string, string> {
-  const map = new Map<string, string>();
-  spans.forEach((span) => {
-    const matchedIdx = THINKING_PHASES.findIndex((phase) => phase.matches(span));
-    if (matchedIdx >= 0) {
-      map.set(span.id, THINKING_PHASES[matchedIdx].id);
-    }
-  });
-  return map;
+function activityGroup(span: ShowcaseTraceSpan): string {
+  const { name, category, type } = span;
+  if (/^Processing with|disabled/i.test(name) || category === 'security') return 'understand';
+  if (category === 'synthesis' || type === 'result' || /checkpoint|persist|response ready|concierge polish|workflow node: synthes/i.test(name)) return 'optimize';
+  if (['memory_short', 'memory_long'].includes(category) || /recall|memory|preferences|interaction/i.test(name)) return 'recall';
+  if (/rerank|rank|compose|turn complete/i.test(name)) return 'curate';
+  if (['data', 'tool', 'gateway'].includes(category) || /sql|pgvector|tools\/call|gateway|availability|trip_packages|booking|hybrid|embed|semantic search|lexical|catalog.*hydrat|search agent completed|eligibility filter/i.test(name)) return 'inventory';
+  if (category === 'orchestration' || type === 'delegation' || /classify|identity|scope|session|routing|invoked|strands agent|supervisor|turn started/i.test(name)) return 'understand';
+  if (category === 'model' || /claude|opus|reasoning/i.test(name)) return 'curate';
+  return 'other';
 }
 
 export function TracePanel({
@@ -85,7 +48,6 @@ export function TracePanel({
   const sqlSpans = state.traceSpans.filter((span) => span.sql);
   const memoryFacts = state.memoryFacts;
   const agentCount = new Set(state.traceSpans.map((span) => span.agent).filter(Boolean)).size;
-  const activeSpans = compact ? state.traceSpans.slice(0, 4) : state.traceSpans;
   const phaseMeta = SHOWCASE_PHASES.find((phase) => phase.phase === state.selectedPhase);
   // The pill asserts the phase's proof point, so it waits for the
   // evidence behind that claim rather than for any span at all.
@@ -128,7 +90,7 @@ export function TracePanel({
             <strong>Activity</strong>
             {collapsed && (
               <span className="mds-collapse-hint">
-                {state.traceSpans.length} spans
+                {state.traceSpans.length} events
               </span>
             )}
           </button>
@@ -160,22 +122,22 @@ export function TracePanel({
       {!collapsed && (
         <>
           <div className="mds-trace-scroll">
-            {/* Recorded steps carry their own status and observed service sources. */}
-            {hasTraceActivity && <ThinkingPhases state={state} />}
+            {hasTraceActivity ? <ActivityTrace key={state.traceSpans[0]?.id ?? 'waiting'} state={state} />
+              : <div className="mds-empty">Ask a question to see the evidence behind the answer.</div>}
 
-            {!compact && (
+            {!compact && <details className="mds-trace-inspector">
+              <summary>Inspect evidence<ChevronDown size={14} aria-hidden="true" /></summary>
               <div className="mds-trace-summary">
                 <span>{state.phaseLabel}</span>
                 {phaseMeta && proofObserved && (
                   <span className="mds-proof-pill">{phaseMeta.proofPoint}</span>
                 )}
-                {state.traceSpans.length > 0 && <span>{state.traceSpans.length} spans</span>}
+                {state.traceSpans.length > 0 && <span>{state.traceSpans.length} events</span>}
                 {agentCount > 0 && <span>{agentCount} agents</span>}
                 {state.totalLatencyMs > 0 && <span>{state.totalLatencyMs}ms recorded</span>}
               </div>
-            )}
-            {!compact && state.selectedPhase === 2 && <McpToolContractPanel state={state} />}
-            {!compact && state.selectedPhase === 5 && <WorkflowStateInspector state={state} />}
+            {state.selectedPhase === 2 && <McpToolContractPanel state={state} />}
+            {state.selectedPhase === 5 && <WorkflowStateInspector state={state} />}
             {!compact && (
               <div className="mds-trace-tabs" role="group" aria-label="Trace filters">
                 {/* RLS is a Phase 4 proof point, so other phases keep the lean tab set. */}
@@ -191,7 +153,7 @@ export function TracePanel({
                     onClick={() => state.setTraceTab(tab)}
                   >
                     {tab === 'spans'
-                      ? 'Trace'
+                      ? 'Overview'
                       : tab === 'memory'
                         ? 'Memory'
                         : tab === 'sql'
@@ -207,25 +169,7 @@ export function TracePanel({
               state.selectedPhase === 5 &&
               state.traceSpans.length > 0 && <WorkflowGraph state={state} />}
 
-            {state.traceTab === 'spans' || compact ? (
-              <div className="mds-span-list">
-                {activeSpans.length === 0 ? (
-                  <div className="mds-empty">Submit a prompt to generate trace spans.</div>
-                ) : (
-                  activeSpans.map((span, index) => (
-                    <TraceSpanRow
-                      key={span.id}
-                      span={span}
-                      index={index}
-                      active={state.replayIndex === index || (!state.isReplaying && state.expandedSpanId === span.id)}
-                      visible={!state.isReplaying || state.replayIndex >= index}
-                      expanded={!compact && state.expandedSpanId === span.id}
-                      onToggle={() => state.setExpandedSpanId(state.expandedSpanId === span.id ? null : span.id)}
-                    />
-                  ))
-                )}
-              </div>
-            ) : state.traceTab === 'memory' ? (
+            {state.traceTab === 'spans' ? null : state.traceTab === 'memory' ? (
               <div className="mds-memory-mini">
                 {memoryFacts.length === 0 ? (
                   <div className="mds-empty">
@@ -256,6 +200,7 @@ export function TracePanel({
                 )}
               </div>
             )}
+            </details>}
           </div>
 
           {!compact && (
@@ -360,59 +305,61 @@ function CopyTraceButton({ state }: { state: MeridianShowcaseState }) {
 
 const ACTIVITY_SERVICES: { name: ServiceMarkName; label: string; matches: (span: ShowcaseTraceSpan) => boolean }[] = [
   { name: 'agentcore', label: 'AgentCore', matches: span => /agentcore/i.test(`${span.name} ${span.component ?? ''}`) },
-  { name: 'aurora', label: 'Aurora', matches: span => Boolean(span.sql) || /aurora|postgres|pgvector/i.test(`${span.name} ${span.component ?? ''}`) },
-  { name: 'bedrock', label: 'Bedrock', matches: span => /claude|cohere|bedrock(?!\s+agentcore)/i.test(`${span.name} ${span.component ?? ''}`) },
+  { name: 'aurora', label: 'Aurora', matches: span => Boolean(span.sql) || /aurora|postgres|pgvector/i.test(`${span.name} ${span.component ?? ''}`) || (span.agent === 'SearchAgent' && /semantic search|catalog card details hydrated|lexical candidates merged/i.test(span.name)) },
+  { name: 'bedrock', label: 'Bedrock', matches: span => /claude|cohere|bedrock(?!\s+agentcore)/i.test(`${span.name} ${span.component ?? ''}`) || (span.agent === 'SearchAgent' && /^(Generating text embedding|Text embedding generated)$/i.test(span.name)) },
   { name: 'lambda', label: 'Lambda', matches: span => /lambda/i.test(`${span.name} ${span.component ?? ''}`) },
 ];
 
-function ThinkingPhases({ state }: { state: MeridianShowcaseState }) {
+function ActivityTrace({ state }: { state: MeridianShowcaseState }) {
   const spans = state.traceSpans;
-  const phaseBySpan = classifySpansToPhases(spans);
-  // Trace arrives with the HTTP response. Never animate guessed tool progress
-  // while waiting, or turn absent evidence into a successful step.
+  // The response carries the trace as a batch. Do not invent live progress.
   if (state.isLoading && !spans.length) {
     return <div className="mds-thinking mds-thinking-wait" role="status">
       <Loader2 size={18} aria-hidden="true" />
       <div><strong>Working on your request</strong><p>Activity appears with the response.</p></div>
     </div>;
   }
-  const phases = THINKING_PHASES.filter(phase =>
-    (phase.id !== 'recall' || state.selectedPhase === 5 || (state.selectedPhase === 4 && state.memoryEnabled)) &&
-    spans.some(span => phaseBySpan.get(span.id) === phase.id));
   const reached = state.isReplaying ? spans.slice(0, Math.max(0, state.replayIndex + 1)) : spans;
   const currentSpan = spans[state.replayIndex];
-  const currentPhase = state.isReplaying && currentSpan ? phaseBySpan.get(currentSpan.id) : undefined;
+  const currentGroup = state.isReplaying && currentSpan ? activityGroup(currentSpan) : undefined;
   const statusLabels = { done: 'Complete', active: 'Replaying', pending: 'Upcoming', unconfirmed: 'Unconfirmed', error: 'Failed', denied: 'Blocked' };
 
   return (
-    <div className="mds-thinking" aria-live="polite">
-      <p className="mds-thinking-caption">{state.isReplaying ? 'Replaying recorded activity' : 'Recorded activity'}</p>
+    <div className="mds-thinking">
+      <p className="mds-thinking-caption" role="status">{state.isReplaying ? 'Replaying recorded activity' : 'Recorded activity'} · {spans.length} events</p>
       <ol className="mds-thinking-list" aria-label="Recorded request steps">
-        {phases.map(phase => {
-          const recorded = reached.filter(span => phaseBySpan.get(span.id) === phase.id);
-          // Keep earlier evidence when replay revisits an earlier group. A
-          // canonical phase index is not the execution order of the trace.
+        {ACTIVITY_GROUPS.filter(group => spans.some(span => activityGroup(span) === group.id)).map(group => {
+          const recorded = reached.filter(span => activityGroup(span) === group.id);
           const status = recorded.some(span => span.status === 'denied') ? 'denied'
             : recorded.some(span => span.status === 'error') ? 'error'
-              : currentPhase === phase.id ? 'active'
-                : recorded.some(span => ['ok', 'delegated'].includes(span.status)) ? 'done'
-                  : recorded.length ? 'unconfirmed' : 'pending';
-          const services = ACTIVITY_SERVICES.filter(service => recorded.some(service.matches));
+              : currentGroup === group.id ? 'active'
+                : !recorded.length ? 'pending'
+                  : recorded.every(span => ['ok', 'delegated'].includes(span.status)) ? 'done' : 'unconfirmed';
+          const services = ACTIVITY_SERVICES.filter(service => recorded.some(span => !/^Processing with/i.test(span.name) && service.matches(span)));
           const StatusIcon = status === 'done' ? Check : status === 'error' ? X
             : status === 'denied' ? ShieldX : status === 'active' ? Loader2 : Circle;
           return (
-            <li key={phase.id} className={`mds-thinking-item is-${status}`} aria-current={status === 'active' ? 'step' : undefined}>
-              <span className="mds-thinking-marker" aria-hidden="true"><StatusIcon size={17} strokeWidth={2} /></span>
-              <span className="mds-thinking-copy">
-                <span>{phase.label}</span>
-                <span className="mds-thinking-meta">
-                  <span className="mds-thinking-status">{statusLabels[status]}</span>
-                  {services.map(service => <span className="mds-thinking-service" key={service.name}>
-                    <ServiceMark name={service.name} size={16} /><span>{service.label}</span>
-                  </span>)}
-                  {recorded.length > 0 && services.length === 0 && <span className="mds-thinking-service"><Workflow size={15} aria-hidden="true" /><span>Meridian app</span></span>}
-                </span>
-              </span>
+            <li key={group.id} className={`mds-thinking-item is-${status}`} aria-current={status === 'active' ? 'step' : undefined}>
+              <details className="mds-activity-group">
+                <summary>
+                  <span className="mds-thinking-marker" aria-hidden="true"><StatusIcon size={17} strokeWidth={2} /></span>
+                  <span className="mds-thinking-copy">
+                    <span>{group.label}</span>
+                    <span className="mds-thinking-meta">
+                      <span className="mds-thinking-status">{statusLabels[status]}</span>
+                      {services.map(service => <span className="mds-thinking-service" key={service.name}>
+                        <ServiceMark name={service.name} size={16} /><span>{service.label}</span>
+                      </span>)}
+                      {recorded.length > 0 && services.length === 0 && <span className="mds-thinking-service"><Workflow size={15} aria-hidden="true" /><span>Meridian app</span></span>}
+                    </span>
+                  </span>
+                  <ChevronDown className="mds-activity-chevron" size={15} aria-hidden="true" />
+                </summary>
+                <div className="mds-activity-events">
+                  {recorded.length ? recorded.map(span => <TraceSpanRow key={span.id} span={span} index={spans.indexOf(span)} active={state.isReplaying && span.id === currentSpan?.id} />)
+                    : <p className="mds-empty">This step has not been reached in the replay.</p>}
+                </div>
+              </details>
             </li>
           );
         })}
@@ -421,69 +368,25 @@ function ThinkingPhases({ state }: { state: MeridianShowcaseState }) {
   );
 }
 
-function TraceSpanRow({
-  span,
-  index,
-  active,
-  visible,
-  expanded,
-  onToggle,
-}: {
-  span: ShowcaseTraceSpan;
-  index: number;
-  active: boolean;
-  visible: boolean;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  // Stagger row entry so dense traces read as a sequence, not a flash.
-  const animationDelay = `${Math.min(index * 35, 480)}ms`;
+function TraceSpanRow({ span, index, active }: { span: ShowcaseTraceSpan; index: number; active: boolean }) {
   const denied = span.status === 'denied';
   const failed = span.status === 'error';
   const statusLabel = denied ? 'Denied by policy' : failed ? 'Failed' : span.status;
-
-  // A div with button semantics: the expanded detail can carry a real link
-  // (the CloudWatch trace), which HTML does not allow inside a <button>.
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      aria-expanded={expanded}
-      className={`mds-span-row${active ? ' is-active' : ''}${visible ? '' : ' is-pending'}${denied ? ' is-denied' : ''}${failed ? ' is-failed' : ''}`}
-      style={{ animationDelay }}
-      onClick={onToggle}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onToggle();
-        }
-      }}
-    >
-      <span className="mds-span-check">{index + 1}</span>
-      <span className="mds-span-main">
-        <span className="mds-span-title">{span.name}</span>
-        <span className="mds-span-meta">
-          {span.category} · {statusLabel} · {span.latencyMs === null ? 'timing not recorded' : `${span.latencyMs}ms`}
-          {span.component ? ` · ${span.component}` : ''}
-        </span>
-        {(span.agent || span.file) && (
-          <span className="mds-span-source">
-            {span.agent ?? 'Agent'}{span.file ? ` · ${span.file}` : ''}
-          </span>
-        )}
-        {expanded && (
-          <span className="mds-span-detail">
-            {span.details || span.output || 'No output payload on this span.'}
-            {span.sql && <code>{span.sql}</code>}
-            {span.fields.map((field) => (
-              <small key={`${span.id}-${field.label}`}>
-                {field.label}: <SpanFieldValue value={field.value} />
-              </small>
-            ))}
-          </span>
-        )}
-      </span>
-    </div>
+    <details className={`mds-activity-event${active ? ' is-active' : ''}${denied ? ' is-denied' : ''}${failed ? ' is-failed' : ''}`}>
+      <summary>
+        <span className="mds-activity-event-index">{index + 1}</span>
+        <span>{span.name}</span>
+        <ChevronDown size={13} aria-hidden="true" />
+      </summary>
+      <div className="mds-activity-event-detail">
+        <p className="mds-activity-event-meta">{span.category} · {statusLabel}{span.latencyMs === null ? '' : ` · ${span.latencyMs}ms`}{span.component ? ` · ${span.component}` : ''}</p>
+        {(span.agent || span.file) && <p className="mds-activity-event-source">{span.agent ?? 'Agent'}{span.file ? ` · ${span.file}` : ''}</p>}
+        <p>{span.details || span.output || 'No output payload on this event.'}</p>
+        {span.sql && <pre>{span.sql}</pre>}
+        {span.fields.map(field => <p key={`${span.id}-${field.label}`}>{field.label}: <SpanFieldValue value={field.value} /></p>)}
+      </div>
+    </details>
   );
 }
 

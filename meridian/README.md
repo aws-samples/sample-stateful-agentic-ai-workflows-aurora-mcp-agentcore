@@ -217,9 +217,12 @@ Concierge and the capability ladder use compact, right-aligned traveler messages
 and open assistant replies aligned with the composer. Reply text keeps a readable
 line length; trip results can fill the conversation column. The shared composer
 expands for multiline requests: **Enter** sends and **Shift+Enter** adds a line.
-Activity uses separate completion, replay, and failure markers, with small AWS
-service icons identified from the returned trace. It shows recorded steps rather
-than guessing tool progress while the HTTP response is pending.
+Activity presents one expandable trace, inspired by Onward: each step shows its
+recorded status and AWS service icons, with its events and technical payloads
+available on expansion. **Inspect evidence** holds SQL, memory, policy checks,
+and phase-specific diagnostics. The panel waits for returned evidence before
+showing step progress. Compact ladder headings and query suggestions preserve
+space for the conversation.
 
 ### Screenshots
 

@@ -98,8 +98,11 @@ state, so a prose rewrite cannot contradict its recorded hold outcome.
 
 Chat uses compact traveler messages and open assistant replies aligned with a
 multiline composer. **Enter** sends; **Shift+Enter** adds a line. Activity shows
-recorded step outcomes with AWS service icons and preserves completed evidence
-during replay, including when trace events arrive out of phase order.
+one expandable trace with recorded step outcomes and AWS service icons. Expand a
+step to inspect its events, then an event for technical details. SQL, memory, and
+policy tools live under **Inspect evidence**. Replay preserves completed evidence
+when events arrive out of phase order. The capability ladder uses smaller headings
+and compact query suggestions to leave more room for the conversation.
 
 ### Recovering from a slow or lost response
 
