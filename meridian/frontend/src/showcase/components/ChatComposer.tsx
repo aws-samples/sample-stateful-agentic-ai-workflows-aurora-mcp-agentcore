@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import {
   CalendarDays,
@@ -31,14 +31,29 @@ export function ChatComposer({
   conciergeMode?: boolean;
 }) {
   const [openChip, setOpenChip] = useState<ChipKey | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const keyboardHintId = useId();
   const contextConnecting = state.memoryLoading && (conciergeMode || state.selectedPhase === 4);
   const requestBusy = state.isLoading || contextConnecting;
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    if (requestBusy) return;
+    if (requestBusy || !state.currentPrompt.trim()) return;
     void state.submitPrompt(undefined, conciergeMode ? 4 : undefined);
   };
+
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    const resize = () => {
+      input.style.height = 'auto';
+      input.style.height = `${input.scrollHeight}px`;
+    };
+    resize();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
+    observer?.observe(input);
+    return () => observer?.disconnect();
+  }, [state.currentPrompt]);
 
   // Experience stays quiet with two known-good prompts. System proof keeps the
   // third stretch prompt because exposing each phase's limit is the teaching
@@ -137,9 +152,17 @@ export function ChatComposer({
       {contextConnecting && <p role="status">Connecting traveler context. Wait for authorization before sending.</p>}
       <form className={`mds-chat-composer${compact ? ' is-compact' : ''}`} onSubmit={onSubmit}>
         {conciergeMode && <span className="mc-composer-icon" aria-hidden="true"><ConciergeBell size={21} strokeWidth={1.6} /></span>}
-        <input
+        <textarea
+          ref={inputRef}
+          rows={1}
           value={state.currentPrompt}
           onChange={(event) => state.setCurrentPrompt(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
           placeholder={
             recoveryMode
               ? 'Describe the trip you need to recover…'
@@ -147,6 +170,7 @@ export function ChatComposer({
           }
           disabled={requestBusy}
           aria-label="Ask Meridian anything"
+          aria-describedby={keyboardHintId}
         />
         <button
           type="submit"
@@ -161,6 +185,7 @@ export function ChatComposer({
           )}
         </button>
       </form>
+      <p className="mc-composer-hint" id={keyboardHintId}>Enter to send · Shift + Enter for a new line</p>
       {!compact && !proofMode && (
         <div className="mds-chat-quick-actions" aria-label="Quick concierge actions">
           <TravelersChip

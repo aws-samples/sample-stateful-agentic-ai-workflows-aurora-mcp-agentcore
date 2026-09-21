@@ -149,11 +149,15 @@
 .mds-root .mc-trip.is-featured .mc-trip-match { padding: 10px 18px; }
 .mds-root .mc-supporting-trips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
 .mds-root .mc-supporting-trips .mc-trip-copy > p { display: none; }
+.mds-root .mc-supporting-trips .mc-trip-copy footer { flex-wrap: wrap; }
 .mds-root .mc-catalog-note { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; color: var(--mc-muted); font-size: calc(10px * var(--mc-type-scale)); line-height: 1.6; }
-.mds-root .mc-conversation { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 22px; }
-.mds-root .mc-message { max-width: 75ch; font-size: calc(14px * var(--mc-type-scale)); line-height: 1.7; padding-bottom: 8px; }
+.mds-root .mc-conversation { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 28px; }
+.mds-root .mc-message { min-width: 0; font-size: calc(14px * var(--mc-type-scale)); line-height: 1.7; padding-bottom: 8px; }
+.mds-root .mc-message.is-bot { width: 100%; }
+.mds-root .mc-message.is-bot .mds-message-text { max-width: 75ch; }
 .mds-root .mc-message p { margin: 7px 0; }
-.mds-root .mc-message.is-user { padding: 12px 18px; background: var(--mc-soft); border-radius: 12px 12px 3px 12px; align-self: flex-end; max-width: 85%; }
+.mds-root .mc-message.is-user p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.mds-root .mc-message.is-user { padding: 12px 18px; background: var(--mc-soft); border-radius: 16px; align-self: flex-end; max-width: min(680px, 85%); }
 .mds-root .mc-message-author { display: flex; align-items: center; gap: 8px; font-size: calc(12px * var(--mc-type-scale)); font-weight: 600; color: var(--mc-muted); }
 .mds-root .mc-conversation:not(:empty) { margin-bottom: 26px; }
 .mds-root .mc-loading, .mds-root .mc-empty-results { display: flex; align-items: center; gap: 13px; padding: 20px 0; color: var(--mc-muted); font-size: calc(14px * var(--mc-type-scale)); }
@@ -200,16 +204,18 @@
 .mds-root .is-discovery .mds-chat-query-starters { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 0 0 12px; }
 .mds-root .is-discovery .mds-chat-starter-label { font-size: calc(10px * var(--mc-type-scale)); color: var(--mc-muted); text-transform: none; font-weight: 500; letter-spacing: 0; margin-right: 4px; }
 .mds-root .is-discovery .mds-chat-starter-chip { min-height: 30px; padding: 6px 10px; border: 1px solid var(--mc-line); border-radius: 5px; background: none; color: var(--mc-ink); font-size: calc(11px * var(--mc-type-scale)); }
-.mds-root .is-discovery .mds-chat-composer { display: flex; align-items: center; gap: 13px; padding: 8px 10px 8px 16px; min-height: 62px; background: var(--mc-soft); border: 1px solid var(--mc-line); border-radius: 10px; }
-.mds-root .mc-composer-icon { display: flex; color: var(--mc-accent); }
-.mds-root .is-discovery .mds-chat-composer input { flex: 1 1 0; min-width: 0; width: 0; height: 44px; border: 0; border-radius: 0; color: var(--mc-ink); background: none; font-size: calc(14px * var(--mc-type-scale)); line-height: 1.5; padding: 0; caret-color: var(--mc-accent); }
-.mds-root .is-discovery .mds-chat-composer input:focus { box-shadow: none; }
-.mds-root .is-discovery .mds-chat-composer:focus-within { outline: 2px solid var(--mc-accent); outline-offset: 2px; }
-.mds-root .is-discovery .mds-chat-composer input::placeholder { color: var(--mc-muted); opacity: 1; }
-.mds-root .is-discovery .mds-chat-send,
-.mds-root .is-discovery .mds-chat-send:hover:not(:disabled) { position: static; inset: auto; transform: none; width: 44px; height: 44px; border-radius: 7px; background: var(--mc-action); color: var(--mc-on-action); flex-shrink: 0; box-shadow: none; }
-.mds-root .is-discovery .mds-chat-send > svg { transform: none; }
-.mds-root .is-discovery .mds-chat-send:disabled { background: var(--mc-line); color: var(--mc-muted); opacity: 1; }
+/* One multiline composer for concierge, ladder, and recovery. */
+.mds-root .mds-desktop-app .mds-chat-composer { display: flex; align-items: flex-end; gap: 13px; padding: 8px 10px 8px 16px; min-height: 62px; background: var(--mc-soft); border: 1px solid var(--mc-line); border-radius: 12px; }
+.mds-root .mc-composer-icon { display: flex; color: var(--mc-accent); margin-bottom: 11px; }
+.mds-root .mds-desktop-app .mds-chat-composer textarea { display: block; flex: 1 1 0; min-width: 0; width: 0; min-height: 44px; max-height: 8.5em; resize: none; overflow-y: auto; border: 0; border-radius: 0; color: var(--mc-ink); background: none; font-family: inherit; font-size: calc(14px * var(--mc-type-scale)); line-height: 1.5; padding: 9px 0; caret-color: var(--mc-accent); }
+.mds-root .mds-desktop-app .mds-chat-composer textarea:focus { box-shadow: none; }
+.mds-root .mds-desktop-app .mds-chat-composer:focus-within { outline: 2px solid var(--mc-accent); outline-offset: 2px; }
+.mds-root .mds-desktop-app .mds-chat-composer textarea::placeholder { color: var(--mc-muted); opacity: 1; }
+.mds-root .mds-desktop-app .mds-chat-send,
+.mds-root .mds-desktop-app .mds-chat-send:hover:not(:disabled) { position: static; inset: auto; transform: none; width: 44px; height: 44px; border-radius: 7px; background: var(--mc-action); color: var(--mc-on-action); flex-shrink: 0; box-shadow: none; }
+.mds-root .mds-desktop-app .mds-chat-send > svg { transform: none; }
+.mds-root .mds-desktop-app .mds-chat-send:disabled { background: var(--mc-line); color: var(--mc-muted); opacity: 1; }
+.mds-root .mc-composer-hint { margin: 0; color: var(--mc-muted); font-size: 12px; line-height: 1.5; text-align: right; }
 .mds-root .is-discovery .mds-chat-quick-actions { gap: 12px; margin-top: 10px; flex-wrap: wrap; }
 .mds-root .is-discovery .mds-chat-action-chip { min-height: 32px; gap: 6px; padding: 4px 0; border: 0; border-radius: 4px; color: var(--mc-muted); background: none; font-size: calc(11px * var(--mc-type-scale)); }
 .mds-root .is-discovery .mds-chat-action-chip svg { color: inherit; }
@@ -232,6 +238,7 @@
   .mds-root .mds-desktop-app.is-discovery, .mds-root .mds-desktop-app.is-discovery.is-sidebar-collapsed { grid-template-columns: 76px minmax(0, 1fr) 268px; }
   .mds-root .mds-desktop-app.is-discovery .mds-desktop-right.is-concierge { padding: 24px 18px; }
   .mds-root .mc-workspace { padding: 25px; }
+  .mds-root .mds-desktop-app.is-discovery .mds-desktop-dock { padding-inline: 25px; }
   .mds-root .mc-trip.is-featured .mc-trip-copy { padding: 20px; }
   .mds-root .mc-trip.is-featured h3 { font-size: calc(23px * var(--mc-type-scale)); }
   .mds-root .mc-trip.is-featured .mc-trip-copy footer { flex-wrap: wrap; }
@@ -290,7 +297,7 @@
   .mds-root .mc-preferences li, .mds-root .mc-brief-details dt, .mds-root .mc-brief-details dd { font-size: calc(13px * var(--mc-type-scale)); }
   .mds-root .mc-brief-header h2 { font-size: calc(19px * var(--mc-type-scale)); }
   .mds-root .mc-traveler strong { font-size: calc(15px * var(--mc-type-scale)); }
-  .mds-root .is-discovery .mds-chat-composer input { font-size: calc(16px * var(--mc-type-scale)); }
+  .mds-root .mds-desktop-app .mds-chat-composer textarea { font-size: calc(16px * var(--mc-type-scale)); }
   .mds-root .is-discovery .mds-chat-action-chip { min-height: 40px; font-size: calc(12px * var(--mc-type-scale)); }
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -463,11 +470,17 @@
 .mds-root .mds-continuity-step-detail { font-size: calc(12px * var(--mc-type-scale)); }
 .mds-root .mds-ladder-headline h1 { font-size: calc(32px * var(--mc-type-scale)); font-weight: 550; line-height: 1.2; }
 /* The ladder's transcript follows the concierge's message system: sentence-case
-   author labels, a soft card for the traveler's turn, a plain surface card for
-   Meridian's, no drop shadows, and follow-up prompts as quiet surface pills. */
-.mds-root .mds-desktop-app.is-proof .mds-message-role { font-size: calc(12px * var(--mc-type-scale)); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--mc-muted); }
-.mds-root .mds-desktop-app.is-proof .mds-message-bubble { border: 1px solid var(--mc-line); border-radius: 12px 12px 12px 3px; background: var(--mc-surface); color: var(--mc-ink); box-shadow: none; font-size: calc(14px * var(--mc-type-scale)); font-weight: 450; line-height: 1.7; letter-spacing: 0; }
-.mds-root .mds-desktop-app.is-proof .mds-message.user .mds-message-bubble { border-color: transparent; border-radius: 12px 12px 3px 12px; background: var(--mc-soft); color: var(--mc-ink); font-weight: 500; }
+   author labels, a soft bubble for the traveler's turn, open full-width replies,
+   and follow-up prompts as quiet surface pills. */
+@media (min-width: 761px) {
+  .mds-root .mds-desktop-app.is-proof .mds-desktop-scroll,
+  .mds-root .mds-desktop-app.is-proof .mds-desktop-dock { padding-inline: 22px; }
+}
+.mds-root .mds-desktop-app.is-proof .mds-message-role { display: flex; align-items: center; gap: 8px; font-size: calc(12px * var(--mc-type-scale)); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--mc-muted); }
+.mds-root .mds-desktop-app.is-proof .mds-message-bubble { min-width: 0; max-width: none; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--mc-ink); box-shadow: none; font-size: calc(14px * var(--mc-type-scale)); font-weight: 450; line-height: 1.7; letter-spacing: 0; }
+.mds-root .mds-desktop-app.is-proof .mds-message.user .mds-message-role { justify-content: flex-end; }
+.mds-root .mds-message.user .mds-message-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.mds-root .mds-desktop-app.is-proof .mds-message.user .mds-message-bubble { border: 0; padding: 12px 18px; border-radius: 16px; background: var(--mc-soft); color: var(--mc-ink); font-weight: 500; }
 .mds-root .mds-desktop-app.is-proof .mds-followup-chip { border: 1px solid var(--mc-line); border-radius: 999px; background: var(--mc-surface); color: var(--mc-ink); font-size: calc(12.5px * var(--mc-type-scale)); font-weight: 500; }
 .mds-root .mds-desktop-app.is-proof .mds-followup-chip:hover { background: var(--mc-soft); border-color: var(--mc-muted); }
 .mds-root .mds-desktop-app.is-proof .mds-chat-starter-label { font-size: calc(10px * var(--mc-type-scale)); font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--mc-muted); }
@@ -699,3 +712,6 @@
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip:focus-visible {
   outline: 2px solid var(--mc-accent); outline-offset: 3px;
 }
+
+/* Activity shares the panel surface; service marks identify evidence sources. */
+.mds-root[data-theme] .mds-thinking { padding: 0; border: 0; background: none; box-shadow: none; }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, ChevronDown, Copy, RefreshCw, RotateCcw } from 'lucide-react';
+import { Check, ChevronDown, Circle, Copy, Loader2, RefreshCw, RotateCcw, ShieldX, Workflow, X } from 'lucide-react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { SHOWCASE_PHASES, type ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 import { WorkflowGraph } from './WorkflowGraph';
@@ -7,6 +7,7 @@ import { RlsProbeCard } from './RlsProbeCard';
 import { McpToolContractPanel } from './McpToolContractPanel';
 import { WorkflowStateInspector } from './WorkflowStateInspector';
 import { IconTooltip } from './ShowcaseTooltip';
+import { ServiceMark, type ServiceMarkName } from './ServiceMark';
 import { deriveAuroraEvidence, isPhaseProofObserved } from '../lib/showcaseProof';
 
 // Maps raw trace spans into five audience-readable progress steps. A span is
@@ -20,15 +21,17 @@ const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTrac
     id: 'understand',
     label: 'Understanding request',
     matches: (s) =>
+      /^Processing with/i.test(s.name) ||
       ['orchestration', 'security'].includes(s.category) ||
       s.type === 'delegation' ||
-      /classify|identity|scope|session|routing|strands agent|supervisor|turn started/i.test(s.name),
+      (!['memory_short', 'memory_long', 'synthesis'].includes(s.category) &&
+        /classify|identity|scope|session|routing|strands agent|supervisor|turn started/i.test(s.name)),
   },
   {
     id: 'recall',
     label: 'Recalling traveler context',
     matches: (s) =>
-      !/checkpoint|persist|disabled/i.test(s.name) && (
+      s.category !== 'synthesis' && !/checkpoint|persist|disabled/i.test(s.name) && (
         ['memory_short', 'memory_long'].includes(s.category) ||
         /recall|memory|preferences|interaction/i.test(s.name)),
   },
@@ -36,8 +39,9 @@ const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTrac
     id: 'inventory',
     label: 'Querying live travel data',
     matches: (s) =>
-      ['data', 'tool'].includes(s.category) ||
-      /sql|pgvector|run_query|tools\/call|gateway|availability|trip_packages|booking|hybrid|embed|cohere/i.test(s.name),
+      s.category !== 'model' && !/rerank/i.test(s.name) && (
+        ['data', 'tool'].includes(s.category) ||
+        /sql|pgvector|run_query|tools\/call|gateway|availability|trip_packages|booking|hybrid|embed|cohere/i.test(s.name)),
   },
   {
     id: 'curate',
@@ -56,15 +60,9 @@ const THINKING_PHASES: { id: string; label: string; matches: (span: ShowcaseTrac
   },
 ];
 
-interface PhaseProgress {
-  status: 'pending' | 'active' | 'done';
-  spanIds: string[];
-}
-
 function classifySpansToPhases(spans: ShowcaseTraceSpan[]): Map<string, string> {
   const map = new Map<string, string>();
   spans.forEach((span) => {
-    if (!['ok', 'delegated'].includes(span.status)) return;
     const matchedIdx = THINKING_PHASES.findIndex((phase) => phase.matches(span));
     if (matchedIdx >= 0) {
       map.set(span.id, THINKING_PHASES[matchedIdx].id);
@@ -162,7 +160,7 @@ export function TracePanel({
       {!collapsed && (
         <>
           <div className="mds-trace-scroll">
-            {/* Progress rail fills top-to-bottom as spans land. */}
+            {/* Recorded steps carry their own status and observed service sources. */}
             {hasTraceActivity && <ThinkingPhases state={state} />}
 
             {!compact && (
@@ -360,63 +358,61 @@ function CopyTraceButton({ state }: { state: MeridianShowcaseState }) {
   );
 }
 
+const ACTIVITY_SERVICES: { name: ServiceMarkName; label: string; matches: (span: ShowcaseTraceSpan) => boolean }[] = [
+  { name: 'agentcore', label: 'AgentCore', matches: span => /agentcore/i.test(`${span.name} ${span.component ?? ''}`) },
+  { name: 'aurora', label: 'Aurora', matches: span => Boolean(span.sql) || /aurora|postgres|pgvector/i.test(`${span.name} ${span.component ?? ''}`) },
+  { name: 'bedrock', label: 'Bedrock', matches: span => /claude|cohere|bedrock(?!\s+agentcore)/i.test(`${span.name} ${span.component ?? ''}`) },
+  { name: 'lambda', label: 'Lambda', matches: span => /lambda/i.test(`${span.name} ${span.component ?? ''}`) },
+];
+
 function ThinkingPhases({ state }: { state: MeridianShowcaseState }) {
   const spans = state.traceSpans;
   const phaseBySpan = classifySpansToPhases(spans);
-  const isStreaming = state.isLoading || state.isReplaying;
-
-  // The HTTP response contains the trace only when the turn finishes.
-  // Elapsed time is not evidence that a tool or memory read completed.
-  const phases = THINKING_PHASES.filter(phase => phase.id !== 'recall'
-    || state.selectedPhase === 5 || (state.selectedPhase === 4 && state.memoryEnabled));
-
-  const progress: PhaseProgress[] = phases.map((phase) => ({
-    status: 'pending',
-    spanIds: spans.filter((span) => phaseBySpan.get(span.id) === phase.id).map((span) => span.id),
-  }));
-
-  if (spans.length > 0) {
-    if (state.isReplaying) {
-      const reachedSpanIndex = Math.max(0, state.replayIndex);
-      const reachedPhaseIds = spans
-        .slice(0, reachedSpanIndex + 1)
-        .map((span) => phaseBySpan.get(span.id))
-        .filter((phaseId): phaseId is string => Boolean(phaseId));
-      const reachedPhaseId = reachedPhaseIds[reachedPhaseIds.length - 1];
-      const reachedPhaseIndex = phases.findIndex((p) => p.id === reachedPhaseId);
-      progress.forEach((p, idx) => {
-        if (idx < reachedPhaseIndex && p.spanIds.length) p.status = 'done';
-        else if (idx === reachedPhaseIndex) p.status = 'active';
-        else p.status = 'pending';
-      });
-    } else if (state.isLoading) {
-      // Streaming turn: mark landed phases done and keep the next phase active.
-      progress.forEach((p) => {
-        p.status = p.spanIds.length ? 'done' : 'pending';
-      });
-      const firstPending = progress.findIndex((p) => p.status === 'pending');
-      if (firstPending !== -1) progress[firstPending].status = 'active';
-    } else {
-      progress.forEach((p) => {
-        p.status = p.spanIds.length ? 'done' : 'pending';
-      });
-
-    }
-  } else if (state.isLoading) {
-    progress[0].status = 'active';
+  // Trace arrives with the HTTP response. Never animate guessed tool progress
+  // while waiting, or turn absent evidence into a successful step.
+  if (state.isLoading && !spans.length) {
+    return <div className="mds-thinking mds-thinking-wait" role="status">
+      <Loader2 size={18} aria-hidden="true" />
+      <div><strong>Working on your request</strong><p>Activity appears with the response.</p></div>
+    </div>;
   }
+  const phases = THINKING_PHASES.filter(phase =>
+    (phase.id !== 'recall' || state.selectedPhase === 5 || (state.selectedPhase === 4 && state.memoryEnabled)) &&
+    spans.some(span => phaseBySpan.get(span.id) === phase.id));
+  const reached = state.isReplaying ? spans.slice(0, Math.max(0, state.replayIndex + 1)) : spans;
+  const currentSpan = spans[state.replayIndex];
+  const currentPhase = state.isReplaying && currentSpan ? phaseBySpan.get(currentSpan.id) : undefined;
+  const statusLabels = { done: 'Complete', active: 'Replaying', pending: 'Upcoming', unconfirmed: 'Unconfirmed', error: 'Failed', denied: 'Blocked' };
 
   return (
-    <div className={`mds-thinking${isStreaming ? ' is-streaming' : ''}`} aria-live="polite">
-      <ol className="mds-thinking-list">
-        {phases.map((phase, idx) => {
-          const status = progress[idx].status;
+    <div className="mds-thinking" aria-live="polite">
+      <p className="mds-thinking-caption">{state.isReplaying ? 'Replaying recorded activity' : 'Recorded activity'}</p>
+      <ol className="mds-thinking-list" aria-label="Recorded request steps">
+        {phases.map(phase => {
+          const recorded = reached.filter(span => phaseBySpan.get(span.id) === phase.id);
+          // Keep earlier evidence when replay revisits an earlier group. A
+          // canonical phase index is not the execution order of the trace.
+          const status = recorded.some(span => span.status === 'denied') ? 'denied'
+            : recorded.some(span => span.status === 'error') ? 'error'
+              : currentPhase === phase.id ? 'active'
+                : recorded.some(span => ['ok', 'delegated'].includes(span.status)) ? 'done'
+                  : recorded.length ? 'unconfirmed' : 'pending';
+          const services = ACTIVITY_SERVICES.filter(service => recorded.some(service.matches));
+          const StatusIcon = status === 'done' ? Check : status === 'error' ? X
+            : status === 'denied' ? ShieldX : status === 'active' ? Loader2 : Circle;
           return (
-            <li key={phase.id} className={`mds-thinking-item is-${status}`}>
-              <span className="mds-thinking-rail" aria-hidden="true">
-                <span className="mds-thinking-dot" />
+            <li key={phase.id} className={`mds-thinking-item is-${status}`} aria-current={status === 'active' ? 'step' : undefined}>
+              <span className="mds-thinking-marker" aria-hidden="true"><StatusIcon size={17} strokeWidth={2} /></span>
+              <span className="mds-thinking-copy">
+                <span>{phase.label}</span>
+                <span className="mds-thinking-meta">
+                  <span className="mds-thinking-status">{statusLabels[status]}</span>
+                  {services.map(service => <span className="mds-thinking-service" key={service.name}>
+                    <ServiceMark name={service.name} size={16} /><span>{service.label}</span>
+                  </span>)}
+                  {recorded.length > 0 && services.length === 0 && <span className="mds-thinking-service"><Workflow size={15} aria-hidden="true" /><span>Meridian app</span></span>}
+                </span>
               </span>
-              <span className="mds-thinking-copy">{phase.label}</span>
             </li>
           );
         })}

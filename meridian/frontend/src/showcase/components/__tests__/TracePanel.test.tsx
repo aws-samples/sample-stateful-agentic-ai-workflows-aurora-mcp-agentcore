@@ -155,7 +155,7 @@ describe('TracePanel collapse behavior', () => {
 
     expect(screen.getByText('Querying live travel data').closest('li')).toHaveClass('is-done');
     expect(screen.queryByText('Recalling traveler context')).not.toBeInTheDocument();
-    expect(screen.getByText('Evaluating options').closest('li')).toHaveClass('is-pending');
+    expect(screen.queryByText('Evaluating options')).not.toBeInTheDocument();
   });
 
   it('lands every step of a completed production turn', () => {
@@ -174,7 +174,7 @@ describe('TracePanel collapse behavior', () => {
         span('s2', 'memory_long', 'Strands @tool recall_traveler_preferences'),
         span('s3', 'gateway', 'AgentCore Gateway · tools/call → semantic_trip_search'),
         span('s4', 'runtime', 'AgentCore Runtime · turn complete'),
-        span('s5', 'synthesis', 'Composed the reply'),
+        span('s5', 'synthesis', 'Memory-grounded reply ready'),
       ],
     });
     render(<TracePanel state={state} />);
@@ -202,8 +202,8 @@ describe('TracePanel collapse behavior', () => {
       { ...traceSpan, status: 'error' },
       { ...traceSpan, id: 'cp', category: 'memory_short', name: 'Checkpoint persisted', sql: undefined },
     ] })} />);
-    expect(screen.getByText('Querying live travel data').closest('li')).toHaveClass('is-pending');
-    expect(screen.getByText('Recalling traveler context').closest('li')).toHaveClass('is-pending');
+    expect(screen.getByText('Querying live travel data').closest('li')).toHaveClass('is-error');
+    expect(screen.queryByText('Recalling traveler context')).not.toBeInTheDocument();
   });
 
   it('still credits the opening step to the runtime turn that started it', () => {
@@ -212,7 +212,49 @@ describe('TracePanel collapse behavior', () => {
     });
     render(<TracePanel state={state} />);
     expect(screen.getByText('Understanding request').closest('li')).toHaveClass('is-done');
-    expect(screen.getByText('Evaluating options').closest('li')).toHaveClass('is-pending');
+    expect(screen.queryByText('Evaluating options')).not.toBeInTheDocument();
+  });
+
+  it('waits for the response without inventing live step progress', () => {
+    render(<TracePanel state={makeState({ isLoading: true, traceSpans: [] })} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Activity appears with the response');
+    expect(screen.queryByRole('list', { name: 'Recorded request steps' })).not.toBeInTheDocument();
+  });
+
+  it('keeps reached steps when replay revisits an earlier group and does not credit future spans', () => {
+    const state = makeState({ selectedPhase: 4, memoryEnabled: true, isReplaying: true, replayIndex: 0,
+      traceSpans: [
+        { ...traceSpan, id: 'recall', category: 'memory_short', name: 'AgentCore Memory session restored', component: 'AgentCore Memory', sql: undefined },
+        { ...traceSpan, id: 'query' },
+        { ...traceSpan, id: 'start', category: 'runtime', name: 'AgentCore Runtime turn started', sql: undefined },
+        { ...traceSpan, id: 'end', category: 'synthesis', name: 'Response ready', sql: undefined },
+      ],
+    });
+    const { rerender } = render(<TracePanel state={state} />);
+    expect(screen.getByText('Understanding request').closest('li')).toHaveClass('is-pending');
+    expect(screen.getByText('Recalling traveler context').closest('li')).toHaveClass('is-active');
+    expect(screen.getByText('Querying live travel data').closest('li')).toHaveClass('is-pending');
+    rerender(<TracePanel state={{ ...state, replayIndex: 2 }} />);
+    expect(screen.getByText('Understanding request').closest('li')).toHaveClass('is-active');
+    expect(screen.getByText('Recalling traveler context').closest('li')).toHaveClass('is-done');
+    expect(screen.getByText('Querying live travel data').closest('li')).toHaveClass('is-done');
+    expect(screen.getByText('Preparing response').closest('li')).toHaveClass('is-pending');
+  });
+
+  it('identifies service sources from recorded spans without mislabeling AgentCore as a model call', () => {
+    const { container } = render(<TracePanel state={makeState({ selectedPhase: 4, memoryEnabled: true,
+      traceSpans: [
+        { ...traceSpan, id: 'memory', category: 'memory_short', name: 'AgentCore Memory session restored', component: 'Bedrock AgentCore Memory', sql: undefined },
+        traceSpan,
+        { ...traceSpan, id: 'rank', category: 'model', name: 'Cohere rerank', sql: undefined },
+      ],
+    })} />);
+    const recall = screen.getByText('Recalling traveler context').closest('li')!;
+    expect(recall).toHaveTextContent('AgentCore');
+    expect(recall).not.toHaveTextContent('Bedrock');
+    expect(container.querySelectorAll('.mds-thinking-service img')).toHaveLength(3);
+    expect(screen.getByText('Querying live travel data').closest('li')).toHaveTextContent('Aurora');
+    expect(screen.getByText('Evaluating options').closest('li')).toHaveTextContent('Bedrock');
   });
 
   it('exposes trace filters as pressed controls', () => {

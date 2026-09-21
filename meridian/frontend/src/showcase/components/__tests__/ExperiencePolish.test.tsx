@@ -115,6 +115,29 @@ function getQueryStarter(prompt: string) {
 }
 
 describe('Experience presentation polish', () => {
+  it('sends multiline requests with Enter and preserves Shift+Enter and IME composition', () => {
+    const state = makeState({ currentPrompt: 'Tokyo for two\nDeparting JFK' });
+    render(<ChatComposer state={state} conciergeMode />);
+    const input = screen.getByRole('textbox', { name: 'Ask Meridian anything' });
+    expect(input.tagName).toBe('TEXTAREA');
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 229 });
+    expect(state.submitPrompt).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(state.submitPrompt).toHaveBeenCalledExactlyOnceWith(undefined, 4);
+    expect(input).toHaveValue('Tokyo for two\nDeparting JFK');
+  });
+
+  it('does not submit blank or busy requests from the keyboard', () => {
+    const state = makeState({ currentPrompt: '  \n  ' });
+    const { rerender } = render(<ChatComposer state={state} />);
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    rerender(<ChatComposer state={{ ...state, currentPrompt: 'Tokyo', isLoading: true }} />);
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    expect(state.submitPrompt).not.toHaveBeenCalled();
+  });
+
   it('blocks prompt submission while traveler context is being authorized', () => {
     const state = makeState({ selectedPhase: 4, memoryLoading: true, currentPrompt: 'Recall my plan' });
     render(<ChatComposer state={state} proofMode />);

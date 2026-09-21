@@ -21,6 +21,7 @@ import { RankDeltaBadge } from './RankDeltaBadge';
 import { TripResultCardContent } from './TripResultCardContent';
 import { resultRankLabel } from '../lib/resultRankLabel';
 import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
+import { ConciergeBell } from '../icons/TravelIcons';
 
 // Keep a malformed markdown response from taking down the transcript.
 class MarkdownBoundary extends Component<
@@ -149,7 +150,7 @@ export function ChatTranscript({
                 : { duration: 0.18, ease: 'easeOut' },
             }}
           >
-            <div className="mds-message-role">Meridian</div>
+            <div className="mds-message-role"><ConciergeBell size={16} aria-hidden="true" />Meridian</div>
             <div className="mds-message-bubble is-thinking">
               <span className="mds-running-dot" />
               <ThinkingTicker phase={state.phaseLabel} />
@@ -248,7 +249,7 @@ function ChatMessage({
 
   return (
     <div className={wrapperClass}>
-      <div className="mds-message-role">{message.role === 'user' ? 'Alex' : 'Meridian'}</div>
+      <div className="mds-message-role">{message.role === 'user' ? 'You' : <><ConciergeBell size={16} aria-hidden="true" />Meridian</>}</div>
       {!isEmptyStream && (
         <div className={bubbleClass}>
           {message.role === 'bot' ? (

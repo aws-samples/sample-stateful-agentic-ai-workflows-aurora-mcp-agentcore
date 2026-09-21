@@ -96,6 +96,11 @@ when off, it performs no traveler-memory read or write; when on, the managed
 Runtime owns the turn. Workflow's closing status comes from saved execution
 state, so a prose rewrite cannot contradict its recorded hold outcome.
 
+Chat uses compact traveler messages and open assistant replies aligned with a
+multiline composer. **Enter** sends; **Shift+Enter** adds a line. Activity shows
+recorded step outcomes with AWS service icons and preserves completed evidence
+during replay, including when trace events arrive out of phase order.
+
 ### Recovering from a slow or lost response
 
 Chat, hold, and confirmation waits stop after 55 seconds, with an elapsed timer

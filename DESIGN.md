@@ -215,7 +215,11 @@ Buttons in the traveler workspace, brief, shell header, and sidebar receive an a
 
 ### Inputs / Fields
 
-The conversational composer is a soft tonal field with a fine border and panel corners. Its input remains flexible while the square send control stays aligned at the end. Placeholder and text contrast use the Muted and Ink roles. Compact input text remains at least the browser-friendly base (16px) before scaling. Suggested prompts sit above the field; optional query settings remain adjacent to the task they affect.
+The conversational composer is a soft tonal field with a fine border and panel corners. Its textarea grows with the draft up to a bounded height (8.5em), then scrolls internally; the square send control stays aligned at the bottom end. Enter sends, Shift + Enter inserts a line break, and input-method composition does not trigger sending. Keep the visible keyboard hint associated with the field. Placeholder and text contrast use the Muted and Ink roles. Compact input text remains at least the browser-friendly base (16px) before scaling. Suggested prompts sit above the field; optional query settings remain adjacent to the task they affect.
+
+### Conversation
+
+Compact, right-aligned traveler bubbles use Soft and Ink and preserve entered line breaks. Assistant replies are open, full-width rows with sentence-case author labels, aligned with the composer. Prose keeps the conversation measure defined in Typography; travel cards use the available row width. Supporting-card price and action footers wrap when space is limited, including mobile layouts.
 
 ### Chips
 
@@ -244,6 +248,10 @@ Reported disruption uses a caution notice and itinerary preview, followed by an 
 On wide screens, the recovery action and flight photograph share equal columns and matching heights. The itinerary endpoints balance around a centered route, with the same content inset as the recovery card. Compact screens stack the action and photograph; tablet layouts place evidence below the workspace.
 
 Evidence uses readable worker cards, persisted-state rows, and labeled facts. Identifiers may use the mono family; surrounding explanation stays in Geist sans. Empty and loading states remain visible, and controls allow a return to recovery or a reread of the actual records. Missing evidence is not replaced by invented success.
+
+### Activity
+
+Recorded activity uses independent markers with explicit status labels for completion, replay, upcoming, unconfirmed, failed, and blocked states. Service marks and names come from the spans represented in each step; keep the supplied AWS artwork separate from the ordinary state icons. While the HTTP request is pending, explain that activity appears with the response. Show only steps represented by returned trace spans, without partial gradient connectors implying progress. Replay status and service marks follow the spans actually reached, including revisited groups, rather than an assumed phase order.
 
 ### Motion and feedback
 

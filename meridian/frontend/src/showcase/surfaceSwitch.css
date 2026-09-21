@@ -1360,10 +1360,9 @@
 .mds-recovery-workspace section, .mds-recovery-workspace [data-console], .mds-brief-section { scroll-margin-top:80px; }
 @media (max-width:600px) { .mc-request-wait { flex-wrap:wrap; } }
 
-/* These rails stack below the workspace when their third grid column goes
-   away. The desktop row override must not paint them over the conversation. */
+/* The continuity rail stacks below its two-column workspace. Concierge owns
+   a three-column tablet layout in airlineConcierge.css and must stay in row 2. */
 @media (min-width:701px) and (max-width:1240px) {
-  .mds-root .mds-desktop-app.is-discovery .mds-desktop-right.is-concierge,
   .mds-root .mds-desktop-app.is-continuity-rail .mds-desktop-right.is-continuity {
     grid-column:2;
     grid-row:3 !important;
