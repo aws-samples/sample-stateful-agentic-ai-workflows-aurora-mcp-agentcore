@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { Check, ChevronDown, Circle, Copy, Loader2, RefreshCw, RotateCcw, ShieldX, Workflow, X } from 'lucide-react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
-import { SHOWCASE_PHASES, type ShowcaseTraceSpan } from '../lib/showcaseAdapters';
+import { type ShowcaseTraceSpan, type ShowcaseTraceTab } from '../lib/showcaseAdapters';
 import { WorkflowGraph } from './WorkflowGraph';
 import { RlsProbeCard } from './RlsProbeCard';
 import { McpToolContractPanel } from './McpToolContractPanel';
 import { WorkflowStateInspector } from './WorkflowStateInspector';
 import { IconTooltip } from './ShowcaseTooltip';
 import { ServiceMark, type ServiceMarkName } from './ServiceMark';
-import { deriveAuroraEvidence, isPhaseProofObserved } from '../lib/showcaseProof';
+import { deriveMcpContracts, deriveWorkflowState } from '../lib/showcaseProof';
 
 // Classify specific actions before generic categories: older retrieval events
 // arrive as "orchestration" even when they are database searches. Every event
@@ -45,20 +45,6 @@ export function TracePanel({
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
 }) {
-  const sqlSpans = state.traceSpans.filter((span) => span.sql);
-  const memoryFacts = state.memoryFacts;
-  const agentCount = new Set(state.traceSpans.map((span) => span.agent).filter(Boolean)).size;
-  const phaseMeta = SHOWCASE_PHASES.find((phase) => phase.phase === state.selectedPhase);
-  // The pill asserts the phase's proof point, so it waits for the
-  // evidence behind that claim rather than for any span at all.
-  const proofObserved = isPhaseProofObserved(
-    state.selectedPhase,
-    deriveAuroraEvidence({
-      selectedPhase: state.selectedPhase,
-      traceSpans: state.traceSpans,
-      recommendations: state.recommendations,
-    }),
-  );
   const hasTraceActivity =
     state.traceSpans.length > 0 || state.isLoading || state.isReplaying;
   const className = [
@@ -90,7 +76,7 @@ export function TracePanel({
             <strong>Activity</strong>
             {collapsed && (
               <span className="mds-collapse-hint">
-                {state.traceSpans.length} events
+                {state.traceSpans.length} {state.traceSpans.length === 1 ? 'event' : 'events'}
               </span>
             )}
           </button>
@@ -125,82 +111,7 @@ export function TracePanel({
             {hasTraceActivity ? <ActivityTrace key={state.traceSpans[0]?.id ?? 'waiting'} state={state} />
               : <div className="mds-empty">Ask a question to see the evidence behind the answer.</div>}
 
-            {!compact && <details className="mds-trace-inspector">
-              <summary>Inspect evidence<ChevronDown size={14} aria-hidden="true" /></summary>
-              <div className="mds-trace-summary">
-                <span>{state.phaseLabel}</span>
-                {phaseMeta && proofObserved && (
-                  <span className="mds-proof-pill">{phaseMeta.proofPoint}</span>
-                )}
-                {state.traceSpans.length > 0 && <span>{state.traceSpans.length} events</span>}
-                {agentCount > 0 && <span>{agentCount} agents</span>}
-                {state.totalLatencyMs > 0 && <span>{state.totalLatencyMs}ms recorded</span>}
-              </div>
-            {state.selectedPhase === 2 && <McpToolContractPanel state={state} />}
-            {state.selectedPhase === 5 && <WorkflowStateInspector state={state} />}
-            {!compact && (
-              <div className="mds-trace-tabs" role="group" aria-label="Trace filters">
-                {/* RLS is a Phase 4 proof point, so other phases keep the lean tab set. */}
-                {(state.selectedPhase === 4
-                  ? (['spans', 'memory', 'sql', 'rls'] as const)
-                  : (['spans', 'memory', 'sql'] as const)
-                ).map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    className={state.traceTab === tab ? 'is-active' : ''}
-                    aria-pressed={state.traceTab === tab}
-                    onClick={() => state.setTraceTab(tab)}
-                  >
-                    {tab === 'spans'
-                      ? 'Overview'
-                      : tab === 'memory'
-                        ? 'Memory'
-                        : tab === 'sql'
-                          ? 'SQL'
-                          : 'RLS'}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Phase 5 shows the executed graph path; spans remain the detail view. */}
-            {(state.traceTab === 'spans' || compact) &&
-              state.selectedPhase === 5 &&
-              state.traceSpans.length > 0 && <WorkflowGraph state={state} />}
-
-            {state.traceTab === 'spans' ? null : state.traceTab === 'memory' ? (
-              <div className="mds-memory-mini">
-                {memoryFacts.length === 0 ? (
-                  <div className="mds-empty">
-                    Aurora-backed memory recalls at Phase 4+.
-                  </div>
-                ) : (
-                  memoryFacts.map((fact) => (
-                    <div key={fact.key}>
-                      <span>{fact.key}</span>
-                      <b>{fact.value}</b>
-                    </div>
-                  ))
-                )}
-              </div>
-            ) : state.traceTab === 'rls' ? (
-              <RlsProbeCard travelerId={state.travelerId} />
-            ) : (
-              <div className="mds-sql-list">
-                {sqlSpans.length ? (
-                  sqlSpans.map((span) => (
-                    <div key={span.id}>
-                      <small>{span.file ?? span.agent ?? 'SQL span'}</small>
-                      <pre>{span.sql}</pre>
-                    </div>
-                  ))
-                ) : (
-                  <div className="mds-empty">No SQL snippet on this turn.</div>
-                )}
-              </div>
-            )}
-            </details>}
+            {!compact && <EvidenceInspector state={state} />}
           </div>
 
           {!compact && (
@@ -232,6 +143,51 @@ export function TracePanel({
       )}
     </section>
   );
+}
+
+/** Only offer evidence that exists. Opening the inspector reveals a real view;
+ * the live RLS probe mounts only after an explicit Run RLS probe action. */
+function EvidenceInspector({ state }: { state: MeridianShowcaseState }) {
+  const sqlSpans = state.traceSpans.filter(span => span.sql);
+  const memoryFacts = state.memoryFacts;
+  const views: Exclude<ShowcaseTraceTab, null>[] = [];
+  if (state.selectedPhase === 2 && deriveMcpContracts(state.traceSpans).some(contract => contract.observed)) views.push('tools');
+  if (state.selectedPhase === 5 && deriveWorkflowState(state.traceSpans).status !== 'ready') views.push('workflow');
+  if (sqlSpans.length) views.push('sql');
+  if (memoryFacts.length && (state.selectedPhase === 5 || (state.selectedPhase === 4 && state.memoryEnabled))) views.push('memory');
+  if (state.selectedPhase === 4) views.push('rls');
+  if (!views.length) return null;
+
+  const selected = state.traceTab && views.includes(state.traceTab) ? state.traceTab : views[0];
+  const labels = { sql: 'SQL', memory: 'Memory', rls: 'RLS probe', tools: 'MCP tools', workflow: 'Workflow' };
+  return (
+    <details className="mds-trace-inspector">
+      <summary>Inspect evidence<ChevronDown size={14} aria-hidden="true" /></summary>
+      {views.length > 1 ? (
+        <div className="mds-trace-tabs" role="group" aria-label="Evidence views">
+          {views.map(view => <button key={view} type="button" className={selected === view ? 'is-active' : ''}
+            aria-pressed={selected === view} onClick={() => state.setTraceTab(view)}>{labels[view]}</button>)}
+        </div>
+      ) : <h2 className="mds-evidence-heading">{labels[selected]}</h2>}
+      {selected === 'sql' && <div className="mds-sql-list">
+        {sqlSpans.map(span => <div key={span.id}><small>{span.name}</small><pre>{span.sql}</pre></div>)}
+      </div>}
+      {selected === 'memory' && <div className="mds-memory-mini">
+        {memoryFacts.map(fact => <div key={fact.key}><span>{fact.key}</span><b>{fact.value}</b></div>)}
+      </div>}
+      {selected === 'tools' && <McpToolContractPanel state={state} />}
+      {selected === 'workflow' && <><WorkflowStateInspector state={state} /><WorkflowGraph state={state} /></>}
+      {selected === 'rls' && <RlsEvidence key={state.travelerId} travelerId={state.travelerId} />}
+    </details>
+  );
+}
+
+function RlsEvidence({ travelerId }: { travelerId: string }) {
+  const [requested, setRequested] = useState(false);
+  return requested ? <RlsProbeCard travelerId={travelerId} /> : <div className="mds-evidence-probe">
+    <p>Check which rows this traveler can access. This runs a live diagnostic.</p>
+    <button type="button" onClick={() => setRequested(true)}>Run RLS probe</button>
+  </div>;
 }
 
 // Copy active trace JSON for debugging or post-demo review.
@@ -315,7 +271,7 @@ function ActivityTrace({ state }: { state: MeridianShowcaseState }) {
   // The response carries the trace as a batch. Do not invent live progress.
   if (state.isLoading && !spans.length) {
     return <div className="mds-thinking mds-thinking-wait" role="status">
-      <Loader2 size={18} aria-hidden="true" />
+      <Loader2 className="mds-activity-spinner" size={18} aria-hidden="true" />
       <div><strong>Working on your request</strong><p>Activity appears with the response.</p></div>
     </div>;
   }
@@ -326,7 +282,7 @@ function ActivityTrace({ state }: { state: MeridianShowcaseState }) {
 
   return (
     <div className="mds-thinking">
-      <p className="mds-thinking-caption" role="status">{state.isReplaying ? 'Replaying recorded activity' : 'Recorded activity'} · {spans.length} events</p>
+      <p className="mds-thinking-caption" role="status">{state.isReplaying ? 'Replaying recorded activity' : 'Recorded activity'} · {spans.length} {spans.length === 1 ? 'event' : 'events'}</p>
       <ol className="mds-thinking-list" aria-label="Recorded request steps">
         {ACTIVITY_GROUPS.filter(group => spans.some(span => activityGroup(span) === group.id)).map(group => {
           const recorded = reached.filter(span => activityGroup(span) === group.id);
@@ -342,7 +298,7 @@ function ActivityTrace({ state }: { state: MeridianShowcaseState }) {
             <li key={group.id} className={`mds-thinking-item is-${status}`} aria-current={status === 'active' ? 'step' : undefined}>
               <details className="mds-activity-group">
                 <summary>
-                  <span className="mds-thinking-marker" aria-hidden="true"><StatusIcon size={17} strokeWidth={2} /></span>
+                  <span className="mds-thinking-marker" aria-hidden="true"><StatusIcon className={status === 'active' ? 'mds-activity-spinner' : undefined} size={17} strokeWidth={2} /></span>
                   <span className="mds-thinking-copy">
                     <span>{group.label}</span>
                     <span className="mds-thinking-meta">

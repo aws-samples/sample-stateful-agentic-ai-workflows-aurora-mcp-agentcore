@@ -9,7 +9,7 @@ import type {
 } from '../../types';
 
 export type ShowcasePhaseLabel = 'SQL' | 'MCP' | 'Retrieval' | 'Production' | 'Workflow';
-export type ShowcaseTraceTab = 'spans' | 'memory' | 'sql' | 'rls';
+export type ShowcaseTraceTab = 'memory' | 'sql' | 'rls' | 'tools' | 'workflow' | null;
 export type BackendStatus = 'checking' | 'online' | 'offline';
 
 export interface ShowcasePhaseOption {

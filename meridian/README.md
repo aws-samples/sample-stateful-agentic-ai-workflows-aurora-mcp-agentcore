@@ -220,7 +220,9 @@ expands for multiline requests: **Enter** sends and **Shift+Enter** adds a line.
 Activity presents one expandable trace, inspired by Onward: each step shows its
 recorded status and AWS service icons, with its events and technical payloads
 available on expansion. **Inspect evidence** holds SQL, memory, policy checks,
-and phase-specific diagnostics. The panel waits for returned evidence before
+and phase-specific diagnostics. It opens directly to recorded evidence and hides
+unavailable views. **Run RLS probe** explicitly starts the live diagnostic.
+The panel waits for returned evidence before
 showing step progress. Compact ladder headings and query suggestions preserve
 space for the conversation.
 

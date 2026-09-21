@@ -303,7 +303,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [memoryMutationError, setMemoryMutationError] = useState<string | null>(null);
   const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
   const [traceSpans, setTraceSpans] = useState<ShowcaseTraceSpan[]>([]);
-  const [traceTab, setTraceTab] = useState<ShowcaseTraceTab>('spans');
+  const [traceTab, setTraceTab] = useState<ShowcaseTraceTab>(null);
   const [expandedSpanId, setExpandedSpanId] = useState<string | null>(null);
   const [replayIndex, setReplayIndex] = useState(-1);
   const [isReplaying, setIsReplaying] = useState(false);
@@ -533,7 +533,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     const nextTrace = chatResponseToTraceSpans(response, prompt);
     setTraceSpans(nextTrace);
     setExpandedSpanId(nextTrace[0]?.id ?? null);
-    setTraceTab('spans');
+    setTraceTab(null);
     if (response.conversation_id) setConversationId(response.conversation_id);
     setWorkflowStatus(response.workflow_status ?? null);
     setWorkflowResumedAfterRestart(
@@ -768,7 +768,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setSelectedTrip(null);
     setTraceSpans([]);
     setExpandedSpanId(null);
-    setTraceTab('spans');
+    setTraceTab(null);
     setReplayIndex(-1);
     setIsReplaying(false);
     setConversationId(null);
@@ -1152,7 +1152,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setSelectedTrip(null);
     setTraceSpans([]);
     setExpandedSpanId(null);
-    setTraceTab('spans');
+    setTraceTab(null);
     setReplayIndex(-1);
     setIsReplaying(false);
     setConversationId(null);

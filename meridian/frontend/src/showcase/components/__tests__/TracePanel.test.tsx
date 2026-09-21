@@ -50,7 +50,7 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     memoryMutationError: null,
     workspaceNotice: null,
     traceSpans: [traceSpan],
-    traceTab: 'spans',
+    traceTab: null,
     expandedSpanId: null,
     replayIndex: -1,
     isReplaying: false,
@@ -130,7 +130,7 @@ describe('TracePanel collapse behavior', () => {
       />,
     );
 
-    expect(screen.getByText('Aurora SQL query')).toBeInTheDocument();
+    expect(screen.getByText('Aurora SQL query', { selector: '.mds-activity-event summary span' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /collapse activity panel/i }));
     expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
 
@@ -143,7 +143,7 @@ describe('TracePanel collapse behavior', () => {
     );
 
     expect(screen.queryByText('Aurora SQL query')).not.toBeInTheDocument();
-    expect(screen.getByText('1 events')).toBeInTheDocument();
+    expect(screen.getByText('1 event')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /expand activity panel/i })).toHaveAttribute(
       'aria-expanded',
       'false',
@@ -257,21 +257,66 @@ describe('TracePanel collapse behavior', () => {
     expect(screen.getByText('Evaluating options').closest('li')).toHaveTextContent('Bedrock');
   });
 
-  it('exposes trace filters as pressed controls', () => {
-    const setTraceTab = vi.fn();
-    render(<TracePanel state={makeState({ setTraceTab })} />);
-
+  it('opens directly to SQL without a redundant selector or empty overview', () => {
+    render(<TracePanel state={makeState()} />);
     fireEvent.click(screen.getByText('Inspect evidence'));
-    const filters = screen.getByRole('group', { name: 'Trace filters' });
-    const trace = screen.getByRole('button', { name: 'Overview' });
-    const memory = screen.getByRole('button', { name: 'Memory' });
+    expect(screen.getByRole('heading', { name: 'SQL' })).toBeVisible();
+    expect(screen.getByText('SELECT * FROM trip_packages', { selector: '.mds-sql-list pre' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Overview' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Evidence views' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Memory' })).not.toBeInTheDocument();
+  });
 
-    expect(filters).toContainElement(trace);
-    expect(trace).toHaveAttribute('aria-pressed', 'true');
-    expect(memory).toHaveAttribute('aria-pressed', 'false');
+  it('hides the inspector when the turn has no supporting evidence', () => {
+    render(<TracePanel state={makeState({ traceSpans: [{ ...traceSpan, sql: undefined }] })} />);
+    expect(screen.queryByText('Inspect evidence')).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(memory);
-    expect(setTraceTab).toHaveBeenCalledWith('memory');
+  it('falls back to available evidence when a selected view disappears', () => {
+    const state = makeState({ selectedPhase: 4, memoryEnabled: true, traceTab: 'memory',
+      memoryFacts: [{ key: 'home_airport', value: 'JFK', source: 'profile' }],
+    });
+    const { rerender } = render(<TracePanel state={state} />);
+    fireEvent.click(screen.getByText('Inspect evidence'));
+    expect(screen.getByText('JFK')).toBeVisible();
+    rerender(<TracePanel state={{ ...state, memoryFacts: [] }} />);
+    expect(screen.queryByRole('button', { name: 'Memory' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'SQL' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('SELECT * FROM trip_packages', { selector: '.mds-sql-list pre' })).toBeVisible();
+  });
+
+  it('offers only recorded memory while keeping the live RLS probe deliberate', () => {
+    const setTraceTab = vi.fn();
+    render(<TracePanel state={makeState({ selectedPhase: 4, memoryEnabled: true,
+      traceSpans: [], memoryFacts: [{ key: 'home_airport', value: 'JFK', source: 'profile' }], setTraceTab,
+    })} />);
+    fireEvent.click(screen.getByText('Inspect evidence'));
+    expect(screen.getByRole('button', { name: 'Memory' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('JFK')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'SQL' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'RLS probe' }));
+    expect(setTraceTab).toHaveBeenCalledWith('rls');
+  });
+
+  it('does not run the RLS diagnostic merely by opening its view', () => {
+    render(<TracePanel state={makeState({ selectedPhase: 4, traceSpans: [] })} />);
+    fireEvent.click(screen.getByText('Inspect evidence'));
+    expect(screen.getByRole('button', { name: 'Run RLS probe' })).toBeVisible();
+    expect(screen.queryByText('Workload authorization + RLS · live')).not.toBeInTheDocument();
+  });
+
+  it('preserves the observed MCP contract as the initial evidence view', () => {
+    render(<TracePanel state={makeState({ selectedPhase: 2, traceSpans: [{ ...traceSpan, name: 'postgres-mcp · run_query' }] })} />);
+    fireEvent.click(screen.getByText('Inspect evidence'));
+    expect(screen.getByRole('region', { name: 'MCP tool contract' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'MCP tools' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('preserves the observed workflow state without an overview tab', () => {
+    render(<TracePanel state={makeState({ selectedPhase: 5, traceSpans: [{ ...traceSpan, name: 'Workflow node: classify', sql: undefined }] })} />);
+    fireEvent.click(screen.getByText('Inspect evidence'));
+    expect(screen.getByRole('region', { name: 'Workflow state inspector' })).toBeVisible();
+    expect(screen.queryByRole('group', { name: 'Evidence views' })).not.toBeInTheDocument();
   });
 
   it('renders a Cedar denial as denied by policy and links the CloudWatch trace', () => {

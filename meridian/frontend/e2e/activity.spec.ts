@@ -12,11 +12,13 @@ const activities = [
 for (const theme of ['light', 'dark']) {
   test(`${theme} activity: waiting, completed service sources, replay and failed steps`, async ({ page }) => {
     for (const width of [1440, 320]) {
+      let probes = 0;
       let release: () => void = () => {};
       const gate = new Promise<void>(resolve => { release = resolve; });
       await page.unrouteAll();
       await page.route(url => url.pathname.startsWith('/api/'), async route => {
         const path = new URL(route.request().url()).pathname;
+        if (path.endsWith('/rls-probe')) { probes += 1; return route.fulfill({ status: 503, json: { detail: 'Probe unavailable in this fixture' } }); }
         if (path === '/api/chat') {
           await gate;
           const failed = route.request().postDataJSON().message.includes('failed');
@@ -54,9 +56,13 @@ for (const theme of ['light', 'dark']) {
       await queryEvent.focus();
       await page.keyboard.press('Space');
       await expect(steps.locator('.mds-activity-event-detail').filter({ hasText: 'data · ok' })).toBeVisible();
-      await expect(page.getByRole('group', { name: 'Trace filters' })).toBeHidden();
+      await expect(page.getByRole('button', { name: 'Run RLS probe' })).toBeHidden();
       await page.getByText('Inspect evidence', { exact: true }).click();
-      await expect(page.getByRole('group', { name: 'Trace filters' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Run RLS probe' })).toBeVisible();
+      expect(probes).toBe(0);
+      await page.getByRole('button', { name: 'Run RLS probe', exact: true }).click();
+      await expect.poll(() => probes).toBeGreaterThan(0);
+      await expect(page.getByText(/Governance probe unavailable:/)).toBeVisible();
       await page.getByText('Inspect evidence', { exact: true }).click();
       await queryStep.click();
       await page.getByRole('button', { name: 'Replay trace', exact: true }).click();
@@ -74,3 +80,87 @@ for (const theme of ['light', 'dark']) {
     }
   });
 }
+
+
+test('evidence opens to recorded SQL and disappears when the next turn has none', async ({ page }) => {
+  await page.route(url => url.pathname.startsWith('/api/'), async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/chat') return route.fulfill({ json: { message: 'The recorded result is ready.', products: [], conversation_id: 'inspector-test',
+      activities: [{ ...activities[1], sql_query: route.request().postDataJSON().message.includes('without') ? undefined : 'SELECT package_id FROM trip_packages LIMIT 5' }],
+    } });
+    return route.fulfill({ json: path.endsWith('/health') ? { status: 'healthy', bedrock_model_id: 'fixture', embedding_model_id: 'fixture' } : { products: [] } });
+  });
+  for (const [width, theme] of [[1440, 'light'], [320, 'dark']] as const) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto(`/showcase?view=ladder&theme=${theme}`);
+    const input = page.getByRole('textbox', { name: 'Ask Meridian anything' });
+    await input.fill('Show trips with SQL'); await input.press('Enter');
+    const inspector = page.locator('.mds-trace-inspector');
+    const disclosure = inspector.locator(':scope > summary');
+    await expect(disclosure).toBeVisible();
+    await disclosure.focus(); await page.keyboard.press('Enter');
+    await expect(inspector.getByRole('heading', { name: 'SQL', exact: true })).toBeVisible();
+    await expect(inspector.locator('pre')).toHaveText('SELECT package_id FROM trip_packages LIMIT 5');
+    await expect(inspector.getByRole('group', { name: 'Evidence views' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Overview', exact: true })).toHaveCount(0);
+    const audit = await new AxeBuilder({ page }).include('.mds-trace-panel').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
+    expect(audit.violations).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await input.fill('Show trips without SQL'); await input.press('Enter');
+    await expect(inspector).toHaveCount(0);
+  }
+});
+
+
+test('all five phases animate waiting and replay spinners and respect reduced motion', async ({ page }) => {
+  let release: () => void = () => {};
+  let gate: Promise<void>;
+  let releaseProbe: () => void = () => {};
+  const probeGate = new Promise<void>(resolve => { releaseProbe = resolve; });
+  await page.route(url => url.pathname.startsWith('/api/'), async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/rls-probe')) { await probeGate; return route.fulfill({ status: 503, json: { detail: 'Probe fixture' } }); }
+    if (path === '/api/chat') { await gate; return route.fulfill({ json: { message: 'Search complete.', products: [], activities, conversation_id: 'spinner-test' } }); }
+    return route.fulfill({ json: path.endsWith('/health') ? { status: 'healthy', bedrock_model_id: 'fixture', embedding_model_id: 'fixture' } : { products: [] } });
+  });
+  for (const phase of [1, 2, 3, 4, 5]) {
+    gate = new Promise<void>(resolve => { release = resolve; });
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.goto('/showcase?view=ladder');
+    await page.getByRole('button', { name: new RegExp(`^Phase ${phase},`) }).click();
+    if (phase === 5) await page.getByRole('button', { name: 'Run to checkpoint', exact: true }).click();
+    else {
+      const input = page.getByRole('textbox', { name: 'Ask Meridian anything' });
+      await input.fill('Find a quiet wine-country retreat'); await input.press('Enter');
+    }
+    const spinner = page.locator('.mds-thinking-wait .mds-activity-spinner');
+    try {
+      await expect(spinner).toBeVisible();
+      await expect(spinner).toHaveCSS('animation-name', 'mds-activity-spin');
+      const initial = await spinner.evaluate(el => getComputedStyle(el).transform);
+      await expect.poll(() => spinner.evaluate(el => getComputedStyle(el).transform)).not.toBe(initial);
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await expect(spinner).toHaveCSS('animation-name', 'none');
+      await expect(spinner).toHaveCSS('transform', 'none');
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      await expect(spinner).toHaveCSS('animation-name', 'mds-activity-spin');
+    } finally { release(); }
+    await expect(page.locator('.mds-thinking-wait')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Replay trace', exact: true }).click();
+    await expect(page.locator('.mds-thinking-item.is-active .mds-activity-spinner')).toHaveCSS('animation-name', 'mds-activity-spin');
+    await expect(page.locator('.mds-thinking-caption')).toHaveText('Recorded activity · 5 events');
+    if (phase === 4) {
+      await page.getByText('Inspect evidence', { exact: true }).click();
+      await page.getByRole('button', { name: 'Run RLS probe', exact: true }).click();
+      const probeSpinner = page.getByRole('button', { name: 'Running governance probe', exact: true }).locator('svg');
+      try {
+        await expect(probeSpinner).toHaveCSS('animation-name', 'mds-send-spin');
+        const initial = await probeSpinner.evaluate(el => getComputedStyle(el).transform);
+        await expect.poll(() => probeSpinner.evaluate(el => getComputedStyle(el).transform)).not.toBe(initial);
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        await expect(probeSpinner).toHaveCSS('animation-name', 'none');
+      } finally { releaseProbe(); }
+      await expect(page.getByText(/Governance probe unavailable:/)).toBeVisible();
+    }
+  }
+});

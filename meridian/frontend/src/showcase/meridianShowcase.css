@@ -4876,6 +4876,10 @@
 .mds-thinking-wait > svg { flex-shrink: 0; margin-top: 2px; color: var(--mc-accent); }
 .mds-thinking-wait strong { color: var(--mc-ink); font-weight: 550; }
 .mds-thinking-wait p { margin: 5px 0 0; }
+@keyframes mds-activity-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: no-preference) {
+  .mds-activity-spinner { animation: mds-activity-spin 1s linear infinite; transform-origin: center; }
+}
 
 /* One disclosure per responsibility. Event payloads stay inside their step. */
 .mds-activity-group > summary { display: grid; grid-template-columns: 20px minmax(0, 1fr) 15px; align-items: start; gap: 10px; min-height: 44px; padding: 14px 0; cursor: pointer; list-style: none; }
@@ -4897,6 +4901,15 @@
 .mds-activity-event-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: inherit; }
 .mds-activity-event-detail a { color: var(--mc-accent); text-decoration: underline; text-underline-offset: 3px; }
 .mds-activity-event-source { font-family: var(--mds-font-mono); }
+.mds-evidence-probe { color: var(--mc-muted); font-size: calc(12px * var(--mc-type-scale)); line-height: 1.5; }
+.mds-evidence-probe p { margin: 0 0 12px; }
+.mds-evidence-probe button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--mc-line); border-radius: 6px; background: var(--mc-soft); color: var(--mc-accent); font: inherit; cursor: pointer; }
+.mds-evidence-probe button:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 3px; }
+.mds-trace-inspector .mds-trace-tabs { display: flex; flex-wrap: wrap; gap: 5px; }
+.mds-trace-inspector .mds-trace-tabs button { flex: 1 1 auto; font-size: calc(12px * var(--mc-type-scale)); }
+.mds-trace-inspector .mds-sql-list small { color: var(--mc-muted); font-size: calc(12px * var(--mc-type-scale)); line-height: 1.5; }
+.mds-trace-inspector .mds-sql-list pre { margin: 6px 0 14px; background: var(--mc-soft); color: var(--mc-ink); font-size: calc(11px * var(--mc-type-scale)); }
+.mds-evidence-heading { margin: 0 0 10px; color: var(--mc-ink); font-size: calc(12px * var(--mc-type-scale)); }
 .mds-trace-inspector > summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; list-style: none; color: var(--mc-muted); font-size: calc(12px * var(--mc-type-scale)); }
 .mds-activity-group > summary:focus-visible,
 .mds-activity-event > summary:focus-visible,
@@ -6914,7 +6927,7 @@
 }
 
 .mds-rls-run:disabled svg {
-  animation: mds-spin 900ms linear infinite;
+  animation: mds-send-spin 900ms linear infinite;
 }
 
 @media (max-width: 720px) {

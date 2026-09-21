@@ -100,7 +100,8 @@ Chat uses compact traveler messages and open assistant replies aligned with a
 multiline composer. **Enter** sends; **Shift+Enter** adds a line. Activity shows
 one expandable trace with recorded step outcomes and AWS service icons. Expand a
 step to inspect its events, then an event for technical details. SQL, memory, and
-policy tools live under **Inspect evidence**. Replay preserves completed evidence
+policy tools live under **Inspect evidence**, which opens directly to available
+evidence. Empty views are hidden; the live RLS diagnostic runs only when requested. Replay preserves completed evidence
 when events arrive out of phase order. The capability ladder uses smaller headings
 and compact query suggestions to leave more room for the conversation.
 
