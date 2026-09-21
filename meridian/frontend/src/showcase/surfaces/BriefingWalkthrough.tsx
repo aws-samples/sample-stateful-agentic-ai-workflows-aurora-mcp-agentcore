@@ -1,4 +1,4 @@
-import { ArrowRight, Braces, FileJson, MessageSquare, ShieldCheck, Workflow, type LucideIcon } from 'lucide-react';
+import { ArrowRight, Braces, ChevronDown, FileJson, MessageSquare, ShieldCheck, Workflow, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { ServiceMark, type ServiceMarkName } from '../components/ServiceMark';
 import './briefingWalkthrough.css';
@@ -28,8 +28,10 @@ function Phase({ number, name, claim, children }: { number: number; name: string
 }
 
 export function BriefingPreparation() {
-  return <section className="mds-brief-section mds-brief-preparation" aria-labelledby="brief-preparation-heading">
-    <div className="mds-brief-section-heading"><h2 id="brief-preparation-heading">Prepare the data before the question</h2><p>Seed-time preparation gives each tool something reliable to read.</p></div>
+  return <details className="mds-brief-section mds-brief-preparation" aria-labelledby="brief-preparation-heading">
+    <summary className="mds-brief-section-heading"><h2 id="brief-preparation-heading">Prepare the data before the question</h2><ChevronDown size={22} aria-hidden="true" /></summary>
+    <div className="mds-brief-section-body">
+    <p>Seed-time preparation gives each tool something reliable to read.</p>
     <div className="mds-brief-prep-labels" aria-hidden="true"><span>Source records</span><span>Preparation</span><span>Ready for the tools</span></div>
     <ol className="mds-brief-prep-paths" aria-label="Source records, preparation and Aurora stores">
       <li>
@@ -49,12 +51,15 @@ export function BriefingPreparation() {
       </li>
     </ol>
     <p className="mds-brief-note">The package ID connects descriptions, search candidates and current inventory. Query and catalog embeddings use the same model.</p>
-  </section>;
+    </div>
+  </details>;
 }
 
 export function BriefingPhases() {
-  return <section className="mds-brief-section mds-brief-walkthrough" aria-labelledby="brief-phases-heading">
-    <div className="mds-brief-section-heading"><h2 id="brief-phases-heading">Five phases, one connected system</h2><p>Each phase adds a capability to the same travel journey.</p></div>
+  return <details className="mds-brief-section mds-brief-walkthrough" aria-labelledby="brief-phases-heading">
+    <summary className="mds-brief-section-heading"><h2 id="brief-phases-heading">Five phases, one connected system</h2><ChevronDown size={22} aria-hidden="true" /></summary>
+    <div className="mds-brief-section-body">
+    <p>Each phase adds a capability to the same travel journey.</p>
     <div className="mds-brief-phase-pair">
       <Phase number={1} name="SQL" claim="Answer from exact rows.">
         <MiniFlow label="Phase 1 SQL path" steps={[
@@ -127,5 +132,6 @@ export function BriefingPhases() {
       </Phase>
     </div>
     <p className="mds-brief-note">Fictional Meridian inventory. Holds and confirmations affect the demo catalog; no supplier is contacted and no payment is taken.</p>
-  </section>;
+    </div>
+  </details>;
 }

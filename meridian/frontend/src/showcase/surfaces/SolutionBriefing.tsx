@@ -23,10 +23,13 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence }: { onOpenLadde
         <h1 id="mds-brief-title">Solution briefing</h1>
         <p>A travel concierge that remembers the traveler, governs each action and resumes interrupted work.</p>
       </header>
-      <section className="mds-brief-section mds-brief-overview" aria-labelledby="brief-architecture-heading">
-        <div className="mds-brief-section-heading"><h2 id="brief-architecture-heading">The architecture</h2><p>Two execution paths sharing governed tools and durable workflow state.</p></div>
-        <BriefingArchitecture />
-      </section>
+      <details className="mds-brief-section mds-brief-overview" open aria-labelledby="brief-architecture-heading">
+        <summary className="mds-brief-section-heading"><h2 id="brief-architecture-heading">The architecture</h2><ChevronDown size={22} aria-hidden="true" /></summary>
+        <div className="mds-brief-section-body">
+          <p>Two execution paths sharing governed tools and durable workflow state.</p>
+          <BriefingArchitecture />
+        </div>
+      </details>
       <BriefingPreparation />
       <BriefingPhases />
       <section className="mds-brief-section mds-brief-reference" aria-labelledby="brief-reference-heading">

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-13T08:55:05.286800+00:00",
+  "generatedAt": "2026-09-21T19:18:56.789170+00:00",
   "title": "Design System: Meridian",
   "extensions": {
     "colorMeta": {
@@ -16,7 +16,8 @@
           "oklch(72% 0.0000 0.00)",
           "oklch(84% 0.0000 0.00)",
           "oklch(95% 0.0000 0.00)"
-        ]
+        ],
+        "canonical": "#ffffff"
       },
       "service-muted": {
         "role": "primary",
@@ -30,7 +31,8 @@
           "oklch(72% 0.0182 81.33)",
           "oklch(84% 0.0182 81.33)",
           "oklch(95% 0.0182 81.33)"
-        ]
+        ],
+        "canonical": "#d2cbbf"
       },
       "service-active": {
         "role": "primary",
@@ -44,7 +46,8 @@
           "oklch(72% 0.0160 75.08)",
           "oklch(84% 0.0160 75.08)",
           "oklch(95% 0.0160 75.08)"
-        ]
+        ],
+        "canonical": "#3d372f"
       },
       "service-hover": {
         "role": "primary",
@@ -58,7 +61,8 @@
           "oklch(72% 0.0119 78.13)",
           "oklch(84% 0.0119 78.13)",
           "oklch(95% 0.0119 78.13)"
-        ]
+        ],
+        "canonical": "#34302a"
       },
       "light-ground": {
         "role": "neutral",
@@ -72,7 +76,8 @@
           "oklch(72% 0.0000 0.00)",
           "oklch(84% 0.0000 0.00)",
           "oklch(95% 0.0000 0.00)"
-        ]
+        ],
+        "canonical": "#ffffff"
       },
       "light-surface": {
         "role": "neutral",
@@ -86,7 +91,8 @@
           "oklch(72% 0.0000 0.00)",
           "oklch(84% 0.0000 0.00)",
           "oklch(95% 0.0000 0.00)"
-        ]
+        ],
+        "canonical": "#ffffff"
       },
       "light-soft": {
         "role": "neutral",
@@ -100,7 +106,8 @@
           "oklch(72% 0.0000 0.00)",
           "oklch(84% 0.0000 0.00)",
           "oklch(95% 0.0000 0.00)"
-        ]
+        ],
+        "canonical": "#f2f2f2"
       },
       "light-ink": {
         "role": "neutral",
@@ -114,63 +121,28 @@
           "oklch(72% 0.0000 0.00)",
           "oklch(84% 0.0000 0.00)",
           "oklch(95% 0.0000 0.00)"
-        ]
+        ],
+        "canonical": "#111111"
       },
       "light-muted": {
         "role": "neutral",
         "displayName": "Light Muted",
-        "tonalRamp": [
-          "oklch(15% 0.0000 0.00)",
-          "oklch(26% 0.0000 0.00)",
-          "oklch(38% 0.0000 0.00)",
-          "oklch(49% 0.0000 0.00)",
-          "oklch(61% 0.0000 0.00)",
-          "oklch(72% 0.0000 0.00)",
-          "oklch(84% 0.0000 0.00)",
-          "oklch(95% 0.0000 0.00)"
-        ]
+        "canonical": "#46515f"
       },
       "light-line": {
         "role": "neutral",
         "displayName": "Light Line",
-        "tonalRamp": [
-          "oklch(15% 0.0000 0.00)",
-          "oklch(26% 0.0000 0.00)",
-          "oklch(38% 0.0000 0.00)",
-          "oklch(49% 0.0000 0.00)",
-          "oklch(61% 0.0000 0.00)",
-          "oklch(72% 0.0000 0.00)",
-          "oklch(84% 0.0000 0.00)",
-          "oklch(95% 0.0000 0.00)"
-        ]
+        "canonical": "#7c8793"
       },
       "light-accent": {
         "role": "primary",
         "displayName": "Light Accent",
-        "tonalRamp": [
-          "oklch(15% 0.1400 259.28)",
-          "oklch(26% 0.1400 259.28)",
-          "oklch(38% 0.1400 259.28)",
-          "oklch(49% 0.1400 259.28)",
-          "oklch(61% 0.1400 259.28)",
-          "oklch(72% 0.1400 259.28)",
-          "oklch(84% 0.1400 259.28)",
-          "oklch(95% 0.1400 259.28)"
-        ]
+        "canonical": "#174c8c"
       },
       "light-action": {
         "role": "primary",
         "displayName": "Light Action",
-        "tonalRamp": [
-          "oklch(15% 0.1487 259.78)",
-          "oklch(26% 0.1487 259.78)",
-          "oklch(38% 0.1487 259.78)",
-          "oklch(49% 0.1487 259.78)",
-          "oklch(61% 0.1487 259.78)",
-          "oklch(72% 0.1487 259.78)",
-          "oklch(84% 0.1487 259.78)",
-          "oklch(95% 0.1487 259.78)"
-        ]
+        "canonical": "#194d90"
       },
       "dark-ground": {
         "role": "neutral",
@@ -184,7 +156,8 @@
           "oklch(72% 0.0045 84.59)",
           "oklch(84% 0.0045 84.59)",
           "oklch(95% 0.0045 84.59)"
-        ]
+        ],
+        "canonical": "#0e0d0b"
       },
       "dark-surface": {
         "role": "neutral",
@@ -198,7 +171,8 @@
           "oklch(72% 0.0067 78.16)",
           "oklch(84% 0.0067 78.16)",
           "oklch(95% 0.0067 78.16)"
-        ]
+        ],
+        "canonical": "#181613"
       },
       "dark-soft": {
         "role": "neutral",
@@ -212,7 +186,8 @@
           "oklch(72% 0.0103 80.60)",
           "oklch(84% 0.0103 80.60)",
           "oklch(95% 0.0103 80.60)"
-        ]
+        ],
+        "canonical": "#221f1a"
       },
       "dark-ink": {
         "role": "neutral",
@@ -226,63 +201,28 @@
           "oklch(72% 0.0069 88.64)",
           "oklch(84% 0.0069 88.64)",
           "oklch(95% 0.0069 88.64)"
-        ]
+        ],
+        "canonical": "#fbf9f4"
       },
       "dark-muted": {
         "role": "neutral",
         "displayName": "Dark Muted",
-        "tonalRamp": [
-          "oklch(15% 0.0183 81.32)",
-          "oklch(26% 0.0183 81.32)",
-          "oklch(38% 0.0183 81.32)",
-          "oklch(49% 0.0183 81.32)",
-          "oklch(61% 0.0183 81.32)",
-          "oklch(72% 0.0183 81.32)",
-          "oklch(84% 0.0183 81.32)",
-          "oklch(95% 0.0183 81.32)"
-        ]
+        "canonical": "#d3cbbc"
       },
       "dark-line": {
         "role": "neutral",
         "displayName": "Dark Line",
-        "tonalRamp": [
-          "oklch(15% 0.0139 76.39)",
-          "oklch(26% 0.0139 76.39)",
-          "oklch(38% 0.0139 76.39)",
-          "oklch(49% 0.0139 76.39)",
-          "oklch(61% 0.0139 76.39)",
-          "oklch(72% 0.0139 76.39)",
-          "oklch(84% 0.0139 76.39)",
-          "oklch(95% 0.0139 76.39)"
-        ]
+        "canonical": "#69737e"
       },
       "dark-accent": {
         "role": "primary",
         "displayName": "Dark Accent",
-        "tonalRamp": [
-          "oklch(15% 0.0857 262.68)",
-          "oklch(26% 0.0857 262.68)",
-          "oklch(38% 0.0857 262.68)",
-          "oklch(49% 0.0857 262.68)",
-          "oklch(61% 0.0857 262.68)",
-          "oklch(72% 0.0857 262.68)",
-          "oklch(84% 0.0857 262.68)",
-          "oklch(95% 0.0857 262.68)"
-        ]
+        "canonical": "#b9d9ff"
       },
       "dark-action": {
         "role": "primary",
         "displayName": "Dark Action",
-        "tonalRamp": [
-          "oklch(15% 0.1577 260.62)",
-          "oklch(26% 0.1577 260.62)",
-          "oklch(38% 0.1577 260.62)",
-          "oklch(49% 0.1577 260.62)",
-          "oklch(61% 0.1577 260.62)",
-          "oklch(72% 0.1577 260.62)",
-          "oklch(84% 0.1577 260.62)",
-          "oklch(95% 0.1577 260.62)"
-        ]
+        "canonical": "#194d90"
       },
       "on-action": {
         "role": "primary",
@@ -296,7 +236,8 @@
           "oklch(72% 0.0000 0.00)",
           "oklch(84% 0.0000 0.00)",
           "oklch(95% 0.0000 0.00)"
-        ]
+        ],
+        "canonical": "#ffffff"
       },
       "light-caution": {
         "role": "secondary",
@@ -310,7 +251,8 @@
           "oklch(72% 0.0904 69.37)",
           "oklch(84% 0.0904 69.37)",
           "oklch(95% 0.0904 69.37)"
-        ]
+        ],
+        "canonical": "#80551d"
       },
       "light-caution-bg": {
         "role": "secondary",
@@ -324,7 +266,8 @@
           "oklch(72% 0.0209 79.10)",
           "oklch(84% 0.0209 79.10)",
           "oklch(95% 0.0209 79.10)"
-        ]
+        ],
+        "canonical": "#fbf2e4"
       },
       "dark-caution": {
         "role": "secondary",
@@ -338,7 +281,8 @@
           "oklch(72% 0.0887 77.87)",
           "oklch(84% 0.0887 77.87)",
           "oklch(95% 0.0887 77.87)"
-        ]
+        ],
+        "canonical": "#edc68a"
       },
       "dark-caution-bg": {
         "role": "secondary",
@@ -352,7 +296,8 @@
           "oklch(72% 0.0195 70.28)",
           "oklch(84% 0.0195 70.28)",
           "oklch(95% 0.0195 70.28)"
-        ]
+        ],
+        "canonical": "#352d24"
       },
       "service-ground": {
         "role": "primary",
@@ -366,7 +311,123 @@
           "oklch(72% 0.0134 72.20)",
           "oklch(84% 0.0134 72.20)",
           "oklch(95% 0.0134 72.20)"
-        ]
+        ],
+        "canonical": "#25201a"
+      },
+      "projector-ground": {
+        "role": "neutral",
+        "displayName": "Projector Ground",
+        "canonical": "#f5f5f2"
+      },
+      "projector-surface": {
+        "role": "neutral",
+        "displayName": "Projector Surface",
+        "canonical": "#fafaf7"
+      },
+      "projector-soft": {
+        "role": "neutral",
+        "displayName": "Projector Soft",
+        "canonical": "#e9ecef"
+      },
+      "projector-ink": {
+        "role": "neutral",
+        "displayName": "Projector Ink",
+        "canonical": "#141b24"
+      },
+      "projector-muted": {
+        "role": "neutral",
+        "displayName": "Projector Muted",
+        "canonical": "#35414f"
+      },
+      "projector-line": {
+        "role": "neutral",
+        "displayName": "Projector Line",
+        "canonical": "#7c8793"
+      },
+      "projector-accent": {
+        "role": "primary",
+        "displayName": "Projector Accent",
+        "canonical": "#174c8c"
+      },
+      "projector-action": {
+        "role": "primary",
+        "displayName": "Projector Action",
+        "canonical": "#194d90"
+      },
+      "projector-caution": {
+        "role": "primary",
+        "displayName": "Projector Caution",
+        "canonical": "#69420c"
+      },
+      "projector-caution-bg": {
+        "role": "primary",
+        "displayName": "Projector Caution Bg",
+        "canonical": "#f7eddc"
+      },
+      "light-action-hover": {
+        "role": "primary",
+        "displayName": "Light Action Hover",
+        "canonical": "#123c70"
+      },
+      "projector-dark-ground": {
+        "role": "neutral",
+        "displayName": "Projector Dark Ground",
+        "canonical": "#0e0d0b"
+      },
+      "projector-dark-surface": {
+        "role": "neutral",
+        "displayName": "Projector Dark Surface",
+        "canonical": "#1b1a17"
+      },
+      "projector-dark-soft": {
+        "role": "neutral",
+        "displayName": "Projector Dark Soft",
+        "canonical": "#292823"
+      },
+      "projector-dark-ink": {
+        "role": "neutral",
+        "displayName": "Projector Dark Ink",
+        "canonical": "#fffdf8"
+      },
+      "projector-dark-muted": {
+        "role": "neutral",
+        "displayName": "Projector Dark Muted",
+        "canonical": "#e1dbd1"
+      },
+      "projector-dark-line": {
+        "role": "neutral",
+        "displayName": "Projector Dark Line",
+        "canonical": "#8d979f"
+      },
+      "projector-dark-accent": {
+        "role": "primary",
+        "displayName": "Projector Dark Accent",
+        "canonical": "#bddbff"
+      },
+      "projector-dark-action": {
+        "role": "primary",
+        "displayName": "Projector Dark Action",
+        "canonical": "#194d90"
+      },
+      "dark-action-hover": {
+        "role": "primary",
+        "displayName": "Dark Action Hover",
+        "canonical": "#123c70"
+      },
+      "dark-on-action": {
+        "role": "primary",
+        "displayName": "Dark On Action",
+        "canonical": "#ffffff"
+      },
+      "dark-action-edge": {
+        "role": "semantic",
+        "displayName": "Dark Action Edge",
+        "canonical": "#8cadd6"
+      },
+      "dark-status": {
+        "canonical": "#4d90df",
+        "role": "semantic",
+        "displayName": "Dark Status"
       }
     },
     "typographyMeta": {
@@ -426,7 +487,9 @@
     ],
     "typeScale": {
       "desktop": 1.18,
-      "compact": 1.04
+      "compact": 1.04,
+      "projectorDesktop": 1.3,
+      "projectorCompact": 1.1
     },
     "focus": {
       "value": "2px solid var(--mc-accent)",
@@ -443,13 +506,55 @@
         "preservedAssetColor": "#C925D1",
         "purpose": "Official Aurora service tile retains its supplied color; it does not introduce a Meridian action color."
       }
+    },
+    "presentation": {
+      "source": "meridian/frontend/src/showcase/projectorReadability.css",
+      "entry": "/showcase?present=1",
+      "themePrecedence": [
+        "explicit theme query",
+        "light room preset",
+        "saved preference",
+        "light default"
+      ],
+      "background": "{colors.projector-ground}",
+      "foreground": "{colors.projector-ink}",
+      "secondary": "{colors.projector-muted}",
+      "body": "20px above 860px",
+      "supportingLabelsAndCode": "18px above 860px",
+      "architectureEdges": "2.5px",
+      "architectureNodeOutlines": "2px",
+      "navigation": "Audience sidebar hidden; wordmark omitted from 861px through 1440px to fit all five surface names.",
+      "loading": "Shared theme resolver applies before the lazy showcase bundle mounts.",
+      "roomCheck": "Verify screen size, lighting and back-row legibility on the actual projector.",
+      "darkEntry": "/showcase?present=1&theme=dark",
+      "darkPalette": {
+        "background": "{colors.projector-dark-ground}",
+        "surface": "{colors.projector-dark-surface}",
+        "secondary": "{colors.projector-dark-muted}",
+        "action": "{colors.projector-dark-action}",
+        "onAction": "{colors.dark-on-action}"
+      },
+      "contrastContract": "Primary action labels retain at least 7:1 in default, hover and focus states. Secondary text is at least 7:1 on soft panels; field boundaries and focus indicators are at least 3:1.",
+      "darkStatusIndicators": {
+        "foreground": "{colors.dark-status}",
+        "label": "{colors.projector-dark-ink}",
+        "scope": "Bare traveler-context lock and waiting/replay glyphs. Plain Activity text with an unboxed blue dot; pulse respects reduced motion."
+      }
+    },
+    "briefing": {
+      "source": "meridian/frontend/src/showcase/surfaces/SolutionBriefing.tsx",
+      "architecture": "Expanded initially and independently collapsible; vertical semantic flow below 900px container width.",
+      "preparation": "Initially collapsed disclosure with package facts, package descriptions and traveler facts.",
+      "phases": "Initially collapsed walkthrough of SQL, MCP, Retrieval, Production and Workflow.",
+      "reference": "Three initially collapsed native disclosures follow the walkthrough.",
+      "evidenceBoundary": "The Bali retrieval candidate is illustrative; measured results belong to the capability ladder."
     }
   },
   "components": [
     {
       "name": "Primary action",
       "kind": "button",
-      "description": "Filled action used by the featured trip; theme variables select its palette.",
+      "description": "Both themes use the same deep-blue actions with white labels; dark mode adds a fine light-blue edge.",
       "html": "<button class=\"ds-primary\" type=\"button\">Explore this trip<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M5 12h14m-6-6 6 6-6 6\"/></svg></button>",
       "css": ".ds-primary{font-family:var(--mds-font,\"Geist Variable\",ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif);display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:10px 14px;border:0;border-radius:6px;background:var(--mc-action,#2358ae);color:var(--mc-on-action,#ffffff);font-size:calc(12px * var(--mc-type-scale,1.18));font-weight:600;cursor:pointer;}.ds-primary:focus-visible{outline:2px solid var(--mc-accent,#2457a7);outline-offset:4px;}.ds-primary:disabled{opacity:.55;cursor:wait;}@media(prefers-reduced-motion:no-preference){.ds-primary{transition:background-color 160ms ease-out,color 160ms ease-out;}}.ds-primary:hover:not(:disabled){background:color-mix(in srgb,var(--mc-action,#2358ae) 90%,black);}",
       "refersTo": "button-primary"
@@ -541,7 +646,7 @@
       },
       {
         "name": "The Projector Rule",
-        "body": "The current desktop scale is (1.18); at widths up to (860px) the compact scale is (1.04). Preserve the evidence-label minimum when adjusting the scale. Small incidental captions in older code are not a target for new information that the audience must read.",
+        "body": "The current desktop scale is (1.18); at widths up to (860px) the compact scale is (1.04). Preserve the evidence-label minimum when adjusting the scale. Small incidental captions in older code are not a target for new information that the audience must read. The audience room preset uses off-white surfaces, stronger contrast and fixed body/code sizes; verify the physical room separately.",
         "section": "typography"
       },
       {

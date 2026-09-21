@@ -4,6 +4,7 @@ import { DesktopMeridianApp } from './DesktopMeridianApp';
 import { useMeridianShowcase } from './hooks/useMeridianShowcase';
 import { usePresentationMode } from './hooks/usePresentationMode';
 import { PresenterControls } from './components/PresenterControls';
+import { initialShowcaseTheme, rememberShowcaseTheme, type ShowcaseTheme } from '../lib/showcaseTheme';
 import './meridianShowcase.css';
 import './recoveryWorkspace.css';
 import './discoveryWorkspace.css';
@@ -14,33 +15,7 @@ import './airlineConcierge.css';
 import './presentationMode.css';
 import './solutionBriefing.css';
 import './recoveryChecks.css';
-
-type ShowcaseTheme = 'dark' | 'light';
-
-const THEME_STORAGE_KEY = 'meridian.theme';
-
-// Light by default: it reads on low-contrast projectors and is the presenter's
-// preference. A `?theme=dark` query or a remembered toggle wins.
-function initialTheme(): ShowcaseTheme {
-  if (typeof window === 'undefined') return 'light';
-  const requested = new URLSearchParams(window.location.search).get('theme');
-  if (requested === 'dark' || requested === 'light') return requested;
-  try {
-    const remembered = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (remembered === 'dark' || remembered === 'light') return remembered;
-  } catch {
-    // Storage can be unavailable (private mode, blocked site data); fall through.
-  }
-  return 'light';
-}
-
-function rememberTheme(theme: ShowcaseTheme): void {
-  try {
-    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-  } catch {
-    // Remembering the toggle is a convenience, never a requirement.
-  }
-}
+import './projectorReadability.css';
 
 // Keep a render error from blanking the live showcase.
 class ShowcaseErrorBoundary extends Component<
@@ -83,11 +58,11 @@ export function MeridianDeviceShowcase() {
   const state = useMeridianShowcase();
   const presentation = usePresentationMode();
   const audienceLayout = presentation.fullscreen || presentation.preview;
-  // Theme is session-local and scoped through CSS tokens.
-  const [theme, setTheme] = useState<ShowcaseTheme>(initialTheme);
+  // Theme uses the same preference as the initial route loading screen.
+  const [theme, setTheme] = useState<ShowcaseTheme>(initialShowcaseTheme);
   const toggleTheme = () => {
     const next: ShowcaseTheme = theme === 'dark' ? 'light' : 'dark';
-    rememberTheme(next);
+    rememberShowcaseTheme(next);
     setTheme(next);
   };
 

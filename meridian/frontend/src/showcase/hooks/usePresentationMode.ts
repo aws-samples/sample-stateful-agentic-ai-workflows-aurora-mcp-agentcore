@@ -5,7 +5,10 @@ export function usePresentationMode() {
   const [fullscreen, setFullscreen] = useState(() =>
     Boolean(document.fullscreenElement || window.matchMedia?.('(display-mode: fullscreen)').matches),
   );
-  const [preview, setPreview] = useState(false);
+  // Audience preview is URL-addressable; fullscreen still requires a click.
+  const [preview, setPreview] = useState(() =>
+    new URLSearchParams(window.location.search).get('present') === '1',
+  );
   const [projector, setProjector] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

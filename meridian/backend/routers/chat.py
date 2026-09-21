@@ -880,13 +880,13 @@ def _format_domain_reply(tool: str, result: Any) -> str:
         if tool == "compare_packages" and isinstance(result, list):
             if not result:
                 return "No packages to compare."
-            lines = [f"Compared {len(result)} packages via meridian-concierge MCP:"]
+            lines = [f"Compared {len(result)} packages via meridian-concierge MCP:", ""]
             for p in result:
                 price = p.get("price_per_person")
-                price_s = f"${price:,.0f}" if isinstance(price, (int, float)) else "—"
+                price_s = f"${price:,.0f}" if isinstance(price, (int, float)) else "-"
                 lines.append(
-                    f"• {p.get('name')} — {p.get('destination') or p.get('region') or ''} "
-                    f"· {p.get('trip_type', '')} · {price_s}"
+                    f"- {p.get('name')} - {p.get('destination') or p.get('region') or ''} "
+                    f"- {p.get('trip_type', '')} - {price_s}"
                 )
             return "\n".join(lines)
         if tool == "currency_convert" and isinstance(result, dict):
@@ -896,22 +896,23 @@ def _format_domain_reply(tool: str, result: Any) -> str:
                     return "No package prices were available to convert."
                 lines = [
                     f"Package prices converted to {result.get('to')} via "
-                    "meridian-concierge MCP:"
+                    "meridian-concierge MCP:",
+                    "",
                 ]
                 for item in conversions:
                     amount = item.get("amount")
                     converted = item.get("converted")
-                    amount_s = f"{amount:,.0f}" if isinstance(amount, (int, float)) else "—"
+                    amount_s = f"{amount:,.0f}" if isinstance(amount, (int, float)) else "-"
                     converted_s = (
                         f"{converted:,.2f}"
                         if isinstance(converted, (int, float))
-                        else "—"
+                        else "-"
                     )
                     lines.append(
-                        f"• {item.get('name')} — {amount_s} {item.get('from')} "
+                        f"- {item.get('name')} - {amount_s} {item.get('from')} "
                         f"≈ {converted_s} {item.get('to')}"
                     )
-                lines.append("Indicative rates; not for settlement.")
+                lines.extend(["", "Indicative rates; not for settlement."])
                 return "\n".join(lines)
             amt = result.get("amount")
             converted = result.get("converted")

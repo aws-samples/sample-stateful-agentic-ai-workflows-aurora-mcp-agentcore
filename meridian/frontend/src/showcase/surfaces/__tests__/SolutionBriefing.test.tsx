@@ -4,8 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { SolutionBriefing } from '../SolutionBriefing';
 
 describe('SolutionBriefing', () => {
-  it('explains preparation and all five phases without opening reference panels', () => {
-    render(<SolutionBriefing onOpenLadder={() => {}} onOpenEvidence={() => {}} />);
+  it('starts with only architecture open and reveals preparation and phases on demand', () => {
+    const { container } = render(<SolutionBriefing onOpenLadder={() => {}} onOpenEvidence={() => {}} />);
+    expect(container.querySelectorAll('details[open]')).toHaveLength(1);
+    expect(screen.getByText('The architecture').closest('details')).toHaveAttribute('open');
+    expect(screen.getByText('Package facts')).not.toBeVisible();
+    expect(screen.getByText('Query vector → pgvector')).not.toBeVisible();
+    fireEvent.click(screen.getByText('Prepare the data before the question'));
+    fireEvent.click(screen.getByText('Five phases, one connected system'));
     expect(screen.getByRole('heading', { name: 'Prepare the data before the question' })).toBeVisible();
     for (const name of ['Phase 1 · SQL', 'Phase 2 · MCP', 'Phase 3 · Retrieval', 'Phase 4 · Production', 'Phase 5 · Workflow']) {
       expect(screen.getByRole('heading', { name })).toBeVisible();
@@ -28,6 +34,11 @@ describe('SolutionBriefing', () => {
     expect(screen.getByText('MeridianHolds___confirm_booking')).toBeVisible();
     expect(screen.getAllByText(/context\.input\.totalCents <= context\.input\.budgetCeilingCents/)).toHaveLength(2);
     expect(screen.getByRole('img', { name: /Meridian request and state architecture/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('The architecture'));
+    expect(screen.getByText('The architecture').closest('details')).not.toHaveAttribute('open');
+    expect(screen.getByText('meridian_hold_governance')).toBeVisible();
+    fireEvent.click(screen.getByText('The architecture'));
+    expect(screen.getByText('The architecture').closest('details')).toHaveAttribute('open');
     fireEvent.click(screen.getByText('Tool contracts & Cedar policies'));
     expect(screen.getByText('meridian_hold_governance')).not.toBeVisible();
   });

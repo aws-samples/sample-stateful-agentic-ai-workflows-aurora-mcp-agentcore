@@ -4,6 +4,7 @@ import '@fontsource-variable/geist'
 import '@fontsource-variable/geist-mono'
 import './index.css'
 import { RouteSkeleton } from './components/RouteSkeleton'
+import { initialShowcaseTheme } from './lib/showcaseTheme'
 
 const DemoStage = lazy(() => import('./stage/DemoStage').then((module) => ({ default: module.DemoStage })))
 const MeridianDeviceShowcase = lazy(() => import('./showcase/MeridianDeviceShowcase'))
@@ -25,6 +26,9 @@ function pickRoot() {
     return <DemoStage />
   }
   if (path === '/showcase' || path === '/device-showcase') {
+    // Resolve before the lazy bundle so a light presentation never flashes a
+    // dark loading screen. The mounted showcase keeps this attribute in sync.
+    document.documentElement.dataset.theme = initialShowcaseTheme()
     return <MeridianDeviceShowcase />
   }
   window.location.replace('/showcase')

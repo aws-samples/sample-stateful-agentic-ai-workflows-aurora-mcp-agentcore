@@ -1,0 +1,165 @@
+/* Room preset. Load after the individual surfaces so audience settings also
+   cover briefing diagrams, recorded SQL and recovery evidence. Laptop styling
+   stays independent; the theme toggle still supports a fully dimmed room. */
+.mds-root[data-theme='light'][data-projector-readability='true'] {
+  color-scheme: light;
+  --mc-ground: #f5f5f2;
+  --mc-surface: #fafaf7;
+  --mc-soft: #e9ecef;
+  --mc-ink: #141b24;
+  --mc-muted: #35414f;
+  --mc-line: #7c8793;
+  --mc-accent: #174c8c;
+  --mc-action: #194d90;
+  --mc-on-action: #ffffff;
+  --mc-caution: #69420c;
+  --mc-caution-bg: #f7eddc;
+  --mds-line-strong: #536170;
+  --mds-green: #166534;
+  --mds-yellow: #805000;
+  --mds-danger: #a61b1b;
+}
+
+.mds-root[data-theme='dark'][data-projector-readability='true'] {
+  color-scheme: dark;
+  --mc-ground: #0e0d0b;
+  --mc-surface: #1b1a17;
+  --mc-soft: #292823;
+  --mc-ink: #fffdf8;
+  --mc-muted: #e1dbd1;
+  --mc-line: #8d979f;
+  --mc-accent: #bddbff;
+  --mc-action: #194d90;
+  --mc-on-action: #ffffff;
+  --mds-line-strong: #b5c2ce;
+  --mds-green: #78e4b6;
+  --mds-yellow: #ffcf76;
+  --mds-danger: #ffa18a;
+}
+
+/* Evidence, dialogs and legacy panels follow the same room palette. */
+.mds-root[data-projector-readability='true'] {
+  --mds-bg: var(--mc-ground);
+  --mds-bg-2: var(--mc-soft);
+  --mds-shell: var(--mc-surface);
+  --mds-shell-elevated: var(--mc-surface);
+  --mds-panel: var(--mc-surface);
+  --mds-panel-2: var(--mc-soft);
+  --mds-app-surface: var(--mc-ground);
+  --mds-card: var(--mc-surface);
+  --mds-recovery-rail: var(--mc-surface);
+  --mds-experience-panel: var(--mc-surface);
+  --mds-experience-panel-raised: var(--mc-soft);
+  --mds-experience-border: var(--mc-line);
+  --mds-ink: var(--mc-ink);
+  --mds-muted: var(--mc-muted);
+  --mds-dim: var(--mc-muted);
+  --mds-on-surface: var(--mc-ink);
+  --mds-on-surface-soft: var(--mc-muted);
+  --mds-on-surface-faint: var(--mc-muted);
+  --mds-line: var(--mc-line);
+  --mds-blue: var(--mc-accent);
+  --mds-chrome-main-background: var(--mc-ground);
+  --mds-chrome-right-background: var(--mc-surface);
+  --mds-chrome-right-border: var(--mc-line);
+}
+
+/* Filled controls must not inherit a text accent or a hard-coded white label. */
+.mds-root[data-theme] :is(
+  .mds-trip-confirm button, .mds-trip-modal-actions .is-primary,
+  .mds-compare-copy .is-primary, .mds-popover-primary,
+  .mds-trace-tabs button.is-active
+) {
+  background: var(--mc-action);
+  border-color: var(--mc-action);
+  color: var(--mc-on-action);
+}
+
+/* Preserve the shared deep-blue fill; its edge supplies separation from dark
+   panels without making the entire button pale. Focus rings remain distinct. */
+.mds-root[data-theme='dark'] .mc-presenter-actions .mc-present-button,
+.mds-root[data-theme='dark'] .mds-desktop-app :is(
+  .mc-trip.is-featured .mc-trip-open, .mds-trip-result-actions button.is-details,
+  .mds-chat-send, .mds-trip-confirm button, .mds-trip-modal-actions .is-primary,
+  .mds-compare-copy .is-primary, .mds-popover-primary,
+  .mds-recovery-workspace .mds-decision-card-actions .is-primary,
+  .mds-mobile-disruption-primary, .mc-session-primary, .mc-query-boundary button
+):not(:disabled) { border: 1px solid var(--mc-action-edge); }
+
+/* Bare status glyphs use a saturated blue that remains visible on dark panels. */
+.mds-root[data-theme='dark'] .mds-memory-gate > svg,
+.mds-root[data-theme='dark'] .mds-thinking-wait > svg,
+.mds-root[data-theme='dark'] .mds-thinking-item.is-active .mds-thinking-marker {
+  color: var(--mc-status);
+}
+.mds-root[data-theme='dark'] .mds-live-state:not(.is-offline) {
+  color: var(--mc-ink);
+}
+.mds-root[data-theme='dark'] .mds-live-state:not(.is-offline)::before {
+  background: var(--mc-status);
+  box-shadow: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mds-root[data-theme='dark'] .mds-live-state:not(.is-offline)::before {
+    animation: mds-pulse 1s ease-in-out infinite;
+  }
+}
+
+.mds-root[data-projector-readability='true'] .mds-theme-toggle {
+  width: 44px;
+  height: 44px;
+}
+
+/* Leave room for all five surface names on common 720p projectors. */
+@media (min-width: 861px) and (max-width: 1440px) {
+  .mds-root[data-audience-layout='true'] .mc-audience-brand > span { display: none; }
+  .mds-root[data-audience-layout='true'] .mds-shell-header { gap: 18px; }
+}
+
+/* Keep this a deliberate stage scale, not an automatic 4K enlargement.
+   At 200% zoom the existing narrow layouts take over and text still reflows. */
+@media (min-width: 861px) {
+  .mds-root[data-projector-readability='true'] :is(
+    .mds-phase-selector button, .mds-phase-hint-copy,
+    .mds-thinking-copy > strong, .mds-thinking-caption,
+    .mds-activity-event-summary, .mds-trace-inspector > summary,
+    .mc-message-author, .mc-trip-location, .mc-trip-meta,
+    .mc-brief-details dt, .mc-brief-details dd, .mc-preferences li,
+    .mds-brief-section-heading p, .mds-brief .mds-brief-note,
+    .mds-brief-step strong, .mds-brief-step span,
+    .mds-brief-phase-evidence, .mds-brief-search-branches strong,
+    .mds-brief-search-branches span, .mds-brief-search-flow p,
+    .mds-brief-search-flow .mds-brief-merge,
+    .mds-brief-arch-delivery, .mds-brief-arch-support p,
+    .mds-brief-architecture figcaption, .mds-brief-retrieval figcaption,
+    .mds-brief-query span, .mds-brief-destination span,
+    .mds-brief-destination p, .mds-brief-footer > p
+  ) { font-size: 18px; line-height: 1.5; }
+
+  .mds-root[data-projector-readability='true'] :is(
+    .mc-message, .mds-message-text, .mds-brief,
+    .mds-brief-head p, .mds-chat-composer textarea
+  ) { font-size: 20px; line-height: 1.6; }
+
+  .mds-root[data-projector-readability='true'] :is(
+    .mds-trace-inspector pre, .mds-activity-event-detail pre,
+    .mds-brief-policy pre
+  ) {
+    font-size: 18px;
+    line-height: 1.65;
+    color: var(--mc-ink);
+    background: var(--mc-soft);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    tab-size: 2;
+  }
+  .mds-root[data-projector-readability='true'] .mds-brief-policy pre code {
+    font-size: inherit;
+  }
+  .mds-root[data-projector-readability='true'] .mds-brief-arch-edges { stroke-width: 2.5; }
+  .mds-root[data-projector-readability='true'] .mds-brief-arch-node rect {
+    stroke: var(--mc-muted);
+    stroke-width: 2;
+  }
+  .mds-root[data-projector-readability='true'] .mds-brief-arch-label { font-weight: 500; }
+}

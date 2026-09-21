@@ -11,18 +11,41 @@ colors:
   light-surface: "#ffffff"
   light-soft: "#f2f2f2"
   light-ink: "#111111"
-  light-muted: "#555555"
-  light-line: "#e2e2e2"
-  light-accent: "#2457a7"
-  light-action: "#2358ae"
+  light-muted: "#46515f"
+  light-line: "#7c8793"
+  light-accent: "#174c8c"
+  light-action: "#194d90"
+  light-action-hover: "#123c70"
+  projector-ground: "#f5f5f2"
+  projector-surface: "#fafaf7"
+  projector-soft: "#e9ecef"
+  projector-ink: "#141b24"
+  projector-muted: "#35414f"
+  projector-line: "#7c8793"
+  projector-accent: "#174c8c"
+  projector-action: "#194d90"
+  projector-caution: "#69420c"
+  projector-caution-bg: "#f7eddc"
+  projector-dark-ground: "#0e0d0b"
+  projector-dark-surface: "#1b1a17"
+  projector-dark-soft: "#292823"
+  projector-dark-ink: "#fffdf8"
+  projector-dark-muted: "#e1dbd1"
+  projector-dark-line: "#8d979f"
+  projector-dark-accent: "#bddbff"
+  projector-dark-action: "#194d90"
   dark-ground: "#0e0d0b"
   dark-surface: "#181613"
   dark-soft: "#221f1a"
   dark-ink: "#fbf9f4"
-  dark-muted: "#cbc4b8"
-  dark-line: "#3a352e"
-  dark-accent: "#a9c7ff"
-  dark-action: "#3268c6"
+  dark-muted: "#d3cbbc"
+  dark-line: "#69737e"
+  dark-accent: "#b9d9ff"
+  dark-action: "#194d90"
+  dark-action-hover: "#123c70"
+  dark-on-action: "#ffffff"
+  dark-action-edge: "#8cadd6"
+  dark-status: "#4d90df"
   on-action: "#ffffff"
   light-caution: "#80551d"
   light-caution-bg: "#fbf2e4"
@@ -75,7 +98,7 @@ components:
     padding: "10px 14px"
   button-primary-dark:
     backgroundColor: "{colors.dark-action}"
-    textColor: "{colors.on-action}"
+    textColor: "{colors.dark-on-action}"
     rounded: "{rounded.action}"
     padding: "10px 14px"
   button-text:
@@ -147,7 +170,12 @@ The palette combines warm near-black navigation, neutral task surfaces, clear bl
 
 - **Service Ground** remains on navigation in both themes; Service Text and Service Muted establish its text hierarchy. Service Active and Service Hover communicate navigation state.
 - **Action Blue** fills primary actions. **Accent Blue** identifies links, selected tabs, focus, and useful icons. These roles have separate light and dark values so text accents stay legible without forcing an overly bright action fill.
-- **On Action** is the shared light foreground for filled primary controls.
+- **On Action** and **Dark On Action** are white on the same deep-blue fill.
+  The user chose the light theme's blue for both themes. In dark mode, a fine
+  light-blue edge separates primary controls from the surrounding panel.
+  Dark-mode status icons and the Activity dot use saturated Status Blue without
+  a surrounding box. Activity uses plain foreground text; its dot pulses only
+  when motion is permitted. The lock and spinners remain bare glyphs.
 
 Official service artwork keeps its supplied colors. In particular, the user-supplied Amazon Aurora tile retains its original magenta (`#C925D1`); this asset color is not an additional Meridian action color.
 
@@ -269,6 +297,20 @@ Windowed preparation uses a compact toolbar above the app: Display settings grou
 
 The audience layout hides the service sidebar and moves the Meridian mark into the shared header. The five surface tabs and contextual evidence remain available. At desktop sizes, projector readability uses a (1.3) type scale, essential evidence labels of at least (18px), and higher-contrast secondary colors in both themes. Windowed preview retains the toolbar; fullscreen uses the recovered height for the active workspace. Exiting fullscreen restores the presenter's preview and readability choices without remounting the conversation.
 
+The room preset at `?present=1` selects the light audience layout ahead of a
+remembered laptop theme. An explicit `theme=dark` or the theme toggle selects
+the dark room palette. Light audience mode uses off-white surfaces, dark
+secondary ink, solid borders, and deeper blue actions. Dark audience mode uses
+warm near-black surfaces, bright secondary ink, clearer borders, and the same
+deep-blue actions with white labels. Both use the projector palettes in frontmatter.
+`projectorReadability.css` applies these roles after
+the individual surface sheets. At widths above (860px), conversation and
+briefing body text use (20px); supporting briefing labels and code use (18px).
+SQL and Cedar wrap inside their panels. Architecture connectors use a (2.5px)
+stroke and node outlines use a (2px) stroke. Keep this fixed stage scale instead
+of inflating headings with display resolution. Physical back-row readability
+still requires the actual screen, projector and room lighting.
+
 ### Shared typography and hold evidence
 
 All five surfaces use Geist Variable for headings, body copy, and controls. Shared headings use weight 520 and -0.035em tracking; labels use 550. Geist Mono remains reserved for technical identifiers and SQL. The legacy serif token aliases the shared sans family. The secondary kiosk also uses the bundled Geist families; its architecture tab shares the briefing's vector diagram and official AWS service artwork.
@@ -281,14 +323,16 @@ The briefing is an architecture-first reading surface. Keep the five application
 tabs, hide the traveler sidebar only in this view, and show the Meridian mark in
 the header. Do not add section tabs, diagram modes, or nested disclosures.
 
-Keep one architecture visible above governance and recovery. Show Phase 4 in
+Keep the architecture expanded initially and independently collapsible. Start
+data preparation, the five-phase walkthrough and all technical-reference panels
+closed; use native disclosures so each can be opened as needed. Show Phase 4 in
 AgentCore Runtime and Phase 5 in FastAPI, converging on Gateway, Cedar policy,
 Lambda tools and Aurora. Distinguish direct Data API access and workflow state
 from governed writes. Bedrock models and AgentCore Memory have separate roles.
 Use the official AWS artwork unchanged. At narrow container widths, use a
 vertical semantic flow instead of shrinking or horizontally scrolling the SVG.
 
-Follow the architecture with three visible preparation rows: package facts,
+When preparation is expanded, show three preparation rows: package facts,
 package descriptions and traveler facts. Each reads from source records through
 preparation to the store ready for its tools. Align these stages in columns on
 wide screens, with fine rules between rows and directional connectors. Stack
@@ -296,7 +340,7 @@ each row into its reading order on narrow screens. Package IDs connect typed
 facts, indexed descriptions and current inventory; semantic and full-text
 preparation remain distinct.
 
-Keep a visible diagram for each of the five phases. Pair SQL with MCP and
+When the walkthrough is expanded, show a diagram for each of the five phases. Pair SQL with MCP and
 Production with Workflow when space permits; give Retrieval its own full-width
 sequence. Its three service stages are Bedrock query embedding with Cohere
 Embed v4, Aurora meaning and word search through pgvector and tsvector, and

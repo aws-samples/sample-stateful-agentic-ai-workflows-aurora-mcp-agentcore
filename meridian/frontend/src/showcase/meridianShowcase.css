@@ -17,7 +17,7 @@
   --mds-line-strong: rgba(255, 250, 240, 0.16);
   --mds-ink: #fbf9f4;
   --mds-muted: #cbc4b8;
-  --mds-dim: #948c80;
+  --mds-dim: #b9b2a6;
   --mds-blue: #2f8cff;
   /* Hue triples for alpha variants. Writing rgb(var(--x) / .12) instead of a
      raw rgba() keeps every tint of an accent on one themed source, so the

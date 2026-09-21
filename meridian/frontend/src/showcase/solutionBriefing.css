@@ -21,6 +21,13 @@
 .mds-brief-overview { padding-top:0; }
 .mds-brief-section-heading { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:8px 24px; margin-bottom:20px; }
 .mds-brief-section-heading p { font-size:15px; }
+.mds-brief-section > summary { flex-wrap:nowrap; align-items:center; min-height:44px; margin-bottom:0; cursor:pointer; list-style:none; }
+.mds-brief-section > summary::-webkit-details-marker { display:none; }
+.mds-brief-section > summary > svg { flex:none; color:var(--mc-accent); }
+.mds-brief-section[open] > summary > svg { transform:rotate(180deg); }
+.mds-brief-section > summary:hover { color:var(--mc-accent); }
+.mds-brief-section-body { padding-top:20px; }
+.mds-brief-section-body > p:first-child { margin-bottom:20px; }
 .mds-brief .mds-brief-note { font-size:14px; }
 .mds-brief-facts { display:grid; margin:0; gap:14px; }
 .mds-brief-facts dt { font-weight:550; color:var(--mc-ink); }

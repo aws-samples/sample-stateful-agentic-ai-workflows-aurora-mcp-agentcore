@@ -90,9 +90,9 @@ test('evidence opens to recorded SQL and disappears when the next turn has none'
     } });
     return route.fulfill({ json: path.endsWith('/health') ? { status: 'healthy', bedrock_model_id: 'fixture', embedding_model_id: 'fixture' } : { products: [] } });
   });
-  for (const [width, theme] of [[1440, 'light'], [320, 'dark']] as const) {
-    await page.setViewportSize({ width, height: 1000 });
-    await page.goto(`/showcase?view=ladder&theme=${theme}`);
+  for (const [width, theme, present] of [[1440, 'light', false], [320, 'dark', false], [1280, 'light', true], [1920, 'dark', true]] as const) {
+    await page.setViewportSize({ width, height: present ? 720 : 1000 });
+    await page.goto(`/showcase?view=ladder&theme=${theme}${present ? '&present=1' : ''}`);
     const input = page.getByRole('textbox', { name: 'Ask Meridian anything' });
     await input.fill('Show trips with SQL'); await input.press('Enter');
     const inspector = page.locator('.mds-trace-inspector');
@@ -101,6 +101,10 @@ test('evidence opens to recorded SQL and disappears when the next turn has none'
     await disclosure.focus(); await page.keyboard.press('Enter');
     await expect(inspector.getByRole('heading', { name: 'SQL', exact: true })).toBeVisible();
     await expect(inspector.locator('pre')).toHaveText('SELECT package_id FROM trip_packages LIMIT 5');
+    if (present) {
+      await expect(inspector.locator('pre')).toHaveCSS('font-size', '18px');
+      expect(await inspector.locator('pre').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    }
     await expect(inspector.getByRole('group', { name: 'Evidence views' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Overview', exact: true })).toHaveCount(0);
     const audit = await new AxeBuilder({ page }).include('.mds-trace-panel').withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();

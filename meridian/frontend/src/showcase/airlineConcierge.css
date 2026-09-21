@@ -10,11 +10,14 @@
   --mc-surface: #181613;
   --mc-soft: #221f1a;
   --mc-ink: #fbf9f4;
-  --mc-muted: #cbc4b8;
-  --mc-line: #3a352e;
-  --mc-accent: #a9c7ff;
-  --mc-action: #3268c6;
+  --mc-muted: #d3cbbc;
+  --mc-line: #69737e;
+  --mc-accent: #b9d9ff;
+  --mc-action: #194d90;
+  --mc-action-hover: #123c70;
   --mc-on-action: #ffffff;
+  --mc-action-edge: #8cadd6;
+  --mc-status: #4d90df;
   --mc-caution: #edc68a;
   --mc-caution-bg: #352d24;
 }
@@ -23,10 +26,12 @@
   --mc-surface: #ffffff;
   --mc-soft: #f2f2f2;
   --mc-ink: #111111;
-  --mc-muted: #555555;
-  --mc-line: #e2e2e2;
-  --mc-accent: #2457a7;
-  --mc-action: #2358ae;
+  --mc-muted: #46515f;
+  --mc-line: #7c8793;
+  --mc-accent: #174c8c;
+  --mc-action: #194d90;
+  --mc-action-hover: #123c70;
+  --mc-on-action: #ffffff;
   --mc-caution: #80551d;
   --mc-caution-bg: #fbf2e4;
 }
@@ -139,7 +144,7 @@
 .mds-root[data-theme] .mc-trip.is-featured .mc-trip-open,
 .mds-root[data-theme] .mds-trip-result-actions button.is-details { background: var(--mc-action); color: var(--mc-on-action); border: 0; border-radius: 6px; box-shadow: none; }
 .mds-root[data-theme] .mc-trip.is-featured .mc-trip-open:hover:not(:disabled),
-.mds-root[data-theme] .mds-trip-result-actions button.is-details:hover:not(:disabled) { background: color-mix(in srgb, var(--mc-action) 90%, black); color: var(--mc-on-action); filter: none; box-shadow: none; }
+.mds-root[data-theme] .mds-trip-result-actions button.is-details:hover:not(:disabled) { background: var(--mc-action-hover); color: var(--mc-on-action); filter: none; box-shadow: none; }
 .mds-root[data-theme] .mc-trip.is-featured .mc-trip-open:focus-visible,
 .mds-root[data-theme] .mds-trip-result-actions button.is-details:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 4px; }
 .mds-root .mc-trip.is-featured .mc-price { display: flex; flex-direction: column; gap: 1px; }
@@ -222,8 +227,8 @@
 .mds-root .is-discovery .mds-chat-action-chip.is-active { color: var(--mc-accent); }
 .mds-root .is-discovery .mds-chip-pop { background: var(--mc-surface); color: var(--mc-ink); border-color: var(--mc-line); }
 .mds-root .is-discovery .mds-trip-modal { background: var(--mc-surface); color: var(--mc-ink); }
-/* Inside the concierge --mds-blue is the pale text accent, so filled actions take
-   the action blue explicitly: white on blue, the same as every other surface. */
+/* Both themes use the same deep-blue fill with white action labels. Text links
+   keep a separate accent so they remain readable on each theme's surface. */
 .mds-root .is-discovery :is(.mds-trip-modal-actions .is-primary, .mds-compare-copy .is-primary, .mds-popover-primary, .mds-trip-confirm .is-primary) { background: var(--mc-action); border-color: var(--mc-action); color: var(--mc-on-action); }
 .mds-root .is-discovery .mds-trip-modal-body h2 { font-family: var(--mds-font); }
 .mds-root .is-discovery .mds-trip-facts b { color: var(--mc-ink); }

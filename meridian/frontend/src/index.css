@@ -17,11 +17,15 @@ body,
 :root {
   --app-bg: #05080d;
   --app-fg: #f5f8fb;
+  --app-skeleton: rgba(143, 174, 204, 0.13);
+  --app-skeleton-shimmer: rgba(143, 174, 204, 0.2);
 }
 
 :root[data-theme='light'] {
-  --app-bg: #eef2f7;
-  --app-fg: #0f172a;
+  --app-bg: #f5f5f2;
+  --app-fg: #141b24;
+  --app-skeleton: #e1e5e8;
+  --app-skeleton-shimmer: #cfd6dd;
 }
 
 html {
@@ -53,8 +57,8 @@ textarea {
   min-height: 100dvh;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
-  color: #f5f8fb;
-  background: #0d0c0a;
+  color: var(--app-fg);
+  background: var(--app-bg);
 }
 
 .route-skeleton-sidebar {
@@ -63,7 +67,7 @@ textarea {
   gap: 14px;
   padding: 22px 18px;
   border-right: 1px solid rgba(125, 162, 199, 0.18);
-  background: #12100e;
+  background: var(--app-bg);
 }
 
 .route-skeleton i,
@@ -72,7 +76,7 @@ textarea {
   display: block;
   overflow: hidden;
   border-radius: 8px;
-  background: rgba(143, 174, 204, 0.13);
+  background: var(--app-skeleton);
 }
 
 .route-skeleton-sidebar > i {
@@ -135,9 +139,9 @@ textarea {
     background:
       linear-gradient(
         90deg,
-        rgba(143, 174, 204, 0.08),
-        rgba(143, 174, 204, 0.2),
-        rgba(143, 174, 204, 0.08)
+        var(--app-skeleton),
+        var(--app-skeleton-shimmer),
+        var(--app-skeleton)
       );
     background-size: 220% 100%;
     animation: route-skeleton-shimmer 1.6s ease-in-out infinite;

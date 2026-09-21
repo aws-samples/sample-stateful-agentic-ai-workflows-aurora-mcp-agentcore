@@ -4,6 +4,16 @@ L300, 60 minutes: a **planned 40-minute core** plus **20 minutes discussion/flex
 
 ## Preflight, 30 minutes before the session
 
+For the approximately 90-person room, start at `/showcase?present=1` (or add
+`&view=briefing` for the architecture). The room preset selects light mode,
+stronger contrast, and larger briefing/code/evidence text, with the sidebar
+hidden. It takes priority over a saved dark theme. Use **Present fullscreen**
+to hide preparation controls; **Esc** restores them. The theme toggle and
+`&theme=dark` retain a dark alternative for a fully dimmed room. At setup,
+check the diagram labels and a real SQL result from the back row; try browser
+zoom at 125–150% and simplify the visible content if needed. Room size alone
+cannot establish legibility without the screen size and lighting.
+
 Use the established demo account and region, Python 3.13, Node 22.12+, AWS CLI, and the repository's hash-locked dependencies. Never run initialization or a full seed against the existing demo database. The app uses Aurora RDS Data API; it does not need a local PostgreSQL substitute or checkpoint tunnel.
 
 From the repository root:

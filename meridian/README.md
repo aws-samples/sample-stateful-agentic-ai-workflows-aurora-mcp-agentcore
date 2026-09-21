@@ -28,6 +28,25 @@ http://127.0.0.1:5176/showcase
 
 The root route redirects to `/showcase`.
 
+For a projector in a lit chalk-talk room, open
+`http://127.0.0.1:5176/showcase?present=1`. This starts the light audience layout
+with an off-white background, stronger text and diagram contrast, and larger
+briefing, SQL, and evidence text. It overrides a remembered dark preference;
+`&theme=dark` explicitly selects the dim-room alternative. Select **Present
+fullscreen** to remove presenter controls, then **Esc** to return. Display
+settings let you disable **Projector readability** or leave the audience preview.
+Check the actual projector from the back row; browser contrast checks cannot
+establish room readability.
+
+Both themes use the same deep-blue actions with white text. A fine edge keeps
+dark-mode buttons distinct from their panels. Projector readability strengthens
+secondary text, control boundaries, and evidence surfaces in either theme.
+Use `/showcase?present=1&theme=dark` to open the dark room preset directly.
+
+Solution briefing opens with Architecture expanded and collapsible. Data
+preparation, the five-phase walkthrough, and technical-reference panels start
+closed so you can reveal them as needed during the talk.
+
 ![Meridian Concierge with five views, destination photography, sample trip prices, and the authorized traveler's saved preferences and budget](docs/meridian-showcase.png)
 
 Captured September 12, 2026, from the local app in fullscreen presentation mode,

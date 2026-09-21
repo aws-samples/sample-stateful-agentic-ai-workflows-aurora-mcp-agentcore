@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "geist",
+        "createdAt": "2026-09-21T18:58:57.819Z",
+        "reason": "Agent: DESIGN.md specifies Geist Variable for display and body text and Geist Mono for evidence; this task preserves the established identity while improving projector readability."
+      }
+    ]
+  }
+}
