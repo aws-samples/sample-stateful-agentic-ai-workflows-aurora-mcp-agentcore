@@ -17,9 +17,9 @@ describe('runConfig', () => {
     expect(
       runConfigModelLabel(4, {
         status: 'healthy',
-        bedrock_model_label: 'Claude Opus 4.8',
+        bedrock_model_label: 'Claude Opus 5',
       }),
-    ).toBe('Claude Opus 4.8');
+    ).toBe('Claude Opus 5');
   });
 
   it('embed label only for retrieval phases', () => {

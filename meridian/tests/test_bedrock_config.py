@@ -26,11 +26,11 @@ class TestBedrockConfig:
         assert cfg.config.bedrock.region == "us-east-1"
 
     def test_bedrock_model_id_env_overrides_default(self, monkeypatch):
-        monkeypatch.setenv("BEDROCK_MODEL_ID", "global.anthropic.claude-sonnet-4-5-20250929-v1:0")
+        monkeypatch.setenv("BEDROCK_MODEL_ID", "global.anthropic.claude-sonnet-5")
         monkeypatch.delenv("BEDROCK_REGION", raising=False)
         monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
         cfg = _reload_config_module()
-        assert cfg.config.bedrock.model_id == "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        assert cfg.config.bedrock.model_id == "global.anthropic.claude-sonnet-5"
 
     def test_bedrock_region_takes_precedence_over_aws_default_region(self, monkeypatch):
         monkeypatch.setenv("BEDROCK_REGION", "us-west-2")

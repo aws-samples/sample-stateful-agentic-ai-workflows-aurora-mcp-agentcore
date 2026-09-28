@@ -81,7 +81,7 @@ class BedrockConfig:
 
     Default is the Global cross-Region inference profile for Anthropic Claude
     Sonnet 5 (``global.anthropic.claude-sonnet-5``). Swap to
-    ``global.anthropic.claude-opus-4-8`` for maximum quality. If you see::
+    ``global.anthropic.claude-opus-5`` for maximum quality. If you see::
 
         ValidationException: The provided model identifier is invalid
 
@@ -90,7 +90,7 @@ class BedrockConfig:
     doesn't route to it. Pick another profile from the Bedrock console
     and set it in ``.env``::
 
-        BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-4-5-20250929-v1:0
+        BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-5
 
     AWS docs:
       - Model access:
@@ -125,17 +125,20 @@ class BedrockConfig:
 def bedrock_model_label(model_id: str) -> str:
     """Human-readable label for Run config / health (from BEDROCK_MODEL_ID).
 
-    Covers the live fallback chain: Sonnet 5 -> Haiku 4.5 -> Opus 4.8.
+    Covers the live fallback chain: Sonnet 5 -> Haiku 4.5 -> Opus 5.
     """
     mid = model_id.lower()
-    if "opus-4-8" in mid or "opus-4.8" in mid:
-        return "Claude Opus 4.8"
-    if "sonnet-5" in mid or "sonnet-5.0" in mid:
+    if "opus-5" in mid or "opus-4-8" in mid or "opus-4.8" in mid:
+        return "Claude Opus 5"
+    if (
+        "sonnet-5" in mid
+        or "sonnet-5.0" in mid
+        or "sonnet-4-6" in mid
+        or "sonnet-4.6" in mid
+        or "sonnet-4-5" in mid
+        or "sonnet-4.5" in mid
+    ):
         return "Claude Sonnet 5"
-    if "sonnet-4-6" in mid or "sonnet-4.6" in mid:
-        return "Claude Sonnet 4.6"
-    if "sonnet-4-5" in mid or "sonnet-4.5" in mid:
-        return "Claude Sonnet 4.5"
     if "haiku" in mid:
         return "Claude Haiku 4.5"
     if "anthropic" in mid and "claude" in mid:

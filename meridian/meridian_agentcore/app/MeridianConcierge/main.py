@@ -227,7 +227,11 @@ async def run(payload: dict):
         for event in drain(queue):
             yield event
         agent = Agent(
-            model=BedrockModel(model_id=MODEL_ID, region_name=REGION, max_tokens=1500),
+            # Claude Sonnet 5 thinks by default, and max_tokens caps thinking +
+            # answer together on this tool-using route; 1500 would truncate
+            # before the agent finishes a tool call. Do not disable thinking
+            # here (that can make Opus/Sonnet 5 emit tool calls as plain text).
+            model=BedrockModel(model_id=MODEL_ID, region_name=REGION, max_tokens=16000),
             system_prompt=system_prompt(
                 turn.hold_confirmed, hold_target, turn.booking_confirmed, booking_target
             ),
