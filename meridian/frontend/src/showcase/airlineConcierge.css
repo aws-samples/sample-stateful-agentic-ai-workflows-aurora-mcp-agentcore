@@ -180,6 +180,9 @@
 .mds-root .mds-desktop-app .mds-chat-composer textarea::placeholder { color: var(--mds-label-3); opacity: 1; }
 .mds-root .mds-desktop-app .mds-chat-send { position: static; inset: auto; transform: none; width: 44px; height: 44px; border-radius: 7px; background: var(--mds-action); color: var(--mds-on-action); flex-shrink: 0; box-shadow: none; }
 .mds-root .mds-desktop-app .mds-chat-send > svg { transform: none; }
+.mds-root .mds-desktop-app .mds-chat-send:hover:not(:disabled) {
+  background: var(--mds-action-hover);
+}
 .mds-root .mds-desktop-app .mds-chat-send:disabled { background: var(--mds-control-line); color: var(--mds-label-2); opacity: 1; }
 .mds-root .mc-composer-hint { margin: 0; color: var(--mds-label-2); font-size: 12px; line-height: 1.5; text-align: right; }
 .mds-root .is-discovery .mds-chat-quick-actions { gap: 12px; margin-top: 10px; flex-wrap: wrap; }
