@@ -65,7 +65,7 @@ With context off, the turn returns without calling the runtime; the guard is in
 | `backend/db/rds_data_client.py`, `scoped_session` | Checks the workload grant, sets a transaction-local scope and switches to the restricted RLS role |
 | `backend/agents/production_04/concierge.py`, `process_turn` | Short authorization and read, and write and audit, units around the external runtime call |
 | `meridian_agentcore/app/MeridianConcierge/main.py` | The Strands loop on AgentCore Runtime: Gateway tools, the Memory session manager and the streamed events |
-| `meridian_agentcore/app/MeridianConcierge/turn_trace.py`, `TraceHooks._pin_arguments` | Pins traveler, confirmation, party, budget and journey from the authorized request before the policy evaluates them |
+| `meridian_agentcore/app/MeridianConcierge/turn_trace.py`, `TraceHooks._pin_arguments` | Overwrites the traveler, the confirmation flag, the budget ceiling and the journey reference with values from the authorized request before the Cedar policy evaluates a hold or confirmation. Party size is not pinned: it comes from the tool arguments, and the hold policy caps it at 6 travelers. |
 | `meridian_agentcore/agentcore/agentcore.template.json`, `MeridianGovernance` | The Cedar read, hold and confirmation policies, in `ENFORCE` mode |
 | `backend/routers/diagnostics.py` | The live allow and deny checks, restricted-role row counts and RLS policy evidence |
 

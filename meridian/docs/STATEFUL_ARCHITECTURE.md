@@ -43,8 +43,8 @@ Phase 5 supports two checkpoint transports. Set
 `LANGGRAPH_CHECKPOINT_DATA_API=true` to use the repository's `AuroraDataApiSaver`
 without a direct PostgreSQL connection. A resolved checkpoint DSN takes
 precedence and selects a pooled `AsyncPostgresSaver`. Both persist workflow
-state in Aurora. The `/health` response and per-run evidence identify the
-actual backend and whether it is durable.
+state in Aurora. The `/api/health` response and per-run evidence identify the
+actual backend and whether it is durable; `/health` reports process liveness only.
 
 ## Production guidance
 

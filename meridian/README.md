@@ -51,17 +51,19 @@ you press **Esc**.
 
 ### Prompts
 
-The Capability ladder suggests a prompt that works in each phase and one that
-needs the next phase. **Continue in** carries the question forward. The prompts
-are defined once in `backend/demo_prompts.py`.
+Each phase has two example prompts that work there and a hand-off prompt
+that needs the next phase. **Continue in** carries the question forward.
+Phase 5 is the last phase, so its hand-off is
+`Resume workflow from checkpoint`. The prompts are defined once in
+`backend/demo_prompts.py`.
 
 | Phase | Works here | Needs the next phase |
 | --- | --- | --- |
-| SQL | `Show me city trips under $2,000 per traveler.` | `Compare three trip types and convert each price to euros.` |
-| MCP | `Compare three trip types and convert each price to euros.` | `Find a quiet, romantic wine-country retreat with a private villa.` |
-| Retrieval | `Find a quiet, romantic wine-country retreat with a private villa.` | `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` |
-| Production | `Find Tokyo trips that fit my saved preferences.` | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` |
-| Workflow | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` | `Resume workflow from checkpoint` after the pause |
+| SQL | `Show me city trips under $2,000 per traveler.`<br>`Show me beach trips under $2,500 per traveler.` | `Compare three trip types and convert each price to euros.` |
+| MCP | `Compare three trip types and convert each price to euros.`<br>`What is the off-season price range for Tokyo trips in November?` | `Find a quiet, romantic wine-country retreat with a private villa.` |
+| Retrieval | `Find a quiet, romantic wine-country retreat with a private villa.`<br>`Which trip lengths are still available for Tuscany Wine & Wellness?` | `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` |
+| Production | `Find Tokyo trips that fit my saved preferences.`<br>`Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` |
+| Workflow | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`<br>`Which trip lengths are still available for Amalfi Coast Villa Week?` | `Resume workflow from checkpoint`, after the run pauses |
 
 These boundaries belong to the configured phases, not to SQL or MCP in
 general.
@@ -172,7 +174,7 @@ Every route except `/health` requires the HTTP principal described under
 | `MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS` | Whole-trip ceiling for Cedar when the traveler has no saved budget. Default `400000` |
 | `LANGGRAPH_CHECKPOINT_DATA_API` | Use `AuroraDataApiSaver` when no checkpoint DSN resolves |
 | `LANGGRAPH_CHECKPOINT_DSN` or `LANGGRAPH_CHECKPOINT_*` | Use `AsyncPostgresSaver` over a bounded PostgreSQL pool instead |
-| `LANGGRAPH_AUTO_CHECKPOINT_DSN` | Allow a DSN built from discrete settings; set `false` to force the Data API saver |
+| `LANGGRAPH_AUTO_CHECKPOINT_DSN` | Allow a DSN built from discrete settings (on by default only when `ENVIRONMENT=development`). `false` stops that DSN; the Data API saver then runs only if `LANGGRAPH_CHECKPOINT_DATA_API=true` and no `LANGGRAPH_CHECKPOINT_DSN` is set, otherwise the workflow falls back to `MemorySaver` |
 | `LANGGRAPH_CHECKPOINT_REQUIRED` | Fail at startup when no durable checkpoint store is available |
 | `LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP` | Initialize and probe the checkpoint store at startup |
 | `LANGGRAPH_DEMO_INTERRUPT_AFTER` | Pause the workflow after the named node |
@@ -196,7 +198,11 @@ uv pip compile --generate-hashes --output-file requirements.txt requirements.in
 - `traveler_identity_bindings`, `traveler_access_audit`: workload-to-traveler grants and allow and deny records
 - `conversations`, `conversation_messages`, `trip_interactions`: session history and semantic recall
 - `bookings`, `booking_lines`, `agent_traces`: bookings and agent observability
-- `agent_audit_log`, `agent_iam_audit`: Phase 4 identity, RLS scope and rows-returned audit trail
+
+`examples/rls_for_agents.sql` adds the RLS policies and the Phase 4 audit trail: the
+`agent_audit_log` table (identity, RLS scope and rows returned) and the `agent_iam_audit`
+view over it. Migration `005_bind_identity_to_traveler.sql` adds the authorization
+columns to that table and recreates the view.
 
 The migrations in `scripts/migrations/` add the journey, execution, hold
 request and checkpoint tables (`journeys`, `journey_executions`,

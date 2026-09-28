@@ -1,4 +1,4 @@
-"""Contract tests for the five-phase presenter prompt ladder."""
+"""Contract tests for the five-phase prompt ladder."""
 
 import asyncio
 from contextlib import asynccontextmanager

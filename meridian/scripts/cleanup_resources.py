@@ -2,7 +2,7 @@
 
 Run without flags to inspect the plan. --apply deletes the named subnet/security
 groups. Credentials are retained because restored clusters may still use them.
-Every AWS failure exits nonzero. Never run against the shared presenter cluster.
+Every AWS failure exits nonzero. Never run it against a shared cluster.
 """
 from __future__ import annotations
 

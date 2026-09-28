@@ -1,8 +1,8 @@
 """
 Phase 3 Supervisor — Retrieval Agent (Strands multi-agent delegation).
 
-Presenter walkthrough
----------------------
+Walkthrough
+-----------
 The supervisor's `@tool` methods are *delegation* tools — Bedrock calls
 `_delegate_to_search`, `_delegate_to_package`, or `_delegate_to_booking`,
 and each forwards to a specialist agent that owns Aurora access.

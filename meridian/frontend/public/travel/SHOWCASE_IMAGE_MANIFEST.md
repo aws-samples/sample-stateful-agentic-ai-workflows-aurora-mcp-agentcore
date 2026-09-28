@@ -1,10 +1,9 @@
 # Showcase editorial image cache
 
-The presenter-query cards use locally bundled editorial travel imagery so the
-projected experience remains reliable without venue Wi-Fi. On August 15, 2026,
-the stage-critical assets listed below were replaced with user-supplied,
-photorealistic generated images. `catalog/CTY-004.jpg` and
-`catalog/BCH-003.jpg` retain the earlier catalog photography.
+The trip cards for the demo prompts use images stored in the repository, so
+they load without an external image service. Every image listed below is a
+photorealistic generated image supplied by the repository owner; `README.md`
+in this folder records the source of each file.
 
 Replacement photography should remain:
 

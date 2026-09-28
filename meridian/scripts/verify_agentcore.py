@@ -56,7 +56,7 @@ console = Console()
 
 # A control-plane resource is "good" once it reaches one of these terminal,
 # usable states. Anything else (CREATING, UPDATING, FAILED, DELETING) is worth
-# surfacing before you walk on stage.
+# surfacing before you use the app.
 READY_STATES = {"READY", "ACTIVE", "AVAILABLE"}
 
 

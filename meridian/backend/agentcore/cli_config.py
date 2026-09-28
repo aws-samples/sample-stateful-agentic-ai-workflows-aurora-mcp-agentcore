@@ -319,7 +319,7 @@ def resolve_agentcore_config() -> AgentCoreDeployedConfig:
                 merged[key] = value
         sources.append("agentcore status --json")
 
-    # Environment overrides (presenter / CI can pin without redeploying)
+    # Environment overrides (an operator or CI can pin without redeploying)
     env_map = {
         "runtime_arn": "AGENTCORE_RUNTIME_ARN",
         "runtime_name": "AGENTCORE_RUNTIME_NAME",

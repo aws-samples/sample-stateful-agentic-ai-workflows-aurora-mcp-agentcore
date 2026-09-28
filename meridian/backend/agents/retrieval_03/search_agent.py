@@ -1,10 +1,10 @@
 """
 Phase 3 — Search Agent (Strands @tool + hybrid search over Aurora).
 
-Presenter walkthrough
----------------------
-Show `_hybrid_search_tool` and `hybrid_search()` when explaining
-specialist agents under the Phase 3 supervisor. The agent exposes one
+Walkthrough
+-----------
+`_hybrid_search_tool` and `hybrid_search()` show a specialist agent
+under the Phase 3 supervisor. The agent exposes one
 tool; inside it runs the full hybrid pipeline: embed (1024-dim Cohere
 Embed v4) → pgvector candidates (`semantic_trip_search`) + tsvector
 lexical candidates → merge/dedup → Cohere Rerank 3.5.

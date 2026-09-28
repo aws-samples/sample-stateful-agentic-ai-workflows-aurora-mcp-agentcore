@@ -4,7 +4,7 @@ Native travel fields (no product-catalog retrofit).
 
 Every package carries commissioned artwork installed under
 ``frontend/public/travel/catalog/``. Nothing is fetched from a stock photo CDN:
-the images ship with the app, so the stage does not depend on venue Wi-Fi and
+the images ship with the app, so it does not depend on an image service and
 the whole catalog reads as one photographic system.
 """
 
@@ -341,7 +341,7 @@ TRAVELER_PREFERENCES = [
 #
 # Three demo threads scoped to DEMO_TRAVELER_ID. Each thread is a real
 # multi-turn back-and-forth so the "what did we decide last time?" prompt returns
-# something coherent on the very first stage demo run, before any new
+# something coherent on the very first demo run, before any new
 # turn has been written.
 #
 # Topics map onto destinations the traveler_preferences seed already

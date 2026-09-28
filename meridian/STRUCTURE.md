@@ -120,6 +120,11 @@ The API and UI keep some e-commerce names from an earlier version of the
 sample:
 
 - `Product` and `product_id` in TypeScript and `/api/products` are trips from `trip_packages`
-- `ProductsSection`, `ProductThumb` and `handleAddToCart` display trips
+- `fetchProducts` and `fetchProduct` in `frontend/src/api/client.ts` call `/api/products`,
+  which `backend/routers/products.py` serves as an alias of `/api/packages`
+- The `Product` type's `brand`, `price` and `category` fields carry a trip's operator,
+  price per person and trip type
+
+The trip display components already use trip names (`TripCard`, `TripRow`).
 
 The agent modules are described in `backend/agents/README.md`.

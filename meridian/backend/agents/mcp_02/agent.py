@@ -1,14 +1,14 @@
 """
 Phase 2 — MCP Agent (Strands + postgres-mcp-server).
 
-Presenter walkthrough
----------------------
-Show this module when explaining MCP as a *transport* layer:
+Walkthrough
+-----------
+This module shows MCP as a *transport* layer:
   • `MCPClient` discovers tools from awslabs.postgres-mcp-server at runtime
   • Same Aurora schema as Phase 1 — different wire protocol (MCP vs inline SQL)
 
-Live demo note: `chat.py` → `mcp_search()` uses `backend/mcp/mcp_client.py`
-for the workshop demo path. This file shows the Strands-native MCP integration.
+In the app, `chat.py` → `mcp_search()` uses `backend/mcp/mcp_client.py`.
+This file shows the Strands-native MCP integration.
 
 AWS docs:
   - RDS Data API (postgres-mcp-server ``rdsapi`` mode):
@@ -78,7 +78,7 @@ class MCPAgent:
         # already knows the cluster and no connect_to_database call is needed.
         # Pinned to @1.0.9: @latest drifted to auto-discovering the Secrets
         # Manager secret, which fails for a Serverless v2 secret whose name
-        # carries a random suffix; the pin avoids that on stage.
+        # carries a random suffix; the pin avoids that failure.
         self.mcp_client = MCPClient(
             lambda: stdio_client(
                 StdioServerParameters(

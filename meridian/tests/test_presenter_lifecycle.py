@@ -1,4 +1,4 @@
-"""Presenter setup/reset must preserve existing data and propagate failures."""
+"""Setup and reset scripts must preserve existing data and propagate failures."""
 from unittest.mock import AsyncMock, Mock
 
 import pytest

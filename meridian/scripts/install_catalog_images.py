@@ -40,7 +40,7 @@ PORTRAIT = REPO / "frontend" / "public" / "travel"
 
 MISSING_ART_HINT = (
     "Every package in the catalog ships with its own artwork, so a gap here is "
-    "a card that will fall back to a flat gradient on stage."
+    "a card that will fall back to a flat gradient in the app."
 )
 
 # The full catalog: seven series of five. Kept in step with TRIP_PACKAGES in

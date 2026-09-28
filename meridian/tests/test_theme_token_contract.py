@@ -3,8 +3,8 @@
 Accent tints used to be written as raw ``rgba(47, 140, 255, .12)`` in 169
 places across 48 different alphas. A literal like that cannot follow the
 theme, which is how the tooltip ended up rendering near-black text on a
-near-black ground in light mode - the theme the presenter guide recommends for
-low-contrast projectors.
+near-black ground in light mode, the theme meant for low-contrast
+projectors.
 
 Every tint now resolves from a themed hue triple, so the light theme follows
 automatically. These tests stop a raw one creeping back in.

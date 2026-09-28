@@ -379,7 +379,7 @@ def generate_follow_ups(query: str, products: List[Product], phase: int) -> List
     """Three follow-up chips, the last of which always advances the ladder.
 
     Every phase ends with the prompt that motivates the next rung, so the
-    hand-off is on screen rather than in the presenter's memory. The two
+    hand-off is on screen rather than left for the user to remember. The two
     preceding chips are contextual suggestions for the current results.
     """
     suggestions = _phase_suggestions(query, products, phase)
@@ -2308,7 +2308,7 @@ async def chat(
                 message = _PHASE4_WORKFLOW_TRANSITION_MESSAGE
             else:
                 # ProductionAgent persists the managed Runtime decision. Return
-                # that same decision unchanged so the audience-facing response
+                # that same decision unchanged so the user-facing response
                 # is authored by AgentCore Runtime rather than a second local
                 # model pass.
                 message = raw_message
@@ -2447,8 +2447,8 @@ async def chat(
             log_error("workflow_authorization", error=str(e))
             raise HTTPException(status_code=403, detail=str(e)) from e
         except Exception as e:
-            # Keep the stack in the log; show the audience a stable reference,
-            # not a Python exception string projected on the wall.
+            # Keep the stack in the log; show the user a stable reference,
+            # not a Python exception string.
             error_ref = uuid.uuid4().hex[:8]
             logger.exception(
                 "orchestration_workflow failed (ref=%s)", error_ref
