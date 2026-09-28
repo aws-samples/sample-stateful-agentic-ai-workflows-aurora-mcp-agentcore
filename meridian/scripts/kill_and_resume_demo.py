@@ -1,6 +1,6 @@
 """Kill a worker mid-workflow and resume it on another, against real Aurora.
 
-The sequence the chalk talk demonstrates, run for real:
+The durable-recovery sequence, run for real:
 
   1. Worker one claims the thread's single execution slot and runs the
      workflow to its interrupt point, committing a checkpoint.

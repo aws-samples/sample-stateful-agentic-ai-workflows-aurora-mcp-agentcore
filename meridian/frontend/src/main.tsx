@@ -12,9 +12,9 @@ const MeridianDeviceShowcase = lazy(() => import('./showcase/MeridianDeviceShowc
 /**
  * Lightweight path-based router.
  *
- * We deliberately avoid adding react-router (or any new dep) for the booth
- * demo. `/` redirects to the live showcase because the chalk talk only needs
- * that surface. `/demo-stage` and `/stage` remain for kiosk and presenter use.
+ * Three routes do not justify react-router (or any new dependency). `/`
+ * redirects to the showcase, the primary surface. `/demo-stage` and `/stage`
+ * serve the kiosk and playback surface.
  */
 function pickRoot() {
   const path = window.location.pathname.replace(/\/+$/, '')
