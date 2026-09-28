@@ -1,11 +1,56 @@
 import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { AgentCoreStack } from '../lib/cdk-stack';
 
-test('AgentCoreStack synthesizes the checked-in Meridian specification', () => {
-  const spec = JSON.parse(readFileSync(resolve(__dirname, '../../agentcore.json'), 'utf8'));
+// Stand-in values for the placeholders scripts/render_agentcore_config.py fills.
+const TEST_VALUES: Record<string, string> = {
+  AWS_ACCOUNT_ID: '123456789012',
+  AWS_REGION: 'us-east-1',
+  AURORA_CLUSTER_ARN: 'arn:aws:rds:us-east-1:123456789012:cluster:meridian',
+  AURORA_SECRET_ARN: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian-AbC123',
+  GATEWAY_ID: 'meridianv2-meridian-aurora-abcde12345',
+  POLICY_ENGINE_ID: 'meridianv2_MeridianGovernance-abcde12345',
+};
+const PROJECT_ROOT = resolve(__dirname, '../../..');
+const originalInitCwd = process.env.INIT_CWD;
+let testProjectRoot: string;
+
+function renderTemplate(): Record<string, any> {
+  const template = readFileSync(join(PROJECT_ROOT, 'agentcore', 'agentcore.template.json'), 'utf8');
+  const rendered = template.replace(/\{\{([A-Z_]+)\}\}/g, (placeholder, name: string) => {
+    const value = TEST_VALUES[name];
+    if (value === undefined) throw new Error(`No test value for ${placeholder}`);
+    return value;
+  });
+  return JSON.parse(rendered);
+}
+
+// The constructs locate the project through agentcore/agentcore.json, which is rendered
+// per account and gitignored. Synthesize from a temporary project that links to the real
+// application and gateway code, so the test never writes into the source tree.
+beforeAll(() => {
+  testProjectRoot = mkdtempSync(join(tmpdir(), 'meridian-agentcore-'));
+  mkdirSync(join(testProjectRoot, 'agentcore'));
+  writeFileSync(join(testProjectRoot, 'agentcore', 'agentcore.json'), JSON.stringify(renderTemplate()));
+  symlinkSync(join(PROJECT_ROOT, 'app'), join(testProjectRoot, 'app'));
+  symlinkSync(
+    join(PROJECT_ROOT, 'agentcore', 'gateway_targets'),
+    join(testProjectRoot, 'agentcore', 'gateway_targets')
+  );
+  process.env.INIT_CWD = testProjectRoot;
+});
+
+afterAll(() => {
+  if (originalInitCwd === undefined) delete process.env.INIT_CWD;
+  else process.env.INIT_CWD = originalInitCwd;
+  rmSync(testProjectRoot, { recursive: true, force: true });
+});
+
+test('AgentCoreStack synthesizes the Meridian specification template', () => {
+  const spec = renderTemplate();
   const app = new cdk.App();
   const stack = new AgentCoreStack(app, 'TestStack', {
     spec: spec as never,

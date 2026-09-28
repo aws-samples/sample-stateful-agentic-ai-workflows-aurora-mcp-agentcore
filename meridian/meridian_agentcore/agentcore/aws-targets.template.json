@@ -2,7 +2,7 @@
   {
     "name": "default",
     "description": "Meridian demo deployment target",
-    "account": "619763002613",
-    "region": "us-east-1"
+    "account": "{{AWS_ACCOUNT_ID}}",
+    "region": "{{AWS_REGION}}"
   }
 ]

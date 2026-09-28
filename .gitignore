@@ -57,6 +57,11 @@ logs/
 cdk.out*/
 .cli/
 
+# AgentCore config rendered for one account by scripts/render_agentcore_config.py.
+# Edit the *.template.json files beside them instead.
+meridian/meridian_agentcore/agentcore/agentcore.json
+meridian/meridian_agentcore/agentcore/aws-targets.json
+
 # Kiro specs (local development)
 .kiro/
 .claude/

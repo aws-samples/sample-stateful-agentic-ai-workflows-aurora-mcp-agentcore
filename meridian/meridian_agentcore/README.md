@@ -1,104 +1,90 @@
-# AgentCore Project
+# Meridian AgentCore project
 
-This project was created with the [AgentCore CLI](https://github.com/aws/agentcore-cli).
+This directory is an [AgentCore CLI](https://github.com/aws/agentcore-cli) project.
+It declares the Amazon Bedrock AgentCore resources Meridian's Production and
+Workflow phases use, and deploys them with the CLI's CDK app.
 
-## Project Structure
+| Resource | Name | Purpose |
+| --- | --- | --- |
+| Runtime | `MeridianConcierge` | Strands agent that plans with Gateway tools and keeps its conversation in Memory |
+| Memory | `meridian_session` | Session store for the runtime (`SEMANTIC` strategy) |
+| Gateway | `meridian-aurora` | MCP endpoint with AWS_IAM inbound auth and the Cedar policy engine attached |
+| Gateway target | `SemanticTripSearchLambda` | Existing Lambda function `meridian-semantic-trip-search` (you create it; see the runbook) |
+| Gateway target | `MeridianHolds` | Lambda built by the CDK app: `get_package_details`, `create_courtesy_hold`, `confirm_booking` |
+| Policy engine | `MeridianGovernance` | Cedar policies in `ENFORCE` mode: reads are permitted; holds and confirmations only within the stated conditions |
 
-```
-my-project/
-├── AGENTS.md               # AI coding assistant context
+## Layout
+
+```text
+meridian_agentcore/
 ├── agentcore/
-│   ├── agentcore.json      # Project config (agents, memories, credentials, gateways, evaluators)
-│   ├── aws-targets.json    # Deployment targets (account + region)
-│   ├── .env.local          # Secrets — API keys (gitignored)
-│   ├── .llm-context/       # TypeScript type definitions for AI assistants
-│   │   ├── agentcore.ts    # AgentCoreProjectSpec types
-│   │   ├── aws-targets.ts  # Deployment target types
-│   │   └── mcp.ts          # Gateway and MCP tool types
-│   └── cdk/                # CDK infrastructure (@aws/agentcore-cdk)
-├── app/                    # Agent application code
-└── evaluators/             # Custom evaluator code (if any)
+│   ├── agentcore.template.json    # Project spec with placeholders (committed)
+│   ├── aws-targets.template.json  # Deployment target with placeholders (committed)
+│   ├── agentcore.json             # Rendered for your account (gitignored)
+│   ├── aws-targets.json           # Rendered for your account (gitignored)
+│   ├── .cli/deployed-state.json   # Written by `agentcore deploy` (gitignored)
+│   ├── cdk/                       # CDK app the CLI synthesizes and deploys
+│   └── gateway_targets/           # Lambda code and tool schemas for both gateway targets
+└── app/MeridianConcierge/         # Runtime code: main.py, turn_trace.py, hold_execution.py
 ```
 
-## Getting Started
+## Configuration templates
 
-### Prerequisites
+The AgentCore CLI and its CDK app read `agentcore/agentcore.json` and
+`agentcore/aws-targets.json`. Those files name your AWS account, Region,
+Aurora cluster and secret, and IDs that exist only after a deploy (the gateway
+ID in the Cedar policies and the runtime's environment). The repository
+commits templates with placeholders instead, and
+[`scripts/render_agentcore_config.py`](../scripts/render_agentcore_config.py)
+writes the real files:
 
-- **Node.js** 20.x or later
-- **Python 3.10+** and **uv** for Python agents ([install uv](https://docs.astral.sh/uv/getting-started/installation/))
-- **AWS credentials** configured (`aws configure` or environment variables)
-- **Docker** (only for Container build agents)
-
-### Development
-
-Run your agent locally:
+| Placeholder | Filled from |
+| --- | --- |
+| `{{AWS_ACCOUNT_ID}}` | The account in `AURORA_CLUSTER_ARN` |
+| `{{AWS_REGION}}` | `AGENTCORE_REGION`, else `AWS_DEFAULT_REGION`, else the cluster's Region |
+| `{{AURORA_CLUSTER_ARN}}` | `AURORA_CLUSTER_ARN` in `meridian/.env` |
+| `{{AURORA_SECRET_ARN}}` | `AURORA_SECRET_ARN` in `meridian/.env` (the full ARN, with its six-character suffix) |
+| `{{GATEWAY_ID}}` | `agentcore/.cli/deployed-state.json`, or `--gateway-id` |
+| `{{POLICY_ENGINE_ID}}` | `agentcore/.cli/deployed-state.json`, or `--policy-engine-id` |
 
 ```bash
-agentcore dev
+cd meridian
+python scripts/render_agentcore_config.py
 ```
 
-### Deployment
+Environment variables take precedence over `meridian/.env`. The script refuses
+to write when a required value is missing or malformed, and names the setting
+to fix.
 
-Deploy to AWS:
+The Cedar policies name the deployed gateway, so a new account needs more than
+one deploy. Before the gateway exists, the script renders the spec without the
+policy engine and without the gateway ID variable. After each
+`agentcore deploy`, run it again: it reads the new IDs from the deployment
+state and prints `Configuration complete.` once nothing is left out. The
+[deployment runbook](../docs/AGENTCORE_DEPLOY_RUNBOOK.md) lists the full
+sequence.
 
-```bash
-agentcore deploy
-```
+Make configuration changes in the `*.template.json` files, then render.
+`agentcore add` and `agentcore remove` edit the rendered `agentcore.json`; copy
+any such change into the template, replacing account-specific values with
+placeholders, or the next render overwrites it.
 
 ## Commands
 
-| Command | Description |
+Run these from `meridian/meridian_agentcore/` after rendering:
+
+| Command | Purpose |
 | --- | --- |
-| `agentcore create` | Create a new AgentCore project |
-| `agentcore add` | Add resources (agent, memory, credential, gateway, evaluator, policy) |
-| `agentcore remove` | Remove resources |
-| `agentcore dev` | Run agent locally with hot-reload |
-| `agentcore deploy` | Deploy to AWS via CDK |
-| `agentcore status` | Show deployment status |
-| `agentcore invoke` | Invoke agent (local or deployed) |
-| `agentcore logs` | View agent logs |
-| `agentcore traces` | View agent traces |
-| `agentcore eval` | Run evaluations |
-| `agentcore package` | Package agent artifacts |
-| `agentcore validate` | Validate configuration |
-| `agentcore pause` | Pause an online evaluation or A/B test |
-| `agentcore resume` | Resume a paused online evaluation or A/B test |
-| `agentcore fetch` | Fetch remote resource definitions |
-| `agentcore import` | Import existing resources |
-| `agentcore update` | Check for CLI updates |
+| `agentcore validate --json` | Check the rendered spec against the CLI schema |
+| `agentcore deploy -y` | Synthesize and deploy the CDK stack |
+| `agentcore status --json` | Show deployed resources |
+| `agentcore logs --runtime MeridianConcierge --follow` | Tail runtime logs |
 
-## Configuration
-
-Edit the JSON files in `agentcore/` to configure your project. See `agentcore/.llm-context/` for type definitions and validation constraints.
-
-The project uses a **flat resource model** — agents, memories, credentials, gateways, evaluators, and policies are top-level arrays in `agentcore.json`. Resources are independent; agents discover memories and credentials at runtime via environment variables or SDK calls.
-
-## Resources
-
-| Resource | Purpose |
-| --- | --- |
-| Agent (runtime) | HTTP, MCP, or A2A agent deployed to AgentCore Runtime |
-| Memory | Persistent context storage with configurable strategies |
-| Credential | API key or OAuth credential providers |
-| Gateway | MCP gateway that routes tool calls to targets |
-| Gateway Target | Tool implementation (Lambda, MCP server, OpenAPI, Smithy, API Gateway) |
-| Evaluator | Custom LLM-as-a-Judge or code-based evaluation |
-| Online Eval Config | Continuous evaluation pipeline for deployed agents |
-| Policy | Cedar authorization policies for gateway tools |
-
-### Agent Types
-
-- **Template agents**: Created from framework templates (Strands, LangChain/LangGraph, GoogleADK, OpenAI Agents, Autogen)
-- **BYO agents**: Bring your own code with `agentcore add agent --type byo`
-- **Import agents**: Import existing Bedrock agents with `agentcore import`
-
-### Build Types
-
-- **CodeZip**: Python source packaged as a zip and deployed directly to AgentCore Runtime
-- **Container**: Docker image built via CodeBuild (ARM64), pushed to ECR, and deployed to AgentCore Runtime
+The CDK unit test in `agentcore/cdk/test/` synthesizes the stack from the
+template with placeholder test values, so it runs without an AWS account.
 
 ## Documentation
 
 - [AgentCore CLI](https://github.com/aws/agentcore-cli)
-- [AgentCore CDK Constructs](https://github.com/aws/agentcore-l3-cdk-constructs)
-- [Amazon Bedrock AgentCore](https://aws.amazon.com/bedrock/agentcore/)
+- [AgentCore CDK constructs](https://github.com/aws/agentcore-l3-cdk-constructs)
+- [Amazon Bedrock AgentCore Developer Guide](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html)
