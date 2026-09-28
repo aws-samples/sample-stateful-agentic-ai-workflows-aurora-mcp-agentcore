@@ -28,11 +28,11 @@ http://127.0.0.1:5176/showcase
 
 The root route redirects to `/showcase`.
 
-For a projector in a lit chalk-talk room, open
-`http://127.0.0.1:5176/showcase?present=1`. This starts the light audience layout
-with an off-white background, stronger text and diagram contrast, and larger
-briefing, SQL, and evidence text. It overrides a remembered dark preference;
-`&theme=dark` explicitly selects the dim-room alternative. Select **Present
+For the re:Invent chalk talk, open
+`http://127.0.0.1:5176/showcase?present=1`. This starts the dark audience layout,
+matching the slide deck, with stronger text and diagram contrast and larger
+briefing, SQL, and evidence text. It overrides a remembered light preference;
+`&theme=light` is available as an explicit override. Select **Present
 fullscreen** to remove presenter controls, then **Esc** to return. Display
 settings let you disable **Projector readability** or leave the audience preview.
 Check the actual projector from the back row; browser contrast checks cannot
@@ -58,6 +58,9 @@ policy decision, or recovery execution.
 
 For the current presentation, use the [editable deck and notes](docs/presentation/README.md),
 [presenter runbook](docs/PRESENTER_RUNBOOK_2026-09-20.md), and [deployment follow-up](docs/FOLLOWUP_2026-09-20.md).
+The [speaker notes](docs/presentation/SLIDE_NOTES.md) cover every slide. The
+40-minute core uses one example per capability and lost-response recovery as its
+main fault; process-kill proof and direct booking confirmation remain optional.
 
 - Python 3.13 (the version CI builds and tests against)
 - Node.js 22.12+ recommended (CI uses Node 22); Node 20.19+ is also supported

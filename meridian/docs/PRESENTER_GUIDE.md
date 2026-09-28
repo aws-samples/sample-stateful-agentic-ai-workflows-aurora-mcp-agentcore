@@ -1,7 +1,12 @@
 # Meridian Presenter Guide
 
-For the September 19 release, use the [presenter runbook](PRESENTER_RUNBOOK_2026-09-19.md)
-and [updated editable presentation](presentation/README.md). They record the current preflight, measured API timings, safe reset, and evidence limitations.
+For the current delivery, use the [presenter runbook](PRESENTER_RUNBOOK_2026-09-20.md)
+and [updated editable presentation](presentation/README.md). They separate current delivery guidance from dated API timings, safe reset, and evidence limitations.
+
+The new re:Invent 2026 deck uses the supplied RIV26 template and a refreshed slide
+order. Use its [speaker notes](presentation/reinvent-2026/SPEAKER_NOTES.md) for the
+40-minute slide-by-slide delivery and its [capture record](presentation/reinvent-2026/README.md)
+for September 27 screenshot provenance and pending presentation checks.
 
 This guide is the concise run-of-show for demonstrating Meridian. It focuses on
 what to run, what to point out, and which claims the application proves.
@@ -81,8 +86,9 @@ Verify:
 - `python scripts/smoke_production_turn.py` ends with three PASS lines: unconfirmed denied, confirmed held, over budget denied.
 - Phase 5 reports `checkpoint_durable: true` with `AuroraDataApiSaver` or `PostgresSaver (Aurora · pooled)`. `MemorySaver` cannot prove restart recovery.
 
-Use the dark theme in a dim room and the light theme when projector contrast is
-poor. Keep browser zoom at 100 percent.
+Use the dark theme for the re:Invent presentation, matching the deck. The room
+preset (`/showcase?present=1`) opens dark even if a light laptop preference was
+saved. Keep browser zoom at 100 percent.
 
 ## Suggested Run Of Show
 
@@ -104,7 +110,7 @@ the UI does not stream live step completion while it waits.
 | Phase | Run this query | Point to | Transition |
 | --- | --- | --- | --- |
 | **1 - SQL** | `Show me city trips under $2,000 per traveler.` | Parameterized SQL, live rows, inventory | Structured filters work, but business operations need a contract. |
-| **2 - MCP** | `Compare three trip types and convert each price to euros.` | MCP tool discovery, comparison, FX conversion | Tools improve interoperability, not semantic understanding. |
+| **2 - MCP** | `Compare three trip types and convert each price to euros.` | MCP tool discovery, comparison, FX conversion | A tool contract still needs validated inputs and authorization. |
 | **3 - Retrieval** | `Find a quiet, romantic wine-country retreat with a private villa.` | pgvector, full-text candidates, Cohere rerank | Intent works, but the system still needs trusted memory. |
 | **4 - Production** | `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` then type `Hold the first option for two travelers now.` | Memory facts, identity, ALLOW/DENY, RLS, audit, the runtime's gateway tool calls, one Cedar deny; the recovery supplies the permit | A multi-step disruption plan now needs durable execution state. |
 | **5 - Workflow** | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` | Named graph nodes, checkpoints, same-thread resume | The plan survives process interruption because state is externalized. |
@@ -130,9 +136,9 @@ In **System evidence**, point to the parameterized filter and execution timing.
 Explain that the RDS Data API is a connectionless transport to durable Aurora
 data. It does not make the application stateless.
 
-Boundary to state: SQL handles exact filters well. Comparison, currency
-conversion, loyalty, and other business operations should be owned as explicit
-tools.
+Boundary to state: the price limit is per traveler, not the whole party. This
+route uses bounded parameterized filters. SQL can support richer operations;
+Meridian exposes comparison and conversion as explicit tools in the next phase.
 
 ### 3. MCP: Governed Tool Contracts
 
@@ -142,8 +148,8 @@ Point to `tools/list` and `tools/call`, then the typed comparison and currency
 results. MCP standardizes how agents discover and invoke tools; the server can
 still choose the appropriate database transport internally.
 
-Boundary to state: MCP improves the interface and governance boundary. It does
-not, by itself, solve semantic intent or conversational memory.
+Boundary to state: MCP defines the interface. Authorization and validated
+inputs remain separate responsibilities; this example uses illustrative FX rates.
 
 ### 4. Retrieval: Semantic Plus Lexical
 
@@ -156,7 +162,9 @@ Point to the three retrieval stages:
 3. Cohere Rerank 3.5 orders the final results.
 
 Explain that candidate generation and reranking are separate concerns. The
-trace should make both visible.
+trace should make both visible. Relevance does not prove eligibility: verify
+price, availability and access separately. Discuss recall under selective filters
+without claiming this small catalog proves production-scale performance.
 
 ### 5. Production: Trusted Memory
 
@@ -166,7 +174,7 @@ the shellfish allergy, then open the RLS proof.
 
 Describe the control chain in order:
 
-1. Authenticate the AWS or AgentCore workload.
+1. Authenticate the AWS workload using its IAM role.
 2. Authorize that subject for Alex's traveler record.
 3. Set the traveler scope and least-privilege database role.
 4. Let Aurora RLS filter rows.
@@ -183,10 +191,14 @@ Be precise: this sample authorizes a workload to access a traveler record. A
 shared application must also authenticate the human user and bind the verified
 user subject, such as a Cognito `sub`, to that traveler.
 
-Run the disruption query once in Phase 4. Production should recall Alex's
+Optional handoff: run the disruption query once in Phase 4. Production should recall Alex's
 context and identify alternatives, then surface `Checkpointed workflow
 required` rather than claiming the dependent recovery steps completed. Use that
 handoff to introduce Phase 5.
+
+Phase 4's use of AgentCore Memory and Phase 5's Aurora saver are implementation
+choices. AgentCore also offers LangGraph checkpoint persistence. A conversation,
+checkpoint and committed booking remain distinct records.
 
 ### 6. Workflow: Durable Multi-Step Execution
 
@@ -214,6 +226,14 @@ Explain the transport split:
 If demonstrating restart recovery, pause after `search`, restart the backend,
 and resume the same thread. The proof is the same thread continuing from an
 Aurora checkpoint, not an in-memory object surviving.
+
+For the core fault at slide 17, use `scripts/lost_response_demo.py` in a prepared
+terminal, or labelled dated evidence if rehearsal does not fit the time budget.
+Its separate test journey commits a real hold, loses the reply through a CLI-only
+injection, then resumes with the same intent on a replacement worker. Compare
+request ID, booking ID and original expiry before and after. The process-kill
+helper is an optional second failure example. A browser reload alone proves
+saved-state readback, not worker death.
 
 ### 7. Handoff: From Saved Progress to Traveler Recovery
 

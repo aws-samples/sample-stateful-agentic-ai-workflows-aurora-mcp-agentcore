@@ -1,0 +1,223 @@
+# Meridian re:Invent 2026 - speaker notes
+
+[PowerPoint](Meridian-reInvent-2026-dark-v3.pptx) | [Capture and validation notes](README.md)
+
+32-slide core; slides 33-36 are hidden Q&A. Five live-demo checkpoints. Planned 40 minutes plus 20 minutes discussion/flex. Timings are estimates.
+
+Story: finished Concierge → Capability ladder → Recovery desk → System evidence.
+
+## 1. Build stateful agentic workflows with Aurora, MCP, and AgentCore
+
+**Core slide.**
+
+CORE 0:00-0:30. Today we follow one travel request from a grounded query to a governed action that can recover from an interrupted worker. We will use the app, inspect code highlights in all five phases, and verify the stored business result. Introduce Aditya and Shayon. The prepared path is 40 minutes; reserve 20 minutes for audience discussion and flex. No re:Invent session code has been supplied. This is a chalk talk, not a participant workshop.
+
+## 2. We built Meridian!
+
+**Core slide.**
+
+CORE 0:30-2:00. SAY: Two friends built Meridian, a travel concierge, using vibe coding. The app became useful. Then came the harder question: can an agent remember context, act under policy and recover when its worker disappears? START IN THE APP: Concierge. Show the finished product first, its traveler brief and Alex's Tokyo plan. Do not run a sixth separate demo; this is the visual orientation before the five checkpoints. Aurora grounds the catalog search, stores workflow progress and records committed business outcomes. AgentCore Memory supplies conversational context. Alex and the travel catalog are fictional. This is not a capacity claim. A Meridian hold changes our catalog database, not a supplier reservation or a payment. The image is a larger native crop of the actual September 27 dark app capture. TRANSITION: Let us open the Capability ladder and build up what makes this work.
+
+## 3. Open the Capability ladder
+
+**Core slide.**
+
+CORE 2:00-3:00. SHOW: The Capability ladder after the finished Concierge. CLICK through the five capabilities: 1 SQL grounds an answer in live rows; 2 MCP gives explicit reusable tools; 3 Retrieval finds trips by meaning; 4 Production adds authorized traveler context and managed policy; 5 Workflow persists intent and recovers the outcome. Each phase has an architecture, a small source excerpt, one architectural takeaway and a live demo checkpoint. The examples deliberately hand off to the next capability. End Retrieval at minute 12, start Workflow/Recovery at 20, read System evidence at 32 and begin closing at 37. These are delivery estimates, not a timed rehearsal. Cut repeat prompts first.
+
+## 4. Ground the assistant in live rows
+
+**Core slide.**
+
+CORE 3:00-3:40. CLICK 1: the UI sends a precise request. CLICK 2: sql_search calls parse_search_query and execute_keyword_search. CLICK 3: the database adapter binds values and sends the statement through RDS Data API. CLICK 4: Aurora returns catalog rows. This first showcase path is deterministic filtering, not arbitrary model-generated SQL and not the reference Strands SQLAgent. RDS Data API is transport. Model-polished wording does not establish the returned facts. Source: backend/routers/chat.py and backend/search_utils.py.
+
+## 5. Bind values to a bounded query
+
+**Core slide.**
+
+CORE 3:40-4:25. Open execute_keyword_search. These are two excerpts from the category-plus-price branch: the SQL predicate/order/limit and the actual db.execute call; the call is line-wrapped for the projector. SELECT and FROM are omitted, not changed. Point to the price-per-person field and tuple of bound values. Do not confuse the human-readable display_sql string with what executes. Keep the excerpt on screen; do not scroll through every search branch.
+
+## 6. Correct SQL still needs a precise question
+
+**Core slide.**
+
+CORE 4:25-4:45. SAY: Syntactically correct SQL can answer the wrong question. Define the unit, allowed joins and historical meaning. Teams also own execution timeouts, concurrency and the entire run budget. ASK quickly: per traveler or the whole party? Then run the example.
+
+## 7. Live demo: inspect the rows that answered
+
+**Core slide.**
+
+CORE 4:45-6:00. RUN: Show me city trips under $2,000 per traveler. SHOW: SQL activity, bound parameters, returned prices and durations. This showcase route uses deterministic bounded filters and parameterized SQL, not unrestricted model-generated text-to-SQL. ASK: Does $2,000 mean per person, the whole party, or an itinerary including flights? Valid SQL can answer the wrong business question. Teams own metric definitions, approved joins, historical meaning and representative validated answers. A read-only query still needs identity, timeouts, concurrency and result bounds. Source: backend/routers/chat.py. The separate Strands SQLAgent is reference code. Fallback: screenshots/03-sql-grounded.png is dated September 27 evidence. CUT: omit extra SQL prompts. TRANSITION: Comparison plus FX is the next rung, not another SQL prompt.
+
+## 8. Give the agent tools it can reuse
+
+**Core slide.**
+
+CORE 6:00-6:35. CLICK 1: mcp_search routes this domain prompt to _call_domain_tool. CLICK 2: concierge_mcp_session invokes compare_packages and currency_convert. CLICK 3: comparisons use Aurora catalog rows and conversion uses configured indicative rates. The caller first selects package IDs from Aurora, then the tools retrieve and transform their facts; this is a capability view, not every network call. The generic PostgreSQL MCP server is a separate catalog branch and is not invoked for this pure comparison prompt.
+
+## 9. Call an explicit tool contract
+
+**Core slide.**
+
+CORE 6:35-7:15. Open _call_domain_tool in the live route. These two source excerpts show compare_packages and currency_convert; surrounding selection, loop and result assembly are omitted, with line wraps for readability. target is EUR for this prompt. The second call runs for each compared package using that package's price. Point at the protocol boundary and auditable arguments. MCP defines the interface; it does not itself prove authorization.
+
+## 10. A tool contract is only one boundary
+
+**Core slide.**
+
+CORE 7:15-7:35. SAY: A named tool can be reused by different agents, but discoverability is not permission. SQL could implement the comparison too; MCP gives the callable contract. The production phase adds the policy boundary. Rates in this demo are indicative, not settlement prices.
+
+## 11. Live demo: follow two named tools
+
+**Core slide.**
+
+CORE 7:35-9:00. Switch to MCP and run the comparison prompt. Show the actual compare_packages and currency_convert calls with arguments and results. The meridian-concierge MCP server handles this example. The PostgreSQL MCP catalog path is separate; do not draw the comparison through that server. FX rates are configured demonstration data, not live market prices. A discoverable schema tells an agent what it can call, not who may call it or whether the operation is safe. Ask which fields should be trusted and which should be overwritten by the application. That question sets up the authority section. Source: backend/routers/chat.py and backend/mcp/mcp_client.py. CUT: one comparison is enough. TRANSITION: The next request describes mood and amenities rather than a fixed tool input.
+
+## 12. Find trips by meaning
+
+**Core slide.**
+
+CORE 9:00-9:40. CLICK 1 request; 2 query embedding via Bedrock; 3 semantic and lexical retrieval from Aurora; 4 SearchAgent merges by package_id, hydrates facts and filters budget/stock; 5 Bedrock reranks the candidate text and the app maps order back to catalog rows. In this code, fusion is a union and deduplication, not reciprocal-rank fusion or weighted blending. SearchAgent.hybrid_search is on the live supervisor path. Read-only specialists can check package durations. Initial eligibility is checked here; price, inventory and access still need revalidation at the write.
+
+## 13. Keep candidates grounded through ranking
+
+**Core slide.**
+
+CORE 9:40-10:20. Open SearchAgent.hybrid_search. The source excerpts show catalog identity in candidate deduplication and the Bedrock rerank call. The explicit omission covers lexical merge, catalog hydration, eligibility and document construction; do not imply these lines are adjacent. Show the real code just above and below if asked. Candidate docs are built from names, destinations, types, operators and descriptions. The returned index maps to the same input row. If embedding fails, the app uses a disclosed lexical-only path; if rerank fails, inspect the fallback trace instead of claiming the reranker ran.
+
+## 14. Relevance is a ranking signal
+
+**Core slide.**
+
+CORE 10:20-10:40. SAY: Selective permissions, availability and budget filters change the retrieval problem. Test the quality target under those filters. A high score does not prove private occupancy or a reservation. This small demo catalog is not a performance benchmark.
+
+## 15. Live demo: inspect the ranked shortlist
+
+**Core slide.**
+
+CORE 10:40-12:00. SHOW: actual retrieval results and the Activity panel. The September 27 capture placed Tuscany Wine & Wellness first, Amalfi second and Bali third; those are dated observed results, not an expected universal ordering. The generated response correctly noted that private-villa status was not specified in the listing. Do not let persuasive prose turn missing facts into verified amenities. ASK: What must be checked again when Alex decides to act? Transition from relevance to authority. At minute 12 leave the ladder. CUT: avoid extra retrieval prompts and deep index tuning; retain the eligibility distinction. Source: retrieval_supervisor_search and SearchAgent.hybrid_search. Fallback: screenshots/04-retrieval-results.png. Do not run a separate new query after minute 12.
+
+## 16. Why move beyond the laptop?
+
+**Core slide.**
+
+CORE 12:00-12:45. SAY: The first three rungs proved usefulness. The application can run on a laptop, but the data and model calls already use AWS. Now ask what must survive beyond the developer session: concurrent users, isolated execution, tool permissions, persistent context and investigation of failures. Hosting the code alone does not establish business correctness or safe retries. Introduce the need for managed production building blocks, then show AgentCore. This is the story transition, not a claim that the current local app has been deployed or load-tested today. Reference: https://aws.amazon.com/bedrock/agentcore/
+
+## 17. Meet Amazon Bedrock AgentCore
+
+**Core slide.**
+
+CORE 12:45-13:30. CLICK through Runtime, Gateway, Memory and Policy. These are the four services used in the next Meridian diagram, not the entire platform catalog. AgentCore is modular and supports framework/model choice. Other capabilities include Identity, Observability, Evaluations, Browser and Code Interpreter; select them for your requirements. Meridian does not use AgentCore Identity as end-user login. Aurora remains responsible for authoritative business records. Reference: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/what-is-bedrock-agentcore.html. TRANSITION: Now place the Meridian agent and its tools inside those boundaries.
+
+## 18. Run the concierge under policy
+
+**Core slide.**
+
+CORE 13:30-14:30. CLICK 1: FastAPI binds the authorized traveler using the shared demo principal. CLICK 2: the Strands agent runs inside AgentCore Runtime and uses the separate Memory service for conversation context. CLICK 3: Gateway exposes MCP tools and integrates with Policy for Cedar decisions. CLICK 4: the Lambda target independently checks workload and traveler authority. CLICK 5: Aurora enforces RLS and current business conditions in scoped transactions. The surrounding box groups logical AgentCore services; it is not a VPC, subnet or network-isolation claim. Bedrock model calls and supporting reads are omitted for legibility. Phase 5 runs its LangGraph worker in FastAPI, not inside this Runtime. Distinguish permission, conversation context and the committed booking.
+
+## 19. Trusted context pins the tool arguments
+
+**Core slide.**
+
+CORE 14:30-15:30. Open meridian_agentcore/app/MeridianConcierge/turn_trace.py, TurnToolTrace._pin_arguments. These three assignments come from the function body; the budget expression is wrapped for readability. The runtime pins traveler identity, confirmation and budget ceiling from trusted turn context. The full function also binds the conversation journey reference. Model-proposed arguments do not establish caller authority. Trace the workload grant into the runtime; Gateway evaluates Cedar before invoking a Lambda target; the target rechecks ownership, price and inventory under a scoped transaction and RLS. Important boundary: the shared browser principal is bound to Alex. AgentCore Identity is not enabled as end-user login in this app. Privileged Gateway callers are trusted; Cedar cannot independently prove that a privileged caller truthfully asserted confirmation. ASK: Which identities and confirmation sources would your production system trust?
+
+## 20. Remembering a preference grants no permission
+
+**Core slide.**
+
+CORE 15:30-16:30. Distinguish the workload grant, Cedar tool-call policy and target-side RLS/business checks. A real refusal is part of a successful demonstration. Privileged Gateway callers are trusted; Cedar cannot independently prove that a caller truthfully asserted confirmation. AgentCore Identity is not enabled for human login. ASK: Which identity and approval sources would your application trust?
+
+## 21. Live demo: authorized context and a real refusal
+
+**Core slide.**
+
+CORE 16:30-20:00. In Production, use traveler context and recall the Tokyo plan. Show the workload identity, Runtime turn, context source and scoped Aurora evidence. For a negative example use the prepared unconfirmed or over-budget request from scripts/smoke_production_turn.py; inspect the real denial and verify that no hold exists. Do not weaken inputs to force a success. The allowed path is the Recovery desk hold after explicit resume confirmation, so we avoid a second unrelated direct hold. Runtime, Gateway and policy must be warmed before the session. If the negative path was not executed live, label the demonstration as source or dated evidence. ASK: What would you record to prove both who was permitted and what committed? At minute 20 start Recovery. CUT: loyalty pricing, additional context prompts and direct confirmation are optional. FIRST: use the exact recall prompt on this slide. For the refusal, use the prepared smoke_production_turn example and identify the actual layer that denied it. An IAM/traveler-grant failure is not a Cedar denial. Keep the successful governed write for checkpoint 5.
+
+## 22. Recover the intent and verify the outcome
+
+**Core slide.**
+
+CORE 20:00-21:30. Move from Capability ladder to Recovery desk. CLICK 1 Classify, 2 Search and pause with a shortlist saved in Aurora, 3 Availability on resume, 4 Prepare hold and checkpoint its stable intent, 5 Hold through the same governed Gateway/Lambda/Aurora write boundary, 6 Synthesize from saved outcome. Pause is an interrupt after search, not an extra graph node. The graph also has a memory_recall branch not shown here. LangGraph executes in the FastAPI worker. AuroraDataApiSaver persists checkpoints over RDS Data API; it is separate from AgentCore Runtime and separate from the hold transaction. Source: backend/agents/orchestration_05/workflow.py.
+
+## 23. Save intent before the external tool call
+
+**Core slide.**
+
+CORE 21:30-23:00. Open workflow.py at _node_prepare_hold and follow its edge into _node_hold. The slide shows the preparation and return statements from the function body, with activity instrumentation explicitly omitted and the returned mapping wrapped for readability. Show the complete source in the editor. The graph saves the hold request identity and parameter fingerprint before the hold node invokes Gateway. A retried execution must reuse this intent, not invent another request ID. A checkpoint is not atomically committed with the Gateway target transaction. ASK: What if the target commits, but the graph cannot save its next checkpoint? That is the failure window we demonstrate next. Source: backend/agents/orchestration_05/workflow.py and backend/agents/orchestration_05/hold_intent.py.
+
+## 24. A checkpoint is progress, not a receipt
+
+**Core slide.**
+
+CORE 23:00-24:00. SAY: A checkpoint can tell us where execution stopped, but not by itself whether the external target committed. Save the request identity before calling the target. On replay, verify the same terms and return the original record and expiry. Do not promise universal exactly-once execution. Supplier calls outside Aurora still need idempotency, reconciliation and often an outbox. ASK: What happens if the target commits but the response never reaches this worker?
+
+## 25. Live demo: resume the saved recovery
+
+**Core slide.**
+
+CORE 24:00-28:00. SHOW: Recovery desk. Start a new recovery and wait for the saved shortlist. Copy the URL containing the thread and journey identifiers. Reload that URL and observe the same paused journey read from Aurora. Click Resume and request hold; inspect the current inventory check, Cedar decision and 15-minute hold. This screenshot was captured September 27 before the hold. The side rail honestly says no worker interruption recorded. Browser reload is not worker-death proof, and an ordinary pause/resume may use the same worker. Keep that distinction explicit. Package inventory only; flights and suppliers are not checked. Do not use repeated clicks as a recovery mechanism if a response is slow. CUT: use the dated screenshot for shortlist retrieval and retain live receipt readback. The displayed canceled-flight prompt is SHOWCASE_FINALE_PROMPT from the running app. This is checkpoint 5, the only core positive hold demo. The next two slides explain and, if rehearsed, inject the commit-without-reply window within this same checkpoint, not a sixth demo.
+
+## 26. The reply is lost. Did the hold happen?
+
+**Core slide.**
+
+CORE 28:00-30:00. Run scripts/lost_response_demo.py only if it was rehearsed within the two-minute slot. It owns a separate test journey. The target really commits, then the helper deliberately discards the reply at the worker boundary and raises a timeout. A replacement worker resumes and reuses the same hold identity; the helper verifies the same booking, original expiry and one hold, checks negative cases and cleans its own records. This is a specific injected response-loss window, not an actual network incident, and no new run is implied by the September 27 screenshots. If timing or credentials fail, show the helper code or dated evidence and say which was used. ASK: Why is retrying with a new UUID dangerous here? Keep process-kill proof for Q&A. BUILD: 1 intent, 2 commit, 3 lost response, 4 replacement worker, 5 original result. Each connection fades with the next step. This continues live checkpoint 5. If behind, explain the fault from source; do not add another long run.
+
+## 27. A replay must resolve to the original result
+
+**Core slide.**
+
+CORE 30:00-32:00. Open scripts/migrations/008_hold_request_identity.sql. The slide contains two source excerpts with intervening statements omitted and a condition wrapped for readability. The function authorizes journey ownership before either the replay or new-write path. In the same transaction, hold_requests claims a unique journey/request key, checks the parameter fingerprint on replay and returns the original booking. The new-write path obtains pg_advisory_xact_lock keyed by package and duration, checks live inventory, and inserts bookings plus booking_lines. Worker leases and fencing address concurrent execution ownership; they are not a substitute for hold request identity. The inventory lock addresses a different race again. A stale worker must not overwrite a new worker, and a duplicate delivery must not create a new hold. No universal exactly-once guarantee is claimed. External suppliers still need their own idempotency and reconciliation.
+
+## 28. Prove the business result independently
+
+**Core slide.**
+
+CORE 32:00-35:00. Open System evidence for the same thread. Read the checkpoint and journey status, authorization decision, execution attempts and booking receipt. Correlate the journey, hold request and booking identifiers; verify the original expiry when using the lost-response proof. The September 27 app capture is ordinary successful pause/resume evidence, not a fresh killed-worker or lost-response run. A healthy tool trace or a confident answer is not enough to establish a business outcome. The result must be visible in authoritative records. ASK: In your own service, which business identifier would join agent decisions to the committed order, refund or reservation? If time permits, inspect the target transaction in Aurora. Avoid exposing credentials or unrelated customer records.
+
+## 29. Production work remains at the boundaries
+
+**Core slide.**
+
+CORE 35:00-37:00. Keep these four callouts short. First, semantics: the schema can stay unchanged while a metric changes meaning; teams need a versioned semantic contract and regression questions. Second, operations: a result LIMIT does not bound database work. Coordinate database timeouts with application deadlines, concurrency, pool wait and retry budgets. Third, retrieval: selective tenant and availability filters change recall/latency tradeoffs; cost per successful answer includes retrieval, model calls and retries. Fourth, external actions: local database atomicity cannot make a supplier call atomic; use durable action records, idempotency, reconciliation and, where appropriate, an outbox. Ask AWS for integrated diagnostics and traceable business outcomes, not just more services. Broader upgrades, multi-Region, tenant recovery and analytics questions belong in audience-led discussion, not the core demo.
+
+## 30. Three habits make the design explainable
+
+**Core slide.**
+
+CORE 37:00-39:00. Return to the three headings drawn at the start. Context gives a grounded interpretation. Authority binds who may act and under which conditions. Durability separates execution progress from a committed business outcome. ASK: Which failure window is hardest in your application? Let one or two audience examples shape the discussion. If behind, close here and share the source link; do not speed through the proof. Avoid saying bulletproof or exactly once. What we have shown is a specific recoverable workflow with explicit boundaries and checkable receipts.
+
+## 31. Take the pattern back to your application
+
+**Core slide.**
+
+CORE 39:00-39:45. Share the source repository and point to meridian/docs/PRESENTER_GUIDE.md, CODE_WALKTHROUGH.md, the presenter runbook, and scripts/lost_response_demo.py. The repository provides implementation and dated evidence; a local run is not hosted parity or fresh-account readiness. Encourage the audience to adapt the three boundaries to their own business operation. No workshop account, event access code or promotion is needed. Slides 33-36 are hidden discussion material. The default slideshow proceeds to Thank you. The 20-minute discussion reserve begins at minute 40.
+
+## 32. Thank you
+
+**Core slide.**
+
+CORE 39:45-40:00. Thank the audience and invite discussion for the remaining 20 minutes. Ask them to complete the session survey in the mobile app. Return to the three questions: What does the traveler mean? Who may act? What actually committed? Use the hidden discussion slides only when an audience question calls for them. Leave the source link available. Do not add a new technical claim in the close.
+
+## 33. What must happen before this tool call?
+
+**Hidden optional slide.**
+
+OPTIONAL 2 minutes within Q&A; not added to the 40-minute core. Cedar evaluates the current request. Dogwood adds conditions over earlier actions in the same policy session, such as a recent approval correlated with this hold. Meridian currently uses Cedar; this temporal design is not enabled or demonstrated. An authenticated approval source must bind actor, action and resource. Do not trust model-supplied confirmation or timestamps. Session history is not a globally consumed approval: a new session starts new history. Aurora must still recheck current terms and enforce one-time intent consumption at the write. ASK: What proves approval, and where is it consumed? These are AgentCore temporal policies, not the Temporal workflow platform. Reference: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-temporal.html. Cedar logo: https://cedarpolicy.com/.
+
+## 34. Turn a failure mode into a concrete AWS ask
+
+**Hidden optional slide.**
+
+OPTIONAL 3-5 minutes within Q&A. Use the audience example, name the concrete failure, state what engineering teams still own, then ask for an integrated AWS capability with an acceptance criterion. For SQL: business correctness, caller authorization and bounded execution. For state: supported durable adapters and one trace to the business receipt. For connections: deployment-aware pinning diagnosis and admission controls; pool separation alone does not reserve database compute. For retrieval: workload-specific quality, latency and cost diagnostics. If the discussion moves to multi-tenancy, multi-Region, upgrades or CDC, clarify the workload boundary before making a product recommendation. Do not imply those topics are implemented by Meridian.
+
+## 35. Protect the proof when the clock gets tight
+
+**Hidden optional slide.**
+
+PRESENTER REFERENCE, hidden. Preflight Aurora, Runtime, Gateway, Memory, ENFORCE policy, checkpoint durability and browser origin; use the established environment without printing credentials or reseeding the database. Warm the intended prompts, prepare the lost-response helper and keep a dated fallback. The September 27 captures verify specific local app paths, not the whole suite, hosted parity or a timed human rehearsal. Check the projector from the back row, inspect real SQL and diagram labels, test fullscreen and Escape, and budget AWS session duration. Preserve minute gates at 12, 20, 32 and 37. Release only owned demo holds. Keep process-kill proof, direct confirmation and broader AWS asks optional. For accessibility, verify reading order and screen-reader behavior with the final event environment.
+
+## 36. Three kinds of state, three different questions
+
+**Hidden optional slide.**
+
+OPTIONAL 2 minutes within Q&A. Conversation memory helps interpret Alex. Workflow checkpoints tell the graph where to resume. Business records establish whether a hold committed. Meridian uses AgentCore Memory for conversational context and Aurora for workflow progress and authoritative booking facts. Do not claim AgentCore Memory cannot checkpoint: its LangGraph integration includes AgentCoreMemorySaver for graph messages, state and metadata. AgentCoreMemoryStore provides asynchronously extracted long-term memory. Our Aurora choice keeps inspectable operational records near the application transaction, but checkpoint and tool write are still separate transactions. ASK: If the transcript says booked but the database has no booking, which record wins? Source: docs/CODE_WALKTHROUGH.md. Current capability reference: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory-integrate-lang.html

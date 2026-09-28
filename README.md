@@ -32,6 +32,10 @@ for questions and operational flex. The full application flows remain available.
 The current presentation is the [editable re:Invent deck](meridian/docs/presentation/Meridian-reInvent-chalk-talk.pptx),
 updated from DAT301-R Toronto. Use the [presenter runbook](meridian/docs/PRESENTER_RUNBOOK_2026-09-20.md)
 and [deployment follow-up](meridian/docs/FOLLOWUP_2026-09-20.md) for tested behavior and remaining checks.
+The [slide-by-slide speaker notes](meridian/docs/presentation/SLIDE_NOTES.md)
+include short callouts on business meaning, retrieval eligibility, trusted
+authority and replay-safe writes. The core fault example is a committed hold
+whose reply is lost; the separate process-kill demonstration is optional.
 
 > **Statefulness lives in durable stores, not database connections.** The RDS
 > Data API is a connectionless transport for durable Aurora reads and writes;

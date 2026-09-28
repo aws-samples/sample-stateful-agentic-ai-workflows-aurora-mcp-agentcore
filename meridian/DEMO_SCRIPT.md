@@ -1,7 +1,7 @@
 # Meridian L300 chalk talk
 
 Current release: [editable deck and notes](docs/presentation/README.md) and
-[validated presenter runbook](docs/PRESENTER_RUNBOOK_2026-09-19.md). The runbook records current command timings and scoped reset procedures.
+[presenter runbook](docs/PRESENTER_RUNBOOK_2026-09-20.md). The runbook separates dated command timings from the planned delivery sequence and scoped reset procedures.
 
 ## Build stateful agentic AI workflows with Aurora, MCP, and AgentCore
 
@@ -48,13 +48,38 @@ backend, runtime and Lambda are separate AWS workloads with separate roles.
 
 Keep the source visible at each boundary: `backend/routers/chat.py` for phase dispatch and context controls; `backend/http_auth.py` and `backend/db/rds_data_client.py` for caller/workload scope; `meridian_agentcore/app/MeridianConcierge/turn_trace.py` for pinned tool arguments; `backend/agents/orchestration_05/execution.py` and `workflow.py` for leases/checkpoints; and `scripts/migrations/008_hold_request_identity.sql` for transaction-level replay protection.
 
-Use the always-visible architecture in **Solution briefing** as the visual companion to the code. Follow its two execution paths into the shared governed tools, then trace source records through preparation into Aurora. The five phase diagrams show what each capability adds. Phase 3 uses an illustrative Bali candidate to explain embeddings, vector and full-text search, candidate deduplication, and reranking; use the capability ladder for actual scores and result order. Open the three technical references only for implementation questions. Label Alex's October itinerary as a fictional scenario; it is not a live flight feed.
+Use the initially expanded, collapsible architecture in **Solution briefing** as the visual companion to the code. Follow its two execution paths into the shared governed tools, then trace source records through preparation into Aurora. The five phase diagrams show what each capability adds. Phase 3 uses an illustrative Bali candidate to explain embeddings, vector and full-text search, candidate deduplication, and reranking; use the capability ladder for actual scores and result order. Open the three technical references only for implementation questions. Label Alex's October itinerary as a fictional scenario; it is not a live flight feed.
 
 The Workflow closing message is composed from saved state, including the hold ID, status and expiry. It is not rewritten by a second model. Use this code boundary to explain why a fluent answer cannot override a transaction receipt.
 
-The full code and product flows remain available. For the 40-minute core, use one managed recall and one refusal; the recovery hold supplies the positive permit. The separate 12-hour hold, booking confirmation, deeper retrieval code, and a second live fault are optional discussion material. Cut optional demonstrations before compressing the checkpoint/transaction explanation.
+The full code and product flows remain available. For the 40-minute core, use one managed recall and one refusal; the recovery hold supplies the positive permit. Use lost-response recovery as the core fault example: the hold committed, its reply disappeared, and the same intent must return the original receipt. The separate 12-hour hold, booking confirmation, deeper retrieval code, and process-kill demonstration are optional discussion material. Cut optional demonstrations before compressing the checkpoint/transaction explanation.
 
 At minute 12 leave the capability ladder; at 20 start recovery; at 32 open evidence; at 37 close. A request stops waiting after 55 seconds and exposes **Stop waiting**. For a recovery, use **Re-read this recovery** before resuming; for a hold, retry the same trip to read its saved intent before any write. A browser timeout does not cancel a committed action.
+
+## Subtle engineering callouts
+
+Keep these to one sentence at the relevant phase; the app repeats them beside
+its capability overview. Expand the technical references only when asked.
+
+| Beat | Callout | Team still owns |
+| --- | --- | --- |
+| SQL | The example price limit is **per traveler**. Correct SQL can answer the wrong business question. | Business definitions and validated examples; this route uses bounded parameterized filters. |
+| MCP | A named tool still needs trusted inputs and authorization. | Tool validation and execution budgets; FX rates here are illustrative. |
+| Retrieval | Relevance finds candidates; price, availability and access require checks. | Quality under real filters and load; this small catalog is not a scale benchmark. |
+| Authority | The application pins the traveler, confirmation and saved budget. | Human identity/approval and trustworthy context; RLS does not reserve compute. |
+| Recovery | A lost reply can follow a committed hold. | Stable intent, replay semantics, reconciliation and independently verified receipts. |
+
+The Phase 4 conversation / Phase 5 Aurora checkpoint split describes this
+implementation. AgentCore also provides [LangGraph checkpoint persistence](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory-integrate-lang.html).
+The booking remains a separate authoritative record with either provider.
+
+Use three short code stops: `turn_trace.py::_pin_arguments`,
+`workflow.py::_node_prepare_hold` followed by `_node_hold`, and migration 008's
+`create_courtesy_hold`. Keep broader connection routing, tenant placement,
+regional recovery, upgrades and analytics in audience-led discussion.
+Ask for a concrete failure, the responsibility the team retains, and the AWS
+integration or diagnostic they would want. Do not imply these features are all
+absent from AWS or promised on a roadmap.
 
 ## Secure preflight
 
@@ -227,6 +252,20 @@ it. The saved intent must be checkpointed before the hold tool executes.
 A checkpoint and a Gateway side effect are **not one distributed transaction**.
 The design accepts retried execution and makes the business write idempotent.
 Do not call this exactly-once execution.
+
+### Core fault: commit succeeds, reply is lost
+
+At slide 17, use `python scripts/lost_response_demo.py` from `meridian/` in a
+prepared terminal. This is a **separate, uniquely scoped journey**, not fault
+injection into the open browser journey. Show: a real hold exists; the checkpoint
+contains intent without an acknowledgement; a replacement worker replays it;
+the request ID, booking ID and original expiry match, with one booking.
+
+The helper includes real calls and cleanup. Rehearse it within the two-minute
+slot before choosing live delivery. If it does not fit, show labelled dated
+execution evidence or the source and state which actions were not run live.
+There is no new stage-latency measurement implied by this delivery change.
+Do not run both fault helpers in the 40-minute core.
 
 ### Rehearse the failure windows
 

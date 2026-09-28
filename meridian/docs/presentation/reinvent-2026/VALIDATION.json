@@ -1,0 +1,113 @@
+{
+  "artifact": "Meridian-reInvent-2026-dark-v3.pptx",
+  "sha256": "a50edd81022a90a2eef0e5e83def96422381aa3713eb5db06667bac0de065582",
+  "slides": 36,
+  "core_slides": 32,
+  "hidden_optional_slides": [
+    33,
+    34,
+    35,
+    36
+  ],
+  "phase_slide_map": {
+    "1": {
+      "architecture": 4,
+      "code": 5,
+      "takeaway": 6,
+      "live_demo": 7
+    },
+    "2": {
+      "architecture": 8,
+      "code": 9,
+      "takeaway": 10,
+      "live_demo": 11
+    },
+    "3": {
+      "architecture": 12,
+      "code": 13,
+      "takeaway": 14,
+      "live_demo": 15
+    },
+    "4": {
+      "architecture": 18,
+      "code": 19,
+      "takeaway": 20,
+      "live_demo": 21
+    },
+    "5": {
+      "architecture": 22,
+      "code": 23,
+      "takeaway": 24,
+      "live_demo": 25
+    }
+  },
+  "live_demo_checkpoints": 5,
+  "speaker_notes_synced": 36,
+  "all_slide_backgrounds": "000000",
+  "service_cards": "No fills or colored stripes; only neutral 8D939B outlines for production service boundaries",
+  "connectors": {
+    "count": 40,
+    "all_straight": true
+  },
+  "animation_clicks_by_slide": {
+    "3": 5,
+    "4": 4,
+    "8": 3,
+    "12": 5,
+    "17": 4,
+    "18": 5,
+    "22": 6,
+    "26": 5
+  },
+  "step_fade_ms": 700,
+  "connector_wipe_ms": 0,
+  "automatic_slide_advances": 0,
+  "embedded_template_fonts_retained": 19,
+  "package_relationships": "PASS",
+  "slide_text_secret_scan": "PASS",
+  "native_powerpoint_review": "PASS - final v3 opened without repair. Native review: slides 2, 16, 17, 20, 22, 24 and 33; slide 17 first and full click builds; slide 18 initial, first, second, third and full builds, with final label spacing rechecked in the editor. Straight connectors fade with destinations. Timed human rehearsal is separate.",
+  "thumbnail_review": "Prior full-deck review retained; all new or changed slides re-rendered. Renderer substitutes embedded fonts.",
+  "schema_validation": "PASS - final v3; all validations passed against supplied template",
+  "timed_human_rehearsal": "PENDING",
+  "projector_review": "PENDING",
+  "live_business_operations_this_edit": 0,
+  "source_excerpt_check": "Verified against current source for all five phases; omissions and line wrapping disclosed in notes",
+  "captures": {
+    "01-solution-briefing.png": [
+      2466,
+      1387
+    ],
+    "02-concierge-dark.png": [
+      1444,
+      1387
+    ],
+    "03-sql-grounded.png": [
+      2466,
+      1387
+    ],
+    "04-retrieval-results.png": [
+      2466,
+      1387
+    ],
+    "05-recovery-start.png": [
+      2466,
+      1387
+    ],
+    "06-recovery-paused.png": [
+      2466,
+      1387
+    ],
+    "07-recovery-held.png": [
+      2466,
+      1387
+    ],
+    "08-system-evidence.png": [
+      2466,
+      1387
+    ],
+    "09-business-receipt.png": [
+      2466,
+      1387
+    ]
+  }
+}

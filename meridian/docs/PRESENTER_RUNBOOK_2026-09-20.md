@@ -5,11 +5,11 @@ L300, 60 minutes: a **planned 40-minute core** plus **20 minutes discussion/flex
 ## Preflight, 30 minutes before the session
 
 For the approximately 90-person room, start at `/showcase?present=1` (or add
-`&view=briefing` for the architecture). The room preset selects light mode,
+`&view=briefing` for the architecture). The room preset selects dark mode,
 stronger contrast, and larger briefing/code/evidence text, with the sidebar
-hidden. It takes priority over a saved dark theme. Use **Present fullscreen**
+hidden. It takes priority over a saved light theme. Use **Present fullscreen**
 to hide preparation controls; **Esc** restores them. The theme toggle and
-`&theme=dark` retain a dark alternative for a fully dimmed room. At setup,
+`&theme=light` remain available for an explicit override. At setup,
 check the diagram labels and a real SQL result from the back row; try browser
 zoom at 125–150% and simplify the visible content if needed. Room size alone
 cannot establish legibility without the screen size and lighting.
@@ -63,7 +63,7 @@ python scripts/validate_demo.py --base-url http://127.0.0.1:8014
 
 This runs real AWS calls, creates uniquely scoped test records, checks 32 contracts, and removes its own conversations/holds by default. Expect no failures, no request above the 55-second browser deadline, and a successful cleanup line. Cloud service audit events retain their configured lifetime. It does not certify hosted parity. If a failure interrupts cleanup, use the recorded IDs to inspect and release only those records.
 
-Enable **Projector readability** and use **Preview audience layout** before fullscreen. The five surface tabs are Concierge, Capability ladder, Recovery desk, System evidence, and Solution briefing. The briefing keeps the architecture visible: trace Runtime and LangGraph into the shared governed tool path, then explain the direct Aurora state path. Follow the preparation rows into Aurora and use the five phase diagrams for the capability progression. Phase 3's Bali image is an illustrative catalog candidate; live rankings belong in the capability ladder. Open the three technical references only as needed. Browser access is a single shared demo principal bound to Alex; there is no end-user account-switch demonstration.
+Enable **Projector readability** and use **Preview audience layout** before fullscreen. The five surface tabs are Concierge, Capability ladder, Recovery desk, System evidence, and Solution briefing. The briefing opens with only the architecture expanded; it can also collapse: trace Runtime and LangGraph into the shared governed tool path, then explain the direct Aurora state path. Follow the preparation rows into Aurora and use the five phase diagrams for the capability progression. Phase 3's Bali image is an illustrative catalog candidate; live rankings belong in the capability ladder. Open the three technical references only as needed. Browser access is a single shared demo principal bound to Alex; there is no end-user account-switch demonstration.
 
 ## Required sequence and observable results
 
@@ -85,7 +85,20 @@ All talk timings are estimates. API timings below were measured on September 20 
 | Evidence, 32-37 min | System evidence: Checkpoint, Authorization, Business result | Saved checkpoint, attempts/worker IDs, authorization audit, same booking and expiry | 2.013 s journey read |
 | Close, 37-40 min | Three takeaways and source link | Separate context, authority and durability; invite discussion | Planned timing |
 
-A normal pause/reload/resume can use the same worker. Call it a **resumed execution**. It is not proof of worker death. For the actual worker-replacement demonstration, run the following from `meridian/`, preferably prepared in a separate terminal before the talk:
+**September 21 delivery update:** use the lost-response example at slide 17 as
+the core fault. Its helper uses a separate test journey, discards a real committed
+reply at the worker boundary, resumes on a replacement worker, verifies the same
+request/booking/expiry and one hold, and cleans its own records. Rehearse the full
+helper within the two-minute slot or use explicitly labelled dated evidence.
+No new fault timing is claimed here. Keep process-kill proof for discussion.
+
+From `meridian/`, in the existing configured environment:
+
+```bash
+python scripts/lost_response_demo.py
+```
+
+A normal pause/reload/resume can use the same worker. Call it a **resumed execution**. It is not proof of worker death. For the optional hard-process-death demonstration, run the following from `meridian/`, preferably prepared in a separate terminal before the talk:
 
 ```bash
 python scripts/kill_and_resume_demo.py
@@ -106,9 +119,9 @@ For code walkthroughs, open `backend/routers/chat.py` (phase boundaries and name
 ## Optional branches
 
 - **Handoff and confirmation:** Recovery desk → **Take it back to Alex** → review the trip → **Confirm this trip for Alex**. Expect the same booking to become confirmed in Aurora. Final direct confirmation measured 8.948 s. No supplier was contacted and no payment was taken.
-- **Lost response:** `python scripts/lost_response_demo.py` deliberately discards an actual committed Gateway response, retries the same intent, verifies one hold and unchanged expiry, then cleans its records. A timeout alone does not prove rollback.
+- **Second fault:** `python scripts/kill_and_resume_demo.py` kills its own worker after a committed checkpoint, waits for lease expiry, resumes and verifies the original hold. Keep this separate from the core lost-response injection.
 - **Denial:** use `python scripts/smoke_production_turn.py` for unconfirmed and over-budget policy checks. Do not secretly relax input constraints to turn a denial into a success. The automated suite also verifies an eight-traveler request is denied and creates no hold.
-- **Solution briefing:** always-visible architecture, source-to-store preparation, five phase diagrams, an illustrative hybrid-retrieval result, and three technical references. The tool-and-policy reference links to the Dogwood assessment; Dogwood is not enabled. Online model-judge evaluation is not deployed.
+- **Solution briefing:** initially expanded, collapsible architecture, source-to-store preparation, five phase diagrams, an illustrative hybrid-retrieval result, and three technical references. The tool-and-policy reference links to the Dogwood assessment; Dogwood is not enabled. Online model-judge evaluation is not deployed.
 
 ## Reset, interruption and recovery
 
