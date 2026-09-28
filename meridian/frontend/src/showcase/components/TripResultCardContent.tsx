@@ -131,7 +131,7 @@ export function TripResultCardContent({
 
   return (
     <>
-      <div className="mds-trip-result-media">
+      <div className="mds-trip-result-media" data-theme="dark">
         <TripVisual product={product} compact />
         <span className="mds-trip-result-destination">
           <MapPin size={12} />
@@ -144,7 +144,7 @@ export function TripResultCardContent({
         </span>
       </div>
 
-      <div className="mds-trip-result-body">
+      <div className="mds-trip-result-body" data-theme="dark">
         <div className="mds-trip-result-summary">
           <div className="mds-trip-result-heading">
             <span>{facts.region}</span>
@@ -159,7 +159,10 @@ export function TripResultCardContent({
               {signals.map((signal) => {
                 const Icon = signal.icon;
                 return (
-                  <span key={signal.label} className={`is-${signal.tone}`}>
+                  <span
+                    key={signal.label}
+                    className={signal.tone === 'checkpoint' ? 'is-checkpoint' : undefined}
+                  >
                     <Icon size={featured ? 13 : 12} aria-hidden="true" />
                     {signal.label}
                   </span>

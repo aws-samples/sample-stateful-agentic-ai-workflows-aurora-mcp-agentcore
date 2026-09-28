@@ -575,7 +575,7 @@ function InlineConciergeCard({
         </p>
         <div className="mds-inline-concierge-signals">
           {travelerContextObserved && (
-            <span className="is-violet">
+            <span>
               <Sparkles size={12} aria-hidden="true" />
               Saved preferences
             </span>
@@ -586,11 +586,11 @@ function InlineConciergeCard({
               Review loyalty benefits
             </span>
           )}
-          <span className="is-green">
+          <span>
             <BedDouble size={12} aria-hidden="true" />
             Check lounge options
           </span>
-          <span className="is-yellow">
+          <span>
             <BusFront size={12} aria-hidden="true" />
             Check transfer options
           </span>
@@ -652,7 +652,6 @@ function InlineProductCard({
           : { type: 'spring', stiffness: 420, damping: 34 }
       }
       className={`mds-trip-result-card${selected ? ' is-selected' : ''}${index === 0 ? ' is-priority' : ''}`}
-      data-theme="dark"
       style={{ animationDelay: `${Math.min(index * 60, 360)}ms` }}
       aria-label={product.name}
     >

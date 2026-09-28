@@ -186,7 +186,8 @@
   .mds-root[data-audience-layout='true'] .mds-recovery-workspace .mds-recovery-launch-card:not(.is-compact) {
     grid-template-rows: minmax(auto, 1fr) auto auto auto;
     align-content: stretch;
-    padding: 0;
+    padding-block: 0;
+    padding-inline: 27px;
   }
   .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-mobile-disruption-card {
     align-content: stretch;
