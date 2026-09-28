@@ -250,7 +250,7 @@ aws ssm delete-parameters --region "$REGION" \
 ```
 
 The stack name is recorded as `stackName` in
-`meridian_agentcore/agentcore/.cli/deployed-state.json`. The runtime and Lambda
+`meridian/meridian_agentcore/agentcore/.cli/deployed-state.json`. The runtime and Lambda
 log groups may remain after deletion; delete them in CloudWatch Logs if you do
 not need them. The `traveler_identity_bindings` rows for deleted roles stay in
 Aurora until you remove them or delete the database.
