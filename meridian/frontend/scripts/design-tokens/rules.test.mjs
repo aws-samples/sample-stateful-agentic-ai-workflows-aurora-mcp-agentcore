@@ -30,6 +30,15 @@ describe('checkCss', () => {
     expect(rules('.a { mask-image: linear-gradient(black, transparent); }')).toEqual(['color']);
   });
 
+  it('flags color-mix outside the tokens file only', () => {
+    expect(rules('.a { background: color-mix(in srgb, var(--mds-label) 16%, transparent); }'))
+      .toEqual(['color-mix']);
+    expect(rules(
+      ':root { --mds-label-fill: color-mix(in srgb, var(--mds-label) 16%, var(--mds-label)); }',
+      { isTokensFile: true },
+    )).toEqual([]);
+  });
+
   it('flags literal type values and allows inherit', () => {
     expect(rules('.a { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; }'))
       .toEqual(['type', 'type', 'type']);

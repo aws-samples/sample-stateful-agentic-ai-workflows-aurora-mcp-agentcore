@@ -5,6 +5,7 @@ const COLOR_LITERAL = new RegExp(
   '|(?<![-\\w])(?:white|black)(?![-\\w])',
 );
 const GRADIENT = /\b(?:repeating-)?(?:linear|radial|conic)-gradient\(/;
+const COLOR_MIX = /\bcolor-mix\(/;
 const VAR_REF = /var\(\s*(--[\w-]+)\s*(,)?/g;
 const TYPE_TOKEN = /^var\(--mds-type-[a-z0-9-]+\)$/;
 const WEIGHT_TOKEN = /^var\(--mds-weight-(?:regular|medium|semibold|bold)\)$/;
@@ -31,6 +32,7 @@ function declarationRules(prop, value, { isTokensFile, definedVars }) {
   const found = [];
   if (!isTokensFile && COLOR_LITERAL.test(value)) found.push('color');
   if (!isTokensFile && GRADIENT.test(value) && !MASK_PROPS.has(prop)) found.push('gradient');
+  if (!isTokensFile && COLOR_MIX.test(value)) found.push('color-mix');
   if (isTypeViolation(prop, value)) found.push('type');
   if (/^border(?:-[a-z]+)*-radius$/.test(prop) && !RADIUS_OK.test(value)) found.push('radius');
   if (isShadowViolation(prop, value)) found.push('shadow');
