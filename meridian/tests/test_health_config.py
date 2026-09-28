@@ -7,22 +7,25 @@ from backend.config import bedrock_model_label
 from backend.main import app, parse_cors_origins
 
 
-def test_bedrock_model_label_opus():
-    assert bedrock_model_label("global.anthropic.claude-opus-4-8") == "Claude Opus 5"
+PROFILE_ARN = "arn:aws:bedrock:us-east-1:123456789012:inference-profile/"
 
 
-def test_bedrock_model_label_sonnet_5():
-    assert (
-        bedrock_model_label("global.anthropic.claude-sonnet-5")
-        == "Claude Sonnet 5"
-    )
-
-
-def test_bedrock_model_label_sonnet_4_5():
-    assert (
-        bedrock_model_label("global.anthropic.claude-sonnet-4-5-20250929-v1:0")
-        == "Claude Sonnet 5"
-    )
+@pytest.mark.parametrize(
+    ("model_id", "label"),
+    [
+        ("global.anthropic.claude-sonnet-5", "Claude Sonnet 5"),
+        ("us.anthropic.claude-sonnet-5", "Claude Sonnet 5"),
+        (f"{PROFILE_ARN}global.anthropic.claude-sonnet-5", "Claude Sonnet 5"),
+        ("global.anthropic.claude-haiku-4-5-20251001-v1:0", "Claude Haiku 4.5"),
+        ("global.anthropic.claude-opus-5", "Claude Opus 5"),
+        ("global.anthropic.claude-opus-5-5", "global.anthropic.claude-opus-5-5"),
+        ("global.anthropic.claude-opus-4-8", "global.anthropic.claude-opus-4-8"),
+        ("global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+         "global.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+    ],
+)
+def test_bedrock_model_label_names_only_the_polish_chain(model_id, label):
+    assert bedrock_model_label(model_id) == label
 
 
 def test_health_includes_model_fields():

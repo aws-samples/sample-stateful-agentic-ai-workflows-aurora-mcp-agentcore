@@ -122,28 +122,22 @@ class BedrockConfig:
     )
 
 
+_MODEL_LABELS = {
+    "claude-sonnet-5": "Claude Sonnet 5",
+    "claude-haiku-4-5-20251001-v1:0": "Claude Haiku 4.5",
+    "claude-opus-5": "Claude Opus 5",
+}
+
+
 def bedrock_model_label(model_id: str) -> str:
     """Human-readable label for Run config / health (from BEDROCK_MODEL_ID).
 
-    Covers the live fallback chain: Sonnet 5 -> Haiku 4.5 -> Opus 5.
+    Names the polish chain (Sonnet 5 -> Haiku 4.5 -> Opus 5) whatever its
+    inference profile prefix or ARN. Any other model shows its own ID, so the
+    UI never names a model that is not running.
     """
-    mid = model_id.lower()
-    if "opus-5" in mid or "opus-4-8" in mid or "opus-4.8" in mid:
-        return "Claude Opus 5"
-    if (
-        "sonnet-5" in mid
-        or "sonnet-5.0" in mid
-        or "sonnet-4-6" in mid
-        or "sonnet-4.6" in mid
-        or "sonnet-4-5" in mid
-        or "sonnet-4.5" in mid
-    ):
-        return "Claude Sonnet 5"
-    if "haiku" in mid:
-        return "Claude Haiku 4.5"
-    if "anthropic" in mid and "claude" in mid:
-        return "Claude (Bedrock)"
-    return model_id.rsplit("/", 1)[-1] if "/" in model_id else model_id
+    profile = model_id.rsplit("/", 1)[-1]
+    return _MODEL_LABELS.get(profile.split("anthropic.", 1)[-1], profile)
 
 
 EMBEDDING_MODEL_ID: str = os.getenv("EMBEDDING_MODEL", "cohere.embed-v4:0")
