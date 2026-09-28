@@ -766,33 +766,6 @@
 /* Opacity only: a CSS transform here would override the marker group's SVG
    transform attribute and teleport both airports to the origin. */
 
-@keyframes mds-route-draw {
-  from {
-    stroke-dashoffset: 1;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes mds-route-line-in {
-  from {
-    opacity: 0;
-  }
-}
-
-@keyframes mds-route-dash-flow {
-  to {
-    stroke-dashoffset: -9;
-  }
-}
-
-@keyframes mds-recovery-capability-pulse {
-  50% {
-    opacity: 0.58;
-  }
-}
-
 .mds-recovery-briefing {
   display: grid;
   gap: 12px;

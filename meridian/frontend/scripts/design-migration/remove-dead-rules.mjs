@@ -26,7 +26,9 @@ const dead = new Set([...cssClasses].filter(cls => !referenced(cls)));
 
 const probed = new Set(fs.readdirSync(probeDir).filter(file => file.startsWith('classes-'))
   .flatMap(file => JSON.parse(fs.readFileSync(path.join(probeDir, file), 'utf8'))));
-if (probed.size === 0) throw new Error(`No classes-*.json in ${probeDir}; run npm run visual first.`);
+if (probed.size === 0) {
+  throw new Error(`No classes-*.json in ${probeDir}; run npm run visual first.`);
+}
 const contradicted = [...dead].filter(cls => probed.has(cls));
 if (contradicted.length) {
   throw new Error(`Rendered classes the static scan calls dead: ${contradicted.join(', ')}`);
@@ -66,8 +68,47 @@ transformCss(migrationCssFiles(), root => {
   }
 });
 
+// A keyframes block survives dead-rule deletion above (its own body has no
+// class selectors to judge), but the rule that named it in an `animation`
+// declaration may have just been deleted. Drop any @keyframes not named by
+// a surviving `animation`/`animation-name` declaration in CSS, and not
+// named by any TS/TSX source string (an inline style could still name it).
+function removeOrphanedKeyframes(files) {
+  const cssText = files.map(file => fs.readFileSync(file, 'utf8')).join('\n');
+  const animationText = (cssText.match(/animation(?:-name)?\s*:[^;]+;/gi) ?? []).join('\n');
+  const orphaned = [];
+  transformCss(files, root => {
+    root.walkAtRules(/^(?:-\w+-)?keyframes$/i, atRule => {
+      const name = atRule.params.trim();
+      const named = new RegExp(`(?<![\\w-])${name}(?![\\w-])`);
+      if (named.test(animationText) || named.test(source)) return;
+      atRule.remove();
+      orphaned.push(name);
+    });
+    let emptied = true;
+    while (emptied) {
+      emptied = false;
+      root.walkAtRules(atRule => {
+        if (atRule.nodes && atRule.nodes.length === 0) {
+          atRule.remove();
+          emptied = true;
+        }
+      });
+    }
+  });
+  return orphaned;
+}
+
+const orphanedKeyframes = removeOrphanedKeyframes(migrationCssFiles());
+
+const summary = `${dead.size} dead classes, ${removed} rules removed, ${trimmed} lists trimmed.`;
 const report = writeReport('dead-css', [
-  '# Dead CSS', '', `${dead.size} dead classes, ${removed} rules removed, ${trimmed} lists trimmed.`, '',
+  '# Dead CSS', '', summary, '',
   ...[...dead].sort().map(cls => `- ${cls}`),
+  '', '# Orphaned keyframes', '',
+  ...orphanedKeyframes.sort().map(name => `- ${name}`),
 ]);
-console.log(`dead classes ${dead.size}; removed ${removed} rules; trimmed ${trimmed}; report ${report}`);
+console.log(
+  `dead classes ${dead.size}; removed ${removed} rules; trimmed ${trimmed}; `
+  + `orphaned keyframes ${orphanedKeyframes.length}; report ${report}`,
+);

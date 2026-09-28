@@ -1143,33 +1143,8 @@
    names what this mode ADDS over the last. Cyan-tinted to read as a
    "capability unlocked" beat, distinct from the warm error banner. */
 
-@keyframes mds-phase-hint-in {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes mds-disruption-attention {
-  0%, 100% {
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
-  }
-  50% {
-    box-shadow:
-      0 0 0 4px color-mix(in srgb, var(--mds-yellow) 22%, transparent),
-      0 12px 38px color-mix(in srgb, var(--mds-yellow) 24%, rgba(0, 0, 0, 0.24));
-  }
-}
-
 /* Live-alert dot inside the status pill — a pulsing ring that echoes the
    card's own attention animation so the badge reads as active, not static. */
-
-@keyframes mds-disruption-dot {
-  0% {
-    box-shadow: 0 0 0 0 rgba(27, 13, 0, 0.55);
-  }
-  70%, 100% {
-    box-shadow: 0 0 0 6px rgba(27, 13, 0, 0);
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
 
@@ -1637,17 +1612,6 @@
   from {
     opacity: 0;
     transform: translateY(-6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes mds-msg-card-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -2474,17 +2438,6 @@
 /* Streaming caret was removed - the typewriter reveal is smooth enough
    on its own and a blinking cursor at the end of finished turns felt
    abrupt on stage demos. */
-
-@keyframes mds-rec-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 
 .mds-trip-visual {
   position: relative;

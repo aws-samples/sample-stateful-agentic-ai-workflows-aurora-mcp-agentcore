@@ -26,7 +26,11 @@ export function migrationCssFiles() {
     if (entry.isDirectory()) return walk(full);
     return entry.name.endsWith('.css') && full !== TOKENS_FILE ? [full] : [];
   });
-  return [...walk(path.join(SRC, 'showcase')), path.join(SRC, 'index.css'), path.join(SRC, 'preflight.css')];
+  return [
+    ...walk(path.join(SRC, 'showcase')),
+    path.join(SRC, 'index.css'),
+    path.join(SRC, 'preflight.css'),
+  ];
 }
 
 export function transformCss(files, visit) {
@@ -71,11 +75,17 @@ export function subjectOf(branch) {
 
 export function baseSelector(selector) {
   return postcss.list.comma(selector)
-    .map(branch => branch.replace(SCOPE_ATTRIBUTE, '').replace(/^\.mds-root\s+/, '').replace(/\s+/g, ' ').trim())
+    .map(branch => branch
+      .replace(SCOPE_ATTRIBUTE, '')
+      .replace(/^\.mds-root\s+/, '')
+      .replace(/\s+/g, ' ')
+      .trim())
     .sort()
     .join(', ');
 }
 
 export function unscopeSelector(selector) {
-  return postcss.list.comma(selector).map(branch => branch.replace(SCOPE_ATTRIBUTE, '').trim()).join(', ');
+  return postcss.list.comma(selector)
+    .map(branch => branch.replace(SCOPE_ATTRIBUTE, '').trim())
+    .join(', ');
 }
