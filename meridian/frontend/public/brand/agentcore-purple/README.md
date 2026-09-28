@@ -1,7 +1,7 @@
 # AgentCore purple service icons
 
-Original, unmodified SVGs from the user-supplied `Agentcore-Bedrock-Icons.pptx`
-(re:Invent 2025 references), the purple `#7B27FF` set:
+Original, unmodified SVGs from `Agentcore-Bedrock-Icons.pptx`, the purple
+`#7B27FF` set:
 
 - Un-suffixed files come from slide 3: black strokes for light backgrounds.
 - `-dark` files come from slide 4: white strokes for dark backgrounds.

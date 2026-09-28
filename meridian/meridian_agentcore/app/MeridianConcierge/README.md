@@ -1,45 +1,40 @@
-# MeridianConcierge Runtime
+# MeridianConcierge runtime
 
-This AgentCore Runtime hosts Meridian's managed concierge decision step. The
-backend supplies the authenticated traveler request, authorized memory context,
-and live AgentCore Gateway candidates. Runtime returns the traveler-facing
-recommendation that the backend persists and displays.
+The Phase 4 agent, deployed to AgentCore Runtime as a CodeZip Python runtime.
+The Meridian backend authorizes the traveler, reads their memory under RLS,
+and invokes this runtime with `bedrock-agentcore:InvokeAgentRuntime`. The
+runtime streams its trace, any hold or booking receipt, and the answer back as
+server-sent events.
 
-# Layout
+## Files
 
-The generated application code lives at the agent root directory. At the root, there is a `.gitignore` file, an
-`agentcore/` folder which represents the configurations and state associated with this project. Other `agentcore`
-commands like `deploy`, `dev`, and `invoke` rely on the configuration stored here.
+| File | Contents |
+| --- | --- |
+| `main.py` | The `@app.entrypoint`. Accepts `concierge_turn` payloads, runs a Strands agent with the gateway's MCP tools and an AgentCore Memory session, and streams `activity`, `packages`, `hold`, `booking`, `token` and `answer` events |
+| `turn_trace.py` | Strands hooks that emit a span per tool call and pin the traveler ID, confirmation flag, budget ceiling and journey reference on every hold and confirmation call |
+| `hold_execution.py` | Runs the hold or confirmation the traveler confirmed, through the gateway, before the model writes its reply |
+| `gateway_auth.py` | SigV4 signing for MCP requests to the gateway with the runtime's execution role |
+| `prompts.py` | System, turn and narration prompts |
+| `model/load.py` | Bedrock model client (`BEDROCK_MODEL_ID`, default `global.anthropic.claude-sonnet-5`) |
 
-## Agent Root
+## Payload
 
-The main entrypoint to your app is defined in `main.py`. Using the AgentCore SDK `@app.entrypoint` decorator, this
-file defines a Starlette ASGI app with the chosen Agent framework SDK running within.
+`main.py` reads these fields from a `concierge_turn` payload: `prompt`,
+`memory_context`, `traveler_id`, `conversation_id`, `budget_ceiling_cents`,
+and, for a write the traveler confirmed, `hold_target` with `hold_confirmed`
+or `booking_target` with `booking_confirmed`. The confirmation flags only take
+effect when the matching target is present.
 
-`model/load.py` instantiates your chosen model provider.
+## Environment
 
-## Environment Variables
+The CDK app sets `AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL` and
+`MEMORY_MERIDIAN_SESSION_ID`. The template adds the observability settings,
+`BEDROCK_MODEL_ID`, `MERIDIAN_POLICY_MODE`, and, once they exist,
+`MERIDIAN_GATEWAY_ID` and `MERIDIAN_POLICY_ENGINE_ID`, which label the trace.
 
-| Variable | Required | Description |
-| --- | --- | --- |
-| `LOCAL_DEV` | No | Set to `1` to use `.env.local` instead of AgentCore Identity |
+## Deploy
 
-# Developing locally
-
-If installation was successful, a virtual environment is already created with dependencies installed.
-
-Run `source .venv/bin/activate` before developing.
-
-`agentcore dev` starts the Runtime-compatible local server on port 8080.
-
-In a new terminal, you can invoke that server with:
-
-Invoke it with a `concierge_turn` JSON payload containing `prompt`,
-`traveler_id`, `memory_context`, and `candidates`.
-
-# Deployment
-
-After providing credentials, `agentcore deploy` will deploy your project into Amazon Bedrock AgentCore.
-
-After deployment, the Meridian backend invokes it through
-`bedrock-agentcore:InvokeAgentRuntime` and consumes the returned JSON decision.
+Deploy with the rest of the AgentCore project; see the
+[deployment runbook](../../../docs/AGENTCORE_DEPLOY_RUNBOOK.md). After a code
+change, `agentcore deploy -y` from `meridian/meridian_agentcore/` publishes a
+new runtime version.

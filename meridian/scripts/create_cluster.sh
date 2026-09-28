@@ -5,7 +5,7 @@ set -euo pipefail
 
 if [ "${1:-}" = "--apply" ]; then
     echo "Provisioning is disabled: use the separate encrypted Aurora CDK entry point instead of this retired credential path." >&2
-    echo "See docs/DEPLOYMENT_FOLLOWUP.md for target preflight and the CDK workflow." >&2
+    echo "See docs/OPERATIONS.md (Provision Aurora) for the preflight and the CDK workflow." >&2
     exit 2
 fi
 
@@ -20,5 +20,5 @@ The separate Aurora CDK entry point supports encrypted creation or snapshot
 restore without exposing credential values. Run the read-only provisioning
 preflight and review the target-specific CDK diff first.
 
-See docs/DEPLOYMENT_FOLLOWUP.md for the workflow and fresh-account limitations.
+See docs/OPERATIONS.md (Provision Aurora) for the workflow.
 PLAN
