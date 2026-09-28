@@ -241,7 +241,7 @@ database and write checkpoints, journeys and holds; run them with
 | Path | Contents |
 | --- | --- |
 | [`meridian/backend/`](meridian/backend/) | FastAPI app: routers, the five phase agents, the Aurora Data API client, checkpoint saver and MCP servers |
-| [`meridian/frontend/`](meridian/frontend/) | React showcase (`/showcase`) and kiosk playback surface (`/demo-stage`) |
+| [`meridian/frontend/`](meridian/frontend/) | React showcase (`/showcase`) |
 | [`meridian/meridian_agentcore/`](meridian/meridian_agentcore/) | AgentCore CLI project: runtime code, gateway Lambda targets, config templates, CDK app |
 | [`meridian/infra/`](meridian/infra/) | CDK apps for the Aurora cluster and the hosted web app |
 | [`meridian/scripts/`](meridian/scripts/) | Schema, migration, seed, AgentCore render and sync, verification and recovery exercise scripts |

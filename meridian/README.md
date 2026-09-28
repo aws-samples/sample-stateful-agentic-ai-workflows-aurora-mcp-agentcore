@@ -22,7 +22,6 @@ URL, so a reload restores a saved workflow.
 | Recovery desk | `/showcase?view=recovery` | The canceled-trip workflow: saved shortlist, resume, the 15-minute hold receipt, and the handoff back to Concierge |
 | System evidence | `/showcase?view=proof` | Aurora readback of the selected journey's checkpoints, executions, leases, authorization decisions and holds |
 | Solution briefing | `/showcase?view=briefing` | Architecture, data preparation, phase diagrams, gateway tools and Cedar policies; makes no service calls |
-| Demo Stage | `/demo-stage`, `/stage` | Auto-playing kiosk loop and scenario playback |
 
 Each reply in Concierge and the Capability ladder has an activity trace. Expand
 a step to see its events and technical payloads. **Inspect evidence** holds the

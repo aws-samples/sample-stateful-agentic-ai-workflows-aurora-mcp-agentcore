@@ -7,7 +7,6 @@ Paths are relative to `meridian/`.
 ```text
 frontend/src/main.tsx
   → /showcase, /device-showcase → showcase/MeridianDeviceShowcase.tsx
-  → /demo-stage, /stage         → stage/DemoStage.tsx
   → api/client.ts → backend origin (VITE_API_ORIGIN, local default 127.0.0.1:8013)
 
 backend/main.py
@@ -72,7 +71,6 @@ uses the governed Gateway path.
 | Path | Role |
 | --- | --- |
 | `frontend/src/showcase/` | The `/showcase` surface: views, components, hooks and adapters |
-| `frontend/src/stage/` | Kiosk and scenario playback surface |
 | `frontend/src/api/` | API client with bounded waits |
 | `frontend/src/components/` | Shared UI (brand mark, route skeleton) |
 | `frontend/public/` | Brand marks, service icons and catalog images |
