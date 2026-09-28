@@ -8,10 +8,14 @@ export const SRC = path.join(FRONTEND, 'src');
 export const REPORT_DIR = path.resolve(FRONTEND, '../.local/design-migration');
 export const TOKENS_FILE = path.join(SRC, 'showcase', 'tokens.css');
 
-export const CONTROL = new RegExp('(?:^|[^\\w-])(?:input|textarea|select|button)(?![\\w-])'
+export const CONTROL = new RegExp('(?:^|[^\\w-])(?:input|textarea|select|button|summary)(?![\\w-])'
   + '|[.-](?:btn|toggle|switch|checkbox|radio|fields?|composer|search|stepper|segmented|send'
-  + '|controls?|picker)(?![\\w])', 'i');
-export const FLOAT = /(?:^|[.\s])[\w-]*(?:tooltip|popover|toast|menu|dropdown|flyout)(?![\w-])/i;
+  + '|controls?|picker)(?![\\w])'
+  + '|-chip(?![\\w-])|\\.is-(?:primary|icon)(?![\\w-])'
+  + '|\\.mds-(?:modal-close|error-retry|error-dismiss|rerank-replay|rls-run|proof-refresh'
+  + '|navpanel-trip|navpanel-prompt)(?![\\w-])', 'i');
+export const FLOAT = new RegExp('(?:^|[.\\s])[\\w-]*(?:tooltip|popover|toast|menu|dropdown|flyout'
+  + '|chip-pop|settings-panel)(?![\\w-])', 'i');
 export const SHELL = new RegExp('(?:^|[^\\w-])(?:html|body)(?![\\w-])|:root|\\.(?:mds-root'
   + '|mds-desktop-app|mds-desktop-main|mds-desktop-sidebar|mds-desktop-right|mds-desktop-dock'
   + '|mds-shell-header|route-skeleton)(?![\\w-])');

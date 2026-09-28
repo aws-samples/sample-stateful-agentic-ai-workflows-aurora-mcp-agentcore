@@ -5,12 +5,13 @@ import {
 const GRADIENT = /\b(?:repeating-)?(?:linear|radial|conic)-gradient\(/;
 const MASK_PROPS = new Set(['mask', 'mask-image', '-webkit-mask', '-webkit-mask-image']);
 const IMAGE_SUBJECT = /(?<![a-z])(?:photo|visual|image|img|hero|thumb|media|cover)(?![a-z])/i;
-const STATE = new RegExp('\\.is-(?:selected|active|featured|current|open|checked)'
-  + '|\\[aria-(?:selected|current|pressed)|:checked');
+const STATE = new RegExp('\\.is-(?:selected|active|featured|current|open|checked|running|stopped'
+  + '|next|visited|done)(?![\\w-])|\\[aria-(?:selected|current|pressed)|:checked');
 const NESTED_ARGS = '\\((?:[^()]|\\([^()]*\\))*\\)';
 const STOP = new RegExp('#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})\\b'
   + `|(?:rgba?|color-mix)${NESTED_ARGS}|var\\(--[\\w-]+\\)|\\btransparent\\b`);
-const NO_BORDER = /^(?:0|0px|none)$/;
+const NONE = /^(?:0|0px|none)$/;
+const INVISIBLE = /\btransparent\b/;
 const FADES_OUT = /\btransparent\b|,\s*0\)|\/\s*0\)/;
 const notes = [];
 
@@ -36,17 +37,24 @@ function splitTopLevel(value) {
   return [...layers, current.trim()];
 }
 
+function focusShadowToOutline(decl, rule, file) {
+  const outline = rule.nodes.find(node => node.type === 'decl' && node.prop === 'outline');
+  if (!outline) {
+    decl.cloneBefore({ prop: 'outline', value: '2px solid var(--mds-blue)' });
+    decl.cloneBefore({ prop: 'outline-offset', value: '2px' });
+    note(file, decl, 'focus shadow became an outline');
+  } else if (NONE.test(outline.value.trim())) {
+    note(file, decl, 'REVIEW focus shadow removed; outline: none leaves no focus ring');
+  } else {
+    note(file, decl, 'focus shadow removed; the rule keeps its own outline');
+  }
+  decl.remove();
+}
+
 function flattenShadow(decl, rule, subjects, file) {
   if (decl.prop.startsWith('--')) return decl.remove();
   if (decl.value.trim() === 'none') return undefined;
-  if (/:focus/.test(rule.selector ?? '')) {
-    if (!rule.some(node => node.type === 'decl' && node.prop === 'outline')) {
-      decl.cloneBefore({ prop: 'outline', value: '2px solid var(--mds-blue)' });
-      decl.cloneBefore({ prop: 'outline-offset', value: '2px' });
-    }
-    note(file, decl, 'focus shadow became an outline');
-    return decl.remove();
-  }
+  if (/:focus/.test(rule.selector ?? '')) return focusShadowToOutline(decl, rule, file);
   if (subjects.some(subject => FLOAT.test(subject))) {
     decl.value = 'var(--mds-shadow-float)';
     return undefined;
@@ -87,8 +95,12 @@ function dropBorder(decl, rule, file) {
     return;
   }
   const zeroWidth = node => node.type === 'decl' && /^border(?:-width)?$/.test(node.prop)
-    && NO_BORDER.test(node.value.trim());
+    && NONE.test(node.value.trim());
   if (rule.some(zeroWidth)) return;
+  if (decl.prop === 'border' && INVISIBLE.test(decl.value)) {
+    note(file, decl, 'transparent border kept; it reserves room for a state border');
+    return;
+  }
   if (decl.prop === 'border') {
     decl.value = '0';
     note(file, decl, 'decorative border removed');

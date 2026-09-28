@@ -28,4 +28,25 @@ describe('selector helpers', () => {
     expect(SHELL.test('.mds-desktop-app.is-discovery')).toBe(true);
     expect(SHELL.test('.mds-desktop-app-card')).toBe(false);
   });
+
+  it('treats chips, disclosure summaries and named buttons as controls', () => {
+    expect(CONTROL.test('.mds-chat-starter-chip.is-stretch:hover')).toBe(true);
+    expect(CONTROL.test('.mds-msg-result-chip')).toBe(true);
+    expect(CONTROL.test('.mds-chat-action-chip-icon')).toBe(false);
+    expect(CONTROL.test('.mds-concierge-context-chips')).toBe(false);
+    expect(CONTROL.test('summary')).toBe(true);
+    expect(CONTROL.test('.mds-memory-switch-track')).toBe(true);
+    expect(CONTROL.test('.mds-modal-close')).toBe(true);
+    expect(CONTROL.test('.mc-session-close')).toBe(false);
+    expect(CONTROL.test('.mds-rls-run')).toBe(true);
+    expect(CONTROL.test('.mds-proof-refresh')).toBe(true);
+    expect(CONTROL.test('.is-primary')).toBe(true);
+    expect(CONTROL.test('.mds-trip-result-card.is-priority')).toBe(false);
+  });
+
+  it('treats the chip popover and the display settings panel as floating', () => {
+    expect(FLOAT.test('.mds-chip-pop')).toBe(true);
+    expect(FLOAT.test('.mds-chip-pop-wrap')).toBe(false);
+    expect(FLOAT.test('.mc-display-settings-panel')).toBe(true);
+  });
 });
