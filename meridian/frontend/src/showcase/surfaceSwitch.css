@@ -62,12 +62,10 @@
 
 .mds-surface-tab:hover {
   color: var(--mds-on-surface);
-  border-color: var(--mds-blue-line);
 }
 
 .mds-surface-tab.is-active {
   color: var(--mds-on-surface);
-  border-color: var(--mds-blue-line);
   background: var(--mds-card);
 }
 
@@ -352,7 +350,6 @@
 }
 
 .mds-continuity-steps li.is-done .mds-continuity-mark {
-  border-color: transparent;
   color: #fff;
   background: #35b37e;
 }
@@ -538,13 +535,11 @@
 }
 
 .mds-shell-header .mds-surface-tab:hover {
-  border-color: transparent;
   color: var(--mds-on-surface);
   background: var(--mds-fill-1);
 }
 
 .mds-shell-header .mds-surface-tab.is-active {
-  border-color: var(--mds-line-strong);
   color: var(--mds-on-surface);
   background: var(--mds-blue-soft);
 }

@@ -19,12 +19,14 @@ body,
   --app-bg: #000000;
   --app-fg: #ffffff;
   --app-skeleton: rgba(143, 174, 204, 0.13);
+  --app-skeleton-shimmer: rgba(143, 174, 204, 0.2);
 }
 
 :root[data-theme='light'] {
   --app-bg: #f5f5f2;
   --app-fg: #141b24;
   --app-skeleton: #e1e5e8;
+  --app-skeleton-shimmer: #cfd6dd;
 }
 
 html {
@@ -129,6 +131,21 @@ textarea {
 .route-skeleton-grid .is-featured {
   grid-column: 1 / -1;
   min-height: 330px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .route-skeleton i,
+  .route-skeleton-toolbar,
+  .route-skeleton-copy i {
+    background: var(--mds-skeleton-sweep);
+    background-size: 220% 100%;
+    animation: route-skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes route-skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -120% 0; }
 }
 
 @media (max-width: 720px) {

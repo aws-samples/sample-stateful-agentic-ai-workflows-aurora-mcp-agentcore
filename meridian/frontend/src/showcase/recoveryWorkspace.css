@@ -138,19 +138,16 @@
 
 /* Already climbed: the capability is still running underneath. */
 .mds-ladder-nav-rung.is-carried .mds-ladder-nav-index {
-  border-color: var(--mds-blue-line);
   color: var(--mds-ink);
   background: var(--mds-blue-soft);
 }
 
 .mds-ladder-nav-rung.is-active {
   color: var(--mds-on-surface);
-  border-color: var(--mds-blue-line);
   background: var(--mds-blue-soft);
 }
 
 .mds-ladder-nav-rung.is-active .mds-ladder-nav-index {
-  border-color: var(--mc-action);
   color: var(--mc-on-action);
   background: var(--mc-action);
 }
@@ -279,10 +276,6 @@
   color: var(--mds-chrome-brand);
 }
 
-.mds-desktop-app .mds-brand-mark {
-  border-color: var(--mds-chrome-brand-border);
-}
-
 .mds-desktop-app .mds-nav-item {
   border: 0;
   color: var(--mds-chrome-nav);
@@ -292,13 +285,11 @@
 .mds-desktop-app .mds-nav-item:hover {
   color: var(--mds-chrome-nav-hover);
   background: var(--mds-chrome-nav-hover-background);
-  border-color: var(--mds-chrome-nav-hover-border);
 }
 
 .mds-desktop-app .mds-nav-item.is-active {
   color: var(--mds-chrome-nav-active);
   background: var(--mds-chrome-nav-active-background);
-  border-color: var(--mds-chrome-nav-active-border);
 }
 
 .mds-desktop-app .mds-nav-item.is-active::before {
@@ -311,10 +302,6 @@
 
 .mds-desktop-app .mds-account-mini:hover strong {
   color: var(--mds-recovery-blue);
-}
-
-.mds-desktop-app .mds-account-mini .mds-avatar {
-  border-color: var(--mds-chrome-avatar-border);
 }
 
 .mds-desktop-app .mds-account-copy strong {
@@ -331,7 +318,6 @@
 
 .mds-desktop-app .mds-status-pill {
   color: var(--mds-chrome-status);
-  border-color: var(--mds-chrome-control-border);
   background: var(--mds-chrome-control-background);
   box-shadow: none;
 }
@@ -1046,19 +1032,16 @@
 .mds-root[data-theme="light"] .mds-desktop-app .mds-nav-item {
   color: var(--mds-chrome-nav);
   background: transparent;
-  border-color: transparent;
 }
 
 .mds-root[data-theme="light"] .mds-desktop-app .mds-nav-item:hover {
   color: var(--mds-chrome-nav-hover);
   background: var(--mds-chrome-nav-hover-background);
-  border-color: var(--mds-chrome-nav-hover-border);
 }
 
 .mds-root[data-theme="light"] .mds-desktop-app .mds-nav-item.is-active {
   color: var(--mds-chrome-nav-active);
   background: var(--mds-chrome-nav-active-background);
-  border-color: var(--mds-chrome-nav-active-border);
 }
 
 .mds-root[data-theme="light"] .mds-desktop-app .mds-desktop-right {
@@ -1076,10 +1059,6 @@
   color: #0a2342;
 }
 
-.mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-brand-mark {
-  border-color: rgba(31, 111, 235, 0.24);
-}
-
 .mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-nav-item {
   color: #536174;
 }
@@ -1087,12 +1066,10 @@
 .mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-nav-item:hover {
   color: #0a2342;
   background: rgba(31, 111, 235, 0.05);
-  border-color: rgba(31, 111, 235, 0.1);
 }
 
 .mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-nav-item.is-active {
   color: #0a2342;
-  border-color: rgba(31, 111, 235, 0.08);
   background: rgb(var(--mds-blue-rgb) / 0.12);
   box-shadow: none;
 }
@@ -1122,7 +1099,6 @@
 }
 
 .mds-root[data-theme="light"] .mds-recovery-briefing {
-  border-color: #d9e6e8;
   background: rgba(255, 255, 255, 0.9);
 }
 
@@ -1131,7 +1107,6 @@
 }
 
 .mds-root[data-theme="light"] .mds-recovery-request {
-  border-color: rgba(31, 111, 235, 0.3);
   color: #24364b;
   background: #f2f7ff;
 }
@@ -2068,19 +2043,16 @@
 }
 
 .mds-recovery-launch-steps li.is-ready > span {
-  border-color: #d89f2b;
   color: #f6c760;
   background: #271c08;
 }
 
 .mds-recovery-launch-steps li.is-visited > span {
-  border-color: #4a9eff;
   color: #d8ebff;
   background: #1769bb;
 }
 
 .mds-recovery-launch-steps li.is-current > span {
-  border-color: #72b8ff;
   color: #dff0ff;
   background: #207dd6;
 }
@@ -2090,7 +2062,6 @@
 }
 
 .mds-recovery-launch-steps li.is-failed > span {
-  border-color: #ff705b;
   color: #ffe5df;
   background: #a63f32;
 }
@@ -2249,7 +2220,6 @@
 }
 
 .mds-decision-status.is-running {
-  border-color: rgb(var(--mds-blue-rgb) / 0.38);
   color: #79b3ff;
   background: rgb(var(--mds-blue-rgb) / 0.1);
 }
@@ -2259,13 +2229,11 @@
 }
 
 .mds-decision-status.is-checkpointed {
-  border-color: rgb(var(--mds-teal-rgb) / 0.36);
   color: #76ddc2;
   background: rgb(var(--mds-teal-rgb) / 0.09);
 }
 
 .mds-decision-status.is-ready {
-  border-color: rgb(var(--mds-recovery-green-rgb) / 0.36);
   color: #6ee1a8;
   background: rgb(var(--mds-recovery-green-rgb) / 0.09);
 }
@@ -3282,7 +3250,6 @@
 
 /* Daylight treatment keeps the same hierarchy and semantic colors. */
 .mds-root[data-theme="light"] .mds-recovery-layout-review {
-  border-color: #dce3ea;
   background: rgba(255, 255, 255, 0.9);
 }
 
@@ -3309,7 +3276,6 @@
 }
 
 .mds-root[data-theme="light"] .mds-decision-card {
-  border-color: #d8dee6;
   color: #25384e;
   background:
     rgba(255, 255, 255, 0.98);
@@ -3455,9 +3421,12 @@
 .mds-root[data-theme="light"] .mds-mobile-disruption-message p,
 .mds-root[data-theme="light"] .mds-mobile-disruption-route em,
 .mds-root[data-theme="light"] .mds-mobile-disruption-status > span,
-.mds-root[data-theme="light"] .mds-recovery-launch-steps small,
 .mds-root[data-theme="light"] .mds-recovery-launch-actions > span {
   color: #56687a;
+}
+
+.mds-root[data-theme="light"] .mds-recovery-launch-steps small {
+  color: #44566a;
 }
 
 .mds-root[data-theme="light"] .mds-mobile-disruption-topline > em {
@@ -3475,13 +3444,11 @@
 }
 
 .mds-root[data-theme="light"] .mds-mobile-disruption-status strong {
-  border-color: rgba(170, 112, 0, 0.24);
   color: #8c5d00;
   background: #fff7e5;
 }
 
 .mds-root[data-theme="light"] .mds-recovery-launch-error {
-  border-color: rgba(190, 66, 47, 0.22);
   color: #a43c2d;
   background: #fff3f0;
 }
@@ -3511,20 +3478,18 @@
 }
 
 .mds-root[data-theme="light"] .mds-recovery-launch-steps li > span {
-  border-color: #9aaabc;
   color: #708398;
   background: #ffffff;
 }
 
 .mds-root[data-theme="light"] .mds-recovery-launch-steps li.is-ready > span {
-  border-color: #c99021;
   color: #946200;
   background: #fff7e5;
 }
 
 .mds-root[data-theme="light"] .mds-recovery-launch-steps li.is-pending strong,
 .mds-root[data-theme="light"] .mds-recovery-launch-steps li.is-pending small {
-  color: #5a6b7d;
+  color: #627386;
 }
 
 .mds-root[data-theme="light"] .mds-recovery-launch-card > .mds-decision-route {

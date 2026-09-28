@@ -55,7 +55,6 @@
   --mds-chrome-sidebar-border: rgba(255, 255, 255, 0.14);
   --mds-chrome-sidebar-background: #000000;
   --mds-chrome-brand: #ffffff;
-  --mds-chrome-brand-border: rgb(var(--mds-recovery-yellow-rgb) / 0.45);
   --mds-chrome-nav: #d0d0d0;
   --mds-chrome-nav-hover: #ffffff;
   --mds-chrome-nav-hover-background: rgba(255, 255, 255, 0.05);
@@ -63,11 +62,9 @@
   --mds-chrome-nav-active: #ffffff;
   --mds-chrome-nav-active-background:
     rgba(255, 255, 255, 0.12);
-  --mds-chrome-nav-active-border: rgba(255, 255, 255, 0.18);
   --mds-chrome-account-border: rgba(255, 255, 255, 0.14);
   --mds-chrome-account: #ffffff;
   --mds-chrome-account-muted: #b8b8b8;
-  --mds-chrome-avatar-border: rgb(var(--mds-recovery-yellow-rgb) / 0.55);
   --mds-chrome-status: #d0d0d0;
   --mds-chrome-control: #d0d0d0;
   --mds-chrome-control-border: rgba(255, 255, 255, 0.2);
@@ -164,7 +161,6 @@
   --mds-chrome-sidebar-border: #e6e6e6;
   --mds-chrome-sidebar-background: rgba(255, 255, 255, 0.82);
   --mds-chrome-brand: #111111;
-  --mds-chrome-brand-border: rgba(31, 111, 235, 0.24);
   --mds-chrome-nav: #555555;
   --mds-chrome-nav-hover: #111111;
   --mds-chrome-nav-hover-background: rgba(31, 111, 235, 0.05);
@@ -172,11 +168,9 @@
   --mds-chrome-nav-active: #111111;
   --mds-chrome-nav-active-background:
     rgb(var(--mds-blue-rgb) / 0.12);
-  --mds-chrome-nav-active-border: rgba(31, 111, 235, 0.08);
   --mds-chrome-account-border: #e8e8e8;
   --mds-chrome-account: #111111;
   --mds-chrome-account-muted: #666666;
-  --mds-chrome-avatar-border: rgb(var(--mds-blue-rgb) / 0.5);
   --mds-chrome-status: #666666;
   --mds-chrome-control: #666666;
   --mds-chrome-control-border: #e2e2e2;
@@ -260,7 +254,6 @@
 }
 .mds-root[data-theme="light"] .mds-panel {
   background: var(--mds-panel);
-  border-color: var(--mds-line);
 }
 .mds-root[data-theme="light"] .mds-chat-composer,
 .mds-root[data-theme="light"] .mds-chat-composer textarea {
@@ -272,7 +265,6 @@
 .mds-root[data-theme="light"] .mds-contract-panel,
 .mds-root[data-theme="light"] .mds-workflow-state {
   background: var(--mds-card);
-  border-color: var(--mds-line);
 }
 .mds-root[data-theme="light"] .mds-chat-action-chip,
 .mds-root[data-theme="light"] .mds-chat-starter-chip,
@@ -306,7 +298,6 @@
 }
 .mds-root[data-theme="light"] .mds-chat-phase-framing {
   background: rgba(15, 23, 42, 0.04);
-  border-color: var(--mds-line);
   color: var(--mds-on-surface-soft);
 }
 .mds-root[data-theme="light"] .mds-chat-phase-framing span {
@@ -317,12 +308,10 @@
 .mds-root[data-theme="light"] .mds-workflow-path,
 .mds-root[data-theme="light"] .mds-workflow-checkpoint {
   background: var(--mds-fill-1);
-  border-color: var(--mds-line);
 }
 .mds-root[data-theme="light"] .mds-contract-row.is-observed,
 .mds-root[data-theme="light"] .mds-workflow-state.is-checkpointed {
   background: rgba(21, 128, 61, 0.08);
-  border-color: rgba(21, 128, 61, 0.24);
 }
 .mds-root[data-theme="light"] .mds-chip-pop,
 .mds-root[data-theme="light"] .mds-chip-pop::after,
@@ -371,7 +360,7 @@
   background: var(--mds-fill-2);
 }
 
-/* The sidebar paints its OWN dark slab that the token swap can't reach — so
+/* The sidebar paints its OWN dark slab that the token swap can't reach, so
    it stayed dark over the now-light app base. Repaint it near-white with a
    hairline right border. */
 .mds-root[data-theme="light"] .mds-desktop-sidebar {
@@ -454,7 +443,6 @@
 /* Inline code sits in the white bubble, so it takes ink on a light fill. Code
    blocks keep the dark console treatment (see .mds-md pre above). */
 .mds-root[data-theme="light"] .mds-md code {
-  border-color: #d6d6d6;
   background: #f1f1f1;
   color: #111111;
 }
@@ -674,6 +662,14 @@
   color: var(--mds-on-surface);
 }
 
+/* Lifted so the panel directly below cannot paint over the bottom of the ring. */
+.mds-rail-handle:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--mds-blue);
+  outline-offset: 2px;
+}
+
 /* Shut, the handle is a tab at the top of the edge, not a label adrift in the
    middle of an empty column. writing-mode does the turning, so the chevron is
    the only thing that needs rotating back to point at the content it opens. */
@@ -702,6 +698,11 @@
 .mds-desktop-right.is-collapsed .mds-rail-handle:hover,
 .mds-desktop-right.is-collapsed .mds-rail-handle:focus-visible {
   background: rgba(255, 255, 255, 0.04);
+}
+
+/* Shut, the handle fills a column that clips overflow, so the ring sits inside it. */
+.mds-desktop-right.is-collapsed .mds-rail-handle:focus-visible {
+  outline-offset: -2px;
 }
 
 .mds-desktop-right.is-collapsed .mds-rail-handle svg {
@@ -845,7 +846,6 @@
 
 .mds-avatar.is-photo {
   overflow: hidden;
-  border-color: rgba(255, 255, 255, 0.38);
   background: rgba(255, 255, 255, 0.05);
 }
 
@@ -1352,7 +1352,11 @@
   border-color: rgb(var(--mds-blue-rgb) / 0.7);
   background: rgba(50, 45, 36, 0.88);
   transform: translateY(-1px);
-  outline: none;
+}
+
+.mds-msg-result-chip:focus-visible {
+  outline: 2px solid var(--mds-blue);
+  outline-offset: 2px;
 }
 
 .mds-msg-result-chip.is-active {
@@ -1419,7 +1423,11 @@
   border-color: rgb(var(--mds-blue-rgb) / 0.7);
   background: rgba(50, 45, 36, 0.9);
   transform: translateY(-1px);
-  outline: none;
+}
+
+.mds-followup-chip:focus-visible {
+  outline: 2px solid var(--mds-blue);
+  outline-offset: 2px;
 }
 
 .mds-followup-chip:hover svg {
@@ -1520,6 +1528,7 @@
   border-radius: 18px;
   color: #ffffff;
   background: #14100c;
+  background-clip: padding-box;
   cursor: pointer;
   text-align: left;
   transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
@@ -1564,13 +1573,6 @@
   height: 100%;
 }
 
-.mds-trip-result-media-shade {
-  position: absolute;
-  inset: 0;
-  background:
-    var(--mds-image-scrim);
-}
-
 .mds-trip-result-destination,
 .mds-trip-result-match {
   position: absolute;
@@ -1596,7 +1598,6 @@
 }
 
 .mds-trip-result-card.is-priority .mds-trip-result-destination {
-  border-color: rgba(49, 215, 255, 0.32);
   color: #68e9ff;
   background: rgba(30, 26, 20, 0.7);
 }
@@ -1628,10 +1629,9 @@
   min-width: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  align-self: stretch;
-  align-content: end;
+  align-self: end;
   gap: 14px;
-  padding: 118px 20px 18px;
+  padding: 48px 20px 18px;
   background: var(--mds-image-scrim);
 }
 
@@ -1640,7 +1640,7 @@
   grid-template-rows: minmax(0, 1fr);
   align-items: end;
   gap: 22px;
-  padding: 150px 24px 20px;
+  padding: 48px 24px 20px;
 }
 
 .mds-trip-result-summary {
@@ -1942,7 +1942,7 @@
 
 .mds-root[data-theme="light"] .mds-trip-result-card {
   color: #ffffff;
-  background: #06111d;
+  background-color: #06111d;
 }
 
 .mds-root[data-theme="light"] .mds-trip-result-commerce > * + *,
@@ -2025,14 +2025,6 @@
   position: relative;
   min-height: 178px;
   overflow: hidden;
-}
-
-.mds-inline-concierge-media::after {
-  position: absolute;
-  inset: 0;
-  content: "";
-  background:
-    var(--mds-image-scrim);
 }
 
 .mds-inline-concierge-media img {
@@ -2172,7 +2164,6 @@
 }
 
 .mds-root[data-theme="light"] .mds-inline-concierge {
-  border-color: rgba(199, 139, 18, 0.3);
   background: #ffffff;
 }
 
@@ -2205,7 +2196,7 @@
   }
 
   .mds-trip-result-body {
-    padding: 115px 17px 16px;
+    padding: 48px 17px 16px;
   }
 
   .mds-trip-result-card.is-priority .mds-trip-result-body {
@@ -2213,7 +2204,7 @@
     grid-template-rows: minmax(0, 1fr) auto;
     align-items: end;
     gap: 12px;
-    padding: 135px 17px 17px;
+    padding: 48px 17px 17px;
   }
 
   .mds-trip-result-commerce,
@@ -2293,13 +2284,6 @@
   .mds-trip-photo { transition: none; transform: none; }
 }
 
-.mds-trip-visual::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--mds-image-scrim);
-}
-
 .mds-trip-visual-douro {
   background: #365a63;
 }
@@ -2312,7 +2296,7 @@
   background: #5e9bb8;
 }
 
-/* City / mountain / landscape have no curated photo — these fills are the
+/* City / mountain / landscape have no curated photo. These fills are the
    graceful fallback when a live image_url is slow or blocked on venue wifi, so
    a Tokyo or Paris card reads as itself rather than an unrelated vineyard. */
 .mds-trip-visual-city {
@@ -2334,7 +2318,6 @@
 }
 
 .mds-trip-visual::before,
-.mds-trip-visual::after,
 .mds-trip-field,
 .mds-trip-ridge,
 .mds-trip-sun {
@@ -2582,7 +2565,7 @@
 .mds-chat-starter-chip.is-works:focus-visible,
 .mds-chat-starter-chip.is-stretch:focus-visible {
   outline: 2px solid var(--mds-blue);
-  outline-offset: 3px;
+  outline-offset: 2px;
 }
 
 .mds-chat-starter-chip.is-stretch {
@@ -2605,7 +2588,6 @@
   border-color: rgb(var(--mds-recovery-yellow-rgb) / 0.78);
   color: #fff5e6;
   background: rgba(56, 36, 18, 0.78);
-  outline: none;
 }
 
 .mds-chat-phase-framing {
@@ -2661,7 +2643,11 @@
   color: var(--mds-on-surface);
   background: rgba(34, 30, 23, 0.88);
   transform: translateY(-1px);
-  outline: none;
+}
+
+.mds-chat-action-chip:focus-visible {
+  outline: 2px solid var(--mds-blue);
+  outline-offset: 2px;
 }
 
 .mds-chat-action-chip:disabled {
@@ -3195,7 +3181,7 @@
   background: transparent;
 }
 
-.mds-memory-switch > span {
+.mds-memory-switch-track {
   position: relative;
   width: 38px;
   height: 22px;
@@ -3206,7 +3192,7 @@
   transition: border-color 180ms ease, background 180ms ease;
 }
 
-.mds-memory-switch > span i {
+.mds-memory-switch-track i {
   position: absolute;
   top: 3px;
   left: 3px;
@@ -3217,12 +3203,12 @@
   transition: transform 180ms ease, background 180ms ease;
 }
 
-.mds-memory-switch[aria-checked="true"] > span {
+.mds-memory-switch[aria-checked="true"] > .mds-memory-switch-track {
   border-color: color-mix(in srgb, var(--mds-green) 58%, transparent);
   background: color-mix(in srgb, var(--mds-green) 22%, transparent);
 }
 
-.mds-memory-switch[aria-checked="true"] > span i {
+.mds-memory-switch[aria-checked="true"] > .mds-memory-switch-track i {
   transform: translateX(16px);
   background: var(--mds-green);
 }
@@ -3470,7 +3456,7 @@
 .mds-evidence-probe { color: var(--mc-muted); font-size: calc(12px * var(--mc-type-scale)); line-height: 1.5; }
 .mds-evidence-probe p { margin: 0 0 12px; }
 .mds-evidence-probe button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--mc-line); border-radius: 6px; background: var(--mc-soft); color: var(--mc-accent); font: inherit; cursor: pointer; }
-.mds-evidence-probe button:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 3px; }
+.mds-evidence-probe button:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 2px; }
 .mds-trace-inspector .mds-trace-tabs { display: flex; flex-wrap: wrap; gap: 5px; }
 .mds-trace-inspector .mds-trace-tabs button { flex: 1 1 auto; font-size: calc(12px * var(--mc-type-scale)); }
 .mds-trace-inspector .mds-sql-list small { color: var(--mc-muted); font-size: calc(12px * var(--mc-type-scale)); line-height: 1.5; }
@@ -3479,7 +3465,7 @@
 .mds-trace-inspector > summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; list-style: none; color: var(--mc-muted); font-size: calc(12px * var(--mc-type-scale)); }
 .mds-activity-group > summary:focus-visible,
 .mds-activity-event > summary:focus-visible,
-.mds-trace-inspector > summary:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 3px; border-radius: 3px; }
+.mds-trace-inspector > summary:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 2px; border-radius: 3px; }
 
 .mds-contract-panel,
 .mds-workflow-state {
@@ -3588,7 +3574,6 @@
 }
 
 .mds-contract-row.is-observed {
-  border-color: rgb(var(--mds-green-rgb) / 0.24);
   background: rgb(var(--mds-green-rgb) / 0.07);
 }
 
@@ -3633,7 +3618,6 @@
 }
 
 .mds-workflow-state.is-checkpointed {
-  border-color: rgb(var(--mds-green-rgb) / 0.28);
   background: rgb(var(--mds-green-rgb) / 0.07);
 }
 
@@ -4294,13 +4278,13 @@
 .mds-surface-switch { display:flex; gap:3px; align-self:flex-start; padding:3px; border:1px solid var(--mds-line-strong); border-radius:8px; background:var(--mds-fill-2); }
 .mds-surface-switch button { min-height:32px; padding:0 13px; border:0; border-radius:6px; color:var(--mds-muted); background:transparent; font-weight:700; }
 .mds-surface-switch button.is-active { color:var(--mds-on-surface); background:var(--mds-card); }
-.mds-toast { position:fixed; left:50%; bottom:24px; z-index:100; transform:translateX(-50%); padding:11px 16px; border:1px solid var(--mds-blue-line); border-radius:8px; color:var(--mds-on-surface); background:var(--mds-shell-elevated); box-shadow:var(--mds-shadow-float); }
+.mds-toast { position:fixed; left:50%; bottom:24px; z-index:100; transform:translateX(-50%); padding:11px 16px; border:0; border-radius:8px; color:var(--mds-on-surface); background:var(--mds-shell-elevated); box-shadow:var(--mds-shadow-float); }
 .mds-modal-backdrop { position:fixed; inset:0; z-index:90; display:grid; place-items:center; padding:24px; background:rgba(9, 7, 4, .72); }
 .mds-trip-modal,.mds-compare-modal { position:relative; width:min(1040px,100%); max-height:min(860px,calc(100dvh - 48px)); overflow:auto; border:0; border-radius:8px; color:var(--mds-ink); background:var(--mds-shell-elevated); }
 .mds-trip-modal { display:grid; grid-template-columns:minmax(300px,.9fr) minmax(420px,1.1fr); }
 .mds-trip-modal-visual { position:relative; min-height:620px; }
 .mds-trip-modal-visual .mds-trip-visual { height:100%; }
-.mds-trip-modal-visual>span { position:absolute; left:20px; bottom:20px; color:#fff; font-weight:700; }
+.mds-trip-modal-visual>span { position:absolute; left:0; right:0; bottom:0; padding:48px 20px 20px; color:#fff; font-weight:700; background:var(--mds-image-scrim); }
 .mds-trip-modal-body { display:grid; align-content:start; gap:18px; padding:34px; }
 .mds-trip-modal-body h2,.mds-compare-modal h2 { margin:5px 0 8px; font-size:30px; color:var(--mds-on-surface); }
 .mds-trip-modal-body p,.mds-trip-section { color:var(--mds-on-surface-soft); line-height:1.55; }
@@ -4312,7 +4296,7 @@
 .mds-trip-section ul,.mds-compare-copy ul { display:grid; gap:8px; margin-top:10px; padding-left:18px; }
 .mds-availability-list { display:flex; flex-wrap:wrap; gap:8px; }.mds-availability-list span { padding:9px; border:0; border-radius:6px; }.mds-availability-list b { display:block; }
 .mds-trip-disclosure,.mds-hold-receipt { display:flex; gap:9px; padding:12px; border:0; border-radius:6px; background:var(--mds-fill-1); }
-.mds-hold-receipt { flex-direction:column; border-color:var(--mds-blue-line); }
+.mds-hold-receipt { flex-direction:column; }
 .mds-trip-modal-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .mds-trip-modal-actions button,.mds-compare-copy button { min-height:40px; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:0 14px; border:1px solid var(--mds-line-strong); border-radius:6px; color:var(--mds-on-surface); background:var(--mds-card); font-weight:700; }
 .mds-trip-modal-actions .is-primary,.mds-compare-copy .is-primary { color:#ffffff; background:var(--mds-blue); margin-left:auto; }
@@ -4541,7 +4525,6 @@
   border: 0;
 }
 .mds-wfgraph.is-unmatched {
-  border-color: var(--mds-yellow);
   background: color-mix(in srgb, var(--mds-yellow) 8%, var(--mds-fill-2));
 }
 .mds-wfgraph-empty {
@@ -4617,7 +4600,6 @@
   opacity: 0.45;
 }
 .mds-wfgraph-branches b.is-active {
-  border-color: var(--mds-blue-line);
   background: var(--mds-blue-soft);
   color: var(--mds-blue);
 }

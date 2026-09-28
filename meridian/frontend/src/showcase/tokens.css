@@ -1,6 +1,19 @@
 :root {
   --mds-shadow-float: 0 12px 32px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.12);
-  --mds-image-scrim: linear-gradient(to top, rgb(0 0 0 / 0.72), rgb(0 0 0 / 0) 60%);
+  /* Painted on the box behind a text block. That box pads its top by 48px, so the fade
+     finishes above the first line and the text sits on 0.7 to 0.84 black. */
+  --mds-image-scrim: linear-gradient(
+    to top,
+    rgb(0 0 0 / 0.84),
+    rgb(0 0 0 / 0.7) calc(100% - 48px),
+    rgb(0 0 0 / 0)
+  );
+  --mds-skeleton-sweep: linear-gradient(
+    90deg,
+    var(--app-skeleton),
+    var(--app-skeleton-shimmer),
+    var(--app-skeleton)
+  );
 }
 
 :root[data-theme='light'] {

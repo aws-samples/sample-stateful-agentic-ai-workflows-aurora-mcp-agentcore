@@ -32,7 +32,6 @@
 }
 
 .mds-recovery-workspace .mds-decision-card {
-  border-color: var(--mds-experience-border);
   border-radius: 8px;
   background: var(--mds-experience-panel);
 }
@@ -383,7 +382,6 @@
 .mds-root[data-theme="light"]
   .mds-recovery-workspace
   .mds-decision-card {
-  border-color: #dedbd4;
   background: #ffffff;
 }
 
@@ -530,7 +528,6 @@
 }
 
 .mds-hold-receipt.is-expired {
-  border-color: var(--mds-line);
   background: var(--mds-fill-1);
 }
 

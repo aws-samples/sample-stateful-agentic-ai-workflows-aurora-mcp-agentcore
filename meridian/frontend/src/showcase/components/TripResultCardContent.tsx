@@ -133,7 +133,6 @@ export function TripResultCardContent({
     <>
       <div className="mds-trip-result-media">
         <TripVisual product={product} compact />
-        <span className="mds-trip-result-media-shade" />
         <span className="mds-trip-result-destination">
           <MapPin size={12} />
           {facts.destination}

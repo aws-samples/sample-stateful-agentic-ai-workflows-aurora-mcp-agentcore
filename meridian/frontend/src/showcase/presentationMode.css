@@ -41,7 +41,7 @@
 .mds-root .mc-presenter-actions button[aria-pressed='true'] { color: var(--mc-accent); border-color: var(--mc-accent); }
 .mds-root .mc-presenter-actions .mc-present-button { background: var(--mc-action); color: var(--mc-on-action); border-color: var(--mc-action); }
 .mds-root .mc-presenter-actions .mc-present-button:hover { filter: brightness(1.08); }
-.mc-presenter-controls :is(button, input):focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 3px; }
+.mc-presenter-controls :is(button, input):focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 2px; }
 .mc-presenter-error {
   position: absolute;
   top: calc(100% + 8px);
@@ -150,7 +150,7 @@
 }
 .mc-display-settings > summary::-webkit-details-marker { display: none; }
 .mc-display-settings > summary:hover { background: var(--mc-soft); }
-.mc-display-settings > summary:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 3px; }
+.mc-display-settings > summary:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 2px; }
 .mc-display-settings[open] > summary { color: var(--mc-accent); border-color: var(--mc-accent); }
 .mc-display-settings[open] > summary svg { transform: rotate(180deg); }
 .mc-display-settings-panel {

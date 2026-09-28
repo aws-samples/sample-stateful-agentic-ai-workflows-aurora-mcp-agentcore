@@ -9,13 +9,13 @@
 .mc-recovery-check-list strong { display:block; font-size:13px; font-weight:550; }
 .mc-recovery-check-list small { display:block; font-size:12px; color:var(--mc-muted); margin-top:4px; }
 .mc-recovery-check-list svg { flex:none; color:var(--mc-muted); }
-.mc-recovery-check-index { display:grid; place-items:center; width:24px; height:24px; flex:none; border:0; border-radius:50%; font-size:12px; color:var(--mc-muted); }
+.mc-recovery-check-index { display:grid; place-items:center; width:24px; height:24px; flex:none; border:0; border-radius:50%; font-size:12px; color:var(--mc-muted); background:color-mix(in srgb, var(--mc-muted) 16%, transparent); }
 .mc-recovery-check-list .is-observed small { color:var(--mc-accent); }
 .mc-recovery-check-list .is-denied small { color:var(--mc-caution); }
 .mc-recovery-check-list .is-selected { border-color:var(--mc-accent); }
 .mc-recovery-check-list .is-selected svg { transform:rotate(180deg); }
 .mc-recovery-check-list button:hover { border-color:var(--mc-line); }
-.mc-recovery-checks button:focus-visible,.mc-trip-context>summary:focus-visible { outline:2px solid var(--mc-accent); outline-offset:3px; }
+.mc-recovery-checks button:focus-visible,.mc-trip-context>summary:focus-visible { outline:2px solid var(--mc-accent); outline-offset:2px; }
 .mc-recovery-check-detail { margin-top:14px; padding:16px 18px; background:var(--mc-soft); border-radius:7px; }
 .mc-recovery-check-detail[hidden] { display:none; }
 .mc-recovery-check-detail p { margin:0; color:var(--mc-muted); font-size:14px; line-height:1.6; max-width:90ch; }

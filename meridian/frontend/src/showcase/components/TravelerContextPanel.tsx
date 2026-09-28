@@ -179,7 +179,7 @@ export function TravelerContextPanel({
               disabled={!memoryAvailable || state.memoryLoading}
               onClick={() => void state.setMemoryEnabled(!memoryOn)}
             >
-              <span aria-hidden="true"><i /></span>
+              <span className="mds-memory-switch-track" aria-hidden="true"><i /></span>
               <b>
                 {memoryStatus.charAt(0).toUpperCase() + memoryStatus.slice(1)}
               </b>
