@@ -37,24 +37,8 @@
   --mds-danger: #ffa18a;
 }
 
-/* Panel edges are decorative. Keep the stronger --mc-line for inputs,
-   buttons and focus states instead of outlining every dark surface. */
+/* Row separators on dark take a quieter line than control edges. */
 .mds-root[data-theme='dark'] { --mc-divider: #303030; }
-.mds-root[data-theme='dark'] :is(
-  .mds-panel, .mds-proof-worker, .mds-proof-store, .mds-proof-panel,
-  .mc-hold-receipt, .mc-trip-context, .mc-boarding-pass,
-  .mds-recovery-handoff
-) {
-  border-color: transparent;
-  box-shadow: none;
-}
-.mds-root[data-theme='dark'] .mds-recovery-workspace .mds-decision-card {
-  border-color: transparent;
-  box-shadow: none;
-}
-.mds-root[data-theme='dark'] .mds-desktop-app .mds-desktop-right .mds-panel {
-  border-color: transparent;
-}
 .mds-root[data-theme='dark'] :is(
   .mds-shell-header, .mc-presenter-controls, .mds-proof-tabs,
   .mc-recovery-checks, .mc-departure, .mc-preferences, .mc-hold-pending,

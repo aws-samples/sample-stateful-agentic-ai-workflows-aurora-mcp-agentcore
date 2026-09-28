@@ -36,7 +36,7 @@
   --mc-caution-bg: #fbf2e4;
 }
 .mds-root .mds-desktop-app { grid-template-rows: 72px minmax(0, 1fr); }
-.mds-root .mds-shell-header { background: var(--mc-surface); border-color: var(--mc-line); backdrop-filter: none; padding: 0 26px; gap: 14px; }
+.mds-root .mds-shell-header { background: var(--mc-surface); border-color: var(--mc-line); padding: 0 26px; gap: 14px; }
 .mds-root .mds-shell-header .mds-surface-switch { display: flex; width: auto; gap: 18px; padding: 0; border: 0; border-radius: 0; background: none; }
 .mds-root .mds-shell-header .mds-surface-tab { height: 72px; min-height: 44px; padding: 0 4px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--mc-muted); background: none; box-shadow: none; }
 .mds-root .mds-shell-header .mds-surface-tab strong { font-size: calc(13px * var(--mc-type-scale)); font-weight: 550; }
@@ -328,7 +328,7 @@
 .mds-root .mc-cancellation-alert strong { font-size: calc(15px * var(--mc-type-scale)); font-weight: 600; }
 .mds-root .mc-cancellation-alert p { font-size: calc(12px * var(--mc-type-scale)); margin: 6px 0 0; line-height: 1.5; }
 .mds-root .mc-cancellation-alert > span { margin-left: auto; font-size: calc(10px * var(--mc-type-scale)); white-space: nowrap; }
-.mds-root .mc-boarding-pass { display: grid; grid-template-columns: minmax(0, 1fr) 220px; background: var(--mc-surface); border: 1px solid var(--mc-line); border-radius: 14px; overflow: hidden; }
+.mds-root .mc-boarding-pass { display: grid; grid-template-columns: minmax(0, 1fr) 220px; background: var(--mc-surface); border: 0; border-radius: 14px; overflow: hidden; }
 .mds-root .mc-pass-main { padding: 28px; }
 .mds-root .mc-pass-main header { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .mds-root .mc-pass-main header > span:first-child { display: flex; align-items: center; gap: 9px; font-size: calc(18px * var(--mc-type-scale)); font-weight: 550; letter-spacing: -0.025em; }
@@ -350,7 +350,7 @@
 .mds-root .mc-pass-stub::before { top: -10px; }
 .mds-root .mc-pass-stub::after { bottom: -10px; }
 .mds-root .mc-pass-stub > svg { color: var(--mc-muted); margin-bottom: 14px; }
-.mds-root .mc-pass-stub > strong { color: var(--mc-caution); padding: 6px 13px; border: 1px solid currentColor; border-radius: 4px; font-size: calc(20px * var(--mc-type-scale)); font-weight: 600; }
+.mds-root .mc-pass-stub > strong { color: var(--mc-caution); padding: 6px 13px; border: 0; border-radius: 4px; font-size: calc(20px * var(--mc-type-scale)); font-weight: 600; }
 .mds-root .mc-pass-stub > span { font-size: calc(10px * var(--mc-type-scale)); color: var(--mc-muted); margin-top: 12px; }
 .mds-root .mc-pass-stub > div { display: flex; align-items: center; gap: 7px; font-size: calc(10px * var(--mc-type-scale)); margin-top: 23px; color: var(--mc-accent); }
 @media (max-width: 860px) {
@@ -582,7 +582,7 @@
 .mds-root[data-theme] :is(.mds-desktop-main, .mds-desktop-right) :is(button, input, textarea, select) { font-family: var(--mds-font); }
 .mds-root[data-theme] :is(.mds-decision-card-kicker, .mds-decision-card-actions button, .mds-recovery-launch-steps strong, .mds-ladder-nav-copy strong, .mds-proof-tab, .mds-proof-fact-value, .mds-continuity-step-label, .mds-chat-markdown strong) { font-weight: var(--mc-label-weight); }
 .mds-root[data-theme] :is(.mds-proof-head h1, .mds-recovery-overview h1, .mc-evidence-intro h1) { font-size: calc(30px * var(--mc-type-scale)); }
-.mds-root[data-theme] .mc-hold-receipt { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--mc-line); border-radius: 8px; background: var(--mc-soft); color: var(--mc-ink); font-size: calc(13px * var(--mc-type-scale)); line-height: 1.6; }
+.mds-root[data-theme] .mc-hold-receipt { display: grid; gap: 16px; padding: 20px; border: 0; border-radius: 8px; background: var(--mc-soft); color: var(--mc-ink); font-size: calc(13px * var(--mc-type-scale)); line-height: 1.6; }
 .mds-root .mc-hold-receipt header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; }
 .mds-root .mc-hold-receipt header strong { display: flex; align-items: center; gap: 10px; font-weight: 550; }
 .mds-root .mc-hold-receipt [role='timer'] { font-variant-numeric: tabular-nums; color: var(--mc-accent); font-weight: 550; }
@@ -629,7 +629,7 @@
 .mds-root .mc-workflow-request { margin: 0; max-width: 65ch; color: var(--mc-muted); font-size: calc(18px * var(--mc-type-scale)); line-height: 1.55; }
 .mds-root .mc-workflow-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; list-style: none; padding: 0; margin: 0; }
 .mds-root .mc-workflow-steps li { min-width: 0; border-top: 1px solid var(--mc-line); padding-top: 18px; }
-.mds-root .mc-workflow-step-mark { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid var(--mc-line); border-radius: 50%; font-variant-numeric: tabular-nums; color: var(--mc-muted); }
+.mds-root .mc-workflow-step-mark { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 0; border-radius: 50%; font-variant-numeric: tabular-nums; color: var(--mc-muted); }
 .mds-root .mc-workflow-steps [data-complete='true'] .mc-workflow-step-mark { background: var(--mc-action); border-color: var(--mc-action); color: var(--mc-on-action); }
 .mds-root .mc-workflow-steps h2 { font-size: calc(18px * var(--mc-type-scale)); font-weight: 550; line-height: 1.35; margin: 14px 0 8px; }
 .mds-root .mc-workflow-steps p { color: var(--mc-muted); font-size: calc(14px * var(--mc-type-scale)); line-height: 1.6; margin: 0; }
@@ -699,7 +699,7 @@
   color: var(--mc-accent); border-bottom-color: var(--mc-accent);
 }
 .mds-root[data-theme] .mds-desktop-app .mds-desktop-right .mds-panel {
-  background: var(--mc-surface); border: 1px solid var(--mc-line); border-radius: 8px; box-shadow: none;
+  background: var(--mc-surface); border: 0; border-radius: 8px; box-shadow: none;
 }
 .mds-root[data-theme] .mds-desktop-right .mds-panel + .mds-panel { margin-top: 16px; }
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-query-starters { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }

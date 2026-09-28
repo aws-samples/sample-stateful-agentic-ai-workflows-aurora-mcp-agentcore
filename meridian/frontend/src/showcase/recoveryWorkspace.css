@@ -69,7 +69,7 @@
   align-items: center;
   gap: 11px;
   padding: 0 15px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 10px;
   color: var(--mds-muted);
   background: transparent;
@@ -95,7 +95,7 @@
   place-items: center;
   /* Inverted chips: ink on the theme's ground, so the numerals read from the
      back of a room without a glow. */
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 50%;
   color: var(--mds-bg);
   background: var(--mds-ink);
@@ -281,11 +281,10 @@
 
 .mds-desktop-app .mds-brand-mark {
   border-color: var(--mds-chrome-brand-border);
-  box-shadow: var(--mds-chrome-brand-shadow);
 }
 
 .mds-desktop-app .mds-nav-item {
-  border: 1px solid transparent;
+  border: 0;
   color: var(--mds-chrome-nav);
   background: transparent;
 }
@@ -300,7 +299,6 @@
   color: var(--mds-chrome-nav-active);
   background: var(--mds-chrome-nav-active-background);
   border-color: var(--mds-chrome-nav-active-border);
-  box-shadow: var(--mds-chrome-nav-active-shadow);
 }
 
 .mds-desktop-app .mds-nav-item.is-active::before {
@@ -317,7 +315,6 @@
 
 .mds-desktop-app .mds-account-mini .mds-avatar {
   border-color: var(--mds-chrome-avatar-border);
-  box-shadow: var(--mds-chrome-avatar-shadow);
 }
 
 .mds-desktop-app .mds-account-copy strong {
@@ -562,12 +559,7 @@
   padding: 10px 30px 15px;
   border-top-color: rgba(112, 151, 188, 0.14);
   background:
-    linear-gradient(
-      180deg,
-      rgba(19, 15, 11, 0.72),
-      rgba(19, 15, 11, 0.98) 28%
-    );
-  box-shadow: 0 -16px 32px rgba(10, 7, 4, 0.22);
+    rgba(19, 15, 11, 0.72);
 }
 
 .mds-desktop-app:is(.is-proof, .is-experience) .mds-desktop-scroll {
@@ -602,7 +594,7 @@
   justify-content: space-between;
   gap: 18px;
   padding: 6px 8px 6px 14px;
-  border: 1px solid rgba(112, 151, 188, 0.18);
+  border: 0;
   border-radius: 10px;
   background: rgba(23, 19, 14, 0.72);
 }
@@ -632,7 +624,7 @@
   display: inline-flex;
   gap: 3px;
   padding: 3px;
-  border: 1px solid rgba(112, 151, 188, 0.2);
+  border: 0;
   border-radius: 8px;
   background: rgba(16, 13, 9, 0.72);
 }
@@ -640,7 +632,7 @@
 .mds-recovery-layout-review button {
   min-height: 32px;
   padding: 0 14px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 6px;
   color: #91a4b8;
   background: transparent;
@@ -651,7 +643,7 @@
 .mds-recovery-layout-review button.is-active {
   color: #ecf7ff;
   background: rgb(var(--mds-blue-rgb) / 0.24);
-  box-shadow: inset 0 0 0 1px rgba(91, 174, 255, 0.32);
+  border-color: var(--mds-line);
 }
 
 .mds-recovery-workspace.is-running .mds-recovery-overview {
@@ -712,7 +704,7 @@
   align-items: center;
   gap: 7px;
   padding: 0 11px;
-  border: 1px solid rgb(var(--mds-recovery-yellow-rgb) / 0.42);
+  border: 0;
   border-radius: 999px;
   color: #f6bd49;
   background: rgb(var(--mds-recovery-yellow-rgb) / 0.1);
@@ -757,7 +749,7 @@
   display: grid;
   gap: 12px;
   padding: 14px 16px 16px;
-  border: 1px solid rgba(83, 144, 188, 0.26);
+  border: 0;
   border-radius: 8px;
   background: var(--mds-experience-panel);
 }
@@ -800,7 +792,7 @@
   align-items: start;
   gap: 11px;
   padding: 10px 12px;
-  border: 1px solid rgb(var(--mds-blue-rgb) / 0.24);
+  border: 0;
   border-radius: 5px;
   color: #dfe8f2;
   background: rgb(var(--mds-blue-rgb) / 0.07);
@@ -1067,7 +1059,6 @@
   color: var(--mds-chrome-nav-active);
   background: var(--mds-chrome-nav-active-background);
   border-color: var(--mds-chrome-nav-active-border);
-  box-shadow: var(--mds-chrome-nav-active-shadow);
 }
 
 .mds-root[data-theme="light"] .mds-desktop-app .mds-desktop-right {
@@ -1078,7 +1069,6 @@
 .mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-desktop-sidebar {
   border-right-color: #e7e3dc;
   background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(18px);
 }
 
 .mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-brand,
@@ -1088,7 +1078,6 @@
 
 .mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-brand-mark {
   border-color: rgba(31, 111, 235, 0.24);
-  box-shadow: 0 3px 12px rgba(31, 111, 235, 0.12);
 }
 
 .mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-nav-item {
@@ -1104,7 +1093,7 @@
 .mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-nav-item.is-active {
   color: #0a2342;
   border-color: rgba(31, 111, 235, 0.08);
-  background: linear-gradient(90deg, rgb(var(--mds-blue-rgb) / 0.12), rgb(var(--mds-blue-rgb) / 0.045));
+  background: rgb(var(--mds-blue-rgb) / 0.12);
   box-shadow: none;
 }
 
@@ -1202,12 +1191,7 @@
   .mds-desktop-dock {
   border-top-color: #d8e0e8;
   background:
-    linear-gradient(
-      180deg,
-      rgba(244, 247, 250, 0.74),
-      rgba(244, 247, 250, 0.98) 28%
-    );
-  box-shadow: 0 -16px 32px rgba(60, 54, 43, 0.08);
+    rgba(244, 247, 250, 0.74);
 }
 
 .mds-root[data-theme="light"] .mds-desktop-app.is-experience .mds-chat-composer-wrap.is-recovery .mds-chat-action-chip {
@@ -1553,8 +1537,7 @@
   padding: 0 27px 14px;
   border-color: rgb(var(--mds-recovery-yellow-rgb) / 0.26);
   background:
-    linear-gradient(135deg, rgb(var(--mds-recovery-yellow-rgb) / 0.055), transparent 38%),
-    linear-gradient(180deg, rgba(33, 29, 23, 0.96), rgba(22, 18, 14, 0.98));
+    rgba(33, 29, 23, 0.96);
 }
 
 .mds-recovery-launch-card.is-compact {
@@ -1563,11 +1546,7 @@
   padding: 0 18px 8px;
   border-color: rgb(var(--mds-blue-rgb) / 0.34);
   background:
-    linear-gradient(90deg, rgb(var(--mds-blue-rgb) / 0.1), transparent 42%),
-    linear-gradient(180deg, rgba(32, 28, 22, 0.97), rgba(22, 18, 14, 0.98));
-  box-shadow:
-    0 12px 28px rgba(11, 8, 5, 0.16),
-    inset 0 1px rgba(255, 255, 255, 0.035);
+    rgba(32, 28, 22, 0.97);
 }
 
 .mds-recovery-launch-card.is-compact::after {
@@ -1593,7 +1572,6 @@
   content: "";
   border-radius: 50%;
   background: #55a8ff;
-  box-shadow: 0 0 0 5px rgb(var(--mds-blue-rgb) / 0.12);
 }
 
 .mds-recovery-launch-card.is-compact .mds-recovery-launch-steps {
@@ -1695,7 +1673,7 @@
 .mds-mobile-disruption-topline > em {
   min-height: 29px;
   padding: 0 11px;
-  border: 1px solid rgb(var(--mds-recovery-yellow-rgb) / 0.34);
+  border: 0;
   border-radius: 999px;
   color: #f7c65d;
   background: rgb(var(--mds-recovery-yellow-rgb) / 0.09);
@@ -1739,10 +1717,9 @@
   column-gap: 14px;
   row-gap: 4px;
   padding: 18px;
-  border: 1px solid var(--mds-blue-line);
+  border: 0;
   border-radius: 12px;
   background: var(--mds-blue-soft);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
 .mds-mobile-disruption-message > span {
@@ -1752,11 +1729,10 @@
   height: 46px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--mds-blue-line);
+  border: 0;
   border-radius: 12px;
   color: #8cc4ff;
   background: rgb(var(--mds-blue-rgb) / 0.16);
-  box-shadow: 0 10px 24px rgb(var(--mds-blue-rgb) / 0.12);
 }
 
 .mds-mobile-disruption-message > div {
@@ -1812,13 +1788,10 @@
   justify-self: start;
   margin-top: 16px;
   padding-inline: 22px;
-  border: 1px solid #ffcf6b;
+  border: 0;
   border-radius: 11px;
   color: #201100;
-  background: linear-gradient(145deg, #ffd778, #f6b73c);
-  box-shadow:
-    0 12px 28px rgb(var(--mds-recovery-yellow-rgb) / 0.23),
-    inset 0 1px rgba(255, 255, 255, 0.32);
+  background: #ffd778;
   font-weight: 840;
 }
 
@@ -1834,8 +1807,7 @@
 .mds-recovery-launch-card.is-running .mds-mobile-disruption-primary {
   border-color: #79b8ff;
   color: #211d16;
-  background: linear-gradient(145deg, #88c5ff, #2f8cff);
-  box-shadow: 0 12px 28px rgb(var(--mds-blue-rgb) / 0.2);
+  background: #88c5ff;
 }
 
 .mds-recovery-launch-card.is-running .mds-mobile-disruption-primary:disabled {
@@ -1850,20 +1822,9 @@
   aspect-ratio: 16 / 9;
   margin: 0;
   overflow: hidden;
-  border: 1px solid rgba(108, 154, 200, 0.22);
+  border: 0;
   border-radius: 10px;
   background: #17130f;
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.045);
-}
-
-.mds-mobile-disruption-media::after {
-  position: absolute;
-  inset: 0;
-  content: "";
-  background:
-    linear-gradient(90deg, rgba(19, 16, 12, 0.2), transparent 55%),
-    linear-gradient(0deg, rgba(19, 16, 12, 0.28), transparent 45%);
-  pointer-events: none;
 }
 
 .mds-mobile-disruption-media img {
@@ -1936,11 +1897,11 @@
 
 .mds-mobile-disruption-route-line i {
   height: 1px;
-  background: linear-gradient(90deg, rgb(var(--mds-blue-rgb) / 0.2), #4c9cff);
+  background: rgb(var(--mds-blue-rgb) / 0.2);
 }
 
 .mds-mobile-disruption-route-line i:nth-of-type(2) {
-  background: linear-gradient(90deg, #4c9cff, rgb(var(--mds-blue-rgb) / 0.2));
+  background: #4c9cff;
 }
 
 .mds-mobile-disruption-route-line b {
@@ -1966,7 +1927,7 @@
   display: inline-flex;
   align-items: center;
   padding: 0 11px;
-  border: 1px solid rgb(var(--mds-recovery-yellow-rgb) / 0.4);
+  border: 0;
   border-radius: 999px;
   color: #ffd16c;
   background: rgb(var(--mds-recovery-yellow-rgb) / 0.1);
@@ -1988,7 +1949,7 @@
   gap: 10px;
   margin-top: 14px;
   padding: 11px 12px;
-  border: 1px solid rgba(255, 112, 91, 0.32);
+  border: 0;
   border-radius: 9px;
   color: #ffb5a6;
   background: rgba(255, 112, 91, 0.075);
@@ -2088,7 +2049,6 @@
 .mds-recovery-launch-steps li.is-visited::before,
 .mds-recovery-launch-steps li.is-current::before {
   background: rgb(var(--mds-blue-rgb) / 0.68);
-  box-shadow: 0 0 9px rgb(var(--mds-blue-rgb) / 0.22);
 }
 
 .mds-recovery-launch-steps li.is-failed::before {
@@ -2101,7 +2061,7 @@
   height: 34px;
   display: grid;
   place-items: center;
-  border: 2px solid #53677c;
+  border: 0;
   border-radius: 50%;
   color: #71869a;
   background: #1d1914;
@@ -2123,7 +2083,6 @@
   border-color: #72b8ff;
   color: #dff0ff;
   background: #207dd6;
-  box-shadow: 0 0 0 5px rgb(var(--mds-blue-rgb) / 0.13);
 }
 
 .mds-recovery-launch-steps li.is-current > span svg {
@@ -2134,7 +2093,6 @@
   border-color: #ff705b;
   color: #ffe5df;
   background: #a63f32;
-  box-shadow: 0 0 0 5px rgba(255, 112, 91, 0.1);
 }
 
 .mds-recovery-launch-steps li > div {
@@ -2192,8 +2150,7 @@
   border: 1px solid #f8cb69;
   border-radius: 11px;
   color: #211200;
-  background: linear-gradient(145deg, #ffd475, #f6b73c);
-  box-shadow: 0 10px 24px rgb(var(--mds-recovery-yellow-rgb) / 0.2);
+  background: #ffd475;
   font-size: calc(13.5px * var(--mds-fs));
   font-weight: 800;
 }
@@ -2201,8 +2158,7 @@
 .mds-recovery-launch-card.is-running .mds-recovery-launch-actions button {
   border-color: #72b4ff;
   color: #211d16;
-  background: linear-gradient(145deg, #82c2ff, #2f8cff);
-  box-shadow: 0 10px 24px rgb(var(--mds-blue-rgb) / 0.2);
+  background: #82c2ff;
 }
 
 .mds-recovery-launch-actions > span {
@@ -2229,15 +2185,12 @@
 .mds-decision-card {
   min-width: 0;
   overflow: hidden;
-  border: 1px solid rgba(190, 219, 255, 0.15);
+  border: 0;
   border-radius: 16px;
   color: #e9eff5;
   font-family: var(--mds-font);
   background:
-    linear-gradient(180deg, rgba(33, 29, 23, 0.92), rgba(23, 19, 14, 0.94));
-  box-shadow:
-    0 16px 50px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    rgba(33, 29, 23, 0.92);
 }
 
 .mds-decision-card button {
@@ -2285,7 +2238,7 @@
   align-items: center;
   gap: 6px;
   padding: 0 11px;
-  border: 1px solid rgba(119, 153, 187, 0.28);
+  border: 0;
   border-radius: 999px;
   color: #aab8c7;
   background: rgba(116, 142, 169, 0.08);
@@ -2344,14 +2297,6 @@
   height: 100%;
 }
 
-.mds-recommended-plan-media > span {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(90deg, rgba(12, 9, 6, 0.24), transparent 65%),
-    linear-gradient(0deg, rgba(12, 9, 6, 0.72), transparent 58%);
-}
-
 .mds-recommended-plan-media > em {
   position: absolute;
   top: 12px;
@@ -2360,11 +2305,10 @@
   display: inline-flex;
   align-items: center;
   padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 0;
   border-radius: 999px;
   color: #f4fbf7;
   background: rgba(20, 16, 12, 0.7);
-  backdrop-filter: blur(8px);
   font-size: calc(10px * var(--mds-fs));
   font-style: normal;
   font-weight: 760;
@@ -2495,22 +2439,14 @@
 
 .mds-decision-route-line i {
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    rgb(var(--mds-blue-rgb) / 0.2),
-    rgb(var(--mds-blue-rgb) / 0.72)
-  );
+  background: rgb(var(--mds-blue-rgb) / 0.2);
 }
 
 .mds-decision-route-line i:last-child {
-  background: linear-gradient(
-    90deg,
-    rgb(var(--mds-blue-rgb) / 0.72),
-    rgb(var(--mds-blue-rgb) / 0.2)
-  );
+  background: rgb(var(--mds-blue-rgb) / 0.72);
 }
 
-/* Outlined pill chips, like the reference's "$0 change fee / seats held" row. */
+/* Pill chips, like the reference's "$0 change fee / seats held" row. */
 .mds-recommended-plan-signals {
   display: flex;
   flex-wrap: wrap;
@@ -2525,7 +2461,7 @@
   align-items: center;
   gap: 7px;
   padding: 5px 13px 5px 11px;
-  border: 1px solid rgba(126, 160, 196, 0.3);
+  border: 0;
   border-radius: 999px;
   color: #c3d0de;
   background: rgba(25, 21, 16, 0.5);
@@ -2610,7 +2546,7 @@
   align-items: center;
   gap: 6px;
   padding: 0 12px 0 10px;
-  border: 1px solid rgb(var(--mds-blue-rgb) / 0.34);
+  border: 0;
   border-radius: 999px;
   color: #94c5ff;
   background: rgb(var(--mds-blue-rgb) / 0.09);
@@ -2675,7 +2611,7 @@
   grid-template-columns: 18px minmax(0, 1fr);
   gap: 7px;
   padding: 9px 10px;
-  border: 1px solid rgba(168, 121, 255, 0.2);
+  border: 0;
   border-radius: 9px;
   background: rgba(126, 79, 194, 0.07);
 }
@@ -2742,10 +2678,9 @@
 
 .mds-decision-card-actions .is-primary {
   min-width: 188px;
-  border: 1px solid rgba(160, 213, 255, 0.62);
+  border: 0;
   color: #252019;
-  background: linear-gradient(180deg, #6ec2ff, #2f9bff);
-  box-shadow: 0 12px 26px rgba(47, 155, 255, 0.28);
+  background: #6ec2ff;
 }
 
 .mds-recommended-plan-card.is-action
@@ -2753,8 +2688,7 @@
   .is-primary {
   border-color: #f8cb69;
   color: #211200;
-  background: linear-gradient(145deg, #ffd475, #f6b73c);
-  box-shadow: 0 8px 20px rgb(var(--mds-recovery-yellow-rgb) / 0.2);
+  background: #ffd475;
 }
 
 .mds-recommended-plan-card.is-checkpointed
@@ -2762,8 +2696,7 @@
   .is-primary {
   border-color: #7ce0c5;
   color: #05241d;
-  background: linear-gradient(145deg, #82e5ca, #43ceab);
-  box-shadow: 0 8px 20px rgb(var(--mds-teal-rgb) / 0.18);
+  background: #82e5ca;
 }
 
 .mds-recommended-plan-card.is-ready
@@ -2771,12 +2704,11 @@
   .is-primary {
   border-color: #7ae6ad;
   color: #052619;
-  background: linear-gradient(145deg, #82e9b9, #32cf86);
-  box-shadow: 0 8px 20px rgb(var(--mds-recovery-green-rgb) / 0.18);
+  background: #82e9b9;
 }
 
 .mds-decision-card-actions .is-secondary {
-  border: 1px solid transparent;
+  border: 0;
   color: #7fb8ff;
   background: transparent;
   font-size: calc(13px * var(--mds-fs));
@@ -2841,13 +2773,13 @@
   padding: 13px 14px 0;
 }
 
-/* Ranked badge reads as an outlined pill; each slot gets its own accent. */
+/* Ranked badge reads as a pill; each slot gets its own accent. */
 .mds-flight-option-card > header > span {
   min-height: 28px;
   display: inline-flex;
   align-items: center;
   padding: 0 12px;
-  border: 1px solid rgb(var(--mds-blue-rgb) / 0.44);
+  border: 0;
   border-radius: 999px;
   color: #79b6ff;
   background: rgb(var(--mds-blue-rgb) / 0.09);
@@ -2889,14 +2821,6 @@
   inset: 0;
   width: 100%;
   height: 100%;
-}
-
-.mds-flight-option-card-media > span {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(0deg, rgba(14, 11, 8, 0.72), transparent 68%);
-  pointer-events: none;
 }
 
 .mds-flight-option-card:hover .mds-flight-option-card-media .mds-trip-photo {
@@ -3073,7 +2997,7 @@
   min-height: 134px;
   overflow: hidden;
   margin: 8px 14px 0;
-  border: 1px solid rgba(139, 174, 209, 0.16);
+  border: 0;
   border-radius: 10px;
   background: #17130f;
 }
@@ -3093,8 +3017,7 @@
 
 .mds-concierge-hotel-media-shade {
   background:
-    linear-gradient(90deg, rgba(12, 9, 6, 0.72), rgba(12, 9, 6, 0.08) 72%),
-    linear-gradient(0deg, rgba(12, 9, 6, 0.82), transparent 72%);
+    var(--mds-image-scrim);
 }
 
 .mds-concierge-hotel-media > em {
@@ -3105,11 +3028,10 @@
   display: inline-flex;
   align-items: center;
   padding: 0 9px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  border: 0;
   border-radius: 999px;
   color: #f3f7fb;
   background: rgba(15, 12, 8, 0.58);
-  backdrop-filter: blur(8px);
   font-size: calc(9.5px * var(--mds-fs));
   font-style: normal;
   font-weight: 760;
@@ -3137,7 +3059,6 @@
   font-size: calc(17px * var(--mds-fs));
   font-weight: 760;
   line-height: 1.12;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.72);
 }
 
 .mds-concierge-hotel-media > div span {
@@ -3161,7 +3082,7 @@
   display: inline-flex;
   align-items: center;
   padding: 0 11px;
-  border: 1px solid rgb(var(--mds-blue-rgb) / 0.32);
+  border: 0;
   border-radius: 999px;
   color: #94c5ff;
   background: rgb(var(--mds-blue-rgb) / 0.09);
@@ -3207,8 +3128,7 @@
 .mds-concierge-assistance-actions button.is-primary {
   border-color: rgba(255, 216, 130, 0.75);
   color: #241400;
-  background: linear-gradient(180deg, #ffd16e, #f6b73c);
-  box-shadow: 0 12px 24px rgb(var(--mds-recovery-yellow-rgb) / 0.22);
+  background: #ffd16e;
 }
 
 .mds-agent-proof-card > .mds-decision-card-head > small {
@@ -3242,7 +3162,7 @@
   height: 22px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(126, 148, 171, 0.24);
+  border: 0;
   border-radius: 50%;
   color: #7d8fa3;
   background: rgba(126, 148, 171, 0.05);
@@ -3386,17 +3306,13 @@
 .mds-root[data-theme="light"] .mds-recovery-layout-review button.is-active {
   color: #1558b0;
   background: #e8f1ff;
-  box-shadow: inset 0 0 0 1px rgba(31, 111, 235, 0.24);
 }
 
 .mds-root[data-theme="light"] .mds-decision-card {
   border-color: #d8dee6;
   color: #25384e;
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(247, 249, 252, 0.98));
-  box-shadow:
-    0 10px 28px rgba(35, 55, 78, 0.07),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    rgba(255, 255, 255, 0.98);
 }
 
 .mds-root[data-theme="light"] .mds-decision-card-head,
@@ -3420,7 +3336,7 @@
 }
 
 .mds-root[data-theme="light"] .mds-recovery-overview-meta {
-  color: #69788a;
+  color: #56687a;
 }
 
 .mds-root[data-theme="light"] .mds-recommended-plan-title p {
@@ -3513,15 +3429,13 @@
 .mds-root[data-theme="light"] .mds-recovery-launch-card {
   border-color: rgba(190, 135, 24, 0.24);
   background:
-    linear-gradient(135deg, rgb(var(--mds-recovery-yellow-rgb) / 0.08), transparent 38%),
-    linear-gradient(180deg, #ffffff, #f7f9fc);
+    #ffffff;
 }
 
 .mds-root[data-theme="light"] .mds-recovery-launch-card.is-compact {
   border-color: rgba(31, 111, 235, 0.26);
   background:
-    linear-gradient(90deg, rgba(31, 111, 235, 0.08), transparent 42%),
-    linear-gradient(180deg, #ffffff, #f7f9fc);
+    #ffffff;
 }
 
 .mds-root[data-theme="light"]
@@ -3543,7 +3457,7 @@
 .mds-root[data-theme="light"] .mds-mobile-disruption-status > span,
 .mds-root[data-theme="light"] .mds-recovery-launch-steps small,
 .mds-root[data-theme="light"] .mds-recovery-launch-actions > span {
-  color: #66788b;
+  color: #56687a;
 }
 
 .mds-root[data-theme="light"] .mds-mobile-disruption-topline > em {
@@ -3589,7 +3503,7 @@
 }
 
 .mds-root[data-theme="light"] .mds-recovery-timeline-heading > small {
-  color: #6c7d8f;
+  color: #56687a;
 }
 
 .mds-root[data-theme="light"] .mds-recovery-launch-steps li::before {
@@ -3610,7 +3524,7 @@
 
 .mds-root[data-theme="light"] .mds-recovery-launch-steps li.is-pending strong,
 .mds-root[data-theme="light"] .mds-recovery-launch-steps li.is-pending small {
-  color: #7a8b9c;
+  color: #5a6b7d;
 }
 
 .mds-root[data-theme="light"] .mds-recovery-launch-card > .mds-decision-route {
@@ -3801,7 +3715,7 @@
 }
 
 /* Bring it home: the held package goes back to the concierge for the traveler's confirmation. */
-.mds-recovery-handoff { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 18px; padding:16px 18px; border:1px solid var(--mds-line-strong); border-radius:8px; background:var(--mds-card); }
+.mds-recovery-handoff { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 18px; padding:16px 18px; border:0; border-radius:8px; background:var(--mds-card); }
 .mds-recovery-handoff > div { display:grid; gap:4px; min-width:0; flex:1 1 320px; }
 .mds-recovery-handoff strong { font-size:calc(15px * var(--mds-fs)); color:var(--mds-on-surface); }
 .mds-recovery-handoff span { color:var(--mds-on-surface-soft); font-size:calc(13px * var(--mds-fs)); line-height:1.5; }

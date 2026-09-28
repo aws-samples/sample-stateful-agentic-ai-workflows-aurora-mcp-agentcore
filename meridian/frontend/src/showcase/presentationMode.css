@@ -48,7 +48,7 @@
   right: 24px;
   width: min(390px, calc(100vw - 32px));
   padding: 20px;
-  border: 1px solid var(--mc-line);
+  border: 0;
   border-radius: 12px;
   background: var(--mc-surface);
   font-size: 15px;
@@ -156,8 +156,8 @@
 .mc-display-settings-panel {
   position: absolute; right: 0; top: calc(100% + 8px); z-index: 40;
   display: grid; gap: 16px; width: 260px; max-width: calc(100vw - 32px);
-  padding: 20px; border: 1px solid var(--mc-line); border-radius: 8px;
-  background: var(--mc-surface); box-shadow: 0 12px 28px rgb(0 0 0 / 0.1);
+  padding: 20px; border: 0; border-radius: 8px;
+  background: var(--mc-surface); box-shadow: var(--mds-shadow-float);
 }
 .mc-display-settings-panel .mc-projector-option { min-height: 44px; }
 .mds-root .mc-display-settings-panel button { white-space: normal; text-align: left; }

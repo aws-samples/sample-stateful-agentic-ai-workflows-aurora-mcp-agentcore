@@ -52,7 +52,7 @@
 .mds-brief-search-flow .mds-brief-merge { margin-top:10px; font-size:14px; }
 .mds-brief-destination-output { position:relative; min-width:0; }
 .mds-brief-result-connector { position:absolute; left:-29px; top:14px; color:var(--mc-muted); }
-.mds-brief-destination { align-self:start; min-width:0; border:1px solid var(--mc-line); border-radius:8px; overflow:hidden; }
+.mds-brief-destination { align-self:start; min-width:0; border:0; border-radius:8px; overflow:hidden; }
 .mds-brief-destination>img { display:block; width:100%; height:auto; aspect-ratio:16 / 9; object-fit:cover; }
 .mds-brief-destination>div { padding:12px 14px 14px; }
 .mds-brief-destination span { display:block; color:var(--mc-muted); font-size:12px; margin-bottom:5px; }

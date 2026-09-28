@@ -14,7 +14,7 @@ export type TripVisualVariant =
 
 // Local photos that genuinely match a variant. city/mountain/landscape have
 // no on-disk photo on purpose: when the live image_url is unreachable we let
-// the themed CSS gradient stand in rather than force an unrelated stock photo
+// the themed CSS fill stand in rather than force an unrelated stock photo
 // (a Tokyo card must never fall back to a Tuscany vineyard).
 export const LOCAL_PHOTO: Partial<Record<TripVisualVariant, string>> = {
   willamette: '/travel/vineyard.jpg',
@@ -54,7 +54,7 @@ export function tripVisualVariant(product: Product): TripVisualVariant {
  * seeded `image_url` points straight at it, so the catalog value is what a
  * card wants in almost every case. The variant photo is the fallback for a
  * product that arrives without one - a live search result, say - and null is
- * the last resort, which shows the themed gradient rather than a photograph
+ * the last resort, which shows the themed fill rather than a photograph
  * of somewhere else.
  */
 export function tripVisualPhoto(product: Product): { variant: TripVisualVariant; src: string | null } {

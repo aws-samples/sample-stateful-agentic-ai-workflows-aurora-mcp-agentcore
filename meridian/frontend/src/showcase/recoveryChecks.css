@@ -9,7 +9,7 @@
 .mc-recovery-check-list strong { display:block; font-size:13px; font-weight:550; }
 .mc-recovery-check-list small { display:block; font-size:12px; color:var(--mc-muted); margin-top:4px; }
 .mc-recovery-check-list svg { flex:none; color:var(--mc-muted); }
-.mc-recovery-check-index { display:grid; place-items:center; width:24px; height:24px; flex:none; border:1px solid var(--mc-line); border-radius:50%; font-size:12px; color:var(--mc-muted); }
+.mc-recovery-check-index { display:grid; place-items:center; width:24px; height:24px; flex:none; border:0; border-radius:50%; font-size:12px; color:var(--mc-muted); }
 .mc-recovery-check-list .is-observed small { color:var(--mc-accent); }
 .mc-recovery-check-list .is-denied small { color:var(--mc-caution); }
 .mc-recovery-check-list .is-selected { border-color:var(--mc-accent); }
@@ -24,7 +24,7 @@
 .mc-recovery-check-detail dd { margin:4px 0 0; overflow-wrap:anywhere; }
 .mc-recovery-check-detail button { display:flex; align-items:center; gap:8px; padding:10px 0 0; background:none; border:0; color:var(--mc-accent); font:inherit; font-size:13px; cursor:pointer; }
 .mc-recovery-action-note { margin:0; max-width:90ch; color:var(--mc-muted); font-size:calc(14px * var(--mc-type-scale, 1)); line-height:1.6; }
-.mc-trip-context { border:1px solid var(--mc-line); border-radius:8px; background:var(--mc-surface); }
+.mc-trip-context { border:0; border-radius:8px; background:var(--mc-surface); }
 .mc-trip-context>summary { display:flex; align-items:center; gap:16px; padding:16px 20px; cursor:pointer; list-style:none; color:var(--mc-ink); }
 .mc-trip-context>summary::-webkit-details-marker { display:none; }
 .mc-trip-context-route { display:flex; align-items:center; gap:12px; font-size:20px; }

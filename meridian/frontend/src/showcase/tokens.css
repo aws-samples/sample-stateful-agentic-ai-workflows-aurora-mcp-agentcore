@@ -1,0 +1,8 @@
+:root {
+  --mds-shadow-float: 0 12px 32px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.12);
+  --mds-image-scrim: linear-gradient(to top, rgb(0 0 0 / 0.72), rgb(0 0 0 / 0) 60%);
+}
+
+:root[data-theme='light'] {
+  --mds-shadow-float: 0 12px 32px rgb(0 0 0 / 0.14), 0 0 0 1px rgb(0 0 0 / 0.08);
+}

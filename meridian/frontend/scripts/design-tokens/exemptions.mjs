@@ -12,13 +12,6 @@ export const EXEMPTIONS = {
     'src/showcase/recoveryWorkspace.css',
     'src/showcase/surfaceSwitch.css',
   ],
-  'blur': [
-    'src/showcase/airlineConcierge.css',
-    'src/showcase/meridianShowcase.css',
-    'src/showcase/recoveryDecisionRefresh.css',
-    'src/showcase/recoveryWorkspace.css',
-    'src/showcase/surfaceSwitch.css',
-  ],
   'type': [
     'src/preflight.css',
     'src/showcase/airlineConcierge.css',
@@ -47,17 +40,5 @@ export const EXEMPTIONS = {
     'src/showcase/solutionBriefing.css',
     'src/showcase/surfaceSwitch.css',
     'src/showcase/surfaces/briefingWalkthrough.css',
-  ],
-  'gradient': [
-    'src/index.css',
-    'src/showcase/meridianShowcase.css',
-    'src/showcase/recoveryWorkspace.css',
-  ],
-  'shadow': [
-    'src/showcase/meridianShowcase.css',
-    'src/showcase/presentationMode.css',
-    'src/showcase/recoveryDecisionRefresh.css',
-    'src/showcase/recoveryWorkspace.css',
-    'src/showcase/surfaceSwitch.css',
   ],
 };

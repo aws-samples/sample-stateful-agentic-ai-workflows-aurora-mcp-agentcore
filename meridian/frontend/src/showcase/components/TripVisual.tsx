@@ -18,7 +18,7 @@ export function TripVisual({ product, compact = false }: { product: Product; com
           loading="lazy"
           onError={(event) => {
             // Try the local category photo once; if there is none (or it also
-            // fails), hide the image so the themed gradient shows through
+            // fails), hide the image so the themed fill shows through
             // instead of an unrelated fallback photo.
             const img = event.currentTarget;
             if (localPhoto && img.src !== new URL(localPhoto, window.location.origin).href) {

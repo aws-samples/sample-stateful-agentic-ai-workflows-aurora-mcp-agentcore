@@ -35,7 +35,6 @@
   border-color: var(--mds-experience-border);
   border-radius: 8px;
   background: var(--mds-experience-panel);
-  box-shadow: 0 10px 26px rgba(8, 6, 3, 0.16);
 }
 
 .mds-recovery-workspace .mds-decision-card-head {
@@ -85,7 +84,6 @@
   padding: 0 8px;
   border-radius: 5px;
   background: rgba(20, 16, 12, 0.82);
-  backdrop-filter: none;
   font-size: calc(9px * var(--mds-fs));
 }
 
@@ -354,7 +352,6 @@
 
 .mds-recovery-workspace .mds-concierge-hotel-media > em {
   border-radius: 4px;
-  backdrop-filter: none;
 }
 
 .mds-recovery-workspace .mds-concierge-hotel-media > div small {
@@ -388,7 +385,6 @@
   .mds-decision-card {
   border-color: #dedbd4;
   background: #ffffff;
-  box-shadow: 0 8px 22px rgba(48, 43, 34, 0.08);
 }
 
 .mds-root[data-theme="light"]
@@ -528,7 +524,7 @@
   align-items: center;
   margin: 10px 0 2px;
   padding: 8px 10px;
-  border: 1px solid rgb(var(--mds-green-rgb) / 0.28);
+  border: 0;
   border-radius: 9px;
   background: rgb(var(--mds-green-rgb) / 0.08);
 }

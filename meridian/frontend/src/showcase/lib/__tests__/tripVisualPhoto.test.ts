@@ -71,7 +71,7 @@ describe('tripVisualPhoto', () => {
   });
 
   it('never falls a city trip back to the Tuscany vineyard photo', () => {
-    // No live URL and no city photo on disk: expect the gradient (null src),
+    // No live URL and no city photo on disk: expect the fill (null src),
     // not tuscany-vineyard.jpg.
     expect(tripVisualPhoto(product({ product_id: 'CITY-NO-PHOTO', image_url: '' })).src).toBeNull();
   });

@@ -46,7 +46,7 @@
   gap: 2px;
   min-height: 46px;
   padding: 6px 15px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 10px;
   color: var(--mds-muted);
   background: transparent;
@@ -69,7 +69,6 @@
   color: var(--mds-on-surface);
   border-color: var(--mds-blue-line);
   background: var(--mds-card);
-  box-shadow: 0 1px 3px rgba(8, 18, 15, 0.1);
 }
 
 .mds-surface-tab strong {
@@ -252,7 +251,7 @@
 
 /* Concierge has a composer dock now, so its stage can no longer be pinned to
    the full viewport height: at 100dvh the grid ran under the dock and the
-   dock's blur sat over the bottom of the trip cards. The main grid's first row
+   dock sat over the bottom of the trip cards. The main grid's first row
    already resolves to the space the dock leaves. */
 .mds-root .mds-desktop-app.is-discovery .mds-desktop-scroll {
   height: auto;
@@ -285,7 +284,7 @@
   min-height: 0;
   overflow-y: auto;
   padding: 18px;
-  border: 1px solid var(--mds-line);
+  border: 0;
   border-radius: 16px;
   background: var(--mds-card);
   scrollbar-width: thin;
@@ -309,7 +308,6 @@
 
 .mds-continuity-dot.is-live {
   background: #35b37e;
-  box-shadow: 0 0 0 3px rgba(53, 179, 126, 0.16);
 }
 
 .mds-continuity-claim {
@@ -347,7 +345,7 @@
   width: 21px;
   height: 21px;
   margin-top: 1px;
-  border: 1px solid var(--mds-line-strong);
+  border: 0;
   border-radius: 50%;
   color: var(--mds-dim);
   background: var(--mds-fill-1);
@@ -491,7 +489,6 @@
   background:
     var(--mds-card),
     var(--mds-app-surface);
-  backdrop-filter: blur(14px);
 }
 
 .mds-shell-surface-nav {
@@ -550,7 +547,6 @@
   border-color: var(--mds-line-strong);
   color: var(--mds-on-surface);
   background: var(--mds-blue-soft);
-  box-shadow: inset 0 0 0 1px var(--mds-line);
 }
 
 .mds-shell-header .mds-surface-tab.is-active small {

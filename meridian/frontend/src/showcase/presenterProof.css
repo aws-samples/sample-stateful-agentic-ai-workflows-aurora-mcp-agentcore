@@ -22,7 +22,7 @@
   flex-direction: column;
   gap: clamp(18px, 2.4vw, 30px);
   padding: clamp(22px, 3vw, 40px);
-  border: 1px solid var(--proof-line);
+  border: 0;
   border-radius: 18px;
   color: var(--proof-ink);
   background: #08120f;
@@ -106,18 +106,8 @@
   gap: 5px;
   align-content: start;
   padding: clamp(16px, 1.7vw, 22px);
-  border: 1px dashed var(--proof-line);
+  border: 0;
   border-radius: 14px;
-}
-
-.mds-proof-worker.is-running {
-  border-style: solid;
-  border-color: rgba(159, 211, 180, 0.5);
-}
-
-.mds-proof-worker.is-stopped {
-  border-style: solid;
-  border-color: rgba(224, 169, 125, 0.55);
 }
 
 .mds-proof-worker-glyph {
@@ -159,7 +149,7 @@
   align-content: start;
   gap: 12px;
   padding: clamp(16px, 1.7vw, 22px);
-  border: 1px solid rgba(159, 211, 180, 0.4);
+  border: 0;
   border-radius: 14px;
   background: var(--proof-panel);
 }
@@ -414,7 +404,7 @@
 
 .mds-proof-read-error {
   padding: 12px 16px;
-  border: 1px solid var(--proof-line);
+  border: 0;
   border-radius: 8px;
   color: var(--proof-ink);
   font-size: 14px;
