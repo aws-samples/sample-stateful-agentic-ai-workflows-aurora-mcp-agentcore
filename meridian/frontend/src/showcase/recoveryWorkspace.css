@@ -5503,7 +5503,7 @@
   min-width: 0;
   overflow: hidden;
   color: #dde7f0;
-  font-family: var(--mds-mono);
+  font-family: var(--mds-font-mono);
   font-size: calc(10.5px * var(--mds-fs));
   text-overflow: ellipsis;
   white-space: nowrap;

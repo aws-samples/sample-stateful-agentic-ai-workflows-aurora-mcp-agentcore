@@ -193,7 +193,7 @@
 .mds-proof-store-rows dd {
   margin: 0;
   overflow-wrap: anywhere;
-  font-family: var(--mds-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--mds-font-mono);
   font-size: 13px;
   text-align: right;
 }
@@ -329,7 +329,7 @@
 
 .mds-proof-fact-value.is-mono {
   overflow-wrap: anywhere;
-  font-family: var(--mds-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--mds-font-mono);
   font-size: clamp(13px, 1.15vw, 15px);
   letter-spacing: -0.01em;
 }
@@ -367,7 +367,7 @@
 
 .mds-proof-subject {
   overflow-wrap: anywhere;
-  font-family: var(--mds-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--mds-font-mono);
   font-size: 12px;
 }
 

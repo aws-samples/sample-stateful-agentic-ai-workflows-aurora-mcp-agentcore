@@ -1578,7 +1578,7 @@
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.05);
   color: var(--mds-on-surface-soft);
-  font-family: var(--mds-mono, ui-monospace, monospace);
+  font-family: var(--mds-font-mono);
   font-size: calc(11px * var(--mds-fs));
   white-space: nowrap;
 }

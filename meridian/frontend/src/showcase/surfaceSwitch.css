@@ -18,7 +18,7 @@
   padding: 5px;
   border: 1px solid var(--mds-line);
   border-radius: 14px;
-  background: var(--mds-fill-0, var(--mds-fill-1));
+  background: var(--mds-fill-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -68,7 +68,7 @@
 .mds-surface-tab.is-active {
   color: var(--mds-on-surface);
   border-color: var(--mds-blue-line);
-  background: var(--mds-surface, #fff);
+  background: var(--mds-card);
   box-shadow: 0 1px 3px rgba(8, 18, 15, 0.1);
 }
 
@@ -425,7 +425,7 @@
 .mds-continuity-foot code {
   overflow-wrap: anywhere;
   color: var(--mds-muted);
-  font-family: var(--mds-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--mds-font-mono);
   font-size: calc(11.5px * var(--mds-fs));
 }
 

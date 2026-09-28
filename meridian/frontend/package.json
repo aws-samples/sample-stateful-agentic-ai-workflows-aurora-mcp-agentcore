@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.e2e.json",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0 && node scripts/design-tokens/check.mjs",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest --run",
@@ -46,6 +46,7 @@
     "eslint-plugin-react-refresh": "^0.4.5",
     "fast-check": "^3.15.0",
     "jsdom": "^23.0.0",
+    "postcss": "^8.5.28",
     "typescript": "^5.3.0",
     "vite": "^7.3.1",
     "vitest": "^4.1.11"
