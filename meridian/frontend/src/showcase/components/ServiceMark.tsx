@@ -39,28 +39,28 @@ const MARKS = {
     label: 'Amazon Aurora',
   },
   agentcore: {
-    src: '/brand/agentcore.svg',
-    smallSrc: '/brand/agentcore-sm.svg',
+    src: '/brand/agentcore-purple/agentcore.svg',
+    smallSrc: '/brand/agentcore-purple/agentcore.svg',
     label: 'Amazon Bedrock AgentCore',
   },
   'agentcore-runtime': {
-    src: '/brand/agentcore-purple/runtime.png',
-    smallSrc: '/brand/agentcore-purple/runtime.png',
+    src: '/brand/agentcore-purple/runtime.svg',
+    smallSrc: '/brand/agentcore-purple/runtime.svg',
     label: 'AgentCore Runtime',
   },
   'agentcore-gateway': {
-    src: '/brand/agentcore-purple/gateway.png',
-    smallSrc: '/brand/agentcore-purple/gateway.png',
+    src: '/brand/agentcore-purple/gateway.svg',
+    smallSrc: '/brand/agentcore-purple/gateway.svg',
     label: 'AgentCore Gateway',
   },
   'agentcore-memory': {
-    src: '/brand/agentcore-purple/memory.png',
-    smallSrc: '/brand/agentcore-purple/memory.png',
+    src: '/brand/agentcore-purple/memory.svg',
+    smallSrc: '/brand/agentcore-purple/memory.svg',
     label: 'AgentCore Memory',
   },
   'agentcore-policy': {
-    src: '/brand/agentcore-purple/policy.png',
-    smallSrc: '/brand/agentcore-purple/policy.png',
+    src: '/brand/agentcore-purple/policy.svg',
+    smallSrc: '/brand/agentcore-purple/policy.svg',
     label: 'AgentCore Policy',
   },
   bedrock: {

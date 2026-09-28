@@ -33,10 +33,6 @@
 .mds-brief-icon-dark { display:none; }
 .mds-root[data-theme='dark'] .mds-brief-icon-light { display:none; }
 .mds-root[data-theme='dark'] .mds-brief-icon-dark { display:block; }
-.mds-root[data-theme='dark'] .mds-service-mark-agentcore-runtime { content:url('/brand/agentcore-purple/runtime-dark.png'); }
-.mds-root[data-theme='dark'] .mds-service-mark-agentcore-gateway { content:url('/brand/agentcore-purple/gateway-dark.png'); }
-.mds-root[data-theme='dark'] .mds-service-mark-agentcore-memory { content:url('/brand/agentcore-purple/memory-dark.png'); }
-.mds-root[data-theme='dark'] .mds-service-mark-agentcore-policy { content:url('/brand/agentcore-purple/policy-dark.png'); }
 @media (min-width:1241px) and (min-height:850px) {
   .mds-root[data-audience-layout='true'] .mds-brief-arch-diagram { max-height:45dvh; }
 }

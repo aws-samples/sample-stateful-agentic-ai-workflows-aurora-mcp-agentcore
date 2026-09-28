@@ -10,8 +10,8 @@ export function BriefingArchitecture() {
       <rect width={width} height={112} rx={8} />
       {step && <g className="mds-brief-arch-number" transform={`translate(${width - 16} 0)`}><circle r={14} /><text textAnchor="middle" y={5}>{step}</text></g>}
       {icon && (icon.startsWith('agentcore-') ? <>
-        <image className="mds-brief-icon-light" href={`/brand/agentcore-purple/${icon.slice(10)}.png`} x={16} y={16} width={32} height={32} />
-        <image className="mds-brief-icon-dark" href={`/brand/agentcore-purple/${icon.slice(10)}-dark.png`} x={16} y={16} width={32} height={32} />
+        <image className="mds-brief-icon-light" href={`/brand/agentcore-purple/${icon.slice(10)}.svg`} x={16} y={16} width={32} height={32} />
+        <image className="mds-brief-icon-dark" href={`/brand/agentcore-purple/${icon.slice(10)}-dark.svg`} x={16} y={16} width={32} height={32} />
       </> : <image href={`/brand/aws-2026-07-31/${icon}.svg`} x={16} y={16} width={32} height={32} />)}
       <text x={icon ? 58 : 16} y={38} className="mds-brief-arch-title">{title}</text>
       {lines.map((line, index) => <text x={16} y={70 + index * 23} key={line}>{line}</text>)}

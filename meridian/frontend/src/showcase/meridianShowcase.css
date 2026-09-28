@@ -7194,6 +7194,24 @@
   vertical-align: -2px;
 }
 
+/* AgentCore marks ship as black-stroke art for light backgrounds and
+   white-stroke art for dark ones, so dark mode swaps the file, not the color. */
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore {
+  content: url('/brand/agentcore-purple/agentcore-dark.svg');
+}
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore-runtime {
+  content: url('/brand/agentcore-purple/runtime-dark.svg');
+}
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore-gateway {
+  content: url('/brand/agentcore-purple/gateway-dark.svg');
+}
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore-memory {
+  content: url('/brand/agentcore-purple/memory-dark.svg');
+}
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore-policy {
+  content: url('/brand/agentcore-purple/policy-dark.svg');
+}
+
 /* The MCP mark is stroke art on currentColor, so it needs no tile treatment -
    just optical alignment with the text beside it. */
 .mds-mcp-mark {
