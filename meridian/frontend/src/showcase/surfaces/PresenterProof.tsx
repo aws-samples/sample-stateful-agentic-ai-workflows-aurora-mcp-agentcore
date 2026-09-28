@@ -117,7 +117,7 @@ export function PresenterProof({
       <section className="mds-proof-surface" aria-label="System evidence">
         <header className="mc-evidence-intro"><h1>System evidence</h1><p>See which worker ran and what Aurora saved.</p></header>
         <div className="mds-proof-empty" role="status">
-          <AuroraIcon size={22} aria-hidden="true" />
+          <AuroraIcon size={56} aria-hidden="true" />
           <h2>Journey evidence is unavailable.</h2>
           <p>{error}</p>
           {onOpenRecovery && <button type="button" className="mds-proof-refresh" onClick={onOpenRecovery}>Open recovery desk</button>}
@@ -134,7 +134,7 @@ export function PresenterProof({
       <section className="mds-proof-surface" aria-label="System evidence">
         <header className="mc-evidence-intro"><h1>System evidence</h1><p>Read the saved steps, access checks, and package hold from Aurora.</p></header>
         <div className="mds-proof-empty" role="status" aria-busy={loading}>
-          <AuroraIcon size={22} aria-hidden="true" />
+          <AuroraIcon size={56} aria-hidden="true" />
           <h2>Reading the journey from Aurora…</h2>
         </div>
       </section>

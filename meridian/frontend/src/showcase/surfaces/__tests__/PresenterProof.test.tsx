@@ -90,6 +90,17 @@ describe('Presenter proof', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Connection interrupted');
   });
 
+  it('marks both empty states with a large official Aurora tile', () => {
+    const { container, rerender } = render(
+      <PresenterProof document={null} loading error={null} onRefresh={noop} />,
+    );
+    const mark = () => container.querySelector('.mds-proof-empty .mds-service-mark-aurora');
+    expect(mark()).toHaveAttribute('src', '/brand/aws-2026-07-31/aurora.svg');
+    expect(mark()).toHaveAttribute('width', '56');
+    rerender(<PresenterProof document={null} loading={false} error="Unavailable" onRefresh={noop} />);
+    expect(mark()).toHaveAttribute('width', '56');
+  });
+
   it('reads the headline off whether a worker was actually replaced', () => {
     render(
       <PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,

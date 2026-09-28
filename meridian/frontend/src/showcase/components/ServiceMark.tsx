@@ -34,8 +34,8 @@ const MARKS = {
     label: 'Amazon S3',
   },
   aurora: {
-    src: '/brand/aurora.svg',
-    smallSrc: '/brand/aurora.svg',
+    src: '/brand/aws-2026-07-31/aurora.svg',
+    smallSrc: '/brand/aws-2026-07-31/aurora.svg',
     label: 'Amazon Aurora',
   },
   agentcore: {

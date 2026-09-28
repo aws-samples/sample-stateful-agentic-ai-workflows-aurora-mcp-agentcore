@@ -375,11 +375,17 @@
 
 .mds-proof-empty {
   display: grid;
+  align-content: center;
   justify-items: center;
   gap: 10px;
   padding: clamp(40px, 7vw, 90px) 20px;
   text-align: center;
   color: var(--proof-dim);
+}
+
+/* At this size the tile's 3px default radius reads as a hard square. */
+.mds-proof-empty .mds-service-mark {
+  border-radius: 12px;
 }
 
 .mds-proof-empty h2 {
