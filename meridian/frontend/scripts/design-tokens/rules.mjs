@@ -1,7 +1,9 @@
 import postcss from 'postcss';
 
-const COLOR_LITERAL =
-  /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(|(?<![-\w])(?:white|black)(?![-\w])/;
+const COLOR_LITERAL = new RegExp(
+  '#[0-9a-fA-F]{3,8}\\b|\\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\\(' +
+  '|(?<![-\\w])(?:white|black)(?![-\\w])',
+);
 const GRADIENT = /\b(?:repeating-)?(?:linear|radial|conic)-gradient\(/;
 const VAR_REF = /var\(\s*(--[\w-]+)\s*(,)?/g;
 const TYPE_TOKEN = /^var\(--mds-type-[a-z0-9-]+\)$/;
@@ -53,7 +55,10 @@ export function checkCss(css, context) {
     const prop = decl.prop.startsWith('--') ? decl.prop : decl.prop.toLowerCase();
     const value = decl.value.trim();
     for (const rule of declarationRules(prop, value, context)) {
-      violations.push({ rule, file: context.file, line: decl.source?.start?.line ?? 0, prop, value });
+      violations.push({
+        rule, file: context.file, line: decl.source?.start?.line ?? 0,
+        prop, value,
+      });
     }
   });
   return violations;

@@ -19,10 +19,14 @@ function cssFiles(dir) {
 const read = file => fs.readFileSync(file, 'utf8');
 const rel = file => path.relative(FRONTEND, file);
 const scanned = [
-  ...cssFiles(path.join(SRC, 'showcase')), path.join(SRC, 'index.css'), path.join(SRC, 'preflight.css'),
+  ...cssFiles(path.join(SRC, 'showcase')),
+  path.join(SRC, 'index.css'),
+  path.join(SRC, 'preflight.css'),
 ];
 const definedVars = new Set(
-  [...scanned, ...cssFiles(path.join(SRC, 'stage'))].flatMap(file => [...collectDefinedVars(read(file))]),
+  [...scanned, ...cssFiles(path.join(SRC, 'stage'))].flatMap(
+    file => [...collectDefinedVars(read(file))],
+  ),
 );
 const all = scanned.flatMap(file => checkCss(read(file), {
   file: rel(file), isTokensFile: file === TOKENS_FILE, definedVars,
@@ -44,7 +48,9 @@ const stale = Object.entries(EXEMPTIONS).flatMap(([rule, files]) => files
   .map(file => `${rule}: ${file}`));
 
 for (const v of violations) console.error(`${v.file}:${v.line} [${v.rule}] ${v.prop}: ${v.value}`);
-for (const entry of stale) console.error(`stale exemption, delete it from exemptions.mjs: ${entry}`);
+for (const entry of stale) {
+  console.error(`stale exemption, delete it from exemptions.mjs: ${entry}`);
+}
 if (violations.length || stale.length) {
   console.error(`design tokens: ${violations.length} violations, ${stale.length} stale exemptions`);
   process.exit(1);

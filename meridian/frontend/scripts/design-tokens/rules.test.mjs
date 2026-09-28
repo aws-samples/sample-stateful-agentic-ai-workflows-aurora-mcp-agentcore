@@ -34,7 +34,9 @@ describe('checkCss', () => {
     expect(rules('.a { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; }'))
       .toEqual(['type', 'type', 'type']);
     expect(rules('.a { font: 14px sans-serif; }')).toEqual(['type']);
-    expect(rules('.a { font-size: inherit; font-weight: inherit; letter-spacing: 0; }')).toEqual([]);
+    expect(
+      rules('.a { font-size: inherit; font-weight: inherit; letter-spacing: 0; }'),
+    ).toEqual([]);
   });
 
   it('flags radius literals and allows 0, 50% and tokens', () => {
