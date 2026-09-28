@@ -3101,7 +3101,6 @@
 }
 
 .mds-workflow-path span.is-visited {
-  border-color: var(--mds-green);
   color: var(--mds-green);
   background: var(--mds-green-fill);
 }
@@ -4043,7 +4042,6 @@
   line-height: 1;
 }
 .mds-wfgraph-route-summary span.is-lit {
-  border-color: var(--mds-blue);
   background: var(--mds-blue-fill);
   color: var(--mds-blue);
 }
