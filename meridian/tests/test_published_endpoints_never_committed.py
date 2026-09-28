@@ -4,7 +4,8 @@ The published demo lives in one AWS account behind basic auth. Committing its
 address would hand anyone reading the sample an endpoint to scan, and it would
 rot into a dead link the moment the stack comes down. `publish.py` records the
 address in the gitignored `.local/published.json` and `scripts/published.py`
-reads it back locally, so nothing needs it in tree.
+reads it back locally, so nothing needs it in tree. The AgentCore gateway URL
+likewise lives in the gitignored `meridian/.env`.
 
 The same holds for account IDs. The AgentCore configuration is committed as
 templates and rendered per account by `scripts/render_agentcore_config.py`,
@@ -24,20 +25,45 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
+requires_git_checkout = pytest.mark.skipif(
+    not (REPO / ".git").exists(),
+    reason="scans the files git tracks; this copy has no .git (for example, a ZIP download)",
+)
 
-# Endpoints that name one account's deployment. A bare mention of "CloudFront"
-# or "App Runner" is fine; a resolvable host is not.
+PUBLISHED_ADDRESS = (
+    "The address belongs in .local/published.json, which is gitignored; read it back "
+    "with `python scripts/published.py`."
+)
+# Endpoints that name one account's deployment, with where each belongs instead.
+# A bare mention of "CloudFront" or a placeholder host is fine; a resolvable host
+# is not. A gateway ID always ends in a hyphen and ten lowercase letters or
+# digits, so test hosts such as meridian-test.gateway... and {id}.gateway... pass.
 ENDPOINTS = {
-    "CloudFront distribution": re.compile(r"\b[a-z0-9]{10,}\.cloudfront\.net\b"),
-    "App Runner service": re.compile(r"\b[a-z0-9]{8,}\.[a-z0-9-]+\.awsapprunner\.com\b"),
+    "CloudFront distribution": (
+        re.compile(r"\b[a-z0-9]{10,}\.cloudfront\.net\b"),
+        PUBLISHED_ADDRESS,
+    ),
+    "App Runner service": (
+        re.compile(r"\b[a-z0-9]{8,}\.[a-z0-9-]+\.awsapprunner\.com\b"),
+        PUBLISHED_ADDRESS,
+    ),
+    "AgentCore gateway": (
+        re.compile(r"-[0-9a-z]{10}\.gateway\.bedrock-agentcore\."),
+        "Set AGENTCORE_GATEWAY_URL in meridian/.env, which is gitignored, or let "
+        "`python scripts/sync_agentcore_env.py --write` read it from the deployment state.",
+    ),
 }
-# An account ID inside an ARN, a CDK environment URI, a JSON "account" field, or
-# written next to the word "account".
+# An account ID inside an ARN, a CDK environment URI, a JSON "account" field, an
+# ECR registry host, a CDK bootstrap bucket or role name (...-<account>-<region>),
+# or written after the word "account" (AWS_ACCOUNT_ID=, CDK_DEFAULT_ACCOUNT=,
+# awsAccountId:, "Deployed to account ...").
 ACCOUNT_ID = re.compile(
     r"arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:(\d{12}):"
     r"|aws://(\d{12})/"
     r"|\"account\"\s*:\s*\"(\d{12})\""
-    r"|\baccount[^0-9\n]{0,24}?(?<![0-9A-Za-z])(\d{12})(?![0-9A-Za-z])",
+    r"|account[^0-9\n]{0,24}?(?<![0-9A-Za-z])(\d{12})(?![0-9A-Za-z])"
+    r"|(?<!\d)(\d{12})\.dkr\.ecr\."
+    r"|-(\d{12})-[a-z]{2}(?:-[a-z]+)+-\d\b",
     re.IGNORECASE,
 )
 # AWS documents 123456789012 and 111122223333 as example accounts; the tests use
@@ -45,6 +71,14 @@ ACCOUNT_ID = re.compile(
 PLACEHOLDER_ACCOUNTS = {"123456789012", "111122223333", "000000000000", "999999999999"}
 # This file states the patterns it forbids, so it would always match itself.
 EXEMPT = {Path(__file__).name}
+
+
+def real_accounts(line: str) -> list[str]:
+    """Return the account IDs a line names, other than the documented placeholders."""
+    accounts = (
+        next(group for group in match.groups() if group) for match in ACCOUNT_ID.finditer(line)
+    )
+    return [account for account in accounts if account not in PLACEHOLDER_ACCOUNTS]
 
 
 def tracked_files() -> list[Path]:
@@ -70,23 +104,20 @@ def tracked_lines() -> Iterator[tuple[str, str]]:
             yield f"{path.relative_to(REPO)}:{line_number}", line
 
 
-@pytest.mark.parametrize("label,pattern", sorted(ENDPOINTS.items()))
-def test_no_tracked_file_names_a_deployed_endpoint(label: str, pattern: re.Pattern) -> None:
+@requires_git_checkout
+@pytest.mark.parametrize("label", sorted(ENDPOINTS))
+def test_no_tracked_file_names_a_deployed_endpoint(label: str) -> None:
+    pattern, remedy = ENDPOINTS[label]
     hits = [location for location, line in tracked_lines() if pattern.search(line)]
-    assert not hits, (
-        f"{len(hits)} tracked line(s) name a live {label}: {hits}. The address "
-        f"belongs in .local/published.json, which is gitignored; read it back "
-        f"with `python scripts/published.py`."
-    )
+    assert not hits, f"{len(hits)} tracked line(s) name a live {label}: {hits}. {remedy}"
 
 
+@requires_git_checkout
 def test_no_tracked_file_names_a_real_aws_account() -> None:
     hits = [
         f"{location} ({account})"
         for location, line in tracked_lines()
-        for match in ACCOUNT_ID.finditer(line)
-        for account in [next(group for group in match.groups() if group)]
-        if account not in PLACEHOLDER_ACCOUNTS
+        for account in real_accounts(line)
     ]
     assert not hits, (
         f"{len(hits)} tracked line(s) name an AWS account: {hits}. Use a placeholder "
@@ -96,20 +127,70 @@ def test_no_tracked_file_names_a_real_aws_account() -> None:
 
 
 @pytest.mark.parametrize(
-    "line",
+    "real,placeholder",
     [
-        '"Resource": "arn:aws:rds:us-east-1:210987654321:cluster:meridian"',
-        '"account": "210987654321"',
-        "npx cdk bootstrap aws://210987654321/us-east-1",
-        "Deployed to account `210987654321`.",
+        (
+            '"Resource": "arn:aws:rds:us-east-1:210987654321:cluster:meridian"',
+            '"Resource": "arn:aws:rds:us-east-1:123456789012:cluster:meridian"',
+        ),
+        ('"account": "210987654321"', '"account": "123456789012"'),
+        (
+            "npx cdk bootstrap aws://210987654321/us-east-1",
+            "npx cdk bootstrap aws://111122223333/us-east-1",
+        ),
+        ("Deployed to account `210987654321`.", "Deployed to account `123456789012`."),
+        ("export AWS_ACCOUNT_ID=210987654321", "export AWS_ACCOUNT_ID=123456789012"),
+        ("CDK_DEFAULT_ACCOUNT=210987654321", "CDK_DEFAULT_ACCOUNT=<account-id>"),
+        ("awsAccountId: '210987654321',", "awsAccountId: '000000000000',"),
+        (
+            "docker push 210987654321.dkr.ecr.us-east-1.amazonaws.com/meridian:latest",
+            "docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/meridian:latest",
+        ),
+        (
+            "docker push 210987654321.dkr.ecr.eu-west-1.amazonaws.com/meridian:latest",
+            "docker push 123456789012.dkr.ecr.eu-west-1.amazonaws.com/meridian:latest",
+        ),
+        (
+            "s3://cdk-hnb659fds-assets-210987654321-us-east-1/asset.zip",
+            "s3://cdk-hnb659fds-assets-123456789012-us-east-1/asset.zip",
+        ),
+        (
+            "role/cdk-hnb659fds-cfn-exec-role-210987654321-ap-southeast-2",
+            "role/cdk-hnb659fds-cfn-exec-role-<account-id>-ap-southeast-2",
+        ),
     ],
 )
-def test_account_pattern_finds_real_accounts(line: str) -> None:
-    match = ACCOUNT_ID.search(line)
-    assert match and "210987654321" in match.groups()
+def test_account_pattern_finds_real_accounts_and_passes_placeholders(
+    real: str, placeholder: str
+) -> None:
+    assert real_accounts(real) == ["210987654321"]
+    assert real_accounts(placeholder) == []
 
 
-def test_account_pattern_ignores_hashes_and_placeholders() -> None:
-    assert not ACCOUNT_ID.search("sha256:0c1f00ff210987654321ab")
-    match = ACCOUNT_ID.search('"account": "123456789012"')
-    assert match and "123456789012" in PLACEHOLDER_ACCOUNTS
+def test_account_pattern_ignores_hashes_and_unrelated_numbers() -> None:
+    assert real_accounts("sha256:0c1f00ff210987654321ab") == []
+    assert real_accounts("--hash=sha256:210987654321210987654321") == []
+    assert real_accounts("order 210987654321 shipped") == []
+
+
+@pytest.mark.parametrize(
+    "host,is_deployed",
+    [
+        (
+            "https://meridianv2-meridian-aurora-k3v9q2x7ma.gateway.bedrock-agentcore"
+            ".us-east-1.amazonaws.com/mcp",
+            True,
+        ),
+        ("https://mygw-0123456789.gateway.bedrock-agentcore.eu-west-1.amazonaws.com/mcp", True),
+        ("https://meridian-test.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp", False),
+        ("https://x.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp", False),
+        ("https://*.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp", False),
+        ("https://{id}.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp", False),
+        ("https://<id>.gateway.bedrock-agentcore.<region>.amazonaws.com/mcp", False),
+    ],
+)
+def test_gateway_pattern_finds_deployed_hosts_and_passes_test_hosts(
+    host: str, is_deployed: bool
+) -> None:
+    pattern, _ = ENDPOINTS["AgentCore gateway"]
+    assert bool(pattern.search(host)) is is_deployed
