@@ -73,6 +73,15 @@ for (const view of ['concierge', 'ladder']) for (const theme of ['light', 'dark'
           expect(action.x + action.width).toBeLessThanOrEqual(bounds.x + bounds.width);
         }
       }
+      if (view === 'ladder' && theme === 'light') {
+        // The trip card photo region keeps the dark roles in light mode so its
+        // scrim text stays readable, even though the card's own border follows
+        // the page theme (Minor 6, tokens-task-6-review.md).
+        const card = page.locator('.mds-trip-result-card').first();
+        await expect(card.locator('.mds-trip-result-media')).toHaveAttribute('data-theme', 'dark');
+        const heading = card.locator('.mds-trip-result-heading > strong');
+        await expect(heading).toHaveCSS('color', 'rgb(255, 255, 255)');
+      }
       const audit = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
       expect(audit.violations.map(v => ({ id: v.id, targets: v.nodes.map(n => n.target) }))).toEqual([]);
       // A second turn can be sent with Enter without losing its line breaks.

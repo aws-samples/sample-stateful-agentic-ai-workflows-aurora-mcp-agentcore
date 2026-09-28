@@ -20,6 +20,7 @@ import { RecoveryWorkspace } from '../RecoveryWorkspace';
 import type { JourneyDocument } from '../../journey/types';
 import { TripResultCardContent } from '../TripResultCardContent';
 import { TripDetailDrawer } from '../TripDetailDrawer';
+import { ConciergeAssistanceCard } from '../RecoveryDecisionCards';
 import { SessionClose } from '../../surfaces/SessionClose';
 
 function makeState(
@@ -802,6 +803,47 @@ describe('Experience presentation polish', () => {
     expect(facts).toHaveTextContent('Recorded total for 2 travelers');
     expect(facts).toHaveTextContent('$4,000');
     expect(facts).not.toHaveTextContent('$2,499');
+    // The photo label sits on the black scrim, so it keeps the dark roles in
+    // both themes (Important 4, tokens-task-6-review.md).
+    expect(container.querySelector('.mds-trip-modal-visual')).toHaveAttribute('data-theme', 'dark');
+  });
+
+  it('scopes the dark photo roles to the hotel media region', () => {
+    const state = makeState({ selectedPhase: 5 });
+    const evidence = deriveRecoveryEvidence(state);
+    const { container } = render(
+      <ConciergeAssistanceCard
+        stage="ready"
+        evidence={evidence}
+        product={null}
+        onHotel={vi.fn()}
+        onProtection={vi.fn()}
+      />,
+    );
+    const media = container.querySelector('.mds-concierge-hotel-media');
+    expect(media).toHaveAttribute('data-theme', 'dark');
+  });
+
+  it('marks only the Checkpointed chip with the checkpoint tone', () => {
+    const product = {
+      product_id: 'TKY-005', name: 'Tokyo Ryokan & Onsen Slow Week', price: 3899,
+      brand: 'ANA Holidays',
+      description: 'Lounge access included with an easy airport transfer.',
+      image_url: '/travel/catalog/TKY-005.jpg', category: 'City & Culture',
+      destination: 'Tokyo', region: 'Asia', available_sizes: ['5 nights'],
+      availability: { '5 nights': 4 }, highlights: ['lounge access'],
+    };
+    const state = makeState({ selectedPhase: 5, workflowStatus: 'paused' });
+
+    render(
+      <article>
+        <TripResultCardContent product={product} state={state} matchPct={null} featured />
+      </article>,
+    );
+
+    expect(screen.getByText('Checkpointed').closest('span')).toHaveClass('is-checkpoint');
+    expect(screen.getByText('Lounge access').closest('span')).not.toHaveClass('is-checkpoint');
+    expect(screen.getByText('Lounge access').closest('span')?.className).toBe('');
   });
 
   it('does not present a previous Concierge booking as a new recovery receipt', () => {
