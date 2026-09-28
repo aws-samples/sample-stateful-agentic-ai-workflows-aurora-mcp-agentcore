@@ -21,17 +21,17 @@ function MiniFlow({ label, steps }: { label: string; steps: Step[] }) {
 }
 
 function Phase({ number, name, claim, children }: { number: number; name: string; claim: string; children: ReactNode }) {
-  return <article className={`mds-brief-phase mds-brief-phase-${number}`} aria-labelledby={`brief-phase-${number}`}>
-    <div className="mds-brief-phase-heading"><h3 id={`brief-phase-${number}`}>Phase {number} · {name}</h3><p>{claim}</p></div>
-    {children}
-  </article>;
+  return <details className={`mds-brief-phase mds-brief-phase-${number}`} aria-labelledby={`brief-phase-${number}`}>
+    <summary className="mds-brief-phase-heading"><div><h3 id={`brief-phase-${number}`}>Phase {number} - {name}</h3><p>{claim}</p></div><ChevronDown size={20} aria-hidden="true" /></summary>
+    <div className="mds-brief-phase-body">{children}</div>
+  </details>;
 }
 
 export function BriefingPreparation() {
   return <details className="mds-brief-section mds-brief-preparation" aria-labelledby="brief-preparation-heading">
-    <summary className="mds-brief-section-heading"><h2 id="brief-preparation-heading">Prepare the data before the question</h2><ChevronDown size={22} aria-hidden="true" /></summary>
+    <summary className="mds-brief-section-heading"><h2 id="brief-preparation-heading"><span className="mds-brief-section-number" aria-hidden="true">02</span>Prepare the data</h2><ChevronDown size={22} aria-hidden="true" /></summary>
     <div className="mds-brief-section-body">
-    <p>Seed-time preparation gives each tool something reliable to read.</p>
+    <p>Load the facts. Index the descriptions. Scope the traveler.</p>
     <div className="mds-brief-prep-labels" aria-hidden="true"><span>Source records</span><span>Preparation</span><span>Ready for the tools</span></div>
     <ol className="mds-brief-prep-paths" aria-label="Source records, preparation and Aurora stores">
       <li>
@@ -57,9 +57,9 @@ export function BriefingPreparation() {
 
 export function BriefingPhases() {
   return <details className="mds-brief-section mds-brief-walkthrough" aria-labelledby="brief-phases-heading">
-    <summary className="mds-brief-section-heading"><h2 id="brief-phases-heading">Five phases, one connected system</h2><ChevronDown size={22} aria-hidden="true" /></summary>
+    <summary className="mds-brief-section-heading"><h2 id="brief-phases-heading"><span className="mds-brief-section-number" aria-hidden="true">03</span>Build five capabilities</h2><ChevronDown size={22} aria-hidden="true" /></summary>
     <div className="mds-brief-section-body">
-    <p>Each phase adds a capability to the same travel journey.</p>
+    <p>Follow the same five phases as the slides. Open one capability at a time.</p>
     <div className="mds-brief-phase-pair">
       <Phase number={1} name="SQL" claim="Answer from exact rows.">
         <MiniFlow label="Phase 1 SQL path" steps={[
@@ -67,15 +67,15 @@ export function BriefingPhases() {
           { icon: Braces, title: 'SQL filters', detail: 'Parameterized query' },
           { service: 'aurora', title: 'Aurora', detail: 'Data API → rows' },
         ]} />
-        <p className="mds-brief-phase-evidence">Inspect the SQL and returned package records.</p>
+        <p className="mds-brief-phase-evidence">Check the SQL and rows. Budget is per traveler. This is bounded filtering, not unrestricted text-to-SQL.</p>
       </Phase>
       <Phase number={2} name="MCP" claim="Put a reusable tool contract around the data.">
         <MiniFlow label="Phase 2 MCP path" steps={[
           { service: 'app-runner', title: 'FastAPI', detail: 'MCP client' },
-          { icon: Braces, title: 'MCP server', detail: 'Named PostgreSQL tools' },
-          { service: 'aurora', title: 'Aurora', detail: 'Same Data API' },
+          { icon: Braces, title: 'Concierge MCP', detail: 'Compare + convert' },
+          { service: 'aurora', title: 'Catalog + rates', detail: 'Aurora + demo FX' },
         ]} />
-        <p className="mds-brief-phase-evidence">Inspect tool names, inputs and results. Gateway joins in Phase 4.</p>
+        <p className="mds-brief-phase-evidence">Check tool names, inputs and results. Gateway governs the production tools in Phase 4.</p>
       </Phase>
     </div>
     <Phase number={3} name="Retrieval" claim="Find the meaning as well as the words.">
@@ -108,27 +108,30 @@ export function BriefingPhases() {
             <div><span>Example candidate · BCH-003</span><h4>Bali Rice Terrace Retreat</h4><p>Ubud villa · yoga mornings · beach club day</p></div>
           </div></div>
         </div>
-        <figcaption>The image illustrates a catalog candidate. Run Phase 3 in the capability ladder for measured scores and the actual result order; tools verify current prices, seats and budget separately.</figcaption>
+        <figcaption>Check observed scores in Phase 3. Relevance is a candidate signal; tools still verify price, availability and access.</figcaption>
       </figure>
     </Phase>
     <div className="mds-brief-phase-pair">
       <Phase number={4} name="Production" claim="Remember context. Govern every tool call.">
         <MiniFlow label="Phase 4 governed action path" steps={[
-          { service: 'agentcore', title: 'Runtime', detail: 'Strands + Memory' },
-          { service: 'agentcore', title: 'Gateway', detail: 'Cedar policy' },
+          { service: 'agentcore-runtime', title: 'Runtime', detail: 'Strands + Memory' },
+          { service: 'agentcore-gateway', title: 'Gateway', detail: 'Cedar policy' },
           { service: 'lambda', title: 'Lambda', detail: 'Aurora transaction' },
         ]} />
-        <p>The traveler confirms; the platform pins identity and saved budget. Cedar permits the call before the tool runs. Holds allow up to 6 travelers and 12 hours; Aurora checks inventory, ownership and expiry.</p>
-        <p className="mds-brief-phase-evidence">Inspect the policy decision and persisted receipt.</p>
+        <p>Bind the traveler and saved budget. Cedar authorizes the call. Aurora checks inventory, ownership and expiry.</p>
+        <p className="mds-brief-phase-evidence">Check both the policy decision and the Aurora receipt. Permission to call a tool is not proof of a committed write.</p>
       </Phase>
       <Phase number={5} name="Workflow" claim="Resume the work after a worker stops.">
-        <MiniFlow label="Phase 5 durable workflow path" steps={[
-          { icon: Workflow, title: 'LangGraph', detail: 'Worker in FastAPI' },
-          { service: 'aurora', title: 'Checkpoint', detail: 'Thread + hold intent' },
-          { service: 'agentcore', title: 'Gateway', detail: 'Replay the same hold' },
-        ]} />
-        <p>After lease release or expiry, a replacement resumes the same thread and reuses the request and booking IDs. Aurora checkpoints restore execution; AgentCore Memory supplies Phase 4 conversation context.</p>
-        <p className="mds-brief-phase-evidence">Verify the same booking ID, original expiry and one hold.</p>
+        <p className="mds-brief-workflow-host"><Workflow size={24} aria-hidden="true" /><strong>LangGraph in FastAPI</strong><span>Aurora checkpoints through the RDS Data API</span></p>
+        <ol className="mds-brief-workflow-sequence" aria-label="Phase 5 durable workflow path">
+          {[
+            ['Classify', 'Understand the disruption'], ['Search', 'Rank options, then pause'],
+            ['Availability', 'Recheck stock'], ['Prepare hold', 'Checkpoint the write intent'],
+            ['Hold', 'Gateway to Lambda'], ['Synthesize', 'Read the saved result'],
+          ].map(([title, detail], index) => <li key={title}><span aria-hidden="true">{index + 1}</span><div><strong>{title}</strong><p>{detail}</p></div></li>)}
+        </ol>
+        <p>After lease release or expiry, resume the same thread with the same request and booking IDs.</p>
+        <p className="mds-brief-phase-evidence">Check one hold, the same booking ID and the original expiry. Aurora checkpoints restore work; AgentCore Memory carries conversation context.</p>
       </Phase>
     </div>
     <p className="mds-brief-note">Fictional Meridian inventory. Holds and confirmations affect the demo catalog; no supplier is contacted and no payment is taken.</p>

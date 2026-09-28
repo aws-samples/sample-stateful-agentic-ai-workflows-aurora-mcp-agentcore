@@ -22,11 +22,11 @@
 
 .mds-root[data-theme='dark'][data-projector-readability='true'] {
   color-scheme: dark;
-  --mc-ground: #0e0d0b;
-  --mc-surface: #1b1a17;
-  --mc-soft: #292823;
-  --mc-ink: #fffdf8;
-  --mc-muted: #e1dbd1;
+  --mc-ground: #000000;
+  --mc-surface: #000000;
+  --mc-soft: #141414;
+  --mc-ink: #ffffff;
+  --mc-muted: #dedede;
   --mc-line: #8d979f;
   --mc-accent: #bddbff;
   --mc-action: #194d90;
@@ -36,6 +36,34 @@
   --mds-yellow: #ffcf76;
   --mds-danger: #ffa18a;
 }
+
+/* Panel edges are decorative. Keep the stronger --mc-line for inputs,
+   buttons and focus states instead of outlining every dark surface. */
+.mds-root[data-theme='dark'] { --mc-divider: #303030; }
+.mds-root[data-theme='dark'] :is(
+  .mds-panel, .mds-proof-worker, .mds-proof-store, .mds-proof-panel,
+  .mc-hold-receipt, .mc-trip-context, .mc-boarding-pass,
+  .mds-recovery-handoff
+) {
+  border-color: transparent;
+  box-shadow: none;
+}
+.mds-root[data-theme='dark'] .mds-recovery-workspace .mds-decision-card {
+  border-color: transparent;
+  box-shadow: none;
+}
+.mds-root[data-theme='dark'] .mds-desktop-app .mds-desktop-right .mds-panel {
+  border-color: transparent;
+}
+.mds-root[data-theme='dark'] :is(
+  .mds-shell-header, .mc-presenter-controls, .mds-proof-tabs,
+  .mc-recovery-checks, .mc-departure, .mc-preferences, .mc-hold-pending,
+  .mds-main-actions, .mc-capability-route, .mc-session-handoff,
+  .mc-session-patterns > div, .mc-session-close-foot, .mc-workflow-steps li
+) { border-color: var(--mc-divider); }
+.mds-root[data-theme='dark'] .mds-desktop-app :is(
+  .mds-desktop-right, .mds-desktop-dock
+) { border-color: var(--mc-divider); }
 
 /* Evidence, dialogs and legacy panels follow the same room palette. */
 .mds-root[data-projector-readability='true'] {

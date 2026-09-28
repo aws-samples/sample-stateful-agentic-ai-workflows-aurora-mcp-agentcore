@@ -1,23 +1,22 @@
 .mds-root {
-  /* ---- Dark theme: warm near-black for a projector in a dark room ----
-     Surfaces sit just off black with a warm cast, text is bright warm white,
-     and secondary text stays well above the usual dark-mode dimness so labels
-     survive a projector. Accents (blue action, green success, amber memory)
-     are unchanged. The light theme below overrides every token it needs. */
-  --mds-bg: #0b0a09;
-  --mds-bg-2: #12100e;
-  --mds-shell: #0a0908;
-  --mds-shell-elevated: #14120f;
-  --mds-tooltip-bg: rgba(16, 14, 12, 0.98);
-  --mds-tooltip-fg: #fbf9f4;
-  --mds-tooltip-border: rgba(214, 200, 176, 0.24);
-  --mds-panel: rgba(20, 18, 15, 0.8);
-  --mds-panel-2: rgba(30, 27, 23, 0.82);
-  --mds-line: rgba(255, 250, 240, 0.09);
-  --mds-line-strong: rgba(255, 250, 240, 0.16);
-  --mds-ink: #fbf9f4;
-  --mds-muted: #cbc4b8;
-  --mds-dim: #b9b2a6;
+  /* ---- Dark theme: pure black with white and neutral-gray text ----
+     Supporting text stays bright enough for projection. Blue actions, green
+     success and amber memory retain their semantic roles. The light theme
+     below overrides every token it needs. */
+  --mds-bg: #000000;
+  --mds-bg-2: #141414;
+  --mds-shell: #000000;
+  --mds-shell-elevated: #141414;
+  --mds-tooltip-bg: rgba(0, 0, 0, 0.98);
+  --mds-tooltip-fg: #ffffff;
+  --mds-tooltip-border: rgba(255, 255, 255, 0.24);
+  --mds-panel: #000000;
+  --mds-panel-2: #141414;
+  --mds-line: rgba(255, 255, 255, 0.09);
+  --mds-line-strong: rgba(255, 255, 255, 0.16);
+  --mds-ink: #ffffff;
+  --mds-muted: #d0d0d0;
+  --mds-dim: #b8b8b8;
   --mds-blue: #2f8cff;
   /* Hue triples for alpha variants. Writing rgb(var(--x) / .12) instead of a
      raw rgba() keeps every tint of an accent on one themed source, so the
@@ -40,55 +39,52 @@
   --mds-memory-line: rgb(var(--mds-recovery-yellow-rgb) / 0.72);
 
   /* Shared app-surface palette. The capability ladder and the Stateful Recovery finale
-     render on the same warm-black surface so the two demo steps read as one product
+     render on the same black surface so the two demo steps read as one product
      rather than two apps. Amber stays the disruption accent against it.
      Geometry and type scale still differ per step — see recoveryWorkspace.css. */
-  --mds-app-surface: #0d0c0a;
+  --mds-app-surface: #000000;
   --mds-recovery-yellow: #f6b73c;
   --mds-recovery-yellow-strong: #d99a18;
   --mds-recovery-red: #ef4444;
   --mds-recovery-blue: #2f8cff;
   --mds-recovery-green: #32cf86;
-  --mds-recovery-rail: #131110;
-  --mds-experience-panel: #1a1815;
-  --mds-experience-panel-raised: #232019;
-  --mds-experience-border: rgba(214, 200, 176, 0.2);
-  --mds-chrome-sidebar-border: rgba(214, 200, 176, 0.14);
-  --mds-chrome-sidebar-background:
-    radial-gradient(circle at 0% 74%, rgb(var(--mds-recovery-yellow-rgb) / 0.06), transparent 40%),
-    linear-gradient(180deg, rgba(14, 12, 10, 0.97), rgba(10, 9, 8, 0.95));
+  --mds-recovery-rail: #000000;
+  --mds-experience-panel: #000000;
+  --mds-experience-panel-raised: #141414;
+  --mds-experience-border: rgba(255, 255, 255, 0.2);
+  --mds-chrome-sidebar-border: rgba(255, 255, 255, 0.14);
+  --mds-chrome-sidebar-background: #000000;
   --mds-chrome-brand: #ffffff;
   --mds-chrome-brand-border: rgb(var(--mds-recovery-yellow-rgb) / 0.45);
   --mds-chrome-brand-shadow:
     0 0 0 2px rgb(var(--mds-recovery-yellow-rgb) / 0.14),
     0 5px 18px rgba(0, 0, 0, 0.4);
-  --mds-chrome-nav: #cfc8bc;
+  --mds-chrome-nav: #d0d0d0;
   --mds-chrome-nav-hover: #ffffff;
-  --mds-chrome-nav-hover-background: rgba(255, 250, 240, 0.05);
-  --mds-chrome-nav-hover-border: rgba(255, 250, 240, 0.1);
+  --mds-chrome-nav-hover-background: rgba(255, 255, 255, 0.05);
+  --mds-chrome-nav-hover-border: rgba(255, 255, 255, 0.1);
   --mds-chrome-nav-active: #ffffff;
   --mds-chrome-nav-active-background:
-    linear-gradient(90deg, rgba(255, 250, 240, 0.12), rgba(255, 250, 240, 0.06));
-  --mds-chrome-nav-active-border: rgba(255, 250, 240, 0.18);
+    linear-gradient(90deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+  --mds-chrome-nav-active-border: rgba(255, 255, 255, 0.18);
   --mds-chrome-nav-active-shadow:
-    inset 0 0 24px rgba(255, 250, 240, 0.02),
+    inset 0 0 24px rgba(255, 255, 255, 0.02),
     0 0 22px rgba(0, 0, 0, 0.25);
-  --mds-chrome-account-border: rgba(214, 200, 176, 0.14);
-  --mds-chrome-account: #fbf9f4;
-  --mds-chrome-account-muted: #b6aea2;
+  --mds-chrome-account-border: rgba(255, 255, 255, 0.14);
+  --mds-chrome-account: #ffffff;
+  --mds-chrome-account-muted: #b8b8b8;
   --mds-chrome-avatar-border: rgb(var(--mds-recovery-yellow-rgb) / 0.55);
   --mds-chrome-avatar-shadow: 0 0 0 3px rgb(var(--mds-recovery-yellow-rgb) / 0.08);
-  --mds-chrome-status: #cfc8bc;
-  --mds-chrome-control: #c3bcb0;
-  --mds-chrome-control-border: rgba(214, 200, 176, 0.2);
-  --mds-chrome-control-background: rgba(20, 18, 15, 0.7);
+  --mds-chrome-status: #d0d0d0;
+  --mds-chrome-control: #d0d0d0;
+  --mds-chrome-control-border: rgba(255, 255, 255, 0.2);
+  --mds-chrome-control-background: #000000;
   --mds-chrome-main-background: transparent;
   --mds-chrome-breadcrumb: #ffffff;
-  --mds-chrome-right-border: rgba(214, 200, 176, 0.16);
-  --mds-chrome-right-background: #0f0e0c;
-  --mds-side-panel-background:
-    linear-gradient(180deg, rgba(20, 18, 15, 0.78), rgba(13, 12, 10, 0.85));
-  --mds-side-panel-border: rgba(255, 250, 240, 0.1);
+  --mds-chrome-right-border: rgba(255, 255, 255, 0.16);
+  --mds-chrome-right-background: #000000;
+  --mds-side-panel-background: #000000;
+  --mds-side-panel-border: rgba(255, 255, 255, 0.1);
   --mds-side-panel-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
 
   /* Semantic surface tokens — these flip in light mode. In dark they equal
@@ -100,12 +96,12 @@
        --mds-card             : opaque card/inset background
        --mds-scrim            : dark scrims over imagery */
   --mds-on-surface: #ffffff;
-  --mds-on-surface-soft: rgba(255, 252, 245, 0.86);
-  --mds-on-surface-faint: rgba(255, 252, 245, 0.62);
-  --mds-fill-1: rgba(255, 250, 240, 0.04);
-  --mds-fill-2: rgba(255, 250, 240, 0.08);
-  --mds-fill-3: rgba(255, 250, 240, 0.14);
-  --mds-card: #171512;
+  --mds-on-surface-soft: rgba(255, 255, 255, 0.86);
+  --mds-on-surface-faint: rgba(255, 255, 255, 0.62);
+  --mds-fill-1: rgba(255, 255, 255, 0.04);
+  --mds-fill-2: rgba(255, 255, 255, 0.08);
+  --mds-fill-3: rgba(255, 255, 255, 0.14);
+  --mds-card: #000000;
   --mds-scrim: rgba(0, 0, 0, 0.5);
   --mds-blue-soft: rgba(47, 140, 255, 0.12);
   --mds-blue-line: rgba(47, 140, 255, 0.32);
@@ -458,10 +454,7 @@
   color: var(--mds-blue);
 }
 
-/* THE MAIN STAGE BACKGROUND. .mds-desktop-app carries the dark base gradient
-   (#0d0a07…) with warm/cool halos, and a ::before screen-blend overlay. This
-   is the big dark region (sidebar + main are transparent grid columns over it).
-   Repaint it as the pale daylight wash and neutralize the screen-blend halo. */
+/* Light mode owns its stage surface and subtle daylight overlay. */
 .mds-root[data-theme="light"] .mds-desktop-app {
   /* Warm daylight wash, matching the Stateful Recovery finale's light variant. */
   background: var(--mds-app-surface);
@@ -759,26 +752,19 @@
   overflow: hidden;
   border: 0;
   border-radius: 0;
-  /* Shared warm-black shell — matches the Stateful Recovery finale so both demo steps sit on
-     one surface. Blue-only halos keep amber as the disruption color. */
-  background:
-    radial-gradient(ellipse 58% 70% at 45% 42%, rgba(51, 46, 37, 0.26), transparent 70%),
-    radial-gradient(ellipse 32% 50% at 0% 88%, rgb(var(--mds-blue-rgb) / 0.12), transparent 72%),
-    var(--mds-app-surface);
+  /* One black canvas across the capability ladder and recovery workspace. */
+  background: var(--mds-app-surface);
   box-shadow: none;
 }
 
-/* Soft corner lift without competing with semantic colors. Normal blend and
-   blue-only tints, matching the Stateful Recovery finale's overlay. */
+/* Keep the dark canvas free of color washes. Light mode owns its overlay. */
 .mds-desktop-app::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  background:
-    linear-gradient(90deg, rgb(var(--mds-blue-rgb) / 0.025), transparent 18%),
-    radial-gradient(circle at 68% 45%, rgba(30, 118, 188, 0.08), transparent 38%);
+  background: none;
   mix-blend-mode: normal;
 }
 

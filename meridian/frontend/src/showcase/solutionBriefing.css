@@ -3,7 +3,7 @@
 .mds-root .mds-desktop-app.is-solution-briefing .mds-desktop-scroll { padding:0; gap:0; }
 .mds-root .is-solution-briefing .mds-shell-header { grid-column:1 / -1; grid-template-columns:auto minmax(0,1fr) auto; gap:24px; }
 .mds-root .is-solution-briefing .mc-audience-brand { display:flex; align-items:center; gap:10px; font-size:23px; font-weight:550; letter-spacing:-.035em; color:var(--mc-ink); }
-.mds-brief { width:100%; min-width:0; box-sizing:border-box; max-width:1440px; margin:0 auto; padding:32px 40px 40px; color:var(--mc-ink); font:16px/1.6 var(--mds-font); container-type:inline-size; }
+.mds-brief { width:100%; min-width:0; box-sizing:border-box; max-width:1760px; margin:0 auto; padding:32px 40px 40px; color:var(--mc-ink); font:16px/1.6 var(--mds-font); container-type:inline-size; }
 .mds-brief p { margin:0; color:var(--mc-muted); }
 .mds-brief h1,.mds-brief h2,.mds-brief h3,.mds-brief h4 { margin:0; text-wrap:balance; }
 .mds-brief h2 { font-size:28px; line-height:1.25; font-weight:520; letter-spacing:-.025em; }
@@ -21,6 +21,9 @@
 .mds-brief-overview { padding-top:0; }
 .mds-brief-section-heading { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:8px 24px; margin-bottom:20px; }
 .mds-brief-section-heading p { font-size:15px; }
+.mds-brief-section-heading h2 { display:flex; align-items:baseline; gap:16px; text-wrap:initial; }
+.mds-brief-section-number { flex:none; color:var(--mc-accent); font-size:.7em; font-variant-numeric:tabular-nums; }
+.mds-brief-reference { border-top:1px solid var(--mc-line); }
 .mds-brief-section > summary { flex-wrap:nowrap; align-items:center; min-height:44px; margin-bottom:0; cursor:pointer; list-style:none; }
 .mds-brief-section > summary::-webkit-details-marker { display:none; }
 .mds-brief-section > summary > svg { flex:none; color:var(--mc-accent); }
@@ -61,6 +64,12 @@
 }
 @media (min-width:861px) {
   .mds-root[data-theme] .mds-desktop-app.is-solution-briefing { grid-template-columns:0 minmax(0,1fr); }
+}
+@media (min-width:1241px) {
+  .mds-root[data-audience-layout='true'] .mds-brief-head { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px 24px; padding-bottom:24px; }
+  .mds-root[data-audience-layout='true'] .mds-brief-head h1 { margin:0; }
+  .mds-root[data-audience-layout='true'] .mds-brief-section { padding-block:20px; }
+  .mds-root[data-audience-layout='true'] .mds-brief-overview { padding-top:0; }
 }
 @media (max-width:1180px) {
   .mds-root .is-solution-briefing .mc-audience-brand>span { display:none; }

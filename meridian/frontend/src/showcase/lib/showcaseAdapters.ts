@@ -79,8 +79,8 @@ export const PHASE_QUERY_BOUNDARIES: Record<Phase, string> = {
 };
 
 const SHOWCASE_PROMPT_LABELS: Record<string, string> = {
-  [SHOWCASE_EXAMPLE_PROMPTS[1][0]]: 'City trips under $2,000',
-  [SHOWCASE_EXAMPLE_PROMPTS[1][1]]: 'Beach trips under $2,500',
+  [SHOWCASE_EXAMPLE_PROMPTS[1][0]]: 'City trips under $2,000 per traveler',
+  [SHOWCASE_EXAMPLE_PROMPTS[1][1]]: 'Beach trips under $2,500 per traveler',
   [SHOWCASE_EXAMPLE_PROMPTS[1][2]]: 'Compare trips in euros',
   [SHOWCASE_EXAMPLE_PROMPTS[2][1]]: 'Tokyo off-season pricing',
   [SHOWCASE_EXAMPLE_PROMPTS[2][2]]: 'Romantic wine-country villa',

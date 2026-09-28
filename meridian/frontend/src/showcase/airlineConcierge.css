@@ -5,12 +5,12 @@
   --mc-heading-weight: 520;
   --mc-heading-tracking: -0.035em;
   --mc-label-weight: 550;
-  /* Warm near-black for a dark room and a projector; bright warm-white text. */
-  --mc-ground: #0e0d0b;
-  --mc-surface: #181613;
-  --mc-soft: #221f1a;
-  --mc-ink: #fbf9f4;
-  --mc-muted: #d3cbbc;
+  /* Black canvas, white labels and neutral supporting tones. */
+  --mc-ground: #000000;
+  --mc-surface: #000000;
+  --mc-soft: #141414;
+  --mc-ink: #ffffff;
+  --mc-muted: #d0d0d0;
   --mc-line: #69737e;
   --mc-accent: #b9d9ff;
   --mc-action: #194d90;
@@ -46,7 +46,7 @@
 .mds-root .mds-shell-status { padding-right: 0; gap: 16px; }
 .mds-root .mds-shell-status .mds-status-pill { border: 0; background: none; color: var(--mc-muted); font-size: calc(12px * var(--mc-type-scale)); padding: 0; }
 .mds-root .mds-theme-toggle { position: static; flex-shrink: 0; width: 36px; height: 36px; border: 1px solid var(--mc-line); background: transparent; color: var(--mc-muted); box-shadow: none; }
-.mds-root .mds-desktop-sidebar { background: #25201a; border-right: 0; color: #eef3fc; }
+.mds-root .mds-desktop-sidebar { background: #000000; border-right: 0; color: #ffffff; }
 .mds-root .mds-sidebar-head { gap: 14px; }
 .mds-root .mds-brand { color: #f4f7ff; gap: 10px; }
 .mds-root .mds-brand-mark { width: 34px; height: 34px; border-radius: 8px; border: 0; box-shadow: none; }
@@ -54,11 +54,11 @@
 .mds-brand-name small { display: block; margin-top: 5px; font-size: calc(8px * var(--mc-type-scale)); font-weight: 450; letter-spacing: 0.12em; }
 .mds-root .mds-sidebar-toggle { color: #afc1db; border-color: #354963; background: transparent; }
 /* The service sidebar is a dark surface in both themes, so these are literals:
-   warm greys on warm black rather than the theme's chrome tokens, which flip
+   neutral greys on black rather than the theme's chrome tokens, which flip
    to dark-on-light in the light theme. */
-.mds-root .mds-nav-item { color: #d2cbbf; border: 0; box-shadow: none; border-radius: 7px; min-height: 44px; }
-.mds-root .mds-nav-item:hover { color: #ffffff; background: #34302a; }
-.mds-root .mds-nav-item.is-active { background: #3d372f; color: #ffffff; box-shadow: none; }
+.mds-root .mds-nav-item { color: #d0d0d0; border: 0; box-shadow: none; border-radius: 7px; min-height: 44px; }
+.mds-root .mds-nav-item:hover { color: #ffffff; background: #141414; }
+.mds-root .mds-nav-item.is-active { background: #222222; color: #ffffff; box-shadow: none; }
 .mds-root .mds-nav-item.is-active::before { display: none; }
 .mds-root .mds-nav-label { font-size: calc(13px * var(--mc-type-scale)); font-weight: 500; }
 .mds-root .mds-account-mini { color: #eef3fc; border-color: #354963; }
@@ -506,6 +506,7 @@
 .mds-root .mc-capability-brief { color: var(--mc-ink); padding: 0 0 16px; }
 .mds-root .mc-capability-brief h1 { font-size: calc(24px * var(--mc-type-scale)); font-weight: 550; line-height: 1.2; letter-spacing: -0.025em; margin: 0; text-wrap: balance; }
 .mds-root .mc-capability-description { color: var(--mc-muted); font-size: calc(13px * var(--mc-type-scale)); line-height: 1.5; max-width: 68ch; margin: 8px 0 6px; }
+.mds-root .mc-capability-callout { color: var(--mc-ink); font-size: calc(13px * var(--mc-type-scale)); line-height: 1.5; max-width: 76ch; margin: 8px 0; }
 .mds-root .mc-capability-details summary { display: flex; align-items: center; gap: 12px; width: fit-content; min-height: 36px; list-style: none; cursor: pointer; color: var(--mc-accent); font-size: calc(12px * var(--mc-type-scale)); font-weight: 550; }
 .mds-root .mc-capability-details summary::-webkit-details-marker { display: none; }
 .mds-root .mc-capability-details[open] summary svg { transform: rotate(180deg); }

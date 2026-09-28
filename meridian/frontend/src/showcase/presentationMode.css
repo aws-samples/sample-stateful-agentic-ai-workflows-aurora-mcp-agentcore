@@ -97,8 +97,8 @@
 /* Readability is opt-in for the preview and enabled by default on stage. */
 .mds-root[data-projector-readability='true'] {
   --mc-type-scale: 1.3;
-  --mc-muted: #d9d3c8;
-  --mc-line: #4a443b;
+  --mc-muted: #dedede;
+  --mc-line: #737373;
 }
 .mds-root[data-theme='light'][data-projector-readability='true'] {
   --mc-muted: #40526c;
@@ -171,4 +171,148 @@
   .mc-presenter-actions { width: 100%; justify-content: space-between; }
   .mc-display-settings-panel { left: 0; right: auto; }
   .mc-fullscreen-label { display: none; }
+}
+
+/* Let the opening recovery decision occupy the stage's remaining height.
+   Content still sets the minimum, so open disclosures and shorter screens scroll. */
+@media (min-width: 1241px) {
+  .mds-root[data-audience-layout='true'] .mds-view-swap:has(> .mds-recovery-workspace .mds-recovery-launch-card:not(.is-compact)) {
+    flex: 1 0 auto;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace:has(> .mds-recovery-launch-system > .mds-recovery-launch-card) {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace > * { flex-shrink: 0; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-launch-system:has(> .mds-recovery-launch-card) {
+    flex: 1;
+    align-items: stretch;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace .mds-recovery-launch-card:not(.is-compact) {
+    grid-template-rows: minmax(auto, 1fr) auto auto auto;
+    align-content: stretch;
+    padding: 0;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-mobile-disruption-card {
+    align-content: stretch;
+    padding: 8px 0 20px;
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-hero {
+    min-height: clamp(240px, 26dvh, 400px);
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message {
+    padding: clamp(24px, 3cqw, 52px);
+    row-gap: 20px;
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message h2 {
+    max-width: 21ch;
+    font-size: clamp(28px, 2.8cqw, 46px);
+    line-height: 1.15;
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message p {
+    max-width: 46ch;
+    font-size: clamp(18px, 1.5cqw, 20px);
+    line-height: 1.55;
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message .mds-mobile-disruption-primary {
+    min-height: 52px;
+    font-size: 18px;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps {
+    padding: 18px 12px;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps strong {
+    color: var(--mc-ink);
+    font-size: 18px;
+    line-height: 1.35;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps small {
+    display: block;
+    max-width: 28ch;
+    margin-inline: auto;
+    color: var(--mc-muted);
+    font-size: 16px;
+    line-height: 1.4;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) :is(.mds-recovery-timeline-heading > span, .mds-recovery-timeline-heading > small, .mds-recovery-launch-actions > span) {
+    color: var(--mc-muted);
+    font-size: 16px;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-recovery-timeline-heading { padding-block: 14px 10px; }
+}
+
+/* Size recovery against its available workspace, not the screen behind the
+   continuity rail. Shared rows keep related cards aligned on stage. */
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace {
+  container: recovery-stage / inline-size;
+}
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+  .mds-recovery-decision-system { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+  :is(.mds-recovery-decision-primary, .mds-recovery-decision-support) { gap: 20px; }
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+  .mds-recovery-decision-support { grid-template-columns: minmax(0, 1fr); }
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace
+  .mds-recovery-alternative-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace
+  .mds-flight-option-card { min-height: 0; }
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace
+  :is(.mds-flight-option-card-media, .mds-concierge-hotel-media, .mds-recommended-plan-media) {
+  height: 160px;
+  min-height: 0;
+  aspect-ratio: auto;
+}
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace
+  .mds-recommended-plan-card {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'head' 'media' 'title' 'route' 'signals' 'preferences' 'memory' 'actions';
+  align-content: start;
+}
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace
+  .mds-recommended-plan-media { margin: 8px 16px 0; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-card > .mds-decision-card-head { grid-area: head; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-media { grid-area: media; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-title { grid-area: title; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-card > .mds-decision-route { grid-area: route; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-signals { grid-area: signals; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-card > .mds-decision-preference-row { grid-area: preferences; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-card > .mds-recovery-context-reasons { grid-area: memory; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-card > .mds-decision-card-actions { grid-area: actions; }
+
+@container recovery-stage (min-width: 700px) {
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace
+    .mds-recovery-alternative-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-recovery-decision-support { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace
+    .mds-recommended-plan-card {
+    grid-template-columns: minmax(180px, .45fr) minmax(0, 1fr);
+    grid-template-areas: 'head head' 'media title' 'route route' 'signals signals'
+      'preferences preferences' 'memory memory' 'actions actions';
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace
+    .mds-recommended-plan-media { margin-right: 0; }
+}
+@container recovery-stage (min-width: 1100px) {
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-recovery-decision-system {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    grid-template-areas: 'plan assistance' 'alternatives alternatives' 'proof proof';
+    align-items: stretch;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    :is(.mds-recovery-decision-primary, .mds-recovery-decision-support) { display: contents; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-recommended-plan-card { grid-area: plan; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-concierge-assistance-card { grid-area: assistance; display: flex; flex-direction: column; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-concierge-assistance-actions { margin-top: auto; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-recovery-alternatives { grid-area: alternatives; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-agent-proof-card { grid-area: proof; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-agent-proof-card ul { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
 }

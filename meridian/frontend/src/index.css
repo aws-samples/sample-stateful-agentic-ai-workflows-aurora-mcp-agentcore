@@ -15,8 +15,8 @@ body,
    page behind a light UI. Both values are always defined together — a light
    background paired with the dark theme's text was a 1.02:1 contrast bug. */
 :root {
-  --app-bg: #05080d;
-  --app-fg: #f5f8fb;
+  --app-bg: #000000;
+  --app-fg: #ffffff;
   --app-skeleton: rgba(143, 174, 204, 0.13);
   --app-skeleton-shimmer: rgba(143, 174, 204, 0.2);
 }

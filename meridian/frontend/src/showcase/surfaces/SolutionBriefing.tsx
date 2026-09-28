@@ -21,25 +21,26 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence }: { onOpenLadde
     <section className="mds-brief" aria-labelledby="mds-brief-title">
       <header className="mds-brief-head">
         <h1 id="mds-brief-title">Solution briefing</h1>
-        <p>A travel concierge that remembers the traveler, governs each action and resumes interrupted work.</p>
+        <p>Ground the answer. Govern the action. Recover the work.</p>
       </header>
       <details className="mds-brief-section mds-brief-overview" open aria-labelledby="brief-architecture-heading">
-        <summary className="mds-brief-section-heading"><h2 id="brief-architecture-heading">The architecture</h2><ChevronDown size={22} aria-hidden="true" /></summary>
+        <summary className="mds-brief-section-heading"><h2 id="brief-architecture-heading"><span className="mds-brief-section-number" aria-hidden="true">01</span>The architecture</h2><ChevronDown size={22} aria-hidden="true" /></summary>
         <div className="mds-brief-section-body">
-          <p>Two execution paths sharing governed tools and durable workflow state.</p>
+          <p>Two execution paths. One governed tool boundary. Aurora records the outcome.</p>
           <BriefingArchitecture />
         </div>
       </details>
       <BriefingPreparation />
       <BriefingPhases />
       <section className="mds-brief-section mds-brief-reference" aria-labelledby="brief-reference-heading">
-        <div className="mds-brief-section-heading"><h2 id="brief-reference-heading">Technical reference</h2><p>Open the implementation detail when you need it.</p></div>
+        <div className="mds-brief-section-heading"><h2 id="brief-reference-heading"><span className="mds-brief-section-number" aria-hidden="true">04</span>Verify the boundaries</h2><p>Tools, policy and recovery evidence. Open as needed.</p></div>
         <Detail title="Data preparation & the five phases">
           <h3>Prepare the inputs</h3>
           <p><code>scripts/travel_catalog.py</code> supplies fictional packages and traveler preferences. <code>scripts/seed_data.py</code> loads Aurora and embeds package descriptions with Cohere Embed v4 on Bedrock. Query and corpus use the same embedding model.</p>
           <p>Aurora combines pgvector similarity and full-text search; Bedrock reranks the candidates. Similarity does not prove availability: tools read prices, duration inventory and the authorized traveler’s saved budget from Aurora.</p>
           <h3>Build one capability at a time</h3>
-          <ol className="mds-brief-phases">{PHASES.map(([name, claim, body]) => <li key={name}><h4>{name} · {claim}</h4><p>{body}</p></li>)}</ol>
+          <ol className="mds-brief-phases">{PHASES.map(([name, claim, body]) => <li key={name}><h4>{name} - {claim}</h4><p>{body}</p></li>)}</ol>
+          <p>These are Meridian’s implementation choices. AgentCore also offers <a href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory-integrate-lang.html">LangGraph checkpoint persistence</a>; this workflow uses Aurora. A conversation or checkpoint is separate from the authoritative booking receipt.</p>
           <h3>Delivery and service boundaries</h3>
           <p>CloudFront delivers the S3 site and routes API requests to FastAPI on App Runner. Local development uses Vite and the same backend. AgentCore resources are declared in <code>agentcore.json</code>. Aurora stores the catalog, identity bindings, access audit, traveler preferences, journeys, checkpoints, leases and bookings; the RDS Data API provides connectionless access.</p>
         </Detail>
@@ -52,7 +53,8 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence }: { onOpenLadde
           <p><code>MeridianGovernance</code> uses ENFORCE mode and default deny. A denied call does not execute the target. The gateway ARN’s account portion is abbreviated below; this reference is not a live policy decision.</p>
           {POLICIES.map(([name, plain, statement]) => <article className="mds-brief-policy" key={name}><h4><code>{name}</code></h4><p>{plain}</p><pre>{statement}</pre></article>)}
           <h3>Authorization at each boundary</h3><Facts items={CONTROLS} />
-          <p>Temporal policy with Dogwood is an assessed extension, not enabled here. Its proposed same-package lookup and five-minute session condition are documented in the <a href="https://github.com/aws-samples/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/blob/main/meridian/docs/DOGWOOD_POLICY_ASSESSMENT.md">Dogwood policy assessment</a>.</p>
+          <p><a href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy.html">AgentCore Policy supports temporal conditions through Dogwood</a>. Meridian uses Cedar per-call policies; the proposed same-package lookup and five-minute session condition remain an <a href="https://github.com/aws-samples/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/blob/main/meridian/docs/DOGWOOD_POLICY_ASSESSMENT.md">assessed extension</a>, not enabled here.</p>
+          <p>Trusted identity and row-level security govern access. Application deadlines, bounded retries and concurrency controls address workload pressure; separate pools alone do not reserve database compute.</p>
         </Detail>
         <Detail title="Recovery guarantees & evidence">
           <p>The workflow runs classify → search → availability → prepare_hold → hold → synthesize. Before the write, prepare_hold checkpoints the request and booking IDs. The worker renews its lease in <code>journey_executions</code>; both worker and Lambda check the lease, with another Lambda check inside the write transaction.</p>
@@ -62,6 +64,7 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence }: { onOpenLadde
             ['After the hold checkpoint', 'Continue the remaining nodes. Compare the saved hold with the persisted booking and successful execution receipt.'],
           ]} />
           <p>A checkpoint and a Gateway write are separate transactions. The workflow may retry; Aurora makes this business effect idempotent. A hard process-death rehearsal and a lost-response rehearsal test different failure windows.</p>
+          <p>Browser reload proves saved-state readback. The separate lost-response rehearsal discards a real committed reply, resumes on a replacement worker and checks the original receipt. It uses its own journey; it does not inject a fault into the open browser session.</p>
           <h3>Follow the result to its evidence</h3>
           <p>System evidence shows SQL and tool results, retrieval scores, traveler binding and RLS records, policy decisions, and persisted hold identity. Recovery desk shows the active thread, checkpoints and worker lease. Missing records remain unavailable.</p>
           <p>ADOT instruments Phase 4 model, Gateway and Memory operations as CloudWatch spans. Trace IDs connect those operations to the displayed run. Phase 5 adds workflow nodes, checkpoints and its Gateway hold decision. This briefing explains the design without making service calls.</p>

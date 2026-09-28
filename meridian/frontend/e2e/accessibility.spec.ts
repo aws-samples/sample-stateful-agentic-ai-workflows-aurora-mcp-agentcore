@@ -107,26 +107,26 @@ for (const theme of ['light', 'dark']) for (const present of [false, true]) {
   });
 }
 
-test('room link overrides a saved dark theme while explicit dark and fullscreen remain available', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('meridian.theme', 'dark'));
+test('dark room link overrides a saved light theme while explicit light and fullscreen remain available', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('meridian.theme', 'light'));
   await page.goto('/showcase?present=1&view=briefing');
-  await expect(page.locator('.mds-root')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('.mds-root')).toHaveAttribute('data-theme', 'dark');
   await page.getByRole('button', { name: 'Present fullscreen' }).click();
   await expect(page.locator('.mds-root')).toHaveAttribute('data-fullscreen', 'true');
   await expect(page.getByRole('region', { name: 'Presenter controls' })).toBeHidden();
   await page.evaluate(() => document.exitFullscreen());
   await expect(page.getByRole('region', { name: 'Presenter controls' })).toBeVisible();
   await expect(page.locator('.mds-root')).toHaveAttribute('data-audience-layout', 'true');
-  await page.getByRole('button', { name: 'Switch to dark mode' }).click();
-  await expect(page.locator('.mds-root')).toHaveAttribute('data-theme', 'dark');
-  await page.goto('/showcase?present=1&theme=dark&view=briefing');
-  await expect(page.locator('.mds-root')).toHaveAttribute('data-theme', 'dark');
+  await page.getByRole('button', { name: 'Switch to light mode' }).click();
+  await expect(page.locator('.mds-root')).toHaveAttribute('data-theme', 'light');
+  await page.goto('/showcase?present=1&theme=light&view=briefing');
+  await expect(page.locator('.mds-root')).toHaveAttribute('data-theme', 'light');
   await page.locator('summary').filter({ hasText: 'Display settings' }).click();
   await page.getByRole('checkbox', { name: 'Projector readability' }).uncheck();
   await expect(page.locator('.mds-root')).not.toHaveAttribute('data-projector-readability', 'true');
 });
 
-test('light room preset also applies while the showcase bundle is loading', async ({ page }) => {
+test('dark room preset also applies while the showcase bundle is loading', async ({ page }) => {
   let release: () => void = () => {};
   const bundle = new Promise<void>(resolve => { release = resolve; });
   await page.route(/\/(?:src\/showcase\/MeridianDeviceShowcase\.tsx|assets\/MeridianDeviceShowcase-[^/]+\.js)(?:\?.*)?$/, async route => {
@@ -136,12 +136,12 @@ test('light room preset also applies while the showcase bundle is loading', asyn
   try {
     await page.goto('/showcase?present=1', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('status', { name: '' })).toContainText('Loading Meridian');
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-    await expect(page.locator('.route-skeleton')).toHaveCSS('background-color', 'rgb(245, 245, 242)');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.locator('.route-skeleton')).toHaveCSS('background-color', 'rgb(0, 0, 0)');
   } finally {
     release();
   }
-  await expect(page.locator('.mds-root')).toHaveAttribute('data-theme', 'light');
+  await expect(page.locator('.mds-root')).toHaveAttribute('data-theme', 'dark');
 });
 
 test('reduced-motion preference can change without reloading the page', async ({ page }) => {
@@ -164,8 +164,8 @@ for (const theme of ['light', 'dark']) {
         : page.getByRole('list', { name: 'Meridian request and state architecture' });
       await expect(architecture).toBeVisible();
       await expect(page.locator('.mds-brief details[open]')).toHaveCount(1);
-      await expect(page.getByRole('heading', { name: 'Prepare the data before the question' })).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Phase 3 · Retrieval' })).toBeHidden();
+      await expect(page.getByRole('heading', { name: 'Prepare the data' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Phase 3 - Retrieval' })).toBeHidden();
       const architectureToggle = page.locator('.mds-brief-overview > summary');
       await architectureToggle.focus();
       await page.keyboard.press('Enter');
@@ -173,13 +173,13 @@ for (const theme of ['light', 'dark']) {
       await page.keyboard.press('Space');
       await expect(architecture).toBeVisible();
       const summaries = page.locator('.mds-brief summary');
-      await expect(summaries).toHaveCount(6);
+      await expect(summaries).toHaveCount(11);
       for (const summary of await page.locator('.mds-brief details:not(.mds-brief-overview) > summary').all()) {
         await summary.focus();
         await page.keyboard.press('Enter');
         await expect(summary.locator('..')).toHaveAttribute('open', '');
       }
-      await expect(page.getByRole('heading', { name: 'Phase 3 · Retrieval' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Phase 3 - Retrieval' })).toBeVisible();
       const candidate = page.getByRole('img', { name: 'Green rice terraces and palms in Bali' });
       await candidate.scrollIntoViewIfNeeded();
       await expect.poll(() => candidate.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);

@@ -43,6 +43,26 @@ const MARKS = {
     smallSrc: '/brand/agentcore-sm.svg',
     label: 'Amazon Bedrock AgentCore',
   },
+  'agentcore-runtime': {
+    src: '/brand/agentcore-purple/runtime.png',
+    smallSrc: '/brand/agentcore-purple/runtime.png',
+    label: 'AgentCore Runtime',
+  },
+  'agentcore-gateway': {
+    src: '/brand/agentcore-purple/gateway.png',
+    smallSrc: '/brand/agentcore-purple/gateway.png',
+    label: 'AgentCore Gateway',
+  },
+  'agentcore-memory': {
+    src: '/brand/agentcore-purple/memory.png',
+    smallSrc: '/brand/agentcore-purple/memory.png',
+    label: 'AgentCore Memory',
+  },
+  'agentcore-policy': {
+    src: '/brand/agentcore-purple/policy.png',
+    smallSrc: '/brand/agentcore-purple/policy.png',
+    label: 'AgentCore Policy',
+  },
   bedrock: {
     src: '/brand/bedrock.svg',
     smallSrc: '/brand/bedrock.svg',
@@ -72,7 +92,7 @@ export function ServiceMark({
 
   return (
     <img
-      className={`mds-service-mark${className ? ` ${className}` : ''}`}
+      className={`mds-service-mark mds-service-mark-${name}${className ? ` ${className}` : ''}`}
       src={src}
       width={size}
       height={size}

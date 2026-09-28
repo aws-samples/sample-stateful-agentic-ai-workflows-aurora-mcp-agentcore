@@ -10,17 +10,23 @@ describe('SolutionBriefing', () => {
     expect(screen.getByText('The architecture').closest('details')).toHaveAttribute('open');
     expect(screen.getByText('Package facts')).not.toBeVisible();
     expect(screen.getByText('Query vector → pgvector')).not.toBeVisible();
-    fireEvent.click(screen.getByText('Prepare the data before the question'));
-    fireEvent.click(screen.getByText('Five phases, one connected system'));
-    expect(screen.getByRole('heading', { name: 'Prepare the data before the question' })).toBeVisible();
-    for (const name of ['Phase 1 · SQL', 'Phase 2 · MCP', 'Phase 3 · Retrieval', 'Phase 4 · Production', 'Phase 5 · Workflow']) {
+    fireEvent.click(screen.getByText('Prepare the data'));
+    fireEvent.click(screen.getByText('Build five capabilities'));
+    expect(screen.getByRole('heading', { name: 'Prepare the data' })).toBeVisible();
+    for (const name of ['Phase 1 - SQL', 'Phase 2 - MCP', 'Phase 3 - Retrieval', 'Phase 4 - Production', 'Phase 5 - Workflow']) {
       expect(screen.getByRole('heading', { name })).toBeVisible();
     }
+    expect(screen.getByText('Query vector → pgvector')).not.toBeVisible();
+    fireEvent.click(screen.getByRole('heading', { name: 'Phase 3 - Retrieval' }));
     expect(screen.getByText('Query vector → pgvector')).toBeVisible();
     expect(screen.getByText('Query text → tsvector')).toBeVisible();
     expect(screen.getByText('Merge candidates by package ID')).toBeVisible();
     expect(screen.getByText('Illustrative query · seeded catalog example')).toBeVisible();
     expect(screen.getByRole('img', { name: 'Green rice terraces and palms in Bali' })).toHaveAttribute('src', '/travel/catalog/BCH-003.jpg');
+    expect(screen.getByText('Prepare hold', { exact: true })).not.toBeVisible();
+    fireEvent.click(screen.getByRole('heading', { name: 'Phase 5 - Workflow' }));
+    expect(screen.getByText('Prepare hold', { exact: true })).toBeVisible();
+    expect(screen.getByText('Checkpoint the write intent')).toBeVisible();
   });
 
   it('keeps the architecture available while inspecting policies and tools', () => {

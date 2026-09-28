@@ -26,8 +26,8 @@ function pickRoot() {
     return <DemoStage />
   }
   if (path === '/showcase' || path === '/device-showcase') {
-    // Resolve before the lazy bundle so a light presentation never flashes a
-    // dark loading screen. The mounted showcase keeps this attribute in sync.
+    // Resolve before the lazy bundle so loading matches the requested theme.
+    // The mounted showcase keeps this attribute in sync.
     document.documentElement.dataset.theme = initialShowcaseTheme()
     return <MeridianDeviceShowcase />
   }

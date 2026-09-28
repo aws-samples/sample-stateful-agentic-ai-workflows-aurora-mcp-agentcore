@@ -5,6 +5,8 @@
 .mds-brief-arch-delivery img { flex:none; }
 .mds-brief-arch-diagram { display:block; width:100%; height:auto; margin:12px 0; font:16px var(--mds-font); fill:var(--mc-muted); }
 .mds-brief-arch-node rect { fill:var(--mc-surface); stroke:var(--mc-line); stroke-width:1.5; }
+.mds-brief-arch-number circle { fill:var(--mc-ground); stroke:var(--mc-accent); stroke-width:1.5; }
+.mds-brief-arch-number text { fill:var(--mc-ink); font-size:15px; font-weight:600; }
 .mds-brief-arch-title { font-size:17px; font-weight:550; fill:var(--mc-ink); }
 .mds-brief-arch-label { font-size:16px; fill:var(--mc-muted); }
 .mds-brief-arch-edges { fill:none; stroke:var(--mc-accent); stroke-width:1.6; }
@@ -25,4 +27,16 @@
   .mds-brief-arch-mobile li::before { content:''; position:absolute; left:-5px; top:27px; width:8px; height:8px; border-radius:50%; background:var(--mc-accent); }
   .mds-brief-arch-mobile strong { font-weight:550; }
   .mds-brief-arch-mobile p { margin:4px 0 0; color:var(--mc-muted); }
+}
+
+/* Match the supplied slide artwork in each theme without recoloring it. */
+.mds-brief-icon-dark { display:none; }
+.mds-root[data-theme='dark'] .mds-brief-icon-light { display:none; }
+.mds-root[data-theme='dark'] .mds-brief-icon-dark { display:block; }
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore-runtime { content:url('/brand/agentcore-purple/runtime-dark.png'); }
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore-gateway { content:url('/brand/agentcore-purple/gateway-dark.png'); }
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore-memory { content:url('/brand/agentcore-purple/memory-dark.png'); }
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore-policy { content:url('/brand/agentcore-purple/policy-dark.png'); }
+@media (min-width:1241px) and (min-height:850px) {
+  .mds-root[data-audience-layout='true'] .mds-brief-arch-diagram { max-height:45dvh; }
 }
