@@ -4,7 +4,6 @@ export const EXEMPTIONS = {
     'src/index.css',
     'src/preflight.css',
     'src/showcase/airlineConcierge.css',
-    'src/showcase/discoveryWorkspace.css',
     'src/showcase/meridianShowcase.css',
     'src/showcase/presentationMode.css',
     'src/showcase/presenterProof.css',
@@ -39,7 +38,6 @@ export const EXEMPTIONS = {
   'radius': [
     'src/index.css',
     'src/showcase/airlineConcierge.css',
-    'src/showcase/discoveryWorkspace.css',
     'src/showcase/meridianShowcase.css',
     'src/showcase/presentationMode.css',
     'src/showcase/presenterProof.css',
@@ -52,7 +50,6 @@ export const EXEMPTIONS = {
   ],
   'gradient': [
     'src/index.css',
-    'src/showcase/discoveryWorkspace.css',
     'src/showcase/meridianShowcase.css',
     'src/showcase/recoveryWorkspace.css',
   ],

@@ -383,32 +383,6 @@
   border-radius: 5px;
 }
 
-.mds-recovery-workspace .mds-checkpoint-thread {
-  margin: 9px 12px 0;
-  padding: 8px 9px;
-  border-radius: 5px;
-  background: rgba(19, 16, 11, 0.26);
-}
-
-.mds-recovery-workspace .mds-checkpoint-thread small {
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.mds-recovery-workspace .mds-checkpoint-progress {
-  padding: 15px 12px 10px;
-}
-
-.mds-recovery-workspace .mds-checkpoint-progress li::before {
-  height: 1px;
-  border-radius: 0;
-}
-
-.mds-recovery-workspace .mds-checkpoint-progress li.is-done i,
-.mds-recovery-workspace .mds-checkpoint-progress li.is-current i {
-  box-shadow: none;
-}
-
 .mds-root[data-theme="light"]
   .mds-recovery-workspace
   .mds-decision-card {
@@ -548,51 +522,6 @@
    to present MemorySaver as the durable proof, so the surface names the store
    rather than leaving it in the trace rail.
 --------------------------------------------------------------------------- */
-.mds-checkpoint-receipt {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin: 8px 0 2px;
-}
-
-.mds-checkpoint-receipt-store {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--mds-on-surface-soft);
-  font-family: var(--mds-font-mono);
-  font-size: calc(11px * var(--mds-fs-chrome));
-  font-weight: 600;
-}
-
-.mds-checkpoint-receipt.is-durable .mds-checkpoint-receipt-store {
-  color: var(--mds-green);
-}
-
-.mds-checkpoint-receipt-tag {
-  padding: 2px 8px;
-  border: 1px solid var(--mds-line);
-  border-radius: 999px;
-  color: var(--mds-dim);
-  font-size: calc(10.5px * var(--mds-fs-chrome));
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.mds-checkpoint-receipt-tag.is-durable {
-  border-color: rgb(var(--mds-green-rgb) / 0.34);
-  color: var(--mds-green);
-  background: rgb(var(--mds-green-rgb) / 0.09);
-}
-
-.mds-checkpoint-receipt-tag.is-restart {
-  border-color: rgb(var(--mds-blue-rgb) / 0.4);
-  color: var(--mds-blue);
-  background: rgb(var(--mds-blue-rgb) / 0.1);
-}
 
 /* ---------------------------------------------------------------------------
    Hold receipt
@@ -618,38 +547,10 @@
   background: var(--mds-fill-1);
 }
 
-.mds-hold-receipt-head {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--mds-green);
-  font-size: calc(11.5px * var(--mds-fs-chrome));
-  font-weight: 760;
-}
-
-.mds-hold-receipt.is-expired .mds-hold-receipt-head {
-  color: var(--mds-dim);
-}
-
 .mds-hold-receipt code {
   color: var(--mds-on-surface-soft);
   font-family: var(--mds-font-mono);
   font-size: calc(10.5px * var(--mds-fs-chrome));
-}
-
-.mds-hold-receipt-clock {
-  margin-left: auto;
-  color: var(--mds-on-surface);
-  font-family: var(--mds-font-mono);
-  font-size: calc(13px * var(--mds-fs-chrome));
-  font-variant-numeric: tabular-nums;
-  font-weight: 760;
-}
-
-.mds-hold-receipt-stock {
-  color: var(--mds-dim);
-  font-size: calc(10.5px * var(--mds-fs-chrome));
-  font-weight: 640;
 }
 
 /* The cross-fade wrapper needs a real box - opacity and transform do not apply
