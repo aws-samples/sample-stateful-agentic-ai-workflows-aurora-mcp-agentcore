@@ -124,7 +124,7 @@ def test_account_and_region_come_from_the_cluster_arn_unless_a_region_is_set() -
           "AURORA_SECRET_ARN": f"arn:aws:secretsmanager:us-west-2:{ACCOUNT}:secret:meridian"},
          "six-character suffix"),
         ({"AURORA_CLUSTER_ARN": CLUSTER_ARN,
-          "AURORA_SECRET_ARN": SECRET_ARN.replace(ACCOUNT, "210987654321")},
+          "AURORA_SECRET_ARN": SECRET_ARN.replace(ACCOUNT, "111122223333")},
          "both must belong to the deployment account"),
         ({"AURORA_CLUSTER_ARN": CLUSTER_ARN, "AURORA_SECRET_ARN": SECRET_ARN,
           "AWS_DEFAULT_REGION": "region"}, "not an AWS Region name"),
