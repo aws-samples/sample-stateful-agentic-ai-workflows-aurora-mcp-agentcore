@@ -740,6 +740,7 @@ async def mcp_search(
 
     # ----- Custom MCP server (meridian-concierge) -----
     domain_text: Optional[str] = None
+    custom_answered = False
     if use_custom_mcp:
         try:
             domain_call = await _call_domain_tool(
@@ -747,6 +748,7 @@ async def mcp_search(
                 traveler_id=traveler_id,
             )
             if domain_call:
+                custom_answered = True
                 activities.append(create_activity(
                     activity_type="mcp",
                     title="MCP server discovered: meridian-concierge (custom)",
@@ -852,8 +854,11 @@ async def mcp_search(
     log_search(phase=2, query=query, results_count=len(results),
                execution_time_ms=execution_time, search_type="mcp")
 
-    # Count the servers this turn actually used, not the ones it could have.
-    servers_used = (0 if pure_domain else 1) + (1 if use_custom_mcp else 0)
+    # Count the servers that answered this turn, not the ones it meant to use.
+    # Detecting a domain intent is not the same as the concierge server
+    # returning: counting the intent let a call that raised, or came back
+    # empty, still appear in the proof as a server the turn had used.
+    servers_used = (0 if pure_domain else 1) + (1 if custom_answered else 0)
     activities.append(create_activity(
         activity_type="mcp",
         title=(
