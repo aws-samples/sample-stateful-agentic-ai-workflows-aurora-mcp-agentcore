@@ -169,48 +169,6 @@ export function phaseLabelFor(phase: Phase): ShowcasePhaseLabel {
   return SHOWCASE_PHASES.find((p) => p.phase === phase)?.label ?? 'Workflow';
 }
 
-type TripPackageLike = {
-  package_id: string;
-  name: string;
-  destination?: string;
-  region?: string;
-  operator?: string;
-  price_per_person: number;
-  description?: string;
-  image_url?: string;
-  trip_type?: string;
-  durations?: string[] | null;
-  similarity?: number;
-  pre_rerank_position?: number | null;
-  pre_rerank_similarity?: number | null;
-  rank_delta?: number | null;
-};
-
-function tripPackageToProduct(pkg: TripPackageLike): Product {
-  return {
-    product_id: pkg.package_id,
-    name: pkg.name,
-    brand: [pkg.destination, pkg.region].filter(Boolean).join(' + ') || pkg.operator || 'Meridian Travel',
-    price: Number(pkg.price_per_person) || 0,
-    description: pkg.description ?? '',
-    image_url: pkg.image_url ?? '',
-    category: pkg.trip_type ?? 'Trip',
-    available_sizes: pkg.durations,
-    similarity: pkg.similarity,
-    pre_rerank_position: pkg.pre_rerank_position,
-    pre_rerank_similarity: pkg.pre_rerank_similarity,
-    rank_delta: pkg.rank_delta,
-  };
-}
-
-export function packagesResponseToRecommendations(input: Product[] | TripPackageLike[] | null | undefined): Product[] {
-  if (!input?.length) return [];
-  const normalized = input.map((item) =>
-    'package_id' in item ? tripPackageToProduct(item) : item,
-  );
-  return normalized.slice(0, 6);
-}
-
 export function genericizeLoyaltyText(value: string): string {
   return value
     .replace(/Marriott Bonvoy Platinum Elite/gi, 'Hotel Platinum')

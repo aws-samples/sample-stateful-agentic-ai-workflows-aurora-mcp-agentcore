@@ -1,6 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { Message } from '../../../types';
 import {
   EMPTY_FILTERS,
   type MeridianShowcaseState,
@@ -10,15 +9,13 @@ import {
   SHOWCASE_FINALE_PROMPT,
   showcasePromptLabel,
 } from '../../lib/showcaseAdapters';
-import { deriveRecoveryEvidence, deriveRecoveryStage } from '../../lib/recoveryState';
+import { deriveRecoveryEvidence } from '../../lib/recoveryState';
 import { DesktopMeridianApp } from '../../DesktopMeridianApp';
 import { ChatComposer } from '../ChatComposer';
 import { DiscoveryWorkspace } from '../DiscoveryWorkspace';
 import { ConciergeRail } from '../../surfaces/ConciergeRail';
 import { RecoveryBoardingPass } from '../RecoveryBoardingPass';
 import { ChatTranscript } from '../ChatTranscript';
-import { JourneyPanel } from '../JourneyPanel';
-import { RecoveryRouteMap } from '../RecoveryRouteMap';
 import { RecoveryWorkspace } from '../RecoveryWorkspace';
 import type { JourneyDocument } from '../../journey/types';
 import { TripResultCardContent } from '../TripResultCardContent';
@@ -376,16 +373,6 @@ describe('Experience presentation polish', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders an offline geographic JFK-to-Tokyo recovery map', () => {
-    const { container } = render(<RecoveryRouteMap />);
-
-    expect(screen.getByRole('img', { name: /New York.*Tokyo/i })).toBeInTheDocument();
-    expect(screen.getByText('JFK')).toBeInTheDocument();
-    expect(screen.getByText('TYO')).toBeInTheDocument();
-    expect(container.querySelectorAll('.mds-route-geography').length).toBeGreaterThan(100);
-    expect(container.querySelector('.mds-route-line')).toBeInTheDocument();
-  });
-
   it('keeps Experience customer-facing with exactly two prompt examples', () => {
     const state = makeState();
     const firstPrompt = SHOWCASE_EXAMPLE_PROMPTS[1][0];
@@ -482,79 +469,6 @@ describe('Experience presentation polish', () => {
     starters = container.querySelector('.mds-chat-query-starters');
     expect(starters).toHaveClass('has-2');
     expect(starters?.querySelectorAll('.mds-chat-starter-chip')).toHaveLength(2);
-  });
-
-  it('progresses the current trip from disruption through recovery', () => {
-    const initial = makeState();
-    expect(deriveRecoveryStage(initial)).toBe('action');
-
-    const runningMessages: Message[] = [
-      { role: 'user', text: SHOWCASE_FINALE_PROMPT },
-    ];
-    const running = makeState({
-      selectedPhase: 5,
-      phaseLabel: 'Workflow',
-      phaseExamples: SHOWCASE_EXAMPLE_PROMPTS[5],
-      lastPrompt: SHOWCASE_FINALE_PROMPT,
-      isLoading: true,
-      messages: runningMessages,
-    });
-    expect(deriveRecoveryStage(running)).toBe('running');
-
-    const ready = makeState({
-      ...running,
-      isLoading: false,
-      workflowStatus: 'resumed',
-      messages: [
-        ...runningMessages,
-        { role: 'bot', text: 'Two live alternatives are ready.' },
-      ],
-    });
-    expect(deriveRecoveryStage(ready)).toBe('ready');
-
-    const checkpointed = makeState({
-      ...running,
-      isLoading: false,
-      workflowStatus: 'paused',
-      conversationId: 'phase5-demo',
-      messages: [
-        ...runningMessages,
-        { role: 'bot', text: 'The shortlist is saved.' },
-      ],
-    });
-    expect(deriveRecoveryStage(checkpointed)).toBe('checkpointed');
-
-    const { rerender } = render(<JourneyPanel state={initial} />);
-    expect(screen.getByText('Traveler report')).toBeInTheDocument();
-    expect(screen.getByText('Action needed')).toBeInTheDocument();
-    expect(screen.getByText('Canceled')).toBeInTheDocument();
-    expect(screen.getByText('Saved loyalty profile')).toBeInTheDocument();
-    expect(screen.getByText('Partner benefits need confirmation')).toBeInTheDocument();
-    expect(screen.queryByText(/No shortlist/i)).not.toBeInTheDocument();
-
-    rerender(<JourneyPanel state={running} />);
-    expect(screen.getByText('Checking alternatives')).toBeInTheDocument();
-
-    rerender(<JourneyPanel state={checkpointed} />);
-    expect(screen.getByText('Shortlist saved')).toBeInTheDocument();
-    expect(screen.queryByText(/Recovery plan ready/i)).not.toBeInTheDocument();
-
-    rerender(<JourneyPanel state={ready} />);
-    expect(screen.getByText(/Recovery plan ready/i)).toBeInTheDocument();
-  });
-
-  it('keeps travel context collapsed until the presenter opens it', () => {
-    render(<JourneyPanel state={makeState()} />);
-
-    const toggle = screen.getByRole('button', { name: /Travel context/i });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText('Budget')).not.toBeInTheDocument();
-
-    fireEvent.click(toggle);
-
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText('Budget')).toBeInTheDocument();
-    expect(screen.getByText('$3,200')).toBeInTheDocument();
   });
 
   it('renders an intentional recovery launch state before live results exist', () => {
@@ -993,50 +907,6 @@ describe('Experience presentation polish', () => {
       availabilityObserved: false, loyaltyObserved: false, memoryObserved: false,
       checkpointObserved: false, durableCheckpoint: false,
     });
-  });
-
-  it('marks only observed activity as verified', () => {
-    const state = makeState({
-      selectedPhase: 5,
-      phaseLabel: 'Workflow',
-      lastPrompt: SHOWCASE_FINALE_PROMPT,
-      workflowStatus: 'paused',
-      recommendations: [
-        {
-          product_id: 'tokyo',
-          name: 'Tokyo option',
-          brand: 'Meridian',
-          price: 1800,
-          description: 'Tokyo',
-          image_url: '',
-          category: 'city',
-        },
-      ],
-      traceSpans: [
-        {
-          id: 'checkpoint',
-          name: 'Checkpoint · PostgresSaver.put',
-          category: 'memory_short',
-          type: 'tool_call',
-          status: 'ok',
-          latencyMs: 10,
-          fields: [],
-        },
-      ],
-      messages: [
-        { role: 'user', text: SHOWCASE_FINALE_PROMPT },
-        { role: 'bot', text: 'Paused.' },
-      ],
-    });
-
-    render(<JourneyPanel state={state} />);
-
-    const loyaltyRow = screen
-      .getByText('Loyalty perks')
-      .closest('.mds-agent-activity-row');
-    expect(loyaltyRow).toHaveClass('is-unobserved');
-    expect(loyaltyRow).toHaveTextContent('Not observed in this run');
-    expect(loyaltyRow).toHaveTextContent('not observed');
   });
 
   it('limits verified inventory to the top three plans and polishes memory context', () => {

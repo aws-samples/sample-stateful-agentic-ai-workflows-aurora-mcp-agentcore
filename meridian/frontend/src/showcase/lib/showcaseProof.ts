@@ -1,25 +1,4 @@
-import type { Phase, Product } from '../../types';
 import type { ShowcaseTraceSpan } from './showcaseAdapters';
-
-export type ProofStatus = 'locked' | 'ready' | 'observed';
-
-export interface PhaseProof {
-  phase: Phase;
-  headline: string;
-  dataPath: string;
-  auroraCapability: string;
-  agentBoundary: string;
-  proof: string;
-  source: string;
-}
-
-export interface AuroraEvidence {
-  key: 'sql' | 'mcp' | 'vector' | 'rerank' | 'runtime' | 'rls' | 'checkpoint';
-  label: string;
-  value: string;
-  detail: string;
-  status: ProofStatus;
-}
 
 export interface McpContract {
   server: string;
@@ -51,54 +30,6 @@ export interface WorkflowStateProof {
   holdStatus: string;
 }
 
-export const PHASE_PROOFS: Record<Phase, PhaseProof> = {
-  1: {
-    phase: 1,
-    headline: 'Direct Aurora query',
-    dataPath: 'Prompt -> SQL filters -> trip_packages',
-    auroraCapability: 'RDS Data API executes scoped catalog reads.',
-    agentBoundary: 'The live route parses filters and executes the catalog query.',
-    proof: 'SQL text and row count appear in the trace.',
-    source: 'backend/routers/chat.py',
-  },
-  2: {
-    phase: 2,
-    headline: 'Aurora behind MCP tools',
-    dataPath: 'Prompt -> MCP tools/list -> tools/call -> Aurora',
-    auroraCapability: 'Same Aurora schema, exposed through tool contracts.',
-    agentBoundary: 'Generic postgres-mcp plus custom meridian-concierge MCP.',
-    proof: 'Tool name, request args, and Aurora operation are visible.',
-    source: 'backend/mcp/concierge_server.py',
-  },
-  3: {
-    phase: 3,
-    headline: 'Intent retrieval',
-    dataPath: 'Prompt -> embedding -> pgvector + tsvector -> rerank',
-    auroraCapability: 'Aurora PostgreSQL stores vectors and full-text indexes.',
-    agentBoundary: 'Supervisor routes to specialist retrieval agents.',
-    proof: 'Candidate retrieval and Cohere rerank spans land in order.',
-    source: 'backend/agents/retrieval_03/search_agent.py',
-  },
-  4: {
-    phase: 4,
-    headline: 'Production trust boundary',
-    dataPath: 'Identity -> traveler grant -> RLS-scoped Aurora transaction',
-    auroraCapability: 'Aurora grants the workload access to Alex, then RLS isolates rows.',
-    agentBoundary: 'AgentCore runtime, gateway, memory, and identity adapters.',
-    proof: 'ALLOW Alex, DENY Jordan, then scoped row counts and audit records.',
-    source: 'backend/memory/store.py',
-  },
-  5: {
-    phase: 5,
-    headline: 'Durable workflow',
-    dataPath: 'Classify -> branch -> worker node -> checkpoint -> synthesize',
-    auroraCapability: 'An Aurora checkpointer saves LangGraph checkpoints through the Data API or a PostgreSQL connection.',
-    agentBoundary: 'LangGraph makes routing explicit and resumable.',
-    proof: 'Executed nodes, checkpoint ID, and the active checkpoint backend are visible.',
-    source: 'backend/agents/orchestration_05/workflow.py',
-  },
-};
-
 const WORKFLOW_PATHS: Record<string, string[]> = {
   search: ['classify', 'search', 'synthesize'],
   plan: ['classify', 'search', 'availability', 'synthesize'],
@@ -113,151 +44,6 @@ export function workflowPathFor(intent: string, spans: ShowcaseTraceSpan[]): str
     || ['prepare_hold', 'hold'].includes(workflowNodeFromSpan(span) ?? ''));
   if (intent === 'plan' && recovery) return ['classify', 'search', 'availability', 'prepare_hold', 'hold', 'synthesize'];
   return WORKFLOW_PATHS[intent] ?? ['classify', 'branch', 'synthesize'];
-}
-
-export function getPhaseProof(phase: Phase): PhaseProof {
-  return PHASE_PROOFS[phase] ?? PHASE_PROOFS[5];
-}
-
-export function deriveAuroraEvidence({
-  selectedPhase,
-  traceSpans,
-  recommendations,
-}: {
-  selectedPhase: Phase;
-  traceSpans: ShowcaseTraceSpan[];
-  recommendations: Product[];
-}): AuroraEvidence[] {
-  traceSpans = traceSpans.filter(span => span.status === 'ok');
-  const sqlSpans = traceSpans.filter((s) => Boolean(s.sql) || s.type === 'database');
-  const mcpSpans = traceSpans.filter((s) => /mcp|tools\/call|postgres-mcp|meridian-concierge/i.test(spanText(s)));
-  const vectorSpans = traceSpans.filter((s) => /pgvector|semantic_trip_search|embedding|hybrid|tsvector/i.test(spanText(s)));
-  const rerankSpans = traceSpans.filter((s) => /rerank|rank/i.test(spanText(s)));
-  const rlsSpans = traceSpans.filter((s) => /\brls\b|scoped transaction/i.test(spanText(s)));
-  const runtimeSpans = traceSpans.filter((s) => /agentcore runtime/i.test(spanText(s)));
-  const accessGranted = traceSpans.some(span => fieldValue(span, 'authorization.decision') === 'allow');
-  const checkpointSpans = traceSpans.filter(isCheckpointSpan);
-  const checkpointKind =
-    traceSpans
-      .map((span) => fieldValue(span, 'checkpointer'))
-      .find(Boolean) ??
-    (checkpointSpans.some((span) => /postgressaver/i.test(spanText(span)))
-      ? 'PostgresSaver'
-      : checkpointSpans.some((span) => /memorysaver/i.test(spanText(span)))
-        ? 'MemorySaver (in-process)'
-        : 'not observed');
-  const durableCheckpoint = hasDurableCheckpoint(traceSpans);
-  const checkpointStore =
-    traceSpans
-      .map((span) => fieldValue(span, 'checkpoint_store'))
-      .find(Boolean) ??
-    (checkpointKind.toLowerCase().includes('memorysaver')
-      ? 'process memory'
-      : durableCheckpoint ? 'checkpoints' : 'not observed');
-  const hasRankDeltas = recommendations.some((p) => p.rank_delta != null || p.pre_rerank_position != null);
-
-  return [
-    {
-      key: 'sql',
-      label: 'SQL rows',
-      value: sqlSpans.length ? `${sqlSpans.length} span${plural(sqlSpans.length)}` : 'ready',
-      detail: sqlSpans.length
-        ? `${recommendations.length} trip result${plural(recommendations.length)} surfaced`
-        : 'Aurora query evidence appears after the first run',
-      status: statusFor(true, sqlSpans.length > 0),
-    },
-    {
-      key: 'mcp',
-      label: 'MCP calls',
-      value: mcpSpans.length ? `${mcpSpans.length} call${plural(mcpSpans.length)}` : selectedPhase >= 2 ? 'ready' : 'later',
-      detail: mcpSpans.length
-        ? `${countMcpServers(traceSpans)} server${plural(countMcpServers(traceSpans))} involved`
-        : 'Tool contracts unlock at the MCP phase',
-      status: statusFor(selectedPhase >= 2, mcpSpans.length > 0),
-    },
-    {
-      key: 'vector',
-      label: 'Hybrid retrieval',
-      value: vectorSpans.length ? 'pgvector + FTS' : selectedPhase >= 3 ? 'ready' : 'later',
-      detail: firstMatchingDetail(vectorSpans, /candidate|embedding|pgvector|tsvector/i) ?? 'Semantic vectors plus PostgreSQL full-text search',
-      status: statusFor(selectedPhase >= 3, vectorSpans.length > 0),
-    },
-    {
-      key: 'rerank',
-      label: 'Rerank',
-      value: rerankSpans.length || hasRankDeltas ? 'applied' : selectedPhase >= 3 ? 'ready' : 'later',
-      detail: firstMatchingDetail(rerankSpans, /rerank/i) ?? 'Cohere rerank orders the candidate set',
-      status: statusFor(selectedPhase >= 3, rerankSpans.length > 0 || hasRankDeltas),
-    },
-    {
-      key: 'runtime',
-      label: 'Agent runtime',
-      value: runtimeSpans.length ? 'AgentCore Runtime' : selectedPhase >= 4 ? 'ready' : 'later',
-      detail: runtimeSpans.length
-        ? 'A managed runtime invocation was recorded'
-        : 'AgentCore and Strands unlock at Production',
-      status: statusFor(selectedPhase >= 4, runtimeSpans.length > 0),
-    },
-    {
-      key: 'rls',
-      label: 'Governance',
-      value: rlsSpans.length && accessGranted ? 'grant + row scope' : selectedPhase >= 4 ? 'ready' : 'later',
-      detail: rlsSpans.length && accessGranted ? 'Access grant and RLS scope recorded; inspect the audit record in System evidence' : 'Workload authorization, RLS, and audit proof unlock at Production',
-      status: statusFor(selectedPhase >= 4, rlsSpans.length > 0 && accessGranted),
-    },
-    {
-      key: 'checkpoint',
-      label: 'Checkpoint',
-      value: checkpointSpans.length
-        ? durableCheckpoint
-          ? `${checkpointSpans.length} saved to Aurora`
-          : 'in-process only'
-        : selectedPhase >= 5 ? 'ready' : 'later',
-      detail: checkpointSpans.length
-        ? durableCheckpoint
-          ? `Durable workflow state checkpointed via ${checkpointKind} (${checkpointStore})`
-          : `Ephemeral workflow state via ${checkpointKind}; Aurora durability not observed`
-        : 'LangGraph checkpoints unlock at Workflow',
-      status: statusFor(
-        selectedPhase >= 5,
-        checkpointSpans.length > 0 && durableCheckpoint,
-      ),
-    },
-  ];
-}
-
-/**
- * The evidence keys that each phase's proof pill actually claims.
- *
- * Phase 3 says "pgvector + rerank" and Phase 4 says "Workload grant + RLS",
- * so both of their keys have to land before the claim is true.
- */
-const PHASE_PROOF_KEYS: Record<Phase, AuroraEvidence['key'][]> = {
-  1: ['sql'],
-  2: ['mcp'],
-  3: ['vector', 'rerank'],
-  4: ['runtime', 'rls'],
-  5: ['checkpoint'],
-};
-
-/**
- * Whether a phase actually established the proof its pill asserts.
- *
- * The pill used to render as soon as any span arrived, so a phase that
- * errored, or one running on a fallback path, still displayed its proof
- * point as though it had been demonstrated.
- */
-export function isPhaseProofObserved(
-  phase: Phase,
-  evidence: AuroraEvidence[],
-): boolean {
-  const keys = PHASE_PROOF_KEYS[phase] ?? [];
-  return (
-    keys.length > 0 &&
-    keys.every((key) =>
-      evidence.some((item) => item.key === key && item.status === 'observed'),
-    )
-  );
 }
 
 export function deriveMcpContracts(traceSpans: ShowcaseTraceSpan[]): McpContract[] {
@@ -449,34 +235,12 @@ function spanText(span: ShowcaseTraceSpan): string {
     .join(' ');
 }
 
-function statusFor(unlocked: boolean, observed: boolean): ProofStatus {
-  if (!unlocked) return 'locked';
-  return observed ? 'observed' : 'ready';
-}
-
-function countMcpServers(spans: ShowcaseTraceSpan[]): number {
-  const servers = new Set<string>();
-  spans.forEach((span) => {
-    if (/postgres-mcp|awslabs/i.test(spanText(span))) servers.add('postgres-mcp');
-    if (/meridian-concierge/i.test(spanText(span))) servers.add('meridian-concierge');
-  });
-  return servers.size;
-}
-
-function firstMatchingDetail(spans: ShowcaseTraceSpan[], re: RegExp): string | null {
-  return spans.find((s) => re.test(spanText(s)))?.details ?? null;
-}
-
 function lastToken(name: string): string {
   return name.split('·').pop()?.trim() ?? name;
 }
 
 function compactSql(sql: string): string {
   return sql.replace(/\s+/g, ' ').trim();
-}
-
-function plural(count: number): string {
-  return count === 1 ? '' : 's';
 }
 
 function unique<T>(items: T[]): T[] {

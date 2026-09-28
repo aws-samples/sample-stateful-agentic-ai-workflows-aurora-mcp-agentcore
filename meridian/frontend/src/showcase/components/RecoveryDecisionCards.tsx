@@ -1,4 +1,3 @@
-import { HoldReceipt } from './HoldReceipt';
 import { AuroraIcon } from './ServiceMark';
 import {
 AlertTriangle,
@@ -67,22 +66,6 @@ interface AgentProofCardProps {
   recommendationCount: number;
   traceCount: number;
   onViewProof: () => void;
-}
-
-interface CheckpointedPlanCardProps {
-  stage: RecoveryStage;
-  evidence: RecoveryEvidence;
-  threadId: string;
-  resumedAfterRestart: boolean;
-  /** Which checkpointer actually ran. PostgresSaver is durable; MemorySaver is not. */
-  checkpointStore: string;
-  durable: boolean;
-  /** A committed courtesy hold, when the recovery path reached the hold node. */
-  holdId?: string;
-  holdExpiresAt?: string;
-  holdCreatedAt?: string;
-  holdObservedAt?: string;
-  holdStatus?: string;
 }
 
 interface RecoveryLaunchCardProps {
@@ -453,26 +436,6 @@ export function RecoveryLaunchCard({
           </span>
         </footer>
       )}
-    </article>
-  );
-}
-
-export function RecoveryGuardrailsCard() {
-  return (
-    <article
-      className="mds-decision-card mds-recovery-guardrails-card"
-      aria-label="Recovery guardrails"
-    >
-      <span>
-        <ShieldCheck size={17} aria-hidden="true" />
-      </span>
-      <div>
-        <strong>Built for a safe handoff</strong>
-        <small>
-          Live search, traveler context, and durable state become visible only
-          after the workflow observes them.
-        </small>
-      </div>
     </article>
   );
 }
@@ -904,111 +867,6 @@ export function AgentProofCard({
         View system evidence
         <ArrowRight size={15} aria-hidden="true" />
       </button>
-    </article>
-  );
-}
-
-export function CheckpointedPlanCard({
-  stage,
-  evidence,
-  threadId,
-  resumedAfterRestart,
-  checkpointStore,
-  durable,
-  holdId,
-  holdExpiresAt,
-  holdCreatedAt,
-  holdObservedAt,
-  holdStatus,
-}: CheckpointedPlanCardProps) {
-  const searchDone = evidence.searchObserved;
-  const rankDone = evidence.alternativesObserved;
-  const checkpointDone = evidence.checkpointObserved;
-  const inventoryDone = evidence.availabilityObserved;
-  const status =
-    stage === 'ready'
-      ? 'Plan ready'
-      : stage === 'checkpointed'
-        ? evidence.durableCheckpoint
-          ? 'Checkpointed in Aurora'
-          : 'Checkpointed'
-        : stage === 'running'
-          ? 'Workflow running'
-          : 'Not started';
-
-  return (
-    <article
-      className={`mds-decision-card mds-checkpointed-plan-card is-${stage}`}
-      aria-label="Checkpointed plan progress"
-    >
-      <header className="mds-decision-card-head">
-        <span className="mds-decision-card-kicker">
-          <AuroraIcon size={17} aria-hidden="true" />
-          Checkpointed plan
-        </span>
-        <span className={`mds-checkpoint-badge is-${stage}`}>{status}</span>
-      </header>
-      <div className="mds-checkpoint-thread">
-        <small>Thread</small>
-        <strong>{threadId}</strong>
-      </div>
-      {holdId && (
-        <HoldReceipt
-          holdId={holdId}
-          expiresAt={holdExpiresAt}
-          createdAt={holdCreatedAt}
-          observedAt={holdObservedAt}
-          status={holdStatus}
-        />
-      )}
-      {!holdId && (stage === 'checkpointed' || stage === 'ready') && (
-        <div className="mc-hold-pending">
-          <strong>{stage === 'checkpointed' ? 'Shortlist saved. No inventory held yet.' : 'No package hold recorded.'}</strong>
-          <p>{stage === 'checkpointed' ? 'Resume verifies package availability, then requests a timed hold. Its clock starts when Aurora creates the booking.' : 'The checkpoint records workflow progress. A hold needs its own booking receipt.'}</p>
-        </div>
-      )}
-      {/* The claim this phase makes lives or dies on which store ran, so name
-          it here rather than only in the trace rail. */}
-      <div className={`mds-checkpoint-receipt${durable ? ' is-durable' : ''}`}>
-        <span className="mds-checkpoint-receipt-store">
-          <AuroraIcon size={13} aria-hidden="true" />
-          {checkpointStore || 'checkpointer not observed'}
-        </span>
-        {durable ? (
-          <span className="mds-checkpoint-receipt-tag is-durable">survives process loss</span>
-        ) : (
-          <span className="mds-checkpoint-receipt-tag">in-process only</span>
-        )}
-        {resumedAfterRestart && (
-          <span className="mds-checkpoint-receipt-tag is-restart">
-            resumed after worker restart
-          </span>
-        )}
-      </div>
-      <ol className="mds-checkpoint-progress">
-        <li className="is-done"><i />Disruption</li>
-        <li className={searchDone ? 'is-done' : stage === 'running' ? 'is-current' : ''}>
-          <i />Search
-        </li>
-        <li className={rankDone ? 'is-done' : ''}><i />Rank</li>
-        <li className={checkpointDone ? 'is-done' : ''}><i />Save</li>
-        <li className={inventoryDone ? 'is-done' : stage === 'checkpointed' ? 'is-current' : ''}>
-          <i />Verify
-        </li>
-      </ol>
-      <p>
-        {stage === 'ready'
-          ? !evidence.durableCheckpoint
-            ? 'Resumed from in-process workflow state. Not durable across a restart.'
-            : resumedAfterRestart
-              ? 'Resumed from Aurora after a worker restart.'
-              : 'Resumed from the saved Aurora workflow state.'
-          : stage === 'checkpointed'
-            ? 'The ranked shortlist is durable and safe to resume.'
-            : stage === 'running'
-              ? 'Meridian is saving progress between workflow steps.'
-              : 'Recovery state will be persisted before inventory verification.'}
-      </p>
     </article>
   );
 }
