@@ -83,12 +83,3 @@ for (const mode of MODES) for (const theme of THEMES) for (const view of VIEWS) 
     await recordClasses(page, name);
   });
 }
-
-test('stage', async ({ page }) => {
-  await page.setViewportSize({ width: 1920, height: 1080 });
-  await page.goto('/stage');
-  await page.waitForLoadState('networkidle');
-  await page.evaluate(async () => { await document.fonts.ready; });
-  fs.mkdirSync(outDir, { recursive: true });
-  await page.screenshot({ path: path.join(outDir, 'stage.png') });
-});

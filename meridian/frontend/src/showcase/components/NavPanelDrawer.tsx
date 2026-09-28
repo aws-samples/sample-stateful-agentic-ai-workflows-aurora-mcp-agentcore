@@ -8,10 +8,10 @@ import { ALEX_IMAGE_URL, ALEX_NAME } from '../lib/personas';
 import { ShowcaseSheet } from './ShowcaseSheet';
 
 // Lightweight-but-complete side panels for the sidebar nav. Each panel
-// renders REAL session / Aurora state - no fixtures - so a presenter (or a
-// booth visitor) can click any nav item and land on something coherent
-// instead of a dead button. All four share the existing drawer chrome
-// (.mds-drawer) so they match the Memory drawer visually.
+// renders REAL session / Aurora state - no fixtures - so a visitor can
+// click any nav item and land on something coherent instead of a dead
+// button. All four share the existing drawer chrome (.mds-drawer) so
+// they match the Memory drawer visually.
 
 export type NavPanelId = 'trips' | 'discover' | 'profile' | 'messages';
 

@@ -24,9 +24,7 @@ const scanned = [
   path.join(SRC, 'preflight.css'),
 ];
 const definedVars = new Set(
-  [...scanned, ...cssFiles(path.join(SRC, 'stage'))].flatMap(
-    file => [...collectDefinedVars(read(file))],
-  ),
+  scanned.flatMap(file => [...collectDefinedVars(read(file))]),
 );
 const all = scanned.flatMap(file => checkCss(read(file), {
   file: rel(file), isTokensFile: file === TOKENS_FILE, definedVars,
