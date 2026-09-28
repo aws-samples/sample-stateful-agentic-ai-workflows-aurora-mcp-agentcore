@@ -25,8 +25,10 @@ Environment variables take precedence over ``meridian/.env``.
 The Cedar policies name the deployed gateway, so a first deployment cannot
 include them. Without a gateway ID the script renders that first pass: no
 policy engine and no gateway ID variable. Without a policy engine ID it leaves
-out only the runtime's policy engine variable. Run it again after each
-``agentcore deploy`` until it reports a complete configuration.
+out only the runtime's policy engine variable. A policy engine ID without a
+gateway ID is refused, because the engine it names could not be rendered. Run
+it again after each ``agentcore deploy`` until it reports a complete
+configuration.
 
 Usage:
     cd meridian
@@ -55,6 +57,17 @@ DEPLOYED_STATE = Path(".cli") / "deployed-state.json"
 
 GATEWAY_NAME = "meridian-aurora"
 POLICY_ENGINE_NAME = "MeridianGovernance"
+GATEWAY_ID_KEYS = ("mcp", "gateways", GATEWAY_NAME, "gatewayId")
+POLICY_ENGINE_ID_KEYS = ("policyEngines", POLICY_ENGINE_NAME, "policyEngineId")
+STATE_REMEDY = "re-run agentcore deploy, or pass --gateway-id and --policy-engine-id"
+JSON_TYPES = {
+    dict: "an object",
+    list: "an array",
+    str: "a string",
+    bool: "a boolean",
+    int: "a number",
+    float: "a number",
+}
 
 PLACEHOLDER = re.compile(r"\{\{([A-Z_]+)\}\}")
 CLUSTER_ARN = re.compile(
@@ -118,6 +131,39 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
     }
 
 
+def state_value(state: Any, keys: tuple[str, ...], state_path: Path) -> str | None:
+    """Follow ``keys`` through the deployed state to a string.
+
+    Args:
+        state: The parsed deployed-state document.
+        keys: Object keys from the top level down to the value.
+        state_path: The file the state came from, named in errors.
+
+    Returns:
+        The string at the end of ``keys``, or None when a key along the way is absent.
+
+    Raises:
+        ConfigError: When a level is not a JSON object or the value is not a string.
+    """
+    node = state
+    for depth, key in enumerate(keys):
+        if not isinstance(node, dict):
+            where = ".".join(keys[:depth]) or "the top level"
+            raise ConfigError(
+                f"{state_path}: expected an object at {where}, found "
+                f"{JSON_TYPES.get(type(node), type(node).__name__)}; {STATE_REMEDY}"
+            )
+        node = node.get(key)
+        if node is None:
+            return None
+    if not isinstance(node, str):
+        raise ConfigError(
+            f"{state_path}: {'.'.join(keys)} must be a string, found "
+            f"{JSON_TYPES.get(type(node), type(node).__name__)}; {STATE_REMEDY}"
+        )
+    return node
+
+
 def deployed_ids(state_path: Path, target: str) -> dict[str, str]:
     """Read the gateway and policy engine IDs the AgentCore CLI recorded after a deploy.
 
@@ -127,6 +173,9 @@ def deployed_ids(state_path: Path, target: str) -> dict[str, str]:
 
     Returns:
         GATEWAY_ID and POLICY_ENGINE_ID when the state records them; empty before a deploy.
+
+    Raises:
+        ConfigError: When the file is not JSON or does not have the shape the CLI writes.
     """
     if not state_path.is_file():
         return {}
@@ -136,12 +185,10 @@ def deployed_ids(state_path: Path, target: str) -> dict[str, str]:
         raise ConfigError(
             f"{state_path} is not valid JSON ({exc}); re-run agentcore deploy"
         ) from exc
-    resources = state.get("targets", {}).get(target, {}).get("resources", {})
-    gateway = resources.get("mcp", {}).get("gateways", {}).get(GATEWAY_NAME, {})
-    engine = resources.get("policyEngines", {}).get(POLICY_ENGINE_NAME, {})
+    resources = ("targets", target, "resources")
     found = {
-        "GATEWAY_ID": gateway.get("gatewayId"),
-        "POLICY_ENGINE_ID": engine.get("policyEngineId"),
+        "GATEWAY_ID": state_value(state, (*resources, *GATEWAY_ID_KEYS), state_path),
+        "POLICY_ENGINE_ID": state_value(state, (*resources, *POLICY_ENGINE_ID_KEYS), state_path),
     }
     return {key: value for key, value in found.items() if value}
 
@@ -197,11 +244,17 @@ def render(
     targets_template: list[dict[str, Any]],
     values: dict[str, str],
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
-    """Fill both templates and prune what the current deployment stage cannot supply.
+    """Fill both templates and prune what the current deployment pass cannot supply.
 
     Raises:
-        ConfigError: When a required placeholder has no value.
+        ConfigError: When a required placeholder has no value, or a policy engine ID
+            comes without the gateway ID its policies name.
     """
+    if values.get("POLICY_ENGINE_ID") and not values.get("GATEWAY_ID"):
+        raise ConfigError(
+            "a policy engine ID needs the gateway ID too, because the engine's Cedar "
+            "policies name the gateway; pass --gateway-id with --policy-engine-id"
+        )
     spec = substitute(spec_template, values)
     targets = substitute(targets_template, values)
     notes = drop_pending_deployment_values(spec)

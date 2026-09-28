@@ -53,8 +53,10 @@ python scripts/render_agentcore_config.py
 ```
 
 Environment variables take precedence over `meridian/.env`. The script refuses
-to write when a required value is missing or malformed, and names the setting
-to fix.
+to write when a required value is missing or malformed, or when
+`deployed-state.json` does not have the shape the CLI writes, and names the
+setting or key to fix. It also refuses a policy engine ID without a gateway ID,
+because the engine's policies name the gateway.
 
 The Cedar policies name the deployed gateway, so a new account needs more than
 one deploy. Before the gateway exists, the script renders the spec without the

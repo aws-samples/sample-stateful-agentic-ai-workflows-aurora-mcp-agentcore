@@ -157,7 +157,9 @@ python meridian/scripts/render_agentcore_config.py
 `agentcore deploy` writes the deployed ARNs and IDs to
 `meridian/meridian_agentcore/agentcore/.cli/deployed-state.json`. If that file
 is missing, for example on another machine, pass the IDs to
-`render_agentcore_config.py` with `--gateway-id` and `--policy-engine-id`.
+`render_agentcore_config.py` with `--gateway-id` and `--policy-engine-id`. A
+policy engine ID needs the gateway ID with it, because the engine's policies
+name the gateway.
 
 ## 6. Grant the holds Lambda access to the demo traveler
 

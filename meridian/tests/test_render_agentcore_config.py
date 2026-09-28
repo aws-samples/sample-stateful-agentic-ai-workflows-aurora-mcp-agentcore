@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -17,6 +18,7 @@ SECRET_ARN = f"arn:aws:secretsmanager:us-west-2:{ACCOUNT}:secret:meridian-AbC123
 GATEWAY_ID = "meridianv2-meridian-aurora-abcde12345"
 POLICY_ENGINE_ID = "meridianv2_MeridianGovernance-abcde12345"
 GATEWAY_ARN = f"arn:aws:bedrock-agentcore:us-west-2:{ACCOUNT}:gateway/{GATEWAY_ID}"
+REPO = render_config.MERIDIAN_DIR.parent
 
 
 def templates() -> tuple[dict, list]:
@@ -135,6 +137,13 @@ def test_malformed_inputs_fail_with_the_setting_to_fix(env: dict, message: str) 
         render_config.account_values(env)
 
 
+def test_a_policy_engine_id_without_a_gateway_id_is_refused() -> None:
+    values = {**base_values(), "POLICY_ENGINE_ID": POLICY_ENGINE_ID}
+
+    with pytest.raises(render_config.ConfigError, match="needs the gateway ID"):
+        render_config.render(*templates(), values)
+
+
 def test_a_required_placeholder_without_a_value_is_refused() -> None:
     values = base_values()
     del values["AURORA_SECRET_ARN"]
@@ -174,6 +183,151 @@ def test_deployed_ids_come_from_the_cli_deployment_state(tmp_path: Path) -> None
         render_config.deployed_ids(state, "default")
 
 
+@pytest.mark.parametrize(
+    "state,message",
+    [
+        ([], "expected an object at the top level, found an array"),
+        ({"targets": []}, "expected an object at targets, found an array"),
+        ({"targets": {"default": "deployed"}}, "at targets.default, found a string"),
+        (
+            {"targets": {"default": {"resources": {"mcp": {"gateways": []}}}}},
+            "at targets.default.resources.mcp.gateways, found an array",
+        ),
+        (
+            {
+                "targets": {
+                    "default": {
+                        "resources": {
+                            "policyEngines": {"MeridianGovernance": {"policyEngineId": 7}}
+                        }
+                    }
+                }
+            },
+            "targets.default.resources.policyEngines.MeridianGovernance.policyEngineId "
+            "must be a string, found a number",
+        ),
+    ],
+)
+def test_unexpected_deployed_state_names_the_file_and_key(
+    tmp_path: Path, state: object, message: str
+) -> None:
+    path = tmp_path / "deployed-state.json"
+    path.write_text(json.dumps(state), encoding="utf-8")
+
+    with pytest.raises(render_config.ConfigError) as raised:
+        render_config.deployed_ids(path, "default")
+
+    assert str(path) in str(raised.value)
+    assert message in str(raised.value)
+
+
+@pytest.fixture
+def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A scratch meridian/ with the committed templates, an empty .env and no deploy yet."""
+    config_dir = tmp_path / "meridian_agentcore" / "agentcore"
+    config_dir.mkdir(parents=True)
+    for name in (render_config.SPEC_TEMPLATE, render_config.TARGETS_TEMPLATE):
+        shutil.copy(render_config.CONFIG_DIR / name, config_dir / name)
+    monkeypatch.setattr(render_config, "MERIDIAN_DIR", tmp_path)
+    monkeypatch.setattr(render_config, "CONFIG_DIR", config_dir)
+    for name in ("AGENTCORE_REGION", "AWS_DEFAULT_REGION"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("AURORA_CLUSTER_ARN", CLUSTER_ARN)
+    monkeypatch.setenv("AURORA_SECRET_ARN", SECRET_ARN)
+    return config_dir
+
+
+def write_state(config_dir: Path, state: object) -> None:
+    path = config_dir / render_config.DEPLOYED_STATE
+    path.parent.mkdir()
+    path.write_text(json.dumps(state), encoding="utf-8")
+
+
+def deployed(gateway_id: str) -> dict:
+    resources = {
+        "mcp": {"gateways": {"meridian-aurora": {"gatewayId": gateway_id}}},
+        "policyEngines": {"MeridianGovernance": {"policyEngineId": POLICY_ENGINE_ID}},
+    }
+    return {"targets": {"default": {"resources": resources}}}
+
+
+def written(config_dir: Path) -> tuple[dict, list]:
+    spec = json.loads((config_dir / render_config.SPEC_OUTPUT).read_text(encoding="utf-8"))
+    targets = json.loads((config_dir / render_config.TARGETS_OUTPUT).read_text(encoding="utf-8"))
+    return spec, targets
+
+
+def test_main_writes_the_first_pass_before_any_deploy(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert render_config.main([]) == 0
+
+    spec, targets = written(project)
+    assert targets[0]["account"] == ACCOUNT
+    assert spec["policyEngines"] == []
+    assert "MERIDIAN_POLICY_ENGINE_ID" not in runtime_env(spec)
+    out = capsys.readouterr().out
+    assert f"account {ACCOUNT}, region us-west-2" in out
+    assert "Deploy with `agentcore deploy -y`, then run this script again." in out
+
+
+def test_main_completes_from_the_deployed_state_and_the_env_file(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("AURORA_CLUSTER_ARN")
+    monkeypatch.delenv("AURORA_SECRET_ARN")
+    (render_config.MERIDIAN_DIR / ".env").write_text(
+        f"AURORA_CLUSTER_ARN={CLUSTER_ARN}\nAURORA_SECRET_ARN={SECRET_ARN}\n"
+        "AGENTCORE_REGION=eu-west-1\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AGENTCORE_REGION", "us-east-1")
+    write_state(project, deployed(GATEWAY_ID))
+
+    assert render_config.main([]) == 0
+
+    spec, targets = written(project)
+    assert targets[0]["region"] == "us-east-1"
+    assert runtime_env(spec)["MERIDIAN_GATEWAY_ID"] == GATEWAY_ID
+    assert runtime_env(spec)["MERIDIAN_POLICY_ENGINE_ID"] == POLICY_ENGINE_ID
+    assert capsys.readouterr().out.endswith("Configuration complete.\n")
+
+
+def test_main_flags_override_the_deployed_state(project: Path) -> None:
+    write_state(project, deployed("meridianv2-meridian-aurora-zyxwv98765"))
+
+    assert render_config.main(["--gateway-id", GATEWAY_ID]) == 0
+
+    spec, _ = written(project)
+    assert runtime_env(spec)["MERIDIAN_GATEWAY_ID"] == GATEWAY_ID
+    assert runtime_env(spec)["MERIDIAN_POLICY_ENGINE_ID"] == POLICY_ENGINE_ID
+    assert all(GATEWAY_ID in p["statement"] for p in spec["policyEngines"][0]["policies"])
+
+
+@pytest.mark.parametrize(
+    "args,state,message",
+    [
+        (["--policy-engine-id", POLICY_ENGINE_ID], None, "needs the gateway ID"),
+        ([], {"targets": {"default": []}}, "expected an object at targets.default"),
+    ],
+)
+def test_main_refuses_to_write_an_inconsistent_config(
+    project: Path,
+    capsys: pytest.CaptureFixture[str],
+    args: list[str],
+    state: object,
+    message: str,
+) -> None:
+    if state is not None:
+        write_state(project, state)
+
+    assert render_config.main(args) == 1
+
+    assert message in capsys.readouterr().err
+    assert not (project / render_config.SPEC_OUTPUT).exists()
+    assert not (project / render_config.TARGETS_OUTPUT).exists()
+
+
 def test_templates_hold_no_account_or_deployment_specific_value() -> None:
     for name in (render_config.SPEC_TEMPLATE, render_config.TARGETS_TEMPLATE):
         text = (render_config.CONFIG_DIR / name).read_text(encoding="utf-8")
@@ -181,6 +335,10 @@ def test_templates_hold_no_account_or_deployment_specific_value() -> None:
         assert not re.search(r"arn:aws[a-z-]*:[a-z0-9-]+:[a-z]{2}-[a-z]+-\d", text), name
 
 
+@pytest.mark.skipif(
+    not (REPO / ".git").exists(),
+    reason="asks git check-ignore; this copy has no .git (for example, a ZIP download)",
+)
 def test_rendered_files_are_gitignored() -> None:
     for name in (render_config.SPEC_OUTPUT, render_config.TARGETS_OUTPUT):
         rendered = render_config.CONFIG_DIR / name
