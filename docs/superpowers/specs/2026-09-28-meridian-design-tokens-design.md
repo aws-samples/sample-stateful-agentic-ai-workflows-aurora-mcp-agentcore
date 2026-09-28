@@ -61,12 +61,20 @@ as live.
 | `box-shadow` | 84 literal, 15 via variable, 33 `none` |
 | Before dead-code removal | 114 gradient declarations, 27 `backdrop-filter`, 57 `text-transform: uppercase`, 329 border declarations |
 
-**Bug.** `--mds-mono` is referenced but never defined; the defined variable is
-`--mds-font-mono`. `.mds-checkpoint-thread strong`
-(`recoveryWorkspace.css:5506`, rendered by `RecoveryDecisionCards.tsx:951`)
-has no fallback, so the checkpoint thread ID on the Recovery desk renders in
-the sans font. Five other uses carry a fallback and render monospace only
-because of it.
+**Undefined variable.** `--mds-mono` is referenced six times but never
+defined; the defined variable is `--mds-font-mono`. Five uses carry a fallback
+and render monospace only because of it. The sixth,
+`.mds-checkpoint-thread strong` (`recoveryWorkspace.css:5506`), has none, but
+its component `CheckpointedPlanCard` is never rendered, so nothing on screen
+is wrong today. The token check's undefined-variable and no-fallback rules
+cover this class of bug.
+
+**Unrendered components.** Eight exported components are imported nowhere
+outside their own file and tests: `RecoveryRouteMap`, `RecommendationCards`,
+`AuroraEvidenceStrip`, `SessionReceipt`, `JourneyPanel`,
+`RecoveryGuardrailsCard`, `CheckpointedPlanCard` and `PhaseSelector` (about
+800 lines). Their class names keep otherwise dead CSS looking live, so the
+dead-CSS figure above is a floor.
 
 **Contrast tests already in force.** `e2e/accessibility.spec.ts:80-107` runs in
 both themes, desktop and projector, and reads `--mc-surface`, `--mc-soft`,
@@ -144,6 +152,8 @@ Two gradient tokens survive: `--mds-image-scrim` (a bottom-up black gradient
 behind white text on trip photos, the same in both themes) and the loading
 skeleton pair `--mds-skeleton` (`var(--mds-surface-2)`) and
 `--mds-skeleton-shimmer` (`--mds-label` at 8% over `--mds-surface-2`).
+`--mds-scrim` (`rgb(0 0 0 / 0.5)` dark, `rgb(0 0 0 / 0.32)` light) keeps the
+drawer backdrop.
 
 **Contrast, measured against the worst-case background `--mds-surface-2`.**
 
@@ -177,11 +187,20 @@ Fonts: `--mds-font: system-ui, -apple-system, sans-serif` and
 `--mds-font-mono: ui-monospace, Menlo, monospace`. The Geist stylistic-set
 `font-feature-settings` and `--mds-serif` are removed.
 
-One multiplier, `--mds-type-scale`: 1 on the laptop; the projector value
-starts at 1.2 and is tuned by screenshot. Each style is a `font` shorthand
+One multiplier, `--mds-type-scale`: 1 on the laptop, 0.9 below 860px, and
+1.1 with projector readability on (today's projector preset raises Concierge
+type by the same 1.3 / 1.18 ratio); both are tuned by screenshot. Caption and
+footnote keep a 12px floor through `max()`. Each style is a `font` shorthand
 token, for example
 `--mds-type-body: 400 calc(15px * var(--mds-type-scale))/1.467 var(--mds-font)`,
-used as `font: var(--mds-type-body)`.
+used as `font: var(--mds-type-body)`. The type tokens are declared on both
+`:root` and `.mds-root`, because a custom property's `var()` references are
+resolved where it is declared: declaring them only on `:root` would ignore the
+projector multiplier set on `.mds-root`.
+
+Laptop sizes are mapped from what renders today: `.mds-desktop-app` always
+carries `is-projector`, so `--mds-fs` is 1.16 everywhere except the discovery
+workspace (1), `--mds-fs-chrome` is 1.08 and `--mc-type-scale` is 1.18.
 
 | Style | Size / line height | Weight | Replaces |
 | --- | --- | --- | --- |
@@ -197,9 +216,9 @@ used as `font: var(--mds-type-body)`.
 Weights: `--mds-weight-regular` 400, `-medium` 500 (buttons, tabs, controls),
 `-semibold` 600, `-bold` 700. Old values round to the nearest.
 
-Tracking, starting values to confirm by screenshot:
-`--mds-tracking-text` 0 (up to 15px), `--mds-tracking-title` -0.01em (18 to
-22px), `--mds-tracking-display` -0.02em (28 to 36px).
+Tracking, starting values to confirm by screenshot: 0 up to 15px (the
+default, so no token), `--mds-tracking-title` -0.01em (18 to 22px),
+`--mds-tracking-display` -0.02em (28 to 36px).
 
 Eyebrow labels drop `text-transform: uppercase` and use `footnote` at 600 in
 `label-2`. Any string authored in capitals in TSX moves to sentence case in the
@@ -237,7 +256,9 @@ same stage.
 - Spacing. 49 distinct padding, margin and gap values; a 4px grid would move
   every layout. Separate spec after re:Invent.
 - Restyling `/stage` and the mockups. Only the `.ds-kiosk-architecture` remap
-  changes, so the embedded briefing diagram keeps working.
+  changes, so the embedded briefing diagram keeps its colors. The diagram's
+  text takes the system font there too, since its type tokens resolve on
+  `:root`.
 - Layout, copy (other than uppercase labels), icons and motion.
 - Apple's Liquid Glass (iOS 26 and macOS Tahoe) or any translucency.
 
@@ -267,12 +288,13 @@ the next begins.
      (1920x1080, `present=1`), plus one `/stage` shot: 21 images. It runs
      against one journey kept with `scripts/kill_and_resume_demo.py --keep`,
      with reduced motion and fonts loaded, and masks relative timestamps.
-   - An e2e assertion that `.mds-checkpoint-thread strong` computes a
-     monospace family. It fails today. The fix lands as its own commit.
-1. **Delete dead CSS.** Remove only rules the static scan marks dead. Chrome
-   CSS coverage across all views, themes and modes can prove a rule is live
-   but not that it is dead, so any rule coverage reports as used is kept and
-   investigated. Screenshots must match the stage 0 baseline pixel for pixel.
+1. **Delete dead code.** First delete the eight unrendered components and the
+   tests that exercise only them. Then remove only CSS rules the static scan
+   marks dead. A DOM probe across all views, themes and modes, with every
+   `<details>` opened, records the classes that actually render; it can prove
+   a class live but not dead, so any statically dead class the probe sees is
+   kept and investigated. Screenshots must match the stage 0 baseline pixel
+   for pixel.
 2. **Depth.** Remove decorative gradients, blur, literal shadows and
    decorative borders; add `--mds-shadow-float`, `--mds-image-scrim` and the
    focus outline. This goes before color so about 300 literals are deleted
