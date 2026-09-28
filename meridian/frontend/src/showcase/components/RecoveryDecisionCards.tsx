@@ -720,7 +720,7 @@ export function ConciergeAssistanceCard({
         </span>
         <Sparkles size={16} aria-hidden="true" />
       </header>
-      <div className="mds-concierge-hotel-media">
+      <div className="mds-concierge-hotel-media" data-theme="dark">
         <img
           src="/travel/haneda-hotel.jpg"
           alt="Airport hotel room overlooking Haneda runways"

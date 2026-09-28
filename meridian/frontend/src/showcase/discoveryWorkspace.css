@@ -60,7 +60,7 @@
     gap: 10px;
     padding: 12px 14px;
     border-right: 0;
-    border-bottom: 1px solid var(--mds-chrome-sidebar-border);
+    border-bottom: 1px solid var(--mds-separator);
   }
 
   .mds-desktop-app.is-discovery .mds-brand {

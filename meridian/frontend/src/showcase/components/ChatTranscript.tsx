@@ -652,6 +652,7 @@ function InlineProductCard({
           : { type: 'spring', stiffness: 420, damping: 34 }
       }
       className={`mds-trip-result-card${selected ? ' is-selected' : ''}${index === 0 ? ' is-priority' : ''}`}
+      data-theme="dark"
       style={{ animationDelay: `${Math.min(index * 60, 360)}ms` }}
       aria-label={product.name}
     >

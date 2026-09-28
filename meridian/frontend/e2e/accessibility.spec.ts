@@ -85,7 +85,12 @@ for (const theme of ['light', 'dark']) for (const present of [false, true]) {
     await expect(action).toBeVisible();
     const colors = await page.locator('.mds-root').evaluate(el => {
       const css = getComputedStyle(el);
-      return Object.fromEntries(['surface', 'soft', 'muted', 'line', 'accent'].map(name => [name, css.getPropertyValue(`--mc-${name}`).trim()]));
+      const tokens = {
+        surface: '--mds-surface', soft: '--mds-surface-2', muted: '--mds-label-2',
+        line: '--mds-control-line', accent: '--mds-tint',
+      };
+      return Object.fromEntries(Object.entries(tokens)
+        .map(([name, token]) => [name, css.getPropertyValue(token).trim()]));
     });
     for (const state of ['default', 'hover', 'focus']) {
       if (state === 'hover') await action.hover();

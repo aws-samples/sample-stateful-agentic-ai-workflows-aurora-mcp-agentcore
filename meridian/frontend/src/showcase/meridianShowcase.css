@@ -1,99 +1,4 @@
 .mds-root {
-  /* ---- Dark theme: pure black with white and neutral-gray text ----
-     Supporting text stays bright enough for projection. Blue actions, green
-     success and amber memory retain their semantic roles. The light theme
-     below overrides every token it needs. */
-  --mds-bg: #000000;
-  --mds-bg-2: #141414;
-  --mds-shell: #000000;
-  --mds-shell-elevated: #141414;
-  --mds-tooltip-bg: rgba(0, 0, 0, 0.98);
-  --mds-tooltip-fg: #ffffff;
-  --mds-tooltip-border: rgba(255, 255, 255, 0.24);
-  --mds-panel: #000000;
-  --mds-panel-2: #141414;
-  --mds-line: rgba(255, 255, 255, 0.09);
-  --mds-line-strong: rgba(255, 255, 255, 0.16);
-  --mds-ink: #ffffff;
-  --mds-muted: #d0d0d0;
-  --mds-dim: #b8b8b8;
-  --mds-blue: #2f8cff;
-  /* Hue triples for alpha variants. Writing rgb(var(--x) / .12) instead of a
-     raw rgba() keeps every tint of an accent on one themed source, so the
-     light theme follows automatically instead of needing an override rule per
-     use. The dark values are byte-identical to the literals they replace. */
-  --mds-blue-rgb: 47 140 255;
-  --mds-green-rgb: 55 210 157;
-  --mds-recovery-yellow-rgb: 246 183 60;
-  --mds-recovery-green-rgb: 50 207 134;
-  --mds-teal-rgb: 67 206 171;
-  /* Gold text accent. Same value as the finale's gold in dark; the light theme
-     darkens it below for contrast (see --mds-yellow under [data-theme=light]). */
-  --mds-yellow: var(--mds-recovery-yellow);
-  --mds-green: #37d29d;
-  --mds-danger: #ff815f;
-  /* Recalled-from-memory signature. Signal yellow stays legible on a projected
-     dark surface and remains distinct from blue actions and green success. */
-  --mds-memory: #f6b73c;
-  --mds-memory-soft: rgb(var(--mds-recovery-yellow-rgb) / 0.18);
-  --mds-memory-line: rgb(var(--mds-recovery-yellow-rgb) / 0.72);
-
-  /* Shared app-surface palette. The capability ladder and the Stateful Recovery finale
-     render on the same black surface so the two demo steps read as one product
-     rather than two apps. Amber stays the disruption accent against it.
-     Geometry and type scale still differ per step — see recoveryWorkspace.css. */
-  --mds-app-surface: #000000;
-  --mds-recovery-yellow: #f6b73c;
-  --mds-recovery-yellow-strong: #d99a18;
-  --mds-recovery-red: #ef4444;
-  --mds-recovery-blue: #2f8cff;
-  --mds-recovery-green: #32cf86;
-  --mds-recovery-rail: #000000;
-  --mds-experience-panel: #000000;
-  --mds-experience-panel-raised: #141414;
-  --mds-experience-border: rgba(255, 255, 255, 0.2);
-  --mds-chrome-sidebar-border: rgba(255, 255, 255, 0.14);
-  --mds-chrome-sidebar-background: #000000;
-  --mds-chrome-brand: #ffffff;
-  --mds-chrome-nav: #d0d0d0;
-  --mds-chrome-nav-hover: #ffffff;
-  --mds-chrome-nav-hover-background: rgba(255, 255, 255, 0.05);
-  --mds-chrome-nav-hover-border: rgba(255, 255, 255, 0.1);
-  --mds-chrome-nav-active: #ffffff;
-  --mds-chrome-nav-active-background:
-    rgba(255, 255, 255, 0.12);
-  --mds-chrome-account-border: rgba(255, 255, 255, 0.14);
-  --mds-chrome-account: #ffffff;
-  --mds-chrome-account-muted: #b8b8b8;
-  --mds-chrome-status: #d0d0d0;
-  --mds-chrome-control: #d0d0d0;
-  --mds-chrome-control-border: rgba(255, 255, 255, 0.2);
-  --mds-chrome-control-background: #000000;
-  --mds-chrome-main-background: transparent;
-  --mds-chrome-breadcrumb: #ffffff;
-  --mds-chrome-right-border: rgba(255, 255, 255, 0.16);
-  --mds-chrome-right-background: #000000;
-  --mds-side-panel-background: #000000;
-
-  /* Semantic surface tokens — these flip in light mode. In dark they equal
-     the white-on-dark values they replace, so the default look is unchanged.
-       --mds-on-surface       : primary text on a panel (was #fff/#ffffff)
-       --mds-on-surface-soft  : secondary text (was rgba(255,255,255,.7-.78))
-       --mds-on-surface-faint : tertiary/labels (was rgba(255,255,255,.45-.55))
-       --mds-fill-*           : subtle white overlays used for chips/insets
-       --mds-card             : opaque card/inset background
-       --mds-scrim            : dark scrims over imagery */
-  --mds-on-surface: #ffffff;
-  --mds-on-surface-soft: rgba(255, 255, 255, 0.86);
-  --mds-on-surface-faint: rgba(255, 255, 255, 0.62);
-  --mds-fill-1: rgba(255, 255, 255, 0.04);
-  --mds-fill-2: rgba(255, 255, 255, 0.08);
-  --mds-fill-3: rgba(255, 255, 255, 0.14);
-  --mds-card: #000000;
-  --mds-scrim: rgba(0, 0, 0, 0.5);
-  --mds-blue-soft: rgba(47, 140, 255, 0.12);
-  --mds-blue-line: rgba(47, 140, 255, 0.32);
-
   --mds-font: "Geist Variable", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mds-font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   /* Display serif for headlines and section titles. Shared by both demo steps —
@@ -109,88 +14,12 @@
      content - see .is-projector in recoveryWorkspace.css. */
   --mds-fs-chrome: 1;
 
-  color: var(--mds-ink);
+  color: var(--mds-label);
   font-family: var(--mds-font);
   font-feature-settings: "ss01", "ss03", "cv11"; /* Geist stylistic sets */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: geometricPrecision;
-}
-
-/* ============================================================================
-   LIGHT THEME — "Daylight" (break-glass for low-contrast rooms / projectors)
-   Overrides only the token values; every component re-skins automatically.
-   Plain white with neutral greys and near-black ink: the highest contrast on
-   a big screen, no colour cast to fight the projector. Accents stay blue,
-   green and amber. --mds-muted is darkened for legibility.
-   ========================================================================== */
-.mds-root[data-theme="light"] {
-  --mds-bg: #ffffff;
-  --mds-bg-2: #f3f3f3;
-  --mds-shell: #ffffff;
-  --mds-shell-elevated: #ffffff;
-  --mds-tooltip-bg: #1a1a1a;
-  --mds-tooltip-fg: #ffffff;
-  --mds-tooltip-border: rgba(0, 0, 0, 0.28);
-  --mds-panel: rgba(255, 255, 255, 0.92);
-  --mds-panel-2: #ffffff;
-  --mds-line: rgba(0, 0, 0, 0.12);
-  --mds-line-strong: rgba(0, 0, 0, 0.2);
-  --mds-ink: #111111;
-  --mds-muted: #555555;   /* darkened for projector contrast */
-  --mds-dim: #666666;
-  --mds-blue: #1f6feb;
-  --mds-blue-rgb: 31 111 235;
-  --mds-green-rgb: 21 128 61;
-  --mds-recovery-yellow-rgb: 154 103 0;
-  --mds-recovery-green-rgb: 21 128 61;
-  --mds-teal-rgb: 17 122 102;
-  --mds-yellow: #9a6700;
-  --mds-green: #15803d;
-  --mds-danger: #dc2626;
-  --mds-memory: #40300a;
-  --mds-memory-soft: rgb(var(--mds-recovery-yellow-rgb) / 0.22);
-
-  /* Daylight counterpart to the shared app-surface palette. */
-  --mds-app-surface: #ffffff;
-  --mds-recovery-rail: #ffffff;
-  --mds-experience-panel: #ffffff;
-  --mds-experience-panel-raised: #f6f6f6;
-  --mds-experience-border: #e2e2e2;
-  --mds-memory-line: rgba(122, 81, 0, 0.48);
-  --mds-chrome-sidebar-border: #e6e6e6;
-  --mds-chrome-sidebar-background: rgba(255, 255, 255, 0.82);
-  --mds-chrome-brand: #111111;
-  --mds-chrome-nav: #555555;
-  --mds-chrome-nav-hover: #111111;
-  --mds-chrome-nav-hover-background: rgba(31, 111, 235, 0.05);
-  --mds-chrome-nav-hover-border: rgba(31, 111, 235, 0.1);
-  --mds-chrome-nav-active: #111111;
-  --mds-chrome-nav-active-background:
-    rgb(var(--mds-blue-rgb) / 0.12);
-  --mds-chrome-account-border: #e8e8e8;
-  --mds-chrome-account: #111111;
-  --mds-chrome-account-muted: #666666;
-  --mds-chrome-status: #666666;
-  --mds-chrome-control: #666666;
-  --mds-chrome-control-border: #e2e2e2;
-  --mds-chrome-control-background: rgba(255, 255, 255, 0.86);
-  --mds-chrome-main-background: #ffffff;
-  --mds-chrome-breadcrumb: #111111;
-  --mds-chrome-right-border: #e4e4e4;
-  --mds-chrome-right-background: #ffffff;
-  --mds-side-panel-background: var(--mds-panel);
-
-  --mds-on-surface: #111111;
-  --mds-on-surface-soft: #333333;
-  --mds-on-surface-faint: #555555;
-  --mds-fill-1: rgba(0, 0, 0, 0.03);
-  --mds-fill-2: rgba(0, 0, 0, 0.06);
-  --mds-fill-3: rgba(0, 0, 0, 0.1);
-  --mds-card: #ffffff;
-  --mds-scrim: rgba(0, 0, 0, 0.32);
-  --mds-blue-soft: rgba(31, 111, 235, 0.10);
-  --mds-blue-line: rgba(31, 111, 235, 0.35);
 }
 
 /* Animated theme flip — a ~220ms cross-fade on the properties that change
@@ -225,244 +54,14 @@
   display: grid;
   place-items: center;
   border-radius: 999px;
-  color: var(--mds-on-surface-soft);
-  background: var(--mds-panel-2);
-  border: 1px solid var(--mds-line-strong);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  border: 1px solid var(--mds-control-line);
   transition: color 150ms, background 150ms, transform 150ms;
 }
 .mds-theme-toggle:hover {
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   transform: translateY(-1px);
-}
-
-/* ----------------------------------------------------------------------------
-   LIGHT THEME — surface overrides.
-   The major surfaces use hardcoded dark fills (page shell, panels, cards,
-   composer) that don't read tokens. Token swaps fixed the TEXT; these rules
-   repaint the BACKGROUNDS for light mode so it's not dark-on-light. Scoped to
-   [data-theme="light"] so dark mode is untouched.
-   -------------------------------------------------------------------------- */
-.mds-root[data-theme="light"].mds-fullbleed-route,
-.mds-root[data-theme="light"] .mds-fullbleed-route {
-  background:
-    #eef2f7;
-}
-/* When .mds-fullbleed-route IS the root element itself */
-.mds-root[data-theme="light"] {
-  background:
-    #eef2f7;
-}
-.mds-root[data-theme="light"] .mds-panel {
-  background: var(--mds-panel);
-}
-.mds-root[data-theme="light"] .mds-chat-composer,
-.mds-root[data-theme="light"] .mds-chat-composer textarea {
-  background: var(--mds-card);
-}
-/* ---- Light theme: remaining dark chrome (chips, popovers, drawers, buttons,
-   badges). Each maps a dark surface to a light one. Whites become faint slate
-   fills; cyan-tinted "active" states use the light cyan-soft token. ---- */
-.mds-root[data-theme="light"] .mds-contract-panel,
-.mds-root[data-theme="light"] .mds-workflow-state {
-  background: var(--mds-card);
-}
-.mds-root[data-theme="light"] .mds-chat-action-chip,
-.mds-root[data-theme="light"] .mds-chat-starter-chip,
-.mds-root[data-theme="light"] .mds-msg-result-chip,
-.mds-root[data-theme="light"] .mds-popover-step-btn,
-.mds-root[data-theme="light"] .mds-trace-actions button,
-.mds-root[data-theme="light"] .mds-popover-dates input[type="date"] {
-  background: var(--mds-card);
-  border-color: var(--mds-line);
-  color: var(--mds-on-surface-soft);
-}
-.mds-root[data-theme="light"] .mds-chat-action-chip.is-active,
-.mds-root[data-theme="light"] .mds-msg-result-chip.is-active,
-.mds-root[data-theme="light"] .mds-chat-action-chip:focus-visible,
-.mds-root[data-theme="light"] .mds-msg-result-chip:focus-visible,
-.mds-root[data-theme="light"] .mds-chat-starter-chip:focus-visible,
-.mds-root[data-theme="light"] .mds-popover-step-btn:hover:not(:disabled) {
-  background: var(--mds-blue-soft);
-  border-color: var(--mds-blue-line);
-  color: var(--mds-blue);
-}
-.mds-root[data-theme="light"] .mds-chat-starter-chip.is-stretch {
-  background: rgba(154, 103, 0, 0.08);
-  border-color: rgba(154, 103, 0, 0.30);
-  color: var(--mds-yellow);
-}
-.mds-root[data-theme="light"] .mds-chat-starter-chip.is-works {
-  background: rgb(var(--mds-green-rgb) / 0.07);
-  border-color: rgb(var(--mds-green-rgb) / 0.4);
-  color: var(--mds-on-surface);
-}
-.mds-root[data-theme="light"] .mds-chat-phase-framing {
-  background: rgba(15, 23, 42, 0.04);
-  color: var(--mds-on-surface-soft);
-}
-.mds-root[data-theme="light"] .mds-chat-phase-framing span {
-  color: var(--mds-blue);
-}
-.mds-root[data-theme="light"] .mds-contract-row,
-.mds-root[data-theme="light"] .mds-workflow-kv div,
-.mds-root[data-theme="light"] .mds-workflow-path,
-.mds-root[data-theme="light"] .mds-workflow-checkpoint {
-  background: var(--mds-fill-1);
-}
-.mds-root[data-theme="light"] .mds-contract-row.is-observed,
-.mds-root[data-theme="light"] .mds-workflow-state.is-checkpointed {
-  background: rgba(21, 128, 61, 0.08);
-}
-.mds-root[data-theme="light"] .mds-chip-pop,
-.mds-root[data-theme="light"] .mds-chip-pop::after,
-.mds-root[data-theme="light"] .mds-drawer {
-  background: var(--mds-shell-elevated);
-  border-color: var(--mds-line);
-  color: var(--mds-on-surface);
-}
-/* Drawer body text was tuned for the dark drawer (near-white #c5d0da) and
-   washes out on the now-white surface — flip to slate ink. */
-.mds-root[data-theme="light"] .mds-trip-confirm b {
-  color: var(--mds-on-surface);
-}
-.mds-root[data-theme="light"] .mds-trip-confirm span {
-  color: var(--mds-on-surface-soft);
-}
-.mds-root[data-theme="light"] .mds-drawer-backdrop {
-  background: var(--mds-scrim);
-}
-/* Code blocks stay dark-on-light by convention (a "console" look), so give them
-   the mockup's console treatment rather than washing them out. */
-.mds-root[data-theme="light"] .mds-md pre,
-.mds-root[data-theme="light"] .mds-sql-list pre,
-.mds-root[data-theme="light"] .mds-error-card pre {
-  background: #080d1c;
-  color: #e2e8f0;
-}
-/* Nav active state (sidebar is transparent; only its active item is tinted). */
-.mds-root[data-theme="light"] .mds-nav-item.is-active {
-  background: var(--mds-blue-soft);
-  color: var(--mds-blue);
-}
-
-/* Light mode owns its stage surface. */
-.mds-root[data-theme="light"] .mds-desktop-app {
-  /* Warm daylight wash, matching the Stateful Recovery finale's light variant. */
-  background: var(--mds-app-surface);
-}
-/* Sidebar nav item text is a hardcoded light-gray (#aeb9c4) that vanishes on a
-   light wash — use the slate token so nav labels stay legible. */
-.mds-root[data-theme="light"] .mds-nav-item {
-  color: var(--mds-on-surface-soft);
-}
-.mds-root[data-theme="light"] .mds-nav-item:hover {
-  color: var(--mds-on-surface);
-  background: var(--mds-fill-2);
-}
-
-/* The sidebar paints its OWN dark slab that the token swap can't reach, so
-   it stayed dark over the now-light app base. Repaint it near-white with a
-   hairline right border. */
-.mds-root[data-theme="light"] .mds-desktop-sidebar {
-  background: var(--mds-panel);
-  border-right: 1px solid var(--mds-line);
-}
-
-/* The dock's white hairline reads as a murky band under the starter pills
-   in light mode; use a slate hairline instead. */
-.mds-root[data-theme="light"] .mds-desktop-dock {
-  border-top: 1px solid var(--mds-line);
-}
-
-/* "Meridian activity" reasoning timeline — dark gradient slab → solid white
-   card. --mds-fill-2 (rgba slate .06) was almost invisible on the light wash;
-   the mockup renders this as a proper white panel, so the live trace reads as
-   a distinct surface. */
-.mds-root[data-theme="light"] .mds-thinking {
-  background: var(--mds-card);
-  border-color: var(--mds-line);
-}
-
-/* Sent (user) query bubble: background was rgba(49,90,110,.62) — a dark teal
-   that reads as a muddy grey slab on light. Repaint as the soft cyan tint so
-   it's clearly the traveler's turn, with legible slate ink. */
-.mds-root[data-theme="light"] .mds-message.user .mds-message-bubble {
-  background: var(--mds-blue-soft);
-  border: 0;
-  color: var(--mds-on-surface);
-  box-shadow: none;
-}
-.mds-root[data-theme="light"] .mds-navpanel-msg.is-user {
-  background: var(--mds-blue-soft);
-}
-
-/* "N trips" collapsible summary chip: the soft cyan-on-cyan fill was too low
-   contrast to spot. Add a defining border + a touch more fill so it reads as
-   a tappable control. */
-.mds-root[data-theme="light"] .mds-msg-result-chip {
-  background: var(--mds-blue-soft);
-  border: 1px solid var(--mds-blue-line);
-}
-/* The "· $1,599 – $1,899" price range was a near-white (and an active pale
-   green) tuned for the dark chip — both vanish on the light cyan fill. Use
-   readable slate/cyan in light mode. */
-.mds-root[data-theme="light"] .mds-msg-result-chip-text span,
-.mds-root[data-theme="light"] .mds-msg-result-chip.is-active .mds-msg-result-chip-text span {
-  color: var(--mds-on-surface-soft);
-}
-
-/* ---- Light theme: text that was hardcoded near-white (won't flip via tokens)
-   and goes invisible on a light surface. Force to the slate ink tokens. ---- */
-.mds-root[data-theme="light"] .mds-chat-composer textarea,
-.mds-root[data-theme="light"] .mds-message-bubble,
-.mds-root[data-theme="light"] .mds-message.bot .mds-message-bubble,
-.mds-root[data-theme="light"] .mds-msg-result-chip,
-.mds-root[data-theme="light"] .mds-navpanel-fact b,
-.mds-root[data-theme="light"] .mds-navpanel-trip-main strong,
-.mds-root[data-theme="light"] .mds-navpanel-msg-text,
-.mds-root[data-theme="light"] .mds-navpanel-prompt,
-.mds-root[data-theme="light"] .mds-md em,
-.mds-root[data-theme="light"] .mds-md blockquote,
-.mds-root[data-theme="light"] .mds-md th,
-.mds-root[data-theme="light"] .mds-main-actions button:hover {
-  color: var(--mds-on-surface);
-}
-.mds-root[data-theme="light"] .mds-empty,
-.mds-root[data-theme="light"] .mds-empty-sub,
-.mds-root[data-theme="light"] .mds-navpanel-fact span,
-.mds-root[data-theme="light"] .mds-navpanel-hint,
-.mds-root[data-theme="light"] .mds-navpanel-msg-role,
-.mds-root[data-theme="light"] .mds-navpanel-empty span,
-.mds-root[data-theme="light"] .mds-navpanel-section-head,
-.mds-root[data-theme="light"] .mds-main-actions button {
-  color: var(--mds-on-surface-soft);
-}
-.mds-root[data-theme="light"] .mds-navpanel-section-head em {
-  color: var(--mds-on-surface-faint);
-}
-/* Inline code sits in the white bubble, so it takes ink on a light fill. Code
-   blocks keep the dark console treatment (see .mds-md pre above). */
-.mds-root[data-theme="light"] .mds-md code {
-  background: #f1f1f1;
-  color: #111111;
-}
-.mds-root[data-theme="light"] .mds-md pre code {
-  background: transparent;
-  color: #d4f9ff;
-}
-/* Semantic warm text (errors, fallback badge) — darken for light contrast. */
-.mds-root[data-theme="light"] .mds-error-banner,
-.mds-root[data-theme="light"] .mds-error-dismiss {
-  color: #b91c1c;
-}
-/* Popovers + trace span source sit on light surfaces in light mode → dark text.
-   (Rec-card overlay text like .mds-rec-sub/.mds-rec-overlay-meta stays light —
-   it sits over a photo, so white is correct in both themes.) */
-.mds-root[data-theme="light"] .mds-popover-title {
-  color: var(--mds-on-surface);
-}
-.mds-root[data-theme="light"] .mds-popover-link {
-  color: var(--mds-on-surface-soft);
 }
 
 /* Page-level error boundary fallback. Shown when a render crash would
@@ -473,8 +72,8 @@
   display: grid;
   place-items: center;
   padding: 32px;
-  background: #0b0906;
-  color: var(--mds-ink);
+  background: var(--mds-ground);
+  color: var(--mds-label);
   font-family: var(--mds-font);
 }
 
@@ -486,12 +85,12 @@
   padding: 28px 30px;
   border: 0;
   border-radius: 16px;
-  background: rgba(17, 14, 10, 0.92);
+  background: var(--mds-surface);
 }
 
 .mds-error-card h2 {
   margin: 0;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(22px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: -0.018em;
@@ -499,7 +98,7 @@
 
 .mds-error-card p {
   margin: 0;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   font-size: calc(14.5px * var(--mds-fs));
   line-height: 1.55;
 }
@@ -508,8 +107,8 @@
   margin: 0;
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.42);
-  color: #ffd1c6;
+  background: var(--mds-surface-2);
+  color: var(--mds-label);
   font-family: var(--mds-font-mono);
   font-size: calc(12px * var(--mds-fs));
   line-height: 1.45;
@@ -523,8 +122,8 @@
   padding: 0 18px;
   border: 0;
   border-radius: 10px;
-  color: #ffffff;
-  background: var(--mds-blue);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
   font-family: inherit;
   font-size: calc(13px * var(--mds-fs));
   font-weight: 700;
@@ -535,8 +134,7 @@
   min-height: 100dvh;
   width: 100%;
   overflow: hidden;
-  background:
-    #0b0906;
+  background: var(--mds-ground);
 }
 
 .mds-root *,
@@ -566,7 +164,6 @@
      may get. The stage measure is generous on purpose; only prose is held to
      a reading width. */
   --mds-stage-measure: 1560px;
-  --mds-prose-measure: 78ch;
 
   position: relative;
   min-height: 100dvh;
@@ -577,8 +174,8 @@
   overflow: hidden;
   border: 0;
   border-radius: 0;
-  /* One black canvas across the capability ladder and recovery workspace. */
-  background: var(--mds-app-surface);
+  /* One ground across the capability ladder and recovery workspace. */
+  background: var(--mds-ground);
   box-shadow: none;
 }
 
@@ -646,7 +243,7 @@
   width: 100%;
   padding: 14px 0;
   border: 0;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   background: transparent;
   font: inherit;
   font-size: calc(11.5px * var(--mds-fs));
@@ -659,14 +256,14 @@
 
 .mds-rail-handle:hover,
 .mds-rail-handle:focus-visible {
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
 }
 
 /* Lifted so the panel directly below cannot paint over the bottom of the ring. */
 .mds-rail-handle:focus-visible {
   position: relative;
   z-index: 1;
-  outline: 2px solid var(--mds-blue);
+  outline: 2px solid var(--mds-tint);
   outline-offset: 2px;
 }
 
@@ -697,7 +294,7 @@
 
 .mds-desktop-right.is-collapsed .mds-rail-handle:hover,
 .mds-desktop-right.is-collapsed .mds-rail-handle:focus-visible {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--mds-surface-2);
 }
 
 /* Shut, the handle fills a column that clips overflow, so the ring sits inside it. */
@@ -721,9 +318,8 @@
   flex-direction: column;
   gap: 12px;
   padding: 28px 18px;
-  border-right: 1px solid var(--mds-line);
-  background:
-    rgba(13, 10, 6, 0.78);
+  border-right: 1px solid var(--mds-separator);
+  background: var(--mds-surface);
   overflow: hidden;
 }
 
@@ -732,7 +328,7 @@
   align-items: center;
   gap: 11px;
   margin-bottom: 14px;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   /* Tight-tracked Geist Display feel for the wordmark. */
   font-size: calc(25px * var(--mds-fs));
   font-weight: 700;
@@ -765,7 +361,7 @@
   padding: 0 13px 0 16px;
   border: 0;
   border-radius: 10px;
-  color: #aeb9c4;
+  color: var(--mds-label-2);
   background: transparent;
   font-size: calc(13px * var(--mds-fs));
   text-align: left;
@@ -774,8 +370,8 @@
 
 .mds-nav-item.is-active,
 .mds-nav-item:hover {
-  color: var(--mds-on-surface);
-  background: rgba(255, 255, 255, 0.055);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
 }
 
 .mds-nav-item.is-active::before {
@@ -796,8 +392,8 @@
   place-items: center;
   margin-left: auto;
   border-radius: 999px;
-  background: #176fb7;
-  color: var(--mds-on-surface);
+  background: var(--mds-label-2);
+  color: var(--mds-ground);
   font-size: calc(9px * var(--mds-fs));
 }
 
@@ -826,7 +422,7 @@
   gap: 10px;
   align-items: center;
   padding-top: 14px;
-  border-top: 1px solid var(--mds-line);
+  border-top: 1px solid var(--mds-separator);
 }
 
 .mds-account-copy {
@@ -841,12 +437,12 @@
   border: 0;
   border-radius: 50%;
   background:
-    #3d372c;
+    var(--mds-surface-2);
 }
 
 .mds-avatar.is-photo {
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--mds-surface-2);
 }
 
 .mds-avatar.is-photo img {
@@ -859,7 +455,7 @@
 .mds-account-copy strong,
 .mds-profile-line strong {
   display: block;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(15px * var(--mds-fs));
   font-weight: 660;
 }
@@ -869,7 +465,7 @@
   display: block;
   margin-top: 3px;
   overflow: hidden;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   font-size: calc(12.5px * var(--mds-fs));
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -921,11 +517,11 @@
 
 .mds-desktop-scroll::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--mds-surface-2);
 }
 
 .mds-desktop-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--mds-surface-2);
 }
 
 .mds-desktop-dock {
@@ -934,10 +530,10 @@
   flex-direction: column;
   gap: 10px;
   padding: 14px 34px 22px;
-  background: transparent;
+  background: var(--mds-surface);
   /* Subtle hairline so the dock visually separates from scrolling content
      without feeling boxed-in. */
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--mds-separator);
 }
 
 .mds-desktop-app.is-proof .mds-desktop-scroll {
@@ -983,8 +579,8 @@
   font-size: calc(12px * var(--mds-fs));
   font-weight: 500;
   letter-spacing: 0;
-  color: var(--mds-on-surface-soft);
-  background: var(--mds-panel-2);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
   border: 0;
 }
 .mds-status-dot {
@@ -997,17 +593,17 @@
   animation: mds-status-pulse 2.4s ease-in-out infinite;
 }
 .mds-status-pill.is-off .mds-status-dot {
-  background: var(--mds-danger);
+  background: var(--mds-red);
 }
 .mds-status-pill.is-checking .mds-status-dot {
   background: var(--mds-yellow);
   animation: mds-status-pulse 1.4s ease-in-out infinite;
 }
 .mds-status-sep {
-  color: var(--mds-on-surface-faint);
+  color: var(--mds-label-3);
 }
 .mds-status-unit {
-  color: var(--mds-on-surface-faint);
+  color: var(--mds-label-3);
   font-variant-numeric: tabular-nums;
 }
 @keyframes mds-status-pulse {
@@ -1028,8 +624,8 @@
   padding: 10px 12px;
   border: 0;
   border-radius: 11px;
-  color: #ffd1c2;
-  background: rgba(255, 129, 95, 0.08);
+  color: var(--mds-red);
+  background: var(--mds-red-fill);
   font-size: calc(13px * var(--mds-fs));
   text-align: left;
 }
@@ -1102,7 +698,7 @@
 }
 
 .mds-message-role {
-  color: var(--mds-on-surface-faint);
+  color: var(--mds-label-3);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -1117,8 +713,8 @@
   padding: 13px 16px;
   border: 0;
   border-radius: 16px;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--mds-label);
+  background: var(--mds-surface);
   font-size: calc(14.5px * var(--mds-fs));
   font-weight: 460;
   line-height: 1.55;
@@ -1127,19 +723,19 @@
   transition: box-shadow 220ms ease, background 220ms ease;
 }
 
-/* Alex's turn: a clean blue with pure white text, weighted up a notch so it
-   reads on a projector in a dark room. */
+/* Alex's turn: a blue-tinted bubble, weighted up a notch so it reads on a
+   projector. */
 .mds-message.user .mds-message-bubble {
   border-radius: 16px 16px 4px 16px;
-  background: rgb(var(--mds-blue-rgb) / 0.42);
-  color: #ffffff;
+  background: var(--mds-blue-fill);
+  color: var(--mds-label);
   font-weight: 500;
 }
 
 .mds-message.bot .mds-message-bubble {
   border-radius: 16px 16px 16px 4px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #ffffff;
+  background: var(--mds-surface);
+  color: var(--mds-label);
 }
 
 /* Thinking uses the same open response surface as the completed reply. */
@@ -1147,7 +743,7 @@
   display: inline-flex;
   align-items: center;
   border-radius: 16px 16px 16px 4px;
-  background: var(--mds-blue-soft);
+  background: var(--mds-surface);
 }
 
 /* Stack the result summary and full-width travel cards below the reply. */
@@ -1166,9 +762,9 @@
    injected on hast by rehypeMemoryHighlight, so it survives skipHtml and
    reapplies as the typewriter reveals each phrase. */
 .mds-md mark.mds-memory-highlight {
-  color: var(--mds-memory);
-  background: var(--mds-memory-soft);
-  border-bottom: 2px solid var(--mds-memory-line);
+  color: var(--mds-yellow);
+  background: var(--mds-yellow-fill);
+  border-bottom: 2px solid var(--mds-yellow);
   border-radius: 4px;
   padding: 1px 4px;
   font-weight: 720;
@@ -1177,9 +773,9 @@
   -webkit-box-decoration-break: clone;
 }
 
-/* react-markdown output for bot replies. Tight vertical rhythm, cyan
-   bullet markers, white-bold emphasis - matches the rest of the
-   showcase typography. */
+/* react-markdown output for bot replies. Tight vertical rhythm, neutral
+   bullet markers, bold emphasis - matches the rest of the showcase
+   typography. */
 .mds-md > * {
   margin: 0;
 }
@@ -1200,7 +796,7 @@
   gap: 4px;
 }
 
-/* Custom-styled bullets: small cyan dot via ::marker so they stay
+/* Custom-styled bullets: small neutral dot via ::marker so they stay
    aligned with the line-height even on multi-line list items. */
 .mds-md ul {
   list-style: none;
@@ -1220,7 +816,7 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: rgb(var(--mds-blue-rgb) / 0.78);
+  background: var(--mds-label-3);
 }
 
 .mds-md ol {
@@ -1232,30 +828,30 @@
 }
 
 .mds-md ol > li::marker {
-  color: rgb(var(--mds-blue-rgb) / 0.78);
+  color: var(--mds-label-2);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .mds-md strong {
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-weight: 680;
 }
 
 .mds-md em {
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--mds-label-2);
   font-style: italic;
 }
 
 /* Tool and column names inside a reply: a neutral keycap, readable from the
    back row and free of the colours that carry meaning elsewhere (blue acts,
-   green works, amber needs the next phase). */
+   green works, yellow needs the next phase). */
 .mds-md code {
   padding: 2px 8px;
   border: 0;
   border-radius: 6px;
-  background: rgba(255, 250, 240, 0.13);
-  color: #ffffff;
+  background: var(--mds-surface-2);
+  color: var(--mds-label);
   font-family: var(--mds-font-mono);
   font-size: 0.92em;
   font-weight: 600;
@@ -1264,14 +860,14 @@
 .mds-md pre {
   padding: 12px 14px;
   border-radius: 10px;
-  background: rgba(0, 0, 0, 0.42);
+  background: var(--mds-surface-2);
   overflow-x: auto;
 }
 
 .mds-md pre code {
   padding: 0;
   background: transparent;
-  color: #d4f9ff;
+  color: var(--mds-label);
   font-size: 0.9em;
   line-height: 1.5;
 }
@@ -1279,7 +875,7 @@
 .mds-md a {
   color: var(--mds-blue);
   text-decoration: underline;
-  text-decoration-color: rgb(var(--mds-blue-rgb) / 0.5);
+  text-decoration-color: var(--mds-blue);
   text-underline-offset: 3px;
 }
 
@@ -1290,9 +886,9 @@
 .mds-md blockquote {
   margin: 0;
   padding: 6px 12px;
-  border-left: 3px solid rgb(var(--mds-blue-rgb) / 0.5);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.85);
+  border-left: 3px solid var(--mds-label-3);
+  background: var(--mds-surface-2);
+  color: var(--mds-label-2);
   border-radius: 0 8px 8px 0;
 }
 
@@ -1305,13 +901,13 @@
 .mds-md th,
 .mds-md td {
   padding: 6px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--mds-separator);
   text-align: left;
   font-variant-numeric: tabular-nums;
 }
 
 .mds-md th {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--mds-label-2);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1321,7 +917,7 @@
 .mds-md hr {
   margin: 12px 0;
   border: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--mds-separator);
 }
 
 /* Compact result chip baked into bot bubbles that returned products.
@@ -1335,10 +931,10 @@
   align-self: flex-start;
   margin-top: 2px;
   padding: 6px 12px 6px 10px;
-  border: 1px solid rgb(var(--mds-blue-rgb) / 0.32);
+  border: 1px solid var(--mds-control-line);
   border-radius: 999px;
-  color: #e7faff;
-  background: rgba(42, 37, 29, 0.78);
+  color: var(--mds-label);
+  background: var(--mds-surface);
   font-size: calc(12.5px * var(--mds-fs));
   font-weight: 540;
   font-variant-numeric: tabular-nums;
@@ -1349,20 +945,20 @@
 
 .mds-msg-result-chip:hover,
 .mds-msg-result-chip:focus-visible {
-  border-color: rgb(var(--mds-blue-rgb) / 0.7);
-  background: rgba(50, 45, 36, 0.88);
+  border-color: var(--mds-blue);
+  background: var(--mds-surface-2);
   transform: translateY(-1px);
 }
 
 .mds-msg-result-chip:focus-visible {
-  outline: 2px solid var(--mds-blue);
+  outline: 2px solid var(--mds-tint);
   outline-offset: 2px;
 }
 
 .mds-msg-result-chip.is-active {
-  border-color: rgb(var(--mds-green-rgb) / 0.55);
-  color: #d2fbe7;
-  background: rgba(14, 42, 32, 0.85);
+  border-color: var(--mds-blue);
+  color: var(--mds-label);
+  background: var(--mds-blue-fill);
 }
 
 .mds-msg-result-chip-icon {
@@ -1371,20 +967,20 @@
 }
 
 .mds-msg-result-chip.is-active .mds-msg-result-chip-icon {
-  color: var(--mds-green);
+  color: var(--mds-blue);
 }
 
 .mds-msg-result-chip-text b {
   font-weight: 700;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
 }
 
 .mds-msg-result-chip.is-active .mds-msg-result-chip-text b {
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
 }
 
 .mds-msg-result-chip-text span {
-  color: rgba(231, 250, 255, 0.78);
+  color: var(--mds-label-2);
 }
 
 /* Follow-up chips: the backend's suggested next steps for a turn. The Phase 5
@@ -1402,10 +998,10 @@
   align-items: center;
   gap: 7px;
   padding: 7px 14px 7px 11px;
-  border: 1px solid var(--mds-blue-line);
+  border: 1px solid var(--mds-blue);
   border-radius: 999px;
-  color: rgba(231, 250, 255, 0.92);
-  background: var(--mds-blue-soft);
+  color: var(--mds-label);
+  background: var(--mds-blue-fill);
   font-size: calc(12.5px * var(--mds-fs));
   font-weight: 560;
   letter-spacing: 0.005em;
@@ -1420,13 +1016,12 @@
 
 .mds-followup-chip:hover,
 .mds-followup-chip:focus-visible {
-  border-color: rgb(var(--mds-blue-rgb) / 0.7);
-  background: rgba(50, 45, 36, 0.9);
+  border-color: var(--mds-blue);
   transform: translateY(-1px);
 }
 
 .mds-followup-chip:focus-visible {
-  outline: 2px solid var(--mds-blue);
+  outline: 2px solid var(--mds-tint);
   outline-offset: 2px;
 }
 
@@ -1434,26 +1029,20 @@
   transform: translateX(3px);
 }
 
-.mds-root[data-theme="light"] .mds-followup-chip {
-  color: var(--mds-on-surface);
-  background: var(--mds-blue-soft);
-  border-color: var(--mds-blue-line);
-}
-
 .mds-msg-result-chip.is-active .mds-msg-result-chip-text span {
-  color: rgba(210, 251, 231, 0.82);
+  color: var(--mds-label-2);
 }
 
 .mds-msg-result-chip-caret {
   display: inline-flex;
   margin-left: 2px;
-  color: rgba(231, 250, 255, 0.7);
+  color: var(--mds-label-2);
   transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .mds-msg-result-chip.is-active .mds-msg-result-chip-caret {
   transform: rotate(180deg);
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
 }
 
 /* Inline product grid revealed when the per-turn chip is expanded.
@@ -1475,18 +1064,18 @@
   gap: 12px;
   margin-top: 10px;
   padding: 10px 0 2px;
-  border-top: 1px solid var(--mds-line);
-  color: var(--mds-on-surface-soft);
+  border-top: 1px solid var(--mds-separator);
+  color: var(--mds-label-2);
   font-size: calc(11.5px * var(--mds-fs));
 }
 
 .mds-result-disclosure button {
   min-height: 32px;
   padding: 0 12px;
-  border: 1px solid var(--mds-blue-line);
+  border: 1px solid var(--mds-blue);
   border-radius: 8px;
   color: var(--mds-blue);
-  background: var(--mds-blue-soft);
+  background: var(--mds-blue-fill);
   font: inherit;
   font-weight: 700;
   cursor: pointer;
@@ -1526,8 +1115,8 @@
   min-height: 344px;
   border: 1px solid transparent;
   border-radius: 18px;
-  color: #ffffff;
-  background: #14100c;
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
   background-clip: padding-box;
   cursor: pointer;
   text-align: left;
@@ -1543,12 +1132,12 @@
 .mds-trip-result-card:hover,
 .mds-trip-result-card:focus-within {
   transform: translateY(-3px);
-  border-color: rgba(49, 215, 255, 0.42);
+  border-color: var(--mds-tint);
   outline: none;
 }
 
 .mds-trip-result-card.is-selected {
-  border-color: rgba(49, 215, 255, 0.58);
+  border-color: var(--mds-tint);
 }
 
 .mds-trip-result-card:hover .mds-trip-photo,
@@ -1563,7 +1152,7 @@
   z-index: 0;
   min-height: 100%;
   overflow: hidden;
-  background: var(--mds-shell-elevated);
+  background: var(--mds-surface-2);
 }
 
 .mds-trip-result-media .mds-trip-visual {
@@ -1583,8 +1172,8 @@
   padding: 6px 11px;
   border: 0;
   border-radius: 999px;
-  color: #dcecff;
-  background: rgba(23, 19, 15, 0.66);
+  color: var(--mds-label);
+  background: var(--mds-surface);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 750;
   line-height: 1;
@@ -1597,20 +1186,12 @@
   text-transform: uppercase;
 }
 
-.mds-trip-result-card.is-priority .mds-trip-result-destination {
-  color: #68e9ff;
-  background: rgba(30, 26, 20, 0.7);
-}
-
-/* Solid mint pill so the rank verdict pops against any photo. */
 .mds-trip-result-match {
   top: 14px;
   right: 14px;
   gap: 7px;
   border: 0;
   padding: 7px 12px;
-  color: #07592c;
-  background: #ecfff5;
   font-weight: 780;
   letter-spacing: 0.01em;
 }
@@ -1620,7 +1201,7 @@
   height: 7px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #12a150;
+  background: var(--mds-green);
 }
 
 .mds-trip-result-body {
@@ -1663,7 +1244,7 @@
 .mds-trip-result-heading > strong {
   display: -webkit-box;
   overflow: hidden;
-  color: #ffffff;
+  color: var(--mds-label);
   font-size: calc(21px * var(--mds-fs));
   font-weight: 780;
   letter-spacing: -0.02em;
@@ -1685,7 +1266,7 @@
   display: -webkit-box;
   margin: 0;
   overflow: hidden;
-  color: rgba(240, 247, 255, 0.9);
+  color: var(--mds-label);
   font-size: calc(13px * var(--mds-fs));
   line-height: 1.36;
   -webkit-box-orient: vertical;
@@ -1714,7 +1295,7 @@
 
 .mds-trip-result-commerce > * + * {
   padding-left: 15px;
-  border-left: 1px solid rgba(255, 255, 255, 0.16);
+  border-left: 1px solid var(--mds-separator);
 }
 
 .mds-trip-result-commerce > *:first-child,
@@ -1731,7 +1312,7 @@
 }
 
 .mds-trip-result-fact > b {
-  color: rgba(207, 222, 237, 0.68);
+  color: var(--mds-label-3);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -1749,7 +1330,7 @@
   flex-wrap: wrap;
   gap: 6px;
   min-width: 0;
-  color: #ffffff;
+  color: var(--mds-label);
   font-size: calc(17px * var(--mds-fs));
   font-style: normal;
   font-weight: 780;
@@ -1764,7 +1345,7 @@
 }
 
 .mds-trip-result-fact.is-availability > em {
-  color: #7cf0ad;
+  color: var(--mds-green);
   font-size: calc(13px * var(--mds-fs));
   font-weight: 720;
   white-space: normal;
@@ -1777,7 +1358,7 @@
   column-gap: 12px;
   padding-top: 10px;
   padding-left: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  border-top: 1px solid var(--mds-separator);
   border-left: 0;
 }
 
@@ -1815,8 +1396,8 @@
   padding: 0 11px 0 9px;
   border: 0;
   border-radius: 999px;
-  color: #68e9ff;
-  background: rgba(49, 215, 255, 0.1);
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
   font-size: calc(11px * var(--mds-fs));
   font-weight: 700;
   text-overflow: ellipsis;
@@ -1827,22 +1408,9 @@
   flex: 0 0 auto;
 }
 
-.mds-trip-result-signals > span.is-green {
-  border-color: rgba(70, 216, 148, 0.25);
-  color: #9ff5c7;
-  background: rgba(70, 216, 148, 0.12);
-}
-
-.mds-trip-result-signals > span.is-yellow {
-  border-color: rgba(244, 179, 83, 0.3);
-  color: #ffc263;
-  background: rgba(244, 179, 83, 0.12);
-}
-
-.mds-trip-result-signals > span.is-violet {
-  border-color: rgba(181, 140, 255, 0.28);
-  color: #d5c0ff;
-  background: rgba(181, 140, 255, 0.12);
+.mds-trip-result-signals > span.is-checkpoint {
+  color: var(--mds-cyan);
+  background: var(--mds-cyan-fill);
 }
 
 .mds-trip-result-price {
@@ -1855,7 +1423,7 @@
 }
 
 .mds-trip-result-price span {
-  color: rgba(207, 222, 237, 0.68);
+  color: var(--mds-label-3);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -1863,13 +1431,13 @@
 }
 
 .mds-trip-result-price small {
-  color: rgba(207, 222, 237, 0.64);
+  color: var(--mds-label-3);
   font-size: calc(11px * var(--mds-fs));
   font-weight: 650;
 }
 
 .mds-trip-result-price b {
-  color: #ffffff;
+  color: var(--mds-label);
   font-size: calc(21px * var(--mds-fs));
   font-weight: 800;
   letter-spacing: -0.01em;
@@ -1899,10 +1467,10 @@
   justify-content: center;
   gap: 7px;
   padding: 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.17);
+  border: 1px solid var(--mds-control-line);
   border-radius: 13px;
-  color: #dceeff;
-  background: rgba(19, 16, 12, 0.64);
+  color: var(--mds-label);
+  background: var(--mds-surface);
   font-size: calc(12.5px * var(--mds-fs));
   font-weight: 780;
   line-height: 1;
@@ -1919,9 +1487,9 @@
   flex: 1 1 auto;
   min-width: 0;
   padding: 0 15px;
-  color: #ffffff;
+  color: var(--mds-on-action);
   border: 0;
-  background: #197abc;
+  background: var(--mds-action);
 }
 
 .mds-trip-result-actions button.is-icon {
@@ -1931,81 +1499,11 @@
 }
 
 .mds-trip-result-actions button:hover:not(:disabled) {
-  border-color: rgba(49, 215, 255, 0.5);
-  color: #ffffff;
+  border-color: var(--mds-tint);
 }
 
 .mds-trip-result-actions button.is-details:hover:not(:disabled) {
-  color: #ffffff;
-  filter: brightness(1.08);
-}
-
-.mds-root[data-theme="light"] .mds-trip-result-card {
-  color: #ffffff;
-  background-color: #06111d;
-}
-
-.mds-root[data-theme="light"] .mds-trip-result-commerce > * + *,
-.mds-root[data-theme="light"]
-  .mds-trip-result-card.is-priority
-  .mds-trip-result-commerce
-  > *:first-child {
-  border-color: rgba(255, 255, 255, 0.16);
-}
-
-.mds-root[data-theme="light"] .mds-trip-result-fact > b,
-.mds-root[data-theme="light"] .mds-trip-result-price span {
-  color: rgba(207, 222, 237, 0.72);
-}
-
-.mds-root[data-theme="light"] .mds-trip-result-heading > strong,
-.mds-root[data-theme="light"] .mds-trip-result-fact > em,
-.mds-root[data-theme="light"] .mds-trip-result-price b {
-  color: #ffffff;
-}
-
-.mds-root[data-theme="light"] .mds-trip-result-description {
-  color: rgba(240, 247, 255, 0.92);
-}
-
-.mds-root[data-theme="light"] .mds-trip-result-fact.is-availability > em {
-  color: #1a9a5e;
-}
-
-.mds-root[data-theme="light"] .mds-trip-result-actions button {
-  border-color: rgba(255, 255, 255, 0.18);
-  color: #eef7ff;
-  background: rgba(5, 17, 31, 0.68);
-}
-
-.mds-root[data-theme="light"] .mds-trip-result-signals > span {
-  color: #24649b;
-  background: #eef6ff;
-}
-
-.mds-root[data-theme="light"] .mds-trip-result-signals > span.is-green {
-  color: #267554;
-  background: #eef9f3;
-}
-
-.mds-root[data-theme="light"] .mds-trip-result-signals > span.is-yellow {
-  color: #9a6500;
-  background: #fff8e8;
-}
-
-.mds-root[data-theme="light"] .mds-trip-result-signals > span.is-violet {
-  color: #7441a6;
-  background: #f6efff;
-}
-
-.mds-root[data-theme="light"] .mds-trip-result-actions button.is-details {
-  color: #ffffff;
-  border: 0;
-  background: #1668a8;
-}
-
-.mds-root[data-theme="light"] .mds-trip-result-actions button.is-details:hover:not(:disabled) {
-  color: #ffffff;
+  background: var(--mds-action-hover);
 }
 
 .mds-inline-concierge {
@@ -2017,8 +1515,7 @@
   margin-top: 14px;
   border: 0;
   border-radius: 8px;
-  background:
-    rgba(28, 24, 18, 0.98);
+  background: var(--mds-surface);
 }
 
 .mds-inline-concierge-media {
@@ -2042,8 +1539,8 @@
   padding: 5px 8px;
   border: 0;
   border-radius: 5px;
-  color: #ffffff;
-  background: rgba(15, 12, 8, 0.68);
+  color: var(--mds-label);
+  background: var(--mds-surface);
   font-size: calc(10px * var(--mds-fs));
   font-weight: 760;
 }
@@ -2068,18 +1565,18 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: #eaf3fc;
+  color: var(--mds-label);
   font-family: var(--mds-serif);
   font-size: calc(14px * var(--mds-fs));
   font-weight: 650;
 }
 
 .mds-inline-concierge-copy > header > span svg {
-  color: #57cfff;
+  color: var(--mds-label-2);
 }
 
 .mds-inline-concierge-copy > header > em {
-  color: #f6c866;
+  color: var(--mds-yellow);
   font-size: calc(10px * var(--mds-fs));
   font-style: normal;
   font-weight: 760;
@@ -2092,13 +1589,13 @@
 }
 
 .mds-inline-concierge-copy h3 {
-  color: #ffffff;
+  color: var(--mds-label);
   font-size: calc(18px * var(--mds-fs));
   line-height: 1.18;
 }
 
 .mds-inline-concierge-copy p {
-  color: #aebdcb;
+  color: var(--mds-label-2);
   font-size: calc(11.5px * var(--mds-fs));
   line-height: 1.38;
 }
@@ -2117,28 +1614,10 @@
   padding: 0 7px;
   border: 0;
   border-radius: 5px;
-  color: #96c5ff;
-  background: rgb(var(--mds-blue-rgb) / 0.08);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
   font-size: calc(9.5px * var(--mds-fs));
   font-weight: 680;
-}
-
-.mds-inline-concierge-signals > span.is-green {
-  border-color: rgb(var(--mds-recovery-green-rgb) / 0.28);
-  color: #82e4b3;
-  background: rgb(var(--mds-recovery-green-rgb) / 0.08);
-}
-
-.mds-inline-concierge-signals > span.is-yellow {
-  border-color: rgb(var(--mds-recovery-yellow-rgb) / 0.35);
-  color: #ffd278;
-  background: rgb(var(--mds-recovery-yellow-rgb) / 0.1);
-}
-
-.mds-inline-concierge-signals > span.is-violet {
-  border-color: rgba(164, 112, 255, 0.3);
-  color: #cfb4ff;
-  background: rgba(135, 79, 230, 0.1);
 }
 
 .mds-inline-concierge-copy > footer {
@@ -2149,31 +1628,18 @@
 .mds-inline-concierge-copy > footer button {
   min-height: 34px;
   padding: 0 11px;
-  border: 1px solid rgba(126, 157, 188, 0.26);
+  border: 1px solid var(--mds-control-line);
   border-radius: 6px;
-  color: #cbd8e6;
-  background: rgba(24, 20, 15, 0.76);
+  color: var(--mds-label);
+  background: var(--mds-surface);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 720;
 }
 
 .mds-inline-concierge-copy > footer button.is-primary {
-  border-color: #f7c85f;
-  color: #211200;
-  background: #ffd16e;
-}
-
-.mds-root[data-theme="light"] .mds-inline-concierge {
-  background: #ffffff;
-}
-
-.mds-root[data-theme="light"] .mds-inline-concierge-copy > header > span,
-.mds-root[data-theme="light"] .mds-inline-concierge-copy h3 {
-  color: #142a42;
-}
-
-.mds-root[data-theme="light"] .mds-inline-concierge-copy p {
-  color: #68798b;
+  border-color: var(--mds-action);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
 }
 
 @media (max-width: 720px) {
@@ -2251,7 +1717,7 @@
   display: inline-block;
   margin-right: 7px;
   border-radius: 50%;
-  background: var(--mds-blue);
+  background: var(--mds-label-2);
   animation: mds-pulse 1.15s ease-in-out infinite;
 }
 
@@ -2259,8 +1725,7 @@
   position: relative;
   overflow: hidden;
   min-height: 160px;
-  background:
-    #6f9fc0;
+  background: var(--mds-surface-2);
 }
 
 .mds-trip-photo {
@@ -2284,33 +1749,6 @@
   .mds-trip-photo { transition: none; transform: none; }
 }
 
-.mds-trip-visual-douro {
-  background: #365a63;
-}
-
-.mds-trip-visual-alsace {
-  background: #88b4ca;
-}
-
-.mds-trip-visual-coast {
-  background: #5e9bb8;
-}
-
-/* City / mountain / landscape have no curated photo. These fills are the
-   graceful fallback when a live image_url is slow or blocked on venue wifi, so
-   a Tokyo or Paris card reads as itself rather than an unrelated vineyard. */
-.mds-trip-visual-city {
-  background: #3a4a63;
-}
-
-.mds-trip-visual-mountain {
-  background: #7fa6c4;
-}
-
-.mds-trip-visual-landscape {
-  background: #6f9fc0;
-}
-
 .mds-trip-sun,
 .mds-trip-ridge,
 .mds-trip-field {
@@ -2331,7 +1769,6 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: #ffdf98;
 }
 
 .mds-trip-ridge.one {
@@ -2340,7 +1777,6 @@
   bottom: 18%;
   height: 44%;
   border-radius: 55% 55% 0 0;
-  background: rgba(34, 69, 54, 0.78);
   transform: rotate(-5deg);
 }
 
@@ -2350,7 +1786,6 @@
   bottom: 8%;
   height: 54%;
   border-radius: 50% 50% 0 0;
-  background: rgba(52, 46, 37, 0.68);
 }
 
 .mds-trip-field {
@@ -2358,17 +1793,15 @@
   right: -8%;
   bottom: -6%;
   height: 44%;
-  background:
-    #254d2d;
   transform: rotate(-2deg);
 }
 
 .mds-trace-actions button {
   min-height: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--mds-control-line);
   border-radius: 9px;
-  color: #d8e4ed;
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
   font-size: calc(11px * var(--mds-fs));
 }
 
@@ -2377,9 +1810,9 @@
 .mds-trace-actions button {
   min-height: 38px;
   padding: 0 14px;
-  border-color: rgba(255, 255, 255, 0.18);
-  color: var(--mds-on-surface);
-  background: rgba(29, 25, 19, 0.82);
+  border-color: var(--mds-control-line);
+  color: var(--mds-label);
+  background: var(--mds-surface);
   font-size: calc(13px * var(--mds-fs));
   font-weight: 600;
 }
@@ -2394,21 +1827,21 @@
   padding: 0;
   border: 0;
   border-radius: 0;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   background: transparent;
   font-size: calc(13px * var(--mds-fs));
   font-weight: 600;
   text-decoration: underline;
-  text-decoration-color: rgba(255, 255, 255, 0.3);
+  text-decoration-color: var(--mds-label-3);
   text-underline-offset: 3px;
 }
 
 .mds-trace-actions button:hover {
-  border-color: rgb(var(--mds-blue-rgb) / 0.32);
+  border-color: var(--mds-blue);
 }
 
 .mds-main-actions button:hover {
-  color: #e8f2f8;
+  color: var(--mds-label);
   border-color: transparent;
 }
 
@@ -2446,7 +1879,7 @@
 .mds-chat-composer-wrap.is-proof .mds-chat-starter-label {
   grid-column: 1 / -1;
   align-self: center;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(13.5px * var(--mds-fs));
   letter-spacing: 0.04em;
 }
@@ -2496,7 +1929,7 @@
 }
 
 .mds-chat-starter-label {
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   font-size: calc(13px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -2506,10 +1939,10 @@
 .mds-chat-starter-chip {
   min-height: 34px;
   padding: 0 14px;
-  border: 1px solid rgb(var(--mds-blue-rgb) / 0.34);
+  border: 1px solid var(--mds-control-line);
   border-radius: 999px;
-  color: rgba(231, 250, 255, 0.92);
-  background: rgba(42, 37, 29, 0.42);
+  color: var(--mds-label);
+  background: var(--mds-surface);
   font-size: calc(13px * var(--mds-fs));
   font-weight: 540;
   letter-spacing: 0.005em;
@@ -2519,9 +1952,9 @@
 .mds-chat-starter-chip:hover,
 .mds-chat-starter-chip:focus-visible {
   border-style: solid;
-  border-color: rgb(var(--mds-blue-rgb) / 0.7);
-  color: var(--mds-on-surface);
-  background: rgba(50, 45, 36, 0.78);
+  border-color: var(--mds-blue);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
   transform: translateY(-1px);
 }
 
@@ -2532,14 +1965,14 @@
 }
 
 /* Stretch query: third pill in each phase that exposes the phase's
-   limit. Amber dashed border + a leading arrow so it's visually distinct
+   limit. Yellow dashed border + a leading arrow so it's visually distinct
    from the two known-good queries. */
 /* A prompt this phase answers: green, the same signal as a completed step.
-   The stretch prompt below stays amber: it needs the next rung. */
+   The stretch prompt below stays yellow: it needs the next rung. */
 .mds-chat-starter-chip.is-works {
-  border-color: rgb(var(--mds-green-rgb) / 0.55);
-  color: var(--mds-on-surface);
-  background: rgb(var(--mds-green-rgb) / 0.1);
+  border-color: var(--mds-green);
+  color: var(--mds-label);
+  background: var(--mds-green-fill);
 }
 
 .mds-chat-starter-chip.is-works small {
@@ -2554,8 +1987,8 @@
 
 .mds-chat-starter-chip.is-works:hover,
 .mds-chat-starter-chip.is-works:focus-visible {
-  border-color: rgb(var(--mds-green-rgb) / 0.85);
-  background: rgb(var(--mds-green-rgb) / 0.18);
+  border-color: var(--mds-green);
+  background: var(--mds-green-fill);
 }
 
 /* Keyboard focus needs its own ring. The hover styles above only shift the
@@ -2564,15 +1997,15 @@
 .mds-chat-starter-chip:focus-visible,
 .mds-chat-starter-chip.is-works:focus-visible,
 .mds-chat-starter-chip.is-stretch:focus-visible {
-  outline: 2px solid var(--mds-blue);
+  outline: 2px solid var(--mds-tint);
   outline-offset: 2px;
 }
 
 .mds-chat-starter-chip.is-stretch {
   border-style: dashed;
-  border-color: rgb(var(--mds-recovery-yellow-rgb) / 0.45);
-  color: rgba(255, 226, 192, 0.95);
-  background: rgba(38, 24, 14, 0.42);
+  border-color: var(--mds-yellow);
+  color: var(--mds-label);
+  background: var(--mds-surface);
 }
 
 .mds-chat-starter-chip.is-stretch::before {
@@ -2585,9 +2018,9 @@
 .mds-chat-starter-chip.is-stretch:hover,
 .mds-chat-starter-chip.is-stretch:focus-visible {
   border-style: solid;
-  border-color: rgb(var(--mds-recovery-yellow-rgb) / 0.78);
-  color: #fff5e6;
-  background: rgba(56, 36, 18, 0.78);
+  border-color: var(--mds-yellow);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
 }
 
 .mds-chat-phase-framing {
@@ -2599,15 +2032,15 @@
   padding: 0 12px;
   border: 0;
   border-radius: 999px;
-  color: var(--mds-on-surface-soft);
-  background: rgb(var(--mds-blue-rgb) / 0.055);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
   font-size: calc(12px * var(--mds-fs));
   line-height: 1.35;
 }
 
 .mds-chat-phase-framing span {
   flex: 0 0 auto;
-  color: var(--mds-blue);
+  color: var(--mds-label);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 800;
   text-transform: uppercase;
@@ -2626,10 +2059,10 @@
   gap: 8px;
   min-height: 38px;
   padding: 0 16px 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--mds-control-line);
   border-radius: 999px;
-  color: var(--mds-on-surface);
-  background: rgba(20, 17, 13, 0.78);
+  color: var(--mds-label);
+  background: var(--mds-surface);
   font-size: calc(13.5px * var(--mds-fs));
   font-weight: 580;
   letter-spacing: 0.005em;
@@ -2639,14 +2072,14 @@
 
 .mds-chat-action-chip:hover,
 .mds-chat-action-chip:focus-visible {
-  border-color: rgb(var(--mds-blue-rgb) / 0.55);
-  color: var(--mds-on-surface);
-  background: rgba(34, 30, 23, 0.88);
+  border-color: var(--mds-blue);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
   transform: translateY(-1px);
 }
 
 .mds-chat-action-chip:focus-visible {
-  outline: 2px solid var(--mds-blue);
+  outline: 2px solid var(--mds-tint);
   outline-offset: 2px;
 }
 
@@ -2662,7 +2095,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: rgb(var(--mds-blue-rgb) / 0.95);
+  color: var(--mds-blue);
 }
 
 .mds-chat-action-chip:hover .mds-chat-action-chip-icon,
@@ -2675,11 +2108,11 @@
   height: 100%;
 }
 
-/* Active state - chip lights up cyan when its filter is set. */
+/* Active state - chip tints blue when its filter is set. */
 .mds-chat-action-chip.is-active {
-  border-color: rgb(var(--mds-blue-rgb) / 0.7);
-  background: rgba(50, 45, 36, 0.85);
-  color: var(--mds-on-surface);
+  border-color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+  color: var(--mds-label);
 }
 
 .mds-chat-action-chip.is-active .mds-chat-action-chip-icon {
@@ -2697,22 +2130,22 @@
 /* Clear-all chip - dimmer than the others, with an X icon. */
 .mds-chat-action-chip.is-clear {
   border-style: dashed;
-  border-color: rgba(255, 255, 255, 0.18);
-  color: var(--mds-on-surface-soft);
+  border-color: var(--mds-control-line);
+  color: var(--mds-label-2);
   background: transparent;
 }
 
 .mds-chat-action-chip.is-clear:hover {
-  border-color: rgba(255, 129, 95, 0.55);
-  color: var(--mds-danger);
+  border-color: var(--mds-red);
+  color: var(--mds-red);
 }
 
 .mds-chat-action-chip.is-clear .mds-chat-action-chip-icon {
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--mds-label-3);
 }
 
 .mds-chat-action-chip.is-clear:hover .mds-chat-action-chip-icon {
-  color: var(--mds-danger);
+  color: var(--mds-red);
 }
 
 /* Popover shell - anchored above the chip. */
@@ -2733,7 +2166,7 @@
   padding: 14px 14px 12px;
   border: 0;
   border-radius: 14px;
-  background: rgba(17, 14, 10, 0.96);
+  background: var(--mds-surface);
   box-shadow: var(--mds-shadow-float);
   animation: mds-msg-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -2747,14 +2180,14 @@
   width: 12px;
   height: 12px;
   margin-top: -6px;
-  border-right: 1px solid rgb(var(--mds-blue-rgb) / 0.28);
-  border-bottom: 1px solid rgb(var(--mds-blue-rgb) / 0.28);
-  background: rgba(17, 14, 10, 0.96);
+  border-right: 1px solid var(--mds-separator);
+  border-bottom: 1px solid var(--mds-separator);
+  background: var(--mds-surface);
   transform: rotate(45deg);
 }
 
 .mds-popover-title {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--mds-label-2);
   font-size: calc(11.5px * var(--mds-fs));
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -2772,10 +2205,10 @@
 .mds-popover-step-btn {
   width: 36px;
   height: 36px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--mds-control-line);
   border-radius: 50%;
-  color: var(--mds-on-surface);
-  background: rgba(29, 25, 19, 0.6);
+  color: var(--mds-label);
+  background: var(--mds-surface);
   font-size: calc(18px * var(--mds-fs));
   font-weight: 600;
   line-height: 1;
@@ -2784,8 +2217,8 @@
 }
 
 .mds-popover-step-btn:hover:not(:disabled) {
-  border-color: rgb(var(--mds-blue-rgb) / 0.55);
-  background: rgba(50, 45, 36, 0.78);
+  border-color: var(--mds-blue);
+  background: var(--mds-surface-2);
 }
 
 .mds-popover-step-btn:disabled {
@@ -2802,14 +2235,14 @@
 }
 
 .mds-popover-step-value b {
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(22px * var(--mds-fs));
   font-weight: 700;
   line-height: 1.1;
 }
 
 .mds-popover-step-value em {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--mds-label-3);
   font-size: calc(11.5px * var(--mds-fs));
   font-style: normal;
   font-weight: 540;
@@ -2831,7 +2264,7 @@
 }
 
 .mds-popover-dates label span {
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--mds-label-3);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -2841,20 +2274,19 @@
 .mds-popover-dates input[type="date"] {
   height: 38px;
   padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--mds-control-line);
   border-radius: 10px;
-  color: var(--mds-on-surface);
-  background: rgba(23, 20, 15, 0.78);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
   font-family: inherit;
   font-size: calc(13.5px * var(--mds-fs));
   font-weight: 540;
   outline: none;
-  color-scheme: dark;
 }
 
 .mds-popover-dates input[type="date"]:focus {
-  border-color: rgb(var(--mds-blue-rgb) / 0.6);
-  outline: 2px solid var(--mds-blue);
+  border-color: var(--mds-blue);
+  outline: 2px solid var(--mds-tint);
   outline-offset: 2px;
 }
 
@@ -2870,17 +2302,17 @@
   border: 0;
   padding: 0;
   background: transparent;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--mds-label-3);
   font-size: calc(12.5px * var(--mds-fs));
   font-weight: 540;
   text-decoration: underline;
-  text-decoration-color: rgba(255, 255, 255, 0.18);
+  text-decoration-color: var(--mds-label-3);
   text-underline-offset: 3px;
   cursor: pointer;
 }
 
 .mds-popover-link:hover:not(:disabled) {
-  color: var(--mds-danger);
+  color: var(--mds-red);
 }
 
 .mds-popover-link:disabled {
@@ -2894,8 +2326,8 @@
   padding: 0 16px;
   border: 0;
   border-radius: 10px;
-  color: #ffffff;
-  background: var(--mds-blue);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
   font-family: inherit;
   font-size: calc(13px * var(--mds-fs));
   font-weight: 700;
@@ -2911,10 +2343,10 @@
   width: 100%;
   min-width: 0;
   height: 56px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--mds-control-line);
   border-radius: 17px;
-  color: #edf6ff;
-  background: rgba(23, 20, 15, 0.8);
+  color: var(--mds-label);
+  background: var(--mds-surface);
   /* Right padding reserves room for the inset send button (40px + insets). */
   padding: 0 60px 0 16px;
   outline: none;
@@ -2922,15 +2354,13 @@
 }
 
 .mds-chat-composer textarea:focus {
-  border-color: rgb(var(--mds-blue-rgb) / 0.54);
-  outline: 2px solid var(--mds-blue);
+  border-color: var(--mds-blue);
+  outline: 2px solid var(--mds-tint);
   outline-offset: 2px;
 }
 
-/* Send button — a rounded-square icon button (paper plane), per the daylight
-   mockup, instead of a wide "Send" text pill. Dark slate in light mode
-   (mockup), cyan brand fill in dark mode so it never sinks into the dark
-   composer. */
+/* Send button: a rounded-square primary icon button (paper plane) instead of a wide
+   "Send" text pill. */
 .mds-chat-send {
   /* Inset against the right edge of the input pill, vertically centered. */
   position: absolute;
@@ -2943,8 +2373,8 @@
   place-items: center;
   border: 0;
   border-radius: 12px;
-  color: #ffffff;
-  background: var(--mds-blue);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
   transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease, background 150ms ease;
 }
 .mds-chat-send > svg {
@@ -2953,19 +2383,12 @@
 .mds-chat-send:hover:not(:disabled) {
   /* Keep the -50% vertical centering; nudge up a hair on top of it. */
   transform: translateY(calc(-50% - 1px));
+  background: var(--mds-action-hover);
 }
 .mds-chat-send:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   box-shadow: none;
-}
-.mds-root[data-theme="light"] .mds-chat-send {
-  /* Mockup: dark slate square with a white arrow. */
-  color: #ffffff;
-  background: var(--mds-ink);
-}
-.mds-root[data-theme="light"] .mds-chat-send:hover:not(:disabled) {
-  background: #1e293b;
 }
 /* Loading spinner that replaces the arrow while a turn is in flight. */
 .mds-chat-send-spinner {
@@ -2991,15 +2414,10 @@
   flex-direction: column;
   gap: 14px;
   padding: 34px 26px;
-  border-left: 1px solid var(--mds-line);
-  background:
-    rgba(17, 14, 10, 0.96);
+  border-left: 1px solid var(--mds-separator);
+  background: var(--mds-ground);
   overflow-y: auto;
   overflow-x: hidden;
-}
-
-.mds-root[data-theme="light"] .mds-desktop-right {
-  background: rgba(248, 250, 252, 0.98);
 }
 
 .mds-desktop-right::-webkit-scrollbar {
@@ -3008,18 +2426,18 @@
 
 .mds-desktop-right::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--mds-surface-2);
 }
 
 .mds-desktop-right::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--mds-surface-2);
 }
 
 .mds-panel {
   min-width: 0;
   border: 0;
   border-radius: 14px;
-  background: var(--mds-side-panel-background);
+  background: var(--mds-surface);
 }
 
 .mds-traveler-panel {
@@ -3058,7 +2476,7 @@
 
 .mds-collapse-toggle:hover .mds-collapse-chevron,
 .mds-collapse-toggle:focus-visible .mds-collapse-chevron {
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
 }
 
 .mds-collapse-chevron {
@@ -3068,8 +2486,8 @@
   width: 18px;
   height: 18px;
   border-radius: 6px;
-  color: var(--mds-on-surface-faint);
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--mds-label-3);
+  background: var(--mds-surface-2);
   /* Rotate the inner SVG only; the wrapper keeps layout stable. */
   transition: color 180ms ease, background 180ms ease;
 }
@@ -3087,7 +2505,7 @@
 
 .mds-collapse-hint {
   margin-left: 4px;
-  color: var(--mds-on-surface-faint);
+  color: var(--mds-label-3);
   font-size: calc(11.5px * var(--mds-fs));
   font-weight: 500;
   letter-spacing: 0.01em;
@@ -3100,11 +2518,11 @@
   gap: 12px;
   padding-bottom: 10px;
   margin-bottom: 12px;
-  border-bottom: 1px solid var(--mds-line);
+  border-bottom: 1px solid var(--mds-separator);
 }
 
 .mds-panel-head strong {
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(18px * var(--mds-fs-chrome));
   font-weight: 700;
   letter-spacing: -0.005em;
@@ -3113,7 +2531,7 @@
 .mds-panel-head span,
 .mds-panel-head button {
   border: 0;
-  color: var(--mds-blue);
+  color: var(--mds-label-2);
   background: transparent;
   font-size: calc(13px * var(--mds-fs-chrome));
   font-weight: 600;
@@ -3133,7 +2551,7 @@
   gap: 10px;
   align-items: center;
   padding: 11px 0 13px;
-  border-bottom: 1px solid var(--mds-line);
+  border-bottom: 1px solid var(--mds-separator);
 }
 
 /* The service mark stands on its own, the way the official icons are meant to
@@ -3155,7 +2573,7 @@
 }
 
 .mds-memory-control-copy strong {
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(14px * var(--mds-fs-chrome));
   font-weight: 760;
   white-space: nowrap;
@@ -3163,7 +2581,7 @@
 
 .mds-memory-control-copy small {
   margin-top: 2px;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   font-size: calc(11.5px * var(--mds-fs-chrome));
   line-height: 1.3;
 }
@@ -3177,7 +2595,7 @@
   align-items: center;
   padding: 0;
   border: 0;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   background: transparent;
 }
 
@@ -3186,9 +2604,9 @@
   width: 38px;
   height: 22px;
   display: block;
-  border: 1px solid var(--mds-line-strong);
+  border: 1px solid var(--mds-control-line);
   border-radius: 999px;
-  background: var(--mds-fill-3);
+  background: var(--mds-surface-2);
   transition: border-color 180ms ease, background 180ms ease;
 }
 
@@ -3199,13 +2617,13 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--mds-on-surface-soft);
+  background: var(--mds-label-2);
   transition: transform 180ms ease, background 180ms ease;
 }
 
 .mds-memory-switch[aria-checked="true"] > .mds-memory-switch-track {
-  border-color: color-mix(in srgb, var(--mds-green) 58%, transparent);
-  background: color-mix(in srgb, var(--mds-green) 22%, transparent);
+  border-color: var(--mds-green);
+  background: var(--mds-green-fill);
 }
 
 .mds-memory-switch[aria-checked="true"] > .mds-memory-switch-track i {
@@ -3233,11 +2651,11 @@
   align-content: center;
   align-items: start;
   padding: 20px 4px;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
 }
 
 .mds-memory-gate > svg {
-  color: var(--mds-blue);
+  color: var(--mds-label-2);
 }
 
 .mds-memory-gate.is-loading > svg {
@@ -3250,7 +2668,7 @@
 }
 
 .mds-memory-gate strong {
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(15px * var(--mds-fs));
 }
 
@@ -3287,19 +2705,19 @@
   padding: 4px 7px;
   border: 0;
   border-radius: 5px;
-  color: var(--mds-on-surface-soft);
-  background: var(--mds-fill-1);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
   font-size: calc(10px * var(--mds-fs));
   font-weight: 680;
 }
 
 .mds-memory-provenance svg {
-  color: var(--mds-blue);
+  color: var(--mds-label-2);
 }
 
 .mds-memory-fact-group {
   padding: 7px 0;
-  border-top: 1px solid var(--mds-line);
+  border-top: 1px solid var(--mds-separator);
 }
 
 .mds-memory-fact-group > header {
@@ -3307,7 +2725,7 @@
   align-items: center;
   gap: 6px;
   margin-bottom: 5px;
-  color: var(--mds-blue);
+  color: var(--mds-label-2);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 800;
   text-transform: uppercase;
@@ -3325,7 +2743,7 @@
   grid-template-columns: 40% minmax(0, 1fr);
   gap: 10px;
   align-items: start;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(12.5px * var(--mds-fs));
   line-height: 1.35;
 }
@@ -3336,7 +2754,7 @@
   overflow: hidden;
   /* Brighter "label" colour so even the secondary column reads at a glance
      on big stage displays. */
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -3344,7 +2762,7 @@
 .mds-fact-row b,
 .mds-memory-mini b {
   min-width: 0;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-weight: 660;
   /* Let multi-value facts (loyalty_programs, recent_trips, tokyo_culture)
      wrap onto a second line instead of truncating with an ellipsis. */
@@ -3355,8 +2773,8 @@
 .mds-memory-toggle-error {
   margin-top: 10px;
   padding: 9px 0;
-  border-top: 1px solid color-mix(in srgb, var(--mds-danger) 45%, transparent);
-  color: var(--mds-danger);
+  border-top: 1px solid color-mix(in srgb, var(--mds-red) 45%, transparent);
+  color: var(--mds-red);
   font-size: calc(12px * var(--mds-fs));
   line-height: 1.4;
 }
@@ -3384,7 +2802,7 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-color: var(--mds-surface-2) transparent;
 }
 
 .mds-trace-scroll::-webkit-scrollbar {
@@ -3393,7 +2811,7 @@
 
 .mds-trace-scroll::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--mds-surface-2);
 }
 
 .mds-trace-panel.is-collapsed {
@@ -3414,19 +2832,19 @@
 /* Each recorded activity owns its status; no partial connector implies progress. */
 .mds-thinking { margin: 4px 0 18px; }
 .mds-thinking-list { list-style: none; display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; }
-.mds-thinking-item { min-width: 0; color: var(--mds-on-surface); border-bottom: 1px solid var(--mc-line); }
-.mds-thinking-marker { display: grid; place-items: center; margin-top: 2px; color: var(--mds-on-surface-faint); }
+.mds-thinking-item { min-width: 0; color: var(--mds-label); border-bottom: 1px solid var(--mds-separator); }
+.mds-thinking-marker { display: grid; place-items: center; margin-top: 2px; color: var(--mds-label-3); }
 .mds-thinking-item.is-done .mds-thinking-marker { color: var(--mds-green); }
-.mds-thinking-item.is-active .mds-thinking-marker { color: var(--mds-blue); }
-.mds-thinking-item:is(.is-error, .is-denied) .mds-thinking-marker { color: var(--mc-caution); }
+.mds-thinking-item.is-active .mds-thinking-marker { color: var(--mds-label); }
+.mds-thinking-item:is(.is-error, .is-denied) .mds-thinking-marker { color: var(--mds-red); }
 .mds-thinking-copy { display: grid; gap: 5px; min-width: 0; font-size: calc(14px * var(--mc-type-scale)); line-height: 1.4; font-weight: 550; overflow-wrap: anywhere; }
-.mds-thinking-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--mc-muted); font-size: calc(11px * var(--mc-type-scale)); line-height: 1.5; font-weight: 450; }
+.mds-thinking-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--mds-label-2); font-size: calc(11px * var(--mc-type-scale)); line-height: 1.5; font-weight: 450; }
 .mds-thinking-service { display: inline-flex; align-items: center; gap: 5px; }
 .mds-thinking-service img, .mds-thinking-service svg { flex-shrink: 0; }
-.mds-thinking-caption { margin: 0 0 6px; font-size: calc(11px * var(--mc-type-scale)); color: var(--mc-muted); line-height: 1.5; }
-.mds-thinking-wait { display: flex; align-items: flex-start; gap: 10px; color: var(--mc-muted); font-size: calc(12px * var(--mc-type-scale)); line-height: 1.5; }
-.mds-thinking-wait > svg { flex-shrink: 0; margin-top: 2px; color: var(--mc-accent); }
-.mds-thinking-wait strong { color: var(--mc-ink); font-weight: 550; }
+.mds-thinking-caption { margin: 0 0 6px; font-size: calc(11px * var(--mc-type-scale)); color: var(--mds-label-2); line-height: 1.5; }
+.mds-thinking-wait { display: flex; align-items: flex-start; gap: 10px; color: var(--mds-label-2); font-size: calc(12px * var(--mc-type-scale)); line-height: 1.5; }
+.mds-thinking-wait > svg { flex-shrink: 0; margin-top: 2px; color: var(--mds-label-2); }
+.mds-thinking-wait strong { color: var(--mds-label); font-weight: 550; }
 .mds-thinking-wait p { margin: 5px 0 0; }
 @keyframes mds-activity-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: no-preference) {
@@ -3438,34 +2856,34 @@
 .mds-activity-group > summary::-webkit-details-marker,
 .mds-activity-event > summary::-webkit-details-marker,
 .mds-trace-inspector > summary::-webkit-details-marker { display: none; }
-.mds-activity-chevron { margin-top: 3px; color: var(--mc-muted); }
+.mds-activity-chevron { margin-top: 3px; color: var(--mds-label-2); }
 .mds-activity-group[open] > summary > .mds-activity-chevron,
 .mds-activity-event[open] > summary > svg,
 .mds-trace-inspector[open] > summary > svg { transform: rotate(180deg); }
-.mds-activity-events { margin: 0 0 14px 10px; padding-left: 19px; border-left: 1px solid var(--mc-line); }
-.mds-activity-event > summary { display: grid; grid-template-columns: 18px minmax(0, 1fr) 13px; gap: 7px; align-items: start; padding: 9px 0; min-height: 36px; list-style: none; cursor: pointer; font-size: calc(12px * var(--mc-type-scale)); line-height: 1.5; color: var(--mc-ink); overflow-wrap: anywhere; }
-.mds-activity-event-index { color: var(--mc-muted); font-size: .85em; padding-top: 2px; font-variant-numeric: tabular-nums; }
-.mds-activity-event > summary > svg { margin-top: 3px; color: var(--mc-muted); }
-.mds-activity-event.is-active > summary { color: var(--mc-accent); }
-.mds-activity-event:is(.is-failed, .is-denied) > summary { color: var(--mc-caution); }
-.mds-activity-event-detail { min-width: 0; padding: 0 0 10px 25px; color: var(--mc-muted); font-size: calc(11px * var(--mc-type-scale)); line-height: 1.6; overflow-wrap: anywhere; }
+.mds-activity-events { margin: 0 0 14px 10px; padding-left: 19px; border-left: 1px solid var(--mds-separator); }
+.mds-activity-event > summary { display: grid; grid-template-columns: 18px minmax(0, 1fr) 13px; gap: 7px; align-items: start; padding: 9px 0; min-height: 36px; list-style: none; cursor: pointer; font-size: calc(12px * var(--mc-type-scale)); line-height: 1.5; color: var(--mds-label); overflow-wrap: anywhere; }
+.mds-activity-event-index { color: var(--mds-label-2); font-size: .85em; padding-top: 2px; font-variant-numeric: tabular-nums; }
+.mds-activity-event > summary > svg { margin-top: 3px; color: var(--mds-label-2); }
+.mds-activity-event.is-active > summary { color: var(--mds-tint); }
+.mds-activity-event:is(.is-failed, .is-denied) > summary { color: var(--mds-red); }
+.mds-activity-event-detail { min-width: 0; padding: 0 0 10px 25px; color: var(--mds-label-2); font-size: calc(11px * var(--mc-type-scale)); line-height: 1.6; overflow-wrap: anywhere; }
 .mds-activity-event-detail p { margin: 0 0 8px; }
 .mds-activity-event-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: inherit; }
-.mds-activity-event-detail a { color: var(--mc-accent); text-decoration: underline; text-underline-offset: 3px; }
+.mds-activity-event-detail a { color: var(--mds-tint); text-decoration: underline; text-underline-offset: 3px; }
 .mds-activity-event-source { font-family: var(--mds-font-mono); }
-.mds-evidence-probe { color: var(--mc-muted); font-size: calc(12px * var(--mc-type-scale)); line-height: 1.5; }
+.mds-evidence-probe { color: var(--mds-label-2); font-size: calc(12px * var(--mc-type-scale)); line-height: 1.5; }
 .mds-evidence-probe p { margin: 0 0 12px; }
-.mds-evidence-probe button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--mc-line); border-radius: 6px; background: var(--mc-soft); color: var(--mc-accent); font: inherit; cursor: pointer; }
-.mds-evidence-probe button:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 2px; }
+.mds-evidence-probe button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--mds-control-line); border-radius: 6px; background: var(--mds-surface-2); color: var(--mds-tint); font: inherit; cursor: pointer; }
+.mds-evidence-probe button:focus-visible { outline: 2px solid var(--mds-tint); outline-offset: 2px; }
 .mds-trace-inspector .mds-trace-tabs { display: flex; flex-wrap: wrap; gap: 5px; }
 .mds-trace-inspector .mds-trace-tabs button { flex: 1 1 auto; font-size: calc(12px * var(--mc-type-scale)); }
-.mds-trace-inspector .mds-sql-list small { color: var(--mc-muted); font-size: calc(12px * var(--mc-type-scale)); line-height: 1.5; }
-.mds-trace-inspector .mds-sql-list pre { margin: 6px 0 14px; background: var(--mc-soft); color: var(--mc-ink); font-size: calc(11px * var(--mc-type-scale)); }
-.mds-evidence-heading { margin: 0 0 10px; color: var(--mc-ink); font-size: calc(12px * var(--mc-type-scale)); }
-.mds-trace-inspector > summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; list-style: none; color: var(--mc-muted); font-size: calc(12px * var(--mc-type-scale)); }
+.mds-trace-inspector .mds-sql-list small { color: var(--mds-label-2); font-size: calc(12px * var(--mc-type-scale)); line-height: 1.5; }
+.mds-trace-inspector .mds-sql-list pre { margin: 6px 0 14px; background: var(--mds-surface-2); color: var(--mds-label); font-size: calc(11px * var(--mc-type-scale)); }
+.mds-evidence-heading { margin: 0 0 10px; color: var(--mds-label); font-size: calc(12px * var(--mc-type-scale)); }
+.mds-trace-inspector > summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; list-style: none; color: var(--mds-label-2); font-size: calc(12px * var(--mc-type-scale)); }
 .mds-activity-group > summary:focus-visible,
 .mds-activity-event > summary:focus-visible,
-.mds-trace-inspector > summary:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 2px; border-radius: 3px; }
+.mds-trace-inspector > summary:focus-visible { outline: 2px solid var(--mds-tint); outline-offset: 2px; border-radius: 3px; }
 
 .mds-contract-panel,
 .mds-workflow-state {
@@ -3475,7 +2893,7 @@
   padding: 11px;
   border: 0;
   border-radius: 12px;
-  background: rgb(var(--mds-blue-rgb) / 0.055);
+  background: var(--mds-surface-2);
 }
 
 .mds-contract-head,
@@ -3525,14 +2943,14 @@
   display: grid;
   place-items: center;
   border-radius: 9px;
-  color: var(--mds-blue);
-  background: rgb(var(--mds-blue-rgb) / 0.12);
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
 }
 
 .mds-contract-head strong,
 .mds-workflow-state-head strong {
   display: block;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(14px * var(--mds-fs-chrome));
   font-weight: 760;
 }
@@ -3541,7 +2959,7 @@
 .mds-workflow-state-head small {
   display: block;
   margin-top: 2px;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   font-size: calc(11.5px * var(--mds-fs-chrome));
   line-height: 1.3;
 }
@@ -3570,11 +2988,11 @@
   padding: 6px 9px;
   border: 0;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--mds-surface-2);
 }
 
 .mds-contract-row.is-observed {
-  background: rgb(var(--mds-green-rgb) / 0.07);
+  background: var(--mds-green-fill);
 }
 
 .mds-contract-status {
@@ -3593,7 +3011,7 @@
 .mds-contract-names b {
   min-width: 0;
   overflow: hidden;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(12.5px * var(--mds-fs));
   font-weight: 740;
   text-overflow: ellipsis;
@@ -3601,7 +3019,7 @@
 }
 
 .mds-contract-names code {
-  color: var(--mds-blue);
+  color: var(--mds-label);
   font-family: var(--mds-font-mono);
   font-size: calc(10.5px * var(--mds-fs));
   overflow-wrap: anywhere;
@@ -3610,7 +3028,7 @@
 .mds-contract-aurora {
   grid-column: 2;
   justify-self: start;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   font-size: calc(11px * var(--mds-fs));
   line-height: 1.3;
   text-align: left;
@@ -3618,7 +3036,7 @@
 }
 
 .mds-workflow-state.is-checkpointed {
-  background: rgb(var(--mds-green-rgb) / 0.07);
+  background: var(--mds-cyan-fill);
 }
 
 /* Three even tiles that wrap their values, rather than three that truncate
@@ -3635,12 +3053,12 @@
   padding: 8px;
   border: 0;
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--mds-surface-2);
 }
 
 .mds-workflow-kv span {
   display: block;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   font-size: calc(10px * var(--mds-fs-chrome));
   font-weight: 800;
   text-transform: uppercase;
@@ -3649,7 +3067,7 @@
 .mds-workflow-kv b {
   display: block;
   margin-top: 4px;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(11.5px * var(--mds-fs-chrome));
   font-weight: 720;
   line-height: 1.25;
@@ -3666,8 +3084,8 @@
   padding: 8px;
   border: 0;
   border-radius: 9px;
-  color: var(--mds-on-surface-soft);
-  background: rgba(255, 255, 255, 0.035);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
   font-size: calc(11.5px * var(--mds-fs));
   line-height: 1.35;
 }
@@ -3676,29 +3094,29 @@
   padding: 3px 7px;
   border: 0;
   border-radius: 999px;
-  color: var(--mds-on-surface-soft);
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
   font-family: var(--mds-font-mono);
   font-size: calc(10px * var(--mds-fs));
 }
 
 .mds-workflow-path span.is-visited {
-  border-color: rgb(var(--mds-green-rgb) / 0.34);
+  border-color: var(--mds-green);
   color: var(--mds-green);
-  background: rgb(var(--mds-green-rgb) / 0.1);
+  background: var(--mds-green-fill);
 }
 
 .mds-workflow-checkpoint svg,
 .mds-workflow-path svg {
   flex: 0 0 auto;
-  color: var(--mds-blue);
+  color: var(--mds-label-2);
 }
 
 .mds-live-state {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(12.5px * var(--mds-fs));
   font-weight: 600;
 }
@@ -3708,7 +3126,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--mds-blue);
+  background: var(--mds-green);
 }
 
 .mds-live-state.is-live::before {
@@ -3716,7 +3134,7 @@
 }
 
 .mds-live-state.is-offline::before {
-  background: var(--mds-danger);
+  background: var(--mds-red);
 }
 
 .mds-trace-tabs {
@@ -3730,7 +3148,7 @@
   min-height: 44px;
   border: 0;
   border-radius: 8px;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   background: transparent;
   font-size: calc(14px * var(--mds-fs));
   font-weight: 600;
@@ -3738,8 +3156,8 @@
 }
 
 .mds-trace-tabs button.is-active {
-  color: #ffffff;
-  background: var(--mds-blue);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
 }
 
 .mds-sql-list pre {
@@ -3747,8 +3165,8 @@
   overflow: auto;
   padding: 10px;
   border-radius: 8px;
-  color: #d4f9ff;
-  background: rgba(0, 0, 0, 0.42);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
   font-family: var(--mds-font-mono);
   font-size: calc(13px * var(--mds-fs));
   line-height: 1.45;
@@ -3756,7 +3174,7 @@
 }
 
 .mds-sql-list small {
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--mds-label-2);
   font-size: calc(13px * var(--mds-fs));
   font-weight: 600;
 }
@@ -3796,9 +3214,9 @@
   padding: 16px;
   border: 0;
   border-radius: 12px;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--mds-label-2);
   font-size: calc(13px * var(--mds-fs));
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--mds-surface-2);
   font-size: calc(12px * var(--mds-fs));
 }
 
@@ -3806,17 +3224,17 @@
   padding: 9px;
   border: 0;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--mds-surface-2);
 }
 
 .mds-trip-confirm span {
   display: block;
-  color: var(--mds-muted);
+  color: var(--mds-label-2);
   font-size: calc(11px * var(--mds-fs));
 }
 
 .mds-trip-confirm b {
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(13px * var(--mds-fs));
 }
 
@@ -3827,7 +3245,7 @@
 }
 
 .mds-trip-confirm code {
-  color: #caf7ff;
+  color: var(--mds-label);
   font-size: calc(11px * var(--mds-fs));
 }
 
@@ -3835,8 +3253,8 @@
   min-height: 30px;
   border: 0;
   border-radius: 8px;
-  color: #ffffff;
-  background: var(--mds-blue);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
   font-size: calc(12px * var(--mds-fs));
   font-weight: 800;
 }
@@ -3845,7 +3263,7 @@
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--mds-scrim);
 }
 
 .mds-drawer {
@@ -3857,8 +3275,8 @@
   height: 100%;
   padding: 20px;
   overflow-y: auto;
-  border-left: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(13, 10, 7, 0.97);
+  border-left: 1px solid var(--mds-separator);
+  background: var(--mds-surface);
 }
 
 .mds-drawer-backdrop[data-state="open"] {
@@ -3884,10 +3302,10 @@
   z-index: 90;
   max-width: 240px;
   padding: 7px 9px;
-  border: 1px solid var(--mds-tooltip-border);
+  border: 1px solid var(--mds-separator);
   border-radius: 8px;
-  color: var(--mds-tooltip-fg);
-  background: var(--mds-tooltip-bg);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
   box-shadow: var(--mds-shadow-float);
   font-size: calc(12px * var(--mds-fs));
   font-weight: 620;
@@ -3896,7 +3314,7 @@
 }
 
 .mds-tooltip-arrow {
-  fill: var(--mds-tooltip-bg);
+  fill: var(--mds-surface-2);
 }
 
 @keyframes mds-sheet-fade {
@@ -3934,22 +3352,22 @@
 
 .mds-drawer header span {
   display: block;
-  color: var(--mds-blue);
+  color: var(--mds-label-2);
   font-size: calc(12px * var(--mds-fs));
 }
 
 .mds-drawer header strong {
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(20px * var(--mds-fs));
 }
 
 .mds-drawer header button {
   width: 32px;
   height: 32px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--mds-control-line);
   border-radius: 10px;
-  color: var(--mds-on-surface);
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
 }
 
 .mds-drawer-list {
@@ -3964,20 +3382,20 @@
   padding: 12px;
   border: 0;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--mds-surface-2);
 }
 
 .mds-drawer-row span,
 .mds-drawer-row small {
   display: block;
-  color: var(--mds-muted);
+  color: var(--mds-label-2);
   font-size: calc(11px * var(--mds-fs));
 }
 
 .mds-drawer-row b {
   display: block;
   margin: 3px 0;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(13px * var(--mds-fs));
 }
 
@@ -3989,10 +3407,10 @@
 
 .mds-drawer-row button {
   min-height: 26px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--mds-control-line);
   border-radius: 7px;
-  color: var(--mds-muted);
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
   font-size: calc(11px * var(--mds-fs));
 }
 
@@ -4019,7 +3437,7 @@
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
-    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    border-top: 1px solid var(--mds-separator);
     border-left: 0;
   }
 }
@@ -4039,7 +3457,7 @@
     display: block;
     padding: 14px;
     border-right: 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    border-bottom: 1px solid var(--mds-separator);
   }
 
   .mds-brand {
@@ -4113,7 +3531,7 @@
   align-items: baseline;
   gap: 8px;
   margin-bottom: 8px;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--mds-label);
   font-size: calc(12px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -4124,13 +3542,13 @@
   font-weight: 500;
   text-transform: none;
   letter-spacing: 0;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--mds-label-3);
   font-size: calc(11.5px * var(--mds-fs));
 }
 
 .mds-navpanel-hint {
   margin-bottom: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--mds-label-3);
   font-size: calc(12.5px * var(--mds-fs));
   line-height: 1.5;
 }
@@ -4142,8 +3560,8 @@
   padding: 28px 4px;
   text-align: center;
 }
-.mds-navpanel-empty b { color: var(--mds-on-surface); font-size: calc(14.5px * var(--mds-fs)); }
-.mds-navpanel-empty span { color: rgba(255, 255, 255, 0.5); font-size: calc(12.5px * var(--mds-fs)); line-height: 1.5; }
+.mds-navpanel-empty b { color: var(--mds-label); font-size: calc(14.5px * var(--mds-fs)); }
+.mds-navpanel-empty span { color: var(--mds-label-3); font-size: calc(12.5px * var(--mds-fs)); line-height: 1.5; }
 
 /* Trip rows */
 .mds-navpanel-trip {
@@ -4154,23 +3572,23 @@
   width: 100%;
   padding: 11px 12px;
   margin-bottom: 6px;
-  border: 1px solid var(--mds-line);
+  border: 1px solid var(--mds-control-line);
   border-radius: 11px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--mds-surface-2);
   text-align: left;
   cursor: pointer;
   transition: border-color 160ms ease, background 160ms ease;
 }
 .mds-navpanel-trip:hover {
-  border-color: var(--mds-line-strong);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--mds-control-line);
+  background: var(--mds-surface-2);
 }
 .mds-navpanel-trip-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.mds-navpanel-trip-main strong { color: #f0f5fa; font-size: calc(13.5px * var(--mds-fs)); }
-.mds-navpanel-trip-main small { color: var(--mds-on-surface-faint); font-size: calc(11.5px * var(--mds-fs)); }
+.mds-navpanel-trip-main strong { color: var(--mds-label); font-size: calc(13.5px * var(--mds-fs)); }
+.mds-navpanel-trip-main small { color: var(--mds-label-3); font-size: calc(11.5px * var(--mds-fs)); }
 .mds-navpanel-trip-meta { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-.mds-navpanel-trip-meta b { color: var(--mds-on-surface); font-size: calc(13px * var(--mds-fs)); }
-.mds-navpanel-trip-meta span { color: var(--mds-blue); font-size: calc(11px * var(--mds-fs)); }
+.mds-navpanel-trip-meta b { color: var(--mds-label); font-size: calc(13px * var(--mds-fs)); }
+.mds-navpanel-trip-meta span { color: var(--mds-label-2); font-size: calc(11px * var(--mds-fs)); }
 .mds-navpanel-saved-dot {
   width: 7px; height: 7px; border-radius: 50%;
   background: var(--mds-blue);
@@ -4182,10 +3600,10 @@
   width: 100%;
   padding: 10px 12px;
   margin-bottom: 6px;
-  border: 1px solid var(--mds-line);
+  border: 1px solid var(--mds-control-line);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  color: #e8eef4;
+  background: var(--mds-surface-2);
+  color: var(--mds-label);
   font-size: calc(13px * var(--mds-fs));
   line-height: 1.4;
   text-align: left;
@@ -4193,8 +3611,8 @@
   transition: border-color 160ms ease, background 160ms ease;
 }
 .mds-navpanel-prompt:hover {
-  border-color: rgb(var(--mds-blue-rgb) / 0.4);
-  background: rgb(var(--mds-blue-rgb) / 0.07);
+  border-color: var(--mds-blue);
+  background: var(--mds-blue-fill);
 }
 
 /* Profile */
@@ -4204,10 +3622,10 @@
   gap: 12px;
   padding-bottom: 14px;
   margin-bottom: 14px;
-  border-bottom: 1px solid var(--mds-line);
+  border-bottom: 1px solid var(--mds-separator);
 }
-.mds-navpanel-profile-head strong { display: block; color: var(--mds-on-surface); font-size: calc(15px * var(--mds-fs)); }
-.mds-navpanel-profile-head small { color: var(--mds-on-surface-faint); font-size: calc(11.5px * var(--mds-fs)); }
+.mds-navpanel-profile-head strong { display: block; color: var(--mds-label); font-size: calc(15px * var(--mds-fs)); }
+.mds-navpanel-profile-head small { color: var(--mds-label-3); font-size: calc(11.5px * var(--mds-fs)); }
 
 .mds-navpanel-stats {
   display: grid;
@@ -4222,12 +3640,12 @@
   padding: 10px;
   border: 0;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--mds-surface-2);
   text-align: center;
 }
-.mds-navpanel-stats b { color: var(--mds-on-surface); font-size: calc(15px * var(--mds-fs)); }
+.mds-navpanel-stats b { color: var(--mds-label); font-size: calc(15px * var(--mds-fs)); }
 .mds-navpanel-stats span {
-  color: var(--mds-on-surface-faint);
+  color: var(--mds-label-3);
   font-size: calc(10.5px * var(--mds-fs));
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -4239,11 +3657,11 @@
   justify-content: space-between;
   gap: 12px;
   padding: 8px 0;
-  border-bottom: 1px solid var(--mds-line);
+  border-bottom: 1px solid var(--mds-separator);
 }
 .mds-navpanel-fact:last-child { border-bottom: 0; }
-.mds-navpanel-fact span { color: rgba(255, 255, 255, 0.5); font-size: calc(12px * var(--mds-fs)); }
-.mds-navpanel-fact b { color: #f0f5fa; font-size: calc(12.5px * var(--mds-fs)); text-align: right; }
+.mds-navpanel-fact span { color: var(--mds-label-3); font-size: calc(12px * var(--mds-fs)); }
+.mds-navpanel-fact b { color: var(--mds-label); font-size: calc(12.5px * var(--mds-fs)); text-align: right; }
 
 /* Messages transcript */
 .mds-navpanel-msg {
@@ -4253,18 +3671,18 @@
   padding: 9px 11px;
   margin-bottom: 6px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--mds-surface-2);
 }
-.mds-navpanel-msg.is-user { background: rgba(36, 69, 112, 0.32); }
+.mds-navpanel-msg.is-user { background: var(--mds-blue-fill); }
 .mds-navpanel-msg-role {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--mds-label-3);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .mds-navpanel-msg-text {
-  color: #e8eef4;
+  color: var(--mds-label);
   font-size: calc(12.5px * var(--mds-fs));
   line-height: 1.45;
   display: -webkit-box;
@@ -4275,32 +3693,32 @@
 
 /* Production shell: stable laptop/mobile geometry and product dialogs. */
 .mds-root * { letter-spacing: 0; }
-.mds-surface-switch { display:flex; gap:3px; align-self:flex-start; padding:3px; border:1px solid var(--mds-line-strong); border-radius:8px; background:var(--mds-fill-2); }
-.mds-surface-switch button { min-height:32px; padding:0 13px; border:0; border-radius:6px; color:var(--mds-muted); background:transparent; font-weight:700; }
-.mds-surface-switch button.is-active { color:var(--mds-on-surface); background:var(--mds-card); }
-.mds-toast { position:fixed; left:50%; bottom:24px; z-index:100; transform:translateX(-50%); padding:11px 16px; border:0; border-radius:8px; color:var(--mds-on-surface); background:var(--mds-shell-elevated); box-shadow:var(--mds-shadow-float); }
-.mds-modal-backdrop { position:fixed; inset:0; z-index:90; display:grid; place-items:center; padding:24px; background:rgba(9, 7, 4, .72); }
-.mds-trip-modal,.mds-compare-modal { position:relative; width:min(1040px,100%); max-height:min(860px,calc(100dvh - 48px)); overflow:auto; border:0; border-radius:8px; color:var(--mds-ink); background:var(--mds-shell-elevated); }
+.mds-surface-switch { display:flex; gap:3px; align-self:flex-start; padding:3px; border:1px solid var(--mds-control-line); border-radius:8px; background:var(--mds-surface-2); }
+.mds-surface-switch button { min-height:32px; padding:0 13px; border:0; border-radius:6px; color:var(--mds-label-2); background:transparent; font-weight:700; }
+.mds-surface-switch button.is-active { color:var(--mds-label); background:var(--mds-surface); }
+.mds-toast { position:fixed; left:50%; bottom:24px; z-index:100; transform:translateX(-50%); padding:11px 16px; border:0; border-radius:8px; color:var(--mds-label); background:var(--mds-surface-2); box-shadow:var(--mds-shadow-float); }
+.mds-modal-backdrop { position:fixed; inset:0; z-index:90; display:grid; place-items:center; padding:24px; background:var(--mds-scrim); }
+.mds-trip-modal,.mds-compare-modal { position:relative; width:min(1040px,100%); max-height:min(860px,calc(100dvh - 48px)); overflow:auto; border:0; border-radius:8px; color:var(--mds-label); background:var(--mds-surface); }
 .mds-trip-modal { display:grid; grid-template-columns:minmax(300px,.9fr) minmax(420px,1.1fr); }
 .mds-trip-modal-visual { position:relative; min-height:620px; }
 .mds-trip-modal-visual .mds-trip-visual { height:100%; }
-.mds-trip-modal-visual>span { position:absolute; left:0; right:0; bottom:0; padding:48px 20px 20px; color:#fff; font-weight:700; background:var(--mds-image-scrim); }
+.mds-trip-modal-visual>span { position:absolute; left:0; right:0; bottom:0; padding:48px 20px 20px; color:var(--mds-label); font-weight:700; background:var(--mds-image-scrim); }
 .mds-trip-modal-body { display:grid; align-content:start; gap:18px; padding:34px; }
-.mds-trip-modal-body h2,.mds-compare-modal h2 { margin:5px 0 8px; font-size:30px; color:var(--mds-on-surface); }
-.mds-trip-modal-body p,.mds-trip-section { color:var(--mds-on-surface-soft); line-height:1.55; }
-.mds-modal-close { position:absolute; top:14px; right:14px; z-index:2; width:36px; height:36px; display:grid; place-items:center; border:1px solid var(--mds-line-strong); border-radius:50%; color:var(--mds-on-surface); background:var(--mds-card); }
-.mds-trip-facts { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--mds-line); }
-.mds-trip-facts div { padding:12px; background:var(--mds-card); }
+.mds-trip-modal-body h2,.mds-compare-modal h2 { margin:5px 0 8px; font-size:30px; color:var(--mds-label); }
+.mds-trip-modal-body p,.mds-trip-section { color:var(--mds-label-2); line-height:1.55; }
+.mds-modal-close { position:absolute; top:14px; right:14px; z-index:2; width:36px; height:36px; display:grid; place-items:center; border:1px solid var(--mds-control-line); border-radius:50%; color:var(--mds-label); background:var(--mds-surface); }
+.mds-trip-facts { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--mds-separator); }
+.mds-trip-facts div { padding:12px; background:var(--mds-surface); }
 .mds-trip-facts span,.mds-trip-facts b { display:block; margin:0; }
-.mds-trip-facts span { color:var(--mds-muted); font-size:calc(12px * var(--mds-fs)); }
+.mds-trip-facts span { color:var(--mds-label-2); font-size:calc(12px * var(--mds-fs)); }
 .mds-trip-section ul,.mds-compare-copy ul { display:grid; gap:8px; margin-top:10px; padding-left:18px; }
 .mds-availability-list { display:flex; flex-wrap:wrap; gap:8px; }.mds-availability-list span { padding:9px; border:0; border-radius:6px; }.mds-availability-list b { display:block; }
-.mds-trip-disclosure,.mds-hold-receipt { display:flex; gap:9px; padding:12px; border:0; border-radius:6px; background:var(--mds-fill-1); }
+.mds-trip-disclosure,.mds-hold-receipt { display:flex; gap:9px; padding:12px; border:0; border-radius:6px; background:var(--mds-surface-2); }
 .mds-hold-receipt { flex-direction:column; }
 .mds-trip-modal-actions { display:flex; gap:8px; flex-wrap:wrap; }
-.mds-trip-modal-actions button,.mds-compare-copy button { min-height:40px; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:0 14px; border:1px solid var(--mds-line-strong); border-radius:6px; color:var(--mds-on-surface); background:var(--mds-card); font-weight:700; }
-.mds-trip-modal-actions .is-primary,.mds-compare-copy .is-primary { color:#ffffff; background:var(--mds-blue); margin-left:auto; }
-.mds-compare-modal { padding:26px; }.mds-compare-modal>header { display:flex; justify-content:space-between; }.mds-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.mds-compare-grid article { position:relative; overflow:hidden; border:0; border-radius:8px; background:var(--mds-card); }.mds-compare-copy { display:grid; gap:12px; padding:16px; }.mds-compare-copy dl { display:grid; gap:6px; }.mds-compare-copy dl div { display:flex; justify-content:space-between; }.mds-compare-remove { position:absolute; top:8px; right:8px; z-index:2; width:30px; height:30px; border:0; border-radius:50%; }
+.mds-trip-modal-actions button,.mds-compare-copy button { min-height:40px; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:0 14px; border:1px solid var(--mds-control-line); border-radius:6px; color:var(--mds-label); background:var(--mds-surface); font-weight:700; }
+.mds-trip-modal-actions .is-primary,.mds-compare-copy .is-primary { color:var(--mds-on-action); background:var(--mds-action); margin-left:auto; }
+.mds-compare-modal { padding:26px; }.mds-compare-modal>header { display:flex; justify-content:space-between; }.mds-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.mds-compare-grid article { position:relative; overflow:hidden; border:0; border-radius:8px; background:var(--mds-surface-2); }.mds-compare-copy { display:grid; gap:12px; padding:16px; }.mds-compare-copy dl { display:grid; gap:6px; }.mds-compare-copy dl div { display:flex; justify-content:space-between; }.mds-compare-remove { position:absolute; top:8px; right:8px; z-index:2; width:30px; height:30px; border:0; border-radius:50%; }
 
 /* Enter-only, mirroring the Radix drawers (mds-sheet-*): close stays instant
    because these modals unmount conditionally with no exit phase to hook. */
@@ -4321,8 +3739,8 @@
   }
 }
 
-.mds-drawer-row input { width:100%; margin:5px 0; padding:8px; border:1px solid var(--mds-blue-line); border-radius:6px; color:var(--mds-on-surface); background:var(--mds-card); }
-.mds-memory-disclosure { margin:0 0 16px; color:var(--mds-on-surface-soft); font-size:13px; line-height:1.5; }
+.mds-drawer-row input { width:100%; margin:5px 0; padding:8px; border:1px solid var(--mds-control-line); border-radius:6px; color:var(--mds-label); background:var(--mds-surface); }
+.mds-memory-disclosure { margin:0 0 16px; color:var(--mds-label-2); font-size:13px; line-height:1.5; }
 
 @media (max-width:1450px) {
   .mds-desktop-app { --mds-right-rail:340px; grid-template-columns:210px minmax(0,1fr) var(--mds-right-rail); }
@@ -4372,17 +3790,17 @@
   font-size: calc(12px * var(--mds-fs));
   font-weight: 600;
   cursor: pointer;
-  border: 1px solid rgba(255, 129, 95, 0.3);
+  border: 1px solid var(--mds-red);
   background: transparent;
-  color: #ffd1c2;
+  color: var(--mds-red);
   transition: background 160ms ease;
 }
 .mds-error-retry {
-  border-color: rgba(255, 129, 95, 0.55);
-  background: rgba(255, 129, 95, 0.16);
+  border-color: var(--mds-red);
+  background: var(--mds-red-fill);
 }
-.mds-error-retry:hover:not(:disabled) { background: rgba(255, 129, 95, 0.26); }
-.mds-error-dismiss:hover { background: rgba(255, 255, 255, 0.06); }
+.mds-error-retry:hover:not(:disabled) { background: var(--mds-red-fill); }
+.mds-error-dismiss:hover { background: var(--mds-surface-2); }
 .mds-error-retry:disabled { opacity: 0.5; cursor: default; }
 
 /* ============================================================
@@ -4397,17 +3815,17 @@
 }
 
 .mds-empty-title {
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(17px * var(--mds-fs));
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 .mds-empty-sub {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--mds-label-3);
   font-size: calc(13.5px * var(--mds-fs));
   line-height: 1.5;
 }
-.mds-empty-sub b { color: var(--mds-blue); font-weight: 600; }
+.mds-empty-sub b { color: var(--mds-label); font-weight: 600; }
 
 /* ============================================================================
    FEATURE 4 — Phase 4 "writeback you can watch"
@@ -4417,7 +3835,7 @@
    button; margin-right:auto keeps "Memory" pinned to the right edge.
    ========================================================================== */
 /* Scoped under .mds-panel-head to beat `.mds-panel-head span` (0-2-0),
-   which would otherwise force the badge cyan + transparent. */
+   which would otherwise force the badge's text color and a transparent fill. */
 .mds-panel-head .mds-writeback-badge {
   display: inline-flex;
   align-items: center;
@@ -4431,7 +3849,7 @@
   letter-spacing: 0;
   white-space: nowrap;
   color: var(--mds-green);
-  background: var(--mds-fill-2);
+  background: var(--mds-surface-2);
   border: 0;
 }
 .mds-panel-head .mds-writeback-dot {
@@ -4450,9 +3868,7 @@
 /* ============================================================================
    FEATURE 1 — Phase 3 reranker reorder
    Controls above the trip grid (caption + replay button) and the per-card
-   rank-delta badge. The badge sits INSIDE the white match pill (which is
-   intentionally theme-agnostic — always white over imagery), so its colors
-   are fixed to read on white rather than following the light/dark tokens.
+   rank-delta badge. The badge sits inside the match pill over the photo.
    ========================================================================== */
 .mds-rerank-controls {
   display: flex;
@@ -4465,7 +3881,7 @@
   font-size: calc(11px * var(--mds-fs));
   font-weight: 600;
   letter-spacing: 0.01em;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
 }
 .mds-rerank-replay {
   flex: none;
@@ -4474,8 +3890,8 @@
   font-size: calc(11px * var(--mds-fs));
   font-weight: 600;
   color: var(--mds-blue);
-  background: var(--mds-blue-soft);
-  border: 1px solid var(--mds-blue-line);
+  background: var(--mds-blue-fill);
+  border: 1px solid var(--mds-blue);
   cursor: pointer;
   transition: background 150ms ease, transform 150ms ease;
 }
@@ -4484,29 +3900,28 @@
   background: color-mix(in srgb, var(--mds-blue) 18%, transparent);
 }
 
-/* Rank-delta pill inside the white match badge: green=promoted,
-   amber=demoted, grey=unchanged. Fixed colors (reads on the white pill in
-   both themes). */
+/* Rank-delta pill inside the match badge: green=promoted, yellow=demoted,
+   grey=unchanged. */
 .mds-rerank-badge {
   display: inline-flex;
   align-items: center;
   gap: 1px;
   margin-left: 5px;
   padding-left: 5px;
-  border-left: 1px solid rgba(28, 24, 19, 0.18);
+  border-left: 1px solid var(--mds-separator);
   font-size: calc(9.5px * var(--mds-fs));
   font-weight: 800;
   letter-spacing: 0;
   line-height: 1;
 }
 .mds-rerank-badge.is-up {
-  color: #15803d;
+  color: var(--mds-green);
 }
 .mds-rerank-badge.is-down {
-  color: #9a6700;
+  color: var(--mds-yellow);
 }
 .mds-rerank-badge.is-flat {
-  color: #64748b;
+  color: var(--mds-label-3);
 }
 
 /* ============================================================================
@@ -4521,17 +3936,17 @@
   padding: 10px;
   border-radius: 10px;
   background:
-    var(--mds-fill-2);
+    var(--mds-surface-2);
   border: 0;
 }
 .mds-wfgraph.is-unmatched {
-  background: color-mix(in srgb, var(--mds-yellow) 8%, var(--mds-fill-2));
+  background: color-mix(in srgb, var(--mds-yellow) 8%, var(--mds-surface-2));
 }
 .mds-wfgraph-empty {
   margin: 2px 0 0;
   font-size: calc(12px * var(--mds-fs));
   line-height: 1.4;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
 }
 .mds-wfgraph-head {
   display: flex;
@@ -4547,7 +3962,7 @@
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
 }
 .mds-wfgraph-intent {
   flex: 0 0 auto;
@@ -4558,8 +3973,8 @@
   font-weight: 800;
   padding: 3px 8px;
   border-radius: 999px;
-  color: var(--mds-blue);
-  background: var(--mds-blue-soft);
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
   border: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4575,15 +3990,15 @@
   margin-right: 2px;
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 750;
-  color: var(--mds-on-surface-faint);
+  color: var(--mds-label-3);
 }
 .mds-wfgraph-branches b {
   flex: 0 0 auto;
   padding: 3px 6px;
   border-radius: 999px;
   border: 0;
-  background: var(--mds-fill-2);
-  color: var(--mds-on-surface-soft);
+  background: var(--mds-surface-2);
+  color: var(--mds-label-2);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 800;
   letter-spacing: 0;
@@ -4600,7 +4015,7 @@
   opacity: 0.45;
 }
 .mds-wfgraph-branches b.is-active {
-  background: var(--mds-blue-soft);
+  background: var(--mds-blue-fill);
   color: var(--mds-blue);
 }
 .mds-wfgraph-route-summary {
@@ -4613,23 +4028,23 @@
 .mds-wfgraph-route-summary i {
   content: "";
   height: 1px;
-  background: var(--mds-blue);
+  background: var(--mds-label-2);
 }
 .mds-wfgraph-route-summary span,
 .mds-wfgraph-route-summary b {
   padding: 3px 6px;
   border-radius: 999px;
   border: 0;
-  background: var(--mds-fill-1);
-  color: var(--mds-on-surface-soft);
+  background: var(--mds-surface-2);
+  color: var(--mds-label-2);
   font-family: var(--mds-font-mono);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 850;
   line-height: 1;
 }
 .mds-wfgraph-route-summary span.is-lit {
-  border-color: var(--mds-blue-line);
-  background: var(--mds-blue-soft);
+  border-color: var(--mds-blue);
+  background: var(--mds-blue-fill);
   color: var(--mds-blue);
 }
 .mds-wfgraph-route {
@@ -4646,7 +4061,7 @@
   left: 21px;
   width: 2px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--mds-blue) 34%, var(--mds-line));
+  background: color-mix(in srgb, var(--mds-blue) 34%, var(--mds-separator));
 }
 .mds-wfgraph-route-row {
   display: block;
@@ -4660,18 +4075,18 @@
   padding: 6px 8px;
   border-radius: 9px;
   border: 1px solid transparent;
-  background: var(--mds-fill-2);
-  color: var(--mds-on-surface-faint);
+  background: var(--mds-surface-2);
+  color: var(--mds-label-3);
   transition: border-color 280ms ease, color 280ms ease, box-shadow 280ms ease;
 }
 /* The pop plays when a node settles into "visited" - including the moment
    is-current moves on, since dropping that class re-resolves `animation`
    to this rule and restarts it. That is the per-node arrival cue. */
 .mds-wfgraph-route-node.is-visited {
-  border-color: var(--mds-blue-line);
+  border-color: var(--mds-blue);
   background:
-    var(--mds-fill-2);
-  color: var(--mds-on-surface);
+    var(--mds-surface-2);
+  color: var(--mds-label);
   animation: mds-wfgraph-arrive 340ms cubic-bezier(0.34, 1.45, 0.64, 1);
 }
 @keyframes mds-wfgraph-arrive {
@@ -4685,7 +4100,7 @@
   animation: none;
 }
 .mds-wfgraph-route-node.is-next {
-  border-color: rgb(var(--mds-recovery-yellow-rgb) / 0.72);
+  border-color: var(--mds-yellow);
   border-style: dashed;
 }
 .mds-wfgraph-route-step {
@@ -4696,8 +4111,8 @@
   width: 28px;
   height: 28px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--mds-on-surface-faint) 18%, transparent);
-  color: var(--mds-on-surface-soft);
+  background: color-mix(in srgb, var(--mds-label-3) 18%, transparent);
+  color: var(--mds-label-2);
   font-family: var(--mds-font-mono);
   font-size: calc(12.5px * var(--mds-fs));
   font-weight: 900;
@@ -4705,7 +4120,7 @@
 }
 .mds-wfgraph-route-node.is-visited .mds-wfgraph-route-step {
   background: var(--mds-green);
-  color: #03120d;
+  color: var(--mds-ground);
 }
 .mds-wfgraph-route-step {
   transition: background-color 280ms ease, color 280ms ease;
@@ -4736,7 +4151,7 @@
 .mds-wfgraph-route-meta em {
   min-width: 0;
   overflow: hidden;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   font-family: var(--mds-font-mono);
   font-size: calc(11.5px * var(--mds-fs));
   font-style: normal;
@@ -4749,8 +4164,8 @@
   padding: 2px 6px;
   border-radius: 999px;
   border: 0;
-  background: rgb(var(--mds-recovery-yellow-rgb) / 0.16);
-  color: var(--mds-yellow);
+  background: var(--mds-cyan-fill);
+  color: var(--mds-cyan);
   font-family: var(--mds-font-mono);
   font-size: calc(10px * var(--mds-fs));
   font-weight: 850;
@@ -4765,8 +4180,8 @@
   min-width: 0;
   margin-top: 7px;
   padding-top: 7px;
-  border-top: 1px solid var(--mds-line);
-  color: var(--mds-on-surface-soft);
+  border-top: 1px solid var(--mds-separator);
+  color: var(--mds-label-2);
   font-family: var(--mds-font-mono);
   font-size: calc(10.5px * var(--mds-fs));
   font-weight: 760;
@@ -4779,7 +4194,7 @@
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: var(--mds-yellow);
+  background: var(--mds-cyan);
 }
 @media (prefers-reduced-motion: reduce) {
   .mds-wfgraph-route-ckpt,
@@ -4795,7 +4210,7 @@
 
 /* ============================================================================
    FEATURE 2 — Phase 4 "prove RLS is live" probe panel
-   Scoped vs unscoped row counts as an animated bar (the cyan scoped bar
+   Scoped vs unscoped row counts as an animated bar (the green scoped bar
    shrinks from the full unscoped width), plus the real CREATE POLICY USING
    clause. Token-driven for both themes.
    ========================================================================== */
@@ -4815,7 +4230,7 @@
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--mds-on-surface-faint);
+  color: var(--mds-label-3);
 }
 .mds-rls-run {
   width: 32px;
@@ -4825,8 +4240,8 @@
   padding: 0;
   border-radius: 8px;
   color: var(--mds-blue);
-  background: var(--mds-blue-soft);
-  border: 1px solid var(--mds-blue-line);
+  background: var(--mds-blue-fill);
+  border: 1px solid var(--mds-blue);
   cursor: pointer;
 }
 .mds-rls-run:disabled {
@@ -4861,7 +4276,7 @@
   padding: 10px;
   border: 0;
   border-radius: 8px;
-  background: var(--mds-fill-1);
+  background: var(--mds-surface-2);
 }
 .mds-authz-icon {
   width: 24px;
@@ -4869,16 +4284,16 @@
   display: grid;
   place-items: center;
   border-radius: 7px;
-  color: var(--mds-blue);
-  background: var(--mds-blue-soft);
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
 }
 .mds-authz-step.is-allow .mds-authz-icon {
   color: var(--mds-green);
-  background: color-mix(in srgb, var(--mds-green) 12%, transparent);
+  background: var(--mds-green-fill);
 }
 .mds-authz-step.is-deny .mds-authz-icon {
-  color: var(--mds-danger);
-  background: color-mix(in srgb, var(--mds-danger) 12%, transparent);
+  color: var(--mds-red);
+  background: var(--mds-red-fill);
 }
 .mds-authz-step small,
 .mds-authz-step strong,
@@ -4888,7 +4303,7 @@
 }
 .mds-authz-step small {
   margin-bottom: 3px;
-  color: var(--mds-on-surface-faint);
+  color: var(--mds-label-3);
   font-size: calc(11.5px * var(--mds-fs));
   font-weight: 700;
   text-transform: uppercase;
@@ -4897,7 +4312,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(13px * var(--mds-fs));
   line-height: 1.35;
 }
@@ -4910,17 +4325,17 @@
   letter-spacing: 0.06em;
 }
 .mds-authz-decision.is-allow {
-  color: #04140c;
+  color: var(--mds-ground);
   background: var(--mds-green);
 }
 .mds-authz-decision.is-deny {
-  color: #1a0505;
-  background: var(--mds-danger);
+  color: var(--mds-ground);
+  background: var(--mds-red);
 }
 .mds-authz-step code {
   margin-top: 3px;
   overflow: hidden;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   font-family: var(--mds-font-mono);
   font-size: calc(11px * var(--mds-fs));
   text-overflow: ellipsis;
@@ -4931,7 +4346,7 @@
   align-items: center;
   gap: 6px;
   padding-top: 2px;
-  color: var(--mds-on-surface-faint);
+  color: var(--mds-label-3);
   font-size: calc(11px * var(--mds-fs));
   font-weight: 700;
   text-transform: uppercase;
@@ -4956,7 +4371,7 @@
   overflow: hidden;
   font-family: var(--mds-font-mono);
   font-size: calc(12px * var(--mds-fs));
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -4966,66 +4381,66 @@
   align-items: baseline;
   gap: 6px;
   font-size: calc(11.5px * var(--mds-fs));
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
 }
 .mds-rls-count-scoped {
   font-size: calc(26px * var(--mds-fs));
   font-weight: 800;
   line-height: 1;
-  color: var(--mds-blue);
+  color: var(--mds-green);
   font-variant-numeric: tabular-nums;
 }
 .mds-rls-count-arrow {
   font-size: calc(14px * var(--mds-fs));
-  color: var(--mds-on-surface-faint);
+  color: var(--mds-label-3);
 }
 .mds-rls-count-unscoped {
   font-size: calc(15px * var(--mds-fs));
-  color: var(--mds-on-surface-faint);
+  color: var(--mds-label-3);
   text-decoration-thickness: 1.5px;
   font-variant-numeric: tabular-nums;
 }
 .mds-rls-count-unit {
   font-size: calc(11px * var(--mds-fs));
-  color: var(--mds-on-surface-faint);
+  color: var(--mds-label-3);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 .mds-rls-err {
   font-size: calc(11px * var(--mds-fs));
-  color: var(--mds-danger);
+  color: var(--mds-red);
 }
 
 /* The full track = unscoped (all rows). The red ghost fills the whole track as
-   the "before" state; the blue bar animates down over it to the scoped count,
+   the "before" state; the green bar animates down over it to the scoped count,
    so the audience literally watches the red (RLS-hidden) rows get revealed.
-   The blue bar stays full-width and slides left via transform (compositor
+   The green bar stays full-width and slides left via transform (compositor
    thread, no layout) while the track's overflow clips it to the scoped span. */
 .mds-rls-bar {
   position: relative;
   height: 14px;
   border-radius: 999px;
-  background: var(--mds-fill-2);
+  background: var(--mds-surface-2);
   overflow: hidden;
 }
 .mds-rls-bar-ghost {
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--mds-danger) 22%, transparent);
+  background: color-mix(in srgb, var(--mds-red) 22%, transparent);
 }
 .mds-rls-bar-scoped {
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: var(--mds-blue);
+  background: var(--mds-green);
 }
 .mds-rls-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
   font-size: calc(11px * var(--mds-fs));
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
 }
 .mds-rls-legend span {
   display: inline-flex;
@@ -5038,10 +4453,10 @@
   border-radius: 999px;
 }
 .mds-rls-dot.is-scoped {
-  background: var(--mds-blue);
+  background: var(--mds-green);
 }
 .mds-rls-dot.is-hidden {
-  background: color-mix(in srgb, var(--mds-danger) 45%, transparent);
+  background: color-mix(in srgb, var(--mds-red) 45%, transparent);
 }
 
 .mds-rls-policies {
@@ -5049,20 +4464,20 @@
   flex-direction: column;
   gap: 8px;
   padding-top: 8px;
-  border-top: 1px solid var(--mds-line);
+  border-top: 1px solid var(--mds-separator);
 }
 .mds-rls-policies-title {
   font-size: calc(11px * var(--mds-fs));
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--mds-on-surface-faint);
+  color: var(--mds-label-3);
 }
 .mds-rls-policy small {
   display: block;
   font-size: calc(11px * var(--mds-fs));
   font-weight: 600;
-  color: var(--mds-blue);
+  color: var(--mds-label-2);
   margin-bottom: 2px;
 }
 .mds-rls-policy pre {
@@ -5071,12 +4486,12 @@
   margin: 0 0 6px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: var(--mds-fill-1);
+  background: var(--mds-surface-2);
   border: 0;
   font-family: var(--mds-font-mono);
   font-size: calc(11px * var(--mds-fs));
   line-height: 1.5;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   word-break: break-word;
@@ -5089,7 +4504,7 @@
    ========================================================================== */
 .mds-thinking-ticker {
   display: inline-block;
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   animation: mds-ticker-fade 320ms ease;
 }
 @keyframes mds-ticker-fade {
@@ -5143,14 +4558,14 @@
 }
 
 /* Booking confirmation inside the trip drawer: the traveler's decision, restated in full. */
-.mds-trip-confirm { display:grid; gap:14px; padding:18px; border:0; border-radius:8px; background:var(--mds-fill-1); }
-.mds-trip-confirm header { display:flex; align-items:center; gap:10px; color:var(--mds-on-surface); }
-.mds-trip-confirm h3 { margin:0; font-size:calc(17px * var(--mds-fs)); color:var(--mds-on-surface); }
+.mds-trip-confirm { display:grid; gap:14px; padding:18px; border:0; border-radius:8px; background:var(--mds-surface-2); }
+.mds-trip-confirm header { display:flex; align-items:center; gap:10px; color:var(--mds-label); }
+.mds-trip-confirm h3 { margin:0; font-size:calc(17px * var(--mds-fs)); color:var(--mds-label); }
 .mds-trip-confirm dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px 16px; margin:0; }
-.mds-trip-confirm dt { color:var(--mds-muted); font-size:calc(12px * var(--mds-fs)); }
-.mds-trip-confirm dd { margin:2px 0 0; color:var(--mds-on-surface); font-weight:600; overflow-wrap:anywhere; }
-.mds-trip-confirm p { margin:0; color:var(--mds-on-surface-soft); line-height:1.5; }
+.mds-trip-confirm dt { color:var(--mds-label-2); font-size:calc(12px * var(--mds-fs)); }
+.mds-trip-confirm dd { margin:2px 0 0; color:var(--mds-label); font-weight:600; overflow-wrap:anywhere; }
+.mds-trip-confirm p { margin:0; color:var(--mds-label-2); line-height:1.5; }
 .mds-trip-confirm .mds-trip-modal-actions { justify-content:flex-end; }
 @media (max-width:600px) { .mds-trip-confirm dl { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 
-.mds-trip-confirm .mc-budget-basis { display:block; margin-top:3px; color:var(--mds-muted); font-weight:500; font-size:0.92em; }
+.mds-trip-confirm .mc-budget-basis { display:block; margin-top:3px; color:var(--mds-label-2); font-weight:500; font-size:0.92em; }

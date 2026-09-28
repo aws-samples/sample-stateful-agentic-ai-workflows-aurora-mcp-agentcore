@@ -33,7 +33,7 @@
 
 .mds-recovery-workspace .mds-decision-card {
   border-radius: 8px;
-  background: var(--mds-experience-panel);
+  background: var(--mds-surface);
 }
 
 .mds-recovery-workspace .mds-decision-card-head {
@@ -62,14 +62,6 @@
   border-left-width: 1px;
 }
 
-.mds-recovery-workspace .mds-recommended-plan-card.is-checkpointed {
-  border-color: rgb(var(--mds-teal-rgb) / 0.34);
-}
-
-.mds-recovery-workspace .mds-recommended-plan-card.is-ready {
-  border-color: rgb(var(--mds-recovery-green-rgb) / 0.34);
-}
-
 .mds-recovery-workspace .mds-recommended-plan-media {
   height: 142px;
   margin: 8px 16px 0;
@@ -82,7 +74,7 @@
   min-height: 24px;
   padding: 0 8px;
   border-radius: 5px;
-  background: rgba(20, 16, 12, 0.82);
+  background: var(--mds-surface);
   font-size: calc(9px * var(--mds-fs));
 }
 
@@ -92,7 +84,7 @@
 }
 
 .mds-recovery-workspace .mds-recommended-plan-title small {
-  color: #8acbff;
+  color: var(--mds-label-2);
   font-size: calc(10px * var(--mds-fs));
   letter-spacing: 0;
   text-transform: none;
@@ -120,11 +112,11 @@
 }
 
 .mds-recovery-workspace .mds-decision-route-line i {
-  background: rgb(var(--mds-blue-rgb) / 0.42);
+  background: var(--mds-separator);
 }
 
 .mds-recovery-workspace .mds-decision-route-line i:last-child {
-  background: rgb(var(--mds-blue-rgb) / 0.42);
+  background: var(--mds-label-3);
 }
 
 .mds-recovery-workspace .mds-recommended-plan-signals {
@@ -143,7 +135,7 @@
 .mds-recovery-workspace
   .mds-recommended-plan-signals
   > span.is-verified {
-  background: rgb(var(--mds-recovery-green-rgb) / 0.06);
+  background: var(--mds-green-fill);
 }
 
 .mds-recovery-workspace .mds-decision-preference-row {
@@ -176,13 +168,13 @@
 }
 
 .mds-recovery-workspace .mds-recovery-context-reasons > header em {
-  color: var(--mds-muted);
+  color: var(--mds-label-2);
   letter-spacing: 0;
   text-transform: none;
 }
 
 .mds-recovery-workspace .mds-recovery-context-reasons > header svg {
-  color: var(--mds-blue);
+  color: var(--mds-label-2);
 }
 
 .mds-recovery-workspace .mds-recovery-context-reasons ul {
@@ -195,7 +187,7 @@
   align-items: center;
   padding: 7px 2px;
   border: 0;
-  border-top: 1px solid var(--mds-experience-border);
+  border-top: 1px solid var(--mds-separator);
   border-radius: 0;
   background: transparent;
 }
@@ -218,29 +210,11 @@
   white-space: nowrap;
 }
 
-/* Inside the recovery workspace --mds-blue resolves to the pale text accent
-   (--mc-accent), so filling a button with it and writing white on top leaves
-   white on near-white. Filled actions take the action blue explicitly, the same
-   token every other surface fills with. */
 .mds-recovery-workspace .mds-decision-card-actions .is-primary {
   min-width: 168px;
-  border-color: var(--mc-action);
-  color: var(--mc-on-action);
-  background: var(--mc-action);
-  box-shadow: none;
-}
-
-.mds-recovery-workspace
-  .mds-recommended-plan-card.is-checkpointed
-  .mds-decision-card-actions
-  .is-primary,
-.mds-recovery-workspace
-  .mds-recommended-plan-card.is-ready
-  .mds-decision-card-actions
-  .is-primary {
-  border-color: var(--mc-action);
-  color: var(--mc-on-action);
-  background: var(--mc-action);
+  border-color: var(--mds-action);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
   box-shadow: none;
 }
 
@@ -249,7 +223,7 @@
 }
 
 .mds-recovery-workspace .mds-recovery-alternatives-head b {
-  color: var(--mds-on-surface);
+  color: var(--mds-label);
   font-size: calc(13px * var(--mds-fs));
 }
 
@@ -276,8 +250,8 @@
   min-height: 24px;
   padding: 0 8px;
   border-radius: 5px;
-  color: #9bc9ff;
-  background: rgb(var(--mds-blue-rgb) / 0.06);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
   font-size: calc(9px * var(--mds-fs));
 }
 
@@ -286,9 +260,8 @@
   > :nth-child(n)
   > header
   > span {
-  border-color: rgb(var(--mds-blue-rgb) / 0.32);
-  color: #9bc9ff;
-  background: rgb(var(--mds-blue-rgb) / 0.06);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
 }
 
 .mds-recovery-workspace .mds-flight-option-card > header > small {
@@ -361,9 +334,9 @@
 .mds-recovery-workspace
   .mds-concierge-assistance-actions
   button.is-primary {
-  border-color: var(--mc-action);
-  color: var(--mc-on-action);
-  background: var(--mc-action);
+  border-color: var(--mds-action);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
   box-shadow: none;
 }
 
@@ -379,26 +352,8 @@
   border-radius: 5px;
 }
 
-.mds-root[data-theme="light"]
-  .mds-recovery-workspace
-  .mds-decision-card {
-  background: #ffffff;
-}
-
-.mds-root[data-theme="light"]
-  .mds-recovery-workspace
-  .mds-recovery-context-reasons
-  li {
-  border-color: #e4e1da;
-  background: transparent;
-}
-
-/* Status text needs the daylight tokens too, including restored journeys. */
-.mds-root[data-theme="light"] .mds-recovery-overview-meta strong {
-  color: var(--mds-yellow);
-}
-
-.mds-root[data-theme="light"] .mds-recovery-workspace :is(
+/* Status text, including restored journeys. */
+.mds-root .mds-recovery-workspace :is(
   .mds-recovery-overview.is-ready .mds-recovery-overview-meta strong,
   .mds-decision-status.is-ready,
   .mds-checkpoint-badge.is-ready
@@ -406,22 +361,20 @@
   color: var(--mds-green);
 }
 
-.mds-root[data-theme="light"] .mds-recovery-workspace :is(
+.mds-root .mds-recovery-workspace :is(
   .mds-recovery-overview.is-checkpointed .mds-recovery-overview-meta strong,
   .mds-decision-status.is-checkpointed,
   .mds-checkpoint-badge.is-checkpointed
 ) {
-  color: rgb(var(--mds-teal-rgb));
+  color: var(--mds-cyan);
 }
 
-.mds-root[data-theme="light"] .mds-recovery-workspace :is(
+.mds-root .mds-recovery-workspace :is(
   .mds-recovery-overview.is-running .mds-recovery-overview-meta strong,
   .mds-decision-status.is-running,
-  .mds-checkpoint-badge.is-running,
-  .mds-recommended-plan-title small,
-  .mds-flight-option-card > header > span
+  .mds-checkpoint-badge.is-running
 ) {
-  color: var(--mc-accent);
+  color: var(--mds-tint);
 }
 
 @media (min-width: 1280px) {
@@ -524,15 +477,15 @@
   padding: 8px 10px;
   border: 0;
   border-radius: 9px;
-  background: rgb(var(--mds-green-rgb) / 0.08);
+  background: var(--mds-green-fill);
 }
 
 .mds-hold-receipt.is-expired {
-  background: var(--mds-fill-1);
+  background: var(--mds-surface-2);
 }
 
 .mds-hold-receipt code {
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
   font-family: var(--mds-font-mono);
   font-size: calc(10.5px * var(--mds-fs-chrome));
 }

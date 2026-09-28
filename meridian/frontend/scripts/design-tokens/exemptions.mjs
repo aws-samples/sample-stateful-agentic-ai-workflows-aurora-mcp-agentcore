@@ -1,17 +1,5 @@
 // Stylesheets still waiting for their migration task. Each task empties one rule.
 export const EXEMPTIONS = {
-  'color': [
-    'src/index.css',
-    'src/preflight.css',
-    'src/showcase/airlineConcierge.css',
-    'src/showcase/meridianShowcase.css',
-    'src/showcase/presentationMode.css',
-    'src/showcase/presenterProof.css',
-    'src/showcase/projectorReadability.css',
-    'src/showcase/recoveryDecisionRefresh.css',
-    'src/showcase/recoveryWorkspace.css',
-    'src/showcase/surfaceSwitch.css',
-  ],
   'type': [
     'src/preflight.css',
     'src/showcase/airlineConcierge.css',

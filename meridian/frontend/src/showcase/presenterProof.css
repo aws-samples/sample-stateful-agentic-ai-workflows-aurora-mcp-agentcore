@@ -11,12 +11,6 @@
 ------------------------------------------------------------------------------ */
 
 .mds-proof-surface {
-  --proof-ink: #eaf3ef;
-  --proof-dim: #8fa6a0;
-  --proof-line: rgba(160, 205, 190, 0.22);
-  --proof-panel: #0d1a1a;
-  --proof-good: #9fd3b4;
-  --proof-stop: #e0a97d;
 
   display: flex;
   flex-direction: column;
@@ -24,8 +18,8 @@
   padding: clamp(22px, 3vw, 40px);
   border: 0;
   border-radius: 18px;
-  color: var(--proof-ink);
-  background: #08120f;
+  color: var(--mds-label);
+  background: var(--mds-ground);
 }
 
 /* ------------------------------------------------------------------ header */
@@ -48,14 +42,14 @@
 
 .mds-proof-head h1 span {
   display: block;
-  color: var(--proof-good);
+  color: var(--mds-label-2);
 }
 
 .mds-proof-head-meta {
   display: grid;
   justify-items: end;
   gap: 4px;
-  color: var(--proof-dim);
+  color: var(--mds-label-2);
   font-size: clamp(13px, 1.1vw, 15px);
 }
 
@@ -70,10 +64,10 @@
   gap: 7px;
   min-height: 36px;
   padding: 0 14px;
-  border: 1px solid var(--proof-line);
+  border: 1px solid var(--mds-control-line);
   border-radius: 999px;
-  color: var(--proof-ink);
-  background: rgba(159, 211, 180, 0.08);
+  color: var(--mds-label);
+  background: var(--mds-surface);
   font: inherit;
   font-size: 13px;
   font-weight: 650;
@@ -82,8 +76,8 @@
 }
 
 .mds-proof-refresh:hover {
-  border-color: var(--proof-good);
-  background: rgba(159, 211, 180, 0.16);
+  border-color: var(--mds-tint);
+  background: var(--mds-surface-2);
 }
 
 /* -------------------------------------------------------------------- flow */
@@ -97,7 +91,7 @@
 
 .mds-proof-arrow {
   align-self: center;
-  color: var(--proof-dim);
+  color: var(--mds-label-2);
   font-size: 22px;
 }
 
@@ -111,15 +105,15 @@
 }
 
 .mds-proof-worker-glyph {
-  color: var(--proof-dim);
+  color: var(--mds-label-2);
 }
 
 .mds-proof-worker.is-stopped .mds-proof-worker-glyph {
-  color: var(--proof-stop);
+  color: var(--mds-yellow);
 }
 
 .mds-proof-worker-role {
-  color: var(--proof-dim);
+  color: var(--mds-label-2);
   font-size: 13px;
 }
 
@@ -131,16 +125,16 @@
 
 .mds-proof-worker-note,
 .mds-proof-worker-state {
-  color: var(--proof-dim);
+  color: var(--mds-label-2);
   font-size: 13px;
 }
 
 .mds-proof-worker.is-stopped .mds-proof-worker-state {
-  color: var(--proof-stop);
+  color: var(--mds-yellow);
 }
 
 .mds-proof-worker.is-running .mds-proof-worker-state {
-  color: var(--proof-good);
+  color: var(--mds-green);
 }
 
 /* The store is the centre of the claim, so it is the only filled panel. */
@@ -151,14 +145,14 @@
   padding: clamp(16px, 1.7vw, 22px);
   border: 0;
   border-radius: 14px;
-  background: var(--proof-panel);
+  background: var(--mds-surface);
 }
 
 .mds-proof-store-head {
   display: flex;
   align-items: center;
   gap: 9px;
-  color: var(--proof-good);
+  color: var(--mds-label);
   font-size: clamp(15px, 1.5vw, 19px);
 }
 
@@ -176,7 +170,7 @@
 }
 
 .mds-proof-store-rows dt {
-  color: var(--proof-dim);
+  color: var(--mds-label-2);
   font-size: 13px;
 }
 
@@ -194,13 +188,13 @@
   gap: 7px;
   margin: 0;
   padding-top: 10px;
-  border-top: 1px solid var(--proof-line);
-  color: var(--proof-dim);
+  border-top: 1px solid var(--mds-separator);
+  color: var(--mds-label-2);
   font-size: 13px;
 }
 
 .mds-proof-store-foot.is-good {
-  color: var(--proof-good);
+  color: var(--mds-green);
 }
 
 /* -------------------------------------------------------------------- tabs */
@@ -208,7 +202,7 @@
 .mds-proof-tabs {
   display: flex;
   gap: 22px;
-  border-bottom: 1px solid var(--proof-line);
+  border-bottom: 1px solid var(--mds-separator);
 }
 
 .mds-proof-tab {
@@ -216,7 +210,7 @@
   min-height: 40px;
   padding: 0 2px 10px;
   border: 0;
-  color: var(--proof-dim);
+  color: var(--mds-label-2);
   background: none;
   font: inherit;
   font-size: 15px;
@@ -226,11 +220,11 @@
 }
 
 .mds-proof-tab:hover {
-  color: var(--proof-ink);
+  color: var(--mds-label);
 }
 
 .mds-proof-tab.is-active {
-  color: var(--proof-ink);
+  color: var(--mds-label);
 }
 
 .mds-proof-tab.is-active::after {
@@ -240,7 +234,7 @@
   bottom: -1px;
   height: 2px;
   border-radius: 2px;
-  background: var(--proof-good);
+  background: var(--mds-tint);
 }
 
 .mds-proof-panel {
@@ -273,7 +267,7 @@
   display: grid;
   gap: 7px;
   padding-left: 18px;
-  border-left: 1px solid var(--proof-line);
+  border-left: 1px solid var(--mds-separator);
 }
 
 /* Only the first fact in each row loses its rule, so a wrapped grid does not
@@ -287,7 +281,7 @@
 @media (min-width: 1000px) {
   .mds-proof-fact:nth-child(odd) {
     padding-left: 18px;
-    border-left: 1px solid var(--proof-line);
+    border-left: 1px solid var(--mds-separator);
   }
 
   .mds-proof-fact:first-child {
@@ -304,7 +298,7 @@
 }
 
 .mds-proof-fact-label {
-  color: var(--proof-dim);
+  color: var(--mds-label-2);
   font-size: 13px;
 }
 
@@ -325,24 +319,24 @@
 }
 
 .mds-proof-fact-value.is-good {
-  color: var(--proof-good);
+  color: var(--mds-green);
 }
 
 .mds-proof-fact-value.is-muted {
-  color: var(--proof-dim);
+  color: var(--mds-label-2);
 }
 
 .mds-proof-auth {
   display: flex;
   gap: 13px;
   align-items: flex-start;
-  color: var(--proof-ink);
+  color: var(--mds-label);
 }
 
 .mds-proof-auth svg {
   flex: none;
   margin-top: 2px;
-  color: var(--proof-good);
+  color: var(--mds-green);
 }
 
 .mds-proof-auth strong {
@@ -351,7 +345,7 @@
 
 .mds-proof-auth p {
   margin: 5px 0 0;
-  color: var(--proof-dim);
+  color: var(--mds-label-2);
   font-size: 14px;
 }
 
@@ -370,7 +364,7 @@
   gap: 10px;
   padding: clamp(40px, 7vw, 90px) 20px;
   text-align: center;
-  color: var(--proof-dim);
+  color: var(--mds-label-2);
 }
 
 /* At this size the tile's 3px default radius reads as a hard square. */
@@ -380,7 +374,7 @@
 
 .mds-proof-empty h2 {
   margin: 0;
-  color: var(--proof-ink);
+  color: var(--mds-label);
   font-size: clamp(19px, 2.2vw, 26px);
 }
 
@@ -397,8 +391,8 @@
   gap: 12px;
   justify-content: space-between;
   padding-top: 14px;
-  border-top: 1px solid var(--proof-line);
-  color: var(--proof-dim);
+  border-top: 1px solid var(--mds-separator);
+  color: var(--mds-label-2);
   font-size: 12px;
 }
 
@@ -406,7 +400,7 @@
   padding: 12px 16px;
   border: 0;
   border-radius: 8px;
-  color: var(--proof-ink);
+  color: var(--mds-label);
   font-size: 14px;
   line-height: 1.5;
 }

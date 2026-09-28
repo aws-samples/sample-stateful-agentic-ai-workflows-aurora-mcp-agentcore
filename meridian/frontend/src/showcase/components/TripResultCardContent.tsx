@@ -23,7 +23,7 @@ function money(price: number): string {
   return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 }
 
-type SignalTone = 'blue' | 'green' | 'yellow' | 'violet';
+type SignalTone = 'checkpoint' | 'plain';
 
 interface TripSignal {
   label: string;
@@ -64,16 +64,16 @@ function tripSignals(
       ));
 
   if (checkpointObserved) {
-    signals.push({ label: 'Checkpointed', tone: 'blue', icon: AuroraIcon });
+    signals.push({ label: 'Checkpointed', tone: 'checkpoint', icon: AuroraIcon });
   }
   if (travelerContextObserved) {
-    signals.push({ label: 'Traveler context recalled', tone: 'violet', icon: Sparkles });
+    signals.push({ label: 'Traveler context recalled', tone: 'plain', icon: Sparkles });
   }
   if (travelerContextObserved && state.travelerProfile?.party_size) {
     const travelers = state.travelerProfile.party_size;
     signals.push({
       label: `${travelers} ${travelers === 1 ? 'traveler' : 'travelers'}`,
-      tone: 'blue',
+      tone: 'plain',
       icon: Users,
     });
   }
@@ -81,26 +81,26 @@ function tripSignals(
     travelerContextObserved &&
     includesAny(source, [/hotel/, /boutique/, /ryokan/, /villa/, /quiet floor/])
   ) {
-    signals.push({ label: 'Stay details listed', tone: 'violet', icon: BedDouble });
+    signals.push({ label: 'Stay details listed', tone: 'plain', icon: BedDouble });
   }
   if (includesAny(source, [/lounge/])) {
-    signals.push({ label: 'Lounge access', tone: 'green', icon: BadgeCheck });
+    signals.push({ label: 'Lounge access', tone: 'plain', icon: BadgeCheck });
   }
   if (includesAny(source, [/airport transfer/, /car service/, /seaplane transfer/])) {
-    signals.push({ label: 'Airport transfer', tone: 'yellow', icon: BusFront });
+    signals.push({ label: 'Airport transfer', tone: 'plain', icon: BusFront });
   }
   if (
     signals.length < (featured ? 4 : 3) &&
     includesAny(source, [/food/, /kaiseki/, /dinner/, /cuisine/, /wine/, /cooking/])
   ) {
-    signals.push({ label: 'Dining experiences', tone: 'green', icon: HeartHandshake });
+    signals.push({ label: 'Dining experiences', tone: 'plain', icon: HeartHandshake });
   }
   if (
     travelerContextObserved &&
     signals.length < (featured ? 4 : 3) &&
     state.travelerProfile?.loyalty_programs
   ) {
-    signals.push({ label: 'Loyalty status on file', tone: 'blue', icon: ShieldCheck });
+    signals.push({ label: 'Loyalty status on file', tone: 'plain', icon: ShieldCheck });
   }
 
   return signals.slice(0, featured ? 4 : 3);

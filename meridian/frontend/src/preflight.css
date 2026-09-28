@@ -13,7 +13,7 @@
   box-sizing: border-box;
   border-width: 0;
   border-style: solid;
-  border-color: #e5e7eb;
+  border-color: var(--mds-separator);
 }
 
 html,
@@ -210,7 +210,7 @@ textarea {
 input::placeholder,
 textarea::placeholder {
   opacity: 1;
-  color: #9ca3af;
+  color: var(--mds-label-3);
 }
 
 button,
@@ -260,5 +260,5 @@ video {
   /* Legacy hook from the Tailwind build. It must not pin a fixed colour --
      that overrode the themed body background and left a light ground under
      the dark UI. */
-  background-color: var(--app-bg);
+  background-color: var(--mds-ground);
 }
