@@ -756,8 +756,8 @@ class OrchestrationAgent:
         if configured:
             return configured
 
-        # The canonical Stateful Recovery finale deliberately pauses after search so the
-        # audience sees a committed checkpoint before availability fan-out.
+        # The canonical Stateful Recovery run deliberately pauses after search so the
+        # trace shows a committed checkpoint before availability fan-out.
         # Other Phase 5 branches continue in one request.
         normalized = query.lower()
         is_recovery_finale = (

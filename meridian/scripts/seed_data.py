@@ -160,7 +160,7 @@ def package_text(pkg: dict) -> str:
 
 
 def require_empty_seed_tables():
-    """Refuse to overwrite a presenter's live catalog, grants or travel history."""
+    """Refuse to overwrite an existing database's catalog, grants or travel history."""
     response = run_sql(
         "SELECT EXISTS (SELECT 1 FROM trip_packages) OR EXISTS (SELECT 1 FROM travelers)"
     )

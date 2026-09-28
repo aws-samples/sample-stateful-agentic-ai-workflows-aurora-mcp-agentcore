@@ -39,11 +39,11 @@
         },
         {
           "name": "MERIDIAN_GATEWAY_ID",
-          "value": "meridianv2-meridian-aurora-temzt21jg0"
+          "value": "{{GATEWAY_ID}}"
         },
         {
           "name": "MERIDIAN_POLICY_ENGINE_ID",
-          "value": "meridianv2_MeridianGovernance-b2uv1vlg3k"
+          "value": "{{POLICY_ENGINE_ID}}"
         },
         {
           "name": "MERIDIAN_POLICY_MODE",
@@ -78,7 +78,7 @@
           "name": "SemanticTripSearchLambda",
           "targetType": "lambdaFunctionArn",
           "lambdaFunctionArn": {
-            "lambdaArn": "arn:aws:lambda:us-east-1:619763002613:function:meridian-semantic-trip-search",
+            "lambdaArn": "arn:aws:lambda:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:function:meridian-semantic-trip-search",
             "toolSchemaFile": "./agentcore/gateway_targets/semantic_trip_search/tool-schema.json"
           }
         },
@@ -242,7 +242,7 @@
                   "Action": [
                     "ssm:GetParameters"
                   ],
-                  "Resource": "arn:aws:ssm:us-east-1:619763002613:parameter/meridian/aurora/*"
+                  "Resource": "arn:aws:ssm:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:parameter/meridian/aurora/*"
                 },
                 {
                   "Effect": "Allow",
@@ -252,14 +252,14 @@
                     "rds-data:CommitTransaction",
                     "rds-data:RollbackTransaction"
                   ],
-                  "Resource": "arn:aws:rds:us-east-1:619763002613:cluster:meridian-encrypted"
+                  "Resource": "{{AURORA_CLUSTER_ARN}}"
                 },
                 {
                   "Effect": "Allow",
                   "Action": [
                     "secretsmanager:GetSecretValue"
                   ],
-                  "Resource": "arn:aws:secretsmanager:us-east-1:619763002613:secret:meridian-demo-credentials-W0pH9X"
+                  "Resource": "{{AURORA_SECRET_ARN}}"
                 }
               ]
             }
@@ -284,19 +284,19 @@
           "name": "meridian_read_tools",
           "description": "Any authenticated caller may search packages and read package details.",
           "validationMode": "FAIL_ON_ANY_FINDINGS",
-          "statement": "permit(principal, action in [AgentCore::Action::\"SemanticTripSearchLambda___semantic_trip_search\", AgentCore::Action::\"MeridianHolds___get_package_details\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:619763002613:gateway/meridianv2-meridian-aurora-temzt21jg0\");"
+          "statement": "permit(principal, action in [AgentCore::Action::\"SemanticTripSearchLambda___semantic_trip_search\", AgentCore::Action::\"MeridianHolds___get_package_details\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:gateway/{{GATEWAY_ID}}\");"
         },
         {
           "name": "meridian_hold_governance",
           "description": "A courtesy hold runs only after the traveler confirmed it, for at most 12 hours, at most 6 travelers, and within the traveler's saved budget ceiling. Nothing else permits the hold, so any other call is denied by default.",
           "validationMode": "FAIL_ON_ANY_FINDINGS",
-          "statement": "permit(principal, action == AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:619763002613:gateway/meridianv2-meridian-aurora-temzt21jg0\") when { context.input.travelerConfirmed == true && context.input.holdMinutes <= 720 && context.input.travelers <= 6 && context.input.totalCents <= context.input.budgetCeilingCents };"
+          "statement": "permit(principal, action == AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:gateway/{{GATEWAY_ID}}\") when { context.input.travelerConfirmed == true && context.input.holdMinutes <= 720 && context.input.travelers <= 6 && context.input.totalCents <= context.input.budgetCeilingCents };"
         },
         {
           "name": "meridian_booking_governance",
           "description": "A held booking is confirmed only after the traveler confirmed it and only when its total is within the traveler's saved budget ceiling. Aurora enforces that the booking is held, unexpired and owned by the traveler. Nothing else permits confirm_booking, so any other call is denied by default.",
           "validationMode": "FAIL_ON_ANY_FINDINGS",
-          "statement": "permit(principal, action == AgentCore::Action::\"MeridianHolds___confirm_booking\", resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:619763002613:gateway/meridianv2-meridian-aurora-temzt21jg0\") when { context.input.travelerConfirmed == true && context.input.totalCents <= context.input.budgetCeilingCents };"
+          "statement": "permit(principal, action == AgentCore::Action::\"MeridianHolds___confirm_booking\", resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:gateway/{{GATEWAY_ID}}\") when { context.input.travelerConfirmed == true && context.input.totalCents <= context.input.budgetCeilingCents };"
         }
       ]
     }

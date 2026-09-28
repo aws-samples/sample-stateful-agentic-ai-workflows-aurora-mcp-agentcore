@@ -76,7 +76,7 @@ class BedrockConfig:
     """Bedrock LLM configuration.
 
     Every agent in the codebase reads its model identifier from here, so the
-    presenter can swap models for the entire demo via a single environment
+    operator can swap models for the whole app via a single environment
     variable (``BEDROCK_MODEL_ID``) without editing eight files.
 
     Default is the Global cross-Region inference profile for Anthropic Claude

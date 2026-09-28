@@ -71,7 +71,7 @@ def _iso(value: Any) -> Optional[str]:
     if value is None:
         return None
     # Data API returns timestamp columns without an offset. This database uses
-    # UTC; make it explicit so a presenter's browser cannot reinterpret the
+    # UTC; make it explicit so a viewer's browser cannot reinterpret the
     # recorded instant in its own local timezone.
     parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
     if parsed.tzinfo is None:

@@ -1,89 +1,130 @@
-# Meridian repository layout
+# Meridian code layout
 
-## What runs in production (the demo)
+Paths are relative to `meridian/`.
 
-```
+## Request path
+
+```text
 frontend/src/main.tsx
   → /showcase, /device-showcase → showcase/MeridianDeviceShowcase.tsx
   → /demo-stage, /stage         → stage/DemoStage.tsx
-  → api/client.ts → configured backend origin (local quick start: 127.0.0.1:8013)
+  → api/client.ts → backend origin (VITE_API_ORIGIN, local default 127.0.0.1:8013)
 
 backend/main.py
-  → routers/chat.py        # Phases 1–5 (inline search + Phase 4 concierge + Phase 5 LangGraph)
-  → routers/products.py    # GET /api/packages (+ legacy /api/products)
-  → routers/memory.py      # GET /api/memory/{traveler_id} (authorized + RLS-scoped)
+  → routers/chat.py        # Phases 1-5: inline search, Phase 4 concierge, Phase 5 LangGraph, holds and confirmation
+  → routers/products.py    # GET /api/packages and /api/products
+  → routers/memory.py      # GET /api/memory/{traveler_id}, authorized and RLS-scoped
   → routers/journeys.py    # authorized journey list and persisted evidence
-  → routers/diagnostics.py # POST /api/diagnostics/rls-probe (ALLOW/DENY + scoped counts)
+  → routers/diagnostics.py # POST /api/diagnostics/rls-probe: allow and deny checks with scoped counts
 ```
 
-The five views are Concierge, Capability ladder, Recovery desk, System evidence,
-and Solution briefing. The ladder exposes the five implementation phases.
-Concierge has its own conversation; the briefing supplies compact architecture,
-prepared-data, policy, and recovery explanations.
+The five views are Concierge, Capability ladder, Recovery desk, System evidence
+and Solution briefing. The ladder exposes the five phases. Concierge has its
+own conversation, which uses the Phase 4 runtime.
 
-Retrieval, Production, and Workflow import agent modules at runtime:
+The SQL and MCP phases run `sql_search` and `mcp_search` in `chat.py`; the
+Strands agents in `backend/agents/sql_01/` and `backend/agents/mcp_02/` are
+reference implementations of the same steps. Retrieval, Production and Workflow
+import their agent modules at runtime:
 
-- `backend/agents/retrieval_03/` — the Strands supervisor delegates catalog search, availability, and read-only price estimates
-- `backend/agents/production_04/concierge.py` — identity, traveler grant, RLS read and write around the managed runtime; `process_hold()` for the one-click hold
-- `backend/agents/budget.py` — the hold budget ceiling the Cedar policy compares against, shared by Phases 4 and 5
-- `backend/agents/production_04/memory_agent.py` — `@tool` recall/persist methods
-- `backend/agents/orchestration_05/workflow.py` — LangGraph `StateGraph` + `AuroraDataApiSaver` or pooled `AsyncPostgresSaver`; in-process `MemorySaver` cannot prove restart recovery
-- `backend/agentcore/runtime.py`, `backend/agentcore/identity.py` — Bedrock AgentCore adapters (streaming runtime client, identity envelope)
-- `meridian_agentcore/app/MeridianConcierge/` — the Phase 4 agent deployed to AgentCore Runtime: `main.py` (tool loop, memory session, SSE events), `turn_trace.py` (spans and the pinned hold and booking contract), `hold_execution.py` (platform-executed hold and confirmation), `prompts.py`, `gateway_auth.py`
-- `meridian_agentcore/agentcore/gateway_targets/meridian_holds/` — the `MeridianHolds` gateway Lambda (`get_package_details`, `create_courtesy_hold`, `confirm_booking`)
-- `meridian_agentcore/agentcore/agentcore.json` — runtime, memory, gateway targets, and the `MeridianGovernance` Cedar policy engine
+- `backend/agents/retrieval_03/`: the Strands supervisor delegates catalog search, availability and read-only price estimates
+- `backend/agents/production_04/concierge.py`: identity, traveler grant, and RLS read and write around the managed runtime; `process_hold()` for a hold from the UI
+- `backend/agents/production_04/memory_agent.py`: `@tool` recall and persist methods
+- `backend/agents/budget.py`: the budget ceiling Cedar compares against, shared by Phases 4 and 5
+- `backend/agents/orchestration_05/workflow.py`: LangGraph `StateGraph` with `AuroraDataApiSaver` or pooled `AsyncPostgresSaver`; the in-process `MemorySaver` fallback cannot survive a restart
+- `backend/agentcore/runtime.py`, `backend/agentcore/identity.py`: AgentCore adapters (streaming runtime client, identity envelope)
+- `meridian_agentcore/app/MeridianConcierge/`: the Phase 4 agent on AgentCore Runtime: `main.py` (tool loop, memory session, streamed events), `turn_trace.py` (spans and the pinned hold and booking arguments), `hold_execution.py` (confirmed holds and confirmations run by the platform), `prompts.py`, `gateway_auth.py`
+- `meridian_agentcore/agentcore/gateway_targets/meridian_holds/`: the `MeridianHolds` gateway Lambda (`get_package_details`, `create_courtesy_hold`, `confirm_booking`)
+- `meridian_agentcore/agentcore/gateway_targets/semantic_trip_search/`: the `semantic_trip_search` Lambda and its tool schema
+- `meridian_agentcore/agentcore/agentcore.template.json`: runtime, memory, gateway targets and the `MeridianGovernance` Cedar policy engine, with placeholders that `scripts/render_agentcore_config.py` fills for your account
 
-The live SQL and MCP phases use `chat.py`'s `sql_search` and `mcp_search`.
-Their Strands modules are reference implementations. Phase 3 uses
-`retrieval_supervisor_search` and imports the retrieval specialists. These
-catalog agents cannot write a booking; all clicked holds and confirmations
-use the governed path.
+None of the catalog agents can write a booking; every hold and confirmation
+uses the governed Gateway path.
 
-> `chat.py` carries the hybrid lexical/semantic candidate query a second time
-> for the direct Phase 3 and Phase 5 paths. Keep it in step with
-> `SearchAgent.hybrid_search` — `tests/test_hybrid_lexical_arm.py` guards the
+> `chat.py` carries the hybrid lexical and semantic candidate query a second
+> time for the direct Phase 3 and Phase 5 paths. Keep it in step with
+> `SearchAgent.hybrid_search`; `tests/test_hybrid_lexical_arm.py` guards the
 > agent copy.
 
 ## Directory map
 
+### Backend
+
 | Path | Role |
-| ---- | ---- |
-| `backend/authorization.py` | Shared workload-to-traveler authorization types |
-| `backend/db/` | RDS Data API (identity grant + RLS-scoped session helpers), embeddings, `schema.sql` |
-| `backend/mcp/` | Phase 2 client → public `awslabs.postgres-mcp-server`; **custom `memory_server.py`** + its stdio client |
-| `backend/memory/` | Aurora traveler memory store + audit writer |
-| `backend/agentcore/` | Bedrock AgentCore Runtime (streaming client), Gateway (laptop-side checks), Identity — real API calls only |
-| `meridian_agentcore/` | AgentCore CLI project: the deployed agent, the gateway Lambda targets, and `agentcore.json` |
-| `scripts/publish_gateway_parameters.py`, `scripts/bind_gateway_workload.py`, `scripts/bind_web_backend_role.py` | Publish the Aurora settings the holds Lambda reads from SSM; grant the Lambda's execution role and the published backend's App Runner role access to Alex |
-| `scripts/verify_agentcore.py`, `scripts/smoke_gateway_tools.py`, `scripts/smoke_production_turn.py` | Pre-session checks: platform status, gateway tools, and the governed hold path end to end |
-| `backend/agents/production_04/` | Live concierge + memory agents |
-| `backend/agents/orchestration_05/` | LangGraph `OrchestrationAgent` (durable checkpoints, worker leases, governed holds, and restart/resume) |
-| `backend/agents/sql_01,mcp_02/` | Reference Strands agents for SQL and MCP |
-| `backend/agents/retrieval_03/` | Live retrieval supervisor and read-only specialists |
+| --- | --- |
 | `backend/routers/` | FastAPI routes |
-| `backend/demo_prompts.py` | The five-phase presenter prompt ladder (single source of truth) |
-| `examples/rls_for_agents.sql` | Aurora RLS policies + authorization/RLS audit view |
-| `examples/memory_mcp_demo.py` | Stand-alone smoke test for the custom memory MCP server |
-| `scripts/sync_agentcore_env.py` | Sync `agentcore deploy` state → `.env` |
-| `backend/catalog_compat.py` | Maps `trip_packages` rows → legacy API `Product` shape |
-| `frontend/src/showcase/` | Primary `/showcase` surface (components, hooks, adapters) |
-| `frontend/src/stage/` | Kiosk and presenter playback surface |
+| `backend/agents/sql_01/`, `backend/agents/mcp_02/` | Reference Strands agents for SQL and MCP |
+| `backend/agents/retrieval_03/` | Retrieval supervisor and read-only specialists |
+| `backend/agents/production_04/` | Concierge and traveler memory agents |
+| `backend/agents/orchestration_05/` | LangGraph workflow: checkpoints, worker leases, hold intent and governed hold |
+| `backend/agentcore/` | AgentCore Runtime client, Gateway checks, Identity, and the CLI config loader |
+| `backend/db/` | RDS Data API client with grant and RLS-scoped sessions, `AuroraDataApiSaver`, embeddings, journey store, `schema.sql` |
+| `backend/mcp/` | Phase 2 client for `awslabs.postgres-mcp-server`, and the custom `meridian-concierge` and `meridian-memory` MCP servers with their clients |
+| `backend/memory/` | Aurora traveler memory store and audit writer |
+| `backend/authorization.py` | Workload-to-traveler authorization types |
+| `backend/http_auth.py` | HTTP principal and traveler binding |
+| `backend/demo_prompts.py` | The five-phase prompt ladder |
+| `backend/catalog_compat.py` | Maps `trip_packages` rows to the frontend's `Product` shape |
+| `backend/launch.py` | Container entry point that opens the port before the app loads |
+
+### Frontend
+
+| Path | Role |
+| --- | --- |
+| `frontend/src/showcase/` | The `/showcase` surface: views, components, hooks and adapters |
+| `frontend/src/stage/` | Kiosk and scenario playback surface |
+| `frontend/src/api/` | API client with bounded waits |
 | `frontend/src/components/` | Shared UI (brand mark, route skeleton) |
-| `scripts/travel_catalog.py` | Trip + traveler seed source |
-| `scripts/seed_data.py` | Seeds Aurora and binds the current workload to Alex |
-| `scripts/bind_current_identity.py` | Migrates an existing DB and grants the current IAM/AgentCore workload access to Alex |
-| `docs/design/` | Static HTML design explorations (not served by the app) |
-| `tests/` | Pytest |
+| `frontend/public/` | Brand marks, service icons and catalog images |
+| `frontend/e2e/` | Playwright accessibility and behavior tests |
 
-## Naming debt (intentional compat)
+### AgentCore and infrastructure
 
-The travel pivot kept some e-commerce names in the API/UI layer:
+| Path | Role |
+| --- | --- |
+| `meridian_agentcore/` | AgentCore CLI project: runtime code, gateway Lambda targets, configuration templates, CDK app |
+| `infra/bin/meridian-aurora.ts` | CDK app for an encrypted Aurora PostgreSQL cluster with the Data API |
+| `infra/bin/meridian-web.ts` | CDK app for the hosted web app: S3 and CloudFront site, App Runner image and roles |
+| `Dockerfile` | Backend container with the locked PostgreSQL MCP server |
 
-- `Product` / `product_id` in TypeScript and `/api/products` — trips from `trip_packages`
-- `ProductsSection`, `ProductThumb`, `handleAddToCart` — display trips, not SKUs
+### Scripts
 
-A future rename to `Package` / `Trip` would be cosmetic only if the compat layer stays.
+| Path | Role |
+| --- | --- |
+| `scripts/init_aurora_schema.py`, `scripts/apply_migrations.py`, `scripts/migrations/` | Create the schema on a new database and apply tracked migrations |
+| `scripts/travel_catalog.py`, `scripts/seed_data.py` | Seed data, and the loader that embeds it and grants the current workload access to Alex |
+| `scripts/bind_current_identity.py` | Grant the current IAM or AgentCore workload access to Alex on an existing database |
+| `scripts/render_agentcore_config.py` | Render the AgentCore configuration templates for your account and deployed IDs |
+| `scripts/sync_agentcore_env.py` | Copy deployed AgentCore IDs from the CLI state into `.env` |
+| `scripts/publish_gateway_parameters.py` | Publish the Aurora settings the holds Lambda reads from SSM |
+| `scripts/bind_gateway_workload.py`, `scripts/bind_web_backend_role.py` | Grant the holds Lambda role and the App Runner instance role access to Alex |
+| `scripts/verify_agentcore.py`, `scripts/smoke_gateway_tools.py`, `scripts/smoke_production_turn.py` | Check the deployed platform, the gateway tools and the governed hold path end to end |
+| `scripts/kill_and_resume_demo.py`, `scripts/lost_response_demo.py` | Recovery exercises: kill a worker after its hold, or discard a committed hold response |
+| `scripts/provision_preflight.py` | Read-only checks before provisioning Aurora in an account |
+| `scripts/publish.py`, `scripts/published.py` | Publish the hosted web app to an existing App Runner service; read back its local release record |
+| `scripts/validate_demo.py`, `scripts/release_demo_bookings.py` | End-to-end check of a running deployment; release demo bookings |
+| `scripts/install_catalog_images.py` | Install catalog artwork by package ID |
 
-## Cleanup history
+### Other
 
-Removed dead code: duplicate `partner_runtime.py`, unused `ShopWithAI` stack, `mockData`, legacy `lib/aurora_db.py`, `data/products.json`, unused `backend/tools/`, unused WebSocket router, stub `/api/chat/image` endpoint, and the duplicate `agentstride/` tree at the repo root. Design HTML lives in `docs/design/`. Reference agents are documented in `backend/agents/README.md`.
+| Path | Role |
+| --- | --- |
+| `examples/rls_app_role.sql`, `examples/rls_for_agents.sql` | The restricted RLS role, RLS policies and the authorization audit view |
+| `examples/memory_mcp_demo.py` | Stand-alone client for the custom memory MCP server |
+| `tests/` | Pytest suite; `tests/conformance/` runs LangGraph's checkpointer conformance tests against `AuroraDataApiSaver` |
+| `docs/` | Architecture, operations, deployment runbook, code walkthrough and design notes |
+
+## Naming
+
+The API and UI keep some e-commerce names from an earlier version of the
+sample:
+
+- `Product` and `product_id` in TypeScript and `/api/products` are trips from `trip_packages`
+- `fetchProducts` and `fetchProduct` in `frontend/src/api/client.ts` call `/api/products`,
+  which `backend/routers/products.py` serves as an alias of `/api/packages`
+- The `Product` type's `brand`, `price` and `category` fields carry a trip's operator,
+  price per person and trip type
+
+The trip display components already use trip names (`TripCard`, `TripRow`).
+
+The agent modules are described in `backend/agents/README.md`.

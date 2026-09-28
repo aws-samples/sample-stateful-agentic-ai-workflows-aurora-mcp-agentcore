@@ -67,7 +67,7 @@ class MemoryStore:
         The Phase 4 demo flow tries to insert a ``conversations`` row scoped
         to ``traveler_id`` on the first turn. ``conversations`` has a NOT
         NULL FK to ``travelers``, so if the demo traveler was never seeded
-        (e.g. presenter rebuilt Aurora but skipped ``scripts/seed_data.py``),
+        (e.g. Aurora was rebuilt without running ``scripts/seed_data.py``),
         that INSERT fails with::
 
             ERROR: insert or update on table "conversations" violates

@@ -4,8 +4,8 @@
 The address and its basic-auth credentials belong to one AWS account, and this
 repository is public, so none of it is committed. ``publish.py`` records them in
 ``.local/published.json``, which is gitignored and owner-readable only. This
-reads that record back on presentation day: the address on screen, the password
-in the paste buffer, and a reachability check before you walk on.
+reads that record back: the address on screen, the password in the paste
+buffer, and a reachability check.
 
 The password is never printed, so this is safe to run on a shared screen.
 

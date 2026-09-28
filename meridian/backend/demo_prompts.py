@@ -1,10 +1,7 @@
-"""The five-phase presenter prompt ladder, in one place.
+"""The five-phase prompt ladder, in one place.
 
-DEMO_SCRIPT.md and PRESENTER_GUIDE.md name specific prompts for each phase:
-two that work, and one "tee-up" prompt that fails on purpose and motivates the
-next rung. Those strings were previously duplicated across the docs and the
-test suite, and the UI's follow-up chips derived their own suggestions, so the
-hand-off between phases lived only in the presenter's memory.
+Each phase has two prompts that work and one "tee-up" prompt that needs the
+next phase. meridian/README.md documents them.
 
 Keeping them here lets the chat router guarantee the tee-up prompt is always
 one click away, and lets the contract tests assert against the same strings the

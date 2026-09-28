@@ -6,8 +6,7 @@ What it does
 
 Spins up `backend.mcp.memory_server` over stdio, lists the tools it
 exposes, then exercises each one against the real Aurora cluster
-(via RDS Data API).  This is the script the workshop facilitator runs
-to prove that:
+(via RDS Data API).  Run it to prove that:
 
     1. the custom MCP server actually starts up,
     2. it speaks Model Context Protocol like any other server, and

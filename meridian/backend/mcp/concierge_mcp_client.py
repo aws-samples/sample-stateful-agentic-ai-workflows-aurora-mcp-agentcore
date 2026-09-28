@@ -185,10 +185,10 @@ def _decode(result: Any) -> Any:
 
 
 # Per-turn subprocess. We previously kept a long-lived singleton client
-# to avoid spawning Python on every tool call, but that bit us on stage:
+# to avoid spawning Python on every tool call, but that failed in use:
 # the second turn would block forever because the cached stdio session
 # had wedged after the first turn (buffered output, half-closed pipe,
-# Aurora connection state, etc.). For a workshop demo, predictability
+# Aurora connection state, etc.). For this sample, predictability
 # matters more than the ~150ms saved by reusing a process - so each
 # session spawns a fresh subprocess and tears it down on exit.
 @asynccontextmanager

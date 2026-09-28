@@ -1,12 +1,8 @@
-# Stateful Architecture Decision
+# Stateful architecture
 
-## Session promise
-
-**Title:** Build stateful agentic AI workflows with Aurora, MCP, and AgentCore
-
-The architecture is stateful because agents externalize conversational,
-operational, governance, and workflow state into durable stores. It does not
-depend on a long-lived database connection to remember prior work.
+Meridian is stateful because its agents write conversational, operational,
+governance and workflow state to durable stores. It does not depend on a
+long-lived database connection to remember prior work.
 
 > Statefulness lives in durable stores, not database connections.
 
@@ -47,13 +43,13 @@ Phase 5 supports two checkpoint transports. Set
 `LANGGRAPH_CHECKPOINT_DATA_API=true` to use the repository's `AuroraDataApiSaver`
 without a direct PostgreSQL connection. A resolved checkpoint DSN takes
 precedence and selects a pooled `AsyncPostgresSaver`. Both persist workflow
-state in Aurora. The `/health` response and per-run evidence identify the
-actual backend and whether it is durable.
+state in Aurora. The `/api/health` response and per-run evidence identify the
+actual backend and whether it is durable; `/health` reports process liveness only.
 
-## Production target
+## Production guidance
 
 - Choose the checkpoint transport explicitly and apply the tracked migrations
-  before starting the application. The live workshop uses `AuroraDataApiSaver`.
+  before starting the application. The quick start uses `AuroraDataApiSaver`.
 - For direct PostgreSQL checkpointing, give the worker network access to the
   private Aurora endpoint and use one bounded application-lifetime psycopg pool
   with a shared `AsyncPostgresSaver`.
@@ -70,9 +66,9 @@ actual backend and whether it is durable.
   retries, uses worker leases, and limits compensation to the current intent.
   These controls do not turn package holds into airline ticket issuance.
 
-## Live proof contract
+## Verifying recovery
 
-The strongest Phase 5 proof is:
+A Phase 5 recovery is verified when you:
 
 1. Run a multi-node workflow with a durable Aurora checkpoint backend.
 2. Pause after a committed worker-node checkpoint.
@@ -86,19 +82,19 @@ The strongest Phase 5 proof is:
 7. For the hold demonstration, show one booking for the request, with the same
    booking ID and original 15-minute expiry before and after replacement.
 
-If the trace says `MemorySaver`, describe the run as in-process only. It does not
-satisfy the live Aurora-checkpoint proof.
+If the trace says `MemorySaver`, the run was in-process only and does not show
+recovery from Aurora checkpoints.
 
-## Presenter wording
+## Summary
 
-> The Data API remains connectionless, but every turn reads and writes durable
-> state in Aurora. AgentCore Memory can add managed conversational context.
-> When execution becomes multi-step, LangGraph externalizes workflow state
-> into Aurora. This demo uses the Data API checkpoint saver; a pooled PostgreSQL
-> saver is also supported. We can terminate the worker, resume from the saved
-> checkpoint, and read back the execution and hold records to prove continuity.
+The Data API stays connectionless, but every turn reads and writes durable
+state in Aurora. AgentCore Memory adds managed conversational context. When
+execution becomes multi-step, LangGraph writes workflow state to Aurora through
+the Data API checkpoint saver or a pooled PostgreSQL saver. A worker can be
+terminated, and a replacement resumes from the saved checkpoint; the execution
+and hold records show the continuity.
 
-Avoid these claims:
+These statements are not accurate descriptions of the design:
 
 - "The Data API becomes stateful."
 - "The Data API is IAM-only."

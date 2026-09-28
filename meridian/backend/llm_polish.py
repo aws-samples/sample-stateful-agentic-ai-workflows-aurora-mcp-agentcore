@@ -2,7 +2,7 @@
 Concierge-tone polish over deterministic tool outputs.
 
 The MCP path produces precise but dry readouts ("FX via meridian-concierge
-MCP: 2500 USD ≈ 2300 EUR"). On stage we want longer, narrative replies
+MCP: 2500 USD ≈ 2300 EUR"). The app wants longer, narrative replies
 that read like a real travel concierge. This module wraps a Bedrock
 Converse call (Claude Sonnet 5 by default, with fallback to Haiku 4.5
 and Opus 5) around the deterministic facts so the user sees a richer
@@ -95,7 +95,7 @@ _CONCIERGE_SYSTEM = (
 # config.bedrock.model_id) and _candidate_models() always tries that first.
 # This chain is the BACKUP order if the primary errors: stay fast — Sonnet
 # 5, then Haiku 4.5 — and keep Opus 5 last so a transient Sonnet hiccup
-# on stage never silently falls back to the slowest model. First success wins.
+# never silently falls back to the slowest model. First success wins.
 _DEFAULT_FALLBACK_CHAIN: List[str] = [
     "global.anthropic.claude-sonnet-5",
     "global.anthropic.claude-haiku-4-5-20251001-v1:0",

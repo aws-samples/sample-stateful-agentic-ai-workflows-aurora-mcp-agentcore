@@ -14,7 +14,7 @@ REGION="${AWS_DEFAULT_REGION:-us-east-1}"
 
 # Destruction requires the caller to name the account explicitly. No AWS
 # calls or changes occur for the default plan. This cluster can host other
-# demo databases; never apply this plan to the shared presenter environment.
+# demo databases; never apply this plan to a shared environment.
 if [ "$#" -ne 2 ] || [ "$1" != "--apply" ]; then
     echo "Plan: delete ${CLUSTER_IDENTIFIER}-instance, snapshot and delete $CLUSTER_IDENTIFIER."
     echo "Then separately inspect: python scripts/cleanup_resources.py"

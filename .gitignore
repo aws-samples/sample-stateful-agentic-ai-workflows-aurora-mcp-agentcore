@@ -56,10 +56,20 @@ logs/
 .cache/
 cdk.out*/
 .cli/
+meridian/meridian_agentcore/agentcore/gateway_targets/**/*.zip
 
-# Kiro specs (local development)
+# AgentCore config rendered for one account by scripts/render_agentcore_config.py.
+# Edit the *.template.json files beside them instead.
+meridian/meridian_agentcore/agentcore/agentcore.json
+meridian/meridian_agentcore/agentcore/aws-targets.json
+
+# Local agent and editor tooling, verification output and worktrees
 .kiro/
 .claude/
+.cursor/
+.impeccable/
+.superpowers/
+.local/
 
 # Browser verification artifacts
 playwright-report/

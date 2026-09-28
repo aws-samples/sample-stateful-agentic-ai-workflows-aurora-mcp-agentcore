@@ -1,9 +1,9 @@
 """
 Phase 4 — Memory Agent (Strands @tool memory specialist).
 
-Presenter walkthrough
----------------------
-This is the file to open when explaining Strands tool support for memory:
+Walkthrough
+-----------
+This module shows Strands tool support for memory:
   • Each `@tool` maps 1:1 to an Aurora table or pgvector recall path
   • Tools are registered on both this agent AND the concierge's Agent(...)
   • `_transaction_id` pins RLS scope when called inside `scoped_session`

@@ -1,249 +1,95 @@
-# Meridian Operations
+# Meridian operations
 
-Everything for running the demo: **deploy** AgentCore (day-before), **run the
-chalk talk** (day-of), and the **gotchas** we hit getting Phase 4 live.
+How to provision Aurora, run Meridian with durable checkpoints, exercise its
+recovery behavior, publish the web app, and troubleshoot a deployment.
+Commands run from `meridian/` with the virtual environment active unless a
+step says otherwise. The AgentCore deployment has its own
+[runbook](AGENTCORE_DEPLOY_RUNBOOK.md).
 
-- Deploy procedure → [Part 1](#part-1--deploy-agentcore-day-before)
-- Chalk-talk operation → [Part 2](#part-2--chalk-talk-runbook-day-of)
-- Lessons & gotchas → [Part 3](#part-3--learnings--gotchas)
+## Provision Aurora
 
-Default region for this demo: **`us-east-1`**. Replace sample account
-placeholders such as `123456789012` with the AWS account running the workshop.
-Resources are named with the `meridianv2` project prefix.
+Meridian needs an Aurora PostgreSQL cluster with the RDS Data API enabled and a
+Secrets Manager secret for its database user. If you already have one, set
+`AURORA_CLUSTER_ARN`, `AURORA_SECRET_ARN` and `AURORA_DATABASE` in
+`meridian/.env` and skip to [Prepare the database](#prepare-the-database).
 
----
+`infra/bin/meridian-aurora.ts` is a CDK app that creates an encrypted Aurora
+PostgreSQL 18 cluster: one private Serverless v2 writer (0.5 to 16 ACUs), the
+Data API, TLS required, no inbound database port, seven-day backups, deletion
+protection, and an RDS-managed master secret. It needs a VPC with two subnets
+in different Availability Zones.
 
-# PART 1 — Deploy AgentCore (day-before)
-
-End-to-end deploy of Runtime + Gateway + Memory for Phase 4. ~15 min hands-on,
-~5–8 min CDK wait. Resources persist until explicitly destroyed — deploying the
-day before is fine.
-
-## What gets deployed
-
-| Resource | Name | Purpose at the talk |
-|---|---|---|
-| **Runtime** | `MeridianConcierge` | The Phase 4 agent: Strands tool loop over the gateway, AgentCore Memory session, ADOT spans, streamed trace |
-| **Memory** | `meridian_session` | The agent's session store; restored and written by the Strands session manager |
-| **Gateway** | `meridian-aurora` | Managed MCP endpoint, AWS_IAM inbound, Cedar policy engine attached in ENFORCE mode |
-| **Gateway targets** | `SemanticTripSearchLambda`, `MeridianHolds` | `semantic_trip_search`; `get_package_details` and the identity-checked `create_courtesy_hold` and `confirm_booking` |
-| **Policy engine** | `MeridianGovernance` | Permits the reads; permits the hold only when confirmed, at most 12 hours, at most 6 travelers, within budget; permits the booking confirmation only when confirmed and within budget |
-
-All of them are declared in
-[`meridian_agentcore/agentcore/agentcore.json`](../meridian_agentcore/agentcore/agentcore.json).
-Never rename `meridian_session`: a rename replaces the memory and drops the
-seeded Tokyo history. Memory uses the **`SEMANTIC`** strategy over
-`/users/{actorId}/sessions/{sessionId}`.
-
-## Prerequisites
+First run the read-only preflight. It checks your identity, subnet capacity,
+the engine version, RDS quotas, the RDS service-linked role, CDK bootstrap and
+IAM permissions, and makes no changes:
 
 ```bash
-# 1. AWS credentials (Isengard / SSO / aws configure). Confirm:
-aws sts get-caller-identity
-
-# 2. Region pinned to us-east-1 (Bedrock access for Cohere Rerank + Claude models):
-export AWS_DEFAULT_REGION=us-east-1
-
-# 3. AgentCore CLI (Node-based, installed globally):
-npm install -g @aws/agentcore
-agentcore --version
-
-# 4. Node 20+ for the CDK synth step:
-node --version
+python scripts/provision_preflight.py --account <account-id> --region <region> \
+  --vpc-id <vpc-id> --subnet-ids <subnet-in-az-a> <subnet-in-az-b> \
+  --engine-version 18.3 --output .local/provision-preflight.json
 ```
 
-## Deploy
+Then review and deploy the stack:
 
 ```bash
-cd meridian
-
-# The holds Lambda reads its Aurora settings from SSM (values come from .env):
-python scripts/publish_gateway_parameters.py
-
-cd meridian_agentcore
-
-# Validate the config against the current CLI schema first:
-agentcore validate --json
-
-# Synth + deploy (idempotent — updates the existing stack in place):
-agentcore deploy -y
-
-# The holds Lambda is a workload: grant its execution role access to Alex.
-cd .. && python scripts/bind_gateway_workload.py
+cd infra
+npm ci && npm run build
+CONTEXT="-c account=<account-id> -c region=<region> -c clusterIdentifier=<new-cluster-name> \
+  -c vpcId=<vpc-id> -c subnetIds=<subnet-in-az-a>,<subnet-in-az-b> -c engineVersion=18.3"
+npx cdk diff   --app 'node dist/bin/meridian-aurora.js' $CONTEXT
+npx cdk deploy --app 'node dist/bin/meridian-aurora.js' $CONTEXT
 ```
 
-On a fresh account, deploy in two passes: first with `policyEngines: []` and
-no `policyEngineConfiguration` on the gateway, then restore both and deploy
-again. The Cedar policies validate against the `MeridianHolds` tool schema, so
-the target must exist first.
+The stack outputs `ClusterArn` and `MasterSecretArn`; copy them into
+`AURORA_CLUSTER_ARN` and `AURORA_SECRET_ARN`, and set `AURORA_DATABASE=meridian`.
+Passing `-c snapshotArn=<snapshot-arn>` restores from a snapshot instead; the
+restored cluster keeps the snapshot's database users, so keep using the
+existing secret.
 
-`agentcore deploy` writes the live ARNs to
-`meridian_agentcore/agentcore/.cli/deployed-state.json`. The backend reads them
-through [`backend/agentcore/cli_config.py`](../backend/agentcore/cli_config.py).
+To delete the cluster, first turn off deletion protection. The stack takes a
+final snapshot of the cluster and retains the writer instance, subnet group,
+security group and parameter group, so `cdk destroy` alone does not remove
+every billable resource; delete the retained resources and any snapshots you
+do not need.
 
-## Wire the ARNs into the backend env
+`scripts/create_cluster.sh` is a retired helper that only prints a plan and
+refuses `--apply`; use the CDK app.
+
+## Prepare the database
+
+For a new, empty database:
 
 ```bash
-cd meridian
-python scripts/sync_agentcore_env.py --write
-# Writes into .env:
-#   AGENTCORE_RUNTIME_ARN, AGENTCORE_GATEWAY_URL,
-#   AGENTCORE_GATEWAY_SEARCH_TOOL, AGENTCORE_MEMORY_ID, AGENTCORE_REGION
+python scripts/init_aurora_schema.py   # base schema and the meridian_app RLS role
+python scripts/apply_migrations.py     # journeys, checkpoints, hold identity, booking functions
+python scripts/seed_data.py            # catalog with embeddings, the demo traveler, and a grant for your identity
 ```
 
-Restart the backend; the next Phase 4 turn uses real AgentCore data-plane calls.
+`init_aurora_schema.py` and a full `seed_data.py` refuse to run when Meridian
+tables or data already exist. For an existing database, keep its journeys and
+bookings and run only `python scripts/apply_migrations.py`. A database created
+before traveler grants existed may also need
+`python scripts/bind_current_identity.py`, which grants your current IAM or
+AgentCore workload access to the demo traveler.
 
-## Verify
+Each workload that sets a traveler scope needs its own grant: the backend's
+identity (`seed_data.py` or `bind_current_identity.py`), the holds Lambda role
+(`bind_gateway_workload.py`) and, for the hosted app, the App Runner instance
+role (`bind_web_backend_role.py`).
 
-```bash
-cd meridian
-python scripts/verify_agentcore.py        # Runtime, Gateway, Memory, policy engine ACTIVE · ENFORCE, 4 tools, observability
-python scripts/smoke_gateway_tools.py     # tools/list + get_package_details signed from this laptop
-python scripts/smoke_production_turn.py   # search, unconfirmed hold denied, confirmed hold held, over budget denied
-python scripts/kill_and_resume_demo.py    # Phase 5: hold through the gateway, SIGKILL the worker, resume with the same booking
-python scripts/lost_response_demo.py      # discard a real hold reply, then retry the persisted intent
-```
+## Run with durable checkpoints
 
-For the published site, request `/` without credentials (expect 401) and `/api/health`
-with presenter access resolved through `asm-exec` as described in [the follow-up runbook](DEPLOYMENT_FOLLOWUP.md) (expect 200 and
-`"checkpoint_durable": true`).
+The quick start in the [repository README](../../README.md#quick-start) starts
+the backend with these settings:
 
-In the showcase trace panel you should see (real, not faked):
-- `AgentCore Identity resolved` and `Workload traveler grant allowed`
-- `AgentCore Runtime · turn started`, then `AgentCore Gateway · tools/list` with four tools
-- `AgentCore Memory · session restored` with the event count
-- `AgentCore Gateway · tools/call → semantic_trip_search` and its result
-- On a Hold click: `tools/call → create_courtesy_hold`, its result with the Lambda's workload subject and `traveler_grant: allow`, and the hold receipt
-- On a Confirm click: `tools/call → confirm_booking`, its result under `meridian_booking_governance`, and the receipt as **Confirmed booking** (same booking id, status `confirmed`)
-- On a typed hold: `Hold refused by Cedar policy · Denied by policy`
-- `AgentCore Runtime · turn complete` with the trace id and a CloudWatch link
+| Variable | Value | Effect |
+| --- | --- | --- |
+| `LANGGRAPH_CHECKPOINT_DATA_API` | `true` | Store checkpoints in Aurora through the Data API (`AuroraDataApiSaver`) |
+| `LANGGRAPH_AUTO_CHECKPOINT_DSN` | `false` | Do not build a PostgreSQL DSN from other settings |
+| `LANGGRAPH_CHECKPOINT_REQUIRED` | `true` | Refuse to start without a durable checkpoint store |
+| `LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP` | `true` | Initialize and probe the store at startup |
 
-Spans for the trace id land in `/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT`,
-stream `spans`; application logs carry the same trace id in the `runtime-logs-*` streams.
-
-> Transaction-search trace indexing takes **~10 min** after deploy to fully
-> activate. Don't judge missing trace spans in the first few minutes.
-
-## Publish behind CloudFront
-
-Follow the [deployment, hardening and rehearsal runbook](DEPLOYMENT_FOLLOWUP.md).
-The established publisher now requires an exact account/region/service target,
-plans before deployment, preserves edge credentials and references the origin
-token through App Runner's native Secrets Manager integration. It never deletes
-services on failure. The former credential-minting and automatic retry/deletion
-procedure is retired. The existing manually provisioned App Runner service stays
-outside CloudFormation; CDK owns its roles, image assets, site and distribution.
-
-The instance role still needs its existing traveler grant. New workload identities
-must be bound with `scripts/bind_web_backend_role.py` before they can access Alex.
-A successful deployment must be followed by authenticated bundle/image/header
-parity and scoped live-journey checks. Keep deployment receipts under `.local/`.
-
-## If AgentCore fails on stage
-
-The Phase 4 code path does **not** pretend to run Production mode without
-AgentCore. If Runtime, Gateway, or Memory are missing, the chat response shows
-`AgentCore platform not configured` and the trace carries the concrete missing
-resource list. Narrate it plainly: *"Production mode is the managed AgentCore
-path. We fail closed instead of silently swapping in a different architecture."*
-
-If the trace reports a connection closed before the Runtime response, an
-unconfirmed chat turn without a hold or booking target gets one automatic retry
-after 250ms. The same payload and conversation/session IDs are retained. The
-runtime pins the unconfirmed flags and Gateway policy denies inventory writes.
-This narrow recovery does not promise exactly-once conversation-memory recording.
-Holds and booking confirmations remain single-attempt invocations; reconcile their
-persisted outcome before a user retry. Timeouts, partial streams, permission
-errors and errors returned by the runtime are not retried by this rule.
-
-## Teardown (after the event)
-
-Resources bill while they exist. When done:
-```bash
-cd meridian/meridian_agentcore
-agentcore remove gateway-target --name SemanticTripSearchLambda -y
-agentcore remove gateway --name meridian-aurora -y
-agentcore remove memory --name meridian_session -y
-agentcore remove agent --name MeridianConcierge -y
-agentcore validate --json
-agentcore deploy -y
-```
-
----
-
-# PART 2 — Chalk-talk runbook (day-of)
-
-Keep this open in one tab while presenting the chalk talk.
-
-## 1) Preflight (10–15 min before)
-
-```bash
-aws sts get-caller-identity                 # AWS auth works
-
-cd meridian/meridian_agentcore
-agentcore status --json                     # resources healthy
-
-cd ..
-venv/bin/python scripts/verify_agentcore.py  # checks resolved configuration without printing .env
-```
-Expected `.env` keys: `AGENTCORE_RUNTIME_ARN`, `AGENTCORE_GATEWAY_URL`,
-`AGENTCORE_GATEWAY_SEARCH_TOOL`, `AGENTCORE_MEMORY_ID`. Then run
-`venv/bin/python scripts/verify_agentcore.py` and expect every row green,
-including `Policy engine … ACTIVE · ENFORCE` and `Gateway tools … 4 tools`.
-
-## 2) Start the durable stack
-
-For a laptop, use the existing HTTPS Data API endpoint. Aurora stays private;
-no public PostgreSQL ingress or security-group change is needed. Keep certificate
-verification enabled and bind local servers to loopback, including on public Wi-Fi.
-
-Terminal 1 — fail-closed backend:
-```bash
-cd meridian
-source venv/bin/activate
-LANGGRAPH_CHECKPOINT_DSN= LANGGRAPH_AUTO_CHECKPOINT_DSN=false \
-LANGGRAPH_CHECKPOINT_DATA_API=true LANGGRAPH_CHECKPOINT_REQUIRED=true \
-LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP=true \
-uvicorn backend.main:app --host 127.0.0.1 --port 8013
-```
-
-Terminal 2 — frontend:
-```bash
-cd meridian/frontend
-VITE_API_ORIGIN=http://127.0.0.1:8013 npm run dev -- --host 127.0.0.1 --port 5176 --strictPort
-```
-
-Open `http://127.0.0.1:5176/showcase`. The checks below use the backend on 8013.
-Verify existing listeners before choosing ports.
-
-An existing private SSM tunnel with a separately supplied checkpoint DSN can
-instead use pooled `AsyncPostgresSaver`. Keep the DB private and configure TLS
-certificate/hostname verification for that connection. The application does not
-retrieve database passwords. Do not copy a password into the runbook.
-
-Before exposing an API to other people, configure HTTP authentication and an
-explicit CORS allow-list. Local preview does not require a network bind.
-
-## 3) Health checks (must pass)
-
-```bash
-curl -s http://127.0.0.1:8013/api/health | jq .                       # Sonnet 5 + cohere.embed-v4:0
-curl -s http://127.0.0.1:8013/api/memory/trv_meridian_demo | jq . # Alex Morgan facts
-
-# Phase 4 smoke — identity, RLS, AgentCore Runtime, Gateway tools, Cedar, Aurora end to end:
-curl -s -X POST http://127.0.0.1:8013/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{"phase":4,"message":"A slow week somewhere we can drink good wine","customer_id":"trv_meridian_demo"}' \
-  | jq '.message, .conversation_id, (.products | length), [.activities[].title]'
-
-# Governed hold smoke — the click is the confirmation; expect an order with a HLD- id:
-curl -s -X POST http://127.0.0.1:8013/api/chat/order \
-  -H "Content-Type: application/json" \
-  -d '{"phase":4,"product_id":"TKY-001","quantity":2,"traveler_id":"trv_meridian_demo","action":"hold"}' \
-  | jq '.order.order_id, .order.hold_expires_at, [.activities[] | select(.telemetry.status=="denied" or .activity_type=="order") | .title]'
-```
-
-For the stage proof, `/api/health` must include:
+Confirm with `curl http://127.0.0.1:8013/api/health`:
 
 ```json
 {
@@ -253,152 +99,168 @@ For the stage proof, `/api/health` must include:
 }
 ```
 
-If it reports `MemorySaver`, stop. That is an honest local fallback, not the
-Aurora durability proof.
+If it reports `MemorySaver`, checkpoints live in the process and do not survive
+a restart. Health reports configuration only; the catalog and traveler reads in
+the app confirm that the AWS connection works. After renewing expired AWS
+credentials, restart the backend.
 
-## 4) Gateway and governed-path smoke tests (direct — run once before going live)
+To checkpoint over a direct PostgreSQL connection instead, supply
+`LANGGRAPH_CHECKPOINT_DSN` (or the discrete `LANGGRAPH_CHECKPOINT_*` settings)
+from a network location that can reach the private cluster endpoint, with TLS
+certificate and hostname verification. The backend then uses one bounded pool
+and `AsyncPostgresSaver`. Use a least-privilege database role for checkpoints,
+not the master user. `scripts/start_checkpoint_tunnel.sh` opens an SSM port
+forward for this path.
 
-```bash
-cd meridian
-venv/bin/python scripts/smoke_gateway_tools.py CTY-002   # tools/list + get_package_details from this laptop
-venv/bin/python scripts/smoke_production_turn.py         # runtime → gateway → Cedar → Aurora; expect three PASS lines
+Before exposing the API beyond loopback, set `MERIDIAN_API_TOKEN` and an
+explicit `CORS_ORIGINS` list.
+
+## Exercise recovery failures
+
+The canceled-flight workflow runs:
+
+```text
+classify → search → availability → prepare_hold → hold → synthesize
+                                    │              │
+                           checkpoint intent      Gateway → Aurora transaction
+                           (request and booking IDs)
 ```
 
-The second script places one real 12-hour hold on a Tokyo package for Alex.
-Holds expire on their own; `tests/test_order_hold.py` shows how to purge one.
+A checkpoint and a Gateway write are separate transactions. The design makes
+the write idempotent and the execution resumable:
 
-## 5) Prove pause, restart, and resume
+| Failure | Recovery behavior | Evidence |
+| --- | --- | --- |
+| Worker stops before the hold | Another worker takes over after the lease expires and resumes from the saved node | Same thread and pending node, a successful replacement execution |
+| Hold committed, response lost | The retried intent returns the existing booking | Same request ID, booking ID and original expiry; one booking for the request |
+| Worker stops after the hold is checkpointed | The remaining nodes run without placing another hold | The saved hold and the persisted booking |
+| A second worker while the lease is live | The second execution is refused | HTTP 409 and one running execution |
+| Policy refusal or target failure | No hold is reported | The actual boundary or error, and the booking readback |
 
-1. Open `http://127.0.0.1:5176/showcase`, choose **Capability ladder**, then
-   **Workflow**, and run:
-   `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`
-2. Confirm the reply says the workflow paused and the proof names
-   the configured durable backend with `next=availability`.
-3. Stop only the backend with `Ctrl+C`. Leave the browser and frontend running.
-4. Restart the same backend command with the durable settings from section 2.
-5. Confirm `/api/health` is durable again.
-6. Select **Continue at recovery desk**, then **Resume and request hold** in
-   the existing conversation. This requests a 15-minute package hold.
-7. Confirm `Workflow resumed from checkpoint` uses the same `thread_id` and
-   continues at `availability`; the `search` node must not run twice.
+**Restart from the browser.** Run the canceled-flight prompt in the Workflow
+phase; it pauses after `search`. Stop the backend with `Ctrl+C`, start it with
+the same settings, confirm `/api/health` is durable, and select **Resume and
+request hold** on the Recovery desk. The workflow continues at `availability`
+on the same `thread_id`; `search` does not run again.
 
-This is the title claim made visible: the worker process disappears, while the
-execution position survives in Aurora's `checkpoints`, `checkpoint_blobs`, and
-`checkpoint_writes` tables.
+**Scripts against real Aurora and Gateway calls.** Both need the deployed
+AgentCore resources and create, then remove, their own journey, checkpoint and
+hold records. They do not reset the catalog or touch other bookings.
 
-For a separate hard-kill rehearsal, run `venv/bin/python scripts/kill_and_resume_demo.py`:
-worker one places the hold through the gateway tool, is SIGKILLed, a second
-worker is refused until the lease clears, and the resumed run reports one hold
-with the same booking id and the original expiry. `DEMO_LEASE_SECONDS` (default
-20) sets the lease; a cold worker needs most of that before its first heartbeat.
-This script kills after the hold is checkpointed. It does not inject a lost
-response between the business commit and checkpoint commit. Run
-`venv/bin/python scripts/lost_response_demo.py` for that separate simulation:
-the CLI discards a real committed Gateway response, checks the pending intent,
-verifies two Cedar refusals, and resumes on another worker. Both scripts clean
-their own rehearsal records. Use the explicit
-[Data API rehearsal configuration](../README.md#rehearse-recovery-failures). See
-[`DEMO_SCRIPT.md`](../DEMO_SCRIPT.md) for the three failure windows.
-
-## 6) Recovery playbook
-
-**`runtimeSessionId ... valid min length: 33`** — restart backend; verify
-`rg "_build_runtime_session_id" backend/agentcore/runtime.py`.
-
-**Gateway `no targets were configured`** — re-attach the Lambda target and redeploy:
 ```bash
-cd meridian/meridian_agentcore
-agentcore add gateway-target --name SemanticTripSearchLambda --gateway meridian-aurora \
-  --type lambda-function-arn \
-  --lambda-arn arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search \
-  --tool-schema-file ./gateway_targets/semantic_trip_search/tool-schema.json
-agentcore deploy -y
+export LANGGRAPH_CHECKPOINT_DSN=
+export LANGGRAPH_AUTO_CHECKPOINT_DSN=false
+export LANGGRAPH_CHECKPOINT_DATA_API=true
+export LANGGRAPH_CHECKPOINT_REQUIRED=true
+python scripts/kill_and_resume_demo.py
+python scripts/lost_response_demo.py
 ```
 
-**Phase 4 returns zero packages** — the runtime found nothing or the gateway
-search tool is missing. Run `venv/bin/python scripts/verify_agentcore.py`
-(expect four tools) and `agentcore logs --runtime MeridianConcierge --follow`
-while repeating the prompt.
+- `kill_and_resume_demo.py` places a hold through the gateway, kills its worker
+  with SIGKILL after the hold is checkpointed, shows a second worker refused
+  until the lease expires, then resumes and verifies one hold with the same
+  booking ID and original expiry. `DEMO_LEASE_SECONDS` (default 20) sets the
+  lease; a cold worker needs most of that before its first heartbeat.
+- `lost_response_demo.py` receives a real committed hold from the gateway,
+  discards the response and raises a timeout, so the `hold` node stays pending.
+  A replacement worker retries the saved intent and gets the same booking and
+  expiry. It also checks that Cedar denies unconfirmed and over-budget calls
+  with the same request identity. The write and the retry are real; only the
+  lost response is simulated.
 
-**A Hold click answers `traveler_not_authorized`** — the holds Lambda role lost
-its grant: `venv/bin/python scripts/bind_gateway_workload.py`.
+On System evidence, a successful recovery shows the replacement execution ID,
+`resumed_from_checkpoint`, the worker IDs, the hold creator, and the booking ID
+and expiry. A second execution alone does not prove that the resume succeeded.
 
-**Phase 4 or 5 on the published site answers `aws_iam subject is not authorized
-for traveler`** — the App Runner instance role has no grant:
-`venv/bin/python scripts/bind_web_backend_role.py`.
+A confirmed booking uses catalog capacity. To release the demo traveler's
+bookings, list them first:
 
-**Every hold is denied, including a confirmed one** — the policy engine may be
-detached (`verify_agentcore.py` shows `Policy engine … MISSING`): redeploy with
-`agentcore deploy -y`. If it shows `ACTIVE · ENFORCE`, read the denied span's
-`arguments` field: the ceiling comes from Alex's `budget_cap` fact ($3,200 per
-person) times the party size, and packages above it are refused on purpose.
+```bash
+python scripts/release_demo_bookings.py --dry-run
+python scripts/release_demo_bookings.py --booking-id <booking-id>
+```
 
-**Runtime replies but the trace has no gateway spans** — the runtime is on an
-older version. `agentcore status` shows the version; `agentcore deploy -y`
-publishes the current `app/MeridianConcierge` code.
+## Publish the web app
 
-**UI issues** — restart frontend dev server; hard refresh (`Cmd+Shift+R`).
+`scripts/publish.py` publishes the frontend to S3 behind CloudFront and the
+backend image to an existing AWS App Runner service, using the CDK app in
+`infra/bin/meridian-web.ts` (stacks `MeridianWebRoles`, `MeridianWebBackend`
+and `MeridianWeb`). It needs the exact account, Region and App Runner service
+ARN. Without `--apply` it builds the frontend, synthesizes the stacks and shows
+their diffs; with `--apply` it deploys them:
 
-## 7) Operator notes
+```bash
+python scripts/publish.py --account <account-id> --region <region> --service-arn <app-runner-service-arn>
+python scripts/publish.py --account <account-id> --region <region> --service-arn <app-runner-service-arn> --apply
+```
 
-- Reuse the same deployed stack for both kiosk and the code walkthrough — avoid
-  "fresh deploy theater" unless deploying is the explicit lesson.
-- One terminal on backend logs, one on frontend logs.
-- After any fix, rerun the Section 3 health checks before resuming the demo.
-- The kiosk auto-loops real `/api/chat` calls on a timer → real Bedrock + Aurora
-  spend. Stop it when not actively demoing.
-- Never narrate durable recovery unless `/api/health` says
-  `"checkpoint_durable": true` and the trace names the configured Aurora saver.
+The publisher does not create or delete App Runner services, rotate
+credentials or read secret values. App Runner reads the API token from the
+Secrets Manager secret `meridian/web/api-token`. The release record is written
+to `.local/hosted-release.json` (gitignored).
+[App Runner no longer accepts new customers](https://aws.amazon.com/apprunner/),
+so this path applies to accounts that already use it; a new account needs a
+different container host for the backend, such as Amazon ECS.
 
----
+The App Runner instance role is a workload and needs its own grant to the demo
+traveler. Run this once after the `MeridianWebRoles` stack exists; without it,
+Phase 4 and Phase 5 requests on the hosted site fail with
+`aws_iam subject is not authorized for traveler`:
 
-# PART 3 — Learnings & gotchas
+```bash
+python scripts/bind_web_backend_role.py
+```
 
-Hard-won notes from getting Phase 4 live. Most map to a recovery step above.
+A Git push runs CI only; it does not deploy the hosted app or the AgentCore
+resources.
 
-- **Gateway needs real targets.** Creating a Gateway isn't enough — `tools/call`
-  fails until at least one target is attached.
-- **`localhost` is not a valid target.** Gateway runs in AWS; targets must be
-  cloud-reachable (Lambda, API Gateway, public MCP).
-- **Tool names are target-prefixed.** Once a target is attached, the effective
-  tool name is `<TargetName>___<toolName>` (hence
-  `SemanticTripSearchLambda___semantic_trip_search`).
-- **Runtime session IDs have constraints.** `runtimeSessionId` must satisfy
-  AgentCore validation (≥33 chars); short conversation IDs were rejected.
-- **Embedding dimensions must match the DB vectors.** Cohere Embed v4 can return
-  1536 unless `output_dimension=1024` is set explicitly for our pgvector schema.
-- **Region consistency matters.** Runtime / Gateway / Lambda must all be in
-  `us-east-1` for this demo.
-- **Config schema drifts with the CLI.** `agentcore.json` must use a project
-  `name` that starts with a letter and is alphanumeric (`meridianv2`), and a
-  memory strategy from `SEMANTIC | SUMMARIZATION | USER_PREFERENCE | EPISODIC`.
-- **Cedar has no floats and needs required arguments.** Amounts are integer
-  cents, and every argument a policy names is `required` in the tool schema.
-- **A `forbid` deployed next to its `permit` fails validation.** CloudFormation
-  creates policies in parallel; the forbid is validated before the permit exists
-  and is rejected as overly restrictive. One permit with all conditions deploys.
-- **The CDK `lambda` target has no environment variables.** The holds Lambda
-  reads its Aurora settings from SSM (`scripts/publish_gateway_parameters.py`).
-- **The gateway Lambda is a workload.** Grant its role in
-  `traveler_identity_bindings` with `scripts/bind_gateway_workload.py`.
-- **The model retries a refused hold.** The runtime hook settles the hold once
-  per turn and hands the model the explained decision instead of the raw error.
-  See [AGENTCORE_LEARNINGS.md](AGENTCORE_LEARNINGS.md) for the full list.
+`scripts/validate_demo.py` runs the full demo contract (catalog, phases, holds,
+confirmation and cleanup) against a backend. It uses real services and removes
+only its own records. Against a hosted backend it needs
+`--allow-hosted-demo-writes`, and `MERIDIAN_HOSTED_AUTH` must supply the site's
+basic-auth credentials at run time. Resolve that value from Secrets Manager
+when you run the command; do not store it in a file.
 
-## Why two folders (`meridian/` and `meridian/meridian_agentcore/`)?
+To tear down the hosted app, run `npx cdk destroy MeridianWeb` from `infra/`,
+delete the App Runner service, then run
+`npx cdk destroy MeridianWebBackend MeridianWebRoles`.
 
-- **`meridian/`** = the product app (FastAPI + frontend + tests + demo code).
-- **`meridian/meridian_agentcore/`** = the AgentCore CLI project (infra-as-code
-  for the AgentCore resources + deployment state).
+The container starts through `backend/launch.py`, which opens the port before
+the application finishes loading; [AGENTCORE_LEARNINGS.md](AGENTCORE_LEARNINGS.md)
+explains why App Runner needs this.
 
-The app reads deployed values from `.env` / the CLI deployed-state file at
-runtime. The split is intentional and fine; could be merged later if desired.
+## Troubleshooting
 
+| Symptom | Cause and fix |
+| --- | --- |
+| `AgentCore platform not configured` | The backend has no runtime, gateway or memory ID. Run `python scripts/sync_agentcore_env.py --write` and restart the backend. Production does not fall back to direct Aurora access. |
+| `runtimeSessionId ... valid min length: 33` | The runtime session ID is too short. Restart the backend on current code; `_build_runtime_session_id` in `backend/agentcore/runtime.py` builds a valid ID. |
+| Gateway reports `no targets were configured` | A target is missing. Check that `meridian-semantic-trip-search` exists, render the config and run `agentcore deploy -y`. |
+| Production returns no packages | Run `python scripts/verify_agentcore.py` (expect four tools) and watch `agentcore logs --runtime MeridianConcierge --follow` while you repeat the prompt. |
+| A hold returns `traveler_not_authorized` | The holds Lambda role has no grant. Run `python scripts/bind_gateway_workload.py`. |
+| Hosted Phase 4 or 5 returns `aws_iam subject is not authorized for traveler` | The App Runner instance role has no grant. Run `python scripts/bind_web_backend_role.py`. |
+| Every hold is denied, including confirmed ones | If `verify_agentcore.py` shows the policy engine `MISSING`, render (it must print `Configuration complete.`) and deploy. If it shows `ACTIVE` and `ENFORCE`, read the denied span's `arguments`: the ceiling is the traveler's saved per-person budget times the party size, and packages above it are refused. |
+| The runtime replies but the trace has no gateway spans | The runtime runs older code. `agentcore status` shows the version; `agentcore deploy -y` publishes `app/MeridianConcierge`. |
+| `npx agentcore` fails with a cloud assembly schema version error | `npx` resolved an older cached CLI. Run the globally installed `agentcore`. |
+| `/api/health` reports `MemorySaver` | No durable checkpoint store resolved. Set the variables in [Run with durable checkpoints](#run-with-durable-checkpoints). |
 
-### Waiting and readback policy
+## Waits, retries and readback
 
-The browser bounds chat, hold, and booking waits to 55 seconds, before CloudFront's 60-second origin timeout. A managed Runtime read has a 45-second socket timeout with one SDK attempt; this is not an end-to-end workflow deadline. A multi-step workflow can outlive the browser wait. Its saved thread remains addressable in the URL, and the UI requires readback before retrying an unknown recovery outcome. Stopping the wait does not revoke a committed transaction.
+The browser bounds chat, hold and confirmation waits to 55 seconds, under
+CloudFront's 60-second origin timeout. The runtime client uses a 45-second
+socket read timeout with one attempt; this is not an end-to-end workflow
+deadline, and a multi-step workflow can outlive the browser's wait. Its thread
+stays addressable in the URL, and the UI reads the saved outcome back before
+offering a retry. Stopping the wait does not undo a committed transaction.
 
-Catalog routes, `/api/health`, `/openapi.json`, `/docs`, `/redoc`, and the API root use the existing HTTP principal requirement. `/health` is deliberately public and returns only process liveness (`status: healthy`); it does not establish Aurora readiness. For the hosted release, verify protected frontend/backend parity and headers before presenting. Local code validation is not deployment evidence.
+An unconfirmed chat turn without a hold or booking target is retried once,
+after 250 ms, if the connection closes before the runtime responds; it keeps
+the same payload and conversation and session IDs. Holds and confirmations are
+single attempts: read back their outcome before retrying. Timeouts, partial
+streams, permission errors and runtime errors are not retried.
 
-Direct-hold identities and booking references persist per traveler on the browser origin. Receipts are restored through authenticated, RLS-scoped reads from Aurora. Blocked storage prevents a new direct hold from being sent. Do not clear the browser's storage to work around an uncertain hold; inspect its journey and booking first.
+Direct-hold intent IDs and booking references are stored per traveler in the
+browser. Receipts come from authenticated, RLS-scoped reads from Aurora. If
+browser storage is blocked, the app does not send a new direct hold. Do not
+clear browser storage to work around an uncertain hold; open its journey and
+booking first.

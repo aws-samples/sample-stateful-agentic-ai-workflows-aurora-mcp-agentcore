@@ -1,7 +1,7 @@
-"""The claim the chalk talk makes, tested end to end against real Aurora.
+"""Meridian's durable-recovery claim, tested end to end against real Aurora.
 
 Each test maps to one step of the demonstrated sequence: a checkpoint is
-committed where the audience can see it, a fresh worker picks the thread up,
+committed where the evidence views can read it, a fresh worker picks the thread up,
 two workers cannot both pick it up, and a hold survives a kill without being
 placed twice.
 

@@ -1,8 +1,8 @@
 """
 Production mode: the managed AgentCore Runtime owns the tool loop; Aurora RLS bounds the turn.
 
-Presenter walkthrough, AgentCore on one turn
---------------------------------------------
+Walkthrough, AgentCore on one turn
+----------------------------------
   1. AgentCore Identity  : workload / IAM envelope (security span)
   2. Traveler grant      : traveler_identity_bindings authorizes the workload for Alex
   3. Aurora RLS read     : one short transaction for profile, preferences and recall

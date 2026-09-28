@@ -253,7 +253,7 @@ class TraceHooks(HookProvider):
         denied = payload is None and bool(DENIAL_PATTERN.match(text.strip()))
         summary = self._failure(name, text, denied, elapsed, event.tool_use)
         # Hand the model the explained decision so its reply names the real reason;
-        # the raw gateway text stays in the span for the audience.
+        # the raw gateway text stays in the span for the trace viewer.
         event.result = {**result, "status": "error", "content": [{"text": summary}]}
 
     def _success(self, name: str, payload: dict, elapsed: int) -> None:

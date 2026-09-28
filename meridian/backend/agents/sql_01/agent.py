@@ -1,14 +1,14 @@
 """
 Phase 1 — SQL Agent (Strands + direct Aurora access).
 
-Presenter walkthrough
----------------------
-Show this module when explaining the Strands `@tool` pattern:
+Walkthrough
+-----------
+This module shows the Strands `@tool` pattern:
   • `Agent(model=BedrockModel(...), tools=[...])` — Bedrock picks tools per turn
   • Each `@tool` runs SQL via RDS Data API and logs queries for the trace
 
-Live demo note: `chat.py` → `sql_search()` runs the same keyword SQL
-procedurally (no LLM loop) so Phase 1 demos stay deterministic. This file
+In the app, `chat.py` → `sql_search()` runs the same keyword SQL
+procedurally (no LLM loop) so Phase 1 replies stay deterministic. This file
 is the production-shaped Strands implementation.
 
 AWS docs:
