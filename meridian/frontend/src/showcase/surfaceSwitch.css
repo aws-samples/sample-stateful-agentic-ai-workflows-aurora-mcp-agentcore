@@ -302,7 +302,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--mds-separator);
+  background: var(--mds-label-3);
 }
 
 .mds-continuity-dot.is-live {

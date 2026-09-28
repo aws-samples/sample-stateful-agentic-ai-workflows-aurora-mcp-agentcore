@@ -1082,7 +1082,7 @@
 }
 
 .mds-result-disclosure button:hover {
-  background: color-mix(in srgb, var(--mds-blue) 18%, transparent);
+  background: var(--mds-blue-fill);
 }
 
 .mds-result-disclosure button:active {
@@ -1964,63 +1964,22 @@
   transform: none;
 }
 
-/* Stretch query: third pill in each phase that exposes the phase's
-   limit. Yellow dashed border + a leading arrow so it's visually distinct
-   from the two known-good queries. */
-/* A prompt this phase answers: green, the same signal as a completed step.
-   The stretch prompt below stays yellow: it needs the next rung. */
-.mds-chat-starter-chip.is-works {
-  border-color: var(--mds-green);
-  color: var(--mds-label);
-  background: var(--mds-green-fill);
-}
-
-.mds-chat-starter-chip.is-works small {
-  color: var(--mds-green);
-}
-
+/* is-works and is-stretch only render inside the proof-mode composer wrap
+   (ChatComposer.tsx), where airlineConcierge.css overrides their border,
+   background and small color at higher specificity: the color roles below
+   never paint. The checkmark glyph is not a color and nothing overrides it,
+   so it stays, in whatever color the small text resolves to. */
 .mds-chat-starter-chip.is-works small::before {
   content: "\2713";
   margin-right: 5px;
   font-weight: 700;
 }
 
-.mds-chat-starter-chip.is-works:hover,
-.mds-chat-starter-chip.is-works:focus-visible {
-  border-color: var(--mds-green);
-  background: var(--mds-green-fill);
-}
-
-/* Keyboard focus needs its own ring. The hover styles above only shift the
-   border tint, which on a projector is not a visible focus indicator, and the
-   modifier classes below override that tint anyway. */
 .mds-chat-starter-chip:focus-visible,
 .mds-chat-starter-chip.is-works:focus-visible,
 .mds-chat-starter-chip.is-stretch:focus-visible {
   outline: 2px solid var(--mds-tint);
   outline-offset: 2px;
-}
-
-.mds-chat-starter-chip.is-stretch {
-  border-style: dashed;
-  border-color: var(--mds-yellow);
-  color: var(--mds-label);
-  background: var(--mds-surface);
-}
-
-.mds-chat-starter-chip.is-stretch::before {
-  content: "→";
-  margin-right: 6px;
-  color: var(--mds-yellow);
-  font-weight: 700;
-}
-
-.mds-chat-starter-chip.is-stretch:hover,
-.mds-chat-starter-chip.is-stretch:focus-visible {
-  border-style: solid;
-  border-color: var(--mds-yellow);
-  color: var(--mds-label);
-  background: var(--mds-surface-2);
 }
 
 .mds-chat-phase-framing {
@@ -2773,7 +2732,7 @@
 .mds-memory-toggle-error {
   margin-top: 10px;
   padding: 9px 0;
-  border-top: 1px solid color-mix(in srgb, var(--mds-red) 45%, transparent);
+  border-top: 1px solid var(--mds-separator);
   color: var(--mds-red);
   font-size: calc(12px * var(--mds-fs));
   line-height: 1.4;
@@ -3155,8 +3114,8 @@
 }
 
 .mds-trace-tabs button.is-active {
-  color: var(--mds-on-action);
-  background: var(--mds-action);
+  color: var(--mds-blue);
+  background: var(--mds-blue-fill);
 }
 
 .mds-sql-list pre {
@@ -3896,7 +3855,7 @@
 }
 .mds-rerank-replay:hover {
   transform: translateY(-1px);
-  background: color-mix(in srgb, var(--mds-blue) 18%, transparent);
+  background: var(--mds-blue-fill);
 }
 
 /* Rank-delta pill inside the match badge: green=promoted, yellow=demoted,
@@ -3939,7 +3898,7 @@
   border: 0;
 }
 .mds-wfgraph.is-unmatched {
-  background: color-mix(in srgb, var(--mds-yellow) 8%, var(--mds-surface-2));
+  background: var(--mds-yellow-fill);
 }
 .mds-wfgraph-empty {
   margin: 2px 0 0;
@@ -4042,8 +4001,8 @@
   line-height: 1;
 }
 .mds-wfgraph-route-summary span.is-lit {
-  background: var(--mds-blue-fill);
-  color: var(--mds-blue);
+  background: var(--mds-green-fill);
+  color: var(--mds-green);
 }
 .mds-wfgraph-route {
   position: relative;
@@ -4059,7 +4018,7 @@
   left: 21px;
   width: 2px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--mds-blue) 34%, var(--mds-separator));
+  background: var(--mds-separator);
 }
 .mds-wfgraph-route-row {
   display: block;
@@ -4081,7 +4040,7 @@
    is-current moves on, since dropping that class re-resolves `animation`
    to this rule and restarts it. That is the per-node arrival cue. */
 .mds-wfgraph-route-node.is-visited {
-  border-color: var(--mds-blue);
+  border-color: var(--mds-separator);
   background:
     var(--mds-surface-2);
   color: var(--mds-label);
@@ -4094,7 +4053,7 @@
   }
 }
 .mds-wfgraph-route-node.is-current {
-  border-color: var(--mds-green);
+  border-color: var(--mds-tint);
   animation: none;
 }
 .mds-wfgraph-route-node.is-next {
@@ -4109,7 +4068,7 @@
   width: 28px;
   height: 28px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--mds-label-3) 18%, transparent);
+  background: var(--mds-surface);
   color: var(--mds-label-2);
   font-family: var(--mds-font-mono);
   font-size: calc(12.5px * var(--mds-fs));
@@ -4425,7 +4384,7 @@
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--mds-red) 22%, transparent);
+  background: var(--mds-red-fill);
 }
 .mds-rls-bar-scoped {
   position: absolute;
@@ -4454,7 +4413,7 @@
   background: var(--mds-green);
 }
 .mds-rls-dot.is-hidden {
-  background: color-mix(in srgb, var(--mds-red) 45%, transparent);
+  background: var(--mds-red);
 }
 
 .mds-rls-policies {

@@ -2,17 +2,6 @@
    cover briefing diagrams, recorded SQL and recovery evidence. Laptop styling
    stays independent; the theme toggle still supports a fully dimmed room. */
 
-/* Filled controls take the action fill and its label. */
-.mds-root[data-theme] :is(
-  .mds-trip-confirm button, .mds-trip-modal-actions .is-primary,
-  .mds-compare-copy .is-primary, .mds-popover-primary,
-  .mds-trace-tabs button.is-active
-) {
-  background: var(--mds-action);
-  border-color: var(--mds-action);
-  color: var(--mds-on-action);
-}
-
 /* Primary buttons draw a 1px edge in the action color. Focus rings remain distinct. */
 .mds-root .mc-presenter-actions .mc-present-button,
 .mds-root .mds-desktop-app :is(

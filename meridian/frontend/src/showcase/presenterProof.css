@@ -109,7 +109,7 @@
 }
 
 .mds-proof-worker.is-stopped .mds-proof-worker-glyph {
-  color: var(--mds-yellow);
+  color: var(--mds-red);
 }
 
 .mds-proof-worker-role {
@@ -130,11 +130,11 @@
 }
 
 .mds-proof-worker.is-stopped .mds-proof-worker-state {
-  color: var(--mds-yellow);
+  color: var(--mds-red);
 }
 
 .mds-proof-worker.is-running .mds-proof-worker-state {
-  color: var(--mds-green);
+  color: var(--mds-tint);
 }
 
 /* The store is the centre of the claim, so it is the only filled panel. */

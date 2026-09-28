@@ -144,7 +144,7 @@
 
 .mds-ladder-nav-rung.is-active .mds-ladder-nav-index {
   color: var(--mds-on-action);
-  background: var(--mds-action);
+  background: var(--mds-blue);
 }
 
 .mds-ladder-nav-rung.is-active .mds-ladder-nav-copy small {
@@ -686,8 +686,8 @@
   padding: 0 11px;
   border: 0;
   border-radius: 999px;
-  color: var(--mds-yellow);
-  background: var(--mds-yellow-fill);
+  color: var(--mds-red);
+  background: var(--mds-red-fill);
   font-size: calc(12px * var(--mds-fs));
   font-weight: 750;
 }
@@ -1468,8 +1468,8 @@
   padding: 0 11px;
   border: 0;
   border-radius: 999px;
-  color: var(--mds-yellow);
-  background: var(--mds-yellow-fill);
+  color: var(--mds-red);
+  background: var(--mds-red-fill);
   font-size: calc(10.5px * var(--mds-fs));
   font-style: normal;
   font-weight: 800;
@@ -1719,8 +1719,8 @@
   padding: 0 11px;
   border: 0;
   border-radius: 999px;
-  color: var(--mds-yellow);
-  background: var(--mds-yellow-fill);
+  color: var(--mds-red);
+  background: var(--mds-red-fill);
   font-size: calc(11px * var(--mds-fs));
   font-weight: 820;
   text-transform: uppercase;
@@ -1895,7 +1895,7 @@
 }
 
 .mds-recovery-launch-steps small {
-  color: var(--mds-label-3);
+  color: var(--mds-label-2);
   font-size: calc(11px * var(--mds-fs));
   line-height: 1.3;
 }

@@ -54,7 +54,7 @@
   font-size: 15px;
   line-height: 1.6;
 }
-.mc-presenter-error { margin: 0; color: var(--mds-yellow); background: var(--mds-yellow-fill); }
+.mc-presenter-error { margin: 0; color: var(--mds-red); background: var(--mds-red-fill); }
 .mc-audience-brand { display: none; }
 
 /* A CSS guard hides controls immediately, before React receives the event. */
@@ -217,7 +217,6 @@
     padding: 18px 12px;
   }
   .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps strong {
-    color: var(--mds-label);
     font-size: 18px;
     line-height: 1.35;
   }
@@ -225,12 +224,10 @@
     display: block;
     max-width: 28ch;
     margin-inline: auto;
-    color: var(--mds-label-2);
     font-size: 16px;
     line-height: 1.4;
   }
   .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) :is(.mds-recovery-timeline-heading > span, .mds-recovery-timeline-heading > small, .mds-recovery-launch-actions > span) {
-    color: var(--mds-label-2);
     font-size: 16px;
   }
   .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-recovery-timeline-heading { padding-block: 14px 10px; }
