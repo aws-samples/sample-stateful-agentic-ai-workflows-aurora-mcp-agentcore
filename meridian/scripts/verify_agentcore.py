@@ -156,8 +156,9 @@ def main() -> int:
         )
     except (NoCredentialsError, ClientError, BotoCoreError) as exc:
         console.print(
-            "[red]✗ No usable AWS credentials.[/red] Refresh them (e.g. ada/isengard "
-            f"for the account that owns the demo), then re-run.\n   {exc}\n"
+            "[red]✗ No usable AWS credentials.[/red] Sign in with `aws login` or "
+            "`aws sso login` for the account that hosts the deployment, then re-run."
+            f"\n   {exc}\n"
         )
         return 2
 
