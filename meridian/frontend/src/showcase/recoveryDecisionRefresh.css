@@ -515,15 +515,6 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Durability receipt
-
-   Phase 5's claim depends entirely on which checkpointer ran. PostgresSaver
-   survives process loss; MemorySaver does not. The presenter guide warns not
-   to present MemorySaver as the durable proof, so the surface names the store
-   rather than leaving it in the trace rail.
---------------------------------------------------------------------------- */
-
-/* ---------------------------------------------------------------------------
    Hold receipt
 
    The seats are reserved in Aurora with a TTL, so the clock keeps running

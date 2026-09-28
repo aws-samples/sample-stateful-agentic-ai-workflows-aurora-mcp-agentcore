@@ -110,27 +110,6 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Personalization pills
-
-   Each pill is one row Aurora actually returned for this traveler, evaluated
-   against the trip currently in the hero. They recompute as the hero rotates,
-   which is the point: the product view is reading live profile state, not
-   rendering a fixed marketing strip.
---------------------------------------------------------------------------- */
-
-/* ---------------------------------------------------------------------------
-   Hero rotation
---------------------------------------------------------------------------- */
-
-/* ---------------------------------------------------------------------------
-   Session receipt
-
-   The close. Every phase claims to persist something; this counts the rows
-   behind those claims. It only appears once there is something to point at,
-   so the cold open stays clean.
---------------------------------------------------------------------------- */
-
-/* ---------------------------------------------------------------------------
    Concierge rail
    ---------------------------------------------------------------------------
    Sits in the same column as the ladder's evidence rail and reads as its calm

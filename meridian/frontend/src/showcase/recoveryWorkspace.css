@@ -218,16 +218,6 @@
   font-size: calc(13.5px * var(--mds-fs));
 }
 
-/* Use the recovery command heading as the shared title treatment, so advancing
-   between the ladder and finale keeps the greeting visually stationary. */
-
-/* Subhead matches .mds-recovery-greeting p — the base headline rule adds weight
-   and negative tracking that the finale's subhead does not use. */
-
-/* Keep the projector greeting on the same full-width row at large resolutions.
-   Otherwise the phase selector squeezes the headline just as the type scale
-   reaches its maximum, causing the longer afternoon/evening variants to wrap. */
-
 /* Both steps share the finale's shell geometry, so switching views never moves
    the sidebar, main stage, or proof rail. */
 .mds-desktop-app {
@@ -762,9 +752,6 @@
 .mds-recovery-overview.is-ready .mds-recovery-overview-meta strong {
   color: #6ee1a8;
 }
-
-/* Opacity only: a CSS transform here would override the marker group's SVG
-   transform attribute and teleport both airports to the origin. */
 
 .mds-recovery-briefing {
   display: grid;

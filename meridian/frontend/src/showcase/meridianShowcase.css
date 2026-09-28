@@ -297,19 +297,10 @@
   border-color: var(--mds-line);
   box-shadow: var(--mds-shadow-2);
 }
-/* Card title/sub/price sit on the OVERLAY, over a dark photo + scrim — so
-   they must stay light in BOTH themes (same as .mds-rec-overlay text). The
-   title's base color is var(--mds-on-surface), which flips to slate in light
-   and goes dark-on-dark; pin the overlay text back to white here. The dark
-   text-shadow already baked into these elements keeps them legible on the
-   photo. */
 .mds-root[data-theme="light"] .mds-chat-composer,
 .mds-root[data-theme="light"] .mds-chat-composer textarea {
   background: var(--mds-card);
 }
-/* Subtle white overlays read as near-invisible on a light bg — darken them so
-   chips/insets/dividers stay perceptible in light mode. */
-
 /* ---- Light theme: remaining dark chrome (chips, popovers, drawers, buttons,
    badges). Each maps a dark surface to a light one. Whites become faint slate
    fills; cyan-tinted "active" states use the light cyan-soft token. ---- */
@@ -368,8 +359,6 @@
   background: rgba(21, 128, 61, 0.08);
   border-color: rgba(21, 128, 61, 0.24);
 }
-/* Match badge intentionally has NO light-mode override — it's a white pill
-   over a photo and stays identical in both themes (see base rules). */
 .mds-root[data-theme="light"] .mds-chip-pop,
 .mds-root[data-theme="light"] .mds-chip-pop::after,
 .mds-root[data-theme="light"] .mds-drawer {
@@ -461,9 +450,6 @@
   box-shadow: var(--mds-shadow-1);
 }
 
-/* Phase tabs (SQL · MCP · Retrieval · Production · Workflow): inactive label is
-   a hardcoded #aeb9c4 that's far too faint on light. Darken to the soft slate
-   ink; keep the active tab on its own (cyan/ink) treatment. */
 /* Sent (user) query bubble: background was rgba(49,90,110,.62) — a dark teal
    that reads as a muddy grey slab on light. Repaint as the soft cyan tint so
    it's clearly the traveler's turn, with legible slate ink. */
@@ -546,9 +532,6 @@
 .mds-root[data-theme="light"] .mds-popover-link {
   color: var(--mds-on-surface-soft);
 }
-
-/* Tabular numerals for any pill / chip / metric displaying counts so
-   "12 spans" / "427ms" / "$1,950" don't shimmer when values change. */
 
 /* Page-level error boundary fallback. Shown when a render crash would
    otherwise blank the showcase. */
@@ -1063,8 +1046,6 @@
   padding-bottom: 16px;
 }
 
-/* Breadcrumb (left) — orients the surface. */
-
 /* Live status pill (right) — bordered pill with a pulsing dot. */
 .mds-status-pill {
   display: inline-flex;
@@ -1120,15 +1101,6 @@
   transform: translateY(1px);
 }
 
-/* Phase selection is an interaction state, so it uses blue rather than the
-   finale's disruption yellow. */
-
-/* Seven stages, two columns. Six columns in a ~370px rail gave each stage
-   about 55px, which is narrower than "Hybrid retrieval" or "AgentCore +
-   Strands" can render - the labels collided and the seventh stage wrapped
-   alone onto a second row. Two columns give each chip roughly 180px, enough
-   for the label and its value to read at a glance. */
-
 .mds-error-banner {
   padding: 10px 12px;
   border: 1px solid rgba(255, 129, 95, 0.26);
@@ -1138,13 +1110,6 @@
   font-size: calc(13px * var(--mds-fs));
   text-align: left;
 }
-
-/* Phase-diff callout — slides in when the presenter advances a rung and
-   names what this mode ADDS over the last. Cyan-tinted to read as a
-   "capability unlocked" beat, distinct from the warm error banner. */
-
-/* Live-alert dot inside the status pill — a pulsing ring that echoes the
-   card's own attention animation so the badge reads as active, not static. */
 
 @media (prefers-reduced-motion: reduce) {
 
@@ -1270,9 +1235,6 @@
   gap: 8px;
   padding: 13px 16px 11px;
 }
-
-/* Inline trace receipt under the reply (tools called · memory prefs · ms).
-   Token-driven cyan pills — read in both themes. */
 
 .mds-message-text {
   display: block;
@@ -2435,10 +2397,6 @@
   animation: mds-pulse 1.15s ease-in-out infinite;
 }
 
-/* Streaming caret was removed - the typewriter reveal is smooth enough
-   on its own and a blinking cursor at the end of finished turns felt
-   abrupt on stage demos. */
-
 .mds-trip-visual {
   position: relative;
   overflow: hidden;
@@ -2464,8 +2422,6 @@
   will-change: transform;
 }
 
-/* Ken Burns — a slow push-in on hover/focus makes the full-bleed card feel
-   alive and cinematic. Scoped to the rec cards (not chat thumbnails). */
 @media (prefers-reduced-motion: reduce) {
   .mds-trip-photo { transition: none; transform: none; }
 }
@@ -2558,8 +2514,6 @@
     linear-gradient(10deg, #254d2d, #66823a);
   transform: rotate(-2deg);
 }
-
-/* Legacy non-overlay card layout — kept for the trip drawer. */
 
 .mds-trace-actions button {
   min-height: 30px;
@@ -3946,10 +3900,6 @@
   color: #ffffff;
   background: var(--mds-blue);
 }
-
-/* The row is a div with button semantics so its detail can carry a real link. */
-
-/* A Cedar denial or a failed tool call reads in the danger color, not as a failure of the trace. */
 
 .mds-sql-list pre {
   display: block;

@@ -259,17 +259,6 @@
   min-height: 0;
 }
 
-/* With the dock taking its share, the two supporting cards became short enough
-   that their titles clipped ("Barcelona Architecture Week" lost its first
-   word). Give the grid a floor and let the stage scroll instead of letting the
-   cards compress below the size their copy needs. */
-
-/* The workspace is a fixed-height flex child with four grid rows. When the
-   session receipt opened, its row had nowhere to grow, so the rows overlapped
-   and the receipt rendered underneath the full-bleed hero. Sizing to content
-   lets the rows keep their heights and hands the overflow to the scroll
-   container, which already scrolls. */
-
 /* ---------------------------------------------------------------------------
    Journey continuity rail
    ---------------------------------------------------------------------------
@@ -468,31 +457,6 @@
     grid-template-columns: 76px minmax(0, 1fr);
   }
 }
-
-/* ---------------------------------------------------------------------------
-   Concierge rail thread
-   ---------------------------------------------------------------------------
-   The conversation only. The rail used to host the full ChatTranscript, which
-   renders the recommendation deck at full width: inside a 384px column the
-   cards clipped their own prices and overlapped the list below them. The
-   recommendations already have two homes on this surface - the hero grid and
-   "Made for your next chapter" - so the rail carries what was said instead.
------------------------------------------------------------------------------- */
-
-/* Direct children only: the assistant's reply is markdown and contains its own
-   list items, which would otherwise each render as a chat bubble. */
-
-/* Wide block content inside a reply scrolls itself rather than the rail. */
-
-/* ---------------------------------------------------------------------------
-   Session receipt, folded
-   ---------------------------------------------------------------------------
-   Expanded it competed with the full-bleed hero for the same rows and the two
-   drew over each other. Closed by default; a presenter opens it when the
-   receipt is the point being made.
------------------------------------------------------------------------------- */
-
-/* Same reason: the options list keeps its height and the rail scrolls. */
 
 /* ---------------------------------------------------------------------------
    Shared surface bar and Concierge
