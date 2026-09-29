@@ -68,7 +68,7 @@ describe('deriveRecoverySteps', () => {
       }
       : item));
     const steps = deriveRecoverySteps(inProcess, 'checkpointed', checkpointed);
-    expect(steps[2]).toEqual({ state: 'is-pending', source: null });
+    expect(steps[2]).toEqual({ id: 'checkpoint', state: 'is-pending', source: null });
   });
 
   it('claims no progress while a fresh run is in flight', () => {
@@ -102,7 +102,7 @@ describe('deriveRecoverySteps', () => {
       ? { ...item, fields: [{ label: 'checkpoint_durable', value: 'false' }] }
       : item));
     const steps = deriveRecoverySteps(inProcess, 'running', { resumeMode: true, failed: false });
-    expect(steps[2]).toEqual({ state: 'is-pending', source: null });
+    expect(steps[2]).toEqual({ id: 'checkpoint', state: 'is-pending', source: null });
     expect(steps[1].source).toBe(nb('Bedrock + Aurora · 956 ms'));
   });
 

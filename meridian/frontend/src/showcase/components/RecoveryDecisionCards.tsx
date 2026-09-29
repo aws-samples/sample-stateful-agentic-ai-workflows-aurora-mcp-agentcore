@@ -24,6 +24,7 @@ import type { LongTermMemoryFact, Product, TravelerProfile } from '../../types';
 import type {
   RecoveryEvidence,
   RecoveryStage,
+  RecoveryStepId,
   RecoveryStepView,
 } from '../lib/recoveryState';
 import { TripVisual } from './TripVisual';
@@ -82,6 +83,43 @@ interface RecoveryLaunchCardProps {
   compact?: boolean;
   resumeMode?: boolean;
   onStart: () => void;
+}
+
+/** The four workflow steps, each named by the id its backend view carries. */
+const LAUNCH_STEPS: {
+  id: RecoveryStepId;
+  icon: typeof Search | typeof AuroraIcon;
+  label: string;
+  detail: string;
+}[] = [
+  {
+    id: 'understand',
+    icon: AlertTriangle,
+    label: 'Understand disruption',
+    detail: 'Classify the canceled-flight recovery.',
+  },
+  {
+    id: 'search',
+    icon: Search,
+    label: 'Search and rank',
+    detail: 'Retrieve and rerank live Tokyo options.',
+  },
+  {
+    id: 'checkpoint',
+    icon: AuroraIcon,
+    label: 'Save an Aurora checkpoint',
+    detail: 'Persist the shortlist before verification.',
+  },
+  {
+    id: 'verify',
+    icon: CheckCircle2,
+    label: 'Verify after resume',
+    detail: 'Check the top three options after the pause.',
+  },
+];
+
+function stepView(steps: RecoveryStepView[], id: RecoveryStepId): RecoveryStepView {
+  return steps.find(step => step.id === id) ?? { id, state: 'is-pending', source: null };
 }
 
 function timelineNote(
@@ -250,32 +288,12 @@ export function RecoveryLaunchCard({
   const running = stage === 'running';
   const failed = Boolean(errorDetail);
   // The one emphasis, only when a watched run's response confirms the save.
-  const checkpointGlow = useConfirmedLive(steps[2]?.state === 'is-visited', live);
+  const checkpointGlow = useConfirmedLive(
+    stepView(steps, 'checkpoint').state === 'is-visited', live,
+  );
   // A step settles into place only when a response confirms it. While a
   // request is in flight nothing has been confirmed yet, so nothing moves.
   const settles = live && !running;
-  const launchSteps = [
-    {
-      icon: AlertTriangle,
-      label: 'Understand disruption',
-      detail: 'Classify the canceled-flight recovery.',
-    },
-    {
-      icon: Search,
-      label: 'Search and rank',
-      detail: 'Retrieve and rerank live Tokyo options.',
-    },
-    {
-      icon: AuroraIcon,
-      label: 'Save an Aurora checkpoint',
-      detail: 'Persist the shortlist before verification.',
-    },
-    {
-      icon: CheckCircle2,
-      label: 'Verify after resume',
-      detail: 'Check the top three options after the pause.',
-    },
-  ];
 
   return (
     <article
@@ -398,7 +416,7 @@ export function RecoveryLaunchCard({
 
       <div className="mds-recovery-timeline-heading">
         <span>{running ? 'Live workflow' : failed ? 'Workflow stopped' : 'Recovery workflow'}</span>
-        <small>{timelineNote(stage, failed, resumeMode, launchSteps.length)}</small>
+        <small>{timelineNote(stage, failed, resumeMode, LAUNCH_STEPS.length)}</small>
       </div>
 
       {/* The app's view swap starts with AnimatePresence initial={false}, which
@@ -411,11 +429,11 @@ export function RecoveryLaunchCard({
         }`}
         aria-label="Recovery workflow progress"
       >
-        {launchSteps.map((step, index) => {
+        {LAUNCH_STEPS.map((step) => {
           const Icon = step.icon;
-          const { state: stepState, source } = steps[index];
+          const { state: stepState, source } = stepView(steps, step.id);
           // The checkpoint step keeps its Aurora mark once Aurora confirms it.
-          const aurora = Icon === AuroraIcon;
+          const aurora = step.id === 'checkpoint';
           const done = stepState === 'is-visited' && !aurora;
           return (
             <li

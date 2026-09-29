@@ -104,9 +104,12 @@ export function deriveRecoveryEvidence(
 }
 
 export type RecoveryStepState = 'is-ready' | 'is-pending' | 'is-current' | 'is-visited';
+export type RecoveryStepId = 'understand' | 'search' | 'checkpoint' | 'verify';
 
 /** One of the four recovery workflow steps, as the backend has reported it. */
 export interface RecoveryStepView {
+  /** Which step this is, so a view never depends on its position in a list. */
+  id: RecoveryStepId;
   state: RecoveryStepState;
   /** "Service · time" once the step is confirmed; the service alone when unmeasured. */
   source: string | null;
@@ -149,7 +152,9 @@ function checkpointSource(spans: ShowcaseTraceSpan[]): string | null {
   return checkpoint && checkpoint.status === 'ok' && durable ? stepSourceLabel(checkpoint) : null;
 }
 
-const pending = (): RecoveryStepView => ({ state: 'is-pending', source: null });
+const STEP_IDS: RecoveryStepId[] = ['understand', 'search', 'checkpoint', 'verify'];
+
+const pending = (id: RecoveryStepId): RecoveryStepView => ({ id, state: 'is-pending', source: null });
 
 /** Understand, search, checkpoint and verify, each confirmed only by the spans
  *  the backend returned. A fresh run in flight claims no step: the trace arrives
@@ -159,21 +164,22 @@ export function deriveRecoverySteps(
   stage: RecoveryStage,
   { resumeMode, failed }: { resumeMode: boolean; failed: boolean },
 ): RecoveryStepView[] {
-  if (failed || (stage === 'running' && !resumeMode)) {
-    return [pending(), pending(), pending(), pending()];
-  }
+  if (failed || (stage === 'running' && !resumeMode)) return STEP_IDS.map(pending);
   if (stage === 'action') {
-    return [{ state: 'is-ready', source: null }, pending(), pending(), pending()];
+    return STEP_IDS.map(id => (id === 'understand'
+      ? { id, state: 'is-ready', source: null } : pending(id)));
   }
-  const sources = [
-    nodeSource(spans, CLASSIFY_NODE), nodeSource(spans, SEARCH_NODE),
-    checkpointSource(spans), nodeSource(spans, VERIFY_NODE),
-  ];
-  const confirmed = sources.map((source): RecoveryStepView => (
-    source ? { state: 'is-visited', source } : pending()));
-  // Resuming changes nothing the paused run's spans confirmed; only the
-  // verification the request is now running is marked in progress.
-  return stage === 'running'
-    ? [...confirmed.slice(0, 3), { state: 'is-current', source: null }]
-    : confirmed;
+  const sources: Record<RecoveryStepId, string | null> = {
+    understand: nodeSource(spans, CLASSIFY_NODE),
+    search: nodeSource(spans, SEARCH_NODE),
+    checkpoint: checkpointSource(spans),
+    verify: nodeSource(spans, VERIFY_NODE),
+  };
+  return STEP_IDS.map((id): RecoveryStepView => {
+    // Resuming changes nothing the paused run's spans confirmed; only the
+    // verification the request is now running is marked in progress.
+    if (stage === 'running' && id === 'verify') return { id, state: 'is-current', source: null };
+    const source = sources[id];
+    return source ? { id, state: 'is-visited', source } : pending(id);
+  });
 }
