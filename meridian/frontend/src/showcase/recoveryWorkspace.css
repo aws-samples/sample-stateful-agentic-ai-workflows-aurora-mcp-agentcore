@@ -750,7 +750,7 @@
 
 .mds-recovery-briefing-head button {
   border: 0;
-  color: var(--mds-label-3);
+  color: var(--mds-label-2);
   background: transparent;
   font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
@@ -1921,9 +1921,11 @@
   font: var(--mds-type-footnote);
 }
 
+/* Pending steps are the plan the room is about to watch, so they stay at the
+   secondary label: the tertiary one fell under 5:1 on the step row's fill. */
 .mds-recovery-launch-steps li.is-pending strong,
 .mds-recovery-launch-steps li.is-pending small {
-  color: var(--mds-label-3);
+  color: var(--mds-label-2);
 }
 
 .mds-recovery-launch-steps li.is-current strong {
@@ -2334,7 +2336,7 @@
 }
 
 .mds-decision-preference-row > div > span.is-pending {
-  color: var(--mds-label-3);
+  color: var(--mds-label-2);
   background: var(--mds-surface-2);
 }
 
@@ -2481,7 +2483,7 @@
 
 .mds-recovery-alternatives-head small,
 .mds-recovery-alternatives-head em {
-  color: var(--mds-label-3);
+  color: var(--mds-label-2);
   font: var(--mds-type-footnote);
   font-style: normal;
 }

@@ -2451,6 +2451,12 @@
   font-weight: var(--mds-weight-semibold);
 }
 
+/* Unavailable, the label stays readable in the tertiary color instead of fading. */
+.mds-root .mds-panel-head button:disabled {
+  color: var(--mds-label-3);
+  opacity: 1;
+}
+
 .mds-profile-line {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr) auto;
@@ -2551,8 +2557,14 @@
   text-align: left;
 }
 
-.mds-memory-switch:disabled {
+/* Disabled, the switch still states its value: the words keep full contrast
+   and only the track dims. */
+.mds-root .mds-memory-switch:disabled {
   cursor: default;
+  opacity: 1;
+}
+
+.mds-memory-switch:disabled .mds-memory-switch-track {
   opacity: 0.55;
 }
 
