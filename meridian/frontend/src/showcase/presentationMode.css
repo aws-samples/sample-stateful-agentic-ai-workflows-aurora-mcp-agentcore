@@ -186,9 +186,6 @@
     padding: clamp(24px, 3cqw, 52px);
     row-gap: 20px;
   }
-  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message h2 {
-    max-width: 21ch;
-  }
   .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message p {
     max-width: 46ch;
   }
