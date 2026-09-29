@@ -252,7 +252,7 @@ export function DesktopMeridianApp({
         <div className="mds-sidebar-head">
           <div className="mds-brand">
             <BrandMark />
-            <span className="mds-brand-name">Meridian<small>TRAVEL CONCIERGE</small></span>
+            <span className="mds-brand-name">Meridian<small>Travel concierge</small></span>
           </div>
           <IconTooltip label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
             <button
