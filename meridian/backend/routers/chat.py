@@ -33,6 +33,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from backend.agentcore.identity import get_agentcore_identity
+from backend.agents.production_04.concierge import runtime_model_id
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.db.embedding_service import get_embedding_service
@@ -2314,6 +2315,9 @@ async def chat(
                 # is authored by AgentCore Runtime rather than a second local
                 # model pass.
                 message = raw_message
+            # The badge names the model the Runtime reported for this turn.
+            # The workflow handoff is fixed text, so no model wrote it.
+            runtime_model = None if needs_workflow else runtime_model_id(search_activities)
             follow_ups = (
                 [
                     "Run this in Workflow",
@@ -2332,6 +2336,7 @@ async def chat(
                 follow_ups=follow_ups,
                 conversation_id=conv_id,
                 memory_facts=memory_facts,
+                model_label=bedrock_model_label(runtime_model) if runtime_model else None,
             ),
                 request.phase,
                 turn_started,

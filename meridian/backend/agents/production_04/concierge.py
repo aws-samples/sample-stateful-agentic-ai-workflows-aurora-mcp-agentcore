@@ -42,7 +42,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from backend.agentcore.cli_config import require_agentcore_platform
 from backend.agentcore.identity import get_agentcore_identity
@@ -91,6 +91,34 @@ CONSOLE_LOGS = (
     "https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1"
     "#logsV2:log-groups/log-group/$252Faws$252Fbedrock-agentcore$252Fruntimes$252F{runtime_id}-DEFAULT"
 )
+
+
+def _read(item: Any, key: str) -> Any:
+    """One attribute of a span, whether it is a dict or an object."""
+    return item.get(key) if isinstance(item, dict) else getattr(item, key, None)
+
+
+def runtime_model_id(activities: Iterable[Any]) -> Optional[str]:
+    """The model id the AgentCore Runtime reported for this turn, if it reported one.
+
+    The Runtime builds one ``BedrockModel`` per turn, with no fallback chain, and
+    names its id in the ``model`` field of its runtime span. That id is the model
+    that wrote the reply. The configured model is never substituted.
+
+    Args:
+        activities: The turn's spans, as dicts or objects with ``telemetry``.
+
+    Returns:
+        The reported model id, or None when no runtime span carries one.
+    """
+    for activity in activities:
+        telemetry = _read(activity, "telemetry")
+        if telemetry is None or _read(telemetry, "category") != "runtime":
+            continue
+        for row in _read(telemetry, "fields") or []:
+            if _read(row, "label") == "model" and _read(row, "value"):
+                return str(_read(row, "value"))
+    return None
 
 
 @dataclass(frozen=True)
