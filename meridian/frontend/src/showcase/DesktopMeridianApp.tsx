@@ -99,22 +99,30 @@ export function DesktopMeridianApp({
   const [closing, setClosing] = useState(false);
   const setView = (next: typeof view) => { setClosing(false); writeView(next); };
   const isRecoveryView = view === 'recovery';
+  // While a recovery runs on the desk, its journey is re-read as Aurora records each step.
+  const watchingRecovery = isRecoveryView && state.selectedPhase === 5 && state.isLoading
+    && Boolean(state.conversationId);
   const journey = useJourney(
     journeyId,
     setJourneyId,
-    !state.isLoading && (view === 'proof' || isRecoveryView || (view === 'ladder' && state.selectedPhase === 5)),
+    watchingRecovery || (!state.isLoading
+      && (view === 'proof' || isRecoveryView || (view === 'ladder' && state.selectedPhase === 5))),
     state.selectedPhase === 5 ? state.conversationId || threadId : threadId,
+    watchingRecovery,
   );
   const refreshJourney = journey.refresh;
   const latestWorkflowRead = useRef<string | null>(null);
   useEffect(() => {
-    if (state.selectedPhase !== 5 || !state.conversationId || state.isLoading) return;
+    // Recovery polling owns its final read; other views refresh after a workflow reply.
+    if (isRecoveryView || state.selectedPhase !== 5
+      || !state.conversationId || state.isLoading) return;
     const receipt = `${state.conversationId}:${state.workflowStatus}`;
     if (latestWorkflowRead.current !== receipt) {
       latestWorkflowRead.current = receipt;
       refreshJourney();
     }
-  }, [state.selectedPhase, state.conversationId, state.workflowStatus, state.isLoading, refreshJourney]);
+  }, [isRecoveryView, state.selectedPhase, state.conversationId,
+    state.workflowStatus, state.isLoading, refreshJourney]);
   const restoredJourney = useRef<typeof journey.document>(null);
   useEffect(() => {
     if (!isRecoveryView || !journey.document || (restoredJourney.current === journey.document && !state.error)) return;
