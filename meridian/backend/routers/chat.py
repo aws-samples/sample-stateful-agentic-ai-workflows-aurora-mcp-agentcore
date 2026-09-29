@@ -522,6 +522,130 @@ def _is_semantic_intent_query(query: str) -> bool:
     return sum(marker in q for marker in intent_markers) >= 2
 
 
+_CURRENCY_KEYWORDS = ("convert", "in eur", "in euro", "in gbp", "in pounds", "in jpy", "in yen")
+_LOYALTY_KEYWORDS = ("loyalty", "bonvoy", "skymiles", "mileageplus", "united status")
+_PRICE_RANGE_DESTINATIONS = (
+    "Tokyo", "Paris", "Bali", "Lisbon", "Porto", "Iceland", "Rome", "Kyoto",
+)
+_INVENTORY_REGIONS = ("Asia", "Europe", "Americas", "Africa", "Oceania")
+
+
+async def _timed_tool_call(cli: Any, tool: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Call one custom-MCP tool, timing only that call."""
+    started = clock()
+    result = await cli.call(tool, args)
+    return {"tool": tool, "args": args, "result": result, "elapsed_ms": elapsed_ms(started)}
+
+
+async def _flagship_package_ids() -> List[str]:
+    """One flagship per trip_type, so a comparison spans diverse experiences.
+
+    Stratified pick: City Breaks vs Beach vs Wellness vs Adventure... instead
+    of three of the same kind. Within each trip_type the highest-priced row is
+    that type's "flagship" representative, capped at 3 total. Falls through to
+    any 3 rows if the stratified query comes back empty (defensive).
+    """
+    ids: List[str] = []
+    try:
+        stratified_sql = (
+            "SELECT package_id FROM ("
+            "  SELECT package_id, trip_type, price_per_person, "
+            "         ROW_NUMBER() OVER ("
+            "           PARTITION BY trip_type "
+            "           ORDER BY price_per_person DESC, package_id"
+            "         ) AS rn "
+            "  FROM trip_packages"
+            ") flagship "
+            "WHERE rn = 1 "
+            "ORDER BY price_per_person DESC "
+            "LIMIT 3"
+        )
+        rows = await get_rds_data_client().execute(stratified_sql)
+        ids = [r["package_id"] for r in rows if r.get("package_id")]
+        if not ids:
+            rows = await get_rds_data_client().execute(
+                "SELECT package_id FROM trip_packages LIMIT 3"
+            )
+            ids = [r["package_id"] for r in rows if r.get("package_id")]
+    except Exception as exc:
+        log_error("compare_packages_row_pull", error=str(exc))
+    return ids
+
+
+async def _currency_call(
+    cli: Any, q: str, compared_packages: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Convert the compared packages' prices, or a sample amount when none were compared.
+
+    Timed around every currency_convert call it makes.
+    """
+    target = (
+        "EUR" if "eur" in q
+        else "GBP" if "gbp" in q or "pound" in q
+        else "JPY" if "jpy" in q or "yen" in q
+        else "EUR"
+    )
+    started = clock()
+    if compared_packages:
+        conversions: List[Dict[str, Any]] = []
+        for package in compared_packages:
+            amount = float(package.get("price_per_person") or 0)
+            converted = await cli.call(
+                "currency_convert",
+                {"amount": amount, "from_ccy": "USD", "to_ccy": target},
+            )
+            if isinstance(converted, dict):
+                conversions.append({
+                    "package_id": package.get("package_id"),
+                    "name": package.get("name"),
+                    **converted,
+                })
+        result: Dict[str, Any] = {
+            "to": target,
+            "conversions": conversions,
+            "note": "indicative rates, not for settlement",
+        }
+        args: Dict[str, Any] = {
+            "amounts": [
+                float(package.get("price_per_person") or 0)
+                for package in compared_packages
+            ],
+            "to": target,
+        }
+    else:
+        result = await cli.call(
+            "currency_convert",
+            {"amount": 2500.0, "from_ccy": "USD", "to_ccy": target},
+        )
+        args = {"amount": 2500.0, "to": target}
+    return {
+        "tool": "currency_convert",
+        "args": args,
+        "result": result,
+        "elapsed_ms": elapsed_ms(started),
+    }
+
+
+def _loyalty_program(q: str) -> str:
+    return (
+        "Marriott Bonvoy"
+        if "bonvoy" in q
+        else "United MileagePlus"
+        if "mileageplus" in q or "united" in q
+        else "Delta SkyMiles"
+        if "skymiles" in q
+        else "Marriott Bonvoy"
+    )
+
+
+def _named_in(q: str, names: tuple, default: str) -> str:
+    """The first of ``names`` the query mentions, or ``default``."""
+    for name in names:
+        if name.lower() in q:
+            return name
+    return default
+
+
 async def _call_domain_tool(
     query: str,
     *,
@@ -539,153 +663,223 @@ async def _call_domain_tool(
 
     async with concierge_mcp_session() as cli:
         if any(k in q for k in ("compare", "comparison", "side by side")):
-            # Stratified pick: one flagship per trip_type so the comparison
-            # spans diverse experiences (City Breaks vs Beach vs Wellness
-            # vs Adventure...) instead of three of the same kind. Within
-            # each trip_type we pick the highest-priced row as that
-            # type's "flagship" representative, capped at 3 total.
-            #
-            # Falls through to any 3 rows if the stratified query comes
-            # back empty (defensive).
-            ids: List[str] = []
-            try:
-                stratified_sql = (
-                    "SELECT package_id FROM ("
-                    "  SELECT package_id, trip_type, price_per_person, "
-                    "         ROW_NUMBER() OVER ("
-                    "           PARTITION BY trip_type "
-                    "           ORDER BY price_per_person DESC, package_id"
-                    "         ) AS rn "
-                    "  FROM trip_packages"
-                    ") flagship "
-                    "WHERE rn = 1 "
-                    "ORDER BY price_per_person DESC "
-                    "LIMIT 3"
-                )
-                rows = await get_rds_data_client().execute(stratified_sql)
-                ids = [r["package_id"] for r in rows if r.get("package_id")]
-                if not ids:
-                    rows = await get_rds_data_client().execute(
-                        "SELECT package_id FROM trip_packages LIMIT 3"
-                    )
-                    ids = [r["package_id"] for r in rows if r.get("package_id")]
-            except Exception as exc:
-                log_error("compare_packages_row_pull", error=str(exc))
+            ids = await _flagship_package_ids()
             if ids:
-                started = clock()
-                result = await cli.call("compare_packages", {"package_ids": ids})
-                took = elapsed_ms(started)
-                if isinstance(result, list):
-                    compared_packages = result
-                calls.append({
-                    "tool": "compare_packages", "args": {"package_ids": ids},
-                    "result": result, "elapsed_ms": took,
-                })
+                call = await _timed_tool_call(cli, "compare_packages", {"package_ids": ids})
+                if isinstance(call["result"], list):
+                    compared_packages = call["result"]
+                calls.append(call)
 
-        if any(k in q for k in ("convert", "in eur", "in euro", "in gbp", "in pounds", "in jpy", "in yen")):
-            target = (
-                "EUR" if "eur" in q
-                else "GBP" if "gbp" in q or "pound" in q
-                else "JPY" if "jpy" in q or "yen" in q
-                else "EUR"
-            )
-            started = clock()
-            if compared_packages:
-                conversions: List[Dict[str, Any]] = []
-                for package in compared_packages:
-                    amount = float(package.get("price_per_person") or 0)
-                    converted = await cli.call(
-                        "currency_convert",
-                        {"amount": amount, "from_ccy": "USD", "to_ccy": target},
-                    )
-                    if isinstance(converted, dict):
-                        conversions.append({
-                            "package_id": package.get("package_id"),
-                            "name": package.get("name"),
-                            **converted,
-                        })
-                result: Dict[str, Any] = {
-                    "to": target,
-                    "conversions": conversions,
-                    "note": "indicative rates, not for settlement",
-                }
-                args: Dict[str, Any] = {
-                    "amounts": [
-                        float(package.get("price_per_person") or 0)
-                        for package in compared_packages
-                    ],
-                    "to": target,
-                }
-            else:
-                result = await cli.call(
-                    "currency_convert",
-                    {"amount": 2500.0, "from_ccy": "USD", "to_ccy": target},
-                )
-                args = {"amount": 2500.0, "to": target}
-            calls.append({
-                "tool": "currency_convert",
-                "args": args,
-                "result": result,
-                "elapsed_ms": elapsed_ms(started),
-            })
+        if any(k in q for k in _CURRENCY_KEYWORDS):
+            calls.append(await _currency_call(cli, q, compared_packages))
 
-        if any(k in q for k in ("loyalty", "bonvoy", "skymiles", "mileageplus", "united status")):
-            program = (
-                "Marriott Bonvoy"
-                if "bonvoy" in q
-                else "United MileagePlus"
-                if "mileageplus" in q or "united" in q
-                else "Delta SkyMiles"
-                if "skymiles" in q
-                else "Marriott Bonvoy"
-            )
-            started = clock()
-            result = await cli.call(
-                "loyalty_balance",
-                {"traveler_id": traveler_id, "program": program},
-            )
-            calls.append({
-                "tool": "loyalty_balance",
-                "args": {"traveler_id": traveler_id, "program": program},
-                "result": result,
-                "elapsed_ms": elapsed_ms(started),
-            })
+        if any(k in q for k in _LOYALTY_KEYWORDS):
+            calls.append(await _timed_tool_call(
+                cli, "loyalty_balance",
+                {"traveler_id": traveler_id, "program": _loyalty_program(q)},
+            ))
 
         if "price range" in q:
-            destination = "Europe"
-            for d in ("Tokyo", "Paris", "Bali", "Lisbon", "Porto", "Iceland", "Rome", "Kyoto"):
-                if d.lower() in q:
-                    destination = d
-                    break
-            started = clock()
-            result = await cli.call("price_range", {"destination": destination})
-            calls.append({
-                "tool": "price_range",
-                "args": {"destination": destination},
-                "result": result,
-                "elapsed_ms": elapsed_ms(started),
-            })
+            destination = _named_in(q, _PRICE_RANGE_DESTINATIONS, "Europe")
+            calls.append(await _timed_tool_call(
+                cli, "price_range", {"destination": destination},
+            ))
 
         if any(k in q for k in ("how many", "inventory")):
-            region = "Europe"
-            for r in ("Asia", "Europe", "Americas", "Africa", "Oceania"):
-                if r.lower() in q:
-                    region = r
-                    break
-            started = clock()
-            result = await cli.call("region_inventory", {"region": region})
-            calls.append({
-                "tool": "region_inventory",
-                "args": {"region": region},
-                "result": result,
-                "elapsed_ms": elapsed_ms(started),
-            })
+            region = _named_in(q, _INVENTORY_REGIONS, "Europe")
+            calls.append(await _timed_tool_call(cli, "region_inventory", {"region": region}))
 
     if not calls:
         return None
     if len(calls) == 1:
         return calls[0]
     return {"tool": "multi", "calls": calls}
+
+
+async def _postgres_mcp_query(
+    params: Any, limit: int, activities: List[ActivityEntry],
+) -> List[Dict[str, Any]]:
+    """Run the search through the generic postgres-mcp server and trace it."""
+    sql, display_sql, search_title = build_search_sql(params, limit)
+    session_started = clock()
+    async with mcp_session() as client:
+        # Opening the session starts the server, connects it and lists its tools.
+        session_ms = elapsed_ms(session_started)
+        activities.append(create_activity(
+            activity_type="mcp",
+            title="MCP server discovered: awslabs.postgres-mcp-server",
+            details="Generic SQL transport · tools/list returned " + ", ".join(
+                tool["name"] for tool in client.available_tools
+            ),
+            execution_time_ms=session_ms,
+            agent_name="MCPAgent", agent_file="backend/routers/chat.py",
+        ))
+        activities.append(create_activity(
+            activity_type="mcp", title="postgres-mcp · session connected",
+            details="Aurora PostgreSQL via RDS Data API; connection configured at server startup",
+            agent_name="MCPAgent", agent_file="backend/routers/chat.py",
+        ))
+        query_started = clock()
+        results = await client.run_query(sql)
+        query_ms = elapsed_ms(query_started)
+    activities.append(create_activity(
+        activity_type="mcp",
+        title="postgres-mcp · run_query",
+        details=f"Generic SQL tool: {search_title}",
+        sql_query=display_sql,
+        execution_time_ms=query_ms,
+        agent_name="MCPAgent",
+        agent_file="backend/routers/chat.py",
+    ))
+    return results
+
+
+def _record_domain_calls(
+    domain_call: Dict[str, Any], activities: List[ActivityEntry],
+) -> tuple[List[str], List[str]]:
+    """Trace each custom-MCP call; return the reply parts and any compared package ids."""
+    activities.append(create_activity(
+        activity_type="mcp",
+        title="MCP server discovered: meridian-concierge (custom)",
+        details="Custom domain call completed; the executed tools and results follow.",
+        agent_name="MCPAgent",
+        agent_file="backend/mcp/concierge_server.py",
+    ))
+    # Normalize single-call and multi-call shapes into a list
+    # so we can log + format both uniformly.
+    if domain_call.get("tool") == "multi":
+        sub_calls = domain_call["calls"]
+    else:
+        sub_calls = [domain_call]
+
+    reply_parts: List[str] = []
+    # Package_ids surfaced by compare_packages get hydrated
+    # back into full Product rows below so the recommendation
+    # grid renders alongside the polished bubble.
+    compared_ids: List[str] = []
+    for sub in sub_calls:
+        tool_name = sub["tool"]
+        tool_args = sub["args"]
+        tool_result = sub["result"]
+        summary = _summarize_domain_result(tool_name, tool_result)
+        activities.append(create_activity(
+            activity_type="mcp",
+            title=f"meridian-concierge · {tool_name}",
+            details=f"args={tool_args} · {summary}",
+            execution_time_ms=sub.get("elapsed_ms"),
+            agent_name="MCPAgent",
+            agent_file="backend/mcp/concierge_server.py",
+        ))
+        reply = _format_domain_reply(tool_name, tool_result)
+        if reply:
+            reply_parts.append(reply)
+        if tool_name == "compare_packages":
+            compared_ids = list(tool_args.get("package_ids") or [])
+    return reply_parts, compared_ids
+
+
+async def _hydrate_compared(
+    compared_ids: List[str], activities: List[ActivityEntry],
+) -> Optional[List[Dict[str, Any]]]:
+    """Join compared package ids to full catalog rows, in the order compared.
+
+    Returns None when the catalog read itself failed, so the caller keeps
+    what it had.
+    """
+    placeholders = ",".join(["%s"] * len(compared_ids))
+    hydrate_sql = f"""
+        SELECT {PACKAGE_COLUMNS}
+        FROM trip_packages
+        WHERE package_id IN ({placeholders})
+    """
+    results: Optional[List[Dict[str, Any]]] = None
+    try:
+        hydrate_started = clock()
+        results = await get_rds_data_client().execute(
+            hydrate_sql, tuple(compared_ids)
+        )
+        hydrate_ms = elapsed_ms(hydrate_started)
+        # Preserve the order returned by compare_packages.
+        order = {pid: i for i, pid in enumerate(compared_ids)}
+        results.sort(key=lambda r: order.get(r["package_id"], 99))
+        activities.append(create_activity(
+            activity_type="database",
+            title="Hydrated compared packages into product cards",
+            details=f"{len(results)} rows joined from trip_packages",
+            sql_query=(
+                f"SELECT … FROM trip_packages WHERE package_id IN "
+                f"({', '.join(repr(p) for p in compared_ids)})"
+            ),
+            execution_time_ms=hydrate_ms,
+            agent_name="MCPAgent",
+            agent_file="backend/routers/chat.py",
+        ))
+    except Exception as exc:
+        log_error("compare_hydrate", error=str(exc))
+    return results
+
+
+async def _concierge_mcp_turn(
+    query: str,
+    traveler_id: str,
+    results: List[Dict[str, Any]],
+    activities: List[ActivityEntry],
+) -> tuple[List[Dict[str, Any]], Optional[str], bool]:
+    """Answer a domain intent through meridian-concierge.
+
+    Returns the catalog rows to show, the domain reply, and whether the
+    server answered.
+    """
+    domain_text: Optional[str] = None
+    custom_answered = False
+    try:
+        domain_call = await _call_domain_tool(
+            query,
+            traveler_id=traveler_id,
+        )
+        if domain_call:
+            custom_answered = True
+            reply_parts, compared_ids = _record_domain_calls(domain_call, activities)
+            # Hydrate compare_packages IDs into full catalog rows so
+            # the recommendation grid in the UI shows the trips the
+            # tool just compared. Only do this when the SQL search
+            # itself returned zero rows (a pure-domain query) so we
+            # don't override a real keyword match.
+            if compared_ids and not results:
+                hydrated = await _hydrate_compared(compared_ids, activities)
+                if hydrated is not None:
+                    results = hydrated
+            if reply_parts:
+                # Phase 2 demonstrates deterministic, explicit MCP tools.
+                # Keep the response in that contract rather than invoking
+                # an LLM that the capability ladder does not advertise.
+                domain_text = "\n\n".join(reply_parts)
+        else:
+            # The intent matched but no tool branch picked it up.
+            domain_text = (
+                "I recognized this as a domain-tool query but couldn't pick a "
+                "matching meridian-concierge tool. Try keywords like 'compare', "
+                "'in EUR', 'cheapest month', 'inventory', or 'loyalty'."
+            )
+    except Exception as exc:
+        err_msg = str(exc)[:200] or repr(exc)
+        activities.append(create_activity(
+            activity_type="error",
+            title="meridian-concierge MCP error",
+            details=err_msg,
+            agent_name="MCPAgent",
+            agent_file="backend/mcp/concierge_server.py",
+        ))
+        # Surface the failure to the user instead of letting the
+        # generic "Phase 1/2 keyword filters" message take over.
+        domain_text = (
+            "Custom MCP server (meridian-concierge) failed to execute the "
+            f"domain tool: {err_msg}\n\n"
+            "Confirm the FastAPI process can spawn the server "
+            "(`python -m backend.mcp.concierge_server`) and that "
+            "AURORA_CLUSTER_ARN/AURORA_SECRET_ARN/AWS creds are set."
+        )
+    return results, domain_text, custom_answered
 
 
 async def mcp_search(
@@ -728,152 +922,15 @@ async def mcp_search(
     # that no code opened.
     results: List[Dict[str, Any]] = []
     if not pure_domain:
-        sql, display_sql, search_title = build_search_sql(params, limit)
-        session_started = clock()
-        async with mcp_session() as client:
-            # Opening the session starts the server, connects it and lists its tools.
-            session_ms = elapsed_ms(session_started)
-            activities.append(create_activity(
-                activity_type="mcp",
-                title="MCP server discovered: awslabs.postgres-mcp-server",
-                details="Generic SQL transport · tools/list returned " + ", ".join(
-                    tool["name"] for tool in client.available_tools
-                ),
-                execution_time_ms=session_ms,
-                agent_name="MCPAgent", agent_file="backend/routers/chat.py",
-            ))
-            activities.append(create_activity(
-                activity_type="mcp", title="postgres-mcp · session connected",
-                details="Aurora PostgreSQL via RDS Data API; connection configured at server startup",
-                agent_name="MCPAgent", agent_file="backend/routers/chat.py",
-            ))
-            query_started = clock()
-            results = await client.run_query(sql)
-            query_ms = elapsed_ms(query_started)
-        activities.append(create_activity(
-            activity_type="mcp",
-            title="postgres-mcp · run_query",
-            details=f"Generic SQL tool: {search_title}",
-            sql_query=display_sql,
-            execution_time_ms=query_ms,
-            agent_name="MCPAgent",
-            agent_file="backend/routers/chat.py",
-        ))
+        results = await _postgres_mcp_query(params, limit, activities)
 
     # ----- Custom MCP server (meridian-concierge) -----
     domain_text: Optional[str] = None
     custom_answered = False
     if use_custom_mcp:
-        try:
-            domain_call = await _call_domain_tool(
-                query,
-                traveler_id=traveler_id,
-            )
-            if domain_call:
-                custom_answered = True
-                activities.append(create_activity(
-                    activity_type="mcp",
-                    title="MCP server discovered: meridian-concierge (custom)",
-                    details="Custom domain call completed; the executed tools and results follow.",
-                    agent_name="MCPAgent",
-                    agent_file="backend/mcp/concierge_server.py",
-                ))
-                # Normalize single-call and multi-call shapes into a list
-                # so we can log + format both uniformly.
-                if domain_call.get("tool") == "multi":
-                    sub_calls = domain_call["calls"]
-                else:
-                    sub_calls = [domain_call]
-
-                reply_parts: List[str] = []
-                # Package_ids surfaced by compare_packages get hydrated
-                # back into full Product rows below so the recommendation
-                # grid renders alongside the polished bubble.
-                compared_ids: List[str] = []
-                for sub in sub_calls:
-                    tool_name = sub["tool"]
-                    tool_args = sub["args"]
-                    tool_result = sub["result"]
-                    summary = _summarize_domain_result(tool_name, tool_result)
-                    activities.append(create_activity(
-                        activity_type="mcp",
-                        title=f"meridian-concierge · {tool_name}",
-                        details=f"args={tool_args} · {summary}",
-                        execution_time_ms=sub.get("elapsed_ms"),
-                        agent_name="MCPAgent",
-                        agent_file="backend/mcp/concierge_server.py",
-                    ))
-                    reply = _format_domain_reply(tool_name, tool_result)
-                    if reply:
-                        reply_parts.append(reply)
-                    if tool_name == "compare_packages":
-                        compared_ids = list(tool_args.get("package_ids") or [])
-
-                # Hydrate compare_packages IDs into full catalog rows so
-                # the recommendation grid in the UI shows the trips the
-                # tool just compared. Only do this when the SQL search
-                # itself returned zero rows (a pure-domain query) so we
-                # don't override a real keyword match.
-                if compared_ids and not results:
-                    placeholders = ",".join(["%s"] * len(compared_ids))
-                    hydrate_sql = f"""
-                        SELECT {PACKAGE_COLUMNS}
-                        FROM trip_packages
-                        WHERE package_id IN ({placeholders})
-                    """
-                    try:
-                        hydrate_started = clock()
-                        results = await get_rds_data_client().execute(
-                            hydrate_sql, tuple(compared_ids)
-                        )
-                        hydrate_ms = elapsed_ms(hydrate_started)
-                        # Preserve the order returned by compare_packages.
-                        order = {pid: i for i, pid in enumerate(compared_ids)}
-                        results.sort(key=lambda r: order.get(r["package_id"], 99))
-                        activities.append(create_activity(
-                            activity_type="database",
-                            title="Hydrated compared packages into product cards",
-                            details=f"{len(results)} rows joined from trip_packages",
-                            sql_query=(
-                                f"SELECT … FROM trip_packages WHERE package_id IN "
-                                f"({', '.join(repr(p) for p in compared_ids)})"
-                            ),
-                            execution_time_ms=hydrate_ms,
-                            agent_name="MCPAgent",
-                            agent_file="backend/routers/chat.py",
-                        ))
-                    except Exception as exc:
-                        log_error("compare_hydrate", error=str(exc))
-                if reply_parts:
-                    # Phase 2 demonstrates deterministic, explicit MCP tools.
-                    # Keep the response in that contract rather than invoking
-                    # an LLM that the capability ladder does not advertise.
-                    domain_text = "\n\n".join(reply_parts)
-            else:
-                # The intent matched but no tool branch picked it up.
-                domain_text = (
-                    "I recognized this as a domain-tool query but couldn't pick a "
-                    "matching meridian-concierge tool. Try keywords like 'compare', "
-                    "'in EUR', 'cheapest month', 'inventory', or 'loyalty'."
-                )
-        except Exception as exc:
-            err_msg = str(exc)[:200] or repr(exc)
-            activities.append(create_activity(
-                activity_type="error",
-                title="meridian-concierge MCP error",
-                details=err_msg,
-                agent_name="MCPAgent",
-                agent_file="backend/mcp/concierge_server.py",
-            ))
-            # Surface the failure to the user instead of letting the
-            # generic "Phase 1/2 keyword filters" message take over.
-            domain_text = (
-                "Custom MCP server (meridian-concierge) failed to execute the "
-                f"domain tool: {err_msg}\n\n"
-                "Confirm the FastAPI process can spawn the server "
-                "(`python -m backend.mcp.concierge_server`) and that "
-                "AURORA_CLUSTER_ARN/AURORA_SECRET_ARN/AWS creds are set."
-            )
+        results, domain_text, custom_answered = await _concierge_mcp_turn(
+            query, traveler_id, results, activities,
+        )
 
     execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
