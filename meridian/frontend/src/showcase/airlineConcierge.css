@@ -131,7 +131,9 @@
 .mds-root .mc-traveler img { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; object-position: center 25%; }
 .mds-root .mc-traveler > div { display: flex; flex-direction: column; gap: 5px; }
 .mds-root .mc-traveler strong { font: var(--mds-type-body); font-weight: var(--mds-weight-medium); }
-.mds-root .mc-traveler span { font: var(--mds-type-caption); color: var(--mds-label-2); text-wrap: pretty; }
+.mds-root .mc-traveler span {
+  font: var(--mds-type-caption); color: var(--mds-label-2); text-wrap: pretty;
+}
 .mds-root .mc-departure { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 0; border-block: 1px solid var(--mds-separator); }
 .mds-root .mc-departure > div { display: grid; gap: 7px; }
 .mds-root .mc-departure > svg { color: var(--mds-label-2); }
