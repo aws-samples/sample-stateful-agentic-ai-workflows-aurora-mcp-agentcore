@@ -150,6 +150,36 @@ def test_postgres_mcp_span_carries_the_query_time(clock, monkeypatch):
     assert _ms(_span(activities, "postgres-mcp · run_query")) == 75
 
 
+def test_postgres_mcp_discovery_span_carries_the_session_open_time(clock, monkeypatch):
+    _fake_sessions(monkeypatch, clock)
+
+    @asynccontextmanager
+    async def postgres():
+        clock.spend(250)
+        yield FakePostgresMcp(clock)
+
+    monkeypatch.setattr(chat_router, "mcp_session", postgres)
+    _products, activities, _text = asyncio.run(chat_router.mcp_search(
+        "Show me city trips under $2,000 per traveler.", traveler_id="trv_meridian_demo",
+    ))
+    discovered = _span(activities, "MCP server discovered: awslabs.postgres-mcp-server")
+    # Opening the session starts the server and lists its tools; the query is its own span.
+    assert _ms(discovered) == 250
+    assert _ms(_span(activities, "postgres-mcp · run_query")) == 75
+
+
+def test_compare_hydration_span_carries_its_query_time(clock, monkeypatch):
+    _fake_sessions(monkeypatch, clock)
+    monkeypatch.setattr(chat_router, "get_rds_data_client", lambda: FakeDb(
+        clock, {"ROW_NUMBER": 20, "WHERE package_id IN": 45},
+    ))
+    _products, activities, _text = asyncio.run(chat_router.mcp_search(
+        "Compare three trip types and convert each price to euros.",
+        traveler_id="trv_meridian_demo",
+    ))
+    assert _ms(_span(activities, "Hydrated compared packages into product cards")) == 45
+
+
 # ------------------------------------------------------------ Aurora and Bedrock
 
 ROW = {
@@ -201,6 +231,18 @@ def test_workflow_search_spans_time_each_call_directly(clock, monkeypatch):
     # The two retrieval arms, measured together, and nothing else.
     assert _ms(_span(activities, "Hybrid candidates fetched")) == 150
     assert _ms(_span(activities, "Cohere rerank applied")) == 90
+
+
+def test_sql_search_times_its_query_on_the_step_that_ran_it(clock, monkeypatch):
+    monkeypatch.setattr(chat_router, "get_rds_data_client", lambda: FakeDb(
+        clock, {"FROM trip_packages": 70},
+    ))
+    _products, activities = asyncio.run(chat_router.sql_search(
+        "Show me city trips under $2,000 per traveler.",
+    ))
+    assert _ms(_span(activities, "Trip type filter: City Breaks")) == 70
+    # Getting the client opens no connection, so that step has no number.
+    assert _ms(_span(activities, "Direct RDS Data API connection")) is None
 
 
 def test_package_agent_times_its_query_and_invents_nothing_for_in_memory_work(clock, monkeypatch):

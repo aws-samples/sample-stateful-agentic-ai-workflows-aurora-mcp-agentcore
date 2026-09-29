@@ -430,12 +430,15 @@ async def sql_search(query: str, limit: int = 5) -> tuple[List[Product], List[Ac
 
     # Use shared search utilities
     params = parse_search_query(query)
+    query_started = clock()
     results, display_sql, search_title = await execute_keyword_search(db, params, limit)
+    query_ms = elapsed_ms(query_started)
 
     activities.append(create_activity(
         activity_type="search",
         title=search_title,
         sql_query=display_sql,
+        execution_time_ms=query_ms,
         agent_name="SQLAgent",
         agent_file="backend/routers/chat.py"
     ))
@@ -726,13 +729,17 @@ async def mcp_search(
     results: List[Dict[str, Any]] = []
     if not pure_domain:
         sql, display_sql, search_title = build_search_sql(params, limit)
+        session_started = clock()
         async with mcp_session() as client:
+            # Opening the session starts the server, connects it and lists its tools.
+            session_ms = elapsed_ms(session_started)
             activities.append(create_activity(
                 activity_type="mcp",
                 title="MCP server discovered: awslabs.postgres-mcp-server",
                 details="Generic SQL transport · tools/list returned " + ", ".join(
                     tool["name"] for tool in client.available_tools
                 ),
+                execution_time_ms=session_ms,
                 agent_name="MCPAgent", agent_file="backend/routers/chat.py",
             ))
             activities.append(create_activity(
@@ -815,9 +822,11 @@ async def mcp_search(
                         WHERE package_id IN ({placeholders})
                     """
                     try:
+                        hydrate_started = clock()
                         results = await get_rds_data_client().execute(
                             hydrate_sql, tuple(compared_ids)
                         )
+                        hydrate_ms = elapsed_ms(hydrate_started)
                         # Preserve the order returned by compare_packages.
                         order = {pid: i for i, pid in enumerate(compared_ids)}
                         results.sort(key=lambda r: order.get(r["package_id"], 99))
@@ -829,6 +838,7 @@ async def mcp_search(
                                 f"SELECT … FROM trip_packages WHERE package_id IN "
                                 f"({', '.join(repr(p) for p in compared_ids)})"
                             ),
+                            execution_time_ms=hydrate_ms,
                             agent_name="MCPAgent",
                             agent_file="backend/routers/chat.py",
                         ))
