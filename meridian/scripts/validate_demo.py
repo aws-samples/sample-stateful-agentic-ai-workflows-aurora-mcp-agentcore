@@ -136,9 +136,9 @@ def main() -> int:
            ok=ok, compared=lambda b, s: "Compared 3 packages" in b["message"] and "EUR" in b["message"],
            products=has_products,
            concierge_tools=lambda b, s: any("meridian-concierge · compare_packages" in (a.get("title") or "") for a in b["activities"]))
-    record("p2_offseason_tokyo", "POST", "/api/chat",
-           {"message": "What is the off-season price range for Tokyo trips in November?", "phase": 2, "customer_id": TRAVELER},
-           ok=ok, band=lambda b, s: "Seasonal price band" in b["message"] or "No pricing data" in b["message"])
+    record("p2_price_range_tokyo", "POST", "/api/chat",
+           {"message": "What is the price range for Tokyo trips?", "phase": 2, "customer_id": TRAVELER},
+           ok=ok, band=lambda b, s: "Price range for" in b["message"] or "No pricing data" in b["message"])
     record("p2_loyalty_scoped", "POST", "/api/chat",
            {"message": "What is my Marriott Bonvoy loyalty status?", "phase": 2, "customer_id": TRAVELER},
            ok=ok, loyalty=lambda b, s: "Loyalty" in b["message"] and "pts" in b["message"],

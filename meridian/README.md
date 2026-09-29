@@ -43,7 +43,7 @@ you press **Esc**.
 | Phase | Capability | What the trace shows |
 | --- | --- | --- |
 | 1 · SQL | Query | Rows from Aurora through parameterized RDS Data API filters |
-| 2 · MCP | Tools | Aurora access through the PostgreSQL MCP server, plus custom tools for package comparison, currency conversion, seasonal pricing, loyalty and availability |
+| 2 · MCP | Tools | Aurora access through the PostgreSQL MCP server, plus custom tools for package comparison, currency conversion, destination price range, loyalty and availability |
 | 3 · Retrieval | Intent | Hybrid pgvector and full-text candidates reranked by Cohere Rerank 3.5, with a Strands supervisor routing to specialists |
 | 4 · Production | Trust | AgentCore Runtime with four Gateway tools, a Cedar decision for each call, traveler grants and RLS scoping the data, and hold and booking receipts |
 | 5 · Workflow | Durability | Aurora checkpoints, a worker lease, same-thread resume after a restart, and a hold that keeps its request ID, booking ID and expiry |
@@ -59,7 +59,7 @@ Phase 5 is the last phase, so its hand-off is
 | Phase | Works here | Needs the next phase |
 | --- | --- | --- |
 | SQL | `Show me city trips under $2,000 per traveler.`<br>`Show me beach trips under $2,500 per traveler.` | `Compare three trip types and convert each price to euros.` |
-| MCP | `Compare three trip types and convert each price to euros.`<br>`What is the off-season price range for Tokyo trips in November?` | `Find a quiet, romantic wine-country retreat with a private villa.` |
+| MCP | `Compare three trip types and convert each price to euros.`<br>`What is the price range for Tokyo trips?` | `Find a quiet, romantic wine-country retreat with a private villa.` |
 | Retrieval | `Find a quiet, romantic wine-country retreat with a private villa.`<br>`Which trip lengths are still available for Tuscany Wine & Wellness?` | `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` |
 | Production | `Find Tokyo trips that fit my saved preferences.`<br>`Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` |
 | Workflow | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`<br>`Which trip lengths are still available for Amalfi Coast Villa Week?` | `Resume workflow from checkpoint`, after the run pauses |

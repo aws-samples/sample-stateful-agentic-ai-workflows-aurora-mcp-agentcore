@@ -193,8 +193,8 @@ TRIP_PACKAGES = [
          {"3 nights": 16, "4 nights": 10}),
 
     # ---- Extra Tokyo coverage ----------------------------------------
-    # Lets seasonal_price_band("Tokyo", ...) return a real low/median/high
-    # spread instead of three identical numbers, and gives the stratified
+    # Lets price_range("Tokyo") return a real low/average/high spread
+    # instead of three identical numbers, and gives the stratified
     # compare a Tokyo entry in multiple trip_types if the demo focuses
     # there.
     _pkg("TKY-001", "Tokyo Indie Neighborhood Walk", "City Breaks", "Tokyo", "Asia-Pacific", 1599.0,

@@ -35,7 +35,7 @@ PROMPT_LADDER: Dict[int, PhasePrompts] = {
     2: PhasePrompts(
         works=[
             "Compare three trip types and convert each price to euros.",
-            "What is the off-season price range for Tokyo trips in November?",
+            "What is the price range for Tokyo trips?",
         ],
         tee_up=(
             "Find a quiet, romantic wine-country retreat with a private villa."

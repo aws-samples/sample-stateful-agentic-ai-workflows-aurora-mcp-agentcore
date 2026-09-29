@@ -36,7 +36,7 @@ from backend.agentcore.identity import get_agentcore_identity
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.db.embedding_service import get_embedding_service
-from backend.config import config
+from backend.config import bedrock_model_label, config
 from backend.demo_prompts import tee_up_prompt, working_prompts
 from backend.logging_config import log_search, log_order, log_error, log_turn_start, log_turn_complete, log_activity_entry
 from backend.http_auth import (
@@ -56,7 +56,7 @@ from backend.catalog_compat import row_to_api_product
 # MCP clients — Phase 2 demos two distinct MCP servers side-by-side:
 #   1. awslabs.postgres-mcp-server (generic SQL transport, public AWS server)
 #   2. backend.mcp.concierge_server (custom domain tools - compare,
-#      seasonal pricing, region inventory, FX, loyalty)
+#      price range, region inventory, FX, loyalty)
 #
 # Memory tools live in Phase 4 by design (Aurora RLS + AgentCore) - the
 # Phase 2 narrative is "what does a CUSTOM MCP get you that the public
@@ -174,6 +174,11 @@ class ChatResponse(BaseModel):
     memory_facts: Optional[List[MemoryFact]] = None
     workflow_status: Optional[str] = None
     workflow_resumed_after_restart: Optional[bool] = None
+    # The Bedrock model that actually wrote `message` (may be a fallback,
+    # not the configured primary). None when the reply is a pure tool
+    # result and no model wrote any part of it - the frontend must show
+    # no model badge in that case.
+    model_label: Optional[str] = None
 
 
 def create_activity(
@@ -467,7 +472,7 @@ async def sql_search(query: str, limit: int = 5) -> tuple[List[Product], List[Ac
 
 # Keywords that trigger the CUSTOM meridian-concierge MCP server.
 # When the prompt asks for things you can't get from a generic SQL
-# transport (compare these / what's the off-season price / how many
+# transport (compare these / what's the price range / how many
 # trips do you sell in Europe / convert to EUR / loyalty status), we
 # layer the custom server on top so the trace shows both in action.
 _DOMAIN_INTENT_KEYWORDS = (
@@ -485,12 +490,7 @@ _DOMAIN_INTENT_KEYWORDS = (
     "skymiles",
     "mileageplus",
     "united status",
-    "off-season",
-    "off season",
-    "shoulder season",
-    "peak season",
-    "cheapest month",
-    "best month",
+    "price range",
     "how many",
     "inventory",
 )
@@ -636,20 +636,16 @@ async def _call_domain_tool(
                 "result": result,
             })
 
-        if any(k in q for k in ("off-season", "off season", "shoulder season", "peak season", "cheapest month", "best month")):
+        if "price range" in q:
             destination = "Europe"
             for d in ("Tokyo", "Paris", "Bali", "Lisbon", "Porto", "Iceland", "Rome", "Kyoto"):
                 if d.lower() in q:
                     destination = d
                     break
-            month = 11 if "off" in q or "cheapest" in q else 5 if "shoulder" in q else 7
-            result = await cli.call(
-                "seasonal_price_band",
-                {"destination": destination, "month": month},
-            )
+            result = await cli.call("price_range", {"destination": destination})
             calls.append({
-                "tool": "seasonal_price_band",
-                "args": {"destination": destination, "month": month},
+                "tool": "price_range",
+                "args": {"destination": destination},
                 "result": result,
             })
 
@@ -687,7 +683,7 @@ async def mcp_search(
       - meridian-concierge (custom)  → travel-domain tools
 
     Returns (products, activities, domain_text). When the prompt is a
-    pure domain query (compare/FX/seasonal/inventory/loyalty), the
+    pure domain query (compare/FX/price range/inventory/loyalty), the
     domain_text contains a markdown-style readout that the caller uses
     as the bot reply instead of the generic "I found N trips" message.
     """
@@ -948,20 +944,19 @@ def _format_domain_reply(tool: str, result: Any) -> str:
                 f"Loyalty (via meridian-concierge MCP): "
                 f"{pts:,} pts on {program} · tier {tier}{tail}."
             )
-        if tool == "seasonal_price_band" and isinstance(result, dict):
+        if tool == "price_range" and isinstance(result, dict):
             dest = result.get("destination", "—")
-            month = result.get("month", "—")
-            season = result.get("season", "—")
             low = result.get("low")
-            med = result.get("median")
+            avg = result.get("average")
             high = result.get("high")
             n = result.get("sample_size", 0)
             if not n:
-                return f"No pricing data for {dest} in month {month}."
+                return f"No pricing data for {dest}."
+            note = result.get("note", "")
             return (
-                f"Seasonal price band for {dest} (month {month}, {season}, "
-                f"sample={n}): low ${low:,.0f} · median ${med:,.0f} · high ${high:,.0f}."
-            )
+                f"Price range for {dest} (via meridian-concierge MCP, sample={n}): "
+                f"low ${low:,.0f} · average ${avg:,.0f} · high ${high:,.0f}. {note}"
+            ).rstrip()
         if tool == "region_inventory" and isinstance(result, dict):
             region = result.get("region", "—")
             count = result.get("package_count", 0)
@@ -999,8 +994,8 @@ def _summarize_domain_result(tool: str, result: Any) -> str:
                 return f"refused · {result.get('error')}"
             pts = result.get("points_balance", 0) or 0
             return f"{pts:,} pts · tier={result.get('tier')}"
-        if tool == "seasonal_price_band" and isinstance(result, dict):
-            return f"{result.get('season')} band · low={result.get('low')} · high={result.get('high')}"
+        if tool == "price_range" and isinstance(result, dict):
+            return f"range low={result.get('low')} · high={result.get('high')}"
         if tool == "region_inventory" and isinstance(result, dict):
             return f"{result.get('package_count')} packages · {result.get('total_departure_slots')} slots"
     except Exception as exc:
@@ -1128,12 +1123,19 @@ async def _polish_and_record(
     products: List[Product],
     activities: List[ActivityEntry],
     memory_facts: Optional[List[Any]] = None,
-) -> str:
+) -> tuple[str, Optional[str]]:
     """Polish a reply and append the matching success/failure span.
 
     Phases 3, 4 and 5 all end a turn the same way: run the Bedrock rewrite,
     record whether it succeeded, and fall back to the deterministic reply if it
     did not. Keeping that in one place stops the three call sites drifting.
+
+    Returns:
+        (message, model_label). `model_label` names whichever model in the
+        Sonnet 5 -> Haiku 4.5 -> Opus 5 chain actually wrote `message` -
+        which may not be the configured primary - or None when polish did
+        not run or every model in the chain failed, so the raw tool result
+        is returned unpolished and no model wrote any part of it.
     """
     polished, polish_model, polish_note = await _polish_phase_reply(
         phase=phase,
@@ -1151,7 +1153,7 @@ async def _polish_and_record(
             agent_name=agent_name,
             agent_file="backend/llm_polish.py",
         ))
-        return polished
+        return polished, bedrock_model_label(polish_model)
     activities.append(create_activity(
         activity_type="error",
         title="Bedrock polish unavailable",
@@ -1159,7 +1161,7 @@ async def _polish_and_record(
         agent_name=agent_name,
         agent_file="backend/llm_polish.py",
     ))
-    return raw_message
+    return raw_message, None
 
 
 # =============================================================================
@@ -2539,7 +2541,7 @@ async def chat(
                 activities=activities,
                 follow_ups=[
                     "Compare three trip types side by side and convert their prices to euros.",
-                    "What is the off-season price range for Tokyo trips in November?",
+                    "What is the price range for Tokyo trips?",
                 ],
             ),
             request.phase,
@@ -2551,6 +2553,10 @@ async def chat(
         # because its custom MCP path can produce a non-product reply.
         # All other phases stay on the 2-tuple shape.
         domain_text: Optional[str] = None
+        # Set only when a real Bedrock call wrote this reply. A pure tool
+        # result (SQL, MCP, or the raw search prose) carries no model and
+        # the frontend must show no model badge for it.
+        model_label: Optional[str] = None
         if request.phase == 2:
             products, search_activities, domain_text = await mcp_search(
                 request.message,
@@ -2578,7 +2584,7 @@ async def chat(
         # Generate personalized response message
         if domain_text:
             # Custom MCP produced a domain readout (compare / FX / loyalty
-            # / seasonal pricing / inventory) - that IS the answer. It
+            # / price range / inventory) - that IS the answer. It
             # names the specific trips it surfaced, so we don't tack on a
             # generic "I also found N trips" suffix; the recommendation grid
             # speaks for itself.
@@ -2613,7 +2619,7 @@ async def chat(
             # in the product list let the model name *why* each trip
             # matched (intent, vibe, dates) instead of just listing.
             if request.phase == 3:
-                message = await _polish_and_record(
+                message, model_label = await _polish_and_record(
                     phase=3,
                     mode_label="Retrieval",
                     agent_name="RetrievalAgent",
@@ -2683,12 +2689,13 @@ async def chat(
             products=products if products else None,
             order=None,
             activities=activities,
-            follow_ups=follow_ups
+            follow_ups=follow_ups,
+            model_label=model_label,
         ),
             request.phase,
             turn_started,
         )
-        
+
     except HTTPException:
         raise
     except TravelerAuthorizationError as e:

@@ -43,10 +43,11 @@ export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
     'Show me beach trips under $2,500 per traveler.',
     'Compare three trip types and convert each price to euros.',
   ],
-  // Custom MCP tools solve comparison, FX, and seasonality; mood intent remains retrieval's job.
+  // Custom MCP tools solve comparison, FX, and destination price range; mood
+  // intent remains retrieval's job.
   2: [
     'Compare three trip types and convert each price to euros.',
-    'What is the off-season price range for Tokyo trips in November?',
+    'What is the price range for Tokyo trips?',
     'Find a quiet, romantic wine-country retreat with a private villa.',
   ],
   // Intent routing works; persisted conversation memory is still out of scope.
@@ -82,7 +83,7 @@ const SHOWCASE_PROMPT_LABELS: Record<string, string> = {
   [SHOWCASE_EXAMPLE_PROMPTS[1][0]]: 'City trips under $2,000 per traveler',
   [SHOWCASE_EXAMPLE_PROMPTS[1][1]]: 'Beach trips under $2,500 per traveler',
   [SHOWCASE_EXAMPLE_PROMPTS[1][2]]: 'Compare trips in euros',
-  [SHOWCASE_EXAMPLE_PROMPTS[2][1]]: 'Tokyo off-season pricing',
+  [SHOWCASE_EXAMPLE_PROMPTS[2][1]]: 'Tokyo price range',
   [SHOWCASE_EXAMPLE_PROMPTS[2][2]]: 'Romantic wine-country villa',
   [SHOWCASE_EXAMPLE_PROMPTS[3][1]]: 'Tuscany trip lengths',
   [SHOWCASE_EXAMPLE_PROMPTS[3][2]]: 'Recall my plan & preferences',
@@ -206,6 +207,7 @@ export function chatResponseToMessages(prior: Message[], userText: string, respo
         : { role: 'bot', type: 'text', text: assistantText };
 
   if (response.follow_ups?.length) assistant.follow_ups = response.follow_ups;
+  if (response.model_label) assistant.modelLabel = response.model_label;
   return [...prior, userMsg, assistant];
 }
 

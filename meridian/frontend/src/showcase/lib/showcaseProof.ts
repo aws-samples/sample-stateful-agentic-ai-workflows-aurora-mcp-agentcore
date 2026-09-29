@@ -176,7 +176,7 @@ function defaultMcpContracts(): McpContract[] {
       server: 'meridian-concierge',
       tool: 'compare_packages / currency_convert',
       request: '{ package_ids, target_currency }',
-      auroraOperation: 'Custom MCP composes package, price, FX, and seasonal facts.',
+      auroraOperation: 'Custom MCP composes package, price, FX, and price-range facts.',
       result: 'Typed domain readout plus product cards.',
       observed: false,
     },
@@ -186,7 +186,7 @@ function defaultMcpContracts(): McpContract[] {
 function domainOperation(tool: string): string {
   if (/compare/i.test(tool)) return 'Read package rows and compare price, region, and fit.';
   if (/currency|fx/i.test(tool)) return 'Convert Aurora-backed package prices into the requested currency.';
-  if (/seasonal/i.test(tool)) return 'Aggregate seasonal price bands from the catalog.';
+  if (/price_range|price range/i.test(tool)) return 'Aggregate the real price range for a destination from the catalog.';
   if (/inventory|region/i.test(tool)) return 'Count available catalog inventory by region.';
   if (/loyalty/i.test(tool)) return 'Read loyalty context beside trip recommendations.';
   return 'Execute a custom Aurora-backed travel-domain tool.';

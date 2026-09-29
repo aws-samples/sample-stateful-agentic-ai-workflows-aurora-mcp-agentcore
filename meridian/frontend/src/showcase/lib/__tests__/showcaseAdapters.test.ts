@@ -2,10 +2,33 @@ import { describe, expect, it } from 'vitest';
 import {
   SHOWCASE_EXAMPLE_PROMPTS,
   activityToShowcaseTraceSpan,
+  chatResponseToMessages,
   genericizeLoyaltyText,
   healthResponseToStatus,
   showcasePromptLabel,
 } from '../showcaseAdapters';
+
+describe('chatResponseToMessages model badge', () => {
+  it('carries the model that wrote the reply onto the bot message', () => {
+    const messages = chatResponseToMessages(
+      [],
+      'Find a quiet retreat',
+      { message: 'Here are some trips.', activities: [], model_label: 'Claude Haiku 4.5' },
+    );
+    const bot = messages.find((m) => m.role === 'bot');
+    expect(bot?.modelLabel).toBe('Claude Haiku 4.5');
+  });
+
+  it('leaves the model badge unset for a pure tool result', () => {
+    const messages = chatResponseToMessages(
+      [],
+      'What is the price range for Tokyo trips?',
+      { message: 'Price range for Tokyo: low $1,199 · average $1,950 · high $3,299.', activities: [] },
+    );
+    const bot = messages.find((m) => m.role === 'bot');
+    expect(bot?.modelLabel).toBeUndefined();
+  });
+});
 
 it('leaves missing trace timing unrecorded while preserving measured zero', () => {
   const activity = { id: 'a', timestamp: '', activity_type: 'tool_call' as const, title: 'Search' };
@@ -71,7 +94,12 @@ describe('SHOWCASE_EXAMPLE_PROMPTS phase ladder', () => {
   it('uses plain traveler language and explicit units', () => {
     expect(SHOWCASE_EXAMPLE_PROMPTS[1][0]).toContain('$2,000 per traveler');
     expect(SHOWCASE_EXAMPLE_PROMPTS[1][0].toLowerCase()).not.toContain('city break');
-    expect(SHOWCASE_EXAMPLE_PROMPTS[2][1].toLowerCase()).toContain('november');
+    // The catalog holds no per-month or per-season prices, so the prompt
+    // asks only what the data can actually answer - a plain price range,
+    // never an invented seasonal figure.
+    expect(SHOWCASE_EXAMPLE_PROMPTS[2][1].toLowerCase()).toContain('price range');
+    expect(SHOWCASE_EXAMPLE_PROMPTS[2][1].toLowerCase()).not.toContain('off-season');
+    expect(SHOWCASE_EXAMPLE_PROMPTS[2][1].toLowerCase()).not.toContain('november');
   });
 
   it('uses concise projector labels without changing submitted prompts', () => {
