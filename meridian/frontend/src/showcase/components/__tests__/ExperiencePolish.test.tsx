@@ -576,9 +576,10 @@ describe('Experience presentation polish', () => {
     expect(
       screen.getByText('Verify after resume').closest('li'),
     ).toHaveAttribute('aria-current', 'step');
+    // No span on this desk confirmed understanding, so clicking Resume does not either.
     expect(
       screen.getByText('Understand disruption').closest('li'),
-    ).toHaveClass('is-visited');
+    ).toHaveClass('is-pending');
   });
 
   it('fills in each recovery step with its service and time as the backend confirms it', () => {

@@ -169,15 +169,11 @@ export function deriveRecoverySteps(
     nodeSource(spans, CLASSIFY_NODE), nodeSource(spans, SEARCH_NODE),
     checkpointSource(spans), nodeSource(spans, VERIFY_NODE),
   ];
-  if (stage === 'running') {
-    // A paused workflow proves understanding and search ran. Only a durable
-    // checkpoint span proves the Aurora save, and verification is under way.
-    return [
-      { state: 'is-visited', source: sources[0] },
-      { state: 'is-visited', source: sources[1] },
-      sources[2] ? { state: 'is-visited', source: sources[2] } : pending(),
-      { state: 'is-current', source: null },
-    ];
-  }
-  return sources.map(source => (source ? { state: 'is-visited', source } : pending()));
+  const confirmed = sources.map((source): RecoveryStepView => (
+    source ? { state: 'is-visited', source } : pending()));
+  // Resuming changes nothing the paused run's spans confirmed; only the
+  // verification the request is now running is marked in progress.
+  return stage === 'running'
+    ? [...confirmed.slice(0, 3), { state: 'is-current', source: null }]
+    : confirmed;
 }

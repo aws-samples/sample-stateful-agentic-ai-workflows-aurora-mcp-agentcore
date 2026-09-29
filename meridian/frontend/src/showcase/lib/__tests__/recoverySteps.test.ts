@@ -84,11 +84,17 @@ describe('deriveRecoverySteps', () => {
     expect(steps[3].source).toBeNull();
   });
 
-  it('names no service it did not read from a span while resuming', () => {
+  it('names no service and completes no step it did not read from a span while resuming', () => {
     const steps = deriveRecoverySteps([], 'running', { resumeMode: true, failed: false });
     expect(steps.map(step => step.state))
-      .toEqual(['is-visited', 'is-visited', 'is-pending', 'is-current']);
+      .toEqual(['is-pending', 'is-pending', 'is-pending', 'is-current']);
     expect(steps.every(step => step.source === null)).toBe(true);
+  });
+
+  it('changes no confirmed step when Resume is clicked, only when a response arrives', () => {
+    const before = deriveRecoverySteps([], 'checkpointed', checkpointed);
+    const resuming = deriveRecoverySteps([], 'running', { resumeMode: true, failed: false });
+    expect(resuming.slice(0, 3)).toEqual(before.slice(0, 3));
   });
 
   it('does not claim an Aurora checkpoint for an in-process one while resuming', () => {
