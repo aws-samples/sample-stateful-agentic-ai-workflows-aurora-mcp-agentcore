@@ -56,7 +56,7 @@ from backend.agents.production_04.memory_agent import (
     ActivityEntry as MemoryActivity,
     MemoryAgent as TravelerMemorySpecialist,
 )
-from backend.db.rds_data_client import get_rds_data_client
+from backend.db.rds_data_client import ScopeTimings, get_rds_data_client
 from backend.memory.store import get_memory_store
 from backend.timing import clock, elapsed_ms
 
@@ -272,7 +272,7 @@ class ProductionAgent:
 
     # ------------------------------------------------------------- identity
 
-    def _identity_spans(self, scope: Any, traveler_id: str) -> None:
+    def _identity_spans(self, scope: Any, traveler_id: str, timings: ScopeTimings) -> None:
         configured = bool(scope.workload_identity)
         self._log(
             "reasoning",
@@ -304,6 +304,7 @@ class ProductionAgent:
             details=(
                 f"{scope.authorization.provider}:{scope.authorization.subject_id} -> {traveler_id}"
             ),
+            execution_time_ms=timings.grant_ms,
             telemetry={
                 "category": "security",
                 "component": "Aurora identity binding",
@@ -329,6 +330,7 @@ class ProductionAgent:
                 "commits before external calls"
             ),
             sql_query=READ_UNIT_SQL.format(traveler_id=traveler_id),
+            execution_time_ms=timings.rls_ms,
             telemetry={
                 "category": "security",
                 "component": "Aurora RLS",
@@ -354,14 +356,16 @@ class ProductionAgent:
         )
         self.traveler_memory._prepared_query_vector = query_vector
         self.traveler_memory._query_vector_prepared = True
+        timings = ScopeTimings()
         try:
             async with self.db.scoped_session(
                 traveler_id=traveler_id,
                 agent_type="concierge_agent",
                 authorization=scope.authorization,
+                timings=timings,
             ) as read_tx:
                 self.traveler_memory._transaction_id = read_tx
-                self._identity_spans(scope, traveler_id)
+                self._identity_spans(scope, traveler_id, timings)
                 conv_id = await self.store.get_or_create_conversation(
                     traveler_id, conversation_id, transaction_id=read_tx
                 )

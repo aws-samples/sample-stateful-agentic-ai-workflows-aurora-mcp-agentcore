@@ -20,7 +20,9 @@ from backend.agentcore.runtime import RuntimeDecision, _apply_result
 from backend.agents.orchestration_05.workflow import _with_checkpoint_timings
 from backend.agents.production_04.concierge import ProductionAgent
 from backend.agents.retrieval_03.search_agent import SearchAgent
+from backend.authorization import AuthorizationContext
 from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
+from backend.db.rds_data_client import RDSDataClient, ScopeTimings
 from backend.llm_polish import PolishResult
 
 
@@ -275,6 +277,112 @@ def test_production_hydration_times_the_catalog_query(clock):
     agent.db = FakeDb(clock, {"FROM trip_packages": 65})
     asyncio.run(agent._hydrate([{"package_id": "AML-002"}]))
     assert _ms(_span(spans, "Hydrated managed search results")) == 65
+
+
+# ------------------------------------------------- traveler grant and RLS scope
+
+AUTHORIZATION = AuthorizationContext(
+    provider="aws_iam",
+    subject_id="AROATESTROLE",
+    principal="arn:aws:sts::123456789012:assumed-role/Meridian/session-a",
+)
+# The grant check is the binding lookup and its audit row; the RLS setup is the
+# settings round trip and the role switch. Opening and committing are neither.
+SCOPE_COSTS = {
+    "traveler_identity_bindings": 40,
+    "INSERT INTO traveler_access_audit": 15,
+    "set_config": 20,
+    "SET LOCAL ROLE": 12,
+}
+
+
+class TimedAurora(RDSDataClient):
+    """A Data API client whose statements cost the time their first matching marker names."""
+
+    def __init__(self, clock: FakeClock) -> None:
+        self.clock = clock
+
+    def begin_transaction(self) -> str:
+        self.clock.spend(25)
+        return "tx-scope"
+
+    def commit_transaction(self, _transaction_id) -> None:
+        self.clock.spend(30)
+
+    def rollback_transaction(self, _transaction_id) -> None:
+        pass
+
+    async def execute(self, sql, _params=None, transaction_id=None):
+        for marker, ms in SCOPE_COSTS.items():
+            if marker in sql:
+                self.clock.spend(ms)
+                break
+        return [{"binding_id": "bind-1"}] if "traveler_identity_bindings" in sql else []
+
+
+def test_scoped_session_times_the_grant_and_the_rls_setup_separately(clock):
+    db = TimedAurora(clock)
+    timings = ScopeTimings()
+
+    async def read():
+        async with db.scoped_session(
+            traveler_id="trv_meridian_demo", agent_type="concierge_agent",
+            authorization=AUTHORIZATION, timings=timings,
+        ):
+            clock.spend(500)
+
+    asyncio.run(read())
+    assert timings.grant_ms == 55
+    assert timings.rls_ms == 32
+
+
+class FakeReadStore:
+    def prepare_embedding_vector(self, _text, *, input_type):
+        return "[0.1]"
+
+    async def get_or_create_conversation(self, _traveler_id, _conversation_id, *, transaction_id):
+        return "conv-timed"
+
+    async def recall_profile(self, _traveler_id, *, transaction_id):
+        return {}
+
+    async def recall_preferences(self, _traveler_id, limit=8, transaction_id=None):
+        return []
+
+    @staticmethod
+    def format_memory_context(*_args):
+        return ""
+
+
+class FakeRecall:
+    async def recall_session_context(self, _conversation_id):
+        return {"turns": []}
+
+    async def recall_traveler_preferences(self, _traveler_id):
+        return {"facts": []}
+
+    async def recall_similar_interactions(self, _traveler_id, _message):
+        return {"interactions": []}
+
+
+def test_concierge_grant_and_rls_steps_each_carry_their_own_time(clock):
+    agent = ProductionAgent.__new__(ProductionAgent)
+    spans: list = []
+    agent.activity_callback = spans.append
+    agent.db = TimedAurora(clock)
+    agent.store = FakeReadStore()
+    agent.traveler_memory = FakeRecall()
+    agent.identity = SimpleNamespace(scope_for_turn=lambda: SimpleNamespace(
+        iam_identity="arn:aws:sts::123456789012:assumed-role/Meridian/session-a",
+        workload_identity=None, resource_provider=None, token_status="delegated",
+        authorization=AUTHORIZATION,
+    ))
+    asyncio.run(agent._authorized_read("Tokyo in spring", "trv_meridian_demo", None))
+
+    assert _ms(_span(spans, "Workload traveler grant allowed")) == 55
+    assert _ms(_span(spans, "Aurora RLS · short read unit")) == 32
+    # The caller identity is cached for the process; no call runs per turn.
+    assert _ms(_span(spans, "Workload identity · AWS STS")) is None
 
 
 # -------------------------------------------------------------- AgentCore Runtime

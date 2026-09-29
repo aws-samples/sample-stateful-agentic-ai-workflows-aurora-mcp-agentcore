@@ -22,6 +22,7 @@ import logging
 import re
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Optional, List, Any, Dict
 from decimal import Decimal
 
@@ -34,6 +35,22 @@ from backend.authorization import (
     AuthorizationDecision,
     TravelerAuthorizationError,
 )
+from backend.timing import clock, elapsed_ms
+
+
+@dataclass
+class ScopeTimings:
+    """What one scoped session's setup took, each part measured around its own calls.
+
+    A part that did not run keeps ``None``.
+
+    Attributes:
+        grant_ms: The traveler grant check: the binding lookup and its audit row.
+        rls_ms: The RLS setup: the ``set_config`` round trip and ``SET LOCAL ROLE``.
+    """
+
+    grant_ms: Optional[int] = None
+    rls_ms: Optional[int] = None
 
 
 def _encode_boolean(value: Any) -> Dict[str, Any]:
@@ -372,6 +389,7 @@ class RDSDataClient:
         traveler_id: Optional[str] = None,
         agent_type: Optional[str] = None,
         authorization: Optional[AuthorizationContext] = None,
+        timings: Optional[ScopeTimings] = None,
     ):
         """
         Open a transaction with RLS session variables set.
@@ -399,6 +417,106 @@ class RDSDataClient:
         Aurora RLS policies on ``traveler_preferences`` and friends will
         filter rows accordingly.
 
+        After pinning the settings the session steps down to the least-privilege
+        app role; ``_assume_app_role`` says why that is required.
+
+        When ``timings`` is given, the grant check and the RLS setup are each
+        timed around their own Data API calls and recorded on it.
+        """
+        app_role = os.getenv("RLS_APP_ROLE", "meridian_app").strip()
+        allow_unscoped = os.getenv("RLS_ALLOW_UNSCOPED_FALLBACK", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if (
+            allow_unscoped
+            and os.getenv("ENVIRONMENT", "development").strip().lower()
+            != "development"
+        ):
+            raise RuntimeError(
+                "RLS_ALLOW_UNSCOPED_FALLBACK is permitted only when "
+                "ENVIRONMENT=development."
+            )
+        timings = timings or ScopeTimings()
+        tx = self.begin_transaction()
+        transaction_finished = False
+        try:
+            if traveler_id is not None:
+                if authorization is None:
+                    raise RuntimeError(
+                        "Traveler-scoped access requires an authenticated "
+                        "AuthorizationContext."
+                    )
+                started = clock()
+                decision = await self.check_traveler_authorization(
+                    traveler_id,
+                    authorization,
+                    transaction_id=tx,
+                    write_audit=True,
+                )
+                timings.grant_ms = elapsed_ms(started)
+                if not decision.allowed:
+                    # Preserve the DENY evidence. Rolling the transaction back
+                    # would erase the audit row together with the rejected
+                    # request, so commit this audit-only transaction first.
+                    self.commit_transaction(tx)
+                    transaction_finished = True
+                    raise TravelerAuthorizationError(decision)
+
+            started = clock()
+            await self._pin_rls_settings(tx, traveler_id, agent_type, authorization)
+            await self._assume_app_role(tx, app_role, allow_unscoped)
+            timings.rls_ms = elapsed_ms(started)
+            yield tx
+            self.commit_transaction(tx)
+            transaction_finished = True
+        except BaseException:
+            # Cancellation must release RLS/lease row locks too. CancelledError
+            # is a BaseException; otherwise Data API waits for its idle timeout.
+            if not transaction_finished:
+                try:
+                    self.rollback_transaction(tx)
+                except Exception:
+                    logger.exception("Failed to roll back interrupted traveler transaction")
+            raise
+
+    async def _pin_rls_settings(
+        self,
+        tx: str,
+        traveler_id: Optional[str],
+        agent_type: Optional[str],
+        authorization: Optional[AuthorizationContext],
+    ) -> None:
+        """Pin every transaction-local RLS setting in one Data API round trip.
+
+        On a high-latency connection, separate calls for each setting can
+        exhaust the browser's read timeout before any data is read.
+        """
+        settings = [("row_security", "on")]
+        if traveler_id is not None:
+            settings.append(("app.current_traveler_id", traveler_id))
+        if agent_type is not None:
+            settings.append(("app.agent_type", agent_type))
+        if authorization is not None:
+            settings.extend([
+                ("app.authorization_provider", authorization.provider),
+                ("app.authorization_subject", authorization.subject_id),
+            ])
+        await self.execute(
+            "SELECT " + ", ".join(
+                f"set_config('{name}', %s, true)" for name, _ in settings
+            ),
+            tuple(value for _, value in settings),
+            transaction_id=tx,
+        )
+
+    async def _assume_app_role(self, tx: str, app_role: str, allow_unscoped: bool) -> None:
+        """Step off the privileged master role for the rest of the transaction.
+
+        The least-privilege app role IS subject to RLS. ``SET LOCAL ROLE`` is
+        transaction-scoped and reverts on commit or rollback.
+
         IMPORTANT — why we SET LOCAL ROLE: the RDS Data API connects as the
         DB user its secret maps to. Ours is the cluster master user
         (meridian_admin), and on this Aurora cluster the master role is NOT
@@ -416,109 +534,33 @@ class RDSDataClient:
         fail closed instead of continuing on the master connection. For one-off
         local admin diagnostics only, set ``RLS_ALLOW_UNSCOPED_FALLBACK=1``.
         """
-        app_role = os.getenv("RLS_APP_ROLE", "meridian_app").strip()
-        allow_unscoped = os.getenv("RLS_ALLOW_UNSCOPED_FALLBACK", "").lower() in {
-            "1",
-            "true",
-            "yes",
-        }
-        if (
-            allow_unscoped
-            and os.getenv("ENVIRONMENT", "development").strip().lower()
-            != "development"
-        ):
+        if not app_role:
+            msg = (
+                "RLS_APP_ROLE is empty; refusing to run scoped_session "
+                "without a least-privilege role."
+            )
+            if not allow_unscoped:
+                raise RuntimeError(
+                    f"{msg} Set RLS_APP_ROLE=meridian_app or apply "
+                    "examples/rls_app_role.sql."
+                )
+            logger.warning("%s RLS will NOT filter.", msg)
+            return
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", app_role):
             raise RuntimeError(
-                "RLS_ALLOW_UNSCOPED_FALLBACK is permitted only when "
-                "ENVIRONMENT=development."
+                f"Invalid RLS_APP_ROLE {app_role!r}; expected an unquoted "
+                "PostgreSQL identifier such as meridian_app."
             )
-        tx = self.begin_transaction()
-        transaction_finished = False
         try:
-            if traveler_id is not None:
-                if authorization is None:
-                    raise RuntimeError(
-                        "Traveler-scoped access requires an authenticated "
-                        "AuthorizationContext."
-                    )
-                decision = await self.check_traveler_authorization(
-                    traveler_id,
-                    authorization,
-                    transaction_id=tx,
-                    write_audit=True,
-                )
-                if not decision.allowed:
-                    # Preserve the DENY evidence. Rolling the transaction back
-                    # would erase the audit row together with the rejected
-                    # request, so commit this audit-only transaction first.
-                    self.commit_transaction(tx)
-                    transaction_finished = True
-                    raise TravelerAuthorizationError(decision)
-
-            # Pin all transaction-local settings in one Data API round trip.
-            # On a high-latency connection, separate calls for each setting
-            # can exhaust the browser's read timeout before any data is read.
-            settings = [("row_security", "on")]
-            if traveler_id is not None:
-                settings.append(("app.current_traveler_id", traveler_id))
-            if agent_type is not None:
-                settings.append(("app.agent_type", agent_type))
-            if authorization is not None:
-                settings.extend([
-                    ("app.authorization_provider", authorization.provider),
-                    ("app.authorization_subject", authorization.subject_id),
-                ])
-            await self.execute(
-                "SELECT " + ", ".join(
-                    f"set_config('{name}', %s, true)" for name, _ in settings
-                ),
-                tuple(value for _, value in settings),
-                transaction_id=tx,
+            await self.execute(f"SET LOCAL ROLE {app_role}", transaction_id=tx)
+        except Exception as exc:  # role missing / not granted
+            msg = (
+                f"scoped_session: could not SET LOCAL ROLE {app_role} "
+                f"({str(exc)[:120]}). Apply examples/rls_app_role.sql."
             )
-            # Step off the privileged master role for the rest of this
-            # transaction by switching to the least-privilege app role (which
-            # IS subject to RLS). SET LOCAL ROLE is transaction-scoped and
-            # reverts on commit/rollback.
-            if not app_role:
-                msg = (
-                    "RLS_APP_ROLE is empty; refusing to run scoped_session "
-                    "without a least-privilege role."
-                )
-                if allow_unscoped:
-                    logger.warning("%s RLS will NOT filter.", msg)
-                else:
-                    raise RuntimeError(
-                        f"{msg} Set RLS_APP_ROLE=meridian_app or apply "
-                        "examples/rls_app_role.sql."
-                    )
-            else:
-                if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", app_role):
-                    raise RuntimeError(
-                        f"Invalid RLS_APP_ROLE {app_role!r}; expected an unquoted "
-                        "PostgreSQL identifier such as meridian_app."
-                    )
-                try:
-                    await self.execute(f"SET LOCAL ROLE {app_role}", transaction_id=tx)
-                except Exception as exc:  # role missing / not granted
-                    msg = (
-                        f"scoped_session: could not SET LOCAL ROLE {app_role} "
-                        f"({str(exc)[:120]}). Apply examples/rls_app_role.sql."
-                    )
-                    if allow_unscoped:
-                        logger.warning("%s Continuing on master connection; RLS will NOT filter.", msg)
-                    else:
-                        raise RuntimeError(msg) from exc
-            yield tx
-            self.commit_transaction(tx)
-            transaction_finished = True
-        except BaseException:
-            # Cancellation must release RLS/lease row locks too. CancelledError
-            # is a BaseException; otherwise Data API waits for its idle timeout.
-            if not transaction_finished:
-                try:
-                    self.rollback_transaction(tx)
-                except Exception:
-                    logger.exception("Failed to roll back interrupted traveler transaction")
-            raise
+            if not allow_unscoped:
+                raise RuntimeError(msg) from exc
+            logger.warning("%s Continuing on master connection; RLS will NOT filter.", msg)
 
 
 # Global client instance
