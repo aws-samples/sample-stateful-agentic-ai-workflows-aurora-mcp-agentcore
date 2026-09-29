@@ -22,6 +22,7 @@ import type { LongTermMemoryFact, Product, TravelerProfile } from '../../types';
 import type {
   RecoveryEvidence,
   RecoveryStage,
+  RecoveryStepView,
 } from '../lib/recoveryState';
 import { TripVisual } from './TripVisual';
 
@@ -70,11 +71,23 @@ interface AgentProofCardProps {
 
 interface RecoveryLaunchCardProps {
   stage: RecoveryStage;
+  /** Each step's state and source, as the backend has confirmed it. */
+  steps: RecoveryStepView[];
   errorDetail?: string | null;
   disabled?: boolean;
   compact?: boolean;
   resumeMode?: boolean;
   onStart: () => void;
+}
+
+function timelineNote(
+  stage: RecoveryStage, failed: boolean, resumeMode: boolean, total: number,
+): string {
+  if (failed) return 'Check saved progress before retrying';
+  if (stage === 'running') return resumeMode ? `Step 4 of ${total}` : 'Waiting for saved results';
+  if (stage === 'checkpointed') return 'Paused at a saved checkpoint';
+  if (stage === 'ready') return 'Workflow complete';
+  return 'Runs after you confirm';
 }
 
 function money(price: number): string {
@@ -222,6 +235,7 @@ function PackageSummary({
 
 export function RecoveryLaunchCard({
   stage,
+  steps,
   errorDetail = null,
   disabled = false,
   compact = false,
@@ -230,8 +244,6 @@ export function RecoveryLaunchCard({
 }: RecoveryLaunchCardProps) {
   const running = stage === 'running';
   const failed = Boolean(errorDetail);
-  // Only a confirmed paused workflow proves the first three steps finished.
-  const activeStep = running && resumeMode ? 3 : -1;
   const launchSteps = [
     {
       icon: AlertTriangle,
@@ -376,13 +388,7 @@ export function RecoveryLaunchCard({
 
       <div className="mds-recovery-timeline-heading">
         <span>{running ? 'Live workflow' : failed ? 'Workflow stopped' : 'Recovery workflow'}</span>
-        <small>
-          {running
-            ? resumeMode ? `Step 4 of ${launchSteps.length}` : 'Waiting for saved results'
-            : failed
-              ? 'Check saved progress before retrying'
-              : 'Runs after you confirm'}
-        </small>
+        <small>{timelineNote(stage, failed, resumeMode, launchSteps.length)}</small>
       </div>
 
       <ol
@@ -393,17 +399,9 @@ export function RecoveryLaunchCard({
       >
         {launchSteps.map((step, index) => {
           const Icon = step.icon;
-          const stepState = failed
-            ? 'is-pending'
-            : running
-              ? index < activeStep
-                ? 'is-visited'
-                : index === activeStep
-                  ? 'is-current'
-                  : 'is-pending'
-              : index === 0
-                ? 'is-ready'
-                : 'is-pending';
+          const { state: stepState, source } = steps[index];
+          // The checkpoint step keeps its Aurora mark once Aurora confirms it.
+          const done = stepState === 'is-visited' && Icon !== AuroraIcon;
           return (
             <li
               key={step.label}
@@ -411,17 +409,16 @@ export function RecoveryLaunchCard({
               aria-current={stepState === 'is-current' ? 'step' : undefined}
             >
               <span>
-                {stepState === 'is-current' ? (
-                  <Loader2 size={16} aria-hidden="true" />
-                ) : stepState === 'is-visited' ? (
-                  <Check size={15} strokeWidth={3} aria-hidden="true" />
-                ) : (
-                  <Icon size={16} aria-hidden="true" />
-                )}
+                {stepState === 'is-current'
+                  ? <Loader2 size={16} aria-hidden="true" />
+                  : done
+                    ? <Check size={15} strokeWidth={3} aria-hidden="true" />
+                    : <Icon size={16} aria-hidden="true" />}
               </span>
               <div>
                 <strong>{step.label}</strong>
                 <small>{step.detail}</small>
+                {source && <em className="mds-step-source">{source}</em>}
               </div>
             </li>
           );

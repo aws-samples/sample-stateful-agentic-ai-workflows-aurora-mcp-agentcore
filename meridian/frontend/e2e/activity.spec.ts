@@ -42,9 +42,13 @@ for (const theme of ['light', 'dark']) {
       release();
       const steps = page.getByRole('list', { name: 'Recorded request steps' });
       await expect(steps.locator('.is-done')).toHaveCount(5);
-      await expect(steps.getByText('AgentCore', { exact: true })).toHaveCount(2);
-      await expect(steps.getByText('Aurora', { exact: true })).toHaveCount(1);
-      await expect(steps.getByText('Bedrock', { exact: true })).toHaveCount(1);
+      const chips = steps.locator('.mds-thinking-service');
+      await expect(chips.getByText('AgentCore', { exact: true })).toHaveCount(2);
+      await expect(chips.getByText('Aurora', { exact: true })).toHaveCount(1);
+      await expect(chips.getByText('Bedrock', { exact: true })).toHaveCount(1);
+      await expect(steps.locator('.mds-step-source')).toHaveText([
+        'AgentCore Runtime', 'AgentCore Memory', 'Aurora Data API', 'Bedrock', 'Meridian app',
+      ]);
       await expect.poll(() => steps.locator('img').evaluateAll(imgs => imgs.every(img => (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalWidth > 0))).toBe(true);
       await expect(page.locator('.mds-span-list')).toHaveCount(0);
       await expect(steps.locator('.mds-activity-group[open]')).toHaveCount(0);

@@ -10,7 +10,9 @@ import { SHOWCASE_FINALE_PROMPT } from '../lib/showcaseAdapters';
 import {
   deriveRecoveryEvidence,
   deriveRecoveryStage,
+  deriveRecoverySteps,
 } from '../lib/recoveryState';
+import type { ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 import { deriveWorkflowState } from '../lib/showcaseProof';
 import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 import { RecoveryBriefing } from './RecoveryBriefing';
@@ -32,6 +34,26 @@ const PROTECTION_PROMPT =
   'Review my trip protection and change-fee options before rebooking the canceled Tokyo flight.';
 
 type RecoveryLayout = 'command' | 'focus' | 'journey';
+
+/** The spans the recovery steps read, for one recovery thread.
+ *
+ * A request clears the trace until its response arrives, so a resume shows the
+ * steps the paused run confirmed. A resumed run returns the earlier spans again
+ * without the checkpoint write time measured after that pause; the time is
+ * carried over by span id, never re-derived.
+ */
+function useRecoveryStepSpans(
+  spans: ShowcaseTraceSpan[], thread: string | null,
+): ShowcaseTraceSpan[] {
+  const seen = useRef<{ thread: string | null; spans: ShowcaseTraceSpan[] }>({ thread, spans: [] });
+  if (seen.current.thread !== thread) seen.current = { thread, spans: [] };
+  if (!spans.length) return seen.current.spans;
+  const measured = new Map(seen.current.spans.map(span => [span.id, span.latencyMs]));
+  const merged = spans.map(span => (span.latencyMs == null && measured.get(span.id) != null
+    ? { ...span, latencyMs: measured.get(span.id) ?? null } : span));
+  seen.current = { thread, spans: merged };
+  return merged;
+}
 
 const RECOVERY_LAYOUTS: {
   id: RecoveryLayout;
@@ -116,6 +138,11 @@ export function RecoveryWorkspace({
     recoveryStage === 'running' &&
     state.workflowStatus === 'paused' &&
     /resume|checkpoint/i.test(state.lastPrompt ?? '');
+  const stepSpans = useRecoveryStepSpans(state.traceSpans, state.conversationId);
+  const recoverySteps = deriveRecoverySteps(stepSpans, recoveryStage, {
+    resumeMode: isResumingFromCheckpoint,
+    failed: Boolean(workflowErrorDetail),
+  });
 
   useEffect(() => { headingRef.current?.focus({ preventScroll: true }); }, []);
 
@@ -307,19 +334,19 @@ export function RecoveryWorkspace({
         </section>
       )}
 
-      {recoveryStage === 'running' ? (
+      {/* One console for running, checkpointed and ready, so the step card stays
+          mounted and each step's change reads as a change, not a new card. */}
+      {recoveryStage === 'running' || showDecisionDashboard ? (
         <div ref={consoleRef} className="mds-recovery-active-console">
           <RecoveryLaunchCard
             stage={recoveryStage}
+            steps={recoverySteps}
             compact
             resumeMode={isResumingFromCheckpoint}
             disabled
             onStart={startRecovery}
           />
-        </div>
-      ) : showDecisionDashboard ? (
-        <div ref={consoleRef} className="mds-recovery-active-console">
-          <section
+          {showDecisionDashboard && <section
             className="mds-recovery-decision-system"
             aria-label="Recovery decisions"
           >
@@ -394,7 +421,7 @@ export function RecoveryWorkspace({
                 onViewProof={onOpenProof}
               />
             </div>
-          </section>
+          </section>}
         </div>
       ) : state.error && state.conversationId ? (
         <section className="mds-recovery-launch-system" role="status">
@@ -409,6 +436,7 @@ export function RecoveryWorkspace({
         >
           <RecoveryLaunchCard
             stage={recoveryStage}
+            steps={recoverySteps}
             errorDetail={workflowErrorDetail}
             disabled={state.isLoading}
             onStart={startRecovery}

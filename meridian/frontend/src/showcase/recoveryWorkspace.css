@@ -1397,6 +1397,13 @@
   -webkit-line-clamp: 2;
 }
 
+/* Once steps are confirmed, each shows its service and measured time instead of
+   the plan's description, which keeps the decision cards higher on the stage. */
+.mds-recovery-launch-card.is-compact:is(.is-checkpointed, .is-ready)
+  .mds-recovery-launch-steps small {
+  display: none;
+}
+
 .mds-recovery-launch-card::after {
   position: absolute;
   right: -52px;

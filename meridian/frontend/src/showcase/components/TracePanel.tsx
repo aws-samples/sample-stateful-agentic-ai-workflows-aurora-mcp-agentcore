@@ -9,6 +9,7 @@ import { WorkflowStateInspector } from './WorkflowStateInspector';
 import { IconTooltip } from './ShowcaseTooltip';
 import { ServiceMark, type ServiceMarkName } from './ServiceMark';
 import { deriveMcpContracts, deriveWorkflowState } from '../lib/showcaseProof';
+import { formatLatency, stepSourceLabel } from '../lib/stepSource';
 
 // Classify specific actions before generic categories: older retrieval events
 // arrive as "orchestration" even when they are database searches. Every event
@@ -199,7 +200,7 @@ function CopyTraceButton({ state }: { state: MeridianShowcaseState }) {
     if (disabled) return;
     // Only the model that wrote this reply, never the configured one. A reply
     // no model wrote (a SQL or tool result) carries no model at all.
-    const replyModel = [...state.messages].reverse().find(message => message.role === 'bot')?.modelLabel;
+    const replyModel = latestReplyModel(state);
     const payload = {
       prompt: state.lastPrompt,
       phase: state.phaseLabel,
@@ -268,8 +269,14 @@ const ACTIVITY_SERVICES: { name: ServiceMarkName; label: string; matches: (span:
   { name: 'lambda', label: 'Lambda', matches: span => /lambda/i.test(`${span.name} ${span.component ?? ''}`) },
 ];
 
+/** The model that wrote the latest reply, which the trace on screen belongs to. */
+function latestReplyModel(state: MeridianShowcaseState): string | undefined {
+  return [...state.messages].reverse().find(message => message.role === 'bot')?.modelLabel;
+}
+
 function ActivityTrace({ state }: { state: MeridianShowcaseState }) {
   const spans = state.traceSpans;
+  const replyModel = latestReplyModel(state);
   // The response carries the trace as a batch. Do not invent live progress.
   if (state.isLoading && !spans.length) {
     return <div className="mds-thinking mds-thinking-wait" role="status">
@@ -314,7 +321,9 @@ function ActivityTrace({ state }: { state: MeridianShowcaseState }) {
                   <ChevronDown className="mds-activity-chevron" size={15} aria-hidden="true" />
                 </summary>
                 <div className="mds-activity-events">
-                  {recorded.length ? recorded.map(span => <TraceSpanRow key={span.id} span={span} index={spans.indexOf(span)} active={state.isReplaying && span.id === currentSpan?.id} />)
+                  {recorded.length ? recorded.map(span => <TraceSpanRow key={span.id} span={span}
+                    index={spans.indexOf(span)} replyModel={replyModel}
+                    active={state.isReplaying && span.id === currentSpan?.id} />)
                     : <p className="mds-empty">This step has not been reached in the replay.</p>}
                 </div>
               </details>
@@ -326,19 +335,28 @@ function ActivityTrace({ state }: { state: MeridianShowcaseState }) {
   );
 }
 
-function TraceSpanRow({ span, index, active }: { span: ShowcaseTraceSpan; index: number; active: boolean }) {
+function TraceSpanRow({ span, index, active, replyModel }: {
+  span: ShowcaseTraceSpan; index: number; active: boolean; replyModel?: string;
+}) {
   const denied = span.status === 'denied';
   const failed = span.status === 'error';
   const statusLabel = denied ? 'Denied by policy' : failed ? 'Failed' : span.status;
+  const latency = formatLatency(span.latencyMs);
   return (
     <details className={`mds-activity-event${active ? ' is-active' : ''}${denied ? ' is-denied' : ''}${failed ? ' is-failed' : ''}`}>
       <summary>
         <span className="mds-activity-event-index">{index + 1}</span>
-        <span>{span.name}</span>
+        <span className="mds-activity-event-title">
+          <span>{span.name}</span>
+          <span className="mds-step-source">{stepSourceLabel(span, replyModel)}</span>
+        </span>
         <ChevronDown size={13} aria-hidden="true" />
       </summary>
       <div className="mds-activity-event-detail">
-        <p className="mds-activity-event-meta">{span.category} · {statusLabel}{span.latencyMs === null ? '' : ` · ${span.latencyMs}ms`}{span.component ? ` · ${span.component}` : ''}</p>
+        <p className="mds-activity-event-meta">
+          {span.category} · {statusLabel}{latency ? ` · ${latency}` : ''}
+          {span.component ? ` · ${span.component}` : ''}
+        </p>
         {(span.agent || span.file) && <p className="mds-activity-event-source">{span.agent ?? 'Agent'}{span.file ? ` · ${span.file}` : ''}</p>}
         <p>{span.details || span.output || 'No output payload on this event.'}</p>
         {span.sql && <pre>{span.sql}</pre>}

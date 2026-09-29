@@ -579,6 +579,64 @@ describe('Experience presentation polish', () => {
     ).toHaveClass('is-visited');
   });
 
+  it('fills in each recovery step with its service and time as the backend confirms it', () => {
+    const traceSpan = (name: string, extra: Record<string, unknown> = {}) => ({
+      id: name, name, category: 'orchestration', type: 'tool_call', status: 'ok',
+      latencyMs: null, fields: [], ...extra,
+    });
+    const checkpoint = traceSpan('Checkpoint · AuroraDataApiSaver.put', {
+      component: 'Aurora · LangGraph checkpoint tables', latencyMs: 106,
+      fields: [{ label: 'checkpoint_durable', value: 'true' }],
+    });
+    const paused = [
+      traceSpan('Workflow node: classify → plan', {
+        component: 'LangGraph StateGraph', latencyMs: 0,
+      }),
+      traceSpan('Workflow node: search', {
+        component: 'LangGraph → SearchAgent', latencyMs: 956,
+      }),
+      traceSpan('Embedding generated', { latencyMs: 221 }),
+      traceSpan('Hybrid candidates fetched', { latencyMs: 338, sql: 'SELECT 1' }),
+      checkpoint,
+    ];
+    const base = {
+      selectedPhase: 5 as const, phaseLabel: 'Workflow' as const, conversationId: 'phase5-thread',
+      messages: [
+        { role: 'user' as const, text: SHOWCASE_FINALE_PROMPT },
+        { role: 'bot' as const, text: 'Paused.' },
+      ],
+    };
+    const step = (label: string) => screen.getByText(label).closest('li');
+    const { rerender } = render(<RecoveryWorkspace state={makeState({
+      ...base, lastPrompt: SHOWCASE_FINALE_PROMPT, workflowStatus: 'paused', traceSpans: paused,
+    })} />);
+    expect(step('Save an Aurora checkpoint')).toHaveClass('is-visited');
+    expect(step('Save an Aurora checkpoint')).toHaveTextContent('Aurora Data API · 106 ms');
+    expect(step('Search and rank')).toHaveTextContent('Bedrock + Aurora · 956 ms');
+    expect(step('Verify after resume')).toHaveClass('is-pending');
+    expect(screen.getByText('Paused at a saved checkpoint')).toBeInTheDocument();
+
+    rerender(<RecoveryWorkspace state={makeState({
+      ...base, lastPrompt: 'Resume workflow from checkpoint', workflowStatus: 'paused',
+      isLoading: true, traceSpans: [],
+    })} />);
+    expect(step('Save an Aurora checkpoint')).toHaveTextContent('Aurora Data API · 106 ms');
+    expect(step('Verify after resume')).toHaveAttribute('aria-current', 'step');
+
+    // The resumed run returns the paused run's spans without the write time.
+    rerender(<RecoveryWorkspace state={makeState({
+      ...base, lastPrompt: 'Resume workflow from checkpoint', workflowStatus: 'resumed',
+      traceSpans: [
+        ...paused.slice(0, 4), { ...checkpoint, latencyMs: null },
+        traceSpan('Workflow node: availability fan-out', { latencyMs: 54 }),
+        traceSpan('PackageAgent: Finding package', { latencyMs: 40 }),
+      ],
+    })} />);
+    expect(step('Save an Aurora checkpoint')).toHaveTextContent('Aurora Data API · 106 ms');
+    expect(step('Verify after resume')).toHaveClass('is-visited');
+    expect(step('Verify after resume')).toHaveTextContent('Aurora · 54 ms');
+  });
+
   it('reports an interrupted request without claiming no changes or completed steps', () => {
     render(
       <RecoveryWorkspace

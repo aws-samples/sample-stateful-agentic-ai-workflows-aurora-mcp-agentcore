@@ -2785,6 +2785,17 @@
 .mds-activity-event-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: inherit; }
 .mds-activity-event-detail a { color: var(--mds-tint); text-decoration: underline; text-underline-offset: 3px; }
 .mds-activity-event-source { font-family: var(--mds-font-mono); }
+/* The service that did a step's work and the time measured around it. Never
+   smaller than the footnote step; tabular figures so times line up. */
+.mds-activity-event-title { display: grid; gap: 2px; min-width: 0; }
+.mds-root .mds-step-source {
+  display: block;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.mds-root .mds-recovery-launch-steps li.is-pending .mds-step-source { color: var(--mds-label-3); }
 .mds-evidence-probe { color: var(--mds-label-2); font: var(--mds-type-footnote); }
 .mds-evidence-probe p { margin: 0 0 12px; }
 .mds-evidence-probe button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--mds-control-line); border-radius: var(--mds-radius-s); background: var(--mds-surface-2); color: var(--mds-tint); font: inherit; cursor: pointer; }

@@ -1,5 +1,7 @@
 import { hasDurableCheckpoint } from './showcaseProof';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import type { ShowcaseTraceSpan } from './showcaseAdapters';
+import { formatLatency, stepService, stepSourceLabel } from './stepSource';
 
 export type RecoveryStage = 'action' | 'running' | 'checkpointed' | 'ready';
 
@@ -99,4 +101,83 @@ export function deriveRecoveryEvidence(
     durableCheckpoint:
       hasDurableCheckpoint(state.traceSpans ?? []),
   };
+}
+
+export type RecoveryStepState = 'is-ready' | 'is-pending' | 'is-current' | 'is-visited';
+
+/** One of the four recovery workflow steps, as the backend has reported it. */
+export interface RecoveryStepView {
+  state: RecoveryStepState;
+  /** "Service · time" once the step is confirmed; the service alone when unmeasured. */
+  source: string | null;
+}
+
+const CLASSIFY_NODE = /^Workflow node: classify/;
+const SEARCH_NODE = /^Workflow node: search$/;
+const VERIFY_NODE = /^Workflow node: availability/;
+const CHECKPOINT = /^Checkpoint · /;
+// A paused workflow proves the first three steps ran, even with no span to read.
+const CONFIRMED_SERVICES = ['LangGraph', 'Bedrock + Aurora', 'Aurora Data API'];
+
+const isStepBoundary = (span: ShowcaseTraceSpan) =>
+  /^Workflow node:/.test(span.name) || CHECKPOINT.test(span.name);
+
+/** The services a node's own spans called, in the order it called them. */
+function nodeServices(spans: ShowcaseTraceSpan[], nodeIndex: number): string {
+  const services: string[] = [];
+  for (const span of spans.slice(nodeIndex + 1)) {
+    if (isStepBoundary(span)) break;
+    const service = stepService(span).replace(/ Data API$/, '');
+    if (service !== 'Meridian app' && !services.includes(service)) services.push(service);
+  }
+  return services.join(' + ') || 'LangGraph';
+}
+
+function nodeSource(spans: ShowcaseTraceSpan[], node: RegExp): string | null {
+  const index = spans.findIndex(span => node.test(span.name) && span.status === 'ok');
+  if (index < 0) return null;
+  return [nodeServices(spans, index), formatLatency(spans[index].latencyMs)]
+    .filter(Boolean).join(' · ');
+}
+
+/** The checkpoint written after the search node, and only a durable one. */
+function checkpointSource(spans: ShowcaseTraceSpan[]): string | null {
+  const search = spans.findIndex(span => SEARCH_NODE.test(span.name));
+  const checkpoint = search < 0
+    ? undefined
+    : spans.slice(search + 1).find(span => CHECKPOINT.test(span.name));
+  const durable = checkpoint?.fields
+    .some(field => field.label === 'checkpoint_durable' && field.value === 'true');
+  return checkpoint && checkpoint.status === 'ok' && durable ? stepSourceLabel(checkpoint) : null;
+}
+
+const pending = (): RecoveryStepView => ({ state: 'is-pending', source: null });
+
+/** Understand, search, checkpoint and verify, each confirmed only by the spans
+ *  the backend returned. A fresh run in flight claims no step: the trace arrives
+ *  with the response. */
+export function deriveRecoverySteps(
+  spans: ShowcaseTraceSpan[],
+  stage: RecoveryStage,
+  { resumeMode, failed }: { resumeMode: boolean; failed: boolean },
+): RecoveryStepView[] {
+  if (failed || (stage === 'running' && !resumeMode)) {
+    return [pending(), pending(), pending(), pending()];
+  }
+  if (stage === 'action') {
+    return [{ state: 'is-ready', source: null }, pending(), pending(), pending()];
+  }
+  const sources = [
+    nodeSource(spans, CLASSIFY_NODE), nodeSource(spans, SEARCH_NODE),
+    checkpointSource(spans), nodeSource(spans, VERIFY_NODE),
+  ];
+  if (stage === 'running') {
+    return [
+      ...sources.slice(0, 3).map((source, index) => ({
+        state: 'is-visited' as const, source: source ?? CONFIRMED_SERVICES[index],
+      })),
+      { state: 'is-current', source: null },
+    ];
+  }
+  return sources.map(source => (source ? { state: 'is-visited', source } : pending()));
 }

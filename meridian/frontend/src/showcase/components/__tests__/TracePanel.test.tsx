@@ -116,6 +116,36 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
   };
 }
 
+describe('TracePanel step sources', () => {
+  it('shows the service and the measured time on every recorded step', () => {
+    const { container } = render(<TracePanel state={makeState()} />);
+    const source = container.querySelector('.mds-activity-event summary .mds-step-source');
+    expect(source).toHaveTextContent('Aurora Data API · 42 ms');
+  });
+
+  it('shows the service alone when a step has no measured time', () => {
+    const { container } = render(<TracePanel state={makeState({
+      traceSpans: [{ ...traceSpan, latencyMs: null }],
+    })} />);
+    const source = container.querySelector('.mds-activity-event summary .mds-step-source');
+    expect(source).toHaveTextContent(/^Aurora Data API$/);
+    expect(container.querySelector('.mds-activity-event-meta')).not.toHaveTextContent(/\d\s*m?s\b/);
+  });
+
+  it('names the model that wrote the reply on the step it wrote', () => {
+    const { container } = render(<TracePanel state={makeState({
+      selectedPhase: 3,
+      messages: [{ role: 'bot', text: 'Two retreats.', modelLabel: 'Claude Haiku 4.5' }],
+      traceSpans: [{
+        ...traceSpan, id: 'polish', sql: undefined, category: 'model', latencyMs: 1400,
+        name: 'Bedrock · concierge polish (global.anthropic.claude-haiku-4-5-20251001-v1:0)',
+      }],
+    })} />);
+    expect(container.querySelector('.mds-step-source'))
+      .toHaveTextContent('Bedrock · Claude Haiku 4.5 · 1.4 s');
+  });
+});
+
 describe('TracePanel copy trace', () => {
   async function copiedPayload(state: MeridianShowcaseState) {
     const writeText = vi.fn().mockResolvedValue(undefined);
