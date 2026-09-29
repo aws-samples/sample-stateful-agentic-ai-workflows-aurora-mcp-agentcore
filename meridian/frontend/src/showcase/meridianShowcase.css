@@ -260,8 +260,10 @@
    would repeat the strip's own "Aurora evidence" heading directly below it. */
 .mds-desktop-right:not(.is-collapsed) .mds-rail-handle {
   width: auto;
+  min-width: 32px;
+  min-height: 32px;
   align-self: flex-end;
-  padding: 0 0 4px;
+  padding: 0;
   gap: 0;
 }
 
@@ -1794,7 +1796,7 @@
 }
 
 .mds-main-actions button {
-  min-height: auto;
+  min-height: 32px;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -2380,6 +2382,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-height: 32px;
   padding: 0;
   margin: 0;
   border: 0;
@@ -2449,6 +2452,11 @@
   background: transparent;
   font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-semibold);
+}
+
+/* A presenter clicks these from across the stage: at least 32px tall. */
+.mds-panel-head button {
+  min-height: 32px;
 }
 
 /* Unavailable, the label stays readable in the tertiary color instead of fading. */
@@ -2797,7 +2805,14 @@
 .mds-activity-event-detail { min-width: 0; padding: 0 0 10px 25px; color: var(--mds-label-2); font: var(--mds-type-footnote); overflow-wrap: anywhere; }
 .mds-activity-event-detail p { margin: 0 0 8px; }
 .mds-activity-event-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: inherit; }
-.mds-activity-event-detail a { color: var(--mds-tint); text-decoration: underline; text-underline-offset: 3px; }
+.mds-activity-event-detail a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--mds-tint);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .mds-activity-event-source { font-family: var(--mds-font-mono); }
 /* The service that did a step's work and the time measured around it. Never
    smaller than the footnote step; tabular figures so times line up. */
