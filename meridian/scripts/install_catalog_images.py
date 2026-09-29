@@ -72,8 +72,8 @@ UNSHARP_RADIUS = 1.5
 UNSHARP_PERCENT = 80
 UNSHARP_THRESHOLD = 3
 
-# Alex is centre-cropped into a circle, so a square source is what keeps the
-# framing under your control rather than the crop's.
+# Alex is shown as a small circle, so the portrait is cut square. The crop keeps
+# the top of the frame: a centred cut of a tall headshot loses the top of the head.
 PORTRAIT_TARGETS = {"alex-morgan": (1024, 1024)}
 
 
@@ -102,8 +102,13 @@ def resolve_target(stem: str) -> tuple[Path, tuple[int, int]] | None:
     return None
 
 
-def normalise(source: Path, destination: Path, size: tuple[int, int]) -> str:
-    """Cover-crop to the target aspect, downscale, and save as progressive JPEG."""
+def normalise(
+    source: Path, destination: Path, size: tuple[int, int], *, anchor_top: bool = False
+) -> str:
+    """Cover-crop to the target aspect, downscale, and save as progressive JPEG.
+
+    The crop is centred, or keeps the top edge when ``anchor_top`` is set.
+    """
     with Image.open(source) as image:
         image = image.convert("RGB")
         src_w, src_h = image.size
@@ -114,7 +119,7 @@ def normalise(source: Path, destination: Path, size: tuple[int, int]) -> str:
         interim = (max(1, round(src_w * scale)), max(1, round(src_h * scale)))
         image = image.resize(interim, Image.Resampling.LANCZOS)
         left = (interim[0] - target_w) // 2
-        top = (interim[1] - target_h) // 2
+        top = 0 if anchor_top else (interim[1] - target_h) // 2
         image = image.crop((left, top, left + target_w, top + target_h))
 
         # Enlarging spreads fixed detail over more pixels, which is what reads
@@ -217,7 +222,7 @@ def main() -> int:
             args.backup.mkdir(parents=True, exist_ok=True)
             shutil.copy2(destination, args.backup / destination.name)
 
-        detail = normalise(path, destination, size)
+        detail = normalise(path, destination, size, anchor_top=destination.parent == PORTRAIT)
         print(f"  {path.name:28s} -> {destination.name:16s}  {detail}")
         installed += 1
 
