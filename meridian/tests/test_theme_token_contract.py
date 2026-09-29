@@ -1,13 +1,11 @@
-"""Guard the showcase theme token layer.
+"""Guard the showcase tooltip colours and the session receipt.
 
-Accent tints used to be written as raw ``rgba(47, 140, 255, .12)`` in 169
-places across 48 different alphas. A literal like that cannot follow the
-theme, which is how the tooltip ended up rendering near-black text on a
-near-black ground in light mode, the theme meant for low-contrast
-projectors.
-
-Every tint now resolves from a themed hue triple, so the light theme follows
-automatically. These tests stop a raw one creeping back in.
+The tooltip once rendered near-black text on a near-black ground in light mode
+because its ground was a hard-coded dark hex under themed text. Colour literals
+anywhere in the showcase are now rejected by the design-token check
+(``frontend/scripts/design-tokens/check.mjs``) and real contrast is measured by
+the accessibility suite; this test keeps the tooltip's two colours on role
+tokens so both follow the theme together.
 """
 
 from __future__ import annotations
@@ -15,82 +13,22 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
-SHOWCASE = (
-    Path(__file__).resolve().parents[1] / "frontend" / "src" / "showcase"
-)
-
-SHEETS = (
-    "meridianShowcase.css",
-    "recoveryWorkspace.css",
-    "discoveryWorkspace.css",
-    "recoveryDecisionRefresh.css",
-)
-
-# Hues that must only ever be referenced through their themed triple.
-THEMED_HUES = {
-    "blue accent": r"rgba?\(\s*47\s*,\s*140\s*,\s*255\s*[,)]",
-    "green": r"rgba?\(\s*55\s*,\s*210\s*,\s*157\s*[,)]",
-    "recovery yellow": r"rgba?\(\s*246\s*,\s*183\s*,\s*60\s*[,)]",
-    "recovery green": r"rgba?\(\s*50\s*,\s*207\s*,\s*134\s*[,)]",
-    "teal": r"rgba?\(\s*67\s*,\s*206\s*,\s*171\s*[,)]",
-}
-
-HUE_TRIPLES = (
-    "--mds-blue-rgb",
-    "--mds-green-rgb",
-    "--mds-recovery-yellow-rgb",
-    "--mds-recovery-green-rgb",
-    "--mds-teal-rgb",
-)
+SHOWCASE = Path(__file__).resolve().parents[1] / "frontend" / "src" / "showcase"
 
 
 def _sheet(name: str) -> str:
     return (SHOWCASE / name).read_text(encoding="utf-8")
 
 
-def _without_token_definitions(css: str) -> str:
-    """Drop the ``:root`` declarations, where the literals legitimately live."""
-    return "\n".join(
-        line
-        for line in css.splitlines()
-        if not re.match(r"\s*--mds-[a-z-]+\s*:", line)
-    )
-
-
-@pytest.mark.parametrize("name", SHEETS)
-@pytest.mark.parametrize("label,pattern", sorted(THEMED_HUES.items()))
-def test_no_raw_accent_literals(name: str, label: str, pattern: str) -> None:
-    css = _without_token_definitions(_sheet(name))
-    hits = re.findall(pattern, css)
-    assert not hits, (
-        f"{name} has {len(hits)} raw {label} literal(s). Use "
-        f"rgb(var(--mds-...-rgb) / <alpha>) so the tint follows the theme."
-    )
-
-
-@pytest.mark.parametrize("token", HUE_TRIPLES)
-def test_hue_triple_defined_for_both_themes(token: str) -> None:
-    css = _sheet("meridianShowcase.css")
-    definitions = re.findall(rf"{re.escape(token)}\s*:", css)
-    assert len(definitions) == 2, (
-        f"{token} must be defined once for dark and once for light; "
-        f"found {len(definitions)}"
-    )
-
-
-def test_tooltip_colours_come_from_tokens() -> None:
+def test_tooltip_colours_come_from_role_tokens() -> None:
     """The original bug: themed text over a hard-coded dark ground."""
     css = _sheet("meridianShowcase.css")
     match = re.search(r"\.mds-tooltip\s*\{[^}]*\}", css)
     assert match, ".mds-tooltip rule not found"
     rule = match.group(0)
-    assert "var(--mds-tooltip-bg)" in rule
-    assert "var(--mds-tooltip-fg)" in rule
-    assert not re.search(r"#[0-9a-fA-F]{6}", rule), (
-        "tooltip still carries a hard-coded colour"
-    )
+    assert re.search(r"(?<![-\w])color\s*:\s*var\(--mds-", rule), "tooltip text is not a token"
+    assert re.search(r"background\s*:\s*var\(--mds-", rule), "tooltip ground is not a token"
+    assert not re.search(r"#[0-9a-fA-F]{3,8}\b", rule), "tooltip still carries a hard-coded colour"
 
 
 # ---------------------------------------------------------------------------
@@ -107,8 +45,7 @@ def test_receipt_reads_bookings_as_the_agent_entitled_to_them() -> None:
     reservation.
     """
     source = (
-        Path(__file__).resolve().parents[1]
-        / "backend" / "routers" / "diagnostics.py"
+        Path(__file__).resolve().parents[1] / "backend" / "routers" / "diagnostics.py"
     ).read_text(encoding="utf-8")
     receipt = source[source.index("async def session_receipt") :]
     assert 'agent_type="booking_agent"' in receipt, (
@@ -119,46 +56,10 @@ def test_receipt_reads_bookings_as_the_agent_entitled_to_them() -> None:
 def test_receipt_is_read_only() -> None:
     """The close must never mutate the state it reports on."""
     source = (
-        Path(__file__).resolve().parents[1]
-        / "backend" / "routers" / "diagnostics.py"
+        Path(__file__).resolve().parents[1] / "backend" / "routers" / "diagnostics.py"
     ).read_text(encoding="utf-8")
     receipt = source[source.index("async def session_receipt") :]
     for statement in ("INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE"):
         assert statement not in receipt.upper(), (
             f"session_receipt must stay read-only; found {statement}"
         )
-
-
-# The concierge and recovery surfaces remap --mds-blue to --mc-accent, a pale
-# text accent tuned for reading on a dark ground. Filling a control with it and
-# writing white on top leaves white on near-white: the "Find hotel options"
-# button shipped that way twice, and the active phase chip in the side nav sat
-# at 1.71:1 against its own label. Filled controls take --mc-action, which
-# carries --mc-on-action and is what every other filled control uses.
-#
-# Only the surface sheets are scanned. meridianShowcase.css is the base layer,
-# and its blue fills are overridden per surface by exactly these sheets, so
-# reading it in isolation reports controls that render correctly. Decorative
-# fills carry no label, hence the pairing rather than the fill alone.
-SURFACE_SHEETS = (
-    "recoveryWorkspace.css",
-    "recoveryDecisionRefresh.css",
-    "discoveryWorkspace.css",
-)
-BLOCK = re.compile(r"\{([^{}]*)\}")
-ACCENT_FILL = re.compile(r"background(?:-color)?\s*:\s*var\(\s*--mds-blue\s*\)")
-LIGHT_TEXT = re.compile(r"color\s*:\s*(#fff(?:fff)?\b|white\b)", re.IGNORECASE)
-
-
-@pytest.mark.parametrize("name", SURFACE_SHEETS)
-def test_light_text_is_never_written_on_the_pale_accent(name: str) -> None:
-    offenders = [
-        " ".join(body.split())[:90]
-        for body in BLOCK.findall(_sheet(name))
-        if ACCENT_FILL.search(body) and LIGHT_TEXT.search(body)
-    ]
-    assert not offenders, (
-        f"{name} fills {len(offenders)} control(s) with var(--mds-blue) and writes "
-        f"white on them, which resolves to white on the pale text accent. Use "
-        f"var(--mc-action) with var(--mc-on-action). Offending blocks: {offenders}"
-    )
