@@ -373,6 +373,13 @@
   font: var(--mds-type-footnote);
 }
 
+/* Before Aurora records a step, one line stands in for the list. */
+.mds-continuity-empty {
+  margin: 0;
+  color: var(--mds-label-2);
+  font: var(--mds-type-body);
+}
+
 .mds-continuity-foot {
   display: grid;
   gap: 7px;
