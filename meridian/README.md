@@ -36,7 +36,9 @@ security diagnostic.
 shared screen; add `&theme=light` or `&theme=dark` to choose the theme. In the
 windowed layout, the controls bar offers an audience preview, a projector
 readability setting and **Present fullscreen**, which hides the controls until
-you press **Esc**.
+you press **Esc**. Both themes use the same color roles and system font. The
+projector setting enlarges type by 20% without changing colors. Dark mode uses
+the deck's black background, white labels and blue actions.
 
 ## Five phases
 
