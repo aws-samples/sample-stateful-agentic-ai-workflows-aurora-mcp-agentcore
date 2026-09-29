@@ -16,8 +16,6 @@ function state(
     memoryMutationError: null,
     memoryFacts: [],
     traceSpans: [],
-    modelLabel: 'Claude Sonnet 5',
-    embedLabel: 'Cohere Embed v4',
     setMemoryEnabled: vi.fn(),
     ...overrides,
   } as unknown as MeridianShowcaseState;

@@ -69,8 +69,6 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     workflowResumedAfterRestart: false,
     lastPrompt: 'Show me city trips under $2,000 per traveler.',
     actionDrawer: null,
-    modelLabel: 'Claude Sonnet 5',
-    embedLabel: 'Cohere Embed v4',
     totalLatencyMs: 42,
     phaseExamples: [],
     chatFilters: {
@@ -117,6 +115,39 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     ...overrides,
   };
 }
+
+describe('TracePanel copy trace', () => {
+  async function copiedPayload(state: MeridianShowcaseState) {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<TracePanel state={state} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy trace' }));
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalled());
+    return JSON.parse(writeText.mock.calls[0][0]);
+  }
+
+  it('names the model that wrote the reply, not the configured one', async () => {
+    const payload = await copiedPayload(makeState({
+      messages: [
+        { role: 'user', text: 'Find a quiet retreat' },
+        { role: 'bot', text: 'Here are two.', modelLabel: 'Claude Haiku 4.5' },
+      ],
+    }));
+    expect(payload.model).toBe('Claude Haiku 4.5');
+    expect(payload).not.toHaveProperty('embed');
+  });
+
+  it('omits the model when no model wrote the reply', async () => {
+    const payload = await copiedPayload(makeState({
+      messages: [
+        { role: 'user', text: 'Show me city trips' },
+        { role: 'bot', text: 'Found 5 trips.' },
+      ],
+    }));
+    expect(payload).not.toHaveProperty('model');
+    expect(payload.spans).toHaveLength(1);
+  });
+});
 
 describe('TracePanel collapse behavior', () => {
   it('hides activity details while keeping the panel header actionable', () => {

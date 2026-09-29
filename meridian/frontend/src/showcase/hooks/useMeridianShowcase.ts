@@ -24,7 +24,7 @@ import type {
   Product,
   TravelerProfile,
 } from '../../types';
-import { runConfigEmbedLabel, runConfigModelLabel, type BackendHealth } from '../../lib/runConfig';
+import type { BackendHealth } from '../../lib/runConfig';
 import {
   SHOWCASE_EXAMPLE_PROMPTS,
   SHOWCASE_PHASES,
@@ -145,8 +145,6 @@ export interface MeridianShowcaseState {
   tripHolds: TripHold[];
   /** The held trip waiting for the traveler's confirmation in the trip drawer. */
   bookingPrompt: TripHold | null;
-  modelLabel: string;
-  embedLabel: string;
   totalLatencyMs: number;
   phaseExamples: string[];
   travelersCount: number;
@@ -1235,8 +1233,6 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       })) },
     })),
     bookingPrompt,
-    modelLabel: runConfigModelLabel(selectedPhase, backendHealth),
-    embedLabel: runConfigEmbedLabel(selectedPhase, backendHealth),
     totalLatencyMs,
     phaseExamples: SHOWCASE_EXAMPLE_PROMPTS[selectedPhase] ?? [],
     chatFilters,

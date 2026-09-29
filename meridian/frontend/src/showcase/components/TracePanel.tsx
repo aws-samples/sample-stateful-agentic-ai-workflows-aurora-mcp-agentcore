@@ -197,11 +197,13 @@ function CopyTraceButton({ state }: { state: MeridianShowcaseState }) {
 
   const onCopy = async () => {
     if (disabled) return;
+    // Only the model that wrote this reply, never the configured one. A reply
+    // no model wrote (a SQL or tool result) carries no model at all.
+    const replyModel = [...state.messages].reverse().find(message => message.role === 'bot')?.modelLabel;
     const payload = {
       prompt: state.lastPrompt,
       phase: state.phaseLabel,
-      model: state.modelLabel,
-      embed: state.embedLabel,
+      ...(replyModel ? { model: replyModel } : {}),
       total_latency_ms: state.totalLatencyMs,
       timing_basis: 'Sum of recorded span durations; nested spans may overlap.',
       span_count: state.traceSpans.length,
