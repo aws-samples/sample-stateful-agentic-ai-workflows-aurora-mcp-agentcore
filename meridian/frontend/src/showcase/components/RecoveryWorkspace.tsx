@@ -15,6 +15,7 @@ import {
 import type { ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 import { deriveWorkflowState } from '../lib/showcaseProof';
 import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
+import { useLiveCues } from '../hooks/useLiveCues';
 import { RecoveryBriefing } from './RecoveryBriefing';
 import { RecoveryChecks } from './RecoveryChecks';
 import { RecoveryBoardingPass } from './RecoveryBoardingPass';
@@ -143,6 +144,7 @@ export function RecoveryWorkspace({
     resumeMode: isResumingFromCheckpoint,
     failed: Boolean(workflowErrorDetail),
   });
+  const liveCues = useLiveCues(state.conversationId, state.isLoading);
 
   useEffect(() => { headingRef.current?.focus({ preventScroll: true }); }, []);
 
@@ -341,6 +343,7 @@ export function RecoveryWorkspace({
           <RecoveryLaunchCard
             stage={recoveryStage}
             steps={recoverySteps}
+            live={liveCues}
             compact
             resumeMode={isResumingFromCheckpoint}
             disabled

@@ -587,7 +587,13 @@ export function DesktopMeridianApp({
           className="mds-desktop-right is-continuity"
           aria-label="Journey continuity"
         >
-          <JourneyContinuityRail document={journey.document} error={journey.error} loading={journey.loading || (state.selectedPhase === 5 && state.isLoading)} />
+          <JourneyContinuityRail
+            document={journey.document}
+            error={journey.error}
+            loading={journey.loading || (state.selectedPhase === 5 && state.isLoading)}
+            thread={state.selectedPhase === 5 ? state.conversationId : null}
+            running={state.selectedPhase === 5 && state.isLoading}
+          />
         </aside>
       )}
 

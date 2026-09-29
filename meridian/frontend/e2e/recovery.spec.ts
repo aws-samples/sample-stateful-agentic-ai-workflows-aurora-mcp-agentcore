@@ -62,3 +62,37 @@ test('recovery alternative cards keep the route on one line at 1440', async ({ p
     expect(isSingleLine, `"${await label.textContent()}" wraps to more than one line`).toBe(true);
   }
 });
+
+const pausedActivities = [
+  ['Workflow node: classify → plan', 'LangGraph StateGraph', 0, []],
+  ['Workflow node: search', 'LangGraph → SearchAgent', 956, []],
+  ['Checkpoint · AuroraDataApiSaver.put', 'Aurora · LangGraph checkpoint tables', 458,
+    [{ label: 'checkpoint_durable', value: 'true' }]],
+].map(([title, component, ms, fields], index) => ({
+  id: `paused-${index}`, timestamp: '2026-09-28T18:00:00Z', activity_type: 'tool_call', title,
+  execution_time_ms: ms, telemetry: { category: 'orchestration', component, status: 'ok', fields },
+}));
+
+for (const motion of ['no-preference', 'reduce'] as const) {
+  test(`checkpoint confirmation with ${motion} motion`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: motion });
+    await page.route(url => url.pathname === '/api/chat', route => route.fulfill({ json: {
+      message: 'Workflow paused after a committed checkpoint.', products, activities: pausedActivities,
+      conversation_id: route.request().postDataJSON().conversation_id, workflow_status: 'paused',
+    } }));
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto('/showcase?view=recovery&present=1');
+    await page.getByRole('button', { name: 'Start recovery' }).click();
+    const checkpoint = page.locator('.mds-recovery-launch-steps li')
+      .filter({ hasText: 'Save an Aurora checkpoint' });
+    await expect(checkpoint).toHaveClass(/is-visited/);
+    await expect(checkpoint.locator('.mds-step-source')).toHaveText('Aurora Data API · 458 ms');
+    await expect(page.locator('.mds-aurora-glow')).toHaveCount(motion === 'reduce' ? 0 : 1);
+    if (motion === 'reduce') {
+      await expect.poll(() => page.evaluate(() => document.getAnimations()
+        .filter(animation => animation.playState === 'running').length)).toBe(0);
+      expect(await checkpoint.locator('.mds-recovery-step-icon').evaluate(el => el.style.opacity))
+        .not.toBe('0');
+    }
+  });
+}

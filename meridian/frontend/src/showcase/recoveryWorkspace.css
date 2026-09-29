@@ -1829,6 +1829,7 @@
 }
 
 .mds-recovery-launch-steps li > span {
+  position: relative;
   z-index: 1;
   width: 34px;
   height: 34px;
@@ -1855,8 +1856,47 @@
   background: var(--mds-blue-fill);
 }
 
-.mds-recovery-launch-steps li.is-current > span svg {
-  animation: mds-recovery-spin 1s linear infinite;
+.mds-recovery-step-icon {
+  display: grid;
+  place-items: center;
+}
+
+/* The one emphasis: a ring leaves the Aurora mark once, when a watched run's
+   response confirms the checkpoint. It is only rendered for that change. */
+.mds-aurora-glow {
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--mds-green);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Working indicators, removed with the state that shows them: a ring on the
+   step in progress, and the live dot while a fresh run has no step to name. */
+@media (prefers-reduced-motion: no-preference) {
+  .mds-recovery-launch-steps li.is-current > span::after {
+    position: absolute;
+    inset: -3px;
+    content: "";
+    border: 2px solid var(--mds-blue);
+    border-radius: 50%;
+    animation: mds-pulse 1.4s ease-in-out infinite;
+  }
+
+  .mds-recovery-launch-card.is-compact.is-running .mds-recovery-timeline-heading > span::before {
+    background: var(--mds-blue);
+    animation: mds-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mds-recovery-brief-running > svg,
+  .mds-recovery-launch-card.is-running .mds-mobile-disruption-topline > em svg,
+  .mds-recovery-launch-card.is-running .mds-mobile-disruption-primary svg,
+  .mds-decision-status.is-running svg,
+  .mds-agent-proof-card li.is-running > span svg {
+    animation: none;
+  }
 }
 
 .mds-recovery-launch-steps li.is-failed > span {

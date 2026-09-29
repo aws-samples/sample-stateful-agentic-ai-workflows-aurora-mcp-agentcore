@@ -146,6 +146,21 @@ describe('TracePanel step sources', () => {
   });
 });
 
+describe('TracePanel arrivals', () => {
+  it('paints a trace it opens onto without moving it', () => {
+    render(<TracePanel state={makeState()} />);
+    const group = screen.getByText('Querying live travel data').closest('li')!;
+    expect(group.style.opacity).not.toBe('0');
+  });
+
+  it('slides in the steps of a response it was waiting for', () => {
+    const waiting = makeState({ isLoading: true, traceSpans: [] });
+    const { rerender } = render(<TracePanel state={waiting} />);
+    rerender(<TracePanel state={makeState()} />);
+    expect(screen.getByText('Querying live travel data').closest('li')!.style.opacity).toBe('0');
+  });
+});
+
 describe('TracePanel copy trace', () => {
   async function copiedPayload(state: MeridianShowcaseState) {
     const writeText = vi.fn().mockResolvedValue(undefined);

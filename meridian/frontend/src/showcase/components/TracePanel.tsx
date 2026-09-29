@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import { Check, ChevronDown, Circle, Copy, Loader2, RefreshCw, RotateCcw, ShieldX, Workflow, X } from 'lucide-react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { type ShowcaseTraceSpan, type ShowcaseTraceTab } from '../lib/showcaseAdapters';
@@ -10,6 +11,8 @@ import { IconTooltip } from './ShowcaseTooltip';
 import { ServiceMark, type ServiceMarkName } from './ServiceMark';
 import { deriveMcpContracts, deriveWorkflowState } from '../lib/showcaseProof';
 import { formatLatency, stepSourceLabel } from '../lib/stepSource';
+import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
+import { STEP_ENTER } from '../hooks/useLiveCues';
 
 // Classify specific actions before generic categories: older retrieval events
 // arrive as "orchestration" even when they are database searches. Every event
@@ -35,6 +38,26 @@ function activityGroup(span: ShowcaseTraceSpan): string {
   return 'other';
 }
 
+/** Whether the trace on screen is the response this panel was waiting for,
+ *  shown for the first time. Only then do its steps slide in: a trace the panel
+ *  opens onto, or shows again after a collapse, is painted still. */
+function useArrivingTrace(state: MeridianShowcaseState): boolean {
+  const reduced = usePrefersReducedMotion();
+  const arrival = useRef({ waiting: false, batch: null as string | null, shown: false });
+  const batch = state.traceSpans[0]?.id ?? null;
+  if (state.isLoading) {
+    arrival.current = { waiting: true, batch: null, shown: false };
+  } else if (arrival.current.waiting && batch) {
+    arrival.current = { waiting: false, batch, shown: false };
+  }
+  const enter = !reduced && !state.isReplaying && batch !== null
+    && arrival.current.batch === batch && !arrival.current.shown;
+  useEffect(() => {
+    if (enter) arrival.current.shown = true;
+  });
+  return enter;
+}
+
 export function TracePanel({
   state,
   compact = false,
@@ -48,6 +71,8 @@ export function TracePanel({
 }) {
   const hasTraceActivity =
     state.traceSpans.length > 0 || state.isLoading || state.isReplaying;
+  const arriving = useArrivingTrace(state);
+  const traceKey = state.traceSpans[0]?.id ?? 'waiting';
   const className = [
     'mds-panel',
     'mds-trace-panel',
@@ -109,7 +134,8 @@ export function TracePanel({
       {!collapsed && (
         <>
           <div className="mds-trace-scroll">
-            {hasTraceActivity ? <ActivityTrace key={state.traceSpans[0]?.id ?? 'waiting'} state={state} />
+            {hasTraceActivity
+              ? <ActivityTrace key={traceKey} state={state} arriving={arriving} />
               : <div className="mds-empty">Ask a question to see the evidence behind the answer.</div>}
 
             {!compact && <EvidenceInspector state={state} />}
@@ -274,7 +300,7 @@ function latestReplyModel(state: MeridianShowcaseState): string | undefined {
   return [...state.messages].reverse().find(message => message.role === 'bot')?.modelLabel;
 }
 
-function ActivityTrace({ state }: { state: MeridianShowcaseState }) {
+function ActivityTrace({ state, arriving }: { state: MeridianShowcaseState; arriving: boolean }) {
   const spans = state.traceSpans;
   const replyModel = latestReplyModel(state);
   // The response carries the trace as a batch. Do not invent live progress.
@@ -304,7 +330,10 @@ function ActivityTrace({ state }: { state: MeridianShowcaseState }) {
           const StatusIcon = status === 'done' ? Check : status === 'error' ? X
             : status === 'denied' ? ShieldX : status === 'active' ? Loader2 : Circle;
           return (
-            <li key={group.id} className={`mds-thinking-item is-${status}`} aria-current={status === 'active' ? 'step' : undefined}>
+            <motion.li key={group.id} className={`mds-thinking-item is-${status}`}
+              aria-current={status === 'active' ? 'step' : undefined}
+              initial={arriving ? { opacity: 0, y: 8 } : false}
+              animate={{ opacity: 1, y: 0 }} transition={STEP_ENTER}>
               <details className="mds-activity-group">
                 <summary>
                   <span className="mds-thinking-marker" aria-hidden="true"><StatusIcon className={status === 'active' ? 'mds-activity-spinner' : undefined} size={17} strokeWidth={2} /></span>
@@ -327,7 +356,7 @@ function ActivityTrace({ state }: { state: MeridianShowcaseState }) {
                     : <p className="mds-empty">This step has not been reached in the replay.</p>}
                 </div>
               </details>
-            </li>
+            </motion.li>
           );
         })}
       </ol>

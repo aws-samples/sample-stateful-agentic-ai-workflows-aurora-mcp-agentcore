@@ -347,6 +347,11 @@
   background: var(--mds-surface-2);
 }
 
+.mds-continuity-mark > span {
+  display: grid;
+  place-items: center;
+}
+
 .mds-continuity-steps li.is-done .mds-continuity-mark {
   color: var(--mds-ground);
   background: var(--mds-green);

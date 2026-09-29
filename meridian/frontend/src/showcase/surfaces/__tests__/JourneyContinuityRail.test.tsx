@@ -96,4 +96,21 @@ describe('JourneyContinuityRail', () => {
       'Worker interrupted', 'Saved plan resumed',
     ]);
   });
+
+  it('paints recorded rows still when it opens onto a saved journey', () => {
+    render(<JourneyContinuityRail error={null} document={makeDocument({
+      authorization: authorized, recommendations, checkpoint,
+    } as Partial<JourneyDocument>)} />);
+    for (const row of screen.getAllByRole('listitem')) expect(row.style.opacity).not.toBe('0');
+  });
+
+  it('fades each row in as a watched run records it', () => {
+    const { rerender } = render(<JourneyContinuityRail
+      document={null} error={null} loading thread="thread_test" running />);
+    rerender(<JourneyContinuityRail error={null} thread="thread_test" running={false}
+      document={makeDocument({ authorization: authorized } as Partial<JourneyDocument>)} />);
+    const [row] = screen.getAllByRole('listitem');
+    expect(row.style.opacity).toBe('0');
+  });
 });
+

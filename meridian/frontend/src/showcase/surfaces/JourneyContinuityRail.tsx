@@ -1,5 +1,7 @@
+import { motion } from 'motion/react';
 import { hasLiveLease, hasVerifiedResume, useEvidenceClock } from '../journey/evidence';
 import { AuroraIcon } from '../components/ServiceMark';
+import { STATE_CHANGE, useLiveCues } from '../hooks/useLiveCues';
 import { Check, Circle, ShieldCheck } from 'lucide-react';
 
 import type { JourneyDocument } from '../journey/types';
@@ -75,13 +77,21 @@ export function JourneyContinuityRail({
   document,
   error,
   loading = false,
+  thread = null,
+  running = false,
 }: {
   document: JourneyDocument | null;
   error: string | null;
   loading?: boolean;
+  /** The recovery thread on the desk, whose run this rail may be watching. */
+  thread?: string | null;
+  /** Whether that recovery's request is in flight. */
+  running?: boolean;
 }) {
   const now = useEvidenceClock(document);
   const steps = stepsFor(document, now);
+  // Rows fade in, and their marks settle, only as a watched run records them.
+  const live = useLiveCues(thread, running);
 
   return (
     <div className="mds-continuity-rail" tabIndex={0} role="region" aria-label="Journey progress">
@@ -101,15 +111,28 @@ export function JourneyContinuityRail({
       {steps.length ? (
         <ol className="mds-continuity-steps">
           {steps.map((step) => (
-            <li key={step.id} className={step.done ? 'is-done' : ''}>
+            <motion.li
+              key={step.id}
+              className={step.done ? 'is-done' : ''}
+              initial={live ? { opacity: 0 } : false}
+              animate={{ opacity: 1 }}
+              transition={STATE_CHANGE}
+            >
               <span className="mds-continuity-mark" aria-hidden="true">
-                {step.done ? <Check size={13} strokeWidth={3} /> : <Circle size={13} />}
+                <motion.span
+                  key={step.done ? 'done' : 'open'}
+                  initial={live ? { opacity: 0, scale: 0.6 } : false}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={STATE_CHANGE}
+                >
+                  {step.done ? <Check size={13} strokeWidth={3} /> : <Circle size={13} />}
+                </motion.span>
               </span>
               <span className="mds-continuity-copy">
                 <strong>{step.label}</strong>
                 <small>{step.detail}</small>
               </span>
-            </li>
+            </motion.li>
           ))}
         </ol>
       ) : (

@@ -1,4 +1,6 @@
+import { motion } from 'motion/react';
 import { AuroraIcon } from './ServiceMark';
+import { CHECKPOINT_GLOW, STATE_CHANGE } from '../hooks/useLiveCues';
 import {
 AlertTriangle,
   ArrowRight,
@@ -73,6 +75,8 @@ interface RecoveryLaunchCardProps {
   stage: RecoveryStage;
   /** Each step's state and source, as the backend has confirmed it. */
   steps: RecoveryStepView[];
+  /** Animate step changes: only after watching this recovery's run. */
+  live?: boolean;
   errorDetail?: string | null;
   disabled?: boolean;
   compact?: boolean;
@@ -236,6 +240,7 @@ function PackageSummary({
 export function RecoveryLaunchCard({
   stage,
   steps,
+  live = false,
   errorDetail = null,
   disabled = false,
   compact = false,
@@ -401,7 +406,8 @@ export function RecoveryLaunchCard({
           const Icon = step.icon;
           const { state: stepState, source } = steps[index];
           // The checkpoint step keeps its Aurora mark once Aurora confirms it.
-          const done = stepState === 'is-visited' && Icon !== AuroraIcon;
+          const aurora = Icon === AuroraIcon;
+          const done = stepState === 'is-visited' && !aurora;
           return (
             <li
               key={step.label}
@@ -409,16 +415,41 @@ export function RecoveryLaunchCard({
               aria-current={stepState === 'is-current' ? 'step' : undefined}
             >
               <span>
-                {stepState === 'is-current'
-                  ? <Loader2 size={16} aria-hidden="true" />
-                  : done
+                <motion.span
+                  key={stepState}
+                  className="mds-recovery-step-icon"
+                  initial={live ? { opacity: 0, scale: 0.6 } : false}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={STATE_CHANGE}
+                >
+                  {done
                     ? <Check size={15} strokeWidth={3} aria-hidden="true" />
                     : <Icon size={16} aria-hidden="true" />}
+                </motion.span>
+                {live && aurora && stepState === 'is-visited' && (
+                  <motion.span
+                    className="mds-aurora-glow"
+                    aria-hidden="true"
+                    initial={{ opacity: 0.9, scale: 1 }}
+                    animate={{ opacity: 0, scale: 1.9 }}
+                    transition={CHECKPOINT_GLOW}
+                  />
+                )}
               </span>
               <div>
                 <strong>{step.label}</strong>
                 <small>{step.detail}</small>
-                {source && <em className="mds-step-source">{source}</em>}
+                {source && (
+                  <motion.em
+                    key={source}
+                    className="mds-step-source"
+                    initial={live ? { opacity: 0 } : false}
+                    animate={{ opacity: 1 }}
+                    transition={STATE_CHANGE}
+                  >
+                    {source}
+                  </motion.em>
+                )}
               </div>
             </li>
           );
