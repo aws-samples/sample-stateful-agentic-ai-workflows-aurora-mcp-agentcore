@@ -172,22 +172,37 @@ async function projectorLegibility(page: import('@playwright/test').Page) {
       for (let node: Element | null = el; node; node = node.parentElement) {
         const css = getComputedStyle(node);
         if (css.visibility === 'hidden' || Number(css.opacity) === 0) return false;
-        if (node.getAttribute('aria-hidden') === 'true') return false;
       }
       return true;
     };
+    const ownText = (el: Element) => Array.from(el.childNodes)
+      .filter(node => node.nodeType === Node.TEXT_NODE)
+      .map(node => node.textContent!.trim()).join(' ').trim();
     const name = (el: Element) => `${el.tagName.toLowerCase()}.${el.className} `
       + `"${(el.textContent ?? '').trim().slice(0, 40)}"`;
-    const small = Array.from(root.querySelectorAll('*'))
-      .filter(el => !el.closest('svg') && Array.from(el.childNodes)
-        .some(node => node.nodeType === Node.TEXT_NODE && node.textContent!.trim()))
-      .filter(el => shown(el) && parseFloat(getComputedStyle(el).fontSize) < footnote - 0.05)
+    const texts = Array.from(root.querySelectorAll('*'))
+      .filter(el => !el.closest('svg') && ownText(el) && shown(el));
+    const hidden = (el: Element) => Boolean(el.closest('[aria-hidden="true"]'));
+    const spoken = new Set(texts.filter(el => !hidden(el)).map(ownText));
+    // Text hidden from assistive technology still reaches the room. It is
+    // skipped only when decorative: a glyph with no letter or digit, or a copy
+    // of text shown elsewhere on screen, which is checked in its own right.
+    const decorative = (el: Element) => hidden(el)
+      && (!/[\p{L}\p{N}]/u.test(ownText(el)) || spoken.has(ownText(el)));
+    const small = texts
+      .filter(el => !decorative(el))
+      .filter(el => parseFloat(getComputedStyle(el).fontSize) < footnote - 0.05)
       .map(el => `${name(el)} ${getComputedStyle(el).fontSize}`);
-    // Links inside running text are exempt, as WCAG 2.5.8 exempts inline targets.
+    // Only a link inside running text is exempt, as WCAG 2.5.8 exempts inline targets.
+    const inlineLink = (el: Element) => {
+      const sentence = el.matches('a[href]') ? el.closest('p') : null;
+      return Boolean(sentence)
+        && sentence!.textContent!.trim().length > (el.textContent ?? '').trim().length;
+    };
     const tiny = Array.from(root.querySelectorAll(
       'button, a[href], summary, [role="switch"], [role="tab"]',
     ))
-      .filter(el => shown(el) && !el.closest('p'))
+      .filter(el => shown(el) && !inlineLink(el))
       .filter(el => {
         const box = el.getBoundingClientRect();
         return box.width < 32 || box.height < 32;
