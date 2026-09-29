@@ -97,6 +97,20 @@ describe('JourneyContinuityRail', () => {
     ]);
   });
 
+  it('says a worker was interrupted only when one was abandoned', () => {
+    const leaseEnds = new Date(Date.now() + 60_000).toISOString();
+    render(<JourneyContinuityRail error={null} document={makeDocument({
+      authorization: authorized, recommendations, checkpoint,
+      executions: {
+        status: 'observed', source: 'journey_executions',
+        items: [execution({ status: 'running', lease_expires_at: leaseEnds })],
+      },
+    } as Partial<JourneyDocument>)} />);
+    expect(rows())
+      .toEqual(['Traveler authorized', 'Alternatives retrieved', 'Checkpoint persisted']);
+    expect(screen.queryByText(/still running/)).toBeNull();
+  });
+
   it('paints recorded rows still when it opens onto a saved journey', () => {
     render(<JourneyContinuityRail error={null} document={makeDocument({
       authorization: authorized, recommendations, checkpoint,

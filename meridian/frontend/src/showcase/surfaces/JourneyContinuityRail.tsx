@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { hasLiveLease, hasVerifiedResume, useEvidenceClock } from '../journey/evidence';
+import { hasVerifiedResume } from '../journey/evidence';
 import { AuroraIcon } from '../components/ServiceMark';
 import { STATE_CHANGE, useLiveCues } from '../hooks/useLiveCues';
 import { Check, Circle, ShieldCheck } from 'lucide-react';
@@ -21,12 +21,11 @@ type Step = {
  * Aurora records its fact, so a presenter cannot get ahead of the system and
  * the system cannot claim a step it did not take. Before that there is no row.
  */
-function stepsFor(document: JourneyDocument | null, now: number): Step[] {
+function stepsFor(document: JourneyDocument | null): Step[] {
   if (!document) return [];
 
   const executions = isObserved(document.executions) ? document.executions.items : [];
   const abandoned = executions.filter((e) => e.status === 'abandoned');
-  const running = executions.find((e) => hasLiveLease(e, now));
   const auth = document.authorization;
   const checkpoint = document.checkpoint;
   const recommendations = document.recommendations;
@@ -54,13 +53,13 @@ function stepsFor(document: JourneyDocument | null, now: number): Step[] {
       recorded: isObserved(checkpoint),
     },
     {
+      // Only an abandoned execution is an interruption. A worker that holds
+      // a live lease is running, and the rail says nothing about it.
       id: 'interrupted',
       label: 'Worker interrupted',
-      detail: abandoned.length
-        ? `${abandoned[0].worker_id} abandoned`
-        : `${running?.worker_id} still running`,
-      done: abandoned.length > 0,
-      recorded: abandoned.length > 0 || Boolean(running),
+      detail: abandoned.length ? `${abandoned[0].worker_id} abandoned` : '',
+      done: true,
+      recorded: abandoned.length > 0,
     },
     {
       id: 'resumed',
@@ -88,8 +87,7 @@ export function JourneyContinuityRail({
   /** Whether that recovery's request is in flight. */
   running?: boolean;
 }) {
-  const now = useEvidenceClock(document);
-  const steps = stepsFor(document, now);
+  const steps = stepsFor(document);
   // Rows fade in, and their marks settle, only as a watched run records them.
   const live = useLiveCues(thread, running);
 
