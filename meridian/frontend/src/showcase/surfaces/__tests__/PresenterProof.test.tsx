@@ -83,6 +83,17 @@ function makeDocument(overrides: Partial<JourneyDocument> = {}): JourneyDocument
 const noop = () => {};
 
 describe('Presenter proof', () => {
+  it('offers recovery when none is selected without claiming a read is running', () => {
+    const open = vi.fn();
+    render(<PresenterProof document={null} loading={false} error={null}
+      onRefresh={noop} onOpenRecovery={open} />);
+    expect(screen.getByRole('heading', { name: 'No recovery selected' })).toBeInTheDocument();
+    expect(screen.queryByText('Reading the journey from Aurora…')).toBeNull();
+    expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'Open recovery desk' }));
+    expect(open).toHaveBeenCalledOnce();
+  });
+
   it('labels the retained observation when a refresh fails', () => {
     render(<PresenterProof document={makeDocument()} loading={false}
       error="Connection interrupted" onRefresh={noop} />);

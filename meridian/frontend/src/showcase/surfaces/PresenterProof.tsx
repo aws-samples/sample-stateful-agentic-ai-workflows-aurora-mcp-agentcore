@@ -135,7 +135,13 @@ export function PresenterProof({
         <header className="mc-evidence-intro"><h1>System evidence</h1><p>Read the saved steps, access checks, and package hold from Aurora.</p></header>
         <div className="mds-proof-empty" role="status" aria-busy={loading}>
           <AuroraIcon size={56} aria-hidden="true" />
-          <h2>Reading the journey from Aurora…</h2>
+          <h2>{loading ? 'Reading the journey from Aurora…' : 'No recovery selected'}</h2>
+          {!loading && <p>Open a saved recovery or start one to inspect its recorded evidence.</p>}
+          {!loading && onOpenRecovery && (
+            <button type="button" className="mds-proof-refresh" onClick={onOpenRecovery}>
+              Open recovery desk
+            </button>
+          )}
         </div>
       </section>
     );
