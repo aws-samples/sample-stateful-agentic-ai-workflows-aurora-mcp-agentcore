@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { pausedRecovery } from './fixtures/pausedRecovery';
 
 const views = ['concierge', 'ladder', 'recovery', 'proof', 'briefing'];
 const live = process.env.MERIDIAN_A11Y_LIVE === '1';
@@ -148,27 +149,13 @@ for (const [width, height, connection] of stages) {
   });
 }
 
-// The paused recovery the decision dashboard renders from, as the live backend returns it.
-const pausedRecovery = {
-  message: 'Workflow paused after a committed checkpoint.',
-  workflow_status: 'paused',
-  products: ['TYO-001', 'TYO-002', 'TYO-003', 'TYO-004'].map((id, index) => ({
-    product_id: id, name: `Tokyo option ${index + 1}`, brand: 'Meridian partner',
-    price: 1900 + index * 300, category: 'City & Culture', destination: 'Tokyo', region: 'Asia',
-    description: 'Fixture package.', image_url: '/travel/catalog/TYO-001.jpg',
-    available_sizes: ['5 nights', '7 nights'], availability: { '5 nights': 3 },
-  })),
-  activities: [
-    ['Workflow node: classify → plan', 'LangGraph StateGraph', 0, []],
-    ['Workflow node: search', 'LangGraph → SearchAgent', 956, []],
-    ['Checkpoint · AuroraDataApiSaver.put', 'Aurora · LangGraph checkpoint tables', 458,
-      [{ label: 'checkpoint_durable', value: 'true' }]],
-  ].map(([title, component, ms, fields], index) => ({
-    id: `paused-${index}`, timestamp: '2026-09-28T18:00:00Z', activity_type: 'tool_call', title,
-    execution_time_ms: ms,
-    telemetry: { category: 'orchestration', component, status: 'ok', fields },
-  })),
-};
+// The options the paused recovery dashboard renders.
+const tokyoOptions = ['TYO-001', 'TYO-002', 'TYO-003', 'TYO-004'].map((id, index) => ({
+  product_id: id, name: `Tokyo option ${index + 1}`, brand: 'Meridian partner',
+  price: 1900 + index * 300, category: 'City & Culture', destination: 'Tokyo', region: 'Asia',
+  description: 'Fixture package.', image_url: '/travel/catalog/TYO-001.jpg',
+  available_sizes: ['5 nights', '7 nights'], availability: { '5 nights': 3 },
+}));
 
 /** Visible text below the footnote step, and presenter controls under 32px. */
 async function projectorLegibility(page: import('@playwright/test').Page) {
@@ -218,9 +205,9 @@ for (const theme of ['dark', 'light']) {
     + ' controls reach 32px';
   test(title, async ({ page }) => {
     await mockLiveCatalog(page);
-    await page.route(url => url.pathname === '/api/chat', route => route.fulfill({ json: {
-      ...pausedRecovery, conversation_id: route.request().postDataJSON().conversation_id,
-    } }));
+    await page.route(url => url.pathname === '/api/chat', route => route.fulfill({
+      json: pausedRecovery(tokyoOptions, route.request().postDataJSON().conversation_id),
+    }));
     for (const [width, height] of [[1920, 1080], [1280, 720]]) {
       await page.setViewportSize({ width, height });
       for (const view of views) {

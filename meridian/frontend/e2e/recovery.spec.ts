@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { pausedRecovery } from './fixtures/pausedRecovery';
 
 // Deterministic UI fixture, using real catalog destination and duration
 // strings (including the longest single-word destination, Yellowstone). These
@@ -63,23 +64,12 @@ test('recovery alternative cards keep the route on one line at 1440', async ({ p
   }
 });
 
-const pausedActivities = [
-  ['Workflow node: classify → plan', 'LangGraph StateGraph', 0, []],
-  ['Workflow node: search', 'LangGraph → SearchAgent', 956, []],
-  ['Checkpoint · AuroraDataApiSaver.put', 'Aurora · LangGraph checkpoint tables', 458,
-    [{ label: 'checkpoint_durable', value: 'true' }]],
-].map(([title, component, ms, fields], index) => ({
-  id: `paused-${index}`, timestamp: '2026-09-28T18:00:00Z', activity_type: 'tool_call', title,
-  execution_time_ms: ms, telemetry: { category: 'orchestration', component, status: 'ok', fields },
-}));
-
 for (const motion of ['no-preference', 'reduce'] as const) {
   test(`checkpoint confirmation with ${motion} motion`, async ({ page }) => {
     await page.emulateMedia({ reducedMotion: motion });
-    await page.route(url => url.pathname === '/api/chat', route => route.fulfill({ json: {
-      message: 'Workflow paused after a committed checkpoint.', products, activities: pausedActivities,
-      conversation_id: route.request().postDataJSON().conversation_id, workflow_status: 'paused',
-    } }));
+    await page.route(url => url.pathname === '/api/chat', route => route.fulfill({
+      json: pausedRecovery(products, route.request().postDataJSON().conversation_id),
+    }));
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto('/showcase?view=recovery&present=1');
     // The desk is the first view painted here, the case the view swap's
