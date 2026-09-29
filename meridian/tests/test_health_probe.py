@@ -57,7 +57,7 @@ def test_probe_passes_when_aurora_answers_select_1(monkeypatch):
 
 
 def test_probe_fails_closed_with_error_class_not_error_text(monkeypatch):
-    secret_leak = "arn:aws:secretsmanager:us-east-1:619763002613:secret:prod/aurora-abc123"
+    secret_leak = "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/aurora-abc123"
     db = _FailingDb(RuntimeError(f"ExpiredTokenException: token expired ({secret_leak})"))
     monkeypatch.setattr(health_probe, "get_rds_data_client", lambda: db)
 
