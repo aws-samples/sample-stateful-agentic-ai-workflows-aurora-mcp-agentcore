@@ -249,6 +249,31 @@ export function RecoveryWorkspace({
   };
   const showDecisionDashboard =
     recoveryStage === 'checkpointed' || recoveryStage === 'ready';
+  // Before the traveler starts, the hero and the workflow it will run come
+  // first; the hold note and the itinerary follow them on the stage.
+  const launchFirst = recoveryStage === 'action' && !(state.error && state.conversationId);
+  const recoveryContext = (
+    <>
+      {(recoveryStage === 'checkpointed' || recoveryStage === 'action') && (
+        <p className="mc-recovery-action-note">
+          Recovery checks package availability and requests a 15-minute courtesy hold on the
+          leading option. No payment is taken; booking confirmation happens later in Concierge.
+        </p>
+      )}
+      <details className="mc-trip-context">
+        <summary>
+          <span className="mc-trip-context-route">
+            <strong>JFK</strong><ArrowRight size={19} aria-hidden="true" /><strong>Tokyo</strong>
+          </span>
+          <span className="mc-trip-context-note">
+            Original flight canceled<small>Traveler-reported · inspect itinerary</small>
+          </span>
+          <ChevronDown size={18} aria-hidden="true" />
+        </summary>
+        <RecoveryBoardingPass state={state} />
+      </details>
+    </>
+  );
 
   return (
     <div
@@ -270,19 +295,7 @@ export function RecoveryWorkspace({
         </div>
       </header>
 
-      {(recoveryStage === 'checkpointed' || recoveryStage === 'action') && <p className="mc-recovery-action-note">
-        Recovery checks package availability and requests a 15-minute courtesy hold on the leading option.
-        No payment is taken; booking confirmation happens later in Concierge.
-      </p>}
-
-      <details className="mc-trip-context">
-        <summary>
-          <span className="mc-trip-context-route"><strong>JFK</strong><ArrowRight size={19} aria-hidden="true" /><strong>Tokyo</strong></span>
-          <span className="mc-trip-context-note">Original flight canceled<small>Traveler-reported · inspect itinerary</small></span>
-          <ChevronDown size={18} aria-hidden="true" />
-        </summary>
-        <RecoveryBoardingPass state={state} />
-      </details>
+      {!launchFirst && recoveryContext}
 
       {hasConversation && <RecoveryChecks state={state} journeyDocument={journeyDocument} onOpenProof={onOpenProof} />}
 
@@ -446,6 +459,8 @@ export function RecoveryWorkspace({
           />
         </section>
       )}
+
+      {launchFirst && recoveryContext}
 
       {hasConversation && (
         <section

@@ -114,6 +114,36 @@ async function mockLiveCatalog(page: import('@playwright/test').Page) {
   }));
 }
 
+const stages = [[1920, 1080, 'live'], [1920, 1080, 'offline'], [1280, 720, 'live']] as const;
+for (const [width, height, connection] of stages) {
+  const title = `recovery hero, photo and workflow share one ${connection} stage`
+    + ` at ${width}x${height}`;
+  test(title, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    if (connection === 'live') await mockLiveCatalog(page);
+    await page.goto('/showcase?present=1&view=recovery');
+    await expect(page.locator('.mds-status-pill'))
+      .toContainText(connection === 'live' ? 'Meridian live' : 'Meridian offline');
+    const photo = page.getByRole('img', { name: 'Aircraft on final approach' });
+    for (const mode of ['presenter controls', 'fullscreen']) {
+      if (mode === 'fullscreen') {
+        await page.getByRole('button', { name: 'Present fullscreen' }).click();
+        await expect(page.locator('.mds-root')).toHaveAttribute('data-fullscreen', 'true');
+      }
+      await expect(photo).toBeVisible();
+      const fold = await page.evaluate(() => ({
+        steps: document.querySelector('.mds-recovery-launch-steps')!
+          .getBoundingClientRect().bottom,
+        photo: document.querySelector('.mds-mobile-disruption-media')!
+          .getBoundingClientRect().height,
+        viewport: innerHeight,
+      }));
+      expect(fold.steps, `${mode}: workflow row below the fold`).toBeLessThanOrEqual(fold.viewport);
+      expect(fold.photo, `${mode}: photo shrunk away`).toBeGreaterThanOrEqual(200);
+    }
+  });
+}
+
 for (const theme of ['light', 'dark']) for (const present of [false, true]) {
   test(`${theme} ${present ? 'projector' : 'desktop'}: blue actions, focus and secondary text keep contrast`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
@@ -218,9 +248,8 @@ for (const theme of ['light', 'dark']) {
     await expect(title).toBeFocused();
     expect((await outline('.mds-recovery-overview-title h1')).style).toBe('none');
     await page.keyboard.press('Tab');
-    const summary = page.locator('.mc-trip-context > summary');
-    await expect(summary).toBeFocused();
-    const ring = await outline('.mc-trip-context > summary');
+    await expect(page.getByRole('button', { name: 'Start recovery' })).toBeFocused();
+    const ring = await outline('.mds-mobile-disruption-primary');
     expect(ring.style).toBe('solid');
     expect(ring.width).toBeGreaterThanOrEqual(2);
 

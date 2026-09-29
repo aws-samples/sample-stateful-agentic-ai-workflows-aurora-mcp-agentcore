@@ -153,54 +153,89 @@
   .mc-fullscreen-label { display: none; }
 }
 
-/* Let the opening recovery decision occupy the stage's remaining height.
-   Content still sets the minimum, so open disclosures and shorter screens scroll. */
+/* The opening recovery decision sizes to its content, so the hero, its photo
+   and the four-step workflow it runs share one stage at 1920x1080 and at
+   1280x720. The photo takes the message's height instead of setting it. */
 @media (min-width: 1241px) {
-  .mds-root[data-audience-layout='true'] .mds-view-swap:has(> .mds-recovery-workspace .mds-recovery-launch-card:not(.is-compact)) {
-    flex: 1 0 auto;
-  }
-  .mds-root[data-audience-layout='true'] .mds-recovery-workspace:has(> .mds-recovery-launch-system > .mds-recovery-launch-card) {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-  }
-  .mds-root[data-audience-layout='true'] .mds-recovery-workspace > * { flex-shrink: 0; }
-  .mds-root[data-audience-layout='true'] .mds-recovery-launch-system:has(> .mds-recovery-launch-card) {
-    flex: 1;
-    align-items: stretch;
-  }
-  .mds-root[data-audience-layout='true'] .mds-recovery-workspace .mds-recovery-launch-card:not(.is-compact) {
-    grid-template-rows: minmax(auto, 1fr) auto auto auto;
-    align-content: stretch;
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace
+    .mds-recovery-launch-card:not(.is-compact) {
     padding-block: 0;
-    padding-inline: 27px;
+    padding-inline: 24px;
   }
-  .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-mobile-disruption-card {
-    align-content: stretch;
-    padding: 8px 0 20px;
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-mobile-disruption-card {
+    padding: 16px 0 12px;
   }
   .mds-root[data-audience-layout='true'] .mds-mobile-disruption-hero {
-    min-height: clamp(240px, 26dvh, 400px);
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-media {
+    min-height: 0;
   }
   .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message {
-    padding: clamp(24px, 3cqw, 52px);
-    row-gap: 20px;
+    padding: 24px 28px;
+    row-gap: 0;
   }
   .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message p {
     max-width: 46ch;
+    font: var(--mds-type-body);
+    letter-spacing: 0;
   }
-  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message .mds-mobile-disruption-primary {
+  .mds-root[data-audience-layout='true']
+    .mds-mobile-disruption-message .mds-mobile-disruption-primary {
     min-height: 52px;
   }
-  .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps {
-    padding: 18px 12px;
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps {
+    padding: 14px 12px;
   }
-  .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps small {
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps small {
     display: block;
     max-width: 28ch;
     margin-inline: auto;
   }
-  .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-recovery-timeline-heading { padding-block: 14px 10px; }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-recovery-timeline-heading {
+    padding-block: 10px 8px;
+  }
+}
+
+/* A 720p stage keeps the same story on one screen: the step labels stay and
+   their descriptions give way, and the hero gives up padding, not content. */
+@media (min-width: 1241px) and (max-height: 800px) {
+  .mds-root[data-audience-layout='true']
+    .mds-desktop-scroll:has(.mds-recovery-launch-card:not(.is-compact)) {
+    padding-top: 12px;
+    row-gap: 8px;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-desktop-scroll:has(.mds-recovery-launch-card:not(.is-compact)) .mc-saved-journeys {
+    margin-block: 0;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-mobile-disruption-card {
+    padding: 4px 0;
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message {
+    padding: 16px 24px;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-mobile-disruption-message .mds-mobile-disruption-primary {
+    min-height: 44px;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps {
+    padding: 10px 12px;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps small {
+    display: none;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-recovery-timeline-heading {
+    padding-block: 6px 4px;
+  }
 }
 
 /* Size recovery against its available workspace, not the screen behind the

@@ -15,7 +15,10 @@
 .mc-recovery-check-list .is-selected { border-color:var(--mds-tint); }
 .mc-recovery-check-list .is-selected svg { transform:rotate(180deg); }
 .mc-recovery-check-list button:hover { border-color:var(--mds-control-line); }
-.mc-recovery-checks button:focus-visible,.mc-trip-context>summary:focus-visible { outline:2px solid var(--mds-tint); outline-offset:2px; }
+.mc-recovery-checks button:focus-visible,.mc-trip-context>summary:focus-visible,
+.mds-recovery-workspace .mds-mobile-disruption-primary:focus-visible {
+  outline:2px solid var(--mds-tint); outline-offset:2px;
+}
 .mc-recovery-check-detail { margin-top:14px; padding:16px 18px; background:var(--mds-surface); border-radius:var(--mds-radius-s); }
 .mc-recovery-check-detail[hidden] { display:none; }
 .mc-recovery-check-detail p { margin:0; color:var(--mds-label-2); font:var(--mds-type-footnote); max-width:90ch; }
