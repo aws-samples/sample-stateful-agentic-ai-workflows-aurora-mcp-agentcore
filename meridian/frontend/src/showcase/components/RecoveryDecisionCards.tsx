@@ -1,6 +1,6 @@
 import { motion } from 'motion/react';
 import { AuroraIcon } from './ServiceMark';
-import { CHECKPOINT_GLOW, STATE_CHANGE } from '../hooks/useLiveCues';
+import { CHECKPOINT_GLOW, STATE_CHANGE, useConfirmedLive } from '../hooks/useLiveCues';
 import {
 AlertTriangle,
   ArrowRight,
@@ -249,6 +249,11 @@ export function RecoveryLaunchCard({
 }: RecoveryLaunchCardProps) {
   const running = stage === 'running';
   const failed = Boolean(errorDetail);
+  // The one emphasis, only when a watched run's response confirms the save.
+  const checkpointGlow = useConfirmedLive(steps[2]?.state === 'is-visited', live);
+  // A step settles into place only when a response confirms it. While a
+  // request is in flight nothing has been confirmed yet, so nothing moves.
+  const settles = live && !running;
   const launchSteps = [
     {
       icon: AlertTriangle,
@@ -418,7 +423,8 @@ export function RecoveryLaunchCard({
                 <motion.span
                   key={stepState}
                   className="mds-recovery-step-icon"
-                  initial={live ? { opacity: 0, scale: 0.6 } : false}
+                  initial={settles && stepState === 'is-visited'
+                    ? { opacity: 0, scale: 0.6 } : false}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={STATE_CHANGE}
                 >
@@ -426,7 +432,7 @@ export function RecoveryLaunchCard({
                     ? <Check size={15} strokeWidth={3} aria-hidden="true" />
                     : <Icon size={16} aria-hidden="true" />}
                 </motion.span>
-                {live && aurora && stepState === 'is-visited' && (
+                {checkpointGlow && aurora && (
                   <motion.span
                     className="mds-aurora-glow"
                     aria-hidden="true"
@@ -443,7 +449,7 @@ export function RecoveryLaunchCard({
                   <motion.em
                     key={source}
                     className="mds-step-source"
-                    initial={live ? { opacity: 0 } : false}
+                    initial={settles ? { opacity: 0 } : false}
                     animate={{ opacity: 1 }}
                     transition={STATE_CHANGE}
                   >

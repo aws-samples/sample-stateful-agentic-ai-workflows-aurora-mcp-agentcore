@@ -24,3 +24,19 @@ export function useLiveCues(identity: string | null | undefined, running: boolea
   if (running && identity) observed.current = identity;
   return !reduced && Boolean(identity) && observed.current === identity;
 }
+
+/** Whether `confirmed` turned true while the surface was watching.
+ *
+ * A fact already confirmed when watching began, such as a checkpoint in a
+ * saved journey, never counts, so a resume cannot replay its emphasis.
+ *
+ * @param confirmed Whether the backend has confirmed the fact.
+ * @param live Whether the surface may animate, from `useLiveCues`.
+ */
+export function useConfirmedLive(confirmed: boolean, live: boolean): boolean {
+  const last = useRef({ confirmed, fired: false });
+  if (last.current.confirmed !== confirmed) {
+    last.current = { confirmed, fired: confirmed && live };
+  }
+  return live && last.current.fired;
+}

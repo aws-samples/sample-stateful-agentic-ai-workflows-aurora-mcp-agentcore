@@ -673,6 +673,56 @@ describe('Experience presentation polish', () => {
     expect(mark.style.opacity).toBe('0');
   });
 
+  it('does not glow or animate a checkpoint confirmed before the resume it watches', () => {
+    const checkpoint = {
+      id: 'cp', name: 'Checkpoint · AuroraDataApiSaver.put', category: 'memory_short',
+      type: 'tool_call', status: 'ok', latencyMs: 106,
+      component: 'Aurora · LangGraph checkpoint tables',
+      fields: [{ label: 'checkpoint_durable', value: 'true' }],
+    };
+    const search = {
+      id: 'search', name: 'Workflow node: search', category: 'orchestration',
+      type: 'delegation', status: 'ok', latencyMs: 956, fields: [],
+    };
+    const base = {
+      selectedPhase: 5 as const, phaseLabel: 'Workflow' as const,
+      conversationId: 'phase5-restored', traceSpans: [search, checkpoint],
+      messages: [
+        { role: 'user' as const, text: SHOWCASE_FINALE_PROMPT },
+        { role: 'bot' as const, text: 'Paused.' },
+      ],
+    };
+    // Opened onto a journey Aurora already recorded, then resumed in front of the room.
+    const view = render(<RecoveryWorkspace state={makeState({
+      ...base, lastPrompt: SHOWCASE_FINALE_PROMPT, workflowStatus: 'paused',
+    })} />);
+    view.rerender(<RecoveryWorkspace state={makeState({
+      ...base, lastPrompt: 'Resume workflow from checkpoint', workflowStatus: 'paused',
+      isLoading: true,
+    })} />);
+    expect(view.container.querySelector('.mds-aurora-glow')).toBeNull();
+    const icons = () => Array.from(
+      view.container.querySelectorAll<HTMLElement>('.mds-recovery-step-icon'),
+    );
+    expect(icons().some(icon => icon.style.opacity === '0')).toBe(false);
+  });
+
+  it('starts a watched run without animating any step the backend has not confirmed', () => {
+    const base = {
+      selectedPhase: 5 as const, phaseLabel: 'Workflow' as const, conversationId: 'phase5-fresh',
+    };
+    const view = render(<RecoveryWorkspace state={makeState(base)} />);
+    view.rerender(<RecoveryWorkspace state={makeState({
+      ...base, isLoading: true, lastPrompt: SHOWCASE_FINALE_PROMPT,
+      messages: [{ role: 'user' as const, text: SHOWCASE_FINALE_PROMPT }],
+    })} />);
+    const icons = Array.from(
+      view.container.querySelectorAll<HTMLElement>('.mds-recovery-step-icon'),
+    );
+    expect(icons).toHaveLength(4);
+    expect(icons.some(icon => icon.style.opacity === '0')).toBe(false);
+  });
+
   it('reports an interrupted request without claiming no changes or completed steps', () => {
     render(
       <RecoveryWorkspace
