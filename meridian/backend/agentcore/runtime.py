@@ -60,7 +60,8 @@ class RuntimeDecision:
     policy_decision: Optional[str] = None
     trace_id: Optional[str] = None
     usage: dict[str, Any] = field(default_factory=dict)
-    elapsed_ms: int = 0
+    # The Runtime's own measurement of the turn. None when it reports none.
+    elapsed_ms: Optional[int] = None
     isolation: str = "microVM · session-scoped CPU/memory/filesystem"
 
 
@@ -301,7 +302,9 @@ def _apply_result(decision: RuntimeDecision, event: dict[str, Any]) -> None:
     decision.follow_ups = [str(value) for value in event.get("follow_ups") or [] if value]
     decision.trace_id = event.get("trace_id")
     decision.usage = dict(event.get("usage") or {})
-    decision.elapsed_ms = int(event.get("elapsed_ms") or 0)
+    elapsed = event.get("elapsed_ms")
+    measured = isinstance(elapsed, (int, float)) and not isinstance(elapsed, bool)
+    decision.elapsed_ms = int(elapsed) if measured else None
     if event.get("hold") and not decision.hold:
         decision.hold = event.get("hold")
     if event.get("booking") and not decision.booking:

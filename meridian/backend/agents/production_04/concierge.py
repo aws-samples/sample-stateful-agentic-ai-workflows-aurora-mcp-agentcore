@@ -58,6 +58,7 @@ from backend.agents.production_04.memory_agent import (
 )
 from backend.db.rds_data_client import get_rds_data_client
 from backend.memory.store import get_memory_store
+from backend.timing import clock, elapsed_ms
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +235,7 @@ class ProductionAgent:
                 title=title,
                 details=details,
                 sql_query=kwargs.get("sql_query"),
+                execution_time_ms=kwargs.get("execution_time_ms"),
                 agent_name=kwargs.get("agent_name", "ProductionAgent"),
                 agent_file=kwargs.get("agent_file", self.AGENT_FILE),
                 telemetry=kwargs.get("telemetry"),
@@ -394,13 +396,15 @@ class ProductionAgent:
 
     def _runtime_span(self, decision: RuntimeDecision) -> None:
         runtime_id = decision.runtime_arn.rsplit("/", 1)[-1]
+        # The Runtime measures its own turn and reports it; no report, no number.
         self._log(
             "reasoning",
             "AgentCore Runtime · turn complete",
             details=(
-                f"session={decision.runtime_session_id} · {decision.elapsed_ms} ms · "
+                f"session={decision.runtime_session_id} · "
                 f"trace={decision.trace_id or 'pending'}"
             ),
+            execution_time_ms=decision.elapsed_ms,
             agent_file=self.RUNTIME_FILE,
             telemetry={
                 "category": "runtime",
@@ -463,9 +467,11 @@ class ProductionAgent:
         package_ids = [str(p.get("package_id") or "") for p in packages_raw if p.get("package_id")]
         if package_ids:
             placeholders = ", ".join(["%s"] * len(package_ids))
+            started = clock()
             detail_rows = await self.db.execute(
                 PACKAGE_DETAIL_SQL.format(placeholders=placeholders), tuple(package_ids)
             )
+            query_ms = elapsed_ms(started)
             detail_by_id = {str(row.get("package_id") or ""): dict(row) for row in detail_rows}
             packages_raw = [
                 {
@@ -483,6 +489,7 @@ class ProductionAgent:
                     "SELECT package_id, durations, availability, highlights "
                     "FROM trip_packages WHERE package_id IN (...)"
                 ),
+                execution_time_ms=query_ms,
                 telemetry={
                     "category": "data",
                     "component": "Aurora trip_packages",

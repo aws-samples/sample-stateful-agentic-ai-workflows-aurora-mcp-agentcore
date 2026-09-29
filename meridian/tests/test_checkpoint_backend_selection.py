@@ -78,7 +78,7 @@ def test_data_api_saver_is_not_labelled_in_process(
 ) -> None:
     workflow.checkpointer_kind = "AuroraDataApiSaver"
     workflow.checkpointer_durable = True
-    activity = workflow._checkpoint_activity("search", 12)
+    activity = workflow._checkpoint_activity("search")
     text = str(activity)
     assert "MemorySaver" not in text
     assert "AuroraDataApiSaver" in text
@@ -89,7 +89,7 @@ def test_memory_saver_is_still_labelled_in_process(
 ) -> None:
     workflow.checkpointer_kind = "MemorySaver (in-process)"
     workflow.checkpointer_durable = False
-    assert "MemorySaver" in str(workflow._checkpoint_activity("search", 12))
+    assert "MemorySaver" in str(workflow._checkpoint_activity("search"))
 
 
 def test_backend_carries_a_durable_flag() -> None:

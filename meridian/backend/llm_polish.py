@@ -27,6 +27,7 @@ import boto3
 from botocore.config import Config
 
 from backend.config import config
+from backend.timing import clock, elapsed_ms
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,9 @@ class PolishResult:
     text: str
     model_id: Optional[str]  # which model actually answered
     note: Optional[str]  # error string if polish failed entirely
+    # How long the Converse call of the model that answered took. Earlier
+    # failed attempts in the chain are not part of it.
+    elapsed_ms: Optional[int] = None
 
 
 _bedrock_client = None
@@ -195,7 +199,9 @@ def _polish_sync(user_query: str, tool_output: str) -> PolishResult:
                 converse_kwargs["additionalModelRequestFields"] = {
                     "thinking": {"type": "disabled"}
                 }
+            started = clock()
             resp = _client().converse(**converse_kwargs)
+            call_ms = elapsed_ms(started)
             stop_reason = str(resp.get("stopReason", "")).lower()
             blocks = resp.get("output", {}).get("message", {}).get("content", [])
             saw_text = False
@@ -228,6 +234,7 @@ def _polish_sync(user_query: str, tool_output: str) -> PolishResult:
                         text=polished,
                         model_id=model_id,
                         note=None,
+                        elapsed_ms=call_ms,
                     )
             if not saw_text:
                 last_error = f"{model_id} returned an empty response"

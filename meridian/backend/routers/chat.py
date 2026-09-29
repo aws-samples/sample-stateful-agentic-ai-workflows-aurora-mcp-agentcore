@@ -39,6 +39,7 @@ from backend.db.rds_data_client import get_rds_data_client
 from backend.db.embedding_service import get_embedding_service
 from backend.config import bedrock_model_label, config
 from backend.demo_prompts import tee_up_prompt, working_prompts
+from backend.timing import clock, elapsed_ms
 from backend.logging_config import log_search, log_order, log_error, log_turn_start, log_turn_complete, log_activity_entry
 from backend.http_auth import (
     HttpPrincipal,
@@ -64,7 +65,7 @@ from backend.catalog_compat import row_to_api_product
 # one can't?" so domain logic, not memory, is what we showcase here.
 from backend.mcp.mcp_client import mcp_session
 from backend.mcp.concierge_mcp_client import concierge_mcp_session
-from backend.llm_polish import polish_concierge_reply
+from backend.llm_polish import PolishResult, polish_concierge_reply
 
 
 logger = logging.getLogger(__name__)
@@ -527,7 +528,8 @@ async def _call_domain_tool(
     prompt and call them. Returns a single dict (legacy single-call path)
     OR a dict with `tool='multi'` and a `calls` list when more than one
     tool intent was detected (e.g. "compare ... in EUR" fires BOTH
-    compare_packages and currency_convert)."""
+    compare_packages and currency_convert). Each call carries `elapsed_ms`,
+    measured around the MCP tool call or calls it made."""
     q = query.lower()
     calls: List[Dict[str, Any]] = []
     compared_packages: List[Dict[str, Any]] = []
@@ -567,10 +569,15 @@ async def _call_domain_tool(
             except Exception as exc:
                 log_error("compare_packages_row_pull", error=str(exc))
             if ids:
+                started = clock()
                 result = await cli.call("compare_packages", {"package_ids": ids})
+                took = elapsed_ms(started)
                 if isinstance(result, list):
                     compared_packages = result
-                calls.append({"tool": "compare_packages", "args": {"package_ids": ids}, "result": result})
+                calls.append({
+                    "tool": "compare_packages", "args": {"package_ids": ids},
+                    "result": result, "elapsed_ms": took,
+                })
 
         if any(k in q for k in ("convert", "in eur", "in euro", "in gbp", "in pounds", "in jpy", "in yen")):
             target = (
@@ -579,6 +586,7 @@ async def _call_domain_tool(
                 else "JPY" if "jpy" in q or "yen" in q
                 else "EUR"
             )
+            started = clock()
             if compared_packages:
                 conversions: List[Dict[str, Any]] = []
                 for package in compared_packages:
@@ -615,6 +623,7 @@ async def _call_domain_tool(
                 "tool": "currency_convert",
                 "args": args,
                 "result": result,
+                "elapsed_ms": elapsed_ms(started),
             })
 
         if any(k in q for k in ("loyalty", "bonvoy", "skymiles", "mileageplus", "united status")):
@@ -627,6 +636,7 @@ async def _call_domain_tool(
                 if "skymiles" in q
                 else "Marriott Bonvoy"
             )
+            started = clock()
             result = await cli.call(
                 "loyalty_balance",
                 {"traveler_id": traveler_id, "program": program},
@@ -635,6 +645,7 @@ async def _call_domain_tool(
                 "tool": "loyalty_balance",
                 "args": {"traveler_id": traveler_id, "program": program},
                 "result": result,
+                "elapsed_ms": elapsed_ms(started),
             })
 
         if "price range" in q:
@@ -643,11 +654,13 @@ async def _call_domain_tool(
                 if d.lower() in q:
                     destination = d
                     break
+            started = clock()
             result = await cli.call("price_range", {"destination": destination})
             calls.append({
                 "tool": "price_range",
                 "args": {"destination": destination},
                 "result": result,
+                "elapsed_ms": elapsed_ms(started),
             })
 
         if any(k in q for k in ("how many", "inventory")):
@@ -656,11 +669,13 @@ async def _call_domain_tool(
                 if r.lower() in q:
                     region = r
                     break
+            started = clock()
             result = await cli.call("region_inventory", {"region": region})
             calls.append({
                 "tool": "region_inventory",
                 "args": {"region": region},
                 "result": result,
+                "elapsed_ms": elapsed_ms(started),
             })
 
     if not calls:
@@ -725,12 +740,15 @@ async def mcp_search(
                 details="Aurora PostgreSQL via RDS Data API; connection configured at server startup",
                 agent_name="MCPAgent", agent_file="backend/routers/chat.py",
             ))
+            query_started = clock()
             results = await client.run_query(sql)
+            query_ms = elapsed_ms(query_started)
         activities.append(create_activity(
             activity_type="mcp",
             title="postgres-mcp · run_query",
             details=f"Generic SQL tool: {search_title}",
             sql_query=display_sql,
+            execution_time_ms=query_ms,
             agent_name="MCPAgent",
             agent_file="backend/routers/chat.py",
         ))
@@ -774,6 +792,7 @@ async def mcp_search(
                         activity_type="mcp",
                         title=f"meridian-concierge · {tool_name}",
                         details=f"args={tool_args} · {summary}",
+                        execution_time_ms=sub.get("elapsed_ms"),
                         agent_name="MCPAgent",
                         agent_file="backend/mcp/concierge_server.py",
                     ))
@@ -1020,15 +1039,16 @@ async def _polish_phase_reply(
     products: List[Product],
     activities: List[ActivityEntry],
     memory_facts: Optional[List[Any]] = None,  # MemoryFact pydantic OR dict
-) -> tuple[str, Optional[str], Optional[str]]:
+) -> PolishResult:
     """Run the Bedrock polish over a search reply.
 
-    Returns (final_message, model_id_or_none, note_or_none). On failure
-    (no model access, all fallbacks blocked) the raw_message is returned
-    verbatim as a graceful fallback.
+    Returns the polish result: the final message, the model that wrote it and
+    how long its call took, or no model and a note. On failure (no model
+    access, all fallbacks blocked) the raw_message is returned verbatim as a
+    graceful fallback.
     """
     if not products and not raw_message:
-        return raw_message, None, "no content to polish"
+        return PolishResult(text=raw_message, model_id=None, note="no content to polish")
 
     # Build a deterministic, fact-only context block. The system prompt
     # in llm_polish forbids inventing anything outside this block.
@@ -1107,8 +1127,7 @@ async def _polish_phase_reply(
 
     raw = "\n".join(lines)
 
-    polish = await polish_concierge_reply(user_query, raw)
-    return polish.text, polish.model_id, polish.note
+    return await polish_concierge_reply(user_query, raw)
 #
 # AWS docs:
 #   Cohere Embed v4: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed-v4.html
@@ -1138,7 +1157,7 @@ async def _polish_and_record(
         not run or every model in the chain failed, so the raw tool result
         is returned unpolished and no model wrote any part of it.
     """
-    polished, polish_model, polish_note = await _polish_phase_reply(
+    polish = await _polish_phase_reply(
         phase=phase,
         user_query=user_query,
         raw_message=raw_message,
@@ -1146,19 +1165,20 @@ async def _polish_and_record(
         activities=activities,
         memory_facts=memory_facts,
     )
-    if polish_model:
+    if polish.model_id:
         activities.append(create_activity(
             activity_type="reasoning",
-            title=f"Bedrock · concierge polish ({polish_model})",
+            title=f"Bedrock · concierge polish ({polish.model_id})",
             details=f"Wrapping {mode_label} reply in concierge tone",
+            execution_time_ms=polish.elapsed_ms,
             agent_name=agent_name,
             agent_file="backend/llm_polish.py",
         ))
-        return polished, bedrock_model_label(polish_model)
+        return polish.text, bedrock_model_label(polish.model_id)
     activities.append(create_activity(
         activity_type="error",
         title="Bedrock polish unavailable",
-        details=polish_note or "unknown",
+        details=polish.note or "unknown",
         agent_name=agent_name,
         agent_file="backend/llm_polish.py",
     ))
@@ -1174,7 +1194,6 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     - Ranking: Cohere Rerank on Bedrock
     """
     activities = []
-    start_time = datetime.now(timezone.utc)
 
     db = get_rds_data_client()
 
@@ -1201,10 +1220,11 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     ))
     
     embedding_service = get_embedding_service()
+    embedding_started = clock()
     query_embedding = await asyncio.to_thread(embedding_service.generate_text_embedding, query)
+    embedding_time = elapsed_ms(embedding_started)
     embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
 
-    embedding_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
     activities.append(create_activity(
         activity_type="embedding",
         title="Embedding generated",
@@ -1229,6 +1249,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     semantic_sql = """
         SELECT * FROM semantic_trip_search(%s::vector, %s::integer)
     """
+    search_started = clock()
     semantic_rows = await db.execute(semantic_sql, (embedding_str, candidate_limit))
     if price_filter is not None:
         semantic_rows = [r for r in semantic_rows if float(r["price_per_person"]) <= price_filter]
@@ -1265,6 +1286,8 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     lexical_sql += " ORDER BY lexical_score DESC LIMIT %s"
     lexical_params.append(candidate_limit)
     lexical_rows = await db.execute(lexical_sql, tuple(lexical_params))
+    # Both queries, measured together: the semantic and the lexical arm.
+    search_time = elapsed_ms(search_started)
 
     # Merge candidates by package_id so rerank sees one entry per trip package.
     merged_by_package: dict[str, dict[str, Any]] = {}
@@ -1278,7 +1301,6 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
             merged_by_package[row["package_id"]] = dict(row)
     candidate_rows = list(merged_by_package.values())
 
-    search_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000) - embedding_time
     activities.append(create_activity(
         activity_type="search",
         title="Hybrid candidates fetched",
@@ -1296,7 +1318,6 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     ))
 
     # Step 3: Cohere rerank over semantic candidates.
-    rerank_start = datetime.now(timezone.utc)
     embedding_service = get_embedding_service()
     docs = [
         " | ".join([
@@ -1310,14 +1331,14 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     ]
     ranked_rows = candidate_rows
     rerank_failed = False
+    rerank_started = clock()
     try:
         ranked = await asyncio.to_thread(embedding_service.rerank_documents, query, docs, top_n=limit)
         ranked_rows = [candidate_rows[item["index"]] for item in ranked if item["index"] < len(candidate_rows)]
     except Exception:
         rerank_failed = True
         ranked_rows = candidate_rows[:limit]
-
-    rerank_time = int((datetime.now(timezone.utc) - rerank_start).total_seconds() * 1000)
+    rerank_time = elapsed_ms(rerank_started)
     activities.append(create_activity(
         activity_type="search",
         title="Cohere rerank applied" if not rerank_failed else "Cohere rerank unavailable",
@@ -1991,7 +2012,6 @@ async def retrieval_availability_search(
     Returns: (products, activities, message)
     """
     activities = []
-    start_time = datetime.now(timezone.utc)
 
     db = get_rds_data_client()
 
@@ -2004,18 +2024,6 @@ async def retrieval_availability_search(
     ))
 
     query_lower = query.lower()
-
-    activities.append(create_activity(
-        activity_type="search",
-        title="PackageAgent: Finding package",
-        details=(
-            f"Loading ranked package {package_id}"
-            if package_id
-            else "Searching for mentioned trip package"
-        ),
-        agent_name="PackageAgent",
-        agent_file="agents/retrieval_03/package_agent.py"
-    ))
 
     exact_sql = """
         SELECT package_id, name, operator, price_per_person, description,
@@ -2042,18 +2050,30 @@ async def retrieval_availability_search(
         if word and any(ch.isalnum() for ch in word) and word not in stopwords:
             search_terms.append(word)
     
+    search_started = clock()
     if package_id:
         results = await db.execute(exact_sql, (package_id,))
     else:
         results = await _resolve_named_package(db, query_lower, search_terms)
-    
-    search_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-    
+    search_time = elapsed_ms(search_started)
+
+    activities.append(create_activity(
+        activity_type="search",
+        title="PackageAgent: Finding package",
+        details=(
+            f"Loading ranked package {package_id}"
+            if package_id
+            else "Searching for mentioned trip package"
+        ),
+        execution_time_ms=search_time,
+        agent_name="PackageAgent",
+        agent_file="agents/retrieval_03/package_agent.py"
+    ))
+
     if not results:
         activities.append(create_activity(
             activity_type="result",
             title="PackageAgent: Package not found",
-            execution_time_ms=search_time,
             agent_name="PackageAgent",
             agent_file="agents/retrieval_03/package_agent.py"
         ))
@@ -2089,13 +2109,11 @@ async def retrieval_availability_search(
     else:
         total_stock = 0
     
-    availability_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000) - search_time
-    
+    # Totalled in memory from the row read above; there is no call to time.
     activities.append(create_activity(
         activity_type="result",
         title="PackageAgent: Duration inventory verified",
         details=f"Total: {total_stock} package places across available durations",
-        execution_time_ms=availability_time,
         agent_name="PackageAgent",
         agent_file="agents/retrieval_03/package_agent.py"
     ))

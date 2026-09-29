@@ -35,6 +35,7 @@ from pydantic import BaseModel
 from backend.db.embedding_service import EmbeddingUnavailable, get_embedding_service
 from backend.db.rds_data_client import get_rds_data_client
 from backend.search_utils import parse_search_query
+from backend.timing import clock, elapsed_ms
 
 
 class ActivityEntry(BaseModel):
@@ -300,7 +301,9 @@ When searching:
             ORDER BY lexical_score DESC
             LIMIT %s
         """
+        lexical_started = clock()
         lexical_rows = await self.db.execute(lexical_sql, (query, candidate_limit))
+        lexical_ms = elapsed_ms(lexical_started)
         # --- Merge + dedup by package_id -------------------------------------
         # This is the "fusion" step: union the two candidate pools keyed on
         # package_id so a trip found by BOTH arms appears once (and carries its
@@ -322,6 +325,7 @@ When searching:
         candidate_ids = list(merged_by_package)
         if candidate_ids:
             placeholders = ", ".join(["%s"] * len(candidate_ids))
+            hydrate_started = clock()
             detail_rows = await self.db.execute(
                 f"""
                     SELECT package_id, name, operator, price_per_person,
@@ -332,6 +336,7 @@ When searching:
                 """,
                 tuple(candidate_ids),
             )
+            hydrate_ms = elapsed_ms(hydrate_started)
             detail_by_id = {
                 str(row["package_id"]): dict(row) for row in detail_rows
             }
@@ -359,6 +364,7 @@ When searching:
                     "availability, highlights FROM trip_packages "
                     "WHERE package_id IN (...)"
                 ),
+                execution_time_ms=hydrate_ms,
             )
 
         # --- Eligibility gate -------------------------------------------
@@ -416,6 +422,8 @@ When searching:
             title="Lexical candidates merged",
             details=f"{len(results)} unique candidates (lexical={len(lexical_rows)})",
             sql_query="SELECT ... ts_rank(search_vector, websearch_to_tsquery(...)) ...",
+            # The lexical query's own time; merging the pools is in memory.
+            execution_time_ms=lexical_ms,
         )
 
         # --- Final stage: RERANK (precision) ---------------------------------

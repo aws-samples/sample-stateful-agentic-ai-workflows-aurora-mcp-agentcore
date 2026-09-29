@@ -582,13 +582,18 @@ class OrchestrationAgent:
         """
         return self.checkpointer_durable
 
-    def _checkpoint_activity(self, node: str, elapsed_ms: int) -> Dict[str, Any]:
-        """Trace the actual configured checkpointer, not just the ideal one."""
+    def _checkpoint_activity(self, node: str) -> Dict[str, Any]:
+        """Trace the actual configured checkpointer, not just the ideal one.
+
+        The put runs after the node returns, so this span cannot time it. A
+        saver that measures its puts has the time attached after the run, by
+        ``_with_checkpoint_timings``.
+        """
         if self._uses_durable_saver:
             return _activity(
                 "tool_call",
                 f"Checkpoint · {self.checkpointer_kind}.put",
-                details=f"Workflow state serialized after {node} node ({elapsed_ms}ms)",
+                details=f"Workflow state serialized after the {node} node",
                 sql_query=(
                     "INSERT INTO checkpoints\n"
                     "  (thread_id, checkpoint_ns, checkpoint_id,\n"
@@ -620,7 +625,7 @@ class OrchestrationAgent:
             "tool_call",
             "Checkpoint · MemorySaver.put",
             details=(
-                f"Workflow state kept in-process after {node} node ({elapsed_ms}ms). "
+                f"Workflow state kept in-process after the {node} node. "
                 "Set LANGGRAPH_CHECKPOINT_DSN, or LANGGRAPH_CHECKPOINT_DATA_API "
                 "to checkpoint over the Data API, for Aurora durability."
             ),
@@ -835,7 +840,7 @@ class OrchestrationAgent:
         )
         for sa in search_activities:
             activities.append(_coerce_activity(sa))
-        activities.append(self._checkpoint_activity("search", elapsed))
+        activities.append(self._checkpoint_activity("search"))
         return {"packages": packages, "activities": activities}
 
     async def _node_availability(self, state: WorkflowState) -> WorkflowState:
@@ -969,7 +974,7 @@ class OrchestrationAgent:
         )
         for sa in sub_activities:
             activities.append(_coerce_activity(sa))
-        activities.append(self._checkpoint_activity("availability", elapsed))
+        activities.append(self._checkpoint_activity("availability"))
         return {
             "packages": packages,
             "activities": activities,
@@ -1023,7 +1028,7 @@ class OrchestrationAgent:
                 )
             )
             elapsed = int((_utc_now() - start).total_seconds() * 1000)
-            activities.append(self._checkpoint_activity("hold", elapsed))
+            activities.append(self._checkpoint_activity("hold"))
             return {"activities": activities}
 
         # Terms come from the checkpointed intent, so the hold that runs is the
@@ -1097,7 +1102,7 @@ class OrchestrationAgent:
             logger.warning("courtesy hold not placed: %s", outcome.raw_error or reason)
             activities.append(self._hold_not_placed(reason, denied=denied, raw=outcome.raw_error))
             elapsed = int((_utc_now() - start).total_seconds() * 1000)
-            activities.append(self._checkpoint_activity("hold", elapsed))
+            activities.append(self._checkpoint_activity("hold"))
             return {"activities": activities}
 
         hold = outcome.hold or {}
@@ -1171,7 +1176,7 @@ class OrchestrationAgent:
                 },
             )
         )
-        activities.append(self._checkpoint_activity("hold", elapsed))
+        activities.append(self._checkpoint_activity("hold"))
         return {
             "activities": activities,
             "journey_id": journey_id,
@@ -1340,7 +1345,7 @@ class OrchestrationAgent:
         )
         for sa in sub_activities:
             activities.append(_coerce_activity(sa))
-        activities.append(self._checkpoint_activity("memory_recall", elapsed))
+        activities.append(self._checkpoint_activity("memory_recall"))
         return {"packages": packages, "activities": activities}
 
     async def _node_synthesize(self, state: WorkflowState) -> WorkflowState:
@@ -1550,7 +1555,10 @@ class OrchestrationAgent:
 
         result = dict(result or {})
         current = await self.graph.aget_state(config)
-        activities = list(result.get("activities", []) or [])
+        activities = _with_checkpoint_timings(
+            list(result.get("activities", []) or []),
+            getattr(self.checkpointer, "put_timings", None),
+        )
 
         if current.next:
             next_nodes = ", ".join(current.next)
@@ -1655,6 +1663,35 @@ class OrchestrationAgent:
             result["execution_id"] = execution_id
             await self.graph.aupdate_state(config, result, as_node="synthesize")
         return result
+
+
+def _with_checkpoint_timings(
+    activities: List[Dict[str, Any]], timings: Optional[Dict[str, int]]
+) -> List[Dict[str, Any]]:
+    """Attach each checkpoint write's measured time to the span that announced it.
+
+    A saver that times its puts keys each one by the last activity in the state
+    it wrote. A checkpoint span is the last thing its node appends, so the put
+    that persisted it carries its write time. A saver that measures nothing
+    leaves every span without a number.
+
+    Args:
+        activities: The run's spans, in order.
+        timings: The saver's measured put times, consumed as they are read.
+
+    Returns:
+        The spans, with ``execution_time_ms`` set on each timed checkpoint span.
+    """
+    if not timings:
+        return activities
+    timed = []
+    for activity in activities:
+        is_checkpoint = str(activity.get("title", "")).startswith("Checkpoint · ")
+        took = timings.pop(activity.get("id"), None) if is_checkpoint else None
+        if took is not None and activity.get("execution_time_ms") is None:
+            activity = {**activity, "execution_time_ms": took}
+        timed.append(activity)
+    return timed
 
 
 def _coerce_activity(activity: Any) -> Dict[str, Any]:
