@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { motion, PresenceContext } from 'motion/react';
 import { AuroraIcon } from './ServiceMark';
 import { CHECKPOINT_GLOW, STATE_CHANGE, useConfirmedLive } from '../hooks/useLiveCues';
 import {
@@ -401,6 +401,10 @@ export function RecoveryLaunchCard({
         <small>{timelineNote(stage, failed, resumeMode, launchSteps.length)}</small>
       </div>
 
+      {/* The app's view swap starts with AnimatePresence initial={false}, which
+          would freeze every cue that mounts later inside the first view it
+          paints. The steps decide for themselves when to move. */}
+      <PresenceContext.Provider value={null}>
       <ol
         className={`mds-recovery-launch-steps${
           running ? ' is-running' : failed ? ' is-failed' : ''
@@ -461,6 +465,7 @@ export function RecoveryLaunchCard({
           );
         })}
       </ol>
+      </PresenceContext.Provider>
 
       {!compact && (
         <footer className="mds-recovery-launch-actions">

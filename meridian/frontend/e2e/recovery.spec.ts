@@ -82,12 +82,26 @@ for (const motion of ['no-preference', 'reduce'] as const) {
     } }));
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto('/showcase?view=recovery&present=1');
+    // The desk is the first view painted here, the case the view swap's
+    // AnimatePresence initial={false} once froze: read the glow as it mounts.
+    await page.evaluate(() => {
+      new MutationObserver(() => {
+        const glow = document.querySelector<HTMLElement>('.mds-aurora-glow');
+        if (glow && !document.body.dataset.glowStart) {
+          document.body.dataset.glowStart = glow.style.opacity;
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    });
     await page.getByRole('button', { name: 'Start recovery' }).click();
     const checkpoint = page.locator('.mds-recovery-launch-steps li')
       .filter({ hasText: 'Save an Aurora checkpoint' });
     await expect(checkpoint).toHaveClass(/is-visited/);
     await expect(checkpoint.locator('.mds-step-source')).toHaveText('Aurora Data API · 458 ms');
     await expect(page.locator('.mds-aurora-glow')).toHaveCount(motion === 'reduce' ? 0 : 1);
+    if (motion === 'no-preference') {
+      // It mounts at its starting keyframe and animates out, not at its end state.
+      await expect(page.locator('body')).toHaveAttribute('data-glow-start', '0.9');
+    }
     if (motion === 'reduce') {
       await expect.poll(() => page.evaluate(() => document.getAnimations()
         .filter(animation => animation.playState === 'running').length)).toBe(0);

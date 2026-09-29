@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   EMPTY_FILTERS,
   type MeridianShowcaseState,
@@ -669,6 +671,48 @@ describe('Experience presentation polish', () => {
     watched.rerender(<RecoveryWorkspace state={checkpointed} />);
     expect(watched.container.querySelectorAll('.mds-aurora-glow')).toHaveLength(1);
     const mark = screen.getByText('Save an Aurora checkpoint').closest('li')!
+      .querySelector<HTMLElement>('.mds-recovery-step-icon')!;
+    expect(mark.style.opacity).toBe('0');
+  });
+
+  it('still moves the recovery cues when the desk is the first view the app paints', () => {
+    // The app's view swap starts with AnimatePresence initial={false}. That must
+    // not freeze cues that mount later inside the view it first painted.
+    const inFirstView = (child: ReactNode) => (
+      <AnimatePresence initial={false}>
+        <motion.div key="recovery" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          {child}
+        </motion.div>
+      </AnimatePresence>
+    );
+    const checkpoint = {
+      id: 'cp', name: 'Checkpoint · AuroraDataApiSaver.put', category: 'memory_short',
+      type: 'tool_call', status: 'ok', latencyMs: 106,
+      component: 'Aurora · LangGraph checkpoint tables',
+      fields: [{ label: 'checkpoint_durable', value: 'true' }],
+    };
+    const search = {
+      id: 'search', name: 'Workflow node: search', category: 'orchestration',
+      type: 'delegation', status: 'ok', latencyMs: 956, fields: [],
+    };
+    const base = {
+      selectedPhase: 5 as const, phaseLabel: 'Workflow' as const, conversationId: 'phase5-first',
+      lastPrompt: SHOWCASE_FINALE_PROMPT,
+    };
+    const view = render(inFirstView(<RecoveryWorkspace state={makeState(base)} />));
+    view.rerender(inFirstView(<RecoveryWorkspace state={makeState({
+      ...base, isLoading: true, messages: [{ role: 'user' as const, text: SHOWCASE_FINALE_PROMPT }],
+    })} />));
+    view.rerender(inFirstView(<RecoveryWorkspace state={makeState({
+      ...base, workflowStatus: 'paused', traceSpans: [search, checkpoint],
+      messages: [
+        { role: 'user' as const, text: SHOWCASE_FINALE_PROMPT },
+        { role: 'bot' as const, text: 'Paused.' },
+      ],
+    })} />));
+    const glow = view.container.querySelector<HTMLElement>('.mds-aurora-glow');
+    expect(glow?.style.opacity).toBe('0.9');
+    const mark = screen.getByText('Search and rank').closest('li')!
       .querySelector<HTMLElement>('.mds-recovery-step-icon')!;
     expect(mark.style.opacity).toBe('0');
   });
