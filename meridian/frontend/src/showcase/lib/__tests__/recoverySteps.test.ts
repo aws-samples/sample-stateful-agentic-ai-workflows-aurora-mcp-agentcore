@@ -10,6 +10,8 @@ function span(name: string, overrides: Partial<ShowcaseTraceSpan> = {}): Showcas
 }
 
 const durable = [{ label: 'checkpoint_durable', value: 'true' }];
+// Values and units are joined by a no-break space so they never wrap apart.
+const nb = (text: string) => text.replace(/(\d) (ms|s)\b/g, '$1\u00a0$2');
 const CHECKPOINT_TABLES = 'Aurora · LangGraph checkpoint tables';
 const checkpointed = { resumeMode: false, failed: false };
 
@@ -46,7 +48,8 @@ describe('deriveRecoverySteps', () => {
     expect(steps.map(step => step.state))
       .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-pending']);
     expect(steps.map(step => step.source)).toEqual([
-      'LangGraph · <1 ms', 'Bedrock + Aurora · 956 ms', 'Aurora Data API · 106 ms', null,
+      nb('LangGraph · <1 ms'), nb('Bedrock + Aurora · 956 ms'),
+      nb('Aurora Data API · 106 ms'), null,
     ]);
   });
 
@@ -54,7 +57,7 @@ describe('deriveRecoverySteps', () => {
     const steps = deriveRecoverySteps(resumed, 'ready', checkpointed);
     expect(steps.map(step => step.state))
       .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-visited']);
-    expect(steps[3].source).toBe('Aurora · 54 ms');
+    expect(steps[3].source).toBe(nb('Aurora · 54 ms'));
   });
 
   it('does not claim an Aurora checkpoint for an in-process one', () => {
@@ -77,7 +80,7 @@ describe('deriveRecoverySteps', () => {
     const steps = deriveRecoverySteps(paused, 'running', { resumeMode: true, failed: false });
     expect(steps.map(step => step.state))
       .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-current']);
-    expect(steps[2].source).toBe('Aurora Data API · 106 ms');
+    expect(steps[2].source).toBe(nb('Aurora Data API · 106 ms'));
     expect(steps[3].source).toBeNull();
   });
 
@@ -94,7 +97,7 @@ describe('deriveRecoverySteps', () => {
       : item));
     const steps = deriveRecoverySteps(inProcess, 'running', { resumeMode: true, failed: false });
     expect(steps[2]).toEqual({ state: 'is-pending', source: null });
-    expect(steps[1].source).toBe('Bedrock + Aurora · 956 ms');
+    expect(steps[1].source).toBe(nb('Bedrock + Aurora · 956 ms'));
   });
 
   it('marks nothing complete after a failure or before the traveler starts', () => {

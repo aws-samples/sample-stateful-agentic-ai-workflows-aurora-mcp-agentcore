@@ -1,13 +1,16 @@
 import type { ShowcaseTraceSpan } from './showcaseAdapters';
 
+// Joins a value to its unit so a narrow stage never wraps "601" away from "ms".
+const NO_BREAK = '\u00a0';
+
 /** A recorded duration as the room reads it: whole milliseconds under a second,
  *  one decimal second above. No measured value, no number: null. */
 export function formatLatency(ms: number | null | undefined): string | null {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
   const whole = Math.round(ms);
-  if (whole === 0) return '<1 ms';
-  if (whole < 1000) return `${whole} ms`;
-  return `${(Math.round(ms / 100) / 10).toFixed(1)} s`;
+  if (whole === 0) return `<1${NO_BREAK}ms`;
+  if (whole < 1000) return `${whole}${NO_BREAK}ms`;
+  return `${(Math.round(ms / 100) / 10).toFixed(1)}${NO_BREAK}s`;
 }
 
 type ServiceRule = { service: string; matches: (span: ShowcaseTraceSpan) => boolean };
