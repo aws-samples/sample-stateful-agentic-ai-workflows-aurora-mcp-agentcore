@@ -177,6 +177,36 @@ test('offline notice is one content-height strip in every surface', async ({ pag
 });
 
 for (const theme of ['light', 'dark']) {
+  test(`${theme}: unset traveler values are quieter than their labels`, async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto(`/showcase?present=1&view=concierge&theme=${theme}`);
+    const tertiary = await page.locator('.mds-root').evaluate(el => {
+      const probe = document.createElement('span');
+      probe.style.color = getComputedStyle(el).getPropertyValue('--mds-label-3');
+      el.appendChild(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
+    const rows = [
+      { value: '.mc-departure .mc-unset', label: '.mc-departure > div:first-child > span:first-child' },
+      { value: '.mc-brief-details .mc-unset', label: '.mc-brief-details > div:last-child dt' },
+    ];
+    for (const row of rows) {
+      const value = page.locator(row.value);
+      await expect(value).toHaveText('Not set');
+      const [valueCss, labelCss] = await Promise.all([row.value, row.label].map(selector =>
+        page.locator(selector).evaluate(el => {
+          const css = getComputedStyle(el);
+          return { size: css.fontSize, color: css.color };
+        })));
+      expect(valueCss.size, `${row.value} size`).toBe(labelCss.size);
+      expect(valueCss.color, `${row.value} color`).toBe(tertiary);
+    }
+  });
+}
+
+for (const theme of ['light', 'dark']) {
   test(`${theme}: headings focused from code draw no ring while keyboard focus keeps one`, async ({ page }) => {
     const outline = (selector: string) => page.locator(selector).evaluate(el => {
       const css = getComputedStyle(el);

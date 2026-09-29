@@ -157,6 +157,10 @@
 .mds-root .mc-departure span { font: var(--mds-type-caption); color: var(--mds-label-2); }
 .mds-root .mc-departure strong { font: var(--mds-type-title-1); font-weight: var(--mds-weight-medium); letter-spacing: var(--mds-tracking-display); }
 .mds-root .mc-departure > div:last-child strong { font: var(--mds-type-title-3); font-weight: var(--mds-weight-medium); letter-spacing: var(--mds-tracking-title); }
+/* An unset value never outshouts a real one. In the departure block it is a
+   span, so it takes the label's own type; in a value cell it drops to the
+   label's weight. Both use the tertiary label color. */
+.mds-root .mc-unset, .mds-root .mc-departure .mc-unset { color: var(--mds-label-3); font-weight: var(--mds-weight-regular); letter-spacing: 0; }
 .mds-root .mc-brief-details { display: grid; gap: 17px; margin: 0; }
 .mds-root .mc-brief-details > div { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .mds-root .mc-brief-details dt { display: flex; align-items: center; gap: 7px; color: var(--mds-label-2); font: var(--mds-type-footnote); }
