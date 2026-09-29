@@ -57,7 +57,9 @@ def _title(activity):
 
 
 def _ms(activity):
-    return activity["execution_time_ms"] if isinstance(activity, dict) else activity.execution_time_ms
+    if isinstance(activity, dict):
+        return activity["execution_time_ms"]
+    return activity.execution_time_ms
 
 
 # --------------------------------------------------------------- Bedrock polish
@@ -262,7 +264,9 @@ def test_search_agent_times_the_lexical_and_hydration_queries(clock, monkeypatch
     agent = SearchAgent.__new__(SearchAgent)
     spans: list = []
     agent.activity_callback = spans.append
-    agent.db = FakeDb(clock, {"semantic_trip_search": 120, "ts_rank": 30, "WHERE package_id IN": 25})
+    agent.db = FakeDb(
+        clock, {"semantic_trip_search": 120, "ts_rank": 30, "WHERE package_id IN": 25},
+    )
     agent.embedding_service = FakeEmbeddings(clock)
     asyncio.run(agent.hybrid_search("quiet villa"))
 

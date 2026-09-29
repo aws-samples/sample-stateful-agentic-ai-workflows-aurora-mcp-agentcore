@@ -295,7 +295,8 @@ test('offline notice is one content-height strip in every surface', async ({ pag
         content: Array.from(el.children)
           .reduce((tallest, child) => Math.max(tallest, child.getBoundingClientRect().height), 0),
         clipped: Array.from(el.querySelectorAll('*'))
-          .some(child => child.getBoundingClientRect().bottom > el.getBoundingClientRect().bottom + 1),
+          .some(child => child.getBoundingClientRect().bottom
+            > el.getBoundingClientRect().bottom + 1),
       }));
       expect(box.clipped, `${view} at ${width}: notice text overflows its strip`).toBe(false);
       expect(box.height - box.content, `${view} at ${width}: notice is taller than its content`)
@@ -319,7 +320,10 @@ for (const theme of ['light', 'dark']) {
       return color;
     });
     const rows = [
-      { value: '.mc-departure .mc-unset', label: '.mc-departure > div:first-child > span:first-child' },
+      {
+        value: '.mc-departure .mc-unset',
+        label: '.mc-departure > div:first-child > span:first-child',
+      },
       { value: '.mc-brief-details .mc-unset', label: '.mc-brief-details > div:last-child dt' },
     ];
     for (const row of rows) {
@@ -337,7 +341,8 @@ for (const theme of ['light', 'dark']) {
 }
 
 for (const theme of ['light', 'dark']) {
-  test(`${theme}: headings focused from code draw no ring while keyboard focus keeps one`, async ({ page }) => {
+  const title = `${theme}: headings focused from code draw no ring while keyboard focus keeps one`;
+  test(title, async ({ page }) => {
     const outline = (selector: string) => page.locator(selector).evaluate(el => {
       const css = getComputedStyle(el);
       return { style: css.outlineStyle, width: parseFloat(css.outlineWidth) };
@@ -398,7 +403,8 @@ test('dark room preset also applies while the showcase bundle is loading', async
 });
 
 for (const theme of ['dark', 'light']) {
-  test(`${theme}: idle live views run no looping motion with full motion allowed`, async ({ page }) => {
+  const title = `${theme}: idle live views run no looping motion with full motion allowed`;
+  test(title, async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.setViewportSize({ width: 1920, height: 1080 });
     await mockLiveCatalog(page);

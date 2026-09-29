@@ -29,10 +29,28 @@ export function ConciergeRail({ state, onSaved, onRecovery }: {
   return <div className="mc-brief">
     <header className="mc-brief-header"><h2>Your travel brief</h2><span>Always part of the conversation.</span></header>
     {state.tripHolds?.slice(-1).map(hold => <TripHoldReceipt key={hold.order.order_id} hold={hold} compact />)}
-    <div className="mc-traveler"><img src={ALEX_IMAGE_URL} alt="" width="44" height="44" /><div><strong>Alex Morgan</strong><span>{profile ? 'Your preferences, remembered' : 'Let’s get to know your travel style'}</span></div></div>
-    <div className="mc-departure"><div><span>Flying from</span>{profile?.home_airport ? <strong>{profile.home_airport}</strong> : <NotSet />}</div><Plane size={26} strokeWidth={1.3} aria-hidden="true" /><div><span>Next stop</span><strong>Possibility.</strong></div></div>
+    <div className="mc-traveler">
+      <img src={ALEX_IMAGE_URL} alt="" width="44" height="44" />
+      <div>
+        <strong>Alex Morgan</strong>
+        <span>
+          {profile ? 'Your preferences, remembered' : 'Let’s get to know your travel style'}
+        </span>
+      </div>
+    </div>
+    <div className="mc-departure">
+      <div>
+        <span>Flying from</span>
+        {profile?.home_airport ? <strong>{profile.home_airport}</strong> : <NotSet />}
+      </div>
+      <Plane size={26} strokeWidth={1.3} aria-hidden="true" />
+      <div><span>Next stop</span><strong>Possibility.</strong></div>
+    </div>
     <dl className="mc-brief-details">
-      <div><dt><UsersRound size={16} aria-hidden="true" />Travelers</dt><dd>{party ? `${party} ${party === 1 ? 'adult' : 'adults'}` : <NotSet />}</dd></div>
+      <div>
+        <dt><UsersRound size={16} aria-hidden="true" />Travelers</dt>
+        <dd>{party ? `${party} ${party === 1 ? 'adult' : 'adults'}` : <NotSet />}</dd>
+      </div>
       <div><dt><CalendarDays size={16} aria-hidden="true" />Travel dates</dt><dd>{dates}</dd></div>
       <div><dt>Usual budget</dt><dd><BudgetCeiling perTravelerCents={state.budgetCeilingPerTravelerCents} travelers={party} /></dd></div>
     </dl>

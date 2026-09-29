@@ -154,7 +154,8 @@ function checkpointSource(spans: ShowcaseTraceSpan[]): string | null {
 
 const STEP_IDS: RecoveryStepId[] = ['understand', 'search', 'checkpoint', 'verify'];
 
-const pending = (id: RecoveryStepId): RecoveryStepView => ({ id, state: 'is-pending', source: null });
+const pending = (id: RecoveryStepId): RecoveryStepView => (
+  { id, state: 'is-pending', source: null });
 
 /** Understand, search, checkpoint and verify, each confirmed only by the spans
  *  the backend returned. A fresh run in flight claims no step: the trace arrives
