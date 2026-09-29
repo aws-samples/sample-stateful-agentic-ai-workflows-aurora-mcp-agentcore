@@ -19,6 +19,7 @@ import type { Product } from '../../types';
 import { deriveWorkflowState } from '../lib/showcaseProof';
 import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 import { useLiveCues } from '../hooks/useLiveCues';
+import { useHoldClock } from '../hooks/useHoldClock';
 import { RecoveryBriefing } from './RecoveryBriefing';
 import { RecoveryChecks } from './RecoveryChecks';
 import { RecoveryBoardingPass } from './RecoveryBoardingPass';
@@ -236,7 +237,10 @@ function RecoveryHoldHandoff({ state, journeyDocument, onOpenProof, onOpenConcie
   const workflowProof = deriveWorkflowState(state.traceSpans);
   const savedHold = journeyDocument?.active_thread_id === state.conversationId
     && isObserved(journeyDocument?.hold) ? journeyDocument.hold : null;
-  const handoffHold: AdoptableHold | null = savedHold?.status === 'held'
+  const { expired, knownExpiry } = useHoldClock(
+    savedHold?.hold_expires_at, savedHold?.observed_at, journeyDocument?.received_at,
+  );
+  const handoffHold: AdoptableHold | null = savedHold?.status === 'held' && knownExpiry && !expired
     ? savedHold
     : null;
   return (

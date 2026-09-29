@@ -971,6 +971,20 @@ describe('Experience presentation polish', () => {
     expect(onOpenConcierge).toHaveBeenCalledWith(hold);
   });
 
+  it.each(['2020-01-01T00:00:00Z', null, 'invalid']) (
+    'does not offer a Concierge handoff for an expired or unverified expiry: %s', (expiry) => {
+      const state = makeState({ selectedPhase: 5, conversationId: 'current-thread' });
+      const document = {
+        active_thread_id: 'current-thread',
+        hold: { status: 'held', booking_id: 'HLD-expired', hold_expires_at: expiry },
+      } as JourneyDocument;
+      render(<RecoveryWorkspace state={state} journeyDocument={document}
+        onOpenConcierge={vi.fn()} />);
+      expect(screen.queryByRole('button', { name: 'Take it back to Alex' })).not.toBeInTheDocument();
+      expect(screen.queryByText('Bring it home.')).not.toBeInTheDocument();
+    },
+  );
+
   it('shows recorded terms in trip details when catalog prices and party have changed', () => {
     const product = {
       product_id: 'CTY-002', name: 'Tokyo trip', price: 2499,
