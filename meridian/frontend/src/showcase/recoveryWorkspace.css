@@ -1865,7 +1865,7 @@
 
 .mds-recovery-launch-steps strong {
   color: var(--mds-label);
-  font: var(--mds-type-footnote);
+  font: var(--mds-type-headline);
   font-weight: var(--mds-weight-bold);
 }
 

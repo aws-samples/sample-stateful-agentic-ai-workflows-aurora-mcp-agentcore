@@ -2777,7 +2777,7 @@
 .mds-trace-inspector .mds-trace-tabs { display: flex; flex-wrap: wrap; gap: 5px; }
 .mds-trace-inspector .mds-trace-tabs button { flex: 1 1 auto; font: var(--mds-type-body); font-weight: var(--mds-weight-semibold); }
 .mds-trace-inspector .mds-sql-list small { color: var(--mds-label-2); font: var(--mds-type-footnote); font-weight: var(--mds-weight-semibold); }
-.mds-trace-inspector .mds-sql-list pre { margin: 6px 0 14px; background: var(--mds-surface-2); color: var(--mds-label); font: var(--mds-type-footnote); font-family: var(--mds-font-mono); }
+.mds-trace-inspector .mds-sql-list pre { margin: 6px 0 14px; background: var(--mds-surface-2); color: var(--mds-label); }
 .mds-evidence-heading { margin: 0 0 10px; color: var(--mds-label); font: var(--mds-type-body); }
 .mds-trace-inspector > summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; list-style: none; color: var(--mds-label-2); font: var(--mds-type-footnote); }
 .mds-activity-group > summary:focus-visible,

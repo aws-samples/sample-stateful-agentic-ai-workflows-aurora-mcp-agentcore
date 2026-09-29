@@ -86,7 +86,7 @@
   :root { --mds-type-scale: 0.9; }
 }
 
-.mds-root[data-projector-readability='true'] { --mds-type-scale: 1.1; }
+.mds-root[data-projector-readability='true'] { --mds-type-scale: 1.2; }
 
 /* SVG text is sized in viewBox units and the drawing already scales with its box, so the
    diagram keeps the laptop scale. Its nodes are fixed shapes sized to that text. */
