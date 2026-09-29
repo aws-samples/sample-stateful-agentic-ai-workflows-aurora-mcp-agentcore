@@ -2142,7 +2142,7 @@
 }
 
 .mds-decision-route b {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   color: var(--mds-label);
   font: var(--mds-type-title-1);
   line-height: 1;
@@ -2572,7 +2572,7 @@
 
 .mds-flight-option-card dd {
   margin-top: 4px;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   color: var(--mds-label);
   font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
@@ -2880,6 +2880,25 @@
   .mds-recovery-decision-support {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  /* The command layout otherwise leaves the alternatives grid squeezed into
+     the primary column's 1.75fr share, which breaks words mid-word between
+     1280 and 1440px. Give the alternatives their own full-width row instead,
+     matching the journey and audience layouts. The audience-layout exclusion
+     is required: below a 1100px container the projector preset keeps a
+     one-column grid, and these areas would otherwise collapse it. */
+  .mds-root:not([data-audience-layout='true']) .mds-recovery-workspace.is-layout-command
+    .mds-recovery-decision-system {
+    grid-template-areas: "plan support" "alternatives alternatives";
+  }
+  .mds-root:not([data-audience-layout='true']) .mds-recovery-workspace.is-layout-command
+    .mds-recovery-decision-primary { display: contents; }
+  .mds-root:not([data-audience-layout='true']) .mds-recovery-workspace.is-layout-command
+    .mds-recommended-plan-card { grid-area: plan; }
+  .mds-root:not([data-audience-layout='true']) .mds-recovery-workspace.is-layout-command
+    .mds-recovery-decision-support { grid-area: support; }
+  .mds-root:not([data-audience-layout='true']) .mds-recovery-workspace.is-layout-command
+    .mds-recovery-alternatives { grid-area: alternatives; }
 
   .mds-recovery-workspace.is-layout-focus .mds-recovery-decision-system {
     grid-template-columns: minmax(0, 1fr);

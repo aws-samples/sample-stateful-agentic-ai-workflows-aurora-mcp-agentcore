@@ -98,7 +98,7 @@
   padding-bottom: 11px;
 }
 
-.mds-recovery-workspace .mds-decision-route b {
+.mds-recovery-workspace .mds-decision-route:not(.is-compact) b {
   font: var(--mds-type-title-2);
   line-height: 1;
   letter-spacing: var(--mds-tracking-title);
