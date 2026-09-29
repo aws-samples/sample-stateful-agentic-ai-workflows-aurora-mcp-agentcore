@@ -46,13 +46,17 @@ type RecoveryLayout = 'command' | 'focus' | 'journey';
 function useRecoveryStepSpans(
   spans: ShowcaseTraceSpan[], thread: string | null,
 ): ShowcaseTraceSpan[] {
-  const seen = useRef<{ thread: string | null; spans: ShowcaseTraceSpan[] }>({ thread, spans: [] });
-  if (seen.current.thread !== thread) seen.current = { thread, spans: [] };
-  if (!spans.length) return seen.current.spans;
-  const measured = new Map(seen.current.spans.map(span => [span.id, span.latencyMs]));
+  // What the last trace for this thread resolved to, and the trace it came
+  // from. Kept in state so a render React discards cannot advance it.
+  const [seen, setSeen] = useState<{
+    thread: string | null; source: ShowcaseTraceSpan[]; spans: ShowcaseTraceSpan[];
+  }>({ thread, source: [], spans: [] });
+  const sameThread = seen.thread === thread;
+  if (sameThread && (!spans.length || spans === seen.source)) return seen.spans;
+  const measured = new Map((sameThread ? seen.spans : []).map(span => [span.id, span.latencyMs]));
   const merged = spans.map(span => (span.latencyMs == null && measured.get(span.id) != null
     ? { ...span, latencyMs: measured.get(span.id) ?? null } : span));
-  seen.current = { thread, spans: merged };
+  setSeen({ thread, source: spans, spans: merged });
   return merged;
 }
 

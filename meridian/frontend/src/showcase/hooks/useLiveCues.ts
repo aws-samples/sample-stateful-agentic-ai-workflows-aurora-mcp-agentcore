@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useState } from 'react';
 import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 
 /** A state change: a short fade with a small scale on the state icon. */
@@ -20,9 +20,12 @@ export const CHECKPOINT_GLOW = { duration: 0.9, ease: 'easeOut' } as const;
  */
 export function useLiveCues(identity: string | null | undefined, running: boolean): boolean {
   const reduced = usePrefersReducedMotion();
-  const observed = useRef<string | null>(null);
-  if (running && identity) observed.current = identity;
-  return !reduced && Boolean(identity) && observed.current === identity;
+  // The recovery last watched in flight, kept in state rather than a ref so a
+  // render React discards cannot leave it advanced.
+  const [observed, setObserved] = useState<string | null>(null);
+  const watched = running && identity ? identity : observed;
+  if (watched !== observed) setObserved(watched);
+  return !reduced && Boolean(identity) && watched === identity;
 }
 
 /** Whether `confirmed` turned true while the surface was watching.
@@ -34,9 +37,8 @@ export function useLiveCues(identity: string | null | undefined, running: boolea
  * @param live Whether the surface may animate, from `useLiveCues`.
  */
 export function useConfirmedLive(confirmed: boolean, live: boolean): boolean {
-  const last = useRef({ confirmed, fired: false });
-  if (last.current.confirmed !== confirmed) {
-    last.current = { confirmed, fired: confirmed && live };
-  }
-  return live && last.current.fired;
+  const [last, setLast] = useState({ confirmed, fired: false });
+  const current = last.confirmed === confirmed ? last : { confirmed, fired: confirmed && live };
+  if (current !== last) setLast(current);
+  return live && current.fired;
 }

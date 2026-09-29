@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { Check, ChevronDown, Circle, Copy, Loader2, RefreshCw, RotateCcw, ShieldX, Workflow, X } from 'lucide-react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
@@ -38,23 +38,33 @@ function activityGroup(span: ShowcaseTraceSpan): string {
   return 'other';
 }
 
+type Arrival = { waiting: boolean; batch: string | null; shown: boolean };
+
+/** Waiting while a request runs, then the first trace batch that follows it. */
+function nextArrival(arrival: Arrival, loading: boolean, batch: string | null): Arrival {
+  if (loading) {
+    return arrival.waiting && arrival.batch === null && !arrival.shown
+      ? arrival : { waiting: true, batch: null, shown: false };
+  }
+  return arrival.waiting && batch ? { waiting: false, batch, shown: false } : arrival;
+}
+
 /** Whether the trace on screen is the response this panel was waiting for,
  *  shown for the first time. Only then do its steps slide in: a trace the panel
  *  opens onto, or shows again after a collapse, is painted still. */
 function useArrivingTrace(state: MeridianShowcaseState): boolean {
   const reduced = usePrefersReducedMotion();
-  const arrival = useRef({ waiting: false, batch: null as string | null, shown: false });
+  const [arrival, setArrival] = useState<Arrival>(
+    { waiting: false, batch: null, shown: false },
+  );
   const batch = state.traceSpans[0]?.id ?? null;
-  if (state.isLoading) {
-    arrival.current = { waiting: true, batch: null, shown: false };
-  } else if (arrival.current.waiting && batch) {
-    arrival.current = { waiting: false, batch, shown: false };
-  }
+  const next = nextArrival(arrival, state.isLoading, batch);
+  if (next !== arrival) setArrival(next);
   const enter = !reduced && !state.isReplaying && batch !== null
-    && arrival.current.batch === batch && !arrival.current.shown;
+    && next.batch === batch && !next.shown;
   useEffect(() => {
-    if (enter) arrival.current.shown = true;
-  });
+    if (enter) setArrival(current => (current.shown ? current : { ...current, shown: true }));
+  }, [enter]);
   return enter;
 }
 
