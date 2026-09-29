@@ -150,6 +150,32 @@ for (const theme of ['light', 'dark']) for (const present of [false, true]) {
   });
 }
 
+test('offline notice is one content-height strip in every surface', async ({ page }) => {
+  for (const [width, height] of [[1920, 1080], [1280, 720]]) {
+    await page.setViewportSize({ width, height });
+    const heights: number[] = [];
+    for (const view of views) {
+      await page.goto(`/showcase?present=1&view=${view}`);
+      const notice = page.locator('.mc-connection-notice');
+      await expect(notice).toHaveAttribute('role', 'status');
+      await expect(notice.getByRole('button', { name: 'Reconnect' })).toBeVisible();
+      await expect(notice).not.toContainText('preview');
+      const box = await notice.evaluate(el => ({
+        height: el.getBoundingClientRect().height,
+        content: Array.from(el.children)
+          .reduce((tallest, child) => Math.max(tallest, child.getBoundingClientRect().height), 0),
+        clipped: Array.from(el.querySelectorAll('*'))
+          .some(child => child.getBoundingClientRect().bottom > el.getBoundingClientRect().bottom + 1),
+      }));
+      expect(box.clipped, `${view} at ${width}: notice text overflows its strip`).toBe(false);
+      expect(box.height - box.content, `${view} at ${width}: notice is taller than its content`)
+        .toBeLessThanOrEqual(40);
+      heights.push(Math.round(box.height));
+    }
+    expect(new Set(heights).size, `notice heights at ${width}: ${heights.join(', ')}`).toBe(1);
+  }
+});
+
 for (const theme of ['light', 'dark']) {
   test(`${theme}: headings focused from code draw no ring while keyboard focus keeps one`, async ({ page }) => {
     const outline = (selector: string) => page.locator(selector).evaluate(el => {

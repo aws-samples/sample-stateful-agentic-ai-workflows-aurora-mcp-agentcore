@@ -388,7 +388,7 @@ export function DesktopMeridianApp({
         <RequestWaitNotice state={state} onReadRecovery={() => { setView('recovery'); journey.refresh(); }} />
         {state.connectionIssue && <div className="mc-connection-notice" role="status">
           <AlertTriangle size={20} aria-hidden="true" />
-          <div><strong>{state.connectionIssue}</strong><p>Displayed trips may be a preview or the last loaded results. Reconnect before planning.</p></div>
+          <div><strong>{state.connectionIssue}</strong><p>What you see is the last successful load. Reconnect before planning.</p></div>
           <button type="button" disabled={state.connectionRefreshing} onClick={() => void state.refreshConnection()}>
             <RefreshCw size={16} aria-hidden="true" />{state.connectionRefreshing ? 'Reconnecting…' : 'Reconnect'}
           </button>
