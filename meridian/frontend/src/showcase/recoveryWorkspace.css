@@ -2,19 +2,9 @@
    Scoped to the finale so the opening capability ladder keeps its
    projector-oriented geometry. */
 
-/* The showcase is the presenter surface. Projector mode raises the shared type
-   scale and contrast without changing the normal Meridian product UI.
-   The scale is tuned for reading trip results from the back of a room, so it
-   runs well above the product default. */
+/* The showcase is the presenter surface. Type sizes come from the ramp in
+   tokens.css; projector readability raises --mds-type-scale there. */
 .mds-desktop-app.is-projector {
-  /* Content scale: replies, trip cards, trace spans - the things a room reads
-     from the back. Kept close to the concierge's own scale so the five phases
-     and the finale read as one product rather than a zoomed-in copy. */
-  --mds-fs: 1.16;
-  /* Chrome scale: panel titles, rail labels, stat tiles. Scaling these as hard
-     as content overflowed the rail and truncated values mid-word. */
-  --mds-fs-chrome: 1.08;
-
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -68,8 +58,8 @@
   border-radius: 10px;
   color: var(--mds-label-2);
   background: transparent;
-  font-size: calc(13px * var(--mds-fs));
-  font-weight: 700;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
   white-space: nowrap;
   transition:
     color 160ms ease,
@@ -94,8 +84,8 @@
   border-radius: 50%;
   color: var(--mds-ground);
   background: var(--mds-label);
-  font-size: calc(11.5px * var(--mds-fs));
-  font-weight: 650;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
   font-variant-numeric: tabular-nums;
   transition:
     color 160ms ease,
@@ -120,14 +110,14 @@
 .mds-ladder-nav-copy strong {
   color: inherit;
   font-size: inherit;
-  font-weight: 720;
+  font-weight: var(--mds-weight-bold);
   line-height: 1.1;
 }
 
 .mds-ladder-nav-copy small {
   color: var(--mds-label-3);
-  font-size: calc(10px * var(--mds-fs));
-  font-weight: 600;
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-semibold);
   line-height: 1.1;
 }
 
@@ -162,52 +152,67 @@
    dense implementation details subordinate in the proof rail. */
 .mds-desktop-app.is-projector.is-proof .mds-nav-item {
   min-height: 46px;
-  font-size: calc(14px * var(--mds-fs));
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-medium);
 }
 
 .mds-desktop-app.is-projector.is-proof .mds-message-role {
-  font-size: calc(11.5px * var(--mds-fs));
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
 }
 
 .mds-desktop-app.is-projector.is-proof .mds-message-bubble {
-  font-size: calc(16px * var(--mds-fs));
-  line-height: 1.5;
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-regular);
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-desktop-app.is-projector.is-proof
   :is(.mds-msg-meta-tag, .mds-msg-result-chip, .mds-followup-chip) {
-  font-size: calc(12.5px * var(--mds-fs));
+  font: var(--mds-type-body);
+}
+
+.mds-desktop-app.is-projector.is-proof .mds-followup-chip {
+  font-weight: var(--mds-weight-medium);
 }
 
 .mds-desktop-app.is-projector.is-proof
   :is(.mds-trip-result-destination, .mds-trip-result-match) {
-  font-size: calc(11.5px * var(--mds-fs));
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1;
 }
 
 .mds-desktop-app.is-projector.is-proof .mds-trip-result-description {
-  font-size: calc(14px * var(--mds-fs));
-  line-height: 1.42;
+  font: var(--mds-type-body);
 }
 
 .mds-desktop-app.is-projector.is-proof .mds-trip-result-signals > span {
   min-height: 30px;
-  font-size: calc(11.5px * var(--mds-fs));
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-desktop-app.is-projector.is-proof
   :is(.mds-trip-result-fact > b, .mds-trip-result-price span) {
-  font-size: calc(11.5px * var(--mds-fs));
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  line-height: 1;
 }
 
 .mds-desktop-app.is-projector.is-proof
   .mds-trip-result-fact.is-availability
   > em {
-  font-size: calc(14px * var(--mds-fs));
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1.1;
 }
 
 .mds-desktop-app.is-projector.is-proof .mds-trip-result-actions button {
   min-height: 42px;
-  font-size: calc(13.5px * var(--mds-fs));
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1;
 }
 
 /* Both steps share the finale's shell geometry, so switching views never moves
@@ -242,22 +247,23 @@
    change weight or family when the demo advances. Sizing and family only — the
    finale keeps its own spacing and colors in the .is-experience rules below. */
 .mds-desktop-app .mds-brand {
-  font-family: var(--mds-serif);
-  font-size: calc(28px * var(--mds-fs));
-  font-weight: 700;
+  font: var(--mds-type-title-1);
+  letter-spacing: var(--mds-tracking-display);
 }
 
 .mds-desktop-app .mds-nav-item {
-  font-size: calc(15px * var(--mds-fs));
-  font-weight: 540;
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-medium);
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-desktop-app .mds-account-copy strong {
-  font-size: calc(14px * var(--mds-fs));
+  font: var(--mds-type-body);
 }
 
 .mds-desktop-app .mds-account-copy .mds-account-loyalty {
-  font-size: calc(11px * var(--mds-fs));
+  font: var(--mds-type-footnote);
+  line-height: 1.25;
 }
 
 /* The ladder and finale share one product chrome. Geometry remains step-specific,
@@ -347,12 +353,6 @@
   gap: 12px;
   min-width: 0;
   margin: 0;
-  font-family: var(--mds-serif);
-  /* Scale with the sidebar instead of clipping. At a fixed 28px the wordmark
-     overflowed its track on ~1280-1360px laptops and rendered as "Meridiar" --
-     the product's own name, silently truncated, with no ellipsis. */
-  font-size: clamp(20px, 1.7vw, calc(28px * var(--mds-fs)));
-  font-weight: 700;
 }
 
 .mds-desktop-app .mds-brand-name {
@@ -412,8 +412,9 @@
   gap: 13px;
   padding: 0 14px 0 17px;
   border-radius: 8px;
-  font-size: calc(15px * var(--mds-fs));
-  font-weight: 540;
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-medium);
+  letter-spacing: var(--mds-tracking-title);
   transition: color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
 
@@ -460,13 +461,14 @@
 }
 
 .mds-desktop-app .mds-account-copy strong {
-  font-size: calc(14px * var(--mds-fs));
+  font: var(--mds-type-body);
 }
 
 .mds-account-chevron {
   color: var(--mds-label-2);
-  font-size: calc(25px * var(--mds-fs));
-  font-weight: 300;
+  font: var(--mds-type-title-1);
+  font-weight: var(--mds-weight-regular);
+  letter-spacing: var(--mds-tracking-display);
 }
 
 .mds-desktop-app.is-sidebar-collapsed .mds-desktop-sidebar {
@@ -507,7 +509,8 @@
   min-width: 15px;
   height: 15px;
   margin: 0;
-  font-size: calc(8px * var(--mds-fs));
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-desktop-app.is-sidebar-collapsed .mds-account-mini {
@@ -550,7 +553,8 @@
 .mds-desktop-app.is-experience .mds-status-pill {
   min-height: 32px;
   padding: 0 12px;
-  font-size: calc(13px * var(--mds-fs));
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-medium);
 }
 
 .mds-desktop-app.is-experience .mds-surface-switch {
@@ -587,14 +591,14 @@
 
 .mds-recovery-layout-review strong {
   color: var(--mds-label);
-  font-size: calc(12.5px * var(--mds-fs));
-  font-weight: 760;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-layout-review small {
   overflow: hidden;
   color: var(--mds-label-3);
-  font-size: calc(11px * var(--mds-fs));
+  font: var(--mds-type-footnote);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -616,8 +620,8 @@
   border-radius: 6px;
   color: var(--mds-label-3);
   background: transparent;
-  font-size: calc(11.5px * var(--mds-fs));
-  font-weight: 720;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-layout-review button.is-active {
@@ -638,11 +642,8 @@
 }
 
 .mds-recovery-workspace.is-running .mds-recovery-overview h1 {
-  font-size: clamp(
-    calc(27px * var(--mds-fs)),
-    2.2vw,
-    calc(37px * var(--mds-fs))
-  );
+  font: var(--mds-type-title-1);
+  line-height: 1.05;
 }
 
 .mds-recovery-workspace.is-running .mds-recovery-overview-meta {
@@ -666,16 +667,9 @@
 .mds-recovery-overview h1 {
   margin: 0;
   color: var(--mds-label);
-  font-family: var(--mds-font);
-  font-size: clamp(
-    calc(34px * var(--mds-fs)),
-    2.6vw,
-    calc(48px * var(--mds-fs))
-  );
-  font-weight: 800;
-  letter-spacing: 0;
+  font: var(--mds-type-large-title);
   line-height: 1.05;
-  font-feature-settings: "ss01", "ss03", "cv11";
+  letter-spacing: var(--mds-tracking-display);
 }
 
 .mds-recovery-cancelled-badge {
@@ -688,8 +682,8 @@
   border-radius: 999px;
   color: var(--mds-red);
   background: var(--mds-red-fill);
-  font-size: calc(12px * var(--mds-fs));
-  font-weight: 750;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-overview-meta {
@@ -698,7 +692,7 @@
   flex-wrap: wrap;
   gap: 8px;
   color: var(--mds-label-2);
-  font-size: calc(14px * var(--mds-fs));
+  font: var(--mds-type-body);
 }
 
 .mds-recovery-overview-meta i {
@@ -710,7 +704,7 @@
 
 .mds-recovery-overview-meta strong {
   color: var(--mds-yellow);
-  font-weight: 720;
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-overview.is-running .mds-recovery-overview-meta strong {
@@ -740,8 +734,8 @@
   justify-content: space-between;
   gap: 12px;
   color: var(--mds-label);
-  font-size: calc(13px * var(--mds-fs));
-  font-weight: 700;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-briefing-head span {
@@ -758,7 +752,8 @@
   border: 0;
   color: var(--mds-label-3);
   background: transparent;
-  font-size: calc(12px * var(--mds-fs));
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-brief {
@@ -784,17 +779,16 @@
   gap: 6px;
   padding-top: 1px;
   color: var(--mds-label-2);
-  font-size: calc(12px * var(--mds-fs));
-  font-weight: 750;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-request p {
   display: -webkit-box;
   margin: 0;
   overflow: hidden;
-  font-size: calc(14px * var(--mds-fs));
-  font-weight: 560;
-  line-height: 1.42;
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-medium);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
@@ -820,12 +814,13 @@
 }
 
 .mds-recovery-brief-running strong {
-  font-size: calc(14px * var(--mds-fs));
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-brief-running small {
   color: var(--mds-label-3);
-  font-size: calc(12.5px * var(--mds-fs));
+  font: var(--mds-type-footnote);
 }
 
 @keyframes mds-recovery-spin {
@@ -862,20 +857,18 @@
 
 .mds-recovery-outcome-title small,
 .mds-recovery-outcome-facts dt {
-  color: var(--mds-label-3);
-  font-size: calc(11.5px * var(--mds-fs));
-  font-weight: 700;
-  line-height: 1.2;
-  text-transform: uppercase;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
 }
 
 .mds-recovery-outcome-title strong {
   overflow-wrap: anywhere;
   color: var(--mds-label);
-  font-family: var(--mds-serif);
-  font-size: calc(19px * var(--mds-fs));
-  font-weight: 600;
+  font: var(--mds-type-title-2);
+  font-weight: var(--mds-weight-semibold);
   line-height: 1.15;
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-recovery-outcome-facts {
@@ -904,16 +897,14 @@
   margin-top: 3px;
   overflow-wrap: anywhere;
   color: var(--mds-label);
-  font-size: calc(13px * var(--mds-fs));
-  font-weight: 720;
-  line-height: 1.25;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-outcome > p {
   margin: 0;
   color: var(--mds-label-2);
-  font-size: calc(13px * var(--mds-fs));
-  line-height: 1.45;
+  font: var(--mds-type-body);
 }
 
 .mds-recovery-full-response {
@@ -928,8 +919,8 @@
   gap: 10px;
   color: var(--mds-label-2);
   cursor: pointer;
-  font-size: calc(13px * var(--mds-fs));
-  font-weight: 700;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
   list-style: none;
 }
 
@@ -955,8 +946,7 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   color: var(--mds-label);
-  font-size: calc(14px * var(--mds-fs));
-  line-height: 1.6;
+  font: var(--mds-type-body);
 }
 
 .mds-recovery-brief-actions {
@@ -972,8 +962,8 @@
   border-radius: 6px;
   color: var(--mds-label);
   background: var(--mds-blue-fill);
-  font-size: calc(12.5px * var(--mds-fs));
-  font-weight: 720;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-brief-actions button:hover {
@@ -996,7 +986,7 @@
   border-color: var(--mds-control-line);
   color: var(--mds-label-2);
   background: var(--mds-surface);
-  font-size: calc(13px * var(--mds-fs));
+  font: var(--mds-type-body);
 }
 
 .mds-desktop-app.is-experience .mds-chat-composer-wrap.is-recovery .mds-chat-action-chip-icon {
@@ -1024,7 +1014,8 @@
 
   .mds-desktop-app .mds-brand {
     gap: 10px;
-    font-size: calc(26px * var(--mds-fs));
+    font: var(--mds-type-title-1);
+    letter-spacing: var(--mds-tracking-display);
   }
 
   .mds-desktop-app.is-finale {
@@ -1069,13 +1060,11 @@
 
   .mds-desktop-app.is-sidebar-collapsed .mds-brand {
     justify-content: center;
-    font-size: 0;
   }
 
   .mds-desktop-app.is-sidebar-collapsed .mds-nav-item {
     justify-content: center;
     padding: 0;
-    font-size: 0;
   }
 
   .mds-desktop-app.is-sidebar-collapsed .mds-account-mini {
@@ -1101,10 +1090,6 @@
 }
 
 @media (max-width: 760px) {
-  .mds-desktop-app.is-projector {
-    --mds-fs: 1.04;
-  }
-
   .mds-desktop-app .mds-sidebar-head {
     display: block;
     padding-top: 0;
@@ -1122,7 +1107,6 @@
     justify-content: center;
     gap: 0;
     padding: 0;
-    font-size: 0;
   }
 
   .mds-desktop-app:is(.is-discovery, .is-proof, .is-experience) .mds-nav-label {
@@ -1153,7 +1137,8 @@
   .mds-desktop-app.is-proof .mds-brand {
     justify-content: flex-start;
     margin: 0;
-    font-size: calc(22px * var(--mds-fs));
+    font: var(--mds-type-title-1);
+    letter-spacing: var(--mds-tracking-display);
   }
 
   .mds-desktop-app.is-proof .mds-brand-mark {
@@ -1173,7 +1158,6 @@
     display: none;
     justify-content: center;
     padding: 0;
-    font-size: 0;
   }
 
   .mds-desktop-app.is-proof .mds-nav-item:first-child,
@@ -1235,7 +1219,8 @@
   .mds-desktop-app.is-experience .mds-brand {
     justify-content: flex-start;
     margin: 0;
-    font-size: calc(22px * var(--mds-fs));
+    font: var(--mds-type-title-1);
+    letter-spacing: var(--mds-tracking-display);
   }
 
   .mds-desktop-app.is-experience .mds-brand-mark {
@@ -1283,7 +1268,8 @@
 
   .mds-desktop-app.is-experience .mds-status-pill {
     padding-inline: 9px;
-    font-size: calc(10px * var(--mds-fs));
+    font: var(--mds-type-caption);
+    font-weight: var(--mds-weight-medium);
   }
 
   .mds-recovery-overview {
@@ -1291,7 +1277,8 @@
   }
 
   .mds-recovery-overview h1 {
-    font-size: calc(39px * var(--mds-fs));
+    font: var(--mds-type-large-title);
+    letter-spacing: var(--mds-tracking-display);
   }
 
   .mds-desktop-app.is-experience .mds-desktop-right {
@@ -1360,7 +1347,8 @@
   align-items: center;
   gap: 8px;
   color: var(--mds-label);
-  font-size: calc(12.5px * var(--mds-fs));
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-launch-card.is-compact .mds-recovery-timeline-heading > span::before {
@@ -1398,13 +1386,13 @@
 }
 
 .mds-recovery-launch-card.is-compact .mds-recovery-launch-steps strong {
-  font-size: calc(11.5px * var(--mds-fs));
+  font: var(--mds-type-footnote);
 }
 
 .mds-recovery-launch-card.is-compact .mds-recovery-launch-steps small {
   display: -webkit-box;
   overflow: hidden;
-  font-size: calc(10.5px * var(--mds-fs));
+  font: var(--mds-type-caption);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
@@ -1455,8 +1443,8 @@
 
 .mds-mobile-disruption-topline > span {
   color: var(--mds-label);
-  font-size: calc(13.5px * var(--mds-fs));
-  font-weight: 780;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-mobile-disruption-topline > span svg {
@@ -1470,11 +1458,9 @@
   border-radius: 999px;
   color: var(--mds-red);
   background: var(--mds-red-fill);
-  font-size: calc(10.5px * var(--mds-fs));
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
   font-style: normal;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .mds-recovery-launch-card.is-running .mds-mobile-disruption-topline > em {
@@ -1537,33 +1523,25 @@
   grid-row: 1;
   display: block;
   color: var(--mds-label-2);
-  font-size: calc(10.5px * var(--mds-fs));
-  font-weight: 820;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
 }
 
 .mds-mobile-disruption-message h2 {
   margin: 0;
   color: var(--mds-label);
-  font-family: var(--mds-font);
   /* Sits below the page title in the hierarchy. At the full content scale this
      card headline was the largest thing on screen, outranking the H1. */
-  font-size: clamp(
-    calc(21px * var(--mds-fs)),
-    1.9vw,
-    calc(27px * var(--mds-fs))
-  );
-  font-weight: 800;
+  font: var(--mds-type-title-1);
   line-height: 1.02;
+  letter-spacing: var(--mds-tracking-display);
 }
 
 .mds-mobile-disruption-message p {
   max-width: 620px;
   margin: 8px 0 0;
   color: var(--mds-label-2);
-  font-size: calc(14px * var(--mds-fs));
-  line-height: 1.42;
+  font: var(--mds-type-body);
 }
 
 .mds-mobile-disruption-primary {
@@ -1583,11 +1561,12 @@
   border-radius: 11px;
   color: var(--mds-on-action);
   background: var(--mds-action);
-  font-weight: 840;
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-root .mds-mobile-disruption-primary {
-  font-size: 18px;
+  font: var(--mds-type-title-3);
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-mobile-disruption-primary:hover:not(:disabled) {
@@ -1656,23 +1635,21 @@
 }
 
 .mds-mobile-disruption-route small {
-  color: var(--mds-label-3);
-  font-size: calc(10.5px * var(--mds-fs));
-  font-weight: 750;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
 }
 
 .mds-mobile-disruption-route strong {
   color: var(--mds-label);
-  font-size: calc(31px * var(--mds-fs));
-  font-weight: 820;
+  font: var(--mds-type-large-title);
   line-height: 1;
+  letter-spacing: var(--mds-tracking-display);
 }
 
 .mds-mobile-disruption-route em {
   color: var(--mds-label-3);
-  font-size: calc(11px * var(--mds-fs));
+  font: var(--mds-type-footnote);
   font-style: normal;
 }
 
@@ -1699,8 +1676,8 @@
   top: calc(100% + 7px);
   left: 50%;
   color: var(--mds-label-2);
-  font-size: calc(10.5px * var(--mds-fs));
-  font-weight: 720;
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
   transform: translateX(-50%);
   white-space: nowrap;
 }
@@ -1721,14 +1698,13 @@
   border-radius: 999px;
   color: var(--mds-red);
   background: var(--mds-red-fill);
-  font-size: calc(11px * var(--mds-fs));
-  font-weight: 820;
-  text-transform: uppercase;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
 }
 
 .mds-mobile-disruption-status > span {
   color: var(--mds-label-2);
-  font-size: calc(12.5px * var(--mds-fs));
+  font: var(--mds-type-footnote);
 }
 
 .mds-recovery-launch-error {
@@ -1757,14 +1733,14 @@
 
 .mds-recovery-launch-error strong {
   color: var(--mds-label);
-  font-size: calc(12.5px * var(--mds-fs));
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-launch-error small {
   overflow-wrap: anywhere;
   color: var(--mds-red);
-  font-size: calc(10.5px * var(--mds-fs));
-  line-height: 1.35;
+  font: var(--mds-type-caption);
 }
 
 .mds-recovery-launch-card > .mds-decision-route {
@@ -1790,14 +1766,14 @@
 
 .mds-recovery-timeline-heading > span {
   color: var(--mds-label);
-  font-size: calc(12px * var(--mds-fs));
-  font-weight: 760;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-timeline-heading > small {
   color: var(--mds-label-3);
-  font-size: calc(11.5px * var(--mds-fs));
-  font-weight: 650;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
 }
 
 .mds-recovery-launch-steps {
@@ -1889,15 +1865,13 @@
 
 .mds-recovery-launch-steps strong {
   color: var(--mds-label);
-  font-size: calc(11.5px * var(--mds-fs));
-  font-weight: 730;
-  line-height: 1.2;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-launch-steps small {
   color: var(--mds-label-2);
-  font-size: calc(11px * var(--mds-fs));
-  line-height: 1.3;
+  font: var(--mds-type-footnote);
 }
 
 .mds-recovery-launch-steps li.is-pending strong,
@@ -1937,8 +1911,8 @@
   border-radius: 11px;
   color: var(--mds-on-action);
   background: var(--mds-action);
-  font-size: calc(13.5px * var(--mds-fs));
-  font-weight: 800;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-launch-card.is-running .mds-recovery-launch-actions button {
@@ -1952,8 +1926,8 @@
   align-items: center;
   gap: 7px;
   color: var(--mds-label-3);
-  font-size: calc(11px * var(--mds-fs));
-  font-weight: 650;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
 }
 
 .mds-recovery-decision-primary,
@@ -2003,9 +1977,9 @@
   align-items: center;
   gap: 9px;
   color: var(--mds-label);
-  font-size: calc(14.5px * var(--mds-fs));
-  font-weight: 740;
-  letter-spacing: -0.005em;
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-decision-card-kicker > svg {
@@ -2014,7 +1988,7 @@
 
 .mds-recommended-plan-card .mds-decision-card-kicker {
   color: var(--mds-label);
-  font-weight: 800;
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-decision-status {
@@ -2027,10 +2001,8 @@
   border-radius: 999px;
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
-  font-size: calc(10px * var(--mds-fs));
-  font-weight: 780;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-decision-status.is-running {
@@ -2082,9 +2054,9 @@
   border-radius: 999px;
   color: var(--mds-label);
   background: var(--mds-surface);
-  font-size: calc(10px * var(--mds-fs));
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
   font-style: normal;
-  font-weight: 760;
 }
 
 .mds-recommended-plan-title {
@@ -2104,22 +2076,16 @@
 
 .mds-recommended-plan-title small {
   color: var(--mds-label-2);
-  font-size: calc(10.5px * var(--mds-fs));
-  font-weight: 800;
-  text-transform: uppercase;
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recommended-plan-title strong {
   overflow-wrap: anywhere;
   color: var(--mds-label);
-  font-size: clamp(
-    calc(22px * var(--mds-fs)),
-    1.9vw,
-    calc(28px * var(--mds-fs))
-  );
-  font-weight: 780;
-  letter-spacing: -0.02em;
+  font: var(--mds-type-title-1);
   line-height: 1.12;
+  letter-spacing: var(--mds-tracking-display);
 }
 
 .mds-recommended-plan-title p {
@@ -2128,8 +2094,7 @@
   margin: 2px 0 0;
   overflow: hidden;
   color: var(--mds-label-2);
-  font-size: calc(13px * var(--mds-fs));
-  line-height: 1.42;
+  font: var(--mds-type-body);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
@@ -2144,15 +2109,14 @@
 
 .mds-recommended-plan-price small,
 .mds-recommended-plan-price span {
-  font-size: calc(10.5px * var(--mds-fs));
-  text-transform: uppercase;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
 }
 
 .mds-recommended-plan-price b {
   color: var(--mds-label);
-  font-size: calc(24px * var(--mds-fs));
-  font-weight: 800;
-  letter-spacing: -0.01em;
+  font: var(--mds-type-title-1);
+  letter-spacing: var(--mds-tracking-display);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2180,25 +2144,23 @@
 .mds-decision-route b {
   overflow-wrap: anywhere;
   color: var(--mds-label);
-  font-size: calc(24px * var(--mds-fs));
-  font-weight: 800;
-  letter-spacing: -0.01em;
+  font: var(--mds-type-title-1);
   line-height: 1;
+  letter-spacing: var(--mds-tracking-display);
 }
 
 .mds-decision-route small {
   color: var(--mds-label-3);
-  font-size: calc(11px * var(--mds-fs));
+  font: var(--mds-type-footnote);
 }
 
 .mds-decision-route em {
   padding-left: 14px;
   border-left: 1px solid var(--mds-separator);
   color: var(--mds-label-2);
-  font-size: calc(13px * var(--mds-fs));
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
   font-style: normal;
-  font-weight: 700;
-  line-height: 1.25;
 }
 
 .mds-decision-route-line {
@@ -2238,9 +2200,8 @@
   border-radius: 999px;
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
-  font-size: calc(11.5px * var(--mds-fs));
-  font-weight: 650;
-  line-height: 1.25;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
 }
 
 .mds-recommended-plan-signals > span svg {
@@ -2278,14 +2239,15 @@
 
 .mds-recommended-plan-empty strong {
   color: var(--mds-label);
-  font-size: calc(16px * var(--mds-fs));
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-recommended-plan-empty small {
   max-width: 410px;
   color: var(--mds-label-3);
-  font-size: calc(12.5px * var(--mds-fs));
-  line-height: 1.4;
+  font: var(--mds-type-footnote);
 }
 
 .mds-decision-preference-row {
@@ -2300,10 +2262,8 @@
 
 .mds-decision-preference-row > small {
   color: var(--mds-label-3);
-  font-size: calc(10.5px * var(--mds-fs));
-  font-weight: 750;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-decision-preference-row > div {
@@ -2322,8 +2282,8 @@
   border-radius: 999px;
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
-  font-size: calc(11.5px * var(--mds-fs));
-  font-weight: 680;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-decision-preference-row > div > span.is-pending {
@@ -2351,8 +2311,8 @@
   align-items: center;
   gap: 7px;
   color: var(--mds-label);
-  font-size: calc(12.5px * var(--mds-fs));
-  font-weight: 780;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-context-reasons > header svg {
@@ -2360,11 +2320,10 @@
 }
 
 .mds-recovery-context-reasons > header em {
-  color: var(--mds-label-3);
-  font-size: calc(10px * var(--mds-fs));
+  color: var(--mds-label-2);
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
   font-style: normal;
-  font-weight: 700;
-  text-transform: uppercase;
 }
 
 .mds-recovery-context-reasons ul {
@@ -2400,13 +2359,12 @@
 
 .mds-recovery-context-reasons li strong {
   color: var(--mds-label);
-  font-size: calc(11px * var(--mds-fs));
+  font: var(--mds-type-footnote);
 }
 
 .mds-recovery-context-reasons li small {
   color: var(--mds-label-2);
-  font-size: calc(10px * var(--mds-fs));
-  line-height: 1.3;
+  font: var(--mds-type-caption);
 }
 
 .mds-decision-card-actions {
@@ -2425,8 +2383,8 @@
   gap: 9px;
   padding: 0 18px;
   border-radius: 12px;
-  font-size: calc(13.5px * var(--mds-fs));
-  font-weight: 780;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-decision-card-actions .is-primary {
@@ -2440,8 +2398,8 @@
   border: 0;
   color: var(--mds-blue);
   background: transparent;
-  font-size: calc(13px * var(--mds-fs));
-  font-weight: 720;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-decision-card-actions .is-secondary:hover:not(:disabled) {
@@ -2469,15 +2427,15 @@
 
 .mds-recovery-alternatives-head b {
   color: var(--mds-label);
-  font-size: calc(15.5px * var(--mds-fs));
-  font-weight: 750;
-  letter-spacing: -0.005em;
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-recovery-alternatives-head small,
 .mds-recovery-alternatives-head em {
   color: var(--mds-label-3);
-  font-size: calc(11.5px * var(--mds-fs));
+  font: var(--mds-type-footnote);
   font-style: normal;
 }
 
@@ -2512,15 +2470,13 @@
   border-radius: 999px;
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
-  font-size: calc(11px * var(--mds-fs));
-  font-weight: 750;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-flight-option-card > header > small {
   color: var(--mds-label-3);
-  font-size: calc(10.5px * var(--mds-fs));
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font: var(--mds-type-caption);
 }
 
 .mds-flight-option-card-media {
@@ -2556,17 +2512,16 @@
   min-height: 36px;
   overflow: hidden;
   color: var(--mds-label);
-  font-size: calc(16px * var(--mds-fs));
-  font-weight: 760;
-  letter-spacing: -0.01em;
-  line-height: 1.16;
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  letter-spacing: var(--mds-tracking-title);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
 .mds-flight-option-card-title span {
   color: var(--mds-label-3);
-  font-size: calc(11.5px * var(--mds-fs));
+  font: var(--mds-type-footnote);
 }
 
 .mds-decision-route.is-compact {
@@ -2577,7 +2532,10 @@
 }
 
 .mds-decision-route.is-compact b {
-  font-size: calc(15px * var(--mds-fs));
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1;
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-decision-route.is-compact em {
@@ -2585,8 +2543,8 @@
   padding: 8px 0 0;
   border-top: 1px solid var(--mds-separator);
   border-left: 0;
-  font-size: calc(11px * var(--mds-fs));
-  font-weight: 650;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
   color: var(--mds-label-2);
   text-align: center;
 }
@@ -2609,18 +2567,15 @@
 
 .mds-flight-option-card dt {
   color: var(--mds-label-3);
-  font-size: calc(10.5px * var(--mds-fs));
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font: var(--mds-type-caption);
 }
 
 .mds-flight-option-card dd {
   margin-top: 4px;
   overflow-wrap: anywhere;
   color: var(--mds-label);
-  font-size: calc(12px * var(--mds-fs));
-  font-weight: 700;
-  line-height: 1.25;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2637,13 +2592,13 @@
 
 .mds-flight-option-card-empty strong {
   color: var(--mds-label);
-  font-size: calc(13px * var(--mds-fs));
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-flight-option-card-empty span {
   color: var(--mds-label-3);
-  font-size: calc(11px * var(--mds-fs));
-  line-height: 1.35;
+  font: var(--mds-type-footnote);
 }
 
 .mds-flight-option-card > footer {
@@ -2666,8 +2621,8 @@
   border: 1px solid var(--mds-control-line);
   color: var(--mds-label);
   background: var(--mds-surface);
-  font-size: calc(12.5px * var(--mds-fs));
-  font-weight: 760;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-flight-option-card > footer .is-primary:hover:not(:disabled) {
@@ -2695,8 +2650,7 @@
 .mds-concierge-assistance-card > p {
   margin: 0;
   color: var(--mds-label-2);
-  font-size: calc(12px * var(--mds-fs));
-  line-height: 1.42;
+  font: var(--mds-type-footnote);
 }
 
 .mds-concierge-assistance-card > p {
@@ -2749,9 +2703,9 @@
   border-radius: 999px;
   color: var(--mds-label);
   background: var(--mds-surface);
-  font-size: calc(9.5px * var(--mds-fs));
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
   font-style: normal;
-  font-weight: 760;
 }
 
 .mds-concierge-hotel-media > div {
@@ -2765,24 +2719,22 @@
 
 .mds-concierge-hotel-media > div small {
   color: var(--mds-label-2);
-  font-size: calc(10.5px * var(--mds-fs));
-  font-weight: 800;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-concierge-hotel-media > div strong {
   color: var(--mds-label);
-  font-size: calc(17px * var(--mds-fs));
-  font-weight: 760;
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
   line-height: 1.12;
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-concierge-hotel-media > div span {
   overflow: hidden;
   color: var(--mds-label-2);
-  font-size: calc(10.5px * var(--mds-fs));
-  line-height: 1.3;
+  font: var(--mds-type-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2803,8 +2755,8 @@
   border-radius: 999px;
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
-  font-size: calc(10.5px * var(--mds-fs));
-  font-weight: 700;
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-concierge-assistance-actions {
@@ -2820,8 +2772,8 @@
   border-radius: 11px;
   color: var(--mds-label);
   background: var(--mds-blue-fill);
-  font-size: calc(11.5px * var(--mds-fs));
-  font-weight: 760;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-concierge-assistance-actions button.is-primary {
@@ -2832,7 +2784,7 @@
 
 .mds-agent-proof-card > .mds-decision-card-head > small {
   color: var(--mds-label-3);
-  font-size: calc(10px * var(--mds-fs));
+  font: var(--mds-type-caption);
 }
 
 .mds-agent-proof-card ul {
@@ -2889,13 +2841,13 @@
 
 .mds-agent-proof-card li strong {
   color: var(--mds-label);
-  font-size: calc(12.5px * var(--mds-fs));
-  font-weight: 680;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-agent-proof-card li small {
   color: var(--mds-label-3);
-  font-size: calc(10.5px * var(--mds-fs));
+  font: var(--mds-type-caption);
 }
 
 /* Quiet text link, like the reference's "View system proof >". */
@@ -2911,8 +2863,8 @@
   border-radius: 10px;
   color: var(--mds-blue);
   background: transparent;
-  font-size: calc(12.5px * var(--mds-fs));
-  font-weight: 750;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-agent-proof-card > button:hover:not(:disabled) {
@@ -3065,7 +3017,9 @@
   }
 
   .mds-mobile-disruption-route strong {
-    font-size: calc(27px * var(--mds-fs));
+    font: var(--mds-type-title-1);
+    line-height: 1;
+    letter-spacing: var(--mds-tracking-display);
   }
 
   .mds-mobile-disruption-status {
@@ -3150,5 +3104,5 @@
 /* Bring it home: the held package goes back to the concierge for the traveler's confirmation. */
 .mds-recovery-handoff { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 18px; padding:16px 18px; border:0; border-radius:8px; background:var(--mds-surface); }
 .mds-recovery-handoff > div { display:grid; gap:4px; min-width:0; flex:1 1 320px; }
-.mds-recovery-handoff strong { font-size:calc(15px * var(--mds-fs)); color:var(--mds-label); }
-.mds-recovery-handoff span { color:var(--mds-label-2); font-size:calc(13px * var(--mds-fs)); line-height:1.5; }
+.mds-recovery-handoff strong { font: var(--mds-type-title-3); font-weight: var(--mds-weight-bold); letter-spacing: var(--mds-tracking-title); color:var(--mds-label); }
+.mds-recovery-handoff span { color:var(--mds-label-2); font: var(--mds-type-body); }

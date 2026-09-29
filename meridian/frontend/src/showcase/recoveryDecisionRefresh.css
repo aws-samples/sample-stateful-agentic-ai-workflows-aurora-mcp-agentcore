@@ -14,7 +14,7 @@
 
 .mds-recovery-workspace .mds-recovery-overview-title h1 {
   font-family: var(--mds-font);
-  font-weight: 760;
+  font-weight: var(--mds-weight-bold);
   letter-spacing: 0;
 }
 
@@ -43,9 +43,8 @@
 
 .mds-recovery-workspace .mds-decision-card-kicker {
   gap: 7px;
-  font-size: calc(13px * var(--mds-fs));
-  font-weight: 690;
-  letter-spacing: 0;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-workspace
@@ -53,9 +52,8 @@
   min-height: 24px;
   padding: 0 8px;
   border-radius: 5px;
-  font-size: calc(9px * var(--mds-fs));
-  letter-spacing: 0;
-  text-transform: none;
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-workspace .mds-recommended-plan-card {
@@ -75,7 +73,8 @@
   padding: 0 8px;
   border-radius: 5px;
   background: var(--mds-surface);
-  font-size: calc(9px * var(--mds-fs));
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-workspace .mds-recommended-plan-title {
@@ -83,22 +82,15 @@
   padding: 14px 18px;
 }
 
-.mds-recovery-workspace .mds-recommended-plan-title small {
-  color: var(--mds-label-2);
-  font-size: calc(10px * var(--mds-fs));
-  letter-spacing: 0;
-  text-transform: none;
-}
-
 .mds-recovery-workspace .mds-recommended-plan-title strong {
-  font-size: calc(23px * var(--mds-fs));
-  font-weight: 730;
-  letter-spacing: 0;
+  font: var(--mds-type-title-1);
+  line-height: 1.12;
+  letter-spacing: var(--mds-tracking-display);
 }
 
 .mds-recovery-workspace .mds-recommended-plan-price b {
-  font-size: calc(21px * var(--mds-fs));
-  letter-spacing: 0;
+  font: var(--mds-type-title-2);
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-recovery-workspace .mds-decision-route {
@@ -107,8 +99,9 @@
 }
 
 .mds-recovery-workspace .mds-decision-route b {
-  font-size: calc(19px * var(--mds-fs));
-  letter-spacing: 0;
+  font: var(--mds-type-title-2);
+  line-height: 1;
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-recovery-workspace .mds-decision-route-line i {
@@ -129,7 +122,8 @@
   padding: 4px 9px;
   border-radius: 5px;
   background: transparent;
-  font-size: calc(10px * var(--mds-fs));
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-semibold);
 }
 
 .mds-recovery-workspace
@@ -145,12 +139,6 @@
   padding: 11px 0;
 }
 
-.mds-recovery-workspace .mds-decision-preference-row > small {
-  font-size: calc(9.5px * var(--mds-fs));
-  letter-spacing: 0;
-  text-transform: none;
-}
-
 .mds-recovery-workspace
   .mds-decision-preference-row
   > div
@@ -158,19 +146,14 @@
   min-height: 27px;
   padding: 0 9px 0 8px;
   border-radius: 5px;
-  font-size: calc(10px * var(--mds-fs));
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-workspace .mds-recovery-context-reasons {
   gap: 7px;
   margin: 0 18px;
   padding: 11px 0 12px;
-}
-
-.mds-recovery-workspace .mds-recovery-context-reasons > header em {
-  color: var(--mds-label-2);
-  letter-spacing: 0;
-  text-transform: none;
 }
 
 .mds-recovery-workspace .mds-recovery-context-reasons > header svg {
@@ -206,7 +189,7 @@
   min-height: 40px;
   padding: 0 13px;
   border-radius: 6px;
-  font-size: calc(11.5px * var(--mds-fs));
+  font: var(--mds-type-footnote);
   white-space: nowrap;
 }
 
@@ -224,12 +207,13 @@
 
 .mds-recovery-workspace .mds-recovery-alternatives-head b {
   color: var(--mds-label);
-  font-size: calc(13px * var(--mds-fs));
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-workspace .mds-recovery-alternatives-head small,
 .mds-recovery-workspace .mds-recovery-alternatives-head em {
-  font-size: calc(10px * var(--mds-fs));
+  font: var(--mds-type-caption);
 }
 
 .mds-recovery-workspace .mds-recovery-alternative-grid {
@@ -252,7 +236,8 @@
   border-radius: 5px;
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
-  font-size: calc(9px * var(--mds-fs));
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-workspace
@@ -262,11 +247,6 @@
   > span {
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
-}
-
-.mds-recovery-workspace .mds-flight-option-card > header > small {
-  letter-spacing: 0;
-  text-transform: none;
 }
 
 .mds-recovery-workspace .mds-flight-option-card-media {
@@ -280,8 +260,7 @@
 
 .mds-recovery-workspace .mds-flight-option-card-title strong {
   min-height: 31px;
-  font-size: calc(14px * var(--mds-fs));
-  letter-spacing: 0;
+  font: var(--mds-type-body);
 }
 
 .mds-recovery-workspace .mds-decision-route.is-compact {
@@ -290,11 +269,6 @@
 
 .mds-recovery-workspace .mds-flight-option-card dl {
   padding: 9px 12px;
-}
-
-.mds-recovery-workspace .mds-flight-option-card dt {
-  letter-spacing: 0;
-  text-transform: none;
 }
 
 .mds-recovery-workspace .mds-flight-option-card > footer {
@@ -324,11 +298,6 @@
 
 .mds-recovery-workspace .mds-concierge-hotel-media > em {
   border-radius: 4px;
-}
-
-.mds-recovery-workspace .mds-concierge-hotel-media > div small {
-  letter-spacing: 0;
-  text-transform: none;
 }
 
 .mds-recovery-workspace
@@ -486,8 +455,8 @@
 
 .mds-hold-receipt code {
   color: var(--mds-label-2);
+  font: var(--mds-type-caption);
   font-family: var(--mds-font-mono);
-  font-size: calc(10.5px * var(--mds-fs-chrome));
 }
 
 /* The cross-fade wrapper needs a real box - opacity and transform do not apply

@@ -71,3 +71,38 @@
   --mds-scrim: rgb(0 0 0 / 0.32);
   --mds-shadow-float: 0 12px 32px rgb(0 0 0 / 0.14), 0 0 0 1px var(--mds-separator);
 }
+
+:root {
+  --mds-type-scale: 1;
+  --mds-weight-regular: 400;
+  --mds-weight-medium: 500;
+  --mds-weight-semibold: 600;
+  --mds-weight-bold: 700;
+  --mds-tracking-title: -0.01em;
+  --mds-tracking-display: -0.02em;
+}
+
+@media (max-width: 860px) {
+  :root { --mds-type-scale: 0.9; }
+}
+
+.mds-root[data-projector-readability='true'] { --mds-type-scale: 1.1; }
+
+/* SVG text is sized in viewBox units and the drawing already scales with its box, so the
+   diagram keeps the laptop scale. Its nodes are fixed shapes sized to that text. */
+.mds-brief-arch-diagram { --mds-type-scale: 1; }
+
+:root,
+.mds-root,
+.mds-brief-arch-diagram {
+  --mds-font: system-ui, -apple-system, sans-serif;
+  --mds-font-mono: ui-monospace, Menlo, monospace;
+  --mds-type-caption: 400 max(12px, calc(12px * var(--mds-type-scale))) / 1.333 var(--mds-font);
+  --mds-type-footnote: 400 max(12px, calc(13px * var(--mds-type-scale))) / 1.385 var(--mds-font);
+  --mds-type-body: 400 calc(15px * var(--mds-type-scale)) / 1.467 var(--mds-font);
+  --mds-type-headline: 600 calc(15px * var(--mds-type-scale)) / 1.467 var(--mds-font);
+  --mds-type-title-3: 600 calc(18px * var(--mds-type-scale)) / 1.333 var(--mds-font);
+  --mds-type-title-2: 700 calc(22px * var(--mds-type-scale)) / 1.273 var(--mds-font);
+  --mds-type-title-1: 700 calc(28px * var(--mds-type-scale)) / 1.214 var(--mds-font);
+  --mds-type-large-title: 700 calc(36px * var(--mds-type-scale)) / 1.167 var(--mds-font);
+}

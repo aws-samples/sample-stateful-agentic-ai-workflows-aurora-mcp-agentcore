@@ -21,8 +21,6 @@ html,
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
   tab-size: 4;
-  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
-    "Segoe UI Symbol", "Noto Color Emoji";
   font-feature-settings: normal;
   font-variation-settings: normal;
   -webkit-tap-highlight-color: transparent;
@@ -60,27 +58,26 @@ a {
 
 b,
 strong {
-  font-weight: bolder;
+  font-weight: var(--mds-weight-bold);
 }
 
 code,
 kbd,
 samp,
 pre {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
-    "Courier New", monospace;
+  font-family: var(--mds-font-mono);
   font-feature-settings: normal;
   font-variation-settings: normal;
-  font-size: 1em;
+  font-size: inherit;
 }
 
 small {
-  font-size: 80%;
+  font: var(--mds-type-footnote);
 }
 
 sub,
 sup {
-  font-size: 75%;
+  font: var(--mds-type-caption);
   line-height: 0;
   position: relative;
   vertical-align: baseline;
@@ -108,10 +105,9 @@ textarea {
   font-family: inherit;
   font-feature-settings: inherit;
   font-variation-settings: inherit;
-  font-size: 100%;
+  font-size: inherit;
   font-weight: inherit;
   line-height: inherit;
-  letter-spacing: inherit;
   color: inherit;
   margin: 0;
   padding: 0;

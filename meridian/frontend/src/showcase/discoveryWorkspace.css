@@ -66,7 +66,8 @@
   .mds-desktop-app.is-discovery .mds-brand {
     justify-content: flex-start;
     margin: 0;
-    font-size: calc(22px * var(--mds-fs));
+    font: var(--mds-type-title-2);
+    letter-spacing: var(--mds-tracking-title);
   }
 
   .mds-desktop-app.is-discovery .mds-brand-mark {

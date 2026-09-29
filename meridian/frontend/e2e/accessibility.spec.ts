@@ -51,10 +51,11 @@ for (const theme of ['light', 'dark']) for (const width of [1920, 1280, 960, 320
         expect(await page.locator('.mds-shell-surface-nav').evaluate(el => el.scrollWidth <= el.clientWidth), `${view}: clipped surface navigation`).toBe(true);
       }
       if (view === 'briefing' && width > 860) {
-        await expect(page.locator('.mds-brief-head p')).toHaveCSS('font-size', '20px');
+        // Projector readability multiplies the type ramp by 1.1: title-3 18px, body 15px.
+        await expect(page.locator('.mds-brief-head p')).toHaveCSS('font-size', '19.8px');
         await page.getByText('Tool contracts & Cedar policies', { exact: true }).click();
         for (const code of await page.locator('.mds-brief-policy pre').all()) {
-          await expect(code).toHaveCSS('font-size', '18px');
+          await expect(code).toHaveCSS('font-size', '16.5px');
           expect(await code.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
         }
       }

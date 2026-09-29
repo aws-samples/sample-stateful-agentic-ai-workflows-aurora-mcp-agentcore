@@ -31,47 +31,20 @@
   .mds-root[data-audience-layout='true'] .mds-shell-header { gap: 18px; }
 }
 
-/* Keep this a deliberate stage scale, not an automatic 4K enlargement.
-   At 200% zoom the existing narrow layouts take over and text still reflows. */
+/* Type scales through --mds-type-scale (tokens.css). This block only wraps long
+   code and thickens diagram strokes for the room; at 200% zoom the narrow
+   layouts take over. */
 @media (min-width: 861px) {
-  .mds-root[data-projector-readability='true'] :is(
-    .mds-phase-selector button, .mds-phase-hint-copy,
-    .mds-thinking-copy > strong, .mds-thinking-caption,
-    .mds-activity-event-summary, .mds-trace-inspector > summary,
-    .mc-message-author, .mc-trip-location, .mc-trip-meta,
-    .mc-brief-details dt, .mc-brief-details dd, .mc-preferences li,
-    .mds-brief-section-heading p, .mds-brief .mds-brief-note,
-    .mds-brief-step strong, .mds-brief-step span,
-    .mds-brief-phase-evidence, .mds-brief-search-branches strong,
-    .mds-brief-search-branches span, .mds-brief-search-flow p,
-    .mds-brief-search-flow .mds-brief-merge,
-    .mds-brief-arch-delivery, .mds-brief-arch-support p,
-    .mds-brief-architecture figcaption, .mds-brief-retrieval figcaption,
-    .mds-brief-query span, .mds-brief-destination span,
-    .mds-brief-destination p, .mds-brief-footer > p
-  ) { font-size: 18px; line-height: 1.5; }
-
-  .mds-root[data-projector-readability='true'] :is(
-    .mc-message, .mds-message-text, .mds-brief,
-    .mds-brief-head p, .mds-chat-composer textarea
-  ) { font-size: 20px; line-height: 1.6; }
-
   .mds-root[data-projector-readability='true'] :is(
     .mds-trace-inspector pre, .mds-activity-event-detail pre,
     .mds-brief-policy pre
   ) {
-    font-size: 18px;
-    line-height: 1.65;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     tab-size: 2;
-  }
-  .mds-root[data-projector-readability='true'] .mds-brief-policy pre code {
-    font-size: inherit;
   }
   .mds-root[data-projector-readability='true'] .mds-brief-arch-edges { stroke-width: 2.5; }
   .mds-root[data-projector-readability='true'] .mds-brief-arch-node rect {
     stroke-width: 2;
   }
-  .mds-root[data-projector-readability='true'] .mds-brief-arch-label { font-weight: 500; }
 }

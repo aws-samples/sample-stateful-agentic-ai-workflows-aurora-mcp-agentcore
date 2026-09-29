@@ -11,7 +11,6 @@
 ------------------------------------------------------------------------------ */
 
 .mds-proof-surface {
-
   display: flex;
   flex-direction: column;
   gap: clamp(18px, 2.4vw, 30px);
@@ -34,10 +33,9 @@
 
 .mds-proof-head h1 {
   margin: 0;
-  font-size: clamp(30px, 4.2vw, 54px);
-  font-weight: 760;
+  font: var(--mds-type-large-title);
   line-height: 1.06;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--mds-tracking-display);
 }
 
 .mds-proof-head h1 span {
@@ -50,7 +48,7 @@
   justify-items: end;
   gap: 4px;
   color: var(--mds-label-2);
-  font-size: clamp(13px, 1.1vw, 15px);
+  font: var(--mds-type-body);
 }
 
 .mds-proof-head-meta p {
@@ -68,9 +66,8 @@
   border-radius: 999px;
   color: var(--mds-label);
   background: var(--mds-surface);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 650;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
   cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease;
 }
@@ -92,7 +89,9 @@
 .mds-proof-arrow {
   align-self: center;
   color: var(--mds-label-2);
-  font-size: 22px;
+  font: var(--mds-type-title-2);
+  font-weight: var(--mds-weight-regular);
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-proof-worker {
@@ -114,19 +113,18 @@
 
 .mds-proof-worker-role {
   color: var(--mds-label-2);
-  font-size: 13px;
+  font: var(--mds-type-footnote);
 }
 
 .mds-proof-worker-id {
-  font-size: clamp(20px, 2.2vw, 28px);
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font: var(--mds-type-title-1);
+  letter-spacing: var(--mds-tracking-display);
 }
 
 .mds-proof-worker-note,
 .mds-proof-worker-state {
   color: var(--mds-label-2);
-  font-size: 13px;
+  font: var(--mds-type-footnote);
 }
 
 .mds-proof-worker.is-stopped .mds-proof-worker-state {
@@ -153,7 +151,8 @@
   align-items: center;
   gap: 9px;
   color: var(--mds-label);
-  font-size: clamp(15px, 1.5vw, 19px);
+  font: var(--mds-type-title-3);
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-proof-store-rows {
@@ -171,14 +170,14 @@
 
 .mds-proof-store-rows dt {
   color: var(--mds-label-2);
-  font-size: 13px;
+  font: var(--mds-type-footnote);
 }
 
 .mds-proof-store-rows dd {
   margin: 0;
   overflow-wrap: anywhere;
+  font: var(--mds-type-footnote);
   font-family: var(--mds-font-mono);
-  font-size: 13px;
   text-align: right;
 }
 
@@ -190,7 +189,7 @@
   padding-top: 10px;
   border-top: 1px solid var(--mds-separator);
   color: var(--mds-label-2);
-  font-size: 13px;
+  font: var(--mds-type-footnote);
 }
 
 .mds-proof-store-foot.is-good {
@@ -212,9 +211,7 @@
   border: 0;
   color: var(--mds-label-2);
   background: none;
-  font: inherit;
-  font-size: 15px;
-  font-weight: 620;
+  font: var(--mds-type-headline);
   cursor: pointer;
   transition: color 160ms ease;
 }
@@ -299,7 +296,7 @@
 
 .mds-proof-fact-label {
   color: var(--mds-label-2);
-  font-size: 13px;
+  font: var(--mds-type-footnote);
 }
 
 .mds-proof-fact-value {
@@ -307,15 +304,14 @@
      across lines mid-token makes a value that is meant to be read aloud from
      the back of a room unreadable. */
   overflow-wrap: break-word;
-  font-size: clamp(16px, 1.6vw, 20px);
-  font-weight: 640;
+  font: var(--mds-type-title-3);
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-proof-fact-value.is-mono {
   overflow-wrap: anywhere;
+  font: var(--mds-type-body);
   font-family: var(--mds-font-mono);
-  font-size: clamp(13px, 1.15vw, 15px);
-  letter-spacing: -0.01em;
 }
 
 .mds-proof-fact-value.is-good {
@@ -340,19 +336,21 @@
 }
 
 .mds-proof-auth strong {
-  font-size: clamp(16px, 1.6vw, 20px);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-proof-auth p {
   margin: 5px 0 0;
   color: var(--mds-label-2);
-  font-size: 14px;
+  font: var(--mds-type-footnote);
 }
 
 .mds-proof-subject {
   overflow-wrap: anywhere;
+  font: var(--mds-type-caption);
   font-family: var(--mds-font-mono);
-  font-size: 12px;
 }
 
 /* ------------------------------------------------------- empty and footer */
@@ -375,14 +373,14 @@
 .mds-proof-empty h2 {
   margin: 0;
   color: var(--mds-label);
-  font-size: clamp(19px, 2.2vw, 26px);
+  font: var(--mds-type-title-1);
+  letter-spacing: var(--mds-tracking-display);
 }
 
 .mds-proof-empty p {
   max-width: 52ch;
   margin: 0;
-  font-size: 14px;
-  line-height: 1.55;
+  font: var(--mds-type-body);
 }
 
 .mds-proof-foot {
@@ -393,7 +391,7 @@
   padding-top: 14px;
   border-top: 1px solid var(--mds-separator);
   color: var(--mds-label-2);
-  font-size: 12px;
+  font: var(--mds-type-caption);
 }
 
 .mds-proof-read-error {
@@ -401,8 +399,7 @@
   border: 0;
   border-radius: 8px;
   color: var(--mds-label);
-  font-size: 14px;
-  line-height: 1.5;
+  font: var(--mds-type-body);
 }
 
 /* --------------------------------------------------------------- narrow */

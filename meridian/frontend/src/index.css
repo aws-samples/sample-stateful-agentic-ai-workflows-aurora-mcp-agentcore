@@ -22,7 +22,7 @@ body {
   margin: 0;
   background: var(--mds-ground);
   color: var(--mds-label);
-  font-family: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--mds-font);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

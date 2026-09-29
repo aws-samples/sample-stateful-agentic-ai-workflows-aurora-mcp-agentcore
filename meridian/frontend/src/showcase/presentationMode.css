@@ -13,12 +13,12 @@
   border-bottom: 1px solid var(--mds-separator);
   background: var(--mds-ground);
   color: var(--mds-label);
-  font-size: 13px;
+  font: var(--mds-type-footnote);
 }
 .mc-presenter-controls[hidden] { display: none; }
 .mc-presenter-caption { display: grid; gap: 3px; flex-shrink: 0; }
-.mc-presenter-caption strong { display: flex; align-items: center; gap: 8px; font-weight: 550; }
-.mc-presenter-caption > span { color: var(--mds-label-2); font-size: 12px; }
+.mc-presenter-caption strong { display: flex; align-items: center; gap: 8px; font-weight: var(--mds-weight-medium); }
+.mc-presenter-caption > span { color: var(--mds-label-2); font: var(--mds-type-caption); }
 .mc-presenter-actions { display: flex; align-items: center; gap: 12px; }
 .mc-projector-option { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
 .mc-projector-option input { width: 17px; height: 17px; accent-color: var(--mds-tint); }
@@ -51,8 +51,7 @@
   border: 0;
   border-radius: 12px;
   background: var(--mds-surface);
-  font-size: 15px;
-  line-height: 1.6;
+  font: var(--mds-type-body);
 }
 .mc-presenter-error { margin: 0; color: var(--mds-red); background: var(--mds-red-fill); }
 .mc-audience-brand { display: none; }
@@ -88,23 +87,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 23px;
-  font-weight: 550;
-  letter-spacing: -0.035em;
+  font: var(--mds-type-title-2);
+  font-weight: var(--mds-weight-medium);
+  letter-spacing: var(--mds-tracking-title);
   color: var(--mds-label);
 }
-
-/* Readability is opt-in for the preview and enabled by default on stage. */
-.mds-root[data-projector-readability='true'] {
-  --mc-type-scale: 1.3;
-}
-.mds-root[data-projector-readability='true'] :is(
-  .mds-proof-worker-role, .mds-proof-worker-note, .mds-proof-worker-state,
-  .mds-proof-store-rows dt, .mds-proof-store-rows dd, .mds-proof-store-foot,
-  .mds-proof-fact-label, .mds-proof-head-meta, .mds-proof-tab,
-  .mds-continuity-steps li small, .mc-hold-proof-note
-) { font-size: max(18px, calc(14px * var(--mc-type-scale))); }
-.mds-root[data-projector-readability='true'] .mds-proof-foot { font-size: 16px; }
 
 /* Use the extra stage height without putting recovery copy over the aircraft. */
 @media (min-width: 1241px) and (min-height: 950px) {
@@ -132,7 +119,6 @@
   .mds-root[data-audience-layout='true'] .mds-shell-header { display: flex; flex-wrap: nowrap; }
   .mds-root[data-audience-layout='true'] .mc-audience-brand { flex: 0 0 auto; }
   .mds-root[data-audience-layout='true'] .mds-shell-surface-nav { flex: 1; overflow-x: auto; }
-  .mds-root[data-projector-readability='true'] { --mc-type-scale: 1.1; }
 }
 
 /* Keep preparation quiet; disclose secondary settings without shrinking the app. */
@@ -202,34 +188,20 @@
   }
   .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message h2 {
     max-width: 21ch;
-    font-size: clamp(28px, 2.8cqw, 46px);
-    line-height: 1.15;
   }
   .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message p {
     max-width: 46ch;
-    font-size: clamp(18px, 1.5cqw, 20px);
-    line-height: 1.55;
   }
   .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message .mds-mobile-disruption-primary {
     min-height: 52px;
-    font-size: 18px;
   }
   .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps {
     padding: 18px 12px;
-  }
-  .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps strong {
-    font-size: 18px;
-    line-height: 1.35;
   }
   .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps small {
     display: block;
     max-width: 28ch;
     margin-inline: auto;
-    font-size: 16px;
-    line-height: 1.4;
-  }
-  .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) :is(.mds-recovery-timeline-heading > span, .mds-recovery-timeline-heading > small, .mds-recovery-launch-actions > span) {
-    font-size: 16px;
   }
   .mds-root[data-audience-layout='true'] .mds-recovery-launch-card:not(.is-compact) .mds-recovery-timeline-heading { padding-block: 14px 10px; }
 }

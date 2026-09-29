@@ -102,7 +102,8 @@ test('evidence opens to recorded SQL and disappears when the next turn has none'
     await expect(inspector.getByRole('heading', { name: 'SQL', exact: true })).toBeVisible();
     await expect(inspector.locator('pre')).toHaveText('SELECT package_id FROM trip_packages LIMIT 5');
     if (present) {
-      await expect(inspector.locator('pre')).toHaveCSS('font-size', '18px');
+      // Footnote (13px) at the projector's 1.1 type scale.
+      await expect(inspector.locator('pre')).toHaveCSS('font-size', '14.3px');
       expect(await inspector.locator('pre').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     }
     await expect(inspector.getByRole('group', { name: 'Evidence views' })).toHaveCount(0);
