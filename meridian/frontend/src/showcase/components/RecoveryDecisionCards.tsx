@@ -275,18 +275,145 @@ function PackageSummary({
   );
 }
 
-export function RecoveryLaunchCard({
-  stage,
-  steps,
-  live = false,
-  errorDetail = null,
-  disabled = false,
-  compact = false,
-  resumeMode = false,
-  onStart,
-}: RecoveryLaunchCardProps) {
-  const running = stage === 'running';
-  const failed = Boolean(errorDetail);
+/** The canceled flight: route, status, and why the workflow stopped if it did. */
+function DisruptionFlight({ running, failed, errorDetail }: {
+  running: boolean;
+  failed: boolean;
+  errorDetail: string | null;
+}) {
+  return (
+    <div className="mds-mobile-disruption-flight">
+      <div className="mds-mobile-disruption-route">
+        <span>
+          <small>From</small>
+          <strong>JFK</strong>
+          <em>New York</em>
+        </span>
+        <span className="mds-mobile-disruption-route-line">
+          <i />
+          <Circle size={8} fill="currentColor" aria-hidden="true" />
+          <i />
+          <b>Traveler report</b>
+        </span>
+        <span>
+          <small>To</small>
+          <strong>TYO</strong>
+          <em>Tokyo</em>
+        </span>
+      </div>
+
+      <div className="mds-mobile-disruption-status">
+        <strong>Canceled</strong>
+        <span>
+          {failed
+            ? 'The workflow was interrupted. Check System evidence for saved progress.'
+            : running
+              ? 'Meridian is building a checkpointed recovery plan.'
+              : 'Live trip-package options are ready to search.'}
+        </span>
+      </div>
+
+      {failed && (
+        <div className="mds-recovery-launch-error" role="alert">
+          <AlertTriangle size={17} aria-hidden="true" />
+          <span>
+            <strong>
+              Recovery interrupted
+            </strong>
+            <small>{errorDetail}</small>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The traveler's view of the disruption, with the one action that starts recovery. */
+function DisruptionHero({ running, failed, errorDetail, disabled, onStart }: {
+  running: boolean;
+  failed: boolean;
+  errorDetail: string | null;
+  disabled: boolean;
+  onStart: () => void;
+}) {
+  return (
+    <section
+      className="mds-mobile-disruption-card"
+      aria-label="Traveler-reported canceled flight"
+    >
+      <div className="mds-mobile-disruption-topline">
+        <span>Meridian trips</span>
+        <em>
+          {failed ? (
+            <AlertTriangle size={13} aria-hidden="true" />
+          ) : running ? (
+            <Loader2 size={13} aria-hidden="true" />
+          ) : (
+            <AlertTriangle size={13} aria-hidden="true" />
+          )}
+          {failed
+            ? 'Recovery needs attention'
+            : running
+              ? 'Recovery in progress'
+              : 'Action needed'}
+        </em>
+      </div>
+
+      <div className="mds-mobile-disruption-hero">
+        <div className="mds-mobile-disruption-message">
+          <small>Trip update</small>
+          <span aria-hidden="true">
+            <AlertTriangle size={22} />
+          </span>
+          <div>
+            <h2>Let’s get your trip moving again.</h2>
+            <p>
+              Search live alternatives, save the shortlist in Aurora, and
+              resume to verify availability. You decide what happens next.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="mds-mobile-disruption-primary"
+            onClick={onStart}
+            disabled={disabled || running}
+          >
+            {running ? (
+              <Loader2 size={18} aria-hidden="true" />
+            ) : (
+              <Route size={18} aria-hidden="true" />
+            )}
+            {running
+              ? 'Building plan'
+              : failed
+                ? 'Retry recovery'
+                : 'Start recovery'}
+          </button>
+        </div>
+        <figure className="mds-mobile-disruption-media">
+          <img
+            src="/travel/recovery-flight.jpg"
+            alt="Aircraft on final approach"
+            width="1920"
+            height="1168"
+            loading="eager"
+            decoding="async"
+          />
+        </figure>
+
+        <DisruptionFlight running={running} failed={failed} errorDetail={errorDetail} />
+      </div>
+    </section>
+  );
+}
+
+/** The four workflow steps, each moving only when a watched response confirms it. */
+function RecoveryStepList({ steps, live, running, failed }: {
+  steps: RecoveryStepView[];
+  live: boolean;
+  running: boolean;
+  failed: boolean;
+}) {
   // The one emphasis, only when a watched run's response confirms the save.
   const checkpointGlow = useConfirmedLive(
     stepView(steps, 'checkpoint').state === 'is-visited', live,
@@ -295,134 +422,11 @@ export function RecoveryLaunchCard({
   // request is in flight nothing has been confirmed yet, so nothing moves.
   const settles = live && !running;
 
+  // The app's view swap starts with AnimatePresence initial={false}, which
+  // would freeze every cue that mounts later inside the first view it
+  // paints. The steps decide for themselves when to move.
   return (
-    <article
-      className={`mds-decision-card mds-recovery-launch-card is-${stage}${
-        failed ? ' has-error' : ''
-      }${compact ? ' is-compact' : ''}`}
-      aria-label={compact ? 'Live recovery progress' : 'Start travel recovery'}
-    >
-      {!compact && (
-        <section
-          className="mds-mobile-disruption-card"
-          aria-label="Traveler-reported canceled flight"
-        >
-          <div className="mds-mobile-disruption-topline">
-            <span>Meridian trips</span>
-            <em>
-              {failed ? (
-                <AlertTriangle size={13} aria-hidden="true" />
-              ) : running ? (
-                <Loader2 size={13} aria-hidden="true" />
-              ) : (
-                <AlertTriangle size={13} aria-hidden="true" />
-              )}
-              {failed
-                ? 'Recovery needs attention'
-                : running
-                  ? 'Recovery in progress'
-                  : 'Action needed'}
-            </em>
-          </div>
-
-          <div className="mds-mobile-disruption-hero">
-            <div className="mds-mobile-disruption-message">
-              <small>Trip update</small>
-              <span aria-hidden="true">
-                <AlertTriangle size={22} />
-              </span>
-              <div>
-                <h2>Let’s get your trip moving again.</h2>
-                <p>
-                  Search live alternatives, save the shortlist in Aurora, and
-                  resume to verify availability. You decide what happens next.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="mds-mobile-disruption-primary"
-                onClick={onStart}
-                disabled={disabled || running}
-              >
-                {running ? (
-                  <Loader2 size={18} aria-hidden="true" />
-                ) : (
-                  <Route size={18} aria-hidden="true" />
-                )}
-                {running
-                  ? 'Building plan'
-                  : failed
-                    ? 'Retry recovery'
-                    : 'Start recovery'}
-              </button>
-            </div>
-            <figure className="mds-mobile-disruption-media">
-              <img
-                src="/travel/recovery-flight.jpg"
-                alt="Aircraft on final approach"
-                width="1920"
-                height="1168"
-                loading="eager"
-                decoding="async"
-              />
-            </figure>
-
-            <div className="mds-mobile-disruption-flight">
-              <div className="mds-mobile-disruption-route">
-                <span>
-                  <small>From</small>
-                  <strong>JFK</strong>
-                  <em>New York</em>
-                </span>
-                <span className="mds-mobile-disruption-route-line">
-                  <i />
-                  <Circle size={8} fill="currentColor" aria-hidden="true" />
-                  <i />
-                  <b>Traveler report</b>
-                </span>
-                <span>
-                  <small>To</small>
-                  <strong>TYO</strong>
-                  <em>Tokyo</em>
-                </span>
-              </div>
-
-              <div className="mds-mobile-disruption-status">
-                <strong>Canceled</strong>
-                <span>
-                  {failed
-                    ? 'The workflow was interrupted. Check System evidence for saved progress.'
-                    : running
-                      ? 'Meridian is building a checkpointed recovery plan.'
-                      : 'Live trip-package options are ready to search.'}
-                </span>
-              </div>
-
-              {failed && (
-                <div className="mds-recovery-launch-error" role="alert">
-                  <AlertTriangle size={17} aria-hidden="true" />
-                  <span>
-                    <strong>
-                      Recovery interrupted
-                    </strong>
-                    <small>{errorDetail}</small>
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
-
-      <div className="mds-recovery-timeline-heading">
-        <span>{running ? 'Live workflow' : failed ? 'Workflow stopped' : 'Recovery workflow'}</span>
-        <small>{timelineNote(stage, failed, resumeMode, LAUNCH_STEPS.length)}</small>
-      </div>
-
-      {/* The app's view swap starts with AnimatePresence initial={false}, which
-          would freeze every cue that mounts later inside the first view it
-          paints. The steps decide for themselves when to move. */}
-      <PresenceContext.Provider value={null}>
+    <PresenceContext.Provider value={null}>
       <ol
         className={`mds-recovery-launch-steps${
           running ? ' is-running' : failed ? ' is-failed' : ''
@@ -483,7 +487,46 @@ export function RecoveryLaunchCard({
           );
         })}
       </ol>
-      </PresenceContext.Provider>
+    </PresenceContext.Provider>
+  );
+}
+
+export function RecoveryLaunchCard({
+  stage,
+  steps,
+  live = false,
+  errorDetail = null,
+  disabled = false,
+  compact = false,
+  resumeMode = false,
+  onStart,
+}: RecoveryLaunchCardProps) {
+  const running = stage === 'running';
+  const failed = Boolean(errorDetail);
+
+  return (
+    <article
+      className={`mds-decision-card mds-recovery-launch-card is-${stage}${
+        failed ? ' has-error' : ''
+      }${compact ? ' is-compact' : ''}`}
+      aria-label={compact ? 'Live recovery progress' : 'Start travel recovery'}
+    >
+      {!compact && (
+        <DisruptionHero
+          running={running}
+          failed={failed}
+          errorDetail={errorDetail}
+          disabled={disabled}
+          onStart={onStart}
+        />
+      )}
+
+      <div className="mds-recovery-timeline-heading">
+        <span>{running ? 'Live workflow' : failed ? 'Workflow stopped' : 'Recovery workflow'}</span>
+        <small>{timelineNote(stage, failed, resumeMode, LAUNCH_STEPS.length)}</small>
+      </div>
+
+      <RecoveryStepList steps={steps} live={live} running={running} failed={failed} />
 
       {!compact && (
         <footer className="mds-recovery-launch-actions">
