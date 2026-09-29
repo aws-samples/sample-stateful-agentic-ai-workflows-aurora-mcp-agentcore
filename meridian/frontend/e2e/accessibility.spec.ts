@@ -134,11 +134,15 @@ for (const [width, height, connection] of stages) {
       const fold = await page.evaluate(() => ({
         steps: document.querySelector('.mds-recovery-launch-steps')!
           .getBoundingClientRect().bottom,
+        card: document.querySelector('.mds-recovery-launch-card')!
+          .getBoundingClientRect().bottom,
         photo: document.querySelector('.mds-mobile-disruption-media')!
           .getBoundingClientRect().height,
         viewport: innerHeight,
       }));
       expect(fold.steps, `${mode}: workflow row below the fold`).toBeLessThanOrEqual(fold.viewport);
+      // The whole card, down to its no-booking promise, not a row that ends on the edge.
+      expect(fold.card, `${mode}: launch card below the fold`).toBeLessThanOrEqual(fold.viewport);
       expect(fold.photo, `${mode}: photo shrunk away`).toBeGreaterThanOrEqual(200);
     }
   });

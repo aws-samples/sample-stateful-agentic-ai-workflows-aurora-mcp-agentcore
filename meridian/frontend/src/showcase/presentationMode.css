@@ -180,6 +180,7 @@
     max-width: 46ch;
     font: var(--mds-type-body);
     letter-spacing: 0;
+    text-wrap: pretty;
   }
   .mds-root[data-audience-layout='true']
     .mds-mobile-disruption-message .mds-mobile-disruption-primary {
@@ -202,7 +203,9 @@
 }
 
 /* A 720p stage keeps the same story on one screen: the step labels stay and
-   their descriptions give way, and the hero gives up padding, not content. */
+   their descriptions give way, and the hero gives up padding, not content.
+   The message takes more of the row so its title and lead each need fewer
+   lines; the photo keeps the height they leave it. */
 @media (min-width: 1241px) and (max-height: 800px) {
   .mds-root[data-audience-layout='true']
     .mds-desktop-scroll:has(.mds-recovery-launch-card:not(.is-compact)) {
@@ -212,6 +215,14 @@
   .mds-root[data-audience-layout='true']
     .mds-desktop-scroll:has(.mds-recovery-launch-card:not(.is-compact)) .mc-saved-journeys {
     margin-block: 0;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-desktop-scroll:has(.mds-recovery-launch-card:not(.is-compact))
+    .mc-saved-journeys summary {
+    padding-block: 4px;
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-hero {
+    grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
   }
   .mds-root[data-audience-layout='true']
     .mds-recovery-launch-card:not(.is-compact) .mds-mobile-disruption-card {
