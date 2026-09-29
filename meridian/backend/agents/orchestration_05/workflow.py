@@ -1027,7 +1027,6 @@ class OrchestrationAgent:
                     details="No ranked option to hold for this traveler.",
                 )
             )
-            elapsed = int((_utc_now() - start).total_seconds() * 1000)
             activities.append(self._checkpoint_activity("hold"))
             return {"activities": activities}
 
@@ -1101,7 +1100,6 @@ class OrchestrationAgent:
                 reason = outcome.error or "the gateway returned no hold"
             logger.warning("courtesy hold not placed: %s", outcome.raw_error or reason)
             activities.append(self._hold_not_placed(reason, denied=denied, raw=outcome.raw_error))
-            elapsed = int((_utc_now() - start).total_seconds() * 1000)
             activities.append(self._checkpoint_activity("hold"))
             return {"activities": activities}
 
