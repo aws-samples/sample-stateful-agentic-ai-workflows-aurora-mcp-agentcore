@@ -18,7 +18,7 @@
 .mc-presenter-controls[hidden] { display: none; }
 .mc-presenter-caption { display: grid; gap: 3px; flex-shrink: 0; }
 .mc-presenter-caption strong { display: flex; align-items: center; gap: 8px; font-weight: var(--mds-weight-medium); }
-.mc-presenter-caption > span { color: var(--mds-label-2); font: var(--mds-type-caption); }
+.mc-presenter-caption > span { color: var(--mds-label-2); font: var(--mds-type-footnote); }
 .mc-presenter-actions { display: flex; align-items: center; gap: 12px; }
 .mc-projector-option { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
 .mc-projector-option input { width: 17px; height: 17px; accent-color: var(--mds-tint); }

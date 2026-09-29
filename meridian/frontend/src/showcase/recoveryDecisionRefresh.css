@@ -52,7 +52,7 @@
   min-height: 24px;
   padding: 0 8px;
   border-radius: var(--mds-radius-s);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
 }
 
@@ -73,7 +73,7 @@
   padding: 0 8px;
   border-radius: var(--mds-radius-s);
   background: var(--mds-surface);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
 }
 
@@ -122,7 +122,7 @@
   padding: 4px 9px;
   border-radius: var(--mds-radius-s);
   background: transparent;
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-semibold);
 }
 
@@ -146,7 +146,7 @@
   min-height: 27px;
   padding: 0 9px 0 8px;
   border-radius: var(--mds-radius-s);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
 }
 
@@ -213,7 +213,7 @@
 
 .mds-recovery-workspace .mds-recovery-alternatives-head small,
 .mds-recovery-workspace .mds-recovery-alternatives-head em {
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
 }
 
 .mds-recovery-workspace .mds-recovery-alternative-grid {
@@ -236,7 +236,7 @@
   border-radius: var(--mds-radius-s);
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
 }
 
@@ -455,7 +455,7 @@
 
 .mds-hold-receipt code {
   color: var(--mds-label-2);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-family: var(--mds-font-mono);
 }
 

@@ -1392,7 +1392,7 @@
 .mds-recovery-launch-card.is-compact .mds-recovery-launch-steps small {
   display: -webkit-box;
   overflow: hidden;
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
@@ -1747,7 +1747,7 @@
 .mds-recovery-launch-error small {
   overflow-wrap: anywhere;
   color: var(--mds-red);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
 }
 
 .mds-recovery-launch-card > .mds-decision-route {
@@ -2048,7 +2048,7 @@
   border-radius: var(--mds-radius-full);
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
 }
 
@@ -2101,7 +2101,7 @@
   border-radius: var(--mds-radius-full);
   color: var(--mds-label);
   background: var(--mds-surface);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
   font-style: normal;
 }
@@ -2123,7 +2123,7 @@
 
 .mds-recommended-plan-title small {
   color: var(--mds-label-2);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
 }
 
@@ -2309,7 +2309,7 @@
 
 .mds-decision-preference-row > small {
   color: var(--mds-label-3);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
 }
 
@@ -2368,7 +2368,7 @@
 
 .mds-recovery-context-reasons > header em {
   color: var(--mds-label-2);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
   font-style: normal;
 }
@@ -2411,7 +2411,7 @@
 
 .mds-recovery-context-reasons li small {
   color: var(--mds-label-2);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
 }
 
 .mds-decision-card-actions {
@@ -2523,7 +2523,7 @@
 
 .mds-flight-option-card > header > small {
   color: var(--mds-label-3);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
 }
 
 .mds-flight-option-card-media {
@@ -2614,7 +2614,7 @@
 
 .mds-flight-option-card dt {
   color: var(--mds-label-3);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
 }
 
 .mds-flight-option-card dd {
@@ -2750,7 +2750,7 @@
   border-radius: var(--mds-radius-full);
   color: var(--mds-label);
   background: var(--mds-surface);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
   font-style: normal;
 }
@@ -2766,7 +2766,7 @@
 
 .mds-concierge-hotel-media > div small {
   color: var(--mds-label-2);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
 }
 
@@ -2781,7 +2781,7 @@
 .mds-concierge-hotel-media > div span {
   overflow: hidden;
   color: var(--mds-label-2);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2802,7 +2802,7 @@
   border-radius: var(--mds-radius-full);
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-bold);
 }
 
@@ -2831,7 +2831,7 @@
 
 .mds-agent-proof-card > .mds-decision-card-head > small {
   color: var(--mds-label-3);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
 }
 
 .mds-agent-proof-card ul {
@@ -2894,7 +2894,7 @@
 
 .mds-agent-proof-card li small {
   color: var(--mds-label-3);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
 }
 
 /* Quiet text link, like the reference's "View system proof >". */

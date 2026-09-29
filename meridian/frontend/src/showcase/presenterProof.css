@@ -349,7 +349,7 @@
 
 .mds-proof-subject {
   overflow-wrap: anywhere;
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
   font-family: var(--mds-font-mono);
 }
 
@@ -391,7 +391,7 @@
   padding-top: 14px;
   border-top: 1px solid var(--mds-separator);
   color: var(--mds-label-2);
-  font: var(--mds-type-caption);
+  font: var(--mds-type-footnote);
 }
 
 .mds-proof-read-error {
