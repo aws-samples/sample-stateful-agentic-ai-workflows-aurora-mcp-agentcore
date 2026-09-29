@@ -106,3 +106,10 @@
   --mds-type-title-1: 700 calc(28px * var(--mds-type-scale)) / 1.214 var(--mds-font);
   --mds-type-large-title: 700 calc(36px * var(--mds-type-scale)) / 1.167 var(--mds-font);
 }
+
+:root {
+  --mds-radius-s: 6px;
+  --mds-radius-m: 10px;
+  --mds-radius-l: 14px;
+  --mds-radius-full: 999px;
+}

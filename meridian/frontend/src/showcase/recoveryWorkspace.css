@@ -55,7 +55,7 @@
   gap: 11px;
   padding: 0 15px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--mds-radius-m);
   color: var(--mds-label-2);
   background: transparent;
   font: var(--mds-type-headline);
@@ -372,7 +372,7 @@
   place-items: center;
   padding: 0;
   border: 1px solid var(--mds-control-line);
-  border-radius: 7px;
+  border-radius: var(--mds-radius-s);
   color: var(--mds-label-2);
   background: var(--mds-surface);
   box-shadow: none;
@@ -399,7 +399,7 @@
   width: 44px;
   height: 44px;
   display: block;
-  border-radius: 7px;
+  border-radius: var(--mds-radius-s);
   background: transparent;
 }
 
@@ -411,7 +411,7 @@
   min-height: 48px;
   gap: 13px;
   padding: 0 14px 0 17px;
-  border-radius: 8px;
+  border-radius: var(--mds-radius-m);
   font: var(--mds-type-title-3);
   font-weight: var(--mds-weight-medium);
   letter-spacing: var(--mds-tracking-title);
@@ -560,7 +560,7 @@
 .mds-desktop-app.is-experience .mds-surface-switch {
   min-height: 38px;
   padding: 3px;
-  border-radius: 8px;
+  border-radius: var(--mds-radius-m);
   border-color: var(--mds-control-line);
   background: var(--mds-surface-2);
 }
@@ -579,7 +579,7 @@
   gap: 18px;
   padding: 6px 8px 6px 14px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--mds-radius-m);
   background: var(--mds-surface);
 }
 
@@ -609,7 +609,7 @@
   gap: 3px;
   padding: 3px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--mds-radius-m);
   background: var(--mds-surface-2);
 }
 
@@ -617,7 +617,7 @@
   min-height: 32px;
   padding: 0 14px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--mds-radius-s);
   color: var(--mds-label-3);
   background: transparent;
   font: var(--mds-type-footnote);
@@ -679,7 +679,7 @@
   gap: 7px;
   padding: 0 11px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--mds-radius-full);
   color: var(--mds-red);
   background: var(--mds-red-fill);
   font: var(--mds-type-footnote);
@@ -724,7 +724,7 @@
   gap: 12px;
   padding: 14px 16px 16px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--mds-radius-m);
   background: var(--mds-surface);
 }
 
@@ -768,7 +768,7 @@
   gap: 11px;
   padding: 10px 12px;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--mds-radius-s);
   color: var(--mds-label);
   background: var(--mds-surface-2);
 }
@@ -959,7 +959,7 @@
   min-height: 36px;
   padding: 0 13px;
   border: 1px solid var(--mds-blue);
-  border-radius: 6px;
+  border-radius: var(--mds-radius-s);
   color: var(--mds-label);
   background: var(--mds-blue-fill);
   font: var(--mds-type-headline);
@@ -1455,7 +1455,7 @@
   min-height: 29px;
   padding: 0 11px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--mds-radius-full);
   color: var(--mds-red);
   background: var(--mds-red-fill);
   font: var(--mds-type-footnote);
@@ -1495,7 +1495,7 @@
   row-gap: 4px;
   padding: 18px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--mds-radius-l);
   background: var(--mds-surface-2);
 }
 
@@ -1507,7 +1507,7 @@
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--mds-radius-l);
   color: var(--mds-label-2);
   background: var(--mds-surface);
 }
@@ -1558,7 +1558,7 @@
   margin-top: 16px;
   padding-inline: 22px;
   border: 0;
-  border-radius: 11px;
+  border-radius: var(--mds-radius-m);
   color: var(--mds-on-action);
   background: var(--mds-action);
   font-weight: var(--mds-weight-bold);
@@ -1592,7 +1592,7 @@
   margin: 0;
   overflow: hidden;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--mds-radius-m);
   background: var(--mds-surface-2);
 }
 
@@ -1695,7 +1695,7 @@
   align-items: center;
   padding: 0 11px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--mds-radius-full);
   color: var(--mds-red);
   background: var(--mds-red-fill);
   font: var(--mds-type-footnote);
@@ -1716,7 +1716,7 @@
   margin-top: 14px;
   padding: 11px 12px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--mds-radius-m);
   color: var(--mds-red);
   background: var(--mds-red-fill);
 }
@@ -1908,7 +1908,7 @@
   justify-content: center;
   gap: 9px;
   border: 1px solid var(--mds-action);
-  border-radius: 11px;
+  border-radius: var(--mds-radius-m);
   color: var(--mds-on-action);
   background: var(--mds-action);
   font: var(--mds-type-headline);
@@ -1946,7 +1946,7 @@
   min-width: 0;
   overflow: hidden;
   border: 0;
-  border-radius: 16px;
+  border-radius: var(--mds-radius-l);
   color: var(--mds-label);
   font-family: var(--mds-font);
   background: var(--mds-surface);
@@ -1998,7 +1998,7 @@
   gap: 6px;
   padding: 0 11px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--mds-radius-full);
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
   font: var(--mds-type-caption);
@@ -2033,7 +2033,7 @@
   height: 168px;
   overflow: hidden;
   margin: 8px 18px 0;
-  border-radius: 11px;
+  border-radius: var(--mds-radius-m);
   background: var(--mds-surface-2);
 }
 
@@ -2051,7 +2051,7 @@
   align-items: center;
   padding: 0 10px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--mds-radius-full);
   color: var(--mds-label);
   background: var(--mds-surface);
   font: var(--mds-type-caption);
@@ -2197,7 +2197,7 @@
   gap: 7px;
   padding: 5px 13px 5px 11px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--mds-radius-full);
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
   font: var(--mds-type-footnote);
@@ -2279,7 +2279,7 @@
   gap: 6px;
   padding: 0 12px 0 10px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--mds-radius-full);
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
   font: var(--mds-type-footnote);
@@ -2342,7 +2342,7 @@
   gap: 7px;
   padding: 9px 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--mds-radius-m);
   background: var(--mds-surface-2);
 }
 
@@ -2382,7 +2382,7 @@
   justify-content: center;
   gap: 9px;
   padding: 0 18px;
-  border-radius: 12px;
+  border-radius: var(--mds-radius-l);
   font: var(--mds-type-headline);
   font-weight: var(--mds-weight-bold);
 }
@@ -2467,7 +2467,7 @@
   align-items: center;
   padding: 0 12px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--mds-radius-full);
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
   font: var(--mds-type-footnote);
@@ -2613,7 +2613,7 @@
 
 .mds-flight-option-card > footer button {
   min-height: 40px;
-  border-radius: 10px;
+  border-radius: var(--mds-radius-m);
   transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
 }
 
@@ -2669,7 +2669,7 @@
   overflow: hidden;
   margin: 8px 14px 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--mds-radius-m);
   background: var(--mds-surface-2);
 }
 
@@ -2700,7 +2700,7 @@
   align-items: center;
   padding: 0 9px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--mds-radius-full);
   color: var(--mds-label);
   background: var(--mds-surface);
   font: var(--mds-type-caption);
@@ -2752,7 +2752,7 @@
   align-items: center;
   padding: 0 11px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--mds-radius-full);
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
   font: var(--mds-type-caption);
@@ -2769,7 +2769,7 @@
 .mds-concierge-assistance-actions button {
   min-height: 42px;
   border: 1px solid var(--mds-blue);
-  border-radius: 11px;
+  border-radius: var(--mds-radius-m);
   color: var(--mds-label);
   background: var(--mds-blue-fill);
   font: var(--mds-type-footnote);
@@ -2860,7 +2860,7 @@
   margin: 2px 6px 8px;
   padding: 0 12px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--mds-radius-m);
   color: var(--mds-blue);
   background: transparent;
   font: var(--mds-type-headline);
@@ -3121,7 +3121,7 @@
 }
 
 /* Bring it home: the held package goes back to the concierge for the traveler's confirmation. */
-.mds-recovery-handoff { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 18px; padding:16px 18px; border:0; border-radius:8px; background:var(--mds-surface); }
+.mds-recovery-handoff { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 18px; padding:16px 18px; border:0; border-radius:var(--mds-radius-m); background:var(--mds-surface); }
 .mds-recovery-handoff > div { display:grid; gap:4px; min-width:0; flex:1 1 320px; }
 .mds-recovery-handoff strong { font: var(--mds-type-title-3); font-weight: var(--mds-weight-bold); letter-spacing: var(--mds-tracking-title); color:var(--mds-label); }
 .mds-recovery-handoff span { color:var(--mds-label-2); font: var(--mds-type-body); }

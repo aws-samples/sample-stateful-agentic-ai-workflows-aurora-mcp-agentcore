@@ -61,7 +61,7 @@ textarea {
 .route-skeleton-copy i {
   display: block;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: var(--mds-radius-m);
   background: var(--mds-skeleton);
 }
 

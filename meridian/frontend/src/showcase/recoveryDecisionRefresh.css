@@ -19,7 +19,7 @@
 }
 
 .mds-recovery-workspace .mds-recovery-cancelled-badge {
-  border-radius: 5px;
+  border-radius: var(--mds-radius-s);
 }
 
 .mds-recovery-workspace .mds-recovery-decision-system {
@@ -32,7 +32,7 @@
 }
 
 .mds-recovery-workspace .mds-decision-card {
-  border-radius: 8px;
+  border-radius: var(--mds-radius-m);
   background: var(--mds-surface);
 }
 
@@ -51,7 +51,7 @@
   :is(.mds-decision-status, .mds-checkpoint-badge) {
   min-height: 24px;
   padding: 0 8px;
-  border-radius: 5px;
+  border-radius: var(--mds-radius-s);
   font: var(--mds-type-caption);
   font-weight: var(--mds-weight-bold);
 }
@@ -63,7 +63,7 @@
 .mds-recovery-workspace .mds-recommended-plan-media {
   height: 142px;
   margin: 8px 16px 0;
-  border-radius: 6px;
+  border-radius: var(--mds-radius-s);
 }
 
 .mds-recovery-workspace .mds-recommended-plan-media > em {
@@ -71,7 +71,7 @@
   right: 9px;
   min-height: 24px;
   padding: 0 8px;
-  border-radius: 5px;
+  border-radius: var(--mds-radius-s);
   background: var(--mds-surface);
   font: var(--mds-type-caption);
   font-weight: var(--mds-weight-bold);
@@ -120,7 +120,7 @@
 .mds-recovery-workspace .mds-recommended-plan-signals > span {
   min-height: 29px;
   padding: 4px 9px;
-  border-radius: 5px;
+  border-radius: var(--mds-radius-s);
   background: transparent;
   font: var(--mds-type-caption);
   font-weight: var(--mds-weight-semibold);
@@ -145,7 +145,7 @@
   > span {
   min-height: 27px;
   padding: 0 9px 0 8px;
-  border-radius: 5px;
+  border-radius: var(--mds-radius-s);
   font: var(--mds-type-caption);
   font-weight: var(--mds-weight-bold);
 }
@@ -188,7 +188,7 @@
 .mds-recovery-workspace .mds-decision-card-actions button {
   min-height: 40px;
   padding: 0 13px;
-  border-radius: 6px;
+  border-radius: var(--mds-radius-s);
   font: var(--mds-type-footnote);
   white-space: nowrap;
 }
@@ -233,7 +233,7 @@
 .mds-recovery-workspace .mds-flight-option-card > header > span {
   min-height: 24px;
   padding: 0 8px;
-  border-radius: 5px;
+  border-radius: var(--mds-radius-s);
   color: var(--mds-label-2);
   background: var(--mds-surface-2);
   font: var(--mds-type-caption);
@@ -278,7 +278,7 @@
 
 .mds-recovery-workspace .mds-flight-option-card > footer button {
   min-height: 36px;
-  border-radius: 6px;
+  border-radius: var(--mds-radius-s);
 }
 
 .mds-recovery-workspace
@@ -293,11 +293,11 @@
 .mds-recovery-workspace .mds-concierge-hotel-media {
   min-height: 118px;
   margin: 7px 12px 0;
-  border-radius: 6px;
+  border-radius: var(--mds-radius-s);
 }
 
 .mds-recovery-workspace .mds-concierge-hotel-media > em {
-  border-radius: 4px;
+  border-radius: var(--mds-radius-s);
 }
 
 .mds-recovery-workspace
@@ -318,7 +318,7 @@
 }
 
 .mds-recovery-workspace .mds-agent-proof-card > button {
-  border-radius: 5px;
+  border-radius: var(--mds-radius-s);
 }
 
 /* Status text, including restored journeys. */
@@ -445,7 +445,7 @@
   margin: 10px 0 2px;
   padding: 8px 10px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--mds-radius-m);
   background: var(--mds-green-fill);
 }
 

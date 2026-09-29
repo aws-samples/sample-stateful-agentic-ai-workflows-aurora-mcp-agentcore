@@ -49,7 +49,7 @@
 .mds-brief-phases li::marker { color:var(--mds-label-2); }
 .mds-brief-phases p,.mds-brief-policy p { margin-top:6px; }
 .mds-brief-policy { min-width:0; padding-top:16px; border-top:1px solid var(--mds-separator); }
-.mds-brief-policy pre { white-space:pre-wrap; overflow-wrap:anywhere; padding:16px; margin:14px 0 0; background:var(--mds-surface); border-radius:6px; font:var(--mds-type-body); font-family:var(--mds-font-mono); }
+.mds-brief-policy pre { white-space:pre-wrap; overflow-wrap:anywhere; padding:16px; margin:14px 0 0; background:var(--mds-surface); border-radius:var(--mds-radius-s); font:var(--mds-type-body); font-family:var(--mds-font-mono); }
 .mds-brief-tools { display:grid; gap:18px; margin:0; }
 .mds-brief-tools>div { min-width:0; }
 .mds-brief-tools dt { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; font-weight:var(--mds-weight-medium); }

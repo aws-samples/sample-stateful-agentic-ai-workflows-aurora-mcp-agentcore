@@ -16,7 +16,7 @@
   gap: clamp(18px, 2.4vw, 30px);
   padding: clamp(22px, 3vw, 40px);
   border: 0;
-  border-radius: 18px;
+  border-radius: var(--mds-radius-l);
   color: var(--mds-label);
   background: var(--mds-ground);
 }
@@ -63,7 +63,7 @@
   min-height: 36px;
   padding: 0 14px;
   border: 1px solid var(--mds-control-line);
-  border-radius: 999px;
+  border-radius: var(--mds-radius-full);
   color: var(--mds-label);
   background: var(--mds-surface);
   font: var(--mds-type-footnote);
@@ -100,7 +100,7 @@
   align-content: start;
   padding: clamp(16px, 1.7vw, 22px);
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--mds-radius-l);
 }
 
 .mds-proof-worker-glyph {
@@ -142,7 +142,7 @@
   gap: 12px;
   padding: clamp(16px, 1.7vw, 22px);
   border: 0;
-  border-radius: 14px;
+  border-radius: var(--mds-radius-l);
   background: var(--mds-surface);
 }
 
@@ -230,7 +230,7 @@
   inset-inline: 0;
   bottom: -1px;
   height: 2px;
-  border-radius: 2px;
+  border-radius: var(--mds-radius-s);
   background: var(--mds-tint);
 }
 
@@ -367,7 +367,7 @@
 
 /* At this size the tile's 3px default radius reads as a hard square. */
 .mds-proof-empty .mds-service-mark {
-  border-radius: 12px;
+  border-radius: var(--mds-radius-l);
 }
 
 .mds-proof-empty h2 {
@@ -397,7 +397,7 @@
 .mds-proof-read-error {
   padding: 12px 16px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--mds-radius-m);
   color: var(--mds-label);
   font: var(--mds-type-body);
 }
