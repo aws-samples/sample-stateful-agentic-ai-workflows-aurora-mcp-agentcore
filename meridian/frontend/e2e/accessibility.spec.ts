@@ -148,6 +148,98 @@ for (const [width, height, connection] of stages) {
   });
 }
 
+// The paused recovery the decision dashboard renders from, as the live backend returns it.
+const pausedRecovery = {
+  message: 'Workflow paused after a committed checkpoint.',
+  workflow_status: 'paused',
+  products: ['TYO-001', 'TYO-002', 'TYO-003', 'TYO-004'].map((id, index) => ({
+    product_id: id, name: `Tokyo option ${index + 1}`, brand: 'Meridian partner',
+    price: 1900 + index * 300, category: 'City & Culture', destination: 'Tokyo', region: 'Asia',
+    description: 'Fixture package.', image_url: '/travel/catalog/TYO-001.jpg',
+    available_sizes: ['5 nights', '7 nights'], availability: { '5 nights': 3 },
+  })),
+  activities: [
+    ['Workflow node: classify → plan', 'LangGraph StateGraph', 0, []],
+    ['Workflow node: search', 'LangGraph → SearchAgent', 956, []],
+    ['Checkpoint · AuroraDataApiSaver.put', 'Aurora · LangGraph checkpoint tables', 458,
+      [{ label: 'checkpoint_durable', value: 'true' }]],
+  ].map(([title, component, ms, fields], index) => ({
+    id: `paused-${index}`, timestamp: '2026-09-28T18:00:00Z', activity_type: 'tool_call', title,
+    execution_time_ms: ms,
+    telemetry: { category: 'orchestration', component, status: 'ok', fields },
+  })),
+};
+
+/** Visible text below the footnote step, and presenter controls under 32px. */
+async function projectorLegibility(page: import('@playwright/test').Page) {
+  return page.evaluate(() => {
+    const root = document.querySelector('.mds-root')!;
+    const probe = document.createElement('span');
+    probe.style.font = 'var(--mds-type-footnote)';
+    root.appendChild(probe);
+    const footnote = parseFloat(getComputedStyle(probe).fontSize);
+    probe.remove();
+    const shown = (el: Element) => {
+      const box = el.getBoundingClientRect();
+      if (box.width < 1 || box.height < 1) return false;
+      for (let node: Element | null = el; node; node = node.parentElement) {
+        const css = getComputedStyle(node);
+        if (css.visibility === 'hidden' || Number(css.opacity) === 0) return false;
+        if (node.getAttribute('aria-hidden') === 'true') return false;
+      }
+      return true;
+    };
+    const name = (el: Element) => `${el.tagName.toLowerCase()}.${el.className} `
+      + `"${(el.textContent ?? '').trim().slice(0, 40)}"`;
+    const small = Array.from(root.querySelectorAll('*'))
+      .filter(el => !el.closest('svg') && Array.from(el.childNodes)
+        .some(node => node.nodeType === Node.TEXT_NODE && node.textContent!.trim()))
+      .filter(el => shown(el) && parseFloat(getComputedStyle(el).fontSize) < footnote - 0.05)
+      .map(el => `${name(el)} ${getComputedStyle(el).fontSize}`);
+    // Links inside running text are exempt, as WCAG 2.5.8 exempts inline targets.
+    const tiny = Array.from(root.querySelectorAll(
+      'button, a[href], summary, [role="switch"], [role="tab"]',
+    ))
+      .filter(el => shown(el) && !el.closest('p'))
+      .filter(el => {
+        const box = el.getBoundingClientRect();
+        return box.width < 32 || box.height < 32;
+      })
+      .map(el => {
+        const box = el.getBoundingClientRect();
+        return `${name(el)} ${Math.round(box.width)}x${Math.round(box.height)}`;
+      });
+    return { small, tiny };
+  });
+}
+
+for (const theme of ['dark', 'light']) {
+  const title = `${theme} projector: meaningful text reaches the footnote step,`
+    + ' controls reach 32px';
+  test(title, async ({ page }) => {
+    await mockLiveCatalog(page);
+    await page.route(url => url.pathname === '/api/chat', route => route.fulfill({ json: {
+      ...pausedRecovery, conversation_id: route.request().postDataJSON().conversation_id,
+    } }));
+    for (const [width, height] of [[1920, 1080], [1280, 720]]) {
+      await page.setViewportSize({ width, height });
+      for (const view of views) {
+        await page.goto(`/showcase?present=1&view=${view}&theme=${theme}`);
+        await expect(page.locator('.mds-status-pill')).toContainText('Meridian live');
+        const found = await projectorLegibility(page);
+        expect(found.small, `${view} at ${width}: text below footnote`).toEqual([]);
+        expect(found.tiny, `${view} at ${width}: controls under 32px`).toEqual([]);
+      }
+      await page.goto(`/showcase?present=1&view=recovery&theme=${theme}`);
+      await page.getByRole('button', { name: 'Start recovery' }).click();
+      await expect(page.locator('.mds-recovery-decision-system')).toBeVisible();
+      const found = await projectorLegibility(page);
+      expect(found.small, `paused recovery at ${width}: text below footnote`).toEqual([]);
+      expect(found.tiny, `paused recovery at ${width}: controls under 32px`).toEqual([]);
+    }
+  });
+}
+
 for (const theme of ['light', 'dark']) for (const present of [false, true]) {
   test(`${theme} ${present ? 'projector' : 'desktop'}: blue actions, focus and secondary text keep contrast`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
