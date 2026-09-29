@@ -150,6 +150,31 @@ for (const theme of ['light', 'dark']) for (const present of [false, true]) {
   });
 }
 
+for (const theme of ['light', 'dark']) {
+  test(`${theme}: headings focused from code draw no ring while keyboard focus keeps one`, async ({ page }) => {
+    const outline = (selector: string) => page.locator(selector).evaluate(el => {
+      const css = getComputedStyle(el);
+      return { style: css.outlineStyle, width: parseFloat(css.outlineWidth) };
+    });
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto(`/showcase?present=1&view=recovery&theme=${theme}`);
+    const title = page.getByRole('heading', { name: "Alex's JFK to Tokyo recovery" });
+    await expect(title).toBeFocused();
+    expect((await outline('.mds-recovery-overview-title h1')).style).toBe('none');
+    await page.keyboard.press('Tab');
+    const summary = page.locator('.mc-trip-context > summary');
+    await expect(summary).toBeFocused();
+    const ring = await outline('.mc-trip-context > summary');
+    expect(ring.style).toBe('solid');
+    expect(ring.width).toBeGreaterThanOrEqual(2);
+
+    await page.goto(`/showcase?present=1&view=proof&theme=${theme}`);
+    await page.getByRole('button', { name: 'Session takeaways' }).click();
+    await expect(page.locator('.mc-session-close h1')).toBeFocused();
+    expect((await outline('.mc-session-close h1')).style).toBe('none');
+  });
+}
+
 test('dark room link overrides a saved light theme while explicit light and fullscreen remain available', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('meridian.theme', 'light'));
   await page.goto('/showcase?present=1&view=briefing');

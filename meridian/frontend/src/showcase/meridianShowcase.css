@@ -6,6 +6,13 @@
   text-rendering: geometricPrecision;
 }
 
+/* Headings and dialogs take focus from code so a screen reader announces them.
+   They are not controls, so they draw no ring for a mouse or clicker user.
+   Interactive controls keep their :focus-visible rings. */
+.mds-root :is(h1, h2, h3, h4, h5, h6, [role='dialog'])[tabindex='-1']:focus {
+  outline: none;
+}
+
 /* Animated theme flip — a ~220ms cross-fade on the properties that change
    between light and dark, so the swap reads as a smooth transition rather
    than an instant pop. Scoped to the common skinnable surfaces (not "*",

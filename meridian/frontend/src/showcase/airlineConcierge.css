@@ -592,7 +592,6 @@
 /* A deliberate close, with space for the room's next conversation. */
 .mds-root .mc-session-close { display: flex; flex-direction: column; gap: 24px; min-height: calc(100dvh - var(--mds-controls-height) - 150px); width: min(1280px, 100%); margin: 0 auto; padding: clamp(16px, 4vh, 48px) clamp(0px, 3vw, 42px) 0; }
 .mds-root .mc-session-close h1 { white-space: pre-line; margin: 0; font: var(--mds-type-large-title); font-weight: var(--mds-weight-medium); line-height: 1.08; letter-spacing: var(--mds-tracking-display); }
-.mds-root .mc-session-close h1:focus { outline: none; }
 .mds-root .mc-session-lead { max-width: 52ch; margin: 24px 0 0; font: var(--mds-type-title-2); font-weight: var(--mds-weight-regular); letter-spacing: var(--mds-tracking-title); color: var(--mds-label-2); }
 .mds-root .mc-session-patterns { margin: 24px 0; }
 .mds-root .mc-session-patterns > div { display: grid; grid-template-columns: minmax(200px, 0.8fr) minmax(0, 1.5fr); gap: 24px; padding: 16px 0; border-top: 1px solid var(--mds-separator); }
