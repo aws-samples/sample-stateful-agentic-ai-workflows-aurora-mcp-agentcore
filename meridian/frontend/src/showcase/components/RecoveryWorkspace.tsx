@@ -6,7 +6,7 @@ import {
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { ChatComposer } from './ChatComposer';
 import type { AdoptableHold, MeridianShowcaseState } from '../hooks/useMeridianShowcase';
-import { SHOWCASE_FINALE_PROMPT } from '../lib/showcaseAdapters';
+import { SHOWCASE_FINALE_PROMPT, type ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 import {
   deriveRecoveryEvidence,
   deriveRecoveryStage,
@@ -15,7 +15,6 @@ import {
   type RecoveryStage,
   type RecoveryStepView,
 } from '../lib/recoveryState';
-import type { ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 import type { Product } from '../../types';
 import { deriveWorkflowState } from '../lib/showcaseProof';
 import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
