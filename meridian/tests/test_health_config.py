@@ -28,7 +28,13 @@ def test_bedrock_model_label_names_only_the_polish_chain(model_id, label):
     assert bedrock_model_label(model_id) == label
 
 
-def test_health_includes_model_fields():
+def test_health_includes_model_fields(monkeypatch):
+    from backend import health_probe
+
+    async def fake_probe():
+        return health_probe.AuroraProbeResult(ok=True)
+
+    monkeypatch.setattr(health_probe, "probe_aurora", fake_probe)
     res = TestClient(app).get("/api/health")
     assert res.status_code == 200
     body = res.json()
@@ -36,6 +42,42 @@ def test_health_includes_model_fields():
     assert "bedrock_model_label" in body
     assert "embedding_model_id" in body
     assert body["bedrock_model_label"]
+
+
+def test_health_reports_healthy_when_aurora_probe_passes(monkeypatch):
+    from backend import health_probe
+
+    async def fake_probe():
+        return health_probe.AuroraProbeResult(ok=True)
+
+    monkeypatch.setattr(health_probe, "probe_aurora", fake_probe)
+    body = TestClient(app).get("/api/health").json()
+
+    assert body["status"] == "healthy"
+    assert body["aurora_reachable"] is True
+    assert body["degraded_component"] is None
+    assert body["degraded_error_class"] is None
+
+
+def test_health_reports_degraded_with_component_and_error_class_when_aurora_is_down(monkeypatch):
+    from backend import health_probe
+
+    async def fake_probe():
+        return health_probe.AuroraProbeResult(ok=False, error_class="ExpiredTokenException")
+
+    monkeypatch.setattr(health_probe, "probe_aurora", fake_probe)
+    res = TestClient(app).get("/api/health")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "degraded"
+    assert body["aurora_reachable"] is False
+    assert body["degraded_component"] == "aurora"
+    assert body["degraded_error_class"] == "ExpiredTokenException"
+    # Existing fields callers already read must still be present.
+    assert body["checkpoint_backend"]
+    assert "checkpoint_durable" in body
+    assert "checkpoint_required" in body
 
 
 def test_cors_origins_accepts_explicit_allowlist():
