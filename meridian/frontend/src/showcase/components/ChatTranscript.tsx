@@ -249,7 +249,10 @@ function ChatMessage({
 
   return (
     <div className={wrapperClass}>
-      <div className="mds-message-role">{message.role === 'user' ? 'You' : <><ConciergeBell size={16} aria-hidden="true" />Meridian</>}</div>
+      <div className="mds-message-role">{message.role === 'user' ? 'You' : <>
+        <ConciergeBell size={16} aria-hidden="true" />Meridian
+        {message.modelLabel && <span className="mds-message-model">· {message.modelLabel}</span>}
+      </>}</div>
       {!isEmptyStream && (
         <div className={bubbleClass}>
           {message.role === 'bot' ? (

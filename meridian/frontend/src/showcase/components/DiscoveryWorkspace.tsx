@@ -1,59 +1,13 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { AlertTriangle, ArrowRight, Check, Clock3, Compass, Heart, MapPin, X } from 'lucide-react';
+import {
+  AlertTriangle, ArrowRight, Check, Clock3, Compass, Heart, MapPin, RefreshCw, X,
+} from 'lucide-react';
 import { ShowcaseMarkdown } from './ChatTranscript';
 import { ConciergeBell } from '../icons/TravelIcons';
 import type { Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { tripVisualPhoto } from '../lib/tripVisualPhoto';
 import { derivePersonalization } from '../lib/discoveryPersonalization';
-
-const CATALOG_PREVIEW: Product[] = [
-  {
-    product_id: 'WEL-005',
-    name: 'Tuscany Wine & Wellness',
-    brand: 'Trafalgar',
-    price: 3699,
-    description:
-      'Villa stay, vineyard tours, cooking class, and an optional truffle-season add-on.',
-    image_url: '/travel/catalog/WEL-005.jpg',
-    category: 'Wellness & Luxury',
-    destination: 'Chianti',
-    region: 'Europe',
-    available_sizes: ['6 nights', '8 nights'],
-    availability: { '6 nights': 5, '8 nights': 3 },
-    highlights: ['vineyard tours', 'cooking class'],
-  },
-  {
-    product_id: 'TKY-003',
-    name: 'Tokyo Executive Stopover',
-    brand: 'JAL Premium',
-    price: 1949,
-    description:
-      'A Marunouchi stay with Haneda lounge access, car service, late checkout, and a quiet floor.',
-    image_url: '/travel/catalog/TKY-003.jpg',
-    category: 'Business Travel',
-    destination: 'Tokyo',
-    region: 'Asia-Pacific',
-    available_sizes: ['2 nights', '3 nights', '4 nights'],
-    availability: { '2 nights': 14, '3 nights': 11, '4 nights': 8 },
-    highlights: ['lounge access', 'car service', 'quiet floor'],
-  },
-  {
-    product_id: 'CTY-002',
-    name: 'Tokyo Culture & Cuisine',
-    brand: 'ANA Holidays',
-    price: 2499,
-    description:
-      'A Shibuya base with a Tsukiji breakfast tour, teamLab, Hakone, and a rail pass.',
-    image_url: '/travel/catalog/CTY-002.jpg',
-    category: 'City Breaks',
-    destination: 'Tokyo',
-    region: 'Asia-Pacific',
-    available_sizes: ['5 nights', '7 nights'],
-    availability: { '5 nights': 10, '7 nights': 7 },
-    highlights: ['rail pass', 'kaiseki dinner'],
-  },
-];
 
 function money(value: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
@@ -101,6 +55,25 @@ function TripCard({ product, state, featured = false }: {
   );
 }
 
+// The opening screen has never had invented inventory: the pool below is
+// always either the live recommendations from a chat turn, or the live
+// Aurora catalog. When that catalog hasn't resolved yet, failed, or came
+// back empty, the three blocks after the collection section say so instead
+// of standing in a fabricated card.
+function CatalogSkeleton() {
+  return (
+    <section className="mc-collection" aria-label="Travel inspiration">
+      <div className="mc-section-heading"><h2>A little inspiration for your next chapter</h2></div>
+      <div className="mc-trip-skeleton is-featured" role="status" aria-live="polite"
+        aria-label="Loading the live catalog" />
+      <div className="mc-supporting-trips" aria-hidden="true">
+        <div className="mc-trip-skeleton" />
+        <div className="mc-trip-skeleton" />
+      </div>
+    </section>
+  );
+}
+
 export function DiscoveryWorkspace({ state, onClear, greeting, onDiscover }: {
   state: MeridianShowcaseState;
   onClear: () => void;
@@ -108,8 +81,14 @@ export function DiscoveryWorkspace({ state, onClear, greeting, onDiscover }: {
   onDiscover?: () => void;
 }) {
   const hasTurn = state.messages.length > 0;
-  // A zero-result search stays empty. Bundled inspiration is only for the opening.
-  const pool = hasTurn ? state.recommendations : state.catalog.length ? state.catalog : CATALOG_PREVIEW;
+  // Pre-turn, the pool is exactly the live Aurora catalog - never a bundled
+  // preview. A zero-result search (post-turn) also stays empty on purpose.
+  const pool = hasTurn ? state.recommendations : state.catalog;
+  const catalogLoading = !hasTurn && state.catalog.length === 0
+    && (state.backendStatus === 'checking' || state.connectionRefreshing);
+  const catalogFailed = !hasTurn && !catalogLoading && state.catalog.length === 0
+    && state.backendStatus === 'offline';
+  const catalogEmpty = !hasTurn && !catalogLoading && !catalogFailed && state.catalog.length === 0;
   const options = useMemo(() => {
     if (hasTurn) return pool.slice(0, 3);
     const profile = state.travelerProfile ?? state.previewProfile;
@@ -133,7 +112,10 @@ export function DiscoveryWorkspace({ state, onClear, greeting, onDiscover }: {
 
       <ol className="mc-conversation" aria-label="Conversation with Meridian">
         {state.messages.map((message, index) => <li key={`${index}-${message.role}`} className={`mc-message is-${message.role}`}>
-          <span className="mc-message-author">{message.role === 'user' ? 'You' : <><ConciergeBell size={16} />Meridian</>}</span>
+          <span className="mc-message-author">{message.role === 'user' ? 'You' : <>
+            <ConciergeBell size={16} />Meridian
+            {message.modelLabel && <span className="mc-message-model">· {message.modelLabel}</span>}
+          </>}</span>
           {message.role === 'user' ? <p>{message.text}</p> : <ShowcaseMarkdown source={message.text} />}
         </li>)}
       </ol>
@@ -141,13 +123,27 @@ export function DiscoveryWorkspace({ state, onClear, greeting, onDiscover }: {
       {state.error && <div className="mc-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><strong>A request needs attention.</strong><p>{state.error}</p></div>
         <button type="button" onClick={state.clearError} disabled={state.isLoading}><X size={15} />Dismiss</button></div>}
 
-      {!state.isLoading && !state.error && options.length > 0 && <section className="mc-collection" aria-label={hasTurn ? 'Your trip recommendations' : 'Travel inspiration'}>
+      {!hasTurn && catalogLoading && <CatalogSkeleton />}
+      {!hasTurn && catalogFailed && <div className="mc-error" role="alert">
+        <AlertTriangle size={19} aria-hidden="true" />
+        <div><strong>The live catalog is unavailable.</strong>
+          <p>{state.connectionIssue ?? 'Meridian could not load the live catalog.'}</p></div>
+        <button type="button" onClick={() => void state.refreshConnection()} disabled={state.connectionRefreshing}>
+          <RefreshCw size={15} aria-hidden="true" />Check again
+        </button>
+      </div>}
+      {!hasTurn && catalogEmpty && <div className="mc-empty-results"><Compass size={24} aria-hidden="true" />
+        <div><strong>Nothing in the collection right now.</strong>
+          <p>Aurora returned no trips. Check back soon, or start a search below.</p></div></div>}
+
+      {!state.isLoading && !state.error && !catalogLoading && !catalogFailed && !catalogEmpty
+        && options.length > 0 && <section className="mc-collection" aria-label={hasTurn ? 'Your trip recommendations' : 'Travel inspiration'}>
         <div className="mc-section-heading"><h2>{hasTurn ? 'Worth a closer look' : 'A little inspiration for your next chapter'}</h2>
           {onDiscover && <button type="button" className="mc-text-button" onClick={onDiscover}>Explore more<ArrowRight size={15} aria-hidden="true" /></button>}
         </div>
         <TripCard product={options[0]} state={state} featured />
         <div className="mc-supporting-trips">{options.slice(1).map(product => <TripCard key={product.product_id} product={product} state={state} />)}</div>
-        <p className="mc-catalog-note">{hasTurn || state.catalog.length ? 'Meridian collection' : 'A preview of the Meridian collection'}<span>·</span>USD per traveler. Dates and availability confirmed when you plan.</p>
+        <p className="mc-catalog-note">Meridian collection<span>·</span>USD per traveler. Dates and availability confirmed when you plan.</p>
       </section>}
       {hasTurn && !state.isLoading && !state.error && options.length === 0 && <div className="mc-empty-results"><Compass size={24} aria-hidden="true" /><div><strong>A different direction?</strong><p>Try another destination or a wider budget to find more options.</p></div></div>}
       <div ref={endRef} />

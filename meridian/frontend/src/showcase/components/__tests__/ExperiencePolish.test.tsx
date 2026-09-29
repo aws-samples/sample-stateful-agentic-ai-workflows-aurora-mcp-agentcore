@@ -1134,9 +1134,23 @@ describe('Concierge travel states', () => {
 
   it('reflects saved state and allows removing the same trip', () => {
     const saveTrip = vi.fn();
-    const state = makeState({ saveTrip, savedTripIds: new Set(['WEL-005']), travelerProfile: null });
+    const liveCatalog = [{
+      product_id: 'WEL-005',
+      name: 'Wellness Retreat Fixture',
+      brand: 'Fixture Tours',
+      price: 3699,
+      description: 'A live catalog row used only in this test.',
+      image_url: '/travel/catalog/WEL-005.jpg',
+      category: 'Wellness & Luxury',
+    }];
+    const state = makeState({
+      saveTrip,
+      catalog: liveCatalog,
+      savedTripIds: new Set(['WEL-005']),
+      travelerProfile: null,
+    });
     render(<DiscoveryWorkspace state={state} greeting="morning" onClear={vi.fn()} />);
-    const button = screen.getByRole('button', { name: 'Unsave Tuscany Wine & Wellness' });
+    const button = screen.getByRole('button', { name: 'Unsave Wellness Retreat Fixture' });
     expect(button).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(button);
     expect(saveTrip).toHaveBeenCalledWith(expect.objectContaining({ product_id: 'WEL-005' }));

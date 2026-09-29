@@ -682,6 +682,11 @@
   text-align: right;
 }
 
+.mds-message-model {
+  margin-left: 4px;
+  font-weight: var(--mds-weight-regular);
+}
+
 .mds-message-bubble {
   padding: 13px 16px;
   border: 0;

@@ -109,6 +109,15 @@
 .mds-root .mc-supporting-trips .mc-trip-copy > p { display: none; }
 .mds-root .mc-supporting-trips .mc-trip-copy footer { flex-wrap: wrap; }
 .mds-root .mc-catalog-note { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; color: var(--mds-label-2); font: var(--mds-type-caption); }
+.mds-root .mc-trip-skeleton { border-radius: 12px; min-height: 160px; background: var(--mds-skeleton); }
+.mds-root .mc-trip-skeleton.is-featured { min-height: 252px; }
+@media (prefers-reduced-motion: no-preference) {
+  .mds-root .mc-trip-skeleton {
+    background: var(--mds-skeleton-sweep);
+    background-size: 220% 100%;
+    animation: route-skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+}
 .mds-root .mc-conversation { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 28px; }
 .mds-root .mc-message { min-width: 0; font: var(--mds-type-title-3); font-weight: var(--mds-weight-regular); letter-spacing: var(--mds-tracking-title); padding-bottom: 8px; }
 .mds-root .mc-message.is-bot { width: 100%; }
@@ -117,6 +126,7 @@
 .mds-root .mc-message.is-user p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .mds-root .mc-message.is-user { padding: 12px 18px; background: var(--mds-surface); border-radius: 16px; align-self: flex-end; max-width: min(680px, 85%); }
 .mds-root .mc-message-author { display: flex; align-items: center; gap: 8px; font: var(--mds-type-footnote); font-weight: var(--mds-weight-semibold); color: var(--mds-label-2); }
+.mds-root .mc-message-model { font-weight: var(--mds-weight-regular); }
 .mds-root .mc-conversation:not(:empty) { margin-bottom: 26px; }
 .mds-root .mc-loading, .mds-root .mc-empty-results { display: flex; align-items: center; gap: 13px; padding: 20px 0; color: var(--mds-label-2); font: var(--mds-type-title-3); font-weight: var(--mds-weight-regular); letter-spacing: var(--mds-tracking-title); }
 .mds-root .mc-empty-results strong { color: var(--mds-label); }

@@ -78,9 +78,46 @@ function contrastRatio(a: string, b: string): number {
   return (values[0] + .05) / (values[1] + .05);
 }
 
+// The featured trip card only renders from a live catalog fetch - the
+// showcase has no bundled preview inventory to fall back to (see
+// DiscoveryWorkspace.tsx). This suite otherwise runs every API call
+// offline (beforeEach above), so this one test overrides that with a
+// realistic successful catalog response to exercise the real card the
+// contrast checks below target, the same way a live backend would.
+async function mockLiveCatalog(page: import('@playwright/test').Page) {
+  await page.route('**/api/products**', route => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({
+      products: [{
+        product_id: 'TST-001', name: 'Fixture Wine Country Retreat', brand: 'Fixture Tours',
+        price: 2500, description: 'A fixture trip used only to exercise the contrast check.',
+        image_url: '/travel/catalog/TST-001.jpg', category: 'Wellness & Luxury',
+        destination: 'Testville', region: 'Test Region',
+        available_sizes: ['5 nights'], availability: { '5 nights': 4 }, highlights: ['fixture'],
+      }],
+      total: 1,
+    }),
+  }));
+  await page.route('**/api/health', route => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({
+      status: 'healthy', version: '1.0.0', environment: 'development',
+      bedrock_model_id: 'global.anthropic.claude-sonnet-5', bedrock_model_label: 'Claude Sonnet 5',
+      embedding_model_id: 'cohere.embed-v4:0', checkpoint_backend: 'AuroraDataApiSaver',
+      checkpoint_durable: true, checkpoint_required: true, aurora_reachable: true,
+      degraded_component: null, degraded_error_class: null,
+    }),
+  }));
+  await page.route('**/api/memory/**', route => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify({
+      traveler_id: 'trv_meridian_demo', facts: [], profile: null,
+      budget_ceiling_per_traveler_cents: null,
+    }),
+  }));
+}
+
 for (const theme of ['light', 'dark']) for (const present of [false, true]) {
   test(`${theme} ${present ? 'projector' : 'desktop'}: blue actions, focus and secondary text keep contrast`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
+    await mockLiveCatalog(page);
     await page.goto(`/showcase?view=concierge&theme=${theme}${present ? '&present=1' : ''}`);
     const action = page.locator('.mc-trip.is-featured .mc-trip-open');
     await expect(action).toBeVisible();

@@ -165,6 +165,9 @@ export interface ChatResponse {
   memory_facts?: LongTermMemoryFact[];
   workflow_status?: 'paused' | 'resumed' | 'complete';
   workflow_resumed_after_restart?: boolean;
+  /** The Bedrock model that actually wrote `message` (may be a fallback).
+   *  Absent when the reply is a pure tool result with no model involved. */
+  model_label?: string | null;
 }
 
 export interface LoyaltyProgram {
@@ -201,6 +204,9 @@ export interface Message {
   products?: Product[];
   order?: Order;
   follow_ups?: string[];
+  /** The model that wrote this bot reply. Undefined on user messages and on
+   *  bot replies that are a pure tool result - never shown as a badge then. */
+  modelLabel?: string;
 }
 
 // Alias for backward compatibility
