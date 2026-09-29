@@ -14,12 +14,6 @@
   border: 1px solid var(--mds-action);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .mds-root[data-theme='dark'] .mds-live-state:not(.is-offline)::before {
-    animation: mds-pulse 1s ease-in-out infinite;
-  }
-}
-
 .mds-root[data-projector-readability='true'] .mds-theme-toggle {
   width: 44px;
   height: 44px;

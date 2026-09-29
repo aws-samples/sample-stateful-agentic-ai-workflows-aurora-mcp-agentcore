@@ -303,6 +303,25 @@ test('dark room preset also applies while the showcase bundle is loading', async
   await expect(page.locator('.mds-root')).toHaveAttribute('data-theme', 'dark');
 });
 
+for (const theme of ['dark', 'light']) {
+  test(`${theme}: idle live views run no looping motion with full motion allowed`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await mockLiveCatalog(page);
+    for (const view of views) {
+      await page.goto(`/showcase?present=1&view=${view}&theme=${theme}`);
+      await expect(page.locator('.mds-status-pill')).toContainText('Meridian live');
+      // Only work in progress may loop; an idle, connected stage holds still.
+      await expect.poll(() => page.evaluate(() => document.getAnimations()
+        .filter(animation => animation.playState === 'running')
+        .map(animation => {
+          const target = (animation.effect as KeyframeEffect | null)?.target as Element | null;
+          return `${(animation as CSSAnimation).animationName} on ${target?.className ?? '?'}`;
+        })), { message: view }).toEqual([]);
+    }
+  });
+}
+
 test('reduced-motion preference can change without reloading the page', async ({ page }) => {
   await page.goto('/showcase?view=concierge');
   await page.emulateMedia({ reducedMotion: 'no-preference' });

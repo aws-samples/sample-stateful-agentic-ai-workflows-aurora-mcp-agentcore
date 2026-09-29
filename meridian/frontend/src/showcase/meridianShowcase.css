@@ -553,7 +553,8 @@
   padding-bottom: 16px;
 }
 
-/* Live status pill (right) with a pulsing dot. */
+/* Live status pill (right). The dot holds still while connected and pulses
+   only while a connection check is in progress. */
 .mds-status-pill {
   display: inline-flex;
   align-items: center;
@@ -571,9 +572,6 @@
   height: 7px;
   border-radius: 50%;
   background: var(--mds-green);
-}
-.mds-status-pill.is-live .mds-status-dot {
-  animation: mds-status-pulse 2.4s ease-in-out infinite;
 }
 .mds-status-pill.is-off .mds-status-dot {
   background: var(--mds-red);
@@ -594,7 +592,6 @@
   50% { opacity: 0.45; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .mds-status-pill.is-live .mds-status-dot { animation: none; }
   .mds-status-pill.is-checking .mds-status-dot { animation: none; }
 }
 
