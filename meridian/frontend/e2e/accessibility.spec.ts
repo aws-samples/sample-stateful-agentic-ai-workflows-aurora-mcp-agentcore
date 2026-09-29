@@ -189,6 +189,8 @@ test('offline notice is one content-height strip in every surface', async ({ pag
       const notice = page.locator('.mc-connection-notice');
       await expect(notice).toHaveAttribute('role', 'status');
       await expect(notice.getByRole('button', { name: 'Reconnect' })).toBeVisible();
+      // True whether or not anything ever loaded: the catalog has no stand-in trips.
+      await expect(notice).toContainText('Only data from the last successful load is shown.');
       await expect(notice).not.toContainText('preview');
       const box = await notice.evaluate(el => ({
         height: el.getBoundingClientRect().height,
