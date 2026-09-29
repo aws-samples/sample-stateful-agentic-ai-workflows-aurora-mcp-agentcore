@@ -116,8 +116,6 @@ const CLASSIFY_NODE = /^Workflow node: classify/;
 const SEARCH_NODE = /^Workflow node: search$/;
 const VERIFY_NODE = /^Workflow node: availability/;
 const CHECKPOINT = /^Checkpoint · /;
-// A paused workflow proves the first three steps ran, even with no span to read.
-const CONFIRMED_SERVICES = ['LangGraph', 'Bedrock + Aurora', 'Aurora Data API'];
 
 const isStepBoundary = (span: ShowcaseTraceSpan) =>
   /^Workflow node:/.test(span.name) || CHECKPOINT.test(span.name);
@@ -172,10 +170,12 @@ export function deriveRecoverySteps(
     checkpointSource(spans), nodeSource(spans, VERIFY_NODE),
   ];
   if (stage === 'running') {
+    // A paused workflow proves understanding and search ran. Only a durable
+    // checkpoint span proves the Aurora save, and verification is under way.
     return [
-      ...sources.slice(0, 3).map((source, index) => ({
-        state: 'is-visited' as const, source: source ?? CONFIRMED_SERVICES[index],
-      })),
+      { state: 'is-visited', source: sources[0] },
+      { state: 'is-visited', source: sources[1] },
+      sources[2] ? { state: 'is-visited', source: sources[2] } : pending(),
       { state: 'is-current', source: null },
     ];
   }

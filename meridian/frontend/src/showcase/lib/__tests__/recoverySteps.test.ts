@@ -81,11 +81,20 @@ describe('deriveRecoverySteps', () => {
     expect(steps[3].source).toBeNull();
   });
 
-  it('names the service alone for a confirmed step with no recorded span', () => {
+  it('names no service it did not read from a span while resuming', () => {
     const steps = deriveRecoverySteps([], 'running', { resumeMode: true, failed: false });
-    expect(steps.slice(0, 3).map(step => step.source))
-      .toEqual(['LangGraph', 'Bedrock + Aurora', 'Aurora Data API']);
-    expect(steps.slice(0, 3).some(step => /\d/.test(step.source ?? ''))).toBe(false);
+    expect(steps.map(step => step.state))
+      .toEqual(['is-visited', 'is-visited', 'is-pending', 'is-current']);
+    expect(steps.every(step => step.source === null)).toBe(true);
+  });
+
+  it('does not claim an Aurora checkpoint for an in-process one while resuming', () => {
+    const inProcess = paused.map(item => (item.name.startsWith('Checkpoint')
+      ? { ...item, fields: [{ label: 'checkpoint_durable', value: 'false' }] }
+      : item));
+    const steps = deriveRecoverySteps(inProcess, 'running', { resumeMode: true, failed: false });
+    expect(steps[2]).toEqual({ state: 'is-pending', source: null });
+    expect(steps[1].source).toBe('Bedrock + Aurora · 956 ms');
   });
 
   it('marks nothing complete after a failure or before the traveler starts', () => {
