@@ -169,7 +169,7 @@ The showcase has five views, selected along the top of the page.
    | Phase | Works here | Hand-off |
    | --- | --- | --- |
    | SQL | `Show me city trips under $2,000 per traveler.`<br>`Show me beach trips under $2,500 per traveler.` | `Compare three trip types and convert each price to euros.` |
-   | MCP | `Compare three trip types and convert each price to euros.`<br>`What is the off-season price range for Tokyo trips in November?` | `Find a quiet, romantic wine-country retreat with a private villa.` |
+   | MCP | `Compare three trip types and convert each price to euros.`<br>`What is the price range for Tokyo trips?` | `Find a quiet, romantic wine-country retreat with a private villa.` |
    | Retrieval | `Find a quiet, romantic wine-country retreat with a private villa.`<br>`Which trip lengths are still available for Tuscany Wine & Wellness?` | `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` |
    | Production (turn on **Use traveler context** first) | `Find Tokyo trips that fit my saved preferences.`<br>`Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` |
    | Workflow | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`<br>`Which trip lengths are still available for Amalfi Coast Villa Week?` | `Resume workflow from checkpoint` |
