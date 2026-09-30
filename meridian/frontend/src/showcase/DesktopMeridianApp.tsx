@@ -483,7 +483,7 @@ export function DesktopMeridianApp({
             <>
             <PresenterProof
               document={journey.document}
-              loading={journey.loading}
+              loading={journey.loading || (state.selectedPhase === 5 && state.isLoading)}
               error={journey.error}
               onRefresh={journey.refresh}
               onOpenRecovery={() => setView('recovery')}

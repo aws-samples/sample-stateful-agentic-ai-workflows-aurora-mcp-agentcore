@@ -376,6 +376,26 @@ describe('Experience presentation polish', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows System evidence as loading, not empty, while a recovery run is in flight', () => {
+    window.history.replaceState(null, '', '/showcase?view=proof');
+    render(
+      <DesktopMeridianApp
+        state={makeState({
+          selectedPhase: 5,
+          phaseLabel: 'Workflow',
+          conversationId: 'phase5-thread',
+          lastPrompt: SHOWCASE_FINALE_PROMPT,
+          isLoading: true,
+        })}
+        theme="dark"
+        onToggleTheme={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('No recovery selected')).not.toBeInTheDocument();
+    expect(screen.getByText('Reading the journey from Aurora…')).toBeInTheDocument();
+  });
+
   it('keeps Experience customer-facing with exactly two prompt examples', () => {
     const state = makeState();
     const firstPrompt = SHOWCASE_EXAMPLE_PROMPTS[1][0];
