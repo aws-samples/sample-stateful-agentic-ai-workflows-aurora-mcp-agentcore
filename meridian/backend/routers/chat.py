@@ -859,7 +859,7 @@ async def _concierge_mcp_turn(
             domain_text = (
                 "I recognized this as a domain-tool query but couldn't pick a "
                 "matching meridian-concierge tool. Try keywords like 'compare', "
-                "'in EUR', 'cheapest month', 'inventory', or 'loyalty'."
+                "'in EUR', 'price range', 'inventory', or 'loyalty'."
             )
     except Exception as exc:
         err_msg = str(exc)[:200] or repr(exc)
@@ -1213,9 +1213,8 @@ async def _polish_and_record(
 ) -> tuple[str, Optional[str]]:
     """Polish a reply and append the matching success/failure span.
 
-    Phases 3, 4 and 5 all end a turn the same way: run the Bedrock rewrite,
-    record whether it succeeded, and fall back to the deterministic reply if it
-    did not. Keeping that in one place stops the three call sites drifting.
+    Phase 3 ends a turn this way: run the Bedrock rewrite, record whether it
+    succeeded, and fall back to the deterministic reply if it did not.
 
     Returns:
         (message, model_label). `model_label` names whichever model in the
