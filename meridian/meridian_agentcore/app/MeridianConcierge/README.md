@@ -15,7 +15,22 @@ server-sent events.
 | `hold_execution.py` | Runs the hold or confirmation the traveler confirmed, through the gateway, before the model writes its reply |
 | `gateway_auth.py` | SigV4 signing for MCP requests to the gateway with the runtime's execution role |
 | `prompts.py` | System, turn and narration prompts |
-| `model/load.py` | Bedrock model client (`BEDROCK_MODEL_ID`, default `global.anthropic.claude-sonnet-5`) |
+| `model/load.py` | Bedrock model client (`BEDROCK_MODEL_ID`, default `global.anthropic.claude-haiku-4-5-20251001-v1:0`) |
+
+## Model and latency
+
+The managed concierge defaults to Claude Haiku 4.5 with a 4,096-token output
+budget. Local teaching agents keep their separately configured Sonnet model.
+To change the managed model, edit `BEDROCK_MODEL_ID` in the AgentCore template,
+render the project configuration, then redeploy. Changing only the backend's
+`.env` does not change the managed Runtime. Optional reasoning models retain a
+16,000-token budget because thinking and tool generation share that limit.
+
+Search results stream as they arrive from Gateway. The backend forwards only
+package IDs for provisional cards; the browser resolves these against its live
+Aurora catalog. Unrecognized IDs are not displayed. Final hydration, memory
+persistence and the completed response remain authoritative. Card actions stay
+disabled while the turn is running.
 
 ## Payload
 

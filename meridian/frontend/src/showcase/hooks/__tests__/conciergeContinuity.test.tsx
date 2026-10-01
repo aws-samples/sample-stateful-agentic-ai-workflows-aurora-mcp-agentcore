@@ -385,3 +385,26 @@ it('marks interrupted text incomplete and ignores late events from an abandoned 
   act(() => { result.current.clearChat(); emit({ type: 'delta', text: 'Late text' }); });
   expect(result.current.messages).toEqual([]);
 });
+
+
+it('previews only live catalog matches and discards them on interruption', async () => {
+  const trip = { product_id: 'CTY-002', name: 'Tokyo', brand: 'Meridian', price: 1000, description: '', image_url: '/travel/tokyo.jpg', category: 'City' };
+  vi.mocked(fetchProducts).mockResolvedValue([trip]);
+  let emit!: NonNullable<Parameters<typeof sendChatMessage>[2]>;
+  vi.mocked(sendChatMessage).mockImplementationOnce((_request, _signal, onEvent) => {
+    emit = onEvent!;
+    return new Promise(() => {});
+  });
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.catalog).toHaveLength(1));
+  await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+  let pending!: Promise<void>;
+  act(() => { pending = result.current.submitPrompt('Plan Tokyo', 4); });
+  act(() => { emit({ type: 'candidates', package_ids: ['CTY-002', 'invented'] }); });
+  expect(result.current.streamingRecommendations).toEqual([trip]);
+  expect(result.current.recommendations).toEqual([]);
+  await act(async () => { result.current.stopWaiting(); await pending; });
+  expect(result.current.streamingRecommendations).toEqual([]);
+  act(() => { result.current.clearChat(); emit({ type: 'candidates', package_ids: ['CTY-002'] }); });
+  expect(result.current.streamingRecommendations).toEqual([]);
+});

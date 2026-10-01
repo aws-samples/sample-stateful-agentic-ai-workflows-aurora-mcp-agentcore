@@ -42,3 +42,13 @@ describe('live concierge stream', () => {
     await expect(readChatStream(new Response('<html>proxy</html>'), vi.fn())).rejects.toThrow('live stream');
   });
 });
+
+
+it('delivers candidate IDs without accepting malformed payloads as cards', async () => {
+  const onEvent = vi.fn();
+  await readChatStream(response([encoder.encode(
+    frame({ type: 'candidates', package_ids: ['CTY-002', 'CTY-002'] })
+    + frame({ type: 'candidates', package_ids: [42] }) + frame(complete),
+  )]), onEvent);
+  expect(onEvent).toHaveBeenCalledExactlyOnceWith({ type: 'candidates', package_ids: ['CTY-002'] });
+});

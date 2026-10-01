@@ -2,7 +2,8 @@ import type { ChatResponse } from '../types';
 
 export type ChatStreamEvent =
   | { type: 'delta' | 'status'; text: string }
-  | { type: 'conversation'; conversation_id: string };
+  | { type: 'conversation'; conversation_id: string }
+  | { type: 'candidates'; package_ids: string[] };
 
 /** Read real server events; a closed connection is not a completed answer. */
 export async function readChatStream(
@@ -48,6 +49,10 @@ export async function readChatStream(
           }
           if ((event.type === 'delta' || event.type === 'status') && typeof event.text === 'string') onEvent(event);
           else if (event.type === 'conversation' && typeof event.conversation_id === 'string') onEvent(event);
+          else if (event.type === 'candidates' && Array.isArray(event.package_ids)
+            && event.package_ids.length <= 20 && event.package_ids.every((id: unknown) => typeof id === 'string')) {
+            onEvent({ type: 'candidates', package_ids: [...new Set<string>(event.package_ids)] });
+          }
         }
       }
       if (done) throw new Error('The response was interrupted before it finished. Check the connection before trying again.');

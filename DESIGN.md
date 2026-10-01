@@ -241,6 +241,15 @@ The shared header uses text tabs with medium-weight body labels, a tint underlin
 
 Native `details` elements share the `solution-briefing` name for exclusive expansion. Number, heading, supporting sentence and chevron are one operable summary. Summaries retain visible keyboard focus and a minimum `44px` target; deeper reference summaries use `56px`. The diagram is an explanation of the system, not live transaction proof.
 
+### Content appearance
+
+Main-view and capability changes fade in over 220ms without an exit wait or
+vertical motion. Destination, ladder-result and recovery cards, plus opened
+architecture/briefing details, use the same short opacity reveal. Destination
+photos reveal after loading. Reduced-motion preferences skip these fades.
+Provisional catalog matches appear during the real stream; actions remain
+disabled until the authoritative turn completes.
+
 ## Do's and Don'ts
 
 ### Do:

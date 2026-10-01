@@ -127,6 +127,16 @@ def _forward_runtime_events(response):
     for event in iter_sse(_stream_chunks(response)):
         if event.get("type") == "token" and isinstance(event.get("text"), str):
             emit_chat_event({"type": "delta", "text": event["text"]})
+        elif event.get("type") == "packages" and isinstance(event.get("packages"), list):
+            # Preview only IDs from observed Gateway results. The UI resolves
+            # them against its live catalog; final hydration/persistence still
+            # determines the completed turn. Never expose raw tool payloads.
+            ids = list(dict.fromkeys(
+                p["package_id"] for p in event["packages"]
+                if isinstance(p, dict) and isinstance(p.get("package_id"), str)
+                and p["package_id"]
+            ))[:20]
+            emit_chat_event({"type": "candidates", "package_ids": ids})
         elif event.get("type") == "activity":
             # Expose a short, observed stage, never raw tool payloads or reasoning.
             emit_chat_event({"type": "status", "text": "Checking your trip options…"})

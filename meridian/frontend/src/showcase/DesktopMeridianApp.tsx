@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentType } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -446,11 +446,7 @@ export function DesktopMeridianApp({
           </nav>
           )}
 
-          {/* Switching rungs clears the transcript, spans and results, so
-              without a transition the whole column blinks out and back. Cross
-              fade the swap instead: out fast, in a touch slower, keyed on the
-              view so React unmounts cleanly between phases. */}
-          <AnimatePresence mode="wait" initial={false}>
+          {/* Reveal the next view immediately; no exit wait or moving type. */}
           <motion.div
             key={
               closing
@@ -468,13 +464,12 @@ export function DesktopMeridianApp({
             className="mds-view-swap"
             onAnimationStart={() => { if (workspaceRef.current) workspaceRef.current.scrollTop = 0; }}
             onAnimationComplete={() => { if (workspaceRef.current) workspaceRef.current.scrollTop = 0; }}
-            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
-            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
+            initial={prefersReducedMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
             transition={
               prefersReducedMotion
-                ? { duration: 0.12 }
-                : { duration: 0.26, ease: [0.22, 0.61, 0.36, 1] }
+                ? { duration: 0 }
+                : { duration: 0.22, ease: [0.22, 0.61, 0.36, 1] }
             }
           >
           {isLadder && <CapabilityBrief phase={state.selectedPhase} />}
@@ -572,7 +567,6 @@ export function DesktopMeridianApp({
             />
           )}
           </motion.div>
-          </AnimatePresence>
         </div>
 
         {isLadder && !isWorkflow && (

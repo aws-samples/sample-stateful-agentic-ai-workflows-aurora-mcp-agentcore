@@ -118,3 +118,21 @@ async def test_stream_errors_are_terminal_not_success(monkeypatch):
     assert '"type": "error"' in events[-1]
     assert 'Private exception' not in ''.join(events)
     assert '"type": "complete"' not in ''.join(events)
+
+
+def test_runtime_previews_only_catalog_ids_before_completion():
+    from backend.agentcore.runtime import _forward_runtime_events
+
+    observed = []
+    packages = {"type": "packages", "packages": [
+        {"package_id": "CTY-002", "private_payload": "not for UI"},
+        {"package_id": "CTY-002"}, {"package_id": 42}, None,
+    ]}
+    token = chat_event_sink.set(observed.append)
+    try:
+        events = _forward_runtime_events({"response": [frame(packages), frame({"type": "result"})]})
+        assert next(events) == packages
+        assert observed == [{"type": "candidates", "package_ids": ["CTY-002"]}]
+        assert next(events)["type"] == "result"
+    finally:
+        chat_event_sink.reset(token)

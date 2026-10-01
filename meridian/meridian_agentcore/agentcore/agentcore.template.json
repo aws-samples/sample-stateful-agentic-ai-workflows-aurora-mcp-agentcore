@@ -35,7 +35,7 @@
         },
         {
           "name": "BEDROCK_MODEL_ID",
-          "value": "global.anthropic.claude-sonnet-5"
+          "value": "global.anthropic.claude-haiku-4-5-20251001-v1:0"
         },
         {
           "name": "MERIDIAN_GATEWAY_ID",

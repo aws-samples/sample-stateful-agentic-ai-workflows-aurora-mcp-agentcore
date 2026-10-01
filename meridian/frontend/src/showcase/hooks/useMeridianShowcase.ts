@@ -101,6 +101,7 @@ export interface MeridianShowcaseState {
   messages: Message[];
   currentPrompt: string;
   recommendations: Product[];
+  streamingRecommendations: Product[];
   catalog: Product[];
   selectedTrip: Product | null;
   tripDetailsOpen: boolean;
@@ -264,6 +265,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [currentPrompt, setCurrentPrompt] = useState(SHOWCASE_INITIAL_PROMPT);
   const [recommendations, setRecommendations] = useState<Product[]>([]);
+  const [candidateIds, setCandidateIds] = useState<string[]>([]);
   // Live catalog for the product view's rotating hero. Aurora rows, not a
   // bundled preview list.
   const [catalog, setCatalog] = useState<Product[]>([]);
@@ -610,10 +612,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setReplayIndex(-1);
       setIsReplaying(false);
       setIsLoading(true);
+      setCandidateIds([]);
       setChatProgress('Connecting to your concierge…');
       setRequestStartedAt(Date.now());
-      // Reset stream-complete so downstream surfaces (recommendation
-      // grid) wait until the typewriter finishes revealing this turn.
+      // Completion remains separate from provisional text and catalog matches.
       setLatestStreamComplete(false);
       setError(null);
       setTraceSpans([]);
@@ -665,6 +667,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           conversationPhaseRef.current = requestPhase;
         } else if (event.type === 'status') {
           setChatProgress(event.text);
+        } else if (event.type === 'candidates') {
+          setCandidateIds(event.package_ids);
         } else if (event.text) {
           setChatProgress('Writing your reply…');
           setMessages(prior => {
@@ -1209,6 +1213,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     messages,
     currentPrompt,
     recommendations,
+    streamingRecommendations: isLoading ? candidateIds.flatMap(id => {
+      const product = catalog.find(item => item.product_id === id);
+      return product ? [product] : [];
+    }) : [],
     catalog,
     selectedTrip,
     tripDetailsOpen,

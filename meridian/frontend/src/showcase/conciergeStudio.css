@@ -243,3 +243,19 @@
 .mds-root .is-discovery .mc-supporting-trips .mc-trip-image { grid-column:1; grid-row:1; overflow:clip; }
 .mds-root .is-discovery .mc-supporting-trips .mc-trip-copy { grid-column:2; grid-row:1; min-width:0; }
 .mds-root .is-discovery .mc-supporting-trips .mc-trip-image img { transform:none; }
+
+/* Arrivals stay soft without delaying live results or moving projector text. */
+@keyframes mc-soft-arrival { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) {
+  .mds-root .is-discovery .mc-trip,
+  .mds-root .mds-trip-result-card,
+  .mds-root .mds-decision-card,
+  .mds-root .mc-capability-details[open] > :not(summary),
+  .mds-root .mds-brief-section[open] > .mds-brief-section-body,
+  .mds-root .mds-brief-detail[open] > .mds-brief-detail-body {
+    animation: mc-soft-arrival 220ms ease-out both;
+  }
+  .mds-root .is-discovery .mc-destination-photo { opacity: 0; }
+  .mds-root .is-discovery .mc-destination-photo.is-loaded { opacity: 1; animation: mc-soft-arrival 220ms ease-out both; }
+}
+.mds-root .is-discovery .mc-trip :is(.mc-trip-open, .mc-save):disabled { cursor: wait; }

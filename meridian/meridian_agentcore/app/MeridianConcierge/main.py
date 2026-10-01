@@ -37,7 +37,7 @@ REGION = os.getenv("AWS_REGION", "us-east-1")
 SESSION = boto3.Session(region_name=REGION)
 GATEWAY_URL = os.environ["AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL"]
 MEMORY_ID = os.environ["MEMORY_MERIDIAN_SESSION_ID"]
-MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "global.anthropic.claude-sonnet-5")
+MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "global.anthropic.claude-haiku-4-5-20251001-v1:0")
 GATEWAY_ID = os.getenv("MERIDIAN_GATEWAY_ID", GATEWAY_URL.split("//")[-1].split(".")[0])
 POLICY_ENGINE_ID = os.getenv("MERIDIAN_POLICY_ENGINE_ID", "")
 POLICY_MODE = os.getenv("MERIDIAN_POLICY_MODE", "ENFORCE")
@@ -239,11 +239,12 @@ async def run(payload: dict):
         for event in drain(queue):
             yield event
         agent = Agent(
-            # Claude Sonnet 5 thinks by default, and max_tokens caps thinking +
-            # answer together on this tool-using route; 1500 would truncate
-            # before the agent finishes a tool call. Do not disable thinking
-            # here (that can make Opus/Sonnet 5 emit tool calls as plain text).
-            model=BedrockModel(model_id=MODEL_ID, region_name=REGION, max_tokens=16000),
+            # Haiku keeps interactive tool turns short. Retain the larger budget
+            # for optional reasoning models, whose thinking shares this limit.
+            model=BedrockModel(
+                model_id=MODEL_ID, region_name=REGION,
+                max_tokens=4096 if "haiku" in MODEL_ID else 16000,
+            ),
             system_prompt=system_prompt(
                 turn.hold_confirmed, hold_target, turn.booking_confirmed, booking_target
             ),

@@ -114,3 +114,18 @@ describe('DiscoveryWorkspace catalog states', () => {
     expect(screen.queryByText(/Tokyo Culture & Cuisine/i)).not.toBeInTheDocument();
   });
 });
+
+
+it('shows streamed catalog matches before completion with actions disabled', () => {
+  const state = makeState({
+    messages: [{ role: 'user', text: 'Find a trip' }], isLoading: true,
+    streamingRecommendations: [LIVE_PRODUCT], backendStatus: 'online',
+  });
+  const { rerender } = render(<DiscoveryWorkspace state={state} onClear={vi.fn()} />);
+  expect(screen.getByRole('heading', { name: LIVE_PRODUCT.name })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Explore this trip/ })).toBeDisabled();
+  expect(screen.getByRole('status')).toHaveTextContent('Checking the final details');
+  rerender(<DiscoveryWorkspace state={{ ...state, isLoading: false, streamingRecommendations: [], recommendations: [] }} onClear={vi.fn()} />);
+  expect(screen.queryByRole('heading', { name: LIVE_PRODUCT.name })).not.toBeInTheDocument();
+  expect(screen.getByText('A different direction?')).toBeInTheDocument();
+});

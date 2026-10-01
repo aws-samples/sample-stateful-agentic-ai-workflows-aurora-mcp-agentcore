@@ -7,6 +7,8 @@ import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { tripVisualPhoto } from '../lib/tripVisualPhoto';
 import { derivePersonalization } from '../lib/discoveryPersonalization';
 
+const NO_TRIPS: Product[] = [];
+
 function money(value: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
 }
@@ -24,10 +26,13 @@ function TripCard({ product, state, featured = false }: {
   return (
     <article className={`mc-trip${featured ? ' is-featured' : ''}`} aria-label={product.name} data-theme={featured ? 'dark' : undefined}>
       <div className="mc-trip-image">
-        {photo ? <img src={photo} alt="" width="1600" height="900" loading={featured ? 'eager' : 'lazy'}
+        {photo ? <img key={photo} src={photo} alt="" width="1600" height="900" loading={featured ? 'eager' : 'lazy'}
+          className="mc-destination-photo"
+          onLoad={event => event.currentTarget.classList.add('is-loaded')}
+          ref={element => { if (element?.complete && element.naturalWidth) element.classList.add('is-loaded'); }}
           {...{ fetchpriority: featured ? 'high' : 'auto' }} onError={event => { event.currentTarget.style.visibility = 'hidden'; }} /> : null}
         <span className="mc-trip-image-fallback" aria-hidden="true"><MapPin size={28} /></span>
-        <button type="button" className="mc-save" onClick={() => state.saveTrip(product)}
+        <button type="button" className="mc-save" disabled={state.isLoading} onClick={() => state.saveTrip(product)}
           aria-pressed={saved} aria-label={`${saved ? 'Unsave' : 'Save'} ${product.name}`}>
           <Heart size={18} fill={saved ? 'currentColor' : 'none'} aria-hidden="true" />
         </button>
@@ -40,7 +45,7 @@ function TripCard({ product, state, featured = false }: {
           <span className="mc-trip-facts"><span className="mc-trip-meta"><Clock3 size={14} aria-hidden="true" />{product.available_sizes?.[0] ?? 'Flexible duration'}</span>
           <span className="mc-price"><small>From </small><strong>{money(product.price)}</strong><small> / traveler</small></span>
           </span>
-          <button type="button" className="mc-trip-open" onClick={() => state.openTripDetails(product)} aria-label={`${featured ? 'Explore this trip' : 'Details'}: ${product.name}`}>
+          <button type="button" className="mc-trip-open" disabled={state.isLoading} onClick={() => state.openTripDetails(product)} aria-label={`${featured ? 'Explore this trip' : 'Details'}: ${product.name}`}>
             {featured ? 'Explore this trip' : 'Details'}<ArrowRight size={16} aria-hidden="true" />
           </button>
         </footer>
@@ -81,7 +86,7 @@ export function DiscoveryWorkspace({ state, onClear, onDiscover }: {
   const hasTurn = state.messages.length > 0;
   // Pre-turn, the pool is exactly the live Aurora catalog - never a bundled
   // preview. A zero-result search (post-turn) also stays empty on purpose.
-  const pool = hasTurn ? state.recommendations : state.catalog;
+  const pool = hasTurn ? (state.isLoading ? state.streamingRecommendations ?? NO_TRIPS : state.recommendations) : state.catalog;
   const catalogLoading = !hasTurn && state.catalog.length === 0
     && (state.backendStatus === 'checking' || state.connectionRefreshing);
   const catalogFailed = !hasTurn && !catalogLoading && state.catalog.length === 0
@@ -107,7 +112,7 @@ export function DiscoveryWorkspace({ state, onClear, onDiscover }: {
       <button type="button" className="mc-studio-chat-jump" onClick={() => {
         document.querySelector<HTMLTextAreaElement>('#concierge-compose textarea')?.focus();
       }}>Ask your concierge<ArrowRight size={16} aria-hidden="true" /></button>
-      {hasTurn && state.isLoading && <div className="mc-trip-skeleton is-featured" role="status" aria-label="Updating your trip recommendations" />}
+      {hasTurn && state.isLoading && options.length === 0 && <div className="mc-trip-skeleton is-featured" role="status" aria-label="Updating your trip recommendations" />}
       {hasTurn && state.error && !state.isLoading && <div className="mc-empty-results" role="status">
         <AlertTriangle size={24} aria-hidden="true" /><div><strong>We couldn’t update your trip options.</strong>
           <p>Your concierge has the request details. You can adjust your search or start a new chat.</p>
@@ -127,11 +132,12 @@ export function DiscoveryWorkspace({ state, onClear, onDiscover }: {
         <div><strong>Nothing in the collection right now.</strong>
           <p>Aurora returned no trips. Check back soon, or ask your concierge.</p></div></div>}
 
-      {!state.isLoading && !state.error && !catalogLoading && !catalogFailed && !catalogEmpty
+      {!state.error && !catalogLoading && !catalogFailed && !catalogEmpty
         && options.length > 0 && <section className="mc-collection" aria-label={hasTurn ? 'Your trip recommendations' : 'Travel inspiration'}>
-        <TripCard product={options[0]} state={state} featured />
+        {state.isLoading && <p className="mc-catalog-note" role="status">Matches found. Checking the final details…</p>}
+        <TripCard key={options[0].product_id} product={options[0]} state={state} featured />
         <div className="mc-supporting-trips">{options.slice(1).map(product => <TripCard key={product.product_id} product={product} state={state} />)}</div>
-        {onDiscover && <button type="button" className="mc-text-button" onClick={onDiscover}>Explore more<ArrowRight size={15} aria-hidden="true" /></button>}
+        {onDiscover && !state.isLoading && <button type="button" className="mc-text-button" onClick={onDiscover}>Explore more<ArrowRight size={15} aria-hidden="true" /></button>}
         <p className="mc-catalog-note">Meridian collection<span>·</span>USD per traveler. Dates and availability confirmed when you plan.</p>
       </section>}
       {hasTurn && !state.isLoading && !state.error && options.length === 0 && <div className="mc-empty-results"><Compass size={24} aria-hidden="true" /><div><strong>A different direction?</strong><p>Try another destination or a wider budget to find more options.</p></div></div>}
