@@ -99,39 +99,51 @@ export function DesktopMeridianApp({
   const [closing, setClosing] = useState(false);
   const setView = (next: typeof view) => { setClosing(false); writeView(next); };
   const isRecoveryView = view === 'recovery';
+  const runPhase = state.lastRequestPhase ?? state.selectedPhase;
+  const runState = runPhase === state.selectedPhase ? state : {
+    ...state, selectedPhase: runPhase, phaseLabel: SHOWCASE_PHASES.find(phase => phase.phase === runPhase)!.label,
+  };
+  // Browsing a capability does not relabel or discard a run from another phase.
+  // Its conversation and evidence remain available on their original surfaces.
+  const ladderState: MeridianShowcaseState = runPhase === state.selectedPhase ? state : {
+    ...state, messages: [], recommendations: [], streamingRecommendations: [],
+    traceSpans: [], memoryFacts: [], lastPrompt: null, error: null,
+    conversationId: null, workflowStatus: null, workflowResumedAfterRestart: false,
+  };
   // While a recovery runs on the desk, its journey is re-read as Aurora records each step.
-  const watchingRecovery = isRecoveryView && state.selectedPhase === 5 && state.isLoading
+  const watchingRecovery = isRecoveryView && runPhase === 5 && state.isLoading
     && Boolean(state.conversationId);
   const journey = useJourney(
     journeyId,
     setJourneyId,
     watchingRecovery || (!state.isLoading
-      && (view === 'proof' || isRecoveryView || (view === 'ladder' && state.selectedPhase === 5))),
-    state.selectedPhase === 5 ? state.conversationId || threadId : threadId,
+      && (view === 'proof' || isRecoveryView || (view === 'ladder' && runPhase === 5))),
+    runPhase === 5 ? state.conversationId || threadId : threadId,
     watchingRecovery,
   );
   const refreshJourney = journey.refresh;
   const latestWorkflowRead = useRef<string | null>(null);
   useEffect(() => {
     // Recovery polling owns its final read; other views refresh after a workflow reply.
-    if (isRecoveryView || state.selectedPhase !== 5
+    if (isRecoveryView || runPhase !== 5
       || !state.conversationId || state.isLoading) return;
     const receipt = `${state.conversationId}:${state.workflowStatus}`;
     if (latestWorkflowRead.current !== receipt) {
       latestWorkflowRead.current = receipt;
       refreshJourney();
     }
-  }, [isRecoveryView, state.selectedPhase, state.conversationId,
+  }, [isRecoveryView, runPhase, state.conversationId,
     state.workflowStatus, state.isLoading, refreshJourney]);
   const restoredJourney = useRef<typeof journey.document>(null);
   useEffect(() => {
     if (!isRecoveryView || !journey.document || (restoredJourney.current === journey.document && !state.error)) return;
-    if (!state.isLoading && (state.selectedPhase !== 5 || state.conversationId !== journey.document.active_thread_id || state.error)) {
+    if (!state.isLoading && (runPhase !== 5 || state.conversationId !== journey.document.active_thread_id || state.error)) {
       restoredJourney.current = journey.document;
       state.restoreJourney(journey.document);
     }
-  }, [isRecoveryView, journey.document, state]);
+  }, [isRecoveryView, journey.document, runPhase, state]);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [travelBriefRequested, setTravelBriefRequested] = useState(false);
   const [forYouCollapsed, setForYouCollapsed] = useState(false);
   const [activityCollapsed, setActivityCollapsed] = useState(false);
   // Collapsed by default: the nav is product chrome, and the 136px it gives
@@ -211,6 +223,8 @@ export function DesktopMeridianApp({
   }, [view, closing]);
 
   const openProduct = () => setView('concierge');
+  const openLadder = () => setView('ladder');
+  const inspectRun = () => { state.inspectCurrentRun(); setView('ladder'); };
   const openPhase = (phase: Phase) => {
     state.setSelectedPhase(phase);
     setView('ladder');
@@ -231,13 +245,20 @@ export function DesktopMeridianApp({
       setView('concierge');
       return;
     }
+    if (id === 'profile') {
+      setNavPanel(null);
+      setMemoryOpen(false);
+      setView('concierge');
+      setTravelBriefRequested(true);
+      return;
+    }
     if (id === 'preferences') {
       setNavPanel(null);
       setMemoryOpen(true);
       return;
     }
     setMemoryOpen(false);
-    setNavPanel(id as NavPanelId);
+    setNavPanel(id);
   };
 
   return (
@@ -310,7 +331,7 @@ export function DesktopMeridianApp({
           type="button"
           className="mds-account-mini"
           onClick={() => openNavItem('profile')}
-          aria-label="Open Jordan Morgan profile"
+          aria-label="Open Jordan Morgan travel brief"
         >
           <span className="mds-avatar is-photo" aria-hidden="true">
             <img
@@ -324,7 +345,7 @@ export function DesktopMeridianApp({
           <div className="mds-account-copy">
             <strong>Jordan Morgan</strong>
             <span className="mds-account-loyalty">
-              <span>Traveler profile</span>
+              <span>Travel brief</span>
             </span>
           </div>
           <ChevronRight className="mds-account-chevron" size={16} aria-hidden="true" />
@@ -348,10 +369,10 @@ export function DesktopMeridianApp({
                     className={`mds-surface-tab${active ? ' is-active' : ''}`}
                     aria-current={active ? 'page' : undefined}
                     data-active={active ? 'true' : undefined}
-                    disabled={surface.id === 'ladder' && isProduct && state.isLoading}
+                    disabled={surface.id === 'ladder' && state.isLoading && runPhase !== state.selectedPhase}
                     onClick={() => {
                       if (surface.id === 'concierge') openProduct();
-                      else if (surface.id === 'ladder' && isProduct) clearIntoLadder();
+                      else if (surface.id === 'ladder') openLadder();
                       else setView(surface.id);
                     }}
                     title={surface.blurb}
@@ -366,7 +387,7 @@ export function DesktopMeridianApp({
         </nav>
 
         <div className="mds-shell-status">
-          {isProduct && <button type="button" className="mc-profile-toggle" onClick={() => openNavItem('profile')} aria-label="Open Jordan Morgan profile"><img src={DEMO_TRAVELER_IMAGE_URL} alt="" width="40" height="40" /></button>}
+          {isProduct && <button type="button" className="mc-profile-toggle" onClick={() => openNavItem('profile')} aria-label="Open Jordan Morgan travel brief"><img src={DEMO_TRAVELER_IMAGE_URL} alt="" width="40" height="40" /></button>}
           <span
             className={`mds-status-pill ${runtimeStatus.className}`}
             role="status"
@@ -394,7 +415,7 @@ export function DesktopMeridianApp({
       </header>
 
       <main className="mds-desktop-main">
-        <RequestWaitNotice state={state} onReadRecovery={() => { setView('recovery'); journey.refresh(); }} />
+        {!isProduct && <RequestWaitNotice state={state} onReadRecovery={() => { setView('recovery'); journey.refresh(); }} />}
         {state.connectionIssue && <div className="mc-connection-notice" role="status">
           <AlertTriangle size={20} aria-hidden="true" />
           <div>
@@ -474,16 +495,24 @@ export function DesktopMeridianApp({
           >
           {isLadder && <CapabilityBrief phase={state.selectedPhase} />}
           {closing ? <SessionClose onEvidence={() => setView('proof')} onConcierge={openProduct} /> : isBriefing ? (
-            <SolutionBriefing onOpenLadder={() => setView('ladder')} onOpenEvidence={() => setView('proof')} />
+            <SolutionBriefing onOpenLadder={openLadder} onOpenEvidence={() => setView('proof')} onOpenPhase={openPhase} busy={state.isLoading} />
           ) : isProof ? (
             <>
-            <PresenterProof
+            {runPhase !== 5 && (state.isLoading || state.traceSpans.length > 0) ? <section className="mds-proof-surface mc-run-evidence" aria-label="System evidence">
+              <header className="mc-evidence-intro"><h1>System evidence</h1><p>Recorded activity for your {runState.phaseLabel.toLowerCase()} response.</p></header>
+              <TracePanel state={runState} />
+              <div className="mc-run-evidence-actions">
+                <button type="button" className="mc-text-button" onClick={inspectRun} disabled={state.isLoading}>Open this capability<ArrowRight size={16} aria-hidden="true" /></button>
+                <button type="button" className="mc-text-button" onClick={() => setView('briefing')}>See the solution briefing<ArrowRight size={16} aria-hidden="true" /></button>
+                <button type="button" className="mc-text-button" onClick={() => setView('recovery')}>Open recovery desk<ArrowRight size={16} aria-hidden="true" /></button>
+              </div>
+            </section> : <PresenterProof
               document={journey.document}
-              loading={journey.loading || (state.selectedPhase === 5 && state.isLoading)}
+              loading={journey.loading || (runPhase === 5 && state.isLoading)}
               error={journey.error}
               onRefresh={journey.refresh}
               onOpenRecovery={() => setView('recovery')}
-            />
+            />}
             <footer className="mc-session-handoff">
               <div><h2>Bring it back to the traveler.</h2><p>How Aurora and AgentCore turn saved context into a clear next step.</p></div>
               <button type="button" className="mc-session-primary" onClick={() => setClosing(true)}>Session takeaways <ArrowRight size={18} aria-hidden="true" /></button>
@@ -496,9 +525,9 @@ export function DesktopMeridianApp({
               onClear={clearIntoLadder}
               onDiscover={() => openNavItem('discover')}
             />
-          ) : isWorkflow ? <WorkflowWorkspace state={state} onOpenRecovery={() => setView('recovery')} /> : !isRecovery ? (
+          ) : isWorkflow ? <WorkflowWorkspace state={ladderState} onOpenRecovery={() => setView('recovery')} /> : !isRecovery ? (
             <>
-              {state.error && (
+              {ladderState.error && (
                 <div className="mds-error-banner" role="alert">
                   <span className="mds-error-banner-copy">
                     {state.error}
@@ -528,9 +557,9 @@ export function DesktopMeridianApp({
                 </div>
               )}
 
-              {(state.messages.length > 0 || state.isLoading) && <ChatTranscript state={state} proofMode />}
+              {(ladderState.messages.length > 0 || state.isLoading) && <ChatTranscript state={ladderState} proofMode />}
 
-              {(state.lastPrompt || state.messages.length > 0 || state.traceSpans.length > 0) && <div className="mds-main-actions">
+              {(ladderState.lastPrompt || ladderState.messages.length > 0 || ladderState.traceSpans.length > 0) && <div className="mds-main-actions">
                 <button
                   type="button"
                   onClick={() => void state.replayLastPrompt()}
@@ -547,7 +576,7 @@ export function DesktopMeridianApp({
                 </button>
               </div>}
             </>
-          ) : (journeyId || threadId) && !state.isLoading && (state.selectedPhase !== 5 || !state.conversationId) ? (
+          ) : (journeyId || threadId) && !state.isLoading && (runPhase !== 5 || !state.conversationId) ? (
             <section className="mds-proof-empty" aria-live="polite">
               <h1>Open the saved recovery</h1>
               <p>{journey.loading ? 'Reading this journey from Aurora…' : journey.error ?? 'This journey does not have a resumable workflow response yet. Re-read its progress before continuing.'}</p>
@@ -556,7 +585,7 @@ export function DesktopMeridianApp({
             </section>
           ) : (
             <RecoveryWorkspace
-              state={state}
+              state={runState}
               journeyDocument={journey.document}
               onOpenProof={() => { journey.refresh(); setView('proof'); }}
               onOpenConcierge={(hold) => {
@@ -571,14 +600,21 @@ export function DesktopMeridianApp({
 
         {isLadder && !isWorkflow && (
           <div className="mds-desktop-dock">
-            <ChatComposer state={state} proofMode />
+            <ChatComposer state={ladderState} proofMode />
           </div>
         )}
       </main>
 
       {isProduct && (
         <aside className="mds-desktop-right is-concierge" aria-label="Concierge conversation and travel brief">
-          <ConciergeConversation state={state} onSaved={() => openNavItem('trips')} onRecovery={() => setView('recovery')} />
+          <ConciergeConversation state={state} onSaved={() => openNavItem('trips')} onRecovery={() => setView('recovery')}
+            openTravelBrief={travelBriefRequested} onTravelBriefOpened={() => setTravelBriefRequested(false)}
+            onPreferences={() => openNavItem('preferences')}
+            onReviewRecovery={() => {
+              if (!state.recoveryRequest || state.isLoading) return;
+              void state.submitPrompt(state.recoveryRequest, 5, { reviewOnly: true });
+              setView('recovery');
+            }} />
         </aside>
       )}
 
@@ -590,9 +626,9 @@ export function DesktopMeridianApp({
           <JourneyContinuityRail
             document={journey.document}
             error={journey.error}
-            loading={journey.loading || (state.selectedPhase === 5 && state.isLoading)}
-            thread={state.selectedPhase === 5 ? state.conversationId : null}
-            running={state.selectedPhase === 5 && state.isLoading}
+            loading={journey.loading || (runPhase === 5 && state.isLoading)}
+            thread={runPhase === 5 ? state.conversationId : null}
+            running={runPhase === 5 && state.isLoading}
           />
         </aside>
       )}
@@ -626,13 +662,13 @@ export function DesktopMeridianApp({
                 strip that used to sit above them tried to fit seven stages and
                 their values into the rail's width and never became legible. */}
             <TravelerContextPanel
-              state={state}
+              state={ladderState}
               onOpenMemory={() => setMemoryOpen(true)}
               collapsed={forYouCollapsed}
               onToggleCollapsed={() => setForYouCollapsed((prev) => !prev)}
             />
             <TracePanel
-              state={state}
+              state={ladderState}
               collapsed={activityCollapsed}
               onToggleCollapsed={() => setActivityCollapsed((prev) => !prev)}
             />
@@ -643,7 +679,7 @@ export function DesktopMeridianApp({
 
       <TripDetailDrawer state={state} />
       <ComparisonDialog state={state} />
-      <MemoryDrawer state={state} open={memoryOpen} onClose={() => setMemoryOpen(false)} />
+      <MemoryDrawer state={state} open={memoryOpen} onClose={() => setMemoryOpen(false)} product={isProduct} />
       <NavPanelDrawer state={state} travelerMode={isProduct} panel={navPanel} onClose={() => setNavPanel(null)} />
       {state.workspaceNotice && (
         <div className="mds-toast" role="status">{state.workspaceNotice}</div>

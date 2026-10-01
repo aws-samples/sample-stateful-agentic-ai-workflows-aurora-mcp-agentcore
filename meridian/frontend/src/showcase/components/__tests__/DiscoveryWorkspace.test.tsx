@@ -118,7 +118,7 @@ describe('DiscoveryWorkspace catalog states', () => {
 
 it('shows streamed catalog matches before completion with actions disabled', () => {
   const state = makeState({
-    messages: [{ role: 'user', text: 'Find a trip' }], isLoading: true,
+    messages: [{ role: 'user', text: 'Find a trip' }, { role: 'bot', text: 'Here are the matches.', streaming: true }], isLoading: true,
     streamingRecommendations: [LIVE_PRODUCT], backendStatus: 'online',
   });
   const { rerender } = render(<DiscoveryWorkspace state={state} onClear={vi.fn()} />);

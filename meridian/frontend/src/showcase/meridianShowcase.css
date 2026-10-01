@@ -722,11 +722,23 @@
 }
 
 /* Thinking uses the same open response surface as the completed reply. */
-.mds-message.bot .mds-message-bubble.is-thinking {
+.mds-root .mds-message.bot .mds-message-bubble.is-thinking {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 10px 12px;
   border-radius: var(--mds-radius-l) var(--mds-radius-l) var(--mds-radius-l) var(--mds-radius-s);
   background: var(--mds-surface);
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-regular);
+  letter-spacing: normal;
+}
+
+.mds-message-bubble.is-thinking > svg {
+  flex: none;
 }
 
 /* Stack the result summary and full-width travel cards below the reply. */
@@ -1931,17 +1943,6 @@
   transform: none;
 }
 
-/* is-works and is-stretch only render inside the proof-mode composer wrap
-   (ChatComposer.tsx), where airlineConcierge.css overrides their border,
-   background and small color at higher specificity: the color roles below
-   never paint. The checkmark glyph is not a color and nothing overrides it,
-   so it stays, in whatever color the small text resolves to. */
-.mds-chat-starter-chip.is-works small::before {
-  content: "\2713";
-  margin-right: 5px;
-  font-weight: var(--mds-weight-bold);
-}
-
 .mds-chat-starter-chip:focus-visible,
 .mds-chat-starter-chip.is-works:focus-visible,
 .mds-chat-starter-chip.is-stretch:focus-visible {
@@ -2438,6 +2439,24 @@
   border-bottom: 1px solid var(--mds-separator);
 }
 
+/* Keep the memory action visible while the writeback badge comes and goes. */
+.mds-traveler-panel .mds-panel-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+}
+
+.mds-traveler-panel .mds-collapse-toggle {
+  min-width: 0;
+  text-align: left;
+}
+
+.mds-traveler-panel .mds-panel-head > button:last-child {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+}
+
 .mds-panel-head strong {
   color: var(--mds-label);
   font: var(--mds-type-title-3);
@@ -2504,7 +2523,7 @@
   color: var(--mds-label);
   font: var(--mds-type-headline);
   font-weight: var(--mds-weight-bold);
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .mds-memory-control-copy small {
@@ -2517,7 +2536,7 @@
   min-width: 76px;
   min-height: 44px;
   display: grid;
-  grid-template-columns: 38px 28px;
+  grid-template-columns: 38px auto;
   gap: 6px;
   align-items: center;
   padding: 0;
@@ -3305,12 +3324,21 @@
 }
 
 .mds-drawer header button {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  align-self: flex-start;
+  padding: 0;
   border: 1px solid var(--mds-control-line);
   border-radius: var(--mds-radius-m);
   color: var(--mds-label);
   background: var(--mds-surface-2);
+}
+
+.mds-drawer header button > svg {
+  display: block;
 }
 
 .mds-drawer-list {
@@ -3762,8 +3790,8 @@
    FEATURE 4 — Phase 4 "writeback you can watch"
    A transient badge on the For-you panel header that pulses when the
    concierge persists a turn to Aurora (persist_turn span). Token-driven so
-   it reads in both themes. Sits between the title cluster and the Memory
-   button; margin-right:auto keeps "Memory" pinned to the right edge.
+   it reads in both themes. Its own row keeps the title and Memory action
+   stable as the badge appears and disappears.
    ========================================================================== */
 /* Scoped under .mds-panel-head to beat `.mds-panel-head span` (0-2-0),
    which would otherwise force the badge's text color and a transparent fill. */
@@ -3771,13 +3799,16 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-right: auto;
-  margin-left: 10px;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-self: start;
+  max-width: 100%;
+  margin: 0;
   padding: 3px 9px;
   border-radius: var(--mds-radius-full);
   font: var(--mds-type-footnote);
   font-weight: var(--mds-weight-semibold);
-  white-space: nowrap;
+  white-space: normal;
   color: var(--mds-green);
   background: var(--mds-surface-2);
   border: 0;

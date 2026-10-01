@@ -21,6 +21,52 @@ PRINCIPAL = HttpPrincipal(
 )
 
 
+def test_concierge_offers_recovery_without_teaching_instructions_or_starting_work(monkeypatch):
+    from unittest.mock import AsyncMock
+    production = AsyncMock(side_effect=AssertionError("No unrelated production search"))
+    workflow = AsyncMock(side_effect=AssertionError("Opening chat does not authorize recovery"))
+    monkeypatch.setattr("backend.routers.chat.production_search", production)
+    monkeypatch.setattr("backend.routers.chat.orchestration_workflow", workflow)
+    prompt = "My flight was canceled. Rework my Tokyo trip, then check availability."
+    response = asyncio.run(chat(ChatRequest(
+        message=prompt, phase=4, experience="concierge", conversation_id="current-chat",
+    ), PRINCIPAL))
+    assert response.recovery_request == prompt
+    assert response.conversation_id == "current-chat"
+    assert "hold" in response.message
+    assert not any(word in response.message.lower() for word in ["workflow", "phase", "checkpoint"])
+    production.assert_not_called()
+    workflow.assert_not_called()
+
+
+def test_concierge_review_request_reaches_the_workflow_without_resuming(monkeypatch):
+    from unittest.mock import AsyncMock
+    workflow = AsyncMock(return_value=([], [], "Shortlist ready for review.", "recovery-thread", "paused", False))
+    monkeypatch.setattr("backend.routers.chat.orchestration_workflow", workflow)
+    response = asyncio.run(chat(ChatRequest(
+        message="Rework my trip and check availability", phase=5, review_only=True,
+        conversation_id="recovery-thread", travelers_count=2,
+    ), PRINCIPAL))
+    assert response.workflow_status == "paused"
+    assert workflow.call_args.kwargs["review_only"] is True
+    assert workflow.call_args.kwargs["resume"] is False
+    assert workflow.call_args.kwargs["travelers_count"] == 2
+
+
+def test_review_only_cannot_resume_into_an_inventory_action(monkeypatch):
+    from fastapi import HTTPException
+    from unittest.mock import AsyncMock
+    workflow = AsyncMock()
+    monkeypatch.setattr("backend.routers.chat.orchestration_workflow", workflow)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(chat(ChatRequest(
+            message="Resume workflow from checkpoint", phase=5, review_only=True,
+            conversation_id="recovery-thread",
+        ), PRINCIPAL))
+    assert error.value.status_code == 422
+    workflow.assert_not_called()
+
+
 def test_disruption_replan_bridges_to_workflow() -> None:
     query = (
         "My JFK-to-Tokyo flight was cancelled. Rework the trip, then check "

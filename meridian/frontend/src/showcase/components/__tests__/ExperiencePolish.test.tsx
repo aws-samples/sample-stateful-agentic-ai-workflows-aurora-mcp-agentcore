@@ -34,6 +34,9 @@ function makeState(
     travelersCount: overrides.chatFilters?.travelers || 2,
     restoreJourney: vi.fn(),
     selectedPhase: 1,
+    lastRequestPhase: null,
+    recoveryRequest: null,
+    inspectCurrentRun: vi.fn(),
     phaseLabel: 'SQL',
     phaseExamples: SHOWCASE_EXAMPLE_PROMPTS[1],
     messages: [],
@@ -217,9 +220,10 @@ describe('Experience presentation polish', () => {
     const clearChat = vi.fn();
     const setSelectedPhase = vi.fn();
     const setMemoryEnabled = vi.fn();
+    const inspectCurrentRun = vi.fn();
     render(
       <DesktopMeridianApp
-        state={makeState({ selectedPhase: 3, clearChat, setSelectedPhase, setMemoryEnabled })}
+        state={makeState({ selectedPhase: 3, lastRequestPhase: 4, clearChat, setSelectedPhase, setMemoryEnabled, inspectCurrentRun })}
         theme="dark"
         onToggleTheme={vi.fn()}
       />,
@@ -231,9 +235,10 @@ describe('Experience presentation polish', () => {
     fireEvent.click(
       within(surfaces).getByRole('button', { name: /^Capability ladder/ }),
     );
-    expect(clearChat).toHaveBeenCalledOnce();
-    expect(setSelectedPhase).toHaveBeenCalledWith(1);
-    expect(setMemoryEnabled).toHaveBeenCalledWith(false);
+    expect(inspectCurrentRun).not.toHaveBeenCalled();
+    expect(clearChat).not.toHaveBeenCalled();
+    expect(setSelectedPhase).not.toHaveBeenCalled();
+    expect(setMemoryEnabled).not.toHaveBeenCalled();
 
     const nav = screen.getByRole('navigation', {
       name: 'Capability ladder phases',
@@ -1436,4 +1441,40 @@ it('blocks destination-studio starters until traveler context authorization comp
   rerender(<ConciergeConversation state={{ ...state, memoryLoading: false }} onSaved={vi.fn()} onRecovery={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', { name: 'Help me plan a culture trip to Tokyo' }));
   expect(state.applyPhaseExample).toHaveBeenCalledWith('Help me plan a culture trip to Tokyo', true, 4);
+});
+
+it('keeps one response slot from waiting through streaming and offers stop beside an editable draft', () => {
+  const state = makeState({ isLoading: true, chatProgress: 'Checking your trip options…',
+    stopWaiting: vi.fn(), messages: [{ role: 'user', text: 'Plan Tokyo' }] });
+  const { container, rerender } = render(<ConciergeConversation state={state} onSaved={vi.fn()} onRecovery={vi.fn()} />);
+  const response = container.querySelector('.mc-message.is-bot');
+  expect(response?.querySelector('.mc-response-spinner')).toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: 'Ask Meridian anything' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Stop waiting' }));
+  expect(state.stopWaiting).toHaveBeenCalledOnce();
+  rerender(<ConciergeConversation state={{ ...state,
+    messages: [...state.messages, { role: 'bot', text: 'Your Tokyo trip', streaming: true }],
+  }} onSaved={vi.fn()} onRecovery={vi.fn()} />);
+  expect(container.querySelectorAll('.mc-message.is-bot')).toHaveLength(1);
+  expect(container.querySelector('.mc-message.is-bot')).toBe(response);
+  expect(container.querySelector('.mc-loading')).not.toBeInTheDocument();
+});
+
+it('reveals provisional trips with the reply and enables actions only after the authoritative result', () => {
+  const product = { product_id: 'CTY-002', name: 'Tokyo Culture & Cuisine', brand: 'Meridian',
+    price: 2499, description: 'A catalog trip.', category: 'City', image_url: '/travel/catalog/CTY-002.jpg' };
+  const state = makeState({ isLoading: true, streamingRecommendations: [product],
+    messages: [{ role: 'user', text: 'Plan Tokyo' }] });
+  const { rerender } = render(<DiscoveryWorkspace state={state} onClear={vi.fn()} />);
+  expect(screen.queryByRole('article')).not.toBeInTheDocument();
+  expect(screen.getByRole('status', { name: 'Updating your trip recommendations' })).toBeInTheDocument();
+  const streaming = { ...state, messages: [...state.messages, { role: 'bot' as const, text: 'Here is Tokyo.', streaming: true }] };
+  rerender(<DiscoveryWorkspace state={streaming} onClear={vi.fn()} />);
+  const card = screen.getByRole('article', { name: product.name });
+  expect(screen.getByRole('button', { name: `Explore this trip: ${product.name}` })).toBeDisabled();
+  expect(screen.getByRole('button', { name: `Save ${product.name}` })).toBeDisabled();
+  rerender(<DiscoveryWorkspace state={{ ...streaming, isLoading: false, recommendations: [product] }} onClear={vi.fn()} />);
+  expect(screen.getByRole('article', { name: product.name })).toBe(card);
+  expect(screen.getByRole('button', { name: `Explore this trip: ${product.name}` })).toBeEnabled();
+  expect(screen.getByRole('button', { name: `Save ${product.name}` })).toBeEnabled();
 });

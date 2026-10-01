@@ -153,6 +153,8 @@ export interface ChatRequest {
   resume?: boolean;
   travelers_count?: number;
   memory_enabled?: boolean;
+  experience?: 'capability' | 'concierge';
+  review_only?: boolean;
 }
 
 export interface ChatResponse {
@@ -165,6 +167,7 @@ export interface ChatResponse {
   memory_facts?: LongTermMemoryFact[];
   workflow_status?: 'paused' | 'resumed' | 'complete';
   workflow_resumed_after_restart?: boolean;
+  recovery_request?: string | null;
   /** The Bedrock model that actually wrote `message` (may be a fallback).
    *  Absent when the reply is a pure tool result with no model involved. */
   model_label?: string | null;

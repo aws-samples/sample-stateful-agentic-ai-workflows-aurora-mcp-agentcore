@@ -124,6 +124,86 @@ describe('Concierge request context', () => {
     expect(request).not.toHaveProperty('memory_enabled');
     expect(request).not.toHaveProperty('conversation_id');
   });
+
+  it('authorizes product memory even when the opening profile is unavailable', async () => {
+    vi.mocked(fetchMemoryProfile).mockResolvedValue({ traveler_id: 'trv_meridian_demo', facts: [] });
+    const { result } = renderHook(() => useMeridianShowcase());
+    await act(async () => { await result.current.submitPrompt('Remember my trip', 4); });
+    expect(result.current.previewProfile).toBeNull();
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      phase: 4, experience: 'concierge', memory_enabled: true,
+    }), expect.any(AbortSignal), expect.any(Function));
+    expect(result.current.memoryEnabled).toBe(false);
+  });
+
+  it('keeps a recovery review read-only when replaying its original request', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValueOnce({
+      message: 'Review a recovery plan.', activities: [], recovery_request: 'Rework my canceled trip and check availability.',
+    });
+    const { result } = renderHook(() => useMeridianShowcase());
+    await act(async () => { await result.current.submitPrompt('Rework my canceled trip and check availability.', 4); });
+    expect(result.current.recoveryRequest).toContain('Rework');
+    await act(async () => { await result.current.submitPrompt(result.current.recoveryRequest!, 5, { reviewOnly: true }); });
+    expect(result.current.recoveryRequest).toBeNull();
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 5, review_only: true }), expect.any(AbortSignal));
+    await act(async () => { await result.current.replayLastPrompt(); });
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 5, review_only: true, resume: undefined }), expect.any(AbortSignal));
+  });
+
+  it('inspects the phase that produced a concierge reply without losing the run', async () => {
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+    await act(async () => { await result.current.submitPrompt('Plan Tokyo', 4); });
+    const messages = result.current.messages;
+    const trace = result.current.traceSpans;
+    expect(result.current.selectedPhase).toBe(1);
+    expect(result.current.lastRequestPhase).toBe(4);
+    act(() => result.current.inspectCurrentRun());
+    expect(result.current.selectedPhase).toBe(4);
+    expect(result.current.messages).toBe(messages);
+    expect(result.current.traceSpans).toBe(trace);
+    expect(result.current.conversationId).toBe('production-thread');
+    expect(sendChatMessage).toHaveBeenCalledOnce();
+    act(() => result.current.clearChat());
+    expect(result.current.lastRequestPhase).toBeNull();
+  });
+
+  it('starts a fresh SQL demonstration when explicitly selected after a concierge run', async () => {
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+    await act(async () => { await result.current.submitPrompt('Plan Tokyo', 4); });
+    act(() => result.current.setSelectedPhase(1));
+    expect(result.current.selectedPhase).toBe(1);
+    expect(result.current.lastRequestPhase).toBeNull();
+    expect(result.current.messages).toEqual([]);
+    expect(result.current.conversationId).toBeNull();
+  });
+
+  it('starts a separate ladder turn after returning from Concierge without clicking a phase', async () => {
+    const { result } = renderHook(() => useMeridianShowcase());
+    await act(async () => { await result.current.submitPrompt('Plan Tokyo', 4); });
+    expect(result.current.selectedPhase).toBe(1);
+    vi.mocked(sendChatMessage).mockResolvedValueOnce({ message: 'SQL catalog results.', activities: [] });
+    await act(async () => { await result.current.submitPrompt('City trips under $2000'); });
+    const requests = vi.mocked(sendChatMessage).mock.calls;
+    const request = requests[requests.length - 1][0];
+    expect(request.phase).toBe(1);
+    expect(request).not.toHaveProperty('conversation_id');
+    expect(result.current.conversationId).toBeNull();
+    expect(result.current.lastRequestPhase).toBe(1);
+    expect(result.current.messages.map(message => message.text)).toEqual(['City trips under $2000', 'SQL catalog results.']);
+  });
+
+  it('reruns a concierge request in Production while inspecting its evidence', async () => {
+    const { result } = renderHook(() => useMeridianShowcase());
+    await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+    await act(async () => { await result.current.submitPrompt('Plan Tokyo', 4); });
+    expect(result.current.selectedPhase).toBe(1);
+    await act(async () => { await result.current.replayLastPrompt(); });
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      phase: 4, memory_enabled: true, conversation_id: 'production-thread',
+    }), expect.any(AbortSignal), expect.any(Function));
+  });
 });
 
 

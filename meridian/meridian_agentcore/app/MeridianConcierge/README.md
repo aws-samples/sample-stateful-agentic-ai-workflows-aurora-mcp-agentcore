@@ -15,16 +15,27 @@ server-sent events.
 | `hold_execution.py` | Runs the hold or confirmation the traveler confirmed, through the gateway, before the model writes its reply |
 | `gateway_auth.py` | SigV4 signing for MCP requests to the gateway with the runtime's execution role |
 | `prompts.py` | System, turn and narration prompts |
-| `model/load.py` | Bedrock model client (`BEDROCK_MODEL_ID`, default `global.anthropic.claude-haiku-4-5-20251001-v1:0`) |
+| `model/load.py` | Shared Bedrock model factory (`BEDROCK_MODEL_ID`, default `us.openai.gpt-6-luna`) |
 
 ## Model and latency
 
-The managed concierge defaults to Claude Haiku 4.5 with a 4,096-token output
-budget. Local teaching agents keep their separately configured Sonnet model.
+The managed concierge defaults to GPT-6 Luna through Bedrock, with low reasoning
+effort and a 2,048-token output budget. Local teaching agents keep their separately
+configured Sonnet model. The Runtime reuses its model client between turns while
+each agent loads the authorized conversation through AgentCore Memory.
 To change the managed model, edit `BEDROCK_MODEL_ID` in the AgentCore template,
 render the project configuration, then redeploy. Changing only the backend's
-`.env` does not change the managed Runtime. Optional reasoning models retain a
-16,000-token budget because thinking and tool generation share that limit.
+`.env` does not change the managed Runtime. `BEDROCK_MAX_TOKENS` accepts 256–16,000;
+`BEDROCK_REASONING_EFFORT` applies only to hosted OpenAI models. GPT-OSS models
+are rejected by configuration. To restore the previous
+model, set `BEDROCK_MODEL_ID=global.anthropic.claude-haiku-4-5-20251001-v1:0` in the
+template, render and redeploy. There is no automatic replay of failed tool turns.
+
+Discovery uses one semantic search, recommends up to two trips, and defers
+availability checks until requested or needed to answer a missing fact. Follow-up
+comparisons reuse the authorized context. Runtime startup, memory retrieval and
+Gateway calls still contribute to first-turn latency; a model swap does not
+remove those operations.
 
 Search results stream as they arrive from Gateway. The backend forwards only
 package IDs for provisional cards; the browser resolves these against its live
@@ -44,7 +55,8 @@ effect when the matching target is present.
 
 The CDK app sets `AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL` and
 `MEMORY_MERIDIAN_SESSION_ID`. The template adds the observability settings,
-`BEDROCK_MODEL_ID`, `MERIDIAN_POLICY_MODE`, and, once they exist,
+`BEDROCK_MODEL_ID`, `BEDROCK_MAX_TOKENS`, `BEDROCK_REASONING_EFFORT`,
+`MERIDIAN_POLICY_MODE`, and, once they exist,
 `MERIDIAN_GATEWAY_ID` and `MERIDIAN_POLICY_ENGINE_ID`, which label the trace.
 
 ## Deploy

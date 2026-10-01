@@ -563,10 +563,13 @@ class OrchestrationAgent:
         search_fn: Callable[..., Awaitable[Any]],
         availability_fn: Callable[..., Awaitable[Any]],
         memory_recall_fn: Optional[Callable[..., Awaitable[Any]]] = None,
+        *,
+        review_only: bool = False,
     ) -> None:
         self.search_fn = search_fn
         self.availability_fn = availability_fn
         self.memory_recall_fn = memory_recall_fn
+        self.review_only = review_only
         self.checkpointer = MemorySaver()
         self.checkpointer_kind = "MemorySaver (initializing)"
         self.checkpointer_durable = False
@@ -1466,7 +1469,7 @@ class OrchestrationAgent:
             raise ValueError("travelers_count must be an integer between 1 and 20")
         thread_id = conversation_id or f"phase5-{uuid.uuid4().hex[:8]}"
         config = {"configurable": {"thread_id": thread_id, "execution_id": execution_id}}
-        self.interrupt_after = self._interrupt_after_for_query(query)
+        self.interrupt_after = "search" if self.review_only else self._interrupt_after_for_query(query)
         initial: WorkflowState = {
             "query": query,
             "journey_id": journey_id,

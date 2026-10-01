@@ -134,7 +134,7 @@
 .mds-root .is-discovery .mc-studio-conversation-header h2 { margin: 0 0 10px; font: var(--mds-type-studio-title); letter-spacing: var(--mds-tracking-display); }
 .mds-root .is-discovery .mc-studio-conversation-header p { margin: 0; color: var(--mds-label-2); font: var(--mds-type-studio-body); }
 .mds-root .is-discovery .mc-studio-conversation-header button { font: var(--mds-type-footnote); white-space: nowrap; }
-.mds-root .is-discovery .mc-studio-messages { flex: 1 1 auto; min-height: 100px; overflow: auto; overscroll-behavior: contain; padding: 24px 0; scrollbar-width: thin; scrollbar-color: var(--mds-control-line) transparent; }
+.mds-root .is-discovery .mc-studio-messages { flex: 1 1 auto; min-height: 100px; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; padding: 24px 0; scrollbar-width: thin; scrollbar-color: var(--mds-control-line) transparent; }
 .mds-root .is-discovery .mc-studio-starters { display: grid; gap: 12px; padding-block: clamp(16px, 9dvh, 110px) 20px; }
 .mds-root .is-discovery .mc-studio-starters button { display: flex; align-items: center; gap: 14px; text-align: left; padding: 16px; min-height: 60px; border: 1px solid var(--mds-separator); border-radius: var(--mds-radius-l); background: var(--mds-surface-2); color: var(--mds-label); font: var(--mds-type-studio-label); cursor: pointer; }
 .mds-root .is-discovery .mc-studio-starters button > span { flex: 1; }
@@ -148,6 +148,10 @@
 .mds-root .is-discovery .mc-message { font: var(--mds-type-studio-body); letter-spacing: normal; overflow-wrap: anywhere; }
 .mds-root .is-discovery .mc-message.is-user { padding: 14px 18px; background: var(--mds-surface-2); max-width: 94%; }
 .mds-root .is-discovery .mc-message-author { flex-wrap: wrap; }
+.mds-root .is-discovery .mc-response-spinner { flex: none; color: var(--mds-label-2); }
+.mds-root .is-discovery .mc-response-status { color: var(--mds-label-2); }
+.mds-root .is-discovery .mc-response-body { min-height: 8px; }
+.mds-root .is-discovery .mc-results-status { min-height: 20px; margin: 0 0 12px; color: var(--mds-label-2); font: var(--mds-type-footnote); }
 .mds-root .is-discovery .mc-message .mds-message-text { font: inherit; }
 .mds-root .is-discovery .mc-message .mds-message-text table { display: block; max-width: 100%; overflow-x: auto; }
 .mds-root .is-discovery .mc-message pre { overflow-x: auto; max-width: 100%; }
@@ -244,10 +248,18 @@
 .mds-root .is-discovery .mc-supporting-trips .mc-trip-copy { grid-column:2; grid-row:1; min-width:0; }
 .mds-root .is-discovery .mc-supporting-trips .mc-trip-image img { transform:none; }
 
-/* Arrivals stay soft without delaying live results or moving projector text. */
+/* The response leads; matching cards follow with a small, bounded stagger.
+   Photo decoding has its own fade, so slow images never flash into place. */
 @keyframes mc-soft-arrival { from { opacity: 0; } to { opacity: 1; } }
+.mds-root .is-discovery .mc-destination-photo { opacity: 0; }
+.mds-root .is-discovery .mc-destination-photo.is-loaded { opacity: 1; }
 @media (prefers-reduced-motion: no-preference) {
-  .mds-root .is-discovery .mc-trip,
+  .mds-root .is-discovery .mc-response-spinner { animation: mds-send-spin 900ms linear infinite; }
+  .mds-root .is-discovery .mc-response-body .mds-message-text > * { animation: mc-soft-arrival 180ms ease-out; }
+  .mds-root .is-discovery .mc-trip { animation: mc-soft-arrival 360ms cubic-bezier(.16, 1, .3, 1) 80ms both; }
+  .mds-root .is-discovery .mc-supporting-trips .mc-trip { animation-delay: 160ms; }
+  .mds-root .is-discovery .mc-supporting-trips .mc-trip + .mc-trip { animation-delay: 240ms; }
+  .mds-root .is-discovery .mc-destination-photo { transition: opacity 420ms cubic-bezier(.16, 1, .3, 1); }
   .mds-root .mds-trip-result-card,
   .mds-root .mds-decision-card,
   .mds-root .mc-capability-details[open] > :not(summary),
@@ -255,7 +267,5 @@
   .mds-root .mds-brief-detail[open] > .mds-brief-detail-body {
     animation: mc-soft-arrival 220ms ease-out both;
   }
-  .mds-root .is-discovery .mc-destination-photo { opacity: 0; }
-  .mds-root .is-discovery .mc-destination-photo.is-loaded { opacity: 1; animation: mc-soft-arrival 220ms ease-out both; }
 }
 .mds-root .is-discovery .mc-trip :is(.mc-trip-open, .mc-save):disabled { cursor: wait; }

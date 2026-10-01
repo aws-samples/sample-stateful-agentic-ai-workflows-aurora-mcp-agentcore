@@ -2,11 +2,13 @@ import { Check, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { ShowcaseSheet } from './ShowcaseSheet';
+import { preferenceLabel, preferenceValue } from '../lib/travelPreferences';
 
-export function MemoryDrawer({ state, open, onClose }: { state: MeridianShowcaseState; open: boolean; onClose: () => void }) {
+export function MemoryDrawer({ state, open, onClose, product = false }: { state: MeridianShowcaseState; open: boolean; onClose: () => void; product?: boolean }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const facts = product ? state.previewFacts : state.memoryFacts;
 
   return (
     <ShowcaseSheet
@@ -14,23 +16,23 @@ export function MemoryDrawer({ state, open, onClose }: { state: MeridianShowcase
       onOpenChange={(nextOpen) => {
         if (!nextOpen) onClose();
       }}
-      title="Traveler memory"
+      title={product ? 'Your preferences' : 'Traveler memory'}
       subtitle="Jordan Morgan"
-      description="Review and update Aurora-backed traveler preferences"
+      description={product ? 'Review the details Meridian uses to plan your trips' : 'Review and update Aurora-backed traveler preferences'}
       closeLabel="Close memory drawer"
     >
-      <p className="mds-memory-disclosure">Preferences are scoped to this traveler in Aurora and used only for personalized planning.</p>
+      <p className="mds-memory-disclosure">{product ? 'These saved preferences help shape your trips. You can edit or remove them.' : 'Preferences are scoped to this traveler in Aurora and used only for personalized planning.'}</p>
       {state.memoryMutationError && <div className="mds-error-banner" role="alert">{state.memoryMutationError}</div>}
       <div className="mds-drawer-list">
-        {state.memoryFacts.length === 0 && <div className="mds-navpanel-empty"><b>No saved preferences</b><span>Preferences learned from a live Production turn appear here.</span></div>}
-        {state.memoryFacts.map((fact) => (
+        {facts.length === 0 && <div className="mds-navpanel-empty"><b>No saved preferences</b><span>{product ? 'Your saved travel preferences will appear here.' : 'Preferences recalled in a Production turn appear here.'}</span></div>}
+        {facts.map((fact) => (
           <div className="mds-drawer-row" key={fact.key}>
             <div>
-              <span>{fact.key.replace(/_/g, ' ')}</span>
+              <span>{product ? preferenceLabel(fact.key) : fact.key.replace(/_/g, ' ')}</span>
               {editing === fact.key ? (
                 <input value={value} disabled={busy !== null} onChange={(e) => setValue(e.target.value)} aria-label={`Edit ${fact.key}`} autoFocus />
-              ) : <b>{fact.value}</b>}
-              <small>{fact.source ?? 'memory'} · confidence {fact.confidence?.toFixed(2) ?? 'n/a'}</small>
+              ) : <b>{product ? preferenceValue(fact.key, fact.value) : fact.value}</b>}
+              {!product && <small>{fact.source ?? 'memory'} · confidence {fact.confidence?.toFixed(2) ?? 'n/a'}</small>}
             </div>
             <div>
               {editing === fact.key ? (

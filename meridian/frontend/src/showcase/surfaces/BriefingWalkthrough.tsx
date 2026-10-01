@@ -1,5 +1,6 @@
 import { ArrowRight, Braces, ChevronDown, FileJson, MessageSquare, ShieldCheck, Workflow, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { Phase as CapabilityPhase } from '../../types';
 import { ServiceMark, type ServiceMarkName } from '../components/ServiceMark';
 import './briefingWalkthrough.css';
 
@@ -20,10 +21,15 @@ function MiniFlow({ label, steps }: { label: string; steps: Step[] }) {
   </li>)}</ol>;
 }
 
-function Phase({ number, name, claim, children }: { number: number; name: string; claim: string; children: ReactNode }) {
+function Phase({ number, name, claim, children, onOpen, busy }: {
+  number: CapabilityPhase; name: string; claim: string; children: ReactNode;
+  onOpen?: (phase: CapabilityPhase) => void; busy?: boolean;
+}) {
   return <details name="briefing-capability" className={`mds-brief-phase mds-brief-phase-${number}`} aria-labelledby={`brief-phase-${number}`}>
     <summary className="mds-brief-phase-heading"><div><h3 id={`brief-phase-${number}`}>Phase {number} - {name}</h3><p>{claim}</p></div><ChevronDown size={20} aria-hidden="true" /></summary>
-    <div className="mds-brief-phase-body">{children}</div>
+    <div className="mds-brief-phase-body">{children}
+      {onOpen && <button type="button" className="mds-brief-link" disabled={busy} onClick={() => onOpen(number)}>Open Phase {number}: {name}<ArrowRight size={17} aria-hidden="true" /></button>}
+    </div>
   </details>;
 }
 
@@ -54,12 +60,12 @@ export function BriefingPreparation() {
   </details>;
 }
 
-export function BriefingPhases() {
+export function BriefingPhases({ onOpenPhase, busy }: { onOpenPhase?: (phase: CapabilityPhase) => void; busy?: boolean } = {}) {
   return <details name="solution-briefing" className="mds-brief-section mds-brief-walkthrough" aria-labelledby="brief-phases-heading">
     <summary className="mds-brief-section-heading"><div><h2 id="brief-phases-heading"><span className="mds-brief-section-number" aria-hidden="true">03</span>Build five capabilities</h2><p>SQL → MCP → retrieval → production → recovery.</p></div><ChevronDown size={22} aria-hidden="true" /></summary>
     <div className="mds-brief-section-body">
     <div className="mds-brief-phase-pair">
-      <Phase number={1} name="SQL" claim="Answer from exact rows.">
+      <Phase number={1} name="SQL" claim="Answer from exact rows." onOpen={onOpenPhase} busy={busy}>
         <MiniFlow label="Phase 1 SQL path" steps={[
           { icon: MessageSquare, title: 'Question', detail: 'Destination + budget' },
           { icon: Braces, title: 'SQL filters', detail: 'Parameterized query' },
@@ -67,7 +73,7 @@ export function BriefingPhases() {
         ]} />
         <p className="mds-brief-phase-evidence">Check the SQL and rows. Budget is per traveler. This is bounded filtering, not unrestricted text-to-SQL.</p>
       </Phase>
-      <Phase number={2} name="MCP" claim="Put a reusable tool contract around the data.">
+      <Phase number={2} name="MCP" claim="Put a reusable tool contract around the data." onOpen={onOpenPhase} busy={busy}>
         <MiniFlow label="Phase 2 MCP path" steps={[
           { service: 'app-runner', title: 'FastAPI', detail: 'MCP client' },
           { icon: Braces, title: 'Concierge MCP', detail: 'Compare + convert' },
@@ -76,7 +82,7 @@ export function BriefingPhases() {
         <p className="mds-brief-phase-evidence">Check tool names, inputs and results. Gateway governs the production tools in Phase 4.</p>
       </Phase>
     </div>
-    <Phase number={3} name="Retrieval" claim="Find the meaning as well as the words.">
+    <Phase number={3} name="Retrieval" claim="Find the meaning as well as the words." onOpen={onOpenPhase} busy={busy}>
       <figure className="mds-brief-retrieval" aria-labelledby="brief-retrieval-query">
         <div className="mds-brief-query"><MessageSquare size={23} aria-hidden="true" /><div><p id="brief-retrieval-query">“A Bali villa with yoga and a beach day”</p><span>Illustrative query · seeded catalog example</span></div></div>
         <div className="mds-brief-retrieval-layout">
@@ -110,7 +116,7 @@ export function BriefingPhases() {
       </figure>
     </Phase>
     <div className="mds-brief-phase-pair">
-      <Phase number={4} name="Production" claim="Remember context. Govern every tool call.">
+      <Phase number={4} name="Production" claim="Remember context. Govern every tool call." onOpen={onOpenPhase} busy={busy}>
         <MiniFlow label="Phase 4 governed action path" steps={[
           { service: 'agentcore-runtime', title: 'Runtime', detail: 'Strands + Memory' },
           { service: 'agentcore-gateway', title: 'Gateway', detail: 'Cedar policy' },
@@ -119,7 +125,7 @@ export function BriefingPhases() {
         <p>Bind the traveler and saved budget. Cedar authorizes the call. Aurora checks inventory, ownership and expiry.</p>
         <p className="mds-brief-phase-evidence">Check both the policy decision and the Aurora receipt. Permission to call a tool is not proof of a committed write.</p>
       </Phase>
-      <Phase number={5} name="Workflow" claim="Resume the work after a worker stops.">
+      <Phase number={5} name="Workflow" claim="Resume the work after a worker stops." onOpen={onOpenPhase} busy={busy}>
         <p className="mds-brief-workflow-host"><Workflow size={24} aria-hidden="true" /><strong>LangGraph in FastAPI</strong><span>Aurora checkpoints through the RDS Data API</span></p>
         <ol className="mds-brief-workflow-sequence" aria-label="Phase 5 durable workflow path">
           {[

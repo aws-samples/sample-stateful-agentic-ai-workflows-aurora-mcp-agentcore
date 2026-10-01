@@ -18,13 +18,17 @@ PROFILE_ARN = "arn:aws:bedrock:us-east-1:123456789012:inference-profile/"
         (f"{PROFILE_ARN}global.anthropic.claude-sonnet-5", "Claude Sonnet 5"),
         ("global.anthropic.claude-haiku-4-5-20251001-v1:0", "Claude Haiku 4.5"),
         ("global.anthropic.claude-opus-5", "Claude Opus 5"),
+        ("us.openai.gpt-6-luna", "GPT-6 Luna"),
+        ("global.openai.gpt-6-luna", "GPT-6 Luna"),
+        (f"{PROFILE_ARN}us.openai.gpt-6-luna", "GPT-6 Luna"),
+        ("us.openai.unknown-model", "us.openai.unknown-model"),
         ("global.anthropic.claude-opus-5-5", "global.anthropic.claude-opus-5-5"),
         ("global.anthropic.claude-opus-4-8", "global.anthropic.claude-opus-4-8"),
         ("global.anthropic.claude-sonnet-4-5-20250929-v1:0",
          "global.anthropic.claude-sonnet-4-5-20250929-v1:0"),
     ],
 )
-def test_bedrock_model_label_names_only_the_polish_chain(model_id, label):
+def test_bedrock_model_label_names_known_models_and_preserves_unknown_ids(model_id, label):
     assert bedrock_model_label(model_id) == label
 
 

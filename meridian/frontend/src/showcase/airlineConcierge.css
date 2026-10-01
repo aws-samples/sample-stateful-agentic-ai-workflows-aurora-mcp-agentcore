@@ -708,7 +708,7 @@
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-query-starters { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip {
   width: auto; height: auto; min-height: 36px; max-width: 100%; padding: 7px 10px; gap: 4px 8px;
-  flex-direction: row; flex-wrap: wrap; align-items: baseline; overflow: visible;
+  flex-direction: row; flex-wrap: wrap; align-items: center; overflow: visible;
   font: var(--mds-type-body);
   font-weight: var(--mds-weight-medium);
   background: var(--mds-surface); box-shadow: none; border-radius: var(--mds-radius-m); border: 1px solid var(--mds-control-line);
@@ -716,12 +716,30 @@
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip:hover:not(:disabled) {
   background: var(--mds-surface-2); border-color: var(--mds-tint);
 }
-.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip.is-stretch {
-  border-style: dashed;
-  border-color: var(--mds-yellow);
+/* Green marks an example this capability supports; yellow points to the next
+   capability. These are teaching cues, not receipts for an executed request. */
+.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip.is-works {
+  --mds-starter-color: var(--mds-green);
+  --mds-starter-fill: var(--mds-green-fill);
 }
-.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip.is-stretch small {
-  color: var(--mds-yellow);
+.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip.is-stretch {
+  --mds-starter-color: var(--mds-yellow);
+  --mds-starter-fill: var(--mds-yellow-fill);
+  border-style: dashed;
+}
+.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip:is(.is-works, .is-stretch),
+.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip:is(.is-works, .is-stretch):hover:not(:disabled) {
+  border-color: var(--mds-starter-color);
+  background: var(--mds-starter-fill);
+}
+.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip small {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--mds-starter-color);
+}
+.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip small > svg {
+  display: block; flex: none; width: 1em; height: 1em;
 }
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip:focus-visible {
   outline: 2px solid var(--mds-tint); outline-offset: 2px;
@@ -730,7 +748,9 @@
 /* Suggestions stay small without truncating the query or shrinking touch targets. */
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip > span { display: inline; overflow: visible; overflow-wrap: anywhere; }
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip > small {
-  font: var(--mds-type-footnote);
+  font: inherit;
+  font-weight: var(--mds-weight-regular);
+  white-space: nowrap;
 }
 @media (pointer: coarse) {
   .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip,

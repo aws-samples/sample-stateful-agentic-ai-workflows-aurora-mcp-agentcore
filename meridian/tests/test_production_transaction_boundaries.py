@@ -62,6 +62,11 @@ class FakeStore:
         self.events.append("aurora:profile")
         return {"home_airport": "JFK"}
 
+    async def recall_shown_packages(self, _conversation_id, *, transaction_id):
+        assert transaction_id == self.db.active_tx
+        self.events.append("aurora:shortlist")
+        return [{"package_id": "TKY-001", "name": "Tokyo Indie Walk"}]
+
     async def recall_preferences(self, _traveler_id, limit=8, transaction_id=None):
         assert transaction_id == self.db.active_tx
         assert limit >= 20, "the budget ceiling must see every fact, not the top eight"
@@ -207,6 +212,76 @@ def test_production_turn_releases_transactions_before_the_runtime_call(monkeypat
     assert labels["trace_console"].endswith("rt-1-DEFAULT")
 
 
+def test_trip_cards_and_persisted_context_follow_the_reply_not_search_order(monkeypatch):
+    events, calls = [], []
+    decision = runtime_decision(
+        message="Start with Tokyo Indie Walk (TKY-001), then Tokyo Autumn (TKY-005).",
+        packages=[{"package_id": "CTY-002", "name": "Tokyo Cuisine"},
+                  {"package_id": "TKY-005", "name": "Tokyo Autumn"},
+                  {"package_id": "TKY-001", "name": "Tokyo Indie Walk"}],
+        recommended_package_ids=["CTY-002", "TKY-005", "TKY-001"],
+    )
+    agent = build_agent(events, decision, calls)
+    saved = []
+    async def capture_write(_read, _traveler, _message, _reply, shown, _operation):
+        saved.extend(shown)
+    agent._write_unit = capture_write
+    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+
+    packages, *_ = asyncio.run(agent.process_turn("Plan Tokyo", "trv_meridian_demo", None, 5))
+
+    assert [p.package_id for p in packages] == ["TKY-001", "TKY-005"]
+    assert [p["package_id"] for p in saved] == ["TKY-001", "TKY-005"]
+
+
+@pytest.mark.parametrize(("message", "ids", "expected"), [
+    ("Consider Tokyo Autumn before Tokyo Cuisine.", [], ["TKY-005", "CTY-002"]),
+    ("No details yet for CTY-0020 or FAKE-001.", ["FAKE-001", "TKY-005", "TKY-005"], ["TKY-005"]),
+    ("Compare these options.", [], ["CTY-002", "TKY-005"]),
+])
+def test_response_cards_use_only_observed_packages(message, ids, expected):
+    decision = runtime_decision(message=message, recommended_package_ids=ids, packages=[
+        {"package_id": "CTY-002", "name": "Tokyo Cuisine"},
+        {"package_id": "TKY-005", "name": "Tokyo Autumn"},
+    ])
+    assert [p["package_id"] for p in concierge_mod.response_packages(decision)] == expected
+
+
+def test_followup_refreshes_remembered_trips_and_persists_the_same_cards(monkeypatch):
+    events, calls = [], []
+    agent = build_agent(events, runtime_decision(
+        message="Tokyo Indie Walk fits your saved boutique preference.",
+        packages=[], recommended_package_ids=[], activities=[],
+    ), calls)
+    saved = []
+    async def capture_write(_read, _traveler, _message, _reply, shown, _operation):
+        saved.extend(shown)
+    agent._write_unit = capture_write
+    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    packages, *_ = asyncio.run(agent.process_turn("Which of those fits?", "trv_meridian_demo", "conv-test", 5))
+    assert [p.package_id for p in packages] == ["TKY-001"]
+    assert [p["package_id"] for p in saved] == ["TKY-001"]
+    assert events.index("aurora:shortlist") < events.index("tx-1:commit") < events.index("aurora:hydrate")
+    assert "Previously shown trips" in calls[0][0][3]
+
+
+@pytest.mark.parametrize(("message", "activities"), [
+    ("No new matches for Tokyo Indie Walk.", [{"title": "AgentCore Gateway · tools/call → semantic_trip_search"}]),
+    ("What else would you like to plan?", []),
+])
+def test_recalled_cards_do_not_fill_an_empty_search_or_unrelated_reply(message, activities):
+    decision = runtime_decision(message=message, packages=[], recommended_package_ids=[], activities=activities)
+    assert concierge_mod.response_packages(decision, [{"package_id": "TKY-001", "name": "Tokyo Indie Walk"}]) == []
+
+
+def test_removed_catalog_trip_is_not_recreated_from_memory():
+    agent = build_agent([], runtime_decision(), [])
+    async def no_longer_listed(*_args, **_kwargs):
+        return []
+    agent.db.execute = no_longer_listed
+    assert asyncio.run(agent._hydrate([{"package_id": "TKY-001", "name": "Old trip"}])) == []
+
+
 @pytest.mark.parametrize(
     ("facts", "travelers", "saved_basis", "ceiling"),
     [
@@ -237,5 +312,7 @@ def test_runtime_budget_narration_matches_enforced_ceiling(
     assert saved_basis in context
     assert f"Party size: {travelers} traveler(s)." in context
     assert f"Whole-party policy ceiling: ${ceiling / 100:,.2f}." in context
+    assert "for the entire listed package duration" in context
+    assert "never multiply by nights" in context
     assert kwargs["budget_ceiling_cents"] == ceiling
     assert kwargs["travelers_count"] == travelers

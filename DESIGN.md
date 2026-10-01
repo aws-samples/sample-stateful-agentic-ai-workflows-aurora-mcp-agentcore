@@ -225,6 +225,11 @@ Shared actions are capsule-shaped blue buttons with white headline labels, a min
 
 Concierge quick actions are quiet text with supporting icons, compact spacing, small corners and tint for selected state. They use a `36px` minimum in Studio; they are not blue primary buttons. Starter rows are larger neutral rounded controls, with a `60px` minimum and a neutral border that strengthens on hover.
 
+Capability ladder query pills use a green check, border, and soft green fill for
+“Works here.” A yellow forward arrow, dashed border, and soft yellow fill identify
+queries handled by the next capability. These labels describe supported examples;
+executed request results continue to derive their status from recorded evidence.
+
 ### Cards / Containers
 
 One featured catalog image leads Concierge with its title, facts, price and action over a legibility scrim. Supporting trips use compact rows and medium-radius thumbnails. Image crops remain within their own grid tracks. Save is a separately named toggle with a visible pressed state; clipping the image must not clip that control. Use live catalog copy, pricing and availability, including genuine empty/loading/unavailable states.
@@ -247,8 +252,46 @@ Main-view and capability changes fade in over 220ms without an exit wait or
 vertical motion. Destination, ladder-result and recovery cards, plus opened
 architecture/briefing details, use the same short opacity reveal. Destination
 photos reveal after loading. Reduced-motion preferences skip these fades.
-Provisional catalog matches appear during the real stream; actions remain
-disabled until the authoritative turn completes.
+The Concierge keeps one response slot from waiting to completion. A quiet
+spinner follows real progress; incoming text is paced in short word groups,
+with no replay when revisiting a finished answer. Result cards follow the
+first response text with a bounded 80–240ms stagger and 360ms opacity reveal.
+Photos fade over 420ms after decoding, including cached images. Reduced
+motion shows text and photos immediately. Provisional catalog actions remain
+disabled until the authoritative turn completes. The composer allows drafting
+while waiting and offers Stop waiting without claiming to cancel saved work.
+Completed cards follow the known catalog trips named in the reply; a generic
+reply keeps the runtime ranking. Pricing context states that a package price
+covers its listed duration and is multiplied only by the number of travelers.
+Recommendation prose quotes per-traveler catalog prices; the trip controls
+calculate party totals instead of asking the model to perform that arithmetic.
+
+Surface navigation preserves the current run and selected ladder phase.
+“Open this capability” in System evidence follows the phase that produced the
+run; the explicit How it works action starts a fresh SQL walkthrough.
+System evidence shows the current capability's recorded trace,
+or persisted recovery evidence for Workflow. Briefing links open each of the
+five capabilities without executing a request.
+
+Concierge presents the finished traveler experience before teaching views.
+Its travel brief shows recalled preferences and offers editing; every product
+turn requests server-authorized memory independently of the ladder toggle.
+The traveler avatar and Profile action open this inline brief, including the
+preferences loaded before a conversation, without a separate profile drawer.
+Dependent recovery requests offer “Review recovery plan,” carrying the actual
+request and party size into a new saved workflow that pauses after search.
+Opening the plan does not place a hold; the recovery desk requires the explicit
+resume-and-request-hold action. Teaching-mode boundary explanations remain in
+the capability ladder.
+
+Reply tone is calm and direct. Prompts prohibit stock applause and routine
+tool narration. The backend removes punctuated lead-ins such as “Great!” and
+“Perfect!” consistently from streamed and completed text, preserving catalog
+names and quotations. Only an ambiguous opening token is buffered.
+Follow-up answers can recall the conversation's previously shown trips without
+another model search. Only named trips return, with current catalog details;
+an empty new search stays empty. Saved preferences are editable before the
+first turn, and product views translate boolean facts into readable choices.
 
 ## Do's and Don'ts
 

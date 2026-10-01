@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 import time
+from functools import lru_cache
 
 import boto3
 from bedrock_agentcore.memory.integrations.strands.config import (
@@ -24,11 +25,11 @@ from bedrock_agentcore.memory.integrations.strands.session_manager import (
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from opentelemetry import trace
 from strands import Agent
-from strands.models.bedrock import BedrockModel
 from strands.tools.mcp import MCPClient
 
 from gateway_auth import GatewaySigV4
 from hold_execution import execute_confirmed_booking, execute_confirmed_hold
+from model.load import DEFAULT_MODEL_ID, load_model
 from prompts import narration_prompt, system_prompt, turn_prompt
 from turn_trace import TraceHooks, TurnContext, activity
 
@@ -37,7 +38,7 @@ REGION = os.getenv("AWS_REGION", "us-east-1")
 SESSION = boto3.Session(region_name=REGION)
 GATEWAY_URL = os.environ["AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL"]
 MEMORY_ID = os.environ["MEMORY_MERIDIAN_SESSION_ID"]
-MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "global.anthropic.claude-haiku-4-5-20251001-v1:0")
+MODEL_ID = os.getenv("BEDROCK_MODEL_ID", DEFAULT_MODEL_ID)
 GATEWAY_ID = os.getenv("MERIDIAN_GATEWAY_ID", GATEWAY_URL.split("//")[-1].split(".")[0])
 POLICY_ENGINE_ID = os.getenv("MERIDIAN_POLICY_ENGINE_ID", "")
 POLICY_MODE = os.getenv("MERIDIAN_POLICY_MODE", "ENFORCE")
@@ -47,6 +48,12 @@ FOLLOW_UPS = [
     "Check duration availability",
     "Explain the preference match",
 ]
+
+
+@lru_cache(maxsize=1)
+def concierge_model():
+    """Reuse the stateless model client within the isolated Runtime session."""
+    return load_model(MODEL_ID, REGION)
 
 
 def trace_id() -> str | None:
@@ -239,12 +246,7 @@ async def run(payload: dict):
         for event in drain(queue):
             yield event
         agent = Agent(
-            # Haiku keeps interactive tool turns short. Retain the larger budget
-            # for optional reasoning models, whose thinking shares this limit.
-            model=BedrockModel(
-                model_id=MODEL_ID, region_name=REGION,
-                max_tokens=4096 if "haiku" in MODEL_ID else 16000,
-            ),
+            model=concierge_model(),
             system_prompt=system_prompt(
                 turn.hold_confirmed, hold_target, turn.booking_confirmed, booking_target
             ),

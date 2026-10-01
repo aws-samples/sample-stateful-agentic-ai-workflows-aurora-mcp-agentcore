@@ -1,5 +1,6 @@
 import { ArrowRight, ChevronDown } from 'lucide-react';
 import type { ReactNode } from 'react';
+import type { Phase } from '../../types';
 import { BriefingArchitecture } from './BriefingArchitecture';
 import { BriefingPhases, BriefingPreparation } from './BriefingWalkthrough';
 import { CONTROLS, POLICIES, TOOLS } from './solutionBriefingContent';
@@ -16,7 +17,9 @@ function Facts({ items }: { items: [string, string][] }) {
   ))}</dl>;
 }
 
-export function SolutionBriefing({ onOpenLadder, onOpenEvidence }: { onOpenLadder: () => void; onOpenEvidence: () => void }) {
+export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, busy = false }: {
+  onOpenLadder: () => void; onOpenEvidence: () => void; onOpenPhase?: (phase: Phase) => void; busy?: boolean;
+}) {
   return (
     <section className="mds-brief" aria-labelledby="mds-brief-title">
       <header className="mds-brief-head">
@@ -30,7 +33,7 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence }: { onOpenLadde
         </div>
       </details>
       <BriefingPreparation />
-      <BriefingPhases />
+      <BriefingPhases onOpenPhase={onOpenPhase} busy={busy} />
       <details name="solution-briefing" className="mds-brief-section mds-brief-reference" aria-labelledby="brief-reference-heading">
         <summary className="mds-brief-section-heading"><div><h2 id="brief-reference-heading"><span className="mds-brief-section-number" aria-hidden="true">04</span>Verify the boundaries</h2><p>Check permission, committed outcomes and recovery.</p></div><ChevronDown size={22} aria-hidden="true" /></summary>
         <div className="mds-brief-section-body">

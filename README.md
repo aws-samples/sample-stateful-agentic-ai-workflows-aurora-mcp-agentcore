@@ -84,7 +84,7 @@ schema and configuration.
 
 - Python 3.13 and Node.js 22.12 or later (Node.js 20.19 also works)
 - An AWS account and credentials for it (`aws login`, `aws sso login` or `aws configure`)
-- Amazon Bedrock access to `global.anthropic.claude-sonnet-5` (or another model you set in `BEDROCK_MODEL_ID`), Cohere Embed v4 and Cohere Rerank 3.5
+- Amazon Bedrock access to `global.anthropic.claude-sonnet-5` for Retrieval, `us.openai.gpt-6-luna` for the Concierge runtime (each configurable through its own `BEDROCK_MODEL_ID`), Cohere Embed v4 and Cohere Rerank 3.5
 - An Aurora PostgreSQL cluster with the RDS Data API enabled and a Secrets Manager secret for its database user. [OPERATIONS.md](meridian/docs/OPERATIONS.md#provision-aurora) shows how to create one with the included CDK app.
 - For Phase 4, the Concierge chat, and every hold or confirmation: the AgentCore resources, deployed with the [AgentCore CLI](https://github.com/aws/agentcore-cli) (`npm install -g @aws/agentcore`) as described in the [deployment runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md)
 

@@ -34,7 +34,18 @@ The existing React application and its tests live under `meridian/frontend`. Sou
 
 ## Product Principles
 
+- Capability query pills use a green check and green fill for “Works here,”
+  and yellow with a forward arrow for a query solved by the next capability.
+  Red remains reserved for actual errors, denials, and cancellations.
+- The traveler avatar and Profile action open the inline travel brief with
+  remembered preferences, regardless of the selected teaching phase.
 - Show the finished traveler experience before the implementation.
+- Concierge is the product front door: it recalls authorized traveler context,
+  carries the conversation across turns, presents live trips, and leads into a
+  saved recovery for review. The capability ladder explains those behaviors;
+  its teaching toggles do not disable memory in Concierge.
+- Use a calm, direct voice. No stock applause such as “Great!” or “Perfect!”;
+  lead with the answer, a relevant remembered detail, or the next decision.
 - Let the trip and the next decision lead; make supporting context available as needed.
 - Make agent actions and their evidence understandable without exposing invented reasoning.
 - Require explicit confirmation before a hold and preserve truthful recovery states.

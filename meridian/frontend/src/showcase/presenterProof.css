@@ -21,6 +21,10 @@
   background: var(--mds-ground);
 }
 
+.mc-run-evidence { width: 100%; max-width: 1100px; margin-inline: auto; }
+.mc-run-evidence .mds-trace-panel { width: 100%; min-width: 0; }
+.mc-run-evidence-actions { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+
 /* ------------------------------------------------------------------ header */
 
 .mds-proof-head {

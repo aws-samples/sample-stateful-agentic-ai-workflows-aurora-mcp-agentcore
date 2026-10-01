@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Headphones,
   List,
+  Loader2,
   ShieldCheck,
   Sparkles,
 } from 'lucide-react';
@@ -16,7 +17,7 @@ import remarkGfm from 'remark-gfm';
 import type { Message, Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { rehypeMemoryHighlight } from '../lib/memoryHighlight';
-import { typewriterCadence } from '../lib/streamingCadence';
+import { useStreamingText } from '../hooks/useStreamingText';
 import { RankDeltaBadge } from './RankDeltaBadge';
 import { TripResultCardContent } from './TripResultCardContent';
 import { resultRankLabel } from '../lib/resultRankLabel';
@@ -124,7 +125,7 @@ export function ChatTranscript({
       ) : (
         visibleMessages.map((message, index) => (
           <ChatMessage
-            key={`${message.role}-${index}-${message.text.slice(0, 12)}`}
+            key={`${message.role}-${index}`}
             message={message}
             state={state}
             isLatestBot={
@@ -136,7 +137,7 @@ export function ChatTranscript({
         ))
       )}
       <AnimatePresence>
-        {state.isLoading && (
+        {state.isLoading && !latestMessage?.streaming && (
           <motion.div
             className="mds-message bot"
             // Entry stays with the shared mds-msg-in CSS; Motion only owns the
@@ -152,41 +153,14 @@ export function ChatTranscript({
           >
             <div className="mds-message-role"><ConciergeBell size={16} aria-hidden="true" />Meridian</div>
             <div className="mds-message-bubble is-thinking">
-              <span className="mds-running-dot" />
-              <ThinkingTicker phase={state.phaseLabel} />
+              <Loader2 className="mds-activity-spinner" size={16} aria-hidden="true" />
+              <span role="status">{state.chatProgress || `Running your ${state.phaseLabel.toLowerCase()} request…`}</span>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
     </div>
   );
-}
-
-// Phase-aware loading phrases mirror the span sequence for the selected mode.
-const THINKING_PHRASES: Record<string, string[]> = {
-  SQL: ['Reading your request', 'Querying Aurora over the Data API', 'Filtering trips', 'Shaping results'],
-  MCP: ['Reading your request', 'Connecting MCP servers', 'Calling domain tools', 'Composing the reply'],
-  Retrieval: ['Reading your request', 'Embedding the query', 'Searching pgvector + keyword', 'Reranking with Cohere', 'Composing the reply'],
-  Production: ['Resolving identity & scope', 'Recalling your preferences', 'Searching trips', 'Applying RLS scope', 'Composing the reply'],
-  Workflow: ['Classifying intent', 'Routing the graph', 'Running the worker nodes', 'Checkpointing state', 'Composing the reply'],
-};
-const THINKING_FALLBACK = ['Reading your request', 'Reasoning over your data', 'Composing the reply'];
-
-function ThinkingTicker({ phase }: { phase: string }) {
-  const prefersReducedMotion = usePrefersReducedMotion();
-  const phrases = THINKING_PHRASES[phase] ?? THINKING_FALLBACK;
-  const [idx, setIdx] = useState(0);
-  useEffect(() => {
-    setIdx(0);
-    if (prefersReducedMotion) return; // Hold the first phrase, no cycling.
-    const t = setInterval(() => {
-      // Hold on the final phrase until the reply lands.
-      setIdx((i) => Math.min(i + 1, phrases.length - 1));
-    }, 1250);
-    return () => clearInterval(t);
-  }, [phase, phrases.length, prefersReducedMotion]);
-  // Key on idx so each phrase swap replays the fade.
-  return <span key={idx} className="mds-thinking-ticker">{phrases[idx]}…</span>;
 }
 
 function ChatMessage({
@@ -201,9 +175,9 @@ function ChatMessage({
   // Always call the hook; decide below whether to show streamed or static text.
   const text = message.text ?? '';
   // Latest bot turns stream; older turns render immediately for fast history review.
-  const useTypewriter = isLatestBot && text.length > 0;
-  const streamed = useTypewriterReveal(text);
-  const visible = useTypewriter ? streamed : text;
+  const useTypewriter = isLatestBot && !state.latestStreamComplete && text.length > 0;
+  const streamed = useStreamingText(text, useTypewriter || Boolean(message.streaming), message.incomplete);
+  const visible = message.role === 'bot' ? streamed : text;
   // Avoid showing an empty streaming bubble before the first characters arrive.
   const isEmptyStream = useTypewriter && visible.length === 0;
 
@@ -680,57 +654,4 @@ function InlineProductCard({
       />
     </motion.article>
   );
-}
-
-// Reveal small adaptive chunks so normal replies finish in about 2-2.5s
-// while long replies stay smooth and remain bounded for live presentation.
-function useTypewriterReveal(text: string): string {
-  const prefersReducedMotion = usePrefersReducedMotion();
-  // Start with the first 6 chars already revealed so the bubble pops in
-  // *with content*, not as an empty rectangle. The first chunk arriving
-  // immediately is what makes the stream feel alive on slow renders.
-  const initial = text.slice(0, Math.min(6, text.length));
-  const [visible, setVisible] = useState(initial);
-
-  useEffect(() => {
-    if (!text) {
-      setVisible('');
-      return undefined;
-    }
-
-    if (prefersReducedMotion) {
-      setVisible(text);
-      return undefined;
-    }
-
-    const seed = text.slice(0, Math.min(6, text.length));
-    setVisible(seed);
-    if (seed.length >= text.length) return undefined;
-
-    const { stepMs, charsPerStep, naturalDurationMs } =
-      typewriterCadence(text.length - seed.length);
-
-    let cursor = seed.length;
-    const id = window.setInterval(() => {
-      cursor = Math.min(text.length, cursor + charsPerStep);
-      setVisible(text.slice(0, cursor));
-      if (cursor >= text.length) {
-        window.clearInterval(id);
-      }
-    }, stepMs);
-
-    // Failsafe for background tabs and interrupted interval scheduling.
-    const failsafeMs = Math.min(naturalDurationMs + 120, 3400);
-    const failsafe = window.setTimeout(() => {
-      setVisible(text);
-      window.clearInterval(id);
-    }, failsafeMs);
-
-    return () => {
-      window.clearInterval(id);
-      window.clearTimeout(failsafe);
-    };
-  }, [text, prefersReducedMotion]);
-
-  return visible;
 }

@@ -280,7 +280,7 @@ def test_production_hydration_times_the_catalog_query(clock):
     agent.activity_callback = spans.append
     agent.db = FakeDb(clock, {"FROM trip_packages": 65})
     asyncio.run(agent._hydrate([{"package_id": "AML-002"}]))
-    assert _ms(_span(spans, "Hydrated managed search results")) == 65
+    assert _ms(_span(spans, "Refreshed discussed trips from the live catalog")) == 65
 
 
 # ------------------------------------------------- traveler grant and RLS scope
@@ -351,6 +351,9 @@ class FakeReadStore:
         return {}
 
     async def recall_preferences(self, _traveler_id, limit=8, transaction_id=None):
+        return []
+
+    async def recall_shown_packages(self, _conversation_id, *, transaction_id):
         return []
 
     @staticmethod

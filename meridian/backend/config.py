@@ -75,9 +75,9 @@ class AgentConfig:
 class BedrockConfig:
     """Bedrock LLM configuration.
 
-    Every agent in the codebase reads its model identifier from here, so the
-    operator can swap models for the whole app via a single environment
-    variable (``BEDROCK_MODEL_ID``) without editing eight files.
+    Local teaching agents read their model identifier from here. The managed
+    Concierge has a separate BEDROCK_MODEL_ID in its AgentCore deployment
+    template; changing the backend environment does not change that Runtime.
 
     Default is the Global cross-Region inference profile for Anthropic Claude
     Sonnet 5 (``global.anthropic.claude-sonnet-5``). Swap to
@@ -126,18 +126,17 @@ _MODEL_LABELS = {
     "claude-sonnet-5": "Claude Sonnet 5",
     "claude-haiku-4-5-20251001-v1:0": "Claude Haiku 4.5",
     "claude-opus-5": "Claude Opus 5",
+    "gpt-6-luna": "GPT-6 Luna",
 }
 
 
 def bedrock_model_label(model_id: str) -> str:
-    """Human-readable label for Run config / health (from BEDROCK_MODEL_ID).
-
-    Names the polish chain (Sonnet 5 -> Haiku 4.5 -> Opus 5) whatever its
-    inference profile prefix or ARN. Any other model shows its own ID, so the
-    UI never names a model that is not running.
-    """
+    """Name a known reported model; preserve unknown IDs instead of guessing."""
     profile = model_id.rsplit("/", 1)[-1]
-    return _MODEL_LABELS.get(profile.split("anthropic.", 1)[-1], profile)
+    for provider in ("anthropic.", "openai."):
+        if provider in profile:
+            return _MODEL_LABELS.get(profile.split(provider, 1)[-1], profile)
+    return profile
 
 
 EMBEDDING_MODEL_ID: str = os.getenv("EMBEDDING_MODEL", "cohere.embed-v4:0")

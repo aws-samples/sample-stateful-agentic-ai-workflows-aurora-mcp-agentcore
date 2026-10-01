@@ -85,6 +85,8 @@ class ChatRequest(BaseModel):
     resume: bool = False
     travelers_count: int = Field(default=1, ge=1, le=20, strict=True)
     memory_enabled: bool = True
+    experience: Literal["capability", "concierge"] = "capability"
+    review_only: bool = False
 
 
 class TraceTelemetry(BaseModel):
@@ -179,6 +181,7 @@ class ChatResponse(BaseModel):
     memory_facts: Optional[List[MemoryFact]] = None
     workflow_status: Optional[str] = None
     workflow_resumed_after_restart: Optional[bool] = None
+    recovery_request: Optional[str] = None
     # The Bedrock model that actually wrote `message` (may be a fallback,
     # not the configured primary). None when the reply is a pure tool
     # result and no model wrote any part of it - the frontend must show
@@ -218,6 +221,8 @@ def _complete_chat_turn(
     *,
     error: Optional[str] = None,
 ) -> ChatResponse:
+    from backend.concierge_voice import direct_reply
+    response.message = direct_reply(response.message)
     log_turn_complete(
         phase,
         products_count=len(response.products) if response.products else 0,
@@ -1838,6 +1843,7 @@ async def orchestration_workflow(
     *,
     resume: bool = False,
     travelers_count: int = 1,
+    review_only: bool = False,
 ) -> tuple[List[Product], List[ActivityEntry], str, str, str, bool]:
     """
     Phase 5: LangGraph StateGraph orchestrates classify → branch → synthesize.
@@ -1856,6 +1862,7 @@ async def orchestration_workflow(
         search_fn=retrieval_search,
         availability_fn=retrieval_availability_search,
         memory_recall_fn=workflow_memory_recall,
+        review_only=review_only,
     )
     try:
         from backend.agents.phase_05_workflow.execution import run_http_workflow
@@ -2339,6 +2346,20 @@ async def chat(
     )
     activities = []
 
+    # The finished product offers a reviewable recovery, never a teaching-mode
+    # instruction. Opening the plan is a separate explicit action; this reply
+    # does not run a workflow or authorize an inventory write.
+    if request.experience == "concierge" and request.phase == 4 and _needs_checkpointed_workflow(request.message):
+        return _complete_chat_turn(ChatResponse(
+            message="We can find alternatives and check their availability. Review a recovery plan before deciding whether to request a hold.",
+            activities=[create_activity(
+                activity_type="reasoning", title="Recovery review offered",
+                details="The traveler can open a saved recovery plan. No recovery or hold has run.",
+                agent_name="Concierge", agent_file="backend/routers/chat.py",
+            )], conversation_id=request.conversation_id,
+            recovery_request=request.message,
+        ), request.phase, turn_started)
+
     # Only Phase 3 uses the local PackageAgent shortcut. Phase 4 must apply
     # the context guard and execute through the managed Runtime below. Multi-step
     # planning prompts that also ask for availability should NOT be collapsed
@@ -2550,6 +2571,8 @@ async def chat(
             resume_workflow = request.resume or _is_workflow_resume_query(
                 request.message
             )
+            if request.review_only and resume_workflow:
+                raise HTTPException(status_code=422, detail="A review starts a new plan. Read the saved recovery before choosing to resume it.")
             (
                 workflow_packages,
                 workflow_activities,
@@ -2563,6 +2586,7 @@ async def chat(
                 conversation_id=request.conversation_id,
                 resume=resume_workflow,
                 travelers_count=request.travelers_count,
+                **({"review_only": True} if request.review_only else {}),
             )
             activities.extend(workflow_activities)
             workflow_memory_facts: List[MemoryFact] = []
@@ -2761,7 +2785,7 @@ async def chat(
             if request.phase in (3, 4):
                 top_similarity = products[0].similarity
                 if top_similarity and top_similarity > 0.8:
-                    raw_message = f"Great match! I found {len(products)} trips that closely match what you're looking for:"
+                    raw_message = f"I found {len(products)} trips that closely match what you're looking for:"
                 else:
                     raw_message = f"Here are {len(products)} trips that might interest you:"
             else:

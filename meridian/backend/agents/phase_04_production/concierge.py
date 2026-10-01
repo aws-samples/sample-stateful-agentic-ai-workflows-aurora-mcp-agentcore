@@ -38,8 +38,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
@@ -47,6 +48,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from backend.agentcore.cli_config import require_agentcore_platform
 from backend.agentcore.identity import get_agentcore_identity
 from backend.chat_stream import emit_chat_event
+from backend.concierge_voice import VOICE
 from backend.agentcore.runtime import RuntimeDecision, get_agentcore_runtime
 from backend.agents.budget import (
     BUDGET_KEYS,
@@ -62,6 +64,40 @@ from backend.memory.store import get_memory_store
 from backend.timing import clock, elapsed_ms
 
 logger = logging.getLogger(__name__)
+
+
+def response_packages(
+    decision: RuntimeDecision, remembered: Optional[List[Dict[str, Any]]] = None
+) -> List[Dict[str, Any]]:
+    """Connect cards to packages discussed in the reply, using only observed results.
+
+    Runtime's IDs can contain the entire search pool. Explicit catalog IDs or
+    full names in the reply give its presentation order; unmentioned candidates
+    must not displace those trips. A generic reply retains the runtime ranking.
+    A follow-up without a search can name the same conversation's saved trips;
+    they are rehydrated from the live catalog before display.
+    """
+    searched = any("tools/call" in str(_read(activity, "title"))
+                   and "semantic_trip_search" in str(_read(activity, "title"))
+                   for activity in decision.activities)
+    recall_only = not decision.packages and not searched
+    pool = remembered if recall_only else decision.packages
+    observed = {str(p["package_id"]): p for p in pool or [] if p.get("package_id")}
+    mentioned = []
+    for package_id, package in observed.items():
+        labels = [package_id, str(package.get("name") or "")]
+        positions = [match.start() for label in labels if label
+                     if (match := re.search(r"(?<!\w)" + re.escape(label) + r"(?!\w)",
+                                            decision.message, re.IGNORECASE))]
+        if positions:
+            mentioned.append((min(positions), package_id))
+    if mentioned:
+        return [observed[package_id] for _, package_id in sorted(mentioned)]
+    if recall_only:
+        return []
+    ranked = list(dict.fromkeys(decision.recommended_package_ids))
+    return [observed[package_id] for package_id in ranked if package_id in observed] or list(observed.values())
+
 
 PACKAGE_DETAIL_SQL = """
     SELECT package_id, name, operator, price_per_person,
@@ -103,7 +139,7 @@ def _read(item: Any, key: str) -> Any:
 def runtime_model_id(activities: Iterable[Any]) -> Optional[str]:
     """The model id the AgentCore Runtime reported for this turn, if it reported one.
 
-    The Runtime builds one ``BedrockModel`` per turn, with no fallback chain, and
+    The Runtime uses its configured ``BedrockModel``, with no fallback chain, and
     names its id in the ``model`` field of its runtime span. That id is the model
     that wrote the reply. The configured model is never substituted.
 
@@ -205,6 +241,7 @@ class AuthorizedRead:
     memory_context: str
     memory_facts: List[Dict[str, Any]]
     budget_facts: List[Dict[str, Any]]
+    remembered_packages: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class ProductionAgent:
@@ -372,6 +409,7 @@ class ProductionAgent:
                 )
                 profile = await self.store.recall_profile(traveler_id, transaction_id=read_tx)
                 session = await self.traveler_memory.recall_session_context(conv_id)
+                remembered_packages = await self.store.recall_shown_packages(conv_id, transaction_id=read_tx)
                 prefs = await self.traveler_memory.recall_traveler_preferences(traveler_id)
                 similar = await self.traveler_memory.recall_similar_interactions(
                     traveler_id, message
@@ -389,12 +427,17 @@ class ProductionAgent:
         context = self.store.format_memory_context(
             profile, session.get("turns", []), facts, similar.get("interactions", [])
         )
+        if remembered_packages:
+            context += "\nPreviously shown trips (recheck availability before a hold):\n" + "\n".join(
+                f"- {package['package_id']}: {package.get('name', '')}" for package in remembered_packages
+            )
         return AuthorizedRead(
             scope=scope,
             conv_id=conv_id,
             memory_context=context,
             memory_facts=facts,
             budget_facts=budget_facts,
+            remembered_packages=remembered_packages,
         )
 
     # -------------------------------------------------------------- runtime
@@ -449,15 +492,21 @@ class ProductionAgent:
         budget_context = (
             f"Current turn pricing basis:\nParty size: {travelers} traveler(s).\n"
             f"{saved_budget}\nWhole-party policy ceiling: ${ceiling / 100:,.2f}.\n"
-            "Catalog prices are per traveler. Compare the catalog price multiplied by "
-            "this party size with the whole-party ceiling, not with a per-traveler cap."
+            "Catalog prices are per traveler for the entire listed package duration, "
+            "not nightly rates. Total = price_per_person × party size only; never multiply "
+            "by nights. No extra tax or fee is modeled. Compare that total with the "
+            "whole-party ceiling; claim it is within budget only when total <= ceiling. "
+            "Offer only durations and availability returned by get_package_details. "
+            "For recommendations, quote the catalog price per traveler only. Leave party "
+            "totals and budget arithmetic to the trip controls, which calculate them exactly. "
+            "Do not quote calculated totals or budget comparisons in recommendation prose."
         )
         decision = await asyncio.to_thread(
             self.agentcore_runtime.invoke_turn,
             read.conv_id,
             traveler_id,
             message,
-            f"{budget_context}\n\n{read.memory_context}",
+            f"{VOICE}\n\n{budget_context}\n\n{read.memory_context}",
             budget_ceiling_cents=ceiling,
             travelers_count=travelers,
             **hold,
@@ -468,7 +517,7 @@ class ProductionAgent:
         return decision
 
     async def _hydrate(self, packages_raw: List[Dict[str, Any]]) -> List[Any]:
-        """Join the runtime's ranked packages to live catalog rows, preserving its order."""
+        """Join the reply's packages to live catalog rows, preserving presentation order."""
         package_ids = [str(p.get("package_id") or "") for p in packages_raw if p.get("package_id")]
         if package_ids:
             placeholders = ", ".join(["%s"] * len(package_ids))
@@ -484,12 +533,12 @@ class ProductionAgent:
                     **detail_by_id.get(str(package.get("package_id") or ""), {}),
                     **({"similarity": package["similarity"]} if "similarity" in package else {}),
                 }
-                for package in packages_raw
+                for package in packages_raw if str(package.get("package_id") or "") in detail_by_id
             ]
             self._log(
                 "database",
-                "Hydrated managed search results",
-                details=f"{len(detail_rows)} live catalog rows joined to the runtime's ranking",
+                "Refreshed discussed trips from the live catalog",
+                details=f"{len(detail_rows)} live catalog rows joined to the response's trip order",
                 sql_query=(
                     "SELECT package_id, durations, availability, highlights "
                     "FROM trip_packages WHERE package_id IN (...)"
@@ -501,7 +550,7 @@ class ProductionAgent:
                     "status": "ok",
                     "fields": [
                         {"label": "rows", "value": str(len(detail_rows))},
-                        {"label": "preserved_order", "value": "Runtime ranking"},
+                        {"label": "preserved_order", "value": "Trips discussed in the response; Runtime ranking when none are named"},
                     ],
                 },
             )
@@ -624,7 +673,7 @@ class ProductionAgent:
         emit_chat_event({"type": "conversation", "conversation_id": read.conv_id})
         decision = await self._runtime_turn(read, message, traveler_id, travelers_count)
         emit_chat_event({"type": "status", "text": "Saving your plan and checking trip details…"})
-        packages = await self._hydrate(decision.packages)
+        packages = await self._hydrate(response_packages(decision, read.remembered_packages))
         shown = [{"package_id": p.package_id, "name": p.name} for p in packages]
         await self._write_unit(
             read, traveler_id, message, decision.message, shown, "production_turn"

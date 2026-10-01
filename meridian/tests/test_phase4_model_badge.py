@@ -1,6 +1,6 @@
 """Phase 4 names the model the AgentCore Runtime reported, or no model at all.
 
-The Runtime builds one ``BedrockModel(model_id=MODEL_ID)`` per turn, with no
+The Runtime reuses a Bedrock client for its configured model, with no automatic
 fallback chain, and reports that id in the ``model`` field of its runtime
 span. The backend reads that row; it never substitutes the configured model.
 """
@@ -92,6 +92,15 @@ def test_phase4_reply_has_no_badge_when_the_runtime_reports_no_model(monkeypatch
         "Find Tokyo trips for me.",
     )
     assert response.model_label is None
+
+
+def test_phase4_reply_badge_names_the_reported_gpt_model(monkeypatch):
+    response = _run_phase4(
+        monkeypatch,
+        [_runtime_started([{"label": "model", "value": "us.openai.gpt-6-luna"}])],
+        "Find Tokyo trips for me.",
+    )
+    assert response.model_label == "GPT-6 Luna"
 
 
 def test_phase4_workflow_handoff_has_no_badge(monkeypatch):

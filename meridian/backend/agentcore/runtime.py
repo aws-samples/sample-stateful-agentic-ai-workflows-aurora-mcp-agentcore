@@ -33,6 +33,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError, ConnectionClosedError
 
 from backend.chat_stream import emit_chat_event
+from backend.concierge_voice import DirectReplyStream, direct_reply
 from backend.agentcore.cli_config import resolve_agentcore_config
 from backend.agentcore.errors import AgentCoreNotConfiguredError
 
@@ -124,9 +125,26 @@ def _stream_chunks(response: dict[str, Any]):
 
 
 def _forward_runtime_events(response):
+    raw_text, display_text = [], []
+    paragraph_pending = False
+    narration = DirectReplyStream()
     for event in iter_sse(_stream_chunks(response)):
         if event.get("type") == "token" and isinstance(event.get("text"), str):
-            emit_chat_event({"type": "delta", "text": event["text"]})
+            text = event["text"]
+            raw_text.append(text)
+            if text and paragraph_pending and display_text:
+                # Separate model messages on either side of an observed tool
+                # step. Runtime token events otherwise concatenate them.
+                previous = "".join(display_text)
+                trailing = len(previous) - len(previous.rstrip("\n"))
+                leading = len(text) - len(text.lstrip("\n"))
+                text = "\n" * max(0, 2 - trailing - leading) + text
+            if text:
+                paragraph_pending = False
+                display_text.append(text)
+            delta = narration.feed(text)
+            if delta:
+                emit_chat_event({"type": "delta", "text": delta})
         elif event.get("type") == "packages" and isinstance(event.get("packages"), list):
             # Preview only IDs from observed Gateway results. The UI resolves
             # them against its live catalog; final hydration/persistence still
@@ -138,8 +156,19 @@ def _forward_runtime_events(response):
             ))[:20]
             emit_chat_event({"type": "candidates", "package_ids": ids})
         elif event.get("type") == "activity":
+            paragraph_pending = bool(display_text)
             # Expose a short, observed stage, never raw tool payloads or reasoning.
             emit_chat_event({"type": "status", "text": "Checking your trip options…"})
+        elif event.get("type") == "result":
+            # Match the same formatting in the authoritative answer. An actual
+            # correction from Runtime takes precedence over provisional text.
+            if raw_text and str(event.get("message") or "").strip() == "".join(raw_text).strip():
+                tail = narration.feed("", final=True)
+                if tail:
+                    emit_chat_event({"type": "delta", "text": tail})
+                event = {**event, "message": narration.visible.strip()}
+            else:
+                event = {**event, "message": direct_reply(str(event.get("message") or "")).strip()}
         yield event
 
 

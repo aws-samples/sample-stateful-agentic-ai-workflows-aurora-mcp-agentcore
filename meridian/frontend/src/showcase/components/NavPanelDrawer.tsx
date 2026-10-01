@@ -4,21 +4,19 @@ import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import type { Product } from '../../types';
 import { SHOWCASE_EXAMPLE_PROMPTS, SHOWCASE_PHASES } from '../lib/showcaseAdapters';
 import { resultRankLabel } from '../lib/resultRankLabel';
-import { DEMO_TRAVELER_IMAGE_URL, DEMO_TRAVELER_NAME } from '../lib/personas';
 import { ShowcaseSheet } from './ShowcaseSheet';
 
 // Lightweight-but-complete side panels for the sidebar nav. Each panel
 // renders REAL session / Aurora state - no fixtures - so a visitor can
 // click any nav item and land on something coherent instead of a dead
-// button. All four share the existing drawer chrome (.mds-drawer) so
+// button. All three share the existing drawer chrome (.mds-drawer) so
 // they match the Memory drawer visually.
 
-export type NavPanelId = 'trips' | 'discover' | 'profile' | 'messages';
+export type NavPanelId = 'trips' | 'discover' | 'messages';
 
 const PANEL_TITLE: Record<NavPanelId, string> = {
   trips: 'Your trips',
   discover: 'Discover',
-  profile: 'Profile',
   messages: 'Messages',
 };
 
@@ -52,7 +50,6 @@ export function NavPanelDrawer({
     >
       {panel === 'trips' && <TripsPanel state={state} onClose={onClose} />}
       {panel === 'discover' && (travelerMode ? <TravelDiscoverPanel state={state} onClose={onClose} /> : <DiscoverPanel state={state} onClose={onClose} />)}
-      {panel === 'profile' && <ProfilePanel state={state} />}
       {panel === 'messages' && <MessagesPanel state={state} />}
     </ShowcaseSheet>
   );
@@ -171,63 +168,6 @@ function DiscoverPanel({ state, onClose }: { state: MeridianShowcaseState; onClo
           </div>
         );
       })}
-    </div>
-  );
-}
-
-// --- Profile: traveler identity + memory + session stats ----------------
-function ProfilePanel({ state }: { state: MeridianShowcaseState }) {
-  const userTurns = state.messages.filter((m) => m.role === 'user').length;
-  const saved = state.savedTripIds.size;
-
-  return (
-    <div className="mds-drawer-list">
-      <div className="mds-navpanel-profile-head">
-        <span className="mds-avatar is-photo" aria-hidden="true">
-          <img
-            src={DEMO_TRAVELER_IMAGE_URL}
-            alt={DEMO_TRAVELER_NAME}
-            width="640"
-            height="960"
-            loading="lazy"
-          />
-        </span>
-        <div>
-          <strong>Jordan Morgan</strong>
-          <small>{state.travelerId}</small>
-        </div>
-      </div>
-
-      <div className="mds-navpanel-stats">
-        <div>
-          <b>{userTurns}</b>
-          <span>prompts</span>
-        </div>
-        <div>
-          <b>{saved}</b>
-          <span>saved</span>
-        </div>
-        <div>
-          <b>{state.phaseLabel}</b>
-          <span>mode</span>
-        </div>
-      </div>
-
-      <div className="mds-navpanel-section">
-        <div className="mds-navpanel-section-head">Memory facts · {state.memoryFacts.length}</div>
-        {state.memoryFacts.length === 0 ? (
-          <div className="mds-navpanel-hint">
-            Switch to Production and ask a question - traveler facts load from Aurora here.
-          </div>
-        ) : (
-          state.memoryFacts.map((fact) => (
-            <div className="mds-navpanel-fact" key={fact.key}>
-              <span>{fact.key.replace(/_/g, ' ')}</span>
-              <b>{fact.value}</b>
-            </div>
-          ))
-        )}
-      </div>
     </div>
   );
 }

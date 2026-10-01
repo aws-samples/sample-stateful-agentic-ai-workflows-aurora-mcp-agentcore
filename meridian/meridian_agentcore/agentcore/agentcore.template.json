@@ -35,7 +35,15 @@
         },
         {
           "name": "BEDROCK_MODEL_ID",
-          "value": "global.anthropic.claude-haiku-4-5-20251001-v1:0"
+          "value": "us.openai.gpt-6-luna"
+        },
+        {
+          "name": "BEDROCK_MAX_TOKENS",
+          "value": "2048"
+        },
+        {
+          "name": "BEDROCK_REASONING_EFFORT",
+          "value": "low"
         },
         {
           "name": "MERIDIAN_GATEWAY_ID",

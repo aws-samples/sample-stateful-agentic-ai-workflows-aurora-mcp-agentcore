@@ -101,6 +101,23 @@ def test_workflow_search_branch() -> None:
     assert any("synthesize" in t for t in titles)
 
 
+def test_product_review_pauses_before_availability_and_inventory_actions(monkeypatch) -> None:
+    # The product's review boundary wins over demonstration environment settings.
+    monkeypatch.setenv("LANGGRAPH_DEMO_INTERRUPT_AFTER", "hold")
+    wf = _build_workflow()
+    wf.review_only = True
+    res = asyncio.run(wf.run(
+        "My flight was canceled. Rework the trip, then check availability.",
+        traveler_id="t1", conversation_id="product-review", travelers_count=2,
+    ))
+    assert res["workflow_status"] == "paused"
+    assert res["packages"]
+    assert not res.get("hold_id")
+    titles = [a.get("title", "") for a in res.get("activities", [])]
+    assert any("Workflow node: search" in title for title in titles)
+    assert not any("Workflow node: hold" in title or "Workflow node: availability" in title for title in titles)
+
+
 def test_workflow_availability_branch() -> None:
     wf = _build_workflow()
     res = asyncio.run(

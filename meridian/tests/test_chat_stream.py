@@ -136,3 +136,57 @@ def test_runtime_previews_only_catalog_ids_before_completion():
         assert next(events)["type"] == "result"
     finally:
         chat_event_sink.reset(token)
+
+
+@pytest.mark.parametrize("existing_break", ["", "\n", "\n\n"])
+def test_tool_steps_separate_streamed_paragraphs_and_final_answer(existing_break):
+    from backend.agentcore.runtime import _forward_runtime_events
+
+    observed = []
+    first = "Let me check Tokyo." + existing_break
+    second = "Here are your options."
+    events = [
+        {"type": "token", "text": first},
+        {"type": "activity", "title": "Catalog search"},
+        {"type": "activity", "title": "Availability"},
+        {"type": "token", "text": second},
+        {"type": "result", "message": first + second},
+    ]
+    token = chat_event_sink.set(observed.append)
+    try:
+        final = list(_forward_runtime_events({"response": [frame(e) for e in events]}))[-1]
+    finally:
+        chat_event_sink.reset(token)
+    expected = "Let me check Tokyo.\n\nHere are your options."
+    assert "".join(e["text"] for e in observed if e["type"] == "delta") == expected
+    assert final["message"] == expected
+
+
+def test_stream_formatting_never_overwrites_an_authoritative_correction():
+    from backend.agentcore.runtime import _forward_runtime_events
+
+    events = [{"type": "token", "text": "Checking trips."},
+              {"type": "activity", "title": "Availability"},
+              {"type": "token", "text": "Found Tokyo."},
+              {"type": "result", "message": "No available trips remain."}]
+    final = list(_forward_runtime_events({"response": [frame(e) for e in events]}))[-1]
+    assert final["message"] == "No available trips remain."
+
+
+def test_stream_and_persisted_reply_share_the_direct_voice():
+    from backend.agentcore.runtime import _forward_runtime_events
+
+    observed = []
+    events = [{"type": "token", "text": "Gr"},
+              {"type": "token", "text": "eat! I can check Tokyo."},
+              {"type": "activity", "title": "Catalog search"},
+              {"type": "token", "text": "Perfect! Two trips are available."},
+              {"type": "result", "message": "Great! I can check Tokyo.Perfect! Two trips are available."}]
+    token = chat_event_sink.set(observed.append)
+    try:
+        final = list(_forward_runtime_events({"response": [frame(e) for e in events]}))[-1]
+    finally:
+        chat_event_sink.reset(token)
+    expected = "I can check Tokyo.\n\nTwo trips are available."
+    assert "".join(e["text"] for e in observed if e["type"] == "delta") == expected
+    assert final["message"] == expected
