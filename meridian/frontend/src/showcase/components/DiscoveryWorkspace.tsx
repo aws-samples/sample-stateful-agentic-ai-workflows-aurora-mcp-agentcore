@@ -104,7 +104,7 @@ export function DiscoveryWorkspace({ state, onClear, onDiscover }: {
   return (
     <section className="mc-workspace" aria-label="Meridian concierge">
       <header className="mc-welcome">
-        <div><h1>{hasTurn ? 'Let’s make it your kind of trip.' : 'Your next chapter, Alex.'}</h1>
+        <div><h1>{hasTurn ? 'Let’s make it your kind of trip.' : 'Your next chapter, Jordan.'}</h1>
         <span>A trip that feels like you.</span></div>
         <button type="button" className="mc-text-button mc-walkthrough" onClick={onClear} aria-label="How it works: start the capability ladder at Phase 1">How it works<ArrowRight size={15} aria-hidden="true" /></button>
       </header>

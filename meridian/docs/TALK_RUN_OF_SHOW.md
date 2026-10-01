@@ -8,7 +8,7 @@ System evidence, then Solution briefing as the discussion aid.
 
 | Clock | Screen and code | Say and show | Evidence before moving on |
 | --- | --- | --- | --- |
-| 00-04 | Concierge | Start with the finished product: Alex needs a trip that fits saved preferences. Show the catalog and one streamed response. Two builders started with a travel app; each new requirement adds a capability. | Real catalog rows, saved context and the runtime trace. No purchase or supplier integration. |
+| 00-04 | Concierge | Start with the finished product: Jordan needs a trip that fits saved preferences. Show the catalog and one streamed response. Two builders started with a travel app; each new requirement adds a capability. | Real catalog rows, saved context and the runtime trace. No purchase or supplier integration. |
 | 04-06 | Capability ladder | Preview the five steps. Aurora holds the business facts, traveler context and durable workflow state. | Name the failure each step solves. |
 | 06-10 | **01 SQL**: [guide](../backend/agents/phase_01_sql/) | Query city trips under $2,000 per traveler. Open only the filter construction and parameterized execution. | Executed SQL and matching rows. State the unit: price per traveler. |
 | 10-14 | **02 MCP**: [guide](../backend/agents/phase_02_mcp/) | Compare packages and convert prices. Show the named tool's input and output. | Tool name, arguments and actual response. FX data is indicative. |
@@ -27,7 +27,7 @@ System evidence, then Solution briefing as the discussion aid.
 
 ## Before the room opens
 
-1. Confirm the intended AWS identity and durable checkpoint health. Load the catalog and Alex's travel brief through the exact URL you will present.
+1. Confirm the intended AWS identity and durable checkpoint health. Load the catalog and Jordan's travel brief through the exact URL you will present.
 2. Verify the deployed bundle and backend image, then run the targeted hosted checks. Git push and a healthy process alone are not deployment parity.
 3. Rehearse the restart locally; do not stop the hosted service on stage. Keep the same conversation and journey references.
 4. Open the five source highlights and the deck ahead of time. Keep terminals, credentials and operational logs off the projected screen.

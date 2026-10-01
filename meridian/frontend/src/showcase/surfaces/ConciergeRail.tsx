@@ -1,5 +1,5 @@
 import { ArrowRight, CalendarDays, Check, Heart, Plane, ShieldCheck, UsersRound, Utensils } from 'lucide-react';
-import { ALEX_IMAGE_URL } from '../lib/personas';
+import { DEMO_TRAVELER_IMAGE_URL } from '../lib/personas';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { TripHoldReceipt } from '../components/TripHoldReceipt';
 import { BudgetCeiling } from '../components/BudgetCeiling';
@@ -30,9 +30,9 @@ export function ConciergeRail({ state, onSaved, onRecovery }: {
     <header className="mc-brief-header"><h2>Your travel brief</h2><span>Always part of the conversation.</span></header>
     {state.tripHolds?.slice(-1).map(hold => <TripHoldReceipt key={hold.order.order_id} hold={hold} compact />)}
     <div className="mc-traveler">
-      <img src={ALEX_IMAGE_URL} alt="" width="44" height="44" />
+      <img src={DEMO_TRAVELER_IMAGE_URL} alt="" width="44" height="44" />
       <div>
-        <strong>Alex Morgan</strong>
+        <strong>Jordan Morgan</strong>
         <span>
           {profile ? 'Your preferences, remembered' : 'Let’s get to know your travel style'}
         </span>

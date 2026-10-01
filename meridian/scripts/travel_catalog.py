@@ -241,8 +241,8 @@ DEMO_TRAVELER_ID = "trv_meridian_demo"
 TRAVELERS = [
     {
         "traveler_id": DEMO_TRAVELER_ID,
-        "full_name": "Alex Morgan",
-        "email": "alex.morgan@example.com",
+        "full_name": "Jordan Morgan",
+        "email": "jordan.morgan@example.com",
         "home_airport": "JFK",
     },
 ]

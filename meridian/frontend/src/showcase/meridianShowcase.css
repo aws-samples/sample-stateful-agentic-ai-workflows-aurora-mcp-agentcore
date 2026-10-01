@@ -706,7 +706,7 @@
   transition: box-shadow 220ms ease, background 220ms ease;
 }
 
-/* Alex's turn: a blue-tinted bubble, weighted up a notch so it reads on a
+/* Jordan's turn: a blue-tinted bubble, weighted up a notch so it reads on a
    projector. */
 .mds-message.user .mds-message-bubble {
   border-radius: var(--mds-radius-l) var(--mds-radius-l) var(--mds-radius-s) var(--mds-radius-l);

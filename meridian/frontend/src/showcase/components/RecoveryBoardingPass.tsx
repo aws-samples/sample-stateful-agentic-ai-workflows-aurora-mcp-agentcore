@@ -20,7 +20,7 @@ export function RecoveryBoardingPass({ state }: { state: MeridianShowcaseState }
         <div className="mc-pass-main">
           <header><span><img src={MERIDIAN_MARK_SRC} alt="" width="22" height="22" />Meridian</span><span>Original itinerary</span></header>
           <div className="mc-pass-route"><div><strong>JFK</strong><span>New York</span></div><span className="mc-pass-route-line"><Plane size={24} strokeWidth={1.5} aria-hidden="true" /></span><div><strong>Tokyo</strong><span>Japan</span></div></div>
-          <dl className="mc-pass-details"><div><dt>Passenger</dt><dd>{profile?.full_name ?? 'Alex Morgan'}</dd></div><div><dt>Flight / seat</dt><dd>Not provided</dd></div><div><dt>Document</dt><dd>Itinerary preview</dd></div></dl>
+          <dl className="mc-pass-details"><div><dt>Passenger</dt><dd>{profile?.full_name ?? 'Jordan Morgan'}</dd></div><div><dt>Flight / seat</dt><dd>Not provided</dd></div><div><dt>Document</dt><dd>Itinerary preview</dd></div></dl>
         </div>
         <div className="mc-pass-stub"><Ticket size={23} aria-hidden="true" /><strong>Canceled</strong><span>Not valid for boarding</span><div>{recovering ? (stage === 'ready' ? 'Recovery plan ready' : stage === 'checkpointed' ? 'Your progress is saved' : 'Finding alternatives') : 'Ready for a new plan'}<ArrowRight size={14} aria-hidden="true" /></div></div>
       </div>

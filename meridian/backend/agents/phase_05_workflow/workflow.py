@@ -1202,7 +1202,7 @@ class OrchestrationAgent:
         Two short RLS units, both committed before the gateway is called: the
         booking-agent unit checks the lease and binds the thread to its journey;
         the concierge unit reads every saved preference so the ceiling the Cedar
-        policy compares against comes from Alex's own facts.
+        policy compares against comes from Jordan's own facts.
         """
         from backend.agentcore.identity import get_agentcore_identity
         from backend.db.rds_data_client import get_rds_data_client

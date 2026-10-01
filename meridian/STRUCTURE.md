@@ -90,12 +90,12 @@ uses the governed Gateway path.
 | Path | Role |
 | --- | --- |
 | `scripts/init_aurora_schema.py`, `scripts/apply_migrations.py`, `scripts/migrations/` | Create the schema on a new database and apply tracked migrations |
-| `scripts/travel_catalog.py`, `scripts/seed_data.py` | Seed data, and the loader that embeds it and grants the current workload access to Alex |
-| `scripts/bind_current_identity.py` | Grant the current IAM or AgentCore workload access to Alex on an existing database |
+| `scripts/travel_catalog.py`, `scripts/seed_data.py` | Seed data, and the loader that embeds it and grants the current workload access to Jordan |
+| `scripts/bind_current_identity.py` | Grant the current IAM or AgentCore workload access to Jordan on an existing database |
 | `scripts/render_agentcore_config.py` | Render the AgentCore configuration templates for your account and deployed IDs |
 | `scripts/sync_agentcore_env.py` | Copy deployed AgentCore IDs from the CLI state into `.env` |
 | `scripts/publish_gateway_parameters.py` | Publish the Aurora settings the holds Lambda reads from SSM |
-| `scripts/bind_gateway_workload.py`, `scripts/bind_web_backend_role.py` | Grant the holds Lambda role and the App Runner instance role access to Alex |
+| `scripts/bind_gateway_workload.py`, `scripts/bind_web_backend_role.py` | Grant the holds Lambda role and the App Runner instance role access to Jordan |
 | `scripts/verify_agentcore.py`, `scripts/smoke_gateway_tools.py`, `scripts/smoke_production_turn.py` | Check the deployed platform, the gateway tools and the governed hold path end to end |
 | `scripts/kill_and_resume_demo.py`, `scripts/lost_response_demo.py` | Recovery exercises: kill a worker after its hold, or discard a committed hold response |
 | `scripts/provision_preflight.py` | Read-only checks before provisioning Aurora in an account |

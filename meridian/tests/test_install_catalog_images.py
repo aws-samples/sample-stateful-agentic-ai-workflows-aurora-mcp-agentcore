@@ -25,7 +25,7 @@ def _top_row_colour(path: Path) -> tuple[int, int, int]:
 
 
 def test_portrait_crop_keeps_the_top_of_the_frame(tmp_path: Path) -> None:
-    source, destination = tmp_path / "alex-morgan.png", tmp_path / "out.jpg"
+    source, destination = tmp_path / "jordan-morgan.png", tmp_path / "out.jpg"
     _tall_portrait(source)
 
     normalise(source, destination, (300, 300), anchor_top=True)

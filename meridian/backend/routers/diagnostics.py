@@ -1,7 +1,7 @@
 """Diagnostics API — prove Aurora RLS is enforced, live.
 
 The ``/rls-probe`` endpoint first proves the authenticated workload is allowed
-to claim Alex and denied when it claims the decoy traveler. It then runs the
+to claim Jordan and denied when it claims the decoy traveler. It then runs the
 SAME ``COUNT(*)`` twice against a table:
 
   1. SCOPED   — inside ``scoped_session(traveler_id=...)``, so the GUC

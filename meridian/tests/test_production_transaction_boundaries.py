@@ -73,7 +73,7 @@ class FakeStore:
 
     @staticmethod
     def format_memory_context(*_args):
-        return "Alex flies from JFK"
+        return "Jordan flies from JFK"
 
     async def write_audit(self, *, transaction_id, **kwargs):
         assert transaction_id == self.db.active_tx

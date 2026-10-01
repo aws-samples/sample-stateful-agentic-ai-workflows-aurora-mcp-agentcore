@@ -182,7 +182,7 @@ class MemoryStore:
         """Return the traveler's core profile (name, home airport, party size…).
 
         Joins ``travelers`` with ``traveler_profiles``. Used to ground a turn
-        before search — e.g. defaulting departures to JFK for Alex Morgan.
+        before search — e.g. defaulting departures to JFK for Jordan Morgan.
         """
         rows = await self.db.execute(
             """

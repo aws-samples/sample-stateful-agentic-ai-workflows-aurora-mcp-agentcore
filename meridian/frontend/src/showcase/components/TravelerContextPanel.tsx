@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { ServiceMark } from './ServiceMark';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
-import { ALEX_IMAGE_URL, ALEX_NAME } from '../lib/personas';
+import { DEMO_TRAVELER_IMAGE_URL, DEMO_TRAVELER_NAME } from '../lib/personas';
 import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 
 // Snake-case schema keys read as "authentic Aurora data" for some fields
@@ -198,7 +198,7 @@ export function TravelerContextPanel({
             <div className="mds-memory-gate is-loading" role="status">
               <Loader2 size={22} aria-hidden="true" />
               <div>
-                <strong>Authorizing Alex's context</strong>
+                <strong>Authorizing Jordan's context</strong>
                 <span>Applying the traveler grant and loading scoped Aurora facts.</span>
               </div>
             </div>
@@ -223,15 +223,15 @@ export function TravelerContextPanel({
               <div className="mds-profile-line">
                 <span className="mds-avatar is-photo" aria-hidden="true">
                   <img
-                    src={ALEX_IMAGE_URL}
-                    alt={ALEX_NAME}
+                    src={DEMO_TRAVELER_IMAGE_URL}
+                    alt={DEMO_TRAVELER_NAME}
                     width="640"
                     height="960"
                     loading="lazy"
                   />
                 </span>
                 <div>
-                  <strong>Alex Morgan</strong>
+                  <strong>Jordan Morgan</strong>
                   <small>{state.travelerId}</small>
                 </div>
                 <span className="mds-memory-authorized">

@@ -183,7 +183,7 @@ function RecoveryOverview({ stage, error, showHeading, headingRef }: {
   return (
     <header className={`mds-recovery-overview is-${stage}`}>
       {showHeading && <div className="mds-recovery-overview-title">
-        <h1 tabIndex={-1} ref={headingRef}>Alex&apos;s JFK to Tokyo recovery</h1>
+        <h1 tabIndex={-1} ref={headingRef}>Jordan&apos;s JFK to Tokyo recovery</h1>
         <span className="mds-recovery-cancelled-badge">
           <AlertTriangle size={14} aria-hidden="true" />
           Traveler-reported disruption
@@ -227,7 +227,7 @@ function RecoveryContext({ stage, state }: {
   );
 }
 
-/** The hold this recovery recorded, and the step that takes it back to Alex. */
+/** The hold this recovery recorded, and the step that takes it back to Jordan. */
 function RecoveryHoldHandoff({ state, journeyDocument, onOpenProof, onOpenConcierge }: {
   state: MeridianShowcaseState;
   journeyDocument?: JourneyDocument | null;
@@ -258,10 +258,10 @@ function RecoveryHoldHandoff({ state, journeyDocument, onOpenProof, onOpenConcie
         <div className="mds-recovery-handoff">
           <div>
             <strong>Bring it home.</strong>
-            <span>The package is held. Alex confirms the trip with the concierge; the booking policy decides before Aurora confirms.</span>
+            <span>The package is held. Jordan confirms the trip with the concierge; the booking policy decides before Aurora confirms.</span>
           </div>
           <button type="button" className="mc-session-primary" onClick={() => onOpenConcierge(handoffHold)}>
-            Take it back to Alex<ArrowRight size={16} aria-hidden="true" />
+            Take it back to Jordan<ArrowRight size={16} aria-hidden="true" />
           </button>
         </div>
       )}

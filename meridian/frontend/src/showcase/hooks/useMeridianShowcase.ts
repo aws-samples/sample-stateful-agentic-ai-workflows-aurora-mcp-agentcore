@@ -1023,7 +1023,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           order: response.order,
           live: true,
         });
-        setWorkspaceNotice(response.order?.status === 'confirmed' ? `${product.name} is confirmed for Alex.` : response.message);
+        setWorkspaceNotice(response.order?.status === 'confirmed' ? `${product.name} is confirmed for Jordan.` : response.message);
       } catch {
         if (!mounted.current || generation !== requestGeneration.current) return;
         setBackendStatus('offline');

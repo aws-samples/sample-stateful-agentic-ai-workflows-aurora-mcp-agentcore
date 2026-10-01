@@ -121,7 +121,7 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
               >
                 {state.isLoading
                   ? activeHold ? 'Confirming...' : 'Creating hold...'
-                  : confirmed ? 'Trip confirmed' : activeHold ? 'Confirm this trip for Alex' : 'Request 12-hour hold'}
+                  : confirmed ? 'Trip confirmed' : activeHold ? 'Confirm this trip for Jordan' : 'Request 12-hour hold'}
               </button>
             )}
           </footer>

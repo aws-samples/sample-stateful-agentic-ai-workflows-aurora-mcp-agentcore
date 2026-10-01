@@ -15,7 +15,7 @@ export function MemoryDrawer({ state, open, onClose }: { state: MeridianShowcase
         if (!nextOpen) onClose();
       }}
       title="Traveler memory"
-      subtitle="Alex Morgan"
+      subtitle="Jordan Morgan"
       description="Review and update Aurora-backed traveler preferences"
       closeLabel="Close memory drawer"
     >

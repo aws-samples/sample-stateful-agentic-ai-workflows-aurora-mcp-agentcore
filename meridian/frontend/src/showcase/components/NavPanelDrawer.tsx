@@ -4,7 +4,7 @@ import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import type { Product } from '../../types';
 import { SHOWCASE_EXAMPLE_PROMPTS, SHOWCASE_PHASES } from '../lib/showcaseAdapters';
 import { resultRankLabel } from '../lib/resultRankLabel';
-import { ALEX_IMAGE_URL, ALEX_NAME } from '../lib/personas';
+import { DEMO_TRAVELER_IMAGE_URL, DEMO_TRAVELER_NAME } from '../lib/personas';
 import { ShowcaseSheet } from './ShowcaseSheet';
 
 // Lightweight-but-complete side panels for the sidebar nav. Each panel
@@ -46,8 +46,8 @@ export function NavPanelDrawer({
         if (!nextOpen) onClose();
       }}
       title={PANEL_TITLE[panel]}
-      subtitle="Alex Morgan"
-      description={`${PANEL_TITLE[panel]} workspace for Alex Morgan`}
+      subtitle="Jordan Morgan"
+      description={`${PANEL_TITLE[panel]} workspace for Jordan Morgan`}
       closeLabel={`Close ${PANEL_TITLE[panel]}`}
     >
       {panel === 'trips' && <TripsPanel state={state} onClose={onClose} />}
@@ -185,15 +185,15 @@ function ProfilePanel({ state }: { state: MeridianShowcaseState }) {
       <div className="mds-navpanel-profile-head">
         <span className="mds-avatar is-photo" aria-hidden="true">
           <img
-            src={ALEX_IMAGE_URL}
-            alt={ALEX_NAME}
+            src={DEMO_TRAVELER_IMAGE_URL}
+            alt={DEMO_TRAVELER_NAME}
             width="640"
             height="960"
             loading="lazy"
           />
         </span>
         <div>
-          <strong>Alex Morgan</strong>
+          <strong>Jordan Morgan</strong>
           <small>{state.travelerId}</small>
         </div>
       </div>
@@ -249,7 +249,7 @@ function MessagesPanel({ state }: { state: MeridianShowcaseState }) {
           key={`${message.role}-${idx}`}
           className={`mds-navpanel-msg is-${message.role}`}
         >
-          <span className="mds-navpanel-msg-role">{message.role === 'user' ? 'Alex' : 'Meridian'}</span>
+          <span className="mds-navpanel-msg-role">{message.role === 'user' ? 'Jordan' : 'Meridian'}</span>
           <span className="mds-navpanel-msg-text">{message.text}</span>
         </div>
       ))}

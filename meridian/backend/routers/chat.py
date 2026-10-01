@@ -2407,7 +2407,7 @@ async def chat(
                 ChatResponse(
                     message=(
                         "Traveler context is off for this run. Enable **Use traveler "
-                        "context** to let Production recall Alex's saved preferences "
+                        "context** to let Production recall Jordan's saved preferences "
                         "and prior Tokyo plan. Nothing was read from or written to memory."
                     ),
                     products=None,

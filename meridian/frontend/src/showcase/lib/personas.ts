@@ -1,3 +1,3 @@
-export const ALEX_NAME = 'Alex Morgan';
+export const DEMO_TRAVELER_NAME = 'Jordan Morgan';
 
-export const ALEX_IMAGE_URL = '/travel/alex-morgan.jpg';
+export const DEMO_TRAVELER_IMAGE_URL = '/travel/jordan-morgan.jpg';

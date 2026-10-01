@@ -142,7 +142,7 @@ class TestRecallProfile:
     def test_includes_structured_loyalty_programs(self, store):
         s, db = store
         db.queue([{
-            "full_name": "Alex Morgan",
+            "full_name": "Jordan Morgan",
             "loyalty_programs": {
                 "marriott_bonvoy": {
                     "program": "Marriott Bonvoy",

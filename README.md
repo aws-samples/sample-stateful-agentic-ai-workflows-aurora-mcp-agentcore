@@ -14,7 +14,7 @@ LangGraph workflow that survives the loss of its worker process. Every screen
 lets you inspect the SQL, tool calls, authorization decisions and stored
 records behind the result.
 
-The catalog holds sample travel packages and one fictional traveler, Alex
+The catalog holds sample travel packages and one fictional traveler, Jordan
 Morgan (`trv_meridian_demo`). Holds and confirmations change rows in Meridian's
 own database only: there is no supplier, airline or payment integration.
 
@@ -120,6 +120,10 @@ Both `init_aurora_schema.py` and `seed_data.py` refuse to run against a
 database that already has Meridian tables or data. For an existing database,
 run only `python scripts/apply_migrations.py`.
 
+Migration `012` renames the demo traveler to Jordan Morgan without changing
+the traveler ID, saved trips, preferences or recovery checkpoints. Historical
+conversations and audit records retain their original content.
+
 ### 2. Start the backend
 
 ```bash
@@ -168,13 +172,13 @@ configured. Deploy AgentCore to enable them.
 
 The showcase has five views, selected along the top of the page.
 
-1. **Concierge.** Browse trips for Alex and open one with **Explore this trip**
+1. **Concierge.** Browse trips for Jordan and open one with **Explore this trip**
    or **Details**. The conversation sits beside the trip options; **View travel brief**
    reveals the traveler context. Ask for something in the composer, for example
-   `Find Tokyo trips that fit my saved preferences.` The answer uses Alex's
+   `Find Tokyo trips that fit my saved preferences.` The answer uses Jordan's
    saved preferences through the Phase 4 runtime. In a trip's details,
    **Request 12-hour hold** places a courtesy hold through the Gateway, and
-   **Confirm this trip for Alex** confirms it.
+   **Confirm this trip for Jordan** confirms it.
 2. **Capability ladder.** Pick a phase and run its suggested prompts. Each
    phase has two example prompts that work there and a hand-off prompt that
    needs the next phase. Phase 5 is the last phase, so its hand-off is
@@ -195,7 +199,7 @@ The showcase has five views, selected along the top of the page.
    recovery, stop the backend with `Ctrl+C`, start it again with the same
    command, then select **Resume and request hold**. The workflow resumes from
    the saved checkpoint on the same thread and requests a 15-minute hold.
-   **Take it back to Alex** carries the held trip to the Concierge for
+   **Take it back to Jordan** carries the held trip to the Concierge for
    confirmation.
 4. **System evidence.** Read back what Aurora recorded for the selected
    journey: checkpoints, worker executions and leases, authorization
@@ -273,7 +277,7 @@ the code.
 ## Security
 
 This sample authorizes AWS workload identities, not people. Local development
-and the hosted sample use one shared demo principal bound to Alex. An
+and the hosted sample use one shared demo principal bound to Jordan. An
 application with real users must authenticate each user and bind the verified
 user identity, such as an Amazon Cognito `sub`, to the traveler record. Review
 networking, monitoring, availability and data-protection requirements before

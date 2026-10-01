@@ -163,7 +163,7 @@ def test_phase4_memory_off_stops_before_recall_or_writeback(monkeypatch, message
 def test_phase4_returns_managed_runtime_decision_without_local_rewrite(
     monkeypatch, message,
 ) -> None:
-    runtime_message = "Managed Runtime selected Tokyo Culture using Alex's saved context."
+    runtime_message = "Managed Runtime selected Tokyo Culture using Jordan's saved context."
 
     async def fake_production_search(*args, **kwargs):
         return (

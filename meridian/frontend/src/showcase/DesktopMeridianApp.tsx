@@ -42,7 +42,7 @@ import { IconTooltip } from './components/ShowcaseTooltip';
 import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
 import type { Phase } from '../types';
 import { MERIDIAN_MARK_SRC } from '../lib/meridianBrand';
-import { ALEX_IMAGE_URL, ALEX_NAME } from './lib/personas';
+import { DEMO_TRAVELER_IMAGE_URL, DEMO_TRAVELER_NAME } from './lib/personas';
 import { usePrefersReducedMotion } from './lib/prefersReducedMotion';
 import { SHOWCASE_PHASES } from './lib/showcaseAdapters';
 
@@ -310,19 +310,19 @@ export function DesktopMeridianApp({
           type="button"
           className="mds-account-mini"
           onClick={() => openNavItem('profile')}
-          aria-label="Open Alex Morgan profile"
+          aria-label="Open Jordan Morgan profile"
         >
           <span className="mds-avatar is-photo" aria-hidden="true">
             <img
-              src={ALEX_IMAGE_URL}
-              alt={ALEX_NAME}
+              src={DEMO_TRAVELER_IMAGE_URL}
+              alt={DEMO_TRAVELER_NAME}
               width="640"
               height="960"
               loading="lazy"
             />
           </span>
           <div className="mds-account-copy">
-            <strong>Alex Morgan</strong>
+            <strong>Jordan Morgan</strong>
             <span className="mds-account-loyalty">
               <span>Traveler profile</span>
             </span>
@@ -366,7 +366,7 @@ export function DesktopMeridianApp({
         </nav>
 
         <div className="mds-shell-status">
-          {isProduct && <button type="button" className="mc-profile-toggle" onClick={() => openNavItem('profile')} aria-label="Open Alex Morgan profile"><img src={ALEX_IMAGE_URL} alt="" width="40" height="40" /></button>}
+          {isProduct && <button type="button" className="mc-profile-toggle" onClick={() => openNavItem('profile')} aria-label="Open Jordan Morgan profile"><img src={DEMO_TRAVELER_IMAGE_URL} alt="" width="40" height="40" /></button>}
           <span
             className={`mds-status-pill ${runtimeStatus.className}`}
             role="status"

@@ -1,4 +1,4 @@
-"""Provisioning helpers publish parameters and bind the holds Lambda role to Alex."""
+"""Provisioning helpers publish parameters and bind the holds Lambda role to Jordan."""
 
 from __future__ import annotations
 

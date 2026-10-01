@@ -9,7 +9,7 @@ recovery views do not depend on an external image service.
 - `recovery-flight.jpg`: "ANA 777 landing at NRT" by Angelo DeSantis,
   [Wikimedia Commons](<https://commons.wikimedia.org/wiki/File:ANA_777_landing_at_NRT_(7185678977)_(2).jpg>),
   licensed under [CC BY 2.0](https://creativecommons.org/licenses/by/2.0/).
-- `alex-morgan.jpg` (installed September 28, 2026): a photorealistic generated
+- `jordan-morgan.jpg` (installed September 28, 2026): a photorealistic generated
   portrait of a fictional person, supplied by the repository owner and cleared
   for redistribution in this sample. It does not show a real person.
 - `alsace.jpg`, `coast.jpg`, `douro.jpg`, `mendoza.jpg`, `napa.jpg` and

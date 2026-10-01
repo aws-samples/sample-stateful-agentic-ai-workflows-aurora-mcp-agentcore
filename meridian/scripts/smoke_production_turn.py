@@ -65,7 +65,7 @@ def main() -> int:
     args = parser.parse_args()
     runtime = get_agentcore_runtime()
     conversation = f"smoke-{uuid.uuid4().hex[:10]}"
-    context = "Alex Morgan flies from JFK, party of two, shellfish allergy, boutique hotels."
+    context = "Jordan Morgan flies from JFK, party of two, shellfish allergy, boutique hotels."
     turns = []
 
     print("1. search")

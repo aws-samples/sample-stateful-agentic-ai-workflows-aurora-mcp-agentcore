@@ -303,7 +303,7 @@ def seed_travelers():
 
 
 def _upsert_identity_binding(provider: str, subject_id: str, principal: str) -> str:
-    """Create one stable identity-to-Alex authorization grant."""
+    """Create one stable identity-to-Jordan authorization grant."""
     digest = hashlib.sha256(
         f"{provider}:{subject_id}:{DEMO_TRAVELER_ID}".encode()
     ).hexdigest()[:16]
@@ -333,7 +333,7 @@ def _upsert_identity_binding(provider: str, subject_id: str, principal: str) -> 
 
 
 def seed_identity_bindings():
-    """Authorize the current IAM and configured AgentCore workloads for Alex."""
+    """Authorize the current IAM and configured AgentCore workloads for Jordan."""
     caller = boto3.client("sts").get_caller_identity()
     principal = caller.get("Arn", "unknown")
     subject_id = caller.get("UserId", "").split(":", 1)[0]
@@ -537,7 +537,7 @@ def seed_bookings():
 
 
 # A second, decoy traveler so the RLS probe (Phase 4) shows a real diff:
-# unscoped reads see Alex + decoy rows, scoped reads see only the active
+# unscoped reads see Jordan + decoy rows, scoped reads see only the active
 # traveler's. Without this there is exactly one traveler and scoped==baseline,
 # which makes "watch RLS filter the rows" invisible.
 DECOY_TRAVELER_ID = "trv_demo_decoy"

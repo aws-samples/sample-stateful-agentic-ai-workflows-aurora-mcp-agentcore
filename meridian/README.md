@@ -122,7 +122,7 @@ is visible before the workflow checks availability and places a hold. Set
   expiry, without another model rewrite.
 - Saving a shortlist does not hold inventory. The hold receipt shows the
   database creation time, the 15-minute expiry and the time remaining.
-- **Take it back to Alex** carries the recorded duration, party, unit price and
+- **Take it back to Jordan** carries the recorded duration, party, unit price and
   total into Concierge for confirmation.
 
 [docs/OPERATIONS.md](docs/OPERATIONS.md#exercise-recovery-failures) describes
@@ -247,7 +247,7 @@ The script crops and resizes each image and reports packages without artwork.
 
 The HTTP layer binds each request to a traveler before workload authorization
 runs. Loopback development (the default `ENVIRONMENT=development`) and the
-hosted sample use one shared demo principal; neither authenticates Alex as a
+hosted sample use one shared demo principal; neither authenticates Jordan as a
 person. Set `MERIDIAN_API_TOKEN` and `CORS_ORIGINS` before exposing the API to
 a network.
 

@@ -89,7 +89,7 @@ def test_assumed_role_session_uses_stable_iam_subject() -> None:
 
 def test_live_agentcore_identity_becomes_authorization_subject() -> None:
     adapter = AgentCoreIdentityAdapter(
-        workload_identity="arn:aws:bedrock-agentcore:us-east-1:123:workload-identity/alex",
+        workload_identity="arn:aws:bedrock-agentcore:us-east-1:123:workload-identity/jordan",
         resource_provider="meridian-aurora",
         region="us-east-1",
     )

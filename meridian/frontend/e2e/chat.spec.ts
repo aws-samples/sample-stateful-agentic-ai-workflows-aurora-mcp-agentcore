@@ -156,6 +156,6 @@ test('concierge preserves long-answer reading and explains an unsuccessful reque
   await expect(page.getByRole('button', { name: 'Start a new chat', exact: true })).toBeEnabled();
   await page.screenshot({ path: '../../.impeccable/review/studio/failure-fixture.png', fullPage: false });
   await page.getByRole('button', { name: 'Start a new chat', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Your next chapter, Alex.', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your next chapter, Jordan.', exact: true })).toBeVisible();
   await expect(page.getByText('We couldn’t update your trip options.', { exact: true })).not.toBeVisible();
 });

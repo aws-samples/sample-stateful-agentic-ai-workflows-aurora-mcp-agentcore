@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Grant the published backend's App Runner instance role access to Alex's traveler record.
+"""Grant the published backend's App Runner instance role access to Jordan's traveler record.
 
 The FastAPI backend behind CloudFront runs on App Runner with the instance role
 from the MeridianWebRoles stack. Like the gateway Lambda, it is a workload:

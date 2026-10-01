@@ -516,7 +516,7 @@ describe('Experience presentation polish', () => {
     expect(screen.queryByRole('article', { name: 'Agent proof' })).not.toBeInTheDocument();
     expect(screen.queryByRole('article', { name: 'Recovery option 2' })).not.toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: "Alex's JFK to Tokyo recovery" }),
+      screen.getByRole('heading', { name: "Jordan's JFK to Tokyo recovery" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('heading', {
@@ -954,7 +954,7 @@ describe('Experience presentation polish', () => {
       'Resume workflow from checkpoint',
       5,
     );
-    expect(screen.queryByText('ALEX')).not.toBeInTheDocument();
+    expect(screen.queryByText('JORDAN')).not.toBeInTheDocument();
   });
 
   it('requires a matching persisted receipt before handing a hold to Concierge', () => {
@@ -971,7 +971,7 @@ describe('Experience presentation polish', () => {
     });
     const { rerender } = render(<RecoveryWorkspace state={state}
       onOpenProof={onOpenProof} onOpenConcierge={onOpenConcierge} />);
-    expect(screen.queryByRole('button', { name: 'Take it back to Alex' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Take it back to Jordan' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Read booking receipt' }));
     expect(onOpenProof).toHaveBeenCalledOnce();
 
@@ -983,12 +983,12 @@ describe('Experience presentation polish', () => {
     const document = { active_thread_id: 'different-thread', hold } as JourneyDocument;
     rerender(<RecoveryWorkspace state={state} journeyDocument={document}
       onOpenProof={onOpenProof} onOpenConcierge={onOpenConcierge} />);
-    expect(screen.queryByRole('button', { name: 'Take it back to Alex' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Take it back to Jordan' })).not.toBeInTheDocument();
 
     rerender(<RecoveryWorkspace state={state}
       journeyDocument={{ ...document, active_thread_id: 'current-thread' }}
       onOpenProof={onOpenProof} onOpenConcierge={onOpenConcierge} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Take it back to Alex' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Take it back to Jordan' }));
     expect(onOpenConcierge).toHaveBeenCalledWith(hold);
   });
 
@@ -1001,7 +1001,7 @@ describe('Experience presentation polish', () => {
       } as JourneyDocument;
       render(<RecoveryWorkspace state={state} journeyDocument={document}
         onOpenConcierge={vi.fn()} />);
-      expect(screen.queryByRole('button', { name: 'Take it back to Alex' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Take it back to Jordan' })).not.toBeInTheDocument();
       expect(screen.queryByText('Bring it home.')).not.toBeInTheDocument();
     },
   );
@@ -1297,7 +1297,7 @@ describe('Concierge travel states', () => {
     expect(screen.getByRole('region', { name: 'Workflow checkpoint demonstration' })).toBeInTheDocument();
     expect(screen.queryByText('Not valid for boarding')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Continue at recovery desk' }));
-    expect(await screen.findByRole('heading', { name: "Alex's JFK to Tokyo recovery" })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "Jordan's JFK to Tokyo recovery" })).toBeInTheDocument();
     expect(new URL(window.location.href).searchParams.get('view')).toBe('recovery');
     expect(state.applyPhaseExample).not.toHaveBeenCalled();
     expect(state.submitPrompt).not.toHaveBeenCalled();

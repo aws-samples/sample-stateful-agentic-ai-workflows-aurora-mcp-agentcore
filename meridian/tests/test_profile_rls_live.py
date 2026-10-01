@@ -3,7 +3,7 @@
 `travelers` and `traveler_profiles` were granted to meridian_app with no RLS,
 so the only thing keeping one traveler's session out of another traveler's
 profile was the WHERE clause in each query. Reproduced live before migration
-011: a session scoped to Alex, selecting from `travelers` with no predicate,
+011: a session scoped to the demo traveler, selecting from `travelers` with no predicate,
 returned the decoy traveler as well.
 
 `traveler_profiles` showed no leak in that reproduction, and that was the trap.
@@ -29,7 +29,7 @@ from backend.db.rds_data_client import get_rds_data_client
 
 pytestmark = pytest.mark.database
 
-ALEX = "trv_meridian_demo"
+JORDAN = "trv_meridian_demo"
 DECOY = "trv_demo_decoy"
 PROBE_NOTE = "itest-profile-rls probe row"
 
@@ -73,9 +73,9 @@ async def _visible_ids(table: str, traveler_id: str) -> list[str]:
 
 @pytest.mark.parametrize("table", ["travelers", "traveler_profiles"])
 async def test_a_scoped_session_sees_only_its_own_traveler(table: str, decoy_profile) -> None:
-    visible = await _visible_ids(table, ALEX)
+    visible = await _visible_ids(table, JORDAN)
     assert DECOY not in visible, (
-        f"a session scoped to {ALEX} read {DECOY} from {table}; "
+        f"a session scoped to {JORDAN} read {DECOY} from {table}; "
         f"the table is not row-scoped"
     )
 
@@ -83,7 +83,7 @@ async def test_a_scoped_session_sees_only_its_own_traveler(table: str, decoy_pro
 @pytest.mark.parametrize("table", ["travelers", "traveler_profiles"])
 async def test_the_traveler_still_sees_their_own_row(table: str, decoy_profile) -> None:
     """The positive control. Over-blocking here blanks the Traveler context panel."""
-    assert ALEX in await _visible_ids(table, ALEX)
+    assert JORDAN in await _visible_ids(table, JORDAN)
 
 
 async def test_a_scoped_session_cannot_update_another_traveler(decoy_profile) -> None:
@@ -94,7 +94,7 @@ async def test_a_scoped_session_cannot_update_another_traveler(decoy_profile) ->
     """
     db = get_rds_data_client()
     async with db.scoped_session(
-        traveler_id=ALEX,
+        traveler_id=JORDAN,
         agent_type="concierge_agent",
         authorization=get_agentcore_identity().authorization_context(),
     ) as tx:
@@ -104,7 +104,7 @@ async def test_a_scoped_session_cannot_update_another_traveler(decoy_profile) ->
             (DECOY,),
             transaction_id=tx,
         )
-    assert not reached, f"a session scoped to {ALEX} could update {DECOY}'s traveler row"
+    assert not reached, f"a session scoped to {JORDAN} could update {DECOY}'s traveler row"
 
 
 async def _privilege(privilege: str) -> Optional[bool]:

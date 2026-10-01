@@ -15,7 +15,7 @@ function SheetHarness() {
         open={open}
         onOpenChange={setOpen}
         title="Traveler memory"
-        subtitle="Alex Morgan"
+        subtitle="Jordan Morgan"
         description="Review traveler preferences"
         closeLabel="Close preferences"
       >

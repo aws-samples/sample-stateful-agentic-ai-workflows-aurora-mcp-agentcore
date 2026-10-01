@@ -4,7 +4,7 @@ Production mode: the managed AgentCore Runtime owns the tool loop; Aurora RLS bo
 Walkthrough, AgentCore on one turn
 ----------------------------------
   1. AgentCore Identity  : workload / IAM envelope (security span)
-  2. Traveler grant      : traveler_identity_bindings authorizes the workload for Alex
+  2. Traveler grant      : traveler_identity_bindings authorizes the workload for Jordan
   3. Aurora RLS read     : one short transaction for profile, preferences and recall
   4. AgentCore Runtime   : the agent discovers its tools from AgentCore Gateway over MCP,
                            keeps its conversation in AgentCore Memory, searches Aurora,
@@ -152,7 +152,7 @@ def _with_budget_fact(
     """Keep the fact the ceiling comes from in the context the reply is built on.
 
     The specialist ranks preferences by confidence and truncates, which drops
-    Alex's saved budget. The gateway still enforces a ceiling derived from it, so
+    Jordan's saved budget. The gateway still enforces a ceiling derived from it, so
     a reply written without it tells the traveler that no budget is on file while
     the policy is holding them to one.
 

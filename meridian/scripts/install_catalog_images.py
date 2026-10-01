@@ -72,9 +72,9 @@ UNSHARP_RADIUS = 1.5
 UNSHARP_PERCENT = 80
 UNSHARP_THRESHOLD = 3
 
-# Alex is shown as a small circle, so the portrait is cut square. The crop keeps
+# Jordan is shown as a small circle, so the portrait is cut square. The crop keeps
 # the top of the frame: a centred cut of a tall headshot loses the top of the head.
-PORTRAIT_TARGETS = {"alex-morgan": (1024, 1024)}
+PORTRAIT_TARGETS = {"jordan-morgan": (1024, 1024)}
 
 
 def resolve_target(stem: str) -> tuple[Path, tuple[int, int]] | None:
