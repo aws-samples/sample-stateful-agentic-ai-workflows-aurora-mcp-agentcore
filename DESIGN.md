@@ -168,8 +168,9 @@ A monochrome foundation supports bright blue actions, quieter blue links and dis
 ### Primary
 
 Capability numbers, the selected phase and the Architecture & evidence disclosure
-use action blue with white labels. These compact controls use a 10px outer
-radius; number markers use 6px. White on action blue measures 4.69:1 (WCAG AA).
+use action blue with white labels. Capability controls and the disclosure share
+a 14px outer radius and 10px by 16px padding; inactive capabilities keep a quiet
+filled surface. Number markers use 6px. White on action blue measures 4.69:1 (WCAG AA).
 - **Action blue / action-hover / on-action:** filled decisions with white labels. The same action palette is retained in light mode.
 - **Blue:** tint for links, top-level navigation, focus and active progress; it is separate from the saturated button fill.
 - **Green / yellow / red:** observed success; caution or pending attention; error, denied or canceled. Cyan remains available for existing informational evidence accents.

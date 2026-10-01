@@ -73,11 +73,17 @@
   cursor: not-allowed;
   opacity: 1;
 }
-/* The capability ladder uses the same blue as Concierge actions. The active
-   step has a filled rectangle; every numbered marker stays blue and white. */
+/* Matching rounded rectangles keep every capability visibly selectable.
+   The active step uses Concierge blue; inactive steps use a quiet surface. */
 .mds-root[data-theme] .mds-desktop-app .mds-ladder-nav-rung {
-  border-radius: var(--mds-radius-m);
+  border-radius: var(--mds-radius-l);
   min-height: 44px;
+  padding: 10px 16px;
+  background: var(--mds-surface);
+  color: var(--mds-label);
+}
+.mds-root[data-theme] .mds-desktop-app .mds-ladder-nav-rung:hover {
+  background: var(--mds-surface-2);
 }
 .mds-root[data-theme] .mds-desktop-app .mds-ladder-nav-index {
   background: var(--mds-action);
@@ -100,7 +106,7 @@
 .mds-root[data-theme] .mds-desktop-app .mc-capability-details > summary {
   padding: 10px 16px;
   min-height: 44px;
-  border-radius: var(--mds-radius-m);
+  border-radius: var(--mds-radius-l);
   background: var(--mds-action);
   color: var(--mds-on-action);
 }
