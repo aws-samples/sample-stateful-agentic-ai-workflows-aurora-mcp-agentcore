@@ -73,12 +73,12 @@
   cursor: not-allowed;
   opacity: 1;
 }
-/* Matching rounded rectangles keep every capability visibly selectable.
+/* Match the fully rounded Present fullscreen and Explore this trip actions.
    The active step uses Concierge blue; inactive steps use a quiet surface. */
 .mds-root[data-theme] .mds-desktop-app .mds-ladder-nav-rung {
-  border-radius: var(--mds-radius-l);
+  border-radius: var(--mds-radius-full);
   min-height: 44px;
-  padding: 10px 16px;
+  padding: 10px 20px;
   background: var(--mds-surface);
   color: var(--mds-label);
 }
@@ -88,7 +88,7 @@
 .mds-root[data-theme] .mds-desktop-app .mds-ladder-nav-index {
   background: var(--mds-action);
   color: var(--mds-on-action);
-  border-radius: var(--mds-radius-s);
+  border-radius: var(--mds-radius-full);
 }
 .mds-root[data-theme] .mds-desktop-app .mds-ladder-nav-rung.is-active {
   background: var(--mds-action);
@@ -104,9 +104,9 @@
   color: var(--mds-on-action);
 }
 .mds-root[data-theme] .mds-desktop-app .mc-capability-details > summary {
-  padding: 10px 16px;
+  padding: 10px 20px;
   min-height: 44px;
-  border-radius: var(--mds-radius-l);
+  border-radius: var(--mds-radius-full);
   background: var(--mds-action);
   color: var(--mds-on-action);
 }
