@@ -425,7 +425,7 @@ async def session_receipt(
             checkpoints_exist = True
             checkpoint_total += count
 
-    from backend.agents.orchestration_05.workflow import checkpoint_backend_status
+    from backend.agents.phase_05_workflow.workflow import checkpoint_backend_status
 
     backend_status = checkpoint_backend_status()
     backend_kind = str(backend_status.get("kind") or "not initialized")

@@ -1,0 +1,121 @@
+/* Shared action language across the five demo surfaces. */
+.mds-root[data-theme] .mc-presenter-controls .mc-present-button,
+.mds-root[data-theme] .mds-desktop-app :is(
+  .mc-trip.is-featured .mc-trip-open, .mds-trip-result-actions button.is-details,
+  .mds-trip-confirm button, .mds-trip-modal-actions .is-primary,
+  .mds-compare-copy .is-primary, .mds-popover-primary,
+  .mds-recovery-workspace .mds-decision-card-actions .is-primary,
+  .mds-concierge-assistance-actions button.is-primary,
+  .mds-inline-concierge-copy > footer button.is-primary,
+  .mds-mobile-disruption-primary, .mds-recovery-launch-actions button,
+  .mc-session-primary, .mc-query-boundary button, .mds-brief-link,
+  .mds-evidence-probe button, .mds-rerank-replay
+) {
+  border: 1px solid var(--mds-action);
+  border-radius: var(--mds-radius-full);
+  background: var(--mds-action);
+  color: var(--mds-on-action);
+  min-height: 44px;
+  padding: 10px 20px;
+  font: var(--mds-type-headline);
+  text-decoration: none;
+}
+.mds-root[data-theme] .mc-presenter-controls .mc-present-button:hover:not(:disabled),
+.mds-root[data-theme] .mds-desktop-app :is(
+  .mds-trip-confirm button, .mds-trip-modal-actions .is-primary,
+  .mds-compare-copy .is-primary, .mds-popover-primary,
+  .mds-recovery-workspace .mds-decision-card-actions .is-primary,
+  .mds-concierge-assistance-actions button.is-primary,
+  .mds-inline-concierge-copy > footer button.is-primary,
+  .mds-mobile-disruption-primary, .mds-recovery-launch-actions button,
+  .mc-session-primary, .mc-query-boundary button, .mds-brief-link,
+  .mds-evidence-probe button, .mds-rerank-replay
+):hover:not(:disabled) {
+  background: var(--mds-action-hover);
+  border-color: var(--mds-action-hover);
+  color: var(--mds-on-action);
+  filter: none;
+  transform: none;
+}
+.mds-root :is(button, [role='button']):focus-visible {
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 3px;
+}
+/* Trace utilities are compact controls, not full-size call-to-action pills. */
+.mds-root[data-theme] .mds-desktop-app .mds-trace-actions button {
+  background: var(--mds-action);
+  border: 1px solid var(--mds-action);
+  color: var(--mds-on-action);
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: var(--mds-radius-m);
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+}
+.mds-root[data-theme] .mds-desktop-app .mds-trace-actions button:hover:not(:disabled) {
+  background: var(--mds-action-hover);
+  border-color: var(--mds-action-hover);
+  color: var(--mds-on-action);
+  transform: none;
+}
+.mds-root[data-theme] .mds-desktop-app .mds-trace-actions button svg {
+  width: 18px;
+  height: 18px;
+}
+.mds-root[data-theme] .mds-desktop-app .mds-trace-actions button:disabled {
+  background: var(--mds-surface-2);
+  border-color: var(--mds-separator);
+  color: var(--mds-label-3);
+  cursor: not-allowed;
+  opacity: 1;
+}
+/* The capability ladder uses the same blue as Concierge actions. The active
+   step has a filled rectangle; every numbered marker stays blue and white. */
+.mds-root[data-theme] .mds-desktop-app .mds-ladder-nav-rung {
+  border-radius: var(--mds-radius-m);
+  min-height: 44px;
+}
+.mds-root[data-theme] .mds-desktop-app .mds-ladder-nav-index {
+  background: var(--mds-action);
+  color: var(--mds-on-action);
+  border-radius: var(--mds-radius-s);
+}
+.mds-root[data-theme] .mds-desktop-app .mds-ladder-nav-rung.is-active {
+  background: var(--mds-action);
+  color: var(--mds-on-action);
+}
+.mds-root[data-theme] .mds-desktop-app .mds-ladder-nav-rung.is-active:hover {
+  background: var(--mds-action-hover);
+}
+.mds-root[data-theme] .mds-desktop-app .mds-ladder-nav-rung.is-active .mds-ladder-nav-index {
+  background: transparent;
+}
+.mds-root[data-theme] .mds-desktop-app .mds-ladder-nav-rung.is-active small {
+  color: var(--mds-on-action);
+}
+.mds-root[data-theme] .mds-desktop-app .mc-capability-details > summary {
+  padding: 10px 16px;
+  min-height: 44px;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-action);
+  color: var(--mds-on-action);
+}
+.mds-root[data-theme] .mds-desktop-app .mc-capability-details > summary:hover {
+  background: var(--mds-action-hover);
+  color: var(--mds-on-action);
+}
+.mds-root[data-theme] .mds-desktop-app .mc-capability-details > summary svg {
+  color: currentColor;
+}
+/* State is communicated by the existing labels and icons as well as color.
+   Unrun/unknown remains neutral; waiting for attention is amber. */
+.mds-root .mc-trip-context-note,
+.mds-root .mds-mobile-disruption-status > strong { color: var(--mds-red); }
+.mds-root .mds-thinking-item.is-done .mds-thinking-marker { color: var(--mds-green); }
+.mds-root .mds-thinking-item.is-active .mds-thinking-marker { color: var(--mds-tint); }
+.mds-root .mc-error > svg,
+.mds-root .mc-error strong { color: var(--mds-red); }

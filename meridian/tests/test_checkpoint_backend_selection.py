@@ -12,9 +12,9 @@ import os
 
 import pytest
 
-import backend.agents.orchestration_05.workflow as workflow_mod
+import backend.agents.phase_05_workflow.workflow as workflow_mod
 import backend.db.rds_data_client as rds_data_client
-from backend.agents.orchestration_05.workflow import (
+from backend.agents.phase_05_workflow.workflow import (
     CheckpointBackend,
     OrchestrationAgent,
     initialize_checkpoint_backend,

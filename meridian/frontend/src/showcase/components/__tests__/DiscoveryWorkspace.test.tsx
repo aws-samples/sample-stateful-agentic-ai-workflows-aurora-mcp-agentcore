@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Product } from '../../../types';
 import { EMPTY_FILTERS, type MeridianShowcaseState } from '../../hooks/useMeridianShowcase';
 import { DiscoveryWorkspace } from '../DiscoveryWorkspace';
+import { ConciergeConversation } from '../ConciergeConversation';
 
 const LIVE_PRODUCT: Product = {
   product_id: 'AUR-001',
@@ -22,6 +23,10 @@ const LIVE_PRODUCT: Product = {
 function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShowcaseState {
   return {
     messages: [],
+    savedTrips: [],
+    phaseExamples: [],
+    currentPrompt: '',
+    travelersCount: 2,
     recommendations: [],
     catalog: [],
     savedTripIds: new Set(),
@@ -82,7 +87,7 @@ describe('DiscoveryWorkspace catalog states', () => {
         { role: 'bot', text: 'Here are some trips.', modelLabel: 'Claude Haiku 4.5' },
       ],
     });
-    render(<DiscoveryWorkspace state={state} onClear={vi.fn()} greeting="morning" />);
+    render(<ConciergeConversation state={state} onSaved={vi.fn()} onRecovery={vi.fn()} />);
 
     expect(screen.getByText('· Claude Haiku 4.5')).toBeInTheDocument();
   });
@@ -94,7 +99,7 @@ describe('DiscoveryWorkspace catalog states', () => {
         { role: 'bot', text: 'Price range for Tokyo: low $1,199 · average $1,950 · high $3,299.' },
       ],
     });
-    render(<DiscoveryWorkspace state={state} onClear={vi.fn()} greeting="morning" />);
+    render(<ConciergeConversation state={state} onSaved={vi.fn()} onRecovery={vi.fn()} />);
 
     expect(screen.queryByText(/^· /)).not.toBeInTheDocument();
   });

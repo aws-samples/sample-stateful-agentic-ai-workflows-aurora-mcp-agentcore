@@ -13,9 +13,9 @@
   --mds-label-3: #a4a4a6;
   --mds-blue: #74acfe;
   --mds-tint: var(--mds-blue);
-  --mds-action: #92beff;
-  --mds-action-hover: #aecfff;
-  --mds-on-action: #000000;
+  --mds-action: #0071e3;
+  --mds-action-hover: #0064cc;
+  --mds-on-action: #ffffff;
   --mds-green: #6ee750;
   --mds-yellow: #f3c300;
   --mds-red: #fe897a;
@@ -56,8 +56,8 @@
   --mds-label-2: #4d4d4f;
   --mds-label-3: #676769;
   --mds-blue: #005dca;
-  --mds-action: #014fae;
-  --mds-action-hover: #00459a;
+  --mds-action: #0071e3;
+  --mds-action-hover: #0064cc;
   --mds-on-action: #ffffff;
   --mds-green: #207101;
   --mds-yellow: #785f03;
@@ -112,4 +112,18 @@
   --mds-radius-m: 10px;
   --mds-radius-l: 14px;
   --mds-radius-full: 999px;
+}
+
+/* The user-approved blue action palette is shared by every surface.
+   Status colors remain separate from action colors. */
+.mds-root[data-theme='dark']:has(.mds-desktop-app.is-discovery) {
+  --mds-surface: #151517;
+  --mds-surface-2: #252527;
+  --mds-separator: #303032;
+}
+.mds-desktop-app.is-discovery {
+  --mds-type-studio-display: 600 clamp(30px, 3vw, 44px) / 1.12 var(--mds-font);
+  --mds-type-studio-title: 600 calc(28px * var(--mds-type-scale)) / 1.18 var(--mds-font);
+  --mds-type-studio-body: 400 calc(17px * var(--mds-type-scale)) / 1.5 var(--mds-font);
+  --mds-type-studio-label: 400 max(14px, calc(15px * var(--mds-type-scale))) / 1.4 var(--mds-font);
 }

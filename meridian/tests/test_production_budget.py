@@ -58,7 +58,7 @@ def test_an_unsaved_budget_is_none_rather_than_the_trip_default():
 
 def test_the_governing_budget_fact_survives_confidence_ranking():
     """A reply must not deny a budget the gateway is enforcing."""
-    from backend.agents.production_04.concierge import _with_budget_fact
+    from backend.agents.phase_04_production.concierge import _with_budget_fact
 
     ranked = [{"key": "home_airport", "value": "JFK"}, {"key": "pace", "value": "slow"}]
     full = [*ranked, {"key": "budget_cap", "value": "$3,200"}]
@@ -70,14 +70,14 @@ def test_the_governing_budget_fact_survives_confidence_ranking():
 
 
 def test_a_ranked_budget_fact_is_not_duplicated():
-    from backend.agents.production_04.concierge import _with_budget_fact
+    from backend.agents.phase_04_production.concierge import _with_budget_fact
 
     ranked = [{"key": "budget_cap", "value": "$3,200"}]
     assert _with_budget_fact(ranked, [*ranked, {"key": "budget", "value": "$9,000"}]) == ranked
 
 
 def test_no_saved_budget_leaves_the_context_untouched():
-    from backend.agents.production_04.concierge import _with_budget_fact
+    from backend.agents.phase_04_production.concierge import _with_budget_fact
 
     ranked = [{"key": "home_airport", "value": "JFK"}]
     assert _with_budget_fact(ranked, [{"key": "pace", "value": "slow"}]) == ranked

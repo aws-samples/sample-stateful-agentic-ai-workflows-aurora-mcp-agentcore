@@ -3,7 +3,7 @@
 The published demo lives in one AWS account behind basic auth. Committing its
 address would hand anyone reading the sample an endpoint to scan, and it would
 rot into a dead link the moment the stack comes down. `publish.py` records the
-address in the gitignored `.local/published.json` and `scripts/published.py`
+address in the gitignored `.local/hosted-release.json` and `scripts/published.py`
 reads it back locally, so nothing needs it in tree. The AgentCore gateway URL
 likewise lives in the gitignored `meridian/.env`.
 

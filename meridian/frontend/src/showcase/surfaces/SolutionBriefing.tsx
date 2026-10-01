@@ -2,7 +2,7 @@ import { ArrowRight, ChevronDown } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { BriefingArchitecture } from './BriefingArchitecture';
 import { BriefingPhases, BriefingPreparation } from './BriefingWalkthrough';
-import { CONTROLS, PHASES, POLICIES, TOOLS } from './solutionBriefingContent';
+import { CONTROLS, POLICIES, TOOLS } from './solutionBriefingContent';
 
 function Detail({ title, children }: { title: string; children: ReactNode }) {
   return <details className="mds-brief-detail">
@@ -23,26 +23,30 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence }: { onOpenLadde
         <h1 id="mds-brief-title">Solution briefing</h1>
         <p>Ground the answer. Govern the action. Recover the work.</p>
       </header>
-      <details className="mds-brief-section mds-brief-overview" open aria-labelledby="brief-architecture-heading">
-        <summary className="mds-brief-section-heading"><h2 id="brief-architecture-heading"><span className="mds-brief-section-number" aria-hidden="true">01</span>The architecture</h2><ChevronDown size={22} aria-hidden="true" /></summary>
+      <details name="solution-briefing" className="mds-brief-section mds-brief-overview" open aria-labelledby="brief-architecture-heading">
+        <summary className="mds-brief-section-heading"><div><h2 id="brief-architecture-heading"><span className="mds-brief-section-number" aria-hidden="true">01</span>The architecture</h2><p>Two execution paths. One governed tool boundary.</p></div><ChevronDown size={22} aria-hidden="true" /></summary>
         <div className="mds-brief-section-body">
-          <p>Two execution paths. One governed tool boundary. Aurora records the outcome.</p>
           <BriefingArchitecture />
         </div>
       </details>
       <BriefingPreparation />
       <BriefingPhases />
-      <section className="mds-brief-section mds-brief-reference" aria-labelledby="brief-reference-heading">
-        <div className="mds-brief-section-heading"><h2 id="brief-reference-heading"><span className="mds-brief-section-number" aria-hidden="true">04</span>Verify the boundaries</h2><p>Tools, policy and recovery evidence. Open as needed.</p></div>
-        <Detail title="Data preparation & the five phases">
-          <h3>Prepare the inputs</h3>
-          <p><code>scripts/travel_catalog.py</code> supplies fictional packages and traveler preferences. <code>scripts/seed_data.py</code> loads Aurora and embeds package descriptions with Cohere Embed v4 on Bedrock. Query and corpus use the same embedding model.</p>
-          <p>Aurora combines pgvector similarity and full-text search; Bedrock reranks the candidates. Similarity does not prove availability: tools read prices, duration inventory and the authorized traveler’s saved budget from Aurora.</p>
-          <h3>Build one capability at a time</h3>
-          <ol className="mds-brief-phases">{PHASES.map(([name, claim, body]) => <li key={name}><h4>{name} - {claim}</h4><p>{body}</p></li>)}</ol>
-          <p>These are Meridian’s implementation choices. AgentCore also offers <a href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory-integrate-lang.html">LangGraph checkpoint persistence</a>; this workflow uses Aurora. A conversation or checkpoint is separate from the authoritative booking receipt.</p>
-          <h3>Delivery and service boundaries</h3>
-          <p>CloudFront delivers the S3 site and routes API requests to FastAPI on App Runner. Local development uses Vite and the same backend. AgentCore resources are declared in <code>agentcore.json</code>. Aurora stores the catalog, identity bindings, access audit, traveler preferences, journeys, checkpoints, leases and bookings; the RDS Data API provides connectionless access.</p>
+      <details name="solution-briefing" className="mds-brief-section mds-brief-reference" aria-labelledby="brief-reference-heading">
+        <summary className="mds-brief-section-heading"><div><h2 id="brief-reference-heading"><span className="mds-brief-section-number" aria-hidden="true">04</span>Verify the boundaries</h2><p>Check permission, committed outcomes and recovery.</p></div><ChevronDown size={22} aria-hidden="true" /></summary>
+        <div className="mds-brief-section-body">
+        <Facts items={[
+          ['Identity', 'The application binds the traveler and saved budget.'],
+          ['Permission', 'Cedar decides whether a tool may run.'],
+          ['Outcome', 'Aurora records what actually committed.'],
+        ]} />
+        <Detail title="Implementation reference">
+          <Facts items={[
+            ['Seed', 'travel_catalog.py defines fictional inventory; seed_data.py loads Aurora and embeds descriptions.'],
+            ['Retrieve', 'Query and catalog use the same embedding model. Tools recheck price, availability and access.'],
+            ['Deliver', 'CloudFront serves S3 and routes the API to FastAPI on App Runner. Local development uses Vite and the same backend.'],
+            ['Persist', 'The RDS Data API connects Aurora catalog, traveler state, checkpoints, leases and bookings. AgentCore resources are declared in agentcore.json.'],
+          ]} />
+          <p>AgentCore also offers <a href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory-integrate-lang.html">LangGraph checkpoint persistence</a>; Meridian uses Aurora. A checkpoint is separate from the booking receipt.</p>
         </Detail>
         <Detail title="Tool contracts & Cedar policies">
           <p>The model interprets the request, chooses tools and writes grounded replies. Application code establishes the traveler, pins explicit confirmation and the saved budget, and validates the returned inventory. The model cannot choose its own authorization scope or budget ceiling.</p>
@@ -69,9 +73,9 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence }: { onOpenLadde
           <p>System evidence shows SQL and tool results, retrieval scores, traveler binding and RLS records, policy decisions, and persisted hold identity. Recovery desk shows the active thread, checkpoints and worker lease. Missing records remain unavailable.</p>
           <p>ADOT instruments Phase 4 model, Gateway and Memory operations as CloudWatch spans. Trace IDs connect those operations to the displayed run. Phase 5 adds workflow nodes, checkpoints and its Gateway hold decision. This briefing explains the design without making service calls.</p>
         </Detail>
-      </section>
+        </div>
+      </details>
       <footer className="mds-brief-footer">
-        <p>See the capabilities in action, then inspect what the session observed.</p>
         <div><button className="mds-brief-link" type="button" onClick={onOpenLadder}>Open the capability ladder <ArrowRight size={17} aria-hidden="true" /></button>
           <button className="mds-brief-link" type="button" onClick={onOpenEvidence}>Inspect system evidence <ArrowRight size={17} aria-hidden="true" /></button></div>
       </footer>

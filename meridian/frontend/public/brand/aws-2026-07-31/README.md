@@ -5,13 +5,11 @@ Architecture Icons deck `AWS-Architecture-Icons-Deck_For-Dark-BG_07312026.pptx`,
 release 24-2026.07.31.
 
 The SVG bytes, colors, shapes, and square proportions are preserved. The
-diagram scales them uniformly. The AgentCore service icon
-labels Runtime, Gateway + Policy, and Memory.
+diagram scales them uniformly. AgentCore uses the separate purple service-family assets in the parent
+directory, with dedicated Runtime, Gateway, Memory and Policy marks.
 
 | Asset | Service | Deck slide | Original ZIP entry |
 | --- | --- | --- | --- |
-| `agentcore.svg` | Amazon Bedrock AgentCore | 49 | `ppt/media/image215.svg` |
-| `bedrock.svg` | Amazon Bedrock | 49 | `ppt/media/image214.svg` |
 | `lambda.svg` | AWS Lambda | 62 | `ppt/media/image18.svg` |
 | `app-runner.svg` | AWS App Runner | 66 | `ppt/media/image271.svg` |
 | `aurora.svg` | Amazon Aurora | 77 | `ppt/media/image307.svg` |

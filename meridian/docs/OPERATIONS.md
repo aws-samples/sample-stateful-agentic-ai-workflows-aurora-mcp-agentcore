@@ -52,9 +52,6 @@ security group and parameter group, so `cdk destroy` alone does not remove
 every billable resource; delete the retained resources and any snapshots you
 do not need.
 
-`scripts/create_cluster.sh` is a retired helper that only prints a plan and
-refuses `--apply`; use the CDK app.
-
 ## Prepare the database
 
 For a new, empty database:
@@ -197,7 +194,11 @@ python scripts/publish.py --account <account-id> --region <region> --service-arn
 The publisher does not create or delete App Runner services, rotate
 credentials or read secret values. App Runner reads the API token from the
 Secrets Manager secret `meridian/web/api-token`. The release record is written
-to `.local/hosted-release.json` (gitignored).
+to `.local/hosted-release.json` (gitignored). `python scripts/published.py`
+reads that record and checks reachability; `--url` prints just the URL. Set
+`MERIDIAN_HOSTED_AUTH` at runtime for an authenticated check. The helper never
+copies or persists credentials. Confirm current asset hashes, image identity
+and a streamed turn through CloudFront before marking a release verified.
 [App Runner no longer accepts new customers](https://aws.amazon.com/apprunner/),
 so this path applies to accounts that already use it; a new account needs a
 different container host for the backend, such as Amazon ECS.
@@ -246,8 +247,12 @@ explains why App Runner needs this.
 
 ## Waits, retries and readback
 
-The browser bounds chat, hold and confirmation waits to 55 seconds, under
-CloudFront's 60-second origin timeout. The runtime client uses a 45-second
+The browser bounds ladder chat, hold and confirmation waits to 55 seconds.
+The main Concierge streams real AgentCore text over `/api/chat/stream`, with a
+120-second browser deadline. The stream sends a heartbeat every 10 seconds
+while awaiting events, below CloudFront's 60-second origin idle timeout.
+App Runner still imposes a 120-second total request limit; streaming does not
+extend it. A partial reply is marked incomplete and is never retried automatically. The runtime client uses a 45-second
 socket read timeout with one attempt; this is not an end-to-end workflow
 deadline, and a multi-step workflow can outlive the browser's wait. Its thread
 stays addressable in the URL, and the UI reads the saved outcome back before

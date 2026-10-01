@@ -7,7 +7,7 @@ span. The backend reads that row; it never substitutes the configured model.
 
 import asyncio
 
-from backend.agents.production_04.concierge import runtime_model_id
+from backend.agents.phase_04_production.concierge import runtime_model_id
 from backend.http_auth import HttpPrincipal
 from backend.routers.chat import ActivityEntry, ChatRequest, TraceTelemetry, chat
 

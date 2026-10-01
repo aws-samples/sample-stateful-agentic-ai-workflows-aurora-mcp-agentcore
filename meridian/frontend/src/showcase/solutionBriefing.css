@@ -90,3 +90,18 @@
   .mds-root .mds-desktop-app:is(.is-solution-briefing,.is-finale) .mds-desktop-scroll { flex:1 1 auto; min-height:0; }
   .mds-root .mds-desktop-app:is(.is-solution-briefing,.is-finale) .mds-desktop-dock { flex:none; }
 }
+
+/* Four disclosure rows give the speaker one topic to reveal at a time. */
+.mds-brief-section-heading > div { min-width:0; }
+.mds-brief-section-heading > div > p { margin:6px 0 0 44px; font:var(--mds-type-body); max-width:72ch; }
+.mds-brief-section-body { padding-top:16px; }
+.mds-brief-reference > .mds-brief-section-body > .mds-brief-facts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:32px; padding:8px 0 32px; }
+.mds-brief-platform { margin-top:12px; }
+.mds-brief-platform > summary { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:44px; cursor:pointer; list-style:none; color:var(--mds-tint); font:var(--mds-type-body); }
+.mds-brief-platform > summary::-webkit-details-marker { display:none; }
+.mds-brief-platform > summary > svg { flex:none; }
+.mds-brief-platform[open] > summary > svg { transform:rotate(180deg); }
+@container (max-width:640px) {
+  .mds-brief-reference > .mds-brief-section-body > .mds-brief-facts { grid-template-columns:1fr; gap:20px; }
+  .mds-brief-section-heading > div > p { margin-left:0; }
+}

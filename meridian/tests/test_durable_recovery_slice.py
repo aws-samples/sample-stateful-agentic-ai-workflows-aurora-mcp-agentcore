@@ -19,8 +19,8 @@ import pytest
 import pytest_asyncio
 
 from backend.agentcore.identity import get_agentcore_identity
-from backend.agents.orchestration_05.hold_intent import prepare_hold_node
-from backend.agents.orchestration_05.workflow import initialize_checkpoint_backend
+from backend.agents.phase_05_workflow.hold_intent import prepare_hold_node
+from backend.agents.phase_05_workflow.workflow import initialize_checkpoint_backend
 from backend.db.journey_store import (
     ScopedDb,
     bind_thread,

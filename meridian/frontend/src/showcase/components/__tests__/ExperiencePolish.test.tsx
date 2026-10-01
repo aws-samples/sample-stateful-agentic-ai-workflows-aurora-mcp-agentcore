@@ -15,6 +15,7 @@ import { deriveRecoveryEvidence } from '../../lib/recoveryState';
 import { DesktopMeridianApp } from '../../DesktopMeridianApp';
 import { ChatComposer } from '../ChatComposer';
 import { DiscoveryWorkspace } from '../DiscoveryWorkspace';
+import { ConciergeConversation } from '../ConciergeConversation';
 import { ConciergeRail } from '../../surfaces/ConciergeRail';
 import { RecoveryBoardingPass } from '../RecoveryBoardingPass';
 import { ChatTranscript } from '../ChatTranscript';
@@ -159,7 +160,7 @@ describe('Experience presentation polish', () => {
     const clearError = vi.fn();
     const replayLastPrompt = vi.fn();
     const error = 'A saved booking request still needs reconciliation. Open its trip and retry the same hold to check Aurora before sending it again.';
-    render(<DiscoveryWorkspace state={makeState({ error, clearError, replayLastPrompt })} greeting="morning" onClear={vi.fn()} />);
+    render(<ConciergeConversation state={makeState({ error, clearError, replayLastPrompt })} onSaved={vi.fn()} onRecovery={vi.fn()} />);
 
     expect(screen.getByRole('alert')).toHaveTextContent(error);
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
@@ -185,7 +186,7 @@ describe('Experience presentation polish', () => {
       screen.getByRole('list', { name: 'Conversation with Meridian' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('complementary', { name: 'Your trip brief' }),
+      screen.getByRole('complementary', { name: 'Concierge conversation and travel brief' }),
     ).toBeInTheDocument();
     // The sidebar also has a Concierge entry - that one is the traveler's
     // product nav. Scope to the surface axis.
@@ -1413,4 +1414,26 @@ it('does not present a SQL result as a recovery plan', () => {
   expect(screen.getByRole('button', { name: 'Start recovery' })).toBeInTheDocument();
   expect(screen.queryByText('Unrelated Barcelona trip')).not.toBeInTheDocument();
   expect(screen.queryByText('SQL results')).not.toBeInTheDocument();
+});
+
+it('keeps one concierge composer and sends its request through the production phase', () => {
+  const state = makeState({ currentPrompt: 'Keep the boutique option', selectedPhase: 1 });
+  render(<ConciergeConversation state={state} onSaved={vi.fn()} onRecovery={vi.fn()} />);
+  expect(screen.getAllByRole('textbox', { name: 'Ask Meridian anything' })).toHaveLength(1);
+  expect(screen.getAllByRole('button', { name: 'Help me plan a culture trip to Tokyo' })).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  expect(state.submitPrompt).toHaveBeenCalledWith(undefined, 4);
+  expect(screen.getByRole('heading', { name: 'Your travel brief' })).not.toBeVisible();
+});
+
+it('blocks destination-studio starters until traveler context authorization completes', () => {
+  const state = makeState({ memoryLoading: true });
+  const { rerender } = render(<ConciergeConversation state={state} onSaved={vi.fn()} onRecovery={vi.fn()} />);
+  const starter = screen.getByRole('button', { name: 'Help me plan a culture trip to Tokyo' });
+  expect(starter).toBeDisabled();
+  fireEvent.click(starter);
+  expect(state.applyPhaseExample).not.toHaveBeenCalled();
+  rerender(<ConciergeConversation state={{ ...state, memoryLoading: false }} onSaved={vi.fn()} onRecovery={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Help me plan a culture trip to Tokyo' }));
+  expect(state.applyPhaseExample).toHaveBeenCalledWith('Help me plan a culture trip to Tokyo', true, 4);
 });

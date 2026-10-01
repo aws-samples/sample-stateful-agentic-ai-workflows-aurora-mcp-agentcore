@@ -21,17 +21,16 @@ function MiniFlow({ label, steps }: { label: string; steps: Step[] }) {
 }
 
 function Phase({ number, name, claim, children }: { number: number; name: string; claim: string; children: ReactNode }) {
-  return <details className={`mds-brief-phase mds-brief-phase-${number}`} aria-labelledby={`brief-phase-${number}`}>
+  return <details name="briefing-capability" className={`mds-brief-phase mds-brief-phase-${number}`} aria-labelledby={`brief-phase-${number}`}>
     <summary className="mds-brief-phase-heading"><div><h3 id={`brief-phase-${number}`}>Phase {number} - {name}</h3><p>{claim}</p></div><ChevronDown size={20} aria-hidden="true" /></summary>
     <div className="mds-brief-phase-body">{children}</div>
   </details>;
 }
 
 export function BriefingPreparation() {
-  return <details className="mds-brief-section mds-brief-preparation" aria-labelledby="brief-preparation-heading">
-    <summary className="mds-brief-section-heading"><h2 id="brief-preparation-heading"><span className="mds-brief-section-number" aria-hidden="true">02</span>Prepare the data</h2><ChevronDown size={22} aria-hidden="true" /></summary>
+  return <details name="solution-briefing" className="mds-brief-section mds-brief-preparation" aria-labelledby="brief-preparation-heading">
+    <summary className="mds-brief-section-heading"><div><h2 id="brief-preparation-heading"><span className="mds-brief-section-number" aria-hidden="true">02</span>Prepare the data</h2><p>Load facts. Index descriptions. Scope the traveler.</p></div><ChevronDown size={22} aria-hidden="true" /></summary>
     <div className="mds-brief-section-body">
-    <p>Load the facts. Index the descriptions. Scope the traveler.</p>
     <div className="mds-brief-prep-labels" aria-hidden="true"><span>Source records</span><span>Preparation</span><span>Ready for the tools</span></div>
     <ol className="mds-brief-prep-paths" aria-label="Source records, preparation and Aurora stores">
       <li>
@@ -56,10 +55,9 @@ export function BriefingPreparation() {
 }
 
 export function BriefingPhases() {
-  return <details className="mds-brief-section mds-brief-walkthrough" aria-labelledby="brief-phases-heading">
-    <summary className="mds-brief-section-heading"><h2 id="brief-phases-heading"><span className="mds-brief-section-number" aria-hidden="true">03</span>Build five capabilities</h2><ChevronDown size={22} aria-hidden="true" /></summary>
+  return <details name="solution-briefing" className="mds-brief-section mds-brief-walkthrough" aria-labelledby="brief-phases-heading">
+    <summary className="mds-brief-section-heading"><div><h2 id="brief-phases-heading"><span className="mds-brief-section-number" aria-hidden="true">03</span>Build five capabilities</h2><p>SQL → MCP → retrieval → production → recovery.</p></div><ChevronDown size={22} aria-hidden="true" /></summary>
     <div className="mds-brief-section-body">
-    <p>Follow the same five phases as the slides. Open one capability at a time.</p>
     <div className="mds-brief-phase-pair">
       <Phase number={1} name="SQL" claim="Answer from exact rows.">
         <MiniFlow label="Phase 1 SQL path" steps={[

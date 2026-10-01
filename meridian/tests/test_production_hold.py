@@ -2,8 +2,8 @@
 
 import asyncio
 
-from backend.agents.production_04 import concierge as concierge_mod
-from backend.agents.production_04.concierge import HoldTarget
+from backend.agents.phase_04_production import concierge as concierge_mod
+from backend.agents.phase_04_production.concierge import HoldTarget
 from tests.test_production_transaction_boundaries import build_agent, runtime_decision
 
 TARGET = HoldTarget(package_id="CTY-002", duration="7 nights", travelers=2, unit_price_cents=250000)
@@ -68,7 +68,7 @@ def test_denied_hold_returns_the_refusal_without_a_hold(monkeypatch):
 
 
 def test_confirmed_booking_is_sent_to_the_runtime_and_recorded(monkeypatch):
-    from backend.agents.production_04.concierge import BookingTarget
+    from backend.agents.phase_04_production.concierge import BookingTarget
 
     events, calls = [], []
     booked = {"bookingId": "HLD-1", "status": "confirmed", "confirmedAt": "2026-09-10 13:00:00+00",
@@ -108,7 +108,7 @@ def test_confirmed_booking_is_sent_to_the_runtime_and_recorded(monkeypatch):
 
 
 def test_denied_booking_returns_the_refusal_without_a_booking(monkeypatch):
-    from backend.agents.production_04.concierge import BookingTarget
+    from backend.agents.phase_04_production.concierge import BookingTarget
 
     events, calls = [], []
     decision = runtime_decision(

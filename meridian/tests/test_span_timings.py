@@ -17,9 +17,9 @@ import backend.llm_polish as llm_polish
 import backend.routers.chat as chat_router
 from backend import timing
 from backend.agentcore.runtime import RuntimeDecision, _apply_result
-from backend.agents.orchestration_05.workflow import _with_checkpoint_timings
-from backend.agents.production_04.concierge import ProductionAgent
-from backend.agents.retrieval_03.search_agent import SearchAgent
+from backend.agents.phase_05_workflow.workflow import _with_checkpoint_timings
+from backend.agents.phase_04_production.concierge import ProductionAgent
+from backend.agents.phase_03_retrieval.search_agent import SearchAgent
 from backend.authorization import AuthorizationContext
 from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
 from backend.db.rds_data_client import RDSDataClient, ScopeTimings

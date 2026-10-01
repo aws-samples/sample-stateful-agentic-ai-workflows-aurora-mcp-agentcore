@@ -13,6 +13,7 @@ import {
   sendChatMessage,
   updateMemoryFact,
 } from '../../api/client';
+import type { ChatStreamEvent } from '../../api/chatStream';
 import { runWithDeadline } from '../../api/request';
 import { holdIntentKey, loadBookingRecovery, saveBookingRecovery, type SavedHoldIntent } from '../lib/bookingRecovery';
 import type {
@@ -127,6 +128,7 @@ export interface MeridianShowcaseState {
   replayIndex: number;
   isReplaying: boolean;
   isLoading: boolean;
+  chatProgress?: string;
   requestStartedAt: number | null;
   stopWaiting: () => void;
   error: string | null;
@@ -306,6 +308,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [replayIndex, setReplayIndex] = useState(-1);
   const [isReplaying, setIsReplaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [chatProgress, setChatProgress] = useState('');
   const [requestStartedAt, setRequestStartedAt] = useState<number | null>(null);
   const stopWaiting = useCallback(() => {
     chatController.current?.abort(new DOMException('Stopped waiting.', 'AbortError'));
@@ -519,7 +522,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     // double-render. chatResponseToMessages always appends [user, bot];
     // we trim the trailing optimistic user bubble first to keep history
     // clean.
-    setMessages((prior) => {
+    setMessages((messages) => {
+      const prior = messages[messages.length - 1]?.streaming ? messages.slice(0, -1) : messages;
       const trimmed =
         prior.length > 0 &&
         prior[prior.length - 1].role === 'user' &&
@@ -606,6 +610,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setReplayIndex(-1);
       setIsReplaying(false);
       setIsLoading(true);
+      setChatProgress('Connecting to your concierge…');
       setRequestStartedAt(Date.now());
       // Reset stream-complete so downstream surfaces (recommendation
       // grid) wait until the typewriter finishes revealing this turn.
@@ -653,6 +658,23 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       // the full pair so we don't double-render.
       setMessages((prior) => [...prior, { role: 'user', text: decorated }]);
 
+      const onStreamEvent = (event: ChatStreamEvent) => {
+        if (!isCurrent() || controller.signal.aborted) return;
+        if (event.type === 'conversation') {
+          setConversationId(event.conversation_id);
+          conversationPhaseRef.current = requestPhase;
+        } else if (event.type === 'status') {
+          setChatProgress(event.text);
+        } else if (event.text) {
+          setChatProgress('Writing your reply…');
+          setMessages(prior => {
+            const last = prior[prior.length - 1];
+            return last?.streaming
+              ? [...prior.slice(0, -1), { ...last, text: last.text + event.text }]
+              : [...prior, { role: 'bot', text: event.text, streaming: true }];
+          });
+        }
+      };
       try {
         const response = await runWithDeadline(signal => sendChatMessage({
           message: decorated,
@@ -674,13 +696,14 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           ...(requestPhase === 5
             ? { resume: resumeRequested || undefined }
             : {}),
-        }, signal), controller.signal);
+        }, signal, ...(phaseOverride === 4 ? [onStreamEvent] : [])), controller.signal, phaseOverride === 4 ? 120_000 : undefined);
         if (!isCurrent()) return;
         // One successful chat does not verify the catalog and traveler reads.
         // Only the readiness check may mark all of Meridian's live data ready.
         if (backendStatus === 'offline' && !connectionController.current) void refreshConnection();
         conversationPhaseRef.current = requestPhase;
         applyChatResponse(decorated, response);
+        if (phaseOverride === 4) setLatestStreamComplete(true);
         setConversationTravelers(travelersCount);
         // Filters are per-turn - clear them after a successful submit so
         // the next prompt starts clean (matches the intuition of every
@@ -688,6 +711,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         setChatFiltersState(EMPTY_FILTERS);
       } catch (err) {
         if (!isCurrent()) return;
+        setMessages(prior => prior.map(message => message.streaming ? { ...message, streaming: false, incomplete: true } : message));
         if (requestPhase === 5) unresolvedWorkflow.current = workflowThread;
         setError(requestPhase === 5
           ? 'The recovery response was not received. The worker may still be running. Re-read this saved recovery before resuming; its address is preserved on refresh.'
@@ -698,6 +722,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (isCurrent()) {
           chatController.current = null;
           setIsLoading(false);
+          setChatProgress('');
           setRequestStartedAt(null);
         }
       }
@@ -1207,6 +1232,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     replayIndex,
     isReplaying,
     isLoading,
+    chatProgress,
     requestStartedAt,
     stopWaiting,
     error,

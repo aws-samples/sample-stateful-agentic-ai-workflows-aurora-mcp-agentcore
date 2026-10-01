@@ -2,18 +2,6 @@
    cover briefing diagrams, recorded SQL and recovery evidence. Laptop styling
    stays independent; the theme toggle still supports a fully dimmed room. */
 
-/* Primary buttons draw a 1px edge in the action color. Focus rings remain distinct. */
-.mds-root .mc-presenter-actions .mc-present-button,
-.mds-root .mds-desktop-app :is(
-  .mc-trip.is-featured .mc-trip-open, .mds-trip-result-actions button.is-details,
-  .mds-chat-send, .mds-trip-confirm button, .mds-trip-modal-actions .is-primary,
-  .mds-compare-copy .is-primary, .mds-popover-primary,
-  .mds-recovery-workspace .mds-decision-card-actions .is-primary,
-  .mds-mobile-disruption-primary, .mc-session-primary, .mc-query-boundary button
-):not(:disabled) {
-  border: 1px solid var(--mds-action);
-}
-
 .mds-root[data-projector-readability='true'] .mds-theme-toggle {
   width: 44px;
   height: 44px;

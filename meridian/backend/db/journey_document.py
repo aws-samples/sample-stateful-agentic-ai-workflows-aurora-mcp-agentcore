@@ -91,7 +91,7 @@ def _channel(values: Any, name: str) -> Any:
 
 async def _workflow_snapshot(client: Any, thread_id: str, checkpoint_id: str):
     """Read pending nodes and values using the same graph definition, without running it."""
-    from backend.agents.orchestration_05.workflow import OrchestrationAgent
+    from backend.agents.phase_05_workflow.workflow import OrchestrationAgent
     from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
 
     async def read_only(*args, **kwargs):

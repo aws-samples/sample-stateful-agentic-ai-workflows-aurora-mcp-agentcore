@@ -52,15 +52,15 @@ class AgentConfig:
 
     # Agent names and files for each phase
     search_agents: Dict[int, tuple] = field(default_factory=lambda: {
-        1: ("SQLAgent", "agents/sql_01/agent.py"),
-        2: ("MCPAgent", "agents/mcp_02/agent.py"),
-        3: ("RetrievalAgent", "agents/retrieval_03/supervisor.py"),
+        1: ("SQLAgent", "agents/phase_01_sql/agent.py"),
+        2: ("MCPAgent", "agents/phase_02_mcp/agent.py"),
+        3: ("RetrievalAgent", "agents/phase_03_retrieval/supervisor.py"),
     })
 
     booking_agents: Dict[int, tuple] = field(default_factory=lambda: {
-        1: ("SQLAgent", "agents/sql_01/agent.py"),
-        2: ("MCPAgent", "agents/mcp_02/agent.py"),
-        3: ("BookingAgent", "agents/retrieval_03/booking_agent.py"),
+        1: ("SQLAgent", "agents/phase_01_sql/agent.py"),
+        2: ("MCPAgent", "agents/phase_02_mcp/agent.py"),
+        3: ("BookingAgent", "agents/phase_03_retrieval/booking_agent.py"),
     })
 
     # Progressive reveal delays (ms) - for demo purposes

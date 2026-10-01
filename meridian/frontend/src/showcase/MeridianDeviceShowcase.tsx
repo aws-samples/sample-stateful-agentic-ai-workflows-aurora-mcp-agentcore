@@ -16,6 +16,8 @@ import './presentationMode.css';
 import './solutionBriefing.css';
 import './recoveryChecks.css';
 import './projectorReadability.css';
+import './conciergeStudio.css';
+import './actionControls.css';
 
 // Keep a render error from blanking the live showcase.
 class ShowcaseErrorBoundary extends Component<

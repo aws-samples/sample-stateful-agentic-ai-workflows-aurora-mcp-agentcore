@@ -23,7 +23,9 @@ URL, so a reload restores a saved workflow.
 | System evidence | `/showcase?view=proof` | Aurora readback of the selected journey's checkpoints, executions, leases, authorization decisions and holds |
 | Solution briefing | `/showcase?view=briefing` | Architecture, data preparation, phase diagrams, gateway tools and Cedar policies; makes no service calls |
 
-Each reply in Concierge and the Capability ladder has an activity trace. Expand
+Concierge presents live trip options beside the conversation. **View travel brief**
+reveals saved context; unset dates stay distinct from remembered target dates.
+The Capability ladder exposes the activity trace for the selected phase. Expand
 a step to see its events and technical payloads. **Inspect evidence** holds the
 SQL, memory and policy views, and **Run RLS probe** runs the live row-level
 security diagnostic.
@@ -38,9 +40,16 @@ windowed layout, the controls bar offers an audience preview, a projector
 readability setting and **Present fullscreen**, which hides the controls until
 you press **Esc**. Both themes use the same color roles and system font. The
 projector setting enlarges type by 20% without changing colors. Dark mode uses
-the deck's black background, white labels and blue actions.
+the deck's black background and white labels. Rounded blue actions with white text
+are shared across all five views. Green indicates observed success, red indicates
+errors or blocked/canceled states, and amber indicates caution or pending attention;
+labels and icons preserve the meaning without color. Unrun or unknown stays neutral.
 
-## Five phases
+Solution Briefing opens with the architecture. Its four numbered topics reveal
+one at a time; supporting services and technical reference stay collapsed until
+you open them. This keeps the projector focused on the topic being discussed.
+
+## Five capabilities
 
 | Phase | Capability | What the trace shows |
 | --- | --- | --- |
@@ -122,8 +131,12 @@ real Aurora and Gateway calls.
 
 ### Slow responses and reloads
 
+The main Concierge streams AgentCore text as it arrives, with progress messages
+during tool work. The final trip list and completion state appear after catalog
+hydration and memory persistence. Interrupted text is marked incomplete.
+
 - The browser stops waiting for chat, hold and confirmation responses after
-  55 seconds and offers **Stop waiting** before then. A server action can still
+  55 seconds (two minutes for the streamed Concierge) and offers **Stop waiting** before then. A server action can still
   finish after the browser stops waiting.
 - The runtime client uses a 45-second socket read timeout and no blanket
   retries. An unconfirmed chat turn gets one retry if the connection closes
@@ -142,6 +155,7 @@ real Aurora and Gateway calls.
 
 | Method | Path | Description |
 | --- | --- | --- |
+| `POST` | `/api/chat/stream` | Phase 4 Concierge SSE: progress, text deltas, conversation identity, then one completed response. Uses the same authentication and traveler authorization as chat. Disconnects are never automatically retried. |
 | `POST` | `/api/chat` | Chat by `phase` (1 to 5). Phase 5 carries the conversation, traveler count and resume request into LangGraph. The response includes the trace in `activities`. |
 | `POST` | `/api/chat/order` | Courtesy hold from any phase: Runtime, Gateway and Cedar, then the `MeridianHolds` Lambda. `order` is null when the hold is refused. |
 | `POST` | `/api/chat/book` | Confirm a held booking. The backend reads the total under RLS so the policy judges what Aurora holds. `order` is null when the confirmation is refused. |
@@ -283,6 +297,10 @@ package before a hold. It is not enabled.
 | Observability | AWS Distro for OpenTelemetry on the runtime; spans and logs in the runtime's CloudWatch log group, with the trace ID shown in the UI |
 
 ## Documentation
+
+Start with the [documentation index](docs/README.md), the
+[numbered capability guides](backend/agents/README.md), or the
+[60-minute presenter run of show](docs/TALK_RUN_OF_SHOW.md).
 
 | Document | Contents |
 | --- | --- |

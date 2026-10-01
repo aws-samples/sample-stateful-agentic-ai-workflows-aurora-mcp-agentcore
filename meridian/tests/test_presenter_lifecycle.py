@@ -2,9 +2,8 @@
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from botocore.exceptions import ClientError
 
-from scripts import cleanup_resources, init_aurora_schema, release_demo_bookings, seed_data
+from scripts import init_aurora_schema, release_demo_bookings, seed_data
 
 
 def test_schema_initialization_refuses_existing_tables_before_ddl(monkeypatch):
@@ -56,50 +55,6 @@ def test_concurrent_seed_is_refused_without_running_the_body(monkeypatch):
     client.rollback_transaction.assert_called_once()
 
 
-def test_cleanup_preserves_resources_when_cluster_still_exists(monkeypatch):
-    rds = Mock()
-    rds.describe_db_clusters.return_value = {"DBClusters": [{"Status": "available"}]}
-    factory = Mock(return_value=rds)
-    monkeypatch.setattr(cleanup_resources.boto3, "client", factory)
-
-    with pytest.raises(RuntimeError, match="still exists"):
-        cleanup_resources.cleanup_resources(apply=True)
-
-    factory.assert_called_once_with("rds", region_name="us-east-1")
-    rds.delete_db_subnet_group.assert_not_called()
-
-
-def test_access_denied_is_not_treated_as_resource_absence():
-    call = Mock(side_effect=ClientError({"Error": {"Code": "AccessDenied"}}, "Describe"))
-    with pytest.raises(ClientError, match="AccessDenied"):
-        cleanup_resources._optional(call, {"DBClusterNotFoundFault"})
-
-
-@pytest.mark.parametrize("apply", [False, True])
-def test_cleanup_dry_run_and_failed_apply(monkeypatch, apply):
-    rds, secrets, ec2 = Mock(), Mock(), Mock()
-    rds.describe_db_clusters.side_effect = ClientError(
-        {"Error": {"Code": "DBClusterNotFoundFault"}}, "DescribeDBClusters",
-    )
-    secrets.describe_secret.return_value = {"ARN": "secret-reference"}
-    rds.describe_db_subnet_groups.return_value = {"DBSubnetGroups": [{}]}
-    ec2.describe_security_groups.return_value = {"SecurityGroups": []}
-    services = {"rds": rds, "secretsmanager": secrets, "ec2": ec2}
-    monkeypatch.setattr(cleanup_resources.boto3, "client", lambda name, **kw: services[name])
-    rds.delete_db_subnet_group.side_effect = ClientError(
-        {"Error": {"Code": "AccessDenied"}}, "DeleteDBSubnetGroup",
-    )
-
-    if apply:
-        with pytest.raises(ClientError, match="AccessDenied"):
-            cleanup_resources.cleanup_resources(apply=True)
-    else:
-        assert cleanup_resources.cleanup_resources() == 1
-        rds.delete_db_subnet_group.assert_not_called()
-    # Deleting the source must not delete credentials used by a snapshot restore.
-    secrets.delete_secret.assert_not_called()
-
-
 @pytest.mark.asyncio
 async def test_booking_release_is_targeted_and_atomic_on_failure(monkeypatch):
     client = Mock()
@@ -127,21 +82,3 @@ async def test_booking_release_dry_run_never_opens_write_transaction(monkeypatch
     monkeypatch.setattr(release_demo_bookings, "get_rds_data_client", lambda: client)
     assert await release_demo_bookings.release("traveler", False, True, "owned") == 1
     client.begin_transaction.assert_not_called()
-
-
-def test_unreviewed_provisioning_stops_before_any_aws_call(tmp_path):
-    import os
-    import subprocess
-    from pathlib import Path
-
-    marker = tmp_path / "aws-called"
-    aws = tmp_path / "aws"
-    aws.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\nexit 1\n')
-    aws.chmod(0o755)
-    script = Path(__file__).resolve().parents[1] / "scripts/create_cluster.sh"
-    result = subprocess.run(["/bin/bash", str(script), "--apply", "123456789012"],
-                            env={**os.environ, "PATH": str(tmp_path)},
-                            capture_output=True, text=True, check=False)
-    assert result.returncode == 2
-    assert "Provisioning is disabled" in result.stderr
-    assert not marker.exists()

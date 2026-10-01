@@ -20,15 +20,17 @@ for (const view of ['concierge', 'ladder']) for (const theme of ['light', 'dark'
     const requests: string[] = [];
     await page.route(url => url.pathname.startsWith('/api/'), async route => {
       const path = new URL(route.request().url()).pathname;
-      if (path === '/api/chat') requests.push(route.request().postDataJSON().message as string);
-      const body = path === '/api/chat'
-        ? { message: reply, products: trips, activities: [], follow_ups: [], conversation_id: 'chat-layout-test' }
+      if (path.startsWith('/api/chat')) requests.push(route.request().postDataJSON().message as string);
+      const body = path.startsWith('/api/chat')
+        ? { message: reply, products: trips, activities: [{ id: 'fixture-search', timestamp: '2026-10-01T00:00:00Z', activity_type: 'search', title: 'Fixture catalog search', details: 'Controlled UI fixture.' }], follow_ups: [], conversation_id: 'chat-layout-test' }
         : path === '/api/health'
           ? { status: 'healthy', bedrock_model_id: 'fixture', embedding_model_id: 'fixture', checkpoint_backend: 'fixture' }
           : path.includes('/memory/')
             ? { traveler_id: 'trv_meridian_demo', facts: [] }
             : { products: trips };
-      await route.fulfill({ json: body });
+      await route.fulfill(path === '/api/chat/stream'
+      ? { contentType: 'text/event-stream', body: `data: ${JSON.stringify({ type: 'complete', response: body })}\n\n` }
+      : { json: body });
     });
     for (const width of [1920, 1440, 900, 320]) {
       await page.setViewportSize({ width, height: 1000 });
@@ -71,7 +73,25 @@ for (const view of ['concierge', 'ladder']) for (const theme of ['light', 'dark'
           const bounds = (await card.boundingBox())!;
           const action = (await card.getByRole('button', { name: /^Details:/ }).boundingBox())!;
           expect(action.x + action.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+          const image = (await card.locator('.mc-trip-image').boundingBox())!;
+          const copy = (await card.locator('.mc-trip-copy').boundingBox())!;
+          expect(copy.x).toBeGreaterThanOrEqual(image.x + image.width);
+          const facts = (await page.locator('.is-featured .mc-trip-facts').boundingBox())!;
+          const explore = (await page.locator('.is-featured .mc-trip-open').boundingBox())!;
+          expect(explore.y >= facts.y + facts.height - 1 || explore.x >= facts.x + facts.width - 1).toBe(true);
         }
+      }
+      if (view === 'ladder' && width === 1440) {
+        for (const button of await page.locator('.mds-trace-actions button').all()) {
+          await expect(button).toHaveCSS('border-radius', '10px');
+          await expect(button).toHaveCSS('padding', '0px');
+          await expect(button).toHaveCSS('background-color', 'rgb(0, 113, 227)');
+          await expect(button).toHaveCSS('color', 'rgb(255, 255, 255)');
+          const bounds = (await button.boundingBox())!;
+          expect(bounds.width).toBeCloseTo(44, 0);
+          expect(bounds.height).toBeCloseTo(44, 0);
+        }
+        await page.screenshot({ path: `../../.impeccable/review/studio/trace-controls-${theme}-fixture.png` });
       }
       if (view === 'ladder' && theme === 'light') {
         // The trip card photo region keeps the dark roles in light mode so its
@@ -92,3 +112,50 @@ for (const view of ['concierge', 'ladder']) for (const theme of ['light', 'dark'
     }
   });
 }
+
+test('concierge preserves long-answer reading and explains an unsuccessful request', async ({ page }) => {
+  let turn = 0;
+  await page.route(url => url.pathname.startsWith('/api/'), async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.startsWith('/api/chat') && ++turn > 1) {
+      await route.fulfill({ status: 503, json: { detail: 'Controlled UI test: service unavailable.' } });
+      return;
+    }
+    const body = path.startsWith('/api/chat')
+      ? { message: ['Start of the travel answer.', ...Array.from({ length: 18 }, (_, i) => `Option ${i + 1}: Compare the destination, duration and price before deciding.`)].join('\n\n'), products: trips, activities: [], follow_ups: [] }
+      : path === '/api/health' ? { status: 'healthy', bedrock_model_id: 'fixture' }
+      : path.includes('/memory/') ? { traveler_id: 'trv_meridian_demo', facts: [] }
+      : { products: trips };
+    await route.fulfill(path === '/api/chat/stream'
+      ? { contentType: 'text/event-stream', body: `data: ${JSON.stringify({ type: 'complete', response: body })}\n\n` }
+      : { json: body });
+  });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/showcase?present=1&view=concierge&theme=dark');
+  const input = page.getByRole('textbox', { name: 'Ask Meridian anything' });
+  await expect(input).toBeEnabled();
+  await input.fill('Find a Tokyo trip');
+  await input.press('Enter');
+  await expect(page.getByText('Start of the travel answer.', { exact: true })).toBeVisible();
+  const pane = page.getByRole('region', { name: 'Concierge responses' });
+  const answer = page.locator('.mc-message.is-bot');
+  await expect.poll(async () => (await answer.boundingBox())!.y - (await pane.boundingBox())!.y).toBeGreaterThanOrEqual(0);
+  expect((await answer.boundingBox())!.y - (await pane.boundingBox())!.y).toBeLessThan(30);
+  // Place the reader part-way through the answer without keyboard scroll animation.
+  await pane.evaluate(el => { el.scrollTop = 320; });
+  const readingPosition = await pane.evaluate(el => el.scrollTop);
+  await page.getByRole('button', { name: 'Save Tokyo Culture & Cuisine', exact: true }).click();
+  expect(await pane.evaluate(el => el.scrollTop)).toBe(readingPosition);
+  await expect(page.getByRole('button', { name: 'Latest activity', exact: true })).toBeVisible();
+  await page.screenshot({ path: '../../.impeccable/review/studio/long-response-fixture.png', fullPage: false });
+  await page.getByRole('button', { name: 'Latest activity', exact: true }).click();
+  await expect.poll(() => pane.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThan(2);
+  await input.fill('Try another search');
+  await input.press('Enter');
+  await expect(page.getByText('We couldn’t update your trip options.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start a new chat', exact: true })).toBeEnabled();
+  await page.screenshot({ path: '../../.impeccable/review/studio/failure-fixture.png', fullPage: false });
+  await page.getByRole('button', { name: 'Start a new chat', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your next chapter, Alex.', exact: true })).toBeVisible();
+  await expect(page.getByText('We couldn’t update your trip options.', { exact: true })).not.toBeVisible();
+});

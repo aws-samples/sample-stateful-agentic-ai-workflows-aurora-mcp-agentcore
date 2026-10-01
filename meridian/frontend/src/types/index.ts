@@ -198,6 +198,9 @@ export interface MemoryProfileResponse {
 }
 
 export interface Message {
+  /** Provisional Runtime text; completion replaces it with the persisted reply. */
+  streaming?: boolean;
+  incomplete?: boolean;
   role: 'user' | 'bot';
   type?: 'text' | 'products' | 'order';
   text: string;

@@ -14,8 +14,8 @@ from typing import Any, List, Tuple
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
-import backend.agents.orchestration_05.workflow as workflow_mod
-from backend.agents.orchestration_05.workflow import (
+import backend.agents.phase_05_workflow.workflow as workflow_mod
+from backend.agents.phase_05_workflow.workflow import (
     OrchestrationAgent,
     _classify_intent,
     _resolve_checkpoint_dsn,
@@ -546,7 +546,7 @@ def test_availability_lookup_never_holds_inventory() -> None:
 
 def test_hold_picks_a_duration_that_has_inventory() -> None:
     """Never hold against a sold-out duration."""
-    from backend.agents.orchestration_05.packages import (
+    from backend.agents.phase_05_workflow.packages import (
         first_available_duration as _first_available_duration,
     )
 

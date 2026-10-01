@@ -14,7 +14,7 @@ export function RequestWaitNotice({ state, onReadRecovery }: {
   if (!state.isLoading && !(state.error && state.selectedPhase === 5 && state.conversationId)) return null;
   return <div className="mc-request-wait" role="status">
     <div>{state.isLoading
-      ? <><strong>Waiting for Meridian · {Math.max(0, Math.floor((now - (state.requestStartedAt ?? now)) / 1000))}s</strong><p>Responses may take up to 55 seconds. Stopping the wait does not cancel a saved action.</p></>
+      ? <><strong>Waiting for Meridian · {Math.max(0, Math.floor((now - (state.requestStartedAt ?? now)) / 1000))}s</strong><p>Your request is still running. Stopping the wait does not cancel a saved action.</p></>
       : <><strong>Check the saved recovery</strong><p>{state.error}</p></>}
     </div>
     {state.isLoading

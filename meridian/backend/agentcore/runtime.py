@@ -18,6 +18,7 @@ AWS docs:
 
 from __future__ import annotations
 
+import codecs
 import hashlib
 import json
 import logging
@@ -31,6 +32,7 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError, ConnectionClosedError
 
+from backend.chat_stream import emit_chat_event
 from backend.agentcore.cli_config import resolve_agentcore_config
 from backend.agentcore.errors import AgentCoreNotConfiguredError
 
@@ -65,47 +67,70 @@ class RuntimeDecision:
     isolation: str = "microVM · session-scoped CPU/memory/filesystem"
 
 
-def parse_sse(raw: bytes) -> list[dict[str, Any]]:
-    """Decode the runtime's SSE body into the JSON objects it yielded.
+def iter_sse(chunks):
+    """Decode complete SSE frames without buffering the entire Runtime response."""
+    decoder = codecs.getincrementaldecoder("utf-8")()
+    pending = ""
+    data = []
 
-    BedrockAgentCoreApp encodes each yielded string as the SSE data value, so a
-    JSON object yielded by the app arrives as one additional JSON-encoded
-    string layer. Both shapes are accepted.
-    """
-    events: list[dict[str, Any]] = []
-    for line in raw.decode("utf-8", errors="replace").splitlines():
-        if not line.startswith("data:"):
-            continue
-        text = line[5:].strip()
-        if not text:
-            continue
-        value = json.loads(text)
+    def decode(lines):
+        value = json.loads("\n".join(lines))
         if isinstance(value, str):
             value = json.loads(value)
-        if isinstance(value, dict):
-            events.append(value)
-    return events
+        if not isinstance(value, dict):
+            raise ValueError("Runtime event must be a JSON object")
+        return value
+
+    for chunk in chunks:
+        pending += decoder.decode(chunk)
+        if len(pending) > 2_000_000:
+            raise ValueError("Runtime event exceeded the stream limit")
+        while "\n" in pending:
+            line, pending = pending.split("\n", 1)
+            line = line.rstrip("\r")
+            if line.startswith("data:"):
+                data.append(line[5:].lstrip(" "))
+            elif not line and data:
+                yield decode(data)
+                data = []
+    pending += decoder.decode(b"", final=True)
+    if pending.startswith("data:"):
+        data.append(pending[5:].strip())
+    if data:
+        yield decode(data)
 
 
-def _read_stream(response: dict[str, Any]) -> bytes:
+def parse_sse(raw: bytes) -> list[dict[str, Any]]:
+    """Compatibility helper for saved Runtime responses."""
+    return list(iter_sse([raw]))
+
+
+def _stream_chunks(response: dict[str, Any]):
     body = response.get("response")
-    chunks = bytearray()
-    if hasattr(body, "read"):
-        while True:
-            chunk = body.read(4096)
-            if not chunk:
-                break
-            chunks.extend(chunk)
-        return bytes(chunks)
-    for chunk in body or []:
-        if isinstance(chunk, (bytes, bytearray)):
-            chunks.extend(chunk)
-        elif isinstance(chunk, dict):
-            payload = chunk.get("chunk", {}).get("bytes") or chunk.get("bytes") or b""
-            chunks.extend(payload if isinstance(payload, (bytes, bytearray)) else str(payload).encode())
+    try:
+        if hasattr(body, "read"):
+            # Small reads avoid holding several model tokens behind a 4 KiB buffer.
+            while chunk := body.read(128):
+                yield chunk
         else:
-            chunks.extend(str(chunk).encode())
-    return bytes(chunks)
+            for chunk in body or []:
+                if isinstance(chunk, (bytes, bytearray)):
+                    yield chunk
+                elif isinstance(chunk, dict):
+                    yield chunk.get("chunk", {}).get("bytes") or chunk.get("bytes") or b""
+    finally:
+        if hasattr(body, "close"):
+            body.close()
+
+
+def _forward_runtime_events(response):
+    for event in iter_sse(_stream_chunks(response)):
+        if event.get("type") == "token" and isinstance(event.get("text"), str):
+            emit_chat_event({"type": "delta", "text": event["text"]})
+        elif event.get("type") == "activity":
+            # Expose a short, observed stage, never raw tool payloads or reasoning.
+            emit_chat_event({"type": "status", "text": "Checking your trip options…"})
+        yield event
 
 
 class AgentCoreRuntimeAdapter:
@@ -260,9 +285,9 @@ class AgentCoreRuntimeAdapter:
                 raise RuntimeError(f"AgentCore Runtime invoke failed: {code}") from exc
         # Once a response exists, a broken stream or runtime error must surface.
         # Replaying here could repeat work already performed by the runtime.
-        return self._decision(arn, session_id, parse_sse(_read_stream(response)))
+        return self._decision(arn, session_id, _forward_runtime_events(response))
 
-    def _decision(self, arn: str, session_id: str, events: list[dict[str, Any]]) -> RuntimeDecision:
+    def _decision(self, arn: str, session_id: str, events) -> RuntimeDecision:
         decision = RuntimeDecision(
             runtime_arn=arn,
             runtime_session_id=session_id,

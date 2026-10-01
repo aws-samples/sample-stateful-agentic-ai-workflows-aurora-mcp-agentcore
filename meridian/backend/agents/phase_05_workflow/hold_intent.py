@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Dict, Optional
 
-from backend.agents.orchestration_05.packages import (
+from backend.agents.phase_05_workflow.packages import (
     first_available_duration,
     top_ranked_package,
 )

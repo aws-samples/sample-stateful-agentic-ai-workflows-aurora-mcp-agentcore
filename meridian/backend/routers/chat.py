@@ -23,6 +23,7 @@ AWS docs (by phase):
     https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html
 """
 
+import json
 import logging
 import asyncio
 import re
@@ -31,9 +32,11 @@ from datetime import datetime, timezone
 from typing import Literal, Optional, List, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from fastapi.responses import StreamingResponse
+from backend.chat_stream import chat_event_sink
 
 from backend.agentcore.identity import get_agentcore_identity
-from backend.agents.production_04.concierge import runtime_model_id
+from backend.agents.phase_04_production.concierge import runtime_model_id
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.db.embedding_service import get_embedding_service
@@ -1274,7 +1277,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         title="Delegating to SearchAgent",
         details="Supervisor routing search request to specialized agent",
         agent_name="RetrievalAgent",
-        agent_file="agents/retrieval_03/supervisor.py"
+        agent_file="agents/phase_03_retrieval/supervisor.py"
     ))
 
     activities.append(create_activity(
@@ -1282,7 +1285,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         title="Generating query embedding",
         details="Cohere Embed v4 Embeddings (1024d)",
         agent_name="SearchAgent",
-        agent_file="agents/retrieval_03/search_agent.py"
+        agent_file="agents/phase_03_retrieval/search_agent.py"
     ))
     
     embedding_service = get_embedding_service()
@@ -1296,7 +1299,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         title="Embedding generated",
         execution_time_ms=embedding_time,
         agent_name="SearchAgent",
-        agent_file="agents/retrieval_03/search_agent.py"
+        agent_file="agents/phase_03_retrieval/search_agent.py"
     ))
 
     # Step 2: Hybrid candidate retrieval (semantic + lexical).
@@ -1305,7 +1308,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         title="Hybrid candidate retrieval",
         details="pgvector cosine + tsvector/ts_rank",
         agent_name="SearchAgent",
-        agent_file="agents/retrieval_03/search_agent.py"
+        agent_file="agents/phase_03_retrieval/search_agent.py"
     ))
     candidate_limit = max(limit * config.search.rerank_candidate_multiplier, 25)
     # Cast the limit to ::integer — the function signature is
@@ -1380,7 +1383,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         ),
         execution_time_ms=search_time,
         agent_name="SearchAgent",
-        agent_file="agents/retrieval_03/search_agent.py"
+        agent_file="agents/phase_03_retrieval/search_agent.py"
     ))
 
     # Step 3: Cohere rerank over semantic candidates.
@@ -1415,7 +1418,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         ),
         execution_time_ms=rerank_time,
         agent_name="SearchAgent",
-        agent_file="agents/retrieval_03/search_agent.py"
+        agent_file="agents/phase_03_retrieval/search_agent.py"
     ))
 
     activities.append(create_activity(
@@ -1423,7 +1426,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         title=f"SearchAgent returned {len(ranked_rows[:limit])} results",
         details="Returning ranked trips to RetrievalAgent",
         agent_name="RetrievalAgent",
-        agent_file="agents/retrieval_03/supervisor.py"
+        agent_file="agents/phase_03_retrieval/supervisor.py"
     ))
 
     products = [Product(**row_to_api_product(row)) for row in ranked_rows[:limit]]
@@ -1563,7 +1566,7 @@ async def retrieval_supervisor_search(
     limit: int = 5,
 ) -> tuple[List[Product], List[ActivityEntry]]:
     """Phase 3 via live Strands supervisor — Bedrock LLM picks the SearchAgent tool."""
-    from backend.agents.retrieval_03 import create_retrieval_system
+    from backend.agents.phase_03_retrieval import create_retrieval_system
 
     activities: List[ActivityEntry] = []
 
@@ -1592,14 +1595,14 @@ async def retrieval_supervisor_search(
                 "zero results so the concierge can explain the gap."
             ),
             agent_name="RetrievalAgent",
-            agent_file="agents/retrieval_03/supervisor.py",
+            agent_file="agents/phase_03_retrieval/supervisor.py",
         ))
         activities.append(create_activity(
             activity_type="result",
             title="Retrieval mode cannot resolve memory-recall queries",
             details="Routed to honest-failure path; Production mode is the upgrade.",
             agent_name="RetrievalAgent",
-            agent_file="agents/retrieval_03/supervisor.py",
+            agent_file="agents/phase_03_retrieval/supervisor.py",
         ))
         return [], activities
 
@@ -1608,7 +1611,7 @@ async def retrieval_supervisor_search(
         title="RetrievalAgent invoked (Strands + Bedrock)",
         details="Bedrock will choose which specialist tool to call",
         agent_name="RetrievalAgent",
-        agent_file="agents/retrieval_03/supervisor.py",
+        agent_file="agents/phase_03_retrieval/supervisor.py",
     ))
 
     supervisor = create_retrieval_system(activity_callback=collect)
@@ -1630,7 +1633,7 @@ async def retrieval_supervisor_search(
                 "pgvector + tsvector + Cohere rerank coverage."
             ),
             agent_name="RetrievalAgent",
-            agent_file="agents/retrieval_03/supervisor.py",
+            agent_file="agents/phase_03_retrieval/supervisor.py",
         ))
         try:
             direct = await supervisor.search_agent.hybrid_search(query, limit=limit)
@@ -1666,7 +1669,7 @@ async def retrieval_supervisor_search(
             title="Supervisor search returned no trips",
             details="Strands delegation + direct fallback both empty",
             agent_name="RetrievalAgent",
-            agent_file="agents/retrieval_03/supervisor.py",
+            agent_file="agents/phase_03_retrieval/supervisor.py",
         ))
         return products, activities
 
@@ -1675,7 +1678,7 @@ async def retrieval_supervisor_search(
         title=f"Supervisor returned {len(products)} trips",
         details="Bedrock-driven delegation completed",
         agent_name="RetrievalAgent",
-        agent_file="agents/retrieval_03/supervisor.py",
+        agent_file="agents/phase_03_retrieval/supervisor.py",
     ))
 
     return products, activities
@@ -1736,7 +1739,7 @@ async def workflow_memory_recall(
             title="Aurora recall: traveler_preferences",
             details=f"{len(prefs)} durable preference facts",
             agent_name="MemoryAgent",
-            agent_file="agents/production_04/memory_agent.py",
+            agent_file="agents/phase_04_production/memory_agent.py",
         ))
 
         if conversation_id:
@@ -1748,7 +1751,7 @@ async def workflow_memory_recall(
                 title="Aurora recall: conversation_messages",
                 details=f"{len(session)} recent session turns",
                 agent_name="MemoryAgent",
-                agent_file="agents/production_04/memory_agent.py",
+                agent_file="agents/phase_04_production/memory_agent.py",
             ))
 
         similar = await store.recall_similar_interactions(
@@ -1759,7 +1762,7 @@ async def workflow_memory_recall(
             title="Aurora recall: trip_interactions (pgvector)",
             details=f"{len(similar)} semantically similar past interactions",
             agent_name="MemoryAgent",
-            agent_file="agents/production_04/memory_agent.py",
+            agent_file="agents/phase_04_production/memory_agent.py",
         ))
 
     products, search_activities = await retrieval_search(query, limit=5)
@@ -1844,7 +1847,7 @@ async def orchestration_workflow(
     search code." The process-wide checkpoint backend is pooled PostgresSaver
     when configured, otherwise an explicitly ephemeral MemorySaver.
     """
-    from backend.agents.orchestration_05.workflow import (
+    from backend.agents.phase_05_workflow.workflow import (
         OrchestrationAgent,
         WorkflowAuthorizationError,
     )
@@ -1855,7 +1858,7 @@ async def orchestration_workflow(
         memory_recall_fn=workflow_memory_recall,
     )
     try:
-        from backend.agents.orchestration_05.execution import run_http_workflow
+        from backend.agents.phase_05_workflow.execution import run_http_workflow
         final_state = await run_http_workflow(
             workflow,
             query,
@@ -1931,7 +1934,7 @@ async def production_search(
 
     Requires deployed AgentCore Runtime, Gateway, and Memory — see ``agentcore/README.md``.
     """
-    from backend.agents.production_04.concierge import create_production_agent
+    from backend.agents.phase_04_production.concierge import create_production_agent
     from backend.memory.store import DEMO_TRAVELER_ID
 
     tid = customer_id or DEMO_TRAVELER_ID
@@ -2086,7 +2089,7 @@ async def retrieval_availability_search(
         title="Delegating to PackageAgent",
         details="Supervisor routing availability request to specialist agent",
         agent_name="RetrievalAgent",
-        agent_file="agents/retrieval_03/supervisor.py"
+        agent_file="agents/phase_03_retrieval/supervisor.py"
     ))
 
     query_lower = query.lower()
@@ -2133,7 +2136,7 @@ async def retrieval_availability_search(
         ),
         execution_time_ms=search_time,
         agent_name="PackageAgent",
-        agent_file="agents/retrieval_03/package_agent.py"
+        agent_file="agents/phase_03_retrieval/package_agent.py"
     ))
 
     if not results:
@@ -2141,7 +2144,7 @@ async def retrieval_availability_search(
             activity_type="result",
             title="PackageAgent: Package not found",
             agent_name="PackageAgent",
-            agent_file="agents/retrieval_03/package_agent.py"
+            agent_file="agents/phase_03_retrieval/package_agent.py"
         ))
 
         activities.append(create_activity(
@@ -2149,7 +2152,7 @@ async def retrieval_availability_search(
             title="PackageAgent returned to Supervisor",
             details="No matching package found",
             agent_name="RetrievalAgent",
-            agent_file="agents/retrieval_03/supervisor.py"
+            agent_file="agents/phase_03_retrieval/supervisor.py"
         ))
 
         return [], activities, "I couldn't find that trip package. Try searching by destination, operator, or trip type."
@@ -2163,7 +2166,7 @@ async def retrieval_availability_search(
         details=f"Package: {product['name']}",
         sql_query="SELECT availability, durations FROM trip_packages WHERE package_id = ?",
         agent_name="PackageAgent",
-        agent_file="agents/retrieval_03/package_agent.py"
+        agent_file="agents/phase_03_retrieval/package_agent.py"
     ))
     
     # Calculate total stock
@@ -2181,7 +2184,7 @@ async def retrieval_availability_search(
         title="PackageAgent: Duration inventory verified",
         details=f"Total: {total_stock} package places across available durations",
         agent_name="PackageAgent",
-        agent_file="agents/retrieval_03/package_agent.py"
+        agent_file="agents/phase_03_retrieval/package_agent.py"
     ))
 
     activities.append(create_activity(
@@ -2189,7 +2192,7 @@ async def retrieval_availability_search(
         title="PackageAgent returned to Supervisor",
         details=f"Availability check complete for {product['name']}",
         agent_name="RetrievalAgent",
-        agent_file="agents/retrieval_03/supervisor.py"
+        agent_file="agents/phase_03_retrieval/supervisor.py"
     ))
 
     durations = product.get('durations', [])
@@ -2235,6 +2238,82 @@ def _is_workflow_resume_query(query: str) -> bool:
     }
 
 
+# Retain disconnected read-only chat turns until memory persistence finishes.
+# Disconnecting never retries a request or claims to cancel an in-flight tool.
+_stream_tasks: set[asyncio.Task] = set()
+
+
+@router.post("/stream")
+async def stream_chat(
+    request: ChatRequest,
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> StreamingResponse:
+    if request.phase != 4:
+        raise HTTPException(status_code=422, detail="Streaming is available for the concierge.")
+    # Authorize before sending headers, including when context is disabled.
+    authorize_traveler(principal, request.customer_id)
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    connected = True
+    started = clock()
+    first_delta = False
+    handoff = _needs_checkpointed_workflow(request.message)
+
+    def enqueue(event):
+        nonlocal first_delta
+        if event.get("type") == "delta" and not first_delta:
+            first_delta = True
+            logger.info("Concierge first text received in %s ms", elapsed_ms(started))
+        if connected:
+            queue.put_nowait(event)
+
+    def publish(event):
+        # A workflow handoff intentionally replaces Runtime prose. Never briefly
+        # show an answer the ordinary chat route would withhold.
+        if handoff and event.get("type") == "delta":
+            return
+        loop.call_soon_threadsafe(enqueue, event)
+
+    async def produce():
+        token = chat_event_sink.set(publish)
+        try:
+            response = await chat(request, principal)
+            if any(entry.activity_type == "error" for entry in response.activities):
+                publish({"type": "error", "message": response.message})
+            else:
+                publish({"type": "complete", "response": response.model_dump()})
+        except HTTPException as exc:
+            publish({"type": "error", "message": str(exc.detail)})
+        except Exception:
+            logger.exception("Concierge stream failed")
+            publish({"type": "error", "message": "The response was interrupted. Check the connection before trying again."})
+        finally:
+            chat_event_sink.reset(token)
+
+    async def events():
+        nonlocal connected
+        task = asyncio.create_task(produce())
+        _stream_tasks.add(task)
+        task.add_done_callback(_stream_tasks.discard)
+        try:
+            yield 'data: {"type":"status","text":"Connecting to your concierge…"}\n\n'
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=10)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                if event["type"] in ("complete", "error"):
+                    break
+        finally:
+            connected = False
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no",
+    })
+
+
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -2275,7 +2354,7 @@ async def chat(
             title="Processing with Multi-Agent Orchestration",
             details=f"Query: {request.message[:80]}{'...' if len(request.message) > 80 else ''}",
             agent_name="RetrievalAgent",
-            agent_file="agents/retrieval_03/supervisor.py"
+            agent_file="agents/phase_03_retrieval/supervisor.py"
         ))
 
         try:
@@ -2305,7 +2384,7 @@ async def chat(
                 title="PackageAgent error",
                 details=str(e),
                 agent_name="PackageAgent",
-                agent_file="agents/retrieval_03/package_agent.py"
+                agent_file="agents/phase_03_retrieval/package_agent.py"
             ))
             # Fall through to regular search
 
@@ -2322,7 +2401,7 @@ async def chat(
                     "conversations, or AgentCore Memory. No memory writeback occurred."
                 ),
                 agent_name="ProductionAgent",
-                agent_file="agents/production_04/concierge.py",
+                agent_file="agents/phase_04_production/concierge.py",
             ))
             return _complete_chat_turn(
                 ChatResponse(
@@ -2350,7 +2429,7 @@ async def chat(
             title="Processing with Production concierge (Runtime + Gateway + Memory)",
             details=f"Query: {request.message[:80]}{'...' if len(request.message) > 80 else ''}",
             agent_name="ProductionAgent",
-            agent_file="agents/production_04/concierge.py",
+            agent_file="agents/phase_04_production/concierge.py",
         ))
         try:
             products, search_activities, raw_message, conv_id, memory_facts = await production_search(
@@ -2390,7 +2469,7 @@ async def chat(
                         "availability can checkpoint separately."
                     ),
                     agent_name="ProductionAgent",
-                    agent_file="agents/production_04/concierge.py",
+                    agent_file="agents/phase_04_production/concierge.py",
                 ))
                 message = _PHASE4_WORKFLOW_TRANSITION_MESSAGE
             else:
@@ -2442,7 +2521,7 @@ async def chat(
                 ),
                 details=str(e),
                 agent_name="ProductionAgent",
-                agent_file="agents/production_04/concierge.py",
+                agent_file="agents/phase_04_production/concierge.py",
             ))
             return _complete_chat_turn(
                 ChatResponse(
@@ -2558,7 +2637,7 @@ async def chat(
     phase_configs = {
         1: ("SQLAgent", "Direct RDS Data API", sql_search, "backend/routers/chat.py"),
         2: ("MCPAgent", "MCP tool routing", mcp_search, "backend/routers/chat.py"),
-        3: ("RetrievalAgent", phase3_method, phase3_fn, "agents/retrieval_03/supervisor.py"),
+        3: ("RetrievalAgent", phase3_method, phase3_fn, "agents/phase_03_retrieval/supervisor.py"),
     }
 
     agent_name, method, search_fn, agent_file = phase_configs[request.phase]
@@ -2890,7 +2969,7 @@ async def production_hold(request: "OrderRequest") -> OrderResponse:
     as ``hold_confirmed``; the runtime pins it onto the tool call; the gateway's
     Cedar policy permits the hold only with it. Nothing here writes to Aurora.
     """
-    from backend.agents.production_04.concierge import HoldTarget, create_production_agent
+    from backend.agents.phase_04_production.concierge import HoldTarget, create_production_agent
 
     row, pkg = await _package_for_hold(request.product_id)
     duration = _requested_duration(row, request.size)
@@ -3076,7 +3155,7 @@ async def production_booking(request: "BookingRequest") -> BookingResponse:
     here writes to Aurora: the SQL function behind the gateway tool flips the
     booking from held to confirmed, or refuses by name.
     """
-    from backend.agents.production_04.concierge import BookingTarget, create_production_agent
+    from backend.agents.phase_04_production.concierge import BookingTarget, create_production_agent
 
     line = await _traveler_booking(request.traveler_id, request.booking_id)
     _row, pkg = await _package_for_hold(str(line["package_id"]))

@@ -23,12 +23,14 @@ export function ChatComposer({
   proofMode = false,
   recoveryMode = false,
   conciergeMode = false,
+  hideStarters = false,
 }: {
   state: MeridianShowcaseState;
   compact?: boolean;
   proofMode?: boolean;
   recoveryMode?: boolean;
   conciergeMode?: boolean;
+  hideStarters?: boolean;
 }) {
   const [openChip, setOpenChip] = useState<ChipKey | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -74,7 +76,7 @@ export function ChatComposer({
 
   const nextPhase = SHOWCASE_PHASES.find(phase => phase.phase === state.selectedPhase + 1);
   const boundaryReached = proofMode && nextPhase && stretchPrompt && state.lastPrompt?.startsWith(stretchPrompt) && !state.isLoading;
-  const queryStarters = compact || recoveryMode
+  const queryStarters = compact || recoveryMode || hideStarters
     ? []
     : conversationStarted
       ? proofMode && stretchStillUnasked

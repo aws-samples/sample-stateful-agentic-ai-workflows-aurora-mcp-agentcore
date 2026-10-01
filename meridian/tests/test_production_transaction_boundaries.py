@@ -7,8 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 from backend.agentcore.runtime import RuntimeDecision
-from backend.agents.production_04 import concierge as concierge_mod
-from backend.agents.production_04.concierge import ProductionAgent
+from backend.agents.phase_04_production import concierge as concierge_mod
+from backend.agents.phase_04_production.concierge import ProductionAgent
 
 
 class FakeDB:

@@ -46,13 +46,14 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from backend.agentcore.cli_config import require_agentcore_platform
 from backend.agentcore.identity import get_agentcore_identity
+from backend.chat_stream import emit_chat_event
 from backend.agentcore.runtime import RuntimeDecision, get_agentcore_runtime
 from backend.agents.budget import (
     BUDGET_KEYS,
     budget_ceiling_from_facts,
     budget_ceiling_per_traveler_cents,
 )
-from backend.agents.production_04.memory_agent import (
+from backend.agents.phase_04_production.memory_agent import (
     ActivityEntry as MemoryActivity,
     MemoryAgent as TravelerMemorySpecialist,
 )
@@ -215,7 +216,7 @@ class ProductionAgent:
     tool loop), then persists the returned decision under RLS.
     """
 
-    AGENT_FILE = "agents/production_04/concierge.py"
+    AGENT_FILE = "agents/phase_04_production/concierge.py"
     RUNTIME_FILE = "meridian_agentcore/app/MeridianConcierge/main.py"
 
     def __init__(self, activity_callback: Optional[Callable[[MemoryActivity], Any]] = None):
@@ -618,8 +619,11 @@ class ProductionAgent:
         require_agentcore_platform(require_memory=False)
         activities: List[Any] = []
         self._collect(activities)
+        emit_chat_event({"type": "status", "text": "Recalling your travel preferences…"})
         read = await self._authorized_read(message, traveler_id, conversation_id)
+        emit_chat_event({"type": "conversation", "conversation_id": read.conv_id})
         decision = await self._runtime_turn(read, message, traveler_id, travelers_count)
+        emit_chat_event({"type": "status", "text": "Saving your plan and checking trip details…"})
         packages = await self._hydrate(decision.packages)
         shown = [{"package_id": p.package_id, "name": p.name} for p in packages]
         await self._write_unit(

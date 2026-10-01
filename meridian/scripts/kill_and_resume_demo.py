@@ -38,7 +38,7 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv()
 
 from backend.agentcore.identity import get_agentcore_identity  # noqa: E402
-from backend.agents.orchestration_05.workflow import (  # noqa: E402
+from backend.agents.phase_05_workflow.workflow import (  # noqa: E402
     initialize_checkpoint_backend,
 )
 from backend.db.journey_store import (  # noqa: E402
@@ -78,7 +78,7 @@ async def _run_workflow(
     thread_id: str, *, resume: bool, after_pause=None, gateway_call_wrapper=None,
 ) -> dict:
     """Run the real graph, with the app's own retrieval functions."""
-    from backend.agents.orchestration_05.workflow import OrchestrationAgent
+    from backend.agents.phase_05_workflow.workflow import OrchestrationAgent
     from backend.routers.chat import (
         retrieval_availability_search,
         retrieval_search,
@@ -92,7 +92,7 @@ async def _run_workflow(
     )
     if gateway_call_wrapper is not None:
         workflow._gateway_call = gateway_call_wrapper(workflow._gateway_call)
-    from backend.agents.orchestration_05 import execution
+    from backend.agents.phase_05_workflow import execution
     execution.LEASE_SECONDS = LEASE_SECONDS
     execution.HEARTBEAT_SECONDS = max(1, LEASE_SECONDS // 3)
     return await execution.run_http_workflow(

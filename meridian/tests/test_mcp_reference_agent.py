@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 from strands.tools.mcp import MCPClient
 
-from backend.agents.mcp_02 import agent as mcp_agent
+from backend.agents.phase_02_mcp import agent as mcp_agent
 
 
 class _FakeClient:

@@ -54,6 +54,7 @@ for (const theme of ['light', 'dark']) for (const width of [1920, 1280, 960, 320
       if (view === 'briefing' && width > 860) {
         // Projector readability multiplies the type ramp by 1.2: title-3 18px, body 15px.
         await expect(page.locator('.mds-brief-head p')).toHaveCSS('font-size', '21.6px');
+        await page.getByRole('heading', { name: 'Verify the boundaries', exact: true }).click();
         await page.getByText('Tool contracts & Cedar policies', { exact: true }).click();
         for (const code of await page.locator('.mds-brief-policy pre').all()) {
           await expect(code).toHaveCSS('font-size', '18px');
@@ -269,7 +270,8 @@ for (const theme of ['light', 'dark']) for (const present of [false, true]) {
         return { foreground: css.color, background: css.backgroundColor,
           edge: parseFloat(css.borderTopWidth) > 0 ? css.borderTopColor : css.backgroundColor };
       });
-      expect(contrastRatio(computed.foreground, computed.background), `${state} action label`).toBeGreaterThanOrEqual(7);
+      // The approved #0071e3 / white pair meets WCAG AA (4.69:1).
+      expect(contrastRatio(computed.foreground, computed.background), `${state} action label`).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(computed.edge, colors.surface), `${state} action boundary`).toBeGreaterThanOrEqual(3);
     }
     expect(contrastRatio(colors.muted, colors.soft), 'secondary copy').toBeGreaterThanOrEqual(7);
@@ -450,22 +452,36 @@ for (const theme of ['light', 'dark']) {
       await expect(architecture).toBeHidden();
       await page.keyboard.press('Space');
       await expect(architecture).toBeVisible();
-      const summaries = page.locator('.mds-brief summary');
-      await expect(summaries).toHaveCount(11);
-      for (const summary of await page.locator('.mds-brief details:not(.mds-brief-overview) > summary').all()) {
-        await summary.focus();
-        await page.keyboard.press('Enter');
-        await expect(summary.locator('..')).toHaveAttribute('open', '');
+      const sections = page.locator('.mds-brief-section');
+      await expect(sections).toHaveCount(4);
+      await expect(page.locator('.mds-brief-phase')).toHaveCount(5);
+      // The briefing now reveals one major topic and one capability at a time.
+      for (const section of await sections.all()) {
+        const summary = section.locator(':scope > summary');
+        if (await section.getAttribute('open') === null) {
+          await summary.focus();
+          await page.keyboard.press('Enter');
+        }
+        await expect(page.locator('.mds-brief-section[open]')).toHaveCount(1);
+        for (const detail of await section.locator('details').all()) {
+          const toggle = detail.locator(':scope > summary');
+          await toggle.focus();
+          await page.keyboard.press('Enter');
+          await expect(detail).toHaveAttribute('open', '');
+          if (await detail.getAttribute('name') === 'briefing-capability') {
+            await expect(page.locator('.mds-brief-phase[open]')).toHaveCount(1);
+          }
+          const candidate = detail.getByRole('img', { name: 'Green rice terraces and palms in Bali' });
+          if (await candidate.count()) {
+            await candidate.scrollIntoViewIfNeeded();
+            await expect.poll(() => candidate.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+          }
+        }
+        const audit = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
+        expect(audit.violations).toEqual([]);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       }
-      await expect(page.getByRole('heading', { name: 'Phase 3 - Retrieval' })).toBeVisible();
-      const candidate = page.getByRole('img', { name: 'Green rice terraces and palms in Bali' });
-      await candidate.scrollIntoViewIfNeeded();
-      await expect.poll(() => candidate.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
       await expect(page.getByText('meridian_hold_governance')).toBeVisible();
-      await expect(architecture).toBeVisible();
-      const audit = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
-      expect(audit.violations).toEqual([]);
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       await page.getByRole('button', { name: 'Inspect system evidence' }).click();
       await expect(page.locator('.mds-desktop-app')).not.toHaveClass(/is-solution-briefing/);
       await page.getByRole('button', { name: 'Solution briefing', exact: true }).click();

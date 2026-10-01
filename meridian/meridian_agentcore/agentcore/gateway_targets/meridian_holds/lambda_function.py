@@ -156,7 +156,7 @@ def _transaction(operation: str, tx: str) -> None:
 
 
 def normalize_terms(package_id: str, duration: str, quantity: int, unit_price: Decimal) -> dict:
-    """The same canonical form as backend/agents/orchestration_05/hold_intent.py."""
+    """The same canonical form as backend/agents/phase_05_workflow/hold_intent.py."""
     price = Decimal(unit_price).quantize(Decimal("0.01"))
     return {
         "package_id": package_id.strip().lower(),

@@ -19,7 +19,7 @@ export function ConciergeRail({ state, onSaved, onRecovery }: {
   const party = state.travelersCount;
   const dates = filters.startDate
     ? `${dateLabel(filters.startDate)}${filters.endDate ? ` – ${dateLabel(filters.endDate)}` : ' onward'}`
-    : 'Open to ideas';
+    : 'Dates not set';
   const preferences = [
     { value: profile?.seat_preference, icon: Plane },
     { value: profile?.dietary_notes, icon: Utensils },

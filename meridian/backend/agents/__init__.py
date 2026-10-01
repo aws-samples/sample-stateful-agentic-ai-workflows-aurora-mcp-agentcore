@@ -1,9 +1,9 @@
 """
 Agent implementations for Meridian showcase modes.
 
-- sql_01/: Direct SQL filters (RDS Data API)
-- mcp_02/: MCP-backed search (postgres-mcp-server)
-- retrieval_03/: Supervisor + search/package/booking specialists
-- production_04/: Production concierge + memory (AgentCore)
-- orchestration_05/: LangGraph workflow orchestration
+- phase_01_sql/: Direct SQL filters (RDS Data API)
+- phase_02_mcp/: MCP-backed search (postgres-mcp-server)
+- phase_03_retrieval/: Supervisor + search/package/booking specialists
+- phase_04_production/: Production concierge + memory (AgentCore)
+- phase_05_workflow/: LangGraph workflow orchestration
 """

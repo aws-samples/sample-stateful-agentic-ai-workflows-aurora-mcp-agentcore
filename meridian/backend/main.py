@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         "LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP", "false"
     ).lower() in {"1", "true", "yes", "on"}
     if checkpoint_required or checkpoint_startup:
-        from backend.agents.orchestration_05.workflow import (
+        from backend.agents.phase_05_workflow.workflow import (
             initialize_checkpoint_backend,
         )
 
@@ -89,7 +89,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         yield
     finally:
-        from backend.agents.orchestration_05.workflow import (
+        from backend.agents.phase_05_workflow.workflow import (
             close_checkpoint_backend,
         )
 
@@ -162,7 +162,7 @@ async def _health_payload() -> HealthResponse:
     fields remain the backend's configured checkpoint state, not a
     second live probe.
     """
-    from backend.agents.orchestration_05.workflow import checkpoint_backend_status
+    from backend.agents.phase_05_workflow.workflow import checkpoint_backend_status
     from backend.health_probe import probe_aurora
 
     model_id = config.bedrock.model_id

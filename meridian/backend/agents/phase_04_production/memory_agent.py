@@ -55,7 +55,7 @@ class MemoryAgent:
     Memory specialist with Strands @tool methods for Aurora-backed recall and persistence.
     """
 
-    AGENT_FILE = "agents/production_04/memory_agent.py"
+    AGENT_FILE = "agents/phase_04_production/memory_agent.py"
 
     def __init__(self, activity_callback: Optional[Callable[[ActivityEntry], Any]] = None):
         self.activity_callback = activity_callback or (lambda _: None)

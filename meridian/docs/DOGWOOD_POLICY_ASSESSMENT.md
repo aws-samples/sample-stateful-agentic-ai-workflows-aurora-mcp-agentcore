@@ -27,7 +27,7 @@ Traveler confirmation must continue to come from the application.
 | Read, hold and confirmation Cedar policies | `policyEngines` in the same configuration |
 | Platform-pinned traveler, confirmation, ceiling and journey | `meridian_agentcore/app/MeridianConcierge/turn_trace.py` |
 | Confirmed writes executed before model narration | `meridian_agentcore/app/MeridianConcierge/hold_execution.py` |
-| Phase 5 hold through the same gateway | `backend/agents/orchestration_05/workflow.py`, `_node_hold` |
+| Phase 5 hold through the same gateway | `backend/agents/phase_05_workflow/workflow.py`, `_node_hold` |
 | Atomic, replay-safe hold and lease validation | `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py` and Aurora functions |
 | Structured allow/deny fields for recovery | `cedar_decision`, `cedar_policy`, `policy_mode`, `gateway_tool` in workflow telemetry |
 

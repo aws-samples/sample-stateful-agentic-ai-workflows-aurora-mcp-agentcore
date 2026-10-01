@@ -17,7 +17,7 @@ from decimal import Decimal
 import pytest
 
 from backend.agentcore.identity import get_agentcore_identity
-from backend.agents.orchestration_05.hold_intent import (
+from backend.agents.phase_05_workflow.hold_intent import (
     fingerprint_terms,
     normalize_hold_terms,
 )

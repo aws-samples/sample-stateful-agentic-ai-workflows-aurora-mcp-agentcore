@@ -25,13 +25,25 @@ own database only: there is no supplier, airline or payment integration.
 The application walks one travel domain through five phases. Each phase adds
 one capability and keeps the ones before it.
 
-| Phase | Adds | Implementation |
+| Capability | Code and live checkpoint | Adds |
 | --- | --- | --- |
-| 1 · SQL | Grounded answers | Parameterized catalog filters over Aurora through the RDS Data API |
-| 2 · MCP | Reusable tools | The PostgreSQL MCP server plus custom MCP tools for comparison, currency conversion, loyalty and availability |
-| 3 · Retrieval | Search by meaning | Cohere Embed v4, pgvector and PostgreSQL full-text search, reranked by Cohere Rerank 3.5 |
-| 4 · Production | Governed actions for a known traveler | A Strands agent on AgentCore Runtime, tools through AgentCore Gateway, Cedar policies, AgentCore Memory, and traveler-scoped reads under Aurora row-level security |
-| 5 · Workflow | Durable execution | A LangGraph workflow with Aurora checkpoints, worker leases, and a hold that keeps its identity and expiry across a restart |
+| **01 - SQL** | [phase_01_sql](meridian/backend/agents/phase_01_sql/) | Parameterized Aurora catalog queries through the RDS Data API |
+| **02 - MCP** | [phase_02_mcp](meridian/backend/agents/phase_02_mcp/) | Named tools for search, comparison, conversion and availability |
+| **03 - Retrieval** | [phase_03_retrieval](meridian/backend/agents/phase_03_retrieval/) | Cohere Embed v4, pgvector and full-text candidates, Cohere Rerank 3.5 |
+| **04 - Production** | [phase_04_production](meridian/backend/agents/phase_04_production/) | AgentCore Runtime, Gateway, Memory and Cedar, with Aurora traveler grants and RLS |
+| **05 - Workflow** | [phase_05_workflow](meridian/backend/agents/phase_05_workflow/) | LangGraph, Aurora checkpoints, worker leases and idempotent holds |
+
+Each numbered folder starts with a short guide: the running source, one demo
+prompt, the evidence to inspect and the architectural takeaway. Phases 1 and 2
+also retain clearly labeled Strands reference agents; their live paths run in
+[`backend/routers/chat.py`](meridian/backend/routers/chat.py).
+
+**Presenting at re:Invent:** start with the finished Concierge, walk the five
+capabilities, and close with recovery evidence. The
+[60-minute run of show](meridian/docs/TALK_RUN_OF_SHOW.md) budgets 40 minutes
+for the story, code and five live checkpoints, leaving 20 minutes for discussion.
+The [documentation index](meridian/docs/README.md) separates presenter, builder
+and operator reading paths.
 
 The sample separates three kinds of state and stores each durably:
 
@@ -135,6 +147,8 @@ before exposing the API to a network.
 
 ### 3. Start the frontend
 
+In a second terminal, start from the repository root:
+
 ```bash
 cd meridian/frontend
 npm ci
@@ -155,8 +169,8 @@ configured. Deploy AgentCore to enable them.
 The showcase has five views, selected along the top of the page.
 
 1. **Concierge.** Browse trips for Alex and open one with **Explore this trip**
-   or **Details**.
-   Ask for something in the composer, for example
+   or **Details**. The conversation sits beside the trip options; **View travel brief**
+   reveals the traveler context. Ask for something in the composer, for example
    `Find Tokyo trips that fit my saved preferences.` The answer uses Alex's
    saved preferences through the Phase 4 runtime. In a trip's details,
    **Request 12-hour hold** places a courtesy hold through the Gateway, and
@@ -187,7 +201,8 @@ The showcase has five views, selected along the top of the page.
    journey: checkpoints, worker executions and leases, authorization
    decisions, and the hold with its booking ID and expiry.
 5. **Solution briefing.** The architecture, data preparation, the five phases,
-   the gateway tools and the Cedar policies, without calling any service.
+   the gateway tools and the Cedar policies, without calling any service. Four
+   numbered sections reveal one topic at a time, with architecture open initially.
 
 [OPERATIONS.md](meridian/docs/OPERATIONS.md#exercise-recovery-failures) lists
 scripts that kill a worker or discard a committed response on purpose, and
@@ -231,6 +246,9 @@ npm ci && npm run build && npm test -- --runInBand && npm run format:check
 npm ci && npm test
 ```
 
+The [dependency notes](meridian/docs/DEPENDENCIES.md) track the remaining
+upstream CDK audit finding; audit failures are not suppressed.
+
 The backend unit tests block network access and ignore `meridian/.env`.
 Tests marked `database` run against a live, migrated and seeded Aurora
 database and write checkpoints, journeys and holds; run them with
@@ -244,10 +262,10 @@ database and write checkpoints, journeys and holds; run them with
 | [`meridian/frontend/`](meridian/frontend/) | React showcase (`/showcase`) |
 | [`meridian/meridian_agentcore/`](meridian/meridian_agentcore/) | AgentCore CLI project: runtime code, gateway Lambda targets, config templates, CDK app |
 | [`meridian/infra/`](meridian/infra/) | CDK apps for the Aurora cluster and the hosted web app |
-| [`meridian/scripts/`](meridian/scripts/) | Schema, migration, seed, AgentCore render and sync, verification and recovery exercise scripts |
+| [`meridian/scripts/`](meridian/scripts/README.md) | Schema, migration, seed, AgentCore render and sync, verification and recovery exercise scripts |
 | [`meridian/examples/`](meridian/examples/) | Row-level security SQL and a stand-alone memory MCP client |
 | [`meridian/tests/`](meridian/tests/) | Pytest suite, including a LangGraph checkpointer conformance suite |
-| [`meridian/docs/`](meridian/docs/) | Architecture, operations, deployment runbook, code walkthrough and design notes |
+| [`meridian/docs/`](meridian/docs/README.md) | Architecture, operations, deployment runbook, code walkthrough and design notes |
 
 [meridian/STRUCTURE.md](meridian/STRUCTURE.md) maps the request path through
 the code.

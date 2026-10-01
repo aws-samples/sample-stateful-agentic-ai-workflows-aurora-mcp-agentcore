@@ -252,7 +252,7 @@ def test_fingerprint_matches_the_backend_canonical_form():
         "unit_price": "2500.00",
         "total_amount": "5000.00",
     }
-    from backend.agents.orchestration_05.hold_intent import fingerprint_terms, normalize_hold_terms
+    from backend.agents.phase_05_workflow.hold_intent import fingerprint_terms, normalize_hold_terms
 
     backend_terms = normalize_hold_terms("cty-002 ", " 7  Nights", 2, Decimal("2500.00"))
     assert holds.fingerprint(terms) == fingerprint_terms(backend_terms)

@@ -33,12 +33,12 @@ describe('Concierge request context', () => {
     const { result } = renderHook(() => useMeridianShowcase());
     await waitFor(() => expect(result.current.travelersCount).toBe(2));
     await act(async () => { await result.current.submitPrompt('Recall my plan', 4); });
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 4, travelers_count: 2 }), expect.any(AbortSignal));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 4, travelers_count: 2 }), expect.any(AbortSignal), expect.any(Function));
     act(() => result.current.setChatFilters({ ...result.current.chatFilters, travelers: 3 }));
     await act(async () => { await result.current.submitPrompt('Plan for three', 4); });
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ travelers_count: 3 }), expect.any(AbortSignal));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ travelers_count: 3 }), expect.any(AbortSignal), expect.any(Function));
     await act(async () => { await result.current.submitPrompt('Keep the same party', 4); });
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ travelers_count: 3 }), expect.any(AbortSignal));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ travelers_count: 3 }), expect.any(AbortSignal), expect.any(Function));
   });
 
   it('waits for context authorization instead of submitting a context-off turn while connecting', async () => {
@@ -107,11 +107,11 @@ describe('Concierge request context', () => {
     const { result } = renderHook(() => useMeridianShowcase());
     await waitFor(() => expect(result.current.previewProfile?.home_airport).toBe('JFK'));
     await act(async () => { await result.current.submitPrompt('Plan Tokyo', 4); });
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 4, memory_enabled: true }), expect.any(AbortSignal));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 4, memory_enabled: true }), expect.any(AbortSignal), expect.any(Function));
     expect(result.current.selectedPhase).toBe(1);
     expect(result.current.memoryEnabled).toBe(false);
     await act(async () => { await result.current.submitPrompt('Make it quieter', 4); });
-    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ conversation_id: 'production-thread', phase: 4 }), expect.any(AbortSignal));
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ conversation_id: 'production-thread', phase: 4 }), expect.any(AbortSignal), expect.any(Function));
   });
 
   it('keeps a normal SQL ladder request free of traveler memory', async () => {
@@ -336,4 +336,52 @@ it('addresses a recovery before dispatch and blocks blind replay after a lost re
   await act(async () => { await result.current.replayLastPrompt(); });
   expect(sendChatMessage).toHaveBeenCalledTimes(1);
   expect(result.current.error).toContain('Re-read this recovery');
+});
+
+it('shows live text, then replaces it with one completed reply', async () => {
+  let finish!: (value: Awaited<ReturnType<typeof sendChatMessage>>) => void;
+  let emit!: NonNullable<Parameters<typeof sendChatMessage>[2]>;
+  vi.mocked(sendChatMessage).mockImplementationOnce((_request, _signal, onEvent) => {
+    emit = onEvent!;
+    return new Promise(resolve => { finish = resolve; });
+  });
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+  let pending!: Promise<void>;
+  act(() => { pending = result.current.submitPrompt('Plan Tokyo', 4); });
+  act(() => {
+    emit({ type: 'conversation', conversation_id: 'stream-thread' });
+    emit({ type: 'delta', text: 'Here is ' });
+    emit({ type: 'delta', text: 'Tokyo.' });
+  });
+  expect(result.current.isLoading).toBe(true);
+  expect(result.current.messages).toEqual([
+    expect.objectContaining({ role: 'user' }),
+    { role: 'bot', text: 'Here is Tokyo.', streaming: true },
+  ]);
+  expect(result.current.conversationId).toBe('stream-thread');
+  await act(async () => {
+    finish({ message: 'Here is Tokyo.', conversation_id: 'stream-thread', products: [], activities: [] });
+    await pending;
+  });
+  expect(result.current.messages).toHaveLength(2);
+  expect(result.current.messages[1].streaming).toBeUndefined();
+  expect(result.current.isLoading).toBe(false);
+});
+
+it('marks interrupted text incomplete and ignores late events from an abandoned turn', async () => {
+  let emit!: NonNullable<Parameters<typeof sendChatMessage>[2]>;
+  vi.mocked(sendChatMessage).mockImplementationOnce((_request, _signal, onEvent) => {
+    emit = onEvent!;
+    return new Promise(() => {});
+  });
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+  let pending!: Promise<void>;
+  act(() => { pending = result.current.submitPrompt('Plan Tokyo', 4); });
+  act(() => { emit({ type: 'delta', text: 'Partial answer' }); });
+  await act(async () => { result.current.stopWaiting(); await pending; });
+  expect(result.current.messages[1]).toMatchObject({ text: 'Partial answer', incomplete: true, streaming: false });
+  act(() => { result.current.clearChat(); emit({ type: 'delta', text: 'Late text' }); });
+  expect(result.current.messages).toEqual([]);
 });

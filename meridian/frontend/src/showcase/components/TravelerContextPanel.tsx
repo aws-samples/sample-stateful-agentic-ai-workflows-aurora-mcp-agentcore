@@ -73,7 +73,7 @@ export function TravelerContextPanel({
   // span. When that span appears on a turn we pulse a "+N written to Aurora"
   // badge on the header so the audience FEELS the write actually happen.
   // The row count is the persist_turn write shape: 2 conversation_messages +
-  // 1 trip_interaction = 3 rows (backend/agents/production_04/memory_agent.py
+  // 1 trip_interaction = 3 rows (backend/agents/phase_04_production/memory_agent.py
   // persist_turn, ~lines 220-271). If a span ever exposes an explicit count
   // we prefer that.
   const persistSpan =

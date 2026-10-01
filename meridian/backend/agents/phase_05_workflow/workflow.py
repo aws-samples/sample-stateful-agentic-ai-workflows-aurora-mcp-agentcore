@@ -48,8 +48,8 @@ from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, TypedDict
 from urllib.parse import quote
 
-from backend.agents.orchestration_05.hold_intent import prepare_hold_node
-from backend.agents.orchestration_05.governed_hold import (
+from backend.agents.phase_05_workflow.hold_intent import prepare_hold_node
+from backend.agents.phase_05_workflow.governed_hold import (
     HOLD_TOOL,
     HoldOutcomeUnknown,
     hold_arguments,
@@ -60,7 +60,7 @@ from backend.agents.orchestration_05.governed_hold import (
 # the App Runner deployment (see docs/AGENTCORE_LEARNINGS.md).
 from backend.agents.budget import budget_ceiling_from_facts
 from backend.db.journey_store import ExecutionLeaseLostError, ScopedDb, ensure_journey
-from backend.agents.orchestration_05.packages import (
+from backend.agents.phase_05_workflow.packages import (
     first_available_duration,
     package_to_dict,
     top_ranked_package,
@@ -86,7 +86,7 @@ except ImportError:  # pragma: no cover - optional extra
     dict_row = None  # type: ignore
 
 
-AGENT_FILE = "agents/orchestration_05/workflow.py"
+AGENT_FILE = "agents/phase_05_workflow/workflow.py"
 POSTGRES_CHECKPOINT_TABLES = (
     "checkpoints",
     "checkpoint_blobs",

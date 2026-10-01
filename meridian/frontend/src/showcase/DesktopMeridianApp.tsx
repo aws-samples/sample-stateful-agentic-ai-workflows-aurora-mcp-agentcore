@@ -23,7 +23,7 @@ import { SURFACES, useJourney, useSurfaceUrlState } from './journey/useJourney';
 import { JourneyChooser } from './journey/JourneyChooser';
 import { RequestWaitNotice } from './components/RequestWaitNotice';
 import { PresenterProof } from './surfaces/PresenterProof';
-import { ConciergeRail } from './surfaces/ConciergeRail';
+import { ConciergeConversation } from './components/ConciergeConversation';
 import { JourneyContinuityRail } from './surfaces/JourneyContinuityRail';
 import { ChatTranscript } from './components/ChatTranscript';
 import { ComparisonDialog } from './components/ComparisonDialog';
@@ -244,7 +244,7 @@ export function DesktopMeridianApp({
     <div
       className={`mds-desktop-app is-projector ${
         isProduct
-          ? 'is-discovery'
+          ? `is-discovery${state.messages.length ? ' has-conversation' : ''}`
           : isProof || closing || isBriefing
             ? 'is-presenter-proof'
             : isRecovery
@@ -366,6 +366,7 @@ export function DesktopMeridianApp({
         </nav>
 
         <div className="mds-shell-status">
+          {isProduct && <button type="button" className="mc-profile-toggle" onClick={() => openNavItem('profile')} aria-label="Open Alex Morgan profile"><img src={ALEX_IMAGE_URL} alt="" width="40" height="40" /></button>}
           <span
             className={`mds-status-pill ${runtimeStatus.className}`}
             role="status"
@@ -574,22 +575,16 @@ export function DesktopMeridianApp({
           </AnimatePresence>
         </div>
 
-        {/* Concierge and the ladder share one dock. Moving between them should
-            change what is on screen, not where the screen's controls are. */}
-        {(isProduct || (isLadder && !isWorkflow)) && (
+        {isLadder && !isWorkflow && (
           <div className="mds-desktop-dock">
-            {isProduct ? (
-              <ChatComposer state={state} conciergeMode />
-            ) : (
-              <ChatComposer state={state} proofMode />
-            )}
+            <ChatComposer state={state} proofMode />
           </div>
         )}
       </main>
 
       {isProduct && (
-        <aside className="mds-desktop-right is-concierge" aria-label="Your trip brief">
-          <ConciergeRail state={state} onSaved={() => openNavItem('trips')} onRecovery={() => setView('recovery')} />
+        <aside className="mds-desktop-right is-concierge" aria-label="Concierge conversation and travel brief">
+          <ConciergeConversation state={state} onSaved={() => openNavItem('trips')} onRecovery={() => setView('recovery')} />
         </aside>
       )}
 

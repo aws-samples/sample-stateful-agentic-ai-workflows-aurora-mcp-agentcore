@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from backend.agentcore.identity import get_agentcore_identity
 from backend.db.journey_store import ScopedDb, ensure_journey, claim_execution, renew_lease, release_execution
 from backend.db.rds_data_client import get_rds_data_client
-from backend.agents.orchestration_05.workflow import WORKER_INSTANCE_ID
+from backend.agents.phase_05_workflow.workflow import WORKER_INSTANCE_ID
 
 LEASE_SECONDS = 60
 HEARTBEAT_SECONDS = 10

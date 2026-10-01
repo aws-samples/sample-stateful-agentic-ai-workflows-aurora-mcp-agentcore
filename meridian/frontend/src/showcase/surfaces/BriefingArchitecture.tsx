@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { ServiceMark } from '../components/ServiceMark';
 import './briefingArchitecture.css';
 
@@ -18,11 +19,6 @@ export function BriefingArchitecture() {
     </g>
   );
   return <figure className="mds-brief-architecture">
-    <div className="mds-brief-arch-delivery" aria-label="Published application delivery">
-      <span><ServiceMark name="cloudfront" size={28} /><span><strong>CloudFront</strong>Browser access + API routing</span></span>
-      <span><ServiceMark name="s3" size={28} /><span><strong>Amazon S3</strong>Static application files</span></span>
-      <span><ServiceMark name="app-runner" size={28} /><span><strong>App Runner</strong>FastAPI application</span></span>
-    </div>
     <svg className="mds-brief-arch-diagram" viewBox="0 0 1120 410" role="img" aria-labelledby={`${id}-title ${id}-description`}>
       <title id={`${id}-title`}>Meridian request and state architecture</title>
       <desc id={`${id}-description`}>FastAPI on App Runner invokes the Phase 4 Strands agent in AgentCore Runtime and runs the Phase 5 LangGraph workflow itself. Both call AgentCore Gateway, where Cedar policy governs calls before Lambda tools access Aurora PostgreSQL. FastAPI also reads catalog and traveler data through the Data API and persists workflow checkpoints and leases in Aurora. Bedrock supplies models and retrieval; AgentCore Memory retains Phase 4 conversation context.</desc>
@@ -57,11 +53,19 @@ export function BriefingArchitecture() {
       <li><strong>5. Aurora PostgreSQL - record the outcome</strong><p>Read scoped facts and commit replay-safe business writes.</p></li>
       <li><strong>Phase 5: LangGraph in FastAPI</strong><p>Uses the same Gateway tool path. The Data API persists checkpoints and worker leases in Aurora.</p></li>
     </ol>
+    <figcaption><span className="mds-brief-arch-legend">Phase 4: follow 1–5. Phase 5 joins at Gateway. Dashed path: direct Data API access.</span></figcaption>
+    <details className="mds-brief-platform">
+      <summary>Supporting services &amp; app delivery<ChevronDown size={18} aria-hidden="true" /></summary>
+    <div className="mds-brief-arch-delivery" aria-label="Published application delivery">
+      <span><ServiceMark name="cloudfront" size={28} /><span><strong>CloudFront</strong>Browser access + API routing</span></span>
+      <span><ServiceMark name="s3" size={28} /><span><strong>Amazon S3</strong>Static application files</span></span>
+      <span><ServiceMark name="app-runner" size={28} /><span><strong>App Runner</strong>FastAPI application</span></span>
+    </div>
     <div className="mds-brief-arch-support">
       <div><ServiceMark name="bedrock" size={28} /><p><strong>Amazon Bedrock</strong><span>Agent models, embeddings and reranking</span></p></div>
       <div><ServiceMark name="agentcore-memory" size={28} /><p><strong>AgentCore Memory</strong><span>Phase 4 conversation context</span></p></div>
       <div><ServiceMark name="agentcore-policy" size={28} /><p><strong>AgentCore Policy</strong><span>Cedar checks before tool execution</span></p></div>
     </div>
-    <figcaption><span className="mds-brief-arch-legend">Phase 4: follow 1–5. Phase 5: LangGraph joins at Gateway. Solid: requests. Dashed: Data API reads and workflow state.</span></figcaption>
+    </details>
   </figure>;
 }

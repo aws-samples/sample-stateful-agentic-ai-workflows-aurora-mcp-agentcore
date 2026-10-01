@@ -22,15 +22,15 @@ and Solution briefing. The ladder exposes the five phases. Concierge has its
 own conversation, which uses the Phase 4 runtime.
 
 The SQL and MCP phases run `sql_search` and `mcp_search` in `chat.py`; the
-Strands agents in `backend/agents/sql_01/` and `backend/agents/mcp_02/` are
+Strands agents in `backend/agents/phase_01_sql/` and `backend/agents/phase_02_mcp/` are
 reference implementations of the same steps. Retrieval, Production and Workflow
 import their agent modules at runtime:
 
-- `backend/agents/retrieval_03/`: the Strands supervisor delegates catalog search, availability and read-only price estimates
-- `backend/agents/production_04/concierge.py`: identity, traveler grant, and RLS read and write around the managed runtime; `process_hold()` for a hold from the UI
-- `backend/agents/production_04/memory_agent.py`: `@tool` recall and persist methods
+- `backend/agents/phase_03_retrieval/`: the Strands supervisor delegates catalog search, availability and read-only price estimates
+- `backend/agents/phase_04_production/concierge.py`: identity, traveler grant, and RLS read and write around the managed runtime; `process_hold()` for a hold from the UI
+- `backend/agents/phase_04_production/memory_agent.py`: `@tool` recall and persist methods
 - `backend/agents/budget.py`: the budget ceiling Cedar compares against, shared by Phases 4 and 5
-- `backend/agents/orchestration_05/workflow.py`: LangGraph `StateGraph` with `AuroraDataApiSaver` or pooled `AsyncPostgresSaver`; the in-process `MemorySaver` fallback cannot survive a restart
+- `backend/agents/phase_05_workflow/workflow.py`: LangGraph `StateGraph` with `AuroraDataApiSaver` or pooled `AsyncPostgresSaver`; the in-process `MemorySaver` fallback cannot survive a restart
 - `backend/agentcore/runtime.py`, `backend/agentcore/identity.py`: AgentCore adapters (streaming runtime client, identity envelope)
 - `meridian_agentcore/app/MeridianConcierge/`: the Phase 4 agent on AgentCore Runtime: `main.py` (tool loop, memory session, streamed events), `turn_trace.py` (spans and the pinned hold and booking arguments), `hold_execution.py` (confirmed holds and confirmations run by the platform), `prompts.py`, `gateway_auth.py`
 - `meridian_agentcore/agentcore/gateway_targets/meridian_holds/`: the `MeridianHolds` gateway Lambda (`get_package_details`, `create_courtesy_hold`, `confirm_booking`)
@@ -52,10 +52,10 @@ uses the governed Gateway path.
 | Path | Role |
 | --- | --- |
 | `backend/routers/` | FastAPI routes |
-| `backend/agents/sql_01/`, `backend/agents/mcp_02/` | Reference Strands agents for SQL and MCP |
-| `backend/agents/retrieval_03/` | Retrieval supervisor and read-only specialists |
-| `backend/agents/production_04/` | Concierge and traveler memory agents |
-| `backend/agents/orchestration_05/` | LangGraph workflow: checkpoints, worker leases, hold intent and governed hold |
+| `backend/agents/phase_01_sql/`, `backend/agents/phase_02_mcp/` | Reference Strands agents for SQL and MCP |
+| `backend/agents/phase_03_retrieval/` | Retrieval supervisor and read-only specialists |
+| `backend/agents/phase_04_production/` | Concierge and traveler memory agents |
+| `backend/agents/phase_05_workflow/` | LangGraph workflow: checkpoints, worker leases, hold intent and governed hold |
 | `backend/agentcore/` | AgentCore Runtime client, Gateway checks, Identity, and the CLI config loader |
 | `backend/db/` | RDS Data API client with grant and RLS-scoped sessions, `AuroraDataApiSaver`, embeddings, journey store, `schema.sql` |
 | `backend/mcp/` | Phase 2 client for `awslabs.postgres-mcp-server`, and the custom `meridian-concierge` and `meridian-memory` MCP servers with their clients |

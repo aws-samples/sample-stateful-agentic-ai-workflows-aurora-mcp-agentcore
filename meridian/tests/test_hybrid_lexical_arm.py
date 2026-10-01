@@ -25,7 +25,7 @@ SEARCH_AGENT = (
     Path(__file__).resolve().parents[1]
     / "backend"
     / "agents"
-    / "retrieval_03"
+    / "phase_03_retrieval"
     / "search_agent.py"
 )
 

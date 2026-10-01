@@ -12,7 +12,7 @@ const traceSpan: ShowcaseTraceSpan = {
   status: 'ok',
   latencyMs: 42,
   agent: 'SQLAgent',
-  file: 'backend/agents/sql_01/agent.py',
+  file: 'backend/agents/phase_01_sql/agent.py',
   sql: 'SELECT * FROM trip_packages',
   details: 'Read trip packages from Aurora.',
   fields: [],
