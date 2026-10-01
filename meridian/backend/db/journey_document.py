@@ -71,7 +71,7 @@ def _iso(value: Any) -> Optional[str]:
     if value is None:
         return None
     # Data API returns timestamp columns without an offset. This database uses
-    # UTC; make it explicit so a presenter's browser cannot reinterpret the
+    # UTC; make it explicit so a viewer's browser cannot reinterpret the
     # recorded instant in its own local timezone.
     parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
     if parsed.tzinfo is None:
@@ -91,7 +91,7 @@ def _channel(values: Any, name: str) -> Any:
 
 async def _workflow_snapshot(client: Any, thread_id: str, checkpoint_id: str):
     """Read pending nodes and values using the same graph definition, without running it."""
-    from backend.agents.orchestration_05.workflow import OrchestrationAgent
+    from backend.agents.phase_05_workflow.workflow import OrchestrationAgent
     from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
 
     async def read_only(*args, **kwargs):

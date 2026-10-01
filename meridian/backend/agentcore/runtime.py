@@ -18,6 +18,7 @@ AWS docs:
 
 from __future__ import annotations
 
+import codecs
 import hashlib
 import json
 import logging
@@ -31,6 +32,8 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError, ConnectionClosedError
 
+from backend.chat_stream import emit_chat_event
+from backend.concierge_voice import DirectReplyStream, direct_reply
 from backend.agentcore.cli_config import resolve_agentcore_config
 from backend.agentcore.errors import AgentCoreNotConfiguredError
 
@@ -60,51 +63,113 @@ class RuntimeDecision:
     policy_decision: Optional[str] = None
     trace_id: Optional[str] = None
     usage: dict[str, Any] = field(default_factory=dict)
-    elapsed_ms: int = 0
+    # The Runtime's own measurement of the turn. None when it reports none.
+    elapsed_ms: Optional[int] = None
     isolation: str = "microVM · session-scoped CPU/memory/filesystem"
 
 
-def parse_sse(raw: bytes) -> list[dict[str, Any]]:
-    """Decode the runtime's SSE body into the JSON objects it yielded.
+def iter_sse(chunks):
+    """Decode complete SSE frames without buffering the entire Runtime response."""
+    decoder = codecs.getincrementaldecoder("utf-8")()
+    pending = ""
+    data = []
 
-    BedrockAgentCoreApp encodes each yielded string as the SSE data value, so a
-    JSON object yielded by the app arrives as one additional JSON-encoded
-    string layer. Both shapes are accepted.
-    """
-    events: list[dict[str, Any]] = []
-    for line in raw.decode("utf-8", errors="replace").splitlines():
-        if not line.startswith("data:"):
-            continue
-        text = line[5:].strip()
-        if not text:
-            continue
-        value = json.loads(text)
+    def decode(lines):
+        value = json.loads("\n".join(lines))
         if isinstance(value, str):
             value = json.loads(value)
-        if isinstance(value, dict):
-            events.append(value)
-    return events
+        if not isinstance(value, dict):
+            raise ValueError("Runtime event must be a JSON object")
+        return value
+
+    for chunk in chunks:
+        pending += decoder.decode(chunk)
+        if len(pending) > 2_000_000:
+            raise ValueError("Runtime event exceeded the stream limit")
+        while "\n" in pending:
+            line, pending = pending.split("\n", 1)
+            line = line.rstrip("\r")
+            if line.startswith("data:"):
+                data.append(line[5:].lstrip(" "))
+            elif not line and data:
+                yield decode(data)
+                data = []
+    pending += decoder.decode(b"", final=True)
+    if pending.startswith("data:"):
+        data.append(pending[5:].strip())
+    if data:
+        yield decode(data)
 
 
-def _read_stream(response: dict[str, Any]) -> bytes:
+def parse_sse(raw: bytes) -> list[dict[str, Any]]:
+    """Compatibility helper for saved Runtime responses."""
+    return list(iter_sse([raw]))
+
+
+def _stream_chunks(response: dict[str, Any]):
     body = response.get("response")
-    chunks = bytearray()
-    if hasattr(body, "read"):
-        while True:
-            chunk = body.read(4096)
-            if not chunk:
-                break
-            chunks.extend(chunk)
-        return bytes(chunks)
-    for chunk in body or []:
-        if isinstance(chunk, (bytes, bytearray)):
-            chunks.extend(chunk)
-        elif isinstance(chunk, dict):
-            payload = chunk.get("chunk", {}).get("bytes") or chunk.get("bytes") or b""
-            chunks.extend(payload if isinstance(payload, (bytes, bytearray)) else str(payload).encode())
+    try:
+        if hasattr(body, "read"):
+            # Small reads avoid holding several model tokens behind a 4 KiB buffer.
+            while chunk := body.read(128):
+                yield chunk
         else:
-            chunks.extend(str(chunk).encode())
-    return bytes(chunks)
+            for chunk in body or []:
+                if isinstance(chunk, (bytes, bytearray)):
+                    yield chunk
+                elif isinstance(chunk, dict):
+                    yield chunk.get("chunk", {}).get("bytes") or chunk.get("bytes") or b""
+    finally:
+        if hasattr(body, "close"):
+            body.close()
+
+
+def _forward_runtime_events(response):
+    raw_text, display_text = [], []
+    paragraph_pending = False
+    narration = DirectReplyStream()
+    for event in iter_sse(_stream_chunks(response)):
+        if event.get("type") == "token" and isinstance(event.get("text"), str):
+            text = event["text"]
+            raw_text.append(text)
+            if text and paragraph_pending and display_text:
+                # Separate model messages on either side of an observed tool
+                # step. Runtime token events otherwise concatenate them.
+                previous = "".join(display_text)
+                trailing = len(previous) - len(previous.rstrip("\n"))
+                leading = len(text) - len(text.lstrip("\n"))
+                text = "\n" * max(0, 2 - trailing - leading) + text
+            if text:
+                paragraph_pending = False
+                display_text.append(text)
+            delta = narration.feed(text)
+            if delta:
+                emit_chat_event({"type": "delta", "text": delta})
+        elif event.get("type") == "packages" and isinstance(event.get("packages"), list):
+            # Preview only IDs from observed Gateway results. The UI resolves
+            # them against its live catalog; final hydration/persistence still
+            # determines the completed turn. Never expose raw tool payloads.
+            ids = list(dict.fromkeys(
+                p["package_id"] for p in event["packages"]
+                if isinstance(p, dict) and isinstance(p.get("package_id"), str)
+                and p["package_id"]
+            ))[:20]
+            emit_chat_event({"type": "candidates", "package_ids": ids})
+        elif event.get("type") == "activity":
+            paragraph_pending = bool(display_text)
+            # Expose a short, observed stage, never raw tool payloads or reasoning.
+            emit_chat_event({"type": "status", "text": "Checking your trip options…"})
+        elif event.get("type") == "result":
+            # Match the same formatting in the authoritative answer. An actual
+            # correction from Runtime takes precedence over provisional text.
+            if raw_text and str(event.get("message") or "").strip() == "".join(raw_text).strip():
+                tail = narration.feed("", final=True)
+                if tail:
+                    emit_chat_event({"type": "delta", "text": tail})
+                event = {**event, "message": narration.visible.strip()}
+            else:
+                event = {**event, "message": direct_reply(str(event.get("message") or "")).strip()}
+        yield event
 
 
 class AgentCoreRuntimeAdapter:
@@ -259,9 +324,9 @@ class AgentCoreRuntimeAdapter:
                 raise RuntimeError(f"AgentCore Runtime invoke failed: {code}") from exc
         # Once a response exists, a broken stream or runtime error must surface.
         # Replaying here could repeat work already performed by the runtime.
-        return self._decision(arn, session_id, parse_sse(_read_stream(response)))
+        return self._decision(arn, session_id, _forward_runtime_events(response))
 
-    def _decision(self, arn: str, session_id: str, events: list[dict[str, Any]]) -> RuntimeDecision:
+    def _decision(self, arn: str, session_id: str, events) -> RuntimeDecision:
         decision = RuntimeDecision(
             runtime_arn=arn,
             runtime_session_id=session_id,
@@ -301,7 +366,9 @@ def _apply_result(decision: RuntimeDecision, event: dict[str, Any]) -> None:
     decision.follow_ups = [str(value) for value in event.get("follow_ups") or [] if value]
     decision.trace_id = event.get("trace_id")
     decision.usage = dict(event.get("usage") or {})
-    decision.elapsed_ms = int(event.get("elapsed_ms") or 0)
+    elapsed = event.get("elapsed_ms")
+    measured = isinstance(elapsed, (int, float)) and not isinstance(elapsed, bool)
+    decision.elapsed_ms = int(elapsed) if measured else None
     if event.get("hold") and not decision.hold:
         decision.hold = event.get("hold")
     if event.get("booking") and not decision.booking:

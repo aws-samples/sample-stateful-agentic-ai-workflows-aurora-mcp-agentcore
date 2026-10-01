@@ -16,8 +16,6 @@ function state(
     memoryMutationError: null,
     memoryFacts: [],
     traceSpans: [],
-    modelLabel: 'Claude Sonnet 5',
-    embedLabel: 'Cohere Embed v4',
     setMemoryEnabled: vi.fn(),
     ...overrides,
   } as unknown as MeridianShowcaseState;
@@ -29,7 +27,7 @@ describe('TravelerContextPanel memory capability', () => {
 
     expect(screen.getByText('Unlocks in Production')).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: 'Use traveler context: off' })).toBeDisabled();
-    expect(screen.queryByText('Alex Morgan')).not.toBeInTheDocument();
+    expect(screen.queryByText('Jordan Morgan')).not.toBeInTheDocument();
   });
 
   it('enables the real memory path before rendering grouped facts', () => {

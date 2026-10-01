@@ -1,4 +1,5 @@
 @import './preflight.css';
+@import './showcase/tokens.css';
 
 * {
   box-sizing: border-box;
@@ -12,31 +13,16 @@ body,
 
 /* Document ground and default ink. The showcase mirrors its theme onto
    <html data-theme>, so these flip with the app instead of leaving a dark
-   page behind a light UI. Both values are always defined together — a light
-   background paired with the dark theme's text was a 1.02:1 contrast bug. */
-:root {
-  --app-bg: #05080d;
-  --app-fg: #f5f8fb;
-  --app-skeleton: rgba(143, 174, 204, 0.13);
-  --app-skeleton-shimmer: rgba(143, 174, 204, 0.2);
-}
-
-:root[data-theme='light'] {
-  --app-bg: #f5f5f2;
-  --app-fg: #141b24;
-  --app-skeleton: #e1e5e8;
-  --app-skeleton-shimmer: #cfd6dd;
-}
-
+   page behind a light UI. */
 html {
-  background: var(--app-bg);
+  background: var(--mds-ground);
 }
 
 body {
   margin: 0;
-  background: var(--app-bg);
-  color: var(--app-fg);
-  font-family: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--mds-ground);
+  color: var(--mds-label);
+  font-family: var(--mds-font);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -49,16 +35,16 @@ textarea {
 }
 
 ::selection {
-  color: #04101d;
-  background: #7dd9ff;
+  color: var(--mds-ground);
+  background: var(--mds-blue);
 }
 
 .route-skeleton {
   min-height: 100dvh;
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
-  color: var(--app-fg);
-  background: var(--app-bg);
+  color: var(--mds-label);
+  background: var(--mds-ground);
 }
 
 .route-skeleton-sidebar {
@@ -66,8 +52,8 @@ textarea {
   align-content: start;
   gap: 14px;
   padding: 22px 18px;
-  border-right: 1px solid rgba(125, 162, 199, 0.18);
-  background: var(--app-bg);
+  border-right: 1px solid var(--mds-separator);
+  background: var(--mds-ground);
 }
 
 .route-skeleton i,
@@ -75,8 +61,8 @@ textarea {
 .route-skeleton-copy i {
   display: block;
   overflow: hidden;
-  border-radius: 8px;
-  background: var(--app-skeleton);
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-skeleton);
 }
 
 .route-skeleton-sidebar > i {
@@ -124,7 +110,7 @@ textarea {
 
 .route-skeleton-grid i {
   min-height: 260px;
-  border: 1px solid rgba(157, 203, 235, 0.12);
+  border: 0;
 }
 
 .route-skeleton-grid .is-featured {
@@ -136,13 +122,7 @@ textarea {
   .route-skeleton i,
   .route-skeleton-toolbar,
   .route-skeleton-copy i {
-    background:
-      linear-gradient(
-        90deg,
-        var(--app-skeleton),
-        var(--app-skeleton-shimmer),
-        var(--app-skeleton)
-      );
+    background: var(--mds-skeleton-sweep);
     background-size: 220% 100%;
     animation: route-skeleton-shimmer 1.6s ease-in-out infinite;
   }

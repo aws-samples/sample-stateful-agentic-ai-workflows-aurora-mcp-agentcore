@@ -83,11 +83,33 @@ function makeDocument(overrides: Partial<JourneyDocument> = {}): JourneyDocument
 const noop = () => {};
 
 describe('Presenter proof', () => {
+  it('offers recovery when none is selected without claiming a read is running', () => {
+    const open = vi.fn();
+    render(<PresenterProof document={null} loading={false} error={null}
+      onRefresh={noop} onOpenRecovery={open} />);
+    expect(screen.getByRole('heading', { name: 'No recovery selected' })).toBeInTheDocument();
+    expect(screen.queryByText('Reading the journey from Aurora…')).toBeNull();
+    expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'Open recovery desk' }));
+    expect(open).toHaveBeenCalledOnce();
+  });
+
   it('labels the retained observation when a refresh fails', () => {
     render(<PresenterProof document={makeDocument()} loading={false}
       error="Connection interrupted" onRefresh={noop} />);
     expect(screen.getByRole('alert')).toHaveTextContent('Showing the last successful observation');
     expect(screen.getByRole('alert')).toHaveTextContent('Connection interrupted');
+  });
+
+  it('marks both empty states with a large official Aurora tile', () => {
+    const { container, rerender } = render(
+      <PresenterProof document={null} loading error={null} onRefresh={noop} />,
+    );
+    const mark = () => container.querySelector('.mds-proof-empty .mds-service-mark-aurora');
+    expect(mark()).toHaveAttribute('src', '/brand/aws-2026-07-31/aurora.svg');
+    expect(mark()).toHaveAttribute('width', '56');
+    rerender(<PresenterProof document={null} loading={false} error="Unavailable" onRefresh={noop} />);
+    expect(mark()).toHaveAttribute('width', '56');
   });
 
   it('reads the headline off whether a worker was actually replaced', () => {

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.agents.orchestration_05.workflow import OrchestrationAgent
+from backend.agents.phase_05_workflow.workflow import OrchestrationAgent
 from backend.db.journey_document import _hold, _pending_decision, _recommendations, _selected_plan
 
 

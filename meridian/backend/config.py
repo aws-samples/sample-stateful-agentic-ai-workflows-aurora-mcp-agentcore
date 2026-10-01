@@ -52,15 +52,15 @@ class AgentConfig:
 
     # Agent names and files for each phase
     search_agents: Dict[int, tuple] = field(default_factory=lambda: {
-        1: ("SQLAgent", "agents/sql_01/agent.py"),
-        2: ("MCPAgent", "agents/mcp_02/agent.py"),
-        3: ("RetrievalAgent", "agents/retrieval_03/supervisor.py"),
+        1: ("SQLAgent", "agents/phase_01_sql/agent.py"),
+        2: ("MCPAgent", "agents/phase_02_mcp/agent.py"),
+        3: ("RetrievalAgent", "agents/phase_03_retrieval/supervisor.py"),
     })
 
     booking_agents: Dict[int, tuple] = field(default_factory=lambda: {
-        1: ("SQLAgent", "agents/sql_01/agent.py"),
-        2: ("MCPAgent", "agents/mcp_02/agent.py"),
-        3: ("BookingAgent", "agents/retrieval_03/booking_agent.py"),
+        1: ("SQLAgent", "agents/phase_01_sql/agent.py"),
+        2: ("MCPAgent", "agents/phase_02_mcp/agent.py"),
+        3: ("BookingAgent", "agents/phase_03_retrieval/booking_agent.py"),
     })
 
     # Progressive reveal delays (ms) - for demo purposes
@@ -75,13 +75,13 @@ class AgentConfig:
 class BedrockConfig:
     """Bedrock LLM configuration.
 
-    Every agent in the codebase reads its model identifier from here, so the
-    presenter can swap models for the entire demo via a single environment
-    variable (``BEDROCK_MODEL_ID``) without editing eight files.
+    Local teaching agents read their model identifier from here. The managed
+    Concierge has a separate BEDROCK_MODEL_ID in its AgentCore deployment
+    template; changing the backend environment does not change that Runtime.
 
     Default is the Global cross-Region inference profile for Anthropic Claude
     Sonnet 5 (``global.anthropic.claude-sonnet-5``). Swap to
-    ``global.anthropic.claude-opus-4-8`` for maximum quality. If you see::
+    ``global.anthropic.claude-opus-5`` for maximum quality. If you see::
 
         ValidationException: The provided model identifier is invalid
 
@@ -90,7 +90,7 @@ class BedrockConfig:
     doesn't route to it. Pick another profile from the Bedrock console
     and set it in ``.env``::
 
-        BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-4-5-20250929-v1:0
+        BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-5
 
     AWS docs:
       - Model access:
@@ -122,25 +122,21 @@ class BedrockConfig:
     )
 
 
-def bedrock_model_label(model_id: str) -> str:
-    """Human-readable label for Run config / health (from BEDROCK_MODEL_ID).
+_MODEL_LABELS = {
+    "claude-sonnet-5": "Claude Sonnet 5",
+    "claude-haiku-4-5-20251001-v1:0": "Claude Haiku 4.5",
+    "claude-opus-5": "Claude Opus 5",
+    "gpt-6-luna": "GPT-6 Luna",
+}
 
-    Covers the live fallback chain: Sonnet 5 -> Haiku 4.5 -> Opus 4.8.
-    """
-    mid = model_id.lower()
-    if "opus-4-8" in mid or "opus-4.8" in mid:
-        return "Claude Opus 4.8"
-    if "sonnet-5" in mid or "sonnet-5.0" in mid:
-        return "Claude Sonnet 5"
-    if "sonnet-4-6" in mid or "sonnet-4.6" in mid:
-        return "Claude Sonnet 4.6"
-    if "sonnet-4-5" in mid or "sonnet-4.5" in mid:
-        return "Claude Sonnet 4.5"
-    if "haiku" in mid:
-        return "Claude Haiku 4.5"
-    if "anthropic" in mid and "claude" in mid:
-        return "Claude (Bedrock)"
-    return model_id.rsplit("/", 1)[-1] if "/" in model_id else model_id
+
+def bedrock_model_label(model_id: str) -> str:
+    """Name a known reported model; preserve unknown IDs instead of guessing."""
+    profile = model_id.rsplit("/", 1)[-1]
+    for provider in ("anthropic.", "openai."):
+        if provider in profile:
+            return _MODEL_LABELS.get(profile.split(provider, 1)[-1], profile)
+    return profile
 
 
 EMBEDDING_MODEL_ID: str = os.getenv("EMBEDDING_MODEL", "cohere.embed-v4:0")

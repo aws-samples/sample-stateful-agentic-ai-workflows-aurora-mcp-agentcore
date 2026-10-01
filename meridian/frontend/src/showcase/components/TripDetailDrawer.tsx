@@ -50,7 +50,7 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
         <button className="mds-modal-close" type="button" onClick={state.closeTripDetails} aria-label="Close trip details">
           <X size={19} />
         </button>
-        <div className="mds-trip-modal-visual">
+        <div className="mds-trip-modal-visual" data-theme="dark">
           <TripVisual product={product} />
           <span>{product.destination || product.region || product.category}</span>
         </div>
@@ -121,7 +121,7 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
               >
                 {state.isLoading
                   ? activeHold ? 'Confirming...' : 'Creating hold...'
-                  : confirmed ? 'Trip confirmed' : activeHold ? 'Confirm this trip for Alex' : 'Request 12-hour hold'}
+                  : confirmed ? 'Trip confirmed' : activeHold ? 'Confirm this trip for Jordan' : 'Request 12-hour hold'}
               </button>
             )}
           </footer>

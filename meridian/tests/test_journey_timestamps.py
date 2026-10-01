@@ -1,4 +1,4 @@
-"""Journey evidence dates must not depend on the presenter's timezone."""
+"""Journey evidence dates must not depend on the viewer's timezone."""
 from datetime import datetime, timezone
 
 import pytest

@@ -23,6 +23,7 @@ AWS docs (by phase):
     https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html
 """
 
+import json
 import logging
 import asyncio
 import re
@@ -31,13 +32,17 @@ from datetime import datetime, timezone
 from typing import Literal, Optional, List, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from fastapi.responses import StreamingResponse
+from backend.chat_stream import chat_event_sink
 
 from backend.agentcore.identity import get_agentcore_identity
+from backend.agents.phase_04_production.concierge import runtime_model_id
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
 from backend.db.embedding_service import get_embedding_service
-from backend.config import config
+from backend.config import bedrock_model_label, config
 from backend.demo_prompts import tee_up_prompt, working_prompts
+from backend.timing import clock, elapsed_ms
 from backend.logging_config import log_search, log_order, log_error, log_turn_start, log_turn_complete, log_activity_entry
 from backend.http_auth import (
     HttpPrincipal,
@@ -56,14 +61,14 @@ from backend.catalog_compat import row_to_api_product
 # MCP clients — Phase 2 demos two distinct MCP servers side-by-side:
 #   1. awslabs.postgres-mcp-server (generic SQL transport, public AWS server)
 #   2. backend.mcp.concierge_server (custom domain tools - compare,
-#      seasonal pricing, region inventory, FX, loyalty)
+#      price range, region inventory, FX, loyalty)
 #
 # Memory tools live in Phase 4 by design (Aurora RLS + AgentCore) - the
 # Phase 2 narrative is "what does a CUSTOM MCP get you that the public
 # one can't?" so domain logic, not memory, is what we showcase here.
 from backend.mcp.mcp_client import mcp_session
 from backend.mcp.concierge_mcp_client import concierge_mcp_session
-from backend.llm_polish import polish_concierge_reply
+from backend.llm_polish import PolishResult, polish_concierge_reply
 
 
 logger = logging.getLogger(__name__)
@@ -80,6 +85,8 @@ class ChatRequest(BaseModel):
     resume: bool = False
     travelers_count: int = Field(default=1, ge=1, le=20, strict=True)
     memory_enabled: bool = True
+    experience: Literal["capability", "concierge"] = "capability"
+    review_only: bool = False
 
 
 class TraceTelemetry(BaseModel):
@@ -174,6 +181,12 @@ class ChatResponse(BaseModel):
     memory_facts: Optional[List[MemoryFact]] = None
     workflow_status: Optional[str] = None
     workflow_resumed_after_restart: Optional[bool] = None
+    recovery_request: Optional[str] = None
+    # The Bedrock model that actually wrote `message` (may be a fallback,
+    # not the configured primary). None when the reply is a pure tool
+    # result and no model wrote any part of it - the frontend must show
+    # no model badge in that case.
+    model_label: Optional[str] = None
 
 
 def create_activity(
@@ -208,6 +221,8 @@ def _complete_chat_turn(
     *,
     error: Optional[str] = None,
 ) -> ChatResponse:
+    from backend.concierge_voice import direct_reply
+    response.message = direct_reply(response.message)
     log_turn_complete(
         phase,
         products_count=len(response.products) if response.products else 0,
@@ -379,7 +394,7 @@ def generate_follow_ups(query: str, products: List[Product], phase: int) -> List
     """Three follow-up chips, the last of which always advances the ladder.
 
     Every phase ends with the prompt that motivates the next rung, so the
-    hand-off is on screen rather than in the presenter's memory. The two
+    hand-off is on screen rather than left for the user to remember. The two
     preceding chips are contextual suggestions for the current results.
     """
     suggestions = _phase_suggestions(query, products, phase)
@@ -423,12 +438,15 @@ async def sql_search(query: str, limit: int = 5) -> tuple[List[Product], List[Ac
 
     # Use shared search utilities
     params = parse_search_query(query)
+    query_started = clock()
     results, display_sql, search_title = await execute_keyword_search(db, params, limit)
+    query_ms = elapsed_ms(query_started)
 
     activities.append(create_activity(
         activity_type="search",
         title=search_title,
         sql_query=display_sql,
+        execution_time_ms=query_ms,
         agent_name="SQLAgent",
         agent_file="backend/routers/chat.py"
     ))
@@ -467,7 +485,7 @@ async def sql_search(query: str, limit: int = 5) -> tuple[List[Product], List[Ac
 
 # Keywords that trigger the CUSTOM meridian-concierge MCP server.
 # When the prompt asks for things you can't get from a generic SQL
-# transport (compare these / what's the off-season price / how many
+# transport (compare these / what's the price range / how many
 # trips do you sell in Europe / convert to EUR / loyalty status), we
 # layer the custom server on top so the trace shows both in action.
 _DOMAIN_INTENT_KEYWORDS = (
@@ -485,12 +503,7 @@ _DOMAIN_INTENT_KEYWORDS = (
     "skymiles",
     "mileageplus",
     "united status",
-    "off-season",
-    "off season",
-    "shoulder season",
-    "peak season",
-    "cheapest month",
-    "best month",
+    "price range",
     "how many",
     "inventory",
 )
@@ -517,6 +530,130 @@ def _is_semantic_intent_query(query: str) -> bool:
     return sum(marker in q for marker in intent_markers) >= 2
 
 
+_CURRENCY_KEYWORDS = ("convert", "in eur", "in euro", "in gbp", "in pounds", "in jpy", "in yen")
+_LOYALTY_KEYWORDS = ("loyalty", "bonvoy", "skymiles", "mileageplus", "united status")
+_PRICE_RANGE_DESTINATIONS = (
+    "Tokyo", "Paris", "Bali", "Lisbon", "Porto", "Iceland", "Rome", "Kyoto",
+)
+_INVENTORY_REGIONS = ("Asia", "Europe", "Americas", "Africa", "Oceania")
+
+
+async def _timed_tool_call(cli: Any, tool: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """Call one custom-MCP tool, timing only that call."""
+    started = clock()
+    result = await cli.call(tool, args)
+    return {"tool": tool, "args": args, "result": result, "elapsed_ms": elapsed_ms(started)}
+
+
+async def _flagship_package_ids() -> List[str]:
+    """One flagship per trip_type, so a comparison spans diverse experiences.
+
+    Stratified pick: City Breaks vs Beach vs Wellness vs Adventure... instead
+    of three of the same kind. Within each trip_type the highest-priced row is
+    that type's "flagship" representative, capped at 3 total. Falls through to
+    any 3 rows if the stratified query comes back empty (defensive).
+    """
+    ids: List[str] = []
+    try:
+        stratified_sql = (
+            "SELECT package_id FROM ("
+            "  SELECT package_id, trip_type, price_per_person, "
+            "         ROW_NUMBER() OVER ("
+            "           PARTITION BY trip_type "
+            "           ORDER BY price_per_person DESC, package_id"
+            "         ) AS rn "
+            "  FROM trip_packages"
+            ") flagship "
+            "WHERE rn = 1 "
+            "ORDER BY price_per_person DESC "
+            "LIMIT 3"
+        )
+        rows = await get_rds_data_client().execute(stratified_sql)
+        ids = [r["package_id"] for r in rows if r.get("package_id")]
+        if not ids:
+            rows = await get_rds_data_client().execute(
+                "SELECT package_id FROM trip_packages LIMIT 3"
+            )
+            ids = [r["package_id"] for r in rows if r.get("package_id")]
+    except Exception as exc:
+        log_error("compare_packages_row_pull", error=str(exc))
+    return ids
+
+
+async def _currency_call(
+    cli: Any, q: str, compared_packages: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Convert the compared packages' prices, or a sample amount when none were compared.
+
+    Timed around every currency_convert call it makes.
+    """
+    target = (
+        "EUR" if "eur" in q
+        else "GBP" if "gbp" in q or "pound" in q
+        else "JPY" if "jpy" in q or "yen" in q
+        else "EUR"
+    )
+    started = clock()
+    if compared_packages:
+        conversions: List[Dict[str, Any]] = []
+        for package in compared_packages:
+            amount = float(package.get("price_per_person") or 0)
+            converted = await cli.call(
+                "currency_convert",
+                {"amount": amount, "from_ccy": "USD", "to_ccy": target},
+            )
+            if isinstance(converted, dict):
+                conversions.append({
+                    "package_id": package.get("package_id"),
+                    "name": package.get("name"),
+                    **converted,
+                })
+        result: Dict[str, Any] = {
+            "to": target,
+            "conversions": conversions,
+            "note": "indicative rates, not for settlement",
+        }
+        args: Dict[str, Any] = {
+            "amounts": [
+                float(package.get("price_per_person") or 0)
+                for package in compared_packages
+            ],
+            "to": target,
+        }
+    else:
+        result = await cli.call(
+            "currency_convert",
+            {"amount": 2500.0, "from_ccy": "USD", "to_ccy": target},
+        )
+        args = {"amount": 2500.0, "to": target}
+    return {
+        "tool": "currency_convert",
+        "args": args,
+        "result": result,
+        "elapsed_ms": elapsed_ms(started),
+    }
+
+
+def _loyalty_program(q: str) -> str:
+    return (
+        "Marriott Bonvoy"
+        if "bonvoy" in q
+        else "United MileagePlus"
+        if "mileageplus" in q or "united" in q
+        else "Delta SkyMiles"
+        if "skymiles" in q
+        else "Marriott Bonvoy"
+    )
+
+
+def _named_in(q: str, names: tuple, default: str) -> str:
+    """The first of ``names`` the query mentions, or ``default``."""
+    for name in names:
+        if name.lower() in q:
+            return name
+    return default
+
+
 async def _call_domain_tool(
     query: str,
     *,
@@ -526,151 +663,231 @@ async def _call_domain_tool(
     prompt and call them. Returns a single dict (legacy single-call path)
     OR a dict with `tool='multi'` and a `calls` list when more than one
     tool intent was detected (e.g. "compare ... in EUR" fires BOTH
-    compare_packages and currency_convert)."""
+    compare_packages and currency_convert). Each call carries `elapsed_ms`,
+    measured around the MCP tool call or calls it made."""
     q = query.lower()
     calls: List[Dict[str, Any]] = []
     compared_packages: List[Dict[str, Any]] = []
 
     async with concierge_mcp_session() as cli:
         if any(k in q for k in ("compare", "comparison", "side by side")):
-            # Stratified pick: one flagship per trip_type so the comparison
-            # spans diverse experiences (City Breaks vs Beach vs Wellness
-            # vs Adventure...) instead of three of the same kind. Within
-            # each trip_type we pick the highest-priced row as that
-            # type's "flagship" representative, capped at 3 total.
-            #
-            # Falls through to any 3 rows if the stratified query comes
-            # back empty (defensive).
-            ids: List[str] = []
-            try:
-                stratified_sql = (
-                    "SELECT package_id FROM ("
-                    "  SELECT package_id, trip_type, price_per_person, "
-                    "         ROW_NUMBER() OVER ("
-                    "           PARTITION BY trip_type "
-                    "           ORDER BY price_per_person DESC, package_id"
-                    "         ) AS rn "
-                    "  FROM trip_packages"
-                    ") flagship "
-                    "WHERE rn = 1 "
-                    "ORDER BY price_per_person DESC "
-                    "LIMIT 3"
-                )
-                rows = await get_rds_data_client().execute(stratified_sql)
-                ids = [r["package_id"] for r in rows if r.get("package_id")]
-                if not ids:
-                    rows = await get_rds_data_client().execute(
-                        "SELECT package_id FROM trip_packages LIMIT 3"
-                    )
-                    ids = [r["package_id"] for r in rows if r.get("package_id")]
-            except Exception as exc:
-                log_error("compare_packages_row_pull", error=str(exc))
+            ids = await _flagship_package_ids()
             if ids:
-                result = await cli.call("compare_packages", {"package_ids": ids})
-                if isinstance(result, list):
-                    compared_packages = result
-                calls.append({"tool": "compare_packages", "args": {"package_ids": ids}, "result": result})
+                call = await _timed_tool_call(cli, "compare_packages", {"package_ids": ids})
+                if isinstance(call["result"], list):
+                    compared_packages = call["result"]
+                calls.append(call)
 
-        if any(k in q for k in ("convert", "in eur", "in euro", "in gbp", "in pounds", "in jpy", "in yen")):
-            target = (
-                "EUR" if "eur" in q
-                else "GBP" if "gbp" in q or "pound" in q
-                else "JPY" if "jpy" in q or "yen" in q
-                else "EUR"
-            )
-            if compared_packages:
-                conversions: List[Dict[str, Any]] = []
-                for package in compared_packages:
-                    amount = float(package.get("price_per_person") or 0)
-                    converted = await cli.call(
-                        "currency_convert",
-                        {"amount": amount, "from_ccy": "USD", "to_ccy": target},
-                    )
-                    if isinstance(converted, dict):
-                        conversions.append({
-                            "package_id": package.get("package_id"),
-                            "name": package.get("name"),
-                            **converted,
-                        })
-                result: Dict[str, Any] = {
-                    "to": target,
-                    "conversions": conversions,
-                    "note": "indicative rates, not for settlement",
-                }
-                args: Dict[str, Any] = {
-                    "amounts": [
-                        float(package.get("price_per_person") or 0)
-                        for package in compared_packages
-                    ],
-                    "to": target,
-                }
-            else:
-                result = await cli.call(
-                    "currency_convert",
-                    {"amount": 2500.0, "from_ccy": "USD", "to_ccy": target},
-                )
-                args = {"amount": 2500.0, "to": target}
-            calls.append({
-                "tool": "currency_convert",
-                "args": args,
-                "result": result,
-            })
+        if any(k in q for k in _CURRENCY_KEYWORDS):
+            calls.append(await _currency_call(cli, q, compared_packages))
 
-        if any(k in q for k in ("loyalty", "bonvoy", "skymiles", "mileageplus", "united status")):
-            program = (
-                "Marriott Bonvoy"
-                if "bonvoy" in q
-                else "United MileagePlus"
-                if "mileageplus" in q or "united" in q
-                else "Delta SkyMiles"
-                if "skymiles" in q
-                else "Marriott Bonvoy"
-            )
-            result = await cli.call(
-                "loyalty_balance",
-                {"traveler_id": traveler_id, "program": program},
-            )
-            calls.append({
-                "tool": "loyalty_balance",
-                "args": {"traveler_id": traveler_id, "program": program},
-                "result": result,
-            })
+        if any(k in q for k in _LOYALTY_KEYWORDS):
+            calls.append(await _timed_tool_call(
+                cli, "loyalty_balance",
+                {"traveler_id": traveler_id, "program": _loyalty_program(q)},
+            ))
 
-        if any(k in q for k in ("off-season", "off season", "shoulder season", "peak season", "cheapest month", "best month")):
-            destination = "Europe"
-            for d in ("Tokyo", "Paris", "Bali", "Lisbon", "Porto", "Iceland", "Rome", "Kyoto"):
-                if d.lower() in q:
-                    destination = d
-                    break
-            month = 11 if "off" in q or "cheapest" in q else 5 if "shoulder" in q else 7
-            result = await cli.call(
-                "seasonal_price_band",
-                {"destination": destination, "month": month},
-            )
-            calls.append({
-                "tool": "seasonal_price_band",
-                "args": {"destination": destination, "month": month},
-                "result": result,
-            })
+        if "price range" in q:
+            destination = _named_in(q, _PRICE_RANGE_DESTINATIONS, "Europe")
+            calls.append(await _timed_tool_call(
+                cli, "price_range", {"destination": destination},
+            ))
 
         if any(k in q for k in ("how many", "inventory")):
-            region = "Europe"
-            for r in ("Asia", "Europe", "Americas", "Africa", "Oceania"):
-                if r.lower() in q:
-                    region = r
-                    break
-            result = await cli.call("region_inventory", {"region": region})
-            calls.append({
-                "tool": "region_inventory",
-                "args": {"region": region},
-                "result": result,
-            })
+            region = _named_in(q, _INVENTORY_REGIONS, "Europe")
+            calls.append(await _timed_tool_call(cli, "region_inventory", {"region": region}))
 
     if not calls:
         return None
     if len(calls) == 1:
         return calls[0]
     return {"tool": "multi", "calls": calls}
+
+
+async def _postgres_mcp_query(
+    params: Any, limit: int, activities: List[ActivityEntry],
+) -> List[Dict[str, Any]]:
+    """Run the search through the generic postgres-mcp server and trace it."""
+    sql, display_sql, search_title = build_search_sql(params, limit)
+    session_started = clock()
+    async with mcp_session() as client:
+        # Opening the session starts the server, connects it and lists its tools.
+        session_ms = elapsed_ms(session_started)
+        activities.append(create_activity(
+            activity_type="mcp",
+            title="MCP server discovered: awslabs.postgres-mcp-server",
+            details="Generic SQL transport · tools/list returned " + ", ".join(
+                tool["name"] for tool in client.available_tools
+            ),
+            execution_time_ms=session_ms,
+            agent_name="MCPAgent", agent_file="backend/routers/chat.py",
+        ))
+        activities.append(create_activity(
+            activity_type="mcp", title="postgres-mcp · session connected",
+            details="Aurora PostgreSQL via RDS Data API; connection configured at server startup",
+            agent_name="MCPAgent", agent_file="backend/routers/chat.py",
+        ))
+        query_started = clock()
+        results = await client.run_query(sql)
+        query_ms = elapsed_ms(query_started)
+    activities.append(create_activity(
+        activity_type="mcp",
+        title="postgres-mcp · run_query",
+        details=f"Generic SQL tool: {search_title}",
+        sql_query=display_sql,
+        execution_time_ms=query_ms,
+        agent_name="MCPAgent",
+        agent_file="backend/routers/chat.py",
+    ))
+    return results
+
+
+def _record_domain_calls(
+    domain_call: Dict[str, Any], activities: List[ActivityEntry],
+) -> tuple[List[str], List[str]]:
+    """Trace each custom-MCP call; return the reply parts and any compared package ids."""
+    activities.append(create_activity(
+        activity_type="mcp",
+        title="MCP server discovered: meridian-concierge (custom)",
+        details="Custom domain call completed; the executed tools and results follow.",
+        agent_name="MCPAgent",
+        agent_file="backend/mcp/concierge_server.py",
+    ))
+    # Normalize single-call and multi-call shapes into a list
+    # so we can log + format both uniformly.
+    if domain_call.get("tool") == "multi":
+        sub_calls = domain_call["calls"]
+    else:
+        sub_calls = [domain_call]
+
+    reply_parts: List[str] = []
+    # Package_ids surfaced by compare_packages get hydrated
+    # back into full Product rows below so the recommendation
+    # grid renders alongside the polished bubble.
+    compared_ids: List[str] = []
+    for sub in sub_calls:
+        tool_name = sub["tool"]
+        tool_args = sub["args"]
+        tool_result = sub["result"]
+        summary = _summarize_domain_result(tool_name, tool_result)
+        activities.append(create_activity(
+            activity_type="mcp",
+            title=f"meridian-concierge · {tool_name}",
+            details=f"args={tool_args} · {summary}",
+            execution_time_ms=sub.get("elapsed_ms"),
+            agent_name="MCPAgent",
+            agent_file="backend/mcp/concierge_server.py",
+        ))
+        reply = _format_domain_reply(tool_name, tool_result)
+        if reply:
+            reply_parts.append(reply)
+        if tool_name == "compare_packages":
+            compared_ids = list(tool_args.get("package_ids") or [])
+    return reply_parts, compared_ids
+
+
+async def _hydrate_compared(
+    compared_ids: List[str], activities: List[ActivityEntry],
+) -> Optional[List[Dict[str, Any]]]:
+    """Join compared package ids to full catalog rows, in the order compared.
+
+    Returns None when the catalog read itself failed, so the caller keeps
+    what it had.
+    """
+    placeholders = ",".join(["%s"] * len(compared_ids))
+    hydrate_sql = f"""
+        SELECT {PACKAGE_COLUMNS}
+        FROM trip_packages
+        WHERE package_id IN ({placeholders})
+    """
+    results: Optional[List[Dict[str, Any]]] = None
+    try:
+        hydrate_started = clock()
+        results = await get_rds_data_client().execute(
+            hydrate_sql, tuple(compared_ids)
+        )
+        hydrate_ms = elapsed_ms(hydrate_started)
+        # Preserve the order returned by compare_packages.
+        order = {pid: i for i, pid in enumerate(compared_ids)}
+        results.sort(key=lambda r: order.get(r["package_id"], 99))
+        activities.append(create_activity(
+            activity_type="database",
+            title="Hydrated compared packages into product cards",
+            details=f"{len(results)} rows joined from trip_packages",
+            sql_query=(
+                f"SELECT … FROM trip_packages WHERE package_id IN "
+                f"({', '.join(repr(p) for p in compared_ids)})"
+            ),
+            execution_time_ms=hydrate_ms,
+            agent_name="MCPAgent",
+            agent_file="backend/routers/chat.py",
+        ))
+    except Exception as exc:
+        log_error("compare_hydrate", error=str(exc))
+    return results
+
+
+async def _concierge_mcp_turn(
+    query: str,
+    traveler_id: str,
+    results: List[Dict[str, Any]],
+    activities: List[ActivityEntry],
+) -> tuple[List[Dict[str, Any]], Optional[str], bool]:
+    """Answer a domain intent through meridian-concierge.
+
+    Returns the catalog rows to show, the domain reply, and whether the
+    server answered.
+    """
+    domain_text: Optional[str] = None
+    custom_answered = False
+    try:
+        domain_call = await _call_domain_tool(
+            query,
+            traveler_id=traveler_id,
+        )
+        if domain_call:
+            custom_answered = True
+            reply_parts, compared_ids = _record_domain_calls(domain_call, activities)
+            # Hydrate compare_packages IDs into full catalog rows so
+            # the recommendation grid in the UI shows the trips the
+            # tool just compared. Only do this when the SQL search
+            # itself returned zero rows (a pure-domain query) so we
+            # don't override a real keyword match.
+            if compared_ids and not results:
+                hydrated = await _hydrate_compared(compared_ids, activities)
+                if hydrated is not None:
+                    results = hydrated
+            if reply_parts:
+                # Phase 2 demonstrates deterministic, explicit MCP tools.
+                # Keep the response in that contract rather than invoking
+                # an LLM that the capability ladder does not advertise.
+                domain_text = "\n\n".join(reply_parts)
+        else:
+            # The intent matched but no tool branch picked it up.
+            domain_text = (
+                "I recognized this as a domain-tool query but couldn't pick a "
+                "matching meridian-concierge tool. Try keywords like 'compare', "
+                "'in EUR', 'price range', 'inventory', or 'loyalty'."
+            )
+    except Exception as exc:
+        err_msg = str(exc)[:200] or repr(exc)
+        activities.append(create_activity(
+            activity_type="error",
+            title="meridian-concierge MCP error",
+            details=err_msg,
+            agent_name="MCPAgent",
+            agent_file="backend/mcp/concierge_server.py",
+        ))
+        # Surface the failure to the user instead of letting the
+        # generic "Phase 1/2 keyword filters" message take over.
+        domain_text = (
+            "Custom MCP server (meridian-concierge) failed to execute the "
+            f"domain tool: {err_msg}\n\n"
+            "Confirm the FastAPI process can spawn the server "
+            "(`python -m backend.mcp.concierge_server`) and that "
+            "AURORA_CLUSTER_ARN/AURORA_SECRET_ARN/AWS creds are set."
+        )
+    return results, domain_text, custom_answered
 
 
 async def mcp_search(
@@ -687,7 +904,7 @@ async def mcp_search(
       - meridian-concierge (custom)  → travel-domain tools
 
     Returns (products, activities, domain_text). When the prompt is a
-    pure domain query (compare/FX/seasonal/inventory/loyalty), the
+    pure domain query (compare/FX/price range/inventory/loyalty), the
     domain_text contains a markdown-style readout that the caller uses
     as the bot reply instead of the generic "I found N trips" message.
     """
@@ -713,147 +930,26 @@ async def mcp_search(
     # that no code opened.
     results: List[Dict[str, Any]] = []
     if not pure_domain:
-        sql, display_sql, search_title = build_search_sql(params, limit)
-        async with mcp_session() as client:
-            activities.append(create_activity(
-                activity_type="mcp",
-                title="MCP server discovered: awslabs.postgres-mcp-server",
-                details="Generic SQL transport · tools/list returned " + ", ".join(
-                    tool["name"] for tool in client.available_tools
-                ),
-                agent_name="MCPAgent", agent_file="backend/routers/chat.py",
-            ))
-            activities.append(create_activity(
-                activity_type="mcp", title="postgres-mcp · session connected",
-                details="Aurora PostgreSQL via RDS Data API; connection configured at server startup",
-                agent_name="MCPAgent", agent_file="backend/routers/chat.py",
-            ))
-            results = await client.run_query(sql)
-        activities.append(create_activity(
-            activity_type="mcp",
-            title="postgres-mcp · run_query",
-            details=f"Generic SQL tool: {search_title}",
-            sql_query=display_sql,
-            agent_name="MCPAgent",
-            agent_file="backend/routers/chat.py",
-        ))
+        results = await _postgres_mcp_query(params, limit, activities)
 
     # ----- Custom MCP server (meridian-concierge) -----
     domain_text: Optional[str] = None
+    custom_answered = False
     if use_custom_mcp:
-        try:
-            domain_call = await _call_domain_tool(
-                query,
-                traveler_id=traveler_id,
-            )
-            if domain_call:
-                activities.append(create_activity(
-                    activity_type="mcp",
-                    title="MCP server discovered: meridian-concierge (custom)",
-                    details="Custom domain call completed; the executed tools and results follow.",
-                    agent_name="MCPAgent",
-                    agent_file="backend/mcp/concierge_server.py",
-                ))
-                # Normalize single-call and multi-call shapes into a list
-                # so we can log + format both uniformly.
-                if domain_call.get("tool") == "multi":
-                    sub_calls = domain_call["calls"]
-                else:
-                    sub_calls = [domain_call]
-
-                reply_parts: List[str] = []
-                # Package_ids surfaced by compare_packages get hydrated
-                # back into full Product rows below so the recommendation
-                # grid renders alongside the polished bubble.
-                compared_ids: List[str] = []
-                for sub in sub_calls:
-                    tool_name = sub["tool"]
-                    tool_args = sub["args"]
-                    tool_result = sub["result"]
-                    summary = _summarize_domain_result(tool_name, tool_result)
-                    activities.append(create_activity(
-                        activity_type="mcp",
-                        title=f"meridian-concierge · {tool_name}",
-                        details=f"args={tool_args} · {summary}",
-                        agent_name="MCPAgent",
-                        agent_file="backend/mcp/concierge_server.py",
-                    ))
-                    reply = _format_domain_reply(tool_name, tool_result)
-                    if reply:
-                        reply_parts.append(reply)
-                    if tool_name == "compare_packages":
-                        compared_ids = list(tool_args.get("package_ids") or [])
-
-                # Hydrate compare_packages IDs into full catalog rows so
-                # the recommendation grid in the UI shows the trips the
-                # tool just compared. Only do this when the SQL search
-                # itself returned zero rows (a pure-domain query) so we
-                # don't override a real keyword match.
-                if compared_ids and not results:
-                    placeholders = ",".join(["%s"] * len(compared_ids))
-                    hydrate_sql = f"""
-                        SELECT {PACKAGE_COLUMNS}
-                        FROM trip_packages
-                        WHERE package_id IN ({placeholders})
-                    """
-                    try:
-                        results = await get_rds_data_client().execute(
-                            hydrate_sql, tuple(compared_ids)
-                        )
-                        # Preserve the order returned by compare_packages.
-                        order = {pid: i for i, pid in enumerate(compared_ids)}
-                        results.sort(key=lambda r: order.get(r["package_id"], 99))
-                        activities.append(create_activity(
-                            activity_type="database",
-                            title="Hydrated compared packages into product cards",
-                            details=f"{len(results)} rows joined from trip_packages",
-                            sql_query=(
-                                f"SELECT … FROM trip_packages WHERE package_id IN "
-                                f"({', '.join(repr(p) for p in compared_ids)})"
-                            ),
-                            agent_name="MCPAgent",
-                            agent_file="backend/routers/chat.py",
-                        ))
-                    except Exception as exc:
-                        log_error("compare_hydrate", error=str(exc))
-                if reply_parts:
-                    # Phase 2 demonstrates deterministic, explicit MCP tools.
-                    # Keep the response in that contract rather than invoking
-                    # an LLM that the capability ladder does not advertise.
-                    domain_text = "\n\n".join(reply_parts)
-            else:
-                # The intent matched but no tool branch picked it up.
-                domain_text = (
-                    "I recognized this as a domain-tool query but couldn't pick a "
-                    "matching meridian-concierge tool. Try keywords like 'compare', "
-                    "'in EUR', 'cheapest month', 'inventory', or 'loyalty'."
-                )
-        except Exception as exc:
-            err_msg = str(exc)[:200] or repr(exc)
-            activities.append(create_activity(
-                activity_type="error",
-                title="meridian-concierge MCP error",
-                details=err_msg,
-                agent_name="MCPAgent",
-                agent_file="backend/mcp/concierge_server.py",
-            ))
-            # Surface the failure to the user instead of letting the
-            # generic "Phase 1/2 keyword filters" message take over.
-            domain_text = (
-                "Custom MCP server (meridian-concierge) failed to execute the "
-                f"domain tool: {err_msg}\n\n"
-                "Confirm the FastAPI process can spawn the server "
-                "(`python -m backend.mcp.concierge_server`) and that "
-                "AURORA_CLUSTER_ARN/AURORA_SECRET_ARN/AWS creds are set."
-            )
+        results, domain_text, custom_answered = await _concierge_mcp_turn(
+            query, traveler_id, results, activities,
+        )
 
     execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
     log_search(phase=2, query=query, results_count=len(results),
                execution_time_ms=execution_time, search_type="mcp")
 
-    # Count the servers this turn actually used, not the ones it could have.
-    servers_used = (0 if pure_domain else 1) + (1 if use_custom_mcp else 0)
+    # Count the servers that answered this turn, not the ones it meant to use.
+    # Detecting a domain intent is not the same as the concierge server
+    # returning: counting the intent let a call that raised, or came back
+    # empty, still appear in the proof as a server the turn had used.
+    servers_used = (0 if pure_domain else 1) + (1 if custom_answered else 0)
     activities.append(create_activity(
         activity_type="mcp",
         title=(
@@ -943,20 +1039,19 @@ def _format_domain_reply(tool: str, result: Any) -> str:
                 f"Loyalty (via meridian-concierge MCP): "
                 f"{pts:,} pts on {program} · tier {tier}{tail}."
             )
-        if tool == "seasonal_price_band" and isinstance(result, dict):
+        if tool == "price_range" and isinstance(result, dict):
             dest = result.get("destination", "—")
-            month = result.get("month", "—")
-            season = result.get("season", "—")
             low = result.get("low")
-            med = result.get("median")
+            avg = result.get("average")
             high = result.get("high")
             n = result.get("sample_size", 0)
             if not n:
-                return f"No pricing data for {dest} in month {month}."
+                return f"No pricing data for {dest}."
+            note = result.get("note", "")
             return (
-                f"Seasonal price band for {dest} (month {month}, {season}, "
-                f"sample={n}): low ${low:,.0f} · median ${med:,.0f} · high ${high:,.0f}."
-            )
+                f"Price range for {dest} (via meridian-concierge MCP, sample={n}): "
+                f"low ${low:,.0f} · average ${avg:,.0f} · high ${high:,.0f}. {note}"
+            ).rstrip()
         if tool == "region_inventory" and isinstance(result, dict):
             region = result.get("region", "—")
             count = result.get("package_count", 0)
@@ -994,8 +1089,8 @@ def _summarize_domain_result(tool: str, result: Any) -> str:
                 return f"refused · {result.get('error')}"
             pts = result.get("points_balance", 0) or 0
             return f"{pts:,} pts · tier={result.get('tier')}"
-        if tool == "seasonal_price_band" and isinstance(result, dict):
-            return f"{result.get('season')} band · low={result.get('low')} · high={result.get('high')}"
+        if tool == "price_range" and isinstance(result, dict):
+            return f"range low={result.get('low')} · high={result.get('high')}"
         if tool == "region_inventory" and isinstance(result, dict):
             return f"{result.get('package_count')} packages · {result.get('total_departure_slots')} slots"
     except Exception as exc:
@@ -1019,15 +1114,16 @@ async def _polish_phase_reply(
     products: List[Product],
     activities: List[ActivityEntry],
     memory_facts: Optional[List[Any]] = None,  # MemoryFact pydantic OR dict
-) -> tuple[str, Optional[str], Optional[str]]:
+) -> PolishResult:
     """Run the Bedrock polish over a search reply.
 
-    Returns (final_message, model_id_or_none, note_or_none). On failure
-    (no model access, all fallbacks blocked) the raw_message is returned
-    verbatim as a graceful fallback.
+    Returns the polish result: the final message, the model that wrote it and
+    how long its call took, or no model and a note. On failure (no model
+    access, all fallbacks blocked) the raw_message is returned verbatim as a
+    graceful fallback.
     """
     if not products and not raw_message:
-        return raw_message, None, "no content to polish"
+        return PolishResult(text=raw_message, model_id=None, note="no content to polish")
 
     # Build a deterministic, fact-only context block. The system prompt
     # in llm_polish forbids inventing anything outside this block.
@@ -1106,8 +1202,7 @@ async def _polish_phase_reply(
 
     raw = "\n".join(lines)
 
-    polish = await polish_concierge_reply(user_query, raw)
-    return polish.text, polish.model_id, polish.note
+    return await polish_concierge_reply(user_query, raw)
 #
 # AWS docs:
 #   Cohere Embed v4: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed-v4.html
@@ -1123,14 +1218,20 @@ async def _polish_and_record(
     products: List[Product],
     activities: List[ActivityEntry],
     memory_facts: Optional[List[Any]] = None,
-) -> str:
+) -> tuple[str, Optional[str]]:
     """Polish a reply and append the matching success/failure span.
 
-    Phases 3, 4 and 5 all end a turn the same way: run the Bedrock rewrite,
-    record whether it succeeded, and fall back to the deterministic reply if it
-    did not. Keeping that in one place stops the three call sites drifting.
+    Phase 3 ends a turn this way: run the Bedrock rewrite, record whether it
+    succeeded, and fall back to the deterministic reply if it did not.
+
+    Returns:
+        (message, model_label). `model_label` names whichever model in the
+        Sonnet 5 -> Haiku 4.5 -> Opus 5 chain actually wrote `message` -
+        which may not be the configured primary - or None when polish did
+        not run or every model in the chain failed, so the raw tool result
+        is returned unpolished and no model wrote any part of it.
     """
-    polished, polish_model, polish_note = await _polish_phase_reply(
+    polish = await _polish_phase_reply(
         phase=phase,
         user_query=user_query,
         raw_message=raw_message,
@@ -1138,23 +1239,24 @@ async def _polish_and_record(
         activities=activities,
         memory_facts=memory_facts,
     )
-    if polish_model:
+    if polish.model_id:
         activities.append(create_activity(
             activity_type="reasoning",
-            title=f"Bedrock · concierge polish ({polish_model})",
+            title=f"Bedrock · concierge polish ({polish.model_id})",
             details=f"Wrapping {mode_label} reply in concierge tone",
+            execution_time_ms=polish.elapsed_ms,
             agent_name=agent_name,
             agent_file="backend/llm_polish.py",
         ))
-        return polished
+        return polish.text, bedrock_model_label(polish.model_id)
     activities.append(create_activity(
         activity_type="error",
         title="Bedrock polish unavailable",
-        details=polish_note or "unknown",
+        details=polish.note or "unknown",
         agent_name=agent_name,
         agent_file="backend/llm_polish.py",
     ))
-    return raw_message
+    return raw_message, None
 
 
 # =============================================================================
@@ -1166,7 +1268,6 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     - Ranking: Cohere Rerank on Bedrock
     """
     activities = []
-    start_time = datetime.now(timezone.utc)
 
     db = get_rds_data_client()
 
@@ -1181,7 +1282,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         title="Delegating to SearchAgent",
         details="Supervisor routing search request to specialized agent",
         agent_name="RetrievalAgent",
-        agent_file="agents/retrieval_03/supervisor.py"
+        agent_file="agents/phase_03_retrieval/supervisor.py"
     ))
 
     activities.append(create_activity(
@@ -1189,20 +1290,21 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         title="Generating query embedding",
         details="Cohere Embed v4 Embeddings (1024d)",
         agent_name="SearchAgent",
-        agent_file="agents/retrieval_03/search_agent.py"
+        agent_file="agents/phase_03_retrieval/search_agent.py"
     ))
     
     embedding_service = get_embedding_service()
+    embedding_started = clock()
     query_embedding = await asyncio.to_thread(embedding_service.generate_text_embedding, query)
+    embedding_time = elapsed_ms(embedding_started)
     embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
 
-    embedding_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
     activities.append(create_activity(
         activity_type="embedding",
         title="Embedding generated",
         execution_time_ms=embedding_time,
         agent_name="SearchAgent",
-        agent_file="agents/retrieval_03/search_agent.py"
+        agent_file="agents/phase_03_retrieval/search_agent.py"
     ))
 
     # Step 2: Hybrid candidate retrieval (semantic + lexical).
@@ -1211,7 +1313,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         title="Hybrid candidate retrieval",
         details="pgvector cosine + tsvector/ts_rank",
         agent_name="SearchAgent",
-        agent_file="agents/retrieval_03/search_agent.py"
+        agent_file="agents/phase_03_retrieval/search_agent.py"
     ))
     candidate_limit = max(limit * config.search.rerank_candidate_multiplier, 25)
     # Cast the limit to ::integer — the function signature is
@@ -1221,6 +1323,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     semantic_sql = """
         SELECT * FROM semantic_trip_search(%s::vector, %s::integer)
     """
+    search_started = clock()
     semantic_rows = await db.execute(semantic_sql, (embedding_str, candidate_limit))
     if price_filter is not None:
         semantic_rows = [r for r in semantic_rows if float(r["price_per_person"]) <= price_filter]
@@ -1257,6 +1360,8 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     lexical_sql += " ORDER BY lexical_score DESC LIMIT %s"
     lexical_params.append(candidate_limit)
     lexical_rows = await db.execute(lexical_sql, tuple(lexical_params))
+    # Both queries, measured together: the semantic and the lexical arm.
+    search_time = elapsed_ms(search_started)
 
     # Merge candidates by package_id so rerank sees one entry per trip package.
     merged_by_package: dict[str, dict[str, Any]] = {}
@@ -1270,7 +1375,6 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
             merged_by_package[row["package_id"]] = dict(row)
     candidate_rows = list(merged_by_package.values())
 
-    search_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000) - embedding_time
     activities.append(create_activity(
         activity_type="search",
         title="Hybrid candidates fetched",
@@ -1284,11 +1388,10 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         ),
         execution_time_ms=search_time,
         agent_name="SearchAgent",
-        agent_file="agents/retrieval_03/search_agent.py"
+        agent_file="agents/phase_03_retrieval/search_agent.py"
     ))
 
     # Step 3: Cohere rerank over semantic candidates.
-    rerank_start = datetime.now(timezone.utc)
     embedding_service = get_embedding_service()
     docs = [
         " | ".join([
@@ -1302,14 +1405,14 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     ]
     ranked_rows = candidate_rows
     rerank_failed = False
+    rerank_started = clock()
     try:
         ranked = await asyncio.to_thread(embedding_service.rerank_documents, query, docs, top_n=limit)
         ranked_rows = [candidate_rows[item["index"]] for item in ranked if item["index"] < len(candidate_rows)]
     except Exception:
         rerank_failed = True
         ranked_rows = candidate_rows[:limit]
-
-    rerank_time = int((datetime.now(timezone.utc) - rerank_start).total_seconds() * 1000)
+    rerank_time = elapsed_ms(rerank_started)
     activities.append(create_activity(
         activity_type="search",
         title="Cohere rerank applied" if not rerank_failed else "Cohere rerank unavailable",
@@ -1320,7 +1423,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         ),
         execution_time_ms=rerank_time,
         agent_name="SearchAgent",
-        agent_file="agents/retrieval_03/search_agent.py"
+        agent_file="agents/phase_03_retrieval/search_agent.py"
     ))
 
     activities.append(create_activity(
@@ -1328,7 +1431,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         title=f"SearchAgent returned {len(ranked_rows[:limit])} results",
         details="Returning ranked trips to RetrievalAgent",
         agent_name="RetrievalAgent",
-        agent_file="agents/retrieval_03/supervisor.py"
+        agent_file="agents/phase_03_retrieval/supervisor.py"
     ))
 
     products = [Product(**row_to_api_product(row)) for row in ranked_rows[:limit]]
@@ -1468,7 +1571,7 @@ async def retrieval_supervisor_search(
     limit: int = 5,
 ) -> tuple[List[Product], List[ActivityEntry]]:
     """Phase 3 via live Strands supervisor — Bedrock LLM picks the SearchAgent tool."""
-    from backend.agents.retrieval_03 import create_retrieval_system
+    from backend.agents.phase_03_retrieval import create_retrieval_system
 
     activities: List[ActivityEntry] = []
 
@@ -1497,14 +1600,14 @@ async def retrieval_supervisor_search(
                 "zero results so the concierge can explain the gap."
             ),
             agent_name="RetrievalAgent",
-            agent_file="agents/retrieval_03/supervisor.py",
+            agent_file="agents/phase_03_retrieval/supervisor.py",
         ))
         activities.append(create_activity(
             activity_type="result",
             title="Retrieval mode cannot resolve memory-recall queries",
             details="Routed to honest-failure path; Production mode is the upgrade.",
             agent_name="RetrievalAgent",
-            agent_file="agents/retrieval_03/supervisor.py",
+            agent_file="agents/phase_03_retrieval/supervisor.py",
         ))
         return [], activities
 
@@ -1513,7 +1616,7 @@ async def retrieval_supervisor_search(
         title="RetrievalAgent invoked (Strands + Bedrock)",
         details="Bedrock will choose which specialist tool to call",
         agent_name="RetrievalAgent",
-        agent_file="agents/retrieval_03/supervisor.py",
+        agent_file="agents/phase_03_retrieval/supervisor.py",
     ))
 
     supervisor = create_retrieval_system(activity_callback=collect)
@@ -1535,7 +1638,7 @@ async def retrieval_supervisor_search(
                 "pgvector + tsvector + Cohere rerank coverage."
             ),
             agent_name="RetrievalAgent",
-            agent_file="agents/retrieval_03/supervisor.py",
+            agent_file="agents/phase_03_retrieval/supervisor.py",
         ))
         try:
             direct = await supervisor.search_agent.hybrid_search(query, limit=limit)
@@ -1571,7 +1674,7 @@ async def retrieval_supervisor_search(
             title="Supervisor search returned no trips",
             details="Strands delegation + direct fallback both empty",
             agent_name="RetrievalAgent",
-            agent_file="agents/retrieval_03/supervisor.py",
+            agent_file="agents/phase_03_retrieval/supervisor.py",
         ))
         return products, activities
 
@@ -1580,7 +1683,7 @@ async def retrieval_supervisor_search(
         title=f"Supervisor returned {len(products)} trips",
         details="Bedrock-driven delegation completed",
         agent_name="RetrievalAgent",
-        agent_file="agents/retrieval_03/supervisor.py",
+        agent_file="agents/phase_03_retrieval/supervisor.py",
     ))
 
     return products, activities
@@ -1641,7 +1744,7 @@ async def workflow_memory_recall(
             title="Aurora recall: traveler_preferences",
             details=f"{len(prefs)} durable preference facts",
             agent_name="MemoryAgent",
-            agent_file="agents/production_04/memory_agent.py",
+            agent_file="agents/phase_04_production/memory_agent.py",
         ))
 
         if conversation_id:
@@ -1653,7 +1756,7 @@ async def workflow_memory_recall(
                 title="Aurora recall: conversation_messages",
                 details=f"{len(session)} recent session turns",
                 agent_name="MemoryAgent",
-                agent_file="agents/production_04/memory_agent.py",
+                agent_file="agents/phase_04_production/memory_agent.py",
             ))
 
         similar = await store.recall_similar_interactions(
@@ -1664,7 +1767,7 @@ async def workflow_memory_recall(
             title="Aurora recall: trip_interactions (pgvector)",
             details=f"{len(similar)} semantically similar past interactions",
             agent_name="MemoryAgent",
-            agent_file="agents/production_04/memory_agent.py",
+            agent_file="agents/phase_04_production/memory_agent.py",
         ))
 
     products, search_activities = await retrieval_search(query, limit=5)
@@ -1740,6 +1843,7 @@ async def orchestration_workflow(
     *,
     resume: bool = False,
     travelers_count: int = 1,
+    review_only: bool = False,
 ) -> tuple[List[Product], List[ActivityEntry], str, str, str, bool]:
     """
     Phase 5: LangGraph StateGraph orchestrates classify → branch → synthesize.
@@ -1749,7 +1853,7 @@ async def orchestration_workflow(
     search code." The process-wide checkpoint backend is pooled PostgresSaver
     when configured, otherwise an explicitly ephemeral MemorySaver.
     """
-    from backend.agents.orchestration_05.workflow import (
+    from backend.agents.phase_05_workflow.workflow import (
         OrchestrationAgent,
         WorkflowAuthorizationError,
     )
@@ -1758,9 +1862,10 @@ async def orchestration_workflow(
         search_fn=retrieval_search,
         availability_fn=retrieval_availability_search,
         memory_recall_fn=workflow_memory_recall,
+        review_only=review_only,
     )
     try:
-        from backend.agents.orchestration_05.execution import run_http_workflow
+        from backend.agents.phase_05_workflow.execution import run_http_workflow
         final_state = await run_http_workflow(
             workflow,
             query,
@@ -1836,7 +1941,7 @@ async def production_search(
 
     Requires deployed AgentCore Runtime, Gateway, and Memory — see ``agentcore/README.md``.
     """
-    from backend.agents.production_04.concierge import create_production_agent
+    from backend.agents.phase_04_production.concierge import create_production_agent
     from backend.memory.store import DEMO_TRAVELER_ID
 
     tid = customer_id or DEMO_TRAVELER_ID
@@ -1983,7 +2088,6 @@ async def retrieval_availability_search(
     Returns: (products, activities, message)
     """
     activities = []
-    start_time = datetime.now(timezone.utc)
 
     db = get_rds_data_client()
 
@@ -1992,22 +2096,10 @@ async def retrieval_availability_search(
         title="Delegating to PackageAgent",
         details="Supervisor routing availability request to specialist agent",
         agent_name="RetrievalAgent",
-        agent_file="agents/retrieval_03/supervisor.py"
+        agent_file="agents/phase_03_retrieval/supervisor.py"
     ))
 
     query_lower = query.lower()
-
-    activities.append(create_activity(
-        activity_type="search",
-        title="PackageAgent: Finding package",
-        details=(
-            f"Loading ranked package {package_id}"
-            if package_id
-            else "Searching for mentioned trip package"
-        ),
-        agent_name="PackageAgent",
-        agent_file="agents/retrieval_03/package_agent.py"
-    ))
 
     exact_sql = """
         SELECT package_id, name, operator, price_per_person, description,
@@ -2034,20 +2126,32 @@ async def retrieval_availability_search(
         if word and any(ch.isalnum() for ch in word) and word not in stopwords:
             search_terms.append(word)
     
+    search_started = clock()
     if package_id:
         results = await db.execute(exact_sql, (package_id,))
     else:
         results = await _resolve_named_package(db, query_lower, search_terms)
-    
-    search_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-    
+    search_time = elapsed_ms(search_started)
+
+    activities.append(create_activity(
+        activity_type="search",
+        title="PackageAgent: Finding package",
+        details=(
+            f"Loading ranked package {package_id}"
+            if package_id
+            else "Searching for mentioned trip package"
+        ),
+        execution_time_ms=search_time,
+        agent_name="PackageAgent",
+        agent_file="agents/phase_03_retrieval/package_agent.py"
+    ))
+
     if not results:
         activities.append(create_activity(
             activity_type="result",
             title="PackageAgent: Package not found",
-            execution_time_ms=search_time,
             agent_name="PackageAgent",
-            agent_file="agents/retrieval_03/package_agent.py"
+            agent_file="agents/phase_03_retrieval/package_agent.py"
         ))
 
         activities.append(create_activity(
@@ -2055,7 +2159,7 @@ async def retrieval_availability_search(
             title="PackageAgent returned to Supervisor",
             details="No matching package found",
             agent_name="RetrievalAgent",
-            agent_file="agents/retrieval_03/supervisor.py"
+            agent_file="agents/phase_03_retrieval/supervisor.py"
         ))
 
         return [], activities, "I couldn't find that trip package. Try searching by destination, operator, or trip type."
@@ -2069,7 +2173,7 @@ async def retrieval_availability_search(
         details=f"Package: {product['name']}",
         sql_query="SELECT availability, durations FROM trip_packages WHERE package_id = ?",
         agent_name="PackageAgent",
-        agent_file="agents/retrieval_03/package_agent.py"
+        agent_file="agents/phase_03_retrieval/package_agent.py"
     ))
     
     # Calculate total stock
@@ -2081,15 +2185,13 @@ async def retrieval_availability_search(
     else:
         total_stock = 0
     
-    availability_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000) - search_time
-    
+    # Totalled in memory from the row read above; there is no call to time.
     activities.append(create_activity(
         activity_type="result",
         title="PackageAgent: Duration inventory verified",
         details=f"Total: {total_stock} package places across available durations",
-        execution_time_ms=availability_time,
         agent_name="PackageAgent",
-        agent_file="agents/retrieval_03/package_agent.py"
+        agent_file="agents/phase_03_retrieval/package_agent.py"
     ))
 
     activities.append(create_activity(
@@ -2097,7 +2199,7 @@ async def retrieval_availability_search(
         title="PackageAgent returned to Supervisor",
         details=f"Availability check complete for {product['name']}",
         agent_name="RetrievalAgent",
-        agent_file="agents/retrieval_03/supervisor.py"
+        agent_file="agents/phase_03_retrieval/supervisor.py"
     ))
 
     durations = product.get('durations', [])
@@ -2143,6 +2245,82 @@ def _is_workflow_resume_query(query: str) -> bool:
     }
 
 
+# Retain disconnected read-only chat turns until memory persistence finishes.
+# Disconnecting never retries a request or claims to cancel an in-flight tool.
+_stream_tasks: set[asyncio.Task] = set()
+
+
+@router.post("/stream")
+async def stream_chat(
+    request: ChatRequest,
+    principal: HttpPrincipal = Depends(require_http_principal),
+) -> StreamingResponse:
+    if request.phase != 4:
+        raise HTTPException(status_code=422, detail="Streaming is available for the concierge.")
+    # Authorize before sending headers, including when context is disabled.
+    authorize_traveler(principal, request.customer_id)
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    connected = True
+    started = clock()
+    first_delta = False
+    handoff = _needs_checkpointed_workflow(request.message)
+
+    def enqueue(event):
+        nonlocal first_delta
+        if event.get("type") == "delta" and not first_delta:
+            first_delta = True
+            logger.info("Concierge first text received in %s ms", elapsed_ms(started))
+        if connected:
+            queue.put_nowait(event)
+
+    def publish(event):
+        # A workflow handoff intentionally replaces Runtime prose. Never briefly
+        # show an answer the ordinary chat route would withhold.
+        if handoff and event.get("type") == "delta":
+            return
+        loop.call_soon_threadsafe(enqueue, event)
+
+    async def produce():
+        token = chat_event_sink.set(publish)
+        try:
+            response = await chat(request, principal)
+            if any(entry.activity_type == "error" for entry in response.activities):
+                publish({"type": "error", "message": response.message})
+            else:
+                publish({"type": "complete", "response": response.model_dump()})
+        except HTTPException as exc:
+            publish({"type": "error", "message": str(exc.detail)})
+        except Exception:
+            logger.exception("Concierge stream failed")
+            publish({"type": "error", "message": "The response was interrupted. Check the connection before trying again."})
+        finally:
+            chat_event_sink.reset(token)
+
+    async def events():
+        nonlocal connected
+        task = asyncio.create_task(produce())
+        _stream_tasks.add(task)
+        task.add_done_callback(_stream_tasks.discard)
+        try:
+            yield 'data: {"type":"status","text":"Connecting to your concierge…"}\n\n'
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=10)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                if event["type"] in ("complete", "error"):
+                    break
+        finally:
+            connected = False
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no",
+    })
+
+
 @router.post("", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -2168,6 +2346,20 @@ async def chat(
     )
     activities = []
 
+    # The finished product offers a reviewable recovery, never a teaching-mode
+    # instruction. Opening the plan is a separate explicit action; this reply
+    # does not run a workflow or authorize an inventory write.
+    if request.experience == "concierge" and request.phase == 4 and _needs_checkpointed_workflow(request.message):
+        return _complete_chat_turn(ChatResponse(
+            message="We can find alternatives and check their availability. Review a recovery plan before deciding whether to request a hold.",
+            activities=[create_activity(
+                activity_type="reasoning", title="Recovery review offered",
+                details="The traveler can open a saved recovery plan. No recovery or hold has run.",
+                agent_name="Concierge", agent_file="backend/routers/chat.py",
+            )], conversation_id=request.conversation_id,
+            recovery_request=request.message,
+        ), request.phase, turn_started)
+
     # Only Phase 3 uses the local PackageAgent shortcut. Phase 4 must apply
     # the context guard and execute through the managed Runtime below. Multi-step
     # planning prompts that also ask for availability should NOT be collapsed
@@ -2183,7 +2375,7 @@ async def chat(
             title="Processing with Multi-Agent Orchestration",
             details=f"Query: {request.message[:80]}{'...' if len(request.message) > 80 else ''}",
             agent_name="RetrievalAgent",
-            agent_file="agents/retrieval_03/supervisor.py"
+            agent_file="agents/phase_03_retrieval/supervisor.py"
         ))
 
         try:
@@ -2213,7 +2405,7 @@ async def chat(
                 title="PackageAgent error",
                 details=str(e),
                 agent_name="PackageAgent",
-                agent_file="agents/retrieval_03/package_agent.py"
+                agent_file="agents/phase_03_retrieval/package_agent.py"
             ))
             # Fall through to regular search
 
@@ -2230,13 +2422,13 @@ async def chat(
                     "conversations, or AgentCore Memory. No memory writeback occurred."
                 ),
                 agent_name="ProductionAgent",
-                agent_file="agents/production_04/concierge.py",
+                agent_file="agents/phase_04_production/concierge.py",
             ))
             return _complete_chat_turn(
                 ChatResponse(
                     message=(
                         "Traveler context is off for this run. Enable **Use traveler "
-                        "context** to let Production recall Alex's saved preferences "
+                        "context** to let Production recall Jordan's saved preferences "
                         "and prior Tokyo plan. Nothing was read from or written to memory."
                     ),
                     products=None,
@@ -2258,7 +2450,7 @@ async def chat(
             title="Processing with Production concierge (Runtime + Gateway + Memory)",
             details=f"Query: {request.message[:80]}{'...' if len(request.message) > 80 else ''}",
             agent_name="ProductionAgent",
-            agent_file="agents/production_04/concierge.py",
+            agent_file="agents/phase_04_production/concierge.py",
         ))
         try:
             products, search_activities, raw_message, conv_id, memory_facts = await production_search(
@@ -2298,15 +2490,18 @@ async def chat(
                         "availability can checkpoint separately."
                     ),
                     agent_name="ProductionAgent",
-                    agent_file="agents/production_04/concierge.py",
+                    agent_file="agents/phase_04_production/concierge.py",
                 ))
                 message = _PHASE4_WORKFLOW_TRANSITION_MESSAGE
             else:
                 # ProductionAgent persists the managed Runtime decision. Return
-                # that same decision unchanged so the audience-facing response
+                # that same decision unchanged so the user-facing response
                 # is authored by AgentCore Runtime rather than a second local
                 # model pass.
                 message = raw_message
+            # The badge names the model the Runtime reported for this turn.
+            # The workflow handoff is fixed text, so no model wrote it.
+            runtime_model = None if needs_workflow else runtime_model_id(search_activities)
             follow_ups = (
                 [
                     "Run this in Workflow",
@@ -2325,6 +2520,7 @@ async def chat(
                 follow_ups=follow_ups,
                 conversation_id=conv_id,
                 memory_facts=memory_facts,
+                model_label=bedrock_model_label(runtime_model) if runtime_model else None,
             ),
                 request.phase,
                 turn_started,
@@ -2346,7 +2542,7 @@ async def chat(
                 ),
                 details=str(e),
                 agent_name="ProductionAgent",
-                agent_file="agents/production_04/concierge.py",
+                agent_file="agents/phase_04_production/concierge.py",
             ))
             return _complete_chat_turn(
                 ChatResponse(
@@ -2375,6 +2571,8 @@ async def chat(
             resume_workflow = request.resume or _is_workflow_resume_query(
                 request.message
             )
+            if request.review_only and resume_workflow:
+                raise HTTPException(status_code=422, detail="A review starts a new plan. Read the saved recovery before choosing to resume it.")
             (
                 workflow_packages,
                 workflow_activities,
@@ -2388,6 +2586,7 @@ async def chat(
                 conversation_id=request.conversation_id,
                 resume=resume_workflow,
                 travelers_count=request.travelers_count,
+                **({"review_only": True} if request.review_only else {}),
             )
             activities.extend(workflow_activities)
             workflow_memory_facts: List[MemoryFact] = []
@@ -2442,8 +2641,8 @@ async def chat(
             log_error("workflow_authorization", error=str(e))
             raise HTTPException(status_code=403, detail=str(e)) from e
         except Exception as e:
-            # Keep the stack in the log; show the audience a stable reference,
-            # not a Python exception string projected on the wall.
+            # Keep the stack in the log; show the user a stable reference,
+            # not a Python exception string.
             error_ref = uuid.uuid4().hex[:8]
             logger.exception(
                 "orchestration_workflow failed (ref=%s)", error_ref
@@ -2462,7 +2661,7 @@ async def chat(
     phase_configs = {
         1: ("SQLAgent", "Direct RDS Data API", sql_search, "backend/routers/chat.py"),
         2: ("MCPAgent", "MCP tool routing", mcp_search, "backend/routers/chat.py"),
-        3: ("RetrievalAgent", phase3_method, phase3_fn, "agents/retrieval_03/supervisor.py"),
+        3: ("RetrievalAgent", phase3_method, phase3_fn, "agents/phase_03_retrieval/supervisor.py"),
     }
 
     agent_name, method, search_fn, agent_file = phase_configs[request.phase]
@@ -2534,7 +2733,7 @@ async def chat(
                 activities=activities,
                 follow_ups=[
                     "Compare three trip types side by side and convert their prices to euros.",
-                    "What is the off-season price range for Tokyo trips in November?",
+                    "What is the price range for Tokyo trips?",
                 ],
             ),
             request.phase,
@@ -2546,6 +2745,10 @@ async def chat(
         # because its custom MCP path can produce a non-product reply.
         # All other phases stay on the 2-tuple shape.
         domain_text: Optional[str] = None
+        # Set only when a real Bedrock call wrote this reply. A pure tool
+        # result (SQL, MCP, or the raw search prose) carries no model and
+        # the frontend must show no model badge for it.
+        model_label: Optional[str] = None
         if request.phase == 2:
             products, search_activities, domain_text = await mcp_search(
                 request.message,
@@ -2573,7 +2776,7 @@ async def chat(
         # Generate personalized response message
         if domain_text:
             # Custom MCP produced a domain readout (compare / FX / loyalty
-            # / seasonal pricing / inventory) - that IS the answer. It
+            # / price range / inventory) - that IS the answer. It
             # names the specific trips it surfaced, so we don't tack on a
             # generic "I also found N trips" suffix; the recommendation grid
             # speaks for itself.
@@ -2582,7 +2785,7 @@ async def chat(
             if request.phase in (3, 4):
                 top_similarity = products[0].similarity
                 if top_similarity and top_similarity > 0.8:
-                    raw_message = f"Great match! I found {len(products)} trips that closely match what you're looking for:"
+                    raw_message = f"I found {len(products)} trips that closely match what you're looking for:"
                 else:
                     raw_message = f"Here are {len(products)} trips that might interest you:"
             else:
@@ -2608,7 +2811,7 @@ async def chat(
             # in the product list let the model name *why* each trip
             # matched (intent, vibe, dates) instead of just listing.
             if request.phase == 3:
-                message = await _polish_and_record(
+                message, model_label = await _polish_and_record(
                     phase=3,
                     mode_label="Retrieval",
                     agent_name="RetrievalAgent",
@@ -2678,12 +2881,13 @@ async def chat(
             products=products if products else None,
             order=None,
             activities=activities,
-            follow_ups=follow_ups
+            follow_ups=follow_ups,
+            model_label=model_label,
         ),
             request.phase,
             turn_started,
         )
-        
+
     except HTTPException:
         raise
     except TravelerAuthorizationError as e:
@@ -2789,7 +2993,7 @@ async def production_hold(request: "OrderRequest") -> OrderResponse:
     as ``hold_confirmed``; the runtime pins it onto the tool call; the gateway's
     Cedar policy permits the hold only with it. Nothing here writes to Aurora.
     """
-    from backend.agents.production_04.concierge import HoldTarget, create_production_agent
+    from backend.agents.phase_04_production.concierge import HoldTarget, create_production_agent
 
     row, pkg = await _package_for_hold(request.product_id)
     duration = _requested_duration(row, request.size)
@@ -2975,7 +3179,7 @@ async def production_booking(request: "BookingRequest") -> BookingResponse:
     here writes to Aurora: the SQL function behind the gateway tool flips the
     booking from held to confirmed, or refuses by name.
     """
-    from backend.agents.production_04.concierge import BookingTarget, create_production_agent
+    from backend.agents.phase_04_production.concierge import BookingTarget, create_production_agent
 
     line = await _traveler_booking(request.traveler_id, request.booking_id)
     _row, pkg = await _package_for_hold(str(line["package_id"]))

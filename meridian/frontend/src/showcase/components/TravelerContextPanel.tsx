@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { ServiceMark } from './ServiceMark';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
-import { ALEX_IMAGE_URL, ALEX_NAME } from '../lib/personas';
+import { DEMO_TRAVELER_IMAGE_URL, DEMO_TRAVELER_NAME } from '../lib/personas';
 import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 
 // Snake-case schema keys read as "authentic Aurora data" for some fields
@@ -73,7 +73,7 @@ export function TravelerContextPanel({
   // span. When that span appears on a turn we pulse a "+N written to Aurora"
   // badge on the header so the audience FEELS the write actually happen.
   // The row count is the persist_turn write shape: 2 conversation_messages +
-  // 1 trip_interaction = 3 rows (backend/agents/production_04/memory_agent.py
+  // 1 trip_interaction = 3 rows (backend/agents/phase_04_production/memory_agent.py
   // persist_turn, ~lines 220-271). If a span ever exposes an explicit count
   // we prefer that.
   const persistSpan =
@@ -179,7 +179,7 @@ export function TravelerContextPanel({
               disabled={!memoryAvailable || state.memoryLoading}
               onClick={() => void state.setMemoryEnabled(!memoryOn)}
             >
-              <span aria-hidden="true"><i /></span>
+              <span className="mds-memory-switch-track" aria-hidden="true"><i /></span>
               <b>
                 {memoryStatus.charAt(0).toUpperCase() + memoryStatus.slice(1)}
               </b>
@@ -198,7 +198,7 @@ export function TravelerContextPanel({
             <div className="mds-memory-gate is-loading" role="status">
               <Loader2 size={22} aria-hidden="true" />
               <div>
-                <strong>Authorizing Alex's context</strong>
+                <strong>Authorizing Jordan's context</strong>
                 <span>Applying the traveler grant and loading scoped Aurora facts.</span>
               </div>
             </div>
@@ -223,15 +223,15 @@ export function TravelerContextPanel({
               <div className="mds-profile-line">
                 <span className="mds-avatar is-photo" aria-hidden="true">
                   <img
-                    src={ALEX_IMAGE_URL}
-                    alt={ALEX_NAME}
+                    src={DEMO_TRAVELER_IMAGE_URL}
+                    alt={DEMO_TRAVELER_NAME}
                     width="640"
                     height="960"
                     loading="lazy"
                   />
                 </span>
                 <div>
-                  <strong>Alex Morgan</strong>
+                  <strong>Jordan Morgan</strong>
                   <small>{state.travelerId}</small>
                 </div>
                 <span className="mds-memory-authorized">

@@ -38,17 +38,16 @@ class EmbeddingService:
     MAX_TEXT_LENGTH = 2048
     # Retries target the same model; a different model is not a substitute.
     EMBEDDING_ATTEMPTS = 2
-    # Cohere Rerank 3.5 is not directly invokable in us-east-1 with the bare
-    # model ID — Bedrock requires the US cross-region inference profile, which
-    # routes traffic to whichever Cohere region has capacity. The plain ID
-    # ("cohere.rerank-v3-5:0") only resolves in us-west-2 / a few other
-    # regions, so calling it from us-east-1 returns AccessDeniedException
-    # / ValidationException ("model not available"), and we silently fall
-    # back to semantic-only ranking on every Phase 3 turn.
-    # Override via RERANK_MODEL env var if running in a region where the
-    # bare model ID works.
+    # The bare model ID is what Bedrock actually serves in us-east-1:
+    # `GetFoundationModel("cohere.rerank-v3-5:0")` returns `modelLifecycle:
+    # ACTIVE` with `inferenceTypesSupported: ["ON_DEMAND"]` there (confirmed
+    # live). There is no `us.cohere.rerank-v3-5:0` cross-region inference
+    # profile at all — `GetInferenceProfile` on that ID returns
+    # ResourceNotFoundException — so a `us.`-prefixed override fails closed
+    # and Phase 3 silently degrades to semantic-only ranking on every turn.
+    # Override via RERANK_MODEL only if a region needs a different ID.
     # Docs: https://docs.aws.amazon.com/bedrock/latest/userguide/cross-region-inference.html
-    DEFAULT_RERANK_MODEL = "us.cohere.rerank-v3-5:0"
+    DEFAULT_RERANK_MODEL = "cohere.rerank-v3-5:0"
 
     def __init__(self, region: Optional[str] = None, dimensions: Optional[int] = None):
         self.region = region or os.getenv("AWS_DEFAULT_REGION", "us-east-1")

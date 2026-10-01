@@ -1,4 +1,4 @@
-"""Apply the identity-binding migration and authorize this AWS caller for Alex."""
+"""Apply the identity-binding migration and authorize this AWS caller for Jordan."""
 
 from __future__ import annotations
 

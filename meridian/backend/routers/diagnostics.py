@@ -1,7 +1,7 @@
 """Diagnostics API — prove Aurora RLS is enforced, live.
 
 The ``/rls-probe`` endpoint first proves the authenticated workload is allowed
-to claim Alex and denied when it claims the decoy traveler. It then runs the
+to claim Jordan and denied when it claims the decoy traveler. It then runs the
 SAME ``COUNT(*)`` twice against a table:
 
   1. SCOPED   — inside ``scoped_session(traveler_id=...)``, so the GUC
@@ -11,8 +11,8 @@ SAME ``COUNT(*)`` twice against a table:
                 role. This sees all rows for a count-only comparison.
 
 The difference between the two counts is the live proof that RLS is doing the
-filtering — not a comment in a slide. The endpoint also returns the real
-``CREATE POLICY`` USING clause from ``pg_policies`` so the audience sees the
+filtering, not a claim in a comment. The endpoint also returns the real
+``CREATE POLICY`` USING clause from ``pg_policies`` so the viewer sees the
 actual rule.
 
 The app role itself is fail closed when the traveler GUC is unset. The broader
@@ -425,7 +425,7 @@ async def session_receipt(
             checkpoints_exist = True
             checkpoint_total += count
 
-    from backend.agents.orchestration_05.workflow import checkpoint_backend_status
+    from backend.agents.phase_05_workflow.workflow import checkpoint_backend_status
 
     backend_status = checkpoint_backend_status()
     backend_kind = str(backend_status.get("kind") or "not initialized")

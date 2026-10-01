@@ -11,7 +11,7 @@ from decimal import Decimal
 
 import pytest
 
-from backend.agents.orchestration_05.hold_intent import (
+from backend.agents.phase_05_workflow.hold_intent import (
     HoldIntent,
     build_hold_intent,
     fingerprint_terms,
@@ -202,7 +202,7 @@ def test_the_hold_node_receives_a_checkpointed_intent() -> None:
     """
     import asyncio
 
-    from backend.agents.orchestration_05.workflow import OrchestrationAgent
+    from backend.agents.phase_05_workflow.workflow import OrchestrationAgent
 
     async def fake_search(q: str, limit: int = 5):
         return ([{"product_id": "TKY-003", "name": "Tokyo", "price": 1949}], [])

@@ -3,7 +3,7 @@
 ``strands.tools.mcp.MCPClient`` takes one positional transport factory and is
 driven with ``start()`` / ``list_tools_sync()`` / ``stop()``. The reference
 used a ``server_name=/command=/args=`` constructor and ``await connect()``
-that never existed, so anyone copying it on stage got a TypeError.
+that never existed, so anyone copying it got a TypeError.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 from strands.tools.mcp import MCPClient
 
-from backend.agents.mcp_02 import agent as mcp_agent
+from backend.agents.phase_02_mcp import agent as mcp_agent
 
 
 class _FakeClient:

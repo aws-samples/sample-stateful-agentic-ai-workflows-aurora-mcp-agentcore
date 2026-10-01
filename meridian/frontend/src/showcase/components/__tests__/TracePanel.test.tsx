@@ -12,7 +12,7 @@ const traceSpan: ShowcaseTraceSpan = {
   status: 'ok',
   latencyMs: 42,
   agent: 'SQLAgent',
-  file: 'backend/agents/sql_01/agent.py',
+  file: 'backend/agents/phase_01_sql/agent.py',
   sql: 'SELECT * FROM trip_packages',
   details: 'Read trip packages from Aurora.',
   fields: [],
@@ -26,6 +26,9 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     travelersCount: 1,
     restoreJourney: vi.fn(),
     selectedPhase: 1,
+    lastRequestPhase: null,
+    recoveryRequest: null,
+    inspectCurrentRun: vi.fn(),
     phaseLabel: 'SQL',
     phaseHint: null,
     dismissPhaseHint: vi.fn(),
@@ -33,6 +36,7 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     messages: [],
     currentPrompt: '',
     recommendations: [],
+    streamingRecommendations: [],
     catalog: [],
     selectedTrip: null,
     tripDetailsOpen: false,
@@ -69,8 +73,6 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     workflowResumedAfterRestart: false,
     lastPrompt: 'Show me city trips under $2,000 per traveler.',
     actionDrawer: null,
-    modelLabel: 'Claude Sonnet 5',
-    embedLabel: 'Cohere Embed v4',
     totalLatencyMs: 42,
     phaseExamples: [],
     chatFilters: {
@@ -117,6 +119,84 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     ...overrides,
   };
 }
+
+describe('TracePanel step sources', () => {
+  it('shows the service and the measured time on every recorded step', () => {
+    const { container } = render(<TracePanel state={makeState()} />);
+    const source = container.querySelector('.mds-activity-event summary .mds-step-source');
+    expect(source).toHaveTextContent('Aurora Data API · 42 ms');
+  });
+
+  it('shows the service alone when a step has no measured time', () => {
+    const { container } = render(<TracePanel state={makeState({
+      traceSpans: [{ ...traceSpan, latencyMs: null }],
+    })} />);
+    const source = container.querySelector('.mds-activity-event summary .mds-step-source');
+    expect(source).toHaveTextContent(/^Aurora Data API$/);
+    expect(container.querySelector('.mds-activity-event-meta')).not.toHaveTextContent(/\d\s*m?s\b/);
+  });
+
+  it('names the model that wrote the reply on the step it wrote', () => {
+    const { container } = render(<TracePanel state={makeState({
+      selectedPhase: 3,
+      messages: [{ role: 'bot', text: 'Two retreats.', modelLabel: 'Claude Haiku 4.5' }],
+      traceSpans: [{
+        ...traceSpan, id: 'polish', sql: undefined, category: 'model', latencyMs: 1400,
+        name: 'Bedrock · concierge polish (global.anthropic.claude-haiku-4-5-20251001-v1:0)',
+      }],
+    })} />);
+    expect(container.querySelector('.mds-step-source'))
+      .toHaveTextContent('Bedrock · Claude Haiku 4.5 · 1.4 s');
+  });
+});
+
+describe('TracePanel arrivals', () => {
+  it('paints a trace it opens onto without moving it', () => {
+    render(<TracePanel state={makeState()} />);
+    const group = screen.getByText('Querying live travel data').closest('li')!;
+    expect(group.style.opacity).not.toBe('0');
+  });
+
+  it('slides in the steps of a response it was waiting for', () => {
+    const waiting = makeState({ isLoading: true, traceSpans: [] });
+    const { rerender } = render(<TracePanel state={waiting} />);
+    rerender(<TracePanel state={makeState()} />);
+    expect(screen.getByText('Querying live travel data').closest('li')!.style.opacity).toBe('0');
+  });
+});
+
+describe('TracePanel copy trace', () => {
+  async function copiedPayload(state: MeridianShowcaseState) {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(<TracePanel state={state} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Copy trace' }));
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalled());
+    return JSON.parse(writeText.mock.calls[0][0]);
+  }
+
+  it('names the model that wrote the reply, not the configured one', async () => {
+    const payload = await copiedPayload(makeState({
+      messages: [
+        { role: 'user', text: 'Find a quiet retreat' },
+        { role: 'bot', text: 'Here are two.', modelLabel: 'Claude Haiku 4.5' },
+      ],
+    }));
+    expect(payload.model).toBe('Claude Haiku 4.5');
+    expect(payload).not.toHaveProperty('embed');
+  });
+
+  it('omits the model when no model wrote the reply', async () => {
+    const payload = await copiedPayload(makeState({
+      messages: [
+        { role: 'user', text: 'Show me city trips' },
+        { role: 'bot', text: 'Found 5 trips.' },
+      ],
+    }));
+    expect(payload).not.toHaveProperty('model');
+    expect(payload.spans).toHaveLength(1);
+  });
+});
 
 describe('TracePanel collapse behavior', () => {
   it('hides activity details while keeping the panel header actionable', () => {

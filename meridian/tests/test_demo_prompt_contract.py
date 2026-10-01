@@ -1,4 +1,4 @@
-"""Contract tests for the five-phase presenter prompt ladder."""
+"""Contract tests for the five-phase prompt ladder."""
 
 import asyncio
 from contextlib import asynccontextmanager
@@ -273,7 +273,7 @@ def test_loyalty_tool_uses_authenticated_traveler(monkeypatch) -> None:
 
 
 def test_prompt_ladder_matches_documented_prompts() -> None:
-    """The shipped ladder must stay in step with DEMO_SCRIPT.md."""
+    """The shipped ladder must stay in step with the prompts meridian/README.md documents."""
     from backend.demo_prompts import PROMPT_LADDER, tee_up_prompt
 
     assert set(PROMPT_LADDER) == {1, 2, 3, 4, 5}

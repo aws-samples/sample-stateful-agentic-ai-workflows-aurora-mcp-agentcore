@@ -15,7 +15,7 @@ import re
 
 DEFAULT_ENV = "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS"
 DEFAULT_CENTS = 400000
-# Alex's seeded facts carry budget_cap ("$3,200") and per_person_range
+# Jordan's seeded facts carry budget_cap ("$3,200") and per_person_range
 # ("Prefers $2k-3.5k per person"). The cap wins when both are present.
 BUDGET_KEYS = ("budget_cap", "budget", "budget_ceiling", "budget_range", "per_person_range")
 AMOUNT = re.compile(r"\$?\s*(\d+(?:\.\d+)?)\s*(k)?", re.I)

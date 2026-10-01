@@ -4,19 +4,19 @@ const THEME_STORAGE_KEY = 'meridian.theme';
 
 /** Resolve once for the loading screen and again when the showcase mounts. */
 export function initialShowcaseTheme(): ShowcaseTheme {
-  if (typeof window === 'undefined') return 'light';
+  if (typeof window === 'undefined') return 'dark';
   const params = new URLSearchParams(window.location.search);
   const requested = params.get('theme');
   if (requested === 'dark' || requested === 'light') return requested;
   // A saved laptop preference must not change the bookmarked room preset.
-  if (params.get('present') === '1') return 'light';
+  if (params.get('present') === '1') return 'dark';
   try {
     const remembered = window.localStorage.getItem(THEME_STORAGE_KEY);
     if (remembered === 'dark' || remembered === 'light') return remembered;
   } catch {
     // Blocked browser storage must not prevent the presentation from opening.
   }
-  return 'light';
+  return 'dark';
 }
 
 export function rememberShowcaseTheme(theme: ShowcaseTheme): void {

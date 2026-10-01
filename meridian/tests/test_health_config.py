@@ -7,25 +7,38 @@ from backend.config import bedrock_model_label
 from backend.main import app, parse_cors_origins
 
 
-def test_bedrock_model_label_opus():
-    assert bedrock_model_label("global.anthropic.claude-opus-4-8") == "Claude Opus 4.8"
+PROFILE_ARN = "arn:aws:bedrock:us-east-1:123456789012:inference-profile/"
 
 
-def test_bedrock_model_label_sonnet_5():
-    assert (
-        bedrock_model_label("global.anthropic.claude-sonnet-5")
-        == "Claude Sonnet 5"
-    )
+@pytest.mark.parametrize(
+    ("model_id", "label"),
+    [
+        ("global.anthropic.claude-sonnet-5", "Claude Sonnet 5"),
+        ("us.anthropic.claude-sonnet-5", "Claude Sonnet 5"),
+        (f"{PROFILE_ARN}global.anthropic.claude-sonnet-5", "Claude Sonnet 5"),
+        ("global.anthropic.claude-haiku-4-5-20251001-v1:0", "Claude Haiku 4.5"),
+        ("global.anthropic.claude-opus-5", "Claude Opus 5"),
+        ("us.openai.gpt-6-luna", "GPT-6 Luna"),
+        ("global.openai.gpt-6-luna", "GPT-6 Luna"),
+        (f"{PROFILE_ARN}us.openai.gpt-6-luna", "GPT-6 Luna"),
+        ("us.openai.unknown-model", "us.openai.unknown-model"),
+        ("global.anthropic.claude-opus-5-5", "global.anthropic.claude-opus-5-5"),
+        ("global.anthropic.claude-opus-4-8", "global.anthropic.claude-opus-4-8"),
+        ("global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+         "global.anthropic.claude-sonnet-4-5-20250929-v1:0"),
+    ],
+)
+def test_bedrock_model_label_names_known_models_and_preserves_unknown_ids(model_id, label):
+    assert bedrock_model_label(model_id) == label
 
 
-def test_bedrock_model_label_sonnet_4_5():
-    assert (
-        bedrock_model_label("global.anthropic.claude-sonnet-4-5-20250929-v1:0")
-        == "Claude Sonnet 4.5"
-    )
+def test_health_includes_model_fields(monkeypatch):
+    from backend import health_probe
 
+    async def fake_probe():
+        return health_probe.AuroraProbeResult(ok=True)
 
-def test_health_includes_model_fields():
+    monkeypatch.setattr(health_probe, "probe_aurora", fake_probe)
     res = TestClient(app).get("/api/health")
     assert res.status_code == 200
     body = res.json()
@@ -33,6 +46,42 @@ def test_health_includes_model_fields():
     assert "bedrock_model_label" in body
     assert "embedding_model_id" in body
     assert body["bedrock_model_label"]
+
+
+def test_health_reports_healthy_when_aurora_probe_passes(monkeypatch):
+    from backend import health_probe
+
+    async def fake_probe():
+        return health_probe.AuroraProbeResult(ok=True)
+
+    monkeypatch.setattr(health_probe, "probe_aurora", fake_probe)
+    body = TestClient(app).get("/api/health").json()
+
+    assert body["status"] == "healthy"
+    assert body["aurora_reachable"] is True
+    assert body["degraded_component"] is None
+    assert body["degraded_error_class"] is None
+
+
+def test_health_reports_degraded_with_component_and_error_class_when_aurora_is_down(monkeypatch):
+    from backend import health_probe
+
+    async def fake_probe():
+        return health_probe.AuroraProbeResult(ok=False, error_class="ExpiredTokenException")
+
+    monkeypatch.setattr(health_probe, "probe_aurora", fake_probe)
+    res = TestClient(app).get("/api/health")
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "degraded"
+    assert body["aurora_reachable"] is False
+    assert body["degraded_component"] == "aurora"
+    assert body["degraded_error_class"] == "ExpiredTokenException"
+    # Existing fields callers already read must still be present.
+    assert body["checkpoint_backend"]
+    assert "checkpoint_durable" in body
+    assert "checkpoint_required" in body
 
 
 def test_cors_origins_accepts_explicit_allowlist():

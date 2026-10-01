@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import pytest
 
-from backend.agents.orchestration_05.governed_hold import (
+from backend.agents.phase_05_workflow.governed_hold import (
     HOLD_TOOL,
     hold_arguments,
     place_governed_hold,

@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.agents.retrieval_03 import booking_agent, supervisor
-from backend.agents.sql_01 import agent as sql_agent
+from backend.agents.phase_03_retrieval import booking_agent, supervisor
+from backend.agents.phase_01_sql import agent as sql_agent
 
 
 def _without_model_or_database(monkeypatch, module, db):

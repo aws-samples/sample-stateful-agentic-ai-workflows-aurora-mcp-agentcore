@@ -1,10 +1,13 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import {
+  ArrowRight,
   CalendarDays,
+  Check,
   Navigation2,
   RefreshCw,
   Send,
+  Square,
   Leaf,
   Plane,
   ConciergeBell,
@@ -23,12 +26,14 @@ export function ChatComposer({
   proofMode = false,
   recoveryMode = false,
   conciergeMode = false,
+  hideStarters = false,
 }: {
   state: MeridianShowcaseState;
   compact?: boolean;
   proofMode?: boolean;
   recoveryMode?: boolean;
   conciergeMode?: boolean;
+  hideStarters?: boolean;
 }) {
   const [openChip, setOpenChip] = useState<ChipKey | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -74,7 +79,7 @@ export function ChatComposer({
 
   const nextPhase = SHOWCASE_PHASES.find(phase => phase.phase === state.selectedPhase + 1);
   const boundaryReached = proofMode && nextPhase && stretchPrompt && state.lastPrompt?.startsWith(stretchPrompt) && !state.isLoading;
-  const queryStarters = compact || recoveryMode
+  const queryStarters = compact || recoveryMode || hideStarters
     ? []
     : conversationStarted
       ? proofMode && stretchStillUnasked
@@ -126,7 +131,10 @@ export function ChatComposer({
                     : prompt
                 }
               >
-                {proofMode && <small>{isStretch ? `Needs ${nextPhase?.label}` : state.selectedPhase === 4 ? 'Uses traveler context' : 'Works here'}</small>}
+                {proofMode && <small>
+                  {isStretch ? <ArrowRight size={14} aria-hidden="true" /> : <Check size={14} strokeWidth={2.4} aria-hidden="true" />}
+                  {isStretch ? `Needs ${nextPhase?.label}` : state.selectedPhase === 4 ? 'Uses traveler context' : 'Works here'}
+                </small>}
                 <span>{promptLabel}</span>
               </button>
             );
@@ -168,17 +176,19 @@ export function ChatComposer({
               ? 'Describe the trip you need to recover…'
               : conciergeMode ? 'Tell me what you have in mind…' : 'Ask about a destination, budget, or duration…'
           }
-          disabled={requestBusy}
+          disabled={conciergeMode ? contextConnecting : requestBusy}
           aria-label="Ask Meridian anything"
           aria-describedby={keyboardHintId}
         />
         <button
-          type="submit"
+          type={conciergeMode && state.isLoading ? 'button' : 'submit'}
           className="mds-chat-send"
-          disabled={requestBusy || !state.currentPrompt.trim()}
-          aria-label="Send message"
+          disabled={conciergeMode && state.isLoading ? false : requestBusy || !state.currentPrompt.trim()}
+          aria-label={conciergeMode && state.isLoading ? 'Stop waiting' : 'Send message'}
+          title={conciergeMode && state.isLoading ? 'Stop waiting for this response. Saved actions may still finish.' : undefined}
+          onClick={conciergeMode && state.isLoading ? state.stopWaiting : undefined}
         >
-          {state.isLoading ? (
+          {conciergeMode && state.isLoading ? <Square size={16} fill="currentColor" aria-hidden="true" /> : state.isLoading ? (
             <span className="mds-chat-send-spinner" aria-hidden="true" />
           ) : (
             <Send size={19} strokeWidth={2.1} aria-hidden="true" />

@@ -19,7 +19,7 @@ export function BookingConfirmation({ product, hold, budgetPerTravelerCents, bus
     <section className="mds-trip-confirm" aria-labelledby="trip-confirm-title">
       <header>
         <ShieldCheck size={18} aria-hidden="true" />
-        <h3 id="trip-confirm-title">Confirm this trip for Alex?</h3>
+        <h3 id="trip-confirm-title">Confirm this trip for Jordan?</h3>
       </header>
       <dl>
         <div><dt>Package</dt><dd>{product.name}</dd></div>

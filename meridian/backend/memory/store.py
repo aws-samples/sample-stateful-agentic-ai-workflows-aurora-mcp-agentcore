@@ -67,7 +67,7 @@ class MemoryStore:
         The Phase 4 demo flow tries to insert a ``conversations`` row scoped
         to ``traveler_id`` on the first turn. ``conversations`` has a NOT
         NULL FK to ``travelers``, so if the demo traveler was never seeded
-        (e.g. presenter rebuilt Aurora but skipped ``scripts/seed_data.py``),
+        (e.g. Aurora was rebuilt without running ``scripts/seed_data.py``),
         that INSERT fails with::
 
             ERROR: insert or update on table "conversations" violates
@@ -141,6 +141,20 @@ class MemoryStore:
             transaction_id=transaction_id,
         )
 
+    async def recall_shown_packages(
+        self, conversation_id: str, *, transaction_id: str
+    ) -> List[Dict[str, Any]]:
+        """Recall a conversation's last shortlist inside its authorized read unit."""
+        rows = await self.db.execute(
+            """
+            SELECT packages_shown FROM trip_interactions
+            WHERE conversation_id = %s AND jsonb_array_length(packages_shown) > 0
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (conversation_id,), transaction_id=transaction_id,
+        )
+        return rows[0].get("packages_shown", []) if rows else []
+
     async def recall_preferences(
         self,
         traveler_id: str,
@@ -182,7 +196,7 @@ class MemoryStore:
         """Return the traveler's core profile (name, home airport, party size…).
 
         Joins ``travelers`` with ``traveler_profiles``. Used to ground a turn
-        before search — e.g. defaulting departures to JFK for Alex Morgan.
+        before search — e.g. defaulting departures to JFK for Jordan Morgan.
         """
         rows = await self.db.execute(
             """
@@ -460,7 +474,7 @@ class MemoryStore:
         if preferences:
             lines.append("Preferences:")
             for p in preferences:
-                lines.append(f"- {p['value']} ({p['confidence']:.2f})")
+                lines.append(f"- {p['key']}: {p['value']} ({p['confidence']:.2f})")
         if short_term:
             lines.append("Recent turns:")
             for msg in reversed(short_term):

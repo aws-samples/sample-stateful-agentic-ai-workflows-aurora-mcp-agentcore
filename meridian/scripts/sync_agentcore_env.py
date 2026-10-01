@@ -5,7 +5,9 @@ Sync AgentCore resource IDs from the @aws/agentcore CLI into meridian/.env.
 Preferred workflow (Node-based CLI):
 
     npm install -g @aws/agentcore
-    cd meridian/meridian_agentcore
+    cd meridian
+    python scripts/render_agentcore_config.py
+    cd meridian_agentcore
     agentcore validate --json
     agentcore package --runtime MeridianConcierge
     agentcore deploy -y

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Grant the MeridianHolds Lambda's execution role access to Alex's traveler record.
+"""Grant the MeridianHolds Lambda's execution role access to Jordan's traveler record.
 
 The gateway Lambda is a workload like the FastAPI backend: before it sets a
 traveler scope it must hold an active row in traveler_identity_bindings. The

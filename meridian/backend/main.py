@@ -49,6 +49,9 @@ class HealthResponse(BaseModel):
     checkpoint_backend: str
     checkpoint_durable: bool
     checkpoint_required: bool
+    aurora_reachable: bool
+    degraded_component: str | None = None
+    degraded_error_class: str | None = None
 
 
 class ErrorResponse(BaseModel):
@@ -77,7 +80,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         "LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP", "false"
     ).lower() in {"1", "true", "yes", "on"}
     if checkpoint_required or checkpoint_startup:
-        from backend.agents.orchestration_05.workflow import (
+        from backend.agents.phase_05_workflow.workflow import (
             initialize_checkpoint_backend,
         )
 
@@ -86,7 +89,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         yield
     finally:
-        from backend.agents.orchestration_05.workflow import (
+        from backend.agents.phase_05_workflow.workflow import (
             close_checkpoint_backend,
         )
 
@@ -150,13 +153,23 @@ app.include_router(diagnostics_router)
 app.include_router(journeys_router)
 
 
-def _health_payload() -> HealthResponse:
-    from backend.agents.orchestration_05.workflow import checkpoint_backend_status
+async def _health_payload() -> HealthResponse:
+    """Build the health response from what is true right now.
+
+    `status` is `healthy` only when a live Aurora `SELECT 1` just
+    succeeded (see `backend.health_probe`); otherwise it is `degraded`
+    and names the failing component and its error class. The checkpoint
+    fields remain the backend's configured checkpoint state, not a
+    second live probe.
+    """
+    from backend.agents.phase_05_workflow.workflow import checkpoint_backend_status
+    from backend.health_probe import probe_aurora
 
     model_id = config.bedrock.model_id
     checkpoint = checkpoint_backend_status()
+    aurora = await probe_aurora()
     return HealthResponse(
-        status="healthy",
+        status="healthy" if aurora.ok else "degraded",
         version="1.0.0",
         environment=os.getenv("ENVIRONMENT", "development"),
         bedrock_model_id=model_id,
@@ -165,6 +178,9 @@ def _health_payload() -> HealthResponse:
         checkpoint_backend=checkpoint["kind"],
         checkpoint_durable=checkpoint["durable"],
         checkpoint_required=checkpoint["required"],
+        aurora_reachable=aurora.ok,
+        degraded_component=None if aurora.ok else "aurora",
+        degraded_error_class=aurora.error_class,
     )
 
 
@@ -173,7 +189,7 @@ async def root() -> HealthResponse:
     """
     Root endpoint - returns basic service information.
     """
-    return _health_payload()
+    return await _health_payload()
 
 
 @app.get("/health")
@@ -190,7 +206,7 @@ async def api_health_check() -> HealthResponse:
     Returns:
         HealthResponse with service status, version, and environment
     """
-    return _health_payload()
+    return await _health_payload()
 
 
 # The schema and interactive API consoles use the same origin boundary as data.

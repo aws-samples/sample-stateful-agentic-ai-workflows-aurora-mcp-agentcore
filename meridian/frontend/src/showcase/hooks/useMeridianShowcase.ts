@@ -13,6 +13,7 @@ import {
   sendChatMessage,
   updateMemoryFact,
 } from '../../api/client';
+import type { ChatStreamEvent } from '../../api/chatStream';
 import { runWithDeadline } from '../../api/request';
 import { holdIntentKey, loadBookingRecovery, saveBookingRecovery, type SavedHoldIntent } from '../lib/bookingRecovery';
 import type {
@@ -24,7 +25,7 @@ import type {
   Product,
   TravelerProfile,
 } from '../../types';
-import { runConfigEmbedLabel, runConfigModelLabel, type BackendHealth } from '../../lib/runConfig';
+import type { BackendHealth } from '../../lib/runConfig';
 import {
   SHOWCASE_EXAMPLE_PROMPTS,
   SHOWCASE_PHASES,
@@ -98,8 +99,12 @@ export interface MeridianShowcaseState {
   dismissPhaseHint: () => void;
   travelerId: string;
   messages: Message[];
+  lastRequestPhase: Phase | null;
+  recoveryRequest: string | null;
+  inspectCurrentRun: () => void;
   currentPrompt: string;
   recommendations: Product[];
+  streamingRecommendations: Product[];
   catalog: Product[];
   selectedTrip: Product | null;
   tripDetailsOpen: boolean;
@@ -127,6 +132,7 @@ export interface MeridianShowcaseState {
   replayIndex: number;
   isReplaying: boolean;
   isLoading: boolean;
+  chatProgress?: string;
   requestStartedAt: number | null;
   stopWaiting: () => void;
   error: string | null;
@@ -145,8 +151,6 @@ export interface MeridianShowcaseState {
   tripHolds: TripHold[];
   /** The held trip waiting for the traveler's confirmation in the trip drawer. */
   bookingPrompt: TripHold | null;
-  modelLabel: string;
-  embedLabel: string;
   totalLatencyMs: number;
   phaseExamples: string[];
   travelersCount: number;
@@ -159,7 +163,7 @@ export interface MeridianShowcaseState {
   setSelectedTrip: (product: Product | null) => void;
   setSelectedPhase: (phase: Phase) => void;
   setMemoryEnabled: (enabled: boolean) => Promise<void>;
-  submitPrompt: (prompt?: string, phaseOverride?: Phase) => Promise<void>;
+  submitPrompt: (prompt?: string, phaseOverride?: Phase, options?: { reviewOnly?: boolean }) => Promise<void>;
   applyPhaseExample: (
     prompt: string,
     runImmediately?: boolean,
@@ -264,6 +268,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
   const [currentPrompt, setCurrentPrompt] = useState(SHOWCASE_INITIAL_PROMPT);
   const [recommendations, setRecommendations] = useState<Product[]>([]);
+  const [candidateIds, setCandidateIds] = useState<string[]>([]);
   // Live catalog for the product view's rotating hero. Aurora rows, not a
   // bundled preview list.
   const [catalog, setCatalog] = useState<Product[]>([]);
@@ -308,6 +313,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [replayIndex, setReplayIndex] = useState(-1);
   const [isReplaying, setIsReplaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [chatProgress, setChatProgress] = useState('');
   const [requestStartedAt, setRequestStartedAt] = useState<number | null>(null);
   const stopWaiting = useCallback(() => {
     chatController.current?.abort(new DOMException('Stopped waiting.', 'AbortError'));
@@ -319,6 +325,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   // to true by ChatMessage when its typewriter reaches the end of the
   // text. Initially true so the empty state isn't held back.
   const [latestStreamComplete, setLatestStreamComplete] = useState(true);
+  const [lastRequestPhase, setLastRequestPhase] = useState<Phase | null>(null);
+  const [recoveryRequest, setRecoveryRequest] = useState<string | null>(null);
+  const lastPromptPhaseOverride = useRef<Phase>();
+  const lastPromptOptions = useRef<{ reviewOnly?: boolean }>();
   const [error, setError] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
   const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
@@ -515,13 +525,15 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, [clearReplayTimers, traceSpans]);
 
   const applyChatResponse = useCallback((prompt: string, response: ChatResponse) => {
+    setRecoveryRequest(response.recovery_request ?? null);
     // The user-side bubble was already appended optimistically when they
     // hit Send (see submitPrompt). Drop any pre-existing user bubble for
     // THIS prompt before re-applying the full pair so we don't get a
     // double-render. chatResponseToMessages always appends [user, bot];
     // we trim the trailing optimistic user bubble first to keep history
     // clean.
-    setMessages((prior) => {
+    setMessages((messages) => {
+      const prior = messages[messages.length - 1]?.streaming ? messages.slice(0, -1) : messages;
       const trimmed =
         prior.length > 0 &&
         prior[prior.length - 1].role === 'user' &&
@@ -564,6 +576,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setError(null);
     setMessages([]);
     setSelectedPhaseState(5);
+    setLastRequestPhase(5);
+    lastPromptPhaseOverride.current = undefined;
+    lastPromptOptions.current = undefined;
     conversationPhaseRef.current = 5;
     setLastPrompt(saved.query);
     setCurrentPrompt('');
@@ -580,7 +595,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, [applyChatResponse, isLoading]);
 
   const submitPrompt = useCallback(
-    async (overridePrompt?: string, phaseOverride?: Phase) => {
+    async (overridePrompt?: string, phaseOverride?: Phase, options?: { reviewOnly?: boolean }) => {
       if ((phaseOverride ?? selectedPhase) === 4 && memoryLoading) {
         setError('Wait for traveler context to finish connecting before sending this request.');
         return;
@@ -596,6 +611,20 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       chatController.current = controller;
       const isCurrent = () => mounted.current && generation === requestGeneration.current;
       const requestPhase = phaseOverride ?? selectedPhase;
+      const startsNewPhase = conversationPhaseRef.current !== null && conversationPhaseRef.current !== requestPhase;
+      if (startsNewPhase) {
+        setMessages([]);
+        setRecommendations([]);
+        setSelectedTrip(null);
+        setConversationId(null);
+        setWorkflowStatus(null);
+        setWorkflowResumedAfterRestart(false);
+        if (requestPhase !== 5) clearWorkflowAddress();
+      }
+      setLastRequestPhase(requestPhase);
+      lastPromptPhaseOverride.current = phaseOverride;
+      lastPromptOptions.current = options;
+      setRecoveryRequest(null);
 
       // Decorate the user's prompt with the active action-chip filters so
       // the backend agent sees the full traveler intent. The decorated
@@ -608,9 +637,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setReplayIndex(-1);
       setIsReplaying(false);
       setIsLoading(true);
+      setCandidateIds([]);
+      setChatProgress('Connecting to your concierge…');
       setRequestStartedAt(Date.now());
-      // Reset stream-complete so downstream surfaces (recommendation
-      // grid) wait until the typewriter finishes revealing this turn.
+      // Completion remains separate from provisional text and catalog matches.
       setLatestStreamComplete(false);
       setError(null);
       setTraceSpans([]);
@@ -619,7 +649,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
 
       const resumeRequested = requestPhase === 5 && /^(resume|continue)( workflow)?( from checkpoint)?$/i.test(baseRaw);
       const workflowThread = requestPhase === 5
-        ? (resumeRequested ? conversationId : `phase5-${crypto.randomUUID()}`)
+        ? (resumeRequested ? (conversationPhaseRef.current === 5 ? conversationId : null) : `phase5-${crypto.randomUUID()}`)
         : null;
       if (requestPhase === 5) {
         if (!workflowThread) {
@@ -655,18 +685,40 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       // the full pair so we don't double-render.
       setMessages((prior) => [...prior, { role: 'user', text: decorated }]);
 
+      const onStreamEvent = (event: ChatStreamEvent) => {
+        if (!isCurrent() || controller.signal.aborted) return;
+        if (event.type === 'conversation') {
+          setConversationId(event.conversation_id);
+          conversationPhaseRef.current = requestPhase;
+        } else if (event.type === 'status') {
+          setChatProgress(event.text);
+        } else if (event.type === 'candidates') {
+          setCandidateIds(event.package_ids);
+        } else if (event.text) {
+          setChatProgress('Writing your reply…');
+          setMessages(prior => {
+            const last = prior[prior.length - 1];
+            return last?.streaming
+              ? [...prior.slice(0, -1), { ...last, text: last.text + event.text }]
+              : [...prior, { role: 'bot', text: event.text, streaming: true }];
+          });
+        }
+      };
       try {
         const response = await runWithDeadline(signal => sendChatMessage({
           message: decorated,
           phase: requestPhase,
+          ...(phaseOverride === 4 ? { experience: 'concierge' as const } : {}),
+          ...(options?.reviewOnly ? { review_only: true } : {}),
           ...(requestPhase >= 4
             ? {
                 customer_id: SHOWCASE_TRAVELER_ID,
                 travelers_count: travelersCount,
                 // Concierge uses Production without advancing the teaching ladder.
-                // Its opening profile is a real Aurora read; use that context on
-                // this request without switching on the ladder's memory toggle.
-                memory_enabled: memoryEnabled || (phaseOverride === 4 && Boolean(previewProfile)),
+                // Authorize recall on the server for every product turn, even
+                // when the opening profile read is still loading. The ladder's
+                // teaching toggle does not disable the finished product.
+                memory_enabled: memoryEnabled || phaseOverride === 4,
                 conversation_id: workflowThread ?? (
                   conversationPhaseRef.current === requestPhase
                     ? conversationId ?? undefined
@@ -676,13 +728,14 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           ...(requestPhase === 5
             ? { resume: resumeRequested || undefined }
             : {}),
-        }, signal), controller.signal);
+        }, signal, ...(phaseOverride === 4 ? [onStreamEvent] : [])), controller.signal, phaseOverride === 4 ? 120_000 : undefined);
         if (!isCurrent()) return;
         // One successful chat does not verify the catalog and traveler reads.
         // Only the readiness check may mark all of Meridian's live data ready.
         if (backendStatus === 'offline' && !connectionController.current) void refreshConnection();
         conversationPhaseRef.current = requestPhase;
         applyChatResponse(decorated, response);
+        if (phaseOverride === 4) setLatestStreamComplete(true);
         setConversationTravelers(travelersCount);
         // Filters are per-turn - clear them after a successful submit so
         // the next prompt starts clean (matches the intuition of every
@@ -690,6 +743,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         setChatFiltersState(EMPTY_FILTERS);
       } catch (err) {
         if (!isCurrent()) return;
+        setMessages(prior => prior.map(message => message.streaming ? { ...message, streaming: false, incomplete: true } : message));
         if (requestPhase === 5) unresolvedWorkflow.current = workflowThread;
         setError(requestPhase === 5
           ? 'The recovery response was not received. The worker may still be running. Re-read this saved recovery before resuming; its address is preserved on refresh.'
@@ -700,11 +754,12 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (isCurrent()) {
           chatController.current = null;
           setIsLoading(false);
+          setChatProgress('');
           setRequestStartedAt(null);
         }
       }
     },
-    [applyChatResponse, backendStatus, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, memoryEnabled, memoryLoading, previewProfile, refreshConnection, selectedPhase, travelersCount, ],
+    [applyChatResponse, backendStatus, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, memoryEnabled, memoryLoading, refreshConnection, selectedPhase, travelersCount, ],
   );
 
   const applyPhaseExample = useCallback(
@@ -722,7 +777,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   );
 
   const replayLastPrompt = useCallback(async () => {
-    if (lastPrompt) await submitPrompt(lastPrompt);
+    if (lastPrompt) await submitPrompt(lastPrompt, lastPromptPhaseOverride.current, lastPromptOptions.current);
   }, [lastPrompt, submitPrompt]);
 
   const setSelectedPhase = useCallback((phase: Phase) => {
@@ -732,7 +787,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     // is a race: the clear below sometimes fired and sometimes didn't. This
     // is deterministic.
     const prev = selectedPhase;
-    const phaseChanged = phase !== prev;
+    const phaseChanged = phase !== prev || (lastRequestPhase !== null && phase !== lastRequestPhase);
     if (!phaseChanged) {
       // Re-clicking the active pill is a no-op - don't wipe an in-progress
       // conversation or re-trigger the hint.
@@ -744,6 +799,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     unresolvedWorkflow.current = null;
     setIsLoading(false);
     setSelectedPhaseState(phase);
+    setLastRequestPhase(null);
+    setRecoveryRequest(null);
 
     // Surface the "what this rung adds" callout only when advancing to a
     // higher phase - that's the narrative beat (each mode composes onto the
@@ -791,7 +848,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     }
     // No auto-prompt: leave the composer empty so the presenter types
     // intent freshly for each phase walkthrough.
-  }, [selectedPhase, clearReplayTimers, invalidateChatRequest, invalidateMemoryRead]);
+  }, [selectedPhase, lastRequestPhase, clearReplayTimers, invalidateChatRequest, invalidateMemoryRead]);
 
   const dismissPhaseHint = useCallback(() => {
     setPhaseHint(null);
@@ -996,7 +1053,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           order: response.order,
           live: true,
         });
-        setWorkspaceNotice(response.order?.status === 'confirmed' ? `${product.name} is confirmed for Alex.` : response.message);
+        setWorkspaceNotice(response.order?.status === 'confirmed' ? `${product.name} is confirmed for Jordan.` : response.message);
       } catch {
         if (!mounted.current || generation !== requestGeneration.current) return;
         setBackendStatus('offline');
@@ -1148,6 +1205,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setMessages([]);
     setCurrentPrompt('');
     setLastPrompt(null);
+    setLastRequestPhase(null);
+    setRecoveryRequest(null);
     setRecommendations([]);
     setSelectedTrip(null);
     setTraceSpans([]);
@@ -1172,6 +1231,12 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setLatestStreamComplete(true);
   }, []);
 
+  // Inspecting an existing run changes its teaching view, never its data or
+  // authorization. Explicit phase changes still start a new demonstration.
+  const inspectCurrentRun = useCallback(() => {
+    if (lastRequestPhase) setSelectedPhaseState(lastRequestPhase);
+  }, [lastRequestPhase]);
+
   const totalLatencyMs = useMemo(
     () => traceSpans.reduce((total, span) => total + (span.latencyMs ?? 0), 0),
     [traceSpans],
@@ -1184,8 +1249,15 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     dismissPhaseHint,
     travelerId: SHOWCASE_TRAVELER_ID,
     messages,
+    lastRequestPhase,
+    recoveryRequest,
+    inspectCurrentRun,
     currentPrompt,
     recommendations,
+    streamingRecommendations: isLoading ? candidateIds.flatMap(id => {
+      const product = catalog.find(item => item.product_id === id);
+      return product ? [product] : [];
+    }) : [],
     catalog,
     selectedTrip,
     tripDetailsOpen,
@@ -1209,6 +1281,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     replayIndex,
     isReplaying,
     isLoading,
+    chatProgress,
     requestStartedAt,
     stopWaiting,
     error,
@@ -1235,8 +1308,6 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       })) },
     })),
     bookingPrompt,
-    modelLabel: runConfigModelLabel(selectedPhase, backendHealth),
-    embedLabel: runConfigEmbedLabel(selectedPhase, backendHealth),
     totalLatencyMs,
     phaseExamples: SHOWCASE_EXAMPLE_PROMPTS[selectedPhase] ?? [],
     chatFilters,

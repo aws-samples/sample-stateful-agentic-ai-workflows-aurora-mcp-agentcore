@@ -17,9 +17,9 @@ import boto3
 
 @pytest.fixture(autouse=True)
 def isolated_unit_environment(request, monkeypatch):
-    """Unit tests must not adopt a presenter's .env or reach a live service.
+    """Unit tests must not adopt a developer's .env or reach a live service.
 
-    Database-marked rehearsals keep their explicit live configuration. A unit
+    Database-marked tests keep their explicit live configuration. A unit
     test can override these defaults or inject a client, but any unmocked
     network attempt fails even if application error handling catches it.
     """

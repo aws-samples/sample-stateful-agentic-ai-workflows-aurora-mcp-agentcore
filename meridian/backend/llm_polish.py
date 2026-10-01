@@ -2,10 +2,10 @@
 Concierge-tone polish over deterministic tool outputs.
 
 The MCP path produces precise but dry readouts ("FX via meridian-concierge
-MCP: 2500 USD ≈ 2300 EUR"). On stage we want longer, narrative replies
+MCP: 2500 USD ≈ 2300 EUR"). The app wants longer, narrative replies
 that read like a real travel concierge. This module wraps a Bedrock
 Converse call (Claude Sonnet 5 by default, with fallback to Haiku 4.5
-and Opus 4.8) around the deterministic facts so the user sees a richer
+and Opus 5) around the deterministic facts so the user sees a richer
 answer without the agent hallucinating numbers - all factual content
 comes from the tool result that we feed verbatim into the system prompt.
 
@@ -27,6 +27,7 @@ import boto3
 from botocore.config import Config
 
 from backend.config import config
+from backend.timing import clock, elapsed_ms
 
 logger = logging.getLogger(__name__)
 
@@ -94,12 +95,12 @@ _CONCIERGE_SYSTEM = (
 # Model fallback chain. The live primary is Sonnet 5 (set in .env /
 # config.bedrock.model_id) and _candidate_models() always tries that first.
 # This chain is the BACKUP order if the primary errors: stay fast — Sonnet
-# 5, then Haiku 4.5 — and keep Opus 4.8 last so a transient Sonnet hiccup
-# on stage never silently falls back to the slowest model. First success wins.
+# 5, then Haiku 4.5 — and keep Opus 5 last so a transient Sonnet hiccup
+# never silently falls back to the slowest model. First success wins.
 _DEFAULT_FALLBACK_CHAIN: List[str] = [
     "global.anthropic.claude-sonnet-5",
     "global.anthropic.claude-haiku-4-5-20251001-v1:0",
-    "global.anthropic.claude-opus-4-8",
+    "global.anthropic.claude-opus-5",
 ]
 
 
@@ -125,6 +126,9 @@ class PolishResult:
     text: str
     model_id: Optional[str]  # which model actually answered
     note: Optional[str]  # error string if polish failed entirely
+    # How long the Converse call of the model that answered took. Earlier
+    # failed attempts in the chain are not part of it.
+    elapsed_ms: Optional[int] = None
 
 
 _bedrock_client = None
@@ -158,10 +162,10 @@ def _polish_sync(user_query: str, tool_output: str) -> PolishResult:
     last_error: Optional[str] = None
     for model_id in _candidate_models():
         try:
-            resp = _client().converse(
-                modelId=model_id,
-                system=[{"text": _CONCIERGE_SYSTEM}],
-                messages=[
+            converse_kwargs = {
+                "modelId": model_id,
+                "system": [{"text": _CONCIERGE_SYSTEM}],
+                "messages": [
                     {
                         "role": "user",
                         "content": [
@@ -175,8 +179,8 @@ def _polish_sync(user_query: str, tool_output: str) -> PolishResult:
                         ],
                     }
                 ],
-                inferenceConfig={
-                    # Just maxTokens. Opus 4.8 deprecates `temperature`
+                "inferenceConfig": {
+                    # Just maxTokens. Opus 5 deprecates `temperature`
                     # ("temperature is deprecated for this model"), and
                     # Haiku 4.5 rejects `temperature + topP` together.
                     # Letting the model pick its own sampling defaults
@@ -184,7 +188,20 @@ def _polish_sync(user_query: str, tool_output: str) -> PolishResult:
                     # Opus / Sonnet / Haiku fallback chain.
                     "maxTokens": 1200,
                 },
-            )
+            }
+            if model_id.lower().endswith(
+                ("anthropic.claude-sonnet-5", "anthropic.claude-opus-5")
+            ):
+                # Opus 5 / Sonnet 5 think by default; this is a single-call,
+                # non-tool reply-polishing route (never used with tools), so
+                # disable thinking to keep the prior latency/cost/behavior
+                # instead of spending the 1200-token budget on reasoning.
+                converse_kwargs["additionalModelRequestFields"] = {
+                    "thinking": {"type": "disabled"}
+                }
+            started = clock()
+            resp = _client().converse(**converse_kwargs)
+            call_ms = elapsed_ms(started)
             stop_reason = str(resp.get("stopReason", "")).lower()
             blocks = resp.get("output", {}).get("message", {}).get("content", [])
             saw_text = False
@@ -217,6 +234,7 @@ def _polish_sync(user_query: str, tool_output: str) -> PolishResult:
                         text=polished,
                         model_id=model_id,
                         note=None,
+                        elapsed_ms=call_ms,
                     )
             if not saw_text:
                 last_error = f"{model_id} returned an empty response"

@@ -1,70 +1,62 @@
 #!/usr/bin/env python3
-"""Show where Meridian is published and put the password on the clipboard.
+"""Show the current hosted URL from the non-secret local release record.
 
-The address and its basic-auth credentials belong to one AWS account, and this
-repository is public, so none of it is committed. ``publish.py`` records them in
-``.local/published.json``, which is gitignored and owner-readable only. This
-reads that record back on presentation day: the address on screen, the password
-in the paste buffer, and a reachability check before you walk on.
-
-The password is never printed, so this is safe to run on a shared screen.
-
-Usage:
-    cd meridian
-    python scripts/published.py           # address, user, reachability, password copied
-    python scripts/published.py --open    # also open it in the default browser
-    python scripts/published.py --url     # print only the address, for piping
+Run after publish.py --apply. Optionally pass MERIDIAN_HOSTED_AUTH as a JSON
+object with username and password for an authenticated reachability check.
+Credentials are neither printed, copied to the clipboard nor written to disk.
+A reachable URL alone does not prove source parity or a successful live demo.
 """
-
 from __future__ import annotations
 
 import argparse
 import base64
 import json
-import shutil
-import subprocess
+import os
 import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
+from urllib.parse import urlparse
 
-RECORD = Path(__file__).resolve().parents[1] / ".local" / "published.json"
-CLIPBOARDS = (("pbcopy",), ("wl-copy",), ("xclip", "-selection", "clipboard"))
+RECORD = Path(__file__).resolve().parents[1] / ".local" / "hosted-release.json"
 TIMEOUT_SECONDS = 15
 
 
 def load_record() -> dict:
-    """The publish record, or a clear instruction when there is not one yet."""
     if not RECORD.exists():
-        raise SystemExit(
-            f"No publish record at {RECORD}.\n"
-            "Run `python scripts/publish.py` first; it writes the address and "
-            "credentials there and never commits them."
-        )
+        raise SystemExit(f"No release record at {RECORD}. Follow docs/OPERATIONS.md to publish first.")
     return json.loads(RECORD.read_text())
 
 
-def copy_to_clipboard(value: str) -> str | None:
-    """Put a value on the clipboard without printing it. Returns the tool used."""
-    for command in CLIPBOARDS:
-        if shutil.which(command[0]):
-            subprocess.run(command, input=value.encode(), check=True)
-            return command[0]
-    return None
+def release_url(record: dict) -> str:
+    url = record.get("site", {}).get("SiteUrl", "")
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("Release record must contain a credential-free HTTPS site.SiteUrl")
+    return url
 
 
-def reachability(url: str, user: str, password: str) -> str:
-    """One authenticated request, so a dead deployment is found before the talk."""
-    token = base64.b64encode(f"{user}:{password}".encode()).decode()
-    request = urllib.request.Request(url, headers={"Authorization": f"Basic {token}"})
+def reachability(url: str) -> str:
+    headers = {}
+    credentials = os.environ.get("MERIDIAN_HOSTED_AUTH")
+    if credentials:
+        try:
+            auth = json.loads(credentials)
+            token = base64.b64encode(f"{auth['username']}:{auth['password']}".encode()).decode()
+        except (ValueError, KeyError, TypeError) as error:
+            raise ValueError("MERIDIAN_HOSTED_AUTH must contain username and password") from error
+        headers["Authorization"] = f"Basic {token}"
+    request = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
             code = response.status
     except urllib.error.HTTPError as error:
         code = error.code
-    except (urllib.error.URLError, TimeoutError) as error:
-        return f"unreachable ({error})"
-    return "live" if code == 200 else f"answered {code}"
+    except (urllib.error.URLError, TimeoutError):
+        return "unreachable"
+    if code == 401 and not credentials:
+        return "access protected (authenticated validation still required)"
+    return "reachable (HTTP 200)" if code == 200 else f"answered HTTP {code}"
 
 
 def main() -> None:
@@ -73,25 +65,18 @@ def main() -> None:
     parser.add_argument("--url", action="store_true", help="print only the address")
     parser.add_argument("--skip-check", action="store_true", help="do not call the site")
     args = parser.parse_args()
-
     record = load_record()
-    url, user, password = record.get("url"), record.get("user"), record.get("password")
-    if not url:
-        raise SystemExit(f"{RECORD} has no url. Re-run `python scripts/publish.py`.")
-
-    if args.url:
-        print(url)
-    else:
-        print(f"Meridian   {url}")
-        print(f"User       {user}")
-        if not args.skip_check:
-            print(f"Status     {reachability(url, user, password)}")
-        tool = copy_to_clipboard(password) if password else None
-        if tool:
-            print(f"Password   copied to the clipboard with {tool}; paste it at the prompt")
-        elif password:
-            print(f"Password   in {RECORD} under \"password\"; no clipboard tool was found")
-
+    try:
+        url = release_url(record)
+        if args.url:
+            print(url)
+        else:
+            print(f"Meridian   {url}")
+            print(f"Release    {record.get('status', 'unknown')}")
+            if not args.skip_check:
+                print(f"Status     {reachability(url)}")
+    except ValueError as error:
+        raise SystemExit(str(error)) from None
     if args.open:
         webbrowser.open(url)
 

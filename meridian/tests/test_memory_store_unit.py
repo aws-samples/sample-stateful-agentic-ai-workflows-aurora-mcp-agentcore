@@ -138,11 +138,28 @@ class TestVectorLiteral:
         assert MemoryStore._vector_literal([]) == "[]"
 
 
+def test_shortlist_recall_stays_inside_the_conversation_and_rls_transaction(store):
+    s, db = store
+    packages = [{"package_id": "TKY-001", "name": "Tokyo Indie Walk"}]
+    db.queue([{"packages_shown": packages}])
+    assert _run(s.recall_shown_packages("conv-existing", transaction_id="tx-scoped")) == packages
+    sql, params, tx = db.calls[0]
+    assert "WHERE conversation_id = %s" in sql
+    assert params == ("conv-existing",)
+    assert tx == "tx-scoped"
+
+
+def test_boolean_memory_keeps_its_meaning_in_model_context(store):
+    s, _ = store
+    context = s.format_memory_context(None, [], [{"key": "no_red_eye", "value": "true", "confidence": 1}], [])
+    assert "no_red_eye: true" in context
+
+
 class TestRecallProfile:
     def test_includes_structured_loyalty_programs(self, store):
         s, db = store
         db.queue([{
-            "full_name": "Alex Morgan",
+            "full_name": "Jordan Morgan",
             "loyalty_programs": {
                 "marriott_bonvoy": {
                     "program": "Marriott Bonvoy",

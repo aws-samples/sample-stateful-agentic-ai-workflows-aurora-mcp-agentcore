@@ -1,7 +1,7 @@
-"""The claim the chalk talk makes, tested end to end against real Aurora.
+"""Meridian's durable-recovery claim, tested end to end against real Aurora.
 
 Each test maps to one step of the demonstrated sequence: a checkpoint is
-committed where the audience can see it, a fresh worker picks the thread up,
+committed where the evidence views can read it, a fresh worker picks the thread up,
 two workers cannot both pick it up, and a hold survives a kill without being
 placed twice.
 
@@ -19,8 +19,8 @@ import pytest
 import pytest_asyncio
 
 from backend.agentcore.identity import get_agentcore_identity
-from backend.agents.orchestration_05.hold_intent import prepare_hold_node
-from backend.agents.orchestration_05.workflow import initialize_checkpoint_backend
+from backend.agents.phase_05_workflow.hold_intent import prepare_hold_node
+from backend.agents.phase_05_workflow.workflow import initialize_checkpoint_backend
 from backend.db.journey_store import (
     ScopedDb,
     bind_thread,

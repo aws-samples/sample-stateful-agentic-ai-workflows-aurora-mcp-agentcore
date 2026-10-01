@@ -10,8 +10,8 @@ catches:
   - registration drift between the @mcp.tool decorators and the listing
 
 It does NOT exercise the Aurora-bound tools — those live in the
-`examples/memory_mcp_demo.py` walkthrough that the workshop facilitator
-runs against the real cluster.
+`examples/memory_mcp_demo.py` walkthrough, which runs against the real
+cluster.
 """
 
 from __future__ import annotations

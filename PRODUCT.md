@@ -6,33 +6,51 @@
 
 web
 
-## Product Purpose
-
-Meridian is a travel concierge with destination discovery, conversational trip planning, saved trips, comparisons, and disruption recovery. The existing showcase also demonstrates five stages of agent capabilities and their supporting evidence.
-
 ## Users
 
-The traveler experience follows Alex Morgan, the repository's sample traveler. Workshop presenters use the capability ladder and proof surfaces to demonstrate the implementation. These roles and capabilities are established by the existing code.
+Meridian depicts a traveler planning a trip with an agentic concierge. Its primary current presentation context is a re:Invent chalk talk for about 90 people, with projected UI, code walkthroughs, slides and five live checkpoints.
+
+## Product Purpose
+
+Show a finished travel product, then explain how SQL, MCP tools, retrieval, managed agent execution and durable workflows make its behavior possible. The prepared story occupies about 40 minutes of a 60-minute session.
+
+## Operating Context
+
+The supported application route is `/showcase`. The story moves through Concierge, Capability ladder, Recovery desk, System evidence and Solution briefing. The approved Destination Studio redesign leads the Concierge surface, with its blue/white action styling shared across the app and a simplified, projector-friendly Solution Briefing.
 
 ## Capabilities and Constraints
 
-Preserve the running React application, live backend integration, traveler context, saved-trip persistence, comparison tools, and recovery workflow. Catalog content and pricing are sample travel inventory, not a live airline booking service. Do not invent airline partnerships, flight status, reservations, or traveler preferences. Preserve existing uncommitted work while enhancing it.
+Preserve live catalog and recommendation data, conversation, traveler context, saved trips, comparison, trip details, confirmation and hold receipts. Preserve the five demo phases and their evidence. Runtime status must describe the actual connection. Empty, loading and unavailable states must be honest. Never substitute invented availability, transactions, prices, activity or successful agent actions for live evidence.
+
+The demo's fictional traveler is Jordan Morgan. A courtesy hold affects demo catalog inventory; it is not a supplier reservation or payment. Business state and conversation memory have distinct roles.
 
 ## Brand Commitments
 
-The user confirmed that the name stays Meridian and requested airline-level polish, referencing United Airlines and Delta Airlines. Color changes are authorized. Photography, travel-specific icons, and practical service interactions should create a credible concierge experience.
+The user requested clean black backgrounds, white labels and blue action buttons. On October 1, 2026 they explicitly selected an Apple-like design system: polished system typography and rounded blue buttons with white text. This supersedes preserving the pale-blue button fill and black button text exactly. Retain Meridian's name and supplied mark. Support light mode without compromising the dark presentation experience. Keep descriptions concise and readable on a projector. Red means error, denied or canceled; green means observed success; amber means caution or pending attention. Unrun and unknown remain neutral. Pair state colors with labels and icons. Prior user-approved typography direction is a system font.
 
 ## Evidence on Hand
 
-The catalog and traveler profile are served through the existing API. The repository bundles destination photography in meridian/frontend/public/travel, with provenance in its README and image manifest. Brand and sample traveler assets already exist.
+The existing React application and its tests live under `meridian/frontend`. Source-controlled travel photography, a fictional male traveler portrait and image provenance are available under its public assets. September 29 captures and deck evidence are dated historical proof, not a claim about a current live operation.
 
 ## Product Principles
 
-- Give travelers clear next actions and legible trip details.
-- Ground personalization in the returned traveler profile and preferences.
-- Make offline, loading, saved, and empty states explicit.
-- Keep presenter controls available without making technical infrastructure the traveler experience.
+- Capability query pills use a green check and green fill for “Works here,”
+  and yellow with a forward arrow for a query solved by the next capability.
+  Red remains reserved for actual errors, denials, and cancellations.
+- The traveler avatar and Profile action open the inline travel brief with
+  remembered preferences, regardless of the selected teaching phase.
+- Show the finished traveler experience before the implementation.
+- Concierge is the product front door: it recalls authorized traveler context,
+  carries the conversation across turns, presents live trips, and leads into a
+  saved recovery for review. The capability ladder explains those behaviors;
+  its teaching toggles do not disable memory in Concierge.
+- Use a calm, direct voice. No stock applause such as “Great!” or “Perfect!”;
+  lead with the answer, a relevant remembered detail, or the next decision.
+- Let the trip and the next decision lead; make supporting context available as needed.
+- Make agent actions and their evidence understandable without exposing invented reasoning.
+- Require explicit confirmation before a hold and preserve truthful recovery states.
+- Design for a large projected screen and a usable narrow viewport.
 
-## Presentation context
+## Accessibility & Inclusion
 
-The user supplied a level-300 session abstract, “Build stateful agentic AI workflows with Aurora, MCP, and AgentCore.” The intended walkthrough is Concierge (what good looks like), Capability ladder (SQL, MCP, retrieval, identity and memory, workflow), Recovery desk (disruption and resumability), then System evidence (observed records). Solution briefing provides the architecture and teaching diagrams. Statefulness means recalled traveler context and persisted, resumable execution. Governance should name the observed controls: workload identity, traveler authorization, row-level security, and audit records. All five views need readable type for a large projector and the back of the room.
+Preserve semantic controls, accessible names, keyboard navigation, visible focus, readable contrast, reduced-motion support and responsive behavior. The audience must be able to understand the primary action and agent result from the back of a room.

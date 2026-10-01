@@ -1,7 +1,7 @@
 """
 Phase → agent → tool/skill catalog for verbose backend logging.
 
-Mirrors the Meridian Pro workshop UI skill matrix so logs name the same
+Mirrors the capability ladder so logs name the same
 agents, specialists, and @tool signatures the frontend displays.
 """
 
@@ -35,42 +35,42 @@ PHASE_CATALOG: Dict[int, PhaseSpec] = {
         phase=1,
         label="SQL Agent",
         primary_agent="SQLAgent",
-        agent_file="agents/sql_01/agent.py",
+        agent_file="routers/chat.py",
         method="Direct RDS Data API (SQL WHERE filters)",
         specialists=(),
         skills=(
-            SkillSpec("sql_filter", "SQLAgent", "run_sql(category, max_price)", "agents/sql_01/agent.py"),
+            SkillSpec("sql_filter", "SQLAgent", "sql_search(query)", "routers/chat.py"),
         ),
     ),
     2: PhaseSpec(
         phase=2,
         label="MCP Agent",
         primary_agent="MCPAgent",
-        agent_file="agents/mcp_02/agent.py",
+        agent_file="routers/chat.py",
         method="MCP run_query → Aurora via postgres-mcp-server",
         specialists=(),
         skills=(
-            SkillSpec("run_query", "postgres-mcp-server", "run_query(sql, params)", "mcp/postgres/server.py"),
+            SkillSpec("run_query", "postgres-mcp-server", "run_query(sql, params)", "mcp/mcp_client.py"),
         ),
     ),
     3: PhaseSpec(
         phase=3,
         label="Retrieval Agent",
         primary_agent="RetrievalAgent",
-        agent_file="agents/retrieval_03/supervisor.py",
+        agent_file="agents/phase_03_retrieval/supervisor.py",
         method="Strands supervisor + Bedrock tool delegation",
         specialists=("SearchAgent", "PackageAgent", "BookingAgent"),
         skills=(
-            SkillSpec("_hybrid_search_tool", "SearchAgent", "_hybrid_search_tool(query, limit=5)", "agents/retrieval_03/search_agent.py"),
-            SkillSpec("_check_availability_tool", "PackageAgent", "_check_availability_tool(package_id, duration?)", "agents/retrieval_03/package_agent.py"),
-            SkillSpec("_calculate_booking_total_tool", "BookingAgent", "_calculate_booking_total_tool(items) - read-only estimate", "agents/retrieval_03/booking_agent.py"),
+            SkillSpec("_hybrid_search_tool", "SearchAgent", "_hybrid_search_tool(query, limit=5)", "agents/phase_03_retrieval/search_agent.py"),
+            SkillSpec("_check_availability_tool", "PackageAgent", "_check_availability_tool(package_id, duration?)", "agents/phase_03_retrieval/package_agent.py"),
+            SkillSpec("_calculate_booking_total_tool", "BookingAgent", "_calculate_booking_total_tool(items) - read-only estimate", "agents/phase_03_retrieval/booking_agent.py"),
         ),
     ),
     4: PhaseSpec(
         phase=4,
         label="Production Agent",
         primary_agent="ProductionAgent",
-        agent_file="agents/production_04/concierge.py",
+        agent_file="agents/phase_04_production/concierge.py",
         method="Identity + RLS around AgentCore Runtime; the runtime agent calls Gateway tools under Cedar policy",
         specialists=("MemoryAgent", "MeridianConcierge runtime"),
         skills=(
@@ -78,23 +78,23 @@ PHASE_CATALOG: Dict[int, PhaseSpec] = {
             SkillSpec("semantic_trip_search", "AgentCore Gateway", "SemanticTripSearchLambda___semantic_trip_search(query, limit)", "meridian_agentcore/app/MeridianConcierge/main.py"),
             SkillSpec("get_package_details", "AgentCore Gateway", "MeridianHolds___get_package_details(packageId)", "meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py"),
             SkillSpec("create_courtesy_hold", "AgentCore Gateway + Policy", "MeridianHolds___create_courtesy_hold(... travelerConfirmed, budgetCeilingCents) under Cedar ENFORCE", "meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py"),
-            SkillSpec("recall_session_context", "MemoryAgent", "recall_session_context(conversation_id, limit=6)", "agents/production_04/memory_agent.py"),
-            SkillSpec("recall_traveler_preferences", "MemoryAgent", "recall_traveler_preferences(traveler_id, limit=8)", "agents/production_04/memory_agent.py"),
-            SkillSpec("recall_similar_interactions", "MemoryAgent", "recall_similar_interactions(traveler_id, query, limit=3)", "agents/production_04/memory_agent.py"),
-            SkillSpec("persist_turn", "MemoryAgent", "persist_turn(...)", "agents/production_04/memory_agent.py"),
+            SkillSpec("recall_session_context", "MemoryAgent", "recall_session_context(conversation_id, limit=6)", "agents/phase_04_production/memory_agent.py"),
+            SkillSpec("recall_traveler_preferences", "MemoryAgent", "recall_traveler_preferences(traveler_id, limit=8)", "agents/phase_04_production/memory_agent.py"),
+            SkillSpec("recall_similar_interactions", "MemoryAgent", "recall_similar_interactions(traveler_id, query, limit=3)", "agents/phase_04_production/memory_agent.py"),
+            SkillSpec("persist_turn", "MemoryAgent", "persist_turn(...)", "agents/phase_04_production/memory_agent.py"),
         ),
     ),
     5: PhaseSpec(
         phase=5,
         label="Orchestration Agent",
         primary_agent="OrchestrationAgent",
-        agent_file="agents/orchestration_05/workflow.py",
+        agent_file="agents/phase_05_workflow/workflow.py",
         method="LangGraph StateGraph (classify → branch → synthesize)",
         specialists=("SearchAgent", "PackageAgent"),
         skills=(
-            SkillSpec("classify", "OrchestrationAgent", "classify_intent(state)", "agents/orchestration_05/workflow.py"),
-            SkillSpec("checkpoint", "PostgresSaver", "save_checkpoint(thread_id, state)", "agents/orchestration_05/workflow.py"),
-            SkillSpec("synthesize", "OrchestrationAgent", "synthesize_reply(state)", "agents/orchestration_05/workflow.py"),
+            SkillSpec("classify", "OrchestrationAgent", "classify_intent(state)", "agents/phase_05_workflow/workflow.py"),
+            SkillSpec("checkpoint", "PostgresSaver", "save_checkpoint(thread_id, state)", "agents/phase_05_workflow/workflow.py"),
+            SkillSpec("synthesize", "OrchestrationAgent", "synthesize_reply(state)", "agents/phase_05_workflow/workflow.py"),
         ),
     ),
 }

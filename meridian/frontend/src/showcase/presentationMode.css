@@ -1,6 +1,6 @@
 /* Preparation controls belong outside the audience's application. */
-.mds-root { --mc-controls-height: 64px; }
-.mds-root[data-fullscreen='true'] { --mc-controls-height: 0px; }
+.mds-root { --mds-controls-height: 64px; }
+.mds-root[data-fullscreen='true'] { --mds-controls-height: 0px; }
 .mc-presenter-controls {
   position: relative;
   z-index: 30;
@@ -8,20 +8,20 @@
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  height: var(--mc-controls-height);
+  height: var(--mds-controls-height);
   padding: 8px 24px;
-  border-bottom: 1px solid var(--mc-line);
-  background: var(--mc-ground);
-  color: var(--mc-ink);
-  font-size: 13px;
+  border-bottom: 1px solid var(--mds-separator);
+  background: var(--mds-ground);
+  color: var(--mds-label);
+  font: var(--mds-type-footnote);
 }
 .mc-presenter-controls[hidden] { display: none; }
 .mc-presenter-caption { display: grid; gap: 3px; flex-shrink: 0; }
-.mc-presenter-caption strong { display: flex; align-items: center; gap: 8px; font-weight: 550; }
-.mc-presenter-caption > span { color: var(--mc-muted); font-size: 12px; }
+.mc-presenter-caption strong { display: flex; align-items: center; gap: 8px; font-weight: var(--mds-weight-medium); }
+.mc-presenter-caption > span { color: var(--mds-label-2); font: var(--mds-type-footnote); }
 .mc-presenter-actions { display: flex; align-items: center; gap: 12px; }
 .mc-projector-option { display: flex; align-items: center; gap: 7px; cursor: pointer; white-space: nowrap; }
-.mc-projector-option input { width: 17px; height: 17px; accent-color: var(--mc-action); }
+.mc-projector-option input { width: 17px; height: 17px; accent-color: var(--mds-tint); }
 .mds-root .mc-presenter-actions button {
   display: flex;
   align-items: center;
@@ -29,45 +29,44 @@
   gap: 7px;
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid var(--mc-line);
-  border-radius: 6px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-s);
   background: transparent;
-  color: var(--mc-ink);
+  color: var(--mds-label);
   font: inherit;
   white-space: nowrap;
   cursor: pointer;
 }
-.mds-root .mc-presenter-actions button:hover { background: var(--mc-soft); }
-.mds-root .mc-presenter-actions button[aria-pressed='true'] { color: var(--mc-accent); border-color: var(--mc-accent); }
-.mds-root .mc-presenter-actions .mc-present-button { background: var(--mc-action); color: var(--mc-on-action); border-color: var(--mc-action); }
+.mds-root .mc-presenter-actions button:hover { background: var(--mds-surface-2); }
+.mds-root .mc-presenter-actions button[aria-pressed='true'] { color: var(--mds-tint); border-color: var(--mds-tint); }
+.mds-root .mc-presenter-actions .mc-present-button { background: var(--mds-action); color: var(--mds-on-action); border-color: var(--mds-action); }
 .mds-root .mc-presenter-actions .mc-present-button:hover { filter: brightness(1.08); }
-.mc-presenter-controls :is(button, input):focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 3px; }
+.mc-presenter-controls :is(button, input):focus-visible { outline: 2px solid var(--mds-tint); outline-offset: 2px; }
 .mc-presenter-error {
   position: absolute;
   top: calc(100% + 8px);
   right: 24px;
   width: min(390px, calc(100vw - 32px));
   padding: 20px;
-  border: 1px solid var(--mc-line);
-  border-radius: 12px;
-  background: var(--mc-surface);
-  font-size: 15px;
-  line-height: 1.6;
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  background: var(--mds-surface);
+  font: var(--mds-type-body);
 }
-.mc-presenter-error { margin: 0; color: var(--mc-caution); background: var(--mc-caution-bg); }
+.mc-presenter-error { margin: 0; color: var(--mds-red); background: var(--mds-red-fill); }
 .mc-audience-brand { display: none; }
 
 /* A CSS guard hides controls immediately, before React receives the event. */
 :root:fullscreen .mc-presenter-controls { display: none; }
-:root:fullscreen .mds-root { --mc-controls-height: 0px; }
+:root:fullscreen .mds-root { --mds-controls-height: 0px; }
 @media (display-mode: fullscreen) {
   .mc-presenter-controls { display: none; }
-  .mds-root { --mc-controls-height: 0px; }
+  .mds-root { --mds-controls-height: 0px; }
 }
 
 @media (min-width: 1241px) {
   .mds-root[data-theme] .mds-desktop-app.is-projector {
-    height: calc(100dvh - var(--mc-controls-height));
+    height: calc(100dvh - var(--mds-controls-height));
     min-height: 0;
   }
   .mds-root[data-theme] .mds-desktop-app .mds-desktop-sidebar { height: 100%; }
@@ -88,29 +87,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 23px;
-  font-weight: 550;
-  letter-spacing: -0.035em;
-  color: var(--mc-ink);
+  font: var(--mds-type-title-2);
+  font-weight: var(--mds-weight-medium);
+  letter-spacing: var(--mds-tracking-title);
+  color: var(--mds-label);
 }
-
-/* Readability is opt-in for the preview and enabled by default on stage. */
-.mds-root[data-projector-readability='true'] {
-  --mc-type-scale: 1.3;
-  --mc-muted: #d9d3c8;
-  --mc-line: #4a443b;
-}
-.mds-root[data-theme='light'][data-projector-readability='true'] {
-  --mc-muted: #40526c;
-  --mc-line: #b9c6d8;
-}
-.mds-root[data-projector-readability='true'] :is(
-  .mds-proof-worker-role, .mds-proof-worker-note, .mds-proof-worker-state,
-  .mds-proof-store-rows dt, .mds-proof-store-rows dd, .mds-proof-store-foot,
-  .mds-proof-fact-label, .mds-proof-head-meta, .mds-proof-tab,
-  .mds-continuity-steps li small, .mc-hold-proof-note
-) { font-size: max(18px, calc(14px * var(--mc-type-scale))); }
-.mds-root[data-projector-readability='true'] .mds-proof-foot { font-size: 16px; color: var(--mc-muted); }
 
 /* Use the extra stage height without putting recovery copy over the aircraft. */
 @media (min-width: 1241px) and (min-height: 950px) {
@@ -138,26 +119,25 @@
   .mds-root[data-audience-layout='true'] .mds-shell-header { display: flex; flex-wrap: nowrap; }
   .mds-root[data-audience-layout='true'] .mc-audience-brand { flex: 0 0 auto; }
   .mds-root[data-audience-layout='true'] .mds-shell-surface-nav { flex: 1; overflow-x: auto; }
-  .mds-root[data-projector-readability='true'] { --mc-type-scale: 1.1; }
 }
 
 /* Keep preparation quiet; disclose secondary settings without shrinking the app. */
 .mc-display-settings { position: relative; }
 .mc-display-settings > summary {
   display: flex; align-items: center; justify-content: center; gap: 10px;
-  min-height: 44px; padding: 0 12px; border: 1px solid var(--mc-line);
-  border-radius: 6px; list-style: none; cursor: pointer; color: var(--mc-ink);
+  min-height: 44px; padding: 0 12px; border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-s); list-style: none; cursor: pointer; color: var(--mds-label);
 }
 .mc-display-settings > summary::-webkit-details-marker { display: none; }
-.mc-display-settings > summary:hover { background: var(--mc-soft); }
-.mc-display-settings > summary:focus-visible { outline: 2px solid var(--mc-accent); outline-offset: 3px; }
-.mc-display-settings[open] > summary { color: var(--mc-accent); border-color: var(--mc-accent); }
+.mc-display-settings > summary:hover { background: var(--mds-surface-2); }
+.mc-display-settings > summary:focus-visible { outline: 2px solid var(--mds-tint); outline-offset: 2px; }
+.mc-display-settings[open] > summary { color: var(--mds-tint); border-color: var(--mds-tint); }
 .mc-display-settings[open] > summary svg { transform: rotate(180deg); }
 .mc-display-settings-panel {
   position: absolute; right: 0; top: calc(100% + 8px); z-index: 40;
   display: grid; gap: 16px; width: 260px; max-width: calc(100vw - 32px);
-  padding: 20px; border: 1px solid var(--mc-line); border-radius: 8px;
-  background: var(--mc-surface); box-shadow: 0 12px 28px rgb(0 0 0 / 0.1);
+  padding: 20px; border: 0; border-radius: var(--mds-radius-m);
+  background: var(--mds-surface); box-shadow: var(--mds-shadow-float);
 }
 .mc-display-settings-panel .mc-projector-option { min-height: 44px; }
 .mds-root .mc-display-settings-panel button { white-space: normal; text-align: left; }
@@ -171,4 +151,175 @@
   .mc-presenter-actions { width: 100%; justify-content: space-between; }
   .mc-display-settings-panel { left: 0; right: auto; }
   .mc-fullscreen-label { display: none; }
+}
+
+/* The opening recovery decision sizes to its content, so the hero, its photo
+   and the four-step workflow it runs share one stage at 1920x1080 and at
+   1280x720. The photo takes the message's height instead of setting it. */
+@media (min-width: 1241px) {
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace
+    .mds-recovery-launch-card:not(.is-compact) {
+    padding-block: 0;
+    padding-inline: 24px;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-mobile-disruption-card {
+    padding: 16px 0 12px;
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-hero {
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-media {
+    min-height: 0;
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message {
+    padding: 24px 28px;
+    row-gap: 0;
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message p {
+    max-width: 46ch;
+    font: var(--mds-type-body);
+    letter-spacing: 0;
+    text-wrap: pretty;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-mobile-disruption-message .mds-mobile-disruption-primary {
+    min-height: 52px;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps {
+    padding: 14px 12px;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps small {
+    display: block;
+    max-width: 28ch;
+    margin-inline: auto;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-recovery-timeline-heading {
+    padding-block: 10px 8px;
+  }
+}
+
+/* A 720p stage keeps the same story on one screen: the step labels stay and
+   their descriptions give way, and the hero gives up padding, not content.
+   The message takes more of the row so its title and lead each need fewer
+   lines; the photo keeps the height they leave it. */
+@media (min-width: 1241px) and (max-height: 800px) {
+  .mds-root[data-audience-layout='true']
+    .mds-desktop-scroll:has(.mds-recovery-launch-card:not(.is-compact)) {
+    padding-top: 12px;
+    row-gap: 8px;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-desktop-scroll:has(.mds-recovery-launch-card:not(.is-compact)) .mc-saved-journeys {
+    margin-block: 0;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-desktop-scroll:has(.mds-recovery-launch-card:not(.is-compact))
+    .mc-saved-journeys summary {
+    padding-block: 4px;
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-hero {
+    grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-mobile-disruption-card {
+    padding: 4px 0;
+  }
+  .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message {
+    padding: 16px 24px;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-mobile-disruption-message .mds-mobile-disruption-primary {
+    min-height: 44px;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps {
+    padding: 10px 12px;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps small {
+    display: none;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-recovery-timeline-heading {
+    padding-block: 6px 4px;
+  }
+}
+
+/* Size recovery against its available workspace, not the screen behind the
+   continuity rail. Shared rows keep related cards aligned on stage. */
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace {
+  container: recovery-stage / inline-size;
+}
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+  .mds-recovery-decision-system { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+  :is(.mds-recovery-decision-primary, .mds-recovery-decision-support) { gap: 20px; }
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+  .mds-recovery-decision-support { grid-template-columns: minmax(0, 1fr); }
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace
+  .mds-recovery-alternative-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace
+  .mds-flight-option-card { min-height: 0; }
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace
+  :is(.mds-flight-option-card-media, .mds-concierge-hotel-media, .mds-recommended-plan-media) {
+  height: 160px;
+  min-height: 0;
+  aspect-ratio: auto;
+}
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace
+  .mds-recommended-plan-card {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: 'head' 'media' 'title' 'route' 'signals' 'preferences' 'memory' 'actions';
+  align-content: start;
+}
+.mds-root[data-audience-layout='true'] .mds-recovery-workspace
+  .mds-recommended-plan-media { margin: 8px 16px 0; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-card > .mds-decision-card-head { grid-area: head; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-media { grid-area: media; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-title { grid-area: title; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-card > .mds-decision-route { grid-area: route; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-signals { grid-area: signals; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-card > .mds-decision-preference-row { grid-area: preferences; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-card > .mds-recovery-context-reasons { grid-area: memory; }
+.mds-root[data-audience-layout='true'] .mds-recommended-plan-card > .mds-decision-card-actions { grid-area: actions; }
+
+@container recovery-stage (min-width: 700px) {
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace
+    .mds-recovery-alternative-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-recovery-decision-support { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace
+    .mds-recommended-plan-card {
+    grid-template-columns: minmax(180px, .45fr) minmax(0, 1fr);
+    grid-template-areas: 'head head' 'media title' 'route route' 'signals signals'
+      'preferences preferences' 'memory memory' 'actions actions';
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace
+    .mds-recommended-plan-media { margin-right: 0; }
+}
+@container recovery-stage (min-width: 1100px) {
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-recovery-decision-system {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    grid-template-areas: 'plan assistance' 'alternatives alternatives' 'proof proof';
+    align-items: stretch;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    :is(.mds-recovery-decision-primary, .mds-recovery-decision-support) { display: contents; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-recommended-plan-card { grid-area: plan; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-concierge-assistance-card { grid-area: assistance; display: flex; flex-direction: column; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-concierge-assistance-actions { margin-top: auto; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-recovery-alternatives { grid-area: alternatives; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-agent-proof-card { grid-area: proof; }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace.is-layout-command
+    .mds-agent-proof-card ul { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
 }

@@ -210,7 +210,7 @@ async def test_a_committed_checkpoint_is_reported_with_its_thread(
 async def test_the_hold_is_reported_as_one_hold_for_this_request(
     journey: Fixture,
 ) -> None:
-    from backend.agents.orchestration_05.hold_intent import (
+    from backend.agents.phase_05_workflow.hold_intent import (
         fingerprint_terms,
         normalize_hold_terms,
     )

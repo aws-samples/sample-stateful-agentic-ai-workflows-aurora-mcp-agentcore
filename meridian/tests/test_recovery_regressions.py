@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
-import backend.agents.orchestration_05.workflow as module
-from backend.agents.orchestration_05.workflow import (
+import backend.agents.phase_05_workflow.workflow as module
+from backend.agents.phase_05_workflow.workflow import (
     CheckpointBackend, OrchestrationAgent, WorkflowAuthorizationError,
 )
 

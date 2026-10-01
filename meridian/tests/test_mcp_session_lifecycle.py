@@ -107,4 +107,4 @@ async def test_concierge_tool_error_is_not_reported_as_no_matching_trips():
         return_value=SimpleNamespace(isError=True, content=[]),
     ))
     with pytest.raises(RuntimeError, match="Meridian concierge MCP tool failed"):
-        await client.call("seasonal_price_band", {"destination": "Tokyo"})
+        await client.call("price_range", {"destination": "Tokyo"})

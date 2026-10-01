@@ -14,12 +14,12 @@
 
 .mds-recovery-workspace .mds-recovery-overview-title h1 {
   font-family: var(--mds-font);
-  font-weight: 760;
+  font-weight: var(--mds-weight-bold);
   letter-spacing: 0;
 }
 
 .mds-recovery-workspace .mds-recovery-cancelled-badge {
-  border-radius: 5px;
+  border-radius: var(--mds-radius-s);
 }
 
 .mds-recovery-workspace .mds-recovery-decision-system {
@@ -32,10 +32,8 @@
 }
 
 .mds-recovery-workspace .mds-decision-card {
-  border-color: var(--mds-experience-border);
-  border-radius: 8px;
-  background: var(--mds-experience-panel);
-  box-shadow: 0 10px 26px rgba(8, 6, 3, 0.16);
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface);
 }
 
 .mds-recovery-workspace .mds-decision-card-head {
@@ -45,37 +43,27 @@
 
 .mds-recovery-workspace .mds-decision-card-kicker {
   gap: 7px;
-  font-size: calc(13px * var(--mds-fs));
-  font-weight: 690;
-  letter-spacing: 0;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-workspace
   :is(.mds-decision-status, .mds-checkpoint-badge) {
   min-height: 24px;
   padding: 0 8px;
-  border-radius: 5px;
-  font-size: calc(9px * var(--mds-fs));
-  letter-spacing: 0;
-  text-transform: none;
+  border-radius: var(--mds-radius-s);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-workspace .mds-recommended-plan-card {
   border-left-width: 1px;
 }
 
-.mds-recovery-workspace .mds-recommended-plan-card.is-checkpointed {
-  border-color: rgb(var(--mds-teal-rgb) / 0.34);
-}
-
-.mds-recovery-workspace .mds-recommended-plan-card.is-ready {
-  border-color: rgb(var(--mds-recovery-green-rgb) / 0.34);
-}
-
 .mds-recovery-workspace .mds-recommended-plan-media {
   height: 142px;
   margin: 8px 16px 0;
-  border-radius: 6px;
+  border-radius: var(--mds-radius-s);
 }
 
 .mds-recovery-workspace .mds-recommended-plan-media > em {
@@ -83,10 +71,10 @@
   right: 9px;
   min-height: 24px;
   padding: 0 8px;
-  border-radius: 5px;
-  background: rgba(20, 16, 12, 0.82);
-  backdrop-filter: none;
-  font-size: calc(9px * var(--mds-fs));
+  border-radius: var(--mds-radius-s);
+  background: var(--mds-surface);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-workspace .mds-recommended-plan-title {
@@ -94,22 +82,15 @@
   padding: 14px 18px;
 }
 
-.mds-recovery-workspace .mds-recommended-plan-title small {
-  color: #8acbff;
-  font-size: calc(10px * var(--mds-fs));
-  letter-spacing: 0;
-  text-transform: none;
-}
-
 .mds-recovery-workspace .mds-recommended-plan-title strong {
-  font-size: calc(23px * var(--mds-fs));
-  font-weight: 730;
-  letter-spacing: 0;
+  font: var(--mds-type-title-1);
+  line-height: 1.12;
+  letter-spacing: var(--mds-tracking-display);
 }
 
 .mds-recovery-workspace .mds-recommended-plan-price b {
-  font-size: calc(21px * var(--mds-fs));
-  letter-spacing: 0;
+  font: var(--mds-type-title-2);
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-recovery-workspace .mds-decision-route {
@@ -117,17 +98,18 @@
   padding-bottom: 11px;
 }
 
-.mds-recovery-workspace .mds-decision-route b {
-  font-size: calc(19px * var(--mds-fs));
-  letter-spacing: 0;
+.mds-recovery-workspace .mds-decision-route:not(.is-compact) b {
+  font: var(--mds-type-title-2);
+  line-height: 1;
+  letter-spacing: var(--mds-tracking-title);
 }
 
 .mds-recovery-workspace .mds-decision-route-line i {
-  background: rgb(var(--mds-blue-rgb) / 0.42);
+  background: var(--mds-separator);
 }
 
 .mds-recovery-workspace .mds-decision-route-line i:last-child {
-  background: rgb(var(--mds-blue-rgb) / 0.42);
+  background: var(--mds-label-3);
 }
 
 .mds-recovery-workspace .mds-recommended-plan-signals {
@@ -138,15 +120,16 @@
 .mds-recovery-workspace .mds-recommended-plan-signals > span {
   min-height: 29px;
   padding: 4px 9px;
-  border-radius: 5px;
+  border-radius: var(--mds-radius-s);
   background: transparent;
-  font-size: calc(10px * var(--mds-fs));
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
 }
 
 .mds-recovery-workspace
   .mds-recommended-plan-signals
   > span.is-verified {
-  background: rgb(var(--mds-recovery-green-rgb) / 0.06);
+  background: var(--mds-green-fill);
 }
 
 .mds-recovery-workspace .mds-decision-preference-row {
@@ -156,20 +139,15 @@
   padding: 11px 0;
 }
 
-.mds-recovery-workspace .mds-decision-preference-row > small {
-  font-size: calc(9.5px * var(--mds-fs));
-  letter-spacing: 0;
-  text-transform: none;
-}
-
 .mds-recovery-workspace
   .mds-decision-preference-row
   > div
   > span {
   min-height: 27px;
   padding: 0 9px 0 8px;
-  border-radius: 5px;
-  font-size: calc(10px * var(--mds-fs));
+  border-radius: var(--mds-radius-s);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-workspace .mds-recovery-context-reasons {
@@ -178,14 +156,8 @@
   padding: 11px 0 12px;
 }
 
-.mds-recovery-workspace .mds-recovery-context-reasons > header em {
-  color: var(--mds-muted);
-  letter-spacing: 0;
-  text-transform: none;
-}
-
 .mds-recovery-workspace .mds-recovery-context-reasons > header svg {
-  color: var(--mds-blue);
+  color: var(--mds-label-2);
 }
 
 .mds-recovery-workspace .mds-recovery-context-reasons ul {
@@ -198,7 +170,7 @@
   align-items: center;
   padding: 7px 2px;
   border: 0;
-  border-top: 1px solid var(--mds-experience-border);
+  border-top: 1px solid var(--mds-separator);
   border-radius: 0;
   background: transparent;
 }
@@ -216,34 +188,16 @@
 .mds-recovery-workspace .mds-decision-card-actions button {
   min-height: 40px;
   padding: 0 13px;
-  border-radius: 6px;
-  font-size: calc(11.5px * var(--mds-fs));
+  border-radius: var(--mds-radius-s);
+  font: var(--mds-type-footnote);
   white-space: nowrap;
 }
 
-/* Inside the recovery workspace --mds-blue resolves to the pale text accent
-   (--mc-accent), so filling a button with it and writing white on top leaves
-   white on near-white. Filled actions take the action blue explicitly, the same
-   token every other surface fills with. */
 .mds-recovery-workspace .mds-decision-card-actions .is-primary {
   min-width: 168px;
-  border-color: var(--mc-action);
-  color: var(--mc-on-action);
-  background: var(--mc-action);
-  box-shadow: none;
-}
-
-.mds-recovery-workspace
-  .mds-recommended-plan-card.is-checkpointed
-  .mds-decision-card-actions
-  .is-primary,
-.mds-recovery-workspace
-  .mds-recommended-plan-card.is-ready
-  .mds-decision-card-actions
-  .is-primary {
-  border-color: var(--mc-action);
-  color: var(--mc-on-action);
-  background: var(--mc-action);
+  border-color: var(--mds-action);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
   box-shadow: none;
 }
 
@@ -252,13 +206,14 @@
 }
 
 .mds-recovery-workspace .mds-recovery-alternatives-head b {
-  color: var(--mds-on-surface);
-  font-size: calc(13px * var(--mds-fs));
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-workspace .mds-recovery-alternatives-head small,
 .mds-recovery-workspace .mds-recovery-alternatives-head em {
-  font-size: calc(10px * var(--mds-fs));
+  font: var(--mds-type-footnote);
 }
 
 .mds-recovery-workspace .mds-recovery-alternative-grid {
@@ -278,10 +233,11 @@
 .mds-recovery-workspace .mds-flight-option-card > header > span {
   min-height: 24px;
   padding: 0 8px;
-  border-radius: 5px;
-  color: #9bc9ff;
-  background: rgb(var(--mds-blue-rgb) / 0.06);
-  font-size: calc(9px * var(--mds-fs));
+  border-radius: var(--mds-radius-s);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
 }
 
 .mds-recovery-workspace
@@ -289,14 +245,8 @@
   > :nth-child(n)
   > header
   > span {
-  border-color: rgb(var(--mds-blue-rgb) / 0.32);
-  color: #9bc9ff;
-  background: rgb(var(--mds-blue-rgb) / 0.06);
-}
-
-.mds-recovery-workspace .mds-flight-option-card > header > small {
-  letter-spacing: 0;
-  text-transform: none;
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
 }
 
 .mds-recovery-workspace .mds-flight-option-card-media {
@@ -310,8 +260,7 @@
 
 .mds-recovery-workspace .mds-flight-option-card-title strong {
   min-height: 31px;
-  font-size: calc(14px * var(--mds-fs));
-  letter-spacing: 0;
+  font: var(--mds-type-body);
 }
 
 .mds-recovery-workspace .mds-decision-route.is-compact {
@@ -322,11 +271,6 @@
   padding: 9px 12px;
 }
 
-.mds-recovery-workspace .mds-flight-option-card dt {
-  letter-spacing: 0;
-  text-transform: none;
-}
-
 .mds-recovery-workspace .mds-flight-option-card > footer {
   min-height: 50px;
   padding: 7px 10px 10px;
@@ -334,7 +278,7 @@
 
 .mds-recovery-workspace .mds-flight-option-card > footer button {
   min-height: 36px;
-  border-radius: 6px;
+  border-radius: var(--mds-radius-s);
 }
 
 .mds-recovery-workspace
@@ -349,25 +293,19 @@
 .mds-recovery-workspace .mds-concierge-hotel-media {
   min-height: 118px;
   margin: 7px 12px 0;
-  border-radius: 6px;
+  border-radius: var(--mds-radius-s);
 }
 
 .mds-recovery-workspace .mds-concierge-hotel-media > em {
-  border-radius: 4px;
-  backdrop-filter: none;
-}
-
-.mds-recovery-workspace .mds-concierge-hotel-media > div small {
-  letter-spacing: 0;
-  text-transform: none;
+  border-radius: var(--mds-radius-s);
 }
 
 .mds-recovery-workspace
   .mds-concierge-assistance-actions
   button.is-primary {
-  border-color: var(--mc-action);
-  color: var(--mc-on-action);
-  background: var(--mc-action);
+  border-color: var(--mds-action);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
   box-shadow: none;
 }
 
@@ -380,57 +318,11 @@
 }
 
 .mds-recovery-workspace .mds-agent-proof-card > button {
-  border-radius: 5px;
+  border-radius: var(--mds-radius-s);
 }
 
-.mds-recovery-workspace .mds-checkpoint-thread {
-  margin: 9px 12px 0;
-  padding: 8px 9px;
-  border-radius: 5px;
-  background: rgba(19, 16, 11, 0.26);
-}
-
-.mds-recovery-workspace .mds-checkpoint-thread small {
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.mds-recovery-workspace .mds-checkpoint-progress {
-  padding: 15px 12px 10px;
-}
-
-.mds-recovery-workspace .mds-checkpoint-progress li::before {
-  height: 1px;
-  border-radius: 0;
-}
-
-.mds-recovery-workspace .mds-checkpoint-progress li.is-done i,
-.mds-recovery-workspace .mds-checkpoint-progress li.is-current i {
-  box-shadow: none;
-}
-
-.mds-root[data-theme="light"]
-  .mds-recovery-workspace
-  .mds-decision-card {
-  border-color: #dedbd4;
-  background: #ffffff;
-  box-shadow: 0 8px 22px rgba(48, 43, 34, 0.08);
-}
-
-.mds-root[data-theme="light"]
-  .mds-recovery-workspace
-  .mds-recovery-context-reasons
-  li {
-  border-color: #e4e1da;
-  background: transparent;
-}
-
-/* Status text needs the daylight tokens too, including restored journeys. */
-.mds-root[data-theme="light"] .mds-recovery-overview-meta strong {
-  color: var(--mds-yellow);
-}
-
-.mds-root[data-theme="light"] .mds-recovery-workspace :is(
+/* Status text, including restored journeys. */
+.mds-root .mds-recovery-workspace :is(
   .mds-recovery-overview.is-ready .mds-recovery-overview-meta strong,
   .mds-decision-status.is-ready,
   .mds-checkpoint-badge.is-ready
@@ -438,22 +330,20 @@
   color: var(--mds-green);
 }
 
-.mds-root[data-theme="light"] .mds-recovery-workspace :is(
+.mds-root .mds-recovery-workspace :is(
   .mds-recovery-overview.is-checkpointed .mds-recovery-overview-meta strong,
   .mds-decision-status.is-checkpointed,
   .mds-checkpoint-badge.is-checkpointed
 ) {
-  color: rgb(var(--mds-teal-rgb));
+  color: var(--mds-cyan);
 }
 
-.mds-root[data-theme="light"] .mds-recovery-workspace :is(
+.mds-root .mds-recovery-workspace :is(
   .mds-recovery-overview.is-running .mds-recovery-overview-meta strong,
   .mds-decision-status.is-running,
-  .mds-checkpoint-badge.is-running,
-  .mds-recommended-plan-title small,
-  .mds-flight-option-card > header > span
+  .mds-checkpoint-badge.is-running
 ) {
-  color: var(--mc-accent);
+  color: var(--mds-tint);
 }
 
 @media (min-width: 1280px) {
@@ -541,60 +431,6 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Durability receipt
-
-   Phase 5's claim depends entirely on which checkpointer ran. PostgresSaver
-   survives process loss; MemorySaver does not. The presenter guide warns not
-   to present MemorySaver as the durable proof, so the surface names the store
-   rather than leaving it in the trace rail.
---------------------------------------------------------------------------- */
-.mds-checkpoint-receipt {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin: 8px 0 2px;
-}
-
-.mds-checkpoint-receipt-store {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--mds-on-surface-soft);
-  font-family: var(--mds-font-mono);
-  font-size: calc(11px * var(--mds-fs-chrome));
-  font-weight: 600;
-}
-
-.mds-checkpoint-receipt.is-durable .mds-checkpoint-receipt-store {
-  color: var(--mds-green);
-}
-
-.mds-checkpoint-receipt-tag {
-  padding: 2px 8px;
-  border: 1px solid var(--mds-line);
-  border-radius: 999px;
-  color: var(--mds-dim);
-  font-size: calc(10.5px * var(--mds-fs-chrome));
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.mds-checkpoint-receipt-tag.is-durable {
-  border-color: rgb(var(--mds-green-rgb) / 0.34);
-  color: var(--mds-green);
-  background: rgb(var(--mds-green-rgb) / 0.09);
-}
-
-.mds-checkpoint-receipt-tag.is-restart {
-  border-color: rgb(var(--mds-blue-rgb) / 0.4);
-  color: var(--mds-blue);
-  background: rgb(var(--mds-blue-rgb) / 0.1);
-}
-
-/* ---------------------------------------------------------------------------
    Hold receipt
 
    The seats are reserved in Aurora with a TTL, so the clock keeps running
@@ -608,48 +444,19 @@
   align-items: center;
   margin: 10px 0 2px;
   padding: 8px 10px;
-  border: 1px solid rgb(var(--mds-green-rgb) / 0.28);
-  border-radius: 9px;
-  background: rgb(var(--mds-green-rgb) / 0.08);
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-green-fill);
 }
 
 .mds-hold-receipt.is-expired {
-  border-color: var(--mds-line);
-  background: var(--mds-fill-1);
-}
-
-.mds-hold-receipt-head {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--mds-green);
-  font-size: calc(11.5px * var(--mds-fs-chrome));
-  font-weight: 760;
-}
-
-.mds-hold-receipt.is-expired .mds-hold-receipt-head {
-  color: var(--mds-dim);
+  background: var(--mds-surface-2);
 }
 
 .mds-hold-receipt code {
-  color: var(--mds-on-surface-soft);
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
   font-family: var(--mds-font-mono);
-  font-size: calc(10.5px * var(--mds-fs-chrome));
-}
-
-.mds-hold-receipt-clock {
-  margin-left: auto;
-  color: var(--mds-on-surface);
-  font-family: var(--mds-font-mono);
-  font-size: calc(13px * var(--mds-fs-chrome));
-  font-variant-numeric: tabular-nums;
-  font-weight: 760;
-}
-
-.mds-hold-receipt-stock {
-  color: var(--mds-dim);
-  font-size: calc(10.5px * var(--mds-fs-chrome));
-  font-weight: 640;
 }
 
 /* The cross-fade wrapper needs a real box - opacity and transform do not apply

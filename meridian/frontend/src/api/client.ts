@@ -2,6 +2,7 @@
  * API client for Meridian backend
  */
 import { requestJson } from './request';
+import { readChatStream, type ChatStreamEvent } from './chatStream';
 import type {
   BookingRequest,
   BookingResponse,
@@ -109,7 +110,14 @@ export async function fetchProduct(productId: string): Promise<Product> {
 /**
  * Send a chat message to the AI assistant
  */
-export async function sendChatMessage(request: ChatRequest, signal?: AbortSignal): Promise<ChatResponse> {
+export async function sendChatMessage(request: ChatRequest, signal?: AbortSignal, onEvent?: (event: ChatStreamEvent) => void): Promise<ChatResponse> {
+  if (request.phase === 4 && onEvent) {
+    const response = await fetch(`${API_BASE}/chat/stream`, {
+      method: 'POST', signal, cache: 'no-store',
+      headers: { ...apiHeaders(true), Accept: 'text/event-stream' }, body: JSON.stringify(request),
+    });
+    return readChatStream(response, onEvent, signal);
+  }
   return requestJson(`${API_BASE}/chat`, {
     method: 'POST', signal, headers: apiHeaders(true), body: JSON.stringify(request),
   });

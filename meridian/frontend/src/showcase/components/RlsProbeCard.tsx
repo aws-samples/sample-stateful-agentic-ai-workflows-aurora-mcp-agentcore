@@ -77,7 +77,7 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
                 <small>2 · Traveler grant</small>
                 <strong>
                   <span className="mds-authz-decision is-allow">ALLOW</span>
-                  Alex Morgan
+                  Jordan Morgan
                 </strong>
                 <code>{data.authorization.binding_id ?? 'traveler_identity_bindings'}</code>
               </div>

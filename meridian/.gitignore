@@ -66,13 +66,10 @@ Thumbs.db
 *.sqlite3
 logs/
 
-# Local decks and temporary Office files; the reviewed presentation is a release asset.
+# Local decks and temporary Office files
 *.pptx
 *.pdf
-!docs/presentation/Meridian-reInvent-chalk-talk.pptx
-!docs/presentation/Meridian-reInvent-chalk-talk.pdf
 ~$*
-!docs/.gitkeep
 
 # Local verification output and dev-server logs
 .local/

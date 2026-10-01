@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 import time
+from functools import lru_cache
 
 import boto3
 from bedrock_agentcore.memory.integrations.strands.config import (
@@ -24,11 +25,11 @@ from bedrock_agentcore.memory.integrations.strands.session_manager import (
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from opentelemetry import trace
 from strands import Agent
-from strands.models.bedrock import BedrockModel
 from strands.tools.mcp import MCPClient
 
 from gateway_auth import GatewaySigV4
 from hold_execution import execute_confirmed_booking, execute_confirmed_hold
+from model.load import DEFAULT_MODEL_ID, load_model
 from prompts import narration_prompt, system_prompt, turn_prompt
 from turn_trace import TraceHooks, TurnContext, activity
 
@@ -37,7 +38,7 @@ REGION = os.getenv("AWS_REGION", "us-east-1")
 SESSION = boto3.Session(region_name=REGION)
 GATEWAY_URL = os.environ["AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL"]
 MEMORY_ID = os.environ["MEMORY_MERIDIAN_SESSION_ID"]
-MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "global.anthropic.claude-sonnet-5")
+MODEL_ID = os.getenv("BEDROCK_MODEL_ID", DEFAULT_MODEL_ID)
 GATEWAY_ID = os.getenv("MERIDIAN_GATEWAY_ID", GATEWAY_URL.split("//")[-1].split(".")[0])
 POLICY_ENGINE_ID = os.getenv("MERIDIAN_POLICY_ENGINE_ID", "")
 POLICY_MODE = os.getenv("MERIDIAN_POLICY_MODE", "ENFORCE")
@@ -47,6 +48,12 @@ FOLLOW_UPS = [
     "Check duration availability",
     "Explain the preference match",
 ]
+
+
+@lru_cache(maxsize=1)
+def concierge_model():
+    """Reuse the stateless model client within the isolated Runtime session."""
+    return load_model(MODEL_ID, REGION)
 
 
 def trace_id() -> str | None:
@@ -74,11 +81,19 @@ def memory_manager(traveler_id: str, conversation_id: str) -> AgentCoreMemorySes
     return AgentCoreMemorySessionManager(agentcore_memory_config=config, region_name=REGION)
 
 
+def elapsed_ms(started: float) -> int:
+    """Whole milliseconds since ``started``, a ``time.perf_counter()`` reading."""
+    return round((time.perf_counter() - started) * 1000)
+
+
 def memory_span(traveler_id: str, conversation_id: str) -> dict:
+    """The Memory span, timed around its one ``list_events`` call and nothing else."""
     client = SESSION.client("bedrock-agentcore")
+    started = time.perf_counter()
     events = client.list_events(
         memoryId=MEMORY_ID, actorId=traveler_id, sessionId=conversation_id, maxResults=50
     )
+    took = elapsed_ms(started)
     count = len(events.get("events", []))
     return activity(
         "reasoning",
@@ -96,6 +111,7 @@ def memory_span(traveler_id: str, conversation_id: str) -> dict:
                 {"label": "namespace", "value": SESSION_NAMESPACE, "mono": True},
             ],
         },
+        took,
     )
 
 
@@ -135,7 +151,8 @@ def start_span(turn: TurnContext) -> dict:
     )
 
 
-def tools_span(tools: list) -> dict:
+def tools_span(tools: list, took: int) -> dict:
+    """The tools/list span, carrying the time measured around ``list_tools_sync``."""
     return activity(
         "tool_call",
         "AgentCore Gateway · tools/list",
@@ -150,6 +167,7 @@ def tools_span(tools: list) -> dict:
                 {"label": "policy_engine", "value": POLICY_ENGINE_ID or "none", "mono": True},
             ],
         },
+        took,
     )
 
 
@@ -218,8 +236,9 @@ async def run(payload: dict):
     gateway = MCPClient(url=GATEWAY_URL, auth_provider=GatewaySigV4(SESSION, REGION))
     yield {"type": "activity", **start_span(turn)}
     with gateway:
+        listed = time.perf_counter()
         tools = gateway.list_tools_sync()
-        yield {"type": "activity", **tools_span(tools)}
+        yield {"type": "activity", **tools_span(tools, elapsed_ms(listed))}
         yield {"type": "activity", **memory_span(turn.traveler_id, turn.conversation_id)}
         outcome, action, target = confirmed_action(
             hooks, gateway, turn, hold_target, booking_target
@@ -227,7 +246,7 @@ async def run(payload: dict):
         for event in drain(queue):
             yield event
         agent = Agent(
-            model=BedrockModel(model_id=MODEL_ID, region_name=REGION, max_tokens=1500),
+            model=concierge_model(),
             system_prompt=system_prompt(
                 turn.hold_confirmed, hold_target, turn.booking_confirmed, booking_target
             ),

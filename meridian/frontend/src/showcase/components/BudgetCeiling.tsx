@@ -1,3 +1,5 @@
+import { NotSet } from './NotSet';
+
 /** The saved budget, stated the way the gateway policy uses it.
  *
  * The traveler saves a per-traveler cap; Cedar judges a hold or a booking against
@@ -8,7 +10,7 @@ export function BudgetCeiling({ perTravelerCents, travelers }: {
   perTravelerCents?: number | null;
   travelers: number;
 }) {
-  if (perTravelerCents == null || !Number.isFinite(perTravelerCents)) return <>Not set</>;
+  if (perTravelerCents == null || !Number.isFinite(perTravelerCents)) return <NotSet />;
   const perTraveler = perTravelerCents / 100;
   const party = Math.max(1, travelers);
   const money = (value: number) => `$${value.toLocaleString('en-US')}`;

@@ -36,10 +36,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
     conversations,
     conversation_messages,
     trip_interactions,
-    agent_audit_log,
     bookings,
     booking_lines
 TO meridian_app;
+
+-- The audit log is append-only for the application: it records what the
+-- agents did, so the role acting cannot be the role that edits the record.
+-- A privileged administrator still can; this is an application event log,
+-- not tamper-evident storage.
+GRANT SELECT, INSERT ON agent_audit_log TO meridian_app;
 
 -- 4. Sequences (e.g. bookings/booking_lines SERIAL) so INSERTs can get ids.
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO meridian_app;

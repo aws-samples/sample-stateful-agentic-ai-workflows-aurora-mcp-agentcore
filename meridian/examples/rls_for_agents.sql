@@ -162,6 +162,26 @@ CREATE POLICY rls_messages_traveler ON conversation_messages FOR ALL USING (
         WHERE traveler_id = current_setting('app.current_traveler_id', true)
     )
 );
+-- The traveler's identity and profile. The profile holds the dietary notes and
+-- loyalty member ids - the most sensitive data here - and was the one traveler
+-- table without a policy, so a scoped session could read every traveler's
+-- profile and update every traveler's identity row. Mirrors migration 011.
+ALTER TABLE travelers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE traveler_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE travelers FORCE ROW LEVEL SECURITY;
+ALTER TABLE traveler_profiles FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS rls_travelers_traveler ON travelers;
+DROP POLICY IF EXISTS rls_profiles_traveler ON traveler_profiles;
+CREATE POLICY rls_travelers_traveler ON travelers FOR ALL USING (
+    traveler_id = current_setting('app.current_traveler_id', true)
+) WITH CHECK (
+    traveler_id = current_setting('app.current_traveler_id', true)
+);
+CREATE POLICY rls_profiles_traveler ON traveler_profiles FOR ALL USING (
+    traveler_id = current_setting('app.current_traveler_id', true)
+) WITH CHECK (
+    traveler_id = current_setting('app.current_traveler_id', true)
+);
 -- ----------------------------------------------------------------------------
 -- B. Agent-type scoping on bookings
 -- ----------------------------------------------------------------------------

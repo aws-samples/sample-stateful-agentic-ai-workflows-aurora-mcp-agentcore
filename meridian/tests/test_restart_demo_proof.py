@@ -1,4 +1,4 @@
-"""The presenter command must fail when its restart claim is not proved."""
+"""The kill-and-resume command must fail when its restart claim is not proved."""
 import asyncio
 from types import SimpleNamespace
 

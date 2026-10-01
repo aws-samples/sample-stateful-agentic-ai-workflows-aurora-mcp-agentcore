@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
-from backend.agents.orchestration_05 import execution as module
+from backend.agents.phase_05_workflow import execution as module
 
 
 @pytest.fixture

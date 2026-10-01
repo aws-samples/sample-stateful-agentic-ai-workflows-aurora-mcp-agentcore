@@ -109,14 +109,13 @@ class MCPPostgresClient:
         """Build server parameters for stdio transport.
 
         Pinned to @1.0.9: this version takes the connection config once, at
-        server start, via CLI flags (--resource_arn / --secret_arn / etc.) —
-        matching the DAT403 workshop's known-good pin. @latest drifted to a
-        shape that requires db_endpoint and auto-discovers the secret, and
+        server start, via CLI flags (--resource_arn / --secret_arn / etc.).
+        Later versions require db_endpoint and auto-discover the secret, and
         that auto-discovery resolves secretArn to None for a Serverless v2
-        cluster whose secret name carries a random suffix
-        (e.g. meridian-demo-credentials-gThG49) — which is the root cause of
-        the Phase 2 `ParamValidationError: Invalid length for parameter
-        secretArn, value: 4` (the literal string "None").
+        cluster whose secret name carries a random suffix (for example
+        my-cluster-secret-AbC123). That is the cause of the Phase 2
+        `ParamValidationError: Invalid length for parameter secretArn,
+        value: 4` (the literal string "None").
         """
         if self.config.connection_method != "rdsapi" or self.config.database_type != "APG":
             raise ValueError("Phase 2 requires Aurora PostgreSQL through the RDS Data API")

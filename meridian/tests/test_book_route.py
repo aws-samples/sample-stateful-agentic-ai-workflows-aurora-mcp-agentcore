@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from backend.agents.production_04 import concierge as concierge_mod
-from backend.agents.production_04.concierge import BookingOutcome, BookingTarget
+from backend.agents.phase_04_production import concierge as concierge_mod
+from backend.agents.phase_04_production.concierge import BookingOutcome, BookingTarget
 from backend.routers import chat as chat_mod
 from backend.routers.chat import BookingRequest, production_booking
 

@@ -1,5 +1,6 @@
-import { HoldReceipt } from './HoldReceipt';
+import { motion, PresenceContext } from 'motion/react';
 import { AuroraIcon } from './ServiceMark';
+import { CHECKPOINT_GLOW, STATE_CHANGE, useConfirmedLive } from '../hooks/useLiveCues';
 import {
 AlertTriangle,
   ArrowRight,
@@ -23,6 +24,8 @@ import type { LongTermMemoryFact, Product, TravelerProfile } from '../../types';
 import type {
   RecoveryEvidence,
   RecoveryStage,
+  RecoveryStepId,
+  RecoveryStepView,
 } from '../lib/recoveryState';
 import { TripVisual } from './TripVisual';
 
@@ -69,29 +72,64 @@ interface AgentProofCardProps {
   onViewProof: () => void;
 }
 
-interface CheckpointedPlanCardProps {
-  stage: RecoveryStage;
-  evidence: RecoveryEvidence;
-  threadId: string;
-  resumedAfterRestart: boolean;
-  /** Which checkpointer actually ran. PostgresSaver is durable; MemorySaver is not. */
-  checkpointStore: string;
-  durable: boolean;
-  /** A committed courtesy hold, when the recovery path reached the hold node. */
-  holdId?: string;
-  holdExpiresAt?: string;
-  holdCreatedAt?: string;
-  holdObservedAt?: string;
-  holdStatus?: string;
-}
-
 interface RecoveryLaunchCardProps {
   stage: RecoveryStage;
+  /** Each step's state and source, as the backend has confirmed it. */
+  steps: RecoveryStepView[];
+  /** Animate step changes: only after watching this recovery's run. */
+  live?: boolean;
   errorDetail?: string | null;
   disabled?: boolean;
   compact?: boolean;
   resumeMode?: boolean;
   onStart: () => void;
+}
+
+/** The four workflow steps, each named by the id its backend view carries. */
+const LAUNCH_STEPS: {
+  id: RecoveryStepId;
+  icon: typeof Search | typeof AuroraIcon;
+  label: string;
+  detail: string;
+}[] = [
+  {
+    id: 'understand',
+    icon: AlertTriangle,
+    label: 'Understand disruption',
+    detail: 'Classify the canceled-flight recovery.',
+  },
+  {
+    id: 'search',
+    icon: Search,
+    label: 'Search and rank',
+    detail: 'Retrieve and rerank live Tokyo options.',
+  },
+  {
+    id: 'checkpoint',
+    icon: AuroraIcon,
+    label: 'Save an Aurora checkpoint',
+    detail: 'Persist the shortlist before verification.',
+  },
+  {
+    id: 'verify',
+    icon: CheckCircle2,
+    label: 'Verify after resume',
+    detail: 'Check the top three options after the pause.',
+  },
+];
+
+function stepView(steps: RecoveryStepView[], id: RecoveryStepId): RecoveryStepView {
+  return steps.find(step => step.id === id) ?? { id, state: 'is-pending', source: null };
+}
+
+function timelineNote(
+  stage: RecoveryStage, failed: boolean, resumeMode: boolean, total: number,
+): string {
+  if (failed) return 'Check saved progress before retrying';
+  if (stage === 'running') return resumeMode ? `Step 4 of ${total}` : 'Waiting for saved results';
+  if (stage === 'checkpointed') return 'Paused at a saved checkpoint';
+  if (stage === 'ready') return 'Workflow complete';
+  return 'Runs after you confirm';
 }
 
 function money(price: number): string {
@@ -237,8 +275,226 @@ function PackageSummary({
   );
 }
 
+/** The canceled flight: route, status, and why the workflow stopped if it did. */
+function DisruptionFlight({ running, failed, errorDetail }: {
+  running: boolean;
+  failed: boolean;
+  errorDetail: string | null;
+}) {
+  return (
+    <div className="mds-mobile-disruption-flight">
+      <div className="mds-mobile-disruption-route">
+        <span>
+          <small>From</small>
+          <strong>JFK</strong>
+          <em>New York</em>
+        </span>
+        <span className="mds-mobile-disruption-route-line">
+          <i />
+          <Circle size={8} fill="currentColor" aria-hidden="true" />
+          <i />
+          <b>Traveler report</b>
+        </span>
+        <span>
+          <small>To</small>
+          <strong>TYO</strong>
+          <em>Tokyo</em>
+        </span>
+      </div>
+
+      <div className="mds-mobile-disruption-status">
+        <strong>Canceled</strong>
+        <span>
+          {failed
+            ? 'The workflow was interrupted. Check System evidence for saved progress.'
+            : running
+              ? 'Meridian is building a checkpointed recovery plan.'
+              : 'Live trip-package options are ready to search.'}
+        </span>
+      </div>
+
+      {failed && (
+        <div className="mds-recovery-launch-error" role="alert">
+          <AlertTriangle size={17} aria-hidden="true" />
+          <span>
+            <strong>
+              Recovery interrupted
+            </strong>
+            <small>{errorDetail}</small>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The traveler's view of the disruption, with the one action that starts recovery. */
+function DisruptionHero({ running, failed, errorDetail, disabled, onStart }: {
+  running: boolean;
+  failed: boolean;
+  errorDetail: string | null;
+  disabled: boolean;
+  onStart: () => void;
+}) {
+  return (
+    <section
+      className="mds-mobile-disruption-card"
+      aria-label="Traveler-reported canceled flight"
+    >
+      <div className="mds-mobile-disruption-topline">
+        <span>Meridian trips</span>
+        <em>
+          {failed ? (
+            <AlertTriangle size={13} aria-hidden="true" />
+          ) : running ? (
+            <Loader2 size={13} aria-hidden="true" />
+          ) : (
+            <AlertTriangle size={13} aria-hidden="true" />
+          )}
+          {failed
+            ? 'Recovery needs attention'
+            : running
+              ? 'Recovery in progress'
+              : 'Action needed'}
+        </em>
+      </div>
+
+      <div className="mds-mobile-disruption-hero">
+        <div className="mds-mobile-disruption-message">
+          <small>Trip update</small>
+          <span aria-hidden="true">
+            <AlertTriangle size={22} />
+          </span>
+          <div>
+            <h2>Let’s get your trip moving again.</h2>
+            <p>
+              Search live alternatives, save the shortlist in Aurora, and
+              resume to verify availability. You decide what happens next.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="mds-mobile-disruption-primary"
+            onClick={onStart}
+            disabled={disabled || running}
+          >
+            {running ? (
+              <Loader2 size={18} aria-hidden="true" />
+            ) : (
+              <Route size={18} aria-hidden="true" />
+            )}
+            {running
+              ? 'Building plan'
+              : failed
+                ? 'Retry recovery'
+                : 'Start recovery'}
+          </button>
+        </div>
+        <figure className="mds-mobile-disruption-media">
+          <img
+            src="/travel/recovery-flight.jpg"
+            alt="Aircraft on final approach"
+            width="1920"
+            height="1168"
+            loading="eager"
+            decoding="async"
+          />
+        </figure>
+
+        <DisruptionFlight running={running} failed={failed} errorDetail={errorDetail} />
+      </div>
+    </section>
+  );
+}
+
+/** The four workflow steps, each moving only when a watched response confirms it. */
+function RecoveryStepList({ steps, live, running, failed }: {
+  steps: RecoveryStepView[];
+  live: boolean;
+  running: boolean;
+  failed: boolean;
+}) {
+  // The one emphasis, only when a watched run's response confirms the save.
+  const checkpointGlow = useConfirmedLive(
+    stepView(steps, 'checkpoint').state === 'is-visited', live,
+  );
+  // A step settles into place only when a response confirms it. While a
+  // request is in flight nothing has been confirmed yet, so nothing moves.
+  const settles = live && !running;
+
+  // The app's view swap starts with AnimatePresence initial={false}, which
+  // would freeze every cue that mounts later inside the first view it
+  // paints. The steps decide for themselves when to move.
+  return (
+    <PresenceContext.Provider value={null}>
+      <ol
+        className={`mds-recovery-launch-steps${
+          running ? ' is-running' : failed ? ' is-failed' : ''
+        }`}
+        aria-label="Recovery workflow progress"
+      >
+        {LAUNCH_STEPS.map((step) => {
+          const Icon = step.icon;
+          const { state: stepState, source } = stepView(steps, step.id);
+          // The checkpoint step keeps its Aurora mark once Aurora confirms it.
+          const aurora = step.id === 'checkpoint';
+          const done = stepState === 'is-visited' && !aurora;
+          return (
+            <li
+              key={step.label}
+              className={stepState}
+              aria-current={stepState === 'is-current' ? 'step' : undefined}
+            >
+              <span>
+                <motion.span
+                  key={stepState}
+                  className="mds-recovery-step-icon"
+                  initial={settles && stepState === 'is-visited'
+                    ? { opacity: 0, scale: 0.6 } : false}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={STATE_CHANGE}
+                >
+                  {done
+                    ? <Check size={15} strokeWidth={3} aria-hidden="true" />
+                    : <Icon size={16} aria-hidden="true" />}
+                </motion.span>
+                {checkpointGlow && aurora && (
+                  <motion.span
+                    className="mds-aurora-glow"
+                    aria-hidden="true"
+                    initial={{ opacity: 0.9, scale: 1 }}
+                    animate={{ opacity: 0, scale: 1.9 }}
+                    transition={CHECKPOINT_GLOW}
+                  />
+                )}
+              </span>
+              <div>
+                <strong>{step.label}</strong>
+                <small>{step.detail}</small>
+                {source && (
+                  <motion.em
+                    key={source}
+                    className="mds-step-source"
+                    initial={settles ? { opacity: 0 } : false}
+                    animate={{ opacity: 1 }}
+                    transition={STATE_CHANGE}
+                  >
+                    {source}
+                  </motion.em>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </PresenceContext.Provider>
+  );
+}
+
 export function RecoveryLaunchCard({
   stage,
+  steps,
+  live = false,
   errorDetail = null,
   disabled = false,
   compact = false,
@@ -247,30 +503,6 @@ export function RecoveryLaunchCard({
 }: RecoveryLaunchCardProps) {
   const running = stage === 'running';
   const failed = Boolean(errorDetail);
-  // Only a confirmed paused workflow proves the first three steps finished.
-  const activeStep = running && resumeMode ? 3 : -1;
-  const launchSteps = [
-    {
-      icon: AlertTriangle,
-      label: 'Understand disruption',
-      detail: 'Classify the canceled-flight recovery.',
-    },
-    {
-      icon: Search,
-      label: 'Search and rank',
-      detail: 'Retrieve and rerank live Tokyo options.',
-    },
-    {
-      icon: AuroraIcon,
-      label: 'Save an Aurora checkpoint',
-      detail: 'Persist the shortlist before verification.',
-    },
-    {
-      icon: CheckCircle2,
-      label: 'Verify after resume',
-      detail: 'Check the top three options after the pause.',
-    },
-  ];
 
   return (
     <article
@@ -280,170 +512,21 @@ export function RecoveryLaunchCard({
       aria-label={compact ? 'Live recovery progress' : 'Start travel recovery'}
     >
       {!compact && (
-        <section
-          className="mds-mobile-disruption-card"
-          aria-label="Traveler-reported canceled flight"
-        >
-          <div className="mds-mobile-disruption-topline">
-            <span>Meridian trips</span>
-            <em>
-              {failed ? (
-                <AlertTriangle size={13} aria-hidden="true" />
-              ) : running ? (
-                <Loader2 size={13} aria-hidden="true" />
-              ) : (
-                <AlertTriangle size={13} aria-hidden="true" />
-              )}
-              {failed
-                ? 'Recovery needs attention'
-                : running
-                  ? 'Recovery in progress'
-                  : 'Action needed'}
-            </em>
-          </div>
-
-          <div className="mds-mobile-disruption-hero">
-            <div className="mds-mobile-disruption-message">
-              <small>Trip update</small>
-              <span aria-hidden="true">
-                <AlertTriangle size={22} />
-              </span>
-              <div>
-                <h2>Let’s get your trip moving again.</h2>
-                <p>
-                  Search live alternatives, save the shortlist in Aurora, and
-                  resume to verify availability. You decide what happens next.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="mds-mobile-disruption-primary"
-                onClick={onStart}
-                disabled={disabled || running}
-              >
-                {running ? (
-                  <Loader2 size={18} aria-hidden="true" />
-                ) : (
-                  <Route size={18} aria-hidden="true" />
-                )}
-                {running
-                  ? 'Building plan'
-                  : failed
-                    ? 'Retry recovery'
-                    : 'Start recovery'}
-              </button>
-            </div>
-            <figure className="mds-mobile-disruption-media">
-              <img
-                src="/travel/recovery-flight.jpg"
-                alt="Aircraft on final approach"
-                width="1920"
-                height="1168"
-                loading="eager"
-                decoding="async"
-              />
-            </figure>
-
-            <div className="mds-mobile-disruption-flight">
-              <div className="mds-mobile-disruption-route">
-                <span>
-                  <small>From</small>
-                  <strong>JFK</strong>
-                  <em>New York</em>
-                </span>
-                <span className="mds-mobile-disruption-route-line">
-                  <i />
-                  <Circle size={8} fill="currentColor" aria-hidden="true" />
-                  <i />
-                  <b>Traveler report</b>
-                </span>
-                <span>
-                  <small>To</small>
-                  <strong>TYO</strong>
-                  <em>Tokyo</em>
-                </span>
-              </div>
-
-              <div className="mds-mobile-disruption-status">
-                <strong>Canceled</strong>
-                <span>
-                  {failed
-                    ? 'The workflow was interrupted. Check System evidence for saved progress.'
-                    : running
-                      ? 'Meridian is building a checkpointed recovery plan.'
-                      : 'Live trip-package options are ready to search.'}
-                </span>
-              </div>
-
-              {failed && (
-                <div className="mds-recovery-launch-error" role="alert">
-                  <AlertTriangle size={17} aria-hidden="true" />
-                  <span>
-                    <strong>
-                      Recovery interrupted
-                    </strong>
-                    <small>{errorDetail}</small>
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
+        <DisruptionHero
+          running={running}
+          failed={failed}
+          errorDetail={errorDetail}
+          disabled={disabled}
+          onStart={onStart}
+        />
       )}
 
       <div className="mds-recovery-timeline-heading">
         <span>{running ? 'Live workflow' : failed ? 'Workflow stopped' : 'Recovery workflow'}</span>
-        <small>
-          {running
-            ? resumeMode ? `Step 4 of ${launchSteps.length}` : 'Waiting for saved results'
-            : failed
-              ? 'Check saved progress before retrying'
-              : 'Runs after you confirm'}
-        </small>
+        <small>{timelineNote(stage, failed, resumeMode, LAUNCH_STEPS.length)}</small>
       </div>
 
-      <ol
-        className={`mds-recovery-launch-steps${
-          running ? ' is-running' : failed ? ' is-failed' : ''
-        }`}
-        aria-label="Recovery workflow progress"
-      >
-        {launchSteps.map((step, index) => {
-          const Icon = step.icon;
-          const stepState = failed
-            ? 'is-pending'
-            : running
-              ? index < activeStep
-                ? 'is-visited'
-                : index === activeStep
-                  ? 'is-current'
-                  : 'is-pending'
-              : index === 0
-                ? 'is-ready'
-                : 'is-pending';
-          return (
-            <li
-              key={step.label}
-              className={stepState}
-              aria-current={stepState === 'is-current' ? 'step' : undefined}
-            >
-              <span>
-                {stepState === 'is-current' ? (
-                  <Loader2 size={16} aria-hidden="true" />
-                ) : stepState === 'is-visited' ? (
-                  <Check size={15} strokeWidth={3} aria-hidden="true" />
-                ) : (
-                  <Icon size={16} aria-hidden="true" />
-                )}
-              </span>
-              <div>
-                <strong>{step.label}</strong>
-                <small>{step.detail}</small>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+      <RecoveryStepList steps={steps} live={live} running={running} failed={failed} />
 
       {!compact && (
         <footer className="mds-recovery-launch-actions">
@@ -453,26 +536,6 @@ export function RecoveryLaunchCard({
           </span>
         </footer>
       )}
-    </article>
-  );
-}
-
-export function RecoveryGuardrailsCard() {
-  return (
-    <article
-      className="mds-decision-card mds-recovery-guardrails-card"
-      aria-label="Recovery guardrails"
-    >
-      <span>
-        <ShieldCheck size={17} aria-hidden="true" />
-      </span>
-      <div>
-        <strong>Built for a safe handoff</strong>
-        <small>
-          Live search, traveler context, and durable state become visible only
-          after the workflow observes them.
-        </small>
-      </div>
     </article>
   );
 }
@@ -757,7 +820,7 @@ export function ConciergeAssistanceCard({
         </span>
         <Sparkles size={16} aria-hidden="true" />
       </header>
-      <div className="mds-concierge-hotel-media">
+      <div className="mds-concierge-hotel-media" data-theme="dark">
         <img
           src="/travel/haneda-hotel.jpg"
           alt="Airport hotel room overlooking Haneda runways"
@@ -778,14 +841,10 @@ export function ConciergeAssistanceCard({
         </div>
       </div>
       <div className="mds-concierge-context-chips">
-        {evidence.memoryObserved && <span className="is-violet">Context recalled</span>}
+        {evidence.memoryObserved && <span>Context recalled</span>}
         {evidence.loyaltyObserved && <span>Loyalty context</span>}
-        <span className={ready ? 'is-green' : ''}>
-          {ready ? 'Check lounge options' : 'Hotel options'}
-        </span>
-        <span className={ready ? 'is-yellow' : ''}>
-          {ready ? 'Check transfer options' : 'Transfer support'}
-        </span>
+        <span>{ready ? 'Check lounge options' : 'Hotel options'}</span>
+        <span>{ready ? 'Check transfer options' : 'Transfer support'}</span>
       </div>
       <p>{contextLabel}. Nothing is booked automatically.</p>
       <footer className="mds-concierge-assistance-actions">
@@ -904,111 +963,6 @@ export function AgentProofCard({
         View system evidence
         <ArrowRight size={15} aria-hidden="true" />
       </button>
-    </article>
-  );
-}
-
-export function CheckpointedPlanCard({
-  stage,
-  evidence,
-  threadId,
-  resumedAfterRestart,
-  checkpointStore,
-  durable,
-  holdId,
-  holdExpiresAt,
-  holdCreatedAt,
-  holdObservedAt,
-  holdStatus,
-}: CheckpointedPlanCardProps) {
-  const searchDone = evidence.searchObserved;
-  const rankDone = evidence.alternativesObserved;
-  const checkpointDone = evidence.checkpointObserved;
-  const inventoryDone = evidence.availabilityObserved;
-  const status =
-    stage === 'ready'
-      ? 'Plan ready'
-      : stage === 'checkpointed'
-        ? evidence.durableCheckpoint
-          ? 'Checkpointed in Aurora'
-          : 'Checkpointed'
-        : stage === 'running'
-          ? 'Workflow running'
-          : 'Not started';
-
-  return (
-    <article
-      className={`mds-decision-card mds-checkpointed-plan-card is-${stage}`}
-      aria-label="Checkpointed plan progress"
-    >
-      <header className="mds-decision-card-head">
-        <span className="mds-decision-card-kicker">
-          <AuroraIcon size={17} aria-hidden="true" />
-          Checkpointed plan
-        </span>
-        <span className={`mds-checkpoint-badge is-${stage}`}>{status}</span>
-      </header>
-      <div className="mds-checkpoint-thread">
-        <small>Thread</small>
-        <strong>{threadId}</strong>
-      </div>
-      {holdId && (
-        <HoldReceipt
-          holdId={holdId}
-          expiresAt={holdExpiresAt}
-          createdAt={holdCreatedAt}
-          observedAt={holdObservedAt}
-          status={holdStatus}
-        />
-      )}
-      {!holdId && (stage === 'checkpointed' || stage === 'ready') && (
-        <div className="mc-hold-pending">
-          <strong>{stage === 'checkpointed' ? 'Shortlist saved. No inventory held yet.' : 'No package hold recorded.'}</strong>
-          <p>{stage === 'checkpointed' ? 'Resume verifies package availability, then requests a timed hold. Its clock starts when Aurora creates the booking.' : 'The checkpoint records workflow progress. A hold needs its own booking receipt.'}</p>
-        </div>
-      )}
-      {/* The claim this phase makes lives or dies on which store ran, so name
-          it here rather than only in the trace rail. */}
-      <div className={`mds-checkpoint-receipt${durable ? ' is-durable' : ''}`}>
-        <span className="mds-checkpoint-receipt-store">
-          <AuroraIcon size={13} aria-hidden="true" />
-          {checkpointStore || 'checkpointer not observed'}
-        </span>
-        {durable ? (
-          <span className="mds-checkpoint-receipt-tag is-durable">survives process loss</span>
-        ) : (
-          <span className="mds-checkpoint-receipt-tag">in-process only</span>
-        )}
-        {resumedAfterRestart && (
-          <span className="mds-checkpoint-receipt-tag is-restart">
-            resumed after worker restart
-          </span>
-        )}
-      </div>
-      <ol className="mds-checkpoint-progress">
-        <li className="is-done"><i />Disruption</li>
-        <li className={searchDone ? 'is-done' : stage === 'running' ? 'is-current' : ''}>
-          <i />Search
-        </li>
-        <li className={rankDone ? 'is-done' : ''}><i />Rank</li>
-        <li className={checkpointDone ? 'is-done' : ''}><i />Save</li>
-        <li className={inventoryDone ? 'is-done' : stage === 'checkpointed' ? 'is-current' : ''}>
-          <i />Verify
-        </li>
-      </ol>
-      <p>
-        {stage === 'ready'
-          ? !evidence.durableCheckpoint
-            ? 'Resumed from in-process workflow state. Not durable across a restart.'
-            : resumedAfterRestart
-              ? 'Resumed from Aurora after a worker restart.'
-              : 'Resumed from the saved Aurora workflow state.'
-          : stage === 'checkpointed'
-            ? 'The ranked shortlist is durable and safe to resume.'
-            : stage === 'running'
-              ? 'Meridian is saving progress between workflow steps.'
-              : 'Recovery state will be persisted before inventory verification.'}
-      </p>
     </article>
   );
 }

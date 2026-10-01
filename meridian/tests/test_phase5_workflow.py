@@ -14,8 +14,8 @@ from typing import Any, List, Tuple
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
-import backend.agents.orchestration_05.workflow as workflow_mod
-from backend.agents.orchestration_05.workflow import (
+import backend.agents.phase_05_workflow.workflow as workflow_mod
+from backend.agents.phase_05_workflow.workflow import (
     OrchestrationAgent,
     _classify_intent,
     _resolve_checkpoint_dsn,
@@ -99,6 +99,23 @@ def test_workflow_search_branch() -> None:
     titles = [a.get("title", "") for a in res.get("activities", [])]
     assert any("classify → search" in t for t in titles)
     assert any("synthesize" in t for t in titles)
+
+
+def test_product_review_pauses_before_availability_and_inventory_actions(monkeypatch) -> None:
+    # The product's review boundary wins over demonstration environment settings.
+    monkeypatch.setenv("LANGGRAPH_DEMO_INTERRUPT_AFTER", "hold")
+    wf = _build_workflow()
+    wf.review_only = True
+    res = asyncio.run(wf.run(
+        "My flight was canceled. Rework the trip, then check availability.",
+        traveler_id="t1", conversation_id="product-review", travelers_count=2,
+    ))
+    assert res["workflow_status"] == "paused"
+    assert res["packages"]
+    assert not res.get("hold_id")
+    titles = [a.get("title", "") for a in res.get("activities", [])]
+    assert any("Workflow node: search" in title for title in titles)
+    assert not any("Workflow node: hold" in title or "Workflow node: availability" in title for title in titles)
 
 
 def test_workflow_availability_branch() -> None:
@@ -546,7 +563,7 @@ def test_availability_lookup_never_holds_inventory() -> None:
 
 def test_hold_picks_a_duration_that_has_inventory() -> None:
     """Never hold against a sold-out duration."""
-    from backend.agents.orchestration_05.packages import (
+    from backend.agents.phase_05_workflow.packages import (
         first_available_duration as _first_available_duration,
     )
 

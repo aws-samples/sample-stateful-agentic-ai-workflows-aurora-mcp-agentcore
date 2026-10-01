@@ -1,0 +1,129 @@
+/* Dark is the default. An element with data-theme="dark" keeps the dark roles in the
+   light theme; the regions whose text sits on a photo's black scrim use it. */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+  --mds-ground: #000000;
+  --mds-surface: #252527;
+  --mds-surface-2: #363638;
+  --mds-separator: #3f3f41;
+  --mds-control-line: #848486;
+  --mds-label: #ffffff;
+  --mds-label-2: #c8c8ca;
+  --mds-label-3: #a4a4a6;
+  --mds-blue: #74acfe;
+  --mds-tint: var(--mds-blue);
+  --mds-action: #0071e3;
+  --mds-action-hover: #0064cc;
+  --mds-on-action: #ffffff;
+  --mds-green: #6ee750;
+  --mds-yellow: #f3c300;
+  --mds-red: #fe897a;
+  --mds-cyan: #64d2ff;
+  --mds-blue-fill: color-mix(in srgb, var(--mds-blue) 16%, var(--mds-surface));
+  --mds-green-fill: color-mix(in srgb, var(--mds-green) 16%, var(--mds-surface));
+  --mds-yellow-fill: color-mix(in srgb, var(--mds-yellow) 16%, var(--mds-surface));
+  --mds-red-fill: color-mix(in srgb, var(--mds-red) 16%, var(--mds-surface));
+  --mds-cyan-fill: color-mix(in srgb, var(--mds-cyan) 16%, var(--mds-surface));
+  --mds-scrim: rgb(0 0 0 / 0.5);
+  --mds-skeleton: var(--mds-surface-2);
+  --mds-skeleton-shimmer: color-mix(in srgb, var(--mds-label) 8%, var(--mds-surface-2));
+  --mds-skeleton-sweep: linear-gradient(
+    90deg,
+    var(--mds-skeleton),
+    var(--mds-skeleton-shimmer),
+    var(--mds-skeleton)
+  );
+  --mds-shadow-float: 0 12px 32px rgb(0 0 0 / 0.6), 0 0 0 1px var(--mds-separator);
+  /* Painted on the box behind a text block. That box pads its top by 48px, so the fade
+     finishes above the first line and the text sits on 0.7 to 0.84 black. */
+  --mds-image-scrim: linear-gradient(
+    to top,
+    rgb(0 0 0 / 0.84),
+    rgb(0 0 0 / 0.7) calc(100% - 48px),
+    rgb(0 0 0 / 0)
+  );
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --mds-ground: #ededef;
+  --mds-surface: #ffffff;
+  --mds-surface-2: #ededef;
+  --mds-separator: #d9d9db;
+  --mds-control-line: #838385;
+  --mds-label: #1d1d1f;
+  --mds-label-2: #4d4d4f;
+  --mds-label-3: #676769;
+  --mds-blue: #005dca;
+  --mds-action: #0071e3;
+  --mds-action-hover: #0064cc;
+  --mds-on-action: #ffffff;
+  --mds-green: #207101;
+  --mds-yellow: #785f03;
+  --mds-red: #c60213;
+  --mds-cyan: #056897;
+  --mds-blue-fill: color-mix(in srgb, var(--mds-blue) 10%, var(--mds-surface));
+  --mds-green-fill: color-mix(in srgb, var(--mds-green) 10%, var(--mds-surface));
+  --mds-yellow-fill: color-mix(in srgb, var(--mds-yellow) 10%, var(--mds-surface));
+  --mds-red-fill: color-mix(in srgb, var(--mds-red) 10%, var(--mds-surface));
+  --mds-cyan-fill: color-mix(in srgb, var(--mds-cyan) 10%, var(--mds-surface));
+  --mds-scrim: rgb(0 0 0 / 0.32);
+  --mds-shadow-float: 0 12px 32px rgb(0 0 0 / 0.14), 0 0 0 1px var(--mds-separator);
+}
+
+:root {
+  --mds-type-scale: 1;
+  --mds-weight-regular: 400;
+  --mds-weight-medium: 500;
+  --mds-weight-semibold: 600;
+  --mds-weight-bold: 700;
+  --mds-tracking-title: -0.01em;
+  --mds-tracking-display: -0.02em;
+}
+
+@media (max-width: 860px) {
+  :root { --mds-type-scale: 0.9; }
+}
+
+.mds-root[data-projector-readability='true'] { --mds-type-scale: 1.2; }
+
+/* SVG text is sized in viewBox units and the drawing already scales with its box, so the
+   diagram keeps the laptop scale. Its nodes are fixed shapes sized to that text. */
+.mds-brief-arch-diagram { --mds-type-scale: 1; }
+
+:root,
+.mds-root,
+.mds-brief-arch-diagram {
+  --mds-font: system-ui, -apple-system, sans-serif;
+  --mds-font-mono: ui-monospace, Menlo, monospace;
+  --mds-type-caption: 400 max(12px, calc(12px * var(--mds-type-scale))) / 1.333 var(--mds-font);
+  --mds-type-footnote: 400 max(12px, calc(13px * var(--mds-type-scale))) / 1.385 var(--mds-font);
+  --mds-type-body: 400 calc(15px * var(--mds-type-scale)) / 1.467 var(--mds-font);
+  --mds-type-headline: 600 calc(15px * var(--mds-type-scale)) / 1.467 var(--mds-font);
+  --mds-type-title-3: 600 calc(18px * var(--mds-type-scale)) / 1.333 var(--mds-font);
+  --mds-type-title-2: 700 calc(22px * var(--mds-type-scale)) / 1.273 var(--mds-font);
+  --mds-type-title-1: 700 calc(28px * var(--mds-type-scale)) / 1.214 var(--mds-font);
+  --mds-type-large-title: 700 calc(36px * var(--mds-type-scale)) / 1.167 var(--mds-font);
+}
+
+:root {
+  --mds-radius-s: 6px;
+  --mds-radius-m: 10px;
+  --mds-radius-l: 14px;
+  --mds-radius-full: 999px;
+}
+
+/* The user-approved blue action palette is shared by every surface.
+   Status colors remain separate from action colors. */
+.mds-root[data-theme='dark']:has(.mds-desktop-app.is-discovery) {
+  --mds-surface: #151517;
+  --mds-surface-2: #252527;
+  --mds-separator: #303032;
+}
+.mds-desktop-app.is-discovery {
+  --mds-type-studio-display: 600 clamp(30px, 3vw, 44px) / 1.12 var(--mds-font);
+  --mds-type-studio-title: 600 calc(28px * var(--mds-type-scale)) / 1.18 var(--mds-font);
+  --mds-type-studio-body: 400 calc(17px * var(--mds-type-scale)) / 1.5 var(--mds-font);
+  --mds-type-studio-label: 400 max(14px, calc(15px * var(--mds-type-scale))) / 1.4 var(--mds-font);
+}

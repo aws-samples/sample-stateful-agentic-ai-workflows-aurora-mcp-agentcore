@@ -27,7 +27,7 @@ from scripts.kill_and_resume_demo import (  # noqa: E402
     create_journey, get_rds_data_client, initialize_checkpoint_backend, say, scoped,
 )
 from backend.agentcore.gateway import AgentCoreGatewayAdapter  # noqa: E402
-from backend.agents.orchestration_05.governed_hold import (  # noqa: E402
+from backend.agents.phase_05_workflow.governed_hold import (  # noqa: E402
     HOLD_TOOL, HoldOutcomeUnknown, hold_arguments, place_governed_hold,
 )
 

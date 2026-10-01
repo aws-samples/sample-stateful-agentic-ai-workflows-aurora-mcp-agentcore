@@ -17,7 +17,7 @@ Tools exposed (none of these are runnable as a single SQL query - they
 require domain rules, secondary lookups, or external context):
 
     - compare_packages(package_ids[])     → side-by-side comparison block
-    - seasonal_price_band(destination, m) → low/avg/high price for a month
+    - price_range(destination)            → low/avg/high price for a destination
     - region_inventory(region, trip_type) → operational availability roll-up
     - currency_convert(amount, from, to)  → indicative FX (deterministic table)
     - loyalty_balance(traveler_id, program) → points + tier readout
@@ -120,24 +120,24 @@ async def compare_packages(package_ids: List[str]) -> List[Dict[str, Any]]:
 
 
 # --------------------------------------------------------------------------- #
-# seasonal_price_band: low/avg/high for a destination + month
+# price_range: low/avg/high for a destination
 # --------------------------------------------------------------------------- #
 
 
 @mcp.tool()
-async def seasonal_price_band(destination: str, month: int) -> Dict[str, Any]:
-    """Return seasonal price band (low / median / high) for a destination.
+async def price_range(destination: str) -> Dict[str, Any]:
+    """Return the price range (low / average / high) for a destination.
 
     Args:
-        destination: city or region string (matched ILIKE).
-        month: 1-12 calendar month.
+        destination: city or region string (matched ILIKE against the
+            destination or region columns).
 
-    The band is computed from current trip_packages prices for the
-    destination, modulated by a deterministic seasonal multiplier so the
-    same query returns the same answer across demo runs.
+    Computed directly from the current `trip_packages` prices for the
+    destination. `trip_packages` stores one price per package, not a
+    price per departure date or per month, so there is no seasonal
+    price to compute - this is the real, whole-catalog range, and the
+    payload says so explicitly rather than implying a seasonal figure.
     """
-    if not (1 <= month <= 12):
-        return {"error": "month must be between 1 and 12"}
     sql = """
         SELECT MIN(price_per_person)::float AS min_price,
                AVG(price_per_person)::float AS avg_price,
@@ -149,28 +149,18 @@ async def seasonal_price_band(destination: str, month: int) -> Dict[str, Any]:
     pat = f"%{destination}%"
     row = await _db().execute_one(sql, (pat, pat))
     if not row or not row.get("sample_size"):
-        return {"destination": destination, "month": month, "sample_size": 0}
-
-    # Northern-hemisphere bias for the demo: summer (Jun-Aug) +18%,
-    # shoulder (Apr-May, Sep-Oct) +0%, winter (Nov-Mar) -8%.
-    if month in (6, 7, 8):
-        seasonal = 1.18
-        season_label = "peak"
-    elif month in (4, 5, 9, 10):
-        seasonal = 1.0
-        season_label = "shoulder"
-    else:
-        seasonal = 0.92
-        season_label = "off-season"
+        return {"destination": destination, "sample_size": 0}
 
     return {
         "destination": destination,
-        "month": month,
-        "season": season_label,
-        "low": round(row["min_price"] * seasonal, 2),
-        "median": round(row["avg_price"] * seasonal, 2),
-        "high": round(row["max_price"] * seasonal, 2),
+        "low": round(row["min_price"], 2),
+        "average": round(row["avg_price"], 2),
+        "high": round(row["max_price"], 2),
         "sample_size": int(row["sample_size"]),
+        "note": (
+            "Not seasonal: the catalog holds one price per package, not "
+            "per-month or per-season prices."
+        ),
     }
 
 

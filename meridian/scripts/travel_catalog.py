@@ -4,7 +4,7 @@ Native travel fields (no product-catalog retrofit).
 
 Every package carries commissioned artwork installed under
 ``frontend/public/travel/catalog/``. Nothing is fetched from a stock photo CDN:
-the images ship with the app, so the stage does not depend on venue Wi-Fi and
+the images ship with the app, so it does not depend on an image service and
 the whole catalog reads as one photographic system.
 """
 
@@ -193,8 +193,8 @@ TRIP_PACKAGES = [
          {"3 nights": 16, "4 nights": 10}),
 
     # ---- Extra Tokyo coverage ----------------------------------------
-    # Lets seasonal_price_band("Tokyo", ...) return a real low/median/high
-    # spread instead of three identical numbers, and gives the stratified
+    # Lets price_range("Tokyo") return a real low/average/high spread
+    # instead of three identical numbers, and gives the stratified
     # compare a Tokyo entry in multiple trip_types if the demo focuses
     # there.
     _pkg("TKY-001", "Tokyo Indie Neighborhood Walk", "City Breaks", "Tokyo", "Asia-Pacific", 1599.0,
@@ -241,8 +241,8 @@ DEMO_TRAVELER_ID = "trv_meridian_demo"
 TRAVELERS = [
     {
         "traveler_id": DEMO_TRAVELER_ID,
-        "full_name": "Alex Morgan",
-        "email": "alex.morgan@example.com",
+        "full_name": "Jordan Morgan",
+        "email": "jordan.morgan@example.com",
         "home_airport": "JFK",
     },
 ]
@@ -341,7 +341,7 @@ TRAVELER_PREFERENCES = [
 #
 # Three demo threads scoped to DEMO_TRAVELER_ID. Each thread is a real
 # multi-turn back-and-forth so the "what did we decide last time?" prompt returns
-# something coherent on the very first stage demo run, before any new
+# something coherent on the very first demo run, before any new
 # turn has been written.
 #
 # Topics map onto destinations the traveler_preferences seed already

@@ -1,8 +1,7 @@
 # Meridian: Cedar and Dogwood
 
-Reviewed against the repository and current AWS documentation on 12 September 2026.
-This is an integration assessment and a candidate policy, not a deployment record.
-No gateway, policy, permission or inventory was changed for this assessment.
+An integration assessment and a candidate policy for adding a Dogwood temporal
+rule to Meridian's Cedar policy engine. Dogwood is not enabled in the sample.
 
 ## Recommendation
 
@@ -24,15 +23,15 @@ Traveler confirmation must continue to come from the application.
 
 | Control | Source |
 | --- | --- |
-| `MeridianGovernance`, configured in `ENFORCE` | `meridian_agentcore/agentcore/agentcore.json` |
+| `MeridianGovernance`, configured in `ENFORCE` | `meridian_agentcore/agentcore/agentcore.template.json` |
 | Read, hold and confirmation Cedar policies | `policyEngines` in the same configuration |
 | Platform-pinned traveler, confirmation, ceiling and journey | `meridian_agentcore/app/MeridianConcierge/turn_trace.py` |
 | Confirmed writes executed before model narration | `meridian_agentcore/app/MeridianConcierge/hold_execution.py` |
-| Phase 5 hold through the same gateway | `backend/agents/orchestration_05/workflow.py`, `_node_hold` |
+| Phase 5 hold through the same gateway | `backend/agents/phase_05_workflow/workflow.py`, `_node_hold` |
 | Atomic, replay-safe hold and lease validation | `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py` and Aurora functions |
 | Structured allow/deny fields for recovery | `cedar_decision`, `cedar_policy`, `policy_mode`, `gateway_tool` in workflow telemetry |
 
-The new Recovery checks UI exposes these structured decisions separately from
+The Recovery checks UI shows these structured decisions separately from
 persisted checkpoint and booking records. It does not infer an allow from prose,
 claim that an allowed call created a hold, or describe Dogwood as enabled.
 
@@ -67,7 +66,7 @@ claim that an allowed call created a hold, or describe Dogwood as enabled.
 6. **Use the temporal policy definition.** The control-plane definition is
    `definition.policy.statement`, rather than `definition.cedar.statement`.
    Verify that the installed AgentCore CLI schema supports it before modifying
-   `agentcore.json`; a supported IaC/control-plane path may be necessary.
+   `agentcore.template.json`; a supported IaC or control-plane path may be necessary.
 7. **Replace the hold permit deliberately.** A second, stricter permit does not
    constrain the existing looser permit. Replace the existing hold permit with
    one combining its Cedar checks and the temporal prerequisite, or design an
@@ -112,11 +111,11 @@ approval, and a prior response is not a replacement for transactional capacity
 validation.
 
 Avoid a “one hold call per session” rule initially. Counting requests also counts
-retries; it can block the very idempotent recovery the workshop demonstrates.
+retries; it can block the idempotent recovery the sample depends on.
 Keep duplicate prevention and capacity locking in Aurora. Session limits also
 reset with a new session, so they are not account-wide spending limits.
 
-## Concrete rehearsal
+## Test plan
 
 Use an isolated Gateway/policy engine with the same schemas and controlled test
 targets. Do not set the current gateway to `LOG_ONLY`: enforcement mode applies
@@ -136,7 +135,7 @@ to the gateway and would stop enforcing its existing Cedar policies too.
 | Hand back to Concierge under a different principal | Read the authorized Aurora booking; do not assume shared history |
 
 Capture the actual policy decision, policy session ID, gateway trace ID, temporal
-evaluation attributes, checkpoint and booking identity for the workshop proof.
+evaluation attributes, checkpoint and booking identity for each scenario.
 The temporal `evaluation_invoked` span attribute alone does not establish that a
 temporal condition matched or determined the decision.
 

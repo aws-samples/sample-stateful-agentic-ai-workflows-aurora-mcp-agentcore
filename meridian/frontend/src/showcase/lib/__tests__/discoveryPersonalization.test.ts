@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { LongTermMemoryFact, Product, TravelerProfile } from '../../../types';
 import { derivePersonalization } from '../discoveryPersonalization';
 
-/** The real rows `/api/memory/trv_meridian_demo` returns for Alex. */
+/** The real rows `/api/memory/trv_meridian_demo` returns for Jordan. */
 const FACTS: LongTermMemoryFact[] = [
   { key: 'shellfish_allergy', value: 'Exclude shellfish', source: 'support_ticket', confidence: 1 },
   { key: 'home_airport', value: 'JFK', source: 'profile', confidence: 1 },
@@ -22,7 +22,7 @@ const FACTS: LongTermMemoryFact[] = [
 ];
 
 const PROFILE: TravelerProfile = {
-  full_name: 'Alex Morgan',
+  full_name: 'Jordan Morgan',
   home_airport: 'JFK',
   party_size: 2,
   budget_min: '2000.00' as unknown as number,

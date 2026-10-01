@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from backend.agents.orchestration_05.workflow import (
+from backend.agents.phase_05_workflow.workflow import (
     OrchestrationAgent,
     WorkflowAuthorizationError,
     _hold_key,

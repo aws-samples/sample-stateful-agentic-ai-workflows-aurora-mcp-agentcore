@@ -34,14 +34,34 @@ const MARKS = {
     label: 'Amazon S3',
   },
   aurora: {
-    src: '/brand/aurora.svg',
-    smallSrc: '/brand/aurora.svg',
+    src: '/brand/aws-2026-07-31/aurora.svg',
+    smallSrc: '/brand/aws-2026-07-31/aurora.svg',
     label: 'Amazon Aurora',
   },
   agentcore: {
-    src: '/brand/agentcore.svg',
-    smallSrc: '/brand/agentcore-sm.svg',
+    src: '/brand/agentcore-purple/agentcore.svg',
+    smallSrc: '/brand/agentcore-purple/agentcore.svg',
     label: 'Amazon Bedrock AgentCore',
+  },
+  'agentcore-runtime': {
+    src: '/brand/agentcore-purple/runtime.svg',
+    smallSrc: '/brand/agentcore-purple/runtime.svg',
+    label: 'AgentCore Runtime',
+  },
+  'agentcore-gateway': {
+    src: '/brand/agentcore-purple/gateway.svg',
+    smallSrc: '/brand/agentcore-purple/gateway.svg',
+    label: 'AgentCore Gateway',
+  },
+  'agentcore-memory': {
+    src: '/brand/agentcore-purple/memory.svg',
+    smallSrc: '/brand/agentcore-purple/memory.svg',
+    label: 'AgentCore Memory',
+  },
+  'agentcore-policy': {
+    src: '/brand/agentcore-purple/policy.svg',
+    smallSrc: '/brand/agentcore-purple/policy.svg',
+    label: 'AgentCore Policy',
   },
   bedrock: {
     src: '/brand/bedrock.svg',
@@ -72,7 +92,7 @@ export function ServiceMark({
 
   return (
     <img
-      className={`mds-service-mark${className ? ` ${className}` : ''}`}
+      className={`mds-service-mark mds-service-mark-${name}${className ? ` ${className}` : ''}`}
       src={src}
       width={size}
       height={size}

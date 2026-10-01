@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { Message } from '../../../types';
+import type { ReactNode } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   EMPTY_FILTERS,
   type MeridianShowcaseState,
@@ -10,19 +11,19 @@ import {
   SHOWCASE_FINALE_PROMPT,
   showcasePromptLabel,
 } from '../../lib/showcaseAdapters';
-import { deriveRecoveryEvidence, deriveRecoveryStage } from '../../lib/recoveryState';
+import { deriveRecoveryEvidence } from '../../lib/recoveryState';
 import { DesktopMeridianApp } from '../../DesktopMeridianApp';
 import { ChatComposer } from '../ChatComposer';
 import { DiscoveryWorkspace } from '../DiscoveryWorkspace';
+import { ConciergeConversation } from '../ConciergeConversation';
 import { ConciergeRail } from '../../surfaces/ConciergeRail';
 import { RecoveryBoardingPass } from '../RecoveryBoardingPass';
 import { ChatTranscript } from '../ChatTranscript';
-import { JourneyPanel } from '../JourneyPanel';
-import { RecoveryRouteMap } from '../RecoveryRouteMap';
 import { RecoveryWorkspace } from '../RecoveryWorkspace';
 import type { JourneyDocument } from '../../journey/types';
 import { TripResultCardContent } from '../TripResultCardContent';
 import { TripDetailDrawer } from '../TripDetailDrawer';
+import { ConciergeAssistanceCard } from '../RecoveryDecisionCards';
 import { SessionClose } from '../../surfaces/SessionClose';
 
 function makeState(
@@ -33,6 +34,9 @@ function makeState(
     travelersCount: overrides.chatFilters?.travelers || 2,
     restoreJourney: vi.fn(),
     selectedPhase: 1,
+    lastRequestPhase: null,
+    recoveryRequest: null,
+    inspectCurrentRun: vi.fn(),
     phaseLabel: 'SQL',
     phaseExamples: SHOWCASE_EXAMPLE_PROMPTS[1],
     messages: [],
@@ -159,7 +163,7 @@ describe('Experience presentation polish', () => {
     const clearError = vi.fn();
     const replayLastPrompt = vi.fn();
     const error = 'A saved booking request still needs reconciliation. Open its trip and retry the same hold to check Aurora before sending it again.';
-    render(<DiscoveryWorkspace state={makeState({ error, clearError, replayLastPrompt })} greeting="morning" onClear={vi.fn()} />);
+    render(<ConciergeConversation state={makeState({ error, clearError, replayLastPrompt })} onSaved={vi.fn()} onRecovery={vi.fn()} />);
 
     expect(screen.getByRole('alert')).toHaveTextContent(error);
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
@@ -185,7 +189,7 @@ describe('Experience presentation polish', () => {
       screen.getByRole('list', { name: 'Conversation with Meridian' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('complementary', { name: 'Your trip brief' }),
+      screen.getByRole('complementary', { name: 'Concierge conversation and travel brief' }),
     ).toBeInTheDocument();
     // The sidebar also has a Concierge entry - that one is the traveler's
     // product nav. Scope to the surface axis.
@@ -216,9 +220,10 @@ describe('Experience presentation polish', () => {
     const clearChat = vi.fn();
     const setSelectedPhase = vi.fn();
     const setMemoryEnabled = vi.fn();
+    const inspectCurrentRun = vi.fn();
     render(
       <DesktopMeridianApp
-        state={makeState({ selectedPhase: 3, clearChat, setSelectedPhase, setMemoryEnabled })}
+        state={makeState({ selectedPhase: 3, lastRequestPhase: 4, clearChat, setSelectedPhase, setMemoryEnabled, inspectCurrentRun })}
         theme="dark"
         onToggleTheme={vi.fn()}
       />,
@@ -230,9 +235,10 @@ describe('Experience presentation polish', () => {
     fireEvent.click(
       within(surfaces).getByRole('button', { name: /^Capability ladder/ }),
     );
-    expect(clearChat).toHaveBeenCalledOnce();
-    expect(setSelectedPhase).toHaveBeenCalledWith(1);
-    expect(setMemoryEnabled).toHaveBeenCalledWith(false);
+    expect(inspectCurrentRun).not.toHaveBeenCalled();
+    expect(clearChat).not.toHaveBeenCalled();
+    expect(setSelectedPhase).not.toHaveBeenCalled();
+    expect(setMemoryEnabled).not.toHaveBeenCalled();
 
     const nav = screen.getByRole('navigation', {
       name: 'Capability ladder phases',
@@ -376,14 +382,24 @@ describe('Experience presentation polish', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders an offline geographic JFK-to-Tokyo recovery map', () => {
-    const { container } = render(<RecoveryRouteMap />);
+  it('shows System evidence as loading, not empty, while a recovery run is in flight', () => {
+    window.history.replaceState(null, '', '/showcase?view=proof');
+    render(
+      <DesktopMeridianApp
+        state={makeState({
+          selectedPhase: 5,
+          phaseLabel: 'Workflow',
+          conversationId: 'phase5-thread',
+          lastPrompt: SHOWCASE_FINALE_PROMPT,
+          isLoading: true,
+        })}
+        theme="dark"
+        onToggleTheme={vi.fn()}
+      />,
+    );
 
-    expect(screen.getByRole('img', { name: /New York.*Tokyo/i })).toBeInTheDocument();
-    expect(screen.getByText('JFK')).toBeInTheDocument();
-    expect(screen.getByText('TYO')).toBeInTheDocument();
-    expect(container.querySelectorAll('.mds-route-geography').length).toBeGreaterThan(100);
-    expect(container.querySelector('.mds-route-line')).toBeInTheDocument();
+    expect(screen.queryByText('No recovery selected')).not.toBeInTheDocument();
+    expect(screen.getByText('Reading the journey from Aurora…')).toBeInTheDocument();
   });
 
   it('keeps Experience customer-facing with exactly two prompt examples', () => {
@@ -484,79 +500,6 @@ describe('Experience presentation polish', () => {
     expect(starters?.querySelectorAll('.mds-chat-starter-chip')).toHaveLength(2);
   });
 
-  it('progresses the current trip from disruption through recovery', () => {
-    const initial = makeState();
-    expect(deriveRecoveryStage(initial)).toBe('action');
-
-    const runningMessages: Message[] = [
-      { role: 'user', text: SHOWCASE_FINALE_PROMPT },
-    ];
-    const running = makeState({
-      selectedPhase: 5,
-      phaseLabel: 'Workflow',
-      phaseExamples: SHOWCASE_EXAMPLE_PROMPTS[5],
-      lastPrompt: SHOWCASE_FINALE_PROMPT,
-      isLoading: true,
-      messages: runningMessages,
-    });
-    expect(deriveRecoveryStage(running)).toBe('running');
-
-    const ready = makeState({
-      ...running,
-      isLoading: false,
-      workflowStatus: 'resumed',
-      messages: [
-        ...runningMessages,
-        { role: 'bot', text: 'Two live alternatives are ready.' },
-      ],
-    });
-    expect(deriveRecoveryStage(ready)).toBe('ready');
-
-    const checkpointed = makeState({
-      ...running,
-      isLoading: false,
-      workflowStatus: 'paused',
-      conversationId: 'phase5-demo',
-      messages: [
-        ...runningMessages,
-        { role: 'bot', text: 'The shortlist is saved.' },
-      ],
-    });
-    expect(deriveRecoveryStage(checkpointed)).toBe('checkpointed');
-
-    const { rerender } = render(<JourneyPanel state={initial} />);
-    expect(screen.getByText('Traveler report')).toBeInTheDocument();
-    expect(screen.getByText('Action needed')).toBeInTheDocument();
-    expect(screen.getByText('Canceled')).toBeInTheDocument();
-    expect(screen.getByText('Saved loyalty profile')).toBeInTheDocument();
-    expect(screen.getByText('Partner benefits need confirmation')).toBeInTheDocument();
-    expect(screen.queryByText(/No shortlist/i)).not.toBeInTheDocument();
-
-    rerender(<JourneyPanel state={running} />);
-    expect(screen.getByText('Checking alternatives')).toBeInTheDocument();
-
-    rerender(<JourneyPanel state={checkpointed} />);
-    expect(screen.getByText('Shortlist saved')).toBeInTheDocument();
-    expect(screen.queryByText(/Recovery plan ready/i)).not.toBeInTheDocument();
-
-    rerender(<JourneyPanel state={ready} />);
-    expect(screen.getByText(/Recovery plan ready/i)).toBeInTheDocument();
-  });
-
-  it('keeps travel context collapsed until the presenter opens it', () => {
-    render(<JourneyPanel state={makeState()} />);
-
-    const toggle = screen.getByRole('button', { name: /Travel context/i });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByText('Budget')).not.toBeInTheDocument();
-
-    fireEvent.click(toggle);
-
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByText('Budget')).toBeInTheDocument();
-    expect(screen.getByText('$3,200')).toBeInTheDocument();
-  });
-
   it('renders an intentional recovery launch state before live results exist', () => {
     render(<RecoveryWorkspace state={makeState()} />);
 
@@ -578,7 +521,7 @@ describe('Experience presentation polish', () => {
     expect(screen.queryByRole('article', { name: 'Agent proof' })).not.toBeInTheDocument();
     expect(screen.queryByRole('article', { name: 'Recovery option 2' })).not.toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: "Alex's JFK to Tokyo recovery" }),
+      screen.getByRole('heading', { name: "Jordan's JFK to Tokyo recovery" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('heading', {
@@ -659,9 +602,196 @@ describe('Experience presentation polish', () => {
     expect(
       screen.getByText('Verify after resume').closest('li'),
     ).toHaveAttribute('aria-current', 'step');
+    // No span on this desk confirmed understanding, so clicking Resume does not either.
     expect(
       screen.getByText('Understand disruption').closest('li'),
-    ).toHaveClass('is-visited');
+    ).toHaveClass('is-pending');
+  });
+
+  it('fills in each recovery step with its service and time as the backend confirms it', () => {
+    const traceSpan = (name: string, extra: Record<string, unknown> = {}) => ({
+      id: name, name, category: 'orchestration', type: 'tool_call', status: 'ok',
+      latencyMs: null, fields: [], ...extra,
+    });
+    const checkpoint = traceSpan('Checkpoint · AuroraDataApiSaver.put', {
+      component: 'Aurora · LangGraph checkpoint tables', latencyMs: 106,
+      fields: [{ label: 'checkpoint_durable', value: 'true' }],
+    });
+    const paused = [
+      traceSpan('Workflow node: classify → plan', {
+        component: 'LangGraph StateGraph', latencyMs: 0,
+      }),
+      traceSpan('Workflow node: search', {
+        component: 'LangGraph → SearchAgent', latencyMs: 956,
+      }),
+      traceSpan('Embedding generated', { latencyMs: 221 }),
+      traceSpan('Hybrid candidates fetched', { latencyMs: 338, sql: 'SELECT 1' }),
+      checkpoint,
+    ];
+    const base = {
+      selectedPhase: 5 as const, phaseLabel: 'Workflow' as const, conversationId: 'phase5-thread',
+      messages: [
+        { role: 'user' as const, text: SHOWCASE_FINALE_PROMPT },
+        { role: 'bot' as const, text: 'Paused.' },
+      ],
+    };
+    const step = (label: string) => screen.getByText(label).closest('li');
+    const { rerender } = render(<RecoveryWorkspace state={makeState({
+      ...base, lastPrompt: SHOWCASE_FINALE_PROMPT, workflowStatus: 'paused', traceSpans: paused,
+    })} />);
+    expect(step('Save an Aurora checkpoint')).toHaveClass('is-visited');
+    expect(step('Save an Aurora checkpoint')).toHaveTextContent('Aurora Data API · 106 ms');
+    expect(step('Search and rank')).toHaveTextContent('Bedrock + Aurora · 956 ms');
+    expect(step('Verify after resume')).toHaveClass('is-pending');
+    expect(screen.getByText('Paused at a saved checkpoint')).toBeInTheDocument();
+
+    rerender(<RecoveryWorkspace state={makeState({
+      ...base, lastPrompt: 'Resume workflow from checkpoint', workflowStatus: 'paused',
+      isLoading: true, traceSpans: [],
+    })} />);
+    expect(step('Save an Aurora checkpoint')).toHaveTextContent('Aurora Data API · 106 ms');
+    expect(step('Verify after resume')).toHaveAttribute('aria-current', 'step');
+
+    // The resumed run returns the paused run's spans without the write time.
+    rerender(<RecoveryWorkspace state={makeState({
+      ...base, lastPrompt: 'Resume workflow from checkpoint', workflowStatus: 'resumed',
+      traceSpans: [
+        ...paused.slice(0, 4), { ...checkpoint, latencyMs: null },
+        traceSpan('Workflow node: availability fan-out', { latencyMs: 54 }),
+        traceSpan('PackageAgent: Finding package', { latencyMs: 40 }),
+      ],
+    })} />);
+    expect(step('Save an Aurora checkpoint')).toHaveTextContent('Aurora Data API · 106 ms');
+    expect(step('Verify after resume')).toHaveClass('is-visited');
+    expect(step('Verify after resume')).toHaveTextContent('Aurora · 54 ms');
+  });
+
+  it('glows the Aurora mark once, when a watched run confirms the checkpoint', () => {
+    const checkpoint = {
+      id: 'cp', name: 'Checkpoint · AuroraDataApiSaver.put', category: 'memory_short',
+      type: 'tool_call', status: 'ok', latencyMs: 106,
+      component: 'Aurora · LangGraph checkpoint tables',
+      fields: [{ label: 'checkpoint_durable', value: 'true' }],
+    };
+    const search = {
+      id: 'search', name: 'Workflow node: search', category: 'orchestration',
+      type: 'delegation', status: 'ok', latencyMs: 956, fields: [],
+    };
+    const base = {
+      selectedPhase: 5 as const, phaseLabel: 'Workflow' as const, conversationId: 'phase5-glow',
+      lastPrompt: SHOWCASE_FINALE_PROMPT,
+    };
+    const checkpointed = makeState({
+      ...base, workflowStatus: 'paused', traceSpans: [search, checkpoint],
+      messages: [
+        { role: 'user' as const, text: SHOWCASE_FINALE_PROMPT },
+        { role: 'bot' as const, text: 'Paused.' },
+      ],
+    });
+    const { container, unmount } = render(<RecoveryWorkspace state={checkpointed} />);
+    expect(container.querySelector('.mds-aurora-glow')).toBeNull();
+    unmount();
+
+    const watched = render(<RecoveryWorkspace state={makeState({
+      ...base, isLoading: true, messages: [{ role: 'user' as const, text: SHOWCASE_FINALE_PROMPT }],
+    })} />);
+    watched.rerender(<RecoveryWorkspace state={checkpointed} />);
+    expect(watched.container.querySelectorAll('.mds-aurora-glow')).toHaveLength(1);
+    const mark = screen.getByText('Save an Aurora checkpoint').closest('li')!
+      .querySelector<HTMLElement>('.mds-recovery-step-icon')!;
+    expect(mark.style.opacity).toBe('0');
+  });
+
+  it('still moves the recovery cues when the desk is the first view the app paints', () => {
+    // The app's view swap starts with AnimatePresence initial={false}. That must
+    // not freeze cues that mount later inside the view it first painted.
+    const inFirstView = (child: ReactNode) => (
+      <AnimatePresence initial={false}>
+        <motion.div key="recovery" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          {child}
+        </motion.div>
+      </AnimatePresence>
+    );
+    const checkpoint = {
+      id: 'cp', name: 'Checkpoint · AuroraDataApiSaver.put', category: 'memory_short',
+      type: 'tool_call', status: 'ok', latencyMs: 106,
+      component: 'Aurora · LangGraph checkpoint tables',
+      fields: [{ label: 'checkpoint_durable', value: 'true' }],
+    };
+    const search = {
+      id: 'search', name: 'Workflow node: search', category: 'orchestration',
+      type: 'delegation', status: 'ok', latencyMs: 956, fields: [],
+    };
+    const base = {
+      selectedPhase: 5 as const, phaseLabel: 'Workflow' as const, conversationId: 'phase5-first',
+      lastPrompt: SHOWCASE_FINALE_PROMPT,
+    };
+    const view = render(inFirstView(<RecoveryWorkspace state={makeState(base)} />));
+    view.rerender(inFirstView(<RecoveryWorkspace state={makeState({
+      ...base, isLoading: true, messages: [{ role: 'user' as const, text: SHOWCASE_FINALE_PROMPT }],
+    })} />));
+    view.rerender(inFirstView(<RecoveryWorkspace state={makeState({
+      ...base, workflowStatus: 'paused', traceSpans: [search, checkpoint],
+      messages: [
+        { role: 'user' as const, text: SHOWCASE_FINALE_PROMPT },
+        { role: 'bot' as const, text: 'Paused.' },
+      ],
+    })} />));
+    const glow = view.container.querySelector<HTMLElement>('.mds-aurora-glow');
+    expect(glow?.style.opacity).toBe('0.9');
+    const mark = screen.getByText('Search and rank').closest('li')!
+      .querySelector<HTMLElement>('.mds-recovery-step-icon')!;
+    expect(mark.style.opacity).toBe('0');
+  });
+
+  it('does not glow or animate a checkpoint confirmed before the resume it watches', () => {
+    const checkpoint = {
+      id: 'cp', name: 'Checkpoint · AuroraDataApiSaver.put', category: 'memory_short',
+      type: 'tool_call', status: 'ok', latencyMs: 106,
+      component: 'Aurora · LangGraph checkpoint tables',
+      fields: [{ label: 'checkpoint_durable', value: 'true' }],
+    };
+    const search = {
+      id: 'search', name: 'Workflow node: search', category: 'orchestration',
+      type: 'delegation', status: 'ok', latencyMs: 956, fields: [],
+    };
+    const base = {
+      selectedPhase: 5 as const, phaseLabel: 'Workflow' as const,
+      conversationId: 'phase5-restored', traceSpans: [search, checkpoint],
+      messages: [
+        { role: 'user' as const, text: SHOWCASE_FINALE_PROMPT },
+        { role: 'bot' as const, text: 'Paused.' },
+      ],
+    };
+    // Opened onto a journey Aurora already recorded, then resumed in front of the room.
+    const view = render(<RecoveryWorkspace state={makeState({
+      ...base, lastPrompt: SHOWCASE_FINALE_PROMPT, workflowStatus: 'paused',
+    })} />);
+    view.rerender(<RecoveryWorkspace state={makeState({
+      ...base, lastPrompt: 'Resume workflow from checkpoint', workflowStatus: 'paused',
+      isLoading: true,
+    })} />);
+    expect(view.container.querySelector('.mds-aurora-glow')).toBeNull();
+    const icons = () => Array.from(
+      view.container.querySelectorAll<HTMLElement>('.mds-recovery-step-icon'),
+    );
+    expect(icons().some(icon => icon.style.opacity === '0')).toBe(false);
+  });
+
+  it('starts a watched run without animating any step the backend has not confirmed', () => {
+    const base = {
+      selectedPhase: 5 as const, phaseLabel: 'Workflow' as const, conversationId: 'phase5-fresh',
+    };
+    const view = render(<RecoveryWorkspace state={makeState(base)} />);
+    view.rerender(<RecoveryWorkspace state={makeState({
+      ...base, isLoading: true, lastPrompt: SHOWCASE_FINALE_PROMPT,
+      messages: [{ role: 'user' as const, text: SHOWCASE_FINALE_PROMPT }],
+    })} />);
+    const icons = Array.from(
+      view.container.querySelectorAll<HTMLElement>('.mds-recovery-step-icon'),
+    );
+    expect(icons).toHaveLength(4);
+    expect(icons.some(icon => icon.style.opacity === '0')).toBe(false);
   });
 
   it('reports an interrupted request without claiming no changes or completed steps', () => {
@@ -829,7 +959,7 @@ describe('Experience presentation polish', () => {
       'Resume workflow from checkpoint',
       5,
     );
-    expect(screen.queryByText('ALEX')).not.toBeInTheDocument();
+    expect(screen.queryByText('JORDAN')).not.toBeInTheDocument();
   });
 
   it('requires a matching persisted receipt before handing a hold to Concierge', () => {
@@ -846,7 +976,7 @@ describe('Experience presentation polish', () => {
     });
     const { rerender } = render(<RecoveryWorkspace state={state}
       onOpenProof={onOpenProof} onOpenConcierge={onOpenConcierge} />);
-    expect(screen.queryByRole('button', { name: 'Take it back to Alex' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Take it back to Jordan' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Read booking receipt' }));
     expect(onOpenProof).toHaveBeenCalledOnce();
 
@@ -858,14 +988,28 @@ describe('Experience presentation polish', () => {
     const document = { active_thread_id: 'different-thread', hold } as JourneyDocument;
     rerender(<RecoveryWorkspace state={state} journeyDocument={document}
       onOpenProof={onOpenProof} onOpenConcierge={onOpenConcierge} />);
-    expect(screen.queryByRole('button', { name: 'Take it back to Alex' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Take it back to Jordan' })).not.toBeInTheDocument();
 
     rerender(<RecoveryWorkspace state={state}
       journeyDocument={{ ...document, active_thread_id: 'current-thread' }}
       onOpenProof={onOpenProof} onOpenConcierge={onOpenConcierge} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Take it back to Alex' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Take it back to Jordan' }));
     expect(onOpenConcierge).toHaveBeenCalledWith(hold);
   });
+
+  it.each(['2020-01-01T00:00:00Z', null, 'invalid']) (
+    'does not offer a Concierge handoff for an expired or unverified expiry: %s', (expiry) => {
+      const state = makeState({ selectedPhase: 5, conversationId: 'current-thread' });
+      const document = {
+        active_thread_id: 'current-thread',
+        hold: { status: 'held', booking_id: 'HLD-expired', hold_expires_at: expiry },
+      } as JourneyDocument;
+      render(<RecoveryWorkspace state={state} journeyDocument={document}
+        onOpenConcierge={vi.fn()} />);
+      expect(screen.queryByRole('button', { name: 'Take it back to Jordan' })).not.toBeInTheDocument();
+      expect(screen.queryByText('Bring it home.')).not.toBeInTheDocument();
+    },
+  );
 
   it('shows recorded terms in trip details when catalog prices and party have changed', () => {
     const product = {
@@ -888,6 +1032,47 @@ describe('Experience presentation polish', () => {
     expect(facts).toHaveTextContent('Recorded total for 2 travelers');
     expect(facts).toHaveTextContent('$4,000');
     expect(facts).not.toHaveTextContent('$2,499');
+    // The photo label sits on the black scrim, so it keeps the dark roles in
+    // both themes (Important 4, tokens-task-6-review.md).
+    expect(container.querySelector('.mds-trip-modal-visual')).toHaveAttribute('data-theme', 'dark');
+  });
+
+  it('scopes the dark photo roles to the hotel media region', () => {
+    const state = makeState({ selectedPhase: 5 });
+    const evidence = deriveRecoveryEvidence(state);
+    const { container } = render(
+      <ConciergeAssistanceCard
+        stage="ready"
+        evidence={evidence}
+        product={null}
+        onHotel={vi.fn()}
+        onProtection={vi.fn()}
+      />,
+    );
+    const media = container.querySelector('.mds-concierge-hotel-media');
+    expect(media).toHaveAttribute('data-theme', 'dark');
+  });
+
+  it('marks only the Checkpointed chip with the checkpoint tone', () => {
+    const product = {
+      product_id: 'TKY-005', name: 'Tokyo Ryokan & Onsen Slow Week', price: 3899,
+      brand: 'ANA Holidays',
+      description: 'Lounge access included with an easy airport transfer.',
+      image_url: '/travel/catalog/TKY-005.jpg', category: 'City & Culture',
+      destination: 'Tokyo', region: 'Asia', available_sizes: ['5 nights'],
+      availability: { '5 nights': 4 }, highlights: ['lounge access'],
+    };
+    const state = makeState({ selectedPhase: 5, workflowStatus: 'paused' });
+
+    render(
+      <article>
+        <TripResultCardContent product={product} state={state} matchPct={null} featured />
+      </article>,
+    );
+
+    expect(screen.getByText('Checkpointed').closest('span')).toHaveClass('is-checkpoint');
+    expect(screen.getByText('Lounge access').closest('span')).not.toHaveClass('is-checkpoint');
+    expect(screen.getByText('Lounge access').closest('span')?.className).toBe('');
   });
 
   it('does not present a previous Concierge booking as a new recovery receipt', () => {
@@ -993,50 +1178,6 @@ describe('Experience presentation polish', () => {
       availabilityObserved: false, loyaltyObserved: false, memoryObserved: false,
       checkpointObserved: false, durableCheckpoint: false,
     });
-  });
-
-  it('marks only observed activity as verified', () => {
-    const state = makeState({
-      selectedPhase: 5,
-      phaseLabel: 'Workflow',
-      lastPrompt: SHOWCASE_FINALE_PROMPT,
-      workflowStatus: 'paused',
-      recommendations: [
-        {
-          product_id: 'tokyo',
-          name: 'Tokyo option',
-          brand: 'Meridian',
-          price: 1800,
-          description: 'Tokyo',
-          image_url: '',
-          category: 'city',
-        },
-      ],
-      traceSpans: [
-        {
-          id: 'checkpoint',
-          name: 'Checkpoint · PostgresSaver.put',
-          category: 'memory_short',
-          type: 'tool_call',
-          status: 'ok',
-          latencyMs: 10,
-          fields: [],
-        },
-      ],
-      messages: [
-        { role: 'user', text: SHOWCASE_FINALE_PROMPT },
-        { role: 'bot', text: 'Paused.' },
-      ],
-    });
-
-    render(<JourneyPanel state={state} />);
-
-    const loyaltyRow = screen
-      .getByText('Loyalty perks')
-      .closest('.mds-agent-activity-row');
-    expect(loyaltyRow).toHaveClass('is-unobserved');
-    expect(loyaltyRow).toHaveTextContent('Not observed in this run');
-    expect(loyaltyRow).toHaveTextContent('not observed');
   });
 
   it('limits verified inventory to the top three plans and polishes memory context', () => {
@@ -1161,7 +1302,7 @@ describe('Concierge travel states', () => {
     expect(screen.getByRole('region', { name: 'Workflow checkpoint demonstration' })).toBeInTheDocument();
     expect(screen.queryByText('Not valid for boarding')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Continue at recovery desk' }));
-    expect(await screen.findByRole('heading', { name: "Alex's JFK to Tokyo recovery" })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "Jordan's JFK to Tokyo recovery" })).toBeInTheDocument();
     expect(new URL(window.location.href).searchParams.get('view')).toBe('recovery');
     expect(state.applyPhaseExample).not.toHaveBeenCalled();
     expect(state.submitPrompt).not.toHaveBeenCalled();
@@ -1222,9 +1363,23 @@ describe('Concierge travel states', () => {
 
   it('reflects saved state and allows removing the same trip', () => {
     const saveTrip = vi.fn();
-    const state = makeState({ saveTrip, savedTripIds: new Set(['WEL-005']), travelerProfile: null });
+    const liveCatalog = [{
+      product_id: 'WEL-005',
+      name: 'Wellness Retreat Fixture',
+      brand: 'Fixture Tours',
+      price: 3699,
+      description: 'A live catalog row used only in this test.',
+      image_url: '/travel/catalog/WEL-005.jpg',
+      category: 'Wellness & Luxury',
+    }];
+    const state = makeState({
+      saveTrip,
+      catalog: liveCatalog,
+      savedTripIds: new Set(['WEL-005']),
+      travelerProfile: null,
+    });
     render(<DiscoveryWorkspace state={state} greeting="morning" onClear={vi.fn()} />);
-    const button = screen.getByRole('button', { name: 'Unsave Tuscany Wine & Wellness' });
+    const button = screen.getByRole('button', { name: 'Unsave Wellness Retreat Fixture' });
     expect(button).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(button);
     expect(saveTrip).toHaveBeenCalledWith(expect.objectContaining({ product_id: 'WEL-005' }));
@@ -1264,4 +1419,62 @@ it('does not present a SQL result as a recovery plan', () => {
   expect(screen.getByRole('button', { name: 'Start recovery' })).toBeInTheDocument();
   expect(screen.queryByText('Unrelated Barcelona trip')).not.toBeInTheDocument();
   expect(screen.queryByText('SQL results')).not.toBeInTheDocument();
+});
+
+it('keeps one concierge composer and sends its request through the production phase', () => {
+  const state = makeState({ currentPrompt: 'Keep the boutique option', selectedPhase: 1 });
+  render(<ConciergeConversation state={state} onSaved={vi.fn()} onRecovery={vi.fn()} />);
+  expect(screen.getAllByRole('textbox', { name: 'Ask Meridian anything' })).toHaveLength(1);
+  expect(screen.getAllByRole('button', { name: 'Help me plan a culture trip to Tokyo' })).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  expect(state.submitPrompt).toHaveBeenCalledWith(undefined, 4);
+  expect(screen.getByRole('heading', { name: 'Your travel brief' })).not.toBeVisible();
+});
+
+it('blocks destination-studio starters until traveler context authorization completes', () => {
+  const state = makeState({ memoryLoading: true });
+  const { rerender } = render(<ConciergeConversation state={state} onSaved={vi.fn()} onRecovery={vi.fn()} />);
+  const starter = screen.getByRole('button', { name: 'Help me plan a culture trip to Tokyo' });
+  expect(starter).toBeDisabled();
+  fireEvent.click(starter);
+  expect(state.applyPhaseExample).not.toHaveBeenCalled();
+  rerender(<ConciergeConversation state={{ ...state, memoryLoading: false }} onSaved={vi.fn()} onRecovery={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Help me plan a culture trip to Tokyo' }));
+  expect(state.applyPhaseExample).toHaveBeenCalledWith('Help me plan a culture trip to Tokyo', true, 4);
+});
+
+it('keeps one response slot from waiting through streaming and offers stop beside an editable draft', () => {
+  const state = makeState({ isLoading: true, chatProgress: 'Checking your trip options…',
+    stopWaiting: vi.fn(), messages: [{ role: 'user', text: 'Plan Tokyo' }] });
+  const { container, rerender } = render(<ConciergeConversation state={state} onSaved={vi.fn()} onRecovery={vi.fn()} />);
+  const response = container.querySelector('.mc-message.is-bot');
+  expect(response?.querySelector('.mc-response-spinner')).toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: 'Ask Meridian anything' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Stop waiting' }));
+  expect(state.stopWaiting).toHaveBeenCalledOnce();
+  rerender(<ConciergeConversation state={{ ...state,
+    messages: [...state.messages, { role: 'bot', text: 'Your Tokyo trip', streaming: true }],
+  }} onSaved={vi.fn()} onRecovery={vi.fn()} />);
+  expect(container.querySelectorAll('.mc-message.is-bot')).toHaveLength(1);
+  expect(container.querySelector('.mc-message.is-bot')).toBe(response);
+  expect(container.querySelector('.mc-loading')).not.toBeInTheDocument();
+});
+
+it('reveals provisional trips with the reply and enables actions only after the authoritative result', () => {
+  const product = { product_id: 'CTY-002', name: 'Tokyo Culture & Cuisine', brand: 'Meridian',
+    price: 2499, description: 'A catalog trip.', category: 'City', image_url: '/travel/catalog/CTY-002.jpg' };
+  const state = makeState({ isLoading: true, streamingRecommendations: [product],
+    messages: [{ role: 'user', text: 'Plan Tokyo' }] });
+  const { rerender } = render(<DiscoveryWorkspace state={state} onClear={vi.fn()} />);
+  expect(screen.queryByRole('article')).not.toBeInTheDocument();
+  expect(screen.getByRole('status', { name: 'Updating your trip recommendations' })).toBeInTheDocument();
+  const streaming = { ...state, messages: [...state.messages, { role: 'bot' as const, text: 'Here is Tokyo.', streaming: true }] };
+  rerender(<DiscoveryWorkspace state={streaming} onClear={vi.fn()} />);
+  const card = screen.getByRole('article', { name: product.name });
+  expect(screen.getByRole('button', { name: `Explore this trip: ${product.name}` })).toBeDisabled();
+  expect(screen.getByRole('button', { name: `Save ${product.name}` })).toBeDisabled();
+  rerender(<DiscoveryWorkspace state={{ ...streaming, isLoading: false, recommendations: [product] }} onClear={vi.fn()} />);
+  expect(screen.getByRole('article', { name: product.name })).toBe(card);
+  expect(screen.getByRole('button', { name: `Explore this trip: ${product.name}` })).toBeEnabled();
+  expect(screen.getByRole('button', { name: `Save ${product.name}` })).toBeEnabled();
 });

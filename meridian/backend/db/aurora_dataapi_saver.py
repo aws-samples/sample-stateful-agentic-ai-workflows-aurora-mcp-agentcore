@@ -21,6 +21,7 @@ appended segments and read through windowed ``substring`` calls.
 
 import asyncio
 import json
+from collections import OrderedDict
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Sequence
 
 from langgraph.checkpoint.base import (
@@ -34,6 +35,10 @@ from langgraph.checkpoint.base import (
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from backend.db.blob_windows import split_for_write, window_offsets
+from backend.timing import clock, elapsed_ms
+
+# Recent put timings kept for the workflow to read back after its run.
+PUT_TIMINGS_KEPT = 256
 
 
 async def _bounded_reads(items: Sequence, read: Callable[[Any], Awaitable[Any]]) -> list:
@@ -151,6 +156,21 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
         """
         super().__init__(serde=serde or JsonPlusSerializer())
         self.client = client
+        # Measured write time of each recent put, keyed by the id of the last
+        # activity in the state it persisted. The workflow reads its own back
+        # after the run, so a checkpoint span can show how long its write took.
+        self.put_timings: OrderedDict[str, int] = OrderedDict()
+
+    def _record_put(self, values: dict, took_ms: int) -> None:
+        """Remember how long the put that persisted the latest activity took."""
+        activities = values.get("activities") or []
+        latest = activities[-1] if activities else None
+        activity_id = latest.get("id") if isinstance(latest, dict) else None
+        if not activity_id:
+            return
+        self.put_timings[activity_id] = took_ms
+        while len(self.put_timings) > PUT_TIMINGS_KEPT:
+            self.put_timings.popitem(last=False)
 
     async def _write_blob(
         self, thread_id: str, ns: str, channel: str, version: str, value: Any
@@ -248,6 +268,7 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
         thread_id = configurable["thread_id"]
         ns = configurable.get("checkpoint_ns", "")
         values = checkpoint.get("channel_values", {})
+        started = clock()
 
         for channel, version in new_versions.items():
             if channel in values:
@@ -269,6 +290,7 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
                 json.dumps(serializable_metadata),
             ),
         )
+        self._record_put(values, elapsed_ms(started))
         return {
             "configurable": {
                 "thread_id": thread_id,

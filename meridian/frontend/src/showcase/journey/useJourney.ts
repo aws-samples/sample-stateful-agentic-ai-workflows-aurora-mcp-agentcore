@@ -96,6 +96,9 @@ export function useSurfaceUrlState() {
   return { view, journeyId, threadId, setView, setJourneyId, selectJourney };
 }
 
+/** How long after one in-flight read finishes the next one starts. */
+export const JOURNEY_POLL_MS = 1000;
+
 export type JourneyState = {
   journeyId: string | null;
   document: JourneyDocument | null;
@@ -104,103 +107,113 @@ export type JourneyState = {
   refresh: () => void;
 };
 
-/** Own the journey document: resolve an id, load it, and let a surface reload it.
+type JourneyRead = {
+  key: string | null;
+  document: JourneyDocument | null;
+  loading: boolean;
+  error: string | null;
+};
+
+const emptyRead: JourneyRead = { key: null, document: null, loading: false, error: null };
+
+/** Resolve only the selected recovery; never adopt another thread's latest journey. */
+async function readJourney(
+  id: string | null,
+  threadId: string | null | undefined,
+  signal: AbortSignal,
+): Promise<JourneyDocument | null> {
+  if (!id && threadId) {
+    const journeys = await fetchJourneys(1, signal, threadId);
+    id = journeys.find(item => item.active_thread_id === threadId)?.journey_id ?? null;
+  }
+  if (!id) return null;
+  const doc = await fetchJourneyDocument(id, signal);
+  if (threadId && doc.active_thread_id !== threadId) {
+    throw new Error('The journey does not match this recovery thread. '
+      + 'Re-read after the workflow saves its progress.');
+  }
+  return doc;
+}
+
+function missingJourney(threadId: string | null | undefined): string {
+  return threadId
+    ? 'No journey has been recorded for this recovery yet. '
+      + 'Re-read after the workflow saves its progress.'
+    : 'No journey has been recorded yet. Start a recovery to create one.';
+}
+
+/** Read committed journey evidence, serially polling only during an active run.
  *
- * The whole continuity claim is that a refresh restores the conversation, the
- * plan, the pending decision, the hold and both executions from persisted
- * state, so the document is fetched rather than remembered.
+ * Aurora commits the lease, authorization and checkpoints during the request.
+ * Each next read starts one second after the previous read ends. The transition
+ * out of polling aborts that read and performs one final read of the outcome.
+ * A refresh of saved evidence never animates or invents intermediate progress.
  */
 export function useJourney(
   journeyId: string | null,
   onResolveId: (id: string) => void,
   enabled: boolean,
   threadId?: string | null,
+  poll = false,
 ): JourneyState {
-  const [document, setDocument] = useState<JourneyDocument | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [read, setRead] = useState<JourneyRead>(emptyRead);
   const [nonce, setNonce] = useState(0);
-  // Held in a ref so resolving an id cannot itself retrigger the load.
   const resolve = useRef(onResolveId);
-  resolve.current = onResolveId;
-  const loadedNonce = useRef(0);
+  useEffect(() => { resolve.current = onResolveId; }, [onResolveId]);
+  // A resolved journey id in the URL must not cancel its own thread read.
+  const selectedId = threadId ? null : journeyId;
+  const key = enabled ? threadId || selectedId : null;
 
   useEffect(() => {
-    if (!enabled || (!journeyId && !threadId)) {
-      setDocument(null);
-      setLoading(false);
-      setError(null);
-      return;
-    }
-    // Publishing the resolved id changes this dependency. Without this the
-    // surface immediately re-reads the document it just loaded, which costs a
-    // few seconds of Data API round trips and leaves the control saying
-    // "Reading" over data that is already on screen.
-    if ((threadId ? document?.active_thread_id === threadId : journeyId && document?.journey_id === journeyId) && nonce === loadedNonce.current) {
+    if (!key) {
+      setRead(emptyRead);
       return;
     }
     let cancelled = false;
-    const controller = new AbortController();
-    // A full checkpoint rehydrates several bounded Data API blob windows.
-    // Allow for that read over a slow connection while retaining a hard limit.
-    const timeout = window.setTimeout(() => controller.abort(), 60000);
-    let resolvedFromList: string | null = null;
-
+    let id = selectedId;
+    let controller: AbortController;
+    let timeout: number;
+    let next: number;
     const load = async () => {
-      setLoading(true);
-      setError(null);
-      // Keep same-journey data during a refresh, but never show a previous
-      // journey under a newly selected URL if the new read fails.
-      if (threadId ? document?.active_thread_id !== threadId : document?.journey_id !== journeyId) setDocument(null);
+      controller = new AbortController();
+      timeout = window.setTimeout(() => controller.abort(), 60000);
+      setRead(current => ({
+        ...(current.key === key ? current : emptyRead), key, loading: true,
+        error: poll && current.key === key ? current.error : null,
+      }));
       try {
-        let id = journeyId;
-        if (!id || (threadId && document?.active_thread_id !== threadId)) {
-          const journeys = await fetchJourneys(1, controller.signal, threadId ?? undefined);
-          const match = journeys.find(item => item.active_thread_id === threadId);
-          if (!match) {
-            if (!cancelled) {
-              setDocument(null);
-              setError(
-                threadId ? 'No journey has been recorded for this recovery yet. Re-read after the workflow saves its progress.' : 'No journey has been recorded yet. Start a recovery to create one.',
-              );
-            }
-            return;
-          }
-          id = match.journey_id;
-          resolvedFromList = id;
-        }
-        const doc = await fetchJourneyDocument(id, controller.signal);
+        const doc = await readJourney(id, threadId, controller.signal);
         if (cancelled) return;
-        if (threadId && doc.active_thread_id !== threadId) throw new Error('The journey does not match this recovery thread. Re-read after the workflow saves its progress.');
-        setDocument(doc);
-        loadedNonce.current = nonce;
-        // Publish the id only once the document is committed. Writing it into
-        // the URL first changes this effect's dependency mid-flight, which
-        // cancels the very run that was about to deliver the document.
-        if (resolvedFromList) resolve.current(resolvedFromList);
+        setRead({ key, document: doc, loading: false,
+          error: doc || poll ? null : missingJourney(threadId) });
+        if (doc) {
+          if (id !== doc.journey_id) resolve.current(doc.journey_id);
+          id = doc.journey_id;
+        }
       } catch (err) {
-        if (!cancelled) setError(controller.signal.aborted ? 'Reading the saved journey took too long. Check the connection and try again.' : err instanceof Error ? err.message : String(err));
+        if (!cancelled) setRead(current => ({ ...current, error: controller.signal.aborted
+          ? 'Reading the saved journey took too long. Check the connection and try again.'
+          : err instanceof Error ? err.message : String(err) }));
       } finally {
         window.clearTimeout(timeout);
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setRead(current => ({ ...current, loading: false }));
+          if (poll) next = window.setTimeout(() => { void load(); }, JOURNEY_POLL_MS);
+        }
       }
     };
-
     void load();
     return () => {
       cancelled = true;
       window.clearTimeout(timeout);
-      controller.abort();
+      window.clearTimeout(next);
+      controller?.abort();
     };
-  }, [journeyId, enabled, nonce, threadId, document?.journey_id, document?.active_thread_id]);
+  }, [key, selectedId, threadId, nonce, poll]);
 
+  const current = key && read.key === key ? read : emptyRead;
   return {
-    journeyId,
-    // Mask synchronously too: effects run after paint. An old green receipt
-    // must never flash under a new request while its read is being scheduled.
-    document: enabled && (threadId ? document?.active_thread_id === threadId : journeyId && document?.journey_id === journeyId) ? document : null,
-    loading,
-    error,
-    refresh: useCallback(() => setNonce((n) => n + 1), []),
+    journeyId, document: current.document, loading: current.loading, error: current.error,
+    refresh: useCallback(() => setNonce(n => n + 1), []),
   };
 }

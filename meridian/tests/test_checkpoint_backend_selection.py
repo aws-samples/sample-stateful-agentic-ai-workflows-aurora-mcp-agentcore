@@ -12,9 +12,9 @@ import os
 
 import pytest
 
-import backend.agents.orchestration_05.workflow as workflow_mod
+import backend.agents.phase_05_workflow.workflow as workflow_mod
 import backend.db.rds_data_client as rds_data_client
-from backend.agents.orchestration_05.workflow import (
+from backend.agents.phase_05_workflow.workflow import (
     CheckpointBackend,
     OrchestrationAgent,
     initialize_checkpoint_backend,
@@ -78,7 +78,7 @@ def test_data_api_saver_is_not_labelled_in_process(
 ) -> None:
     workflow.checkpointer_kind = "AuroraDataApiSaver"
     workflow.checkpointer_durable = True
-    activity = workflow._checkpoint_activity("search", 12)
+    activity = workflow._checkpoint_activity("search")
     text = str(activity)
     assert "MemorySaver" not in text
     assert "AuroraDataApiSaver" in text
@@ -89,7 +89,7 @@ def test_memory_saver_is_still_labelled_in_process(
 ) -> None:
     workflow.checkpointer_kind = "MemorySaver (in-process)"
     workflow.checkpointer_durable = False
-    assert "MemorySaver" in str(workflow._checkpoint_activity("search", 12))
+    assert "MemorySaver" in str(workflow._checkpoint_activity("search"))
 
 
 def test_backend_carries_a_durable_flag() -> None:

@@ -43,10 +43,11 @@ export const SHOWCASE_EXAMPLE_PROMPTS: Record<Phase, string[]> = {
     'Show me beach trips under $2,500 per traveler.',
     'Compare three trip types and convert each price to euros.',
   ],
-  // Custom MCP tools solve comparison, FX, and seasonality; mood intent remains retrieval's job.
+  // Custom MCP tools solve comparison, FX, and destination price range; mood
+  // intent remains retrieval's job.
   2: [
     'Compare three trip types and convert each price to euros.',
-    'What is the off-season price range for Tokyo trips in November?',
+    'What is the price range for Tokyo trips?',
     'Find a quiet, romantic wine-country retreat with a private villa.',
   ],
   // Intent routing works; persisted conversation memory is still out of scope.
@@ -79,10 +80,10 @@ export const PHASE_QUERY_BOUNDARIES: Record<Phase, string> = {
 };
 
 const SHOWCASE_PROMPT_LABELS: Record<string, string> = {
-  [SHOWCASE_EXAMPLE_PROMPTS[1][0]]: 'City trips under $2,000',
-  [SHOWCASE_EXAMPLE_PROMPTS[1][1]]: 'Beach trips under $2,500',
+  [SHOWCASE_EXAMPLE_PROMPTS[1][0]]: 'City trips under $2,000 per traveler',
+  [SHOWCASE_EXAMPLE_PROMPTS[1][1]]: 'Beach trips under $2,500 per traveler',
   [SHOWCASE_EXAMPLE_PROMPTS[1][2]]: 'Compare trips in euros',
-  [SHOWCASE_EXAMPLE_PROMPTS[2][1]]: 'Tokyo off-season pricing',
+  [SHOWCASE_EXAMPLE_PROMPTS[2][1]]: 'Tokyo price range',
   [SHOWCASE_EXAMPLE_PROMPTS[2][2]]: 'Romantic wine-country villa',
   [SHOWCASE_EXAMPLE_PROMPTS[3][1]]: 'Tuscany trip lengths',
   [SHOWCASE_EXAMPLE_PROMPTS[3][2]]: 'Recall my plan & preferences',
@@ -148,7 +149,7 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     phase: 4,
     description: 'Runtime-owned tools, Cedar policy, traveler memory, and RLS',
     capability: 'Trust',
-    takeaway: 'Authenticate the workload, authorize Alex, let the agent call governed tools, and audit every turn.',
+    takeaway: 'Authenticate the workload, authorize Jordan, let the agent call governed tools, and audit every turn.',
     proofPoint: 'Runtime + RLS',
     adds: 'The agent runs in AgentCore Runtime, calls Aurora tools through AgentCore Gateway, and Cedar policy checks every call before it runs.',
     tech: 'AgentCore Runtime · Gateway · Policy · Memory · Aurora RLS',
@@ -167,48 +168,6 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
 
 export function phaseLabelFor(phase: Phase): ShowcasePhaseLabel {
   return SHOWCASE_PHASES.find((p) => p.phase === phase)?.label ?? 'Workflow';
-}
-
-type TripPackageLike = {
-  package_id: string;
-  name: string;
-  destination?: string;
-  region?: string;
-  operator?: string;
-  price_per_person: number;
-  description?: string;
-  image_url?: string;
-  trip_type?: string;
-  durations?: string[] | null;
-  similarity?: number;
-  pre_rerank_position?: number | null;
-  pre_rerank_similarity?: number | null;
-  rank_delta?: number | null;
-};
-
-function tripPackageToProduct(pkg: TripPackageLike): Product {
-  return {
-    product_id: pkg.package_id,
-    name: pkg.name,
-    brand: [pkg.destination, pkg.region].filter(Boolean).join(' + ') || pkg.operator || 'Meridian Travel',
-    price: Number(pkg.price_per_person) || 0,
-    description: pkg.description ?? '',
-    image_url: pkg.image_url ?? '',
-    category: pkg.trip_type ?? 'Trip',
-    available_sizes: pkg.durations,
-    similarity: pkg.similarity,
-    pre_rerank_position: pkg.pre_rerank_position,
-    pre_rerank_similarity: pkg.pre_rerank_similarity,
-    rank_delta: pkg.rank_delta,
-  };
-}
-
-export function packagesResponseToRecommendations(input: Product[] | TripPackageLike[] | null | undefined): Product[] {
-  if (!input?.length) return [];
-  const normalized = input.map((item) =>
-    'package_id' in item ? tripPackageToProduct(item) : item,
-  );
-  return normalized.slice(0, 6);
 }
 
 export function genericizeLoyaltyText(value: string): string {
@@ -248,6 +207,7 @@ export function chatResponseToMessages(prior: Message[], userText: string, respo
         : { role: 'bot', type: 'text', text: assistantText };
 
   if (response.follow_ups?.length) assistant.follow_ups = response.follow_ups;
+  if (response.model_label) assistant.modelLabel = response.model_label;
   return [...prior, userMsg, assistant];
 }
 
