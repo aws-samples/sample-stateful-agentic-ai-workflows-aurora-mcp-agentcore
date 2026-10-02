@@ -216,7 +216,8 @@
 .mds-root .mds-desktop-app .mds-chat-composer { display: flex; align-items: flex-end; gap: 13px; padding: 8px 10px 8px 16px; min-height: 62px; background: var(--mds-surface-2); border: 1px solid var(--mds-control-line); border-radius: var(--mds-radius-l); }
 .mds-root .mc-composer-icon { display: flex; color: var(--mds-label-2); margin-bottom: 11px; }
 .mds-root .mds-desktop-app .mds-chat-composer textarea { display: block; flex: 1 1 0; min-width: 0; width: 0; min-height: 44px; max-height: 8.5em; resize: none; overflow-y: auto; border: 0; border-radius: 0; color: var(--mds-label); background: none; font: var(--mds-type-title-3); font-weight: var(--mds-weight-regular); letter-spacing: var(--mds-tracking-title); padding: 9px 0; caret-color: var(--mds-tint); }
-.mds-root .mds-desktop-app .mds-chat-composer textarea:focus { box-shadow: none; }
+/* The composer container draws the only focus ring (:focus-within below). */
+.mds-root .mds-desktop-app .mds-chat-composer textarea:focus { box-shadow: none; outline: none; }
 .mds-root .mds-desktop-app .mds-chat-composer:focus-within { outline: 2px solid var(--mds-tint); outline-offset: 2px; }
 .mds-root .mds-desktop-app .mds-chat-composer textarea::placeholder { color: var(--mds-label-3); opacity: 1; }
 .mds-root .mds-desktop-app .mds-chat-send { position: static; inset: auto; transform: none; width: 44px; height: 44px; border-radius: var(--mds-radius-s); background: var(--mds-action); color: var(--mds-on-action); flex-shrink: 0; box-shadow: none; }
