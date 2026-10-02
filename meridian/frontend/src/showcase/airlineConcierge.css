@@ -759,3 +759,40 @@
 
 /* Activity shares the panel surface; service marks identify evidence sources. */
 .mds-root[data-theme] .mds-thinking { padding: 0; border: 0; background: none; box-shadow: none; }
+
+/* Ladder phase with no conversation: the starters are the content, centred in
+   the space between the phase brief and the dock. */
+.mds-root[data-theme] .mc-ladder-empty {
+  flex: 1 1 auto; min-height: 220px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 24px; padding: 8px 0 24px;
+}
+.mds-root[data-theme] .mc-ladder-empty-lead {
+  margin: 0; color: var(--mds-label-2); font: var(--mds-type-headline); text-align: center;
+}
+.mds-root[data-theme] .mc-ladder-empty-cards {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; width: 100%;
+}
+.mds-root[data-theme] .mc-ladder-empty-card {
+  --mds-starter-color: var(--mds-green);
+  --mds-starter-fill: var(--mds-green-fill);
+  flex: 1 1 320px; max-width: 520px; min-height: 120px; padding: 20px 24px;
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 10px; text-align: left; cursor: pointer;
+  border: 1px solid var(--mds-starter-color); border-radius: var(--mds-radius-m);
+  background: var(--mds-starter-fill); color: var(--mds-label);
+  font: var(--mds-type-title-3); font-family: var(--mds-font);
+}
+.mds-root[data-theme] .mc-ladder-empty-card.is-stretch {
+  --mds-starter-color: var(--mds-yellow);
+  --mds-starter-fill: var(--mds-yellow-fill);
+  border-style: dashed;
+}
+.mds-root[data-theme] .mc-ladder-empty-card small {
+  display: inline-flex; align-items: center; gap: 6px; color: var(--mds-starter-color);
+  font: var(--mds-type-body); font-weight: var(--mds-weight-semibold);
+}
+.mds-root[data-theme] .mc-ladder-empty-card:hover:not(:disabled) { border-color: var(--mds-tint); }
+.mds-root[data-theme] .mc-ladder-empty-card:focus-visible {
+  outline: 2px solid var(--mds-tint); outline-offset: 2px;
+}
+.mds-root[data-theme] .mc-ladder-empty-card:disabled { cursor: default; opacity: 0.6; }

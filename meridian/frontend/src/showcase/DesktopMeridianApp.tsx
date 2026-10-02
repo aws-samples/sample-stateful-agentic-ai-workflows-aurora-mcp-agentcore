@@ -26,6 +26,7 @@ import { PresenterProof } from './surfaces/PresenterProof';
 import { ConciergeConversation } from './components/ConciergeConversation';
 import { JourneyContinuityRail } from './surfaces/JourneyContinuityRail';
 import { ChatTranscript } from './components/ChatTranscript';
+import { LadderEmptyStage } from './components/LadderEmptyStage';
 import { ComparisonDialog } from './components/ComparisonDialog';
 import { DiscoveryWorkspace } from './components/DiscoveryWorkspace';
 import { MemoryDrawer } from './components/MemoryDrawer';
@@ -557,7 +558,9 @@ export function DesktopMeridianApp({
                 </div>
               )}
 
-              {(ladderState.messages.length > 0 || state.isLoading) && <ChatTranscript state={ladderState} proofMode />}
+              {(ladderState.messages.length > 0 || state.isLoading)
+                ? <ChatTranscript state={ladderState} proofMode />
+                : <LadderEmptyStage state={ladderState} />}
 
               {(ladderState.lastPrompt || ladderState.messages.length > 0 || ladderState.traceSpans.length > 0) && <div className="mds-main-actions">
                 <button

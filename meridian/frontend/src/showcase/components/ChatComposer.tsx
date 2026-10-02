@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { ChatFilters } from '../hooks/useMeridianShowcase';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import { ladderStarters } from '../lib/ladderStarters';
 import { PHASE_QUERY_BOUNDARIES, SHOWCASE_PHASES, showcasePromptLabel } from '../lib/showcaseAdapters';
 
 type ChipKey = 'travelers' | 'dates' | 'spa' | 'flights';
@@ -86,9 +87,7 @@ export function ChatComposer({
         ? [stretchPrompt]
         : []
       : proofMode
-        ? state.selectedPhase <= 3
-          ? [state.phaseExamples[0], state.phaseExamples[2]].filter(Boolean)
-          : [state.phaseExamples[1], state.phaseExamples[2]].filter(Boolean)
+        ? ladderStarters(state).map(starter => starter.prompt)
         : conciergeMode
           ? ['A quiet wine country escape for two', 'Help me plan a culture trip to Tokyo']
           : state.phaseExamples.slice(0, 2);
