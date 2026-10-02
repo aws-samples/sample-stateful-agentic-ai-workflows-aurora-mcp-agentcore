@@ -181,7 +181,7 @@ Every route except `/health` requires the HTTP principal described under
 | Variable | Purpose |
 | --- | --- |
 | `AWS_DEFAULT_REGION`, `BEDROCK_REGION` | AWS SDK and Bedrock Region |
-| `BEDROCK_MODEL_ID` | Model for the local Strands agents (the managed concierge is configured separately). Default: `global.anthropic.claude-sonnet-5` |
+| `BEDROCK_MODEL_ID` | Model for the local Strands agents (the managed concierge is configured separately). Default: `us.openai.gpt-6-luna` |
 | `EMBEDDING_MODEL`, `EMBEDDING_DIMENSION` | Default `cohere.embed-v4:0` at 1024 dimensions, matching the pgvector columns |
 | `AURORA_CLUSTER_ARN`, `AURORA_SECRET_ARN`, `AURORA_DATABASE` | RDS Data API connection |
 | `RLS_APP_ROLE` | Restricted role for scoped sessions. Default `meridian_app` |
@@ -292,7 +292,7 @@ package before a hold. It is not enabled.
 | Workflow | LangGraph `StateGraph` with Aurora checkpoints and worker leases |
 | Governance | AgentCore Policy (Cedar, `ENFORCE`), workload grants in Aurora, row-level security |
 | Database | Aurora PostgreSQL, RDS Data API, pgvector HNSW |
-| Models | Managed concierge: Claude Haiku 4.5 (`global.anthropic.claude-haiku-4-5-20251001-v1:0`). Local agents: Claude Sonnet 5 (`global.anthropic.claude-sonnet-5`), Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`us.cohere.rerank-v3-5:0`) on Amazon Bedrock |
+| Models | Managed concierge and local agents: GPT-6 Luna (`us.openai.gpt-6-luna`), each configurable through `BEDROCK_MODEL_ID`. Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`cohere.rerank-v3-5:0`) on Amazon Bedrock |
 | MCP | `awslabs.postgres-mcp-server` and the custom `meridian-concierge` and `meridian-memory` servers |
 | Observability | AWS Distro for OpenTelemetry on the runtime; spans and logs in the runtime's CloudWatch log group, with the trace ID shown in the UI |
 
