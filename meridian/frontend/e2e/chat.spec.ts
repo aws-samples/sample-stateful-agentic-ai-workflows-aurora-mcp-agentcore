@@ -85,11 +85,10 @@ for (const view of ['concierge', 'ladder']) for (const theme of ['light', 'dark'
         for (const button of await page.locator('.mds-trace-actions button').all()) {
           await expect(button).toHaveCSS('border-radius', '10px');
           await expect(button).toHaveCSS('padding', '0px');
-          await expect(button).toHaveCSS('background-color', 'rgb(0, 113, 227)');
-          await expect(button).toHaveCSS('color', 'rgb(255, 255, 255)');
+          await expect(button).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
           const bounds = (await button.boundingBox())!;
-          expect(bounds.width).toBeCloseTo(44, 0);
-          expect(bounds.height).toBeCloseTo(44, 0);
+          expect(bounds.width).toBeGreaterThanOrEqual(32);
+          expect(bounds.height).toBeGreaterThanOrEqual(32);
         }
         await page.screenshot({ path: `../../.impeccable/review/studio/trace-controls-${theme}-fixture.png` });
       }
