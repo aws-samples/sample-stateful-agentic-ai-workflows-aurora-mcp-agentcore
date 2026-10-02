@@ -18,6 +18,7 @@ PROFILE_ARN = "arn:aws:bedrock:us-east-1:123456789012:inference-profile/"
         (f"{PROFILE_ARN}global.anthropic.claude-sonnet-5", "Claude Sonnet 5"),
         ("global.anthropic.claude-haiku-4-5-20251001-v1:0", "Claude Haiku 4.5"),
         ("global.anthropic.claude-opus-5", "Claude Opus 5"),
+        ("global.anthropic.claude-sonnet-5-5", "Claude Sonnet 5.5"),
         ("us.openai.gpt-6-luna", "GPT-6 Luna"),
         ("global.openai.gpt-6-luna", "GPT-6 Luna"),
         (f"{PROFILE_ARN}us.openai.gpt-6-luna", "GPT-6 Luna"),

@@ -79,9 +79,10 @@ class BedrockConfig:
     Concierge has a separate BEDROCK_MODEL_ID in its AgentCore deployment
     template; changing the backend environment does not change that Runtime.
 
-    Default is the Global cross-Region inference profile for Anthropic Claude
-    Sonnet 5 (``global.anthropic.claude-sonnet-5``). Swap to
-    ``global.anthropic.claude-opus-5`` for maximum quality. If you see::
+    Default is GPT-6 Luna on Amazon Bedrock (``us.openai.gpt-6-luna``), the
+    fastest model that stayed accurate in the demo's latency tests. Swap to
+    ``global.anthropic.claude-sonnet-5-5`` for more nuanced replies at a few
+    seconds more per turn. If you see::
 
         ValidationException: The provided model identifier is invalid
 
@@ -90,7 +91,7 @@ class BedrockConfig:
     doesn't route to it. Pick another profile from the Bedrock console
     and set it in ``.env``::
 
-        BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-5
+        BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-5-5
 
     AWS docs:
       - Model access:
@@ -106,7 +107,7 @@ class BedrockConfig:
             --query "inferenceProfileSummaries[?contains(inferenceProfileId, 'anthropic')].inferenceProfileId"
     """
 
-    DEFAULT_MODEL_ID: str = "global.anthropic.claude-sonnet-5"
+    DEFAULT_MODEL_ID: str = "us.openai.gpt-6-luna"
 
     model_id: str = field(
         default_factory=lambda: os.getenv(
@@ -124,6 +125,7 @@ class BedrockConfig:
 
 _MODEL_LABELS = {
     "claude-sonnet-5": "Claude Sonnet 5",
+    "claude-sonnet-5-5": "Claude Sonnet 5.5",
     "claude-haiku-4-5-20251001-v1:0": "Claude Haiku 4.5",
     "claude-opus-5": "Claude Opus 5",
     "gpt-6-luna": "GPT-6 Luna",

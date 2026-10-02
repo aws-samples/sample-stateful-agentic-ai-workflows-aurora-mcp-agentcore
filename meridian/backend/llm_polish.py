@@ -92,11 +92,11 @@ _CONCIERGE_SYSTEM = (
 )
 
 
-# Model fallback chain. The live primary is Sonnet 5 (set in .env /
-# config.bedrock.model_id) and _candidate_models() always tries that first.
-# This chain is the BACKUP order if the primary errors: stay fast — Sonnet
-# 5, then Haiku 4.5 — and keep Opus 5 last so a transient Sonnet hiccup
-# never silently falls back to the slowest model. First success wins.
+# Model fallback chain. The primary is config.bedrock.model_id (GPT-6 Luna by
+# default, overridable in .env) and _candidate_models() always tries it first.
+# This chain is the BACKUP order if the primary errors: stay fast with Sonnet 5,
+# then Haiku 4.5, and keep Opus 5 last so a transient error never silently
+# falls back to the slowest model. First success wins.
 _DEFAULT_FALLBACK_CHAIN: List[str] = [
     "global.anthropic.claude-sonnet-5",
     "global.anthropic.claude-haiku-4-5-20251001-v1:0",
