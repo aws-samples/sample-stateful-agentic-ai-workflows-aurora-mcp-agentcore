@@ -2576,8 +2576,8 @@
 }
 
 .mds-decision-route.is-compact {
-  grid-template-columns: auto minmax(34px, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: auto minmax(24px, 1fr) auto;
+  gap: 6px;
   margin: 0 14px;
   padding: 2px 0 10px;
 }
@@ -2587,6 +2587,10 @@
   font-weight: var(--mds-weight-bold);
   line-height: 1;
   letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-decision-route.is-compact > span:nth-child(3) b {
+  white-space: nowrap;
 }
 
 .mds-decision-route.is-compact em {
