@@ -229,7 +229,7 @@
     padding: 4px 0;
   }
   .mds-root[data-audience-layout='true'] .mds-mobile-disruption-message {
-    padding: 16px 24px;
+    padding: 12px 24px;
   }
   .mds-root[data-audience-layout='true']
     .mds-mobile-disruption-message .mds-mobile-disruption-primary {
@@ -237,7 +237,7 @@
   }
   .mds-root[data-audience-layout='true']
     .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps {
-    padding: 10px 12px;
+    padding: 6px 12px;
   }
   .mds-root[data-audience-layout='true']
     .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps small {
@@ -246,6 +246,20 @@
   .mds-root[data-audience-layout='true']
     .mds-recovery-launch-card:not(.is-compact) .mds-recovery-timeline-heading {
     padding-block: 6px 4px;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace {
+    gap: 8px;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace .mds-recovery-overview {
+    gap: 4px;
+  }
+  .mds-root[data-audience-layout='true']
+    .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-actions {
+    min-height: 28px;
+  }
+  .mds-root[data-audience-layout='true'] .mds-recovery-workspace .mds-recovery-overview h1 {
+    font: var(--mds-type-title-1);
+    font-weight: var(--mds-weight-medium);
   }
 }
 
