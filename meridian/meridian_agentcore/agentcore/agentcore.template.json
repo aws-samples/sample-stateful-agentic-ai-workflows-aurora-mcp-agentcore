@@ -35,7 +35,7 @@
         },
         {
           "name": "BEDROCK_MODEL_ID",
-          "value": "us.openai.gpt-6-luna"
+          "value": "us.openai.gpt-6-sol"
         },
         {
           "name": "BEDROCK_MAX_TOKENS",

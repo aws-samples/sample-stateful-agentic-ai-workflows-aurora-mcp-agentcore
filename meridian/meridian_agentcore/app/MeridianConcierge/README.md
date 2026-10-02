@@ -15,13 +15,13 @@ server-sent events.
 | `hold_execution.py` | Runs the hold or confirmation the traveler confirmed, through the gateway, before the model writes its reply |
 | `gateway_auth.py` | SigV4 signing for MCP requests to the gateway with the runtime's execution role |
 | `prompts.py` | System, turn and narration prompts |
-| `model/load.py` | Shared Bedrock model factory (`BEDROCK_MODEL_ID`, default `us.openai.gpt-6-luna`) |
+| `model/load.py` | Shared Bedrock model factory (`BEDROCK_MODEL_ID`, default `us.openai.gpt-6-sol`) |
 
 ## Model and latency
 
-The managed concierge defaults to GPT-6 Luna through Bedrock, with low reasoning
-effort and a 2,048-token output budget. Local teaching agents keep their separately
-configured Sonnet model. The Runtime reuses its model client between turns while
+The managed concierge defaults to GPT-6 Sol through Bedrock, with low reasoning
+effort and a 2,048-token output budget. Local teaching agents read their own
+`BEDROCK_MODEL_ID` from the backend `.env` (also GPT-6 Sol by default). The Runtime reuses its model client between turns while
 each agent loads the authorized conversation through AgentCore Memory.
 To change the managed model, edit `BEDROCK_MODEL_ID` in the AgentCore template,
 render the project configuration, then redeploy. Changing only the backend's

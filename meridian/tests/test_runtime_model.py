@@ -24,7 +24,7 @@ def model_factory(monkeypatch):
 def test_default_model_uses_hosted_gpt_reasoning_contract(model_factory):
     loader.load_model()
     model_factory.assert_called_once_with(
-        model_id="us.openai.gpt-6-luna", region_name="us-east-1", max_tokens=2048,
+        model_id="us.openai.gpt-6-sol", region_name="us-east-1", max_tokens=2048,
         additional_request_fields={"reasoning": {"effort": "low"}},
     )
 

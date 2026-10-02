@@ -2,7 +2,7 @@ import os
 
 from strands.models.bedrock import BedrockModel
 
-DEFAULT_MODEL_ID = "us.openai.gpt-6-luna"
+DEFAULT_MODEL_ID = "us.openai.gpt-6-sol"
 
 
 def load_model(model_id: str | None = None, region_name: str | None = None) -> BedrockModel:
