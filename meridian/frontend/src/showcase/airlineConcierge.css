@@ -50,7 +50,7 @@
 .mds-root .mc-connection-notice { display: flex; align-items: center; flex-shrink: 0; gap: 12px; padding: 16px 24px; color: var(--mds-yellow); background: var(--mds-yellow-fill); font: var(--mds-type-body); }
 .mds-root .mc-connection-notice > svg { flex-shrink: 0; }
 .mds-root .mc-connection-notice > div { min-width: 0; }
-.mds-root .mc-connection-notice p { margin: 4px 0 0; }
+.mds-root .mc-connection-notice p { margin: 4px 0 0; font: var(--mds-type-footnote); }
 .mds-root .mc-connection-notice button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 8px; min-height: 44px; margin-left: auto; padding: 8px 12px; border: 1px solid currentColor; border-radius: var(--mds-radius-s); background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .mds-root .mc-connection-notice button:disabled { cursor: wait; opacity: .7; }
 .mds-root .mc-connection-notice button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
