@@ -12,6 +12,7 @@ type Check = {
   description: string;
   facts: [string, string][];
 };
+const RUNS_AFTER_RESUME = 'Runs after you resume';
 const field = (span: ShowcaseTraceSpan | undefined, label: string) =>
   span?.fields.find(item => item.label === label)?.value;
 
@@ -34,6 +35,9 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
   const decision = field(policySpan, 'cedar_decision');
   const allowed = decision === 'allow' && policySpan?.status === 'ok';
   const denied = decision === 'deny' && policySpan?.status === 'denied';
+  const paused = current && state.workflowStatus === 'paused';
+  const policyWaiting = paused && !policySpan;
+  const receiptWaiting = paused && !hold;
   const recommendations = current ? state.recommendations ?? [] : [];
   const checks: Check[] = [
     {
@@ -58,12 +62,16 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
     },
     {
       id: 'policy', title: 'Check the hold',
-      status: allowed ? 'Cedar allowed' : denied ? 'Cedar denied' : 'Decision unavailable',
+      status: allowed ? 'Cedar allowed' : denied ? 'Cedar denied'
+        : policyWaiting ? RUNS_AFTER_RESUME : 'Decision unavailable',
       tone: allowed ? 'observed' : denied ? 'denied' : 'pending',
       description: allowed
         ? 'The gateway permitted this hold call. Inspect the booking record separately to verify the write.'
         : denied ? 'The gateway refused this hold call before the target ran. Review the reason before changing the request.'
-          : 'Cedar checks confirmation, party size, hold duration and saved budget. No decision is reported for the latest hold attempt.',
+          : policyWaiting
+            ? 'The workflow is paused at its saved checkpoint, so no hold has been requested. '
+              + 'This check runs after you resume.'
+            : 'Cedar checks confirmation, party size, hold duration and saved budget. No decision is reported for the latest hold attempt.',
       facts: policySpan ? [
         ['Policy', field(policySpan, 'cedar_policy') || 'Not returned'],
         ['Mode', field(policySpan, 'policy_mode') || 'Not returned'],
@@ -73,11 +81,15 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
     },
     {
       id: 'hold', title: 'Verify the receipt',
-      status: hold ? hold.status === 'held' ? 'Hold recorded' : hold.status === 'confirmed' ? 'Booking confirmed' : `Recorded: ${hold.status}` : 'Receipt unavailable',
+      status: hold ? hold.status === 'held' ? 'Hold recorded' : hold.status === 'confirmed' ? 'Booking confirmed' : `Recorded: ${hold.status}`
+        : receiptWaiting ? RUNS_AFTER_RESUME : 'Receipt unavailable',
       tone: hold ? 'observed' : 'pending',
       description: hold
         ? 'The active journey returned this booking record. Its recorded status and expiry determine the next step.'
-        : 'A completed workflow or permitted call does not prove a hold. Check the active journey for its booking receipt.',
+        : receiptWaiting
+          ? 'The workflow is paused at its saved checkpoint, so there is no booking receipt yet. '
+            + 'This check runs after you resume.'
+          : 'A completed workflow or permitted call does not prove a hold. Check the active journey for its booking receipt.',
       facts: hold ? [['Booking', hold.booking_id], ['Hold records', String(hold.hold_records)], ['Source', hold.source]] : [],
     },
   ];

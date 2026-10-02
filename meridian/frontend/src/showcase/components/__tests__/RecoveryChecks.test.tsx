@@ -61,4 +61,16 @@ describe('RecoveryChecks evidence boundaries', () => {
     expect(screen.getByText('Decision unavailable')).toBeVisible();
     expect(screen.getByText('Receipt unavailable')).toBeVisible();
   });
+  it('says the hold steps run after resume while the workflow is paused', () => {
+    render(<RecoveryChecks state={state({ workflowStatus: 'paused' })} onOpenProof={vi.fn()} />);
+    expect(screen.getAllByText('Runs after you resume')).toHaveLength(2);
+    expect(screen.queryByText('Decision unavailable')).not.toBeInTheDocument();
+    expect(screen.queryByText('Receipt unavailable')).not.toBeInTheDocument();
+  });
+  it('keeps an observed decision visible while the workflow is paused', () => {
+    render(<RecoveryChecks state={state({ workflowStatus: 'paused', traceSpans: [span('allow', 'ok')] })}
+      onOpenProof={vi.fn()} />);
+    expect(screen.getByText('Cedar allowed')).toBeVisible();
+    expect(screen.getAllByText('Runs after you resume')).toHaveLength(1);
+  });
 });
