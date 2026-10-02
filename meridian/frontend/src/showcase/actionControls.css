@@ -41,33 +41,37 @@
   outline: 2px solid var(--mds-tint);
   outline-offset: 3px;
 }
-/* Trace utilities are compact controls, not full-size call-to-action pills. */
+/* Trace utilities are quiet secondary icon buttons; the answer is the loudest thing here. */
 .mds-root[data-theme] .mds-desktop-app .mds-trace-actions button {
-  background: var(--mds-action);
-  border: 1px solid var(--mds-action);
-  color: var(--mds-on-action);
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  min-height: 44px;
+  background: transparent;
+  border: 1px solid var(--mds-control-line);
+  color: var(--mds-label-2);
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
   padding: 0;
   border-radius: var(--mds-radius-m);
   display: grid;
   place-items: center;
-  flex: 0 0 44px;
+  flex: 0 0 36px;
 }
 .mds-root[data-theme] .mds-desktop-app .mds-trace-actions button:hover:not(:disabled) {
-  background: var(--mds-action-hover);
-  border-color: var(--mds-action-hover);
-  color: var(--mds-on-action);
+  background: var(--mds-surface-2);
+  border-color: var(--mds-label-3);
+  color: var(--mds-label);
   transform: none;
+}
+.mds-root[data-theme] .mds-desktop-app .mds-trace-actions button:focus-visible {
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 2px;
 }
 .mds-root[data-theme] .mds-desktop-app .mds-trace-actions button svg {
   width: 18px;
   height: 18px;
 }
 .mds-root[data-theme] .mds-desktop-app .mds-trace-actions button:disabled {
-  background: var(--mds-surface-2);
+  background: transparent;
   border-color: var(--mds-separator);
   color: var(--mds-label-3);
   cursor: not-allowed;
