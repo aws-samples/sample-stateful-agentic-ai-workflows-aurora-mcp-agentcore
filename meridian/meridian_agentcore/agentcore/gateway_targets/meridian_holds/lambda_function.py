@@ -38,6 +38,12 @@ PRICE_SQL = (
     "SELECT ROUND(price_per_person * 100)::BIGINT AS unit_price_cents "
     "FROM trip_packages WHERE package_id = :package_id"
 )
+HOLD_REQUEST_SQL = (
+    "SELECT hr.booking_id, b.status, (b.hold_expires_at <= CURRENT_TIMESTAMP) AS lapsed "
+    "FROM hold_requests hr JOIN bookings b ON b.booking_id = hr.booking_id "
+    "WHERE hr.journey_id = :journey AND hr.hold_request_id = :request_id"
+)
+MAX_REQUEST_CHAIN = 50
 BINDING_SQL = (
     "SELECT binding_id FROM traveler_identity_bindings WHERE identity_provider = :provider "
     "AND subject_id = :subject AND traveler_id = :traveler AND status = 'active' "
@@ -305,7 +311,8 @@ def _receipt(booking_id: str, traveler_id: str, tx: str) -> dict:
     """The persisted receipt, so a replay reports the original expiry, not a new one."""
     rows = query(
         "SELECT status, created_at::TIMESTAMPTZ::TEXT AS created_at, "
-        "hold_expires_at::TEXT AS hold_expires_at, CURRENT_TIMESTAMP::TEXT AS observed_at "
+        "hold_expires_at::TEXT AS hold_expires_at, CURRENT_TIMESTAMP::TEXT AS observed_at, "
+        "(hold_expires_at <= CURRENT_TIMESTAMP) AS lapsed "
         "FROM bookings WHERE booking_id = :b AND traveler_id = :t",
         {"b": booking_id, "t": traveler_id},
         tx,
@@ -313,6 +320,35 @@ def _receipt(booking_id: str, traveler_id: str, tx: str) -> dict:
     if not rows or not rows[0].get("hold_expires_at"):
         raise RuntimeError("persisted hold receipt unavailable")
     return rows[0]
+
+
+def _next_request_id(previous: str, booking_id: str) -> str:
+    digest = hashlib.sha256(f"{previous}|{booking_id}".encode()).hexdigest()[:12]
+    return f"hrq_{digest}"
+
+
+def _is_dead_request(row: dict) -> bool:
+    """A request whose booking can no longer be held: lapsed, released or expired."""
+    if row["status"] == "held":
+        return bool(row.get("lapsed"))
+    return row["status"] != "confirmed"
+
+
+def _live_request_id(request_id: str, journey_id: str, tx: str) -> str:
+    """Advance a derived request id past requests whose booking is dead.
+
+    The default id is a hash of the journey and the terms, so without this a
+    second attempt after the first hold lapsed would replay the dead booking
+    forever. Each step hashes the previous id with the dead booking id, so
+    concurrent retries (serialized by the journey advisory lock) converge on
+    the same new request and later retries replay it.
+    """
+    for _ in range(MAX_REQUEST_CHAIN):
+        rows = query(HOLD_REQUEST_SQL, {"journey": journey_id, "request_id": request_id}, tx)
+        if not rows or not _is_dead_request(rows[0]):
+            return request_id
+        request_id = _next_request_id(request_id, str(rows[0]["booking_id"]))
+    raise RuntimeError(f"hold request chain exceeds {MAX_REQUEST_CHAIN} dead requests")
 
 
 def _hold_row(args: dict, hold: dict, journey_id: str, expires_at: datetime, tx: str) -> dict:
@@ -352,15 +388,18 @@ def create_courtesy_hold(args: dict) -> dict:
         if args.get("executionId"):
             _claim_execution(str(args["executionId"]), tx)
         journey_id = _journey(traveler_id, journey_ref, tx)
+        if not args.get("holdRequestId"):
+            hold["request_id"] = _live_request_id(hold["request_id"], journey_id, tx)
         row = _hold_row(args, hold, journey_id, expires_at, tx)
         receipt = _receipt(str(row["booking_id"]), traveler_id, tx)
         _transaction("commit", tx)
     except Exception as error:  # noqa: BLE001 - the SQL function raises named business errors
         _transaction("rollback", tx)
         return {"error": _named_error(error)}
+    lapsed = receipt["status"] == "held" and bool(receipt.get("lapsed"))
     result = {
         "bookingId": row["booking_id"],
-        "status": str(receipt["status"]),
+        "status": "expired" if lapsed else str(receipt["status"]),
         "replayed": bool(row["replayed"]),
         "journeyId": journey_id,
         "holdRequestId": hold["request_id"],

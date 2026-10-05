@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from decimal import Decimal
@@ -357,6 +358,152 @@ def test_confirm_booking_refuses_when_the_workload_has_no_grant(config, monkeypa
     assert result["error"] == "traveler_not_authorized"
     assert api.tx == ["begin", "rollback"]
     assert not any("confirm_booking" in s for s in api.statements)
+
+
+class RequestLedgerApi(FakeDataApi):
+    """Answers the hold_requests lookup by request id, like the table does."""
+
+    def __init__(self, ledger, rows_by_marker):
+        super().__init__(rows_by_marker)
+        self.ledger = ledger
+
+    def execute_statement(self, **kwargs):
+        if "FROM hold_requests" in kwargs["sql"]:
+            self.statements.append(kwargs["sql"])
+            params = {p["name"]: next(iter(p["value"].values())) for p in kwargs["parameters"]}
+            self.parameters.append(params)
+            rows = self.ledger.get(params["request_id"], [])
+            return {"formattedRecords": json.dumps(rows)}
+        return super().execute_statement(**kwargs)
+
+
+HOLD_ROW = {
+    "FROM create_courtesy_hold": [{
+        "booking_id": "HLD-NEW", "status": "held", "replayed": False,
+        "seats_available": 4, "seats_reserved": 2, "seats_remaining": 2,
+    }],
+    "FROM bookings": RECEIPT,
+}
+
+
+def _default_request_id():
+    key = "concierge:conv-1|cty-002|7 nights|2"
+    return "hrq_" + hashlib.sha256(key.encode()).hexdigest()[:12]
+
+
+def _next_id(previous, booking_id):
+    return "hrq_" + hashlib.sha256(f"{previous}|{booking_id}".encode()).hexdigest()[:12]
+
+
+def _ledger_api(ledger):
+    return RequestLedgerApi(ledger, {
+        **CATALOG_PRICE,
+        "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        "FROM journey_threads": [{"journey_id": "jrn_1"}],
+        **HOLD_ROW,
+    })
+
+
+def _requested_id(api):
+    return api.parameters[api.statements.index(holds.HOLD_SQL)]["request_id"]
+
+
+def _hold(api, monkeypatch, args=None):
+    monkeypatch.setattr(holds, "RDS", api)
+    return holds.lambda_handler(
+        args or _hold_args(), _context("MeridianHolds___create_courtesy_hold")
+    )
+
+
+@pytest.mark.parametrize(
+    "stale",
+    [
+        {"status": "held", "lapsed": True},
+        {"status": "released", "lapsed": False},
+        {"status": "expired", "lapsed": True},
+    ],
+)
+def test_holding_again_after_the_old_hold_lapsed_takes_a_new_request(
+    config, monkeypatch, stale
+):
+    first = _default_request_id()
+    api = _ledger_api({first: [{"booking_id": "HLD-OLD", **stale}]})
+    result = _hold(api, monkeypatch)
+    assert _requested_id(api) == _next_id(first, "HLD-OLD")
+    assert result["hold"]["holdRequestId"] == _next_id(first, "HLD-OLD")
+    lookup_params = api.parameters[api.statements.index(next(
+        s for s in api.statements if "FROM hold_requests" in s
+    ))]
+    assert lookup_params["journey"] == "jrn_1"
+
+
+def test_the_next_request_follows_every_dead_request_in_the_chain(config, monkeypatch):
+    first = _default_request_id()
+    second = _next_id(first, "HLD-1")
+    third = _next_id(second, "HLD-2")
+    api = _ledger_api({
+        first: [{"booking_id": "HLD-1", "status": "held", "lapsed": True}],
+        second: [{"booking_id": "HLD-2", "status": "released", "lapsed": False}],
+    })
+    _hold(api, monkeypatch)
+    assert _requested_id(api) == third
+
+
+def test_a_live_default_request_still_replays(config, monkeypatch):
+    first = _default_request_id()
+    api = _ledger_api({first: [{"booking_id": "HLD-1", "status": "held", "lapsed": False}]})
+    _hold(api, monkeypatch)
+    assert _requested_id(api) == first
+
+
+def test_a_confirmed_default_request_still_replays(config, monkeypatch):
+    first = _default_request_id()
+    api = _ledger_api({first: [{"booking_id": "HLD-1", "status": "confirmed", "lapsed": True}]})
+    _hold(api, monkeypatch)
+    assert _requested_id(api) == first
+
+
+def test_an_explicit_request_id_is_never_advanced(config, monkeypatch):
+    api = _ledger_api({"hrq_mine": [{"booking_id": "HLD-1", "status": "held", "lapsed": True}]})
+    args = {**_hold_args(), "holdRequestId": "hrq_mine", "bookingId": "HLD-1"}
+    _hold(api, monkeypatch, args)
+    assert _requested_id(api) == "hrq_mine"
+    assert not any("FROM hold_requests" in s for s in api.statements)
+
+
+def test_the_request_lookup_runs_under_the_journey_lock_and_the_traveler_scope(
+    config, monkeypatch
+):
+    api = _ledger_api({})
+    _hold(api, monkeypatch)
+    joined = "\n".join(api.statements)
+    assert joined.index("pg_advisory_xact_lock") < joined.index("FROM hold_requests")
+    assert joined.index("SET LOCAL ROLE") < joined.index("FROM hold_requests")
+    assert joined.index("FROM hold_requests") < joined.index("FROM create_courtesy_hold")
+
+
+def test_a_replayed_hold_past_its_expiry_reports_expired(config, monkeypatch):
+    api = _ledger_api({})
+    api.rows_by_marker["FROM create_courtesy_hold"] = [{
+        "booking_id": "HLD-CHK", "status": "held", "replayed": True,
+        "seats_available": None, "seats_reserved": None, "seats_remaining": None,
+    }]
+    api.rows_by_marker["FROM bookings"] = [{**RECEIPT[0], "lapsed": True}]
+    args = {**_hold_args(), "holdRequestId": "hrq_mine"}
+    result = _hold(api, monkeypatch, args)
+    assert result["hold"]["replayed"] is True
+    assert result["hold"]["status"] == "expired"
+
+
+def test_a_replayed_hold_within_its_expiry_stays_held(config, monkeypatch):
+    api = _ledger_api({})
+    api.rows_by_marker["FROM create_courtesy_hold"] = [{
+        "booking_id": "HLD-CHK", "status": "held", "replayed": True,
+        "seats_available": None, "seats_reserved": None, "seats_remaining": None,
+    }]
+    api.rows_by_marker["FROM bookings"] = [{**RECEIPT[0], "lapsed": False}]
+    result = _hold(api, monkeypatch, {**_hold_args(), "holdRequestId": "hrq_mine"})
+    assert result["hold"]["status"] == "held"
 
 
 def _template_hold_tools() -> list[dict]:
