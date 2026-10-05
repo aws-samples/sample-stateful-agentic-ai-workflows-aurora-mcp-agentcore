@@ -54,14 +54,14 @@ SELECT message_id, role, content, created_at
  ORDER BY created_at
 """
 
-# scoped_session writes an allow row for this very read in the same transaction,
-# and decided_at defaults to CURRENT_TIMESTAMP (the transaction start). Strictly
-# earlier rows are the only decisions this read did not make itself.
+# Every scoped read, this one included, writes an allow row, so the latest row is
+# always a recent read. The evidence is the last decision made up to the moment
+# the run was admitted (see _authorization_bound).
 AUDIT_SQL = """
 SELECT audit_id, identity_provider, subject_id, principal, decision, reason,
        decided_at
   FROM traveler_access_audit
- WHERE requested_traveler_id = %s AND decided_at < CURRENT_TIMESTAMP
+ WHERE requested_traveler_id = %s AND decided_at <= %s::timestamptz
  ORDER BY decided_at DESC LIMIT 1
 """
 
@@ -197,7 +197,9 @@ async def assemble_journey_document(
         document["pending_decision"] = _pending_decision(checkpoint, inline)
         document["conversation"] = await _conversation(q, thread_id)
         document["hold"] = await _hold(q, journey_id, inline)
-        document["authorization"] = await _authorization(q, traveler_id)
+        document["authorization"] = await _authorization(
+            q, traveler_id, _authorization_bound(journey, document["executions"])
+        )
         document["rls"] = _unavailable("no scoped probe run this session")
         return document
 
@@ -369,8 +371,18 @@ async def _hold(q, journey_id: str, inline: Any) -> Dict[str, Any]:
     }
 
 
-async def _authorization(q, traveler_id: str) -> Dict[str, Any]:
-    rows = await q(AUDIT_SQL, (traveler_id,))
+def _authorization_bound(journey: Dict[str, Any], executions: Dict[str, Any]) -> Optional[str]:
+    """When the run was admitted: its latest execution's start, else the journey's creation."""
+    starts = [
+        _iso(item["started_at"])
+        for item in executions.get("items", [])
+        if item.get("started_at")
+    ]
+    return max(starts) if starts else _iso(journey.get("created_at"))
+
+
+async def _authorization(q, traveler_id: str, admitted_at: Optional[str]) -> Dict[str, Any]:
+    rows = await q(AUDIT_SQL, (traveler_id, admitted_at))
     if not rows:
         return {
             **_unavailable("no authorization decision recorded for this traveler"),
