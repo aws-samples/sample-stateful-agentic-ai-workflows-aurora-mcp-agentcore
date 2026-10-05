@@ -3412,6 +3412,22 @@
     border-top: 1px solid var(--mds-separator);
     border-left: 0;
   }
+
+  /* Stacked under the stage, the open rail is not a drawer; its edge tab
+     would take a grid cell of its own. A rail shut at a wider size keeps it. */
+  .mds-fullbleed-route .mds-desktop-right:not(.is-collapsed) .mds-rail-handle {
+    display: none;
+  }
+
+  /* Side by side, the two evidence panels need a gutter, not the top margin
+     that separates them when they are stacked in the rail. */
+  .mds-fullbleed-route .is-ladder .mds-desktop-right {
+    gap: 16px;
+  }
+
+  .mds-root[data-theme] .is-ladder .mds-desktop-right .mds-panel + .mds-panel {
+    margin-top: 0;
+  }
 }
 
 @media (max-width: 760px) {
@@ -3679,6 +3695,8 @@
 .mds-trip-modal-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .mds-trip-modal-actions button,.mds-compare-copy button { min-height:40px; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:0 14px; border:1px solid var(--mds-control-line); border-radius:var(--mds-radius-s); color:var(--mds-label); background:var(--mds-surface); font-weight:var(--mds-weight-bold); }
 .mds-trip-modal-actions .is-primary,.mds-compare-copy .is-primary { color:var(--mds-on-action); background:var(--mds-action); margin-left:auto; }
+.mds-trip-modal-actions .mds-trip-stop { margin-left:auto; }
+.mds-trip-modal-actions .mds-trip-stop + .is-primary { margin-left:0; }
 .mds-compare-modal { padding:26px; }.mds-compare-modal>header { display:flex; justify-content:space-between; }.mds-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.mds-compare-grid article { position:relative; overflow:hidden; border:0; border-radius:var(--mds-radius-m); background:var(--mds-surface-2); }.mds-compare-copy { display:grid; gap:12px; padding:16px; }.mds-compare-copy dl { display:grid; gap:6px; }.mds-compare-copy dl div { display:flex; justify-content:space-between; }.mds-compare-remove { position:absolute; top:8px; right:8px; z-index:2; width:30px; height:30px; border:0; border-radius:50%; }
 
 /* Enter-only, mirroring the Radix drawers (mds-sheet-*): close stays instant
@@ -4040,7 +4058,7 @@
   background:
     var(--mds-surface-2);
   color: var(--mds-label);
-  animation: mds-wfgraph-arrive 340ms cubic-bezier(0.34, 1.45, 0.64, 1);
+  animation: mds-wfgraph-arrive 340ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 @keyframes mds-wfgraph-arrive {
   from {

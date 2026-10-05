@@ -134,7 +134,7 @@
 .mds-root .is-discovery .mc-studio-conversation-header h2 { margin: 0 0 10px; font: var(--mds-type-studio-title); letter-spacing: var(--mds-tracking-display); }
 .mds-root .is-discovery .mc-studio-conversation-header p { margin: 0; color: var(--mds-label-2); font: var(--mds-type-studio-body); }
 .mds-root .is-discovery .mc-studio-conversation-header button { font: var(--mds-type-footnote); white-space: nowrap; }
-.mds-root .is-discovery .mc-studio-messages { flex: 1 1 auto; min-height: 100px; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; padding: 24px 0; scrollbar-width: thin; scrollbar-color: var(--mds-control-line) transparent; }
+.mds-root .is-discovery .mc-studio-messages { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 16px); mask-image: linear-gradient(to bottom, transparent, #000 16px); flex: 1 1 auto; min-height: 100px; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; padding: 24px 0; scrollbar-width: thin; scrollbar-color: var(--mds-control-line) transparent; }
 .mds-root .is-discovery .mc-studio-starters { display: grid; gap: 12px; padding-block: clamp(16px, 9dvh, 110px) 20px; }
 .mds-root .is-discovery .mc-studio-starters button { display: flex; align-items: center; gap: 14px; text-align: left; padding: 16px; min-height: 60px; border: 1px solid var(--mds-separator); border-radius: var(--mds-radius-l); background: var(--mds-surface-2); color: var(--mds-label); font: var(--mds-type-studio-label); cursor: pointer; }
 .mds-root .is-discovery .mc-studio-starters button > span { flex: 1; }
@@ -177,6 +177,8 @@
 .mds-root .is-discovery .mc-studio-compose .mds-chat-send { border-radius: 50%; background: var(--mds-action); color: var(--mds-on-action); }
 .mds-root .is-discovery .mc-studio-compose .mc-composer-hint { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .mds-root .is-discovery .mds-chat-quick-actions { gap: 4px 14px; margin-top: 8px; }
+/* The narrower opening column fits three of four actions; two rows of two read as a set. */
+.mds-root .is-discovery:not(.has-conversation) .mds-chat-quick-actions { display: grid; grid-template-columns: repeat(2, max-content); }
 .mds-root .is-discovery .mds-chat-action-chip { min-height: 36px; }
 .mds-root .is-discovery .mds-chip-pop { bottom: calc(100% + 8px); top: auto; }
 .mds-root .is-discovery ::selection { background: var(--mds-action); color: var(--mds-on-action); }

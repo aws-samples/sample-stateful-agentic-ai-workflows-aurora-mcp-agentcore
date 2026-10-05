@@ -707,6 +707,19 @@
   font-weight: var(--mds-weight-bold);
 }
 
+/* Stacked, the separator dot would dangle at the end of the first line. */
+@media (max-width: 560px) {
+  .mds-recovery-overview-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .mds-recovery-overview-meta i {
+    display: none;
+  }
+}
+
 .mds-recovery-overview.is-running .mds-recovery-overview-meta strong {
   color: var(--mds-blue);
 }
@@ -1801,6 +1814,9 @@
   position: relative;
   min-width: 0;
   display: grid;
+  /* Rows keep their content height, so a step whose description wraps does
+     not lift its title above its neighbours'. */
+  align-content: start;
   justify-items: center;
   gap: 8px;
   padding: 0 7px;

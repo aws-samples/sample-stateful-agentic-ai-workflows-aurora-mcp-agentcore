@@ -26,8 +26,8 @@
 .mds-root .mds-account-copy strong { font: var(--mds-type-body); font-weight: var(--mds-weight-semibold); color: var(--mds-label); }
 .mds-root .mds-account-copy .mds-account-loyalty { font: var(--mds-type-caption); line-height: 1.25; color: var(--mds-label-2); }
 .mds-root .mc-sidebar-note { padding: 0 12px 32px; font: var(--mds-type-title-3); font-weight: var(--mds-weight-regular); letter-spacing: var(--mds-tracking-title); color: var(--mds-label-2); }
-.mds-root .mc-sidebar-note > span { display: block; }
-.mds-root .mc-sidebar-note button { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 0; background: none; border: 0; color: var(--mds-blue); font: var(--mds-type-footnote); cursor: pointer; }
+.mds-root .mc-sidebar-note > span { display: block; text-wrap: balance; }
+.mds-root .mc-sidebar-note button { display: flex; align-items: center; gap: 8px; min-height: 32px; margin-top: 8px; padding: 0; background: none; border: 0; color: var(--mds-blue); font: var(--mds-type-footnote); cursor: pointer; }
 .mds-root .is-sidebar-collapsed .mc-sidebar-note { display: none; }
 .mds-root .mds-desktop-app.is-discovery {
   --mds-right-rail: 306px;
@@ -428,7 +428,7 @@
 .mds-root .mds-proof-store-rows > div { flex-wrap: wrap; gap: 4px 14px; }
 .mds-root .mds-proof-store-rows dd { text-align: left; font-family: var(--mds-font-mono); }
 .mds-root .mds-proof-store { background: var(--mds-surface-2); border-radius: var(--mds-radius-m); }
-.mds-root .mds-proof-panel { background: var(--mds-surface); border-radius: var(--mds-radius-m); }
+.mds-root .mds-proof-panel { padding: 18px 22px; background: var(--mds-surface); border-radius: var(--mds-radius-m); }
 .mds-root .mds-proof-tabs { border-color: var(--mds-separator); }
 .mds-root .mds-proof-tab { font: var(--mds-type-body); }
 .mds-root .mds-proof-fact-value { font: var(--mds-type-title-2); letter-spacing: var(--mds-tracking-title); overflow-wrap: anywhere; }
@@ -545,6 +545,8 @@
 @media (min-width: 861px) and (max-width: 1240px) {
   .mds-root .mds-desktop-app:not(.is-discovery) { grid-template-columns: 220px minmax(0, 1fr); grid-template-rows: 72px auto auto; height: auto; }
   .mds-root .mds-desktop-app:not(.is-discovery).is-sidebar-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
+  /* The page scrolls past one screen here; the sidebar runs its full length instead of ending mid-page. */
+  .mds-root .mds-desktop-app:not(.is-discovery) .mds-desktop-sidebar { grid-row: 1 / -1; height: auto; min-height: 100dvh; }
   .mds-root[data-theme] .mds-desktop-app:not(.is-discovery) .mds-desktop-right { grid-column: 2; grid-row: 3 !important; }
   .mds-root .mds-desktop-app:not(.is-discovery) .mds-desktop-main,
   .mds-root .mds-desktop-app:not(.is-discovery) .mds-desktop-scroll { height: auto; overflow: visible; }
@@ -568,6 +570,9 @@
 @media (max-width: 860px) {
   .mds-root .mds-recovery-launch-steps li::before { display: none; }
   .mds-root .mds-recovery-launch-card.is-compact .mds-recovery-launch-steps li { grid-template-columns: 34px minmax(0, 1fr); grid-template-rows: auto; justify-items: stretch; text-align: left; }
+  .mds-root .mds-recovery-launch-steps { row-gap: 14px; }
+  .mds-root .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps { padding-inline: 16px; }
+  .mds-root .mds-recovery-launch-card:not(.is-compact) .mds-recovery-launch-steps li { grid-template-columns: 34px minmax(0, 1fr); align-items: center; justify-items: stretch; column-gap: 12px; text-align: left; }
   .mds-root .mds-recovery-workspace .mds-recovery-launch-card:not(.is-compact) { padding: 20px; }
   .mds-root .mds-mobile-disruption-hero { grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .mds-root .mds-mobile-disruption-message { padding: 20px; }
