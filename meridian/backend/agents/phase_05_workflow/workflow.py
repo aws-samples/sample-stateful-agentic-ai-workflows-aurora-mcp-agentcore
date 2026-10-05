@@ -1272,8 +1272,8 @@ class OrchestrationAgent:
 
     async def _release_hold(
         self, state: WorkflowState, *, expected_hold_id: Optional[str] = None
-    ) -> None:
-        """Compensating action: give the seats back.
+    ) -> bool:
+        """Compensating action: give the seats back. True when a held booking was released.
 
         A durable workflow that commits inventory needs an answer for "step 3
         failed after step 2 committed". Releasing marks the booking so the
@@ -1287,13 +1287,13 @@ class OrchestrationAgent:
         hold_id = state.get("hold_id")
         traveler_id = state.get("traveler_id")
         if not hold_id or not traveler_id:
-            return
+            return False
         if expected_hold_id is not None and hold_id != expected_hold_id:
             logger.warning(
                 "not releasing hold %s: it belongs to a different run than the one that failed",
                 hold_id,
             )
-            return
+            return False
         try:
             from backend.agentcore.identity import get_agentcore_identity
             from backend.db.rds_data_client import get_rds_data_client
@@ -1304,15 +1304,31 @@ class OrchestrationAgent:
                 agent_type="booking_agent",
                 authorization=get_agentcore_identity().authorization_context(),
             ) as transaction_id:
-                await db.execute(
+                rows = await db.execute(
                     "UPDATE bookings SET status = 'released' "
-                    "WHERE booking_id = %s AND traveler_id = %s AND status = 'held'",
+                    "WHERE booking_id = %s AND traveler_id = %s AND status = 'held' "
+                    "RETURNING booking_id",
                     (hold_id, traveler_id),
                     transaction_id=transaction_id,
                 )
             logger.info("released courtesy hold %s", hold_id)
+            return bool(rows)
         except Exception as exc:  # noqa: BLE001
             logger.warning("could not release hold %s: %s", hold_id, exc)
+            return False
+
+    async def _record_release(self, config: RunnableConfig) -> None:
+        """Checkpoint that the hold was given back, so a resume does not report it held.
+
+        ``hold`` only leads to ``synthesize``, so updating as ``hold`` writes a
+        checkpoint whose next node is still the one that failed.
+        """
+        try:
+            await self.graph.aupdate_state(
+                config, {"hold_status": "released"}, as_node="hold"
+            )
+        except Exception as exc:  # noqa: BLE001 - the original failure must still surface
+            logger.warning("could not record the released hold in the checkpoint: %s", exc)
 
     async def _node_memory_recall(self, state: WorkflowState) -> WorkflowState:
         """Worker node: recall prior context (delegates to the Phase 4 memory fn).
@@ -1405,7 +1421,12 @@ class OrchestrationAgent:
         # Action status is application data. A prose model must not turn an
         # existing hold into an offer to place another one, or imply a flight
         # was reserved just because the traveler prefers a nonstop route.
-        if state.get("hold_id"):
+        if state.get("hold_id") and state.get("hold_status") == "released":
+            response += (
+                f"\n\nCourtesy hold {state['hold_id']} was released after a step failed, "
+                "so those seats are no longer held. Place a new hold to reserve them again."
+            )
+        elif state.get("hold_id"):
             response += (
                 f"\n\nAurora recorded courtesy hold {state['hold_id']} for "
                 f"{state.get('hold_package')}, {state.get('hold_duration')}. "
@@ -1558,7 +1579,8 @@ class OrchestrationAgent:
                 _hold_key(thread_id, str(package), str(duration))
                 if package and duration else None
             )
-            await self._release_hold(values, expected_hold_id=expected)
+            if await self._release_hold(values, expected_hold_id=expected):
+                await self._record_release(config)
             raise
 
         result = dict(result or {})

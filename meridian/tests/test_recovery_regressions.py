@@ -266,3 +266,73 @@ async def test_lease_lost_at_the_lambda_stops_the_run_at_the_hold(
         )
     saved = await workflow.graph.aget_state({"configurable": {"thread_id": thread}})
     assert saved.next == ("hold",), "the stale worker must not checkpoint past the hold"
+
+
+def _released_booking_boundary(monkeypatch, released_rows):
+    """Stand in for Aurora and the AWS identity, the only external boundaries."""
+    from contextlib import asynccontextmanager
+    from unittest.mock import Mock
+
+    import backend.agentcore.identity as identity
+    import backend.db.rds_data_client as rds
+
+    @asynccontextmanager
+    async def scoped_session(**kwargs):
+        yield "tx"
+
+    db = Mock(scoped_session=scoped_session, execute=AsyncMock(return_value=released_rows))
+    monkeypatch.setattr(rds, "get_rds_data_client", lambda: db)
+    monkeypatch.setattr(identity, "get_agentcore_identity", lambda: Mock())
+    return db
+
+
+def _held_gateway(tool, arguments):
+    hold = {"bookingId": arguments["bookingId"], "status": "held",
+            "expiresAt": "2026-09-12T20:15:00Z", "createdAt": "2026-09-12T20:00:00Z",
+            "observedAt": "2026-09-12T20:00:01Z"}
+    return {"result": {"content": [{"type": "text", "text": json.dumps({"hold": hold})}]}}
+
+
+@pytest.mark.asyncio
+async def test_a_released_hold_is_recorded_in_the_checkpoint_and_the_resumed_reply(
+    workflow_factory, monkeypatch
+):
+    _released_booking_boundary(monkeypatch, [{"booking_id": "released"}])
+    thread = "compensated-thread"
+    config = {"configurable": {"thread_id": thread}}
+    query = "My flight was canceled. Rework my Tokyo trip and check availability."
+
+    failing = workflow_factory()
+    failing._prepare_governed_hold = AsyncMock(return_value=("journey", 200000))
+    failing._gateway_call = _held_gateway
+    failing._node_synthesize = AsyncMock(side_effect=RuntimeError("synthesis exploded"))
+    with pytest.raises(RuntimeError, match="synthesis exploded"):
+        await failing.run(query, "alice", thread, travelers_count=2)
+
+    saved = await failing.graph.aget_state(config)
+    assert saved.values["hold_status"] == "released"
+    assert saved.next == ("synthesize",), "recording the release must not move the run"
+
+    resumed = await workflow_factory().run("Resume workflow", "alice", thread, resume=True)
+    assert resumed["hold_status"] == "released"
+    assert "released" in resumed["response"].lower()
+    assert "Expires at" not in resumed["response"]
+
+
+@pytest.mark.asyncio
+async def test_a_hold_that_was_not_released_keeps_its_checkpointed_status(
+    workflow_factory, monkeypatch
+):
+    _released_booking_boundary(monkeypatch, [])
+    thread = "uncompensated-thread"
+    failing = workflow_factory()
+    failing._prepare_governed_hold = AsyncMock(return_value=("journey", 200000))
+    failing._gateway_call = _held_gateway
+    failing._node_synthesize = AsyncMock(side_effect=RuntimeError("synthesis exploded"))
+    with pytest.raises(RuntimeError, match="synthesis exploded"):
+        await failing.run(
+            "My flight was canceled. Rework my Tokyo trip and check availability.",
+            "alice", thread, travelers_count=2,
+        )
+    saved = await failing.graph.aget_state({"configurable": {"thread_id": thread}})
+    assert saved.values["hold_status"] == "held"
