@@ -22,6 +22,10 @@ HOLD_TOOL = "MeridianHolds___create_courtesy_hold"
 DENIAL = re.compile(r"^(?:AuthorizeActionException\s*-\s*)?Tool Execution Denied:", re.I)
 
 
+# Lambda errors proving the calling worker no longer owns the run.
+LEASE_LOST_ERRORS = frozenset({"execution_lease_lost", "journey_not_owned"})
+
+
 class HoldOutcomeUnknown(RuntimeError):
     """A hold may have committed; preserve its checkpointed identity for retry."""
 

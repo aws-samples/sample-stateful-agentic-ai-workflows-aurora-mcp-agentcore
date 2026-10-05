@@ -243,3 +243,26 @@ async def test_workflow_failure_does_not_report_success_or_claim_no_changes(monk
         await router.chat(router.ChatRequest(message='Tokyo recovery', phase=5), HttpPrincipal('test', 'alice', 'test'))
     assert exc.value.status_code == 503
     assert 'Re-read the saved journey' in exc.value.detail
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("named_error", ["execution_lease_lost", "journey_not_owned"])
+async def test_lease_lost_at_the_lambda_stops_the_run_at_the_hold(
+    workflow_factory, named_error
+):
+    def gateway(tool, arguments):
+        return {"result": {"content": [{"type": "text",
+                                        "text": json.dumps({"error": named_error})}]}}
+
+    workflow = workflow_factory()
+    workflow._prepare_governed_hold = AsyncMock(return_value=("journey", 200000))
+    workflow._gateway_call = gateway
+    thread = f"lease-lost-{named_error}"
+
+    with pytest.raises(module.ExecutionLeaseLostError):
+        await workflow.run(
+            "My flight was canceled. Rework my Tokyo trip and check availability.",
+            "alice", thread, travelers_count=2,
+        )
+    saved = await workflow.graph.aget_state({"configurable": {"thread_id": thread}})
+    assert saved.next == ("hold",), "the stale worker must not checkpoint past the hold"

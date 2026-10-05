@@ -51,6 +51,7 @@ from urllib.parse import quote
 from backend.agents.phase_05_workflow.hold_intent import prepare_hold_node
 from backend.agents.phase_05_workflow.governed_hold import (
     HOLD_TOOL,
+    LEASE_LOST_ERRORS,
     HoldOutcomeUnknown,
     hold_arguments,
     place_governed_hold,
@@ -1085,6 +1086,12 @@ class OrchestrationAgent:
                 "The hold outcome is unknown. Re-read the saved journey and resume "
                 "the same hold request."
             ) from exc
+
+        if outcome.error in LEASE_LOST_ERRORS:
+            # The Lambda proved this worker no longer owns the run. A
+            # replacement worker owns the hold; checkpointing past it here
+            # would make that worker skip the hold.
+            raise ExecutionLeaseLostError(f"Hold refused: {outcome.error}")
 
         if not outcome.placed:
             if outcome.policy_decision is None or (
