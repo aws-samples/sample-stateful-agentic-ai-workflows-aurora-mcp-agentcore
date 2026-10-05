@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from backend.agentcore.identity import get_agentcore_identity
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
+from backend.logging_config import log_exception
 from backend.memory.store import DEMO_TRAVELER_ID
 from backend.http_auth import (
     HttpPrincipal,
@@ -147,10 +148,14 @@ async def rls_probe(
             results.append(
                 RlsTableResult(table=table, scoped_count=scoped, unscoped_count=unscoped)
             )
-        except Exception as exc:  # one bad table shouldn't 500 the whole probe
+        except Exception:  # one bad table shouldn't 500 the whole probe
+            ref = log_exception(f"rls_probe_{table}")
             results.append(
                 RlsTableResult(
-                    table=table, scoped_count=0, unscoped_count=0, error=str(exc)[:200]
+                    table=table,
+                    scoped_count=0,
+                    unscoped_count=0,
+                    error=f"Probe query failed. Reference {ref}.",
                 )
             )
 
@@ -207,8 +212,8 @@ async def rls_probe(
                 seen[0].get("auth_subject") if seen else None
             ),
         }
-    except Exception as exc:
-        debug = {"error": str(exc)[:200]}
+    except Exception:
+        debug = {"error": f"Scope check failed. Reference {log_exception('rls_probe_scope')}."}
 
     return RlsProbeResponse(
         traveler_id=traveler_id,

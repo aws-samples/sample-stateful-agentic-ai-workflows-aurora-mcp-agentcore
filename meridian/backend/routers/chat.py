@@ -43,7 +43,7 @@ from backend.db.embedding_service import get_embedding_service
 from backend.config import bedrock_model_label, config
 from backend.demo_prompts import tee_up_prompt, working_prompts
 from backend.timing import clock, elapsed_ms
-from backend.logging_config import log_search, log_order, log_error, log_turn_start, log_turn_complete, log_activity_entry
+from backend.logging_config import log_exception, log_search, log_order, log_error, log_turn_start, log_turn_complete, log_activity_entry
 from backend.http_auth import (
     HttpPrincipal,
     authorize_traveler,
@@ -869,23 +869,20 @@ async def _concierge_mcp_turn(
                 "matching meridian-concierge tool. Try keywords like 'compare', "
                 "'in EUR', 'price range', 'inventory', or 'loyalty'."
             )
-    except Exception as exc:
-        err_msg = str(exc)[:200] or repr(exc)
+    except Exception:
+        error_ref = log_exception("concierge_mcp_turn")
         activities.append(create_activity(
             activity_type="error",
             title="meridian-concierge MCP error",
-            details=err_msg,
+            details=f"The domain tool failed. Reference {error_ref}.",
             agent_name="MCPAgent",
             agent_file="backend/mcp/concierge_server.py",
         ))
         # Surface the failure to the user instead of letting the
         # generic "Phase 1/2 keyword filters" message take over.
         domain_text = (
-            "Custom MCP server (meridian-concierge) failed to execute the "
-            f"domain tool: {err_msg}\n\n"
-            "Confirm the FastAPI process can spawn the server "
-            "(`python -m backend.mcp.concierge_server`) and that "
-            "AURORA_CLUSTER_ARN/AURORA_SECRET_ARN/AWS creds are set."
+            "The meridian-concierge domain tool failed to run. "
+            f"Reference {error_ref}; the backend log has the details."
         )
     return results, domain_text, custom_answered
 
@@ -2399,11 +2396,12 @@ async def chat(
         except TravelerAuthorizationError as e:
             log_error("production_authorization", error=str(e))
             raise HTTPException(status_code=403, detail=str(e)) from e
-        except Exception as e:
+        except Exception:
+            error_ref = log_exception("package_agent")
             activities.append(create_activity(
                 activity_type="error",
                 title="PackageAgent error",
-                details=str(e),
+                details=f"The availability lookup failed. Reference {error_ref}.",
                 agent_name="PackageAgent",
                 agent_file="agents/phase_03_retrieval/package_agent.py"
             ))
@@ -2529,7 +2527,7 @@ async def chat(
             log_error("production_authorization", error=str(e))
             raise HTTPException(status_code=403, detail=str(e)) from e
         except Exception as e:
-            log_error("production_search", error=str(e))
+            error_ref = log_exception("production_search")
             from backend.agentcore.errors import AgentCoreNotConfiguredError
 
             is_agentcore_config_error = isinstance(e, AgentCoreNotConfiguredError)
@@ -2540,7 +2538,11 @@ async def chat(
                     if is_agentcore_config_error
                     else "Concierge error"
                 ),
-                details=str(e),
+                details=(
+                    "AgentCore Runtime, Gateway or Memory is not configured. "
+                    if is_agentcore_config_error
+                    else "The Production concierge failed. "
+                ) + f"Reference {error_ref}.",
                 agent_name="ProductionAgent",
                 agent_file="agents/phase_04_production/concierge.py",
             ))
@@ -2894,10 +2896,11 @@ async def chat(
         log_error(context="traveler_authorization", error=str(e), phase=request.phase)
         raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
+        error_ref = log_exception("chat_search")
         activities.append(create_activity(
             activity_type="error",
             title="Error processing request",
-            details=str(e),
+            details=f"The request failed. Reference {error_ref}.",
             agent_name=agent_name,
             agent_file=agent_file
         ))

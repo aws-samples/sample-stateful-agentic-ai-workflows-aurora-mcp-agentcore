@@ -12,6 +12,7 @@ import os
 import sys
 import json
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -360,3 +361,22 @@ def log_error(context: str, error: str, **kwargs: Any) -> None:
         f"Error in {context}: {error}",
         extra={"error": error, "context": context, "event": "error", **kwargs},
     )
+
+
+def log_exception(context: str) -> str:
+    """Log the exception being handled with its traceback and return a short reference.
+
+    Call from inside an ``except`` block. The client gets only the reference
+    (not the exception text); the operator greps the log for it.
+
+    Args:
+        context: What was being attempted, e.g. ``"production_search"``.
+
+    Returns:
+        An 8-character hex reference, present in the log record message.
+    """
+    reference = uuid.uuid4().hex[:8]
+    logging.getLogger("backend.errors").exception(
+        "%s failed (ref=%s)", context, reference, extra={"context": context, "ref": reference}
+    )
+    return reference
