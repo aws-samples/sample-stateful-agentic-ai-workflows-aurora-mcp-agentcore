@@ -196,3 +196,40 @@ it('does not dispatch a hold if its identity cannot be saved', async () => {
     setItem.mockRestore();
   }
 });
+
+const meridianHealth = {
+  status: 'healthy', bedrock_model_id: 'model', embedding_model_id: 'embed',
+  checkpoint_backend: 'AuroraDataApiSaver',
+};
+
+it('names the pending write and stays online when a confirmation is not received', async () => {
+  let finish!: (value: Awaited<ReturnType<typeof processOrder>>) => void;
+  vi.mocked(processOrder).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+  vi.mocked(confirmBooking).mockRejectedValueOnce(new Error('Refused by the gateway'));
+  vi.mocked(fetchHealth).mockResolvedValue(meridianHealth);
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.backendStatus).toBe('online'));
+  expect(result.current.pendingWrite).toBeNull();
+  let hold!: Promise<void>;
+  act(() => { hold = result.current.holdTrip(tokyo); });
+  await waitFor(() => expect(result.current.pendingWrite).toBe('hold'));
+  await act(async () => { finish({ message: 'Held.', order: held, activities: [] }); await hold; });
+  expect(result.current.pendingWrite).toBeNull();
+  await act(async () => { await result.current.confirmTrip(tokyo); });
+  expect(result.current.error).toMatch(/confirmation response .* was not received/);
+  expect(result.current.backendStatus).toBe('online');
+  expect(result.current.pendingWrite).toBeNull();
+});
+
+it('clears request progress when the phase changes during a chat request', async () => {
+  vi.mocked(sendChatMessage).mockReturnValueOnce(new Promise(() => {}));
+  vi.mocked(fetchHealth).mockResolvedValue(meridianHealth);
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.backendStatus).toBe('online'));
+  act(() => { void result.current.submitPrompt('Plan Tokyo', 1); });
+  await waitFor(() => expect(result.current.requestStartedAt).not.toBeNull());
+  act(() => result.current.setSelectedPhase(2));
+  expect(result.current.isLoading).toBe(false);
+  expect(result.current.requestStartedAt).toBeNull();
+  expect(result.current.chatProgress).toBe('');
+});

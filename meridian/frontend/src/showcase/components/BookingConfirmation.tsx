@@ -36,7 +36,7 @@ export function BookingConfirmation({ product, hold, budgetPerTravelerCents, bus
       <footer className="mds-trip-modal-actions">
         <button type="button" onClick={onCancel} disabled={busy}>Not yet</button>
         <button type="button" className="is-primary" onClick={onConfirm} disabled={busy}>
-          {busy ? 'Confirming...' : 'Yes, confirm this trip'}
+          {busy ? 'Confirming…' : 'Yes, confirm this trip'}
         </button>
       </footer>
     </section>

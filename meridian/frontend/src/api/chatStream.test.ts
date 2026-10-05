@@ -52,3 +52,10 @@ it('delivers candidate IDs without accepting malformed payloads as cards', async
   )]), onEvent);
   expect(onEvent).toHaveBeenCalledExactlyOnceWith({ type: 'candidates', package_ids: ['CTY-002'] });
 });
+
+it('reports the error field of a refused stream request', async () => {
+  const refused = new Response(JSON.stringify({ error: 'Traveler not authorized' }), {
+    status: 403, headers: { 'Content-Type': 'application/json' },
+  });
+  await expect(readChatStream(refused, vi.fn())).rejects.toThrow('Traveler not authorized');
+});

@@ -15,6 +15,7 @@ function makeState(
     phaseLabel: 'Workflow',
     messages: [],
     isLoading: false,
+    pendingWrite: null,
     error: null,
     latestStreamComplete: true,
     memoryFacts: [],

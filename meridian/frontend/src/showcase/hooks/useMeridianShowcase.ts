@@ -132,6 +132,8 @@ export interface MeridianShowcaseState {
   replayIndex: number;
   isReplaying: boolean;
   isLoading: boolean;
+  /** The governed write in flight from the trip dialog; chat turns are not writes. */
+  pendingWrite: 'hold' | 'confirm' | null;
   chatProgress?: string;
   requestStartedAt: number | null;
   stopWaiting: () => void;
@@ -314,6 +316,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [isReplaying, setIsReplaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [chatProgress, setChatProgress] = useState('');
+  const [pendingWrite, setPendingWrite] = useState<MeridianShowcaseState['pendingWrite']>(null);
   const [requestStartedAt, setRequestStartedAt] = useState<number | null>(null);
   const stopWaiting = useCallback(() => {
     chatController.current?.abort(new DOMException('Stopped waiting.', 'AbortError'));
@@ -798,6 +801,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     clearWorkflowAddress();
     unresolvedWorkflow.current = null;
     setIsLoading(false);
+    setPendingWrite(null);
+    setChatProgress('');
+    setRequestStartedAt(null);
     setSelectedPhaseState(phase);
     setLastRequestPhase(null);
     setRecoveryRequest(null);
@@ -927,6 +933,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setSelectedTrip(product);
       setTripDetailsOpen(true);
       setIsLoading(true);
+      setPendingWrite('hold');
       setRequestStartedAt(Date.now());
       setLatestStreamComplete(false);
       setError(null);
@@ -985,6 +992,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (writeController.current === controller) writeController.current = null;
         if (mounted.current && generation === requestGeneration.current) {
           setIsLoading(false);
+          setPendingWrite(null);
           setRequestStartedAt(null);
         }
       }
@@ -1012,6 +1020,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       const generation = requestGeneration.current;
       setBookingPrompt(null);
       setIsLoading(true);
+      setPendingWrite('confirm');
       setLatestStreamComplete(false);
       setError(null);
       setRequestStartedAt(Date.now());
@@ -1056,7 +1065,6 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         setWorkspaceNotice(response.order?.status === 'confirmed' ? `${product.name} is confirmed for Jordan.` : response.message);
       } catch {
         if (!mounted.current || generation !== requestGeneration.current) return;
-        setBackendStatus('offline');
         setError(
           `The confirmation response for ${product.name} was not received. The booking may already be confirmed. Retry confirmation to check the same booking.`,
         );
@@ -1065,6 +1073,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         if (writeController.current === controller) writeController.current = null;
         if (mounted.current && generation === requestGeneration.current) {
           setIsLoading(false);
+          setPendingWrite(null);
           setRequestStartedAt(null);
         }
       }
@@ -1201,6 +1210,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     clearWorkflowAddress();
     unresolvedWorkflow.current = null;
     setIsLoading(false);
+    setPendingWrite(null);
+    setChatProgress('');
+    setRequestStartedAt(null);
     clearReplayTimers();
     setMessages([]);
     setCurrentPrompt('');
@@ -1281,6 +1293,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     replayIndex,
     isReplaying,
     isLoading,
+    pendingWrite,
     chatProgress,
     requestStartedAt,
     stopWaiting,

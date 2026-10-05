@@ -45,14 +45,23 @@ export function parseTripWorkspace(raw: string | null): TripWorkspace {
   }
 }
 
+/** Saved and compared trips are a convenience; blocked storage must not stop the app. */
 export function loadTripWorkspace(): TripWorkspace {
   if (typeof window === 'undefined') return EMPTY_TRIP_WORKSPACE;
-  return parseTripWorkspace(window.localStorage.getItem(STORAGE_KEY));
+  try {
+    return parseTripWorkspace(window.localStorage.getItem(STORAGE_KEY));
+  } catch {
+    return EMPTY_TRIP_WORKSPACE;
+  }
 }
 
 export function saveTripWorkspace(workspace: TripWorkspace): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace));
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace));
+  } catch {
+    // Blocked or full storage keeps the workspace for this page only.
+  }
 }
 
 export function toggleSavedTrip(savedTrips: Product[], product: Product): Product[] {

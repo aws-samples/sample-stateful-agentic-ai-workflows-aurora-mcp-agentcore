@@ -38,7 +38,11 @@ export function useDialogA11y(open: boolean, onClose: () => void) {
       }
       const first = current[0];
       const last = current[current.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (!dialog.contains(document.activeElement)) {
+        // The focused control was removed (for example, a confirmed action).
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {

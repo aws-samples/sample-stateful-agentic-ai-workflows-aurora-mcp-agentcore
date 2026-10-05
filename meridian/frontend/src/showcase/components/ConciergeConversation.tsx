@@ -121,7 +121,8 @@ export function ConciergeConversation({ state, onSaved, onRecovery, onReviewReco
   }, [state.messages, state.isLoading, state.error, userCount, measureScrollPosition]);
 
   const lastMessage = state.messages[state.messages.length - 1];
-  const messages = state.isLoading && !lastMessage?.streaming
+  // A hold or confirmation runs in the trip dialog; it is not a concierge reply.
+  const messages = state.isLoading && !state.pendingWrite && !lastMessage?.streaming
     ? [...state.messages, { role: 'bot' as const, text: '', streaming: true }]
     : state.messages;
 

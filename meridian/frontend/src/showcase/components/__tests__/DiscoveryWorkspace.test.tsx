@@ -37,6 +37,7 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     memoryFacts: [],
     previewFacts: [],
     isLoading: false,
+    pendingWrite: null,
     error: null,
     clearError: vi.fn(),
     backendStatus: 'checking',

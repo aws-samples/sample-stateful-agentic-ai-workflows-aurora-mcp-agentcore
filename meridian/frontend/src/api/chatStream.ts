@@ -13,7 +13,11 @@ export async function readChatStream(
 ): Promise<ChatResponse> {
   if (!response.ok) {
     let detail = `Request failed (${response.status}).`;
-    try { const body = await response.json(); if (typeof body.detail === 'string') detail = body.detail; } catch { /* Keep the HTTP status. */ }
+    try {
+      const body = await response.json();
+      if (typeof body.error === 'string') detail = body.error;
+      else if (typeof body.detail === 'string') detail = body.detail;
+    } catch { /* Keep the HTTP status. */ }
     throw new Error(detail);
   }
   if (!response.headers.get('content-type')?.includes('text/event-stream') || !response.body) {

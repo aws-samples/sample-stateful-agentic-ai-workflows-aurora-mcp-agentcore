@@ -40,3 +40,13 @@ describe('dialog return focus', () => {
     expect(document.activeElement).toBe(screen.getByLabelText('Workspace'));
   });
 });
+
+it('brings Tab back into the dialog after the focused control disappears', () => {
+  render(<DialogJourney removeTrigger={false} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open details' }));
+  (document.activeElement as HTMLElement).blur();
+  expect(document.activeElement).toBe(document.body);
+  fireEvent.keyDown(document, { key: 'Tab' });
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close' }));
+});
+

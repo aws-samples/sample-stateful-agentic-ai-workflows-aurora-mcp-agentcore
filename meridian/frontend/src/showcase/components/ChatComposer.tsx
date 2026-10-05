@@ -42,11 +42,20 @@ export function ChatComposer({
   const contextConnecting = state.memoryLoading && (conciergeMode || state.selectedPhase === 4);
   const requestBusy = state.isLoading || contextConnecting;
 
+  // Sending disables the ladder textarea, which drops keyboard focus. Return
+  // it when the request ends, unless the user has moved focus elsewhere.
+  const sentFromInput = useRef(false);
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (requestBusy || !state.currentPrompt.trim()) return;
+    sentFromInput.current = document.activeElement === inputRef.current;
     void state.submitPrompt(undefined, conciergeMode ? 4 : undefined);
   };
+  useEffect(() => {
+    if (requestBusy || !sentFromInput.current) return;
+    sentFromInput.current = false;
+    if (document.activeElement === document.body) inputRef.current?.focus({ preventScroll: true });
+  }, [requestBusy]);
 
   useLayoutEffect(() => {
     const input = inputRef.current;

@@ -300,8 +300,11 @@ export function DesktopMeridianApp({
         </div>
         <nav className="mds-nav-items" aria-label="Desktop navigation">
           {navItems.map((item) => {
+            // The sidebar is visible beside the ladder, desk and evidence; Concierge
+            // is current only on its own view, where the header tab already says so.
             const isActive =
-              (item.id === 'concierge' && navPanel === null && !memoryOpen) ||
+              (item.id === 'concierge' && view === 'concierge'
+                && navPanel === null && !memoryOpen) ||
               (item.id === 'preferences' && memoryOpen) ||
               navPanel === (item.id as NavPanelId);
             const Icon = item.icon;
@@ -603,7 +606,11 @@ export function DesktopMeridianApp({
 
         {isLadder && !isWorkflow && (
           <div className="mds-desktop-dock">
-            <ChatComposer state={ladderState} proofMode />
+            <ChatComposer
+              state={ladderState}
+              proofMode
+              hideStarters={ladderState.messages.length === 0}
+            />
           </div>
         )}
       </main>

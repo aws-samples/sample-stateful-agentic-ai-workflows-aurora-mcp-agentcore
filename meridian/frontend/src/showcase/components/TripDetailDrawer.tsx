@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Bookmark, GitCompareArrows, ShieldCheck, X } from 'lucide-react';
 import type { Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
@@ -20,6 +21,14 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
   const activeHold = hold?.order.status === 'held' && knownExpiry && !expired;
   const confirmed = hold?.order.status === 'confirmed';
   const confirming = Boolean(hold) && state.bookingPrompt?.order.order_id === hold?.order.order_id;
+  const stopRef = useRef<HTMLButtonElement>(null);
+  // Confirming removes the focused button, and a finished write removes Stop
+  // waiting. Keep keyboard focus in the dialog instead of dropping it on the page.
+  useEffect(() => {
+    const dialog = ref.current;
+    if (!open || !dialog || dialog.contains(document.activeElement)) return;
+    (stopRef.current ?? dialog).focus();
+  }, [open, ref, state.pendingWrite]);
   if (!open || !product) return null;
 
   const saved = state.savedTripIds.has(product.product_id);
@@ -112,6 +121,17 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
             <button type="button" onClick={() => state.compareTrip(product)} aria-pressed={compared}>
               <GitCompareArrows size={17} />{compared ? 'Comparing' : 'Compare'}
             </button>
+            {state.pendingWrite && (
+              <button
+                ref={stopRef}
+                className="mds-trip-stop"
+                type="button"
+                onClick={state.stopWaiting}
+                title="Stop waiting for this response. Saved actions may still finish."
+              >
+                Stop waiting
+              </button>
+            )}
             {!confirming && (
               <button
                 className="is-primary"
@@ -119,8 +139,8 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
                 onClick={() => activeHold ? state.requestBookingConfirmation(product) : void state.holdTrip(product)}
                 disabled={state.isLoading || confirmed}
               >
-                {state.isLoading
-                  ? activeHold ? 'Confirming...' : 'Creating hold...'
+                {state.pendingWrite === 'confirm' ? 'Confirming…'
+                  : state.pendingWrite === 'hold' ? 'Creating hold…'
                   : confirmed ? 'Trip confirmed' : activeHold ? 'Confirm this trip for Jordan' : 'Request 12-hour hold'}
               </button>
             )}

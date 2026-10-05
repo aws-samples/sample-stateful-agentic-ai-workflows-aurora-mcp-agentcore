@@ -48,6 +48,7 @@ function makeState(
     previewFacts: [],
     previewProfile: null,
     isLoading: false,
+    pendingWrite: null,
     error: null,
     lastPrompt: null,
     workflowStatus: null,
@@ -1478,3 +1479,86 @@ it('reveals provisional trips with the reply and enables actions only after the 
   expect(screen.getByRole('button', { name: `Explore this trip: ${product.name}` })).toBeEnabled();
   expect(screen.getByRole('button', { name: `Save ${product.name}` })).toBeEnabled();
 });
+
+describe('Navigation, waits and focus', () => {
+  const tokyo = {
+    product_id: 'CTY-002', name: 'Tokyo trip', price: 2499, available_sizes: ['5 nights'],
+    description: '', image_url: '', brand: 'Meridian', category: 'city',
+  };
+  const heldTokyo = { productId: tokyo.product_id, order: {
+    order_id: 'HLD-1', status: 'held', hold_expires_at: '2099-01-01T00:00:00Z',
+    items: [{
+      product_id: tokyo.product_id, name: tokyo.name, size: '5 nights',
+      quantity: 2, unit_price: 2499,
+    }],
+    subtotal: 4998, total: 4998, tax: 0, shipping: 0,
+  } };
+
+  it.each(['ladder', 'recovery', 'proof'])('marks only the %s tab as the current page', view => {
+    window.history.replaceState(null, '', `/showcase?view=${view}`);
+    const { container } = render(
+      <DesktopMeridianApp state={makeState()} theme="dark" onToggleTheme={vi.fn()} />,
+    );
+    const current = container.querySelectorAll('[aria-current="page"]');
+    expect(current).toHaveLength(1);
+    expect(current[0]).toHaveClass('mds-surface-tab');
+  });
+
+  it('does not repeat the empty ladder starters in the composer', () => {
+    window.history.replaceState(null, '', '/showcase?view=ladder');
+    render(<DesktopMeridianApp state={makeState()} theme="dark" onToggleTheme={vi.fn()} />);
+    expect(screen.getByRole('region', { name: 'Starter queries for this phase' }))
+      .toBeInTheDocument();
+    expect(screen.queryByLabelText('Query starters for this phase')).not.toBeInTheDocument();
+  });
+
+  it('offers Stop waiting in the trip dialog and keeps focus inside it while confirming', () => {
+    const base = makeState({ selectedTrip: tokyo, tripDetailsOpen: true, tripHolds: [heldTokyo],
+      stopWaiting: vi.fn(), confirmTrip: vi.fn(), dismissBookingConfirmation: vi.fn(),
+      closeTripDetails: vi.fn() });
+    const { rerender } = render(<TripDetailDrawer state={{ ...base, bookingPrompt: heldTokyo }} />);
+    screen.getByRole('button', { name: 'Yes, confirm this trip' }).focus();
+    rerender(<TripDetailDrawer state={{ ...base, isLoading: true, pendingWrite: 'confirm' }} />);
+    const stop = screen.getByRole('button', { name: 'Stop waiting' });
+    expect(stop).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Confirming…' })).toBeDisabled();
+    fireEvent.click(stop);
+    expect(base.stopWaiting).toHaveBeenCalledOnce();
+    rerender(<TripDetailDrawer state={base} />);
+    expect(screen.queryByRole('button', { name: 'Stop waiting' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toHaveFocus();
+  });
+
+  it('does not label a chat request in the trip dialog as a hold', () => {
+    const state = makeState({ selectedTrip: tokyo, tripDetailsOpen: true, isLoading: true });
+    render(<TripDetailDrawer state={state} />);
+    expect(screen.getByRole('button', { name: 'Request 12-hour hold' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Stop waiting' })).not.toBeInTheDocument();
+  });
+
+  it('does not show a concierge reply placeholder while a hold is written', () => {
+    const state = makeState({
+      isLoading: true, pendingWrite: 'hold', messages: [{ role: 'user', text: 'Plan Tokyo' }],
+    });
+    const { container } = render(
+      <ConciergeConversation state={state} onSaved={vi.fn()} onRecovery={vi.fn()} />,
+    );
+    expect(container.querySelector('.mc-message.is-bot')).not.toBeInTheDocument();
+  });
+
+  it('returns focus to the ladder composer after a request it sent', () => {
+    const state = makeState({ currentPrompt: 'City trips under $2,000' });
+    const { rerender } = render(<ChatComposer state={state} proofMode />);
+    const input = screen.getByRole('textbox', { name: 'Ask Meridian anything' });
+    input.focus();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    // Browsers drop focus from a control as it becomes disabled; jsdom does not.
+    input.blur();
+    rerender(<ChatComposer state={{ ...state, isLoading: true }} proofMode />);
+    expect(input).toBeDisabled();
+    expect(document.body).toHaveFocus();
+    rerender(<ChatComposer state={state} proofMode />);
+    expect(input).toHaveFocus();
+  });
+});
+

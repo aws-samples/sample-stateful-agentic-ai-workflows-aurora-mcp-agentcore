@@ -59,6 +59,7 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     replayIndex: -1,
     isReplaying: false,
     isLoading: false,
+    pendingWrite: null,
     requestStartedAt: null,
     stopWaiting: vi.fn(),
     error: null,
