@@ -36,7 +36,7 @@ RESERVED_CHANNEL = next(iter(WRITES_IDX_MAP))
 class TransactionalFault(FaultAfter):
     """`FaultAfter` that also carries the client's transaction API.
 
-    `_write_pending_blob` opens a real RDS Data API transaction, so a proxy
+    `aput_writes` opens a real RDS Data API transaction, so a proxy
     that fails one statement has to pass begin/commit/rollback through for
     the rollback to be a real rollback in Aurora.
     """

@@ -437,29 +437,40 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
             else INSERT_WRITE_SQL
         )
 
-        for offset, (channel, value) in enumerate(writes):
-            idx = WRITES_IDX_MAP.get(channel, offset)
-            blob_type, payload = self.serde.dumps_typed(value)
-            segments = split_for_write(payload)
-            await self._write_pending_blob(
-                sql,
-                (thread_id, ns, checkpoint_id, task_id, idx),
-                (
-                    thread_id,
-                    ns,
-                    checkpoint_id,
-                    task_id,
-                    idx,
-                    channel,
-                    blob_type,
-                    segments[0],
-                    task_path,
-                ),
-                segments,
-            )
+        # One transaction for the whole batch: a worker that dies mid-batch
+        # must not leave some of a task's writes durable and others missing.
+        transaction_id = self.client.begin_transaction()
+        try:
+            for offset, (channel, value) in enumerate(writes):
+                idx = WRITES_IDX_MAP.get(channel, offset)
+                blob_type, payload = self.serde.dumps_typed(value)
+                segments = split_for_write(payload)
+                await self._write_pending_blob(
+                    sql,
+                    (thread_id, ns, checkpoint_id, task_id, idx),
+                    (
+                        thread_id,
+                        ns,
+                        checkpoint_id,
+                        task_id,
+                        idx,
+                        channel,
+                        blob_type,
+                        segments[0],
+                        task_path,
+                    ),
+                    segments,
+                    transaction_id,
+                )
+            self.client.commit_transaction(transaction_id)
+        except BaseException:
+            # Cancellation is a BaseException. A cancelled worker must release
+            # this transaction too, or takeover can block on its row lock.
+            self.client.rollback_transaction(transaction_id)
+            raise
 
     async def _write_pending_blob(
-        self, sql: str, key: tuple, row_params: tuple, segments: list
+        self, sql: str, key: tuple, row_params: tuple, segments: list, transaction_id: str
     ) -> None:
         """Insert the first segment, appending the rest only if it was written.
 
@@ -470,14 +481,13 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
         full, so ``RETURNING`` always yields a row and the remaining
         segments are always appended.
 
-        The insert and its appends run inside one RDS Data API transaction.
-        Without it, each ``execute`` auto-commits on its own: a process death
-        after the insert lands but before the appends would leave the blob
-        truncated with no repair path, because a retry's ``DO NOTHING``
-        correctly sees the row already exists and skips re-appending. Wrapping
-        both in one transaction means either every segment lands or the whole
-        attempt rolls back, leaving a clean row for the next retry to build on.
-        It also serializes concurrent re-puts of a reserved channel (e.g.
+        The insert and its appends run inside the caller's RDS Data API
+        transaction. Without it, each ``execute`` auto-commits on its own: a
+        process death after the insert lands but before the appends would leave
+        the blob truncated with no repair path, because a retry's ``DO NOTHING``
+        correctly sees the row already exists and skips re-appending. In one
+        transaction either every segment lands or the whole attempt rolls back,
+        leaving a clean row for the next retry to build on. It also serializes concurrent re-puts of a reserved channel (e.g.
         ``__resume__``): the row lock held for the transaction's lifetime
         keeps one attempt's ``DO UPDATE`` reset from interleaving with
         another's appends.
@@ -491,27 +501,14 @@ class AuroraDataApiSaver(BaseCheckpointSaver):
             row_params: Parameters for the first-segment insert statement.
             segments: All segments for this value; ``segments[0]`` is already
                 in ``row_params``, and only ``segments[1:]`` are appended.
-
-        Raises:
-            Exception: Whatever the insert, an append, or the transaction
-                itself raises, after rolling back so no partial row survives.
+            transaction_id: The open transaction every statement runs in.
         """
-        transaction_id = self.client.begin_transaction()
-        try:
-            rows = await self.client.execute(
-                sql, row_params, transaction_id=transaction_id
-            )
-            if rows:
-                for segment in segments[1:]:
-                    await self.client.execute(
-                        APPEND_WRITE_SQL, (segment,) + key, transaction_id=transaction_id
-                    )
-            self.client.commit_transaction(transaction_id)
-        except BaseException:
-            # Cancellation is a BaseException. A cancelled worker must release
-            # this transaction too, or takeover can block on its row lock.
-            self.client.rollback_transaction(transaction_id)
-            raise
+        rows = await self.client.execute(sql, row_params, transaction_id=transaction_id)
+        if rows:
+            for segment in segments[1:]:
+                await self.client.execute(
+                    APPEND_WRITE_SQL, (segment,) + key, transaction_id=transaction_id
+                )
 
     async def _pending_writes(
         self, thread_id: str, ns: str, checkpoint_id: str
