@@ -24,7 +24,19 @@ class HttpPrincipal:
     authentication: str
 
 
-def _is_loopback(host: str | None) -> bool:
+FORWARDING_HEADERS = ("x-forwarded-for", "forwarded", "x-real-ip")
+
+
+def _is_loopback(request: Request) -> bool:
+    """True only for a direct local connection.
+
+    The server runs with proxy headers trusted, so ``client.host`` can be
+    rewritten from ``X-Forwarded-For``. A request that went through any proxy
+    is therefore never treated as local.
+    """
+    if any(name in request.headers for name in FORWARDING_HEADERS):
+        return False
+    host = request.client.host if request.client else None
     return host in {"127.0.0.1", "::1", "localhost", "testclient"}
 
 
@@ -46,7 +58,7 @@ async def require_http_principal(
     if expected_token:
         scheme, _, supplied = (authorization or "").partition(" ")
         if scheme.lower() != "bearer" or not supplied or not hmac.compare_digest(
-            supplied, expected_token
+            supplied.encode(), expected_token.encode()
         ):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -59,8 +71,7 @@ async def require_http_principal(
             authentication="bearer",
         )
 
-    client_host = request.client.host if request.client else None
-    if _local_development_allowed() and _is_loopback(client_host):
+    if _local_development_allowed() and _is_loopback(request):
         return HttpPrincipal(
             subject_id="local-workshop",
             traveler_id=traveler_id,
