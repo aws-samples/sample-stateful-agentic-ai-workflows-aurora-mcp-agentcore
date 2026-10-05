@@ -134,7 +134,7 @@
 .mds-root .is-discovery .mc-studio-conversation-header h2 { margin: 0 0 10px; font: var(--mds-type-studio-title); letter-spacing: var(--mds-tracking-display); }
 .mds-root .is-discovery .mc-studio-conversation-header p { margin: 0; color: var(--mds-label-2); font: var(--mds-type-studio-body); }
 .mds-root .is-discovery .mc-studio-conversation-header button { font: var(--mds-type-footnote); white-space: nowrap; }
-.mds-root .is-discovery .mc-studio-messages { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 16px); mask-image: linear-gradient(to bottom, transparent, #000 16px); flex: 1 1 auto; min-height: 100px; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; padding: 24px 0; scrollbar-width: thin; scrollbar-color: var(--mds-control-line) transparent; }
+.mds-root .is-discovery .mc-studio-messages { -webkit-mask-image: linear-gradient(to bottom, transparent, var(--mds-ground) 16px); mask-image: linear-gradient(to bottom, transparent, var(--mds-ground) 16px); flex: 1 1 auto; min-height: 100px; overflow: auto; overflow-anchor: none; overscroll-behavior: contain; padding: 24px 0; scrollbar-width: thin; scrollbar-color: var(--mds-control-line) transparent; }
 .mds-root .is-discovery .mc-studio-starters { display: grid; gap: 12px; padding-block: clamp(16px, 9dvh, 110px) 20px; }
 .mds-root .is-discovery .mc-studio-starters button { display: flex; align-items: center; gap: 14px; text-align: left; padding: 16px; min-height: 60px; border: 1px solid var(--mds-separator); border-radius: var(--mds-radius-l); background: var(--mds-surface-2); color: var(--mds-label); font: var(--mds-type-studio-label); cursor: pointer; }
 .mds-root .is-discovery .mc-studio-starters button > span { flex: 1; }
