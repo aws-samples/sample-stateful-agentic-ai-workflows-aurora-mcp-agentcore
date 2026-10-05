@@ -99,9 +99,10 @@ class AgentCoreIdentityAdapter:
             # Assumed-role UserIds are "stable-role-id:ephemeral-session".
             self._iam_subject_cache = user_id.split(":", 1)[0] or "unresolved"
         except Exception as exc:  # pragma: no cover
+            # Not cached: one transient failure must not fail every grant check
+            # until the process restarts.
             logger.warning("sts:GetCallerIdentity failed: %s", exc)
-            self._iam_identity_cache = "unresolved"
-            self._iam_subject_cache = "unresolved"
+            return "unresolved", "unresolved"
         return self._iam_identity_cache, self._iam_subject_cache
 
     def iam_identity(self) -> str:

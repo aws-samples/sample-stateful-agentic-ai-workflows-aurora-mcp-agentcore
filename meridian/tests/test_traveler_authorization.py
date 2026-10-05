@@ -87,6 +87,28 @@ def test_assumed_role_session_uses_stable_iam_subject() -> None:
     adapter._sts.get_caller_identity.assert_called_once()
 
 
+def test_a_transient_sts_failure_is_not_cached_for_the_process_lifetime() -> None:
+    adapter = AgentCoreIdentityAdapter(
+        workload_identity=None,
+        resource_provider=None,
+        region="us-east-1",
+    )
+    adapter._sts = MagicMock()
+    adapter._sts.get_caller_identity.side_effect = [
+        RuntimeError("sts throttled"),
+        {
+            "Arn": "arn:aws:sts::123456789012:assumed-role/Meridian/session-a",
+            "UserId": "AROATESTROLE:session-a",
+        },
+    ]
+
+    assert adapter.authorization_context().subject_id == "unresolved"
+    recovered = adapter.authorization_context()
+
+    assert recovered.subject_id == "AROATESTROLE"
+    assert recovered.principal.endswith("assumed-role/Meridian/session-a")
+
+
 def test_live_agentcore_identity_becomes_authorization_subject() -> None:
     adapter = AgentCoreIdentityAdapter(
         workload_identity="arn:aws:bedrock-agentcore:us-east-1:123:workload-identity/jordan",
