@@ -170,7 +170,7 @@ def test_evidence_document_exposes_the_booking_timestamps():
                  "hold_created_at": "2026-09-06 12:00:00+00", "hold_expires_at": "2026-09-06 12:15:00+00",
                  "observed_at": "2026-09-06 12:05:00+00", "package_id": "PKG-1", "duration": "2 nights",
                  "travelers_count": 2, "unit_price": "100.00", "total_amount": "200.00"}]
-    hold = asyncio.run(_hold(query, "journey-test"))
+    hold = asyncio.run(_hold(query, "journey-test", {}))
     assert hold["hold_created_at"] == "2026-09-06T12:00:00+00:00"
     assert hold["hold_expires_at"] == "2026-09-06T12:15:00+00:00"
     assert hold["observed_at"] == "2026-09-06T12:05:00+00:00"

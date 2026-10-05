@@ -154,7 +154,7 @@ export function JourneyContinuityRail({
           <code>thread: {document.active_thread_id}</code>
         ) : (
           <code className="mds-continuity-absent">
-            {error ? 'evidence unavailable' : loading ? 'reading…' : 'no recovery selected'}
+            thread: {error ? 'unavailable' : loading ? 'reading…' : '—'}
           </code>
         )}
         <span className="mds-continuity-source">

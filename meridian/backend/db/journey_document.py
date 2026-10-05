@@ -192,7 +192,7 @@ async def assemble_journey_document(
         document["recommendations"] = _recommendations(checkpoint, inline)
         document["pending_decision"] = _pending_decision(checkpoint, inline)
         document["conversation"] = await _conversation(q, thread_id)
-        document["hold"] = await _hold(q, journey_id)
+        document["hold"] = await _hold(q, journey_id, inline)
         document["authorization"] = await _authorization(q, traveler_id)
         document["rls"] = _unavailable("no scoped probe run this session")
         return document
@@ -319,10 +319,25 @@ async def _conversation(q, thread_id: Optional[str]) -> Dict[str, Any]:
     }
 
 
-async def _hold(q, journey_id: str) -> Dict[str, Any]:
+def _hold_absent(inline: Any) -> Dict[str, Any]:
+    """Explain a missing hold row without contradicting the checkpoint.
+
+    Releasing a demo booking deletes its rows, while the checkpoint still names
+    the hold the workflow placed. Saying none was placed would be false.
+    """
+    hold_id = _channel(inline, "hold_id")
+    if not hold_id:
+        return _unavailable("no hold has been placed for this journey")
+    return {
+        **_unavailable(f"the checkpoint names hold {hold_id}, but Aurora has no booking for it"),
+        "checkpoint_hold_id": hold_id,
+    }
+
+
+async def _hold(q, journey_id: str, inline: Any) -> Dict[str, Any]:
     rows = await q(HOLD_SQL, (journey_id,))
     if not rows:
-        return _unavailable("no hold has been placed for this journey")
+        return _hold_absent(inline)
     row = rows[0]
     return {
         "status": row["status"],

@@ -204,3 +204,39 @@ it('does not call an expired worker live or a second attempt a successful resume
   expect(screen.getByText('Lease not verified')).toBeInTheDocument();
   expect(screen.getByText('Successful resume not verified')).toBeInTheDocument();
 });
+
+it('calls a paused recovery not resumed yet instead of unverified', () => {
+  const doc = makeDocument({
+    status: 'paused',
+    workflow: {
+      status: 'observed', source: 'checkpoint:thread_test/cp_01', conversation_id: 'thread_test',
+      query: 'Rework the trip', message: 'Paused.', workflow_status: 'paused',
+      next_nodes: ['availability'], activities: [], travelers_count: 2,
+      resumed_after_restart: false,
+    },
+  });
+  render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+  expect(screen.getByText('Not resumed yet')).toBeInTheDocument();
+  expect(screen.queryByText('Successful resume not verified')).not.toBeInTheDocument();
+});
+
+it('says a checkpointed hold is no longer in Aurora instead of claiming none was created', () => {
+  const doc = makeDocument({
+    hold: {
+      status: 'unavailable',
+      reason: 'the checkpoint names hold HLD-gone, but Aurora has no booking for it',
+      checkpoint_hold_id: 'HLD-gone',
+    },
+  });
+  render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+  expect(screen.getByText('No longer in Aurora')).toBeInTheDocument();
+  expect(screen.getByText(/Hold no longer in Aurora\./)).toBeInTheDocument();
+  expect(screen.queryByText('Not created yet')).not.toBeInTheDocument();
+  expect(screen.queryByText(/No hold recorded/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: 'Business result' }));
+  const panel = screen.getByRole('tabpanel');
+  expect(within(panel).getByText('Hold no longer in Aurora.')).toBeInTheDocument();
+  expect(within(panel).getByText(/names hold HLD-gone/)).toBeInTheDocument();
+  expect(within(panel).queryByText('No package hold recorded.')).not.toBeInTheDocument();
+});
+

@@ -119,7 +119,9 @@ export type JourneyDocument = {
     prompt: string;
   }>;
   conversation: Evidence<{ messages: JourneyMessage[] }>;
-  hold: Evidence<JourneyHold>;
+  /** Unavailable with `checkpoint_hold_id` when the checkpoint names a hold
+   *  whose booking Aurora no longer has (for example, a released demo hold). */
+  hold: (Unavailable & { checkpoint_hold_id?: string }) | Observed<JourneyHold>;
   authorization: Evidence<JourneyAuthorization>;
   rls: Evidence<Record<string, unknown>>;
 };

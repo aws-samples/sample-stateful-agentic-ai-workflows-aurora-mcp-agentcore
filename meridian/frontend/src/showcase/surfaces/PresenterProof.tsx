@@ -155,6 +155,12 @@ export function PresenterProof({
   const auth = document.authorization;
   const restarted = Boolean(first && latest && first.worker_id !== latest.worker_id);
   const resumed = hasVerifiedResume(document);
+  const waitingToResume = !resumed && isObserved(document.workflow)
+    && document.workflow.workflow_status === 'paused';
+  const holdGone = !isObserved(hold) && Boolean(hold.checkpoint_hold_id);
+  const holdSummary = isObserved(hold)
+    ? `${hold.hold_records} hold record${hold.hold_records === 1 ? '' : 's'}.`
+    : holdGone ? 'Hold no longer in Aurora.' : 'No hold recorded.';
 
   return (
     <section className="mds-proof-surface" aria-label="System evidence">
@@ -167,7 +173,10 @@ export function PresenterProof({
         </div>
         <div className="mds-proof-head-meta">
           <p>A Tokyo recovery plan.</p>
-          <p>{isObserved(checkpoint) ? 'Checkpoint recorded.' : 'Awaiting checkpoint.'} {isObserved(hold) ? `${hold.hold_records} hold record${hold.hold_records === 1 ? '' : 's'}.` : 'No hold recorded.'}</p>
+          <p>
+            {isObserved(checkpoint) ? 'Checkpoint recorded.' : 'Awaiting checkpoint.'}
+            {' '}{holdSummary}
+          </p>
           <button
             type="button"
             className="mds-proof-refresh"
@@ -207,7 +216,10 @@ export function PresenterProof({
             </div>
             <div>
               <dt>Hold</dt>
-              <dd>{isObserved(hold) ? hold.hold_request_id : 'Not created yet'}</dd>
+              <dd>
+                {isObserved(hold) ? hold.hold_request_id
+                  : holdGone ? 'No longer in Aurora' : 'Not created yet'}
+              </dd>
             </div>
           </dl>
           <p
@@ -280,7 +292,8 @@ export function PresenterProof({
             <Fact
               label="Resume result"
               tone={resumed ? 'good' : 'muted'}
-              value={resumed ? 'Completed from saved checkpoint' : 'Successful resume not verified'}
+              value={resumed ? 'Completed from saved checkpoint'
+                : waitingToResume ? 'Not resumed yet' : 'Successful resume not verified'}
             />
           </div>
         )}
@@ -328,6 +341,14 @@ export function PresenterProof({
                       : 'To prove hold durability, stop the worker after the hold is committed, resume the same thread, then re-read the booking ID and original expiry.'}
                 </p>
               </>
+            ) : holdGone ? (
+              <div className="mc-hold-pending">
+                <strong>Hold no longer in Aurora.</strong>
+                <p>
+                  The checkpoint names hold {hold.checkpoint_hold_id}, but Aurora has no booking
+                  for it. Releasing a demo booking removes its rows.
+                </p>
+              </div>
             ) : (
               <div className="mc-hold-pending">
                 <strong>No package hold recorded.</strong>
