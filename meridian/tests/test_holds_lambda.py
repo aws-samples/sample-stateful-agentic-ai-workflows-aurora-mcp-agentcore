@@ -119,6 +119,8 @@ def test_hold_refuses_when_the_workload_has_no_grant(config, monkeypatch):
     assert not any("create_courtesy_hold" in s for s in api.statements)
 
 
+CATALOG_PRICE = {"FROM trip_packages": [{"unit_price_cents": 250000}]}
+
 RECEIPT = [{
     "status": "held",
     "created_at": "2026-09-10 12:00:00+00",
@@ -129,6 +131,7 @@ RECEIPT = [{
 
 def test_hold_sets_scope_steps_down_and_returns_the_row(config, monkeypatch):
     api = FakeDataApi({
+        **CATALOG_PRICE,
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
         "FROM journey_threads": [{"journey_id": "jrn_1"}],
         "FROM create_courtesy_hold": [{
@@ -166,6 +169,7 @@ def test_hold_sets_scope_steps_down_and_returns_the_row(config, monkeypatch):
 
 def test_a_workflow_caller_replays_its_checkpointed_identity_under_its_lease(config, monkeypatch):
     api = FakeDataApi({
+        **CATALOG_PRICE,
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
         "FROM journey_threads": [{"journey_id": "jrn_1"}],
         "FROM journey_executions": [{"execution_id": "exe_1"}],
@@ -192,6 +196,7 @@ def test_a_workflow_caller_replays_its_checkpointed_identity_under_its_lease(con
 
 def test_a_lost_lease_refuses_the_hold_before_any_write(config, monkeypatch):
     api = FakeDataApi({
+        **CATALOG_PRICE,
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
         "FROM journey_threads": [{"journey_id": "jrn_1"}],
         "FROM journey_executions": [],
@@ -206,6 +211,7 @@ def test_a_lost_lease_refuses_the_hold_before_any_write(config, monkeypatch):
 
 def test_new_journey_is_created_for_an_unknown_reference(config, monkeypatch):
     api = FakeDataApi({
+        **CATALOG_PRICE,
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
         "FROM create_courtesy_hold": [{
             "booking_id": "HLD-2", "status": "held", "replayed": False,
@@ -228,6 +234,7 @@ def test_hold_reports_inventory_errors_by_name(config, monkeypatch):
             return super().execute_statement(**kwargs)
 
     api = Failing({
+        **CATALOG_PRICE,
         "FROM traveler_identity_bindings": [{"binding_id": "b"}],
         "FROM journey_threads": [{"journey_id": "jrn_1"}],
     })
@@ -350,3 +357,85 @@ def test_confirm_booking_refuses_when_the_workload_has_no_grant(config, monkeypa
     assert result["error"] == "traveler_not_authorized"
     assert api.tx == ["begin", "rollback"]
     assert not any("confirm_booking" in s for s in api.statements)
+
+
+def _template_hold_tools() -> list[dict]:
+    template = json.loads(
+        (TARGET.parents[1] / "agentcore.template.json").read_text(encoding="utf-8")
+    )
+    targets = template["agentCoreGateways"][0]["targets"]
+    return next(t for t in targets if t["name"] == "MeridianHolds")["toolDefinitions"]
+
+
+def test_the_template_and_the_tool_schema_file_define_the_same_tools():
+    schema_file = json.loads((TARGET / "tool-schema.json").read_text(encoding="utf-8"))
+    assert _template_hold_tools() == schema_file
+
+
+@pytest.mark.parametrize("tools_source", ["template", "file"])
+def test_hold_numeric_arguments_reject_zero_and_negative_values(tools_source):
+    if tools_source == "template":
+        tools = _template_hold_tools()
+    else:
+        tools = json.loads((TARGET / "tool-schema.json").read_text(encoding="utf-8"))
+    hold = next(t for t in tools if t["name"] == "create_courtesy_hold")
+    properties = hold["inputSchema"]["properties"]
+    for name in ("unitPriceCents", "totalCents", "holdMinutes", "travelers"):
+        assert properties[name]["minimum"] == 1, name
+
+
+def _authorized_api(**extra):
+    return FakeDataApi({
+        "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        "FROM journey_threads": [{"journey_id": "jrn_1"}],
+        **extra,
+    })
+
+
+@pytest.mark.parametrize(
+    ("overrides", "error"),
+    [
+        ({"unitPriceCents": 100, "totalCents": 200}, "hold_price_mismatch"),
+        ({"unitPriceCents": 250001, "totalCents": 500002}, "hold_price_mismatch"),
+        ({"totalCents": 100}, "hold_total_mismatch"),
+        ({"totalCents": 500001}, "hold_total_mismatch"),
+    ],
+)
+def test_hold_refuses_terms_that_do_not_match_the_catalog(config, monkeypatch, overrides, error):
+    api = _authorized_api(**CATALOG_PRICE)
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_hold_args(), **overrides}
+    result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+    assert result == {"error": error}
+    assert api.tx == ["begin", "rollback"]
+    assert not any("FROM create_courtesy_hold" in s for s in api.statements)
+
+
+def test_hold_reads_the_catalog_price_before_stepping_down_from_the_workload_role(
+    config, monkeypatch
+):
+    api = _authorized_api(**CATALOG_PRICE)
+    monkeypatch.setattr(holds, "RDS", api)
+    holds.lambda_handler(_hold_args(), _context("MeridianHolds___create_courtesy_hold"))
+    joined = "\n".join(api.statements)
+    assert joined.index("traveler_access_audit") < joined.index("FROM trip_packages")
+    assert joined.index("FROM trip_packages") < joined.index("SET LOCAL ROLE")
+    price_params = api.parameters[api.statements.index(holds.PRICE_SQL)]
+    assert price_params == {"package_id": "CTY-002"}
+
+
+def test_hold_refuses_an_unknown_package_before_booking(config, monkeypatch):
+    api = _authorized_api(**{"FROM trip_packages": []})
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(_hold_args(), _context("MeridianHolds___create_courtesy_hold"))
+    assert result == {"error": "invalid_package_inventory"}
+    assert api.tx == ["begin", "rollback"]
+
+
+def test_a_price_mismatch_is_not_revealed_to_an_unauthorized_caller(config, monkeypatch):
+    api = FakeDataApi({"FROM traveler_identity_bindings": [], **CATALOG_PRICE})
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_hold_args(), "unitPriceCents": 1, "totalCents": 2}
+    result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+    assert result["error"] == "traveler_not_authorized"
+    assert not any("FROM trip_packages" in s for s in api.statements)

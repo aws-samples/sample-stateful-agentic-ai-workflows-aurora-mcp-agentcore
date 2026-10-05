@@ -42,10 +42,12 @@
         },
         "unitPriceCents": {
           "type": "integer",
+          "minimum": 1,
           "description": "Price per traveler in cents from the catalog."
         },
         "totalCents": {
           "type": "integer",
+          "minimum": 1,
           "description": "unitPriceCents multiplied by travelers."
         },
         "holdMinutes": {

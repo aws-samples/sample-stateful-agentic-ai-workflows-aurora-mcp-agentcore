@@ -34,6 +34,10 @@ PACKAGE_SQL = (
     "SELECT package_id, name, operator, destination, region, price_per_person, "
     "durations, availability, highlights FROM trip_packages WHERE package_id = :package_id"
 )
+PRICE_SQL = (
+    "SELECT ROUND(price_per_person * 100)::BIGINT AS unit_price_cents "
+    "FROM trip_packages WHERE package_id = :package_id"
+)
 BINDING_SQL = (
     "SELECT binding_id FROM traveler_identity_bindings WHERE identity_provider = :provider "
     "AND subject_id = :subject AND traveler_id = :traveler AND status = 'active' "
@@ -76,6 +80,8 @@ BUSINESS_ERRORS = (
     "booking_amount_mismatch",
     "booking_not_held",
     "hold_expired",
+    "hold_price_mismatch",
+    "hold_total_mismatch",
 )
 
 
@@ -265,6 +271,23 @@ def _hold_terms(args: dict) -> dict:
     }
 
 
+def _verify_catalog_terms(args: dict, tx: str) -> None:
+    """Refuse a hold whose price is not the catalog price or whose total is not price x travelers.
+
+    Cedar bounds ``totalCents`` by the budget ceiling but cannot know the catalog, so a direct
+    gateway caller could otherwise book at any price. The catalog is read before the step-down
+    to meridian_app, which holds no grant on trip_packages.
+    """
+    rows = query(PRICE_SQL, {"package_id": str(args["packageId"]).strip()}, tx)
+    if not rows:
+        raise RuntimeError("invalid_package_inventory")
+    unit_price_cents = int(args["unitPriceCents"])
+    if unit_price_cents != int(rows[0]["unit_price_cents"]):
+        raise RuntimeError("hold_price_mismatch")
+    if int(args["totalCents"]) != unit_price_cents * int(args["travelers"]):
+        raise RuntimeError("hold_total_mismatch")
+
+
 def _claim_execution(execution_id: str, tx: str) -> None:
     """A workflow worker must still own its lease when the hold is written."""
     rows = query(
@@ -322,6 +345,7 @@ def create_courtesy_hold(args: dict) -> dict:
             _transaction("rollback", tx)
             _record_denied_audit(governance, traveler_id)
             return {"error": "traveler_not_authorized", "governance": governance}
+        _verify_catalog_terms(args, tx)
         _scope(traveler_id, tx)
         journey_ref = str(args["journeyRef"])
         query("SELECT set_config('app.thread_id', :t, true)", {"t": journey_ref}, tx)
