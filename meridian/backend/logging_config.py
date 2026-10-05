@@ -28,6 +28,16 @@ def agent_verbose_enabled() -> bool:
     return _env_bool("LOG_AGENT_VERBOSE", True)
 
 
+LOGGER_ROOTS = ("meridian", "backend")
+QUERY_LOG_CHARS = 60
+
+
+def _query_prefix(query: Any) -> str:
+    """A short prefix of a traveler's text, so logs never hold the full message."""
+    text = str(query)
+    return text[:QUERY_LOG_CHARS] + "…" if len(text) > QUERY_LOG_CHARS else text
+
+
 class StructuredFormatter(logging.Formatter):
     """JSON formatter for structured logging."""
 
@@ -48,6 +58,8 @@ class StructuredFormatter(logging.Formatter):
         ):
             if hasattr(record, key):
                 log_entry[key] = getattr(record, key)
+        if "query" in log_entry:
+            log_entry["query"] = _query_prefix(log_entry["query"])
 
         if record.exc_info:
             log_entry["exception"] = self.formatException(record.exc_info)
@@ -89,10 +101,7 @@ class ReadableFormatter(logging.Formatter):
         if hasattr(record, "skills"):
             extras.append(f"skills=[{record.skills}]")
         if hasattr(record, "query"):
-            query = record.query
-            if len(query) > 60:
-                query = query[:60] + "…"
-            extras.append(f'query="{query}"')
+            extras.append(f'query="{_query_prefix(record.query)}"')
         if hasattr(record, "results_count"):
             extras.append(f"results={record.results_count}")
         if hasattr(record, "execution_time_ms"):
@@ -110,22 +119,28 @@ def setup_logging(
     level: Optional[str] = None,
     json_output: Optional[bool] = None,
 ) -> logging.Logger:
-    """Configure the meridian logger from environment."""
+    """Configure the ``meridian`` and ``backend`` logger hierarchies from environment.
+
+    Application modules log under ``backend.*``; only the helpers in this file
+    use ``meridian``. Both share one handler and do not propagate, so a record
+    is written once.
+    """
     level_name = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
     log_level = getattr(logging, level_name, logging.INFO)
     use_json = json_output if json_output is not None else _env_bool("LOG_JSON", False)
 
-    meridian_logger = logging.getLogger("meridian")
-    meridian_logger.setLevel(log_level)
-    meridian_logger.handlers.clear()
-    meridian_logger.propagate = False
-
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(log_level)
     handler.setFormatter(StructuredFormatter() if use_json else ReadableFormatter())
-    meridian_logger.addHandler(handler)
 
-    return meridian_logger
+    for name in LOGGER_ROOTS:
+        root = logging.getLogger(name)
+        root.setLevel(log_level)
+        root.handlers.clear()
+        root.propagate = False
+        root.addHandler(handler)
+
+    return logging.getLogger("meridian")
 
 
 logger = setup_logging()
