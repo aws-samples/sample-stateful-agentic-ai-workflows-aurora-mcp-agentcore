@@ -101,6 +101,7 @@ uses the governed Gateway path.
 | `scripts/provision_preflight.py` | Read-only checks before provisioning Aurora in an account |
 | `scripts/publish.py`, `scripts/published.py` | Publish the hosted web app to an existing App Runner service; read back its local release record |
 | `scripts/validate_demo.py`, `scripts/release_demo_bookings.py` | End-to-end check of a running deployment; release demo bookings |
+| `scripts/warm_demo.py` | Warm health, catalog, traveler profile and one read-only turn per phase before presenting |
 | `scripts/install_catalog_images.py` | Install catalog artwork by package ID |
 
 ### Other
