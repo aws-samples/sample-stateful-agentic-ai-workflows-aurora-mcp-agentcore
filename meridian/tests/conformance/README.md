@@ -4,11 +4,11 @@ Source: https://github.com/langchain-ai/langgraph, `libs/checkpoint/tests/test_m
 Tag: `checkpoint==4.1.1` (commit `d1e2ff0561a8b0b09212d0795c9d7b390a5de23a`,
 "release(checkpoint): 4.1.1 (#7890)"). Vendored 2026-09-06.
 
-The installed distribution (`langgraph-checkpoint==4.1.1`) ships only `base`,
-`memory`, `postgres`, and `serde` -- no tests -- so this suite is vendored
-from the upstream tag that matches the installed version exactly (confirmed
-via `pip show langgraph-checkpoint` and the tag's own release commit
-message). There is no `4.1.1` branch/tag on the `langgraph` monorepo itself;
+`requirements.txt` now locks `langgraph-checkpoint==4.2.0`, so the vendored file
+is one minor version behind the installed library and has not been re-vendored.
+The installed distribution ships only `base`, `memory`, `postgres`, and `serde`
+-- no tests -- so this suite was vendored from the upstream tag that matched the
+installed version at the time. There is no `4.1.1` branch/tag on the `langgraph` monorepo itself;
 the per-package release tags are named `checkpoint==X.Y.Z`, found via
 `git ls-remote --tags` filtered on `checkpoint`.
 
@@ -49,4 +49,3 @@ rather than a bare fixture swap:
   `AuroraDataApiSaver` deliberately does not have. Each carries a
   `@pytest.mark.skip(reason=...)` explaining which capability is missing and
   why it is out of scope for this saver, rather than being silently deleted.
-  See `task-6-report.md` for the full list and reasoning.

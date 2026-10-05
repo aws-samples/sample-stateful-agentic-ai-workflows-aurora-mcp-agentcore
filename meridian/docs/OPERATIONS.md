@@ -97,9 +97,12 @@ Confirm with `curl http://127.0.0.1:8013/api/health`:
 ```
 
 If it reports `MemorySaver`, checkpoints live in the process and do not survive
-a restart. Health reports configuration only; the catalog and traveler reads in
-the app confirm that the AWS connection works. After renewing expired AWS
-credentials, restart the backend.
+a restart. `/api/health` also runs a live Aurora `SELECT 1` (2 second timeout,
+cached for 10 seconds) and reports `status` as `healthy` or `degraded`, with
+`aurora_reachable`, `degraded_component` and `degraded_error_class` naming what
+failed. The checkpoint fields are the configured backend, not a second probe.
+`/health` is process liveness only. After renewing expired AWS credentials,
+restart the backend.
 
 To checkpoint over a direct PostgreSQL connection instead, supply
 `LANGGRAPH_CHECKPOINT_DSN` (or the discrete `LANGGRAPH_CHECKPOINT_*` settings)

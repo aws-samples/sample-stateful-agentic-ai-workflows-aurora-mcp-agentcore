@@ -11,10 +11,10 @@ frontend/src/main.tsx
 
 backend/main.py
   → routers/chat.py        # Phases 1-5: inline search, Phase 4 concierge, Phase 5 LangGraph, holds and confirmation
-  → routers/products.py    # GET /api/packages and /api/products
-  → routers/memory.py      # GET /api/memory/{traveler_id}, authorized and RLS-scoped
+  → routers/products.py    # GET /api/packages[/{id}] and /api/products[/{id}]
+  → routers/memory.py      # GET /api/memory/{traveler_id}, PATCH and DELETE on its facts, authorized and RLS-scoped
   → routers/journeys.py    # authorized journey list and persisted evidence
-  → routers/diagnostics.py # POST /api/diagnostics/rls-probe: allow and deny checks with scoped counts
+  → routers/diagnostics.py # POST /api/diagnostics/rls-probe and /session-receipt: allow and deny checks, durable row counts
 ```
 
 The five views are Concierge, Capability ladder, Recovery desk, System evidence

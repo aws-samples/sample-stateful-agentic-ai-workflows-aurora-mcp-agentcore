@@ -30,15 +30,16 @@ a step to see its events and technical payloads. **Inspect evidence** holds the
 SQL, memory and policy views, and **Run RLS probe** runs the live row-level
 security diagnostic.
 
-![Solution briefing: the shared runtime and workflow paths through Gateway policy, Lambda targets and Aurora](docs/meridian-solution-briefing.png)
+![Solution briefing: the shared runtime and workflow paths through Gateway policy, Lambda targets and Aurora](docs/meridian-solution-briefing.jpg)
 
 ### Display options
 
 `/showcase?present=1` opens a dark layout with larger text for a projector or
 shared screen; add `&theme=light` or `&theme=dark` to choose the theme. In the
-windowed layout, the controls bar offers an audience preview, a projector
-readability setting and **Present fullscreen**, which hides the controls until
-you press **Esc**. Both themes use the same color roles and system font. The
+windowed layout, the controls bar has a **Display settings** menu with a
+**Projector readability** checkbox and **Preview audience layout**, and a
+**Present fullscreen** button that hides the controls until you press **Esc**.
+Both themes use the same color roles and system font. The
 projector setting enlarges type by 20% without changing colors. Dark mode uses
 the deck's black background and white labels. Rounded blue actions with white text
 are shared across all five views. Green indicates observed success, red indicates
@@ -101,14 +102,17 @@ A Data API transaction keeps the RLS role and traveler scope together for one
 unit of work; it is not long-lived workflow state. See
 [docs/STATEFUL_ARCHITECTURE.md](docs/STATEFUL_ARCHITECTURE.md).
 
-![Recovery desk before a run: the traveler-reported disruption, the 15-minute courtesy hold explanation and the Start recovery action](docs/meridian-recovery.png)
+![Recovery desk before a run: the traveler-reported disruption, the 15-minute courtesy hold explanation and the Start recovery action](docs/meridian-recovery.jpg)
 
 ## Recovery behavior
 
 The canceled-flight prompt runs `classify → search → availability →
 prepare_hold → hold → synthesize`. It pauses after `search` so the checkpoint
-is visible before the workflow checks availability and places a hold. Set
-`LANGGRAPH_DEMO_INTERRUPT_AFTER` to pause after a different node.
+is visible before the workflow checks availability and places a hold. The pause
+comes from a query match in `workflow.py`: the text must contain "canceled" or
+"cancelled", "flight", "then check" and "best three". Setting
+`LANGGRAPH_DEMO_INTERRUPT_AFTER` overrides that and pauses after the named node
+for every Phase 5 query.
 
 - `prepare_hold` saves the hold's request ID and booking ID in the checkpoint
   before the `hold` node calls the Gateway. A resumed or retried run sends the
@@ -164,10 +168,15 @@ hydration and memory persistence. Interrupted text is marked incomplete.
 | `GET` | `/api/journeys` | List the traveler's journeys; `thread_id` selects one workflow and `limit` is 1 to 50 |
 | `GET` | `/api/journeys/{journey_id}` | Saved workflow, checkpoint, executions, authorization and hold evidence |
 | `GET` | `/api/memory/{traveler_id}` | Traveler profile and preference facts |
+| `PATCH` | `/api/memory/{traveler_id}/facts/{preference_key}` | Set the value of one preference fact under RLS |
+| `DELETE` | `/api/memory/{traveler_id}/facts/{preference_key}` | Delete one preference fact under RLS |
 | `GET` | `/api/packages` | Trip catalog |
+| `GET` | `/api/packages/{package_id}` | One trip package; 404 when it does not exist |
 | `GET` | `/api/products` | The same catalog in the frontend's product shape |
+| `GET` | `/api/products/{product_id}` | One trip in the product shape (`product_id` is the `package_id`) |
 | `POST` | `/api/diagnostics/rls-probe` | Allow and deny checks plus row counts under the restricted RLS role |
-| `GET` | `/api/health` | Configuration, checkpoint backend and whether it is durable |
+| `POST` | `/api/diagnostics/session-receipt` | Counts the durable rows this session produced in the last `window_minutes`, table by table |
+| `GET` | `/api/health` | Runs a live Aurora `SELECT 1` and reports `healthy` or `degraded` (`aurora_reachable`, `degraded_component`, `degraded_error_class`), plus the checkpoint backend and whether it is durable |
 | `GET` | `/health` | Public process liveness only; it does not check Aurora |
 | `GET` | `/openapi.json`, `/docs`, `/redoc` | API schema and interactive documentation |
 
@@ -176,7 +185,7 @@ Every route except `/health` requires the HTTP principal described under
 
 ## Configuration
 
-`.env.example` documents every setting. The main ones:
+`.env.example` documents the settings below and more. The main ones:
 
 | Variable | Purpose |
 | --- | --- |

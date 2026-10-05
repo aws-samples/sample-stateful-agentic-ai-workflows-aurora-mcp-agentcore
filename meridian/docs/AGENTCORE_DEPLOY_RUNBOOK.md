@@ -31,7 +31,7 @@ The AgentCore CLI deploys them as one CloudFormation stack,
 - AWS credentials for the account that owns the cluster. Sign in with
   `aws login` or `aws sso login`, then confirm with
   `aws sts get-caller-identity`.
-- The AgentCore CLI, Node.js 20 or later, and
+- The AgentCore CLI, Node.js 22.12 or later (the repository prerequisite), and
   [uv](https://docs.astral.sh/uv/getting-started/installation/), which the CLI
   uses to package the Python runtime:
 
@@ -41,9 +41,13 @@ The AgentCore CLI deploys them as one CloudFormation stack,
   ```
 
 - Deploy AgentCore in the Aurora cluster's Region. The defaults assume
-  `us-east-1`: the rerank model uses the `us.` cross-Region inference profile.
-  In another Region, set `BEDROCK_MODEL_ID` and `RERANK_MODEL` to models
-  available there.
+  `us-east-1`: the rerank model is the bare `cohere.rerank-v3-5:0` (there is no
+  `us.cohere.rerank-v3-5:0` inference profile) and the Concierge model is
+  `us.openai.gpt-6-sol`. In another Region, set `RERANK_MODEL` in `meridian/.env`
+  and change the managed runtime's `BEDROCK_MODEL_ID` in
+  `meridian_agentcore/agentcore/agentcore.template.json`. `BEDROCK_MODEL_ID` in
+  `meridian/.env` configures only the local Strands agents, not the managed
+  runtime.
 
 From the repository root, activate the backend's virtual environment and set
 these shell variables for the commands below:

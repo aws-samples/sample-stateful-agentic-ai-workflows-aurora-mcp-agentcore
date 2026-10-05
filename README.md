@@ -18,7 +18,7 @@ The data is sample travel packages and one fictional traveler, Jordan Morgan.
 Holds and confirmations change rows in Meridian's own database only. There is
 no supplier, airline or payment integration.
 
-![Meridian Concierge with destination photography, sample trip prices, and the traveler's saved preferences and budget](meridian/docs/meridian-showcase.png)
+![Meridian Concierge with destination photography, sample trip prices, and the traveler's saved preferences and budget](meridian/docs/meridian-showcase.jpg)
 
 ## What it demonstrates
 
@@ -63,8 +63,10 @@ RLS limits each query to one traveler. Read
 state design and [meridian/README.md](meridian/README.md) for the API, schema
 and configuration.
 
-Models on Amazon Bedrock: GPT-6 Sol for the agents (set `BEDROCK_MODEL_ID` to
-change it), Cohere Embed v4 for embeddings and Cohere Rerank 3.5 for reranking.
+Models on Amazon Bedrock: GPT-6 Sol for the agents, Cohere Embed v4 for
+embeddings and Cohere Rerank 3.5 for reranking. `BEDROCK_MODEL_ID` changes the
+local Strands agents; the managed Concierge runtime's model is set in
+`meridian/meridian_agentcore/agentcore/agentcore.template.json`.
 
 ## Prerequisites
 
@@ -135,7 +137,7 @@ npm run dev -- --host 127.0.0.1 --port 5176 --strictPort
 ```
 
 Open <http://127.0.0.1:5176/showcase>. The header shows **Meridian live** when
-the catalog and traveler reads work.
+`/api/health` reports healthy and the catalog and traveler profile reads work.
 
 Without AgentCore resources, the catalog, Phases 1 to 3, System evidence and
 Solution briefing work. The Concierge chat, Phase 4 and all holds report that
@@ -188,8 +190,11 @@ PYTHON_DOTENV_DISABLED=1 python -m pytest -m "not database"
 npm ci && npm run lint && npm run typecheck && npm run test:run
 ```
 
-CI runs these checks, plus linting, a dependency audit and the CDK app tests, on
-every pull request. See [`application-ci.yml`](.github/workflows/application-ci.yml).
+On every pull request CI runs ruff, the backend unit tests and `pip-audit`; the
+frontend lint, typecheck, unit tests, build, `npm audit` and Playwright
+accessibility tests; a backend container build with a network-less MCP import
+check; the AgentCore CDK build, tests, format check and audit; and the web
+infrastructure tests and audit. See [`application-ci.yml`](.github/workflows/application-ci.yml).
 
 The unit tests block network access and ignore `meridian/.env`. Tests marked
 `database` write checkpoints, journeys and holds to a live Aurora database. Run
