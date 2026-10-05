@@ -54,10 +54,14 @@ SELECT message_id, role, content, created_at
  ORDER BY created_at
 """
 
+# scoped_session writes an allow row for this very read in the same transaction,
+# and decided_at defaults to CURRENT_TIMESTAMP (the transaction start). Strictly
+# earlier rows are the only decisions this read did not make itself.
 AUDIT_SQL = """
 SELECT audit_id, identity_provider, subject_id, principal, decision, reason,
        decided_at
-  FROM traveler_access_audit WHERE requested_traveler_id = %s
+  FROM traveler_access_audit
+ WHERE requested_traveler_id = %s AND decided_at < CURRENT_TIMESTAMP
  ORDER BY decided_at DESC LIMIT 1
 """
 

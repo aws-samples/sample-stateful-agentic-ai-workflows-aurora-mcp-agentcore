@@ -266,3 +266,14 @@ async def test_authorization_comes_from_the_audit_trail_not_the_current_caller(
     if auth["status"] != "unavailable":
         assert auth["decision"] in ("allow", "deny")
         assert auth["observed_at"]
+
+
+async def test_authorization_evidence_predates_the_read_that_reports_it(
+    journey: Fixture,
+) -> None:
+    """The read's own scoped_session audit row shares its transaction timestamp."""
+    await _document(journey)
+    doc = await _document(journey)
+    auth = doc["authorization"]
+    assert auth["status"] == "observed", "the first read's audit row is an earlier decision"
+    assert auth["observed_at"] < doc["observed_at"]
