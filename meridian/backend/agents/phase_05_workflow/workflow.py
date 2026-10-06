@@ -575,6 +575,7 @@ class OrchestrationAgent:
         self.checkpointer_kind = "MemorySaver (initializing)"
         self.checkpointer_durable = False
         self.interrupt_after = ""
+        self.interrupt_before = ""
         self.graph = self._build_graph()
 
     @property
@@ -756,6 +757,7 @@ class OrchestrationAgent:
 
         return builder.compile(
             checkpointer=self.checkpointer,
+            interrupt_before=[self.interrupt_before] if self.interrupt_before else None,
             interrupt_after=[interrupt_after] if interrupt_after else None,
         )
 
@@ -1055,7 +1057,9 @@ class OrchestrationAgent:
         ))
         thread_id = str(state.get("conversation_id") or "")
         hold_request_id = str(intent.get("hold_request_id") or hold_id)
-        execution_id = (config or {}).get("configurable", {}).get("execution_id")
+        configurable = (config or {}).get("configurable", {})
+        execution_id = configurable.get("execution_id")
+        traveler_confirmed = bool(configurable.get("traveler_confirmed"))
         terms = {
             "package_id": package_id,
             "duration": duration,
@@ -1075,6 +1079,7 @@ class OrchestrationAgent:
             budget_ceiling_cents=ceiling,
             hold_minutes=HOLD_MINUTES,
             execution_id=execution_id,
+            traveler_confirmed=traveler_confirmed,
         )
         try:
             outcome = await asyncio.to_thread(place_governed_hold, self._gateway_call, arguments)
@@ -1496,7 +1501,16 @@ class OrchestrationAgent:
         if not isinstance(travelers_count, int) or isinstance(travelers_count, bool) or not 1 <= travelers_count <= 20:
             raise ValueError("travelers_count must be an integer between 1 and 20")
         thread_id = conversation_id or f"phase5-{uuid.uuid4().hex[:8]}"
-        config = {"configurable": {"thread_id": thread_id, "execution_id": execution_id}}
+        # Only the traveler's resume, after reviewing the plan, confirms a hold.
+        # A fresh run of any wording stops before prepare_hold, so no route
+        # reaches the hold without that answer, and the hold node sends the
+        # confirmation Cedar checks only when it is true.
+        config = {"configurable": {
+            "thread_id": thread_id,
+            "execution_id": execution_id,
+            "traveler_confirmed": resume,
+        }}
+        self.interrupt_before = "" if resume else "prepare_hold"
         self.interrupt_after = "search" if self.review_only else self._interrupt_after_for_query(query)
         initial: WorkflowState = {
             "query": query,

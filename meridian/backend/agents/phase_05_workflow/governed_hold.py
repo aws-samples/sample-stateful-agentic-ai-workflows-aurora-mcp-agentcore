@@ -48,11 +48,13 @@ class GovernedHold:
 def hold_arguments(
     intent: Dict[str, Any], *, traveler_id: str, journey_ref: str,
     budget_ceiling_cents: int, hold_minutes: int, execution_id: Optional[str],
+    traveler_confirmed: bool,
 ) -> Dict[str, Any]:
     """Tool arguments from the checkpointed hold intent.
 
-    The confirmation flag is set by the backend from the traveler's own request
-    that started or resumed the workflow, never from a model.
+    ``traveler_confirmed`` must come from the traveler's own resume after
+    reviewing the plan, never from a model and never from reaching this step.
+    The Cedar policy denies the hold when it is false.
     """
     unit_price_cents = int(round(float(intent["unit_price"]) * 100))
     quantity = int(intent["quantity"])
@@ -64,7 +66,7 @@ def hold_arguments(
         "unitPriceCents": unit_price_cents,
         "totalCents": unit_price_cents * quantity,
         "holdMinutes": int(hold_minutes),
-        "travelerConfirmed": True,
+        "travelerConfirmed": bool(traveler_confirmed),
         "budgetCeilingCents": int(budget_ceiling_cents),
         "journeyRef": journey_ref,
         "holdRequestId": str(intent["hold_request_id"]),

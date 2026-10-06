@@ -52,9 +52,13 @@ def drop_committed_hold_reply(call_tool):
 
 async def worker(thread_id: str) -> int:
     os.environ.pop("LANGGRAPH_DEMO_INTERRUPT_AFTER", None)
+    paused = await _run_workflow(thread_id, resume=False)
+    if paused.get("workflow_status") != "paused":
+        return 1  # A fresh run must stop for the traveler's review before any hold.
     try:
+        # The traveler's resume is what confirms the hold.
         await _run_workflow(
-            thread_id, resume=False, gateway_call_wrapper=drop_committed_hold_reply,
+            thread_id, resume=True, gateway_call_wrapper=drop_committed_hold_reply,
         )
     except HoldOutcomeUnknown:
         return EXPECTED_LOSS_EXIT
@@ -67,7 +71,7 @@ def check_denials(intent: dict, thread_id: str) -> None:
     arguments = hold_arguments(
         intent, traveler_id=TRAVELER, journey_ref=thread_id,
         budget_ceiling_cents=int(round(float(intent["total_amount"]) * 100)),
-        hold_minutes=15, execution_id=None,
+        hold_minutes=15, execution_id=None, traveler_confirmed=True,
     )
     for label, changes in (
         ("unconfirmed", {"travelerConfirmed": False}),
@@ -135,13 +139,13 @@ async def main() -> int:
             "SELECT status, worker_id FROM journey_executions "
             "WHERE thread_id = %s ORDER BY attempt", (thread_id,),
         )
-        if [row["status"] for row in executions] != ["failed", "succeeded"]:
+        if [row["status"] for row in executions] != ["paused", "failed", "succeeded"]:
             raise AssertionError(f"Unexpected execution outcomes: {executions}")
-        if executions[0]["worker_id"] == executions[1]["worker_id"]:
+        if executions[1]["worker_id"] == executions[2]["worker_id"]:
             raise AssertionError("Resume must use a different worker")
         say("resume", f"same request and booking {after[0]['booking_id']}; one persisted hold")
         say("expiry", f"original expiry retained: {after[0]['hold_expires_at']}")
-        say("workers", "first execution failed; replacement resumed and succeeded")
+        say("workers", "review paused; confirmed run failed; replacement resumed and succeeded")
         return 0
     finally:
         if child is not None and child.returncode is None:

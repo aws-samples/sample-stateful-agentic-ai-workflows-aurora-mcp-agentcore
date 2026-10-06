@@ -503,7 +503,7 @@ def test_plan_fans_out_availability_and_merges_inventory() -> None:
 # ---------------------------------------------------------------------------
 
 # A disruption that does NOT match the canonical finale predicate, so the graph
-# runs straight through to the hold instead of pausing after search.
+# does not pause after search; it still stops for review before the hold.
 WORKFLOW_PLAN = (
     "My flight was cancelled, rework the trip and show duration availability."
 )
@@ -536,15 +536,22 @@ def _plan_workflow(hold_calls: List[dict]) -> OrchestrationAgent:
 
 
 def test_plan_path_places_a_courtesy_hold() -> None:
-    """The recovery plan commits inventory, not just workflow position."""
+    """The recovery plan commits inventory once the traveler resumes after review."""
     calls: List[dict] = []
-    asyncio.run(
-        _plan_workflow(calls).run(
-            WORKFLOW_PLAN,
-            traveler_id="trv_meridian_demo",
-            conversation_id="hold-plan",
+    workflow = _plan_workflow(calls)
+
+    async def review_then_resume():
+        paused = await workflow.run(
+            WORKFLOW_PLAN, traveler_id="trv_meridian_demo", conversation_id="hold-plan",
         )
-    )
+        assert paused["workflow_status"] == "paused"
+        assert calls == [], "no hold before the traveler's review"
+        await workflow.run(
+            WORKFLOW_PLAN, traveler_id="trv_meridian_demo", conversation_id="hold-plan",
+            resume=True,
+        )
+
+    asyncio.run(review_then_resume())
     assert len(calls) == 1, "plan path must reach the hold node exactly once"
 
 

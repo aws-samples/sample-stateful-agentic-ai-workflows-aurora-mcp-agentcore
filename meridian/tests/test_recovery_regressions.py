@@ -33,6 +33,16 @@ def workflow_factory(monkeypatch):
     return lambda: OrchestrationAgent(search_fn=search, availability_fn=availability)
 
 
+RECOVERY = "My flight was canceled. Rework my Tokyo trip and check availability."
+
+
+async def reviewed(workflow, query, traveler, thread, **kwargs):
+    """Pause for the traveler's review, then resume: the only route to a hold."""
+    paused = await workflow.run(query, traveler, thread, **kwargs)
+    assert paused["workflow_status"] == "paused"
+    return await workflow.run(query, traveler, thread, resume=True)
+
+
 @pytest.mark.asyncio
 async def test_new_turn_cannot_replace_another_travelers_thread(workflow_factory):
     first = workflow_factory()
@@ -81,7 +91,8 @@ async def test_new_recoveries_have_new_terms_and_booking_ids(workflow_factory):
     for destination in ("Tokyo", "Paris", "Tokyo"):
         workflow = workflow_factory()
         workflow._node_hold = hold
-        result = await workflow.run(
+        result = await reviewed(
+            workflow,
             f"My flight was canceled. Rework my {destination} trip and check availability.",
             "alice", "recovery-thread",
         )
@@ -93,13 +104,12 @@ async def test_new_recoveries_have_new_terms_and_booking_ids(workflow_factory):
 
 @pytest.mark.asyncio
 async def test_resume_preserves_the_checkpointed_business_intent(workflow_factory, monkeypatch):
-    monkeypatch.setenv("LANGGRAPH_DEMO_INTERRUPT_AFTER", "prepare_hold")
     first = workflow_factory()
-    paused = await first.run(
-        "My flight was canceled. Rework my Tokyo trip and check availability.",
-        "alice", "paused-thread",
-    )
+    await first.run(RECOVERY, "alice", "paused-thread")
+    monkeypatch.setenv("LANGGRAPH_DEMO_INTERRUPT_AFTER", "prepare_hold")
+    paused = await first.run(RECOVERY, "alice", "paused-thread", resume=True)
     assert paused["workflow_status"] == "paused"
+    assert paused["hold_intent"]
     seen = []
 
     async def hold(state):
@@ -153,11 +163,9 @@ async def test_lost_hold_response_keeps_the_original_intent_resumable(workflow_f
         return workflow
 
     first = worker()
+    await first.run(RECOVERY, "alice", "lost-response-thread", travelers_count=2)
     with pytest.raises(RuntimeError, match="hold outcome is unknown"):
-        await first.run(
-            "My flight was canceled. Rework my Tokyo trip and check availability.",
-            "alice", "lost-response-thread", travelers_count=2,
-        )
+        await first.run(RECOVERY, "alice", "lost-response-thread", resume=True)
     saved = await first.graph.aget_state({
         "configurable": {"thread_id": "lost-response-thread"},
     })
@@ -178,12 +186,10 @@ async def test_lost_hold_response_keeps_the_original_intent_resumable(workflow_f
 
 @pytest.mark.asyncio
 async def test_resume_uses_checkpointed_party_size(workflow_factory, monkeypatch):
-    monkeypatch.setenv("LANGGRAPH_DEMO_INTERRUPT_AFTER", "prepare_hold")
     first = workflow_factory()
-    paused = await first.run(
-        "My flight was canceled. Rework my Tokyo trip and check availability.",
-        "alice", "party-thread", travelers_count=3,
-    )
+    await first.run(RECOVERY, "alice", "party-thread", travelers_count=3)
+    monkeypatch.setenv("LANGGRAPH_DEMO_INTERRUPT_AFTER", "prepare_hold")
+    paused = await first.run(RECOVERY, "alice", "party-thread", resume=True)
     assert paused["hold_intent"]["quantity"] == 3
     assert paused["hold_intent"]["total_amount"] == "300.00"
     monkeypatch.delenv("LANGGRAPH_DEMO_INTERRUPT_AFTER")
@@ -259,11 +265,9 @@ async def test_lease_lost_at_the_lambda_stops_the_run_at_the_hold(
     workflow._gateway_call = gateway
     thread = f"lease-lost-{named_error}"
 
+    await workflow.run(RECOVERY, "alice", thread, travelers_count=2)
     with pytest.raises(module.ExecutionLeaseLostError):
-        await workflow.run(
-            "My flight was canceled. Rework my Tokyo trip and check availability.",
-            "alice", thread, travelers_count=2,
-        )
+        await workflow.run(RECOVERY, "alice", thread, resume=True)
     saved = await workflow.graph.aget_state({"configurable": {"thread_id": thread}})
     assert saved.next == ("hold",), "the stale worker must not checkpoint past the hold"
 
@@ -306,8 +310,9 @@ async def test_a_released_hold_is_recorded_in_the_checkpoint_and_the_resumed_rep
     failing._prepare_governed_hold = AsyncMock(return_value=("journey", 200000))
     failing._gateway_call = _held_gateway
     failing._node_synthesize = AsyncMock(side_effect=RuntimeError("synthesis exploded"))
+    await failing.run(query, "alice", thread, travelers_count=2)
     with pytest.raises(RuntimeError, match="synthesis exploded"):
-        await failing.run(query, "alice", thread, travelers_count=2)
+        await failing.run(query, "alice", thread, resume=True)
 
     saved = await failing.graph.aget_state(config)
     assert saved.values["hold_status"] == "released"
@@ -329,10 +334,8 @@ async def test_a_hold_that_was_not_released_keeps_its_checkpointed_status(
     failing._prepare_governed_hold = AsyncMock(return_value=("journey", 200000))
     failing._gateway_call = _held_gateway
     failing._node_synthesize = AsyncMock(side_effect=RuntimeError("synthesis exploded"))
+    await failing.run(RECOVERY, "alice", thread, travelers_count=2)
     with pytest.raises(RuntimeError, match="synthesis exploded"):
-        await failing.run(
-            "My flight was canceled. Rework my Tokyo trip and check availability.",
-            "alice", thread, travelers_count=2,
-        )
+        await failing.run(RECOVERY, "alice", thread, resume=True)
     saved = await failing.graph.aget_state({"configurable": {"thread_id": thread}})
     assert saved.values["hold_status"] == "held"

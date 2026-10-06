@@ -229,13 +229,19 @@ def test_the_hold_node_receives_a_checkpointed_intent() -> None:
     workflow = OrchestrationAgent(search_fn=fake_search, availability_fn=fake_avail)
     workflow._node_hold = fake_hold  # type: ignore[method-assign]
 
-    asyncio.run(
-        workflow.run(
-            "My flight was cancelled, rework the trip and show duration availability.",
-            traveler_id="trv_meridian_demo",
-            conversation_id="hold-intent-graph",
+    query = "My flight was cancelled, rework the trip and show duration availability."
+
+    async def review_then_resume():
+        paused = await workflow.run(
+            query, traveler_id="trv_meridian_demo", conversation_id="hold-intent-graph",
         )
-    )
+        assert paused["workflow_status"] == "paused" and seen == []
+        await workflow.run(
+            query, traveler_id="trv_meridian_demo", conversation_id="hold-intent-graph",
+            resume=True,
+        )
+
+    asyncio.run(review_then_resume())
 
     assert len(seen) == 1, "the plan path must reach the hold node exactly once"
     intent = seen[0].get("hold_intent")

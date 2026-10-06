@@ -102,8 +102,11 @@ async def _run_workflow(
 
 
 async def _worker_one(journey_id: str, thread_id: str) -> None:
-    """Keep a worker alive after committing its hold, until the driver kills it."""
+    """Pause for review, resume to commit the hold, then stay alive until killed."""
     os.environ["LANGGRAPH_DEMO_INTERRUPT_AFTER"] = "hold"
+    reviewed = await _run_workflow(thread_id, resume=False)
+    if reviewed.get("workflow_status") != "paused":
+        raise RuntimeError("A fresh run must stop for the traveler's review before any hold")
 
     async def wait_for_kill(state, claim):
         print(json.dumps({"event": "claimed", "worker_id": claim.worker_id,
@@ -111,7 +114,7 @@ async def _worker_one(journey_id: str, thread_id: str) -> None:
         print(json.dumps({"event": "paused", "status": state["workflow_status"]}), flush=True)
         await asyncio.Event().wait()
 
-    await _run_workflow(thread_id, resume=False, after_pause=wait_for_kill)
+    await _run_workflow(thread_id, resume=True, after_pause=wait_for_kill)
 
 
 # ------------------------------------------------------------------- driver

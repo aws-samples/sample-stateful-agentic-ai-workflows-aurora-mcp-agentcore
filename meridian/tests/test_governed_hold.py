@@ -27,6 +27,7 @@ def test_arguments_carry_the_checkpointed_identity_and_the_worker_lease():
     args = hold_arguments(
         INTENT, traveler_id="trv_meridian_demo", journey_ref="phase5-thread",
         budget_ceiling_cents=640000, hold_minutes=15, execution_id="exe_1",
+        traveler_confirmed=True,
     )
     assert args["holdRequestId"] == "hrq_abc123"
     assert args["bookingId"] == "HLD-ABC123"
@@ -36,8 +37,21 @@ def test_arguments_carry_the_checkpointed_identity_and_the_worker_lease():
     assert args["holdMinutes"] == 15 and args["travelerConfirmed"] is True
     assert "executionId" not in hold_arguments(
         INTENT, traveler_id="t", journey_ref="j", budget_ceiling_cents=1, hold_minutes=15,
-        execution_id=None,
+        execution_id=None, traveler_confirmed=True,
     )
+
+
+def test_confirmation_is_whatever_the_caller_proves_never_a_default():
+    unconfirmed = hold_arguments(
+        INTENT, traveler_id="t", journey_ref="j", budget_ceiling_cents=1, hold_minutes=15,
+        execution_id=None, traveler_confirmed=False,
+    )
+    assert unconfirmed["travelerConfirmed"] is False
+    with pytest.raises(TypeError):
+        hold_arguments(  # type: ignore[call-arg]
+            INTENT, traveler_id="t", journey_ref="j", budget_ceiling_cents=1,
+            hold_minutes=15, execution_id=None,
+        )
 
 
 def _response(payload=None, *, error=None, is_error=False, text=None):

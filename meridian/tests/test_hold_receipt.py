@@ -108,7 +108,7 @@ def test_hold_reports_the_gateway_receipt_even_when_it_is_old(monkeypatch, repla
         "traveler_id": "traveler-test", "conversation_id": "thread-test", "journey_id": "journey-test",
         "packages": [{"product_id": "PKG-1", "price": 100, "available_sizes": ["2 nights"]}],
         "hold_intent": {"package_id": "PKG-1", "duration": "2 nights", "quantity": 2, "unit_price": 100, "hold_request_id": "request-test", "booking_id": "HLD-TEST", "fingerprint": "test"},
-    }, {"configurable": {"execution_id": "exe-test"}}))
+    }, {"configurable": {"execution_id": "exe-test", "traveler_confirmed": True}}))
     name, arguments = gateway_calls[0]
     assert name == "MeridianHolds___create_courtesy_hold"
     assert arguments["holdRequestId"] == "request-test"
