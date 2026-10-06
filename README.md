@@ -7,7 +7,7 @@
   <a href="#prerequisites"><img height="20" alt="Node.js 22.12 or later recommended" src="https://img.shields.io/badge/Node.js-22.12%2B-355E8C?style=flat-square&amp;labelColor=24354B&amp;logo=nodedotjs&amp;logoColor=white"></a>
 </p>
 
-Meridian is a sample travel concierge that stores its state in Amazon Aurora
+Meridian is a sample travel concierge that stores its state in AWS Aurora
 PostgreSQL. You learn how an agent application grows in five phases: from SQL
 queries to Model Context Protocol (MCP) tools, hybrid retrieval, a governed
 agent on Amazon Bedrock AgentCore, and a LangGraph workflow that resumes after

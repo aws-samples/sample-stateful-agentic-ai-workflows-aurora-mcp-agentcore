@@ -1,7 +1,7 @@
 /**
  * Official AWS service marks.
  *
- * A generic cylinder standing in for Amazon Aurora is the kind of detail an
+ * A generic cylinder standing in for AWS Aurora is the kind of detail an
  * AWS audience reads instantly, so the surfaces that name a service use its
  * real icon. Everything that signals a *state* rather than a product - an RLS
  * padlock, a check, a chevron - stays on the shared icon set, because a
@@ -36,7 +36,7 @@ const MARKS = {
   aurora: {
     src: '/brand/aws-2026-07-31/aurora.svg',
     smallSrc: '/brand/aws-2026-07-31/aurora.svg',
-    label: 'Amazon Aurora',
+    label: 'AWS Aurora',
   },
   agentcore: {
     src: '/brand/agentcore-purple/agentcore.svg',

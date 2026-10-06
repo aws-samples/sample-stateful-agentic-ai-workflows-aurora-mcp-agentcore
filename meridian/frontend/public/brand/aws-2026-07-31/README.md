@@ -12,7 +12,7 @@ directory, with dedicated Runtime, Gateway, Memory and Policy marks.
 | --- | --- | --- | --- |
 | `lambda.svg` | AWS Lambda | 62 | `ppt/media/image18.svg` |
 | `app-runner.svg` | AWS App Runner | 66 | `ppt/media/image271.svg` |
-| `aurora.svg` | Amazon Aurora | 77 | `ppt/media/image307.svg` |
+| `aurora.svg` | AWS Aurora | 77 | `ppt/media/image307.svg` |
 | `cloudfront.svg` | Amazon CloudFront | 125 | `ppt/media/image600.svg` |
 | `s3.svg` | Amazon Simple Storage Service | 152 | `ppt/media/image792.svg` |
 
