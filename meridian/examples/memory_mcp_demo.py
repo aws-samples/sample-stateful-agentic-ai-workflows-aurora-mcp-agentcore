@@ -49,7 +49,7 @@ def _show(label: str, value: Any) -> None:
 
 async def run(traveler_id: str, conversation_id: str) -> None:
     client = MeridianMemoryMCPClient()
-    print(f"Launching meridian-memory MCP server (stdio)…")
+    print("Launching meridian-memory MCP server (stdio)…")
     await client.connect()
 
     print("\nTools exposed by the server:")
