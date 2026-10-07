@@ -18,6 +18,13 @@ import { BadgeCheck, Fingerprint, RefreshCw, ShieldX } from 'lucide-react';
 import { fetchRlsProbe, type RlsProbeResponse } from '../../api/client';
 import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 
+function decisionToneClass(decision: string): string {
+  const normalized = decision.toLowerCase();
+  if (normalized === 'allow') return 'is-allow';
+  if (normalized === 'not_applicable') return 'is-neutral';
+  return 'is-deny';
+}
+
 export function RlsProbeCard({ travelerId }: { travelerId: string }) {
   const prefersReducedMotion = usePrefersReducedMotion();
   const [data, setData] = useState<RlsProbeResponse | null>(null);
@@ -82,15 +89,13 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
                 <code>{data.authorization.binding_id ?? 'traveler_identity_bindings'}</code>
               </div>
             </div>
-            <div className="mds-authz-step is-deny">
+            <div className={`mds-authz-step ${decisionToneClass(data.negative_control.decision)}`}>
               <span className="mds-authz-icon"><ShieldX size={16} aria-hidden="true" /></span>
               <div>
                 <small>Negative control</small>
                 <strong>
                   <span
-                    className={`mds-authz-decision ${
-                      data.negative_control.decision.toUpperCase() === 'ALLOW' ? 'is-allow' : 'is-deny'
-                    }`}
+                    className={`mds-authz-decision ${decisionToneClass(data.negative_control.decision)}`}
                   >
                     {data.negative_control.decision.toUpperCase().replace('_', ' ')}
                   </span>

@@ -4272,6 +4272,10 @@
   color: var(--mds-red);
   background: var(--mds-red-fill);
 }
+.mds-authz-step.is-neutral .mds-authz-icon {
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
+}
 .mds-authz-step small,
 .mds-authz-step strong,
 .mds-authz-step code {
@@ -4306,6 +4310,10 @@
 .mds-authz-decision.is-deny {
   color: var(--mds-ground);
   background: var(--mds-red);
+}
+.mds-authz-decision.is-neutral {
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
 }
 .mds-authz-step code {
   margin-top: 3px;
