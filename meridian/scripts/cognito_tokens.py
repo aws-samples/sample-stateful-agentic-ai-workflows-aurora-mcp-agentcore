@@ -10,6 +10,9 @@ import os
 from typing import Dict, Optional
 
 import boto3
+from botocore.exceptions import BotoCoreError, ClientError
+
+from scripts.provision_service_logins import redact
 
 SECRET_PREFIX = "meridian/cognito/"
 
@@ -32,11 +35,26 @@ def mint_tokens(
     idp = idp or boto3.client("cognito-idp", region_name=region)
     pool_id = pool_id or os.environ["MERIDIAN_COGNITO_USER_POOL_ID"]
     client_id = client_id or os.environ["MERIDIAN_COGNITO_APP_CLIENT_ID"]
-    login = json.loads(sm.get_secret_value(SecretId=SECRET_PREFIX + user_key)["SecretString"])
-    result = idp.admin_initiate_auth(
-        UserPoolId=pool_id, ClientId=client_id, AuthFlow="ADMIN_USER_PASSWORD_AUTH",
-        AuthParameters={"USERNAME": login["username"], "PASSWORD": login["password"]},
-    )["AuthenticationResult"]
+    reseed = f"re-run scripts/seed_cognito_users.py --user {user_key} --apply"
+    try:
+        secret = sm.get_secret_value(SecretId=SECRET_PREFIX + user_key)["SecretString"]
+    except (ClientError, BotoCoreError) as err:
+        raise RuntimeError(
+            f"cannot read {SECRET_PREFIX}{user_key}: {redact(str(err))}; check AWS_PROFILE, "
+            f"or {reseed} if the secret was never created") from None
+    login = json.loads(secret)
+    try:
+        response = idp.admin_initiate_auth(
+            UserPoolId=pool_id, ClientId=client_id, AuthFlow="ADMIN_USER_PASSWORD_AUTH",
+            AuthParameters={"USERNAME": login["username"], "PASSWORD": login["password"]},
+        )
+    except (ClientError, BotoCoreError) as err:
+        raise RuntimeError(
+            f"sign-in for {user_key} failed: {redact(str(err))}; {reseed}") from None
+    result = response.get("AuthenticationResult")
+    if result is None:
+        challenge = response.get("ChallengeName", "unknown")
+        raise RuntimeError(f"sign-in for {user_key} needs a {challenge} challenge; {reseed}")
     return {"access": result["AccessToken"], "id": result["IdToken"]}
 
 

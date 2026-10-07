@@ -9,6 +9,13 @@ can sign in and must be refused everything that belongs to Jordan Morgan. For ea
 4. writes the binding row (identity_provider='cognito', subject_id=<sub>) that the pre-token
    trigger reads, as the master login, which is the only login allowed to grant.
 
+Before anything is changed, every chosen user's traveler must exist in ``travelers`` (the binding
+has a foreign key on it), and an existing user's sub must not already hold an active cognito
+binding to a different traveler; either problem stops the run with the fix named. A reset keeps the
+user's ``sub``, so it does not refresh ``name`` or ``picture`` (change those in the console or with
+admin_update_user_attributes) and it does not revoke extra bindings the same sub holds, which is
+why the second check refuses to continue instead of leaving them.
+
 The password is printed nowhere and written to no file. Without --apply it reports what it
 would do. Run from meridian/ with AWS_PROFILE set, after the identity stack is deployed and
 scripts/sync_cognito_env.py --write has put the pool id in meridian/.env.
@@ -53,6 +60,7 @@ class SeedUser:
         name: The display name carried in the ID token.
         traveler_id: The traveler the binding row grants.
         picture: A site-relative photo URL for the ID token, or None for initials.
+        seed_script: The script that creates the traveler row this user is bound to.
     """
 
     key: str
@@ -60,6 +68,7 @@ class SeedUser:
     name: str
     traveler_id: str
     picture: Optional[str]
+    seed_script: str
 
     @property
     def secret_name(self) -> str:
@@ -70,14 +79,15 @@ USERS: Dict[str, SeedUser] = {
     user.key: user
     for user in (
         SeedUser("jordan", "jordan.morgan@example.com", "Jordan Morgan",
-                 "trv_meridian_demo", "/travel/jordan-morgan.jpg"),
-        SeedUser("decoy", "jordan.lee@example.com", "Jordan Lee", "trv_demo_decoy", None),
+                 "trv_meridian_demo", "/travel/jordan-morgan.jpg", "scripts/seed_data.py"),
+        SeedUser("decoy", "jordan.lee@example.com", "Jordan Lee", "trv_demo_decoy", None,
+                 "scripts/apply_rls_force_and_decoy.py"),
     )
 }
 
 
 def generate_password() -> str:
-    """A 22-character password that satisfies the pool's policy by construction."""
+    """A 23-character password: 19 random characters plus a suffix that meets the pool policy."""
     return secrets.token_urlsafe(14) + "-Aa1"
 
 
@@ -85,6 +95,21 @@ def binding_id(subject: str, traveler_id: str) -> str:
     """The stable id of the binding between one Cognito subject and one traveler."""
     digest = hashlib.sha256(f"{PROVIDER}:{subject}:{traveler_id}".encode()).hexdigest()[:16]
     return f"bind_{digest}"
+
+
+class PartialSeedError(Exception):
+    """An AWS call failed after Cognito's password for ``user_key`` may have changed."""
+
+    def __init__(self, user_key: str, cause: Exception):
+        super().__init__(user_key)
+        self.user_key, self.cause = user_key, cause
+
+
+def repair_hint(user_key: str) -> str:
+    """What to run when the new password may be stored nowhere safe."""
+    return (f"Cognito's password for {user_key} is currently stored nowhere safe; "
+            f"re-run with --apply to reset and store it again "
+            f"(scripts/seed_cognito_users.py --user {user_key} --apply)")
 
 
 def _attributes(user: SeedUser) -> list:
@@ -117,8 +142,12 @@ def upsert_user(idp, pool_id: str, user: SeedUser, password: str) -> str:
         )
     idp.admin_set_user_password(
         UserPoolId=pool_id, Username=user.email, Password=password, Permanent=True)
-    created = idp.admin_get_user(UserPoolId=pool_id, Username=user.email)
-    return next(a["Value"] for a in created["UserAttributes"] if a["Name"] == "sub")
+    return sub_of(idp.admin_get_user(UserPoolId=pool_id, Username=user.email))
+
+
+def sub_of(cognito_user: Dict[str, Any]) -> str:
+    """The ``sub`` attribute of an admin_get_user response."""
+    return next(a["Value"] for a in cognito_user["UserAttributes"] if a["Name"] == "sub")
 
 
 def store_secret(sm, user: SeedUser, password: str) -> None:
@@ -150,7 +179,58 @@ def store_keychain(user: SeedUser, password: str,
                f"-l 'Meridian sign-in for {user.name}' -w '{password}'\n")
     done = run(["security", "-i"], input=command, text=True, capture_output=True, check=False)
     if done.returncode != 0:
-        raise SystemExit(f"the Keychain refused the {user.key} password (exit {done.returncode})")
+        raise SystemExit(f"the Keychain refused the {user.key} password (exit {done.returncode}); "
+                         f"{repair_hint(user.key)}")
+    found = run(["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", user.email],
+                text=True, capture_output=True, check=False)
+    if found.returncode != 0:
+        raise SystemExit(
+            f"Keychain item for {user.key} missing after add; Cognito and Secrets Manager "
+            f"already hold the new password, fix the Keychain and re-run "
+            f"scripts/seed_cognito_users.py --user {user.key} --apply")
+
+
+def _select(rds, conn: Dict[str, str], sql: str, **values: str) -> list:
+    """The first column of every row ``sql`` returns, as strings."""
+    response = rds.execute_statement(
+        **conn, sql=sql,
+        parameters=[{"name": k, "value": {"stringValue": v}} for k, v in values.items()])
+    return [row[0]["stringValue"] for row in response.get("records", [])]
+
+
+def require_traveler(rds, conn: Dict[str, str], user: SeedUser) -> None:
+    """Stop when the traveler row is missing, before anything is created for the user."""
+    found = _select(rds, conn, "SELECT traveler_id FROM travelers WHERE traveler_id = :traveler_id",
+                    traveler_id=user.traveler_id)
+    if not found:
+        raise SystemExit(
+            f"traveler {user.traveler_id} for {user.key} is not in the travelers table; run "
+            f"{user.seed_script} first, then re-run this script")
+
+
+def require_no_other_binding(rds, conn: Dict[str, str], user: SeedUser, subject: str) -> None:
+    """Stop when the sub is already active on a traveler other than the intended one."""
+    others = _select(
+        rds, conn,
+        "SELECT traveler_id FROM traveler_identity_bindings WHERE identity_provider = :provider "
+        "AND subject_id = :subject_id AND status = 'active' AND traveler_id <> :traveler_id",
+        provider=PROVIDER, subject_id=subject, traveler_id=user.traveler_id)
+    if others:
+        raise SystemExit(
+            f"{user.key}'s Cognito user already has an active binding to {', '.join(others)} as "
+            f"well as {user.traveler_id}, and a reset would not revoke it. Revoke the extra "
+            "binding (set status = 'revoked' in traveler_identity_bindings as the master login), "
+            "then re-run")
+
+
+def preflight(user: SeedUser, *, idp, rds, pool_id: str, cluster_arn: str,
+              master_secret_arn: str, database: str) -> None:
+    """Read-only checks that must pass before the user is created or reset."""
+    conn = {"resourceArn": cluster_arn, "secretArn": master_secret_arn, "database": database}
+    require_traveler(rds, conn, user)
+    existing = find_user(idp, pool_id, user)
+    if existing is not None:
+        require_no_other_binding(rds, conn, user, sub_of(existing))
 
 
 def write_binding(rds, cluster_arn: str, master_secret_arn: str, database: str,
@@ -177,7 +257,7 @@ def write_binding(rds, cluster_arn: str, master_secret_arn: str, database: str,
 
 def seed_user(user: SeedUser, *, idp, sm, rds, pool_id: str, cluster_arn: str,
               master_secret_arn: str, database: str, apply: bool,
-              keychain: Callable[[SeedUser, str], None] = store_keychain,
+              keychain: Optional[Callable[[SeedUser, str], None]] = None,
               password: Optional[str] = None) -> Optional[str]:
     """Seed one user. Returns the Cognito sub, or None on a dry run."""
     exists = find_user(idp, pool_id, user) is not None
@@ -187,10 +267,13 @@ def seed_user(user: SeedUser, *, idp, sm, rds, pool_id: str, cluster_arn: str,
               f"item, bind {PROVIDER} -> {user.traveler_id}")
         return None
     password = password or generate_password()
-    subject = upsert_user(idp, pool_id, user, password)
-    store_secret(sm, user, password)
-    keychain(user, password)
-    write_binding(rds, cluster_arn, master_secret_arn, database, user, subject)
+    try:
+        subject = upsert_user(idp, pool_id, user, password)
+        store_secret(sm, user, password)
+        (keychain or store_keychain)(user, password)
+        write_binding(rds, cluster_arn, master_secret_arn, database, user, subject)
+    except (ClientError, BotoCoreError) as err:
+        raise PartialSeedError(user.key, err) from None
     print(f"{user.key}: {'reset' if exists else 'created'}, bound {PROVIDER} -> "
           f"{user.traveler_id}, sub ends {subject[-4:]}")
     return subject
@@ -210,12 +293,25 @@ def _run(args: argparse.Namespace) -> None:
     idp = boto3.client("cognito-idp", region_name=region)
     sm = boto3.client("secretsmanager", region_name=region)
     rds = boto3.client("rds-data", region_name=region)
-    for user in (USERS.values() if args.user == "all" else [USERS[args.user]]):
+    database = os.getenv("AURORA_DATABASE", "meridian")
+    chosen = list(USERS.values()) if args.user == "all" else [USERS[args.user]]
+    for user in chosen:
+        preflight(user, idp=idp, rds=rds, pool_id=pool_id, cluster_arn=cluster_arn,
+                  master_secret_arn=master_secret_arn, database=database)
+    for user in chosen:
         seed_user(
             user, idp=idp, sm=sm, rds=rds, pool_id=pool_id, cluster_arn=cluster_arn,
-            master_secret_arn=master_secret_arn,
-            database=os.getenv("AURORA_DATABASE", "meridian"), apply=args.apply,
+            master_secret_arn=master_secret_arn, database=database, apply=args.apply,
         )
+
+
+def _aws_message(err: Exception) -> str:
+    """A redacted one-line account of an AWS failure."""
+    if isinstance(err, ClientError):
+        code = err.response.get("Error", {}).get("Code", "unknown")
+        return (f"{err.operation_name} failed ({code}): {redact(str(err))}; "
+                "check AWS_PROFILE and that the profile has permission for this call")
+    return f"AWS call failed: {redact(str(err))}; check AWS_PROFILE, the region and the network"
 
 
 def main(argv: Optional[list] = None) -> None:
@@ -226,17 +322,10 @@ def main(argv: Optional[list] = None) -> None:
     args = parser.parse_args(argv)
     try:
         _run(args)
-    except ClientError as err:
-        code = err.response.get("Error", {}).get("Code", "unknown")
-        raise SystemExit(
-            f"{err.operation_name} failed ({code}): {redact(str(err))}; "
-            "check AWS_PROFILE and that the profile has permission for this call; "
-            "re-run to repair a partly seeded user"
-        ) from None
-    except BotoCoreError as err:
-        raise SystemExit(
-            f"AWS call failed: {redact(str(err))}; check AWS_PROFILE, the region and the network"
-        ) from None
+    except PartialSeedError as err:
+        raise SystemExit(f"{_aws_message(err.cause)}; {repair_hint(err.user_key)}") from None
+    except (ClientError, BotoCoreError) as err:
+        raise SystemExit(f"{_aws_message(err)}; re-run to repair a partly seeded user") from None
     except KeyError as err:
         raise SystemExit(
             f"unexpected response or setting missing {redact(str(err))}; re-run to repair"

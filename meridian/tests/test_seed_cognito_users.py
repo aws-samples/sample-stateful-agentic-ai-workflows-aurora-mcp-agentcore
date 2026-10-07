@@ -29,6 +29,28 @@ class Recorder:
         return record
 
 
+class FakeRds:
+    """A Data API that knows which travelers exist and what the sub is already bound to."""
+
+    def __init__(self, travelers=("trv_meridian_demo", "trv_demo_decoy"), other_bindings=()):
+        self.travelers, self.other_bindings, self.calls = travelers, other_bindings, []
+
+    def execute_statement(self, **kwargs):
+        self.calls.append(("execute_statement", kwargs))
+        sql = kwargs["sql"]
+        values = {p["name"]: p["value"]["stringValue"] for p in kwargs.get("parameters", [])}
+        if sql.startswith("SELECT traveler_id FROM travelers"):
+            found = [values["traveler_id"]] if values["traveler_id"] in self.travelers else []
+        elif sql.startswith("SELECT traveler_id FROM traveler_identity_bindings"):
+            found = list(self.other_bindings)
+        else:
+            return {}
+        return {"records": [[{"stringValue": t}] for t in found]}
+
+    def inserts(self):
+        return [kw for _, kw in self.calls if kw["sql"].startswith("INSERT")]
+
+
 def _error(code):
     return ClientError({"Error": {"Code": code, "Message": "x"}}, "Op")
 
@@ -57,9 +79,10 @@ def cognito(existing=False, sub="11111111-aaaa-bbbb-cccc-222222222222"):
     return FakeCognito(existing, sub)
 
 
-def run(user, *, idp, apply=True, password="Generated-Password-1234-Aa1", keychain=None):
+def run(user, *, idp, apply=True, password="Generated-Password-1234-Aa1", keychain=None,
+        rds=None):
     sm = Recorder({"describe_secret": _error("ResourceNotFoundException")})
-    rds = Recorder()
+    rds = rds or FakeRds()
     kept = []
     subject = seed.seed_user(
         user, idp=idp, sm=sm, rds=rds, pool_id=POOL, cluster_arn=CLUSTER,
@@ -79,9 +102,9 @@ def test_a_dry_run_reads_but_changes_nothing(capsys):
     idp = cognito()
     subject, sm, rds, kept = run(seed.USERS["jordan"], idp=idp, apply=False)
     assert subject is None and kept == []
-    writes = [c for r in (idp, sm, rds) for c in r.calls
+    writes = [c for r in (idp, sm) for c in r.calls
               if not c[0].startswith(("describe", "get", "admin_get"))]
-    assert writes == []
+    assert writes == [] and rds.inserts() == []
     assert "would create" in capsys.readouterr().out
 
 
@@ -131,7 +154,7 @@ def test_an_existing_secret_is_overwritten_not_duplicated():
 def test_the_binding_row_grants_the_cognito_subject_its_one_traveler_as_the_master():
     idp = cognito(existing=True, sub="sub-decoy")
     _, _, rds, _ = run(seed.USERS["decoy"], idp=idp)
-    (name, call), = rds.calls
+    call, = rds.inserts()
     assert call["secretArn"] == "arn:master" and "ON CONFLICT" in call["sql"]
     values = {p["name"]: p["value"]["stringValue"] for p in call["parameters"]}
     assert values == {
@@ -150,24 +173,44 @@ def test_generated_passwords_meet_the_pool_policy_and_differ():
     passwords = {seed.generate_password() for _ in range(20)}
     assert len(passwords) == 20
     for password in passwords:
-        assert len(password) >= 14
+        assert len(password) == 23
         assert re.search(r"[a-z]", password) and re.search(r"[A-Z]", password)
         assert re.search(r"\d", password) and re.search(r"[-_]", password)
 
 
 def test_the_keychain_receives_the_password_on_stdin_never_in_arguments(monkeypatch):
     monkeypatch.setattr(sys, "platform", "darwin")
-    seen = {}
+    seen = []
 
     def fake_run(argv, **kwargs):
-        seen.update(argv=argv, **kwargs)
+        seen.append((argv, kwargs))
         return SimpleNamespace(returncode=0)
 
     seed.store_keychain(seed.USERS["jordan"], "Secret-Pw_1234-Aa1", run=fake_run)
-    assert seen["argv"] == ["security", "-i"]
-    assert "Secret-Pw_1234-Aa1" not in " ".join(seen["argv"])
-    assert "-w 'Secret-Pw_1234-Aa1'" in seen["input"]
-    assert "-s meridian-cognito" in seen["input"] and "-U" in seen["input"]
+    (add_argv, add), (find_argv, find) = seen
+    assert add_argv == ["security", "-i"]
+    assert "Secret-Pw_1234-Aa1" not in " ".join(add_argv)
+    assert "-w 'Secret-Pw_1234-Aa1'" in add["input"]
+    assert "-s meridian-cognito" in add["input"] and "-U" in add["input"]
+    assert find_argv == ["security", "find-generic-password", "-s", "meridian-cognito",
+                         "-a", "jordan.morgan@example.com"]
+    assert "Secret-Pw_1234-Aa1" not in " ".join(find_argv)
+
+
+def test_an_item_missing_after_a_zero_exit_add_stops_the_run_without_the_password(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    def interactive_lies(argv, **kwargs):
+        return SimpleNamespace(returncode=0 if argv == ["security", "-i"] else 44)
+
+    with pytest.raises(SystemExit) as exit_info:
+        seed.store_keychain(seed.USERS["jordan"], "Secret-Pw_1234-Aa1", run=interactive_lies)
+    message = str(exit_info.value)
+    assert "Secret-Pw" not in message
+    assert message == (
+        "Keychain item for jordan missing after add; Cognito and Secrets Manager already hold "
+        "the new password, fix the Keychain and re-run "
+        "scripts/seed_cognito_users.py --user jordan --apply")
 
 
 def test_a_keychain_failure_stops_the_run_without_echoing_the_password(monkeypatch):
@@ -175,7 +218,10 @@ def test_a_keychain_failure_stops_the_run_without_echoing_the_password(monkeypat
     failing = lambda argv, **kw: SimpleNamespace(returncode=45)  # noqa: E731
     with pytest.raises(SystemExit) as exit_info:
         seed.store_keychain(seed.USERS["jordan"], "Secret-Pw_1234-Aa1", run=failing)
-    assert "Secret-Pw" not in str(exit_info.value) and "exit 45" in str(exit_info.value)
+    message = str(exit_info.value)
+    assert "Secret-Pw" not in message and "exit 45" in message
+    assert ("Cognito's password for jordan is currently stored nowhere safe; "
+            "re-run with --apply to reset and store it again") in message
 
 
 def test_the_keychain_is_required_so_other_platforms_stop(monkeypatch):
@@ -222,9 +268,11 @@ def test_the_wrong_account_stops_main_before_any_write(monkeypatch, tmp_path):
     assert [c for n in untouched for c in clients[n].calls] == []
 
 
-def _main_env(monkeypatch, tmp_path, idp):
+def _main_env(monkeypatch, tmp_path, idp, rds=None):
     clients = {"sts": Recorder({"get_caller_identity": {"Account": "111122223333"}}),
-               "cognito-idp": idp, "secretsmanager": Recorder(), "rds-data": Recorder()}
+               "cognito-idp": idp, "secretsmanager": Recorder(), "rds-data": rds or FakeRds()}
+    monkeypatch.setattr(seed, "store_keychain", lambda user, password: None)
+    clients["secretsmanager"].answers = {"describe_secret": _error("ResourceNotFoundException")}
     monkeypatch.setattr(seed.boto3, "client", lambda name, **kw: clients[name])
     monkeypatch.setattr(seed, "ENV_FILE", tmp_path / ".env")
     monkeypatch.setenv("AURORA_CLUSTER_ARN", CLUSTER)
@@ -256,3 +304,74 @@ def test_a_missing_setting_stops_main_with_its_name(monkeypatch, tmp_path):
     monkeypatch.delenv("AURORA_SECRET_ARN")
     with pytest.raises(SystemExit, match="AURORA_SECRET_ARN"):
         seed.main(["--apply"])
+
+
+def test_a_missing_traveler_stops_before_cognito_secrets_or_keychain(monkeypatch, tmp_path):
+    idp, rds = cognito(), FakeRds(travelers=("trv_demo_decoy",))
+    _main_env(monkeypatch, tmp_path, idp, rds)
+    with pytest.raises(SystemExit) as exit_info:
+        seed.main(["--user", "jordan", "--apply"])
+    message = str(exit_info.value)
+    assert "trv_meridian_demo" in message and "scripts/seed_data.py" in message
+    assert [n for n, _ in idp.calls if n.startswith("admin_") and n != "admin_get_user"] == []
+    assert rds.inserts() == []
+
+
+def test_the_decoy_names_its_own_seeding_script(monkeypatch, tmp_path):
+    _main_env(monkeypatch, tmp_path, cognito(), FakeRds(travelers=()))
+    with pytest.raises(SystemExit, match="apply_rls_force_and_decoy.py"):
+        seed.main(["--user", "decoy", "--apply"])
+
+
+def test_all_users_are_checked_before_the_first_is_changed(monkeypatch, tmp_path):
+    idp = cognito()
+    _main_env(monkeypatch, tmp_path, idp, FakeRds(travelers=("trv_meridian_demo",)))
+    with pytest.raises(SystemExit, match="trv_demo_decoy"):
+        seed.main(["--apply"])
+    assert "admin_create_user" not in [n for n, _ in idp.calls]
+
+
+def test_an_extra_active_binding_for_the_same_sub_stops_the_run_before_the_reset():
+    idp = cognito(existing=True, sub="sub-shared")
+    rds = FakeRds(other_bindings=("trv_demo_decoy",))
+    with pytest.raises(SystemExit) as exit_info:
+        seed.preflight(seed.USERS["jordan"], idp=idp, rds=rds, pool_id=POOL,
+                       cluster_arn=CLUSTER, master_secret_arn="arn:master", database="meridian")
+    message = str(exit_info.value)
+    assert "trv_demo_decoy" in message and "revoke" in message.lower()
+    assert "admin_set_user_password" not in [n for n, _ in idp.calls]
+
+
+def test_a_new_user_has_no_sub_to_check_for_extra_bindings():
+    idp, rds = cognito(), FakeRds(other_bindings=("trv_demo_decoy",))
+    seed.preflight(seed.USERS["jordan"], idp=idp, rds=rds, pool_id=POOL,
+                   cluster_arn=CLUSTER, master_secret_arn="arn:master", database="meridian")
+
+
+def test_a_failure_after_cognito_changed_carries_the_repair_hint_without_the_password(
+        monkeypatch, tmp_path):
+    failure = ClientError({"Error": {"Code": "AccessDenied", "Message": "no"}},
+                          "CreateSecret")
+    idp = cognito(existing=True)
+    _main_env(monkeypatch, tmp_path, idp)
+    secrets_client = Recorder({"describe_secret": _error("ResourceNotFoundException"),
+                               "create_secret": failure})
+    real = seed.boto3.client
+    monkeypatch.setattr(seed.boto3, "client",
+                        lambda name, **kw: secrets_client if name == "secretsmanager"
+                        else real(name, **kw))
+    monkeypatch.setattr(seed, "generate_password", lambda: "Generated-Password-1234-Aa1")
+    with pytest.raises(SystemExit) as exit_info:
+        seed.main(["--user", "jordan", "--apply"])
+    message = str(exit_info.value)
+    assert "CreateSecret" in message and "Generated-Password" not in message
+    assert ("Cognito's password for jordan is currently stored nowhere safe; "
+            "re-run with --apply to reset and store it again") in message
+
+
+def test_a_failure_before_cognito_changed_has_no_repair_hint(monkeypatch, tmp_path):
+    failure = ClientError({"Error": {"Code": "AccessDenied", "Message": "no"}}, "AdminGetUser")
+    _main_env(monkeypatch, tmp_path, Recorder({"admin_get_user": failure}))
+    with pytest.raises(SystemExit) as exit_info:
+        seed.main(["--user", "jordan", "--apply"])
+    assert "stored nowhere safe" not in str(exit_info.value)

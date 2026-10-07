@@ -21,7 +21,12 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.provision_service_logins import ENV_FILE, redact, write_env  # noqa: E402
+from scripts.provision_service_logins import (  # noqa: E402
+    ENV_FILE,
+    redact,
+    require_account,
+    write_env,
+)
 
 STACK_NAME = "MeridianIdentity"
 FRONTEND_ENV_FILE = Path(__file__).resolve().parents[1] / "frontend" / ".env.development.local"
@@ -53,7 +58,9 @@ def settings_from(outputs: Dict[str, str], region: str) -> Dict[Path, Dict[str, 
 
 def _run(write: bool) -> None:
     load_dotenv(ENV_FILE)
-    region = os.environ["AURORA_CLUSTER_ARN"].split(":")[3]
+    cluster_arn = os.environ["AURORA_CLUSTER_ARN"]
+    region = cluster_arn.split(":")[3]
+    require_account(boto3.client("sts", region_name=region), cluster_arn)
     outputs = stack_outputs(boto3.client("cloudformation", region_name=region))
     for path, values in settings_from(outputs, region).items():
         for key, value in values.items():
