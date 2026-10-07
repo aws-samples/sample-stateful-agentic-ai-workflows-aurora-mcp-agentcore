@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 MERIDIAN = Path(__file__).resolve().parents[1]
-FORBIDDEN = ("fastapi", "backend.routers", "langgraph")
+FORBIDDEN = ("fastapi", "backend.routers", "langgraph", "bedrock_agentcore")
 FRAMEWORK_FREE = [
     "backend.activity",
     "backend.agents.phase_05_workflow.hold_intent",
@@ -29,6 +29,7 @@ FRAMEWORK_FREE = [
     "backend.agents.phase_05_workflow.runner",
     "backend.agents.phase_05_workflow.lease",
     "backend.agents.phase_05_workflow.service",
+    "backend.agents.phase_05_workflow.runtime_entry",
 ]
 
 
