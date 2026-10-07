@@ -43,12 +43,14 @@ class FakeRds:
         return {"transactionId": txn}
 
     def commit_transaction(self, **kwargs):
+        assert set(kwargs) == {"resourceArn", "secretArn", "transactionId"}, kwargs
         self.calls.append(("commit_transaction", kwargs))
         self.open_transactions.discard(kwargs["transactionId"])
         self.finished.append("commit")
         return {}
 
     def rollback_transaction(self, **kwargs):
+        assert set(kwargs) == {"resourceArn", "secretArn", "transactionId"}, kwargs
         self.calls.append(("rollback_transaction", kwargs))
         self.open_transactions.discard(kwargs["transactionId"])
         self.finished.append("rollback")

@@ -205,6 +205,8 @@ def _traveler_visible(rds, conn: Dict[str, str], traveler_id: str) -> bool:
     login is not BYPASSRLS, so an unpinned read returns nothing even for a row that exists.
     """
     transaction = rds.begin_transaction(**conn)["transactionId"]
+    ending = {"resourceArn": conn["resourceArn"], "secretArn": conn["secretArn"],
+              "transactionId": transaction}
     try:
         values = [{"name": "traveler_id", "value": {"stringValue": traveler_id}}]
         rds.execute_statement(
@@ -214,9 +216,9 @@ def _traveler_visible(rds, conn: Dict[str, str], traveler_id: str) -> bool:
             **conn, transactionId=transaction, parameters=values,
             sql="SELECT 1 FROM travelers WHERE traveler_id = :traveler_id")
     except BaseException:
-        rds.rollback_transaction(transactionId=transaction, **conn)
+        rds.rollback_transaction(**ending)
         raise
-    rds.commit_transaction(transactionId=transaction, **conn)
+    rds.commit_transaction(**ending)
     return bool(response.get("records"))
 
 
