@@ -103,10 +103,16 @@ def _healthy_probe(monkeypatch):
 
 
 def test_health_says_the_workflow_runtime_is_configured_when_its_arn_is_set(monkeypatch):
+    from backend.agentcore.cli_config import resolve_agentcore_config
+
     _healthy_probe(monkeypatch)
     arn = "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/MeridianWorkflow-abc"
     monkeypatch.setenv("AGENTCORE_WORKFLOW_RUNTIME_ARN", arn)
-    body = TestClient(app).get("/api/health").json()
+    resolve_agentcore_config.cache_clear()
+    try:
+        body = TestClient(app).get("/api/health").json()
+    finally:
+        resolve_agentcore_config.cache_clear()
     assert body["workflow_runtime_configured"] is True
 
 

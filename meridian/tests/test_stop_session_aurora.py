@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from backend.agents.phase_05_workflow.graph import snapshot_key
 from backend.agentcore.workflow_runtime import SessionStop, workflow_session_id
+from backend.agentcore.identity import get_agentcore_identity
 from backend.db.journey_document import assemble_journey_document
 from backend.db.journey_store import bind_thread, claim_execution, create_journey
 from backend.db.rds_data_client import get_rds_data_client
@@ -103,7 +104,7 @@ async def test_a_paused_journey_stops_its_own_session_and_records_it(journey_wit
     assert stops["items"][0]["stopped_at"]
 
 
-async def test_another_travelers_stop_is_not_readable_in_the_document(journey_with):
+async def test_the_journey_document_refuses_another_travelers_journey(journey_with):
     make, _ = journey_with
     journey, _ = await make(traveler="trv_demo_decoy", status="paused")
     await get_rds_data_client().execute(
@@ -112,6 +113,30 @@ async def test_another_travelers_stop_is_not_readable_in_the_document(journey_wi
         "'stopped', 'test', 'waiting' FROM journeys WHERE journey_id = %s", (journey,))
     with pytest.raises(LookupError):
         await assemble_journey_document(get_rds_data_client(), journey, "trv_meridian_demo")
+
+
+async def test_rls_hides_another_travelers_stop_row_from_a_scoped_read(journey_with):
+    make, _ = journey_with
+    master = get_rds_data_client()
+    own, _ = await make(traveler="trv_meridian_demo", status="paused")
+    decoy, _ = await make(traveler="trv_demo_decoy", status="paused")
+    for journey in (own, decoy):
+        await master.execute(
+            "INSERT INTO workflow_session_stops (journey_id, thread_id, runtime_session_id, "
+            "outcome, requested_by, stopped_during) SELECT journey_id, active_thread_id, "
+            "'rt-wf-rls', 'stopped', 'test', 'waiting' FROM journeys WHERE journey_id = %s",
+            (journey,))
+    sql = "SELECT stop_id FROM workflow_session_stops WHERE journey_id = %s"
+    async with master.scoped_session(
+        traveler_id="trv_meridian_demo",
+        agent_type="booking_agent",
+        authorization=get_agentcore_identity().authorization_context(),
+    ) as tx:
+        visible_own = await master.execute(sql, (own,), transaction_id=tx)
+        visible_decoy = await master.execute(sql, (decoy,), transaction_id=tx)
+    assert len(visible_own) == 1
+    assert visible_decoy == []
+    assert len(await master.execute(sql, (decoy,))) == 1
 
 
 async def test_a_journey_with_no_stop_says_so(journey_with):
