@@ -34,3 +34,11 @@ def test_anything_else_is_refused_by_name(monkeypatch, value):
     monkeypatch.setenv(AUTH_MODE_ENV, value)
     with pytest.raises(AuthModeError, match=AUTH_MODE_ENV):
         agentcore_auth_mode()
+
+
+def test_a_bogus_value_is_never_logged_or_raised(monkeypatch, caplog):
+    monkeypatch.setenv(AUTH_MODE_ENV, "bogus")
+    with pytest.raises(AuthModeError) as raised:
+        agentcore_auth_mode()
+    assert "bogus" not in str(raised.value)
+    assert AUTH_MODE_ENV in str(raised.value)

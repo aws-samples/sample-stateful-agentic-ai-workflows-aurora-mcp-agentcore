@@ -360,3 +360,14 @@ def test_chat_resolves_me_to_the_callers_traveler_downstream(key, cognito, monke
         json={"message": "Show me city trips.", "phase": 1, "customer_id": CURRENT_TRAVELER})
     assert response.status_code == 418
     assert seen == ["trv_demo_decoy"]
+
+
+def test_a_bogus_auth_mode_is_a_value_free_503_and_never_logged(monkeypatch, caplog):
+    monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "bogus")
+    caplog.set_level(logging.DEBUG)
+    with pytest.raises(HTTPException) as refused:
+        asyncio.run(http_auth._cognito_principal(object(), "some-token"))
+    assert refused.value.status_code == 503
+    assert refused.value.detail == "Sign-in is misconfigured."
+    assert "MERIDIAN_AGENTCORE_AUTH" in caplog.text
+    assert "bogus" not in caplog.text

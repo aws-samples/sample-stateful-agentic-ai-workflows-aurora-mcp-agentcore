@@ -35,7 +35,7 @@ def agentcore_auth_mode() -> str:
     mode = raw.strip().lower()
     if mode not in MODES:
         raise AuthModeError(
-            f"{AUTH_MODE_ENV}={raw!r} is not a mode; set it to 'iam' (today's path) or 'jwt' "
+            f"{AUTH_MODE_ENV} holds an unrecognised mode; set it to 'iam' (today's path) or 'jwt' "
             "(Cognito bearer tokens), or unset it."
         )
     return mode
