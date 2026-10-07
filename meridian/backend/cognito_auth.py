@@ -12,6 +12,10 @@ Configuration (all three or none):
     MERIDIAN_COGNITO_USER_POOL_ID=us-east-1_AbCdEfGhI
     MERIDIAN_COGNITO_APP_CLIENT_ID=<the web app client's id>
 
+Logging: log only ``InvalidCognitoToken.reason``. Never log an exception's message or
+traceback from this module: ``PyJWKClientError`` messages embed the attacker-supplied ``kid``,
+and the raised exceptions are chained to them.
+
 AWS docs:
   - Verifying a JSON web token:
     https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-tokens-verifying-a-jwt.html
@@ -21,6 +25,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Callable, Optional
@@ -34,9 +39,11 @@ from jwt.exceptions import (
     InvalidAlgorithmError,
     InvalidIssuerError,
     InvalidSignatureError,
+    InvalidSubjectError,
     MissingRequiredClaimError,
     PyJWKClientConnectionError,
     PyJWKClientError,
+    PyJWKSetError,
     PyJWTError,
 )
 
@@ -45,6 +52,8 @@ TRAVELER_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,50}$")
 ALGORITHMS = ["RS256"]
 JWKS_LIFESPAN_SECONDS = 3600
 JWKS_TIMEOUT_SECONDS = 5
+JWKS_REFETCH_COOLDOWN_SECONDS = 30
+UNAVAILABLE_BACKOFF_SECONDS = 10
 CLOCK_SKEW_SECONDS = 30
 REQUIRED_CLAIMS = ["exp", "iss", "sub", "token_use"]
 ENV_KEYS = (
@@ -59,8 +68,10 @@ _REASONS = (
     (InvalidSignatureError, "signature"),
     (InvalidAlgorithmError, "algorithm"),
     (MissingRequiredClaimError, "missing_claim"),
+    (InvalidSubjectError, "missing_claim"),
     (ImmatureSignatureError, "not_yet_valid"),
     (PyJWKClientError, "signing_key"),
+    (PyJWKSetError, "signing_key"),
     (DecodeError, "malformed"),
 )
 
@@ -136,32 +147,43 @@ def cognito_config_from_env() -> Optional[CognitoConfig]:
 class CognitoVerifier:
     """Verifies Cognito access tokens against one user pool and one app client.
 
+    Only ``InvalidCognitoToken.reason`` is safe to log; see the module docstring.
+
+    After the signing keys cannot be fetched, every call raises ``CognitoUnavailable``
+    without touching the network for ``UNAVAILABLE_BACKOFF_SECONDS``, so a down JWKS endpoint
+    cannot make each request wait out the fetch timeout behind PyJWT's client lock.
+
     Args:
         config: The pool and client to accept.
         signing_key_for: Returns the public key that signed a token. The default fetches the
-            pool's JWKS and caches it; tests inject a local key.
+            pool's JWKS and caches the key set for ``JWKS_LIFESPAN_SECONDS``; tests inject a
+            local key.
     """
 
     def __init__(
         self, config: CognitoConfig, signing_key_for: Optional[SigningKeyProvider] = None
     ) -> None:
         self._config = config
+        self._unavailable_until = 0.0
         if signing_key_for is None:
-            client = PyJWKClient(
+            self._jwks_client = PyJWKClient(
                 config.jwks_url,
-                cache_keys=True,
                 lifespan=JWKS_LIFESPAN_SECONDS,
                 timeout=JWKS_TIMEOUT_SECONDS,
+                cooldown_duration=JWKS_REFETCH_COOLDOWN_SECONDS,
             )
-            signing_key_for = lambda token: client.get_signing_key_from_jwt(token).key  # noqa: E731
+            signing_key_for = self._key_from_jwks
         self._signing_key_for = signing_key_for
+
+    def _key_from_jwks(self, token: str) -> Any:
+        return self._jwks_client.get_signing_key_from_jwt(token).key
 
     def verify(self, token: str) -> VerifiedIdentity:
         """Verify an access token and return the identity it proves.
 
         Raises:
-            InvalidCognitoToken: The signature, issuer, expiry, token type, app client or
-                traveler claim is wrong.
+            InvalidCognitoToken: The signature, issuer, expiry, token type, app client,
+                subject or traveler claim is wrong.
             CognitoUnavailable: The signing keys could not be fetched.
         """
         claims = self._decode(token)
@@ -169,18 +191,22 @@ class CognitoVerifier:
             raise InvalidCognitoToken("token_use")
         if claims.get("client_id") != self._config.app_client_id:
             raise InvalidCognitoToken("client_id")
+        subject = claims.get("sub")
+        if not isinstance(subject, str) or not subject:
+            raise InvalidCognitoToken("missing_claim")
         traveler_id = claims.get(TRAVELER_CLAIM)
         if not isinstance(traveler_id, str) or not TRAVELER_ID_PATTERN.fullmatch(traveler_id):
             raise InvalidCognitoToken("traveler_claim")
+        username = claims.get("username")
         return VerifiedIdentity(
-            subject_id=str(claims["sub"]),
+            subject_id=subject,
             traveler_id=traveler_id,
-            username=claims.get("username"),
+            username=username if isinstance(username, str) else None,
         )
 
     def _decode(self, token: str) -> dict:
+        key = self._lookup_key(token)
         try:
-            key = self._signing_key_for(token)
             return jwt.decode(
                 token,
                 key=key,
@@ -189,10 +215,22 @@ class CognitoVerifier:
                 leeway=CLOCK_SKEW_SECONDS,
                 options={"require": REQUIRED_CLAIMS, "verify_aud": False},
             )
-        except PyJWKClientConnectionError as exc:
-            raise CognitoUnavailable("The Cognito signing keys could not be fetched.") from exc
         except PyJWTError as exc:
             raise InvalidCognitoToken(_reason(exc)) from exc
+
+    def _lookup_key(self, token: str) -> Any:
+        if time.monotonic() < self._unavailable_until:
+            raise CognitoUnavailable("The Cognito signing keys are unavailable; not retrying yet.")
+        try:
+            return self._signing_key_for(token)
+        except (PyJWKClientConnectionError, OSError, ValueError) as exc:
+            raise self._mark_unavailable() from exc
+        except PyJWTError as exc:
+            raise InvalidCognitoToken(_reason(exc)) from exc
+
+    def _mark_unavailable(self) -> CognitoUnavailable:
+        self._unavailable_until = time.monotonic() + UNAVAILABLE_BACKOFF_SECONDS
+        return CognitoUnavailable("The Cognito signing keys could not be fetched.")
 
 
 def _reason(error: Exception) -> str:
