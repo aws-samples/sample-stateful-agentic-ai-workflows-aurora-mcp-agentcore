@@ -299,7 +299,7 @@ async def test_a_run_finished_from_a_saved_step_is_a_verified_resume(journey: Fi
     assert last["execution_id"] == second.execution_id
 
 
-async def test_a_snapshot_past_the_data_api_row_limit_is_read_for_the_document(
+async def test_a_snapshot_larger_than_64_kb_is_read_for_the_document(
     journey: Fixture,
 ) -> None:
     from backend.agents.phase_05_workflow.graph import snapshot_key

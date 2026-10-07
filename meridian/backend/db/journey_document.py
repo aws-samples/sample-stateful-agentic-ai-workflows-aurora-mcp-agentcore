@@ -16,7 +16,6 @@ from typing import Any, Dict, Optional
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agents.phase_05_workflow.graph import fold_snapshot, next_nodes, snapshot_key
 from backend.agents.phase_05_workflow.state import SNAPSHOT_STORE
-from backend.db.snapshot_text import snapshot_text
 
 JOURNEY_SQL = """
 SELECT journey_id, traveler_id, checkpoint_backend, active_thread_id, status,
@@ -32,7 +31,8 @@ SELECT execution_id, attempt, worker_id, status, started_at::TEXT, ended_at::TEX
 """
 
 SNAPSHOT_SQL = """
-SELECT snapshot_seq::TEXT AS seq, saved_at::TEXT AS saved_at, execution_id
+SELECT snapshot_seq::TEXT AS seq, snapshot::TEXT AS snapshot, saved_at::TEXT AS saved_at,
+       execution_id
   FROM workflow_snapshots WHERE session_id = %s AND storage_key = %s
  ORDER BY snapshot_seq DESC LIMIT 1
 """
@@ -253,12 +253,6 @@ async def _snapshot(q, thread_id: Optional[str]):
     if not rows:
         return _unavailable(f"no workflow snapshot saved on thread {thread_id}"), None, None, None
     row = rows[0]
-    text = await snapshot_text(q, row["seq"])
-    if text is None:
-        return (
-            _unavailable(f"snapshot {row['seq']} disappeared while it was read"),
-            None, None, None,
-        )
     history = (await q(SNAPSHOT_HISTORY_SQL, (row["execution_id"], row["seq"], thread_id, key)))[0]
     checkpoint = {
         "status": "committed",
@@ -270,7 +264,7 @@ async def _snapshot(q, thread_id: Optional[str]):
         "committed_at": _iso(row["saved_at"]),
         "snapshot_count": int(history["n"]),
     }
-    return checkpoint, json.loads(text), row["execution_id"], history["resumed_from"]
+    return checkpoint, json.loads(row["snapshot"]), row["execution_id"], history["resumed_from"]
 
 
 def _channel_source(checkpoint: Dict[str, Any], channel: str) -> str:

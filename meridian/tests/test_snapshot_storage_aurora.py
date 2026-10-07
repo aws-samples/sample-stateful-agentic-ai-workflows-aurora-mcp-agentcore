@@ -9,7 +9,10 @@ import pytest_asyncio
 from strands.types.exceptions import StorageError
 
 from backend.agentcore.identity import get_agentcore_identity
-from backend.agents.phase_05_workflow.snapshot_storage import AuroraSnapshotStorage
+from backend.agents.phase_05_workflow.snapshot_storage import (
+    MAX_SNAPSHOT_BYTES,
+    AuroraSnapshotStorage,
+)
 from backend.db.journey_store import (
     ExecutionLeaseLostError,
     ScopedDb,
@@ -257,7 +260,7 @@ async def test_a_stalled_worker_cannot_append_after_another_worker_took_the_thre
     assert [r["execution_id"] for r in rows] == [taker.execution_id]
 
 
-async def test_a_snapshot_past_the_data_api_row_limit_round_trips(threads):
+async def test_a_snapshot_larger_than_64_kb_reads_back(threads):
     client, made = threads
     thread_id, _, storage = await writer(client, made)
     big = {"data": {"state": {"status": "executing", "padding": "é" * 120_000}}}
@@ -279,3 +282,22 @@ async def test_a_snapshot_over_the_read_ceiling_is_refused_and_not_written(threa
     with pytest.raises(StorageError, match="900000"):
         await storage.write(key(thread_id), huge)
     assert await rows_for(client, thread_id) == []
+
+
+async def test_a_snapshot_just_under_the_cap_reads_back_as_the_newest_row(threads):
+    client, made = threads
+    thread_id, _, storage = await writer(client, made)
+    padding = "a" * 590_000 + "é" * 60_000 + "東京" * 30_000
+    near_cap = {"data": {"state": {"status": "executing", "padding": padding}}}
+    payload = json.dumps(near_cap, ensure_ascii=False).encode()
+    assert MAX_SNAPSHOT_BYTES - 50_000 < len(payload) <= MAX_SNAPSHOT_BYTES
+    await storage.write(key(thread_id), EXECUTING)
+    await storage.write(key(thread_id), payload)
+
+    assert json.loads(await storage.read(key(thread_id))) == near_cap
+    size = await client.execute(
+        "SELECT octet_length(snapshot::TEXT) AS n FROM workflow_snapshots "
+        "WHERE session_id = %s ORDER BY snapshot_seq DESC LIMIT 1",
+        (thread_id,),
+    )
+    assert size[0]["n"] > MAX_SNAPSHOT_BYTES - 50_000

@@ -17,7 +17,9 @@ from botocore.exceptions import ClientError
 from strands.types.exceptions import StorageError
 
 from backend.db.journey_store import ExecutionLeaseLostError
-from backend.db.snapshot_text import MAX_SNAPSHOT_BYTES, latest_snapshot_text
+
+# The Data API refuses a result over 1 MB, so a snapshot this cap admits must still read back.
+MAX_SNAPSHOT_BYTES = 900_000
 
 INSERT_SQL = """
 INSERT INTO workflow_snapshots
@@ -28,6 +30,10 @@ SELECT %s, %s, %s, %s, %s, %s::jsonb
       WHERE execution_id = %s AND thread_id = %s AND status = 'running'
  )
 RETURNING snapshot_seq
+"""
+READ_SQL = """
+SELECT snapshot::TEXT AS snapshot FROM workflow_snapshots
+ WHERE storage_key = %s ORDER BY snapshot_seq DESC LIMIT 1
 """
 LIST_SQL = """
 SELECT DISTINCT storage_key FROM workflow_snapshots
@@ -93,8 +99,9 @@ class AuroraSnapshotStorage:
             )
         if len(data) > MAX_SNAPSHOT_BYTES:
             raise StorageError(
-                f"snapshot for {key!r} is {len(data)} bytes; the Data API read path returns at "
-                f"most {MAX_SNAPSHOT_BYTES} bytes. Reduce what the nodes return."
+                f"snapshot for {key!r} is {len(data)} bytes; the Data API refuses a result "
+                f"over 1 MB, so the cap is {MAX_SNAPSHOT_BYTES} bytes. "
+                "Reduce what the nodes return."
             )
         owned = self._owned(key)
         started = time.perf_counter()
@@ -124,12 +131,12 @@ class AuroraSnapshotStorage:
         """
         owned = self._owned(key)
         try:
-            text = await latest_snapshot_text(self._query, owned)
+            rows = await self._query(READ_SQL, (owned,))
         except ClientError as exc:
             raise StorageError(
                 f"reading {owned!r} failed: {exc.response['Error']['Code']}"
             ) from exc
-        return text.encode("utf-8") if text is not None else None
+        return rows[0]["snapshot"].encode("utf-8") if rows else None
 
     async def _query(self, sql: str, params: tuple) -> List[dict]:
         return await self._client.execute(sql, params)
