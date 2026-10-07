@@ -331,3 +331,47 @@ async def test_a_pause_after_pause_taken_after_confirm_resumes_without_asking_ag
     assert done["workflow_status"] == "resumed"
     assert len(world.gateway.calls) == 1
     assert done["hold_id"] == world.gateway.calls[0]["bookingId"]
+
+
+class LeaseLostAfterFirstWrite:
+    """A storage whose second snapshot write finds that another worker took the thread."""
+
+    def __init__(self, inner):
+        self._inner, self._writes = inner, 0
+
+    async def write(self, key, data):
+        self._writes += 1
+        if self._writes > 1:
+            raise ExecutionLeaseLostError("exe_t1_1 no longer runs thread t1")
+        await self._inner.write(key, data)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+async def test_a_snapshot_write_refused_for_a_lost_lease_stops_the_run_as_lease_loss():
+    world = World()
+    ran, released = [], []
+
+    async def release(state, *, expected_hold_id=None):
+        released.append(expected_hold_id)
+        return True
+
+    runner = world.runner(release=release)
+    for name in ("classify", "search", "availability", "prepare_hold", "hold", "synthesize"):
+        original = getattr(runner._nodes, name)
+
+        async def spy(state, config=None, _original=original, _name=name):
+            ran.append(_name)
+            return await _original(state, config)
+
+        setattr(runner._nodes, name, spy)
+    runner._storage_for = lambda *args: LeaseLostAfterFirstWrite(
+        world.storages.setdefault("t1", InMemoryStorage())
+    )
+    with pytest.raises(ExecutionLeaseLostError, match="no longer runs thread t1"):
+        await runner.run(command(RECOVERY))
+    assert ran == ["classify", "search"]
+    assert world.gateway.calls == []
+    assert released == []
+    assert [e["status"] for e in world.lease.executions] == ["failed"]

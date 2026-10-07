@@ -206,7 +206,10 @@ async def test_a_saved_snapshot_is_reported_with_its_thread(journey: Fixture) ->
     from backend.agents.phase_05_workflow.graph import snapshot_key
 
     snapshot = _workflow_snapshot(journey, "interrupted", ["synthesize"])
-    storage = _storage(journey, "exe_jdoc", "worker-jdoc")
+    claim = await claim_execution(
+        journey.client, journey.journey_id, journey.thread_id, "worker-jdoc"
+    )
+    storage = _storage(journey, claim.execution_id, "worker-jdoc")
     for _ in range(2):
         await storage.write(snapshot_key(journey.thread_id), json.dumps(snapshot).encode())
 

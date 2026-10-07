@@ -5,6 +5,9 @@ writes through. Every write appends a row, so the table keeps each node
 boundary of a run, and the newest row for a key is what a resume restores.
 Rows are stamped with the traveler, execution and worker that trusted code
 supplies after the lease claim, never with values read from the snapshot.
+A write lands only while its execution is still the thread's running one, so a
+worker that stalled past its lease cannot append an older state after another
+worker took the thread over.
 """
 
 import time
@@ -12,10 +15,17 @@ from typing import Callable, List, Optional
 
 from strands.types.exceptions import StorageError
 
+from backend.db.journey_store import ExecutionLeaseLostError
+
 INSERT_SQL = """
 INSERT INTO workflow_snapshots
     (storage_key, session_id, traveler_id, execution_id, worker_id, snapshot)
-VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+SELECT %s, %s, %s, %s, %s, %s::jsonb
+ WHERE EXISTS (
+     SELECT 1 FROM journey_executions
+      WHERE execution_id = %s AND thread_id = %s AND status = 'running'
+ )
+RETURNING snapshot_seq
 """
 READ_SQL = """
 SELECT snapshot::TEXT AS snapshot FROM workflow_snapshots
@@ -41,7 +51,8 @@ class AuroraSnapshotStorage:
             session, as the LangGraph saver did under migration 013.
         session_id: The workflow thread. Keys outside it are refused.
         traveler_id: The traveler the lease claim authorized.
-        execution_id: The execution holding the lease, when one does.
+        execution_id: The execution holding the lease. None makes the storage
+            read-only: a write is refused, because nothing fences it.
         worker_id: The process or Runtime session doing the work.
         on_write: Called with each write's duration in milliseconds.
     """
@@ -52,7 +63,7 @@ class AuroraSnapshotStorage:
         *,
         session_id: str,
         traveler_id: str,
-        execution_id: Optional[str] = None,
+        execution_id: Optional[str],
         worker_id: Optional[str] = None,
         on_write: Optional[Callable[[int], None]] = None,
     ) -> None:
@@ -70,12 +81,28 @@ class AuroraSnapshotStorage:
         return key
 
     async def write(self, key: str, data: bytes) -> None:
-        """Append one snapshot row."""
+        """Append one snapshot row while this execution still holds the thread.
+
+        Raises:
+            StorageError: The storage has no execution, or the key is outside the session.
+            ExecutionLeaseLostError: The execution no longer runs the thread; nothing was written.
+        """
+        if self._execution_id is None:
+            raise StorageError(
+                f"read-only storage for workflow session {self._session_id}: "
+                "bind an execution before writing"
+            )
         started = time.perf_counter()
-        await self._client.execute(INSERT_SQL, (
+        rows = await self._client.execute(INSERT_SQL, (
             self._owned(key), self._session_id, self._traveler_id,
             self._execution_id, self._worker_id, data.decode("utf-8"),
+            self._execution_id, self._session_id,
         ))
+        if not rows:
+            raise ExecutionLeaseLostError(
+                f"Execution {self._execution_id} no longer runs thread {self._session_id}; "
+                "its snapshot was not saved. Re-read the saved journey."
+            )
         if self._on_write is not None:
             self._on_write(round((time.perf_counter() - started) * 1000))
 
