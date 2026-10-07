@@ -24,6 +24,7 @@ FRAMEWORK_FREE = [
     "backend.agents.phase_05_workflow.routing",
     "backend.agents.phase_05_workflow.snapshot_storage",
     "backend.agents.phase_05_workflow.state",
+    "backend.agents.phase_05_workflow.nodes",
 ]
 
 
