@@ -1,0 +1,25 @@
+{
+  "interceptorInputVersion": "1.0",
+  "mcp": {
+    "rawGatewayRequest": {
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"SemanticTripSearchLambda___semantic_trip_search\",\"arguments\":{\"query\":\"quiet beach week\",\"limit\":5}}}"
+    },
+    "gatewayRequest": {
+      "path": "/mcp",
+      "httpMethod": "POST",
+      "headers": {
+        "Authorization": "Bearer {{TOKEN}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "method": "tools/call",
+        "params": {
+          "name": "SemanticTripSearchLambda___semantic_trip_search",
+          "arguments": {"query": "quiet beach week", "limit": 5}
+        }
+      }
+    }
+  }
+}
