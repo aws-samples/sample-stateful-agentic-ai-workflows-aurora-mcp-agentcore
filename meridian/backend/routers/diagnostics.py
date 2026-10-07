@@ -7,8 +7,9 @@ SAME ``COUNT(*)`` twice against a table:
   1. SCOPED   — inside ``scoped_session(traveler_id=...)``, so the GUC
                 ``app.current_traveler_id`` is set and the RLS policy filters
                 rows to that traveler.
-  2. BASELINE — through the privileged migration connection, outside the app
-                role. This sees all rows for a count-only comparison.
+  2. BASELINE — through ``backend_admin_count`` (migration 018), a definer
+                function that returns every traveler's row count and nothing
+                else. The backend login holds no other cross-traveler read.
 
 The difference between the two counts is the live proof that RLS is doing the
 filtering, not a claim in a comment. The endpoint also returns the real
@@ -16,7 +17,7 @@ filtering, not a claim in a comment. The endpoint also returns the real
 actual rule.
 
 The app role itself is fail closed when the traveler GUC is unset. The broader
-baseline is available only through the privileged administrative connection.
+baseline is available only through the definer function.
 
 This endpoint is READ-ONLY (COUNT + pg_policies SELECT only).
 
@@ -32,9 +33,9 @@ from pydantic import BaseModel, Field
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.authorization import TravelerAuthorizationError
+from backend.db.admin_counts import RLS_BASELINE_KINDS, admin_count
 from backend.db.rds_data_client import get_rds_data_client
 from backend.logging_config import log_exception
-from backend.memory.store import DEMO_TRAVELER_ID
 from backend.http_auth import (
     HttpPrincipal,
     authorize_traveler,
@@ -104,9 +105,7 @@ async def rls_probe(
     principal: HttpPrincipal = Depends(require_http_principal),
 ) -> RlsProbeResponse:
     """Run scoped vs unscoped COUNT(*) per table + return the live policies."""
-    traveler_id = authorize_traveler(
-        principal, request.traveler_id or DEMO_TRAVELER_ID
-    )
+    traveler_id = authorize_traveler(principal, request.traveler_id)
     requested = request.tables or list(DEFAULT_TABLES)
     # Drop anything not on the allow-list (injection guard).
     tables = list(dict.fromkeys(t for t in requested if t in ALLOWED_TABLES))
@@ -142,9 +141,9 @@ async def rls_probe(
                 authorization=authorization,
             ) as tx:
                 scoped = await _count(db, table, tx)
-            # Privileged baseline: the Data API secret maps to the migration
-            # role, so this count is intentionally outside the app role.
-            unscoped = await _count(db, table, None)
+            # Baseline: every traveler's rows, counted by the definer function
+            # because the backend login itself is subject to RLS.
+            unscoped = await admin_count(db, RLS_BASELINE_KINDS[table])
             results.append(
                 RlsTableResult(table=table, scoped_count=scoped, unscoped_count=unscoped)
             )
@@ -159,26 +158,7 @@ async def rls_probe(
                 )
             )
 
-    # Pull the real USING clause for each table's policy from pg_catalog.
-    policies: List[RlsPolicy] = []
-    for table in tables:
-        try:
-            rows = await db.execute(
-                "SELECT tablename, policyname, qual "
-                "FROM pg_policies WHERE schemaname = 'public' AND tablename = %s",
-                (table,),
-            )
-            for r in rows:
-                policies.append(
-                    RlsPolicy(
-                        table=r.get("tablename", table),
-                        policy=r.get("policyname", ""),
-                        using_clause=r.get("qual"),
-                    )
-                )
-        except Exception:
-            # pg_policies read is best-effort; the counts are the real proof.
-            pass
+    policies = await _load_policies(db, tables)
 
     # Proof, inside the scoped transaction, that RLS is genuinely engaged:
     # the effective role (should be the least-privilege app role, NOT the
@@ -298,34 +278,68 @@ async def _count_since(
     return int(rows[0]["n"]) if rows else 0
 
 
+async def _load_policies(db, tables: List[str]) -> List[RlsPolicy]:
+    """The real USING clause for each table's policy, from pg_catalog.
+
+    The read is best-effort: the counts are the real proof, so a failed lookup is skipped.
+    """
+    policies: List[RlsPolicy] = []
+    for table in tables:
+        try:
+            rows = await db.execute(
+                "SELECT tablename, policyname, qual "
+                "FROM pg_policies WHERE schemaname = 'public' AND tablename = %s",
+                (table,),
+            )
+        except Exception:  # noqa: BLE001 - see the docstring
+            continue
+        policies.extend(
+            RlsPolicy(
+                table=r.get("tablename", table),
+                policy=r.get("policyname", ""),
+                using_clause=r.get("qual"),
+            )
+            for r in rows
+        )
+    return policies
+
+
+async def _admin_count_or_none(db, kind: str, *, window: str) -> Optional[int]:
+    """A cross-traveler count, or None when Aurora cannot answer it."""
+    try:
+        return await admin_count(db, kind, window=window)
+    except Exception:  # noqa: BLE001 - an unavailable count is an answer, not a fault
+        return None
+
+
+async def _tables_exist(db, tables: tuple) -> bool:
+    """True when every named table exists. ``to_regclass`` needs no privilege on the table."""
+    for table in tables:
+        rows = await db.execute(
+            "SELECT to_regclass(%s) IS NOT NULL AS present", (f"public.{table}",)
+        )
+        if not rows or rows[0]["present"] is not True:
+            return False
+    return True
+
+
 @router.post("/session-receipt", response_model=SessionReceiptResponse)
 async def session_receipt(
     request: SessionReceiptRequest = SessionReceiptRequest(),
     principal: HttpPrincipal = Depends(require_http_principal),
 ) -> SessionReceiptResponse:
     """Count the durable state this session produced, table by table."""
-    traveler_id = authorize_traveler(
-        principal, request.traveler_id or DEMO_TRAVELER_ID
-    )
+    traveler_id = authorize_traveler(principal, request.traveler_id)
     db = get_rds_data_client()
     authorization = get_agentcore_identity().authorization_context()
     window = f"{request.window_minutes} minutes"
     lines: List[ReceiptLine] = []
 
     # Governance evidence is not traveler-scoped: a DENY is precisely a row for
-    # a traveler this workload may not claim, so it is read on the admin path.
-    allow = await _count_since(
-        db,
-        "SELECT COUNT(*) AS n FROM traveler_access_audit "
-        "WHERE decision = 'allow' AND decided_at > CURRENT_TIMESTAMP - %s::interval",
-        (window,),
-    )
-    deny = await _count_since(
-        db,
-        "SELECT COUNT(*) AS n FROM traveler_access_audit "
-        "WHERE decision = 'deny' AND decided_at > CURRENT_TIMESTAMP - %s::interval",
-        (window,),
-    )
+    # a traveler this workload may not claim, so it is counted by the definer
+    # function rather than read through the backend login's own rights.
+    allow = await _admin_count_or_none(db, "audit_allow", window=window)
+    deny = await _admin_count_or_none(db, "audit_deny", window=window)
     lines.append(ReceiptLine(
         label="Authorization decisions",
         table="traveler_access_audit",
@@ -333,12 +347,7 @@ async def session_receipt(
         detail=f"{allow or 0} allow, {deny or 0} deny",
     ))
 
-    audited = await _count_since(
-        db,
-        "SELECT COUNT(*) AS n FROM agent_audit_log "
-        "WHERE ran_at > CURRENT_TIMESTAMP - %s::interval",
-        (window,),
-    )
+    audited = await _admin_count_or_none(db, "agent_audit", window=window)
     lines.append(ReceiptLine(
         label="RLS-scoped operations audited",
         table="agent_audit_log",
@@ -409,25 +418,13 @@ async def session_receipt(
     # every thread, every traveler, all of time - let a rehearsal from an hour
     # earlier satisfy a durability claim made about the run on screen, which is
     # the one number on this receipt that has to be beyond argument.
+    # "No thread to count" and "no such table" are different answers, so the
+    # relation is probed first and the count follows only for a real thread.
     checkpoint_total = 0
-    checkpoints_exist = False
     thread_id = request.conversation_id
-    for table in CHECKPOINT_TABLES:
-        count = await _count_since(
-            db,
-            f"SELECT COUNT(*) AS n FROM {table} WHERE session_id = %s",
-            (thread_id,),
-        ) if thread_id else None
-        if count is None and thread_id is None:
-            # Distinguish "no thread to count" from "no such table": probe the
-            # relation so the copy can say which is true.
-            count = await _count_since(db, f"SELECT COUNT(*) AS n FROM {table} WHERE false", ())
-            if count is not None:
-                checkpoints_exist = True
-            continue
-        if count is not None:
-            checkpoints_exist = True
-            checkpoint_total += count
+    checkpoints_exist = await _tables_exist(db, CHECKPOINT_TABLES)
+    if checkpoints_exist and thread_id:
+        checkpoint_total = await admin_count(db, "workflow_snapshots", key=thread_id)
 
     from backend.agents.phase_05_workflow.service import workflow_store_status
 
