@@ -9,6 +9,7 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
+from backend.agentcore.errors import CallerTokenExpired
 from backend.agents.budget import budget_ceiling_from_facts
 from backend.agents.phase_05_workflow.governed_hold import (
     HOLD_TOOL,
@@ -596,6 +597,10 @@ class WorkflowNodes:
         """Call the Gateway; raise unless the outcome is a placement or a clear refusal."""
         try:
             outcome = await asyncio.to_thread(place_governed_hold, self._gateway_call, arguments)
+        except CallerTokenExpired:
+            # The Gateway refused the token before any tool ran, so no hold exists. Fail the node
+            # as is; the traveler resumes with a fresh token and the saved hold intent replays.
+            raise
         except Exception as exc:  # noqa: BLE001 - a lost reply cannot prove no write
             logger.warning("courtesy hold outcome unknown: %s", exc)
             # Failing the node leaves prepare_hold's durable intent pending.

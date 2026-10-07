@@ -20,6 +20,9 @@ HOLD_TOOL = "MeridianHolds___create_courtesy_hold"
 # Gateway Policy denial envelopes: tool-result errors and the observed JSON-RPC
 # -32002 response. IAM and target errors must not become Cedar decisions.
 DENIAL = re.compile(r"^(?:AuthorizeActionException\s*-\s*)?Tool Execution Denied:", re.I)
+# The Gateway's request interceptor answers a call whose caller has no usable traveler with a tool
+# error behind this prefix. Nothing ran, so it is a refusal, not an unknown outcome.
+IDENTITY_REFUSAL = re.compile(r"^Identity Check Failed:")
 
 
 # Lambda errors proving the calling worker no longer owns the run.
@@ -113,7 +116,8 @@ def place_governed_hold(call_tool: Callable[[str, Dict[str, Any]], Dict[str, Any
         policy_envelope = bool(result.get("isError")) or (
             isinstance(rpc_error, dict) and rpc_error.get("code") == -32002
         )
-        denied = bool(policy_envelope and DENIAL.match(message.strip()))
+        refusal = DENIAL.match(message.strip()) or IDENTITY_REFUSAL.match(message.strip())
+        denied = bool(policy_envelope and refusal)
         return GovernedHold(None, {}, message, "deny" if denied else None, message)
     try:
         payload = json.loads(text) if text else {}

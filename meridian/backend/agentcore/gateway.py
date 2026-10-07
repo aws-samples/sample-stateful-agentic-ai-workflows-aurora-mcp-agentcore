@@ -24,6 +24,9 @@ or env override:
     AGENTCORE_GATEWAY_SEARCH_TOOL=meridian-aurora___semantic_trip_search
     AGENTCORE_GATEWAY_ACCESS_TOKEN=   # optional; omit for IAM SigV4
 
+With ``MERIDIAN_AGENTCORE_AUTH=jwt`` every request carries the signed-in caller's Cognito access
+token (``backend.agentcore.caller_credential``) and ``AGENTCORE_GATEWAY_ACCESS_TOKEN`` is ignored.
+
 Docs:
   https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html
 """
@@ -42,6 +45,9 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from botocore.exceptions import ClientError
 
+from backend.agentcore.auth_mode import jwt_mode
+from backend.agentcore.caller_claims import ensure_unexpired
+from backend.agentcore.caller_credential import require_caller_token
 from backend.agentcore.cli_config import resolve_agentcore_config
 from backend.agentcore.errors import AgentCoreNotConfiguredError
 
@@ -111,6 +117,11 @@ class AgentCoreGatewayAdapter:
 
     def _build_headers(self, body: bytes) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
+        if jwt_mode():
+            token = require_caller_token()
+            ensure_unexpired(token)
+            headers["Authorization"] = f"Bearer {token}"
+            return headers
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
             return headers
@@ -150,6 +161,9 @@ class AgentCoreGatewayAdapter:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
+            if exc.code == 401 and jwt_mode():
+                # Raises CallerTokenExpired when the token ran out while the call was in flight.
+                ensure_unexpired(require_caller_token())
             detail = exc.read().decode("utf-8", errors="replace")[:300]
             raise RuntimeError(f"Gateway HTTP {exc.code}: {detail}") from exc
 
