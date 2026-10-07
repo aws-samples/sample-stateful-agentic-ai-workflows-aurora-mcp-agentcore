@@ -128,6 +128,16 @@ def test_the_workflow_runtime_arn_must_be_set_in_the_selected_account(arn):
         publish.validate_environment(environment, "123456789012", "us-east-1")
 
 
+def test_the_backend_login_secret_is_optional_but_must_belong_to_the_account():
+    secret = "arn:aws:secretsmanager:us-east-1:123456789012:secret:backend-login-a1B2c3"
+    publish.validate_environment(
+        hosted_environment(AURORA_BACKEND_SECRET_ARN=secret), "123456789012", "us-east-1")
+    other = secret.replace("123456789012", "999999999999")
+    with pytest.raises(ValueError, match="AURORA_BACKEND_SECRET_ARN"):
+        publish.validate_environment(
+            hosted_environment(AURORA_BACKEND_SECRET_ARN=other), "123456789012", "us-east-1")
+
+
 def control_returning(status):
     control = Mock()
     control.get_agent_runtime.return_value = {"status": status}

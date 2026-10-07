@@ -60,6 +60,18 @@ export class MeridianWebRolesStack extends Stack {
         })],
       }),
     );
+    // The meridian_backend login's own secret and Data API access, created by
+    // scripts/provision_service_logins.py. The key is written to meridian/.env only after that
+    // policy exists. The service keeps running as the master login until the cutover release
+    // points its AURORA_SECRET_ARN here and drops the master secret from the statement above.
+    if (environment.AURORA_BACKEND_SECRET_ARN) {
+      this.instanceRole.addManagedPolicy(
+        iam.ManagedPolicy.fromManagedPolicyArn(
+          this, 'BackendLoginAccess',
+          `arn:aws:iam::${this.account}:policy/MeridianBackendAuroraAccess`,
+        ),
+      );
+    }
     this.instanceRole.addToPolicy(
       new iam.PolicyStatement({
         actions: ['bedrock-agentcore:InvokeAgentRuntime'],

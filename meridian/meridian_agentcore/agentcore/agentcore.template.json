@@ -328,7 +328,10 @@
                   "Action": [
                     "secretsmanager:GetSecretValue"
                   ],
-                  "Resource": "{{AURORA_SECRET_ARN}}"
+                  "Resource": [
+                    "{{AURORA_SECRET_ARN}}",
+                    "{{AURORA_GATEWAY_SECRET_ARN}}"
+                  ]
                 }
               ]
             }

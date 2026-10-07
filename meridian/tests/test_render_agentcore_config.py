@@ -18,6 +18,9 @@ SECRET_ARN = f"arn:aws:secretsmanager:us-west-2:{ACCOUNT}:secret:meridian-AbC123
 WORKFLOW_SECRET_ARN = (
     f"arn:aws:secretsmanager:us-west-2:{ACCOUNT}:secret:meridian/aurora/workflow-login-XyZ789"
 )
+GATEWAY_SECRET_ARN = (
+    f"arn:aws:secretsmanager:us-west-2:{ACCOUNT}:secret:meridian/aurora/gateway-login-GwY456"
+)
 GATEWAY_ID = "meridianv2-meridian-aurora-abcde12345"
 POLICY_ENGINE_ID = "meridianv2_MeridianGovernance-abcde12345"
 GATEWAY_ARN = f"arn:aws:bedrock-agentcore:us-west-2:{ACCOUNT}:gateway/{GATEWAY_ID}"
@@ -37,6 +40,7 @@ def base_values() -> dict[str, str]:
             "AURORA_CLUSTER_ARN": CLUSTER_ARN,
             "AURORA_SECRET_ARN": SECRET_ARN,
             "AURORA_WORKFLOW_SECRET_ARN": WORKFLOW_SECRET_ARN,
+            "AURORA_GATEWAY_SECRET_ARN": GATEWAY_SECRET_ARN,
         }
     )
 
@@ -74,7 +78,7 @@ def test_complete_render_fills_every_account_and_deployment_value() -> None:
     assert resources == [
         f"arn:aws:ssm:us-west-2:{ACCOUNT}:parameter/meridian/aurora/*",
         CLUSTER_ARN,
-        SECRET_ARN,
+        [SECRET_ARN, GATEWAY_SECRET_ARN],
     ]
     policies = spec["policyEngines"][0]["policies"]
     assert [p["name"] for p in policies] == [
@@ -118,6 +122,7 @@ def test_account_and_region_come_from_the_cluster_arn_unless_a_region_is_set() -
             "AURORA_CLUSTER_ARN": CLUSTER_ARN,
             "AURORA_SECRET_ARN": SECRET_ARN,
             "AURORA_WORKFLOW_SECRET_ARN": WORKFLOW_SECRET_ARN,
+            "AURORA_GATEWAY_SECRET_ARN": GATEWAY_SECRET_ARN,
             "AWS_DEFAULT_REGION": "eu-west-1",
             "AGENTCORE_REGION": "us-east-1",
         }
@@ -143,7 +148,13 @@ def test_account_and_region_come_from_the_cluster_arn_unless_a_region_is_set() -
 )
 def test_malformed_inputs_fail_with_the_setting_to_fix(env: dict, message: str) -> None:
     with pytest.raises(render_config.ConfigError, match=message):
-        render_config.account_values({"AURORA_WORKFLOW_SECRET_ARN": WORKFLOW_SECRET_ARN, **env})
+        render_config.account_values(
+            {
+                "AURORA_WORKFLOW_SECRET_ARN": WORKFLOW_SECRET_ARN,
+                "AURORA_GATEWAY_SECRET_ARN": GATEWAY_SECRET_ARN,
+                **env,
+            }
+        )
 
 
 @pytest.mark.parametrize(
@@ -159,9 +170,39 @@ def test_a_bad_workflow_secret_names_the_setting_to_fix(workflow_arn: str, messa
         "AURORA_CLUSTER_ARN": CLUSTER_ARN,
         "AURORA_SECRET_ARN": SECRET_ARN,
         "AURORA_WORKFLOW_SECRET_ARN": workflow_arn,
+        "AURORA_GATEWAY_SECRET_ARN": GATEWAY_SECRET_ARN,
     }
     with pytest.raises(render_config.ConfigError, match=message):
         render_config.account_values(env)
+
+
+@pytest.mark.parametrize(
+    "gateway_arn,message",
+    [
+        ("", "provision_service_logins"),
+        (f"arn:aws:secretsmanager:us-west-2:{ACCOUNT}:secret:gateway", "six-character suffix"),
+        (GATEWAY_SECRET_ARN.replace(ACCOUNT, "111122223333"), "both must belong"),
+        (SECRET_ARN, "must differ from AURORA_SECRET_ARN"),
+        (WORKFLOW_SECRET_ARN, "must differ from AURORA_SECRET_ARN"),
+    ],
+)
+def test_a_bad_gateway_secret_names_the_setting_to_fix(gateway_arn: str, message: str) -> None:
+    env = {
+        "AURORA_CLUSTER_ARN": CLUSTER_ARN,
+        "AURORA_SECRET_ARN": SECRET_ARN,
+        "AURORA_WORKFLOW_SECRET_ARN": WORKFLOW_SECRET_ARN,
+        "AURORA_GATEWAY_SECRET_ARN": gateway_arn,
+    }
+    with pytest.raises(render_config.ConfigError, match=message):
+        render_config.account_values(env)
+
+
+def test_the_holds_policy_reads_both_the_master_and_the_gateway_secret() -> None:
+    spec, _, _ = render_config.render(*templates(), base_values())
+    holds = next(t for t in spec["agentCoreGateways"][0]["targets"] if t["name"] == "MeridianHolds")
+    secrets = [s for s in holds["compute"]["iamPolicy"]["Statement"]
+               if s["Action"] == ["secretsmanager:GetSecretValue"]]
+    assert secrets[0]["Resource"] == [SECRET_ARN, GATEWAY_SECRET_ARN]
 
 
 def test_the_workflow_runtime_gets_its_own_login_and_policy() -> None:
@@ -278,6 +319,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("AURORA_CLUSTER_ARN", CLUSTER_ARN)
     monkeypatch.setenv("AURORA_SECRET_ARN", SECRET_ARN)
     monkeypatch.setenv("AURORA_WORKFLOW_SECRET_ARN", WORKFLOW_SECRET_ARN)
+    monkeypatch.setenv("AURORA_GATEWAY_SECRET_ARN", GATEWAY_SECRET_ARN)
     real_stage = render_config.stage_workflow_runtime.stage
     monkeypatch.setattr(
         render_config.stage_workflow_runtime, "stage", lambda: real_stage(tmp_path / "bundle")
@@ -335,9 +377,11 @@ def test_main_completes_from_the_deployed_state_and_the_env_file(
     monkeypatch.delenv("AURORA_CLUSTER_ARN")
     monkeypatch.delenv("AURORA_SECRET_ARN")
     monkeypatch.delenv("AURORA_WORKFLOW_SECRET_ARN")
+    monkeypatch.delenv("AURORA_GATEWAY_SECRET_ARN")
     (render_config.MERIDIAN_DIR / ".env").write_text(
         f"AURORA_CLUSTER_ARN={CLUSTER_ARN}\nAURORA_SECRET_ARN={SECRET_ARN}\n"
         f"AURORA_WORKFLOW_SECRET_ARN={WORKFLOW_SECRET_ARN}\n"
+        f"AURORA_GATEWAY_SECRET_ARN={GATEWAY_SECRET_ARN}\n"
         "AGENTCORE_REGION=eu-west-1\n",
         encoding="utf-8",
     )

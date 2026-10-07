@@ -47,6 +47,8 @@ writes the real files:
 | `{{AWS_REGION}}` | `AGENTCORE_REGION`, else `AWS_DEFAULT_REGION`, else the cluster's Region |
 | `{{AURORA_CLUSTER_ARN}}` | `AURORA_CLUSTER_ARN` in `meridian/.env` |
 | `{{AURORA_SECRET_ARN}}` | `AURORA_SECRET_ARN` in `meridian/.env` (the full ARN, with its six-character suffix) |
+| `{{AURORA_WORKFLOW_SECRET_ARN}}` | `AURORA_WORKFLOW_SECRET_ARN` in `meridian/.env`, the `meridian_workflow` login's secret |
+| `{{AURORA_GATEWAY_SECRET_ARN}}` | `AURORA_GATEWAY_SECRET_ARN` in `meridian/.env`, the `meridian_gateway` login's secret |
 | `{{GATEWAY_ID}}` | `agentcore/.cli/deployed-state.json`, or `--gateway-id` |
 | `{{POLICY_ENGINE_ID}}` | `agentcore/.cli/deployed-state.json`, or `--policy-engine-id` |
 

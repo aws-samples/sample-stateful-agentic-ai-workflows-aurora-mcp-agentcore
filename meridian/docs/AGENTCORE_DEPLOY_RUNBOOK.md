@@ -29,6 +29,16 @@ The AgentCore CLI deploys them as one CloudFormation stack,
   `meridian/.env` sets `AWS_DEFAULT_REGION`, `AURORA_CLUSTER_ARN`,
   `AURORA_SECRET_ARN` (the full ARN, with its six-character suffix) and
   `AURORA_DATABASE`.
+- The `meridian_gateway` login is provisioned, so `meridian/.env` also sets
+  `AURORA_GATEWAY_SECRET_ARN`:
+
+  ```bash
+  python meridian/scripts/provision_service_logins.py --login gateway --apply --write-env
+  ```
+
+  The render refuses to run without it. The `MeridianHolds` policy it writes may
+  read that secret, and the Lambdas keep running as the master login until a
+  later release moves them.
 - AWS credentials for the account that owns the cluster. Sign in with
   `aws login` or `aws sso login`, then confirm with
   `aws sts get-caller-identity`.

@@ -63,6 +63,11 @@ def validate_environment(environment: dict, account: str, region: str) -> None:
                          ("AGENTCORE_WORKFLOW_RUNTIME_ARN", "bedrock-agentcore")):
         if not environment.get(key, "").startswith(f"arn:aws:{service}:{region}:{account}:"):
             raise ValueError(f"{key} must belong to the selected account and region")
+    backend_secret = environment.get("AURORA_BACKEND_SECRET_ARN")
+    if backend_secret and not backend_secret.startswith(
+        f"arn:aws:secretsmanager:{region}:{account}:"
+    ):
+        raise ValueError("AURORA_BACKEND_SECRET_ARN must belong to the selected account and region")
 
 
 def check_workflow_runtime(control, arn: str) -> None:

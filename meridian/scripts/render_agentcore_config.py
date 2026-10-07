@@ -20,6 +20,11 @@ Placeholder sources:
     {{AURORA_WORKFLOW_SECRET_ARN}}
                             AURORA_WORKFLOW_SECRET_ARN, the meridian_workflow
                             login's secret (scripts/provision_workflow_login.py)
+    {{AURORA_GATEWAY_SECRET_ARN}}
+                            AURORA_GATEWAY_SECRET_ARN, the meridian_gateway
+                            login's secret (scripts/provision_service_logins.py);
+                            the MeridianHolds policy may read it from the release
+                            that moves the gateway Lambdas to that login
     {{GATEWAY_ID}}          --gateway-id, else agentcore/.cli/deployed-state.json
     {{POLICY_ENGINE_ID}}    --policy-engine-id, else the same deployed state
 
@@ -122,6 +127,38 @@ def _workflow_secret_arn(env: dict[str, str | None], master_arn: str, account: s
     return arn
 
 
+def _gateway_secret_arn(
+    env: dict[str, str | None], master_arn: str, workflow_arn: str, account: str
+) -> str:
+    """Validate the meridian_gateway login's secret ARN like the other logins' secrets."""
+    arn = (env.get("AURORA_GATEWAY_SECRET_ARN") or "").strip()
+    if not arn:
+        raise ConfigError(
+            "AURORA_GATEWAY_SECRET_ARN is not set; run "
+            "scripts/provision_service_logins.py --login gateway --apply --write-env "
+            "and keep the secret ARN it prints in meridian/.env"
+        )
+    match = SECRET_ARN.match(arn)
+    if not match:
+        raise ConfigError(
+            "AURORA_GATEWAY_SECRET_ARN must be the full Secrets Manager ARN, including the "
+            "six-character suffix; scripts/provision_service_logins.py prints it"
+        )
+    if match["account"] != account:
+        raise ConfigError(
+            f"AURORA_GATEWAY_SECRET_ARN is in account {match['account']} but "
+            f"AURORA_CLUSTER_ARN is in account {account}; both must belong to the "
+            "deployment account"
+        )
+    if arn in (master_arn, workflow_arn):
+        raise ConfigError(
+            "AURORA_GATEWAY_SECRET_ARN must differ from AURORA_SECRET_ARN and "
+            "AURORA_WORKFLOW_SECRET_ARN: the gateway Lambdas run as the least-privilege "
+            "meridian_gateway login"
+        )
+    return arn
+
+
 def account_values(env: dict[str, str | None]) -> dict[str, str]:
     """Resolve the account, region and Aurora ARNs the templates need.
 
@@ -129,8 +166,8 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
         env: Merged ``meridian/.env`` and process environment.
 
     Returns:
-        Values for AWS_ACCOUNT_ID, AWS_REGION, AURORA_CLUSTER_ARN, AURORA_SECRET_ARN
-        and AURORA_WORKFLOW_SECRET_ARN.
+        Values for AWS_ACCOUNT_ID, AWS_REGION, AURORA_CLUSTER_ARN, AURORA_SECRET_ARN,
+        AURORA_WORKFLOW_SECRET_ARN and AURORA_GATEWAY_SECRET_ARN.
 
     Raises:
         ConfigError: When an ARN is missing or malformed, an ARN names a different
@@ -158,6 +195,9 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
             f"is in account {cluster['account']}; both must belong to the deployment account"
         )
     workflow_secret_arn = _workflow_secret_arn(env, secret_arn, cluster["account"])
+    gateway_secret_arn = _gateway_secret_arn(
+        env, secret_arn, workflow_secret_arn, cluster["account"]
+    )
     region = (
         (env.get("AGENTCORE_REGION") or env.get("AWS_DEFAULT_REGION") or "").strip()
         or cluster["region"]
@@ -170,6 +210,7 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
         "AURORA_CLUSTER_ARN": cluster_arn,
         "AURORA_SECRET_ARN": secret_arn,
         "AURORA_WORKFLOW_SECRET_ARN": workflow_secret_arn,
+        "AURORA_GATEWAY_SECRET_ARN": gateway_secret_arn,
     }
 
 

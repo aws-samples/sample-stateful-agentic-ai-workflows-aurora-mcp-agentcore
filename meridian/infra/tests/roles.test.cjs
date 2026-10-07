@@ -14,10 +14,10 @@ const environment = {
   AGENTCORE_GATEWAY_URL: 'https://meridian-test.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp',
 };
 
-function stack() {
+function stack(extra = {}) {
   return new MeridianWebRolesStack(new App(), 'Roles', {
     env: { account: '123456789012', region: 'us-east-1' },
-    environment,
+    environment: { ...environment, ...extra },
   });
 }
 
@@ -60,6 +60,36 @@ test('the concierge Runtime is never granted a stop', () => {
 
 test('the backend no longer holds an InvokeGateway grant', () => {
   assert.ok(!JSON.stringify(statements()).includes('InvokeGateway'));
+});
+
+test('the backend role gains the backend login policy only once the login exists', () => {
+  const without = Template.fromStack(stack());
+  assert.ok(!JSON.stringify(without.toJSON()).includes('MeridianBackendAuroraAccess'));
+
+  const loginSecret = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian/aurora/backend-login-AbC123';
+  const withLogin = Template.fromStack(stack({ AURORA_BACKEND_SECRET_ARN: loginSecret }));
+  withLogin.hasResourceProperties('AWS::IAM::Role', {
+    ManagedPolicyArns: [
+      'arn:aws:iam::123456789012:policy/MeridianBackendAuroraAccess',
+    ],
+  });
+});
+
+test('the master secret grant is untouched until the cutover release', () => {
+  const loginSecret = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian/aurora/backend-login-AbC123';
+  const secrets = Object.values(Template.fromStack(stack({ AURORA_BACKEND_SECRET_ARN: loginSecret }))
+    .findResources('AWS::IAM::Policy'))
+    .flatMap((policy) => policy.Properties.PolicyDocument.Statement)
+    .filter((s) => JSON.stringify(s.Action) === '"secretsmanager:GetSecretValue"');
+  assert.equal(secrets.length, 1);
+  assert.ok(JSON.stringify(secrets[0].Resource).includes(environment.AURORA_SECRET_ARN));
+  assert.ok(!JSON.stringify(secrets[0].Resource).includes('backend-login'));
+});
+
+test('the backend login secret is passed to the stacks but never required', () => {
+  const dotenv = { ...environment, AURORA_BACKEND_SECRET_ARN: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:b-AbC123' };
+  assert.equal(serviceEnvironment(dotenv, 'us-east-1').AURORA_BACKEND_SECRET_ARN, dotenv.AURORA_BACKEND_SECRET_ARN);
+  assert.equal(serviceEnvironment(environment, 'us-east-1').AURORA_BACKEND_SECRET_ARN, undefined);
 });
 
 test('the hosted configuration requires the workflow Runtime ARN', () => {
