@@ -13,7 +13,11 @@ from scripts.kill_and_resume_demo import (
 )
 from scripts.lost_response_demo import check_worker_identity
 
-ENVIRON = {"AURORA_SECRET_ARN": "arn:master", "AURORA_WORKFLOW_SECRET_ARN": "arn:workflow", "X": "1"}
+ENVIRON = {
+    "AURORA_SECRET_ARN": "arn:master",
+    "AURORA_WORKFLOW_SECRET_ARN": "arn:workflow",
+    "X": "1",
+}
 
 
 def test_default_worker_env_is_the_driver_env_unchanged():
