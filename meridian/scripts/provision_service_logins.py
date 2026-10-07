@@ -20,7 +20,9 @@ import json
 import os
 import re
 import secrets
+import stat
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -270,14 +272,23 @@ def provision_login(spec: LoginSpec, *, sm, iam, master, cluster_arn: str, datab
 
 
 def write_env(env_file: Path, env_key: str, secret_arn: str) -> None:
-    """Replace or append the one ``env_key`` line in ``env_file``."""
+    """Replace or append the one ``env_key`` line in ``env_file``, atomically."""
     line = f"{env_key}={secret_arn}"
     lines = env_file.read_text().splitlines() if env_file.exists() else []
     if any(entry.startswith(f"{env_key}=") for entry in lines):
         lines = [line if entry.startswith(f"{env_key}=") else entry for entry in lines]
     else:
         lines.append(line)
-    env_file.write_text("\n".join(lines) + "\n")
+    mode = stat.S_IMODE(env_file.stat().st_mode) if env_file.exists() else 0o600
+    handle, temp_name = tempfile.mkstemp(dir=env_file.parent, prefix=f".{env_file.name}.")
+    try:
+        with os.fdopen(handle, "w") as temp:
+            temp.write("\n".join(lines) + "\n")
+        os.chmod(temp_name, mode)
+        os.replace(temp_name, env_file)
+    except BaseException:
+        Path(temp_name).unlink(missing_ok=True)
+        raise
 
 
 def require_account(sts, cluster_arn: str) -> None:
@@ -291,17 +302,23 @@ def require_account(sts, cluster_arn: str) -> None:
         )
 
 
-def main(argv: Optional[list] = None) -> None:
-    """Parse the CLI, provision the chosen logins and optionally record their secret ARNs."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--login", choices=[*LOGINS, "all"], default="all",
-                        help="which login to provision (default: all three)")
-    parser.add_argument("--apply", action="store_true", help="make the changes")
-    parser.add_argument("--write-env", action="store_true",
-                        help="write each secret ARN into meridian/.env after a verified run")
-    args = parser.parse_args(argv)
+def redact(text: str) -> str:
+    """Hide every 12-digit account id in ``text``."""
+    return re.sub(r"(?<!\d)\d{12}(?!\d)", "<acct>", mask_account(text))
+
+
+def _require_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise SystemExit(f"{name} is not set; add it to meridian/.env or export it, then re-run")
+    return value
+
+
+def _run(args: argparse.Namespace) -> None:
     load_dotenv(ENV_FILE)
-    cluster_arn = os.environ["AURORA_CLUSTER_ARN"]
+    cluster_arn = _require_env("AURORA_CLUSTER_ARN")
+    master_secret_arn = _require_env("AURORA_SECRET_ARN") if args.apply else \
+        os.environ.get("AURORA_SECRET_ARN", "")
     region = cluster_arn.split(":")[3]
     require_account(boto3.client("sts", region_name=region), cluster_arn)
     chosen = list(LOGINS.values()) if args.login == "all" else [LOGINS[args.login]]
@@ -312,7 +329,7 @@ def main(argv: Optional[list] = None) -> None:
             iam=boto3.client("iam"),
             master=boto3.client("rds-data", region_name=region),
             cluster_arn=cluster_arn,
-            master_secret_arn=os.environ["AURORA_SECRET_ARN"],
+            master_secret_arn=master_secret_arn,
             database=os.getenv("AURORA_DATABASE", "meridian"),
             apply=args.apply,
         )
@@ -320,6 +337,29 @@ def main(argv: Optional[list] = None) -> None:
             write_env(ENV_FILE, spec.env_key, result.secret_arn)
         elif args.write_env:
             print(f"nothing written: {spec.env_key} is only written after a verified --apply run")
+
+
+def main(argv: Optional[list] = None) -> None:
+    """Parse the CLI, provision the chosen logins and optionally record their secret ARNs."""
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--login", choices=[*LOGINS, "all"], default="all",
+                        help="which login to provision (default: all three)")
+    parser.add_argument("--apply", action="store_true", help="make the changes")
+    parser.add_argument("--write-env", action="store_true",
+                        help="write each secret ARN into meridian/.env after a verified run")
+    args = parser.parse_args(argv)
+    try:
+        _run(args)
+    except ClientError as err:
+        code = err.response.get("Error", {}).get("Code", "unknown")
+        raise SystemExit(
+            f"{err.operation_name} failed ({code}): {redact(str(err))}; "
+            "check AWS_PROFILE and that the profile has permission for this call"
+        ) from None
+    except KeyError as err:
+        raise SystemExit(
+            f"unexpected response or setting missing {redact(str(err))}; re-run to repair"
+        ) from None
 
 
 if __name__ == "__main__":

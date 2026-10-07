@@ -1,7 +1,12 @@
 """The backend, gateway and identity logins are provisioned without a password reaching Postgres."""
 
+import base64
+import hashlib
+import hmac
 import json
+import os
 import re
+import stat
 from datetime import datetime, timedelta
 
 import pytest
@@ -76,10 +81,19 @@ def test_the_policy_names_one_cluster_and_the_logins_one_secret(spec):
     ]
 
 
-def test_a_dry_run_changes_nothing(spec, aws):
+def test_a_dry_run_changes_nothing(spec, aws, capsys):
     run(spec, aws, apply=False, master_secret_arn="")
     assert [c for r in aws for c in r.calls
             if not c[0].startswith(("describe", "get", "list"))] == []
+    out = capsys.readouterr()
+    assert not re.search(r"\d{12}", out.out + out.err)
+
+
+def scram_keys(password, salt, iterations):
+    salted = hashlib.pbkdf2_hmac("sha256", password.encode("ascii"), salt, iterations)
+    client_key = hmac.new(salted, b"Client Key", hashlib.sha256).digest()
+    server_key = hmac.new(salted, b"Server Key", hashlib.sha256).digest()
+    return hashlib.sha256(client_key).digest(), server_key
 
 
 def test_postgres_receives_a_verifier_and_never_the_password(spec, aws, monkeypatch):
@@ -94,7 +108,13 @@ def test_postgres_receives_a_verifier_and_never_the_password(spec, aws, monkeypa
     assert PASSWORD not in json.dumps(master.calls + iam.calls)
     created = next(kw for name, kw in sm.calls if name == "create_secret")
     assert created["Name"] == spec.secret_name
-    assert json.loads(created["SecretString"]) == {"username": spec.role, "password": PASSWORD}
+    stored = json.loads(created["SecretString"])
+    assert stored == {"username": spec.role, "password": PASSWORD}
+    match = re.search(r"SCRAM-SHA-256\$(\d+):([^$]+)\$([^:]+):([^']+)'", sql[0])
+    iterations, salt = int(match.group(1)), base64.b64decode(match.group(2))
+    stored_key, server_key = scram_keys(stored["password"], salt, iterations)
+    assert base64.b64decode(match.group(3)) == stored_key
+    assert base64.b64decode(match.group(4)) == server_key
 
 
 def test_the_policy_is_created_for_this_logins_secret(spec, aws, monkeypatch):
@@ -276,3 +296,85 @@ def test_verify_retries_then_gives_an_actionable_error(spec, monkeypatch):
     assert FailingClient.attempts == 3 and delays == [2, 2]
     assert "BadRequestException" in str(exc.value)
     assert "re-run this script to repair" in str(exc.value)
+
+
+def _main_env(monkeypatch, tmp_path, clients):
+    monkeypatch.setattr(prov.boto3, "client", lambda name, **kw: clients[name])
+    monkeypatch.setattr(prov, "ENV_FILE", tmp_path / ".env")
+    monkeypatch.setenv("AURORA_CLUSTER_ARN", CLUSTER)
+    monkeypatch.setenv("AURORA_SECRET_ARN", "arn:master")
+
+
+def _clients(**overrides):
+    base = {"sts": Recorder({"get_caller_identity": {"Account": ACCOUNT}}),
+            "secretsmanager": Recorder({"describe_secret": {}}),
+            "iam": Recorder(), "rds-data": Recorder()}
+    base.update(overrides)
+    return base
+
+
+class DenyingSecrets:
+    def describe_secret(self, **kw):
+        message = "User: arn:aws:sts::123456789012:assumed-role/dev/me is not authorized"
+        raise ClientError({"Error": {"Code": "AccessDeniedException", "Message": message}},
+                          "DescribeSecret")
+
+
+def test_an_aws_error_exits_with_the_operation_code_and_no_account_id(monkeypatch, tmp_path):
+    _main_env(monkeypatch, tmp_path, _clients(secretsmanager=DenyingSecrets()))
+    with pytest.raises(SystemExit) as exc:
+        prov.main(["--apply"])
+    text = str(exc.value)
+    assert "DescribeSecret" in text and "AccessDeniedException" in text
+    assert not re.search(r"\d{12}", text)
+
+
+@pytest.mark.parametrize("missing", ["AURORA_CLUSTER_ARN", "AURORA_SECRET_ARN"])
+def test_a_missing_environment_variable_is_named_in_the_exit(monkeypatch, tmp_path, missing):
+    _main_env(monkeypatch, tmp_path, _clients())
+    monkeypatch.delenv(missing)
+    with pytest.raises(SystemExit) as exc:
+        prov.main(["--apply"])
+    assert missing in str(exc.value) and "Traceback" not in str(exc.value)
+
+
+def test_a_dry_run_does_not_need_the_master_secret(monkeypatch, tmp_path, capsys):
+    clients = _clients()
+    _main_env(monkeypatch, tmp_path, clients)
+    monkeypatch.delenv("AURORA_SECRET_ARN")
+    prov.main(["--login", "gateway"])
+    assert "dry run" in capsys.readouterr().out
+    assert clients["rds-data"].calls == []
+
+
+def test_an_unverified_apply_writes_no_env_file(monkeypatch, tmp_path):
+    gateway = prov.LOGINS["gateway"]
+    clients = _clients()
+    clients["secretsmanager"].answers["create_secret"] = {"ARN": secret_arn(gateway)}
+    clients["iam"].answers["create_policy"] = {"Policy": {"Arn": policy_arn(gateway)}}
+    _main_env(monkeypatch, tmp_path, clients)
+    monkeypatch.setattr(prov, "_verify_login", lambda *a, **k: "")
+    prov.main(["--login", "gateway", "--apply", "--write-env"])
+    assert not (tmp_path / ".env").exists()
+
+
+def test_a_failing_write_env_leaves_the_old_file_intact(monkeypatch, tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("A=1\n")
+
+    def broken_replace(src, dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(prov.os, "replace", broken_replace)
+    with pytest.raises(OSError):
+        prov.write_env(env, "AURORA_BACKEND_SECRET_ARN", "arn:new")
+    assert env.read_text() == "A=1\n"
+    assert os.listdir(tmp_path) == [".env"]
+
+
+def test_write_env_keeps_the_file_mode(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("A=1\n")
+    env.chmod(0o640)
+    prov.write_env(env, "AURORA_BACKEND_SECRET_ARN", "arn:new")
+    assert stat.S_IMODE(env.stat().st_mode) == 0o640
