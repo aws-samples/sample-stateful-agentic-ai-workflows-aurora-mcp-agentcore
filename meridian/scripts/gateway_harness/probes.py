@@ -26,6 +26,8 @@ RECORD_MARKER = "RECORDED_EVENT "
 CONTROL_ATTEMPTS = 8
 CONTROL_INTERVAL = 10.0
 LOG_POLL_SECONDS = 5
+# httpx.InvalidURL is not an HTTPError, so a bad Gateway URL needs naming here.
+TRANSPORT_FAILURES = (httpx.HTTPError, httpx.InvalidURL)
 
 
 @dataclass(frozen=True)
@@ -83,7 +85,7 @@ class McpHttp:
         """
         try:
             response = self._post(token, "tools/call", {"name": ACTION, "arguments": arguments})
-        except httpx.HTTPError as exc:
+        except TRANSPORT_FAILURES as exc:
             return Outcome("http_error", 0, f"transport failure: {type(exc).__name__}")
         return classify(response.status_code, _json_body(response))
 
@@ -97,7 +99,7 @@ class McpHttp:
                 "protocolVersion": "2025-06-18", "capabilities": {},
                 "clientInfo": {"name": "meridian-harness", "version": "1"}})
             body = _json_body(self._post(token, "tools/list", None))
-        except httpx.HTTPError:
+        except TRANSPORT_FAILURES:
             return []
         result = body.get("result") if isinstance(body, dict) else None
         tools = (result.get("tools") if isinstance(result, dict) else None) or []

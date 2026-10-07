@@ -200,3 +200,14 @@ def test_listing_tools_sends_initialize_then_tools_list_and_survives_failure():
 
     assert mcp(handler).list_tools("J") == []
     assert methods == ["initialize", "tools/list"]
+
+
+def test_a_url_httpx_rejects_is_a_transport_error_not_a_crash():
+    def invalid(request):
+        raise httpx.InvalidURL("Invalid URL")
+
+    http = mcp(invalid)
+    outcome = http.call_tool("t", {})
+    assert (outcome.kind, outcome.status) == ("http_error", 0)
+    assert outcome.message == "transport failure: InvalidURL"
+    assert http.list_tools("t") == []

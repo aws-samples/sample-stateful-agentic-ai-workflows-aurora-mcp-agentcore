@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 from pathlib import Path
 
 import httpx
@@ -185,15 +187,49 @@ def test_no_token_reaches_the_output_or_any_saved_file(tmp_path, capsys):
 
 def test_the_ledger_file_exists_with_the_run_id_before_the_first_create(tmp_path):
     world = World()
+    ledger = tmp_path / NAME / "ledger.json"
     seen = []
 
     def create_role(**kwargs):
-        seen.append(json.loads((tmp_path / NAME / "ledger.json").read_text()))
+        seen.append(json.loads(ledger.read_text()) if ledger.exists() else None)
         return {"Role": {"Arn": "arn:role"}}
 
     world.iam.answers["create_role"] = create_role
     runner.run_live(ENV, TEMPLATE, tmp_path, world.deps())
+    assert seen and seen[0] is not None, "no ledger file on disk at the first create call"
     assert seen[0]["run_id"] == RUN_ID and seen[0]["entries"][0] == ["iam-role", f"{NAME}-lambda"]
+
+
+def test_the_first_ledger_write_has_the_run_id_and_no_entries_before_any_create(
+        tmp_path, monkeypatch):
+    writes = []
+    real_writer = runner._ledger_writer
+
+    def recording_writer(path):
+        save = real_writer(path)
+        return lambda payload: (writes.append(json.loads(json.dumps(payload))), save(payload))[1]
+
+    monkeypatch.setattr(runner, "_ledger_writer", recording_writer)
+    runner.run_live(ENV, TEMPLATE, tmp_path, World().deps())
+    assert writes[0] == {"run_id": RUN_ID, "entries": []}
+
+
+def test_the_ledger_verdicts_and_events_are_owner_only_files_in_owner_only_folders(tmp_path):
+    previous = os.umask(0)
+    try:
+        base = tmp_path / "out"
+        assert runner.run_live(ENV, TEMPLATE, base, World().deps()) == runner.EXIT_PASS
+    finally:
+        os.umask(previous)
+    folder = base / NAME
+    files = [folder / "ledger.json", folder / "verdicts.json",
+             *sorted((folder / "recorded").glob("event_*.json"))]
+    assert len(files) == 5
+    for path in files:
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600, path
+    for path in (base, folder, folder / "recorded"):
+        assert stat.S_IMODE(path.stat().st_mode) == 0o700, path
+    assert not list(folder.rglob("*.tmp"))
 
 
 def test_failed_checks_exit_one_and_the_table_says_so(tmp_path, capsys):
@@ -278,13 +314,13 @@ def test_a_failure_while_creating_still_deletes_what_exists(tmp_path, capsys):
 def test_raw_aws_error_text_is_scrubbed_before_it_is_printed(tmp_path, capsys):
     world = World()
     message = (f"User arn:aws:sts::{ACCOUNT}:assumed-role/x is not authorized; "
-               "Bearer abc.def.ghi and token 999988887777")
+               "Bearer abc.def.ghi and token 111122223333")
     world.iam.answers["create_role"] = lambda **kw: (_ for _ in ()).throw(
         client_error("AccessDenied", message))
     code = runner.run_live(ENV, TEMPLATE, tmp_path, world.deps())
     out = capsys.readouterr().out
     assert code == runner.EXIT_FAIL and "FAILED:" in out and "AccessDenied" in out
-    assert ACCOUNT not in out and "999988887777" not in out and "abc.def.ghi" not in out
+    assert ACCOUNT not in out and "111122223333" not in out and "abc.def.ghi" not in out
     assert "<acct>" in out
 
 
@@ -438,3 +474,69 @@ def test_teardown_with_the_wrong_account_builds_only_the_sts_client(tmp_path):
     write_ledger(ledger, [["lambda", f"{NAME}-echo"]])
     assert runner.teardown_from_ledger(ENV, TEMPLATE, ledger, world.deps()) == runner.EXIT_REFUSED
     assert world.factory_calls == ["sts"] and no_calls(world)
+
+
+# ------------------------------------------------- unexpected teardown errors
+
+
+def test_one_resource_failing_with_an_unexpected_error_does_not_stop_the_others(
+        tmp_path, capsys):
+    world = World()
+    calls = []
+
+    def delete_function(**kwargs):
+        calls.append(kwargs["FunctionName"])
+        if kwargs["FunctionName"].endswith("-echo"):
+            raise KeyError("Configuration")
+        return {}
+
+    world.lambda_.answers["delete_function"] = delete_function
+    code = runner.run_live(ENV, TEMPLATE, tmp_path, world.deps())
+    out = capsys.readouterr().out
+    assert code == runner.EXIT_LEFTOVERS
+    assert len(calls) == 2
+    assert world.control.names().count("delete_gateway") == 1
+    assert world.iam.names().count("delete_role") == 2
+    assert "TEARDOWN INCOMPLETE" in out and f"lambda {NAME}-echo: KeyError" in out
+
+
+def test_a_teardown_that_raises_outright_prints_the_ledger_and_the_run_tag(
+        tmp_path, capsys, monkeypatch):
+    def broken(self, *, from_file=False):
+        raise AttributeError("'NoneType' object has no attribute 'delete'")
+
+    monkeypatch.setattr(res.ThrowawayGateway, "teardown", broken)
+    code = runner.run_live(ENV, TEMPLATE, tmp_path, World().deps())
+    out = capsys.readouterr().out
+    assert code == runner.EXIT_LEFTOVERS
+    assert "TEARDOWN INCOMPLETE" in out and "AttributeError" in out
+    assert f"{res.RUN_TAG}={RUN_ID}" in out
+    assert f"iam-role {NAME}-lambda" in out and f"lambda {NAME}-echo" in out
+    assert "--teardown" in out and "Traceback" not in out
+
+
+def test_a_ledger_teardown_that_raises_outright_still_reports_leftovers(
+        tmp_path, capsys, monkeypatch):
+    def broken(self, *, from_file=False):
+        raise TypeError("bad entry")
+
+    monkeypatch.setattr(res.ThrowawayGateway, "teardown", broken)
+    ledger = tmp_path / NAME / "ledger.json"
+    write_ledger(ledger, [["lambda", f"{NAME}-echo"]])
+    code = runner.teardown_from_ledger(ENV, TEMPLATE, ledger, World().deps())
+    out = capsys.readouterr().out
+    assert code == runner.EXIT_LEFTOVERS
+    assert f"lambda {NAME}-echo" in out and f"{res.RUN_TAG}={RUN_ID}" in out
+
+
+def test_a_transport_url_error_fails_the_run_and_tears_down(tmp_path, capsys):
+    world = World()
+    deps = world.deps()
+
+    def bad_url(request):
+        raise httpx.InvalidURL("Invalid non-printable ASCII character in URL")
+
+    deps.transport = httpx.MockTransport(bad_url)
+    assert runner.run_live(ENV, TEMPLATE, tmp_path, deps) == runner.EXIT_FAIL
+    assert world.control.names().count("delete_gateway") == 1
+    assert "Traceback" not in capsys.readouterr().out

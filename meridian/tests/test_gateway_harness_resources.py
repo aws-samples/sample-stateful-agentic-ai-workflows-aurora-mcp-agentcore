@@ -545,6 +545,30 @@ def test_teardown_continues_past_errors_that_are_not_client_errors():
     assert len(clients.logs.args("delete_log_group")) == 2
 
 
+@pytest.mark.parametrize("error", [KeyError("Configuration"), TypeError("bad"),
+                                   AttributeError("no attribute"), IndexError("empty")])
+def test_any_error_on_one_entry_is_reported_and_the_rest_is_deleted(error):
+    harness, clients, _ = build()
+    harness.create()
+    real = clients.lambda_.delete_function
+    clients.lambda_.delete_function = lambda **kw: (
+        (_ for _ in ()).throw(error) if kw["FunctionName"].endswith("-echo") else real(**kw))
+    with pytest.raises(res.TeardownIncomplete, match=f"lambda .*-echo: {type(error).__name__}"):
+        harness.teardown()
+    assert clients.control.names().count("delete_gateway") == 1
+    assert clients.iam.names().count("delete_role") == 2
+    assert len(clients.logs.args("delete_log_group")) == 1  # only the deleted function's group
+
+
+def test_a_log_group_delete_failing_with_an_unexpected_error_is_reported():
+    harness, clients, _ = build()
+    harness.create()
+    clients.logs.delete_log_group = lambda **kw: (_ for _ in ()).throw(KeyError("logGroup"))
+    with pytest.raises(res.TeardownIncomplete, match="log group .*KeyError"):
+        harness.teardown()
+    assert clients.iam.names().count("delete_role") == 2
+
+
 def test_a_malformed_ledger_entry_is_reported_and_the_rest_is_deleted():
     harness, clients, _ = build()
     harness.create()

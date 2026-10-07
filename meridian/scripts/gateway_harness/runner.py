@@ -20,7 +20,7 @@ from typing import Any
 import httpx
 from botocore.exceptions import BotoCoreError, ClientError
 
-from scripts.gateway_harness import guards, probes, verdicts
+from scripts.gateway_harness import guards, private_files, probes, verdicts
 from scripts.gateway_harness.resources import (
     BINDING_POLICY,
     RUN_TAG,
@@ -46,7 +46,7 @@ TAG_PERMISSIONS = (
     "lambda:TagResource", "lambda:ListTags", "iam:TagRole", "iam:ListRoleTags",
     "bedrock-agentcore:TagResource", "bedrock-agentcore:ListTagsForResource",
 )
-RUN_FAILURES = (HarnessFailure, ClientError, BotoCoreError, httpx.HTTPError)
+RUN_FAILURES = (HarnessFailure, ClientError, BotoCoreError, *probes.TRANSPORT_FAILURES)
 MAX_ERROR_TEXT = 500
 
 
@@ -174,18 +174,15 @@ def _mint_tokens(deps: Dependencies) -> dict[str, str]:
 
 def _ledger_writer(path: Path) -> Callable[[dict[str, Any]], None]:
     def save(payload: dict[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        staging = path.with_suffix(".tmp")
-        staging.write_text(json.dumps(payload, indent=2))
-        staging.replace(path)
+        private_files.write_private(path, json.dumps(payload, indent=2))
     return save
 
 
 def _save_events(events: list[dict[str, Any]], out_dir: Path) -> None:
     folder = out_dir / "recorded"
-    folder.mkdir(parents=True, exist_ok=True)
+    private_files.private_dir(folder)
     for index, event in enumerate(events, start=1):
-        (folder / f"event_{index}.json").write_text(json.dumps(event, indent=2))
+        private_files.write_private(folder / f"event_{index}.json", json.dumps(event, indent=2))
     say(f"Recorded {len(events)} real interceptor events (tokens replaced) in {folder}")
 
 
@@ -205,7 +202,8 @@ def _probe_and_report(gateway: ThrowawayGateway, deps: Dependencies, tokens: dic
         observations = verdicts.Observations(binding_policy_accepted=False)
     rows = verdicts.derive_verdicts(observations)
     say(verdicts.format_table(rows))
-    (out_dir / "verdicts.json").write_text(json.dumps([asdict(row) for row in rows], indent=2))
+    private_files.write_private(out_dir / "verdicts.json",
+                                json.dumps([asdict(row) for row in rows], indent=2))
     return EXIT_PASS if verdicts.passed(rows) else EXIT_FAIL
 
 
@@ -220,8 +218,22 @@ def _teardown(gateway: ThrowawayGateway, code: int, *, from_file: bool = False) 
         return EXIT_LEFTOVERS
     except guards.HarnessRefusal as exc:
         return _refused(exc)
+    except Exception as exc:  # teardown must report what is left, never end in a traceback
+        _report_leftovers(gateway, exc)
+        return EXIT_LEFTOVERS
     say(f"Deleted every resource named {gateway.config.name}.")
     return code
+
+
+def _report_leftovers(gateway: ThrowawayGateway, exc: Exception) -> None:
+    """Name every ledger entry and the run tag when teardown stopped on an unexpected error."""
+    say(f"TEARDOWN INCOMPLETE: {type(exc).__name__}: {mask(str(exc))[:MAX_ERROR_TEXT]}")
+    say(f"Treat everything below as possibly still existing. Run tag: "
+        f"{RUN_TAG}={gateway.config.run_id}")
+    for kind, identifier in gateway.ledger.entries:
+        say(f"  {kind} {identifier}")
+    say("Remove by hand, or re-run with --teardown <ledger.json> "
+        f"{CONFIRM_FLAG} (it deletes only entries whose run tag matches).")
 
 
 def _create_probe_teardown(config: HarnessConfig, clients: Clients, tokens: dict[str, str],

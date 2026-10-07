@@ -20,7 +20,7 @@ from typing import Any, Callable, Dict, List, Tuple
 
 import botocore.session
 from botocore import xform_name
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import ClientError
 from botocore.validate import ParamValidator
 
 from scripts.gateway_harness import sources
@@ -66,9 +66,6 @@ class HarnessFailure(RuntimeError):
 
 class TeardownIncomplete(RuntimeError):
     """Some resources could not be deleted; the message lists each with its identifier."""
-
-
-DELETE_ERRORS = (ClientError, BotoCoreError, HarnessFailure, HarnessRefusal, ValueError)
 
 
 @dataclass(frozen=True)
@@ -576,7 +573,7 @@ class ThrowawayGateway:
         for kind, identifier in self._teardown_order():
             try:
                 self._delete_if_ours(kind, identifier)
-            except DELETE_ERRORS as exc:
+            except Exception as exc:  # one bad entry must not stop the rest
                 reason = self._leftover_reason(exc)
                 if reason:
                     leftovers.append(f"{kind} {identifier}: {reason}")
@@ -726,7 +723,7 @@ class ThrowawayGateway:
         for identifier in dict.fromkeys(self._log_groups):
             try:
                 self.aws.logs.delete_log_group(logGroupName=f"/aws/lambda/{identifier}")
-            except DELETE_ERRORS as exc:
+            except Exception as exc:  # one bad entry must not stop the rest
                 reason = self._leftover_reason(exc)
                 if reason:
                     leftovers.append(f"log group {identifier}: {reason}")
