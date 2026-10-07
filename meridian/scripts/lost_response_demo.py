@@ -7,10 +7,10 @@ not a claim that the network itself failed.
 
 Usage: python scripts/lost_response_demo.py [--worker-login]
 
-With --worker-login only the worker subprocess runs as the meridian_workflow login
-(its AURORA_SECRET_ARN becomes AURORA_WORKFLOW_SECRET_ARN). The driver keeps the
-master client for verification and cleanup, and fails unless the worker reports
-``current_user`` as meridian_workflow.
+With --worker-login the injected-loss worker and the replacement worker each run as a
+subprocess as the meridian_workflow login (their AURORA_SECRET_ARN becomes
+AURORA_WORKFLOW_SECRET_ARN). The driver keeps the master client for verification and
+cleanup, and fails unless every worker reports ``current_user`` as meridian_workflow.
 
 Creates isolated rehearsal rows and removes them in finally. No existing
 bookings, schema, permissions, or service configuration are changed.
@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.kill_and_resume_demo import (  # noqa: E402
     TRAVELER, ScopedDb, _holds_for, _purge, _run_workflow, bind_thread,
     create_journey, get_rds_data_client, read_newest_snapshot, report_worker_identity,
-    require_worker_login, say, scoped, worker_env,
+    require_worker_login, run_takeover, say, scoped, worker_env,
 )
 from backend.agentcore.gateway import AgentCoreGatewayAdapter  # noqa: E402
 from backend.agents.phase_05_workflow.governed_hold import (  # noqa: E402
@@ -139,7 +139,7 @@ async def main(worker_login: bool = False) -> int:
         say("loss", "Aurora has the hold; the worker checkpoint has only the prepared intent")
         await asyncio.to_thread(check_denials, intent, thread_id)
 
-        result = await _run_workflow(thread_id, resume=True)
+        result = await run_takeover(thread_id, worker_login)
         after = await _holds_for(client, journey_id)
         identity = lambda row: (row["hold_request_id"], row["booking_id"], row["hold_expires_at"])
         if len(after) != 1 or identity(before[0]) != identity(after[0]):

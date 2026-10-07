@@ -21,9 +21,10 @@ Usage:
     python scripts/kill_and_resume_demo.py --worker-login
         # run the SIGKILLed worker as the meridian_workflow login
 
-With --worker-login only the worker subprocess gets AURORA_WORKFLOW_SECRET_ARN as
-its AURORA_SECRET_ARN. The driver keeps the master client for verification and
-cleanup, and fails unless the worker reports ``current_user`` as meridian_workflow.
+With --worker-login the SIGKILLed worker and the takeover worker each run as a
+subprocess with AURORA_WORKFLOW_SECRET_ARN as its AURORA_SECRET_ARN. The driver keeps
+the master client for verification and cleanup, and fails unless every worker reports
+``current_user`` as meridian_workflow.
 """
 
 from __future__ import annotations
@@ -68,6 +69,7 @@ QUERY = (
 )
 
 WORKFLOW_LOGIN = "meridian_workflow"
+CONFLICT_EXIT = 76
 
 BLUE, GREEN, RED, DIM, BOLD, OFF = (
     "\033[34m", "\033[32m", "\033[31m", "\033[2m", "\033[1m", "\033[0m",
@@ -158,6 +160,50 @@ async def _worker_one(journey_id: str, thread_id: str) -> None:
     await _run_workflow(
         thread_id, resume=True, pause_after="hold", after_pause=wait_for_kill
     )
+
+
+async def _worker_two(thread_id: str) -> int:
+    """The takeover: resume the thread, report who ran it and what it returned."""
+    await report_worker_identity()
+    try:
+        state = await _run_workflow(thread_id, resume=True)
+    except WorkflowConflictError as exc:
+        print(json.dumps({"event": "conflict", "message": str(exc)}), flush=True)
+        return CONFLICT_EXIT
+    print(json.dumps({"event": "result", "state": state}, default=str), flush=True)
+    return 0
+
+
+def parse_takeover(returncode: int, stdout: str, stderr: str, worker_login: bool) -> dict:
+    """Turn a takeover subprocess's output into its state, checking who ran it."""
+    events = [json.loads(line) for line in stdout.splitlines() if line.startswith('{"event":')]
+    if worker_login:
+        identity = next((e for e in events if e["event"] == "identity"), {})
+        require_worker_login(identity.get("current_user"))
+    if returncode == CONFLICT_EXIT:
+        raise WorkflowConflictError(next(e["message"] for e in events if e["event"] == "conflict"))
+    result = next((e for e in events if e["event"] == "result"), None)
+    if returncode != 0 or result is None:
+        raise RuntimeError(f"Takeover worker failed (exit {returncode}): {stderr[-1500:]}")
+    return result["state"]
+
+
+async def run_takeover(thread_id: str, worker_login: bool) -> dict:
+    """Resume the thread; with --worker-login, in a subprocess that runs as the login."""
+    if not worker_login:
+        return await _run_workflow(thread_id, resume=True)
+    child = await asyncio.create_subprocess_exec(
+        sys.executable, __file__, "--worker-two", thread_id,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        env={**worker_env(True), "PYTHONUNBUFFERED": "1"},
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(child.communicate(), timeout=240)
+    finally:
+        if child.returncode is None:
+            child.kill()
+            await child.wait()
+    return parse_takeover(child.returncode, stdout.decode(), stderr.decode(), True)
 
 
 # ------------------------------------------------------------------- driver
@@ -305,7 +351,7 @@ async def main(keep: bool, worker_login: bool = False) -> int:
 
         for attempt in range(60):
             try:
-                state = await _run_workflow(thread_id, resume=True)
+                state = await run_takeover(thread_id, worker_login)
                 break
             except WorkflowConflictError:
                 if attempt == 0:
@@ -363,8 +409,11 @@ if __name__ == "__main__":
         help="run the SIGKILLed worker as the meridian_workflow login",
     )
     parser.add_argument("--worker-one", nargs=2, metavar=("JOURNEY", "THREAD"))
+    parser.add_argument("--worker-two", metavar="THREAD", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
+    if args.worker_two:
+        raise SystemExit(asyncio.run(_worker_two(args.worker_two)))
     if args.worker_one:
         asyncio.run(_worker_one(*args.worker_one))
     else:
