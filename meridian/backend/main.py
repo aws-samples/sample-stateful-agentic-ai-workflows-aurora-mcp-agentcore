@@ -12,6 +12,7 @@ from typing import AsyncGenerator
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
+from backend.agentcore.caller_credential import CallerCredentialMiddleware
 from backend.http_auth import require_http_principal
 from backend.authorization import TravelerAuthorizationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -127,6 +128,9 @@ else:
         allow_methods=["*"],
         allow_headers=["Authorization", "Content-Type"],
     )
+
+# Hand each request's verified access token to the AgentCore clients below the routes.
+app.add_middleware(CallerCredentialMiddleware)
 
 # Include routers
 app.include_router(chat_router)

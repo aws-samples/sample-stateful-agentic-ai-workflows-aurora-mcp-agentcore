@@ -29,3 +29,15 @@ class AgentCoreNotConfiguredError(RuntimeError):
             f"Config sources: {', '.join(self.sources) or 'none'}\n"
             f"Project dir: {self.project_dir}"
         )
+
+
+class CallerTokenMissing(RuntimeError):
+    """Bearer mode was asked to call AgentCore with no caller token bound."""
+
+
+class CallerTokenExpired(RuntimeError):
+    """The caller's access token expired, or AgentCore refused it as expired.
+
+    Nothing the token would have authorized ran. The caller signs in again (or refreshes) and
+    sends the same request, or resumes the workflow from its last saved step.
+    """
