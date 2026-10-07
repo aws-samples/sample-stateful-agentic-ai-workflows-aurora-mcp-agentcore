@@ -1076,6 +1076,29 @@ describe('Experience presentation polish', () => {
     expect(screen.getByText('Lounge access').closest('span')?.className).toBe('');
   });
 
+  it.each([
+    'Snapshot saved: AuroraSnapshotStorage.write',
+    'Workflow resumed from a saved step',
+    'Checkpoint · AuroraSnapshotStorage.write',
+  ])('shows the Checkpointed chip once a "%s" span is in the trace', (name) => {
+    const product = {
+      product_id: 'TKY-005', name: 'Tokyo Ryokan & Onsen Slow Week', price: 3899,
+      brand: 'ANA Holidays', description: 'Lounge access included.',
+      image_url: '/travel/catalog/TKY-005.jpg', category: 'City & Culture',
+      destination: 'Tokyo', region: 'Asia', available_sizes: ['5 nights'],
+      availability: { '5 nights': 4 }, highlights: ['lounge access'],
+    };
+    const state = makeState({
+      selectedPhase: 5,
+      traceSpans: [{
+        id: 'saved', name, category: 'memory_short', type: 'tool_call', status: 'ok',
+        latencyMs: 12, fields: [],
+      }],
+    });
+    render(<article><TripResultCardContent product={product} state={state} matchPct={null} featured /></article>);
+    expect(screen.getByText('Checkpointed')).toBeInTheDocument();
+  });
+
   it('does not present a previous Concierge booking as a new recovery receipt', () => {
     const state = makeState({
       selectedPhase: 5,

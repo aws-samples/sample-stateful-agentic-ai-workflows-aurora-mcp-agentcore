@@ -1119,7 +1119,7 @@ async def _polish_phase_reply(
         and _is_healthy_span(a)
         and any(
             k in a.title.lower()
-            for k in ("rerank applied", "rls", "agentcore", "langgraph", "memory-grounded", "checkpoint", "snapshot saved", "node:")
+            for k in ("rerank applied", "rls", "agentcore", "langgraph", "memory-grounded", "checkpoint", "snapshot saved", "saved step", "node:")
         )
     ]
     if notable_spans:

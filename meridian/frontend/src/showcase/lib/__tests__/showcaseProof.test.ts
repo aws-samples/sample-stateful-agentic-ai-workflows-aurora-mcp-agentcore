@@ -135,3 +135,30 @@ it('does not treat a failed checkpoint operation as a durable save', () => {
   })])).toBe(false);
 });
 
+it('reads a new-title snapshot as a durable save and counts it', () => {
+  const trace = [span({
+    name: 'Snapshot saved: AuroraSnapshotStorage.write',
+    fields: [{ label: 'checkpointer', value: 'Aurora workflow_snapshots' }, { label: 'snapshot_durable', value: 'true' }],
+  })];
+  expect(hasDurableCheckpoint(trace)).toBe(true);
+  const workflow = deriveWorkflowState(trace);
+  expect(workflow.status).toBe('checkpointed');
+  expect(workflow.checkpointCount).toBe(1);
+});
+
+it('treats a new-title snapshot with no snapshot_durable field as non-durable, on purpose', () => {
+  // Deliberate: only an explicit snapshot_durable (or the old checkpoint_durable) of "true"
+  // proves a save reached Aurora. The title and the store name alone prove nothing.
+  expect(hasDurableCheckpoint([span({
+    name: 'Snapshot saved: AuroraSnapshotStorage.write',
+    fields: [{ label: 'checkpointer', value: 'Aurora workflow_snapshots' }],
+  })])).toBe(false);
+});
+
+it('does not count a read that only touches workflow_snapshots as a saved step', () => {
+  const read = span({
+    name: 'Aurora recall: workflow history', sql: 'SELECT snapshot FROM workflow_snapshots',
+    component: 'Aurora workflow_snapshots',
+  });
+  expect(deriveWorkflowState([read]).checkpointCount).toBe(0);
+});

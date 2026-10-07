@@ -115,3 +115,22 @@ describe('WorkflowGraph', () => {
     expect(container.querySelector('.mds-wfgraph-route-node.is-current')).toBeTruthy();
   });
 });
+
+describe.each([
+  ['Snapshot saved: AuroraSnapshotStorage.write'],
+  ['Workflow paused at a saved step'],
+  ['Workflow resumed from a saved step'],
+  ['Checkpoint · AuroraSnapshotStorage.write'],
+  ['Workflow paused at checkpoint'],
+  ['Workflow resumed from checkpoint'],
+])('saved-step span "%s"', (title) => {
+  it('badges the last lit node and shows where it was saved', () => {
+    render(<WorkflowGraph state={state([
+      span({ id: 'classify', fields: [{ label: 'node', value: 'classify' }, { label: 'intent', value: 'plan' }] }),
+      span({ id: 'saved', name: title, fields: [{ label: 'checkpointer', value: 'Aurora workflow_snapshots' }] }),
+    ])} />);
+
+    expect(screen.getByText('checkpoint')).toBeInTheDocument();
+    expect(screen.getByText('checkpointed · Aurora workflow_snapshots')).toBeInTheDocument();
+  });
+});

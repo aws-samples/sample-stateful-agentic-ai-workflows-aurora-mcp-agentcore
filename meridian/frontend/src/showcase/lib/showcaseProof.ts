@@ -215,7 +215,7 @@ function fieldValue(span: ShowcaseTraceSpan, label: string): string | null {
 }
 
 function isCheckpointSpan(span: ShowcaseTraceSpan): boolean {
-  return span.status === 'ok' && /checkpoint|snapshot saved|saved step|workflow_snapshots/i.test(
+  return span.status === 'ok' && /checkpoint|snapshot saved|saved step/i.test(
     [span.name, span.details, span.sql, span.component].filter(Boolean).join(' '),
   );
 }

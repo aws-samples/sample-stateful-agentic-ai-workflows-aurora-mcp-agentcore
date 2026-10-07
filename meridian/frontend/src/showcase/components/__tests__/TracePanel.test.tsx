@@ -469,3 +469,15 @@ describe('TracePanel collapse behavior', () => {
   });
 
 });
+
+it.each([
+  'Snapshot saved: AuroraSnapshotStorage.write',
+  'Workflow resumed from a saved step',
+  'Checkpoint · AuroraSnapshotStorage.write',
+])('files "%s" under preparing the response, not recall', (name) => {
+  render(<TracePanel state={makeState({ selectedPhase: 5, traceSpans: [
+    { ...traceSpan, id: 'saved', category: 'memory_short', type: 'tool_call', name, sql: undefined },
+  ] })} />);
+  expect(screen.getByText('Preparing response').closest('li')).toHaveClass('is-done');
+  expect(screen.queryByText('Recalling traveler context')).not.toBeInTheDocument();
+});

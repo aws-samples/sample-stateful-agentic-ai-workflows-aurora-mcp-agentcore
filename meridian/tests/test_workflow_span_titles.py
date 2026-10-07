@@ -4,10 +4,11 @@ import re
 
 import pytest
 
-from backend.activity import create_activity
+from backend.activity import ActivityEntry, create_activity
 from backend.agents.phase_05_workflow.runner import SNAPSHOT_PREFIX
 from backend.agents.phase_05_workflow.state import SNAPSHOT_STORE
-from backend.routers.chat import _is_workflow_resume_query
+from backend.llm_polish import PolishResult
+from backend.routers.chat import _is_workflow_resume_query, _polish_phase_reply
 from tests.test_workflow_runner import World, command
 
 TITLE = re.compile(
@@ -76,4 +77,25 @@ def test_the_resume_query_accepts_the_new_and_the_old_prompt(prompt):
 
 def test_create_activity_takes_everything_after_the_type_by_keyword():
     with pytest.raises(TypeError):
-        create_activity("search", "title", "details")  # type: ignore[misc]
+        create_activity("search", "title")  # type: ignore[misc]
+    assert create_activity("search", title="title").title == "title"
+
+
+async def test_the_polish_context_lists_the_saved_step_status_spans(monkeypatch):
+    seen = {}
+
+    async def capture(user_query, raw):
+        seen["raw"] = raw
+        return PolishResult(text="ok", model_id=None, note="captured")
+
+    monkeypatch.setattr("backend.routers.chat.polish_concierge_reply", capture)
+    spans = [
+        ActivityEntry(id=str(i), timestamp="2026-10-07T00:00:00Z", activity_type="result",
+                      title=title)
+        for i, title in enumerate(
+            ["Workflow resumed from a saved step", "Snapshot saved: AuroraSnapshotStorage.write"]
+        )
+    ]
+    await _polish_phase_reply(5, "resume", "Continued.", [], spans)
+    assert "- Workflow resumed from a saved step" in seen["raw"]
+    assert "- Snapshot saved: AuroraSnapshotStorage.write" in seen["raw"]
