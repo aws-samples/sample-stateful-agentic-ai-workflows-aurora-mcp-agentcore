@@ -12,6 +12,7 @@ psycopg-pool>=3.3.0
 fastapi>=0.139.2
 uvicorn[standard]>=0.51.0
 python-multipart>=0.0.22
+pyjwt[crypto]>=2.15.1  # Cognito access token verification (backend/cognito_auth.py)
 
 # Data and configuration
 numpy>=2.4.3
