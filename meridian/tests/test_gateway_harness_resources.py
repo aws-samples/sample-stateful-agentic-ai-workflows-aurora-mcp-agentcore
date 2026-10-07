@@ -10,7 +10,7 @@ from io import BytesIO
 import botocore.session
 import pytest
 from botocore import xform_name
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 from botocore.validate import ParamValidator
 
 from scripts.gateway_harness import resources as res
@@ -44,7 +44,7 @@ def build(control=None, **overrides):
     config = res.HarnessConfig(NAME, ACCOUNT, REGION, "https://idp/.well-known/openid-configuration",
                                "client-web", BINDING_TEMPLATE, RUN_ID)
     saved = []
-    ledger = res.Ledger(save=lambda entries: saved.append(list(entries)))
+    ledger = res.Ledger(save=lambda payload: saved.append(copy.deepcopy(payload)))
     harness = res.ThrowawayGateway(config, clients, ledger, sleep=lambda s: None,
                                    clock=iter(range(0, 10_000, 1)).__next__, **overrides)
     return harness, clients, saved
@@ -91,7 +91,7 @@ def test_create_builds_the_gateway_with_the_interceptor_the_authorizer_and_the_e
     assert created["interceptorConfigurations"][0]["interceptionPoints"] == ["REQUEST"]
     target = control.args("create_gateway_target")[0]
     schema = target["targetConfiguration"]["mcp"]["lambda"]["toolSchema"]["inlinePayload"][0]
-    assert schema["inputSchema"]["additionalProperties"] is False
+    assert set(schema["inputSchema"]) == {"type", "properties", "required"}
     assert schema["inputSchema"]["required"] == ["travelerId"]
     assert target["credentialProviderConfigurations"] == [
         {"credentialProviderType": "GATEWAY_IAM_ROLE"}]
@@ -105,7 +105,7 @@ def test_create_builds_the_gateway_with_the_interceptor_the_authorizer_and_the_e
         "mode": "ENFORCE"}
     assert update["interceptorConfigurations"] == created["interceptorConfigurations"]
     assert live.binding_policy_accepted is True
-    assert [kind for kind, _ in saved[-1]] == [
+    assert [kind for kind, _ in saved[-1]["entries"]] == [
         "iam-role", "iam-role", "lambda", "lambda", "gateway", "target", "policy-engine",
         "policy", "policy"]
 
@@ -113,19 +113,87 @@ def test_create_builds_the_gateway_with_the_interceptor_the_authorizer_and_the_e
 def test_each_create_is_in_the_ledger_before_the_next_call():
     harness, _, saved = build()
     harness.create()
-    assert [len(entries) for entries in saved] == list(range(1, 10))
+    counts = [len(payload["entries"]) for payload in saved]
+    assert counts == sorted(counts) and counts[0] == 0 and counts[-1] == 9
+
+
+def test_the_ledger_persists_the_run_id_and_is_saved_before_the_first_create():
+    seen = []
+    harness, clients, saved = build()
+    harness.ledger.save = lambda payload: seen.append(
+        (copy.deepcopy(payload), len(clients.iam.calls) + len(clients.control.calls)))
+    harness.create()
+    first, calls_then = seen[0]
+    assert first == {"run_id": RUN_ID, "entries": []} and calls_then == 0
+    assert all(payload["run_id"] == RUN_ID for payload, _ in seen)
+    assert seen[-1][0]["entries"][0] == ["iam-role", f"{NAME}-lambda"]
+
+
+def entry_exists_when(harness, client, operation):
+    """Make ``operation`` raise, and report the ledger entries that existed at that moment."""
+    at_call = []
+
+    def explode(**kwargs):
+        at_call.append(list(harness.ledger.entries))
+        raise client_error("AccessDenied")
+
+    client.answers[operation] = explode
+    with pytest.raises(ClientError):
+        harness.create()
+    return at_call[0]
+
+
+def test_the_role_is_in_the_ledger_before_create_role_is_called():
+    harness, clients, _ = build()
+    at_call = entry_exists_when(harness, clients.iam, "create_role")
+    assert at_call == [("iam-role", f"{NAME}-lambda")]
+    assert harness.ledger.entries == [("iam-role", f"{NAME}-lambda")]
+
+
+def test_the_function_is_in_the_ledger_before_create_function_is_called():
+    harness, clients, _ = build()
+    at_call = entry_exists_when(harness, clients.lambda_, "create_function")
+    assert ("lambda", f"{NAME}-echo") in at_call
+    assert harness.ledger.entries[-1] == ("lambda", f"{NAME}-echo")
+
+
+def test_a_create_that_left_nothing_behind_is_gone_not_a_failure_at_teardown():
+    harness, clients, _ = build()
+    entry_exists_when(harness, clients.iam, "create_role")
+    harness.teardown()
+    assert clients.iam.names().count("delete_role") == 0
 
 
 def test_the_roles_trust_only_their_service_in_this_account():
     harness, clients, _ = build()
     harness.create()
-    for call in clients.iam.args("create_role"):
-        trust = json.loads(call["AssumeRolePolicyDocument"])["Statement"][0]
-        assert trust["Condition"] == {"StringEquals": {"aws:SourceAccount": ACCOUNT}}
-    policy = json.loads(clients.iam.args("put_role_policy")[0]["PolicyDocument"])
-    functions = policy["Statement"][0]["Resource"]
+    calls = {c["RoleName"]: c for c in clients.iam.args("create_role")}
+    lambda_trust = json.loads(calls[f"{NAME}-lambda"]["AssumeRolePolicyDocument"])["Statement"][0]
+    assert lambda_trust["Condition"] == {"StringEquals": {"aws:SourceAccount": ACCOUNT}}
+    gateway_trust = json.loads(calls[f"{NAME}-gateway"]["AssumeRolePolicyDocument"])["Statement"][0]
+    assert gateway_trust["Condition"] == {
+        "StringEquals": {"aws:SourceAccount": ACCOUNT},
+        "ArnLike": {"aws:SourceArn": f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT}:gateway/*"}}
+    policies = {c["RoleName"]: json.loads(c["PolicyDocument"])
+                for c in clients.iam.args("put_role_policy")}
+    functions = policies[f"{NAME}-gateway"]["Statement"][0]["Resource"]
     assert functions == [f"arn:aws:lambda:{REGION}:{ACCOUNT}:function:{NAME}-{s}"
                          for s in ("echo", "interceptor")]
+
+
+def test_the_lambda_role_writes_only_to_log_groups_of_this_throwaway():
+    harness, clients, _ = build()
+    harness.create()
+    assert clients.iam.args("attach_role_policy") == []
+    policy = next(json.loads(c["PolicyDocument"]) for c in clients.iam.args("put_role_policy")
+                  if c["RoleName"] == f"{NAME}-lambda")
+    group = f"arn:aws:logs:{REGION}:{ACCOUNT}:log-group:/aws/lambda/{NAME}-*"
+    for statement in policy["Statement"]:
+        assert statement["Effect"] == "Allow" and statement["Resource"] in (
+            [group, group + ":*"], [group], group)
+    actions = {a for st in policy["Statement"] for a in (
+        [st["Action"]] if isinstance(st["Action"], str) else st["Action"])}
+    assert actions == {"logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"}
 
 
 def test_the_interceptor_package_carries_the_production_file_byte_for_byte():
@@ -171,11 +239,30 @@ def test_another_lambda_error_is_not_retried():
 def test_the_interceptor_mode_is_switched_with_a_function_configuration_update():
     harness, clients, _ = build()
     harness.create()
-    harness.set_interceptor_mode("extra_argument")
+    harness.set_interceptor_mode("bad_type")
     update = clients.lambda_.args("update_function_configuration")[0]
     assert update["FunctionName"] == f"{NAME}-interceptor"
-    assert update["Environment"]["Variables"]["HARNESS_MODE"] == "extra_argument"
+    assert update["Environment"]["Variables"]["HARNESS_MODE"] == "bad_type"
     assert update["Environment"]["Variables"]["PINNED_TOOLS"] == "EchoTarget___echo"
+
+
+@pytest.mark.parametrize("mode", ["pin", "bad_type", "drop_required", "refuse"])
+def test_every_valid_interceptor_mode_is_accepted(mode):
+    harness, clients, _ = build()
+    harness.create()
+    harness.set_interceptor_mode(mode)
+    assert clients.lambda_.args("update_function_configuration")[0]["Environment"]["Variables"][
+        "HARNESS_MODE"] == mode
+
+
+@pytest.mark.parametrize("mode", ["extra_argument", "", "PIN", "pin; refuse"])
+def test_an_unknown_interceptor_mode_is_refused_before_any_call(mode):
+    harness, clients, _ = build()
+    harness.create()
+    before = len(clients.lambda_.calls)
+    with pytest.raises(HarnessRefusal, match="interceptor mode"):
+        harness.set_interceptor_mode(mode)
+    assert len(clients.lambda_.calls) == before
 
 
 def test_a_failed_status_stops_with_the_reason():
@@ -223,7 +310,8 @@ def test_things_already_gone_are_not_failures_but_other_errors_are_reported():
         harness.teardown()
     assert f"lambda {NAME}-interceptor: AccessDeniedException" in str(left.value)
     assert f"{NAME}-echo:" not in str(left.value)
-    assert len(clients.logs.args("delete_log_group")) == 2
+    assert [c["logGroupName"] for c in clients.logs.args("delete_log_group")] == [
+        f"/aws/lambda/{NAME}-echo"]
 
 
 def test_every_taggable_create_carries_the_run_tag():
@@ -374,28 +462,158 @@ def validate(service, operation, kwargs):
     return ParamValidator().validate(kwargs, shape)
 
 
-def without_additional_properties(kwargs):
-    clean = copy.deepcopy(kwargs)
-    for tool in clean["targetConfiguration"]["mcp"]["lambda"]["toolSchema"]["inlinePayload"]:
-        tool["inputSchema"].pop("additionalProperties")
-    return clean
-
-
 def test_every_call_matches_the_installed_service_models():
     harness, clients, _ = build()
     harness.create()
     harness.set_interceptor_mode("refuse")
     harness.teardown()
     for service, operation, kwargs in recorded_calls(clients):
-        if operation == "create_gateway_target":
-            kwargs = without_additional_properties(kwargs)
         report = validate(service, operation, kwargs)
         assert not report.has_errors(), f"{service}.{operation}: {report.generate_report()}"
 
 
-def test_the_installed_gateway_model_has_no_additional_properties_for_a_tool_schema():
+def test_the_update_resends_the_gateway_description():
     harness, clients, _ = build()
     harness.create()
-    target = clients.control.args("create_gateway_target")[0]
-    report = validate("bedrock-agentcore-control", "create_gateway_target", target)
-    assert "additionalProperties" in report.generate_report()
+    created = clients.control.args("create_gateway")[0]
+    update = clients.control.args("update_gateway")[0]
+    assert update["description"] == created["description"]
+
+
+def test_the_plan_does_not_claim_additional_properties():
+    harness, _, _ = build()
+    assert not [line for line in harness.plan() if "additionalProperties" in line]
+
+
+def all_calls(clients):
+    return len(recorded_calls(clients))
+
+
+def test_an_invalid_request_creates_nothing(monkeypatch):
+    bad = [{"name": "echo", "description": "x", "inputSchema": {
+        "type": "object", "additionalProperties": False}}]
+    monkeypatch.setattr(res, "ECHO_SCHEMA", bad)
+    harness, clients, saved = build()
+    with pytest.raises(HarnessRefusal, match="preflight.*create_gateway_target"):
+        harness.create()
+    assert all_calls(clients) == 0
+    assert harness.ledger.entries == []
+
+
+def test_a_request_the_client_model_rejects_creates_nothing():
+    harness, clients, _ = build()
+    consulted = []
+    real = botocore.session.get_session().get_service_model("bedrock-agentcore-control")
+
+    class RejectingModel:
+        def operation_model(self, name):
+            consulted.append(name)
+            return real.operation_model("DeleteGateway")
+
+    clients.control.meta = type("Meta", (), {"service_model": RejectingModel()})()
+    with pytest.raises(HarnessRefusal, match="preflight"):
+        harness.create()
+    assert "CreateGateway" in consulted and all_calls(clients) == 0
+
+
+def test_preflight_checks_every_service_before_the_first_call():
+    harness, clients, saved = build()
+    harness.create()
+    assert saved[0] == {"run_id": RUN_ID, "entries": []}
+    assert clients.iam.calls[0][0] == "create_role"
+
+
+def test_a_template_that_changed_shape_creates_nothing():
+    config = res.HarnessConfig(
+        NAME, ACCOUNT, REGION, "u", "c", "forbid(principal, action, resource);", RUN_ID)
+    clients = res.Clients(iam=FakeIam(), lambda_=FakeLambda(), control=FakeControl(), logs=Fake())
+    harness = res.ThrowawayGateway(config, clients, res.Ledger(), sleep=lambda s: None)
+    with pytest.raises(HarnessRefusal, match="no longer lists"):
+        harness.create()
+    assert all_calls(clients) == 0
+
+
+def test_teardown_continues_past_errors_that_are_not_client_errors():
+    harness, clients, _ = build()
+    harness.create()
+    clients.control.delete_gateway_target = lambda **kw: (_ for _ in ()).throw(
+        EndpointConnectionError(endpoint_url="https://gw.example"))
+    with pytest.raises(res.TeardownIncomplete, match="target .*EndpointConnectionError"):
+        harness.teardown()
+    assert clients.lambda_.names().count("delete_function") == 2
+    assert clients.iam.names().count("delete_role") == 2
+    assert len(clients.logs.args("delete_log_group")) == 2
+
+
+def test_a_malformed_ledger_entry_is_reported_and_the_rest_is_deleted():
+    harness, clients, _ = build()
+    harness.create()
+    harness.ledger.entries.append(("policy", "no-slash-here"))
+    with pytest.raises(res.TeardownIncomplete, match="policy no-slash-here"):
+        harness.teardown()
+    assert clients.iam.names().count("delete_role") == 2
+
+
+def test_a_log_group_delete_that_cannot_reach_the_service_is_reported():
+    harness, clients, _ = build()
+    harness.create()
+    clients.logs.delete_log_group = lambda **kw: (_ for _ in ()).throw(
+        EndpointConnectionError(endpoint_url="https://logs.example"))
+    with pytest.raises(res.TeardownIncomplete, match="log group .*EndpointConnectionError"):
+        harness.teardown()
+    assert clients.iam.names().count("delete_role") == 2
+
+
+def test_an_empty_ledger_loaded_from_a_file_is_refused_without_an_aws_call():
+    harness, clients, _ = build()
+    with pytest.raises(HarnessRefusal, match="ledger"):
+        harness.teardown(from_file=True)
+    assert all_calls(clients) == 0
+
+
+def test_a_loaded_ledger_with_entries_tears_down():
+    harness, clients, _ = build()
+    harness.ledger.entries.append(("iam-role", f"{NAME}-lambda"))
+    clients.iam.tags[f"{NAME}-lambda"] = res.tag_list(RUN_ID)
+    harness.teardown(from_file=True)
+    assert clients.iam.names().count("delete_role") == 1
+
+
+def test_the_gateway_tag_is_read_again_just_before_it_is_deleted():
+    harness, clients, _ = build()
+    harness.create()
+    real_delete = clients.control.delete_gateway_target
+
+    def delete_then_retag(**kwargs):
+        real_delete(**kwargs)
+        clients.control.tags[f"gateway/{GATEWAY_ID}"] = OTHER
+
+    clients.control.delete_gateway_target = delete_then_retag
+    with pytest.raises(res.TeardownIncomplete, match="not tagged for this run"):
+        harness.teardown()
+    assert clients.control.names().count("delete_gateway") == 0
+
+
+def test_the_engine_tag_is_read_again_just_before_it_is_deleted():
+    harness, clients, _ = build()
+    harness.create()
+    real_delete = clients.control.delete_policy
+
+    def delete_then_retag(**kwargs):
+        real_delete(**kwargs)
+        clients.control.tags[f"policy-engine/{ENGINE_ID}"] = OTHER
+
+    clients.control.delete_policy = delete_then_retag
+    with pytest.raises(res.TeardownIncomplete, match="not tagged for this run"):
+        harness.teardown()
+    assert clients.control.names().count("delete_policy_engine") == 0
+
+
+def test_a_log_group_is_deleted_only_for_a_function_that_was_deleted_or_gone():
+    harness, clients, _ = build()
+    harness.create()
+    clients.lambda_.answers["delete_function"] = lambda FunctionName: (_ for _ in ()).throw(
+        client_error("AccessDeniedException"))
+    with pytest.raises(res.TeardownIncomplete):
+        harness.teardown()
+    assert clients.logs.args("delete_log_group") == []
