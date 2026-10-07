@@ -4,7 +4,7 @@ import { AuroraIcon } from '../components/ServiceMark';
 import { useState } from 'react';
 import { ArrowRight, RefreshCw, ShieldCheck, Terminal } from 'lucide-react';
 
-import type { JourneyDocument, JourneyExecution } from '../journey/types';
+import type { JourneyDocument, JourneyExecution, SessionStop } from '../journey/types';
 import { isObserved } from '../journey/types';
 
 type TabId = 'checkpoint' | 'authorization' | 'business';
@@ -50,7 +50,39 @@ function Fact({
   );
 }
 
-function WorkerCard({
+/** The microVM id, or the whole worker id for journeys saved before Runtime ids existed. */
+function microvmOf(execution: JourneyExecution): string {
+  return execution.microvm_id ?? execution.worker_id;
+}
+
+function sessionChanged(first: JourneyExecution | null, latest: JourneyExecution | null): boolean {
+  if (!first || !latest) return false;
+  if (first.microvm_id && latest.microvm_id) return first.microvm_id !== latest.microvm_id;
+  return first.worker_id !== latest.worker_id;
+}
+
+const STOP_WORDING: Record<SessionStop['stopped_during'], string> = {
+  waiting: 'Stopped while waiting',
+  running: 'Stopped mid-run',
+  finished: 'Stopped after the run finished',
+};
+
+function stopSummary(stop: SessionStop): string {
+  const how = STOP_WORDING[stop.stopped_during] ?? 'Stopped';
+  return stop.last_step ? `${how}, last step ${stop.last_step}` : how;
+}
+
+function leaseNote(execution: JourneyExecution | null, running: boolean): string {
+  if (!execution) return 'No execution recorded';
+  const { status } = execution;
+  if (status === 'abandoned') return 'Lease expired; execution abandoned';
+  if (status === 'failed') return 'Execution failed';
+  if (running) return 'Holding the lease';
+  if (status !== 'running') return status;
+  return execution.lease_expires_at ? 'Lease expired' : 'Lease not verified';
+}
+
+function SessionCard({
   role,
   execution,
   fallback,
@@ -72,16 +104,11 @@ function WorkerCard({
     >
       <Terminal size={18} aria-hidden="true" className="mds-proof-worker-glyph" />
       <span className="mds-proof-worker-role">{role}</span>
-      <strong className="mds-proof-worker-id">{execution?.worker_id ?? fallback}</strong>
-      <span className="mds-proof-worker-note">
-        {execution
-          ? stopped
-            ? status === 'abandoned' ? 'Lease expired; execution abandoned' : 'Execution failed'
-            : running
-              ? 'Holding the lease'
-              : status === 'running' ? execution?.lease_expires_at ? 'Lease expired' : 'Lease not verified' : status
-          : 'No execution recorded'}
-      </span>
+      <strong className="mds-proof-worker-id">
+        {execution ? execution.runtime_session_id ?? DASH : fallback}
+      </strong>
+      {execution && <span className="mds-proof-worker-vm">{microvmOf(execution)}</span>}
+      <span className="mds-proof-worker-note">{leaseNote(execution, running)}</span>
       <span className="mds-proof-worker-state">
         {execution ? `attempt ${execution.attempt}, ${status}` : DASH}
       </span>
@@ -153,7 +180,11 @@ export function PresenterProof({
   const checkpoint = document.checkpoint;
   const hold = document.hold;
   const auth = document.authorization;
-  const restarted = Boolean(first && latest && first.worker_id !== latest.worker_id);
+  const restarted = sessionChanged(first, latest);
+  const stops = document.session_stops && isObserved(document.session_stops)
+    ? document.session_stops.items : [];
+  const newestStop = stops[0] ?? null;
+  const nextNode = isObserved(document.workflow) ? document.workflow.next_nodes?.[0] : undefined;
   const resumed = hasVerifiedResume(document);
   const waitingToResume = !resumed && isObserved(document.workflow)
     && document.workflow.workflow_status === 'paused';
@@ -167,7 +198,7 @@ export function PresenterProof({
       <header className="mds-proof-head">
         <div>
           <h1>
-            {restarted ? 'The worker changed.' : isObserved(checkpoint) ? 'The plan is saved.' : 'The journey has started.'}
+            {restarted ? 'The session changed.' : isObserved(checkpoint) ? 'The plan is saved.' : 'The journey has started.'}
             <span>{resumed ? 'The saved plan resumed.' : isObserved(checkpoint) ? 'The saved step remains.' : 'The evidence follows.'}</span>
           </h1>
         </div>
@@ -196,7 +227,7 @@ export function PresenterProof({
       </p>}
 
       <div className="mds-proof-flow">
-        <WorkerCard now={now} role="Original worker" execution={first} fallback="none yet" />
+        <SessionCard now={now} role="Original session" execution={first} fallback="none yet" />
         <span className="mds-proof-arrow" aria-hidden="true">
           <ArrowRight size={22} />
         </span>
@@ -205,6 +236,7 @@ export function PresenterProof({
             <AuroraIcon size={19} aria-hidden="true" />
             <strong>{document.checkpoint_backend.kind}</strong>
           </div>
+          <p className="mds-proof-store-table">workflow_snapshots</p>
           <dl className="mds-proof-store-rows">
             <div>
               <dt>Journey</dt>
@@ -214,6 +246,21 @@ export function PresenterProof({
               <dt>Thread</dt>
               <dd>{document.active_thread_id ?? DASH}</dd>
             </div>
+            {isObserved(checkpoint) && (
+              <>
+                <div>
+                  <dt>Snapshots</dt>
+                  <dd>{checkpoint.snapshot_count ?? DASH}</dd>
+                </div>
+                <div>
+                  <dt>Latest snapshot</dt>
+                  <dd>
+                    {checkpoint.status ?? DASH}
+                    {nextNode ? `, next ${nextNode}` : ''}
+                  </dd>
+                </div>
+              </>
+            )}
             <div>
               <dt>Hold</dt>
               <dd>
@@ -234,8 +281,14 @@ export function PresenterProof({
         <span className="mds-proof-arrow" aria-hidden="true">
           <ArrowRight size={22} />
         </span>
-        <WorkerCard now={now} role={restarted ? "Replacement worker" : "Latest execution"} execution={latest} fallback="waiting" />
+        <SessionCard now={now} role={restarted ? "Replacement session" : "Latest execution"} execution={latest} fallback="waiting" />
       </div>
+
+      {newestStop && (
+        <p className="mds-proof-stop">
+          {stopSummary(newestStop)}
+        </p>
+      )}
 
       <div className="mds-proof-tabs" role="tablist" aria-label="Evidence">
         {TABS.map(({ id, label }) => (
@@ -329,7 +382,7 @@ export function PresenterProof({
                 <div className="mds-proof-facts">
                   <Fact label="Request identity" mono value={hold.hold_request_id} />
                   <Fact label="Travel party" value={hold.travelers_count ? `${hold.travelers_count} travelers` : DASH} />
-                  <Fact label="Created by" value={hold.created_by_execution_id === first?.execution_id ? 'Original execution' : hold.created_by_execution_id === latest?.execution_id ? (first?.worker_id && latest?.worker_id && first.worker_id !== latest.worker_id ? 'Replacement execution' : 'Resumed execution') : hold.created_by_execution_id || 'Not recorded'} />
+                  <Fact label="Created by" value={hold.created_by_execution_id === first?.execution_id ? 'Original execution' : hold.created_by_execution_id === latest?.execution_id ? (restarted ? 'Replacement execution' : 'Resumed execution') : hold.created_by_execution_id || 'Not recorded'} />
                   <Fact label="Hold records in journey" value={String(hold.hold_records)} />
                   <Fact label="Confirmed" value={hold.confirmed_at ? `${shortTime(hold.confirmed_at)}, catalog inventory, no payment` : 'Not yet confirmed by the traveler'} />
                 </div>

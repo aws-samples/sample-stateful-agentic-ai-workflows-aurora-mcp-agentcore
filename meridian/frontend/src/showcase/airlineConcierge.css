@@ -420,6 +420,9 @@
 .mds-root .mds-proof-worker-id { font: var(--mds-type-title-1); letter-spacing: var(--mds-tracking-display); overflow-wrap: anywhere; }
 .mds-root .mds-proof-worker-role,
 .mds-root .mds-proof-worker-note,
+.mds-root .mds-proof-worker-vm,
+.mds-root .mds-proof-store-table,
+.mds-root .mds-proof-stop,
 .mds-root .mds-proof-worker-state,
 .mds-root .mds-proof-store-rows dt,
 .mds-root .mds-proof-store-rows dd,

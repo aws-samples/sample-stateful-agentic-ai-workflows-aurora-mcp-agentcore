@@ -126,7 +126,11 @@
 }
 
 .mds-proof-worker-note,
-.mds-proof-worker-state {
+.mds-proof-worker-state,
+.mds-proof-worker-vm,
+.mds-proof-store-table,
+.mds-proof-stop {
+  overflow-wrap: anywhere;
   color: var(--mds-label-2);
   font: var(--mds-type-footnote);
 }

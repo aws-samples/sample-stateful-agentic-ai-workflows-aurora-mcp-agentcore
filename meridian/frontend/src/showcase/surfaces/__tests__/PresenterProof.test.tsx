@@ -180,6 +180,78 @@ describe('Presenter proof', () => {
     expect(screen.getByText('Awaiting saved step')).toBeInTheDocument();
   });
 
+  describe('Runtime session cards', () => {
+    const runtimeDocument = (secondVm: string, stops?: JourneyDocument['session_stops']) => {
+      const doc = makeDocument({ session_stops: stops });
+      if (doc.executions.status !== 'observed') throw new Error('Missing fixture executions');
+      const [one, two] = doc.executions.items;
+      Object.assign(one, { runtime_session_id: 'rt-wf-aaa', microvm_id: 'vm-111111111111' });
+      Object.assign(two, { runtime_session_id: 'rt-wf-aaa', microvm_id: secondVm });
+      return doc;
+    };
+    const renderDoc = (doc: JourneyDocument) =>
+      render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+    const stop = (stopped_during: 'waiting' | 'running' | 'finished', last_step: string | null) => ({
+      status: 'observed' as const,
+      source: 'workflow_session_stops',
+      items: [{
+        runtime_session_id: 'rt-wf-aaa', outcome: 'stopped' as const,
+        stopped_at: '2026-10-07T01:00:00+00:00', stopped_during, last_step,
+      }],
+    });
+
+    it('shows the session id, microVM id, attempt and status on each card', () => {
+      renderDoc(runtimeDocument('vm-222222222222'));
+      expect(screen.getAllByText('rt-wf-aaa')).toHaveLength(2);
+      expect(screen.getByText('vm-111111111111')).toBeInTheDocument();
+      expect(screen.getByText('vm-222222222222')).toBeInTheDocument();
+      expect(screen.getByText(/attempt 2, running/)).toBeInTheDocument();
+    });
+
+    it('says the session changed when the microVM ids differ', () => {
+      renderDoc(runtimeDocument('vm-222222222222'));
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('The session changed.');
+    });
+
+    it('does not say the session changed when the same microVM resumed', () => {
+      renderDoc(runtimeDocument('vm-111111111111'));
+      expect(screen.getByRole('heading', { level: 1 })).not.toHaveTextContent('session changed');
+    });
+
+    it('falls back to worker ids when the microVM ids are null', () => {
+      renderDoc(makeDocument());
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('The session changed.');
+    });
+
+    it('shows the snapshot count, latest status and next node on the Aurora card', () => {
+      const doc = makeDocument();
+      Object.assign(doc.checkpoint, { snapshot_count: 4, status: 'committed' });
+      doc.workflow = {
+        status: 'observed', source: 'workflow_snapshots', workflow_status: 'paused',
+        next_nodes: ['availability'],
+      } as unknown as JourneyDocument['workflow'];
+      renderDoc(doc);
+      const card = screen.getByText('Snapshots').closest('div') as HTMLElement;
+      expect(card).toHaveTextContent('4');
+      expect(screen.getByText('Latest snapshot')).toBeInTheDocument();
+      expect(screen.getByText(/committed, next availability/)).toBeInTheDocument();
+    });
+
+    it.each([
+      ['waiting', 'review', 'Stopped while waiting, last step review'],
+      ['running', 'search', 'Stopped mid-run, last step search'],
+      ['finished', 'hold', 'Stopped after the run finished, last step hold'],
+    ] as const)('names a stop that landed while %s', (during, step, text) => {
+      renderDoc(runtimeDocument('vm-222222222222', stop(during, step)));
+      expect(screen.getByText(text)).toBeInTheDocument();
+    });
+
+    it('omits the stop line when session_stops is missing', () => {
+      renderDoc(runtimeDocument('vm-222222222222'));
+      expect(screen.queryByText(/^Stopped /)).toBeNull();
+    });
+  });
+
   it('explains itself when there is no journey at all', () => {
     const onRefresh = vi.fn();
     render(

@@ -50,6 +50,8 @@ export type JourneyCheckpoint = {
   parent_checkpoint_id: string | null;
   checkpoint_ns: string;
   committed_at: string | null;
+  snapshot_count?: number;
+  status?: string;
 };
 
 export type JourneyHold = {
