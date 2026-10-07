@@ -157,10 +157,10 @@ def _check_against(
             )
         raise WorkflowConflictError(
             "This recovery already has saved progress. Read its journey and resume the same "
-            "checkpoint, or start a new recovery."
+            "saved step, or start a new recovery."
         )
     if command.resume and not next_nodes(prior):
-        raise WorkflowConflictError("This workflow has no pending checkpoint to resume.")
+        raise WorkflowConflictError("This workflow has no pending saved step to resume.")
 
 
 def _traveler_confirmed(prior: Optional[Dict[str, Any]], command: WorkflowCommand) -> bool:
@@ -496,7 +496,7 @@ class WorkflowRunner:
             "resumed_from_checkpoint": prior.get("created_at"),
             "activities": activities + [_resumed_span(thread_id, resumed_nodes, restarted)],
             "response": (
-                f"Continued from the saved {', '.join(resumed_nodes)} checkpoint. "
+                f"Continued from the saved {', '.join(resumed_nodes)} step. "
                 "The summary below describes the whole journey.\n\n" + state.get("response", "")
             ),
         }

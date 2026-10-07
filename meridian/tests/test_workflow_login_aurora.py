@@ -145,7 +145,7 @@ async def test_a_resume_of_another_travelers_thread_reads_as_nothing_to_resume(l
         "INSERT INTO workflow_snapshots (storage_key, session_id, traveler_id, snapshot) "
         "VALUES (%s, %s, %s, '{\"data\": {\"state\": {}}}'::jsonb)", (key(thread), thread, DECOY))
     runner = build_workflow_runner(client=login)
-    with pytest.raises(WorkflowConflictError, match="no pending checkpoint"):
+    with pytest.raises(WorkflowConflictError, match="no pending saved step"):
         await runner.run(WorkflowCommand(query="resume", traveler_id=TRAVELER, thread_id=thread,
                                          resume=True))
 

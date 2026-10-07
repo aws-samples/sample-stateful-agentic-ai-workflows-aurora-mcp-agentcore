@@ -155,7 +155,7 @@ def _workflow_document(
         "conversation_id": folded.get("conversation_id"),
         "query": folded.get("query", ""),
         "message": (
-            "Your shortlist is saved. Resume to continue from the checkpoint."
+            "Your shortlist is saved. Resume to continue from the saved step."
             if pending else folded.get("response", "Workflow finished.")
         ),
         "workflow_status": "paused" if pending else ("resumed" if resumed else "complete"),
@@ -332,7 +332,7 @@ def _channel_source(checkpoint: Dict[str, Any], channel: str) -> str:
 
 def _selected_plan(checkpoint: Dict[str, Any], inline: Any) -> Dict[str, Any]:
     if checkpoint.get("status") != "committed":
-        return _unavailable("no committed checkpoint to read a selection from")
+        return _unavailable("no committed snapshot to read a selection from")
     intent = _channel(inline, "hold_intent") or {}
     for channel, package_id in (
         ("hold_package", _channel(inline, "hold_package")),
@@ -345,16 +345,16 @@ def _selected_plan(checkpoint: Dict[str, Any], inline: Any) -> Dict[str, Any]:
                 "source": _channel_source(checkpoint, channel),
                 "package_id": package_id,
             }
-    return _unavailable("the checkpoint carries no selected package or hold intent")
+    return _unavailable("the snapshot carries no selected package or hold intent")
 
 
 def _recommendations(checkpoint: Dict[str, Any], inline: Any) -> Dict[str, Any]:
     if checkpoint.get("status") != "committed":
-        return _unavailable("no committed checkpoint to read recommendations from")
+        return _unavailable("no committed snapshot to read recommendations from")
     channel = "packages" if _channel(inline, "packages") else "recommendations"
     items = _channel(inline, channel)
     if not items:
-        return _unavailable("the checkpoint carries no recommendation channel")
+        return _unavailable("the snapshot carries no recommendation channel")
     return {
         "status": "observed",
         "source": _channel_source(checkpoint, channel),
@@ -366,7 +366,7 @@ def _pending_decision(
     checkpoint: Dict[str, Any], inline: Any, workflow_status: Optional[str] = None
 ) -> Dict[str, Any]:
     if checkpoint.get("status") != "committed":
-        return _unavailable("no committed checkpoint to read a pending step from")
+        return _unavailable("no committed snapshot to read a pending step from")
     # Retain hold_intent for idempotent replay, but never present a completed
     # operation as a new decision merely because its intent is still saved.
     if _channel(inline, "hold_id"):
@@ -375,7 +375,7 @@ def _pending_decision(
         return _unavailable("the workflow has finished with no pending hold decision")
     intent = _channel(inline, "hold_intent")
     if not intent:
-        return _unavailable("the checkpoint carries no pending hold intent")
+        return _unavailable("the snapshot carries no pending hold intent")
     return {
         "status": "observed",
         "source": _channel_source(checkpoint, "hold_intent"),
@@ -407,16 +407,16 @@ async def _conversation(q, thread_id: Optional[str]) -> Dict[str, Any]:
 
 
 def _hold_absent(inline: Any) -> Dict[str, Any]:
-    """Explain a missing hold row without contradicting the checkpoint.
+    """Explain a missing hold row without contradicting the snapshot.
 
-    Releasing a demo booking deletes its rows, while the checkpoint still names
+    Releasing a demo booking deletes its rows, while the snapshot still names
     the hold the workflow placed. Saying none was placed would be false.
     """
     hold_id = _channel(inline, "hold_id")
     if not hold_id:
         return _unavailable("no hold has been placed for this journey")
     return {
-        **_unavailable(f"the checkpoint names hold {hold_id}, but Aurora has no booking for it"),
+        **_unavailable(f"the snapshot names hold {hold_id}, but Aurora has no booking for it"),
         "checkpoint_hold_id": hold_id,
     }
 

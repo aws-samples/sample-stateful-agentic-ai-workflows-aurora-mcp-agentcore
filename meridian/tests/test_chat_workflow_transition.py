@@ -156,7 +156,8 @@ def test_phase4_demo_query_returns_workflow_handoff(monkeypatch) -> None:
     assert [product.name for product in response.products] == [
         "Tokyo Indie Neighborhood Walk"
     ]
-    assert any(a.title == "Checkpointed workflow required" for a in response.activities)
+    assert any(a.title == "Saved-step workflow required" for a in response.activities)
+    assert all("checkpoint" not in a.title.lower() for a in response.activities)
 
 
 @pytest.mark.parametrize("message", [

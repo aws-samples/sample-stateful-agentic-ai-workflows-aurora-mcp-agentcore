@@ -136,7 +136,8 @@ async def test_resume_on_another_worker_holds_once_and_reports_the_restart():
     assert result["resumed_after_restart"] is True
     assert result["resumed_from_checkpoint"]
     assert result["hold_id"] == world.gateway.calls[0]["bookingId"]
-    assert result["response"].startswith("Continued from the saved availability checkpoint.")
+    assert result["response"].startswith("Continued from the saved availability step.")
+    assert "checkpoint" not in result["response"].lower()
     assert result["activities"][-1]["title"] == "Workflow resumed from a saved step"
     assert [e["status"] for e in world.lease.executions] == ["paused", "succeeded"]
 
@@ -160,8 +161,10 @@ async def test_another_traveler_cannot_resume_or_restart_the_thread():
 async def test_saved_progress_cannot_be_overwritten_by_a_fresh_start():
     world = World()
     await world.runner().run(command())
-    with pytest.raises(WorkflowConflictError, match="already has saved progress"):
+    with pytest.raises(WorkflowConflictError, match="already has saved progress") as raised:
         await world.runner().run(command())
+    assert "checkpoint" not in str(raised.value).lower()
+    assert "saved step" in str(raised.value)
 
 
 async def test_a_finished_run_has_nothing_to_resume():
@@ -569,7 +572,7 @@ async def test_a_resume_decides_from_the_snapshot_saved_after_its_claim():
     statuses_before = len(world.released_statuses("t-race"))
     world.serve_reads("t-race", [paused, finished])
 
-    with pytest.raises(WorkflowConflictError, match="no pending checkpoint"):
+    with pytest.raises(WorkflowConflictError, match="no pending saved step"):
         await world.runner().run(command(RECOVERY, resume=True, thread="t-race"))
     assert len(world.gateway.calls) == calls_before
     released = world.released_statuses("t-race")

@@ -296,7 +296,7 @@ it('says a checkpointed hold is no longer in Aurora instead of claiming none was
   const doc = makeDocument({
     hold: {
       status: 'unavailable',
-      reason: 'the checkpoint names hold HLD-gone, but Aurora has no booking for it',
+      reason: 'the snapshot names hold HLD-gone, but Aurora has no booking for it',
       checkpoint_hold_id: 'HLD-gone',
     },
   });

@@ -1944,7 +1944,7 @@ async def chat(
                         products = tokyo_products
                 activities.append(create_activity(
                     activity_type="reasoning",
-                    title="Checkpointed workflow required",
+                    title="Saved-step workflow required",
                     details=(
                         "Production mode recalled traveler context and found candidate "
                         "trips, but this prompt has dependent planning steps. "
