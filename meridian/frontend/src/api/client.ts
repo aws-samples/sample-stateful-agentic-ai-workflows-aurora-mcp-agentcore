@@ -266,7 +266,8 @@ export async function fetchRlsProbe(
 export interface SessionReceiptLine {
   label: string;
   table: string;
-  count: number;
+  /** null when Aurora could not answer; never a stand-in for zero. */
+  count: number | null;
   detail?: string | null;
   scoped: boolean;
 }

@@ -97,7 +97,7 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
                   <span
                     className={`mds-authz-decision ${decisionToneClass(data.negative_control.decision)}`}
                   >
-                    {data.negative_control.decision.toUpperCase().replace('_', ' ')}
+                    {data.negative_control.decision.toUpperCase().replace(/_/g, ' ')}
                   </span>
                   {data.negative_control.display_name ?? 'the decoy traveler'}
                 </strong>

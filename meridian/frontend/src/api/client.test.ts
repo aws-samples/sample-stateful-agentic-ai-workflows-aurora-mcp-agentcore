@@ -37,6 +37,20 @@ describe('bounded evidence and profile operations', () => {
   });
 });
 
+describe('session receipt', () => {
+  it('keeps an unavailable count as null rather than zero', async () => {
+    const body = {
+      traveler_id: 't', since: 'last 90 minutes', durable_checkpoints: false,
+      lines: [{ label: 'Authorization decisions', table: 'traveler_access_audit',
+        count: null, detail: 'audit counts unavailable (ref abc)', scoped: false }],
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })));
+    const receipt = await fetchSessionReceipt();
+    const count: number | null = receipt.lines[0].count;
+    expect(count).toBeNull();
+  });
+});
+
 describe('stopRuntimeSession', () => {
   it('POSTs to the journey stop-session route', async () => {
     const body = { stopped: true, runtime_session_id: 'rt-wf-1', outcome: 'stopped',

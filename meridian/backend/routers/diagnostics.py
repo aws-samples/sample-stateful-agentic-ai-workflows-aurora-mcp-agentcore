@@ -26,7 +26,7 @@ AWS docs:
   - PostgreSQL RLS: https://www.postgresql.org/docs/current/ddl-rowsecurity.html
 """
 
-from typing import List, Optional, Sequence
+from typing import Any, List, NamedTuple, Optional, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -251,7 +251,8 @@ CHECKPOINT_TABLES = ("workflow_snapshots",)
 class ReceiptLine(BaseModel):
     label: str
     table: str
-    count: int
+    # None means Aurora could not answer; it is never a stand-in for zero.
+    count: Optional[int]
     detail: Optional[str] = None
     scoped: bool = False
 
@@ -316,18 +317,25 @@ async def _load_policies(db, tables: Sequence[str]) -> List[RlsPolicy]:
     return policies
 
 
+class Probed(NamedTuple):
+    """An answer from Aurora, or None plus the log reference of why there is none."""
+
+    value: Optional[Any]
+    ref: Optional[str] = None
+
+
 async def _admin_count_or_none(
     db, kind: str, *, window: Optional[str] = None, key: Optional[str] = None
-) -> Optional[int]:
-    """A cross-traveler count, or None when Aurora cannot answer it."""
+) -> Probed:
+    """A cross-traveler count, or no value and a log reference when Aurora cannot answer."""
     try:
-        return await admin_count(db, kind, window=window, key=key)
-    except Exception:  # noqa: BLE001 - an unavailable count is an answer, not a fault
-        return None
+        return Probed(await admin_count(db, kind, window=window, key=key))
+    except Exception:  # noqa: BLE001 - an unavailable count degrades its line, not the receipt
+        return Probed(None, log_exception(f"session_receipt_{kind}"))
 
 
-async def _tables_exist(db, tables: Sequence[str]) -> bool:
-    """True when every named table exists; False when Aurora cannot say.
+async def _tables_exist(db, tables: Sequence[str]) -> Probed:
+    """True when every named table exists, False when one is absent, None when unanswerable.
 
     ``to_regclass`` needs no privilege on the table.
     """
@@ -337,10 +345,43 @@ async def _tables_exist(db, tables: Sequence[str]) -> bool:
                 "SELECT to_regclass(%s) IS NOT NULL AS present", (f"public.{table}",)
             )
             if not rows or rows[0]["present"] is not True:
-                return False
-    except Exception:  # noqa: BLE001 - an unanswerable probe is an answer, not a fault
-        return False
-    return True
+                return Probed(False)
+    except Exception:  # noqa: BLE001 - an unanswerable probe degrades its line, not the receipt
+        return Probed(None, log_exception("session_receipt_tables_exist"))
+    return Probed(True)
+
+
+def _decision_line(allow: Probed, deny: Probed) -> ReceiptLine:
+    """The line that proves denies were audited; unknown is never rendered as zero."""
+    if allow.value is None or deny.value is None:
+        ref = allow.ref or deny.ref
+        return ReceiptLine(
+            label="Authorization decisions",
+            table="traveler_access_audit",
+            count=None,
+            detail=f"audit counts unavailable (ref {ref})",
+        )
+    return ReceiptLine(
+        label="Authorization decisions",
+        table="traveler_access_audit",
+        count=allow.value + deny.value,
+        detail=f"{allow.value} allow, {deny.value} deny",
+    )
+
+
+def _checkpoint_detail(exists: Probed, total: Probed, thread_id: Optional[str]) -> str:
+    """What to say about the snapshot rows, distinguishing absent, unknown and zero."""
+    if exists.value is None:
+        return f"snapshot table could not be checked (ref {exists.ref})"
+    if not exists.value:
+        return "no workflow snapshot table in this database, so nothing was written"
+    if thread_id is None:
+        return "no workflow thread ran in this session"
+    if total.value is None:
+        return f"workflow snapshots for thread {thread_id} could not be counted (ref {total.ref})"
+    if total.value:
+        return f"workflow position externalized into Aurora for thread {thread_id}"
+    return f"thread {thread_id} wrote no workflow snapshot rows"
 
 
 @router.post("/session-receipt", response_model=SessionReceiptResponse)
@@ -360,19 +401,18 @@ async def session_receipt(
     # function rather than read through the backend login's own rights.
     allow = await _admin_count_or_none(db, "audit_allow", window=window)
     deny = await _admin_count_or_none(db, "audit_deny", window=window)
-    lines.append(ReceiptLine(
-        label="Authorization decisions",
-        table="traveler_access_audit",
-        count=(allow or 0) + (deny or 0),
-        detail=f"{allow or 0} allow, {deny or 0} deny",
-    ))
+    lines.append(_decision_line(allow, deny))
 
     audited = await _admin_count_or_none(db, "agent_audit", window=window)
     lines.append(ReceiptLine(
         label="RLS-scoped operations audited",
         table="agent_audit_log",
-        count=audited or 0,
-        detail="workload identity linked to the traveler scope it ran under",
+        count=audited.value,
+        detail=(
+            "workload identity linked to the traveler scope it ran under"
+            if audited.value is not None
+            else f"could not be counted (ref {audited.ref})"
+        ),
     ))
 
     # Traveler-scoped counts run under RLS, so the receipt obeys the same rule
@@ -440,10 +480,10 @@ async def session_receipt(
     # the one number on this receipt that has to be beyond argument.
     # "No thread to count" and "no such table" are different answers, so the
     # relation is probed first and the count follows only for a real thread.
-    checkpoint_total: Optional[int] = 0
     thread_id = request.conversation_id
     checkpoints_exist = await _tables_exist(db, CHECKPOINT_TABLES)
-    if checkpoints_exist and thread_id:
+    checkpoint_total = Probed(0)
+    if checkpoints_exist.value and thread_id:
         checkpoint_total = await _admin_count_or_none(db, "workflow_snapshots", key=thread_id)
 
     from backend.agents.phase_05_workflow.service import workflow_store_status
@@ -451,22 +491,13 @@ async def session_receipt(
     backend_status = workflow_store_status()
     backend_kind = str(backend_status.get("kind") or "not initialized")
     backend_durable = bool(backend_status.get("durable"))
-
-    if not checkpoints_exist:
-        checkpoint_detail = "no workflow snapshot table in this database, so nothing was written"
-    elif thread_id is None:
-        checkpoint_detail = "no workflow thread ran in this session"
-    elif checkpoint_total is None:
-        checkpoint_detail = f"workflow snapshots for thread {thread_id} could not be counted"
-    elif checkpoint_total:
-        checkpoint_detail = f"workflow position externalized into Aurora for thread {thread_id}"
-    else:
-        checkpoint_detail = f"thread {thread_id} wrote no workflow snapshot rows"
+    unknown = checkpoints_exist.value is None or checkpoint_total.value is None
+    checkpoint_detail = _checkpoint_detail(checkpoints_exist, checkpoint_total, thread_id)
 
     lines.append(ReceiptLine(
         label="Workflow snapshot rows",
         table=", ".join(CHECKPOINT_TABLES),
-        count=checkpoint_total or 0,
+        count=None if unknown else checkpoint_total.value,
         detail=checkpoint_detail,
     ))
 
@@ -475,7 +506,7 @@ async def session_receipt(
         since=f"last {request.window_minutes} minutes",
         lines=lines,
         authorization_subject=authorization.subject_id if authorization else None,
-        durable_checkpoints=checkpoints_exist and bool(checkpoint_total),
+        durable_checkpoints=bool(checkpoints_exist.value and checkpoint_total.value),
         checkpoint_backend=backend_kind,
         checkpoint_backend_durable=backend_durable,
     )

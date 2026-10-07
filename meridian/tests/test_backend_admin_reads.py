@@ -5,6 +5,7 @@ report zero. These tests pin that every unscoped total goes through ``backend_ad
 that no unscoped SELECT over a traveler table remains in the two endpoints.
 """
 
+import ast
 import contextlib
 import re
 from pathlib import Path
@@ -112,11 +113,7 @@ async def test_the_rls_probe_defaults_to_the_authenticated_traveler(db):
     assert response.negative_control["requested_traveler_id"] == "trv_demo_decoy"
     assert "decoy" in response.negative_control["reason"]
     assert response.negative_control["audit_id"] is None
-    assert fake_checks(db) == 1
-
-
-def fake_checks(db):
-    return db.check_traveler_authorization.await_count
+    assert db.check_traveler_authorization.await_count == 1
 
 
 async def test_the_session_receipt_counts_governance_through_the_function(db):
@@ -159,7 +156,10 @@ async def test_an_unavailable_count_degrades_its_line_and_not_the_receipt(monkey
     monkeypatch.setattr(diagnostics, "get_agentcore_identity", lambda: IDENTITY)
     response = await diagnostics.session_receipt(diagnostics.SessionReceiptRequest(), PRINCIPAL)
     line = next(line for line in response.lines if line.table == "traveler_access_audit")
-    assert line.count == 0 and line.detail == "0 allow, 0 deny"
+    assert line.count is None
+    assert re.fullmatch(r"audit counts unavailable \(ref \S+\)", line.detail)
+    assert "RuntimeError" not in line.detail and "does not exist" not in line.detail
+    assert "0 allow" not in line.detail
 
 
 def _patch(monkeypatch, fake):
@@ -173,7 +173,9 @@ async def test_a_failing_snapshot_count_degrades_its_line_and_not_the_receipt(mo
     request = diagnostics.SessionReceiptRequest(conversation_id="thread-1")
     response = await diagnostics.session_receipt(request, PRINCIPAL)
     line = next(line for line in response.lines if line.table == "workflow_snapshots")
-    assert line.count == 0 and "could not be counted" in line.detail
+    assert line.count is None
+    assert re.search(r"could not be counted \(ref \S+\)", line.detail)
+    assert "does not exist" not in line.detail
     assert response.durable_checkpoints is False
 
 
@@ -183,8 +185,18 @@ async def test_a_failing_table_probe_degrades_the_receipt_and_not_the_endpoint(m
     request = diagnostics.SessionReceiptRequest(conversation_id="thread-1")
     response = await diagnostics.session_receipt(request, PRINCIPAL)
     line = next(line for line in response.lines if line.table == "workflow_snapshots")
-    assert line.count == 0 and "no workflow snapshot table" in line.detail
+    assert line.count is None
+    assert re.search(r"could not be checked \(ref \S+\)", line.detail)
+    assert "no workflow snapshot table" not in line.detail
+    assert "Data API unavailable" not in line.detail
     assert response.durable_checkpoints is False
+
+
+async def test_an_unavailable_agent_audit_count_is_not_a_zero(monkeypatch):
+    _patch(monkeypatch, RecordingDb(missing=("agent_audit",)))
+    response = await diagnostics.session_receipt(diagnostics.SessionReceiptRequest(), PRINCIPAL)
+    line = next(line for line in response.lines if line.table == "agent_audit_log")
+    assert line.count is None and re.search(r"\(ref \S+\)", line.detail)
 
 
 MIGRATION = Path(__file__).parents[1] / "scripts" / "migrations" / "018_service_logins.sql"
@@ -196,14 +208,33 @@ def _function_body():
     return sql[start:sql.index("REVOKE ALL ON FUNCTION backend_admin_count", start)]
 
 
-def _kinds_in_source(path):
-    source = Path(path).read_text()
-    return set(re.findall(r'admin_count(?:_or_none)?\(\s*db,\s*"([a-z_]+)"', source))
+def _function_branch_kinds():
+    body = _function_body()
+    body = body[:body.index("END;")]
+    kinds = set()
+    for equal, members in re.findall(
+        r"\b(?:ELS)?IF\s+p_kind\s*(?:=\s*'(\w+)'|IN\s*\(([^)]*)\))", body
+    ):
+        kinds.update([equal] if equal else re.findall(r"'(\w+)'", members))
+    return kinds
+
+
+def _kinds_asked_in_source(path):
+    asked = set()
+    for node in ast.walk(ast.parse(Path(path).read_text())):
+        if (
+            isinstance(node, ast.Call)
+            and getattr(node.func, "id", None) in {"admin_count", "_admin_count_or_none"}
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+        ):
+            asked.add(node.args[1].value)
+    return asked
 
 
 def test_every_kind_the_backend_asks_for_is_a_branch_of_the_function():
-    body = _function_body()
-    branches = set(re.findall(r"'([a-z_]+)'", body))
-    asked = set(RLS_BASELINE_KINDS.values()) | _kinds_in_source(diagnostics.__file__)
-    assert {"audit_allow", "audit_deny", "agent_audit", "workflow_snapshots"} <= asked
-    assert asked - branches == set()
+    branches = _function_branch_kinds()
+    literals = _kinds_asked_in_source(diagnostics.__file__)
+    assert literals == {"audit_allow", "audit_deny", "agent_audit", "workflow_snapshots"}
+    asked = set(RLS_BASELINE_KINDS.values()) | literals
+    assert asked <= branches, f"kinds the function lacks: {sorted(asked - branches)}"
