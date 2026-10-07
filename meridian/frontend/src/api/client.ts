@@ -11,7 +11,7 @@ import {
 } from './request';
 import { getAccessToken, setBearerOrigin } from '../auth/accessToken';
 import { CURRENT_TRAVELER } from './currentTraveler';
-import { TokenExpiredError, readChatStream, type ChatStreamEvent } from './chatStream';
+import { SignInRequiredError, TokenExpiredError, readChatStream, type ChatStreamEvent } from './chatStream';
 import type {
   BookingRequest,
   BookingResponse,
@@ -131,6 +131,11 @@ async function streamChatMessage(
     try {
       return await readChatStream(response, onEvent, signal);
     } catch (error) {
+      if (error instanceof SignInRequiredError) {
+        await refreshAfterStreamExpiry(refusedToken);
+        endSessionAfterStreamExpiry();
+        throw new Error(SESSION_ENDED_MESSAGE);
+      }
       if (!(error instanceof TokenExpiredError)) throw error;
       if (error.contentDelivered) {
         void refreshAfterStreamExpiry(refusedToken);

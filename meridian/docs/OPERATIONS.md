@@ -713,6 +713,7 @@ explains why App Runner needs this.
 | The API returns 401 "A valid Meridian sign-in is required." | The token failed a check: expired, another app client, an ID token, or no `traveler_id` claim. Sign in again; the backend log names the reason code. |
 | The API returns 503 "Sign-in verification is temporarily unavailable." | The backend could not fetch the pool's signing keys. Check its outbound network and `MERIDIAN_COGNITO_REGION`. |
 | The decoy signs in but its records are refused | Expected until B2. Workload bindings are `aws_iam` grants bound to Jordan Morgan only. See [Sign-in and who is calling](#sign-in-and-who-is-calling). |
+| The API returns 401 with code `sign_in_required` | No usable token reached the API. The browser tries one refresh, then signs the traveler out and shows the sign-in screen; it does not resend the request. |
 | The API returns 401 with code `token_expired` | The caller's access token ran out, possibly during a long workflow. Sign in again and repeat the request; a paused workflow resumes from its last saved step. See [Switch the AgentCore identity mode](#switch-the-agentcore-identity-mode). |
 | The API returns 401 with code `sign_in_required` | In `jwt` mode a request reached an AgentCore client with no caller token. Send the Cognito access token in `Authorization: Bearer`. |
 | `stop-session` returns 409 | The journey has no paused or running workflow session, or its session was already stopped. Read the journey before trying again. |

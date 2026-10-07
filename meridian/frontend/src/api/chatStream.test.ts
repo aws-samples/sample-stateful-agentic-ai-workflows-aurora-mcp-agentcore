@@ -76,3 +76,14 @@ describe('an expired token reported inside the stream', () => {
     expect(error).toMatchObject({ name: 'TokenExpiredError', contentDelivered: true });
   });
 });
+
+describe('a missing sign-in reported inside the stream', () => {
+  const signInRequired = frame({ type: 'error', code: 'sign_in_required', message: 'eyJ.secret.token' });
+
+  it('is its own typed failure, not a token expiry', async () => {
+    const error = await readChatStream(response([encoder.encode(signInRequired)]), vi.fn()).catch(e => e);
+    expect(error).toMatchObject({ name: 'SignInRequiredError' });
+    expect(error.name).not.toBe('TokenExpiredError');
+    expect(error.message).not.toContain('eyJ');
+  });
+});

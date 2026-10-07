@@ -13,6 +13,14 @@ export class TokenExpiredError extends Error {
   }
 }
 
+/** The backend ended the stream because the request carried no usable sign-in. */
+export class SignInRequiredError extends Error {
+  constructor() {
+    super('Sign-in is required.');
+    this.name = 'SignInRequiredError';
+  }
+}
+
 /** Read real server events; a closed connection is not a completed answer. */
 export async function readChatStream(
   response: Response,
@@ -53,6 +61,7 @@ export async function readChatStream(
         else if (!line && data.length) {
           const event = JSON.parse(data.join('\n'));
           data = [];
+          if (event.type === 'error' && event.code === 'sign_in_required') throw new SignInRequiredError();
           if (event.type === 'error' && event.code === 'token_expired') throw new TokenExpiredError(contentDelivered);
           if (event.type === 'error') throw new Error(typeof event.message === 'string' ? event.message : 'The response was interrupted.');
           if (event.type === 'complete') {

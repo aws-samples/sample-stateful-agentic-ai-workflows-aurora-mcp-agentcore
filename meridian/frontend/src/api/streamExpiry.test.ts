@@ -6,6 +6,7 @@ import { SESSION_ENDED_MESSAGE, STREAM_REFRESHED_MESSAGE, setUnauthorizedHandler
 const encoder = new TextEncoder();
 const frame = (value: unknown) => `data: ${JSON.stringify(value)}\n\n`;
 const expired = frame({ type: 'error', code: 'token_expired', message: 'eyJ.leaked.jwt' });
+const signInRequired = frame({ type: 'error', code: 'sign_in_required', message: 'eyJ.leaked.jwt' });
 const complete = frame({ type: 'complete', response: { message: 'Done', activities: [] } });
 const stream = (...frames: string[]) => new Response(encoder.encode(frames.join('')), {
   headers: { 'Content-Type': 'text/event-stream' },
@@ -88,5 +89,27 @@ describe('a token that expires during a streamed turn', () => {
     const error = await sendChatMessage(request, undefined, vi.fn()).catch(e => e);
     expect(error.message).not.toMatch(/eyJ|leaked|old\.jwt|new\.jwt/);
     expect(STREAM_REFRESHED_MESSAGE).not.toMatch(/[·–—]|demo/i);
+  });
+
+  it('ends the session without a retry when the stream says sign-in is required', async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => stream(signInRequired));
+    vi.stubGlobal('fetch', fetchMock);
+    const hooks = handler();
+    const error = await sendChatMessage(request, undefined, vi.fn()).catch(e => e);
+    expect(error.message).toBe(SESSION_ENDED_MESSAGE);
+    expect(error.message).not.toMatch(/eyJ|leaked/);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(hooks.refresh).toHaveBeenCalledOnce();
+    expect(hooks.signOut).toHaveBeenCalledOnce();
+  });
+
+  it('ends the session after content too, with the plain sign-in message', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(stream(frame({ type: 'delta', text: 'Booking' }), signInRequired));
+    vi.stubGlobal('fetch', fetchMock);
+    const hooks = handler();
+    const error = await sendChatMessage(request, undefined, vi.fn()).catch(e => e);
+    expect(error.message).toBe(SESSION_ENDED_MESSAGE);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(hooks.signOut).toHaveBeenCalledOnce();
   });
 });

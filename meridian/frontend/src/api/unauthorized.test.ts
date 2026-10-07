@@ -142,3 +142,53 @@ describe('a 401 from the API', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('the code in a 401 body', () => {
+  const coded = (code: string) => reply(401, { detail: 'Refused.', code });
+
+  it('token_expired refreshes once and retries with the new token', async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => (
+      new Headers(init?.headers).get('Authorization') === 'Bearer new.jwt'
+        ? reply(200, { ok: true }) : coded('token_expired')));
+    vi.stubGlobal('fetch', fetchMock);
+    const hooks = handler(() => { token = 'new.jwt'; });
+    await expect(requestJson(`${API}/api/me`)).resolves.toEqual({ ok: true });
+    expect(hooks.refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(hooks.signOut).not.toHaveBeenCalled();
+  });
+
+  it('sign_in_required tries one refresh, signs out and never resends', async () => {
+    const fetchMock = vi.fn(async () => coded('sign_in_required'));
+    vi.stubGlobal('fetch', fetchMock);
+    const hooks = handler(() => { token = 'new.jwt'; });
+    await expect(requestJson(`${API}/api/me`)).rejects.toThrow('Your session ended. Sign in again.');
+    expect(hooks.refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(hooks.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('sign_in_required signs out once for concurrent requests', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => coded('sign_in_required')));
+    const hooks = handler(() => { token = 'new.jwt'; });
+    await Promise.allSettled([requestJson(`${API}/api/a`), requestJson(`${API}/api/b`)]);
+    expect(hooks.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('sign_in_required still signs out when the refresh fails', async () => {
+    const fetchMock = vi.fn(async () => coded('sign_in_required'));
+    vi.stubGlobal('fetch', fetchMock);
+    const hooks = handler(() => { throw new Error('network'); });
+    await expect(requestJson(`${API}/api/me`)).rejects.toThrow('Your session ended');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(hooks.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it('a 401 with no code keeps the refresh-and-retry behavior', async () => {
+    const fetchMock = serverThatWantsToken('new.jwt');
+    const hooks = handler(() => { token = 'new.jwt'; });
+    await expect(requestJson(`${API}/api/me`)).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(hooks.refresh).toHaveBeenCalledTimes(1);
+  });
+});

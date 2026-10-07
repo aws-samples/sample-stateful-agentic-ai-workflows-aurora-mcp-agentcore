@@ -88,9 +88,20 @@ export function endSessionAfterStreamExpiry(): void {
   if (unauthorized) endSession(unauthorized);
 }
 
+/** The backend sends code sign_in_required when no usable token reached it; a refresh cannot fix that. */
+async function saysSignInRequired(response: Response): Promise<boolean> {
+  try {
+    const body = await response.clone().json();
+    return body?.code === 'sign_in_required';
+  } catch {
+    return false;
+  }
+}
+
 /**
  * fetch with the bearer token. A 401 on a request that carried our token refreshes the session
- * once and sends the request once more; a second 401 signs out. It never loops.
+ * once and sends the request once more; a second 401 signs out. A 401 coded sign_in_required
+ * gets the one refresh attempt and then signs out without a resend. It never loops.
  */
 export async function authorizedFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const send = () => {
@@ -103,7 +114,10 @@ export async function authorizedFetch(url: string, init: RequestInit = {}): Prom
   const handler = unauthorized;
   const sent = new Headers(first.headers).get('Authorization');
   if (response.status !== 401 || !handler || !sent || callerSetAuthorization) return response;
-  if (!await refreshOnce(handler, sent)) throw new Error(SESSION_ENDED_MESSAGE);
+  const signInRequired = await saysSignInRequired(response);
+  const refreshed = await refreshOnce(handler, sent);
+  if (signInRequired) endSession(handler);
+  if (signInRequired || !refreshed) throw new Error(SESSION_ENDED_MESSAGE);
   const retry = await send().promise;
   if (retry.status === 401) {
     endSession(handler);
