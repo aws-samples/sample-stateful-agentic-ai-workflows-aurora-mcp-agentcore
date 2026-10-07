@@ -102,6 +102,8 @@ def test_get_package_details_reads_availability(config, monkeypatch):
     assert result["package"]["availability"] == {"7 nights": 4}
     assert "Tokyo" in result["summary"]
     assert "4 places" in result["summary"]
+    assert "\u00b7" not in result["summary"]
+    assert result["summary"].startswith("Tokyo, ")
 
 
 def test_hold_refuses_when_the_workload_has_no_grant(config, monkeypatch):

@@ -18,6 +18,8 @@ SCANNED = (
     "backend/agents/phase_05_workflow/*.py",
     "meridian_agentcore/app/MeridianConcierge/turn_trace.py",
     "meridian_agentcore/app/MeridianConcierge/main.py",
+    # The Gateway Lambda summaries land in the trace "result" field.
+    "meridian_agentcore/agentcore/gateway_targets/**/*.py",
 )
 
 
@@ -53,7 +55,7 @@ def _dotted_literals(source: str) -> list[int]:
 
 def test_span_text_emitters_have_no_middle_dot():
     files = _scanned_files()
-    assert len(files) >= 12
+    assert len(files) >= 14
     offences = [
         f"{path.relative_to(ROOT)}:{line}"
         for path in files

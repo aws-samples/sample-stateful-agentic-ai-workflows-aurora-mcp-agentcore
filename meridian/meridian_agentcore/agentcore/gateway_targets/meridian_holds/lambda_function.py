@@ -194,7 +194,7 @@ def get_package_details(args: dict) -> dict:
     open_slots = ", ".join(f"{k}: {v} places" for k, v in availability.items())
     return {
         "package": package,
-        "summary": f"{package.get('name')} · {open_slots or 'no published durations'}",
+        "summary": f"{package.get('name')}, {open_slots or 'no published durations'}",
     }
 
 
