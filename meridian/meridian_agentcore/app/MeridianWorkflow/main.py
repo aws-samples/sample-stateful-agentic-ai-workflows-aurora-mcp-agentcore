@@ -24,7 +24,8 @@ app = BedrockAgentCoreApp()
 async def invoke(payload, context=None):
     """Run one workflow turn and stream its events as JSON."""
     session_id = getattr(context, "session_id", None)
-    async for event in workflow_turn(payload, session_id=session_id):
+    headers = getattr(context, "request_headers", None)
+    async for event in workflow_turn(payload, session_id=session_id, headers=headers):
         yield json.dumps(event, ensure_ascii=False)
 
 

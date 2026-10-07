@@ -12,8 +12,12 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Callable, Dict, Optional, Tuple
+from typing import Any, AsyncIterator, Callable, Dict, Mapping, Optional, Tuple
 
+from backend.agentcore.auth_mode import jwt_mode
+from backend.agentcore.caller_claims import CallerClaimsError, traveler_from_token
+from backend.agentcore.caller_credential import bearer_from_headers, bind_caller_token
+from backend.agentcore.errors import CallerTokenExpired, CallerTokenMissing
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
 from backend.agents.phase_05_workflow.runner import (
     WorkflowCommand,
@@ -38,6 +42,8 @@ RESULT_KEYS = (
     "resumed_after_restart", "resumed_from_checkpoint", "execution_id", "worker_instance_id",
 )
 ERROR_CODES: Tuple[Tuple[type, str], ...] = (
+    (CallerTokenExpired, "token_expired"),
+    (CallerTokenMissing, "authorization"),
     (WorkflowRequestError, "request"),
     (WorkflowAuthorizationError, "authorization"),
     (PermissionError, "authorization"),
@@ -60,22 +66,44 @@ class TravelerContext:
     traveler_id: str
 
 
-def resolve_traveler(payload: Dict[str, Any], session_id: Optional[str]) -> TravelerContext:
+def resolve_traveler(
+    payload: Dict[str, Any], session_id: Optional[str], headers: Optional[Mapping[str, str]] = None
+) -> TravelerContext:
     """Decide which traveler this turn acts for.
 
-    In project A the payload's traveler is trusted. Only principals with
-    InvokeAgentRuntime on this Runtime can send one: the backend's App Runner role,
-    after it authenticated the caller, and the owner's admin credentials. Project B
-    replaces this function with the verified JWT claim.
+    In ``iam`` mode the payload's traveler is trusted, as in project A: only principals with
+    InvokeAgentRuntime on this Runtime can send one. In ``jwt`` mode the traveler is the
+    ``traveler_id`` claim of the access token the Runtime forwarded in ``Authorization`` (the
+    Runtime's JWT authorizer verified it), and a payload that names anyone else is refused.
 
     Args:
         payload: The Runtime payload.
-        session_id: The Runtime session id, unused until project B.
+        session_id: The Runtime session id, unused.
+        headers: The request headers the Runtime allowlisted, or None.
 
     Raises:
-        WorkflowRequestError: The payload names no traveler.
+        WorkflowRequestError: In ``iam`` mode, the payload names no traveler.
+        WorkflowAuthorizationError: In ``jwt`` mode, there is no usable token or the payload names
+            a different traveler than the token.
+        CallerTokenExpired: In ``jwt`` mode, the token has expired or is about to.
     """
-    return TravelerContext(traveler_id=_text(payload, "traveler_id"))
+    if not jwt_mode():
+        return TravelerContext(traveler_id=_text(payload, "traveler_id"))
+    token = bearer_from_headers(headers)
+    if token is None:
+        raise WorkflowAuthorizationError(
+            "No signed-in caller: the Runtime received no bearer token."
+        )
+    try:
+        verified = traveler_from_token(token)
+    except CallerClaimsError as exc:
+        raise WorkflowAuthorizationError(str(exc)) from exc
+    named = payload.get("traveler_id")
+    if named is not None and named != verified:
+        raise WorkflowAuthorizationError(
+            "The request names a different traveler than the signed-in caller."
+        )
+    return TravelerContext(traveler_id=verified)
 
 
 def _text(payload: Dict[str, Any], key: str) -> str:
@@ -85,15 +113,19 @@ def _text(payload: Dict[str, Any], key: str) -> str:
     return value
 
 
-def parse_turn(payload: Any, session_id: Optional[str]) -> Optional[WorkflowCommand]:
+def parse_turn(
+    payload: Any, session_id: Optional[str], headers: Optional[Mapping[str, str]] = None
+) -> Optional[WorkflowCommand]:
     """Return the command a payload asks for, or None for a ping.
 
     Args:
         payload: The Runtime payload, of any type.
         session_id: The Runtime session id.
+        headers: The request headers the Runtime allowlisted, or None.
 
     Raises:
         WorkflowRequestError: The payload is not a usable ``workflow_turn``.
+        WorkflowAuthorizationError, CallerTokenExpired: See :func:`resolve_traveler`.
     """
     if not isinstance(payload, dict) or payload.get("event") != WORKFLOW_EVENT:
         raise WorkflowRequestError(f"send event {WORKFLOW_EVENT!r}; nothing else runs here")
@@ -110,7 +142,7 @@ def parse_turn(payload: Any, session_id: Optional[str]) -> Optional[WorkflowComm
         raise WorkflowRequestError("review_only must be true or false")
     return WorkflowCommand(
         query=_text(payload, "query"),
-        traveler_id=resolve_traveler(payload, session_id).traveler_id,
+        traveler_id=resolve_traveler(payload, session_id, headers).traveler_id,
         thread_id=_text(payload, "thread_id"),
         resume=mode == "resume",
         travelers_count=payload.get("travelers_count", 1),
@@ -148,6 +180,7 @@ async def workflow_turn(
     payload: Any,
     *,
     session_id: Optional[str],
+    headers: Optional[Mapping[str, str]] = None,
     runner_factory: RunnerFactory = default_runner,
     heartbeat_seconds: float = HEARTBEAT_SECONDS,
 ) -> AsyncIterator[Dict[str, Any]]:
@@ -156,6 +189,7 @@ async def workflow_turn(
     Args:
         payload: The Runtime payload.
         session_id: The AgentCore Runtime session id.
+        headers: The request headers the Runtime allowlisted (``Authorization`` in ``jwt`` mode).
         runner_factory: Builds the runner for this worker id.
         heartbeat_seconds: Gap between heartbeat events while the run works.
 
@@ -163,9 +197,12 @@ async def workflow_turn(
         Heartbeats, then one result or one error.
     """
     worker_id = f"{session_id or 'local'}/{MICROVM_ID}"
+    # The Gateway client below this point forwards the caller's token. Tasks started after this
+    # line, including the run, share it.
+    bind_caller_token(bearer_from_headers(headers) if jwt_mode() else None)
     try:
-        command = parse_turn(payload, session_id)
-    except WorkflowRequestError as exc:
+        command = parse_turn(payload, session_id, headers)
+    except (WorkflowRequestError, WorkflowAuthorizationError, CallerTokenExpired) as exc:
         yield _error(exc)
         return
     if command is None:
