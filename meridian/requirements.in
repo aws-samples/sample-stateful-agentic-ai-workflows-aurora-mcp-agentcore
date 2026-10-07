@@ -1,5 +1,5 @@
 # Application and agent runtime
-strands-agents>=1.48.0
+strands-agents==1.57.2  # the release both AgentCore runtimes pin
 strands-agents-tools>=0.2.19
 boto3>=1.43.51
 botocore>=1.43.51

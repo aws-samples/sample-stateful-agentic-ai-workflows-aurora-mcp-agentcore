@@ -2063,9 +2063,9 @@ starlette==1.6.0 \
     #   fastapi
     #   mcp
     #   sse-starlette
-strands-agents==1.52.0 \
-    --hash=sha256:768ff0e865df9f18154a2111f71e0c7683b8505e897704b89981cf7f11667bee \
-    --hash=sha256:e79f08527cf3b03ace3ead081f71ee43ee33de7285a4faa9ecafaef4618afeb0
+strands-agents==1.57.2 \
+    --hash=sha256:6df1e6617b81c07d258631ef6dcf5e4388a93b561729d3696cd44113f2c530d7 \
+    --hash=sha256:c0d4726e63cfbb75cbe381c40d76029aaefb7f29555476e8080f626376c9fe00
     # via
     #   -r requirements.in
     #   strands-agents-tools
