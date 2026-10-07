@@ -1,8 +1,10 @@
-"""SigV4 signing for the AgentCore Gateway MCP endpoint.
+"""How the runtime authenticates to the AgentCore Gateway MCP endpoint.
 
-The gateway uses AWS_IAM inbound authorization, so the runtime signs every MCP
-request with its own execution-role credentials. No bearer tokens, no identity
-provider, no secrets in the code.
+``iam`` (the default): the gateway uses AWS_IAM inbound authorization, so the runtime signs every
+MCP request with its own execution-role credentials. No bearer tokens, no secrets in the code.
+
+``jwt`` (``MERIDIAN_AGENTCORE_AUTH=jwt``): the gateway uses a Cognito JWT authorizer, so every MCP
+request carries the signed-in caller's access token, exactly as this runtime received it.
 """
 
 from __future__ import annotations
@@ -44,3 +46,16 @@ class GatewaySigV4(httpx.Auth):
             if name in aws_request.headers:
                 request.headers[name] = aws_request.headers[name]
         yield request
+
+
+def gateway_client_arguments(mode: str, session, region: str, token: str | None) -> dict:
+    """The authentication arguments for ``MCPClient`` in the given mode.
+
+    Raises:
+        ValueError: In ``jwt`` mode with no token, which would silently fall back to no auth.
+    """
+    if mode != "jwt":
+        return {"auth_provider": GatewaySigV4(session, region)}
+    if not token:
+        raise ValueError("jwt mode needs the caller's access token to call the gateway.")
+    return {"headers": {"Authorization": f"Bearer {token}"}}

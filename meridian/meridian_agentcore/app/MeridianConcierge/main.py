@@ -2,8 +2,9 @@
 
 A Strands agent plans with tools served by AgentCore Gateway over MCP, keeps its
 conversation in AgentCore Memory, and streams activity spans back to the backend.
-Every tool call is signed with the runtime's execution role and checked by the
-gateway's Cedar policies before any Lambda runs.
+Every tool call is authenticated to the gateway and checked by its Cedar policies before any
+Lambda runs: signed with the runtime's execution role (``MERIDIAN_AGENTCORE_AUTH=iam``, the
+default) or carrying the signed-in caller's access token (``jwt``).
 """
 
 from __future__ import annotations
@@ -27,7 +28,8 @@ from opentelemetry import trace
 from strands import Agent
 from strands.tools.mcp import MCPClient
 
-from gateway_auth import GatewaySigV4
+from caller_identity import CallerRefused, auth_mode, caller_from_request
+from gateway_auth import gateway_client_arguments
 from hold_execution import execute_confirmed_booking, execute_confirmed_hold
 from model.load import DEFAULT_MODEL_ID, load_model
 from prompts import narration_prompt, system_prompt, turn_prompt
@@ -43,6 +45,7 @@ GATEWAY_ID = os.getenv("MERIDIAN_GATEWAY_ID", GATEWAY_URL.split("//")[-1].split(
 POLICY_ENGINE_ID = os.getenv("MERIDIAN_POLICY_ENGINE_ID", "")
 POLICY_MODE = os.getenv("MERIDIAN_POLICY_MODE", "ENFORCE")
 SESSION_NAMESPACE = "/users/{actorId}/sessions/{sessionId}"
+GATEWAY_AUTH_LABELS = {"iam": "SigV4", "jwt": "Cognito access token"}
 FOLLOW_UPS = [
     "Compare the top options",
     "Check duration availability",
@@ -115,12 +118,17 @@ def memory_span(traveler_id: str, conversation_id: str) -> dict:
     )
 
 
-def turn_context(payload: dict) -> tuple[TurnContext, dict | None, dict | None]:
-    """The authorized turn plus the hold or booking terms the traveler confirmed, if any."""
+def turn_context(
+    payload: dict, traveler_id: str | None = None, gateway_auth: str = "SigV4"
+) -> tuple[TurnContext, dict | None, dict | None]:
+    """The authorized turn plus the hold or booking terms the traveler confirmed, if any.
+
+    ``traveler_id`` is the traveler proved by the caller's token; without it the payload's is used.
+    """
     hold_target = payload.get("hold_target") or None
     booking_target = payload.get("booking_target") or None
     turn = TurnContext(
-        traveler_id=str(payload.get("traveler_id") or "trv_meridian_demo"),
+        traveler_id=str(traveler_id or payload.get("traveler_id") or "trv_meridian_demo"),
         conversation_id=str(payload.get("conversation_id") or "conv-unknown"),
         hold_confirmed=bool(payload.get("hold_confirmed")) and hold_target is not None,
         budget_ceiling_cents=int(payload.get("budget_ceiling_cents") or 0),
@@ -128,6 +136,7 @@ def turn_context(payload: dict) -> tuple[TurnContext, dict | None, dict | None]:
         policy_engine_id=POLICY_ENGINE_ID,
         policy_mode=POLICY_MODE,
         booking_confirmed=bool(payload.get("booking_confirmed")) and booking_target is not None,
+        gateway_auth=gateway_auth,
     )
     return turn, hold_target, booking_target
 
@@ -151,12 +160,13 @@ def start_span(turn: TurnContext) -> dict:
     )
 
 
-def tools_span(tools: list, took: int) -> dict:
+def tools_span(tools: list, took: int, mode: str = "iam") -> dict:
     """The tools/list span, carrying the time measured around ``list_tools_sync``."""
+    how = "bearer-token" if mode == "jwt" else "IAM-signed"
     return activity(
         "tool_call",
         "AgentCore Gateway: tools/list",
-        f"{len(tools)} MCP tools discovered with IAM-signed requests",
+        f"{len(tools)} MCP tools discovered with {how} requests",
         {
             "category": "gateway",
             "component": "Bedrock AgentCore Gateway",
@@ -228,17 +238,23 @@ def confirmed_action(hooks, gateway, turn: TurnContext, hold_target, booking_tar
     return None, "hold", hold_target
 
 
-async def run(payload: dict):
+async def run(payload: dict, headers: dict | None = None):
     started = time.monotonic()
-    turn, hold_target, booking_target = turn_context(payload)
+    mode = auth_mode()
+    proven_traveler, token = caller_from_request(payload, headers, mode)
+    turn, hold_target, booking_target = turn_context(
+        payload, proven_traveler, GATEWAY_AUTH_LABELS[mode]
+    )
     queue: asyncio.Queue = asyncio.Queue()
     hooks = TraceHooks(queue, turn)
-    gateway = MCPClient(url=GATEWAY_URL, auth_provider=GatewaySigV4(SESSION, REGION))
+    gateway = MCPClient(
+        url=GATEWAY_URL, **gateway_client_arguments(mode, SESSION, REGION, token)
+    )
     yield {"type": "activity", **start_span(turn)}
     with gateway:
         listed = time.perf_counter()
         tools = gateway.list_tools_sync()
-        yield {"type": "activity", **tools_span(tools, elapsed_ms(listed))}
+        yield {"type": "activity", **tools_span(tools, elapsed_ms(listed), mode)}
         yield {"type": "activity", **memory_span(turn.traveler_id, turn.conversation_id)}
         outcome, action, target = confirmed_action(
             hooks, gateway, turn, hold_target, booking_target
@@ -293,9 +309,12 @@ async def invoke(payload, context=None):
     if payload.get("event") != "concierge_turn":
         yield json.dumps({"type": "error", "message": "Unsupported Meridian Runtime event."})
         return
+    headers = getattr(context, "request_headers", None)
     try:
-        async for item in run(payload):
+        async for item in run(payload, headers):
             yield json.dumps(item, ensure_ascii=False)
+    except CallerRefused as refused:
+        yield json.dumps({"type": "error", "code": refused.code, "message": str(refused)})
     except Exception as error:  # noqa: BLE001 - the backend renders the failure as a span
         yield json.dumps({"type": "error", "message": str(error)[:600]})
 

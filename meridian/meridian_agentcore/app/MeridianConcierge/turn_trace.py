@@ -86,6 +86,7 @@ class TurnContext:
     policy_engine_id: str
     policy_mode: str = "ENFORCE"
     booking_confirmed: bool = False
+    gateway_auth: str = "SigV4"
 
     def confirmed(self, kind: str) -> bool:
         """Whether the traveler confirmed this kind of governed write on this turn."""
@@ -221,7 +222,7 @@ class TraceHooks(HookProvider):
             "fields": [
                 {"label": "tool", "value": event.tool_use["name"], "mono": True},
                 {"label": "arguments", "value": json.dumps(args, ensure_ascii=False), "mono": True},
-                {"label": "auth", "value": "SigV4"},
+                {"label": "auth", "value": self.turn.gateway_auth},
                 {"label": "gateway", "value": self.turn.gateway_id, "mono": True},
                 {"label": "policy_engine", "value": self.turn.policy_engine_id, "mono": True},
                 {"label": "policy_mode", "value": self.turn.policy_mode},
