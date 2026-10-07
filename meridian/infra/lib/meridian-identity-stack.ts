@@ -8,6 +8,7 @@ import {
   aws_cognito as cognito,
   aws_iam as iam,
   aws_lambda as lambda,
+  aws_logs as logs,
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
@@ -38,6 +39,7 @@ function assertReturnUrl(url: string): void {
   if (parsed.protocol !== 'https:' && !local) {
     throw new Error(`Return URL must be https or http on localhost: ${url}`);
   }
+  if (url.includes('*')) throw new Error(`Return URL must not contain a wildcard: ${url}`);
   if (parsed.hash) throw new Error(`Return URL must not contain a fragment: ${url}`);
 }
 
@@ -65,7 +67,14 @@ export class MeridianIdentityStack extends Stack {
       description: 'Adds the bound traveler_id to the Cognito access token; refuses a user with no binding',
       runtime: lambda.Runtime.PYTHON_3_13,
       handler: 'pre_token_generation.lambda_handler',
-      code: lambda.Code.fromAsset(path.resolve(__dirname, '..', '..', 'functions', 'pre_token_generation')),
+      code: lambda.Code.fromAsset(
+        path.resolve(__dirname, '..', '..', 'functions', 'pre_token_generation'),
+        { exclude: ['__pycache__', '*.pyc', '*.pyo', '.DS_Store'] },
+      ),
+      logGroup: new logs.LogGroup(this, 'PreTokenGenerationLogs', {
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: RemovalPolicy.DESTROY,
+      }),
       timeout: Duration.seconds(4),
       memorySize: 256,
       environment: {
@@ -104,7 +113,7 @@ export class MeridianIdentityStack extends Stack {
       generateSecret: false,
       // ADMIN_USER_PASSWORD_AUTH is a server-side flow: only a caller with IAM permission can use it,
       // never a browser. Proof scripts use it to mint real tokens for the seeded users.
-      authFlows: { userSrp: true, adminUserPassword: true },
+      authFlows: { adminUserPassword: true },
       oAuth: {
         flows: { authorizationCodeGrant: true },
         scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],

@@ -2,9 +2,11 @@
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pytest
+from botocore.exceptions import BotoCoreError, ClientError
 
 SOURCE = (
     Path(__file__).resolve().parents[1]
@@ -20,6 +22,7 @@ def trigger(monkeypatch):
     )
     monkeypatch.setenv("AURORA_DATABASE", "meridian")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.setattr(sys, "dont_write_bytecode", True)
     spec = importlib.util.spec_from_file_location("pre_token_generation_under_test", SOURCE)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -97,3 +100,37 @@ def test_only_event_version_two_can_customize_an_access_token(trigger, version):
     with pytest.raises(RuntimeError, match="event version 2"):
         trigger.lambda_handler(event(version=version), None)
     assert trigger.RDS.requests == []
+
+
+class FailingDataApi:
+    def __init__(self, error):
+        self.error = error
+
+    def execute_statement(self, **_request):
+        raise self.error
+
+
+CLUSTER_ARN = "arn:aws:rds:us-east-1:123456789012:cluster:c"
+
+
+@pytest.mark.parametrize("error", [
+    ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": f"not allowed on {CLUSTER_ARN}"}},
+        "ExecuteStatement",
+    ),
+    BotoCoreError(),
+])
+def test_a_data_api_failure_does_not_leak_to_the_user(trigger, error, caplog):
+    trigger.RDS = FailingDataApi(error)
+    with pytest.raises(RuntimeError) as raised:
+        trigger.lambda_handler(event(), None)
+    assert str(raised.value) == "Sign-in refused: the traveler lookup failed."
+    assert raised.value.__suppress_context__ and raised.value.__cause__ is None
+    assert "arn:aws" not in str(raised.value)
+    assert "arn:aws" not in caplog.text
+
+
+def test_the_data_api_client_has_short_timeouts_and_one_retry(trigger):
+    config = trigger.RDS.meta.config
+    assert (config.connect_timeout, config.read_timeout) == (1, 3)
+    assert config.retries["total_max_attempts"] == 2

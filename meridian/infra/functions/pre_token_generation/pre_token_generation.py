@@ -10,9 +10,12 @@ It fails closed. A user with no active binding, or with more than one, cannot si
 """
 
 import json
+import logging
 import os
 
 import boto3
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
 
 CLUSTER_ARN = os.environ["AURORA_CLUSTER_ARN"]
 SECRET_ARN = os.environ["AURORA_SECRET_ARN"]
@@ -26,7 +29,13 @@ BINDING_SQL = (
     "AND status = 'active' AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)"
 )
 
-RDS = boto3.client("rds-data")
+LOGGER = logging.getLogger()
+LOGGER.setLevel(logging.INFO)
+
+RDS = boto3.client(
+    "rds-data",
+    config=Config(connect_timeout=1, read_timeout=3, retries={"max_attempts": 1}),
+)
 
 
 def _bound_travelers(subject: str) -> list:
@@ -44,6 +53,12 @@ def _bound_travelers(subject: str) -> list:
     return [row["traveler_id"] for row in json.loads(response.get("formattedRecords") or "[]")]
 
 
+def _error_code(error: Exception) -> str:
+    if isinstance(error, ClientError):
+        return error.response.get("Error", {}).get("Code") or "ClientError"
+    return type(error).__name__
+
+
 def lambda_handler(event: dict, _context) -> dict:
     """Add the user's bound traveler to the access token, or refuse the sign-in."""
     if str(event.get("version")) != "2":
@@ -51,7 +66,11 @@ def lambda_handler(event: dict, _context) -> dict:
     subject = (event.get("request", {}).get("userAttributes", {}) or {}).get("sub")
     if not subject:
         raise RuntimeError("The sign-in event carries no user sub.")
-    travelers = _bound_travelers(subject)
+    try:
+        travelers = _bound_travelers(subject)
+    except (ClientError, BotoCoreError) as error:
+        LOGGER.error("Traveler lookup failed: %s", _error_code(error))
+        raise RuntimeError("Sign-in refused: the traveler lookup failed.") from None
     if len(travelers) != 1:
         raise RuntimeError(
             "Sign-in refused: this user needs exactly one active traveler binding, "
