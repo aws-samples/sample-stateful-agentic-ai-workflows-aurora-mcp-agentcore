@@ -18,6 +18,9 @@ FRAMEWORK_FREE = [
     "backend.agents.phase_05_workflow.hold_intent",
     "backend.agents.phase_05_workflow.governed_hold",
     "backend.agents.phase_05_workflow.packages",
+    "backend.retrieval.hybrid",
+    "backend.retrieval.availability",
+    "backend.agents.phase_05_workflow.memory_recall",
 ]
 
 

@@ -79,11 +79,9 @@ async def _run_workflow(
 ) -> dict:
     """Run the real graph, with the app's own retrieval functions."""
     from backend.agents.phase_05_workflow.workflow import OrchestrationAgent
-    from backend.routers.chat import (
-        retrieval_availability_search,
-        retrieval_search,
-        workflow_memory_recall,
-    )
+    from backend.agents.phase_05_workflow.memory_recall import workflow_memory_recall
+    from backend.retrieval.availability import retrieval_availability_search
+    from backend.retrieval.hybrid import retrieval_search
 
     workflow = OrchestrationAgent(
         search_fn=retrieval_search,

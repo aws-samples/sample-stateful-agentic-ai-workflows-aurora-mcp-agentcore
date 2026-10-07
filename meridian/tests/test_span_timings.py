@@ -14,6 +14,8 @@ from types import SimpleNamespace
 import pytest
 
 import backend.llm_polish as llm_polish
+import backend.retrieval.availability as availability
+import backend.retrieval.hybrid as hybrid
 import backend.routers.chat as chat_router
 from backend import timing
 from backend.agentcore.runtime import RuntimeDecision, _apply_result
@@ -225,11 +227,11 @@ class FakeEmbeddings:
 
 
 def test_workflow_search_spans_time_each_call_directly(clock, monkeypatch):
-    monkeypatch.setattr(chat_router, "get_rds_data_client", lambda: FakeDb(
+    monkeypatch.setattr(hybrid, "get_rds_data_client", lambda: FakeDb(
         clock, {"semantic_trip_search": 120, "ts_rank": 30},
     ))
-    monkeypatch.setattr(chat_router, "get_embedding_service", lambda: FakeEmbeddings(clock))
-    _products, activities = asyncio.run(chat_router.retrieval_search("quiet villa"))
+    monkeypatch.setattr(hybrid, "get_embedding_service", lambda: FakeEmbeddings(clock))
+    _products, activities = asyncio.run(hybrid.retrieval_search("quiet villa"))
 
     assert _ms(_span(activities, "Embedding generated")) == 200
     # The two retrieval arms, measured together, and nothing else.
@@ -250,10 +252,10 @@ def test_sql_search_times_its_query_on_the_step_that_ran_it(clock, monkeypatch):
 
 
 def test_package_agent_times_its_query_and_invents_nothing_for_in_memory_work(clock, monkeypatch):
-    monkeypatch.setattr(chat_router, "get_rds_data_client", lambda: FakeDb(
+    monkeypatch.setattr(availability, "get_rds_data_client", lambda: FakeDb(
         clock, {"FROM trip_packages": 40},
     ))
-    _products, activities, _message = asyncio.run(chat_router.retrieval_availability_search(
+    _products, activities, _message = asyncio.run(availability.retrieval_availability_search(
         "Which trip lengths are still available?", package_id="AML-002",
     ))
     assert _ms(_span(activities, "PackageAgent: Finding package")) == 40
