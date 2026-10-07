@@ -19,6 +19,7 @@ from strands.types.exceptions import StorageError
 from backend.db.journey_store import ExecutionLeaseLostError
 
 # The Data API refuses a result over 1 MB, so a snapshot this cap admits must still read back.
+# Live tests read back ASCII, multibyte and escape-dense snapshots just under this cap.
 MAX_SNAPSHOT_BYTES = 900_000
 
 INSERT_SQL = """

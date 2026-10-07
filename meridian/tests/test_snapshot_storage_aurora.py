@@ -301,3 +301,24 @@ async def test_a_snapshot_just_under_the_cap_reads_back_as_the_newest_row(thread
         (thread_id,),
     )
     assert size[0]["n"] > MAX_SNAPSHOT_BYTES - 50_000
+
+
+async def test_an_escape_dense_snapshot_just_under_the_cap_reads_back(threads):
+    client, made = threads
+    thread_id, _, storage = await writer(client, made)
+    delta = {"text": 'He said "rebook" \\ then "hold"'}
+    nested = {"data": {"state": {
+        "status": "executing", "node_results": json.dumps([delta for _ in range(14_000)]),
+    }}}
+    payload = json.dumps(nested).encode()
+    assert MAX_SNAPSHOT_BYTES - 50_000 < len(payload) <= MAX_SNAPSHOT_BYTES
+    await storage.write(key(thread_id), EXECUTING)
+    await storage.write(key(thread_id), payload)
+
+    assert json.loads(await storage.read(key(thread_id))) == nested
+    size = await client.execute(
+        "SELECT octet_length(snapshot::TEXT) AS n FROM workflow_snapshots "
+        "WHERE session_id = %s ORDER BY snapshot_seq DESC LIMIT 1",
+        (thread_id,),
+    )
+    assert size[0]["n"] > MAX_SNAPSHOT_BYTES - 50_000
