@@ -4,7 +4,14 @@ import json
 
 import pytest
 
-from backend.db.journey_document import _workflow_document, checkpoint_backend_is_durable
+from backend.agents.phase_05_workflow.graph import snapshot_key
+from backend.db.journey_document import (
+    SNAPSHOT_HISTORY_SQL,
+    SNAPSHOT_SQL,
+    _snapshot,
+    _workflow_document,
+    checkpoint_backend_is_durable,
+)
 
 CLASSIFY_DELTA = json.dumps(
     {"state": {"intent": "plan"}, "spans": [{"title": "Workflow node: classify"}]}
@@ -82,3 +89,19 @@ def test_two_executions_with_no_earlier_saved_step_is_not_a_resume():
 )
 def test_only_the_aurora_backed_kinds_are_durable(kind, durable):
     assert checkpoint_backend_is_durable(kind) is durable
+
+
+async def test_the_workflow_is_read_by_its_own_storage_key_not_just_the_session():
+    asked = []
+
+    async def q(sql, params):
+        asked.append((sql, params))
+        if sql == SNAPSHOT_SQL:
+            return [{"seq": "7", "snapshot": json.dumps(PAUSED), "saved_at": "2026-10-06 20:00:00",
+                     "execution_id": "exe_1"}]
+        return [{"n": 1, "resumed_from": None, "previous_seq": None}]
+
+    await _snapshot(q, "t1")
+    key = snapshot_key("t1")
+    assert (SNAPSHOT_SQL, ("t1", key)) in asked
+    assert (SNAPSHOT_HISTORY_SQL, ("exe_1", "7", "t1", key)) in asked

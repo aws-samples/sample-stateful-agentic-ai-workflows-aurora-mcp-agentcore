@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from backend.agentcore.identity import get_agentcore_identity
-from backend.agents.phase_05_workflow.graph import fold_snapshot, next_nodes
+from backend.agents.phase_05_workflow.graph import fold_snapshot, next_nodes, snapshot_key
 from backend.agents.phase_05_workflow.state import SNAPSHOT_STORE
 
 JOURNEY_SQL = """
@@ -33,14 +33,14 @@ SELECT execution_id, attempt, worker_id, status, started_at::TEXT, ended_at::TEX
 SNAPSHOT_SQL = """
 SELECT snapshot_seq::TEXT AS seq, snapshot::TEXT AS snapshot, saved_at::TEXT AS saved_at,
        execution_id
-  FROM workflow_snapshots WHERE session_id = %s
+  FROM workflow_snapshots WHERE session_id = %s AND storage_key = %s
  ORDER BY snapshot_seq DESC LIMIT 1
 """
 SNAPSHOT_HISTORY_SQL = """
 SELECT COUNT(*) AS n,
        MAX(snapshot_seq) FILTER (WHERE execution_id IS DISTINCT FROM %s)::TEXT AS resumed_from,
        MAX(snapshot_seq) FILTER (WHERE snapshot_seq < %s::BIGINT)::TEXT AS previous_seq
-  FROM workflow_snapshots WHERE session_id = %s
+  FROM workflow_snapshots WHERE session_id = %s AND storage_key = %s
 """
 
 HOLD_SQL = """
@@ -248,11 +248,12 @@ async def _snapshot(q, thread_id: Optional[str]):
     """
     if not thread_id:
         return _unavailable("the journey has no active thread"), None, None, None
-    rows = await q(SNAPSHOT_SQL, (thread_id,))
+    key = snapshot_key(thread_id)
+    rows = await q(SNAPSHOT_SQL, (thread_id, key))
     if not rows:
         return _unavailable(f"no workflow snapshot saved on thread {thread_id}"), None, None, None
     row = rows[0]
-    history = (await q(SNAPSHOT_HISTORY_SQL, (row["execution_id"], row["seq"], thread_id)))[0]
+    history = (await q(SNAPSHOT_HISTORY_SQL, (row["execution_id"], row["seq"], thread_id, key)))[0]
     checkpoint = {
         "status": "committed",
         "source": "workflow_snapshots",

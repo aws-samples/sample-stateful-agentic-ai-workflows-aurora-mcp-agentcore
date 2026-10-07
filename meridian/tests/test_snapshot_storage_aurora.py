@@ -37,7 +37,9 @@ async def threads():
     for thread_id, journey_id in made:
         await client.execute("DELETE FROM workflow_snapshots WHERE session_id = %s", (thread_id,))
         await client.execute("DELETE FROM journey_executions WHERE thread_id = %s", (thread_id,))
-        await client.execute("UPDATE journeys SET active_thread_id = NULL WHERE active_thread_id = %s", (thread_id,))
+        await client.execute(
+            "UPDATE journeys SET active_thread_id = NULL WHERE active_thread_id = %s", (thread_id,)
+        )
         await client.execute("DELETE FROM journey_threads WHERE thread_id = %s", (thread_id,))
         if journey_id:
             await client.execute("DELETE FROM journeys WHERE journey_id = %s", (journey_id,))
@@ -83,7 +85,8 @@ async def test_writes_append_and_the_newest_row_wins(threads):
     await storage.write(key(thread_id), first)
     await storage.write(key(thread_id), second)
 
-    assert json.loads(await storage.read(key(thread_id)))["data"]["state"]["status"] == "interrupted"
+    newest = json.loads(await storage.read(key(thread_id)))
+    assert newest["data"]["state"]["status"] == "interrupted"
     rows = await client.execute(
         "SELECT status, traveler_id, execution_id, worker_id FROM workflow_snapshots "
         "WHERE session_id = %s ORDER BY snapshot_seq", (thread_id,),

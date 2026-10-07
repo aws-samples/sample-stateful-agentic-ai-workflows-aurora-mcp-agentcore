@@ -228,6 +228,35 @@ async def test_a_saved_snapshot_is_reported_with_its_thread(journey: Fixture) ->
     assert plan["source"] == expected
 
 
+async def test_another_key_in_the_same_session_is_not_read_as_the_workflow(
+    journey: Fixture,
+) -> None:
+    from backend.agents.phase_05_workflow.graph import snapshot_key
+
+    claim = await claim_execution(
+        journey.client, journey.journey_id, journey.thread_id, "worker-jdoc"
+    )
+    workflow = _workflow_snapshot(journey, "interrupted", ["synthesize"])
+    await _storage(journey, claim.execution_id, "worker-jdoc").write(
+        snapshot_key(journey.thread_id), json.dumps(workflow).encode()
+    )
+    other_key = f"session/{journey.thread_id}/agents/helper/snapshots/snapshot_latest.json"
+    stray = {"data": {"state": {"status": "completed", "next_nodes_to_execute": []}}}
+    await _storage(journey, claim.execution_id, "worker-jdoc").write(
+        other_key, json.dumps(stray).encode()
+    )
+    newest = await journey.client.execute(
+        "SELECT storage_key FROM workflow_snapshots WHERE session_id = %s "
+        "ORDER BY snapshot_seq DESC LIMIT 1", (journey.thread_id,),
+    )
+    assert newest[0]["storage_key"] == other_key, "the stray row must be the newest in the session"
+
+    doc = await _document(journey)
+    assert doc["workflow"]["workflow_status"] == "paused"
+    assert doc["workflow"]["next_nodes"] == ["synthesize"]
+    assert doc["checkpoint"]["snapshot_count"] == 1
+
+
 async def test_a_run_finished_from_a_saved_step_is_a_verified_resume(journey: Fixture) -> None:
     """Two executions, the first saved a step, the second finished: what the UI verifies."""
     from backend.agents.phase_05_workflow.graph import snapshot_key

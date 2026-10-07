@@ -105,7 +105,11 @@ def place_governed_hold(call_tool: Callable[[str, Dict[str, Any]], Dict[str, Any
     text = _text(response)
     if rpc_error or result.get("isError"):
         rpc_message = rpc_error.get("message") if isinstance(rpc_error, dict) else None
-        message = text or (rpc_message if isinstance(rpc_message, str) else "") or json.dumps(rpc_error or result)[:300]
+        message = (
+            text
+            or (rpc_message if isinstance(rpc_message, str) else "")
+            or json.dumps(rpc_error or result)[:300]
+        )
         policy_envelope = bool(result.get("isError")) or (
             isinstance(rpc_error, dict) and rpc_error.get("code") == -32002
         )
