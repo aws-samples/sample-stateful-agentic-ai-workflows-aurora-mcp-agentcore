@@ -3,7 +3,8 @@ import ReactDOM from 'react-dom/client'
 import './index.css'
 import { RouteSkeleton } from './components/RouteSkeleton'
 import { AuthGate } from './auth/AuthGate'
-import { readAuthConfig } from './auth/config'
+import { ConfigProblemScreen } from './auth/ConfigProblemScreen'
+import { loadAuthConfig } from './auth/bootAuth'
 import { initialShowcaseTheme } from './lib/showcaseTheme'
 
 const MeridianDeviceShowcase = lazy(() => import('./showcase/MeridianDeviceShowcase'))
@@ -31,15 +32,17 @@ function pickRoot() {
 }
 
 // Both settings unset means this build has no sign-in and the API decides who is calling.
-const authConfig = readAuthConfig({
+const boot = loadAuthConfig({
   VITE_COGNITO_DOMAIN: import.meta.env.VITE_COGNITO_DOMAIN as string | undefined,
   VITE_COGNITO_CLIENT_ID: import.meta.env.VITE_COGNITO_CLIENT_ID as string | undefined,
 }, window.location.origin)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <AuthGate config={authConfig}>
-      <Suspense fallback={<RouteSkeleton />}>{pickRoot()}</Suspense>
-    </AuthGate>
+    {boot.failed ? <ConfigProblemScreen /> : (
+      <AuthGate config={boot.config}>
+        <Suspense fallback={<RouteSkeleton />}>{pickRoot()}</Suspense>
+      </AuthGate>
+    )}
   </React.StrictMode>,
 )

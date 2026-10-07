@@ -23,4 +23,20 @@ describe('SignInScreen', () => {
     render(<SignInScreen busy />);
     expect(screen.getByRole('button', { name: 'Signing you in' })).toBeDisabled();
   });
+
+  it('announces progress in a status region', () => {
+    const { rerender } = render(<SignInScreen />);
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    rerender(<SignInScreen busy />);
+    expect(screen.getByRole('status')).toHaveTextContent('Signing you in');
+  });
+
+  it('moves focus to the heading when a message appears', () => {
+    const { rerender } = render(<SignInScreen />);
+    expect(screen.getByRole('heading', { level: 1 })).not.toHaveFocus();
+    rerender(<SignInScreen message="We could not complete sign-in. Try again." />);
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading).toHaveAttribute('tabindex', '-1');
+    expect(heading).toHaveFocus();
+  });
 });

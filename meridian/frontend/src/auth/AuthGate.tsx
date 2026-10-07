@@ -25,7 +25,11 @@ function withoutSignInResult(location: Location): string {
 function CognitoGate({ config, children }: { config: AuthConfig; children: ReactNode }) {
   const [session] = useState(() => createBrowserSession(config));
   const [returning, setReturning] = useState(() => hasSignInResult(window.location.search));
+  const [starting, setStarting] = useState(false);
   const state = useSyncExternalStore(session.subscribe, session.getState);
+
+  // A new state, such as the message after a failed start, lets the button work again.
+  useEffect(() => setStarting(false), [state]);
 
   useEffect(() => {
     setAccessTokenProvider(session.getAccessToken);
@@ -34,11 +38,14 @@ function CognitoGate({ config, children }: { config: AuthConfig; children: React
 
   useEffect(() => {
     let live = true;
-    void session.handleCallback(window.location.search).then(handled => {
-      if (!live) return;
-      if (handled) window.history.replaceState(null, '', withoutSignInResult(window.location));
-      setReturning(false);
-    });
+    Promise.resolve()
+      .then(() => session.handleCallback(window.location.search))
+      .catch(() => false)
+      .then(handled => {
+        if (!live) return;
+        if (handled) window.history.replaceState(null, '', withoutSignInResult(window.location));
+        setReturning(false);
+      });
     return () => { live = false; };
   }, [session]);
 
@@ -60,8 +67,8 @@ function CognitoGate({ config, children }: { config: AuthConfig; children: React
   return (
     <SignInScreen
       message={state.message}
-      busy={returning || state.status === 'signing-in'}
-      onSignIn={() => { void session.startSignIn(); }}
+      busy={returning || starting || state.status === 'signing-in'}
+      onSignIn={() => { setStarting(true); void session.startSignIn(); }}
     />
   );
 }

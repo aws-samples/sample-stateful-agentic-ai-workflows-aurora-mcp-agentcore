@@ -1,4 +1,5 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode, useEffect } from 'react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAccessToken } from './accessToken';
 import { AuthGate } from './AuthGate';
@@ -37,6 +38,37 @@ function Who() {
       {signOut && <button type="button" onClick={signOut}>Sign out</button>}
     </div>
   );
+}
+
+const probeMounted = vi.fn();
+const probeFetch = vi.fn();
+
+/** A child that would call the API the moment it mounted. */
+function Probe() {
+  useEffect(() => {
+    probeMounted();
+    void probeFetch();
+  }, []);
+  return <span data-testid="probe" />;
+}
+
+function renderGuarded() {
+  return render(<AuthGate config={config}><Who /><Probe /></AuthGate>);
+}
+
+async function startAndReturn(search: (state: string) => string) {
+  const session = install();
+  await session.startSignIn();
+  const { state } = JSON.parse(values.get('meridian:auth:pkce')!);
+  window.history.replaceState(null, '', `/showcase${search(state)}`);
+  return session;
+}
+
+function expectWithheld() {
+  expect(probeMounted).not.toHaveBeenCalled();
+  expect(probeFetch).not.toHaveBeenCalled();
+  expect(screen.queryByTestId('probe')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('who')).not.toBeInTheDocument();
 }
 
 function install() {
@@ -159,6 +191,109 @@ describe('AuthGate with sign-in configured', () => {
     expect(screen.getByRole('heading', { name: 'Sign in to Meridian' })).toBeInTheDocument();
     expect(navigate.mock.calls[navigate.mock.calls.length - 1][0])
       .toMatch(/\/logout\?client_id=client-web/);
+  });
+});
+
+describe('AuthGate withholds the app until signed in', () => {
+  beforeEach(() => { probeMounted.mockClear(); probeFetch.mockClear(); });
+
+  it('mounts nothing while the token exchange is still pending', async () => {
+    await startAndReturn(state => `?view=proof&code=c1&state=${state}`);
+    fetchFn.mockImplementation(() => new Promise(() => undefined));
+    renderGuarded();
+    await waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole('button', { name: 'Signing you in' })).toBeDisabled();
+    expectWithheld();
+  });
+
+  it('mounts nothing when the token exchange fails', async () => {
+    await startAndReturn(state => `?code=c2&state=${state}`);
+    fetchFn.mockRejectedValue(new Error('network down'));
+    renderGuarded();
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expectWithheld();
+  });
+
+  it('mounts nothing when the hosted page refuses the sign-in', async () => {
+    install();
+    window.history.replaceState(null, '', '/showcase?error=access_denied');
+    renderGuarded();
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expectWithheld();
+  });
+
+  it('mounts the app once, only after sign-in completes', async () => {
+    await startAndReturn(state => `?code=c3&state=${state}`);
+    const tokens = jordanTokens();
+    fetchFn.mockResolvedValue(tokenResponse(tokens.accessToken, tokens.idToken));
+    renderGuarded();
+    expectWithheld();
+    await screen.findByTestId('who');
+    expect(probeMounted).toHaveBeenCalledTimes(1);
+    expect(probeFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AuthGate return handling', () => {
+  it('exchanges the code once under StrictMode and keeps the rest of the address', async () => {
+    await startAndReturn(state => `?view=proof&code=c1&state=${state}`);
+    const tokens = jordanTokens();
+    fetchFn.mockResolvedValue(tokenResponse(tokens.accessToken, tokens.idToken));
+    render(<StrictMode><AuthGate config={config}><Who /></AuthGate></StrictMode>);
+    await waitFor(() => expect(screen.getByTestId('who'))
+      .toHaveTextContent('cognito:trv_meridian_demo:Jordan Morgan'));
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(window.location.search).toBe('?view=proof');
+  });
+
+  it('never renders an error_description from the address as markup', async () => {
+    install();
+    const payload = encodeURIComponent('<img src=x onerror=alert(1)>');
+    window.history.replaceState(
+      null, '', `/showcase?view=proof&error=access_denied&error_description=${payload}`,
+    );
+    const { container } = render(<AuthGate config={config}><Who /></AuthGate>);
+    await screen.findByRole('alert');
+    expect(container.innerHTML).not.toContain('onerror');
+    expect(container.querySelector('img[src="x"]')).toBeNull();
+    expect(window.location.search).toBe('?view=proof');
+  });
+
+  it('recovers when finishing the return throws', async () => {
+    await startAndReturn(state => `?error=access_denied&state=${state}`);
+    const storageFailure = vi.spyOn(storage, 'removeItem').mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+    render(<AuthGate config={config}><Who /></AuthGate>);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled());
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    storageFailure.mockRestore();
+  });
+
+  it('starts the hosted sign-in once however many times the button is pressed', async () => {
+    install();
+    const setItem = vi.spyOn(storage, 'setItem');
+    render(<AuthGate config={config}><Who /></AuthGate>);
+    const button = screen.getByRole('button', { name: 'Sign in' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(button).toBeDisabled();
+    await waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+    expect(setItem).toHaveBeenCalledTimes(1);
+    setItem.mockRestore();
+  });
+
+  it('lets the person try again when starting sign-in fails', async () => {
+    install();
+    const setItem = vi.spyOn(storage, 'setItem').mockImplementation(() => {
+      throw new Error('storage blocked');
+    });
+    render(<AuthGate config={config}><Who /></AuthGate>);
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled();
+    setItem.mockRestore();
   });
 });
 

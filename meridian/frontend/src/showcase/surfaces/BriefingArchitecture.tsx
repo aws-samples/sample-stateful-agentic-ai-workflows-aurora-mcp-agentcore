@@ -33,7 +33,7 @@ export function BriefingArchitecture() {
         <path className="is-secondary" d="M118 230V358H984V286" />
         <path className="is-secondary" d="M386 314V358" />
       </g>
-      <text x={18} y={90} className="mds-brief-arch-label">Phases 1–3: data + retrieval</text>
+      <text x={18} y={90} className="mds-brief-arch-label">Phases 1 to 3: data + retrieval</text>
       {node(18, 118, 200, 'FastAPI', ['SQL / MCP / retrieval', 'Identity + confirmation'], 'app-runner', 1)}
       <text x={268} y={18} className="mds-brief-arch-label">Phase 4: managed concierge</text>
       {node(268, 42, 236, 'AgentCore Runtime', ['Strands agent', 'Conversation context'], 'agentcore-runtime', 2)}
@@ -53,7 +53,7 @@ export function BriefingArchitecture() {
       <li><strong>5. Aurora PostgreSQL - record the outcome</strong><p>Read scoped facts and commit replay-safe business writes.</p></li>
       <li><strong>Phase 5: Strands Graph in its own AgentCore Runtime</strong><p>Uses the same Gateway tool path. Its saved steps and worker leases live in AWS Aurora.</p></li>
     </ol>
-    <figcaption><span className="mds-brief-arch-legend">Phase 4: follow 1–5. Phase 5 joins at Gateway. Dashed path: direct Data API access.</span></figcaption>
+    <figcaption><span className="mds-brief-arch-legend">Phase 4: follow 1 to 5. Phase 5 joins at Gateway. Dashed path: direct Data API access.</span></figcaption>
     <details className="mds-brief-platform">
       <summary>Supporting services &amp; app delivery<ChevronDown size={18} aria-hidden="true" /></summary>
     <div className="mds-brief-arch-delivery" aria-label="Published application delivery">

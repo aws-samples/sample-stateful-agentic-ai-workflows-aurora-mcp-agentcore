@@ -16,7 +16,10 @@ const BANNED = [
 ];
 
 // Words people read. Comments are not copy, so a comment may still say what it needs to.
-const USER_FACING_BANNED = [/\u2014/, /&mdash;/i, /\\u2014/i, /\bdemo\b/i];
+const USER_FACING_BANNED = [
+  /\u2014/, /&mdash;/i, /\\u2014/i, /&#8212;/, /&#x2014;/i, /\u2013/, /&ndash;/i, /&#8211;/,
+  /&#x2013;/i, /\\u2013/i, /\bdemo\b/i,
+];
 const isComment = (line: string) => /^\s*(\/\/|\/\*|\*)/.test(line);
 
 const isTest = (path: string) => /__tests__|\.test\.[tj]sx?$|\.spec\.ts$/.test(path);
