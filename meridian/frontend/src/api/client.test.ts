@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
 import {
   healthOriginFor,
@@ -46,8 +46,8 @@ describe('session receipt', () => {
     };
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })));
     const receipt = await fetchSessionReceipt();
-    const count: number | null = receipt.lines[0].count;
-    expect(count).toBeNull();
+    expectTypeOf(receipt.lines[0].count).toEqualTypeOf<number | null>();
+    expect(receipt.lines[0].count).toBeNull();
   });
 });
 

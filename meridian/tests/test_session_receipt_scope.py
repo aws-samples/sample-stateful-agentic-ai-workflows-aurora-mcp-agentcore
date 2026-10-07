@@ -70,7 +70,7 @@ def test_a_foreign_thread_does_not_count_toward_this_session():
             db, "SELECT COUNT(*) AS n FROM workflow_snapshots WHERE session_id = %s", ("mine",)
         )
     )
-    assert mine == 0
+    assert mine.value == 0
 
     sql, params = checkpoint_queries(db)[0]
     assert params == ("mine",), "the thread id has to reach the query as a parameter"

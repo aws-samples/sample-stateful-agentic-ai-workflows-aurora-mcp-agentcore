@@ -25,10 +25,12 @@ IDENTITY = Mock(authorization_context=lambda: AuthorizationContext("aws_iam", "s
 class RecordingDb:
     """Answers each statement by its shape and records what was asked."""
 
-    def __init__(self, *, scoped=17, baseline=22, missing=(), no_table=False, probe_error=False):
+    def __init__(self, *, scoped=17, baseline=22, missing=(), no_table=False, probe_error=False,
+                 fail_on=()):
         self.statements = []
         self.scoped, self.baseline, self.missing = scoped, baseline, set(missing)
         self.no_table, self.probe_error = no_table, probe_error
+        self.fail_on = tuple(fail_on)
         self.check_traveler_authorization = AsyncMock(side_effect=self._decision)
 
     async def _decision(self, traveler_id, authorization, **_):
@@ -52,6 +54,8 @@ class RecordingDb:
             if self.probe_error:
                 raise RuntimeError("Data API unavailable")
             return [{"present": not self.no_table}]
+        if any(marker in sql for marker in self.fail_on):
+            raise RuntimeError("Data API unavailable")
         if "pg_policies" in sql:
             return []
         if "current_user" in sql:
@@ -197,6 +201,35 @@ async def test_an_unavailable_agent_audit_count_is_not_a_zero(monkeypatch):
     response = await diagnostics.session_receipt(diagnostics.SessionReceiptRequest(), PRINCIPAL)
     line = next(line for line in response.lines if line.table == "agent_audit_log")
     assert line.count is None and re.search(r"\(ref \S+\)", line.detail)
+
+
+@pytest.mark.parametrize("table,label", [
+    ("conversation_messages", "Conversation turns persisted"),
+    ("trip_interactions", "Interactions written for semantic recall"),
+    ("bookings", "Courtesy holds still live"),
+])
+async def test_a_failed_scoped_count_is_unknown_and_logged_not_zero(
+    monkeypatch, caplog, table, label
+):
+    _patch(monkeypatch, RecordingDb(fail_on=(f"FROM {table}",)))
+    with caplog.at_level("ERROR", logger="backend.errors"):
+        response = await diagnostics.session_receipt(diagnostics.SessionReceiptRequest(), PRINCIPAL)
+    line = next(line for line in response.lines if line.label == label)
+    assert line.count is None
+    ref = re.search(r"could not be counted \(ref (\S+)\)", line.detail)
+    assert ref and "Data API unavailable" not in line.detail
+    assert any(f"ref={ref.group(1)}" in r.getMessage() for r in caplog.records)
+    others = [item for item in response.lines if item.scoped and item.label != label]
+    assert others and all(item.count is not None for item in others)
+
+
+async def test_a_failed_policy_lookup_is_logged_and_the_probe_continues(monkeypatch, caplog):
+    _patch(monkeypatch, RecordingDb(fail_on=("pg_policies",)))
+    with caplog.at_level("ERROR", logger="backend.errors"):
+        policies = await diagnostics._load_policies(diagnostics.get_rds_data_client(), ["a", "b"])
+    assert policies == []
+    refs = [r for r in caplog.records if "rls_probe_policies failed" in r.getMessage()]
+    assert len(refs) == 2
 
 
 MIGRATION = Path(__file__).parents[1] / "scripts" / "migrations" / "018_service_logins.sql"

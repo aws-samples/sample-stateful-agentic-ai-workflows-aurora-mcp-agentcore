@@ -45,6 +45,15 @@ def reports_durable_snapshots(body: dict, status: int) -> bool:
     )
 
 
+def receipt_rows_counted(body: dict, status: int) -> bool:
+    """Require every receipt line to carry a count and the counts to sum above zero."""
+    lines = body["lines"]
+    for line in lines:
+        if line["count"] is None:
+            raise ValueError(f"receipt line {line.get('label')!r} could not be counted")
+    return sum(line["count"] for line in lines) > 0
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -244,7 +253,7 @@ def main() -> int:
                workflow_resumed=lambda b, s: b.get("workflow", {}).get("workflow_status") == "resumed")
     record("session_receipt", "POST", "/api/diagnostics/session-receipt",
            {"conversation_id": conv5, "window_minutes": 90}, ok=ok,
-           rows=lambda b, s: sum(l["count"] for l in b["lines"]) > 0,
+           rows=receipt_rows_counted,
            durable=lambda b, s: b.get("checkpoint_backend_durable") is True)
     record("p5_amalfi_lengths", "POST", "/api/chat",
            {"message": "Which trip lengths are still available for Amalfi Coast Villa Week?", "phase": 5, "customer_id": TRAVELER, "travelers_count": 2},

@@ -281,14 +281,24 @@ class SessionReceiptRequest(BaseModel):
 
 
 async def _count_since(
-    db, sql: str, params: tuple, transaction_id: Optional[str] = None
-) -> Optional[int]:
-    """Count rows, returning None when the relation does not exist."""
+    db, sql: str, params: tuple, transaction_id: Optional[str] = None, *, context: str = "count"
+) -> "Probed":
+    """Count rows; on failure return no value and the log reference of why."""
     try:
         rows = await db.execute(sql, params, transaction_id=transaction_id)
-    except Exception:  # noqa: BLE001 - a missing table is an answer, not a fault
-        return None
-    return int(rows[0]["n"]) if rows else 0
+    except Exception:  # noqa: BLE001 - an unavailable count degrades its line, not the receipt
+        return Probed(None, log_exception(f"session_receipt_{context}"))
+    return Probed(int(rows[0]["n"]) if rows else 0)
+
+
+def _scoped_line(label: str, table: str, probed: "Probed", detail: str) -> ReceiptLine:
+    return ReceiptLine(
+        label=label,
+        table=table,
+        count=probed.value,
+        detail=detail if probed.value is not None else f"could not be counted (ref {probed.ref})",
+        scoped=True,
+    )
 
 
 async def _load_policies(db, tables: Sequence[str]) -> List[RlsPolicy]:
@@ -305,6 +315,7 @@ async def _load_policies(db, tables: Sequence[str]) -> List[RlsPolicy]:
                 (table,),
             )
         except Exception:  # noqa: BLE001 - see the docstring
+            log_exception("rls_probe_policies")
             continue
         policies.extend(
             RlsPolicy(
@@ -428,6 +439,7 @@ async def session_receipt(
             "WHERE created_at > CURRENT_TIMESTAMP - %s::interval",
             (window,),
             transaction_id=tx,
+            context="conversation_messages",
         )
         interactions = await _count_since(
             db,
@@ -435,21 +447,16 @@ async def session_receipt(
             "WHERE created_at > CURRENT_TIMESTAMP - %s::interval",
             (window,),
             transaction_id=tx,
+            context="trip_interactions",
         )
 
-    lines.append(ReceiptLine(
-        label="Conversation turns persisted",
-        table="conversation_messages",
-        count=turns or 0,
-        detail="each with a 1024d embedding",
-        scoped=True,
+    lines.append(_scoped_line(
+        "Conversation turns persisted", "conversation_messages", turns,
+        "each with a 1024d embedding",
     ))
-    lines.append(ReceiptLine(
-        label="Interactions written for semantic recall",
-        table="trip_interactions",
-        count=interactions or 0,
-        detail="pgvector rows Phase 4 recalls against",
-        scoped=True,
+    lines.append(_scoped_line(
+        "Interactions written for semantic recall", "trip_interactions", interactions,
+        "pgvector rows Phase 4 recalls against",
     ))
     # `bookings` is scoped by traveler AND by agent type, so it has to be read
     # as the agent entitled to it. Reading as memory_agent returns nothing,
@@ -465,13 +472,11 @@ async def session_receipt(
             "WHERE status = 'held' AND hold_expires_at > CURRENT_TIMESTAMP",
             (),
             transaction_id=booking_tx,
+            context="bookings",
         )
-    lines.append(ReceiptLine(
-        label="Courtesy holds still live",
-        table="bookings",
-        count=holds or 0,
-        detail="inventory committed by the workflow, still inside its TTL",
-        scoped=True,
+    lines.append(_scoped_line(
+        "Courtesy holds still live", "bookings", holds,
+        "inventory committed by the workflow, still inside its TTL",
     ))
 
     # Scoped to this session's workflow thread. Counting these tables whole -
