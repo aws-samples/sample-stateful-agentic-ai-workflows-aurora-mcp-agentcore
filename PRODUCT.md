@@ -20,9 +20,9 @@ The supported application route is `/showcase`. The story moves through Concierg
 
 ## Capabilities and Constraints
 
-Preserve live catalog and recommendation data, conversation, traveler context, saved trips, comparison, trip details, confirmation and hold receipts. Preserve the five demo phases and their evidence. Runtime status must describe the actual connection. Empty, loading and unavailable states must be honest. Never substitute invented availability, transactions, prices, activity or successful agent actions for live evidence.
+Preserve live catalog and recommendation data, conversation, traveler context, saved trips, comparison, trip details, confirmation and hold receipts. Preserve the five phases and their evidence. Runtime status must describe the actual connection. Empty, loading and unavailable states must be honest. Never substitute invented availability, transactions, prices, activity or successful agent actions for live evidence.
 
-The demo's fictional traveler is Jordan Morgan. A courtesy hold affects demo catalog inventory; it is not a supplier reservation or payment. Business state and conversation memory have distinct roles.
+The sample's fictional traveler is Jordan Morgan. A courtesy hold affects sample catalog inventory; it is not a supplier reservation or payment. Business state and conversation memory have distinct roles.
 
 ## Brand Commitments
 

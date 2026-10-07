@@ -1,6 +1,6 @@
 # Meridian operations
 
-How to provision Aurora, run Meridian with durable checkpoints, exercise its
+How to provision Aurora, run the workflow Runtime, exercise its
 recovery behavior, publish the web app, and troubleshoot a deployment.
 Commands run from `meridian/` with the virtual environment active unless a
 step says otherwise. The AgentCore deployment has its own
@@ -58,8 +58,8 @@ For a new, empty database:
 
 ```bash
 python scripts/init_aurora_schema.py   # base schema and the meridian_app RLS role
-python scripts/apply_migrations.py     # journeys, checkpoints, hold identity, booking functions
-python scripts/seed_data.py            # catalog with embeddings, the demo traveler, and a grant for your identity
+python scripts/apply_migrations.py     # journeys, snapshots, hold identity, booking functions
+python scripts/seed_data.py            # catalog with embeddings, the sample traveler, and a grant for your identity
 ```
 
 `init_aurora_schema.py` and a full `seed_data.py` refuse to run when Meridian
@@ -67,50 +67,97 @@ tables or data already exist. For an existing database, keep its journeys and
 bookings and run only `python scripts/apply_migrations.py`. A database created
 before traveler grants existed may also need
 `python scripts/bind_current_identity.py`, which grants your current IAM or
-AgentCore workload access to the demo traveler.
+AgentCore workload access to the sample traveler.
 
 Each workload that sets a traveler scope needs its own grant: the backend's
 identity (`seed_data.py` or `bind_current_identity.py`), the holds Lambda role
 (`bind_gateway_workload.py`) and, for the hosted app, the App Runner instance
 role (`bind_web_backend_role.py`).
 
-## Run with durable checkpoints
+## Run the workflow Runtime
 
-The quick start in the [repository README](../../README.md#quick-start) starts
-the backend with these settings:
+Phase 5 runs as a Strands Graph in the `MeridianWorkflow` AgentCore Runtime. The
+backend invokes it and relays the result; it saves one snapshot per node to the
+Aurora table `workflow_snapshots`. The quick start in the
+[repository README](../../README.md#quick-start) starts the backend. Before Phase 5
+works you need three things:
 
-| Variable | Value | Effect |
-| --- | --- | --- |
-| `LANGGRAPH_CHECKPOINT_DATA_API` | `true` | Store checkpoints in Aurora through the Data API (`AuroraDataApiSaver`) |
-| `LANGGRAPH_AUTO_CHECKPOINT_DSN` | `false` | Do not build a PostgreSQL DSN from other settings |
-| `LANGGRAPH_CHECKPOINT_REQUIRED` | `true` | Refuse to start without a durable checkpoint store |
-| `LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP` | `true` | Initialize and probe the store at startup |
+1. Migrations 014 to 017 applied (`python scripts/apply_migrations.py`). They
+   create `workflow_snapshots`, the `meridian_workflow` role and
+   `workflow_session_stops`.
+2. The Runtime's own database login. `meridian_workflow` is NOBYPASSRLS, owns
+   nothing and reaches `meridian_app` only through `SET ROLE`. Create its
+   password, its Secrets Manager secret and its access policy:
+
+   ```bash
+   python scripts/provision_workflow_login.py            # report only
+   python scripts/provision_workflow_login.py --apply --write-env
+   ```
+
+   `--write-env` sets `AURORA_WORKFLOW_SECRET_ARN` in `.env`.
+3. The deployed Runtime. Follow the [runbook](AGENTCORE_DEPLOY_RUNBOOK.md) to
+   deploy `MeridianWorkflow`, then run `python scripts/sync_agentcore_env.py --write`
+   so `.env` has `AGENTCORE_WORKFLOW_RUNTIME_ARN`, and
+   `python scripts/bind_workflow_runtime.py` to grant the Runtime's role its
+   traveler binding.
 
 Confirm with `curl http://127.0.0.1:8013/api/health`:
 
 ```json
 {
-  "checkpoint_backend": "AuroraDataApiSaver",
+  "checkpoint_backend": "Aurora workflow_snapshots",
   "checkpoint_durable": true,
-  "checkpoint_required": true
+  "workflow_runtime_configured": true
 }
 ```
 
-If it reports `MemorySaver`, checkpoints live in the process and do not survive
-a restart. `/api/health` also runs a live Aurora `SELECT 1` (2 second timeout,
-cached for 10 seconds) and reports `status` as `healthy` or `degraded`, with
+`/api/health` also runs a live Aurora `SELECT 1` (2 second timeout, cached for
+10 seconds) and reports `status` as `healthy` or `degraded`, with
 `aurora_reachable`, `degraded_component` and `degraded_error_class` naming what
-failed. The checkpoint fields are the configured backend, not a second probe.
-`/health` is process liveness only. After renewing expired AWS credentials,
-restart the backend.
+failed. The snapshot fields describe the configured store and the Runtime ARN,
+not a second probe. `python scripts/smoke_workflow_runtime.py` pings the
+deployed Runtime and touches no row. `/health` is process liveness only. After
+renewing expired AWS credentials, restart the backend.
 
-To checkpoint over a direct PostgreSQL connection instead, supply
-`LANGGRAPH_CHECKPOINT_DSN` (or the discrete `LANGGRAPH_CHECKPOINT_*` settings)
-from a network location that can reach the private cluster endpoint, with TLS
-certificate and hostname verification. The backend then uses one bounded pool
-and `AsyncPostgresSaver`. Use a least-privilege database role for checkpoints,
-not the master user. `scripts/start_checkpoint_tunnel.sh` opens an SSM port
-forward for this path.
+### Rotate the workflow login password
+
+Re-run `python scripts/provision_workflow_login.py --apply` with `AWS_PROFILE`
+set. It generates a new password, sends Postgres only its SCRAM-SHA-256
+verifier, stores the new credential in the same secret and checks that the login
+is `meridian_workflow` without BYPASSRLS. Between the `ALTER ROLE` and the secret
+update, anything holding the old secret fails, so rotate while no workflow runs.
+The same command repairs a half-finished run.
+
+### Stop a Runtime session
+
+`POST /api/journeys/{journey_id}/stop-session` stops the Runtime session of the
+journey's active thread. On the Recovery desk this is **Stop runtime session** on
+the continuity rail. The backend takes the thread from the journey under RLS, so
+a caller can stop only their own journey's session. It answers 404 when the
+journey is not the traveler's, 409 when nothing is paused or running or the
+session was already stopped, and 503 when the Runtime is not configured or the
+stop failed.
+
+Each stop is recorded in `workflow_session_stops` with the journey, thread,
+Runtime session ID, who asked, and:
+
+| `stopped_during` | Meaning | Lease |
+| --- | --- | --- |
+| `waiting` | The run was paused for the traveler's review | Nothing to release |
+| `running` | A worker was mid-run | Released as abandoned, so a resume claims at once |
+| `finished` | The snapshot shows the Graph completed and only the release was outstanding | Closed as succeeded |
+
+`last_step` is the last saved node and `released_execution_id` names the
+execution whose lease the stop released. Read the records with the master role:
+
+```sql
+SELECT stopped_at, stopped_during, last_step, runtime_session_id
+  FROM workflow_session_stops
+ WHERE journey_id = '<journey-id>' ORDER BY stop_id DESC;
+```
+
+The next resume starts a new microVM on the same session ID. It claims the next
+attempt and restores the newest snapshot, so `search` does not run again.
 
 Before exposing the API beyond loopback, set `MERIDIAN_API_TOKEN` and an
 explicit `CORS_ORIGINS` list.
@@ -122,36 +169,33 @@ The canceled-flight workflow runs:
 ```text
 classify → search → availability → prepare_hold → hold → synthesize
                                     │              │
-                           checkpoint intent      Gateway → Aurora transaction
+                            saved intent          Gateway → Aurora transaction
                            (request and booking IDs)
 ```
 
-A checkpoint and a Gateway write are separate transactions. The design makes
+A snapshot and a Gateway write are separate transactions. The design makes
 the write idempotent and the execution resumable:
 
 | Failure | Recovery behavior | Evidence |
 | --- | --- | --- |
 | Worker stops before the hold | Another worker takes over after the lease expires and resumes from the saved node | Same thread and pending node, a successful replacement execution |
 | Hold committed, response lost | The retried intent returns the existing booking | Same request ID, booking ID and original expiry; one booking for the request |
-| Worker stops after the hold is checkpointed | The remaining nodes run without placing another hold | The saved hold and the persisted booking |
+| Worker stops after the hold is saved | The remaining nodes run without placing another hold | The saved hold and the persisted booking |
 | A second worker while the lease is live | The second execution is refused | HTTP 409 and one running execution |
+| Runtime session stopped by the presenter | The next resume starts a new microVM on the same session and restores the newest snapshot | A `workflow_session_stops` row, a new execution attempt and the same hold |
 | Policy refusal or target failure | No hold is reported | The actual boundary or error, and the booking readback |
 
-**Restart from the browser.** Run the canceled-flight prompt in the Workflow
-phase; it pauses after `search`. Stop the backend with `Ctrl+C`, start it with
-the same settings, confirm `/api/health` is durable, and select **Resume and
-request hold** on the Recovery desk. The workflow continues at `availability`
-on the same `thread_id`; `search` does not run again.
+**Stop the session from the browser.** Run the canceled-flight prompt in the
+Workflow phase; it pauses after `search`. Choose **Stop runtime session** on the
+continuity rail, then select **Resume and request hold** on the Recovery desk.
+The backend stays up. The workflow continues at `availability` on the same
+`thread_id` in a new microVM; `search` does not run again.
 
 **Scripts against real Aurora and Gateway calls.** Both need the deployed
-AgentCore resources and create, then remove, their own journey, checkpoint and
+AgentCore resources and create, then remove, their own journey, snapshot and
 hold records. They do not reset the catalog or touch other bookings.
 
 ```bash
-export LANGGRAPH_CHECKPOINT_DSN=
-export LANGGRAPH_AUTO_CHECKPOINT_DSN=false
-export LANGGRAPH_CHECKPOINT_DATA_API=true
-export LANGGRAPH_CHECKPOINT_REQUIRED=true
 python scripts/kill_and_resume_proof.py
 python scripts/lost_response_proof.py
 ```
@@ -163,7 +207,7 @@ client for verification and cleanup. The worker prints its `current_user`, and t
 driver fails unless it is `meridian_workflow`.
 
 - `kill_and_resume_proof.py` places a hold through the gateway, kills its worker
-  with SIGKILL after the hold is checkpointed, shows a second worker refused
+  with SIGKILL after the hold is saved, shows a second worker refused
   until the lease expires, then resumes and verifies one hold with the same
   booking ID and original expiry. `DEMO_LEASE_SECONDS` (default 20) sets the
   lease; a cold worker needs most of that before its first heartbeat.
@@ -178,7 +222,12 @@ On System evidence, a successful recovery shows the replacement execution ID,
 `resumed_from_checkpoint`, the worker IDs, the hold creator, and the booking ID
 and expiry. A second execution alone does not prove that the resume succeeded.
 
-A confirmed booking uses catalog capacity. To release the demo traveler's
+`stop_and_resume_proof.py` drives the running backend instead: it stops the
+journey's Runtime session through the stop endpoint, once while the run waits
+for review (`--during waiting`) and once mid-run (`--during running`), resumes
+on a new microVM and removes its own rows unless you pass `--keep`.
+
+A confirmed booking uses catalog capacity. To release the sample traveler's
 bookings, list them first:
 
 ```bash
@@ -215,7 +264,7 @@ and a streamed turn through CloudFront before marking a release verified.
 so this path applies to accounts that already use it; a new account needs a
 different container host for the backend, such as Amazon ECS.
 
-The App Runner instance role is a workload and needs its own grant to the demo
+The App Runner instance role is a workload and needs its own grant to the sample
 traveler. Run this once after the `MeridianWebRoles` stack exists; without it,
 Phase 4 and Phase 5 requests on the hosted site fail with
 `aws_iam subject is not authorized for traveler`:
@@ -227,7 +276,7 @@ python scripts/bind_web_backend_role.py
 A Git push runs CI only; it does not deploy the hosted app or the AgentCore
 resources.
 
-`scripts/validate_demo.py` runs the full demo contract (catalog, phases, holds,
+`scripts/validate_demo.py` runs the full sample contract (catalog, phases, holds,
 confirmation and cleanup) against a backend. It uses real services and removes
 only its own records. Against a hosted backend it needs
 `--allow-hosted-demo-writes`, and `MERIDIAN_HOSTED_AUTH` must supply the site's
@@ -255,7 +304,8 @@ explains why App Runner needs this.
 | Every hold is denied, including confirmed ones | If `verify_agentcore.py` shows the policy engine `MISSING`, render (it must print `Configuration complete.`) and deploy. If it shows `ACTIVE` and `ENFORCE`, read the denied span's `arguments`: the ceiling is the traveler's saved per-person budget times the party size, and packages above it are refused. |
 | The runtime replies but the trace has no gateway spans | The runtime runs older code. `agentcore status` shows the version; `agentcore deploy -y` publishes `app/MeridianConcierge`. |
 | `npx agentcore` fails with a cloud assembly schema version error | `npx` resolved an older cached CLI. Run the globally installed `agentcore`. |
-| `/api/health` reports `MemorySaver` | No durable checkpoint store resolved. Set the variables in [Run with durable checkpoints](#run-with-durable-checkpoints). |
+| `/api/health` reports `workflow_runtime_configured: false`, or Phase 5 reports AgentCore is not configured | The backend has no `AGENTCORE_WORKFLOW_RUNTIME_ARN`. Deploy `MeridianWorkflow`, run `python scripts/sync_agentcore_env.py --write` and restart the backend. See [Run the workflow Runtime](#run-the-workflow-runtime). |
+| `stop-session` returns 409 | The journey has no paused or running workflow session, or its session was already stopped. Read the journey before trying again. |
 
 ## Waits, retries and readback
 

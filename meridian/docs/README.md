@@ -4,13 +4,13 @@
 
 1. [Run of show](TALK_RUN_OF_SHOW.md) - 40 minutes of content, five live checkpoints, 20 minutes of discussion.
 2. [Numbered capability guides](../backend/agents/README.md) - 01 SQL, 02 MCP, 03 Retrieval, 04 Production, 05 Workflow.
-3. [Code walkthrough](CODE_WALKTHROUGH.md) - the precise symbols to open beside the live demo.
+3. [Code walkthrough](CODE_WALKTHROUGH.md) - the precise symbols to open beside the running app.
 
 ## Understand the design
 
 1. [Application guide](../README.md) - screens, API, configuration and governance boundaries.
 2. [Source map](../STRUCTURE.md) - where requests, tools and state live.
-3. [Stateful architecture](STATEFUL_ARCHITECTURE.md) - checkpoints, memory, transactions and recovery.
+3. [Stateful architecture](STATEFUL_ARCHITECTURE.md) - snapshots, memory, transactions and recovery.
 4. [Dogwood assessment](DOGWOOD_POLICY_ASSESSMENT.md) - optional temporal-policy learning, with implemented and proposed behavior kept separate.
 5. [Product](../../PRODUCT.md) and [design system](../../DESIGN.md) - presentation priorities and UI conventions.
 

@@ -166,7 +166,7 @@ is missing, for example on another machine, pass the IDs to
 policy engine ID needs the gateway ID with it, because the engine's policies
 name the gateway.
 
-## 6. Grant the holds Lambda access to the demo traveler
+## 6. Grant the holds Lambda access to the sample traveler
 
 The `MeridianHolds` Lambda is a workload: before it sets a traveler scope it
 needs its own row in `traveler_identity_bindings`.
@@ -235,7 +235,7 @@ Runtime, so confirm each before you run it.
    (cd meridian/meridian_agentcore && agentcore deploy -y)
    ```
 
-5. Bind the Runtime's execution role to the demo traveler. Run it after the
+5. Bind the Runtime's execution role to the sample traveler. Run it after the
    deploy, because the role comes from the deployed state:
 
    ```bash
@@ -281,19 +281,19 @@ python meridian/scripts/smoke_production_turn.py   # search, unconfirmed hold de
 ```
 
 `smoke_production_turn.py` places one real 12-hour hold on a Tokyo package for
-the demo traveler and saves every event under `meridian/.local/verification/`.
+the sample traveler and saves every event under `meridian/.local/verification/`.
 Holds expire on their own.
 
 In the showcase trace for a Production turn, expect:
 
 - `AgentCore Identity resolved` and `Workload traveler grant allowed`
-- `AgentCore Runtime · turn started`, then `AgentCore Gateway · tools/list` with four tools
-- `AgentCore Memory · session restored` with the event count
-- `AgentCore Gateway · tools/call → semantic_trip_search` and its result
-- For a hold: `tools/call → create_courtesy_hold`, its result with the Lambda's workload subject and `traveler_grant: allow`, and the hold receipt
-- For a confirmation: `tools/call → confirm_booking` under `meridian_booking_governance`, and a **Confirmed booking** receipt with the same booking ID
-- For a hold the policy refuses: `Hold refused by Cedar policy · Denied by policy`
-- `AgentCore Runtime · turn complete` with the trace ID and a CloudWatch link
+- `AgentCore Runtime: turn started`, then `AgentCore Gateway: tools/list` with four tools
+- `AgentCore Memory: session restored` with the event count
+- `AgentCore Gateway: tools/call → semantic_trip_search` and its result
+- For a hold: `AgentCore Gateway: tools/call → create_courtesy_hold`, its result with the Lambda's workload subject and `traveler_grant: allow`, and the hold receipt
+- For a confirmation: `AgentCore Gateway: tools/call → confirm_booking` under `meridian_booking_governance`, and a **Confirmed booking** receipt with the same booking ID
+- For a hold the policy refuses: `Hold refused by Cedar policy`, with the status label **Denied by policy**
+- `AgentCore Runtime: turn complete` with the trace ID and a CloudWatch link
 
 Spans for a trace ID are in the runtime log group
 `/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT`, stream `spans`, and the

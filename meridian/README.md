@@ -1,12 +1,14 @@
 # Meridian application
 
 Meridian is a travel concierge built on Aurora PostgreSQL, MCP, Strands Agents,
-Amazon Bedrock AgentCore and LangGraph. This directory holds the runnable
-application: the FastAPI backend, the React frontend, the AgentCore project,
-the CDK apps, scripts and tests.
+and Amazon Bedrock AgentCore. This directory holds the runnable application:
+the FastAPI backend, the React frontend, the AgentCore project with its two
+Runtimes, the CDK apps, scripts and tests. The maintained LangGraph example is
+in [examples/langgraph](examples/langgraph/README.md); the application does not
+import it.
 
 Start with the [repository README](../README.md) for prerequisites, the quick
-start and a walkthrough of the demo. This page is the reference for the views,
+start and a walkthrough of the showcase. This page is the reference for the views,
 phases, API, configuration, schema and governance model.
 
 ## Views
@@ -20,7 +22,7 @@ URL, so a reload restores a saved workflow.
 | Concierge | `/showcase?view=concierge` | Trip discovery, conversation with the Phase 4 runtime, trip details, holds and confirmation, and the traveler brief |
 | Capability ladder | `/showcase?view=ladder` | The five phases, suggested prompts, and a trace of each reply |
 | Recovery desk | `/showcase?view=recovery` | The canceled-trip workflow: saved shortlist, resume, the 15-minute hold receipt, and the handoff back to Concierge |
-| System evidence | `/showcase?view=proof` | Aurora readback of the selected journey's checkpoints, executions, leases, authorization decisions and holds |
+| System evidence | `/showcase?view=proof` | Aurora readback of the selected journey's snapshots, executions, leases, session stops, authorization decisions and holds |
 | Solution briefing | `/showcase?view=briefing` | Architecture, data preparation, phase diagrams, gateway tools and Cedar policies; makes no service calls |
 
 Concierge presents live trip options beside the conversation. **View travel brief**
@@ -54,11 +56,11 @@ you open them. This keeps the projector focused on the topic being discussed.
 
 | Phase | Capability | What the trace shows |
 | --- | --- | --- |
-| 1 · SQL | Query | Rows from Aurora through parameterized RDS Data API filters |
-| 2 · MCP | Tools | Aurora access through the PostgreSQL MCP server, plus custom tools for package comparison, currency conversion, destination price range, loyalty and availability |
-| 3 · Retrieval | Intent | Hybrid pgvector and full-text candidates reranked by Cohere Rerank 3.5, with a Strands supervisor routing to specialists |
-| 4 · Production | Trust | AgentCore Runtime with four Gateway tools, a Cedar decision for each call, traveler grants and RLS scoping the data, and hold and booking receipts |
-| 5 · Workflow | Durability | Aurora checkpoints, a worker lease, same-thread resume after a restart, and a hold that keeps its request ID, booking ID and expiry |
+| 1. SQL | Query | Rows from Aurora through parameterized RDS Data API filters |
+| 2. MCP | Tools | Aurora access through the PostgreSQL MCP server, plus custom tools for package comparison, currency conversion, destination price range, loyalty and availability |
+| 3. Retrieval | Intent | Hybrid pgvector and full-text candidates reranked by Cohere Rerank 3.5, with a Strands supervisor routing to specialists |
+| 4. Production | Trust | AgentCore Runtime with four Gateway tools, a Cedar decision for each call, traveler grants and RLS scoping the data, and hold and booking receipts |
+| 5. Workflow | Durability | A Strands Graph in its own AgentCore Runtime, Aurora snapshots, a worker lease, same-session resume on a new microVM, and a hold that keeps its request ID, booking ID and expiry |
 
 ### Prompts
 
@@ -74,7 +76,7 @@ Phase 5 is the last phase, so its hand-off is
 | MCP | `Compare three trip types and convert each price to euros.`<br>`What is the price range for Tokyo trips?` | `Find a quiet, romantic wine-country retreat with a private villa.` |
 | Retrieval | `Find a quiet, romantic wine-country retreat with a private villa.`<br>`Which trip lengths are still available for Tuscany Wine & Wellness?` | `Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` |
 | Production | `Find Tokyo trips that fit my saved preferences.`<br>`Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.` | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.` |
-| Workflow | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`<br>`Which trip lengths are still available for Amalfi Coast Villa Week?` | `Resume workflow from checkpoint`, after the run pauses |
+| Workflow | `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`<br>`Which trip lengths are still available for Amalfi Coast Villa Week?` | `Resume workflow from the saved step`, after the run pauses |
 
 These boundaries belong to the configured phases, not to SQL or MCP in
 general.
@@ -93,8 +95,9 @@ delegation. Every hold and confirmation uses the governed Gateway path.
 | --- | --- | --- |
 | Traveler profile, preferences, conversation history and audit | Aurora PostgreSQL | RDS Data API |
 | Runtime session and semantic context across turns | AgentCore Memory | AgentCore APIs, through the runtime's Strands session manager |
-| LangGraph execution position and pending writes | Aurora PostgreSQL | `AuroraDataApiSaver` over the RDS Data API, or `AsyncPostgresSaver` over pooled psycopg |
+| Workflow state: Strands Graph snapshots, append-only JSONB, one row per node | Aurora PostgreSQL table `workflow_snapshots` | Written and read by the `MeridianWorkflow` Runtime as the `meridian_workflow` login, with the traveler pinned per transaction under RLS |
 | Journey binding, worker leases and hold-request identities | Aurora PostgreSQL | Scoped RDS Data API transactions |
+| Presenter session stops | Aurora PostgreSQL table `workflow_session_stops` | `POST /api/journeys/{journey_id}/stop-session`, read back under RLS |
 | Holds from any phase and from the Phase 5 workflow | Aurora PostgreSQL | Gateway tool, Cedar policy, then the `MeridianHolds` Lambda in one scoped Data API transaction |
 | Booking confirmation | Aurora PostgreSQL | Gateway tool, Cedar policy, then the `MeridianHolds` Lambda changing the booking from `held` to `confirmed` |
 
@@ -107,15 +110,17 @@ unit of work; it is not long-lived workflow state. See
 ## Recovery behavior
 
 The canceled-flight prompt runs `classify → search → availability →
-prepare_hold → hold → synthesize`. It pauses after `search` so the checkpoint
-is visible before the workflow checks availability and places a hold. The proof scripts pause with `WorkflowCommand(pause_after=...)`.
+prepare_hold → hold → synthesize` as a Strands Graph in the `MeridianWorkflow`
+Runtime. It pauses after `search` so the saved snapshot is visible before the
+workflow checks availability and places a hold. A resume needs the traveler's
+answered review. The proof scripts pause by passing `pause_after` to the runner.
 
-- `prepare_hold` saves the hold's request ID and booking ID in the checkpoint
+- `prepare_hold` saves the hold's request ID and booking ID in the snapshot
   before the `hold` node calls the Gateway. A resumed or retried run sends the
   same IDs, and Aurora returns the existing booking instead of creating another.
 - The `MeridianHolds` Lambda checks the worker's lease inside the write
   transaction, so a worker that lost its lease cannot write.
-- A checkpoint and a business write are separate transactions. The design makes
+- A snapshot and a business write are separate transactions. The design makes
   the write idempotent and the execution resumable; it does not claim
   exactly-once execution.
 - The closing message comes from saved state, including the hold outcome and
@@ -156,13 +161,14 @@ hydration and memory persistence. Interrupted text is marked incomplete.
 | Method | Path | Description |
 | --- | --- | --- |
 | `POST` | `/api/chat/stream` | Phase 4 Concierge SSE: progress, text deltas, conversation identity, then one completed response. Uses the same authentication and traveler authorization as chat. Disconnects are never automatically retried. |
-| `POST` | `/api/chat` | Chat by `phase` (1 to 5). Phase 5 carries the conversation, traveler count and resume request into LangGraph. The response includes the trace in `activities`. |
+| `POST` | `/api/chat` | Chat by `phase` (1 to 5). Phase 5 invokes the `MeridianWorkflow` Runtime with the conversation, traveler count and resume request, and relays its result. The response includes the trace in `activities`. |
 | `POST` | `/api/chat/order` | Courtesy hold from any phase: Runtime, Gateway and Cedar, then the `MeridianHolds` Lambda. `order` is null when the hold is refused. |
 | `POST` | `/api/chat/book` | Confirm a held booking. The backend reads the total under RLS so the policy judges what Aurora holds. `order` is null when the confirmation is refused. |
 | `GET` | `/api/chat/holds` | Read a direct-hold receipt by `conversation_id`, `product_id`, `duration` and `quantity`; no model call or write |
 | `GET` | `/api/chat/bookings/{booking_id}` | Read a booking with its amounts and expiry |
 | `GET` | `/api/journeys` | List the traveler's journeys; `thread_id` selects one workflow and `limit` is 1 to 50 |
-| `GET` | `/api/journeys/{journey_id}` | Saved workflow, checkpoint, executions, authorization and hold evidence |
+| `GET` | `/api/journeys/{journey_id}` | Saved workflow, snapshot, executions, authorization, session stops and hold evidence |
+| `POST` | `/api/journeys/{journey_id}/stop-session` | Stop the journey's `MeridianWorkflow` Runtime session, record the stop in `workflow_session_stops` and release a running lease. 404 when the journey is not the traveler's, 409 when nothing is paused or running or the session was already stopped, 503 when the Runtime is not configured or the stop failed |
 | `GET` | `/api/memory/{traveler_id}` | Traveler profile and preference facts |
 | `PATCH` | `/api/memory/{traveler_id}/facts/{preference_key}` | Set the value of one preference fact under RLS |
 | `DELETE` | `/api/memory/{traveler_id}/facts/{preference_key}` | Delete one preference fact under RLS |
@@ -172,7 +178,7 @@ hydration and memory persistence. Interrupted text is marked incomplete.
 | `GET` | `/api/products/{product_id}` | One trip in the product shape (`product_id` is the `package_id`) |
 | `POST` | `/api/diagnostics/rls-probe` | Allow and deny checks plus row counts under the restricted RLS role |
 | `POST` | `/api/diagnostics/session-receipt` | Counts the durable rows this session produced in the last `window_minutes`, table by table |
-| `GET` | `/api/health` | Runs a live Aurora `SELECT 1` and reports `healthy` or `degraded` (`aurora_reachable`, `degraded_component`, `degraded_error_class`), plus the checkpoint backend and whether it is durable |
+| `GET` | `/api/health` | Runs a live Aurora `SELECT 1` and reports `healthy` or `degraded` (`aurora_reachable`, `degraded_component`, `degraded_error_class`), plus the workflow snapshot store, whether it is durable, and whether the workflow Runtime ARN is configured (`workflow_runtime_configured`) |
 | `GET` | `/health` | Public process liveness only; it does not check Aurora |
 | `GET` | `/openapi.json`, `/docs`, `/redoc` | API schema and interactive documentation |
 
@@ -192,11 +198,8 @@ Every route except `/health` requires the HTTP principal described under
 | `RLS_APP_ROLE` | Restricted role for scoped sessions. Default `meridian_app` |
 | `AGENTCORE_*` | Runtime, Gateway and Memory identifiers, written by `scripts/sync_agentcore_env.py` |
 | `MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS` | Whole-trip ceiling for Cedar when the traveler has no saved budget. Default `400000` |
-| `LANGGRAPH_CHECKPOINT_DATA_API` | Use `AuroraDataApiSaver` when no checkpoint DSN resolves |
-| `LANGGRAPH_CHECKPOINT_DSN` or `LANGGRAPH_CHECKPOINT_*` | Use `AsyncPostgresSaver` over a bounded PostgreSQL pool instead |
-| `LANGGRAPH_AUTO_CHECKPOINT_DSN` | Allow a DSN built from discrete settings (on by default only when `ENVIRONMENT=development`). `false` stops that DSN; the Data API saver then runs only if `LANGGRAPH_CHECKPOINT_DATA_API=true` and no `LANGGRAPH_CHECKPOINT_DSN` is set, otherwise the workflow falls back to `MemorySaver` |
-| `LANGGRAPH_CHECKPOINT_REQUIRED` | Fail at startup when no durable checkpoint store is available |
-| `LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP` | Initialize and probe the checkpoint store at startup |
+| `AGENTCORE_WORKFLOW_RUNTIME_ARN` | ARN of the `MeridianWorkflow` Runtime that runs Phase 5. `scripts/sync_agentcore_env.py --write` sets it |
+| `AURORA_WORKFLOW_SECRET_ARN` | Secret for the `meridian_workflow` login, written by `scripts/provision_workflow_login.py --write-env` |
 | `MERIDIAN_API_TOKEN`, `CORS_ORIGINS` | API token and allowed origins for any non-loopback deployment |
 
 `requirements.in` lists the direct Python dependencies and `requirements.txt`
@@ -224,8 +227,9 @@ view over it. Migration `005_bind_identity_to_traveler.sql` adds the authorizati
 columns to that table and recreates the view.
 
 The migrations in `scripts/migrations/` add the journey, execution, hold
-request and checkpoint tables (`journeys`, `journey_executions`,
-`hold_requests`, `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`),
+request, snapshot and session-stop tables (`journeys`, `journey_executions`,
+`hold_requests`, `workflow_snapshots`, `workflow_session_stops`), the
+`meridian_workflow` login role,
 `bookings.confirmed_at`, and the two `SECURITY DEFINER` functions the governed
 writes call: `create_courtesy_hold` and `confirm_booking`. Both re-check the
 traveler scope and agent type inside the transaction, and a retried call
@@ -251,7 +255,7 @@ The script crops and resizes each image and reports packages without artwork.
 
 The HTTP layer binds each request to a traveler before workload authorization
 runs. Loopback development (the default `ENVIRONMENT=development`) and the
-hosted sample use one shared demo principal; neither authenticates Jordan as a
+hosted sample use one shared sample principal; neither authenticates Jordan as a
 person. Set `MERIDIAN_API_TOKEN` and `CORS_ORIGINS` before exposing the API to
 a network.
 
@@ -293,7 +297,7 @@ package before a hold. It is not enabled.
 | Frontend | React 18, Vite, TypeScript |
 | Backend | FastAPI, Python 3.13 |
 | Agents | Strands Agents for Phases 1 to 4; the Phase 4 agent runs on AgentCore Runtime with tools from AgentCore Gateway |
-| Workflow | LangGraph `StateGraph` with Aurora checkpoints and worker leases |
+| Workflow | Strands 1.57.2 Graph on its own AgentCore Runtime, `MeridianWorkflow`, with Aurora snapshots and worker leases. The LangGraph version is in `examples/langgraph/` |
 | Governance | AgentCore Policy (Cedar, `ENFORCE`), workload grants in Aurora, row-level security |
 | Database | Aurora PostgreSQL, RDS Data API, pgvector HNSW |
 | Models | Managed concierge and local agents: GPT-6 Sol (`us.openai.gpt-6-sol`), each configurable through `BEDROCK_MODEL_ID`. Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`cohere.rerank-v3-5:0`) on Amazon Bedrock |
@@ -312,7 +316,7 @@ Start with the [documentation index](docs/README.md), the
 | [docs/STATEFUL_ARCHITECTURE.md](docs/STATEFUL_ARCHITECTURE.md) | Where each kind of state lives and how it is reached |
 | [docs/CODE_WALKTHROUGH.md](docs/CODE_WALKTHROUGH.md) | A guided tour of the source, phase by phase |
 | [docs/AGENTCORE_DEPLOY_RUNBOOK.md](docs/AGENTCORE_DEPLOY_RUNBOOK.md) | Deploy the AgentCore resources |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Provision Aurora, run with durable checkpoints, exercise recovery, publish the web app, troubleshoot |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Provision Aurora, run the workflow Runtime, exercise recovery, publish the web app, troubleshoot |
 | [docs/AGENTCORE_LEARNINGS.md](docs/AGENTCORE_LEARNINGS.md) | AgentCore, Cedar and App Runner behavior that shaped the code |
 | [docs/DOGWOOD_POLICY_ASSESSMENT.md](docs/DOGWOOD_POLICY_ASSESSMENT.md) | Design for an optional temporal policy |
 | [meridian_agentcore/README.md](meridian_agentcore/README.md) | The AgentCore CLI project and its configuration templates |

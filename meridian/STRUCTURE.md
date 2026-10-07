@@ -10,10 +10,10 @@ frontend/src/main.tsx
   → api/client.ts → backend origin (VITE_API_ORIGIN, local default 127.0.0.1:8013)
 
 backend/main.py
-  → routers/chat.py        # Phases 1-5: inline search, Phase 4 concierge, Phase 5 LangGraph, holds and confirmation
+  → routers/chat.py        # Phases 1-5: inline search, Phase 4 concierge, Phase 5 invokes MeridianWorkflow, holds and confirmation
   → routers/products.py    # GET /api/packages[/{id}] and /api/products[/{id}]
   → routers/memory.py      # GET /api/memory/{traveler_id}, PATCH and DELETE on its facts, authorized and RLS-scoped
-  → routers/journeys.py    # authorized journey list and persisted evidence
+  → routers/journeys.py    # authorized journey list, persisted evidence, and POST /{id}/stop-session for the workflow Runtime session
   → routers/diagnostics.py # POST /api/diagnostics/rls-probe and /session-receipt: allow and deny checks, durable row counts
 ```
 
@@ -30,9 +30,10 @@ import their agent modules at runtime:
 - `backend/agents/phase_04_production/concierge.py`: identity, traveler grant, and RLS read and write around the managed runtime; `process_hold()` for a hold from the UI
 - `backend/agents/phase_04_production/memory_agent.py`: `@tool` recall and persist methods
 - `backend/agents/budget.py`: the budget ceiling Cedar compares against, shared by Phases 4 and 5
-- `backend/agents/phase_05_workflow/`: `graph.py` builds the Strands graph, `nodes.py` holds its steps, `runner.py` claims the lease and runs or resumes it, and `snapshot_storage.py` saves snapshots to Aurora `workflow_snapshots`
-- `backend/agentcore/runtime.py`, `backend/agentcore/identity.py`: AgentCore adapters (streaming runtime client, identity envelope)
+- `backend/agents/phase_05_workflow/`: `graph.py` builds the Strands graph, `nodes.py` holds its steps, `runner.py` claims the lease and runs or resumes it, `snapshot_storage.py` saves snapshots to Aurora `workflow_snapshots`, and `runtime_entry.py` is the one event the `MeridianWorkflow` Runtime handles
+- `backend/agentcore/runtime.py`, `backend/agentcore/workflow_runtime.py`, `backend/agentcore/identity.py`: AgentCore adapters (streaming Concierge client, workflow Runtime client with session stop, identity envelope)
 - `meridian_agentcore/app/MeridianConcierge/`: the Phase 4 agent on AgentCore Runtime: `main.py` (tool loop, memory session, streamed events), `turn_trace.py` (spans and the pinned hold and booking arguments), `hold_execution.py` (confirmed holds and confirmations run by the platform), `prompts.py`, `gateway_auth.py`
+- `meridian_agentcore/app/MeridianWorkflow/`: the Phase 5 Runtime; its `backend/` directory is a generated copy of the backend modules the workflow imports
 - `meridian_agentcore/agentcore/gateway_targets/meridian_holds/`: the `MeridianHolds` gateway Lambda (`get_package_details`, `create_courtesy_hold`, `confirm_booking`)
 - `meridian_agentcore/agentcore/gateway_targets/semantic_trip_search/`: the `semantic_trip_search` Lambda and its tool schema
 - `meridian_agentcore/agentcore/agentcore.template.json`: runtime, memory, gateway targets and the `MeridianGovernance` Cedar policy engine, with placeholders that `scripts/render_agentcore_config.py` fills for your account
@@ -55,9 +56,9 @@ uses the governed Gateway path.
 | `backend/agents/phase_01_sql/`, `backend/agents/phase_02_mcp/` | Reference Strands agents for SQL and MCP |
 | `backend/agents/phase_03_retrieval/` | Retrieval supervisor and read-only specialists |
 | `backend/agents/phase_04_production/` | Concierge and traveler memory agents |
-| `backend/agents/phase_05_workflow/` | LangGraph workflow: checkpoints, worker leases, hold intent and governed hold |
+| `backend/agents/phase_05_workflow/` | Strands Graph workflow: snapshots, worker leases, hold intent and governed hold |
 | `backend/agentcore/` | AgentCore Runtime client, Gateway checks, Identity, and the CLI config loader |
-| `backend/db/` | RDS Data API client with grant and RLS-scoped sessions, `AuroraDataApiSaver`, embeddings, journey store, `schema.sql` |
+| `backend/db/` | RDS Data API client with grant and RLS-scoped sessions, embeddings, journey store, `schema.sql` |
 | `backend/mcp/` | Phase 2 client for `awslabs.postgres-mcp-server`, and the custom `meridian-concierge` and `meridian-memory` MCP servers with their clients |
 | `backend/memory/` | Aurora traveler memory store and audit writer |
 | `backend/authorization.py` | Workload-to-traveler authorization types |
@@ -97,10 +98,11 @@ uses the governed Gateway path.
 | `scripts/publish_gateway_parameters.py` | Publish the Aurora settings the holds Lambda reads from SSM |
 | `scripts/bind_gateway_workload.py`, `scripts/bind_web_backend_role.py` | Grant the holds Lambda role and the App Runner instance role access to Jordan |
 | `scripts/verify_agentcore.py`, `scripts/smoke_gateway_tools.py`, `scripts/smoke_production_turn.py` | Check the deployed platform, the gateway tools and the governed hold path end to end |
-| `scripts/kill_and_resume_proof.py`, `scripts/lost_response_proof.py` | Recovery exercises: kill a worker after its hold, or discard a committed hold response |
+| `scripts/kill_and_resume_proof.py`, `scripts/lost_response_proof.py`, `scripts/stop_and_resume_proof.py` | Recovery exercises: kill a worker after its hold, discard a committed hold response, or stop the Runtime session and resume |
+| `scripts/provision_workflow_login.py`, `scripts/bind_workflow_runtime.py`, `scripts/stage_workflow_runtime.py` | Create or rotate the `meridian_workflow` login, bind the Runtime's workload, and stage the Runtime's backend copy |
 | `scripts/provision_preflight.py` | Read-only checks before provisioning Aurora in an account |
 | `scripts/publish.py`, `scripts/published.py` | Publish the hosted web app to an existing App Runner service; read back its local release record |
-| `scripts/validate_demo.py`, `scripts/release_demo_bookings.py` | End-to-end check of a running deployment; release demo bookings |
+| `scripts/validate_demo.py`, `scripts/release_demo_bookings.py` | End-to-end check of a running deployment; release the sample traveler's bookings |
 | `scripts/warm_demo.py` | Warm health, catalog, traveler profile and one read-only turn per phase before presenting |
 | `scripts/install_catalog_images.py` | Install catalog artwork by package ID |
 
@@ -111,7 +113,7 @@ uses the governed Gateway path.
 | `examples/rls_app_role.sql`, `examples/rls_for_agents.sql` | The restricted RLS role, RLS policies and the authorization audit view |
 | `examples/memory_mcp_demo.py` | Stand-alone client for the custom memory MCP server |
 | `tests/` | Pytest suite |
-| `examples/langgraph/` | Maintained LangGraph example: `AuroraDataApiSaver`, a pause and resume graph, and its tests, including the checkpointer conformance suite |
+| `examples/langgraph/` | Maintained LangGraph example: a Data API checkpoint saver, a pause and resume graph, and its tests, including the checkpointer conformance suite in `tests/conformance/`. The application does not import it |
 | `docs/` | Architecture, operations, deployment runbook, code walkthrough and design notes |
 
 ## Naming

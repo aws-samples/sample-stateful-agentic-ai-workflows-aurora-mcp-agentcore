@@ -14,7 +14,7 @@ implementations; the first two phases run the same steps directly in
 | State | Source | What to look for |
 | --- | --- | --- |
 | Traveler context | `backend/agents/phase_04_production/concierge.py`, `process_turn` | Authorized Aurora facts and the runtime's managed session inform a turn |
-| Workflow progress | `backend/agents/phase_05_workflow/workflow.py`, `initialize_checkpoint_backend` | A durable saver restores execution after the process is replaced |
+| Workflow progress | `backend/agents/phase_05_workflow/graph.py`, `snapshot_storage.py` | Saved snapshots restore execution after the Runtime session is replaced |
 | Business result | `scripts/migrations/008_hold_request_identity.sql` | A persisted intent and transaction constraints make a repeated write safe |
 
 Remembering a sentence does not establish a booking, and a database connection
@@ -61,7 +61,7 @@ With context off, the turn returns without calling the runtime; the guard is in
 
 | Source and symbol | What it does |
 | --- | --- |
-| `backend/http_auth.py`, `require_http_principal` | Binds the HTTP request to its permitted traveler. The sample uses a shared demo principal, not user authentication. |
+| `backend/http_auth.py`, `require_http_principal` | Binds the HTTP request to its permitted traveler. The sample uses a shared sample principal, not user authentication. |
 | `backend/db/rds_data_client.py`, `scoped_session` | Checks the workload grant, sets a transaction-local scope and switches to the restricted RLS role |
 | `backend/agents/phase_04_production/concierge.py`, `process_turn` | Short authorization and read, and write and audit, units around the external runtime call |
 | `meridian_agentcore/app/MeridianConcierge/main.py` | The Strands loop on AgentCore Runtime: Gateway tools, the Memory session manager and the streamed events |
@@ -72,11 +72,11 @@ With context off, the turn returns without calling the runtime; the guard is in
 An IAM or traveler-grant denial is not a Cedar decision; the trace reports each
 at its own boundary.
 
-## 05 - Workflow: checkpoints, workers and the hold
+## 05 - Workflow: snapshots, workers and the hold
 
 Prompt: `My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.`
 
-The recovery path has six nodes and pauses after `search`:
+The recovery path has six nodes and pauses after `search` for the traveler's review:
 
 ```text
 classify → search → availability → prepare_hold → hold → synthesize
@@ -88,25 +88,31 @@ visits every node.
 
 | Source and symbol | What it does |
 | --- | --- |
-| `backend/agents/phase_05_workflow/workflow.py`, graph builder | Edges, the pause configuration and the saver passed to `compile` |
-| `backend/agents/phase_05_workflow/execution.py`, `run_http_workflow` | Duplicate-start guards, the execution claim, heartbeat and lease |
+| `backend/agents/phase_05_workflow/graph.py`, `build_graph` | The Strands `GraphBuilder` edges, the review gate that pauses the run, and the session manager that saves a snapshot after every node |
+| `backend/agents/phase_05_workflow/runner.py`, `WorkflowRunner.run` | Duplicate-start guards, the execution claim, heartbeat and lease |
+| `backend/agents/phase_05_workflow/runtime_entry.py`, `workflow_turn` | The one event the `MeridianWorkflow` Runtime handles: runs the runner and streams heartbeats, then one result or error |
+| `backend/agentcore/workflow_runtime.py`, `WorkflowRuntimeClient` | How the backend invokes the Runtime and stops its session |
 | `backend/agents/phase_05_workflow/hold_intent.py`, `prepare_hold_node` | Normalizes the terms and saves stable request and booking IDs before the hold node |
-| `backend/agents/phase_05_workflow/workflow.py`, `_node_hold` | Calls the Gateway with the saved intent and the current execution lease |
+| `backend/agents/phase_05_workflow/nodes.py`, `hold`, and `governed_hold.py` | Calls the Gateway with the saved intent and the current execution lease |
 | `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py`, `create_courtesy_hold` | Reauthorizes the workload, checks the lease and calls Aurora's idempotent write |
 | `scripts/migrations/008_hold_request_identity.sql` | Replay protection in the same transaction as the business write |
-| `backend/agents/phase_05_workflow/workflow.py`, `_node_synthesize` | Builds the closing status from saved state, including the hold outcome and expiry |
-| `examples/langgraph/aurora_dataapi_saver.py`, `AuroraDataApiSaver` | The LangGraph checkpointer over the RDS Data API |
+| `backend/agents/phase_05_workflow/nodes.py`, `synthesize` | Builds the closing status from saved state, including the hold outcome and expiry |
+| `backend/agents/phase_05_workflow/snapshot_storage.py`, `AuroraSnapshotStorage` | Appends each Strands snapshot as a JSONB row of `workflow_snapshots`, only while the writing execution still holds the thread |
+| `backend/agents/phase_05_workflow/graph.py`, `ResumableStorage` | Repairs a snapshot saved after the traveler's answer so the Graph can resume |
+| `backend/routers/journeys.py`, `stop_session` | Stops the journey's Runtime session and records it in `workflow_session_stops` |
 
 A graceful restart, a hard kill and a lost response are different failures;
 [OPERATIONS.md](OPERATIONS.md#exercise-recovery-failures) shows how to
-exercise each. A checkpoint and a business write are not one distributed
+exercise each. A snapshot and a business write are not one distributed
 transaction: the design gives resumable execution with an idempotent action,
-not exactly-once execution.
+not exactly-once execution. The LangGraph version of the idea is a maintained
+example in [`examples/langgraph/`](../examples/langgraph/README.md); the
+application does not import it.
 
 ## Evidence
 
 System evidence reads the selected journey back from Aurora through
-`backend/db/journey_store.py`: thread, checkpoint, executions, worker,
+`backend/db/journey_store.py`: thread, snapshot, executions, worker, session stops,
 authorization, hold ID, amount and expiry. A failed readback is reported as
 unavailable evidence, not as a new outcome.
 

@@ -27,12 +27,12 @@ Traveler confirmation must continue to come from the application.
 | Read, hold and confirmation Cedar policies | `policyEngines` in the same configuration |
 | Platform-pinned traveler, confirmation, ceiling and journey | `meridian_agentcore/app/MeridianConcierge/turn_trace.py` |
 | Confirmed writes executed before model narration | `meridian_agentcore/app/MeridianConcierge/hold_execution.py` |
-| Phase 5 hold through the same gateway | `backend/agents/phase_05_workflow/workflow.py`, `_node_hold` |
+| Phase 5 hold through the same gateway | `backend/agents/phase_05_workflow/nodes.py`, `hold` |
 | Atomic, replay-safe hold and lease validation | `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py` and Aurora functions |
 | Structured allow/deny fields for recovery | `cedar_decision`, `cedar_policy`, `policy_mode`, `gateway_tool` in workflow telemetry |
 
 The Recovery checks UI shows these structured decisions separately from
-persisted checkpoint and booking records. It does not infer an allow from prose,
+persisted snapshot and booking records. It does not infer an allow from prose,
 claim that an allowed call created a hold, or describe Dogwood as enabled.
 
 ## Integration work required
@@ -52,7 +52,7 @@ claim that an allowed call created a hold, or describe Dogwood as enabled.
    `MeridianHolds___get_package_details` call for that package in the same session.
    The direct Phase 4 confirmed-hold path needs the same prerequisite.
    Check for a successful result, then await it before attempting the hold.
-4. **Keep caller identity boundaries explicit.** The Phase 5 backend and Phase 4
+4. **Keep caller identity boundaries explicit.** The Phase 5 Runtime and Phase 4
    runtime sign with different principals. Identical session strings do not merge
    those histories. For the first slice, perform the lookup and hold under the
    same caller. Keep Aurora's booking record as the authority across the recovery
@@ -135,7 +135,7 @@ to the gateway and would stop enforcing its existing Cedar policies too.
 | Hand back to Concierge under a different principal | Read the authorized Aurora booking; do not assume shared history |
 
 Capture the actual policy decision, policy session ID, gateway trace ID, temporal
-evaluation attributes, checkpoint and booking identity for each scenario.
+evaluation attributes, snapshot and booking identity for each scenario.
 The temporal `evaluation_invoked` span attribute alone does not establish that a
 temporal condition matched or determined the decision.
 

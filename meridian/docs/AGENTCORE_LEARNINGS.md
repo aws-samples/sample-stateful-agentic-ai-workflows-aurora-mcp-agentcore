@@ -28,15 +28,23 @@ deployment steps. Each note names the code or step it explains.
 
 - **A CDK-built `lambda` target has no environment variables.** The holds Lambda reads the cluster ARN, secret ARN and database name from SSM Parameter Store (`scripts/publish_gateway_parameters.py`), and its `iamPolicy` in the template is scoped to those parameters, the cluster and the secret.
 - **The gateway Lambda is a workload.** Its execution role needs its own row in `traveler_identity_bindings` (`scripts/bind_gateway_workload.py`). The subject is the role's `RoleId`, the first part of `sts:GetCallerIdentity`'s `UserId` inside the function.
-- **Phase 5 holds go through the gateway too.** The workflow node passes its checkpointed `holdRequestId`, `bookingId` and `executionId`; the Lambda re-checks the worker lease with `SELECT ... FOR UPDATE` inside the write transaction, so Cedar sees every hold and a restarted worker replays the same booking.
-- **A cold worker needs a lease longer than its first nodes.** The search and availability nodes block the event loop for several seconds, so the first heartbeat is late; `scripts/kill_and_resume_proof.py` defaults to a 20-second lease.
+- **Phase 5 holds go through the gateway too.** The workflow node passes its saved `holdRequestId`, `bookingId` and `executionId`; the Lambda re-checks the worker lease with `SELECT ... FOR UPDATE` inside the write transaction, so Cedar sees every hold and a restarted worker replays the same booking.
+- **A cold worker needs a lease longer than its first nodes.** The search and availability nodes block the event loop for several seconds, so the first heartbeat is late; `scripts/kill_and_resume_proof.py` defaults to a 20-second lease; the runner itself uses 60 seconds with a 10-second heartbeat.
+
+## Workflow Runtime
+
+- **A Runtime session id outlives its microVM.** The backend derives the session id from the traveler and thread (`workflow_session_id`), so a stopped session that is resumed starts a new microVM on the same id. Nothing on the microVM is state; the newest row in `workflow_snapshots` is.
+- **Strands saves the answer before it deactivates the interrupt.** In Strands 1.57.2, a worker killed in the node after a traveler's answer leaves a snapshot that asks for the answers again. `ResumableStorage` repairs it on read, which is why `strands-agents` is pinned to `1.57.2` and `tests/test_strands_pin.py` checks the pin.
+- **A retried step can leave the Graph marked failed.** The runner reports success only when `synthesize` is among the completed nodes.
+- **The workflow runs as its own login.** `meridian_workflow` is NOBYPASSRLS and owns nothing, so each snapshot statement pins the traveler in its own transaction and the RLS policies decide what it sees. Re-running `scripts/provision_workflow_login.py` rotates its password.
+- **Publishing needs the Runtime READY.** `scripts/publish.py` refuses to publish unless `MeridianWorkflow` is READY.
 
 ## App Runner hosting
 
 - **Pin the CDK Region.** `infra/bin/meridian-web.ts` uses `MERIDIAN_WEB_REGION` (default `us-east-1`) instead of the shell's default Region.
 - **App Runner needs the complete secret ARN**, with its six-character suffix, to read a Secrets Manager value at deployment; a partial ARN fails with "unable to retrieve secret from asm".
 - **App Runner roles must exist before the service deploys.** A service whose instance or ECR access role was created seconds earlier failed with "Failed to deploy your application image" and no application log. The roles live in their own stack (`MeridianWebRoles`), which `scripts/publish.py` deploys first, and the publisher waits another 30 seconds for IAM changes to propagate before it updates the service.
-- **The port must open quickly.** On one vCPU the backend needs close to thirty seconds to import its dependencies and initialize the checkpoint store, and App Runner failed deployments whose port opened that late. `backend/launch.py` binds port 8000 immediately and hands the socket to uvicorn with `--fd`; early connections wait in the kernel backlog until startup completes.
+- **The port must open quickly.** On one vCPU the backend needs close to thirty seconds to import its dependencies, and App Runner failed deployments whose port opened that late. `backend/launch.py` binds port 8000 immediately and hands the socket to uvicorn with `--fd`; early connections wait in the kernel backlog until startup completes.
 - **App Runner does not run the start command through a shell.** Quotes are literal and `sh -c '...'` fails.
 - **CloudTrail shows what CloudFormation sends.** `lookup-events` on `CreateService` shows the fields the resource handler adds, which helps when a service created by a stack fails and the same service created by the CLI works. The App Runner service itself is managed outside CloudFormation; `scripts/publish.py` updates it through the SDK.
 
