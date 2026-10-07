@@ -124,6 +124,27 @@ def test_a_crashed_takeover_reports_its_stderr():
         parse_takeover(1, _line(IDENTITY), "boom", True)
 
 
+def test_a_takeover_that_crashed_before_its_identity_reports_its_stderr():
+    stderr = "Traceback\npermission denied for table workflow_session_stops"
+    with pytest.raises(RuntimeError, match="permission denied") as caught:
+        parse_takeover(1, "", stderr, True)
+    assert "exit 1" in str(caught.value)
+
+
+def test_a_crash_reports_only_the_last_twenty_stderr_lines():
+    stderr = "\n".join(f"line {n}" for n in range(1, 41))
+    with pytest.raises(RuntimeError) as caught:
+        parse_takeover(1, "", stderr, True)
+    message = str(caught.value)
+    assert "line 40" in message and "line 21" in message
+    assert "line 20" not in message
+
+
+def test_a_clean_exit_with_no_result_is_a_failure():
+    with pytest.raises(RuntimeError, match="no result"):
+        parse_takeover(0, _line(IDENTITY), "", True)
+
+
 @pytest.mark.asyncio
 async def test_without_the_flag_the_takeover_runs_in_the_driver(monkeypatch):
     calls = []

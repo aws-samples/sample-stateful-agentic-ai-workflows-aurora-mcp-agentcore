@@ -70,6 +70,7 @@ QUERY = (
 
 WORKFLOW_LOGIN = "meridian_workflow"
 CONFLICT_EXIT = 76
+STDERR_TAIL_LINES = 20
 
 BLUE, GREEN, RED, DIM, BOLD, OFF = (
     "\033[34m", "\033[32m", "\033[31m", "\033[2m", "\033[1m", "\033[0m",
@@ -174,8 +175,21 @@ async def _worker_two(thread_id: str) -> int:
     return 0
 
 
+def _stderr_tail(stderr: str) -> str:
+    return "\n".join(stderr.splitlines()[-STDERR_TAIL_LINES:])
+
+
 def parse_takeover(returncode: int, stdout: str, stderr: str, worker_login: bool) -> dict:
-    """Turn a takeover subprocess's output into its state, checking who ran it."""
+    """Turn a takeover subprocess's output into its state, checking who ran it.
+
+    The exit code is checked first so a worker that crashed before printing its
+    identity (for example, missing grants) reports its stderr, not an identity
+    assertion.
+    """
+    if returncode not in (0, CONFLICT_EXIT):
+        raise RuntimeError(
+            f"Takeover worker failed (exit {returncode}); stderr tail:\n{_stderr_tail(stderr)}"
+        )
     events = [json.loads(line) for line in stdout.splitlines() if line.startswith('{"event":')]
     if worker_login:
         identity = next((e for e in events if e["event"] == "identity"), {})
@@ -183,8 +197,10 @@ def parse_takeover(returncode: int, stdout: str, stderr: str, worker_login: bool
     if returncode == CONFLICT_EXIT:
         raise WorkflowConflictError(next(e["message"] for e in events if e["event"] == "conflict"))
     result = next((e for e in events if e["event"] == "result"), None)
-    if returncode != 0 or result is None:
-        raise RuntimeError(f"Takeover worker failed (exit {returncode}): {stderr[-1500:]}")
+    if result is None:
+        raise RuntimeError(
+            f"Takeover worker exited 0 but printed no result; stderr tail:\n{_stderr_tail(stderr)}"
+        )
     return result["state"]
 
 
