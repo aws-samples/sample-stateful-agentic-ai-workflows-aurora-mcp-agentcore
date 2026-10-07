@@ -12,21 +12,19 @@ from backend.db.rds_data_client import get_rds_data_client
 from backend.timing import clock, elapsed_ms
 
 
-async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], List[ActivityEntry]]:
-    """
-    Retrieval mode: hybrid candidates + Cohere rerank.
-    - Candidate retrieval: pgvector semantic + tsvector lexical search on Aurora
-    - Ranking: Cohere Rerank on Bedrock
-    """
-    activities = []
-
-    db = get_rds_data_client()
-
+def _price_filter(query: str) -> float | None:
+    """Parse the optional budget ceiling from the query, if it names one."""
     # Optional budget filter parsed from natural language.
     price_filter = None
     price_match = re.search(r'(?:under|below|less than|<)\s*\$?(\d+(?:\.\d{2})?)', query.lower())
     if price_match:
         price_filter = float(price_match.group(1))
+    return price_filter
+
+
+def _intent_spans(query: str, price_filter: float | None) -> List[ActivityEntry]:
+    """Build the two reasoning spans that open a retrieval search."""
+    activities = []
 
     activities.append(create_activity(
         activity_type="reasoning",
@@ -43,30 +41,31 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         agent_name="SearchAgent",
         agent_file="agents/phase_03_retrieval/search_agent.py"
     ))
-    
+    return activities
+
+
+async def _embed(query: str) -> tuple[str, ActivityEntry]:
+    """Embed the query; return the pgvector literal and the span that timed it."""
     embedding_service = get_embedding_service()
     embedding_started = clock()
     query_embedding = await asyncio.to_thread(embedding_service.generate_text_embedding, query)
     embedding_time = elapsed_ms(embedding_started)
     embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
 
-    activities.append(create_activity(
+    span = create_activity(
         activity_type="embedding",
         title="Embedding generated",
         execution_time_ms=embedding_time,
         agent_name="SearchAgent",
         agent_file="agents/phase_03_retrieval/search_agent.py"
-    ))
+    )
+    return embedding_str, span
 
-    # Step 2: Hybrid candidate retrieval (semantic + lexical).
-    activities.append(create_activity(
-        activity_type="search",
-        title="Hybrid candidate retrieval",
-        details="pgvector cosine + tsvector/ts_rank",
-        agent_name="SearchAgent",
-        agent_file="agents/phase_03_retrieval/search_agent.py"
-    ))
-    candidate_limit = max(limit * config.search.rerank_candidate_multiplier, 25)
+
+async def _semantic_rows(
+    db: Any, embedding_str: str, price_filter: float | None, candidate_limit: int
+) -> List[dict]:
+    """Run the pgvector arm, applying the budget ceiling in memory."""
     # Cast the limit to ::integer — the function signature is
     # semantic_trip_search(vector, integer); Python ints arrive over the
     # RDS Data API as bigint and Postgres can't resolve the overload
@@ -74,11 +73,16 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     semantic_sql = """
         SELECT * FROM semantic_trip_search(%s::vector, %s::integer)
     """
-    search_started = clock()
     semantic_rows = await db.execute(semantic_sql, (embedding_str, candidate_limit))
     if price_filter is not None:
         semantic_rows = [r for r in semantic_rows if float(r["price_per_person"]) <= price_filter]
+    return semantic_rows
 
+
+async def _lexical_rows(
+    db: Any, query: str, price_filter: float | None, candidate_limit: int
+) -> List[dict]:
+    """Run the tsvector arm, ordered by ts_rank, with the budget ceiling in SQL."""
     # websearch_to_tsquery joins bare terms with AND, so a conversational
     # prompt requires every stemmed term in one row and the lexical arm
     # returns nothing. Rewrite the operators to OR and let ts_rank order the
@@ -110,7 +114,35 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         lexical_params.append(price_filter)
     lexical_sql += " ORDER BY lexical_score DESC LIMIT %s"
     lexical_params.append(candidate_limit)
-    lexical_rows = await db.execute(lexical_sql, tuple(lexical_params))
+    return await db.execute(lexical_sql, tuple(lexical_params))
+
+
+async def _candidates(
+    db: Any,
+    query: str,
+    embedding_str: str,
+    price_filter: float | None,
+    limit: int,
+) -> tuple[List[dict], List[ActivityEntry]]:
+    """Fetch both candidate arms and merge them by package.
+
+    Returns:
+        The merged candidate rows and the two spans that describe the retrieval.
+    """
+    activities = []
+
+    # Step 2: Hybrid candidate retrieval (semantic + lexical).
+    activities.append(create_activity(
+        activity_type="search",
+        title="Hybrid candidate retrieval",
+        details="pgvector cosine + tsvector/ts_rank",
+        agent_name="SearchAgent",
+        agent_file="agents/phase_03_retrieval/search_agent.py"
+    ))
+    candidate_limit = max(limit * config.search.rerank_candidate_multiplier, 25)
+    search_started = clock()
+    semantic_rows = await _semantic_rows(db, embedding_str, price_filter, candidate_limit)
+    lexical_rows = await _lexical_rows(db, query, price_filter, candidate_limit)
     # Both queries, measured together: the semantic and the lexical arm.
     search_time = elapsed_ms(search_started)
 
@@ -141,7 +173,13 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         agent_name="SearchAgent",
         agent_file="agents/phase_03_retrieval/search_agent.py"
     ))
+    return candidate_rows, activities
 
+
+async def _rerank(
+    query: str, candidate_rows: List[dict], limit: int
+) -> tuple[List[dict], ActivityEntry]:
+    """Rerank the candidates with Cohere; fall back to candidate order on failure."""
     # Step 3: Cohere rerank over semantic candidates.
     embedding_service = get_embedding_service()
     docs = [
@@ -158,13 +196,17 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     rerank_failed = False
     rerank_started = clock()
     try:
-        ranked = await asyncio.to_thread(embedding_service.rerank_documents, query, docs, top_n=limit)
-        ranked_rows = [candidate_rows[item["index"]] for item in ranked if item["index"] < len(candidate_rows)]
+        ranked = await asyncio.to_thread(
+            embedding_service.rerank_documents, query, docs, top_n=limit
+        )
+        ranked_rows = [
+            candidate_rows[item["index"]] for item in ranked if item["index"] < len(candidate_rows)
+        ]
     except Exception:
         rerank_failed = True
         ranked_rows = candidate_rows[:limit]
     rerank_time = elapsed_ms(rerank_started)
-    activities.append(create_activity(
+    span = create_activity(
         activity_type="search",
         title="Cohere rerank applied" if not rerank_failed else "Cohere rerank unavailable",
         details=(
@@ -175,7 +217,31 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
         execution_time_ms=rerank_time,
         agent_name="SearchAgent",
         agent_file="agents/phase_03_retrieval/search_agent.py"
-    ))
+    )
+    return ranked_rows, span
+
+
+async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], List[ActivityEntry]]:
+    """
+    Retrieval mode: hybrid candidates + Cohere rerank.
+    - Candidate retrieval: pgvector semantic + tsvector lexical search on Aurora
+    - Ranking: Cohere Rerank on Bedrock
+    """
+    db = get_rds_data_client()
+
+    price_filter = _price_filter(query)
+    activities = _intent_spans(query, price_filter)
+
+    embedding_str, embedding_span = await _embed(query)
+    activities.append(embedding_span)
+
+    candidate_rows, candidate_spans = await _candidates(
+        db, query, embedding_str, price_filter, limit
+    )
+    activities.extend(candidate_spans)
+
+    ranked_rows, rerank_span = await _rerank(query, candidate_rows, limit)
+    activities.append(rerank_span)
 
     activities.append(create_activity(
         activity_type="result",

@@ -96,6 +96,117 @@ async def _resolve_named_package(
     return _rank_named_package_matches(rows or [], query_lower, terms)
 
 
+def _search_terms(query_lower: str) -> List[str]:
+    """Extract the stopword-filtered tokens a traveler used to name a package."""
+    # Extract key terms from query
+    search_terms = []
+    stopwords = {
+        'a', 'an', 'any', 'are', 'available', 'check', 'departures', 'do',
+        'duration', 'durations', 'find', 'for', 'have', 'in', 'is', 'matching',
+        'open', 'options', 'package', 'packages', 'plan', 'still', 'the', 'then',
+        'trip', 'verify', 'what', 'which', 'you',
+    }
+    for raw_word in query_lower.split():
+        # Trailing punctuation would survive into the LIKE pattern, and
+        # "%tokyo?%" matches nothing.  Pure-punctuation tokens ("&") carry
+        # no signal either.
+        word = raw_word.strip(".,!?;:'\"()[]")
+        if word and any(ch.isalnum() for ch in word) and word not in stopwords:
+            search_terms.append(word)
+    return search_terms
+
+
+def _not_found(activities: List[ActivityEntry]) -> tuple[list, List[ActivityEntry], str]:
+    """Close the span trail for a package that no query matched."""
+    activities.append(create_activity(
+        activity_type="result",
+        title="PackageAgent: Package not found",
+        agent_name="PackageAgent",
+        agent_file="agents/phase_03_retrieval/package_agent.py"
+    ))
+
+    activities.append(create_activity(
+        activity_type="result",
+        title="PackageAgent returned to Supervisor",
+        details="No matching package found",
+        agent_name="RetrievalAgent",
+        agent_file="agents/phase_03_retrieval/supervisor.py"
+    ))
+
+    return (
+        [],
+        activities,
+        "I couldn't find that trip package. "
+        "Try searching by destination, operator, or trip type.",
+    )
+
+
+def _availability_reply(
+    row: Dict[str, Any], activities: List[ActivityEntry]
+) -> tuple[List[Product], List[ActivityEntry], str]:
+    """Total the package's stock and build the spans, product and message."""
+    product = row
+    availability = product.get('availability', {})
+
+    activities.append(create_activity(
+        activity_type="availability",
+        title="PackageAgent: Checking duration inventory",
+        details=f"Package: {product['name']}",
+        sql_query="SELECT availability, durations FROM trip_packages WHERE package_id = ?",
+        agent_name="PackageAgent",
+        agent_file="agents/phase_03_retrieval/package_agent.py"
+    ))
+
+    # Calculate total stock
+    if isinstance(availability, dict):
+        if 'quantity' in availability:
+            total_stock = availability['quantity']
+        else:
+            total_stock = sum(availability.values()) if availability else 0
+    else:
+        total_stock = 0
+
+    # Totalled in memory from the row read above; there is no call to time.
+    activities.append(create_activity(
+        activity_type="result",
+        title="PackageAgent: Duration inventory verified",
+        details=f"Total: {total_stock} package places across available durations",
+        agent_name="PackageAgent",
+        agent_file="agents/phase_03_retrieval/package_agent.py"
+    ))
+
+    activities.append(create_activity(
+        activity_type="result",
+        title="PackageAgent returned to Supervisor",
+        details=f"Availability check complete for {product['name']}",
+        agent_name="RetrievalAgent",
+        agent_file="agents/phase_03_retrieval/supervisor.py"
+    ))
+
+    durations = product.get('durations', [])
+    if total_stock > 0:
+        if durations:
+            durations_str = ', '.join(durations[:5])
+            message = (
+                f"**{product['name']}** has {total_stock} package places "
+                f"across these trip lengths: {durations_str}."
+            )
+        else:
+            message = (
+                f"**{product['name']}** has {total_stock} package places available."
+            )
+    else:
+        message = (
+            f"**{product['name']}** is currently sold out. "
+            "Would you like similar alternatives?"
+        )
+
+    # Return the product
+    products = [Product(**row_to_api_product(product))]
+
+    return products, activities, message
+
+
 async def retrieval_availability_search(
     query: str,
     package_id: Optional[str] = None,
@@ -128,23 +239,9 @@ async def retrieval_availability_search(
         WHERE package_id = %s
         LIMIT 1
     """
-    
-    # Extract key terms from query
-    search_terms = []
-    stopwords = {
-        'a', 'an', 'any', 'are', 'available', 'check', 'departures', 'do',
-        'duration', 'durations', 'find', 'for', 'have', 'in', 'is', 'matching',
-        'open', 'options', 'package', 'packages', 'plan', 'still', 'the', 'then',
-        'trip', 'verify', 'what', 'which', 'you',
-    }
-    for raw_word in query_lower.split():
-        # Trailing punctuation would survive into the LIKE pattern, and
-        # "%tokyo?%" matches nothing.  Pure-punctuation tokens ("&") carry
-        # no signal either.
-        word = raw_word.strip(".,!?;:'\"()[]")
-        if word and any(ch.isalnum() for ch in word) and word not in stopwords:
-            search_terms.append(word)
-    
+
+    search_terms = _search_terms(query_lower)
+
     search_started = clock()
     if package_id:
         results = await db.execute(exact_sql, (package_id,))
@@ -166,77 +263,6 @@ async def retrieval_availability_search(
     ))
 
     if not results:
-        activities.append(create_activity(
-            activity_type="result",
-            title="PackageAgent: Package not found",
-            agent_name="PackageAgent",
-            agent_file="agents/phase_03_retrieval/package_agent.py"
-        ))
+        return _not_found(activities)
 
-        activities.append(create_activity(
-            activity_type="result",
-            title="PackageAgent returned to Supervisor",
-            details="No matching package found",
-            agent_name="RetrievalAgent",
-            agent_file="agents/phase_03_retrieval/supervisor.py"
-        ))
-
-        return [], activities, "I couldn't find that trip package. Try searching by destination, operator, or trip type."
-
-    product = results[0]
-    availability = product.get('availability', {})
-
-    activities.append(create_activity(
-        activity_type="availability",
-        title="PackageAgent: Checking duration inventory",
-        details=f"Package: {product['name']}",
-        sql_query="SELECT availability, durations FROM trip_packages WHERE package_id = ?",
-        agent_name="PackageAgent",
-        agent_file="agents/phase_03_retrieval/package_agent.py"
-    ))
-    
-    # Calculate total stock
-    if isinstance(availability, dict):
-        if 'quantity' in availability:
-            total_stock = availability['quantity']
-        else:
-            total_stock = sum(availability.values()) if availability else 0
-    else:
-        total_stock = 0
-    
-    # Totalled in memory from the row read above; there is no call to time.
-    activities.append(create_activity(
-        activity_type="result",
-        title="PackageAgent: Duration inventory verified",
-        details=f"Total: {total_stock} package places across available durations",
-        agent_name="PackageAgent",
-        agent_file="agents/phase_03_retrieval/package_agent.py"
-    ))
-
-    activities.append(create_activity(
-        activity_type="result",
-        title="PackageAgent returned to Supervisor",
-        details=f"Availability check complete for {product['name']}",
-        agent_name="RetrievalAgent",
-        agent_file="agents/phase_03_retrieval/supervisor.py"
-    ))
-
-    durations = product.get('durations', [])
-    if total_stock > 0:
-        if durations:
-            durations_str = ', '.join(durations[:5])
-            message = (
-                f"**{product['name']}** has {total_stock} package places "
-                f"across these trip lengths: {durations_str}."
-            )
-        else:
-            message = (
-                f"**{product['name']}** has {total_stock} package places available."
-            )
-    else:
-        message = f"**{product['name']}** is currently sold out. Would you like similar alternatives?"
-    
-    # Return the product
-    products = [Product(**row_to_api_product(product))]
-    
-    return products, activities, message
+    return _availability_reply(results[0], activities)
