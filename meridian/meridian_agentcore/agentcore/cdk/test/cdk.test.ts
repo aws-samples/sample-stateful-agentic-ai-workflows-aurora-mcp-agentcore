@@ -11,6 +11,8 @@ const TEST_VALUES: Record<string, string> = {
   AWS_REGION: 'us-east-1',
   AURORA_CLUSTER_ARN: 'arn:aws:rds:us-east-1:123456789012:cluster:meridian',
   AURORA_SECRET_ARN: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian-AbC123',
+  AURORA_WORKFLOW_SECRET_ARN:
+    'arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian/aurora/workflow-login-XyZ789',
   GATEWAY_ID: 'meridianv2-meridian-aurora-abcde12345',
   POLICY_ENGINE_ID: 'meridianv2_MeridianGovernance-abcde12345',
 };
@@ -60,8 +62,10 @@ test('AgentCoreStack synthesizes the Meridian specification template', () => {
   template.hasOutput('StackNameOutput', {
     Description: 'Name of the CloudFormation Stack',
   });
-  expect(spec.runtimes).toHaveLength(1);
-  expect(spec.runtimes[0].name).toBe('MeridianConcierge');
+  expect(spec.runtimes.map((r: { name: string }) => r.name)).toEqual(['MeridianConcierge', 'MeridianWorkflow']);
+  const workflow = spec.runtimes[1];
+  expect(workflow.lifecycleConfiguration).toEqual({ idleRuntimeSessionTimeout: 900, maxLifetime: 3600 });
+  expect(workflow.additionalPolicies).toHaveLength(1);
   expect(spec.memories).toHaveLength(1);
   expect(spec.memories[0].name).toBe('meridian_session');
   expect(spec.agentCoreGateways).toHaveLength(1);

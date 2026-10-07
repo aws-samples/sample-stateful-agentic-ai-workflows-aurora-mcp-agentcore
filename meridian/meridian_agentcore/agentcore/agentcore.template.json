@@ -58,6 +58,65 @@
           "value": "ENFORCE"
         }
       ]
+    },
+    {
+      "name": "MeridianWorkflow",
+      "description": "Phase 5 recovery workflow: Strands Graph with snapshots in Aurora",
+      "build": "CodeZip",
+      "entrypoint": "main.py",
+      "codeLocation": "app/MeridianWorkflow/",
+      "runtimeVersion": "PYTHON_3_14",
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP",
+      "lifecycleConfiguration": {
+        "idleRuntimeSessionTimeout": 900,
+        "maxLifetime": 3600
+      },
+      "additionalPolicies": [
+        "arn:aws:iam::{{AWS_ACCOUNT_ID}}:policy/MeridianWorkflowAuroraAccess"
+      ],
+      "envVars": [
+        {
+          "name": "AGENT_OBSERVABILITY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OTEL_PYTHON_DISTRO",
+          "value": "aws_distro"
+        },
+        {
+          "name": "OTEL_PYTHON_CONFIGURATOR",
+          "value": "aws_configurator"
+        },
+        {
+          "name": "OTEL_RESOURCE_ATTRIBUTES",
+          "value": "service.name=meridian-workflow"
+        },
+        {
+          "name": "AURORA_CLUSTER_ARN",
+          "value": "{{AURORA_CLUSTER_ARN}}"
+        },
+        {
+          "name": "AURORA_SECRET_ARN",
+          "value": "{{AURORA_WORKFLOW_SECRET_ARN}}"
+        },
+        {
+          "name": "AURORA_DATABASE",
+          "value": "meridian"
+        },
+        {
+          "name": "AGENTCORE_SKIP_CLI_SYNC",
+          "value": "1"
+        },
+        {
+          "name": "ENVIRONMENT",
+          "value": "production"
+        },
+        {
+          "name": "RLS_APP_ROLE",
+          "value": "meridian_app"
+        }
+      ]
     }
   ],
   "memories": [

@@ -50,6 +50,7 @@ class AgentCoreDeployedConfig:
 
     region: str
     runtime_arn: Optional[str] = None
+    workflow_runtime_arn: Optional[str] = None
     runtime_name: Optional[str] = None
     runtime_qualifier: str = "DEFAULT"
     gateway_url: Optional[str] = None
@@ -119,10 +120,30 @@ def _walk(obj: Any) -> Iterable[Any]:
             yield from _walk(item)
 
 
+RUNTIME_NAMES = {"runtime_arn": "MeridianConcierge", "workflow_runtime_arn": "MeridianWorkflow"}
+
+
+def _runtime_arns_by_name(data: Dict[str, Any]) -> Dict[str, str]:
+    """Runtime ARNs keyed by runtime name, from the CLI's deployed state."""
+    arns: Dict[str, str] = {}
+    for target in (data.get("targets") or {}).values():
+        runtimes = ((target or {}).get("resources") or {}).get("runtimes") or {}
+        for name, entry in runtimes.items():
+            if isinstance(entry, dict) and isinstance(entry.get("runtimeArn"), str):
+                arns.setdefault(name, entry["runtimeArn"])
+    return arns
+
+
 def _parse_deployed_state(data: Dict[str, Any]) -> Dict[str, Optional[str]]:
-    """Best-effort extraction from CLI deployed-state.json (schema evolves)."""
+    """Best-effort extraction from CLI deployed-state.json (schema evolves).
+
+    Runtimes resolve by name, so the order of the CLI's entries never decides which
+    ARN is the concierge's. Only a state that names neither Meridian runtime falls back to the
+    first ARN found.
+    """
     found: Dict[str, Optional[str]] = {
         "runtime_arn": None,
+        "workflow_runtime_arn": None,
         "runtime_name": None,
         "gateway_url": None,
         "gateway_name": None,
@@ -133,19 +154,25 @@ def _parse_deployed_state(data: Dict[str, Any]) -> Dict[str, Optional[str]]:
         "region": None,
     }
 
+    by_name = _runtime_arns_by_name(data)
+    for field_name, runtime_name in RUNTIME_NAMES.items():
+        found[field_name] = by_name.get(runtime_name)
+    named = bool(set(RUNTIME_NAMES.values()) & set(by_name))
+
     for node in _walk(data):
         if not isinstance(node, dict):
             continue
 
-        found["runtime_arn"] = found["runtime_arn"] or _first_str(
-            node.get("runtimeArn"),
-            node.get("agentRuntimeArn"),
-            node.get("arn") if node.get("resourceType") in ("agent", "runtime") else None,
-        )
-        found["runtime_name"] = found["runtime_name"] or _first_str(
-            node.get("runtimeName"),
-            node.get("name") if node.get("runtimeArn") or node.get("agentRuntimeArn") else None,
-        )
+        if not named:
+            found["runtime_arn"] = found["runtime_arn"] or _first_str(
+                node.get("runtimeArn"),
+                node.get("agentRuntimeArn"),
+                node.get("arn") if node.get("resourceType") in ("agent", "runtime") else None,
+            )
+            found["runtime_name"] = found["runtime_name"] or _first_str(
+                node.get("runtimeName"),
+                node.get("name") if node.get("runtimeArn") or node.get("agentRuntimeArn") else None,
+            )
         found["gateway_url"] = found["gateway_url"] or _first_str(
             node.get("gatewayUrl"),
             node.get("gatewayEndpoint"),
@@ -284,6 +311,7 @@ def resolve_agentcore_config() -> AgentCoreDeployedConfig:
 
     merged: Dict[str, Optional[str]] = {
         "runtime_arn": None,
+        "workflow_runtime_arn": None,
         "runtime_name": None,
         "gateway_url": None,
         "gateway_name": None,
@@ -322,6 +350,7 @@ def resolve_agentcore_config() -> AgentCoreDeployedConfig:
     # Environment overrides (an operator or CI can pin without redeploying)
     env_map = {
         "runtime_arn": "AGENTCORE_RUNTIME_ARN",
+        "workflow_runtime_arn": "AGENTCORE_WORKFLOW_RUNTIME_ARN",
         "runtime_name": "AGENTCORE_RUNTIME_NAME",
         "gateway_url": "AGENTCORE_GATEWAY_URL",
         "gateway_name": "AGENTCORE_GATEWAY_NAME",
@@ -344,6 +373,7 @@ def resolve_agentcore_config() -> AgentCoreDeployedConfig:
     return AgentCoreDeployedConfig(
         region=merged["region"] or region,
         runtime_arn=merged["runtime_arn"],
+        workflow_runtime_arn=merged["workflow_runtime_arn"],
         runtime_name=merged["runtime_name"],
         runtime_qualifier=os.getenv("AGENTCORE_RUNTIME_QUALIFIER", "DEFAULT"),
         gateway_url=_normalize_gateway_url(merged["gateway_url"]),

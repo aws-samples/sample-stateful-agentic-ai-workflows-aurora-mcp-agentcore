@@ -15,6 +15,9 @@ from scripts import render_agentcore_config as render_config
 ACCOUNT = "123456789012"
 CLUSTER_ARN = f"arn:aws:rds:us-west-2:{ACCOUNT}:cluster:meridian"
 SECRET_ARN = f"arn:aws:secretsmanager:us-west-2:{ACCOUNT}:secret:meridian-AbC123"
+WORKFLOW_SECRET_ARN = (
+    f"arn:aws:secretsmanager:us-west-2:{ACCOUNT}:secret:meridian/aurora/workflow-login-XyZ789"
+)
 GATEWAY_ID = "meridianv2-meridian-aurora-abcde12345"
 POLICY_ENGINE_ID = "meridianv2_MeridianGovernance-abcde12345"
 GATEWAY_ARN = f"arn:aws:bedrock-agentcore:us-west-2:{ACCOUNT}:gateway/{GATEWAY_ID}"
@@ -30,12 +33,17 @@ def templates() -> tuple[dict, list]:
 
 def base_values() -> dict[str, str]:
     return render_config.account_values(
-        {"AURORA_CLUSTER_ARN": CLUSTER_ARN, "AURORA_SECRET_ARN": SECRET_ARN}
+        {
+            "AURORA_CLUSTER_ARN": CLUSTER_ARN,
+            "AURORA_SECRET_ARN": SECRET_ARN,
+            "AURORA_WORKFLOW_SECRET_ARN": WORKFLOW_SECRET_ARN,
+        }
     )
 
 
-def runtime_env(spec: dict) -> dict[str, str]:
-    return {var["name"]: var["value"] for var in spec["runtimes"][0]["envVars"]}
+def runtime_env(spec: dict, name: str = "MeridianConcierge") -> dict[str, str]:
+    runtime = next(r for r in spec["runtimes"] if r["name"] == name)
+    return {var["name"]: var["value"] for var in runtime["envVars"]}
 
 
 def test_complete_render_fills_every_account_and_deployment_value() -> None:
@@ -109,6 +117,7 @@ def test_account_and_region_come_from_the_cluster_arn_unless_a_region_is_set() -
         {
             "AURORA_CLUSTER_ARN": CLUSTER_ARN,
             "AURORA_SECRET_ARN": SECRET_ARN,
+            "AURORA_WORKFLOW_SECRET_ARN": WORKFLOW_SECRET_ARN,
             "AWS_DEFAULT_REGION": "eu-west-1",
             "AGENTCORE_REGION": "us-east-1",
         }
@@ -134,7 +143,41 @@ def test_account_and_region_come_from_the_cluster_arn_unless_a_region_is_set() -
 )
 def test_malformed_inputs_fail_with_the_setting_to_fix(env: dict, message: str) -> None:
     with pytest.raises(render_config.ConfigError, match=message):
+        render_config.account_values({"AURORA_WORKFLOW_SECRET_ARN": WORKFLOW_SECRET_ARN, **env})
+
+
+@pytest.mark.parametrize(
+    "workflow_arn,message",
+    [
+        (f"arn:aws:secretsmanager:us-west-2:{ACCOUNT}:secret:workflow", "six-character suffix"),
+        (WORKFLOW_SECRET_ARN.replace(ACCOUNT, "111122223333"), "both must belong"),
+        (SECRET_ARN, "must differ from AURORA_SECRET_ARN"),
+    ],
+)
+def test_a_bad_workflow_secret_names_the_setting_to_fix(workflow_arn: str, message: str) -> None:
+    env = {
+        "AURORA_CLUSTER_ARN": CLUSTER_ARN,
+        "AURORA_SECRET_ARN": SECRET_ARN,
+        "AURORA_WORKFLOW_SECRET_ARN": workflow_arn,
+    }
+    with pytest.raises(render_config.ConfigError, match=message):
         render_config.account_values(env)
+
+
+def test_the_workflow_runtime_gets_its_own_login_and_policy() -> None:
+    spec, _, notes = render_config.render(*templates(), base_values())
+    workflow = next(r for r in spec["runtimes"] if r["name"] == "MeridianWorkflow")
+    env = {v["name"]: v["value"] for v in workflow["envVars"]}
+    assert env["AURORA_SECRET_ARN"] == WORKFLOW_SECRET_ARN != SECRET_ARN
+    assert workflow["additionalPolicies"] == [
+        f"arn:aws:iam::{ACCOUNT}:policy/MeridianWorkflowAuroraAccess"]
+    assert not [n for n in notes if "MeridianWorkflow" in n]
+
+
+def test_render_refuses_to_run_without_the_workflow_login() -> None:
+    with pytest.raises(render_config.ConfigError, match="provision_workflow_login"):
+        render_config.account_values(
+            {"AURORA_CLUSTER_ARN": CLUSTER_ARN, "AURORA_SECRET_ARN": SECRET_ARN})
 
 
 def test_a_policy_engine_id_without_a_gateway_id_is_refused() -> None:
@@ -234,6 +277,11 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("AURORA_CLUSTER_ARN", CLUSTER_ARN)
     monkeypatch.setenv("AURORA_SECRET_ARN", SECRET_ARN)
+    monkeypatch.setenv("AURORA_WORKFLOW_SECRET_ARN", WORKFLOW_SECRET_ARN)
+    real_stage = render_config.stage_workflow_runtime.stage
+    monkeypatch.setattr(
+        render_config.stage_workflow_runtime, "stage", lambda: real_stage(tmp_path / "bundle")
+    )
     return config_dir
 
 
@@ -271,13 +319,25 @@ def test_main_writes_the_first_pass_before_any_deploy(
     assert "Deploy with `agentcore deploy -y`, then run this script again." in out
 
 
+def test_main_stages_the_workflow_bundle_and_reports_its_modules(
+    project: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert render_config.main([]) == 0
+
+    manifest = tmp_path / "bundle" / "backend" / "BUNDLE_MANIFEST.json"
+    modules = json.loads(manifest.read_text(encoding="utf-8"))
+    assert f"staged {len(modules)} workflow modules" in capsys.readouterr().out
+
+
 def test_main_completes_from_the_deployed_state_and_the_env_file(
     project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.delenv("AURORA_CLUSTER_ARN")
     monkeypatch.delenv("AURORA_SECRET_ARN")
+    monkeypatch.delenv("AURORA_WORKFLOW_SECRET_ARN")
     (render_config.MERIDIAN_DIR / ".env").write_text(
         f"AURORA_CLUSTER_ARN={CLUSTER_ARN}\nAURORA_SECRET_ARN={SECRET_ARN}\n"
+        f"AURORA_WORKFLOW_SECRET_ARN={WORKFLOW_SECRET_ARN}\n"
         "AGENTCORE_REGION=eu-west-1\n",
         encoding="utf-8",
     )

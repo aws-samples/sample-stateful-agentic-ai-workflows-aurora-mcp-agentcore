@@ -4,14 +4,15 @@ Sync AgentCore resource IDs from the @aws/agentcore CLI into meridian/.env.
 
 Preferred workflow (Node-based CLI):
 
-    npm install -g @aws/agentcore
     cd meridian
     python scripts/render_agentcore_config.py
     cd meridian_agentcore
-    agentcore validate --json
-    agentcore package --runtime MeridianConcierge
-    agentcore deploy -y
+    /opt/homebrew/bin/agentcore validate --json
+    /opt/homebrew/bin/agentcore deploy -y
     python ../scripts/sync_agentcore_env.py --write
+
+Both runtimes resolve by name from the deployed state: AGENTCORE_RUNTIME_ARN is
+MeridianConcierge's and AGENTCORE_WORKFLOW_RUNTIME_ARN is MeridianWorkflow's.
 
 This script reads ``agentcore/.cli/deployed-state.json`` and/or runs
 ``agentcore status --json``, then prints (or writes) AGENTCORE_* lines.
@@ -32,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -78,6 +80,36 @@ def _fetch_gateway_access(name: str, project_dir: Path) -> dict | None:
         return None
 
 
+def env_lines(cfg) -> dict[str, str]:
+    """The AGENTCORE_* lines for every value the resolved config holds."""
+    candidates = {
+        "AGENTCORE_REGION": cfg.region,
+        "AGENTCORE_RUNTIME_ARN": cfg.runtime_arn,
+        "AGENTCORE_WORKFLOW_RUNTIME_ARN": cfg.workflow_runtime_arn,
+        "AGENTCORE_RUNTIME_NAME": cfg.runtime_name,
+        "AGENTCORE_GATEWAY_URL": cfg.gateway_url,
+        "AGENTCORE_GATEWAY_NAME": cfg.gateway_name,
+        "AGENTCORE_GATEWAY_SEARCH_TOOL": cfg.gateway_search_tool,
+        "AGENTCORE_MEMORY_ID": cfg.memory_id,
+        "AGENTCORE_MEMORY_NAME": cfg.memory_name,
+        "AGENTCORE_WORKLOAD_IDENTITY": cfg.workload_identity,
+        "AGENTCORE_RESOURCE_PROVIDER": cfg.resource_provider,
+    }
+    return {key: value for key, value in candidates.items() if value}
+
+
+def write_env(env_path: Path, lines: dict[str, str]) -> None:
+    """Update or append each KEY=value line in the env file."""
+    existing = env_path.read_text(encoding="utf-8") if env_path.is_file() else ""
+    for key, value in lines.items():
+        line = f"{key}={value}"
+        if f"{key}=" in existing:
+            existing = re.sub(rf"^{key}=.*$", line, existing, flags=re.MULTILINE)
+        else:
+            existing = existing.rstrip() + f"\n{line}\n"
+    env_path.write_text(existing, encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -96,27 +128,7 @@ def main() -> int:
     cfg = resolve_agentcore_config()
     project_dir = agentcore_project_dir()
 
-    lines: dict[str, str] = {
-        "AGENTCORE_REGION": cfg.region,
-    }
-    if cfg.runtime_arn:
-        lines["AGENTCORE_RUNTIME_ARN"] = cfg.runtime_arn
-    if cfg.runtime_name:
-        lines["AGENTCORE_RUNTIME_NAME"] = cfg.runtime_name
-    if cfg.gateway_url:
-        lines["AGENTCORE_GATEWAY_URL"] = cfg.gateway_url
-    if cfg.gateway_name:
-        lines["AGENTCORE_GATEWAY_NAME"] = cfg.gateway_name
-    if cfg.gateway_search_tool:
-        lines["AGENTCORE_GATEWAY_SEARCH_TOOL"] = cfg.gateway_search_tool
-    if cfg.memory_id:
-        lines["AGENTCORE_MEMORY_ID"] = cfg.memory_id
-    if cfg.memory_name:
-        lines["AGENTCORE_MEMORY_NAME"] = cfg.memory_name
-    if cfg.workload_identity:
-        lines["AGENTCORE_WORKLOAD_IDENTITY"] = cfg.workload_identity
-    if cfg.resource_provider:
-        lines["AGENTCORE_RESOURCE_PROVIDER"] = cfg.resource_provider
+    lines = env_lines(cfg)
 
     if args.fetch_gateway_token and cfg.gateway_name:
         access = _fetch_gateway_access(cfg.gateway_name, project_dir)
@@ -137,16 +149,7 @@ def main() -> int:
 
     if args.write:
         env_path = Path(__file__).resolve().parents[1] / ".env"
-        existing = env_path.read_text(encoding="utf-8") if env_path.is_file() else ""
-        for key, value in lines.items():
-            line = f"{key}={value}"
-            if f"{key}=" in existing:
-                import re
-
-                existing = re.sub(rf"^{key}=.*$", line, existing, flags=re.MULTILINE)
-            else:
-                existing = existing.rstrip() + f"\n{line}\n"
-        env_path.write_text(existing, encoding="utf-8")
+        write_env(env_path, lines)
         print(f"\nWrote {len(lines)} keys to {env_path}")
 
     return 0

@@ -8,9 +8,10 @@ read AGENTCORE_GATEWAY_URL, so it is mapped before they import. The staged
 import json
 import os
 
-os.environ.setdefault(
-    "AGENTCORE_GATEWAY_URL", os.environ.get("AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL", "")
-)
+if os.environ.get("AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL"):
+    os.environ.setdefault(
+        "AGENTCORE_GATEWAY_URL", os.environ["AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL"]
+    )
 
 from bedrock_agentcore.runtime import BedrockAgentCoreApp  # noqa: E402
 

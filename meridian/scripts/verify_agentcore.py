@@ -115,6 +115,30 @@ def check_observability(control, runtime_id: str) -> tuple[bool, str, str]:
     return enabled, log_group, "READY" if enabled else "OFF"
 
 
+def runtime_arns(cfg) -> list[tuple[str, str | None]]:
+    """The deployed runtimes by name, each with its ARN or None when not deployed."""
+    return [("MeridianConcierge", cfg.runtime_arn), ("MeridianWorkflow", cfg.workflow_runtime_arn)]
+
+
+def runtime_row(control, name: str, runtime_arn: str | None, table) -> bool:
+    """Add one runtime's GetAgentRuntime row, named after the runtime; return True when READY."""
+    label = f"Runtime {name}"
+    if not runtime_arn:
+        table.add_row(label, "[red]not configured[/red]", "[red]MISSING[/red]")
+        return False
+    runtime_id = _runtime_id_from_arn(runtime_arn)
+    try:
+        status = control.get_agent_runtime(agentRuntimeId=runtime_id).get("status")
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "Error")
+        table.add_row(label, runtime_id, f"[red]✗ {code}[/red]")
+        return False
+    ok = _status_ok(status)
+    mark = "[green]✓ {}[/green]" if ok else "[yellow]! {}[/yellow]"
+    table.add_row(label, runtime_id, mark.format(status or "UNKNOWN"))
+    return ok
+
+
 def governance_rows(control, cfg, table) -> bool:
     """Add the policy, tools and observability rows; return True when all are good."""
     checks = []
@@ -122,9 +146,12 @@ def governance_rows(control, cfg, table) -> bool:
         gateway_id = _gateway_id_from_url(cfg.gateway_url)
         checks.append(("Policy engine", lambda: check_policy_engine(control, gateway_id)))
         checks.append(("Gateway tools", lambda: check_gateway_tools(cfg)))
-    if cfg.runtime_arn:
-        runtime_id = _runtime_id_from_arn(cfg.runtime_arn)
-        checks.append(("Observability", lambda: check_observability(control, runtime_id)))
+    for name, arn in runtime_arns(cfg):
+        if arn:
+            runtime_id = _runtime_id_from_arn(arn)
+            checks.append(
+                (f"Observability {name}", lambda i=runtime_id: check_observability(control, i))
+            )
     all_ok = True
     for label, check in checks:
         try:
@@ -171,23 +198,9 @@ def main() -> int:
 
     all_ok = True
 
-    # --- Runtime --------------------------------------------------------------
-    if not cfg.runtime_arn:
-        table.add_row("Runtime", "[red]not configured[/red]", "[red]MISSING[/red]")
-        all_ok = False
-    else:
-        runtime_id = _runtime_id_from_arn(cfg.runtime_arn)
-        try:
-            resp = control.get_agent_runtime(agentRuntimeId=runtime_id)
-            status = resp.get("status")
-            ok = _status_ok(status)
-            all_ok &= ok
-            mark = "[green]✓ {}[/green]" if ok else "[yellow]! {}[/yellow]"
-            table.add_row("Runtime", runtime_id, mark.format(status or "UNKNOWN"))
-        except ClientError as exc:
-            all_ok = False
-            code = exc.response.get("Error", {}).get("Code", "Error")
-            table.add_row("Runtime", runtime_id, f"[red]✗ {code}[/red]")
+    # --- Runtimes -------------------------------------------------------------
+    for name, arn in runtime_arns(cfg):
+        all_ok &= runtime_row(control, name, arn, table)
 
     # --- Gateway --------------------------------------------------------------
     if not cfg.gateway_url:

@@ -7,17 +7,30 @@ import sys
 import tomllib
 from pathlib import Path
 
+import pytest
+
 from scripts import stage_workflow_runtime as stage
 
 APP = Path(__file__).resolve().parents[1] / "meridian_agentcore" / "app" / "MeridianWorkflow"
 
 
 def test_the_closure_reaches_lazily_imported_modules():
-    names = {str(p).split("meridian/", 1)[1] for p in stage.closure()}
+    names = {p.relative_to(stage.MERIDIAN).as_posix() for p in stage.closure()}
     for lazy in ("backend/agents/phase_05_workflow/service.py", "backend/retrieval/hybrid.py",
                  "backend/retrieval/availability.py", "backend/db/rds_data_client.py",
                  "backend/agentcore/gateway.py", "backend/memory/store.py"):
         assert lazy in names
+
+
+def test_stage_refuses_to_delete_a_real_backend_package(tmp_path):
+    real = tmp_path / "backend"
+    real.mkdir()
+    (real / "__init__.py").write_text("")
+    (real / "keep.py").write_text("x = 1\n")
+    with pytest.raises(RuntimeError, match="real backend package"):
+        stage.stage(tmp_path)
+    assert (real / "keep.py").is_file()
+    assert (real / "__init__.py").is_file()
 
 
 def test_the_closure_has_no_web_layer():

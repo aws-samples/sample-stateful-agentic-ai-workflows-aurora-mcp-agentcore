@@ -85,8 +85,17 @@ def _digest(path: Path) -> str:
 
 
 def stage(target: Path = RUNTIME_DIR) -> Path:
-    """Copy the closure into ``target/backend`` and return the manifest path."""
+    """Copy the closure into ``target/backend`` and return the manifest path.
+
+    Raises:
+        RuntimeError: ``target/backend`` is a real package, which has no bundle manifest.
+    """
     bundle = target / "backend"
+    if (bundle / "__init__.py").exists() and not (bundle / MANIFEST).exists():
+        raise RuntimeError(
+            f"{bundle} holds a real backend package, not a staged bundle (no {MANIFEST}); "
+            "refusing to delete it. Stage into a Runtime directory instead."
+        )
     if bundle.exists():
         shutil.rmtree(bundle)
     manifest = {}

@@ -17,6 +17,9 @@ Placeholder sources:
                             region in AURORA_CLUSTER_ARN
     {{AURORA_CLUSTER_ARN}}  AURORA_CLUSTER_ARN
     {{AURORA_SECRET_ARN}}   AURORA_SECRET_ARN (the full ARN, with its suffix)
+    {{AURORA_WORKFLOW_SECRET_ARN}}
+                            AURORA_WORKFLOW_SECRET_ARN, the meridian_workflow
+                            login's secret (scripts/provision_workflow_login.py)
     {{GATEWAY_ID}}          --gateway-id, else agentcore/.cli/deployed-state.json
     {{POLICY_ENGINE_ID}}    --policy-engine-id, else the same deployed state
 
@@ -29,6 +32,9 @@ out only the runtime's policy engine variable. A policy engine ID without a
 gateway ID is refused, because the engine it names could not be rendered. Run
 it again after each ``agentcore deploy`` until it reports a complete
 configuration.
+
+After it writes both files it stages the MeridianWorkflow Runtime's backend
+bundle (scripts/stage_workflow_runtime.py), so a deploy never ships a stale copy.
 
 Usage:
     cd meridian
@@ -48,6 +54,10 @@ from typing import Any
 from dotenv import dotenv_values
 
 MERIDIAN_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(MERIDIAN_DIR))
+
+from scripts import stage_workflow_runtime  # noqa: E402
+
 CONFIG_DIR = MERIDIAN_DIR / "meridian_agentcore" / "agentcore"
 SPEC_TEMPLATE = "agentcore.template.json"
 TARGETS_TEMPLATE = "aws-targets.template.json"
@@ -84,6 +94,34 @@ class ConfigError(ValueError):
     """A value needed to render the AgentCore configuration is missing or malformed."""
 
 
+def _workflow_secret_arn(env: dict[str, str | None], master_arn: str, account: str) -> str:
+    """Validate the meridian_workflow login's secret ARN like the master secret's."""
+    arn = (env.get("AURORA_WORKFLOW_SECRET_ARN") or "").strip()
+    if not arn:
+        raise ConfigError(
+            "AURORA_WORKFLOW_SECRET_ARN is not set; run scripts/provision_workflow_login.py "
+            "and keep the secret ARN it prints in meridian/.env"
+        )
+    match = SECRET_ARN.match(arn)
+    if not match:
+        raise ConfigError(
+            "AURORA_WORKFLOW_SECRET_ARN must be the full Secrets Manager ARN, including the "
+            "six-character suffix; scripts/provision_workflow_login.py prints it"
+        )
+    if match["account"] != account:
+        raise ConfigError(
+            f"AURORA_WORKFLOW_SECRET_ARN is in account {match['account']} but "
+            f"AURORA_CLUSTER_ARN is in account {account}; both must belong to the "
+            "deployment account"
+        )
+    if arn == master_arn:
+        raise ConfigError(
+            "AURORA_WORKFLOW_SECRET_ARN must differ from AURORA_SECRET_ARN: the workflow "
+            "Runtime runs as the least-privilege meridian_workflow login, not the master"
+        )
+    return arn
+
+
 def account_values(env: dict[str, str | None]) -> dict[str, str]:
     """Resolve the account, region and Aurora ARNs the templates need.
 
@@ -91,11 +129,13 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
         env: Merged ``meridian/.env`` and process environment.
 
     Returns:
-        Values for AWS_ACCOUNT_ID, AWS_REGION, AURORA_CLUSTER_ARN and AURORA_SECRET_ARN.
+        Values for AWS_ACCOUNT_ID, AWS_REGION, AURORA_CLUSTER_ARN, AURORA_SECRET_ARN
+        and AURORA_WORKFLOW_SECRET_ARN.
 
     Raises:
-        ConfigError: When an ARN is missing or malformed, the two ARNs name
-            different accounts, or the region is not a region name.
+        ConfigError: When an ARN is missing or malformed, an ARN names a different
+            account than the cluster, the two secrets are the same, or the region
+            is not a region name.
     """
     cluster_arn = (env.get("AURORA_CLUSTER_ARN") or "").strip()
     secret_arn = (env.get("AURORA_SECRET_ARN") or "").strip()
@@ -117,6 +157,7 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
             f"AURORA_SECRET_ARN is in account {secret['account']} but AURORA_CLUSTER_ARN "
             f"is in account {cluster['account']}; both must belong to the deployment account"
         )
+    workflow_secret_arn = _workflow_secret_arn(env, secret_arn, cluster["account"])
     region = (
         (env.get("AGENTCORE_REGION") or env.get("AWS_DEFAULT_REGION") or "").strip()
         or cluster["region"]
@@ -128,6 +169,7 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
         "AWS_REGION": region,
         "AURORA_CLUSTER_ARN": cluster_arn,
         "AURORA_SECRET_ARN": secret_arn,
+        "AURORA_WORKFLOW_SECRET_ARN": workflow_secret_arn,
     }
 
 
@@ -296,8 +338,10 @@ def main(argv: list[str] | None = None) -> int:
 
     write_json(CONFIG_DIR / SPEC_OUTPUT, spec)
     write_json(CONFIG_DIR / TARGETS_OUTPUT, targets)
+    staged = json.loads(stage_workflow_runtime.stage().read_text(encoding="utf-8"))
     print(f"Wrote {CONFIG_DIR / SPEC_OUTPUT} and {CONFIG_DIR / TARGETS_OUTPUT}")
     print(f"  account {values['AWS_ACCOUNT_ID']}, region {values['AWS_REGION']}")
+    print(f"  staged {len(staged)} workflow modules into the MeridianWorkflow bundle")
     for note in notes:
         print(f"  {note}")
     if notes:

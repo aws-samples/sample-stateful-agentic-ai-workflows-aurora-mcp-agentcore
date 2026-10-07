@@ -194,6 +194,33 @@ def test_env_overrides_deployed_state(tmp_path: Path, monkeypatch):
     assert "env" in cfg.sources
 
 
+def test_two_runtimes_resolve_by_name_whatever_their_order():
+    state = {"targets": {"default": {"resources": {"runtimes": {
+        "MeridianWorkflow": {"runtimeArn": "arn:aws:bedrock-agentcore:us-east-1:1:runtime/wf"},
+        "MeridianConcierge": {"runtimeArn": "arn:aws:bedrock-agentcore:us-east-1:1:runtime/cc"},
+    }}}}}
+    found = cli_config._parse_deployed_state(state)
+    assert found["runtime_arn"].endswith("/cc")
+    assert found["workflow_runtime_arn"].endswith("/wf")
+
+
+def test_a_lone_workflow_runtime_is_never_taken_for_the_concierge():
+    state = {"targets": {"default": {"resources": {"runtimes": {
+        "MeridianWorkflow": {"runtimeArn": "arn:aws:bedrock-agentcore:us-east-1:1:runtime/wf"},
+    }}}}}
+    found = cli_config._parse_deployed_state(state)
+    assert found["runtime_arn"] is None
+    assert found["workflow_runtime_arn"].endswith("/wf")
+
+
+def test_env_overrides_the_workflow_runtime_arn(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("AGENTCORE_WORKFLOW_RUNTIME_ARN", "arn:workflow-override")
+    monkeypatch.setenv("AGENTCORE_SKIP_CLI_SYNC", "1")
+    cfg = cli_config.resolve_agentcore_config()
+    assert cfg.workflow_runtime_arn == "arn:workflow-override"
+    assert "env" in cfg.sources
+
+
 def test_require_agentcore_platform_missing(tmp_path, monkeypatch):
     # Point at an empty project dir so no real deployed-state.json is found —
     # otherwise a developer's local `agentcore deploy` would configure the path
