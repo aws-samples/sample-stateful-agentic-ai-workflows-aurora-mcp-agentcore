@@ -11,10 +11,10 @@ from backend.agentcore.errors import CallerTokenExpired, CallerTokenMissing
 from backend.http_auth import HttpPrincipal, require_http_principal
 from backend.routers import journeys
 from backend.token_expiry import MESSAGE as EXPIRED_BODY
+from backend.token_expiry import SIGN_IN_MESSAGE as BODY
 
 JORDAN = HttpPrincipal("test", "trv_meridian_demo", "test")
 REMOTE_TEXT = "remote runtime said: secret-detail-123"
-BODY = "Your sign-in has expired or is missing. Sign in again."
 
 
 @pytest.mark.parametrize("error", [CallerTokenMissing, CallerTokenExpired])

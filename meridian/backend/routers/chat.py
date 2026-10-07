@@ -46,13 +46,13 @@ from backend.config import bedrock_model_label
 from backend.demo_prompts import tee_up_prompt, working_prompts
 from backend.timing import clock, elapsed_ms
 from backend.logging_config import log_exception, log_search, log_order, log_error, log_turn_start, log_turn_complete, log_activity_entry
-from backend.agentcore.errors import CallerTokenExpired
+from backend.agentcore.errors import CallerCredentialError
 from backend.http_auth import (
     HttpPrincipal,
     authorize_traveler,
     require_http_principal,
 )
-from backend.token_expiry import TOKEN_EXPIRED_CODE, is_token_expired, token_expired_error
+from backend.token_expiry import credential_error, error_code
 from backend.search_utils import (
     PACKAGE_COLUMNS,
     parse_search_query,
@@ -1561,8 +1561,8 @@ async def orchestration_workflow(
     )
     try:
         final_state = await get_workflow_runtime().run(command)
-    except CallerTokenExpired as exc:
-        raise token_expired_error() from exc
+    except CallerCredentialError as exc:
+        raise credential_error(exc) from exc
     except AgentCoreNotConfiguredError as exc:
         raise HTTPException(
             status_code=503,
@@ -1715,6 +1715,12 @@ def _is_workflow_resume_query(query: str) -> bool:
 _stream_tasks: set[asyncio.Task] = set()
 
 
+def _stream_error_event(error: HTTPException) -> dict:
+    """The terminal SSE error event; the code is how the browser tells refresh from sign-in."""
+    code = error_code(error)
+    return {"type": "error", "message": str(error.detail), **({"code": code} if code else {})}
+
+
 @router.post("/stream")
 async def stream_chat(
     request: ChatRequest,
@@ -1755,13 +1761,10 @@ async def stream_chat(
             else:
                 publish({"type": "complete", "response": response.model_dump()})
         except HTTPException as exc:
-            publish({
-                "type": "error", "message": str(exc.detail),
-                **({"code": TOKEN_EXPIRED_CODE} if is_token_expired(exc) else {}),
-            })
-        except CallerTokenExpired:
-            publish({"type": "error", "message": token_expired_error().detail,
-                     "code": TOKEN_EXPIRED_CODE})
+            publish(_stream_error_event(exc))
+        except CallerCredentialError as exc:
+            logger.info("Concierge stream refused: %s", exc.__class__.__name__)
+            publish(_stream_error_event(credential_error(exc)))
         except Exception:
             logger.exception("Concierge stream failed")
             publish({"type": "error", "message": "The response was interrupted. Check the connection before trying again."})
@@ -2000,8 +2003,8 @@ async def chat(
         except TravelerAuthorizationError as e:
             log_error("production_authorization", error=str(e))
             raise HTTPException(status_code=403, detail=str(e)) from e
-        except CallerTokenExpired as e:
-            raise token_expired_error() from e
+        except CallerCredentialError as e:
+            raise credential_error(e) from e
         except Exception as e:
             error_ref = log_exception("production_search")
             from backend.agentcore.errors import AgentCoreNotConfiguredError
@@ -2495,8 +2498,8 @@ async def production_hold(request: "OrderRequest") -> OrderResponse:
     except TravelerAuthorizationError as e:
         log_error(context="hold_authorization", error=str(e), phase=4)
         raise HTTPException(status_code=403, detail=str(e)) from e
-    except CallerTokenExpired as e:
-        raise token_expired_error() from e
+    except CallerCredentialError as e:
+        raise credential_error(e) from e
     except Exception as e:
         log_error(context="production_hold", error=str(e), phase=4)
         raise HTTPException(
@@ -2684,8 +2687,8 @@ async def production_booking(request: "BookingRequest") -> BookingResponse:
     except TravelerAuthorizationError as e:
         log_error(context="booking_authorization", error=str(e), phase=4)
         raise HTTPException(status_code=403, detail=str(e)) from e
-    except CallerTokenExpired as e:
-        raise token_expired_error() from e
+    except CallerCredentialError as e:
+        raise credential_error(e) from e
     except Exception as e:
         log_error(context="production_booking", error=str(e), phase=4)
         raise HTTPException(
