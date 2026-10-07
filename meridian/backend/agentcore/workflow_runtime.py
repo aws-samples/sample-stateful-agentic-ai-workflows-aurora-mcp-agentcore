@@ -5,6 +5,10 @@ Runtime a typed ``workflow_turn`` built from those fields alone, so a request ca
 never smuggle a pause point or another traveler into the payload. The Runtime
 streams heartbeats and one coded result, and this client turns the code back into
 the workflow's own exception, so chat.py maps HTTP status exactly as before.
+
+With ``MERIDIAN_AGENTCORE_AUTH=jwt`` the Runtime has a JWT authorizer, so a run or ping is posted
+over HTTPS with the signed-in caller's bearer token (``runtime_https``) instead of being signed with
+IAM. Stopping a session stays IAM-signed: ``StopRuntimeSession`` takes no bearer token.
 """
 
 import asyncio
@@ -20,9 +24,12 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
+from backend.agentcore.auth_mode import jwt_mode
+from backend.agentcore.caller_credential import require_caller_token
 from backend.agentcore.cli_config import resolve_agentcore_config
-from backend.agentcore.errors import AgentCoreNotConfiguredError
+from backend.agentcore.errors import AgentCoreNotConfiguredError, CallerTokenExpired
 from backend.agentcore.runtime import iter_sse, stream_chunks
+from backend.agentcore.runtime_https import RuntimeHttpClient, RuntimeHttpError, invocation_url
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
 from backend.agents.phase_05_workflow.runner import (
     WorkflowCommand,
@@ -42,6 +49,7 @@ ERRORS = {
     "conflict": WorkflowConflictError,
     "lease_lost": ExecutionLeaseLostError,
     "hold_unknown": HoldOutcomeUnknown,
+    "token_expired": CallerTokenExpired,
 }
 
 
@@ -78,12 +86,15 @@ class WorkflowRuntimeClient:
         qualifier: The endpoint; defaults to ``DEFAULT``.
         region: The AgentCore region; defaults to the resolved config.
         client: A boto3 ``bedrock-agentcore`` client, for tests.
+        http: The bearer-token HTTPS client used in ``jwt`` mode, for tests.
         sleep: Waits between retries of a session that is being provisioned.
     """
 
     def __init__(self, runtime_arn: Optional[str] = None, *, qualifier: Optional[str] = None,
                  region: Optional[str] = None, client: Any = None,
+                 http: Optional[RuntimeHttpClient] = None,
                  sleep: Callable[[float], None] = time.sleep) -> None:
+        self._http = http
         self._runtime_arn = runtime_arn
         self._qualifier = qualifier
         self._region = region
@@ -125,18 +136,30 @@ class WorkflowRuntimeClient:
             "review_only": command.review_only,
         }).encode("utf-8")
 
+    def _send(self, session_id: str, payload: bytes) -> Any:
+        """One invocation: IAM-signed by default, with the caller's bearer token in jwt mode."""
+        if not jwt_mode():
+            return self._client_for().invoke_agent_runtime(
+                agentRuntimeArn=self._arn(), runtimeSessionId=session_id, payload=payload,
+                qualifier=self._qualifier or "DEFAULT", contentType="application/json",
+                accept="text/event-stream",
+            )
+        self._http = self._http or RuntimeHttpClient()
+        region = self._region or resolve_agentcore_config().region
+        return self._http.invoke(
+            url=invocation_url(region, self._arn(), self._qualifier or "DEFAULT"),
+            token=require_caller_token(), session_id=session_id, payload=payload,
+        )
+
     def _invoke(self, session_id: str, payload: bytes) -> Any:
         # Retry only RetryableConflictException: AgentCore is provisioning or
         # tearing the session down, so the request never reached the workflow.
         for delay in (*CONFLICT_RETRY_DELAYS, None):
             try:
-                return self._client_for().invoke_agent_runtime(
-                    agentRuntimeArn=self._arn(), runtimeSessionId=session_id, payload=payload,
-                    qualifier=self._qualifier or "DEFAULT", contentType="application/json",
-                    accept="text/event-stream",
-                )
-            except ClientError as exc:
-                code = exc.response["Error"]["Code"]
+                return self._send(session_id, payload)
+            except (ClientError, RuntimeHttpError) as exc:
+                code = exc.code if isinstance(exc, RuntimeHttpError) else (
+                    exc.response["Error"]["Code"])
                 if code != "RetryableConflictException" or delay is None:
                     logger.warning("Workflow Runtime invoke failed: code=%s session=%s",
                                    code, session_id)
