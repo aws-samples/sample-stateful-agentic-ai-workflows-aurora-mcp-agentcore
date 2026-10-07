@@ -1,7 +1,9 @@
 """The Runtime entry turns one payload into heartbeats and one coded outcome."""
 
 import asyncio
+import gc
 import json
+import re
 
 import pytest
 
@@ -82,7 +84,7 @@ async def test_ping_answers_without_running_the_workflow():
 
 
 async def test_heartbeats_flow_while_the_run_works():
-    out = await events(START, Runner(result={}, delay=0.35), heartbeat=0.1)
+    out = await events(START, Runner(result={}, delay=0.5), heartbeat=0.1)
     assert [e["type"] for e in out][:3] == ["heartbeat"] * 3
     assert out[-1]["type"] == "result"
 
@@ -121,6 +123,47 @@ async def test_the_worker_id_names_the_session_and_this_microvm():
         seen.append(worker_id)
         return Runner(result={})
 
-    await entry.workflow_turn(START, session_id="rt-wf-s", runner_factory=factory,
-                              heartbeat_seconds=10).__anext__()
+    stream = entry.workflow_turn(START, session_id="rt-wf-s", runner_factory=factory,
+                                 heartbeat_seconds=10)
+    await stream.__anext__()
+    await stream.aclose()
+    assert re.fullmatch(r"vm-[0-9a-f]{12}", entry.MICROVM_ID)
     assert seen == [f"rt-wf-s/{entry.MICROVM_ID}"] and len(seen[0]) <= 128
+
+
+async def test_a_factory_failure_is_one_internal_event():
+    def factory(worker_id):
+        raise RuntimeError("secret detail")
+
+    out = [e async for e in entry.workflow_turn(START, session_id="s", runner_factory=factory,
+                                                 heartbeat_seconds=10)]
+    assert len(out) == 1 and out[0]["code"] == "internal"
+    assert "secret detail" not in out[0]["message"]
+
+
+async def test_a_run_that_fails_after_the_last_heartbeat_is_still_collected():
+    loop = asyncio.get_running_loop()
+    reported = []
+    loop.set_exception_handler(lambda _loop, context: reported.append(context))
+    runner = Runner(error=RuntimeError("late"), delay=0.15)
+    stream = entry.workflow_turn(START, session_id="s", runner_factory=lambda wid: runner,
+                                 heartbeat_seconds=0.05)
+    assert (await anext(stream))["type"] == "heartbeat"
+    await asyncio.sleep(0.2)
+    await stream.aclose()
+    del stream
+    gc.collect()
+    await asyncio.sleep(0)
+    loop.set_exception_handler(None)
+    assert [c for c in reported if "never retrieved" in c.get("message", "")] == []
+
+
+async def test_a_run_that_cancels_itself_is_an_internal_event():
+    class SelfCancelling:
+        async def run(self, command):
+            raise asyncio.CancelledError
+
+    out = [e async for e in entry.workflow_turn(START, session_id="s",
+                                                 runner_factory=lambda wid: SelfCancelling(),
+                                                 heartbeat_seconds=10)]
+    assert [e["code"] for e in out] == ["internal"]

@@ -87,6 +87,10 @@ def _text(payload: Dict[str, Any], key: str) -> str:
 def parse_turn(payload: Any, session_id: Optional[str]) -> Optional[WorkflowCommand]:
     """Return the command a payload asks for, or None for a ping.
 
+    Args:
+        payload: The Runtime payload, of any type.
+        session_id: The Runtime session id.
+
     Raises:
         WorkflowRequestError: The payload is not a usable ``workflow_turn``.
     """
@@ -130,6 +134,15 @@ def default_runner(worker_id: str) -> WorkflowRunner:
     return build_workflow_runner(worker_id=worker_id)
 
 
+async def _collect(run: Optional["asyncio.Future[Any]"]) -> None:
+    """Cancel an unfinished run, then retrieve its outcome so asyncio never reports it lost."""
+    if run is None:
+        return
+    if not run.done():
+        run.cancel()
+    await asyncio.gather(run, return_exceptions=True)
+
+
 async def workflow_turn(
     payload: Any,
     *,
@@ -158,18 +171,22 @@ async def workflow_turn(
         yield {"type": "result",
                "state": {"workflow_status": "ready", "worker_instance_id": worker_id}}
         return
-    run = asyncio.ensure_future(runner_factory(worker_id).run(command))
+    run: Optional["asyncio.Future[Dict[str, Any]]"] = None
     try:
+        run = asyncio.ensure_future(runner_factory(worker_id).run(command))
         while not run.done():
             await asyncio.wait({run}, timeout=heartbeat_seconds)
             if not run.done():
                 yield {"type": "heartbeat", "worker_instance_id": worker_id}
         state = run.result()
+    except asyncio.CancelledError as exc:
+        if run is None or not run.cancelled():
+            raise
+        yield _error(exc)
+        return
     except Exception as exc:  # noqa: BLE001 - every failure leaves as a coded event
         yield _error(exc)
         return
     finally:
-        if not run.done():
-            run.cancel()
-            await asyncio.gather(run, return_exceptions=True)
+        await _collect(run)
     yield {"type": "result", "state": {key: state.get(key) for key in RESULT_KEYS}}
