@@ -29,6 +29,7 @@ jobs:
       # Live Aurora checks require a separately configured test cluster.
       - run: python -m pytest -m "not database" tests examples/langgraph/tests
       - run: python -m pip_audit -r requirements.txt
+      - run: python -m pip_audit -r examples/langgraph/requirements.txt
 
   frontend:
     runs-on: ubuntu-latest

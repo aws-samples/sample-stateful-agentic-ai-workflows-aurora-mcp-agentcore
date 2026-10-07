@@ -51,6 +51,7 @@ def test_no_backend_or_script_file_imports_langgraph():
         str(path.relative_to(ROOT)): imports
         for folder in ("backend", "scripts")
         for path in (ROOT / folder).rglob("*.py")
+        if not {"venv", "site-packages"} & set(path.parts)
         if (imports := _langgraph_imports(path))
     }
 
