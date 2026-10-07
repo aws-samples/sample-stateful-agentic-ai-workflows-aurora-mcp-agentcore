@@ -30,6 +30,7 @@ from fastapi import Header, HTTPException, Request, status
 
 from backend.cognito_auth import (
     CognitoUnavailable,
+    ENV_KEYS,
     CognitoVerifier,
     InvalidCognitoToken,
     get_cognito_verifier,
@@ -96,7 +97,7 @@ async def _cognito_principal(verifier: CognitoVerifier, token: str) -> HttpPrinc
     try:
         identity = await asyncio.to_thread(verifier.verify, token)
     except CognitoUnavailable as exc:
-        logger.error("Cognito signing keys unavailable: %s", exc)
+        logger.error("Cognito signing keys are unavailable; no token can be verified.")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Sign-in verification is temporarily unavailable.",
@@ -111,12 +112,29 @@ async def _cognito_principal(verifier: CognitoVerifier, token: str) -> HttpPrinc
     )
 
 
+def _configured_verifier() -> CognitoVerifier | None:
+    """The Cognito verifier, or a 503 when the pool is only half configured."""
+    try:
+        return get_cognito_verifier()
+    except RuntimeError as exc:
+        logger.error(
+            "Cognito sign-in is half configured: set all of %s or none of them.",
+            ", ".join(ENV_KEYS),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Sign-in is misconfigured.",
+        ) from exc
+
+
 async def require_http_principal(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> HttpPrincipal:
     """Authenticate an HTTP caller and return the traveler it is bound to."""
     bearer = _bearer(authorization)
+    if authorization is not None and not bearer:
+        raise _unauthorized("A Bearer token is required in the Authorization header.")
     expected_token = os.getenv("MERIDIAN_API_TOKEN", "").strip()
 
     if expected_token and bearer and hmac.compare_digest(
@@ -128,7 +146,7 @@ async def require_http_principal(
             authentication="bearer",
         )
 
-    verifier = get_cognito_verifier()
+    verifier = _configured_verifier()
     if verifier is not None and bearer:
         return await _cognito_principal(verifier, bearer)
 
