@@ -11,12 +11,14 @@ from typing import AsyncGenerator
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
-from backend.agentcore.caller_credential import CallerCredentialMiddleware
-from backend.http_auth import require_http_principal
-from backend.authorization import TravelerAuthorizationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from pydantic import BaseModel
+
+from backend.agentcore.caller_credential import CallerCredentialMiddleware
+from backend.agentcore.errors import CallerCredentialError
+from backend.authorization import TravelerAuthorizationError
+from backend.http_auth import require_http_principal
 
 # Load environment variables from .env file
 load_dotenv()
@@ -229,6 +231,17 @@ async def traveler_authorization_exception_handler(request, exc: TravelerAuthori
     """A revoked workload grant is a refusal, including on receipt readback."""
     from fastapi.responses import JSONResponse
     return JSONResponse(status_code=403, content={"error": "This traveler is not authorized for the current workload."})
+
+
+@app.exception_handler(CallerCredentialError)
+async def caller_credential_exception_handler(request, exc: CallerCredentialError):
+    """A missing or expired caller token means sign in again, whichever route hit it."""
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        status_code=401,
+        content={"error": str(exc)},
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 @app.exception_handler(HTTPException)

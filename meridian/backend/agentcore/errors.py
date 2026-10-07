@@ -31,11 +31,19 @@ class AgentCoreNotConfiguredError(RuntimeError):
         )
 
 
-class CallerTokenMissing(RuntimeError):
+class CallerCredentialError(Exception):
+    """The caller's access token is absent or unusable, so the request must be a 401.
+
+    Deliberately not a ``RuntimeError``: routes that turn ``RuntimeError`` into a 503 for a
+    platform outage must not swallow a sign-in problem.
+    """
+
+
+class CallerTokenMissing(CallerCredentialError):
     """Bearer mode was asked to call AgentCore with no caller token bound."""
 
 
-class CallerTokenExpired(RuntimeError):
+class CallerTokenExpired(CallerCredentialError):
     """The caller's access token expired, or AgentCore refused it as expired.
 
     Nothing the token would have authorized ran. The caller signs in again (or refreshes) and
