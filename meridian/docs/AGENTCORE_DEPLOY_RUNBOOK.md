@@ -29,8 +29,13 @@ The AgentCore CLI deploys them as one CloudFormation stack,
   `meridian/.env` sets `AWS_DEFAULT_REGION`, `AURORA_CLUSTER_ARN`,
   `AURORA_SECRET_ARN` (the full ARN, with its six-character suffix) and
   `AURORA_DATABASE`.
-- The `meridian_gateway` login is provisioned, so `meridian/.env` also sets
-  `AURORA_GATEWAY_SECRET_ARN`:
+- Migration 018 (`scripts/migrations/018_service_logins.sql`) is applied, and
+  the `meridian_gateway` login is provisioned, so `meridian/.env` also sets
+  `AURORA_GATEWAY_SECRET_ARN`. Do both before the first render in section 1,
+  because the provisioning script needs the role that migration creates and the
+  render needs the secret ARN the script writes (list the pending
+  migrations with `apply_migrations.py --pending` first, as in the
+  [workflow Runtime steps](#workflow-runtime-steps), then apply 018 and run):
 
   ```bash
   python meridian/scripts/provision_service_logins.py --login gateway --apply --write-env
@@ -80,6 +85,10 @@ generated from the committed templates for your account:
 ```bash
 python meridian/scripts/render_agentcore_config.py
 ```
+
+The render needs `AURORA_GATEWAY_SECRET_ARN`, which
+`provision_service_logins.py --login gateway --apply --write-env` sets and which
+requires migration 018 applied first (see Prerequisites).
 
 On a new account the script reports that it left out the gateway ID variables
 and the Cedar policy engine: the policies name the gateway, which does not
@@ -159,6 +168,10 @@ render needs. Run each pass from the repository root:
 python meridian/scripts/render_agentcore_config.py
 (cd meridian/meridian_agentcore && agentcore validate --json && agentcore deploy -y)
 ```
+
+Every render needs `AURORA_GATEWAY_SECRET_ARN` in `meridian/.env` (set by
+`provision_service_logins.py --login gateway --apply --write-env`, after migration
+018; see Prerequisites).
 
 1. **First pass.** Creates the runtime, memory, gateway and both targets,
    without policies. Expect about 5 to 8 minutes.
@@ -240,6 +253,10 @@ Runtime, so confirm each before you run it.
    ```bash
    python meridian/scripts/render_agentcore_config.py
    ```
+
+   The render needs `AURORA_GATEWAY_SECRET_ARN` (set by
+   `provision_service_logins.py --login gateway --apply --write-env`, which
+   requires migration 018 applied first).
 
 4. Deploy:
 

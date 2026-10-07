@@ -6,6 +6,9 @@ Preferred workflow (Node-based CLI):
 
     cd meridian
     python scripts/render_agentcore_config.py
+    # The render needs AURORA_GATEWAY_SECRET_ARN, set by
+    # provision_service_logins.py --login gateway --apply --write-env
+    # (migration 018 must be applied first).
     cd meridian_agentcore
     /opt/homebrew/bin/agentcore validate --json
     /opt/homebrew/bin/agentcore deploy -y

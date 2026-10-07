@@ -11,6 +11,8 @@ const TEST_VALUES: Record<string, string> = {
   AWS_REGION: 'us-east-1',
   AURORA_CLUSTER_ARN: 'arn:aws:rds:us-east-1:123456789012:cluster:meridian',
   AURORA_SECRET_ARN: 'arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian-AbC123',
+  AURORA_GATEWAY_SECRET_ARN:
+    'arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian/aurora/gateway-login-GwY456',
   AURORA_WORKFLOW_SECRET_ARN:
     'arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian/aurora/workflow-login-XyZ789',
   GATEWAY_ID: 'meridianv2-meridian-aurora-abcde12345',
@@ -93,5 +95,10 @@ test('AgentCoreStack synthesizes the Meridian specification template', () => {
   for (const action of ['AuthorizeAction', 'PartiallyAuthorizeActions', 'GetPolicyEngine']) {
     expect(rendered).toContain(`bedrock-agentcore:${action}`);
   }
+  const holds = spec.agentCoreGateways[0].targets.find((t: { name: string }) => t.name === 'MeridianHolds');
+  const secretStatement = holds.compute.iamPolicy.Statement.find((s: { Action: string[] }) =>
+    s.Action.includes('secretsmanager:GetSecretValue')
+  );
+  expect(secretStatement.Resource).toEqual([TEST_VALUES.AURORA_SECRET_ARN, TEST_VALUES.AURORA_GATEWAY_SECRET_ARN]);
   expect(Object.keys(resources).length).toBeGreaterThan(0);
 });

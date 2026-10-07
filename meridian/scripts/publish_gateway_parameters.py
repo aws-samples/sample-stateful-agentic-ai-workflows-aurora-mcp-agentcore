@@ -35,7 +35,9 @@ PARAMETERS = {
     "/meridian/aurora/database": "AURORA_DATABASE",
 }
 
-
+# Only the secret differs for the gateway login: the cluster and database are shared, so
+# this one entry overrides PARAMETERS. The merge order in parameters_from_env matters; the
+# override must come last or the master secret wins.
 GATEWAY_LOGIN_SECRET = {"/meridian/aurora/secret_arn": "AURORA_GATEWAY_SECRET_ARN"}
 
 
