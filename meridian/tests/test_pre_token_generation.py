@@ -130,7 +130,7 @@ def test_a_data_api_failure_does_not_leak_to_the_user(trigger, error, caplog):
     assert "arn:aws" not in caplog.text
 
 
-def test_the_data_api_client_has_short_timeouts_and_one_retry(trigger):
+def test_the_data_api_client_has_short_timeouts_and_one_attempt(trigger):
     config = trigger.RDS.meta.config
     assert (config.connect_timeout, config.read_timeout) == (1, 3)
-    assert config.retries["total_max_attempts"] == 2
+    assert config.retries["total_max_attempts"] == 1

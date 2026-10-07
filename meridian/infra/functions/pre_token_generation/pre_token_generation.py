@@ -34,7 +34,7 @@ LOGGER.setLevel(logging.INFO)
 
 RDS = boto3.client(
     "rds-data",
-    config=Config(connect_timeout=1, read_timeout=3, retries={"max_attempts": 1}),
+    config=Config(connect_timeout=1, read_timeout=3, retries={"total_max_attempts": 1}),
 )
 
 
