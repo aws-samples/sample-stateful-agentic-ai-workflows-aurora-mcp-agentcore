@@ -30,6 +30,7 @@ TRAVELER_CLAIM = "traveler_id"
 TRAVELER_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,50}$")
 EXPIRY_MARGIN_SECONDS = 10
 MAX_TOKEN_CHARS = 8192
+TOKEN_SHAPE = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
 
 
 class CallerClaimsError(ValueError):
@@ -49,17 +50,19 @@ def decode_claims(token: str) -> dict:
     """The payload of ``token``, with no signature check.
 
     Raises:
-        CallerClaimsError: The token is not three base64url parts whose middle part is a JSON
-            object.
+        CallerClaimsError: The token is not three strict base64url parts (the same shape the
+            Gateway interceptor accepts) whose middle part is a UTF-8 JSON object.
     """
-    if not isinstance(token, str) or len(token) > MAX_TOKEN_CHARS or not token.isascii():
+    if (
+        not isinstance(token, str)
+        or len(token) > MAX_TOKEN_CHARS
+        or not TOKEN_SHAPE.fullmatch(token)
+    ):
         raise CallerClaimsError("malformed")
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise CallerClaimsError("malformed")
+    segment = token.split(".")[1]
     try:
-        payload = base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4))
-        claims = json.loads(payload)
+        padded = segment.replace("-", "+").replace("_", "/") + "=" * (-len(segment) % 4)
+        claims = json.loads(base64.b64decode(padded, validate=True).decode("utf-8"))
     except (ValueError, RecursionError) as exc:
         raise CallerClaimsError("malformed") from exc
     if not isinstance(claims, dict):
@@ -87,6 +90,8 @@ def _check_unexpired(claims: dict, now: Optional[Callable[[], float]]) -> None:
 
 def ensure_unexpired(token: str, *, now: Optional[Callable[[], float]] = None) -> None:
     """Raise unless the token stays valid for at least ``EXPIRY_MARGIN_SECONDS`` more seconds.
+
+    This checks only the shape and ``exp``. It does not check ``token_use`` or the traveler.
 
     Raises:
         CallerClaimsError: The token cannot be decoded or has no ``exp``.

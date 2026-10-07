@@ -40,7 +40,7 @@ def test_the_pattern_matches_the_one_the_backend_verifier_enforces():
     assert caller_claims.TRAVELER_CLAIM == cognito_auth.TRAVELER_CLAIM
 
 
-@pytest.mark.parametrize("exp", [NOW - 1, NOW, NOW + 9])
+@pytest.mark.parametrize("exp", [-5, 0, NOW - 1, NOW, NOW + 9, NOW + 10])
 def test_an_expired_or_nearly_expired_token_is_a_coded_expiry(exp):
     with pytest.raises(CallerTokenExpired):
         traveler_from_token(token_with(good(exp=exp)), now=lambda: NOW)
@@ -48,8 +48,14 @@ def test_an_expired_or_nearly_expired_token_is_a_coded_expiry(exp):
         ensure_unexpired(token_with(good(exp=exp)), now=lambda: NOW)
 
 
-def test_a_token_with_more_than_the_margin_left_is_accepted():
-    ensure_unexpired(token_with(good(exp=NOW + 11)), now=lambda: NOW)
+@pytest.mark.parametrize("exp", [NOW + 11, NOW + 11.5])
+def test_a_token_with_more_than_the_margin_left_is_accepted(exp):
+    ensure_unexpired(token_with(good(exp=exp)), now=lambda: NOW)
+
+
+def test_a_traveler_id_of_exactly_fifty_characters_is_accepted():
+    traveler = "t" * 50
+    assert traveler_from_token(token_with(good(traveler_id=traveler)), now=lambda: NOW) == traveler
 
 
 @pytest.mark.parametrize(("claims", "reason"), [
@@ -63,6 +69,7 @@ def test_a_token_with_more_than_the_margin_left_is_accepted():
     ({k: v for k, v in good().items() if k != "exp"}, "missing_claim"),
     (good(exp=True), "missing_claim"),
     (good(exp="soon"), "missing_claim"),
+    (good(exp="4e9"), "missing_claim"),
 ])
 def test_a_token_a_verified_one_cannot_be_is_refused_with_a_reason(claims, reason):
     with pytest.raises(CallerClaimsError) as refused:
@@ -137,3 +144,43 @@ def test_a_traveler_with_a_trailing_newline_is_refused():
 
 def test_the_default_clock_is_the_real_one():
     assert traveler_from_token(token_with(good(exp=4_000_000_000))) == "trv_meridian_demo"
+
+
+def segments(claims=None):
+    header = b64(b'{"alg": "RS256"}')
+    payload = b64(json.dumps(claims or good()).encode())
+    return header, payload
+
+
+def hostile_tokens():
+    header, payload = segments()
+    std = base64.b64encode(b'{"x": "??>>~~"}').decode()
+    utf16 = b64(json.dumps(good()).encode("utf-16"))
+    return {
+        "junk": f"{header}.{payload[:4]}!!{payload[4:]}.sig",
+        "newline": f"{header}.{payload[:4]}\n{payload[4:]}.sig",
+        "space_inside": f"{header}.{payload[:4]} {payload[4:]}.sig",
+        "std_alphabet": f"{header}.{std}.sig",
+        "equals_padding": f"{header}.{payload}==.sig",
+        "nul_in_header": f"{header[:3]}\x00{header[3:]}.{payload}.sig",
+        "control_in_signature": f"{header}.{payload}.si\x01g",
+        "leading_space": f" {header}.{payload}.sig",
+        "trailing_newline": f"{header}.{payload}.sig\n",
+        "empty_header": f".{payload}.sig",
+        "empty_payload": f"{header}..sig",
+        "utf16_payload": f"{header}.{utf16}.sig",
+    }
+
+
+@pytest.mark.parametrize("name", sorted(hostile_tokens()))
+def test_lenient_base64_and_shapes_are_malformed(name):
+    with pytest.raises(CallerClaimsError) as refused:
+        traveler_from_token(hostile_tokens()[name], now=lambda: NOW)
+    assert refused.value.reason == "malformed"
+    with pytest.raises(CallerClaimsError):
+        ensure_unexpired(hostile_tokens()[name], now=lambda: NOW)
+
+
+def test_an_empty_signature_is_accepted_as_the_interceptor_accepts_it():
+    header, payload = segments()
+    assert traveler_from_token(f"{header}.{payload}.", now=lambda: NOW) == "trv_meridian_demo"
