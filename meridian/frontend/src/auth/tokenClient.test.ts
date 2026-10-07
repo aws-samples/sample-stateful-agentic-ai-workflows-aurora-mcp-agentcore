@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AuthError, exchangeCode, refreshTokens } from './tokenClient';
+import { AuthError, exchangeCode, refreshTokens, revokeRefreshToken } from './tokenClient';
 
 const config = {
   domain: 'd.auth.example.test', clientId: 'client-web',
@@ -42,5 +42,51 @@ describe('token client', () => {
 
   it('refuses a success response without an access token', async () => {
     await expect(refreshTokens(config, 'r', reply({}), () => 0)).rejects.toThrow(AuthError);
+  });
+
+  it('turns a null or non-object body into an AuthError', async () => {
+    await expect(refreshTokens(config, 'r', reply(null), () => 0)).rejects.toThrow(AuthError);
+    await expect(refreshTokens(config, 'r', reply('text'), () => 0)).rejects.toThrow(AuthError);
+  });
+
+  it.each(['abc', 0, -1, '', '3600', Number.POSITIVE_INFINITY, null, 1e306])(
+    'rejects an expires_in of %s', async value => {
+      const fetchFn = reply({ access_token: 'a', expires_in: value });
+      await expect(refreshTokens(config, 'r', fetchFn, () => 0)).rejects.toThrow(AuthError);
+    },
+  );
+
+  it('defaults a missing expires_in to an hour', async () => {
+    const tokens = await refreshTokens(config, 'r', reply({ access_token: 'a' }), () => 0);
+    expect(tokens.expiresAt).toBe(3_600_000);
+  });
+
+  it('accepts a very large expires_in as is and leaves the clamping to the scheduler', async () => {
+    const tokens = await refreshTokens(
+      config, 'r', reply({ access_token: 'a', expires_in: 1e12 }), () => 0,
+    );
+    expect(tokens.expiresAt).toBe(1e15);
+  });
+
+  it('requires a Bearer token type when one is given, in any case', async () => {
+    const ok = reply({ access_token: 'a', token_type: 'bearer', expires_in: 60 });
+    await expect(refreshTokens(config, 'r', ok, () => 0)).resolves.toBeTruthy();
+    const bad = reply({ access_token: 'a', token_type: 'MAC', expires_in: 60 });
+    await expect(refreshTokens(config, 'r', bad, () => 0)).rejects.toThrow(AuthError);
+  });
+
+  it('carries the HTTP status on the AuthError', async () => {
+    const error = await refreshTokens(config, 'r', reply({}, 503), () => 0).catch(e => e);
+    expect(error).toBeInstanceOf(AuthError);
+    expect(error.status).toBe(503);
+  });
+
+  it('revokes a refresh token at the hosted revoke endpoint', async () => {
+    const fetchFn = reply({});
+    await revokeRefreshToken(config, 'r1', fetchFn);
+    const [url, init] = fetchFn.mock.calls[0];
+    expect(url).toBe('https://d.auth.example.test/oauth2/revoke');
+    expect(init.method).toBe('POST');
+    expect(Object.fromEntries(init.body)).toEqual({ client_id: 'client-web', token: 'r1' });
   });
 });

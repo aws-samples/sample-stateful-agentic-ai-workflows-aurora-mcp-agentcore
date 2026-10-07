@@ -36,4 +36,18 @@ describe('claims', () => {
     expect(travelerFromTokens(fakeJwt({ sub: 's' }), null)).toBeNull();
     expect(travelerFromTokens(fakeJwt({ traveler_id: '  ' }), null)).toBeNull();
   });
+
+  it.each([
+    ['https://photos.example.test/a.png', 'https://photos.example.test/a.png'],
+    ['/travel/a.jpg', '/travel/a.jpg'],
+    ['http://photos.example.test/a.png', null],
+    ['javascript:alert(1)', null],
+    ['data:image/png;base64,AAAA', null],
+    ['//evil.test/a.png', null],
+    ['/\\evil.test/a.png', null],
+    ['relative/a.png', null],
+  ])('keeps only https or same-origin picture %s', (picture, expected) => {
+    const access = fakeJwt({ traveler_id: 'trv_x' });
+    expect(travelerFromTokens(access, fakeJwt({ picture }))?.avatarUrl).toBe(expected);
+  });
 });

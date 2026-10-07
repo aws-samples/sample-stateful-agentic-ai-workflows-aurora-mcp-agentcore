@@ -17,18 +17,43 @@ export function decodeJwtPayload(token: string): Record<string, unknown> | null 
   }
 }
 
+/**
+ * The signed-in traveler as the tokens describe them.
+ *
+ * These claims are read without verifying a signature. Treat every field as a display and
+ * routing hint only, never as an authorization decision: the API verifies the access token on
+ * each request and decides what the caller may see.
+ */
 export interface SignedInTraveler {
   travelerId: string;
   /** From the ID token's name claim; null when there is no sign-in and the profile names them. */
   displayName: string | null;
-  /** From the ID token's picture claim; null shows initials. */
+  /**
+   * From the ID token's picture claim, kept only when it is an https URL or a same-origin path;
+   * null shows initials.
+   */
   avatarUrl: string | null;
 }
 
 const text = (value: unknown): string | null =>
   typeof value === 'string' && value.trim() ? value.trim() : null;
 
-/** The traveler the access token names, with the name and photo the ID token carries. */
+function safeImageUrl(value: unknown): string | null {
+  const url = text(value);
+  if (!url) return null;
+  if (/^\/(?![/\\])/.test(url)) return url;
+  try {
+    return new URL(url).protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The traveler the access token names, with the name and photo the ID token carries.
+ *
+ * The claims are unverified hints for display and routing, never an authorization decision.
+ */
 export function travelerFromTokens(
   accessToken: string, idToken: string | null,
 ): SignedInTraveler | null {
@@ -38,6 +63,6 @@ export function travelerFromTokens(
   return {
     travelerId,
     displayName: text(profile?.name) ?? text(profile?.email),
-    avatarUrl: text(profile?.picture),
+    avatarUrl: safeImageUrl(profile?.picture),
   };
 }

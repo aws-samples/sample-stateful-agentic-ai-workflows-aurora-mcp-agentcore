@@ -1,7 +1,9 @@
 import type { AuthConfig } from './config';
 import { travelerFromTokens, type SignedInTraveler } from './claims';
 import { createPkce, randomToken } from './pkce';
-import { exchangeCode, refreshTokens, type TokenSet } from './tokenClient';
+import {
+  exchangeCode, isRefusal, refreshTokens, revokeRefreshToken, type TokenSet,
+} from './tokenClient';
 
 export type SessionStatus = 'signed-out' | 'signing-in' | 'signed-in';
 
@@ -27,6 +29,8 @@ const PKCE_KEY = 'meridian:auth:pkce';
 const SCOPES = 'openid email profile';
 const REFRESH_MARGIN_MS = 60_000;
 const MIN_REFRESH_DELAY_MS = 5_000;
+/** The longest delay setTimeout honors; a larger one fires at once. */
+const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
 export const MESSAGES = {
   refused: 'Sign-in was not completed. Try again, or ask the presenter to check your access.',
@@ -49,6 +53,9 @@ export class AuthSession {
   private state: SessionState = SIGNED_OUT;
   private tokens: TokenSet | null = null;
   private timer: unknown = null;
+  private inflightRefresh: Promise<void> | null = null;
+  /** Bumped whenever the session ends or a new sign-in starts, so late answers can be ignored. */
+  private generation = 0;
   private readonly listeners = new Set<() => void>();
   private readonly callbacks = new Map<string, Promise<boolean>>();
 
@@ -66,14 +73,18 @@ export class AuthSession {
   /** Send the browser to the hosted sign-in page. */
   async startSignIn(): Promise<void> {
     const { config } = this.deps;
-    const { verifier, challenge } = await createPkce();
-    const state = randomToken(16);
-    this.deps.storage.setItem(PKCE_KEY, JSON.stringify({ state, verifier }));
-    const query = new URLSearchParams({
-      response_type: 'code', client_id: config.clientId, redirect_uri: config.redirectUri,
-      scope: SCOPES, state, code_challenge: challenge, code_challenge_method: 'S256',
-    });
-    this.deps.navigate(`https://${config.domain}/oauth2/authorize?${query}`);
+    try {
+      const { verifier, challenge } = await createPkce();
+      const state = randomToken(16);
+      this.deps.storage.setItem(PKCE_KEY, JSON.stringify({ state, verifier }));
+      const query = new URLSearchParams({
+        response_type: 'code', client_id: config.clientId, redirect_uri: config.redirectUri,
+        scope: SCOPES, state, code_challenge: challenge, code_challenge_method: 'S256',
+      });
+      this.deps.navigate(`https://${config.domain}/oauth2/authorize?${query}`);
+    } catch {
+      this.signedOut(MESSAGES.failed);
+    }
   }
 
   /**
@@ -87,7 +98,7 @@ export class AuthSession {
     const params = new URLSearchParams(search);
     const code = params.get('code');
     if (params.get('error')) {
-      this.deps.storage.removeItem(PKCE_KEY);
+      this.discardPkceFor(params.get('state'));
       this.signedOut(MESSAGES.refused);
       return Promise.resolve(true);
     }
@@ -104,47 +115,98 @@ export class AuthSession {
     }
   }
 
-  async refreshNow(): Promise<void> {
+  /**
+   * Refresh the tokens. Callers that arrive while a refresh is running share it, so one expiry
+   * never sends two requests.
+   */
+  refreshNow(): Promise<void> {
+    if (!this.tokens) return Promise.resolve();
+    if (!this.inflightRefresh) {
+      const running = this.runRefresh().finally(() => {
+        if (this.inflightRefresh === running) this.inflightRefresh = null;
+      });
+      this.inflightRefresh = running;
+    }
+    return this.inflightRefresh;
+  }
+
+  /**
+   * Forget the tokens and end the hosted page's session too.
+   *
+   * The refresh token is revoked first with a best-effort request: its failure is ignored and
+   * never delays or blocks sign-out.
+   */
+  signOut(): void {
+    const { config } = this.deps;
+    this.revokeQuietly(this.tokens?.refreshToken ?? null);
+    this.signedOut(null);
+    const query = new URLSearchParams({ client_id: config.clientId, logout_uri: config.logoutUri });
+    this.deps.navigate(`https://${config.domain}/logout?${query}`);
+  }
+
+  private revokeQuietly(refreshToken: string | null): void {
+    if (!refreshToken) return;
+    try {
+      void Promise.resolve(revokeRefreshToken(this.deps.config, refreshToken, this.deps.fetchFn))
+        .catch(() => undefined);
+    } catch {
+      // Best effort: a failed revoke must not stop the person from signing out.
+    }
+  }
+
+  private async runRefresh(): Promise<void> {
+    const generation = this.generation;
     const refreshToken = this.tokens?.refreshToken;
     if (!refreshToken) {
       this.signedOut(MESSAGES.ended);
       return;
     }
     try {
-      this.applyTokens(
-        await refreshTokens(this.deps.config, refreshToken, this.deps.fetchFn, this.deps.now),
+      const tokens = await refreshTokens(
+        this.deps.config, refreshToken, this.deps.fetchFn, this.deps.now,
       );
-    } catch {
-      this.signedOut(MESSAGES.ended);
+      if (generation === this.generation) this.applyTokens(tokens);
+    } catch (error) {
+      if (generation === this.generation) this.handleRefreshFailure(error);
     }
   }
 
-  /** Forget the tokens and end the hosted page's session too. */
-  signOut(): void {
-    const { config } = this.deps;
-    this.signedOut(null);
-    const query = new URLSearchParams({ client_id: config.clientId, logout_uri: config.logoutUri });
-    this.deps.navigate(`https://${config.domain}/logout?${query}`);
+  /** A refusal ends the session; a hiccup retries until the access token has really expired. */
+  private handleRefreshFailure(error: unknown): void {
+    const expired = !this.tokens || this.tokens.expiresAt <= this.deps.now();
+    if (isRefusal(error) || expired) {
+      this.signedOut(MESSAGES.ended);
+      return;
+    }
+    this.cancelTimer();
+    this.timer = this.deps.schedule(() => { void this.refreshNow(); }, MIN_REFRESH_DELAY_MS);
   }
 
   private async completeSignIn(code: string, returnedState: string | null): Promise<boolean> {
     const saved = this.readPkce();
-    this.deps.storage.removeItem(PKCE_KEY);
     if (!saved || !returnedState || saved.state !== returnedState) {
       this.signedOut(MESSAGES.unverified);
       return true;
     }
+    this.deps.storage.removeItem(PKCE_KEY);
+    if (this.tokens) this.signedOut(null);
+    else this.invalidate();
+    const generation = this.generation;
     this.setState({ status: 'signing-in', traveler: null, message: null });
     try {
-      this.applyTokens(
-        await exchangeCode(
-          this.deps.config, code, saved.verifier, this.deps.fetchFn, this.deps.now,
-        ),
+      const tokens = await exchangeCode(
+        this.deps.config, code, saved.verifier, this.deps.fetchFn, this.deps.now,
       );
+      if (generation === this.generation) this.applyTokens(tokens);
     } catch {
-      this.signedOut(MESSAGES.failed);
+      if (generation === this.generation) this.signedOut(MESSAGES.failed);
     }
     return true;
+  }
+
+  private discardPkceFor(returnedState: string | null): void {
+    const saved = this.readPkce();
+    if (saved && saved.state === returnedState) this.deps.storage.removeItem(PKCE_KEY);
   }
 
   private readPkce(): { state: string; verifier: string } | null {
@@ -170,9 +232,8 @@ export class AuthSession {
 
   private scheduleRefresh(tokens: TokenSet): void {
     this.cancelTimer();
-    const delay = Math.max(
-      tokens.expiresAt - this.deps.now() - REFRESH_MARGIN_MS, MIN_REFRESH_DELAY_MS,
-    );
+    const wanted = tokens.expiresAt - this.deps.now() - REFRESH_MARGIN_MS;
+    const delay = Math.min(Math.max(wanted, MIN_REFRESH_DELAY_MS), MAX_TIMER_DELAY_MS);
     this.timer = this.deps.schedule(() => { void this.refreshNow(); }, delay);
   }
 
@@ -181,9 +242,15 @@ export class AuthSession {
     this.timer = null;
   }
 
-  private signedOut(message: string | null): void {
+  private invalidate(): void {
+    this.generation += 1;
     this.tokens = null;
+    this.inflightRefresh = null;
     this.cancelTimer();
+  }
+
+  private signedOut(message: string | null): void {
+    this.invalidate();
     this.setState({ ...SIGNED_OUT, message });
   }
 

@@ -241,3 +241,243 @@ describe('signing out', () => {
     expect(listener).toHaveBeenCalledTimes(calls);
   });
 });
+
+function deferred() {
+  let resolve!: (value: unknown) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
+const refused = (status: number) =>
+  ({ ok: false, status, json: async () => ({ error: 'invalid_grant' }) });
+const lastDelay = () => timers[timers.length - 1].delay;
+
+describe('one refresh at a time', () => {
+  it('shares one request between concurrent refreshes', async () => {
+    const session = build();
+    await signIn(session);
+    const gate = deferred();
+    fetchFn.mockReturnValueOnce(gate.promise);
+    const first = session.refreshNow();
+    const second = session.refreshNow();
+    gate.resolve(tokenResponse(jordanTokens()));
+    await Promise.all([first, second]);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(session.getState().status).toBe('signed-in');
+  });
+
+  it('stays signed out when sign-out happens while a refresh is in flight', async () => {
+    const session = build();
+    await signIn(session);
+    const gate = deferred();
+    fetchFn.mockReturnValueOnce(gate.promise);
+    const pending = session.refreshNow();
+    session.signOut();
+    gate.resolve(tokenResponse(jordanTokens()));
+    await pending;
+    expect(session.getAccessToken()).toBeNull();
+    expect(session.getState().status).toBe('signed-out');
+    expect(timers).toEqual([]);
+  });
+
+  it('stays signed out when sign-out happens while the code is being exchanged', async () => {
+    const session = build();
+    await session.startSignIn();
+    const { state } = JSON.parse(storage.values.get('meridian:auth:pkce')!);
+    const gate = deferred();
+    fetchFn.mockReturnValueOnce(gate.promise);
+    const pending = session.handleCallback(`?code=c&state=${state}`);
+    expect(session.getState().status).toBe('signing-in');
+    session.signOut();
+    gate.resolve(tokenResponse(jordanTokens()));
+    await pending;
+    expect(session.getAccessToken()).toBeNull();
+    expect(session.getState()).toEqual({ status: 'signed-out', traveler: null, message: null });
+  });
+
+  it('keeps a newer session when an older refresh fails afterwards', async () => {
+    const session = build();
+    await signIn(session);
+    const gate = deferred();
+    fetchFn.mockReturnValueOnce(gate.promise);
+    const stale = session.refreshNow();
+    session.signOut();
+    storage.values.clear();
+    await session.startSignIn();
+    const { state } = JSON.parse(storage.values.get('meridian:auth:pkce')!);
+    fetchFn.mockResolvedValueOnce(tokenResponse(decoyTokens()));
+    await session.handleCallback(`?code=code-2&state=${state}`);
+    gate.resolve(refused(400));
+    await stale;
+    expect(session.getState()).toMatchObject({ status: 'signed-in' });
+    expect(session.getAccessToken()).toBe(decoyTokens().accessToken);
+  });
+
+  it('does not start a refresh for a signed-out session or leave a message', async () => {
+    const session = build();
+    await session.refreshNow();
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(session.getState()).toEqual({ status: 'signed-out', traveler: null, message: null });
+  });
+
+  it('drops the old token when a new sign-in begins while signed in', async () => {
+    const session = build();
+    await signIn(session);
+    storage.values.clear();
+    await session.startSignIn();
+    const { state } = JSON.parse(storage.values.get('meridian:auth:pkce')!);
+    const gate = deferred();
+    fetchFn.mockReturnValueOnce(gate.promise);
+    const pending = session.handleCallback(`?code=code-2&state=${state}`);
+    expect(session.getState().status).toBe('signing-in');
+    expect(session.getAccessToken()).toBeNull();
+    gate.resolve(tokenResponse(decoyTokens()));
+    await pending;
+    expect(session.getAccessToken()).toBe(decoyTokens().accessToken);
+  });
+});
+
+describe('a bad expires_in', () => {
+  it.each(['abc', 0, -1, '', 1e12])('never sets a zero-delay timer for %s', async value => {
+    const session = build();
+    await signIn(session);
+    fetchFn.mockResolvedValueOnce(tokenResponse(jordanTokens(), { expires_in: value }));
+    await session.refreshNow();
+    expect(session.getState().status).toBe('signed-in');
+    expect(lastDelay()).toBeGreaterThanOrEqual(5_000);
+    expect(lastDelay()).toBeLessThanOrEqual(2_147_483_647);
+  });
+
+  it('clamps a huge lifetime to the longest timer the platform allows', async () => {
+    const session = build();
+    await signIn(session);
+    fetchFn.mockResolvedValueOnce(tokenResponse(jordanTokens(), { expires_in: 1e12 }));
+    await session.refreshNow();
+    expect(lastDelay()).toBe(2_147_483_647);
+  });
+});
+
+describe('a refresh that fails', () => {
+  it('keeps the session through a network error while the token is valid', async () => {
+    const session = build();
+    await signIn(session);
+    fetchFn.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    clock += 3_540_000;
+    await session.refreshNow();
+    expect(session.getState().status).toBe('signed-in');
+    expect(session.getAccessToken()).toBe(jordanTokens().accessToken);
+    expect(lastDelay()).toBe(5_000);
+  });
+
+  it('keeps the session through a server error while the token is valid', async () => {
+    const session = build();
+    await signIn(session);
+    fetchFn.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
+    await session.refreshNow();
+    expect(session.getState().status).toBe('signed-in');
+    expect(lastDelay()).toBe(5_000);
+  });
+
+  it('signs out once the access token has expired and the refresh still fails', async () => {
+    const session = build();
+    await signIn(session);
+    fetchFn.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await session.refreshNow();
+    clock += 3_600_001;
+    fetchFn.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    timers[timers.length - 1].callback();
+    await vi.waitFor(() => expect(session.getState().status).toBe('signed-out'));
+    expect(session.getState().message).toBe(MESSAGES.ended);
+    expect(session.getAccessToken()).toBeNull();
+  });
+
+  it('signs out at once when the refresh token is refused', async () => {
+    const session = build();
+    await signIn(session);
+    fetchFn.mockResolvedValueOnce(refused(400));
+    await session.refreshNow();
+    expect(session.getState()).toMatchObject({ status: 'signed-out', message: MESSAGES.ended });
+  });
+});
+
+describe('the start of sign-in on an insecure page', () => {
+  it('says sign-in failed when there is no SubtleCrypto', async () => {
+    vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+    try {
+      const session = build();
+      await session.startSignIn();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(session.getState())
+        .toMatchObject({ status: 'signed-out', message: MESSAGES.failed });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('pending sign-in survives noise', () => {
+  it('is not erased by a forged state', async () => {
+    const session = build();
+    await session.startSignIn();
+    const before = storage.values.get('meridian:auth:pkce');
+    await session.handleCallback('?code=c&state=forged');
+    expect(storage.values.get('meridian:auth:pkce')).toBe(before);
+    expect(session.getState().message).toBe(MESSAGES.unverified);
+  });
+
+  it('is not erased by an error that carries a different state', async () => {
+    const session = build();
+    await session.startSignIn();
+    const before = storage.values.get('meridian:auth:pkce');
+    await session.handleCallback('?error=access_denied&state=forged');
+    expect(storage.values.get('meridian:auth:pkce')).toBe(before);
+  });
+
+  it('is cleared by an error that carries its own state', async () => {
+    const session = build();
+    await session.startSignIn();
+    const { state } = JSON.parse(storage.values.get('meridian:auth:pkce')!);
+    await session.handleCallback(`?error=access_denied&state=${state}`);
+    expect(storage.values.size).toBe(0);
+    expect(session.getState().message).toBe(MESSAGES.refused);
+  });
+});
+
+describe('revoking on sign-out', () => {
+  it('asks the hosted page to revoke the refresh token before leaving', async () => {
+    const session = build();
+    await signIn(session);
+    fetchFn.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) });
+    session.signOut();
+    const [url, init] = fetchFn.mock.calls[fetchFn.mock.calls.length - 1];
+    expect(url).toBe('https://d.auth.example.test/oauth2/revoke');
+    expect(Object.fromEntries(init.body)).toEqual({ client_id: 'client-web', token: 'refresh-1' });
+    expect(navigate).toHaveBeenCalledTimes(2);
+  });
+
+  it('signs out even when the revoke request fails or throws', async () => {
+    const session = build();
+    await signIn(session);
+    fetchFn.mockRejectedValueOnce(new TypeError('offline'));
+    session.signOut();
+    await Promise.resolve();
+    expect(session.getState().status).toBe('signed-out');
+    const url = new URL(navigate.mock.calls[navigate.mock.calls.length - 1][0]);
+    expect(url.pathname).toBe('/logout');
+  });
+
+  it('signs out even when fetch throws synchronously', async () => {
+    const session = build();
+    await signIn(session);
+    fetchFn.mockImplementationOnce(() => { throw new Error('boom'); });
+    expect(() => session.signOut()).not.toThrow();
+    expect(navigate).toHaveBeenCalled();
+  });
+
+  it('skips the revoke when there is no refresh token', () => {
+    build().signOut();
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+});
+

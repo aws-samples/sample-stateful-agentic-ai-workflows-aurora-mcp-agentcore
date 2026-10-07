@@ -35,4 +35,13 @@ describe('readAuthConfig', () => {
   ])('fails loudly when only one setting is present', env => {
     expect(() => readAuthConfig(env, ORIGIN)).toThrow(/half configured/);
   });
+
+  it.each([
+    'evil.test/path', 'user@evil.test', 'evil.test:8443', 'evil.test?x=1', 'evil .test',
+    'evil.test#frag', '-bad.test', 'a..b.test', 'https://u:p@evil.test/', 'a\\b.test',
+  ])('rejects the domain %s', domain => {
+    expect(() => readAuthConfig(
+      { VITE_COGNITO_DOMAIN: domain, VITE_COGNITO_CLIENT_ID: 'c' }, ORIGIN,
+    )).toThrow(/VITE_COGNITO_DOMAIN/);
+  });
 });
