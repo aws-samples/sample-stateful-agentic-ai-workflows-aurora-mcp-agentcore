@@ -33,6 +33,7 @@ from typing import Literal, Optional, List, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
+from backend.activity import ActivityEntry, Product, TraceTelemetry, create_activity
 from backend.chat_stream import chat_event_sink
 
 from backend.agentcore.identity import get_agentcore_identity
@@ -89,52 +90,6 @@ class ChatRequest(BaseModel):
     review_only: bool = False
 
 
-class TraceTelemetry(BaseModel):
-    """Optional rich telemetry for trace UI."""
-    category: Optional[str] = None
-    component: Optional[str] = None
-    status: Optional[str] = None
-    fields: Optional[List[dict]] = None
-    memory: Optional[dict] = None
-    tokens: Optional[dict] = None
-
-
-class ActivityEntry(BaseModel):
-    """Model for agent activity entries."""
-    id: str
-    timestamp: str
-    activity_type: str
-    title: str
-    details: Optional[str] = None
-    sql_query: Optional[str] = None
-    execution_time_ms: Optional[int] = None
-    agent_name: Optional[str] = None
-    agent_file: Optional[str] = None
-    telemetry: Optional[TraceTelemetry] = None
-
-
-class Product(BaseModel):
-    """Trip package in API shape (legacy field names for frontend)."""
-    product_id: str
-    name: str
-    brand: str
-    price: float
-    description: str
-    image_url: str
-    category: str
-    destination: Optional[str] = None
-    region: Optional[str] = None
-    available_sizes: Optional[List[str]] = None
-    availability: Optional[Dict[str, Any]] = None
-    highlights: Optional[List[str]] = None
-    similarity: Optional[float] = None
-    # Phase 3 rerank-visualization metadata (optional; only the Retrieval
-    # path populates these). Lets the UI animate the hybrid→reranked reorder.
-    pre_rerank_position: Optional[int] = None
-    pre_rerank_similarity: Optional[float] = None
-    rank_delta: Optional[int] = None
-
-
 class OrderItem(BaseModel):
     """Model for order items."""
     product_id: str
@@ -187,31 +142,6 @@ class ChatResponse(BaseModel):
     # result and no model wrote any part of it - the frontend must show
     # no model badge in that case.
     model_label: Optional[str] = None
-
-
-def create_activity(
-    activity_type: str,
-    title: str,
-    details: Optional[str] = None,
-    sql_query: Optional[str] = None,
-    execution_time_ms: Optional[int] = None,
-    agent_name: Optional[str] = None,
-    agent_file: Optional[str] = None
-) -> ActivityEntry:
-    """Create an activity entry."""
-    entry = ActivityEntry(
-        id=str(uuid.uuid4()),
-        timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        activity_type=activity_type,
-        title=title,
-        details=details,
-        sql_query=sql_query,
-        execution_time_ms=execution_time_ms,
-        agent_name=agent_name,
-        agent_file=agent_file
-    )
-    log_activity_entry(entry)
-    return entry
 
 
 def _complete_chat_turn(
