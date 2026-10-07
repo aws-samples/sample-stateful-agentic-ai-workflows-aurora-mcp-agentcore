@@ -17,6 +17,8 @@ from strands.session import SnapshotSessionManager
 
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
 from backend.agents.phase_05_workflow.graph import (
+    CONFIRM_INTERRUPT,
+    REVIEW_INTERRUPT,
     ResumableStorage,
     RunContext,
     build_graph,
@@ -42,6 +44,7 @@ LEASE_SECONDS = 60
 HEARTBEAT_SECONDS = 10
 WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"
 CHECKPOINT_PREFIX = "Checkpoint · "
+CONSENT_INTERRUPTS = frozenset({REVIEW_INTERRUPT, CONFIRM_INTERRUPT})
 
 StorageFactory = Callable[[str, str, Optional[str], str, Callable[[int], None]], Any]
 AfterPause = Callable[[Dict[str, Any], ExecutionClaim], Awaitable[None]]
@@ -131,26 +134,35 @@ def _check_against(prior: Optional[Dict[str, Any]], command: WorkflowCommand) ->
 
 
 def _traveler_confirmed(prior: Optional[Dict[str, Any]], command: WorkflowCommand) -> bool:
-    """A resume confirms the hold only when the traveler answered a review.
+    """A resume confirms the hold only when the traveler answered a review or confirmation.
 
-    That is: the saved run is waiting on a review interrupt, or it already got
-    past ``prepare_hold``, which only runs after a confirmation. A resume of a
+    That is: the saved run is waiting on a ``REVIEW_INTERRUPT`` or
+    ``CONFIRM_INTERRUPT``, or it already got past ``prepare_hold``, which only
+    runs after a confirmation. A ``pause_after`` pause is not an answer, and a
     run that crashed before any review was shown confirms nothing, so the gate
     stops it at ``prepare_hold`` and the traveler sees the plan first.
     """
     if not command.resume or prior is None:
         return False
     completed = set(prior["data"]["state"].get("completed_nodes") or [])
-    return bool(pending_interrupts(prior)) or _answered_review(prior) or "prepare_hold" in completed
+    return (
+        any(item.get("name") in CONSENT_INTERRUPTS for item in pending_interrupts(prior))
+        or _answered_review(prior)
+        or "prepare_hold" in completed
+    )
 
 
 def _answered_review(prior: Dict[str, Any]) -> bool:
-    """A worker died after the traveler answered: Strands saved the answer, still activated."""
+    """A worker died after the traveler answered a review or confirmation.
+
+    Strands saved the answer with the interrupt state still activated.
+    """
     internal = prior["data"]["state"].get("_internal_state") or {}
     interrupt_state = internal.get("interrupt_state") or {}
     interrupts = (interrupt_state.get("interrupts") or {}).values()
     return bool(interrupt_state.get("activated")) and any(
-        item.get("response") is not None for item in interrupts
+        item.get("name") in CONSENT_INTERRUPTS and item.get("response") is not None
+        for item in interrupts
     )
 
 

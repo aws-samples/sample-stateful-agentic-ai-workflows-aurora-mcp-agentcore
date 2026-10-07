@@ -299,3 +299,35 @@ async def test_a_resume_keeps_the_saved_party_size():
     )
     await world.runner("worker-b").run(resume)
     assert [call["travelers"] for call in world.gateway.calls] == [3]
+
+
+async def test_resuming_a_pause_after_pause_is_not_consent_to_the_hold():
+    """Owner requirement: only an answered review or confirmation lets a hold through."""
+    world = World()
+    paused = await world.runner().run(command(RECOVERY, pause_after="classify"))
+    assert paused["workflow_status"] == "paused"
+    assert world.gateway.calls == []
+
+    stopped = await world.runner().run(command(RECOVERY, resume=True))
+    assert stopped["workflow_status"] == "paused"
+    assert "prepare_hold" in stopped["response"]
+    assert world.gateway.calls == []
+
+    placed = await world.runner().run(command(RECOVERY, resume=True))
+    assert placed["workflow_status"] == "resumed"
+    assert len(world.gateway.calls) == 1
+    assert world.gateway.calls[0]["travelerConfirmed"] is True
+
+
+async def test_a_pause_after_pause_taken_after_confirm_resumes_without_asking_again():
+    """The kill-and-resume path: CONFIRM, then pause_after=hold, then a plain resume."""
+    world = World()
+    await world.runner().run(command(RECOVERY))
+    held = await world.runner().run(command(RECOVERY, resume=True, pause_after="hold"))
+    assert held["workflow_status"] == "paused"
+    assert len(world.gateway.calls) == 1
+
+    done = await world.runner().run(command(RECOVERY, resume=True))
+    assert done["workflow_status"] == "resumed"
+    assert len(world.gateway.calls) == 1
+    assert done["hold_id"] == world.gateway.calls[0]["bookingId"]
