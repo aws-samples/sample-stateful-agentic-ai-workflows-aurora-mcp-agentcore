@@ -7,6 +7,7 @@ from backend.agents.phase_05_workflow.nodes import GatewayCall, WorkflowNodes
 from backend.agents.phase_05_workflow.runner import (
     HEARTBEAT_SECONDS,
     LEASE_SECONDS,
+    WORKER_ID,
     StorageFactory,
     WorkflowRunner,
 )
@@ -45,6 +46,8 @@ def build_workflow_runner(
     search_fn: Any = None,
     availability_fn: Any = None,
     memory_recall_fn: Any = None,
+    worker_id: str = WORKER_ID,
+    pause_after: Optional[str] = None,
 ) -> WorkflowRunner:
     """The production runner: real retrieval, the configured gateway, Aurora state."""
     from backend.agents.phase_05_workflow.memory_recall import workflow_memory_recall
@@ -65,6 +68,8 @@ def build_workflow_runner(
         lease=AuroraLeaseStore(client),
         lease_seconds=lease_seconds,
         heartbeat_seconds=heartbeat_seconds,
+        worker_id=worker_id,
+        pause_after=pause_after,
     )
 
 

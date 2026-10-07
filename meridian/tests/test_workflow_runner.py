@@ -1,6 +1,7 @@
 """The runner: lease, ownership, conflicts, review, resume, replay, compensation, timings."""
 
 import asyncio
+import dataclasses
 import json
 import logging
 import threading
@@ -40,19 +41,59 @@ class SnapshotAppearsOnClaim(InMemoryLease):
         return await super().claim(*args, **kwargs)
 
 
+class ServedReads:
+    """Storage whose snapshot reads return the given snapshots in order, then the last again."""
+
+    def __init__(self, inner, snapshots):
+        self._inner, self._snapshots = inner, snapshots
+
+    async def read(self, key):
+        return self._snapshots.pop(0) if len(self._snapshots) > 1 else self._snapshots[0]
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
 class World:
     """One storage and lease store shared by every 'process' in a test."""
 
     def __init__(self):
         self.storages = {}
+        self.served = {}
         self.lease = InMemoryLease()
         self.gateway = GatewayFake()
 
     def storage_for(self, thread_id, traveler_id, execution_id, worker_id, on_write):
         storage = self.storages.setdefault(thread_id, InMemoryStorage())
+        if thread_id in self.served:
+            return ServedReads(storage, self.served[thread_id])
         return storage
 
-    def runner(self, worker_id="worker-a", *, gateway=None, release=None, synthesize=None):
+    async def pause_at_review(self, thread):
+        """Run a fresh recovery to its REVIEW pause."""
+        await self.runner().run(command(RECOVERY, thread=thread))
+
+    async def finish(self, thread):
+        """Resume the thread until it completes."""
+        while (await self.runner().run(command(RECOVERY, resume=True, thread=thread)))[
+            "workflow_status"
+        ] == "paused":
+            pass
+
+    async def snapshot(self, thread):
+        return await self.storages[thread].read(snapshot_key(thread))
+
+    def serve_reads(self, thread, snapshots):
+        """Make decision reads of ``thread`` return ``snapshots`` in order."""
+        self.served[thread] = list(snapshots)
+
+    def released_statuses(self, thread):
+        return [e["status"] for e in self.lease.executions if e["thread_id"] == thread]
+
+    def runner(
+        self, worker_id="worker-a", *, gateway=None, release=None, synthesize=None,
+        pause_after=None,
+    ):
         nodes = WorkflowNodes(fake_search, fake_availability, gateway_call=gateway or self.gateway)
         nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_test", 400000))
         nodes._booking_status = AsyncMock(return_value=None)
@@ -66,6 +107,7 @@ class World:
             lease=self.lease,
             worker_id=worker_id,
             heartbeat_seconds=1,
+            pause_after=pause_after,
         )
 
 
@@ -306,7 +348,7 @@ async def test_a_resume_keeps_the_saved_party_size():
 async def test_resuming_a_pause_after_pause_is_not_consent_to_the_hold():
     """Owner requirement: only an answered review or confirmation lets a hold through."""
     world = World()
-    paused = await world.runner().run(command(RECOVERY, pause_after="classify"))
+    paused = await world.runner(pause_after="classify").run(command(RECOVERY))
     assert paused["workflow_status"] == "paused"
     assert world.gateway.calls == []
 
@@ -325,7 +367,7 @@ async def test_a_pause_after_pause_taken_after_confirm_resumes_without_asking_ag
     """The kill-and-resume path: CONFIRM, then pause_after=hold, then a plain resume."""
     world = World()
     await world.runner().run(command(RECOVERY))
-    held = await world.runner().run(command(RECOVERY, resume=True, pause_after="hold"))
+    held = await world.runner(pause_after="hold").run(command(RECOVERY, resume=True))
     assert held["workflow_status"] == "paused"
     assert len(world.gateway.calls) == 1
 
@@ -473,12 +515,15 @@ async def test_cancelling_the_run_inside_the_hold_fails_the_lease_and_a_resume_r
     compensation runs, because the hold may have committed; the resume replays it."""
     world = World()
     await world.runner("worker-a").run(command(RECOVERY))
-    entered, proceed = threading.Event(), threading.Event()
+    entered, proceed, done = threading.Event(), threading.Event(), threading.Event()
 
     def blocked(name, arguments):
         entered.set()
         proceed.wait(5)
-        return world.gateway(name, arguments)
+        try:
+            return world.gateway(name, arguments)
+        finally:
+            done.set()
 
     task = asyncio.create_task(
         world.runner("worker-a", gateway=blocked).run(command(RECOVERY, resume=True))
@@ -488,6 +533,7 @@ async def test_cancelling_the_run_inside_the_hold_fails_the_lease_and_a_resume_r
     with pytest.raises(asyncio.CancelledError):
         await task
     proceed.set()
+    await asyncio.to_thread(done.wait, 5)
     assert [e["status"] for e in world.lease.executions] == ["paused", "failed"]
 
     result = await world.runner("worker-b").run(command(RECOVERY, resume=True))
@@ -496,3 +542,35 @@ async def test_cancelling_the_run_inside_the_hold_fails_the_lease_and_a_resume_r
     assert len(world.gateway.receipts) == 1
     assert result["hold_id"] == world.gateway.calls[0]["bookingId"]
     assert [e["status"] for e in world.lease.executions] == ["paused", "failed", "succeeded"]
+
+
+def test_the_command_carries_no_pause_point():
+    assert "pause_after" not in {f.name for f in dataclasses.fields(WorkflowCommand)}
+
+
+def test_a_runner_refuses_a_pause_point_that_never_pauses():
+    world = World()
+    with pytest.raises(ValueError, match="synthesize"):
+        WorkflowRunner(
+            world.runner()._nodes, storage_for=world.storage_for, lease=InMemoryLease(),
+            pause_after="synthesize",
+        )
+
+
+async def test_a_resume_decides_from_the_snapshot_saved_after_its_claim():
+    """The first read shows a paused review; by the claim another worker finished the thread."""
+    world = World()
+    await world.pause_at_review("t-race")
+    paused = await world.snapshot("t-race")
+    await world.finish("t-race")
+    finished = await world.snapshot("t-race")
+    calls_before = len(world.gateway.calls)
+    statuses_before = len(world.released_statuses("t-race"))
+    world.serve_reads("t-race", [paused, finished])
+
+    with pytest.raises(WorkflowConflictError, match="no pending checkpoint"):
+        await world.runner().run(command(RECOVERY, resume=True, thread="t-race"))
+    assert len(world.gateway.calls) == calls_before
+    released = world.released_statuses("t-race")
+    assert len(released) == statuses_before + 1
+    assert released[-1] == "failed"

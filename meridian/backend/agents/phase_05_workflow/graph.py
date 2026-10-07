@@ -36,6 +36,20 @@ LAST_NODE = "synthesize"
 MAX_NODE_EXECUTIONS = 3 * len(NODE_IDS)
 
 
+def pause_point(node: Optional[str]) -> Optional[str]:
+    """Return ``node`` if a run can pause after it.
+
+    Raises:
+        ValueError: If ``node`` names no node that another node follows.
+    """
+    pausable = [node_id for node_id in NODE_IDS if node_id != LAST_NODE]
+    if node is not None and node not in pausable:
+        raise ValueError(
+            f"pause_after={node!r} would never pause the run: name one of {', '.join(pausable)}"
+        )
+    return node
+
+
 @dataclass
 class RunContext:
     """What one invocation knows that the snapshot does not.
@@ -61,12 +75,7 @@ class RunContext:
     pause_after: Optional[str] = None
 
     def __post_init__(self) -> None:
-        pausable = [node_id for node_id in NODE_IDS if node_id != LAST_NODE]
-        if self.pause_after is not None and self.pause_after not in pausable:
-            raise ValueError(
-                f"pause_after={self.pause_after!r} would never pause the run: "
-                f"name one of {', '.join(pausable)}"
-            )
+        pause_point(self.pause_after)
 
     def configurable(self) -> Dict[str, Any]:
         """The values a step's ``config["configurable"]`` carries."""

@@ -93,6 +93,7 @@ async def _run_workflow(
         lease_seconds=LEASE_SECONDS,
         heartbeat_seconds=max(1, LEASE_SECONDS // 3),
         gateway_call=gateway_call,
+        pause_after=pause_after,
     )
     command = WorkflowCommand(
         query=QUERY,
@@ -100,7 +101,6 @@ async def _run_workflow(
         thread_id=thread_id,
         resume=resume,
         travelers_count=2,
-        pause_after=pause_after,
     )
     return await runner.run(command, after_pause=after_pause)
 

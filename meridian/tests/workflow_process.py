@@ -25,6 +25,7 @@ async def main(thread_id: str, mode: str) -> None:
     runner = build_workflow_runner(
         search_fn=fake_search, availability_fn=fake_availability,
         gateway_call=GatewayFake(), lease_seconds=15, heartbeat_seconds=3,
+        pause_after="hold" if mode == "hold" else None,
     )
     runner._nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_live", 400000))
     runner._nodes._booking_status = AsyncMock(return_value=None)
@@ -36,7 +37,6 @@ async def main(thread_id: str, mode: str) -> None:
     command = WorkflowCommand(
         query=QUERY, traveler_id="trv_meridian_demo", thread_id=thread_id,
         resume=mode == "hold", travelers_count=2,
-        pause_after="hold" if mode == "hold" else None,
     )
     result = await runner.run(command, after_pause=hold_forever if mode == "hold" else None)
     print(json.dumps({"event": "done", "status": result["workflow_status"]}), flush=True)

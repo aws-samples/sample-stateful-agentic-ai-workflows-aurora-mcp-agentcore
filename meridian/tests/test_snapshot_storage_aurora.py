@@ -57,9 +57,9 @@ async def bound_thread(client, made, traveler_id: str, thread_id: str | None = N
     return thread_id
 
 
-async def writer(client, made, traveler_id: str = TRAVELER, **kwargs):
+async def writer(client, made, traveler_id: str = TRAVELER, *, thread_id=None, **kwargs):
     """A bound thread with a running execution, and the storage that execution writes through."""
-    thread_id = await bound_thread(client, made, traveler_id, kwargs.pop("thread_id", None))
+    thread_id = await bound_thread(client, made, traveler_id, thread_id)
     claim = await claim_execution(client, made[-1][1], thread_id, "worker-test")
     assert claim.claimed
     storage = AuroraSnapshotStorage(

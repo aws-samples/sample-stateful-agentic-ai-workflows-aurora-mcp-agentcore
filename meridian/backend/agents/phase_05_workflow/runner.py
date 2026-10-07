@@ -26,6 +26,7 @@ from backend.agents.phase_05_workflow.graph import (
     fold_state,
     next_nodes,
     node_spans,
+    pause_point,
     pending_interrupts,
     run_task,
     snapshot_key,
@@ -70,7 +71,6 @@ class WorkflowCommand:
         resume: The traveler resumed the saved plan; this confirms the hold.
         travelers_count: Party size for a fresh run; a resume keeps the saved one.
         review_only: Pause after search for review.
-        pause_after: Pause after this node; used by the scripted proofs.
     """
 
     query: str
@@ -79,7 +79,6 @@ class WorkflowCommand:
     resume: bool = False
     travelers_count: int = 1
     review_only: bool = False
-    pause_after: Optional[str] = None
 
 
 class LeaseStore(Protocol):
@@ -147,8 +146,15 @@ def _authorize(prior: Optional[Dict[str, Any]], command: WorkflowCommand) -> Non
         raise WorkflowAuthorizationError(f"Thread {command.thread_id} belongs to another traveler.")
 
 
-def _check_against(prior: Optional[Dict[str, Any]], command: WorkflowCommand) -> None:
+def _check_against(
+    prior: Optional[Dict[str, Any]], command: WorkflowCommand, *, claimed: bool = False
+) -> None:
+    """Refuse a request the saved progress contradicts; ``claimed`` is the post-claim check."""
     if prior is not None and not command.resume:
+        if claimed:
+            raise WorkflowConflictError(
+                "This recovery now has saved progress. Read its journey before resuming."
+            )
         raise WorkflowConflictError(
             "This recovery already has saved progress. Read its journey and resume the same "
             "checkpoint, or start a new recovery."
@@ -240,6 +246,11 @@ class WorkflowRunner:
         worker_id: This worker's identity, recorded on the lease and every snapshot.
         lease_seconds: How long a claim survives without a heartbeat.
         heartbeat_seconds: How often the lease is renewed while the graph runs.
+        pause_after: Stop after this node, before the next one starts. The scripted
+            proofs set it; no request can.
+
+    Raises:
+        ValueError: If ``pause_after`` names no node that another node follows.
     """
 
     def __init__(
@@ -251,6 +262,7 @@ class WorkflowRunner:
         worker_id: str = WORKER_ID,
         lease_seconds: int = LEASE_SECONDS,
         heartbeat_seconds: int = HEARTBEAT_SECONDS,
+        pause_after: Optional[str] = None,
     ) -> None:
         self._nodes = nodes
         self._storage_for = storage_for
@@ -258,6 +270,7 @@ class WorkflowRunner:
         self._worker_id = worker_id
         self._lease_seconds = lease_seconds
         self._heartbeat_seconds = heartbeat_seconds
+        self._pause_after = pause_point(pause_after)
 
     async def run(
         self, command: WorkflowCommand, *, after_pause: Optional[AfterPause] = None
@@ -288,7 +301,7 @@ class WorkflowRunner:
             raise WorkflowConflictError(
                 "This recovery is already running. Re-read its progress before resuming."
             )
-        return await self._run_claimed(command, journey_id, claim, prior, after_pause)
+        return await self._run_claimed(command, journey_id, claim, after_pause)
 
     async def _read_snapshot(self, command: WorkflowCommand) -> Optional[Dict[str, Any]]:
         # Decisions read the snapshot as saved; the graph itself reads it through
@@ -299,9 +312,9 @@ class WorkflowRunner:
         raw = await storage.read(snapshot_key(command.thread_id))
         return json.loads(raw) if raw else None
 
-    async def _run_claimed(self, command, journey_id, claim, prior, after_pause) -> Dict[str, Any]:
+    async def _run_claimed(self, command, journey_id, claim, after_pause) -> Dict[str, Any]:
         terminal = "failed"
-        work = asyncio.create_task(self._execute(command, journey_id, claim, prior, after_pause))
+        work = asyncio.create_task(self._execute(command, journey_id, claim, after_pause))
         pulse = asyncio.create_task(self._heartbeat(command, claim))
         try:
             done, _ = await asyncio.wait((work, pulse), return_when=asyncio.FIRST_COMPLETED)
@@ -345,12 +358,12 @@ class WorkflowRunner:
                         "The recovery worker lost its lease. Re-read the saved journey."
                     )
 
-    async def _execute(self, command, journey_id, claim, prior, after_pause) -> Dict[str, Any]:
-        if not command.resume and await self._read_snapshot(command) is not None:
-            # Another request completed between the first read and this claim.
-            raise WorkflowConflictError(
-                "This recovery now has saved progress. Read its journey before resuming."
-            )
+    async def _execute(self, command, journey_id, claim, after_pause) -> Dict[str, Any]:
+        # The pre-claim read only refuses obvious conflicts; every decision below
+        # uses the snapshot as it stands now that this execution holds the lease.
+        prior = await self._read_snapshot(command)
+        _authorize(prior, command)
+        _check_against(prior, command, claimed=True)
         write_ms: List[int] = []
         storage = ResumableStorage(
             self._storage_for(
@@ -369,7 +382,7 @@ class WorkflowRunner:
             execution_id=claim.execution_id,
             traveler_confirmed=_traveler_confirmed(prior, command),
             review_requested=command.review_only,
-            pause_after=command.pause_after,
+            pause_after=self._pause_after,
         )
         graph = build_graph(self._nodes, run, session)
         completed_before = set(
