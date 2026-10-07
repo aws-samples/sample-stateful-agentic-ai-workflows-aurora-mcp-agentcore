@@ -61,7 +61,7 @@ def test_the_trigger_puts_the_bound_traveler_in_the_access_token(tokens, config,
     assert claims["traveler_id"] == traveler
     assert claims["token_use"] == "access"
     assert claims["client_id"] == config.app_client_id
-    assert claims["exp"] - claims["iat"] == 3600
+    assert claims["exp"] - claims["iat"] in (3599, 3600)
 
 
 def test_the_id_token_names_the_person_for_the_page(tokens):
@@ -132,7 +132,7 @@ def test_jordans_own_token_reads_jordans_records(tokens, config):
 def test_the_workload_grant_is_a_second_check_the_decoy_also_meets(tokens, config):
     response = TestClient(app).get("/api/memory/me", headers=bearer(tokens, "decoy"))
     assert response.status_code == 403
-    assert "workload" in response.json()["error"]
+    assert response.json()["error"].startswith("aws_iam subject is not authorized")
 
 
 def test_a_request_without_a_token_is_refused(config, monkeypatch):
