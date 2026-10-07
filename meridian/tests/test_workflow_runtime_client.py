@@ -1,10 +1,11 @@
 """The backend's client for MeridianWorkflow: typed payload, coded errors, safe retries."""
 
 import json
+import logging
 from unittest.mock import MagicMock
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, ReadTimeoutError
 
 from backend.agentcore import workflow_runtime as wr
 from backend.agentcore.runtime import AgentCoreRuntimeAdapter
@@ -82,6 +83,59 @@ async def test_other_invoke_failures_are_not_retried():
     with pytest.raises(RuntimeError, match="ThrottlingException"):
         await wr.WorkflowRuntimeClient(ARN, client=client).run(COMMAND)
     assert client.invoke_agent_runtime.call_count == 1
+
+
+async def test_five_conflicts_in_a_row_fail_after_five_calls():
+    client = client_with(*[conflict() for _ in range(5)])
+    sleeps = []
+    with pytest.raises(RuntimeError, match="RetryableConflictException"):
+        await wr.WorkflowRuntimeClient(ARN, client=client, sleep=sleeps.append).run(COMMAND)
+    assert client.invoke_agent_runtime.call_count == 5 and sleeps == [0.5, 1.0, 2.0, 4.0]
+
+
+async def test_a_mid_stream_read_timeout_propagates_without_a_second_invoke():
+    body = MagicMock()
+    body.read.side_effect = ReadTimeoutError(endpoint_url="https://example.invalid")
+    client = client_with({"response": body})
+    with pytest.raises(ReadTimeoutError):
+        await wr.WorkflowRuntimeClient(ARN, client=client).run(COMMAND)
+    assert client.invoke_agent_runtime.call_count == 1
+    body.close.assert_called_once()
+
+
+async def test_the_body_is_closed_after_a_result():
+    response = frames({"type": "result", "state": {}}, {"type": "heartbeat"})
+    await wr.WorkflowRuntimeClient(ARN, client=client_with(response)).run(COMMAND)
+    response["response"].close.assert_called_once()
+
+
+async def test_the_body_is_closed_after_an_error():
+    response = frames({"type": "error", "code": "conflict", "message": "m"})
+    with pytest.raises(WorkflowConflictError):
+        await wr.WorkflowRuntimeClient(ARN, client=client_with(response)).run(COMMAND)
+    response["response"].close.assert_called_once()
+
+
+async def test_a_failed_invoke_logs_the_code_and_session_but_not_the_payload(caplog):
+    client = client_with(conflict("ThrottlingException"))
+    with caplog.at_level(logging.WARNING, logger=wr.logger.name):
+        with pytest.raises(RuntimeError):
+            await wr.WorkflowRuntimeClient(ARN, client=client).run(COMMAND)
+    session = wr.workflow_session_id("trv_meridian_demo", "phase5-0123456789ab")
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "ThrottlingException" in text and session in text
+    assert "My flight was canceled." not in text
+
+
+async def test_a_failed_stop_logs_the_code_and_session(caplog):
+    client = MagicMock()
+    client.stop_runtime_session.side_effect = ClientError(
+        {"Error": {"Code": "ThrottlingException", "Message": "slow"}}, "StopRuntimeSession")
+    with caplog.at_level(logging.WARNING, logger=wr.logger.name):
+        with pytest.raises(RuntimeError, match="ThrottlingException"):
+            await wr.WorkflowRuntimeClient(ARN, client=client).stop_session("t", "phase5-x")
+    text = " ".join(r.getMessage() for r in caplog.records)
+    assert "ThrottlingException" in text and wr.workflow_session_id("t", "phase5-x") in text
 
 
 async def test_a_stream_without_a_result_is_an_error():

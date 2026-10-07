@@ -160,7 +160,10 @@ def test_the_refusal_names_the_runbook():
 
 
 def planned_publish(monkeypatch, tmp_path, control):
-    """Run publish() to its plan phase with every boundary replaced; return the commands run."""
+    """Prepare the mocks and files for publish(); return the list that records the commands.
+
+    This does not run publish(). The caller does, and the list fills as it runs.
+    """
     commands = []
     cdk_out = tmp_path / "infra" / "cdk.out"
     cdk_out.mkdir(parents=True)

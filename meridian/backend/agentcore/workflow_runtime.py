@@ -138,19 +138,25 @@ class WorkflowRuntimeClient:
             except ClientError as exc:
                 code = exc.response["Error"]["Code"]
                 if code != "RetryableConflictException" or delay is None:
+                    logger.warning("Workflow Runtime invoke failed: code=%s session=%s",
+                                   code, session_id)
                     raise RuntimeError(f"Workflow Runtime invoke failed: {code}") from exc
                 self._sleep(delay)
         raise AssertionError("unreachable")
 
     @staticmethod
     def _result(response: Any) -> Dict[str, Any]:
-        for event in iter_sse(stream_chunks(response)):
-            kind = event.get("type")
-            if kind == "result":
-                return event.get("state") or {}
-            if kind == "error":
-                error = ERRORS.get(event.get("code"), RuntimeError)
-                raise error(event.get("message") or "The workflow Runtime reported an error.")
+        chunks = stream_chunks(response)
+        try:
+            for event in iter_sse(chunks):
+                kind = event.get("type")
+                if kind == "result":
+                    return event.get("state") or {}
+                if kind == "error":
+                    error = ERRORS.get(event.get("code"), RuntimeError)
+                    raise error(event.get("message") or "The workflow Runtime reported an error.")
+        finally:
+            chunks.close()
         raise RuntimeError(
             "The workflow Runtime ended without a result. Re-read the saved journey."
         )
@@ -185,6 +191,7 @@ class WorkflowRuntimeClient:
             code = exc.response["Error"]["Code"]
             if code == "ResourceNotFoundException":
                 return SessionStop(session_id, "not_running")
+            logger.warning("Workflow Runtime stop failed: code=%s session=%s", code, session_id)
             raise RuntimeError(f"Stopping the workflow Runtime session failed: {code}") from exc
         return SessionStop(session_id, "stopped")
 

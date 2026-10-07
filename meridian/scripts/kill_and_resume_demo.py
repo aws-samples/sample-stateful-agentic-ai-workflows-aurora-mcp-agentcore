@@ -169,6 +169,9 @@ async def _purge(client, journey_id: str, thread_id: str) -> None:
                 f"DELETE FROM {table} WHERE booking_id = %s", (row["booking_id"],)
             )
     await client.execute(
+        "DELETE FROM workflow_session_stops WHERE journey_id = %s", (journey_id,)
+    )
+    await client.execute(
         "DELETE FROM workflow_snapshots WHERE session_id = %s", (thread_id,)
     )
     await client.execute(
