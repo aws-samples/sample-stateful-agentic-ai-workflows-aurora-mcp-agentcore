@@ -15,7 +15,7 @@ ACCOUNT_ID = re.compile(r"\b[0-9]{12}\b")
 JWT_SHAPE = re.compile(r"eyJ[\w-]+\.[\w-]+\.[\w-]*")
 CREDENTIAL_KEY = re.compile(r"token|claim|authorization|jwt", re.I)
 OMITTED_FIELD_NAMED = re.compile(r"travelerId|required|schema|missing|validation", re.I)
-EXTRA_FIELD_NAMED = re.compile(r"unexpectedField|additional|schema|not allowed|validation", re.I)
+WRONG_TYPE_NAMED = re.compile(r"travelerId|type|string|integer|schema|validation", re.I)
 PASS, FAIL, INFO, UNKNOWN = "PASS", "FAIL", "INFO", "UNKNOWN"
 KEYS = ("Q1", "Q2", "Q3", "Q4", "C1", "C2", "C3", "C4")
 
@@ -131,20 +131,36 @@ def _half(outcome: Outcome, named: re.Pattern[str], reached: bool) -> str:
     return f"inconclusive ({outcome.kind} {outcome.status})"
 
 
+def _rewritten_event(outcome: Outcome) -> dict[str, Any] | None:
+    event = (outcome.echo or {}).get("event")
+    return event if isinstance(event, dict) else None
+
+
 def _revalidation(obs: Observations) -> Verdict:
-    question = "Are rewritten arguments checked against the tool schema?"
-    omitted, extra = obs.get("omitted_required"), obs.get("extra_property")
-    if omitted is None or extra is None:
+    question = "Are rewritten arguments checked against the declared tool schema?"
+    omitted, typed, dropped = (
+        obs.get("omitted_required"), obs.get("bad_type"), obs.get("drop_required"))
+    if omitted is None or typed is None or dropped is None:
         return Verdict("Q2", question, "not probed", UNKNOWN)
-    before = _half(omitted, OMITTED_FIELD_NAMED, True)
-    added = isinstance(extra.echo, dict) and isinstance(extra.echo.get("event"), dict) and bool(
-        extra.echo["event"].get("unexpectedField"))
-    after = _half(extra, EXTRA_FIELD_NAMED, added)
-    finding = (
-        f"A required argument left out by the caller is checked before the interceptor: {before}."
-        f" A property the interceptor adds that the schema forbids is rejected after it: {after}."
+    traveler = (_rewritten_event(typed) or {}).get("travelerId")
+    wrong_type_arrived = isinstance(traveler, int) and not isinstance(traveler, bool)
+    arrived = _rewritten_event(dropped)
+    removed_arrived = arrived is not None and "travelerId" not in arrived
+    halves = (
+        _half(omitted, OMITTED_FIELD_NAMED, True),
+        _half(typed, WRONG_TYPE_NAMED, wrong_type_arrived),
+        _half(dropped, OMITTED_FIELD_NAMED, removed_arrived),
     )
-    inconclusive = "inconclusive" in before or "inconclusive" in after
+    finding = (
+        f"A required argument left out by the caller is checked before the interceptor: "
+        f"{halves[0]}. A travelerId the interceptor rewrote to the wrong type is rejected after "
+        f"it: {halves[1]}. A call with the required travelerId removed by the interceptor is "
+        f"rejected after it: {halves[2]}. A rejection shows the Gateway re-validates rewritten "
+        "arguments against the declared schema. An accepted probe does not show that "
+        "additionalProperties:false is enforced (the tool schema is declared without it); it only "
+        "answers whether re-validation happens at all."
+    )
+    inconclusive = any("inconclusive" in half for half in halves)
     return Verdict("Q2", question, finding, UNKNOWN if inconclusive else INFO)
 
 

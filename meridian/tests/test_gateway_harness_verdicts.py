@@ -15,6 +15,15 @@ def ok(traveler, **extra):
     return v.classify(200, body)
 
 
+def echoed(event):
+    text = json.dumps({"event": event, "custom": {}})
+    return v.classify(200, {"result": {"content": [{"type": "text", "text": text}]}})
+
+
+BAD_TYPE_ACCEPTED = echoed({"travelerId": 12345, "note": "x"})
+DROP_ACCEPTED = echoed({"note": "x"})
+
+
 def tool_error(text):
     body = {"jsonrpc": "2.0", "id": 1, "result": {"isError": True,
                                                   "content": [{"type": "text", "text": text}]}}
@@ -31,7 +40,8 @@ def observations(**outcomes):
         "jordan_names_jordan": ok(JORDAN),
         "decoy_names_jordan": ok(DECOY),
         "omitted_required": ok(DECOY),
-        "extra_property": ok(DECOY, unexpectedField="x"),
+        "bad_type": BAD_TYPE_ACCEPTED,
+        "drop_required": DROP_ACCEPTED,
         "forced_refusal": REFUSED,
     }
     return v.Observations({**base, **outcomes}, binding_policy_accepted=True,
@@ -70,14 +80,36 @@ def test_the_decoy_is_kept_out_either_way_and_fails_only_if_jordans_id_arrives()
     assert leaked["Q4"].status == v.FAIL and leaked["Q1"].status == v.FAIL
 
 
-def test_revalidation_is_reported_for_both_directions():
+def test_revalidation_is_reported_for_each_probe():
     open_gate = table(observations())["Q2"].finding
-    assert "before the interceptor: No" in open_gate and "rejected after it: No" in open_gate
+    assert "before the interceptor: No" in open_gate
+    assert "wrong type is rejected after it: No" in open_gate
+    assert "removed by the interceptor is rejected after it: No" in open_gate
     strict = table(observations(
         omitted_required=v.Outcome("error", 200, "missing travelerId"),
-        extra_property=v.Outcome("error", 200, "unexpectedField not allowed"),
-    ))["Q2"].finding
-    assert "before the interceptor: Yes" in strict and "rejected after it: Yes" in strict
+        bad_type=v.Outcome("error", 200, "travelerId must be a string"),
+        drop_required=v.Outcome("error", 200, "required property travelerId"),
+    ))["Q2"]
+    assert "before the interceptor: Yes" in strict.finding
+    assert "wrong type is rejected after it: Yes" in strict.finding
+    assert "removed by the interceptor is rejected after it: Yes" in strict.finding
+    assert strict.status == v.INFO
+
+
+def test_q2_says_an_accepted_probe_does_not_prove_additional_properties_is_enforced():
+    finding = table(observations())["Q2"].finding
+    assert "does not show that additionalProperties:false is enforced" in finding
+    assert "whether re-validation happens at all" in finding
+
+
+def test_one_rejected_rewrite_is_enough_to_show_the_gateway_revalidates():
+    row = table(observations(bad_type=v.Outcome("error", 200, "schema validation failed")))["Q2"]
+    assert "wrong type is rejected after it: Yes" in row.finding and row.status == v.INFO
+
+
+def test_an_accepted_rewrite_that_did_not_arrive_as_rewritten_is_inconclusive():
+    row = table(observations(bad_type=ok(DECOY), drop_required=ok(DECOY)))["Q2"]
+    assert row.finding.count("inconclusive") == 2 and row.status == v.UNKNOWN
 
 
 def test_the_target_view_lists_event_keys_and_context_keys():
@@ -109,7 +141,7 @@ def test_a_server_error_is_inconclusive_for_revalidation_not_a_yes():
     row = table(observations(omitted_required=v.Outcome("http_error", 503, "x")))["Q2"]
     assert "inconclusive" in row.finding and "Yes" not in row.finding
     assert row.status == v.UNKNOWN
-    denied = table(observations(extra_property=DENIED))["Q2"]
+    denied = table(observations(bad_type=DENIED))["Q2"]
     assert "inconclusive" in denied.finding and denied.status == v.UNKNOWN
 
 
@@ -120,7 +152,7 @@ def test_an_error_that_names_neither_field_is_inconclusive():
 
 def test_a_skipped_probe_cannot_pass_the_table():
     obs = observations()
-    del obs.outcomes["extra_property"]
+    del obs.outcomes["drop_required"]
     assert v.passed(v.derive_verdicts(obs)) is False
     skipped_q1 = observations()
     del skipped_q1.outcomes["decoy_names_jordan"]
@@ -142,7 +174,7 @@ def test_an_account_id_in_server_text_is_masked():
 
 
 def test_a_token_shaped_string_is_redacted_in_the_table():
-    jwt = "ey" + "Jhbc.eyJzdWIiOiJ4In" + "0.sig_-9"
+    jwt = "ey" + "Jhbc.ey" + "JzdWIiOiJ4In" + "0.sig_-9"
     raw = v.Outcome("error", 200, f"bad token {jwt} here")
     text = v.format_table(v.derive_verdicts(observations(forced_refusal=raw)))
     assert jwt not in text and "<token>" in text

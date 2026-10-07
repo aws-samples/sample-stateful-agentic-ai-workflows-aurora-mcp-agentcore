@@ -34,17 +34,54 @@ def test_pin_mode_is_the_production_interceptor_unchanged(wrapper, monkeypatch):
     assert wrapper.lambda_handler(event, None) == load_interceptor().lambda_handler(event, None)
 
 
-def test_extra_argument_mode_adds_a_property_the_schema_forbids(wrapper, monkeypatch):
-    monkeypatch.setenv("HARNESS_MODE", "extra_argument")
+def test_bad_type_mode_rewrites_the_pinned_traveler_to_an_integer(wrapper, monkeypatch):
+    monkeypatch.setenv("HARNESS_MODE", "bad_type")
     event = load("documented_tools_call_hold", token_for(traveler_id=DECOY))
     arguments = arguments_of(wrapper.lambda_handler(event, None))
-    assert arguments["travelerId"] == DECOY and arguments["unexpectedField"]
+    traveler = arguments["travelerId"]
+    assert isinstance(traveler, int) and not isinstance(traveler, bool)
 
 
-def test_extra_argument_mode_leaves_a_refusal_alone(wrapper, monkeypatch):
-    monkeypatch.setenv("HARNESS_MODE", "extra_argument")
+def test_drop_required_mode_removes_the_traveler_argument(wrapper, monkeypatch):
+    monkeypatch.setenv("HARNESS_MODE", "drop_required")
+    event = load("documented_tools_call_hold", token_for(traveler_id=DECOY))
+    pinned = arguments_of(load_interceptor().lambda_handler(event, None))
+    arguments = arguments_of(wrapper.lambda_handler(event, None))
+    assert "travelerId" not in arguments
+    assert arguments == {k: v for k, v in pinned.items() if k != "travelerId"}
+
+
+@pytest.mark.parametrize("mode", ["bad_type", "drop_required"])
+def test_rewrite_modes_leave_a_refusal_alone(wrapper, monkeypatch, mode):
+    monkeypatch.setenv("HARNESS_MODE", mode)
     output = wrapper.lambda_handler(load("documented_tools_call_hold", token_for()), None)
     assert "transformedGatewayResponse" in output["mcp"]
+
+
+@pytest.mark.parametrize("mode", ["bad_type", "drop_required"])
+def test_rewrite_modes_leave_other_methods_alone(wrapper, monkeypatch, mode):
+    monkeypatch.setenv("HARNESS_MODE", mode)
+    event = load("documented_tools_list", token_for(traveler_id=JORDAN))
+    assert wrapper.lambda_handler(event, None) == load_interceptor().lambda_handler(event, None)
+
+
+def test_an_unknown_mode_is_an_error_not_a_silent_pin(wrapper, monkeypatch):
+    monkeypatch.setenv("HARNESS_MODE", "extra_argument")
+    with pytest.raises(ValueError, match="HARNESS_MODE"):
+        wrapper.lambda_handler(load("documented_tools_call_hold", token_for()), None)
+
+
+def test_pin_mode_with_a_malformed_event_equals_the_production_output(wrapper, monkeypatch):
+    monkeypatch.setenv("HARNESS_MODE", "pin")
+    malformed = {"interceptorInputVersion": "1.0", "mcp": {"gatewayRequest": 3}}
+    production = load_interceptor()
+    for event in ({}, {"mcp": {}}, malformed):
+        assert wrapper.lambda_handler(event, None) == production.lambda_handler(event, None)
+
+
+def test_refuse_mode_with_a_malformed_event_falls_through_to_production(wrapper, monkeypatch):
+    monkeypatch.setenv("HARNESS_MODE", "refuse")
+    assert wrapper.lambda_handler({}, None) == load_interceptor().lambda_handler({}, None)
 
 
 def test_refuse_mode_answers_with_the_production_refusal(wrapper, monkeypatch):
@@ -86,3 +123,39 @@ def test_the_echo_target_returns_its_event_and_the_gateway_context():
         "event": {"travelerId": "t"},
         "custom": {"bedrockAgentCoreToolName": "EchoTarget___echo", "n": "3"}}
     assert echo.lambda_handler({}, SimpleNamespace(client_context=None))["custom"] == {}
+
+
+def recorded(wrapper, monkeypatch, capsys, event):
+    monkeypatch.setenv("HARNESS_RECORD", "1")
+    wrapper.lambda_handler(event, None)
+    return capsys.readouterr().out
+
+
+def test_a_token_in_a_non_standard_header_is_masked_in_the_log(wrapper, monkeypatch, capsys):
+    token = token_for(traveler_id=DECOY)
+    event = load("documented_tools_call_hold", token)
+    event["mcp"]["gatewayRequest"]["headers"]["X-Forwarded-Auth"] = f"Bearer {token}"
+    event["mcp"]["gatewayRequest"]["headers"]["X-Raw"] = token
+    logged = recorded(wrapper, monkeypatch, capsys, event)
+    assert token not in logged and token.split(".")[1] not in logged
+    assert json.loads(logged.split(wrapper.RECORD_MARKER, 1)[1])
+
+
+def test_a_token_in_the_body_is_masked_in_the_log(wrapper, monkeypatch, capsys):
+    token = token_for(traveler_id=DECOY)
+    event = load("documented_tools_call_hold", token)
+    event["mcp"]["gatewayRequest"]["body"]["params"]["arguments"]["note"] = (
+        f"use Bearer {token} please")
+    logged = recorded(wrapper, monkeypatch, capsys, event)
+    assert token not in logged and token.split(".")[1] not in logged
+
+
+def test_a_lowercase_bearer_header_is_masked_in_the_log(wrapper, monkeypatch, capsys):
+    secret = "opaque-secret-value-123"
+    event = load("documented_tools_call_hold", token_for(traveler_id=DECOY))
+    event["mcp"]["gatewayRequest"]["headers"]["X-Other"] = f"bearer   {secret}"
+    logged = recorded(wrapper, monkeypatch, capsys, event)
+    assert secret not in logged
+    headers = json.loads(logged.split(wrapper.RECORD_MARKER, 1)[1])["mcp"]["gatewayRequest"][
+        "headers"]
+    assert headers["X-Other"] == "Bearer {{TOKEN}}"
