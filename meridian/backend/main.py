@@ -260,19 +260,21 @@ async def http_exception_handler(request, exc: HTTPException):
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc: Exception):
-    """Handle unexpected exceptions with consistent error format."""
+    """Answer an unexpected error with a generic body and a short reference.
+
+    The exception text can carry bearer tokens from the HTTPS clients, so neither
+    the response nor the log holds it: the log gets the exception class and the
+    reference only.
+    """
     from fastapi.responses import JSONResponse
     import uuid
-    
-    request_id = str(uuid.uuid4())
-    print(f"Unexpected error (request_id={request_id}): {exc}")
-    
+
+    reference = uuid.uuid4().hex[:8]
+    logger.error("Unexpected %s (request_id=%s)", exc.__class__.__name__, reference)
+
     return JSONResponse(
         status_code=500,
-        content={
-            "error": "Internal server error",
-            "request_id": request_id
-        }
+        content={"error": "Internal server error", "request_id": reference},
     )
 
 
