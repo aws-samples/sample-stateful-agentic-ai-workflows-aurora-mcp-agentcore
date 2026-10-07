@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from backend.agentcore.runtime import get_agentcore_runtime  # noqa: E402
+from scripts.agentcore_caller import caller_scope, user_for_traveler  # noqa: E402
 
 load_dotenv()
 
@@ -63,6 +64,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--traveler", default="trv_meridian_demo")
     args = parser.parse_args()
+    with caller_scope(user_for_traveler(args.traveler)):
+        return run_checks(args)
+
+
+def run_checks(args: argparse.Namespace) -> int:
     runtime = get_agentcore_runtime()
     conversation = f"smoke-{uuid.uuid4().hex[:10]}"
     context = "Jordan Morgan flies from JFK, party of two, shellfish allergy, boutique hotels."

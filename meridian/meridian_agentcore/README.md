@@ -51,6 +51,7 @@ writes the real files:
 | `{{AURORA_GATEWAY_SECRET_ARN}}` | `AURORA_GATEWAY_SECRET_ARN` in `meridian/.env`, the `meridian_gateway` login's secret |
 | `{{GATEWAY_ID}}` | `agentcore/.cli/deployed-state.json`, or `--gateway-id` |
 | `{{POLICY_ENGINE_ID}}` | `agentcore/.cli/deployed-state.json`, or `--policy-engine-id` |
+| `{{MERIDIAN_AGENTCORE_AUTH}}` | `MERIDIAN_AGENTCORE_AUTH` in `meridian/.env`: `iam` (the default) or `jwt` |
 
 ```bash
 cd meridian
@@ -75,6 +76,24 @@ Make configuration changes in the `*.template.json` files, then render.
 `agentcore add` and `agentcore remove` edit the rendered `agentcore.json`; copy
 any such change into the template, replacing account-specific values with
 placeholders, or the next render overwrites it.
+
+## Identity mode
+
+`MERIDIAN_AGENTCORE_AUTH` is `iam` (the default) or `jwt`. In `iam` mode the backend and both
+Runtimes sign every AgentCore call with AWS credentials, which is how the deployed release works
+today. In `jwt` mode every hop carries the signed-in person's Cognito access token instead. The
+backend posts to each Runtime's invocation URL with a bearer token, each Runtime forwards the token
+to the Gateway, the Gateway's request interceptor
+(`agentcore/interceptors/traveler_pin/`) pins `travelerId` to the token's `traveler_id` claim, and
+Cedar denies a mismatch. The render script writes the value into both Runtimes' environment, and in
+`jwt` mode it adds the `meridian_traveler_binding` policy.
+
+Do not set `jwt` by itself on a deployed system. A Runtime accepts IAM or a JWT, never both, so the
+Gateway authorizer, both Runtime authorizers and header allowlists, the interceptor attachment and
+the backend's environment change together in one release.
+`scripts/run_gateway_harness.py` tests the Gateway behavior first, on a separate throwaway Gateway.
+The release steps and what stays unswitched until then are in
+[Operations](../docs/OPERATIONS.md#switch-the-agentcore-identity-mode).
 
 ## Commands
 

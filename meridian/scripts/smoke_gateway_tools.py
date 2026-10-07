@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.agentcore.gateway import get_agentcore_gateway  # noqa: E402
+from scripts.agentcore_caller import caller_scope  # noqa: E402
 
 load_dotenv()
 DETAILS_TOOL = "MeridianHolds___get_package_details"
@@ -29,11 +30,12 @@ DETAILS_TOOL = "MeridianHolds___get_package_details"
 def main() -> int:
     package_id = sys.argv[1] if len(sys.argv) > 1 else "CTY-002"
     gateway = get_agentcore_gateway()
-    tools, _ = gateway.list_tools()
-    print(f"{len(tools)} tools at {gateway.gateway_url}")
-    for tool in tools:
-        print(f"  {tool['name']}")
-    raw = gateway.call_tool(DETAILS_TOOL, {"packageId": package_id})
+    with caller_scope():
+        tools, _ = gateway.list_tools()
+        print(f"{len(tools)} tools at {gateway.gateway_url}")
+        for tool in tools:
+            print(f"  {tool['name']}")
+        raw = gateway.call_tool(DETAILS_TOOL, {"packageId": package_id})
     content = (raw.get("result") or {}).get("content") or []
     text = "".join(block.get("text", "") for block in content if isinstance(block, dict))
     if raw.get("error") or not text:

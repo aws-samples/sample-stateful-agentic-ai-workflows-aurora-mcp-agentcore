@@ -32,10 +32,12 @@ import their agent modules at runtime:
 - `backend/agents/budget.py`: the budget ceiling Cedar compares against, shared by Phases 4 and 5
 - `backend/agents/phase_05_workflow/`: `graph.py` builds the Strands graph, `nodes.py` holds its steps, `runner.py` claims the lease and runs or resumes it, `snapshot_storage.py` saves snapshots to Aurora `workflow_snapshots`, and `runtime_entry.py` is the one event the `MeridianWorkflow` Runtime handles
 - `backend/agentcore/runtime.py`, `backend/agentcore/workflow_runtime.py`, `backend/agentcore/identity.py`: AgentCore adapters (streaming Concierge client, workflow Runtime client with session stop, identity envelope)
-- `meridian_agentcore/app/MeridianConcierge/`: the Phase 4 agent on AgentCore Runtime: `main.py` (tool loop, memory session, streamed events), `turn_trace.py` (spans and the pinned hold and booking arguments), `hold_execution.py` (confirmed holds and confirmations run by the platform), `prompts.py`, `gateway_auth.py`
+- `backend/agentcore/auth_mode.py`, `caller_credential.py`, `caller_claims.py`, `runtime_https.py`: the `MERIDIAN_AGENTCORE_AUTH` switch, the per-request caller token, the traveler read from a forwarded token, and the bearer-token Runtime invocation
+- `meridian_agentcore/app/MeridianConcierge/`: the Phase 4 agent on AgentCore Runtime: `main.py` (tool loop, memory session, streamed events), `turn_trace.py` (spans and the pinned hold and booking arguments), `hold_execution.py` (confirmed holds and confirmations run by the platform), `prompts.py`, `gateway_auth.py`, `caller_identity.py`
 - `meridian_agentcore/app/MeridianWorkflow/`: the Phase 5 Runtime; its `backend/` directory is a generated copy of the backend modules the workflow imports
 - `meridian_agentcore/agentcore/gateway_targets/meridian_holds/`: the `MeridianHolds` gateway Lambda (`get_package_details`, `create_courtesy_hold`, `confirm_booking`)
 - `meridian_agentcore/agentcore/gateway_targets/semantic_trip_search/`: the `semantic_trip_search` Lambda and its tool schema
+- `meridian_agentcore/agentcore/interceptors/traveler_pin/`: the Gateway request interceptor that pins `travelerId` to the signed-in traveler (attached to the Gateway, never a target)
 - `meridian_agentcore/agentcore/agentcore.template.json`: runtime, memory, gateway targets and the `MeridianGovernance` Cedar policy engine, with placeholders that `scripts/render_agentcore_config.py` fills for your account
 
 None of the catalog agents can write a booking; every hold and confirmation
@@ -98,6 +100,8 @@ uses the governed Gateway path.
 | `scripts/publish_gateway_parameters.py` | Publish the Aurora settings the holds Lambda reads from SSM |
 | `scripts/bind_gateway_workload.py`, `scripts/bind_web_backend_role.py` | Grant the holds Lambda role and the App Runner instance role access to Jordan |
 | `scripts/verify_agentcore.py`, `scripts/smoke_gateway_tools.py`, `scripts/smoke_production_turn.py` | Check the deployed platform, the gateway tools and the governed hold path end to end |
+| `scripts/run_gateway_harness.py`, `scripts/gateway_harness/` | Create a separate throwaway Gateway, answer the interceptor and Cedar questions with real tokens, print a verdict table and delete everything; dry run by default |
+| `scripts/agentcore_caller.py` | Bind a seeded user's real access token for a smoke script in `jwt` mode; does nothing in `iam` mode |
 | `scripts/kill_and_resume_proof.py`, `scripts/lost_response_proof.py`, `scripts/stop_and_resume_proof.py` | Recovery exercises: kill a worker after its hold, discard a committed hold response, or stop the Runtime session and resume |
 | `scripts/provision_workflow_login.py`, `scripts/bind_workflow_runtime.py`, `scripts/stage_workflow_runtime.py` | Create or rotate the `meridian_workflow` login, bind the Runtime's workload, and stage the Runtime's backend copy |
 | `scripts/provision_service_logins.py` | Create or rotate the `meridian_backend`, `meridian_gateway` and `meridian_identity` logins, their secrets and managed policies |

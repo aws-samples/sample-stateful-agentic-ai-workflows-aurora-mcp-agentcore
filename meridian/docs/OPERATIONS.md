@@ -510,6 +510,83 @@ Undo in the reverse of the order above and stop at the step you need.
    Roll back only while no workload uses the logins. After the coordinated
    release, move the workloads back to the master login first.
 
+## Switch the AgentCore identity mode
+
+`MERIDIAN_AGENTCORE_AUTH` chooses how every AgentCore call is authenticated. `iam` (unset means
+`iam`) signs each call with AWS credentials and is what the deployed release uses. `jwt` sends the
+signed-in person's Cognito access token on every hop. Any other value is refused by name.
+
+The code for `jwt` mode is in the repository and tested in both modes. Nothing deployed uses it.
+
+### What is not switched until the release
+
+- Both Runtimes still use IAM authorizers, and neither lists `Authorization` in its request header
+  allowlist.
+- The Gateway still uses an IAM authorizer and has no request interceptor attached.
+- The Cedar policy `meridian_traveler_binding` is not in the deployed policy engine. The render adds
+  it only in `jwt` mode.
+- The backend and the hosted service do not set `MERIDIAN_AGENTCORE_AUTH`, so they run in `iam`
+  mode. The hosted site still uses the shared `MERIDIAN_API_TOKEN`.
+- The command-line proofs and checks other than the three smoke scripts still sign with AWS
+  credentials and stop working against a `jwt` Runtime until they are converted.
+- `StopRuntimeSession` stays IAM-signed in both modes.
+
+### Prerequisites
+
+Do not start until all of these hold.
+
+1. The throwaway-Gateway harness (`scripts/run_gateway_harness.py`) has been run with `--apply` and
+   its verdict table is recorded. It decides whether the interceptor and Cedar are both needed.
+2. The interceptor Lambda is deployed with its own role: invoke permission for the Gateway role and
+   log access only, no Aurora access.
+3. The Cognito user pool, the two seeded users and their `cognito` binding rows exist, and
+   `python scripts/cognito_tokens.py` mints an access token for each (see
+   [Sign-in and who is calling](#sign-in-and-who-is-calling)).
+4. The three `MERIDIAN_COGNITO_*` settings are in `.env`, and the Cognito app client id is the one
+   both Runtime authorizers and the Gateway authorizer will allow.
+5. The previous Gateway, both Runtime and hosted service configurations are saved outside the
+   repository, and the previous backend image and site bundle can be deployed again.
+6. A maintenance window is agreed, because a Runtime accepts IAM or JWT callers, never both, and
+   every IAM caller fails from the moment its Runtime changes.
+
+### The switch
+
+Set `MERIDIAN_AGENTCORE_AUTH` in `.env` and render. The render writes the value into both Runtimes'
+environment and adds the Cedar rule in the same pass. It writes only the ignored local files and
+prints `AgentCore identity mode: jwt`; compare them with the saved configuration before deploying.
+
+```bash
+python scripts/render_agentcore_config.py
+```
+
+The release then changes, in one window and with a read-back after each step: the interceptor and
+the Cedar rule, both Runtimes (JWT authorizer and `Authorization` allowlist), the Gateway authorizer,
+and last the backend and the hosted service with `MERIDIAN_AGENTCORE_AUTH=jwt`. Setting `jwt` on the
+backend alone, or on one Runtime alone, makes that hop send or expect a credential the next hop
+refuses.
+
+### Run the smoke scripts as a seeded user
+
+In `jwt` mode `smoke_workflow_runtime.py`, `smoke_gateway_tools.py` and `smoke_production_turn.py`
+sign in as a seeded user through `scripts/agentcore_caller.py`. It mints the user's access token
+with `scripts/cognito_tokens.py`, reads the password from Secrets Manager, prints nothing secret and
+binds the token for the one call block. `smoke_production_turn.py --traveler trv_demo_decoy` signs in
+as the decoy user; any other traveler id signs in as Jordan Morgan. In `iam` mode nothing is minted.
+
+### Expired and missing tokens
+
+An access token lasts one hour. A request with an expired token is answered with 401, the code
+`token_expired` and a `WWW-Authenticate: Bearer` challenge that names `invalid_token`. A request
+that reaches an AgentCore client with no token is answered with 401 and the code
+`sign_in_required`. Neither is a 503. After `token_expired`, sign in again and repeat the request; a
+paused workflow resumes from its last saved step with the new token.
+
+### Roll back
+
+Return to `iam` in the reverse order: the backend and hosted service, the Gateway authorizer, both
+Runtimes, then the interceptor and the Cedar rule, using the configurations saved in prerequisite 5.
+The Aurora logins and the Cognito pool work with both modes and are not rolled back.
+
 ## Publish the web app
 
 `scripts/publish.py` publishes the frontend to S3 behind CloudFront and the
@@ -584,6 +661,8 @@ explains why App Runner needs this.
 | The API returns 401 "A valid Meridian sign-in is required." | The token failed a check: expired, another app client, an ID token, or no `traveler_id` claim. Sign in again; the backend log names the reason code. |
 | The API returns 503 "Sign-in verification is temporarily unavailable." | The backend could not fetch the pool's signing keys. Check its outbound network and `MERIDIAN_COGNITO_REGION`. |
 | The decoy signs in but its records are refused | Expected until B2. Workload bindings are `aws_iam` grants bound to Jordan Morgan only. See [Sign-in and who is calling](#sign-in-and-who-is-calling). |
+| The API returns 401 with code `token_expired` | The caller's access token ran out, possibly during a long workflow. Sign in again and repeat the request; a paused workflow resumes from its last saved step. See [Switch the AgentCore identity mode](#switch-the-agentcore-identity-mode). |
+| The API returns 401 with code `sign_in_required` | In `jwt` mode a request reached an AgentCore client with no caller token. Send the Cognito access token in `Authorization: Bearer`. |
 | `stop-session` returns 409 | The journey has no paused or running workflow session, or its session was already stopped. Read the journey before trying again. |
 
 ## Waits, retries and readback
