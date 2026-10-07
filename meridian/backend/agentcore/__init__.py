@@ -51,3 +51,7 @@ def __getattr__(name: str) -> Any:
     value = getattr(import_module(module), name)
     globals()[name] = value
     return value
+
+
+def __dir__() -> list[str]:
+    return sorted([*globals(), *_EXPORTS])

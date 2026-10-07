@@ -13,7 +13,7 @@ import pytest
 import backend.agentcore as agentcore
 
 ROOT = Path(__file__).resolve().parents[1]
-LIGHT = ("auth_mode", "caller_credential", "caller_claims", "errors")
+LIGHT = ("auth_mode", "caller_credential", "caller_claims", "errors", "runtime_https")
 PUBLIC = {
     "agentcore_project_dir": "backend.agentcore.cli_config",
     "deployed_state_path": "backend.agentcore.cli_config",
@@ -59,3 +59,15 @@ def test_an_unknown_name_is_an_attribute_error_not_an_import_error():
 
 def test_the_all_list_is_exactly_the_public_names():
     assert sorted(agentcore.__all__) == sorted(PUBLIC)
+
+
+def test_dir_lists_the_lazy_public_names_on_a_cold_import():
+    code = (
+        f"import sys; sys.path.insert(0, {str(ROOT)!r})\n"
+        "import backend.agentcore as pkg\n"
+        "assert 'get_agentcore_gateway' in dir(pkg), dir(pkg)\n"
+        "assert 'backend.agentcore.gateway' not in sys.modules\n"
+    )
+    done = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True,
+                          check=False, cwd=ROOT)
+    assert done.returncode == 0, done.stderr
