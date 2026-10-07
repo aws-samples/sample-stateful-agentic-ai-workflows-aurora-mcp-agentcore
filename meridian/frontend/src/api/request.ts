@@ -45,6 +45,8 @@ let unauthorized: UnauthorizedHandler | null = null;
 let refreshing: Promise<boolean> | null = null;
 let signedOut = false;
 
+export const STREAM_REFRESHED_MESSAGE = 'Your sign-in was refreshed. Send that again to continue.';
+
 export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
   unauthorized = handler;
   refreshing = null;
@@ -69,6 +71,21 @@ function refreshOnce(handler: UnauthorizedHandler, refusedAuthorization: string)
     refreshing = running;
   }
   return refreshing;
+}
+
+/**
+ * Refreshes the session after a stream reported an expired token, sharing any refresh already
+ * running. Resolves false when there is no handler or the refresh was refused (which signs out).
+ */
+export function refreshAfterStreamExpiry(refusedToken: string | null): Promise<boolean> {
+  const handler = unauthorized;
+  if (!handler || !refusedToken) return Promise.resolve(false);
+  return refreshOnce(handler, `Bearer ${refusedToken}`);
+}
+
+/** Ends the session after a refreshed token was refused again. */
+export function endSessionAfterStreamExpiry(): void {
+  if (unauthorized) endSession(unauthorized);
 }
 
 /**

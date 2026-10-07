@@ -5,6 +5,14 @@ export type ChatStreamEvent =
   | { type: 'conversation'; conversation_id: string }
   | { type: 'candidates'; package_ids: string[] };
 
+/** The backend ended the stream because the caller's access token expired. */
+export class TokenExpiredError extends Error {
+  constructor(readonly contentDelivered: boolean) {
+    super('The sign-in expired during the request.');
+    this.name = 'TokenExpiredError';
+  }
+}
+
 /** Read real server events; a closed connection is not a completed answer. */
 export async function readChatStream(
   response: Response,
@@ -27,6 +35,7 @@ export async function readChatStream(
   const decoder = new TextDecoder('utf-8', { fatal: true });
   let buffer = '';
   let data: string[] = [];
+  let contentDelivered = false;
   const abort = () => { void reader.cancel().catch(() => {}); };
   signal?.addEventListener('abort', abort, { once: true });
   try {
@@ -44,6 +53,7 @@ export async function readChatStream(
         else if (!line && data.length) {
           const event = JSON.parse(data.join('\n'));
           data = [];
+          if (event.type === 'error' && event.code === 'token_expired') throw new TokenExpiredError(contentDelivered);
           if (event.type === 'error') throw new Error(typeof event.message === 'string' ? event.message : 'The response was interrupted.');
           if (event.type === 'complete') {
             if (typeof event.response?.message !== 'string' || !Array.isArray(event.response.activities)) {
@@ -51,10 +61,11 @@ export async function readChatStream(
             }
             return event.response as ChatResponse;
           }
-          if ((event.type === 'delta' || event.type === 'status') && typeof event.text === 'string') onEvent(event);
+          if ((event.type === 'delta' || event.type === 'status') && typeof event.text === 'string') { contentDelivered = true; onEvent(event); }
           else if (event.type === 'conversation' && typeof event.conversation_id === 'string') onEvent(event);
           else if (event.type === 'candidates' && Array.isArray(event.package_ids)
             && event.package_ids.length <= 20 && event.package_ids.every((id: unknown) => typeof id === 'string')) {
+            contentDelivered = true;
             onEvent({ type: 'candidates', package_ids: [...new Set<string>(event.package_ids)] });
           }
         }

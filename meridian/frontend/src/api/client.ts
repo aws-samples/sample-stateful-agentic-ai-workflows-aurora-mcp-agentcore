@@ -1,10 +1,17 @@
 /**
  * API client for Meridian backend
  */
-import { authorizedFetch, requestJson } from './request';
-import { setBearerOrigin } from '../auth/accessToken';
+import {
+  SESSION_ENDED_MESSAGE,
+  STREAM_REFRESHED_MESSAGE,
+  authorizedFetch,
+  endSessionAfterStreamExpiry,
+  refreshAfterStreamExpiry,
+  requestJson,
+} from './request';
+import { getAccessToken, setBearerOrigin } from '../auth/accessToken';
 import { CURRENT_TRAVELER } from './currentTraveler';
-import { readChatStream, type ChatStreamEvent } from './chatStream';
+import { TokenExpiredError, readChatStream, type ChatStreamEvent } from './chatStream';
 import type {
   BookingRequest,
   BookingResponse,
@@ -108,15 +115,41 @@ export async function fetchProduct(productId: string): Promise<Product> {
 }
 
 /**
- * Send a chat message to the AI assistant
+ * Stream a turn. An HTTP 401 is recovered by authorizedFetch. A token that expires inside the
+ * stream is refreshed and the turn is sent again once, but only if nothing reached the caller
+ * yet; after content the turn may have written state, so the person decides whether to resend.
  */
-export async function sendChatMessage(request: ChatRequest, signal?: AbortSignal, onEvent?: (event: ChatStreamEvent) => void): Promise<ChatResponse> {
-  if (request.phase === 4 && onEvent) {
+async function streamChatMessage(
+  request: ChatRequest, signal: AbortSignal | undefined, onEvent: (event: ChatStreamEvent) => void,
+): Promise<ChatResponse> {
+  for (let attempt = 0; ; attempt += 1) {
     const response = await authorizedFetch(`${API_BASE}/chat/stream`, {
       method: 'POST', signal, cache: 'no-store',
       headers: { ...JSON_HEADERS, Accept: 'text/event-stream' }, body: JSON.stringify(request),
     });
-    return readChatStream(response, onEvent, signal);
+    const refusedToken = getAccessToken();
+    try {
+      return await readChatStream(response, onEvent, signal);
+    } catch (error) {
+      if (!(error instanceof TokenExpiredError)) throw error;
+      if (error.contentDelivered) {
+        void refreshAfterStreamExpiry(refusedToken);
+        throw new Error(STREAM_REFRESHED_MESSAGE);
+      }
+      if (attempt > 0 || !await refreshAfterStreamExpiry(refusedToken)) {
+        endSessionAfterStreamExpiry();
+        throw new Error(SESSION_ENDED_MESSAGE);
+      }
+    }
+  }
+}
+
+/**
+ * Send a chat message to the AI assistant
+ */
+export async function sendChatMessage(request: ChatRequest, signal?: AbortSignal, onEvent?: (event: ChatStreamEvent) => void): Promise<ChatResponse> {
+  if (request.phase === 4 && onEvent) {
+    return streamChatMessage(request, signal, onEvent);
   }
   return requestJson(`${API_BASE}/chat`, {
     method: 'POST', signal, headers: JSON_HEADERS, body: JSON.stringify(request),

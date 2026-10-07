@@ -59,3 +59,20 @@ it('reports the error field of a refused stream request', async () => {
   });
   await expect(readChatStream(refused, vi.fn())).rejects.toThrow('Traveler not authorized');
 });
+
+describe('an expired token reported inside the stream', () => {
+  const expired = frame({ type: 'error', code: 'token_expired', message: 'eyJ.secret.token' });
+
+  it('is a typed failure that says no content was delivered yet', async () => {
+    const error = await readChatStream(response([encoder.encode(expired)]), vi.fn()).catch(e => e);
+    expect(error).toMatchObject({ name: 'TokenExpiredError', contentDelivered: false });
+    expect(error.message).not.toContain('eyJ');
+  });
+  it('says content was delivered once the caller has seen a delta', async () => {
+    const onEvent = vi.fn();
+    const error = await readChatStream(
+      response([encoder.encode(frame({ type: 'delta', text: 'Looking' }) + expired)]), onEvent,
+    ).catch(e => e);
+    expect(error).toMatchObject({ name: 'TokenExpiredError', contentDelivered: true });
+  });
+});
