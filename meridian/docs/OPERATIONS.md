@@ -156,6 +156,12 @@ python scripts/kill_and_resume_demo.py
 python scripts/lost_response_demo.py
 ```
 
+Add `--worker-login` to either command to run the SIGKILLed or loss-injected worker
+as the `meridian_workflow` login. Only the worker subprocess gets
+`AURORA_WORKFLOW_SECRET_ARN` as its `AURORA_SECRET_ARN`; the driver keeps the master
+client for verification and cleanup. The worker prints its `current_user`, and the
+driver fails unless it is `meridian_workflow`.
+
 - `kill_and_resume_demo.py` places a hold through the gateway, kills its worker
   with SIGKILL after the hold is checkpointed, shows a second worker refused
   until the lease expires, then resumes and verifies one hold with the same

@@ -5,7 +5,12 @@ the wrapper discards that response and raises TimeoutError. Aurora, Gateway,
 Cedar, retrieval, and checkpointing are real. This is a lost-reply simulation,
 not a claim that the network itself failed.
 
-Usage: python scripts/lost_response_demo.py
+Usage: python scripts/lost_response_demo.py [--worker-login]
+
+With --worker-login only the worker subprocess runs as the meridian_workflow login
+(its AURORA_SECRET_ARN becomes AURORA_WORKFLOW_SECRET_ARN). The driver keeps the
+master client for verification and cleanup, and fails unless the worker reports
+``current_user`` as meridian_workflow.
 
 Creates isolated rehearsal rows and removes them in finally. No existing
 bookings, schema, permissions, or service configuration are changed.
@@ -23,7 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.kill_and_resume_demo import (  # noqa: E402
     TRAVELER, ScopedDb, _holds_for, _purge, _run_workflow, bind_thread,
-    create_journey, get_rds_data_client, read_newest_snapshot, say, scoped,
+    create_journey, get_rds_data_client, read_newest_snapshot, report_worker_identity,
+    require_worker_login, say, scoped, worker_env,
 )
 from backend.agentcore.gateway import AgentCoreGatewayAdapter  # noqa: E402
 from backend.agents.phase_05_workflow.governed_hold import (  # noqa: E402
@@ -51,7 +57,15 @@ def drop_committed_hold_reply(call_tool):
     return wrapped
 
 
+def check_worker_identity(events: list[dict], worker_login: bool) -> None:
+    """With --worker-login, the worker must have reported the workflow login."""
+    if worker_login:
+        identity = next((e for e in events if e["event"] == "identity"), {})
+        require_worker_login(identity.get("current_user"))
+
+
 async def worker(thread_id: str) -> int:
+    await report_worker_identity()
     paused = await _run_workflow(thread_id, resume=False)
     if paused.get("workflow_status") != "paused":
         return 1  # A fresh run must stop for the traveler's review before any hold.
@@ -83,7 +97,8 @@ def check_denials(intent: dict, thread_id: str) -> None:
         say("Cedar", f"{label}: denied by Gateway policy")
 
 
-async def main() -> int:
+async def main(worker_login: bool = False) -> int:
+    env = worker_env(worker_login)
     client = get_rds_data_client()
     store = workflow_store_status()
     async with scoped(client) as tx:
@@ -96,7 +111,7 @@ async def main() -> int:
     try:
         child = await asyncio.create_subprocess_exec(
             sys.executable, __file__, "--worker", thread_id,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env,
         )
         stdout, stderr = await asyncio.wait_for(child.communicate(), timeout=240)
         events = [
@@ -109,6 +124,7 @@ async def main() -> int:
                 f"Worker did not stop at the injected loss: exit={child.returncode}; "
                 f"{stderr.decode()[-1500:]}"
             )
+        check_worker_identity(events, worker_login)
 
         before = await _holds_for(client, journey_id)
         if len(before) != 1 or before[0]["booking_id"] != lost["booking_id"]:
@@ -156,6 +172,10 @@ async def main() -> int:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--worker-login", action="store_true",
+        help="run the worker subprocess as the meridian_workflow login",
+    )
     parser.add_argument("--worker", help=argparse.SUPPRESS)
     args = parser.parse_args()
-    raise SystemExit(asyncio.run(worker(args.worker) if args.worker else main()))
+    raise SystemExit(asyncio.run(worker(args.worker) if args.worker else main(args.worker_login)))

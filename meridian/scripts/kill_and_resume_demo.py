@@ -18,6 +18,12 @@ what the room sees is what actually persisted.
 Usage:
     python scripts/kill_and_resume_demo.py            # run the demo
     python scripts/kill_and_resume_demo.py --keep     # leave the rows behind
+    python scripts/kill_and_resume_demo.py --worker-login
+        # run the SIGKILLed worker as the meridian_workflow login
+
+With --worker-login only the worker subprocess gets AURORA_WORKFLOW_SECRET_ARN as
+its AURORA_SECRET_ARN. The driver keeps the master client for verification and
+cleanup, and fails unless the worker reports ``current_user`` as meridian_workflow.
 """
 
 from __future__ import annotations
@@ -29,6 +35,7 @@ import os
 import signal
 import sys
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -60,6 +67,8 @@ QUERY = (
     "My flight was cancelled, rework the trip and show duration availability."
 )
 
+WORKFLOW_LOGIN = "meridian_workflow"
+
 BLUE, GREEN, RED, DIM, BOLD, OFF = (
     "\033[34m", "\033[32m", "\033[31m", "\033[2m", "\033[1m", "\033[0m",
 )
@@ -67,6 +76,34 @@ BLUE, GREEN, RED, DIM, BOLD, OFF = (
 
 def say(step: str, message: str, colour: str = BLUE) -> None:
     print(f"{colour}{BOLD}{step:>10}{OFF}  {message}", flush=True)
+
+
+def worker_env(worker_login: bool, environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The environment for a worker subprocess; only it ever runs as the login."""
+    env = dict(os.environ if environ is None else environ)
+    if worker_login:
+        secret = env.get("AURORA_WORKFLOW_SECRET_ARN")
+        if not secret:
+            raise SystemExit(
+                "--worker-login needs AURORA_WORKFLOW_SECRET_ARN; "
+                "run scripts/provision_workflow_login.py and load .env"
+            )
+        env["AURORA_SECRET_ARN"] = secret
+    return env
+
+
+def require_worker_login(current_user: str | None) -> None:
+    """Fail unless the worker really ran as the workflow login, not the master role."""
+    if current_user != WORKFLOW_LOGIN:
+        raise AssertionError(
+            f"The worker must run as {WORKFLOW_LOGIN}, but it reported {current_user!r}"
+        )
+
+
+async def report_worker_identity() -> None:
+    """Print the database user this worker's Aurora client really runs as."""
+    rows = await get_rds_data_client().execute("SELECT current_user AS db_user")
+    print(json.dumps({"event": "identity", "current_user": rows[0]["db_user"]}), flush=True)
 
 
 def scoped(client):
@@ -107,6 +144,7 @@ async def _run_workflow(
 
 async def _worker_one(journey_id: str, thread_id: str) -> None:
     """Pause for review, resume to commit the hold, then stay alive until killed."""
+    await report_worker_identity()
     reviewed = await _run_workflow(thread_id, resume=False)
     if reviewed.get("workflow_status") != "paused":
         raise RuntimeError("A fresh run must stop for the traveler's review before any hold")
@@ -190,21 +228,27 @@ async def _purge(client, journey_id: str, thread_id: str) -> None:
     await client.execute("DELETE FROM journeys WHERE journey_id = %s", (journey_id,))
 
 
-async def _wait_for_pause(child) -> str:
+async def _wait_for_pause(child, expect_login: bool = False) -> str:
     """Read startup events without blocking the event loop or waiting forever."""
     first_worker = ""
+    reported_user = None
     while line := await child.stdout.readline():
         line = line.decode().strip()
         if not line.startswith("{"):
             continue
         event = json.loads(line)
-        if event.get("event") == "claimed":
+        if event.get("event") == "identity":
+            reported_user = event["current_user"]
+            say("worker 1", f"database user {reported_user}")
+        elif event.get("event") == "claimed":
             first_worker = event["worker_id"]
             say("worker 1", f"claimed attempt {event['attempt']} as {first_worker} "
                 f"(pid {child.pid}, lease {LEASE_SECONDS}s)")
         elif event.get("event") == "paused":
             if not first_worker or event.get("status") != "paused":
                 raise RuntimeError("Worker did not report a claimed, paused execution")
+            if expect_login:
+                require_worker_login(reported_user)
             say("worker 1", "workflow paused at a checkpoint")
             return first_worker
     raise RuntimeError("Worker exited before reaching its pause; inspect the worker output")
@@ -219,7 +263,8 @@ def _verify_replacement(state: dict, executions: list[dict], first_worker: str) 
         raise AssertionError("Aurora must record a successful, different replacement worker")
 
 
-async def main(keep: bool) -> int:
+async def main(keep: bool, worker_login: bool = False) -> int:
+    env = {**worker_env(worker_login), "PYTHONUNBUFFERED": "1"}
     client = get_rds_data_client()
 
     store = service.workflow_store_status()
@@ -235,10 +280,12 @@ async def main(keep: bool) -> int:
     child = await asyncio.create_subprocess_exec(
         sys.executable, __file__, "--worker-one", journey_id, thread_id,
         stdout=asyncio.subprocess.PIPE,
-        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        env=env,
     )
     try:
-        first_worker = await asyncio.wait_for(_wait_for_pause(child), timeout=240)
+        first_worker = await asyncio.wait_for(
+            _wait_for_pause(child, worker_login), timeout=240
+        )
 
         committed = await _read_committed_checkpoint(client, thread_id)
         if not committed:
@@ -311,10 +358,14 @@ async def main(keep: bool) -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--keep", action="store_true", help="leave the rows behind")
+    parser.add_argument(
+        "--worker-login", action="store_true",
+        help="run the SIGKILLed worker as the meridian_workflow login",
+    )
     parser.add_argument("--worker-one", nargs=2, metavar=("JOURNEY", "THREAD"))
     args = parser.parse_args()
 
     if args.worker_one:
         asyncio.run(_worker_one(*args.worker_one))
     else:
-        raise SystemExit(asyncio.run(main(args.keep)))
+        raise SystemExit(asyncio.run(main(args.keep, args.worker_login)))
