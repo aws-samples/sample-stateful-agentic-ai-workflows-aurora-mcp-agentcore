@@ -116,4 +116,4 @@ Related source:
 - `frontend/src/showcase/lib/bookingRecovery.ts`: persisted retry references; the receipt itself comes from Aurora
 - `backend/routers/chat.py`, `read_hold` and `read_booking`: authenticated reconciliation reads
 - `scripts/migrations/010_confirm_booking.sql`: confirmation of an unexpired catalog hold, with no supplier booking or payment
-- `scripts/lost_response_demo.py` and `scripts/kill_and_resume_demo.py`: the two failure exercises and their cleanup
+- `scripts/lost_response_proof.py` and `scripts/kill_and_resume_proof.py`: the two failure exercises and their cleanup

@@ -29,7 +29,7 @@ deployment steps. Each note names the code or step it explains.
 - **A CDK-built `lambda` target has no environment variables.** The holds Lambda reads the cluster ARN, secret ARN and database name from SSM Parameter Store (`scripts/publish_gateway_parameters.py`), and its `iamPolicy` in the template is scoped to those parameters, the cluster and the secret.
 - **The gateway Lambda is a workload.** Its execution role needs its own row in `traveler_identity_bindings` (`scripts/bind_gateway_workload.py`). The subject is the role's `RoleId`, the first part of `sts:GetCallerIdentity`'s `UserId` inside the function.
 - **Phase 5 holds go through the gateway too.** The workflow node passes its checkpointed `holdRequestId`, `bookingId` and `executionId`; the Lambda re-checks the worker lease with `SELECT ... FOR UPDATE` inside the write transaction, so Cedar sees every hold and a restarted worker replays the same booking.
-- **A cold worker needs a lease longer than its first nodes.** The search and availability nodes block the event loop for several seconds, so the first heartbeat is late; `scripts/kill_and_resume_demo.py` defaults to a 20-second lease.
+- **A cold worker needs a lease longer than its first nodes.** The search and availability nodes block the event loop for several seconds, so the first heartbeat is late; `scripts/kill_and_resume_proof.py` defaults to a 20-second lease.
 
 ## App Runner hosting
 

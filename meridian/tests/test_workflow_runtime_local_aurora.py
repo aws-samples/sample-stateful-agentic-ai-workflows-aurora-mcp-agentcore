@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from backend.db.rds_data_client import get_rds_data_client
-from scripts.kill_and_resume_demo import QUERY, _holds_for, _purge
+from scripts.kill_and_resume_proof import QUERY, _holds_for, _purge
 
 pytestmark = pytest.mark.database
 

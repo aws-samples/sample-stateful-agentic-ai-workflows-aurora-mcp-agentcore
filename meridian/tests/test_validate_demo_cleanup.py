@@ -11,7 +11,7 @@ from scripts import validate_demo
 @pytest.mark.asyncio
 async def test_cleanup_removes_only_journeys_for_its_own_conversation(monkeypatch):
     from backend.db import rds_data_client
-    from scripts import kill_and_resume_demo
+    from scripts import kill_and_resume_proof
 
     rows = [
         {"journey_id": "owned-workflow", "thread_id": "owned-conversation"},
@@ -21,7 +21,7 @@ async def test_cleanup_removes_only_journeys_for_its_own_conversation(monkeypatc
     purge = AsyncMock()
     monkeypatch.setattr(validate_demo, "steps", [{"conversation_id": "owned-conversation"}])
     monkeypatch.setattr(rds_data_client, "get_rds_data_client", lambda: db)
-    monkeypatch.setattr(kill_and_resume_demo, "_purge", purge)
+    monkeypatch.setattr(kill_and_resume_proof, "_purge", purge)
 
     await validate_demo.cleanup()
 

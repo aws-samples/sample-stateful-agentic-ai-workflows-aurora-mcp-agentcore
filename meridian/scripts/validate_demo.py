@@ -18,6 +18,10 @@ from pathlib import Path
 
 import httpx
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from backend.agents.phase_05_workflow.state import SNAPSHOT_STORE  # noqa: E402
+
 BASE = "http://127.0.0.1:8013"
 TRAVELER = os.getenv("DEMO_TRAVELER_ID", "trv_meridian_demo")
 FINALE = (
@@ -31,6 +35,11 @@ BROWSER_DEADLINE_MS = 55_000
 
 client: httpx.Client
 steps: list[dict] = []
+
+
+def reports_durable_snapshots(body: dict, status: int) -> bool:
+    """Return True when /api/health reports the durable snapshot store."""
+    return body.get("checkpoint_backend") == SNAPSHOT_STORE and body.get("checkpoint_durable") is True
 
 
 def now() -> str:
@@ -104,7 +113,7 @@ def main() -> int:
     no_products = lambda b, s: not b.get("products")  # noqa: E731
 
     record("health", "GET", "/api/health", None, ok=ok,
-           durable=lambda b, s: b.get("checkpoint_backend") == "AuroraDataApiSaver" and b.get("checkpoint_durable") is True)
+           durable=reports_durable_snapshots)
     record("memory_profile", "GET", f"/api/memory/{TRAVELER}", None, ok=ok,
            facts=lambda b, s: len(b.get("facts") or []) >= 5,
            budget=lambda b, s: b.get("budget_ceiling_per_traveler_cents") is not None)
@@ -289,7 +298,7 @@ def main() -> int:
 
 async def cleanup() -> None:
     from backend.db.rds_data_client import get_rds_data_client
-    from scripts.kill_and_resume_demo import _purge
+    from scripts.kill_and_resume_proof import _purge
 
     db = get_rds_data_client()
     conversations = {step["conversation_id"] for step in steps if step.get("conversation_id")}
@@ -312,7 +321,6 @@ async def cleanup() -> None:
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default=BASE)
     parser.add_argument("--output", type=Path, default=OUT)

@@ -44,7 +44,7 @@ from backend.agents.phase_05_workflow.graph import (  # noqa: E402
     snapshot_key,
 )
 from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
-from scripts.kill_and_resume_demo import (  # noqa: E402
+from scripts.kill_and_resume_proof import (  # noqa: E402
     _holds_for,
     _purge,
     read_newest_snapshot,

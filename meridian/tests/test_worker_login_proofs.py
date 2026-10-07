@@ -7,8 +7,8 @@ import pytest
 
 from backend.agents.phase_05_workflow.runner import WorkflowConflictError
 
-from scripts import kill_and_resume_demo as demo
-from scripts.kill_and_resume_demo import (
+from scripts import kill_and_resume_proof as demo
+from scripts.kill_and_resume_proof import (
     WORKFLOW_LOGIN,
     _wait_for_pause,
     parse_takeover,
@@ -16,7 +16,7 @@ from scripts.kill_and_resume_demo import (
     require_worker_login,
     worker_env,
 )
-from scripts.lost_response_demo import check_worker_identity
+from scripts.lost_response_proof import check_worker_identity
 
 ENVIRON = {
     "AURORA_SECRET_ARN": "arn:master",

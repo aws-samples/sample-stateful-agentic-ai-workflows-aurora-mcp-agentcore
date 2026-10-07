@@ -152,8 +152,8 @@ export LANGGRAPH_CHECKPOINT_DSN=
 export LANGGRAPH_AUTO_CHECKPOINT_DSN=false
 export LANGGRAPH_CHECKPOINT_DATA_API=true
 export LANGGRAPH_CHECKPOINT_REQUIRED=true
-python scripts/kill_and_resume_demo.py
-python scripts/lost_response_demo.py
+python scripts/kill_and_resume_proof.py
+python scripts/lost_response_proof.py
 ```
 
 Add `--worker-login` to either command to run the SIGKILLed or loss-injected worker
@@ -162,12 +162,12 @@ as the `meridian_workflow` login. Only the worker subprocess gets
 client for verification and cleanup. The worker prints its `current_user`, and the
 driver fails unless it is `meridian_workflow`.
 
-- `kill_and_resume_demo.py` places a hold through the gateway, kills its worker
+- `kill_and_resume_proof.py` places a hold through the gateway, kills its worker
   with SIGKILL after the hold is checkpointed, shows a second worker refused
   until the lease expires, then resumes and verifies one hold with the same
   booking ID and original expiry. `DEMO_LEASE_SECONDS` (default 20) sets the
   lease; a cold worker needs most of that before its first heartbeat.
-- `lost_response_demo.py` receives a real committed hold from the gateway,
+- `lost_response_proof.py` receives a real committed hold from the gateway,
   discards the response and raises a timeout, so the `hold` node stays pending.
   A replacement worker retries the saved intent and gets the same booking and
   expiry. It also checks that Cedar denies unconfirmed and over-budget calls

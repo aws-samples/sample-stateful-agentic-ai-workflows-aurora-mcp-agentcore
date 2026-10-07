@@ -97,7 +97,7 @@ uses the governed Gateway path.
 | `scripts/publish_gateway_parameters.py` | Publish the Aurora settings the holds Lambda reads from SSM |
 | `scripts/bind_gateway_workload.py`, `scripts/bind_web_backend_role.py` | Grant the holds Lambda role and the App Runner instance role access to Jordan |
 | `scripts/verify_agentcore.py`, `scripts/smoke_gateway_tools.py`, `scripts/smoke_production_turn.py` | Check the deployed platform, the gateway tools and the governed hold path end to end |
-| `scripts/kill_and_resume_demo.py`, `scripts/lost_response_demo.py` | Recovery exercises: kill a worker after its hold, or discard a committed hold response |
+| `scripts/kill_and_resume_proof.py`, `scripts/lost_response_proof.py` | Recovery exercises: kill a worker after its hold, or discard a committed hold response |
 | `scripts/provision_preflight.py` | Read-only checks before provisioning Aurora in an account |
 | `scripts/publish.py`, `scripts/published.py` | Publish the hosted web app to an existing App Runner service; read back its local release record |
 | `scripts/validate_demo.py`, `scripts/release_demo_bookings.py` | End-to-end check of a running deployment; release demo bookings |
