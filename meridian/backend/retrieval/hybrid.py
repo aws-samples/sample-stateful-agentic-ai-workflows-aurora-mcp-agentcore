@@ -22,7 +22,7 @@ def _price_filter(query: str) -> float | None:
     return price_filter
 
 
-def _intent_spans(query: str, price_filter: float | None) -> List[ActivityEntry]:
+def _intent_spans() -> List[ActivityEntry]:
     """Build the two reasoning spans that open a retrieval search."""
     activities = []
 
@@ -230,7 +230,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     db = get_rds_data_client()
 
     price_filter = _price_filter(query)
-    activities = _intent_spans(query, price_filter)
+    activities = _intent_spans()
 
     embedding_str, embedding_span = await _embed(query)
     activities.append(embedding_span)
