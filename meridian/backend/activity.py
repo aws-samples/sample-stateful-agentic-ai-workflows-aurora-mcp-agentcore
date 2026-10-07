@@ -62,6 +62,7 @@ class Product(BaseModel):
 def create_activity(
     activity_type: str,
     title: str,
+    *,
     details: Optional[str] = None,
     sql_query: Optional[str] = None,
     execution_time_ms: Optional[int] = None,

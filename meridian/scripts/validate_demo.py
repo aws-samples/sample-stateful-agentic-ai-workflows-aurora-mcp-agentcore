@@ -189,14 +189,14 @@ def main() -> int:
                    {"message": FINALE, "phase": 5, "customer_id": TRAVELER, "travelers_count": 2},
                    ok=ok, paused=lambda b, s: b.get("workflow_status") == "paused",
                    products=has_products,
-                   resume_chip=lambda b, s: (b.get("follow_ups") or []) == ["Resume workflow from checkpoint"],
+                   resume_chip=lambda b, s: (b.get("follow_ups") or []) == ["Resume workflow from the saved step"],
                    durable_span=lambda b, s: any(
-                       any(f.get("label") == "checkpoint_durable" and f.get("value") == "true"
+                       any(f.get("label") == "snapshot_durable" and f.get("value") == "true"
                            for f in ((a.get("telemetry") or {}).get("fields") or []))
                        for a in b["activities"]))
     conv5 = p5.get("conversation_id")
     p5r, _ = record("p5_resume", "POST", "/api/chat",
-                    {"message": "Resume workflow from checkpoint", "phase": 5, "customer_id": TRAVELER, "conversation_id": conv5, "resume": True, "travelers_count": 2},
+                    {"message": "Resume workflow from the saved step", "phase": 5, "customer_id": TRAVELER, "conversation_id": conv5, "resume": True, "travelers_count": 2},
                     ok=ok, resumed=lambda b, s: b.get("workflow_status") == "resumed",
                     same_thread=lambda b, s: b.get("conversation_id") == conv5,
                     availability=lambda b, s: any("Workflow node: availability" in (a.get("title") or "") for a in b["activities"]),
@@ -207,7 +207,7 @@ def main() -> int:
                             for f in ((a.get("telemetry") or {}).get("fields") or []))
                         for a in b["activities"]))
     record("p5_resume_again_conflict", "POST", "/api/chat",
-           {"message": "Resume workflow from checkpoint", "phase": 5, "customer_id": TRAVELER, "conversation_id": conv5, "resume": True, "travelers_count": 2},
+           {"message": "Resume workflow from the saved step", "phase": 5, "customer_id": TRAVELER, "conversation_id": conv5, "resume": True, "travelers_count": 2},
            conflict=lambda b, s: s == 409)
     journeys, _ = record("journeys_list", "GET", "/api/journeys", {"limit": 10, "thread_id": conv5},
                          ok=ok)

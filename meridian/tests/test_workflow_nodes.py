@@ -39,9 +39,9 @@ async def test_search_saves_packages_as_plain_dicts_and_announces_the_snapshot(n
     assert out["packages"][0]["product_id"] == "pkg_tokyo"
     titles = [span["title"] for span in out["activities"]]
     assert titles[0] == "Workflow node: search"
-    assert titles[-1].startswith("Checkpoint · ")
+    assert titles[-1].startswith("Snapshot saved: ")
     fields = {f["label"]: f["value"] for f in out["activities"][-1]["telemetry"]["fields"]}
-    assert fields["checkpoint_durable"] == "true"
+    assert fields["snapshot_durable"] == "true"
     assert fields["checkpoint_store"] == "workflow_snapshots"
 
 
@@ -184,7 +184,7 @@ async def test_a_placed_hold_returns_the_receipt_and_the_span_the_ui_and_journey
         "pkg_tokyo", "7 nights", "2"
     )
     assert (fields["seats_remaining"], fields["replayed"]) == ("9", "no")
-    assert out["activities"][-1]["title"].startswith("Checkpoint")
+    assert out["activities"][-1]["title"].startswith("Snapshot saved: ")
 
 
 async def test_hold_cedar_denial_is_a_refusal_span_not_an_exception(nodes):

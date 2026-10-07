@@ -104,8 +104,8 @@ def _iso(value: Any) -> Optional[str]:
 
 
 def checkpoint_backend_is_durable(kind: str) -> bool:
-    """Only the durable backends adopted by the workflow can support this claim."""
-    return kind in {SNAPSHOT_STORE, "AuroraDataApiSaver", "PostgresSaver (Aurora · pooled)"}
+    """Only the workflow snapshot store can support the durability claim."""
+    return kind == SNAPSHOT_STORE
 
 
 def runtime_ids(worker_id: Optional[str]) -> Tuple[Optional[str], Optional[str]]:

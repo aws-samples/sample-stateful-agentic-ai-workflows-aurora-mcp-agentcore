@@ -71,8 +71,8 @@ PROMPT_LADDER: Dict[int, PhasePrompts] = {
             "Which trip lengths are still available for Amalfi Coast Villa "
             "Week?",
         ],
-        tee_up="Resume workflow from checkpoint",
-        tee_up_label="Resume workflow from checkpoint",
+        tee_up="Resume workflow from the saved step",
+        tee_up_label="Resume workflow from the saved step",
     ),
 }
 

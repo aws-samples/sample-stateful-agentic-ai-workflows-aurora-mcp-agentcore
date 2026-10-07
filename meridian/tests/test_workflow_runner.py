@@ -123,7 +123,7 @@ async def test_a_paused_run_releases_its_lease_as_paused():
     result = await world.runner().run(command())
     assert result["workflow_status"] == "paused"
     assert result["response"].startswith("Workflow paused after a committed checkpoint.")
-    assert result["activities"][-1]["title"] == "Workflow paused at checkpoint"
+    assert result["activities"][-1]["title"] == "Workflow paused at a saved step"
     assert [e["status"] for e in world.lease.executions] == ["paused"]
     assert world.gateway.calls == []
 
@@ -137,7 +137,7 @@ async def test_resume_on_another_worker_holds_once_and_reports_the_restart():
     assert result["resumed_from_checkpoint"]
     assert result["hold_id"] == world.gateway.calls[0]["bookingId"]
     assert result["response"].startswith("Continued from the saved availability checkpoint.")
-    assert result["activities"][-1]["title"] == "Workflow resumed from checkpoint"
+    assert result["activities"][-1]["title"] == "Workflow resumed from a saved step"
     assert [e["status"] for e in world.lease.executions] == ["paused", "succeeded"]
 
 
@@ -274,7 +274,7 @@ async def test_snapshot_spans_carry_the_measured_write_time():
     runner = world.runner()
     runner._storage_for = storage_for
     result = await runner.run(command())
-    checkpoint_spans = [a for a in result["activities"] if a["title"].startswith("Checkpoint · ")]
+    checkpoint_spans = [a for a in result["activities"] if a["title"].startswith("Snapshot saved: ")]
     assert [span["execution_time_ms"] for span in checkpoint_spans] == [222]
 
 

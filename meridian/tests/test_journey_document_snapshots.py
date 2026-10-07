@@ -83,8 +83,8 @@ def test_two_executions_with_no_earlier_saved_step_is_not_a_resume():
     ("kind", "durable"),
     [
         ("Aurora workflow_snapshots", True),
-        ("AuroraDataApiSaver", True),
-        ("PostgresSaver (Aurora \u00b7 pooled)", True),
+        ("AuroraDataApiSaver", False),
+        ("PostgresSaver (Aurora \u00b7 pooled)", False),
         ("MemorySaver (in-process)", False),
         ("", False),
         ("SomethingElse", False),

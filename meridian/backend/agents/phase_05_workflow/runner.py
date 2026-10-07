@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 LEASE_SECONDS = 60
 HEARTBEAT_SECONDS = 10
 WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"
-CHECKPOINT_PREFIX = "Checkpoint · "
+SNAPSHOT_PREFIX = "Snapshot saved: "
 CONSENT_INTERRUPTS = frozenset({REVIEW_INTERRUPT, CONFIRM_INTERRUPT})
 
 StorageFactory = Callable[[str, str, Optional[str], str, Callable[[int], None]], Any]
@@ -207,7 +207,7 @@ def _timed(
         for span in spans:
             if (
                 took is not None
-                and str(span.get("title", "")).startswith(CHECKPOINT_PREFIX)
+                and str(span.get("title", "")).startswith(SNAPSHOT_PREFIX)
                 and span.get("execution_time_ms") is None
             ):
                 span = {**span, "execution_time_ms": took}
@@ -227,7 +227,7 @@ def _status_span(
             "component": "Strands Graph",
             "status": status,
             "fields": [
-                {"label": "checkpoint_durable", "value": "true"},
+                {"label": "snapshot_durable", "value": "true"},
                 *fields,
                 {"label": "checkpointer", "value": SNAPSHOT_STORE},
                 {"label": "durability", "value": "Aurora"},
@@ -504,7 +504,7 @@ class WorkflowRunner:
 
 def _paused_span(thread_id: str, pending: List[str]) -> Dict[str, Any]:
     return _status_span(
-        "Workflow paused at checkpoint",
+        "Workflow paused at a saved step",
         f"thread_id={thread_id}, next={', '.join(pending)}, store={SNAPSHOT_STORE}",
         "held",
         [
@@ -517,7 +517,7 @@ def _paused_span(thread_id: str, pending: List[str]) -> Dict[str, Any]:
 def _resumed_span(thread_id: str, resumed: List[str], restarted: bool) -> Dict[str, Any]:
     observed = "observed" if restarted else "not observed"
     return _status_span(
-        "Workflow resumed from checkpoint",
+        "Workflow resumed from a saved step",
         (
             f"thread_id={thread_id}, resumed={', '.join(resumed)}, "
             f"store={SNAPSHOT_STORE}, worker_restart={observed}"

@@ -81,12 +81,12 @@ class WorkflowNodes:
         """Announce the snapshot Strands appends after this node.
 
         The write runs after the node returns, so this span cannot time it; the
-        runner attaches the measured write time. The title keeps the prefix the
-        showcase parses until A3 changes the span contract.
+        runner attaches the measured write time. The title prefix is the contract
+        the runner and the showcase parse.
         """
         return activity(
             "tool_call",
-            "Checkpoint · AuroraSnapshotStorage.write",
+            "Snapshot saved: AuroraSnapshotStorage.write",
             details=f"Workflow snapshot appended after the {node} node",
             sql_query=(
                 "INSERT INTO workflow_snapshots\n"
@@ -99,8 +99,8 @@ class WorkflowNodes:
                 "component": "Aurora workflow_snapshots",
                 "status": "ok",
                 "fields": [
-                    {"label": "checkpointer", "value": "Strands SnapshotSessionManager"},
-                    {"label": "checkpoint_durable", "value": "true"},
+                    {"label": "checkpointer", "value": SNAPSHOT_STORE},
+                    {"label": "snapshot_durable", "value": "true"},
                     {"label": "checkpoint_store", "value": "workflow_snapshots"},
                     {"label": "durability", "value": SNAPSHOT_STORE},
                 ],

@@ -116,7 +116,7 @@ async def test_a_paused_run_returns_the_resume_chip_and_a_generated_thread(monke
         router.ChatRequest(message="Rework my canceled Tokyo trip", phase=5), principal()
     )
     assert response.workflow_status == "paused"
-    assert response.follow_ups == ["Resume workflow from checkpoint"]
+    assert response.follow_ups == ["Resume workflow from the saved step"]
     assert runner.commands[0].thread_id.startswith("phase5-")
     assert runner.commands[0].resume is False
 

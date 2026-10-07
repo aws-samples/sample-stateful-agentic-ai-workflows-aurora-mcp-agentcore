@@ -54,7 +54,7 @@ API = os.getenv("MERIDIAN_PROOF_API", "http://127.0.0.1:8013/api")
 TRAVELER = os.getenv("DEMO_TRAVELER_ID", "trv_meridian_demo")
 CANONICAL = ("My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration "
              "availability for the best three options.")
-RESUME_MESSAGE = "Resume workflow from checkpoint"
+RESUME_MESSAGE = "Resume workflow from the saved step"
 POLL_SECONDS = 0.2
 JOIN_SECONDS = 260
 EXPECTED_FIRST_RESUME = {

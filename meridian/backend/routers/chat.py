@@ -1119,7 +1119,7 @@ async def _polish_phase_reply(
         and _is_healthy_span(a)
         and any(
             k in a.title.lower()
-            for k in ("rerank applied", "rls", "agentcore", "langgraph", "memory-grounded", "checkpoint", "node:")
+            for k in ("rerank applied", "rls", "agentcore", "langgraph", "memory-grounded", "checkpoint", "snapshot saved", "node:")
         )
     ]
     if notable_spans:
@@ -1698,8 +1698,10 @@ def _is_workflow_resume_query(query: str) -> bool:
     return normalized in {
         "resume",
         "resume workflow",
+        "resume workflow from the saved step",
         "resume workflow from checkpoint",
         "continue workflow",
+        "continue from the saved step",
         "continue from checkpoint",
     }
 
@@ -2077,7 +2079,7 @@ async def chat(
             # avoidable wait after the durable workflow already completed.
             message = raw_message
             follow_ups = (
-                ["Resume workflow from checkpoint"]
+                ["Resume workflow from the saved step"]
                 if workflow_status == "paused"
                 else generate_follow_ups(
                     request.message, workflow_packages, request.phase
