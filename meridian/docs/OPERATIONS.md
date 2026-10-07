@@ -457,6 +457,33 @@ the shared token until the B2 coordinated release. A build that carried its own
 `Authorization` header would be rejected by the CloudFront viewer function,
 which is why the settings live in `frontend/.env.development.local`.
 
+### Revoking access: what stops at once and what waits
+
+An access token stays valid for up to its hour after you revoke the user's
+binding or disable the user. The backend checks the token's signature, issuer,
+`token_use`, app client and expiry on each request. It does not ask Cognito or
+re-read `traveler_identity_bindings`, so a token that was issued before the
+change keeps working until it expires. What stops immediately is new sign-ins
+and refreshes: the pre-token-generation trigger runs on a refresh and fails
+closed when the user has no active `cognito` binding, and a disabled user
+cannot sign in.
+
+To revoke as fast as the system allows:
+
+1. Revoke the binding as the master login
+   (`UPDATE traveler_identity_bindings SET status = 'revoked' WHERE ...`).
+2. Disable the user (`aws cognito-idp admin-disable-user`, the
+   `AdminDisableUser` API) and invalidate the user's refresh tokens
+   (`aws cognito-idp admin-user-global-sign-out`, the `AdminUserGlobalSignOut`
+   API). The repository has no script for either call; run them against the
+   pool in `MERIDIAN_COGNITO_USER_POOL_ID` with the user's email as the
+   username.
+3. If the hour is too long, the only switch that cuts off an already issued
+   token is on the backend: change or unset the three `MERIDIAN_COGNITO_*`
+   settings and restart the service. That refuses every Cognito token, for all
+   users, until you restore them. `AdminUserGlobalSignOut` alone does not do
+   this, because the backend never calls Cognito to check a token.
+
 ### Roll back the service logins and sign-in
 
 Undo in the reverse of the order above and stop at the step you need.
@@ -633,6 +660,14 @@ python scripts/bind_web_backend_role.py
 
 A Git push runs CI only; it does not deploy the hosted app or the AgentCore
 resources.
+
+The next `scripts/publish.py --apply` carries two additive changes beyond the new
+frontend and backend. When `AURORA_BACKEND_SECRET_ARN` is in `.env`, the roles
+stack attaches `MeridianBackendAuroraAccess` to the live App Runner instance
+role, and the service receives `AURORA_BACKEND_SECRET_ARN` as an environment
+variable. The backend does not read that variable yet, so behavior is unchanged.
+State both in the release note, because "no live change" holds for a Git push
+but not for the next publish.
 
 `scripts/validate_demo.py` runs the full sample contract (catalog, phases, holds,
 confirmation and cleanup) against a backend. It uses real services and removes
