@@ -256,7 +256,7 @@ TRAVELER_PROFILES = [
         "budget_min": 2000.0,
         "budget_max": 3200.0,
         "preferred_cabin": "economy_plus",
-        "seat_preference": "Window on short-haul · aisle on long-haul",
+        "seat_preference": "Window on short-haul, aisle on long-haul",
         "dietary_notes": "Shellfish allergy — exclude seafood dining",
         "trip_goal": "Tokyo culture trip — target Oct 12–19",
         "loyalty_programs": {
@@ -287,7 +287,7 @@ TRAVELER_PREFERENCES = [
      "confidence": 0.87, "source": "booking_history"},
     {"preference_type": "logistics", "preference_key": "party_size", "preference_value": "2 travelers",
      "confidence": 0.98, "source": "booking_history"},
-    {"preference_type": "logistics", "preference_key": "seat_pref", "preference_value": "Window · aisle on long-haul",
+    {"preference_type": "logistics", "preference_key": "seat_pref", "preference_value": "Window, aisle on long-haul",
      "confidence": 0.91, "source": "browse_session"},
 
     # Dining
