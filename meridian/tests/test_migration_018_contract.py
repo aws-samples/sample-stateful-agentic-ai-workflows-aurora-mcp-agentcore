@@ -11,6 +11,11 @@ MIGRATION = (
     pathlib.Path(__file__).parent.parent / "scripts" / "migrations" / "018_service_logins.sql"
 )
 LOGINS = ("meridian_backend", "meridian_gateway", "meridian_identity")
+WRITES = ("update", "delete", "truncate", "all")
+FORCED_TABLES = (
+    "traveler_preferences", "trip_interactions", "conversations", "conversation_messages",
+    "agent_audit_log",
+)
 
 
 @pytest.fixture
@@ -37,6 +42,7 @@ def test_a_tampered_existing_role_stops_the_migration(statements):
     create = next(s for s in statements if s.startswith("do $$") and "create role" in s)
     assert "elsif exists (" in create
     assert "rolsuper or rolbypassrls or rolinherit or rolcreatedb or rolcreaterole" in create
+    assert "or rolreplication" in create
     assert "raise exception '% exists with attributes 018 does not allow" in create
 
 
@@ -83,7 +89,7 @@ def test_the_identity_login_reads_the_bindings_and_nothing_else(statements):
 def test_no_login_gets_a_write_beyond_the_audit_append(statements):
     for login in LOGINS:
         for grant in grants_to(statements, login):
-            assert not any(w in grant for w in ("update", "delete", "truncate", "all"))
+            assert not any(re.search(rf"\b{w}\b", grant) for w in WRITES)
             assert "insert" not in grant or "on traveler_access_audit" in grant
 
 
@@ -124,3 +130,19 @@ def test_the_function_reads_only_what_the_evidence_endpoints_count(statements):
     }
     assert set(re.findall(r"\bfrom (\w+)", function)) == tables
     assert " insert " not in function and " update " not in function and " delete " not in function
+
+
+def test_the_owner_alone_may_read_the_forced_tables_the_function_counts(statements):
+    block = next(s for s in statements if s.startswith("do $$") and "create policy" in s)
+    for table in FORCED_TABLES:
+        assert f"'{table}'" in block
+    assert "'agent_audit_admin_count_select'" in block
+    assert "drop policy if exists %i on %i" in block
+    assert "create policy %i on %i for select to %i using (true)" in block
+    assert "forced.policy_name, forced.table_name, current_user" in block
+
+
+def test_the_owner_policy_names_no_login_and_no_app_role(statements):
+    block = next(s for s in statements if s.startswith("do $$") and "create policy" in s)
+    for name in (*LOGINS, "meridian_app", "meridian_workflow", "public"):
+        assert name not in block.replace("'agent_audit_admin_count_select'", "")

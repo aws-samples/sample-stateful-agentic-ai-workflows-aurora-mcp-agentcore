@@ -12,15 +12,19 @@ DO $$
 DECLARE
     login_name TEXT;
 BEGIN
-    FOREACH login_name IN ARRAY ARRAY['meridian_backend', 'meridian_gateway', 'meridian_identity'] LOOP
+    FOREACH login_name IN ARRAY ARRAY[
+        'meridian_backend', 'meridian_gateway', 'meridian_identity'
+    ] LOOP
         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = login_name) THEN
             EXECUTE format(
                 'CREATE ROLE %I NOLOGIN NOBYPASSRLS NOINHERIT NOCREATEDB NOCREATEROLE', login_name);
         ELSIF EXISTS (
             SELECT FROM pg_roles WHERE rolname = login_name
-               AND (rolsuper OR rolbypassrls OR rolinherit OR rolcreatedb OR rolcreaterole)
+               AND (rolsuper OR rolbypassrls OR rolinherit OR rolcreatedb OR rolcreaterole
+                    OR rolreplication)
         ) THEN
-            RAISE EXCEPTION '% exists with attributes 018 does not allow; fix the role by hand', login_name;
+            RAISE EXCEPTION
+                '% exists with attributes 018 does not allow; fix the role by hand', login_name;
         END IF;
     END LOOP;
 END
@@ -55,6 +59,35 @@ GRANT SELECT ON traveler_identity_bindings TO meridian_identity;
 -- the governance decisions and the snapshot total. The master login used to do this by
 -- ignoring RLS. This definer function is the only cross-traveler read the backend login
 -- holds, it returns a count and nothing else, and it answers only the kinds named here.
+--
+-- The function runs as its owner, the login that applies this migration (the master,
+-- meridian_admin). Five of the counted tables force row level security, and their
+-- policies target meridian_app or a traveler setting the owner never has, so the owner
+-- would count zero rows. Each of those tables gets one SELECT policy for the owner
+-- alone, created below with current_user. It names no service login and no
+-- meridian_app, so the function stays the only cross-traveler read.
+-- GRANT ... WITH INHERIT FALSE, SET TRUE above needs PostgreSQL 16 or later.
+DO $$
+DECLARE
+    forced RECORD;
+BEGIN
+    FOR forced IN
+        SELECT * FROM (VALUES
+            ('traveler_preferences', 'traveler_preferences_admin_count_select'),
+            ('trip_interactions', 'trip_interactions_admin_count_select'),
+            ('conversations', 'conversations_admin_count_select'),
+            ('conversation_messages', 'conversation_messages_admin_count_select'),
+            ('agent_audit_log', 'agent_audit_admin_count_select')
+        ) AS t (table_name, policy_name)
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON %I', forced.policy_name, forced.table_name);
+        EXECUTE format(
+            'CREATE POLICY %I ON %I FOR SELECT TO %I USING (true)',
+            forced.policy_name, forced.table_name, current_user);
+    END LOOP;
+END
+$$;
+
 CREATE OR REPLACE FUNCTION backend_admin_count(
     p_kind TEXT,
     p_window INTERVAL DEFAULT NULL,
