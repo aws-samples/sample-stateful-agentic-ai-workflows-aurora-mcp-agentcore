@@ -13,6 +13,7 @@ from backend.agents.budget import budget_ceiling_from_facts
 from backend.agents.phase_05_workflow.governed_hold import (
     HOLD_TOOL,
     LEASE_LOST_ERRORS,
+    GovernedHold,
     HoldOutcomeUnknown,
     hold_arguments,
     place_governed_hold,
@@ -44,9 +45,14 @@ BOOKING_STATUS_SQL = "SELECT status FROM bookings WHERE booking_id = %s"
 class WorkflowNodes:
     """The graph's steps and the hold's helpers.
 
+    Every step takes ``(state, config=None)`` and returns the keys it changes,
+    including the span list with its own spans appended. ``config["configurable"]``
+    carries ``thread_id``, ``execution_id`` and ``traveler_confirmed``.
+
     Args:
         search_fn: Hybrid trip search, ``(query, limit=5) -> (packages, spans)``.
-        availability_fn: Duration availability, ``(query, package_id=None) -> (packages, spans, message)``.
+        availability_fn: Duration availability,
+            ``(query, package_id=None) -> (packages, spans, message)``.
         memory_recall_fn: Saved-context recall for the memory branch, or None to skip it.
         gateway_call: The Gateway ``tools/call`` transport. Defaults to the configured gateway.
     """
@@ -112,6 +118,7 @@ class WorkflowNodes:
         """
         start = utc_now()
         intent = classify_intent(state["query"])
+        recovery = is_recovery_request(state["query"])
         elapsed = int((utc_now() - start).total_seconds() * 1000)
         activities = list(state.get("activities", []))
         activities.append(
@@ -127,7 +134,7 @@ class WorkflowNodes:
                     "fields": [
                         {"label": "node", "value": "classify"},
                         {"label": "intent", "value": intent},
-                        {"label": "recovery", "value": str(is_recovery_request(state["query"])).lower()},
+                        {"label": "recovery", "value": str(recovery).lower()},
                         {"label": "checkpointer", "value": SNAPSHOT_STORE},
                     ],
                 },
@@ -335,6 +342,16 @@ class WorkflowNodes:
     async def prepare_hold(
         self, state: Dict[str, Any], config: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
+        """Prepare the stable hold intent the hold step will run.
+
+        Args:
+            state: The folded workflow state, with ``packages`` and traveler facts.
+            config: Unused; present for the shared step contract.
+
+        Returns:
+            The prepared ``hold_intent`` keys and the span list with this step's
+            span appended.
+        """
         prepared = prepare_hold_node(state)
         activities = list(state.get("activities", []))
         activities.append(activity(
@@ -348,7 +365,9 @@ class WorkflowNodes:
         ))
         return {**prepared, "activities": activities}
 
-    async def hold(self, state: Dict[str, Any], config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def hold(
+        self, state: Dict[str, Any], config: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Worker node: place a courtesy hold on the top-ranked option through the gateway.
 
         This is what makes the durability claim concrete. The previous nodes
@@ -413,62 +432,58 @@ class WorkflowNodes:
             activities.append(self._snapshot_activity("hold"))
             return {"activities": activities}
 
-        hold = outcome.hold or {}
-        hold_id = str(hold.get("bookingId") or hold_id)
-        journey_id = str(hold.get("journeyId") or journey_id)
-        # A replay returns the existing booking without re-counting inventory,
-        # so its seat columns are null by design.
-        remaining = hold.get("seatsRemaining")
-        expires_at = str(hold.get("expiresAt"))
-        created_at = str(hold.get("createdAt"))
-        observed_at = str(hold.get("observedAt"))
-        hold_status = str(hold.get("status"))
+        receipt = self._receipt(outcome, hold_id, journey_id)
         elapsed = int((utc_now() - start).total_seconds() * 1000)
-        activities.append(
-            self._hold_span(
-                outcome=outcome,
-                terms=terms,
-                hold_id=hold_id,
-                journey_id=journey_id,
-                elapsed=elapsed,
-            )
-        )
+        activities.append(self._hold_span(outcome, terms, receipt, elapsed))
         activities.append(self._snapshot_activity("hold"))
         return {
             "activities": activities,
-            "journey_id": journey_id,
-            "hold_id": hold_id,
-            "hold_expires_at": expires_at,
-            "hold_created_at": created_at,
-            "hold_observed_at": observed_at,
-            "hold_status": hold_status,
+            "journey_id": receipt["journey_id"],
+            "hold_id": receipt["hold_id"],
+            "hold_expires_at": receipt["expires_at"],
+            "hold_created_at": receipt["created_at"],
+            "hold_observed_at": receipt["observed_at"],
+            "hold_status": receipt["status"],
             "hold_package": package_id,
             # Part of the idempotency key, so compensation can recompute it.
             "hold_duration": terms["duration"],
-            "hold_seats_remaining": remaining,
+            "hold_seats_remaining": receipt["seats_remaining"],
+        }
+
+    @staticmethod
+    def _receipt(outcome: GovernedHold, hold_id: str, journey_id: str) -> Dict[str, Any]:
+        """Read the Gateway receipt, defaulting the ids to the ones the step sent."""
+        hold = outcome.hold or {}
+        return {
+            "hold_id": str(hold.get("bookingId") or hold_id),
+            "journey_id": str(hold.get("journeyId") or journey_id),
+            "replayed": bool(hold.get("replayed")),
+            # A replay returns the existing booking without re-counting inventory,
+            # so its seat columns are null by design.
+            "seats_remaining": hold.get("seatsRemaining"),
+            "expires_at": str(hold.get("expiresAt")),
+            "created_at": str(hold.get("createdAt")),
+            "observed_at": str(hold.get("observedAt")),
+            "status": str(hold.get("status")),
         }
 
     @staticmethod
     def _hold_span(
-        *,
-        outcome: Any,
-        terms: Dict[str, Any],
-        hold_id: str,
-        journey_id: str,
-        elapsed: int,
+        outcome: GovernedHold, terms: Dict[str, Any], receipt: Dict[str, Any], elapsed: int
     ) -> Dict[str, Any]:
         """Build the span for a placed or replayed hold from the Gateway receipt."""
-        hold = outcome.hold or {}
         package_id = terms["package_id"]
         duration = terms["duration"]
         quantity = terms["quantity"]
         hold_request_id = terms["hold_request_id"]
-        replayed = bool(hold.get("replayed"))
-        remaining = hold.get("seatsRemaining")
-        expires_at = str(hold.get("expiresAt"))
-        created_at = str(hold.get("createdAt"))
-        observed_at = str(hold.get("observedAt"))
-        hold_status = str(hold.get("status"))
+        hold_id = receipt["hold_id"]
+        journey_id = receipt["journey_id"]
+        replayed = receipt["replayed"]
+        remaining = receipt["seats_remaining"]
+        expires_at = receipt["expires_at"]
+        created_at = receipt["created_at"]
+        observed_at = receipt["observed_at"]
+        hold_status = receipt["status"]
         governance = outcome.governance or {}
         return activity(
             "database",
@@ -505,7 +520,11 @@ class WorkflowNodes:
                     {"label": "cedar_decision", "value": "allow"},
                     {"label": "cedar_policy", "value": "meridian_hold_governance", "mono": True},
                     {"label": "policy_mode", "value": "ENFORCE"},
-                    {"label": "workload", "value": str(governance.get("subject") or ""), "mono": True},
+                    {
+                        "label": "workload",
+                        "value": str(governance.get("subject") or ""),
+                        "mono": True,
+                    },
                     {"label": "traveler_grant", "value": str(governance.get("decision") or "")},
                     {"label": "hold_id", "value": hold_id, "mono": True},
                     {
@@ -518,7 +537,10 @@ class WorkflowNodes:
                     {"label": "package", "value": package_id},
                     {"label": "duration", "value": duration},
                     {"label": "seats_held", "value": str(quantity)},
-                    {"label": "seats_remaining", "value": str(remaining) if remaining is not None else ""},
+                    {
+                        "label": "seats_remaining",
+                        "value": str(remaining) if remaining is not None else "",
+                    },
                     {"label": "expires_at", "value": expires_at},
                     {"label": "hold_created_at", "value": created_at},
                     {"label": "hold_observed_at", "value": observed_at},
@@ -528,19 +550,8 @@ class WorkflowNodes:
         )
 
     @staticmethod
-    def _refusal_reason(outcome: Any) -> tuple[str, bool]:
-        """Why the Gateway refused the hold, and whether Cedar policy denied it.
-
-        Raises:
-            HoldOutcomeUnknown: The Gateway returned neither a receipt nor a refusal.
-        """
-        if outcome.policy_decision is None or (
-            outcome.policy_decision == "allow" and not outcome.error
-        ):
-            raise HoldOutcomeUnknown(
-                "The hold outcome is unknown. The Gateway returned no reliable "
-                "receipt or refusal; resume the same saved hold request."
-            )
+    def _refusal_reason(outcome: GovernedHold) -> tuple[str, bool]:
+        """Why the Gateway refused the hold, and whether Cedar policy denied it."""
         denied = outcome.policy_decision == "deny"
         if denied:
             reason = "Cedar policy refused the hold"
@@ -581,7 +592,7 @@ class WorkflowNodes:
             "booking_id": hold_id,
         }
 
-    async def _place_hold(self, arguments: Dict[str, Any]) -> Any:
+    async def _place_hold(self, arguments: Dict[str, Any]) -> GovernedHold:
         """Call the Gateway; raise unless the outcome is a placement or a clear refusal."""
         try:
             outcome = await asyncio.to_thread(place_governed_hold, self._gateway_call, arguments)
@@ -599,6 +610,14 @@ class WorkflowNodes:
             # replacement worker owns the hold; checkpointing past it here
             # would make that worker skip the hold.
             raise ExecutionLeaseLostError(f"Hold refused: {outcome.error}")
+        if not outcome.placed and (
+            outcome.policy_decision is None
+            or (outcome.policy_decision == "allow" and not outcome.error)
+        ):
+            raise HoldOutcomeUnknown(
+                "The hold outcome is unknown. The Gateway returned no reliable "
+                "receipt or refusal; resume the same saved hold request."
+            )
         return outcome
 
     async def _prepare_governed_hold(
@@ -644,6 +663,7 @@ class WorkflowNodes:
                 traveler_id, limit=50, transaction_id=transaction_id
             )
         return str(journey_id), budget_ceiling_from_facts(facts, quantity)
+
     @staticmethod
     def _hold_not_placed(reason: str, *, denied: bool, raw: Optional[str]) -> Dict[str, Any]:
         return activity(
@@ -664,6 +684,7 @@ class WorkflowNodes:
                 ] if denied else []),
             },
         )
+
     async def release_hold(
         self, state: Dict[str, Any], *, expected_hold_id: Optional[str] = None
     ) -> bool:
@@ -710,6 +731,7 @@ class WorkflowNodes:
         except Exception as exc:  # noqa: BLE001
             logger.warning("could not release hold %s: %s", hold_id, exc)
             return False
+
     async def memory_recall(
         self, state: Dict[str, Any], config: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
@@ -765,13 +787,7 @@ class WorkflowNodes:
         packages = state.get("packages", []) or []
         intent = state.get("intent", "search")
         availability_checks = state.get("availability_checks", 0)
-        hold_status = state.get("hold_status")
-        if state.get("hold_id"):
-            # The booking row is the record of truth: compensation may have
-            # released it after the hold step saved "held".
-            hold_status = await self._booking_status(
-                str(state.get("traveler_id") or ""), str(state["hold_id"])
-            ) or hold_status
+        hold_status = await self._current_hold_status(state)
         checkpoint_clause = "each step saved to Aurora so the plan can pause and resume"
         if intent == "plan":
             response = (
@@ -816,8 +832,14 @@ class WorkflowNodes:
                 "Read the current receipt before confirming the trip."
             )
         elif is_recovery_request(state.get("query", "")):
-            response += "\n\nNo courtesy hold was recorded by this workflow. Review the hold decision before continuing."
-        response += "\n\nAvailability refers to trip-package inventory. Flight seats and routes have not been checked or reserved."
+            response += (
+                "\n\nNo courtesy hold was recorded by this workflow. "
+                "Review the hold decision before continuing."
+            )
+        response += (
+            "\n\nAvailability refers to trip-package inventory. "
+            "Flight seats and routes have not been checked or reserved."
+        )
 
         activities = list(state.get("activities", []))
         activities.append(
@@ -842,7 +864,29 @@ class WorkflowNodes:
         )
         return {"response": response, "activities": activities}
 
-    # ------------------------------------------------------------------- run
+    async def _current_hold_status(self, state: Dict[str, Any]) -> Optional[str]:
+        """The hold's status now: the Aurora booking row, else the status the hold step saved.
+
+        The booking row is the record of truth, since compensation may have released
+        it after the hold step saved "held".
+        """
+        saved = state.get("hold_status")
+        hold_id = state.get("hold_id")
+        if not hold_id:
+            return saved
+        try:
+            current = await self._booking_status(
+                str(state.get("traveler_id") or ""), str(hold_id)
+            )
+        except Exception as exc:  # noqa: BLE001 - a logged fallback, not a swallow
+            # The runner releases a committed hold when any step raises, so a transient
+            # read error here must not fail the step and release a valid hold.
+            logger.warning(
+                "could not read booking %s back from Aurora; reporting its saved status: %s",
+                hold_id, exc,
+            )
+            return saved
+        return current or saved
 
     async def _booking_status(self, traveler_id: str, booking_id: str) -> Optional[str]:
         """The booking's current status, read under the traveler's RLS scope."""
