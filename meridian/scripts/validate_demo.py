@@ -39,7 +39,10 @@ steps: list[dict] = []
 
 def reports_durable_snapshots(body: dict, status: int) -> bool:
     """Return True when /api/health reports the durable snapshot store."""
-    return body.get("checkpoint_backend") == SNAPSHOT_STORE and body.get("checkpoint_durable") is True
+    return (
+        body.get("checkpoint_backend") == SNAPSHOT_STORE
+        and body.get("checkpoint_durable") is True
+    )
 
 
 def now() -> str:

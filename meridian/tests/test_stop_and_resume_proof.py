@@ -3,7 +3,7 @@
 from scripts import stop_and_resume_proof as proof
 
 
-def doc(workers, statuses, stops=1, restarted=True, status="resumed", during="waiting",
+def doc(workers, statuses, *, stops=1, restarted=True, status="resumed", during="waiting",
         last_step=None):
     return {
         "executions": {"status": "observed", "items": [

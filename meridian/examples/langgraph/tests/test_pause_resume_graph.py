@@ -1,8 +1,11 @@
 """The workflow pauses after search and resumes into the hold."""
 
+from unittest.mock import Mock
+
 from langgraph.checkpoint.memory import InMemorySaver
 
-from examples.langgraph.pause_resume_graph import build_graph
+from examples.langgraph.aurora_dataapi_saver import AuroraDataApiSaver
+from examples.langgraph.pause_resume_graph import build_aurora_graph, build_graph
 
 CONFIG = {"configurable": {"thread_id": "pause-resume-unit"}}
 
@@ -33,11 +36,6 @@ async def test_a_question_is_classified_and_still_pauses():
 
 
 def test_the_aurora_graph_compiles_with_the_data_api_saver():
-    from unittest.mock import Mock
-
-    from examples.langgraph.aurora_dataapi_saver import AuroraDataApiSaver
-    from examples.langgraph.pause_resume_graph import build_aurora_graph
-
     graph = build_aurora_graph(Mock())
 
     assert isinstance(graph.checkpointer, AuroraDataApiSaver)

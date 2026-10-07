@@ -5,6 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OLD_NAMES = ("kill_and_resume_demo", "lost_response_demo")
+# Repo-relative paths only.
 EXEMPT_FILES = {"chalk_talk.md", "STAGE_CHECKLIST.md", "meridian/tests/test_proof_script_names.py"}
 EXEMPT_PARTS = {".superpowers", ".kiro", ".cache"}
 
@@ -16,7 +17,7 @@ def _tracked_public_files() -> list[Path]:
     files = []
     for name in filter(None, listing.split("\0")):
         path = Path(name)
-        if path.name in EXEMPT_FILES or name in EXEMPT_FILES:
+        if name in EXEMPT_FILES:
             continue
         if EXEMPT_PARTS & set(path.parts):
             continue
