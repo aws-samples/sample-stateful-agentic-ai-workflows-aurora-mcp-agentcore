@@ -28,6 +28,7 @@ FRAMEWORK_FREE = [
     "backend.agents.phase_05_workflow.graph",
     "backend.agents.phase_05_workflow.runner",
     "backend.agents.phase_05_workflow.lease",
+    "backend.agents.phase_05_workflow.service",
 ]
 
 
