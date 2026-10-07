@@ -196,8 +196,9 @@ in a Secrets Manager secret. Run these steps from the repository root, in this
 order. Steps 1, 2, 4, 5 and 7 change the live account or call the deployed
 Runtime, so confirm each before you run it.
 
-1. Apply the migrations that create the login and the stop record, 015 and 016.
-   Migration 016 joined 015 because it adds the columns the stop record needs.
+1. Apply the migrations that create the login and the stop record. 015, 016 and
+   017 are the pending set for this release. Migration 016 adds the columns the
+   stop record needs, and 017 lets `stopped_during` accept `finished`.
    `apply_migrations.py` applies every pending migration, so list the pending
    ones first. `--pending` only reads and prints names:
 
@@ -205,7 +206,8 @@ Runtime, so confirm each before you run it.
    python meridian/scripts/apply_migrations.py --pending
    ```
 
-   Apply only when the list is exactly the migrations named here; otherwise stop:
+   Apply only when the list is exactly 015, 016 and 017; if anything else is
+   listed, stop:
 
    ```bash
    python meridian/scripts/apply_migrations.py

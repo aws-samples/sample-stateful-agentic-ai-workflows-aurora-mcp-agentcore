@@ -178,7 +178,7 @@ hydration and memory persistence. Interrupted text is marked incomplete.
 | `GET` | `/api/products/{product_id}` | One trip in the product shape (`product_id` is the `package_id`) |
 | `POST` | `/api/diagnostics/rls-probe` | Allow and deny checks plus row counts under the restricted RLS role |
 | `POST` | `/api/diagnostics/session-receipt` | Counts the durable rows this session produced in the last `window_minutes`, table by table |
-| `GET` | `/api/health` | Runs a live Aurora `SELECT 1` and reports `healthy` or `degraded` (`aurora_reachable`, `degraded_component`, `degraded_error_class`), plus the workflow snapshot store, whether it is durable, and whether the workflow Runtime ARN is configured (`workflow_runtime_configured`) |
+| `GET` | `/api/health` | Checks that `workflow_snapshots` and `workflow_session_stops` exist (one query) and reports `healthy` or `degraded` (`aurora_reachable`, `degraded_component`, `degraded_error_class`), plus the workflow snapshot store, whether it is durable, and whether the workflow Runtime ARN is configured (`workflow_runtime_configured`) |
 | `GET` | `/health` | Public process liveness only; it does not check Aurora |
 | `GET` | `/openapi.json`, `/docs`, `/redoc` | API schema and interactive documentation |
 

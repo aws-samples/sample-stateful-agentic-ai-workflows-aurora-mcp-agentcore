@@ -111,10 +111,12 @@ Confirm with `curl http://127.0.0.1:8013/api/health`:
 }
 ```
 
-`/api/health` also runs a live Aurora `SELECT 1` (2 second timeout, cached for
-10 seconds) and reports `status` as `healthy` or `degraded`, with
-`aurora_reachable`, `degraded_component` and `degraded_error_class` naming what
-failed. The snapshot fields describe the configured store and the Runtime ARN,
+`/api/health` runs one query (2 second timeout, cached for 10 seconds) that
+checks that the `workflow_snapshots` and `workflow_session_stops` tables exist.
+It reports `status` as `healthy` or `degraded`, with `aurora_reachable`,
+`degraded_component` and `degraded_error_class` naming what failed. It reports
+`degraded` if either table is missing, or if the workflow Runtime ARN is unset
+outside development. The snapshot fields describe the configured store and the Runtime ARN,
 not a second probe. `python scripts/smoke_workflow_runtime.py` pings the
 deployed Runtime and touches no row. `/health` is process liveness only. After
 renewing expired AWS credentials, restart the backend.
