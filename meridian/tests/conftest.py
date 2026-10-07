@@ -31,14 +31,9 @@ def isolated_unit_environment(request, monkeypatch):
         "AWS_SECRET_ACCESS_KEY": "unit-test",
         "AWS_EC2_METADATA_DISABLED": "true",
         "AGENTCORE_SKIP_CLI_SYNC": "1",
-        "LANGGRAPH_CHECKPOINT_DATA_API": "false",
-        "LANGGRAPH_AUTO_CHECKPOINT_DSN": "false",
-        "LANGGRAPH_CHECKPOINT_REQUIRED": "false",
-        "LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP": "false",
     }.items():
         monkeypatch.setenv(name, value)
-    for name in ("AWS_SESSION_TOKEN", "LANGGRAPH_CHECKPOINT_DSN"):
-        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("AWS_SESSION_TOKEN", raising=False)
 
     attempted = []
     connect = socket.socket.connect

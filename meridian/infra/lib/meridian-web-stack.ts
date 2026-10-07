@@ -86,8 +86,6 @@ export function serviceEnvironment(dotenv: Record<string, string>, region: strin
     LOG_LEVEL: dotenv.LOG_LEVEL ?? 'INFO',
     LOG_AGENT_VERBOSE: 'false',
     AGENTCORE_SKIP_CLI_SYNC: '1',
-    LANGGRAPH_CHECKPOINT_DATA_API: 'true',
-    LANGGRAPH_CHECKPOINT_REQUIRED: 'true',
     MCP_CONNECTION_METHOD: 'rdsapi',
     MCP_DATABASE_TYPE: 'APG',
   };
