@@ -74,7 +74,9 @@ def test_health_reports_degraded_with_component_and_error_class_when_aurora_is_d
     from backend import health_probe
 
     async def fake_probe():
-        return health_probe.AuroraProbeResult(ok=False, error_class="ExpiredTokenException")
+        return health_probe.AuroraProbeResult(
+            ok=False, error_class="ExpiredTokenException", component="aurora"
+        )
 
     monkeypatch.setattr(health_probe, "probe_aurora", fake_probe)
     res = TestClient(app).get("/api/health")
@@ -89,6 +91,48 @@ def test_health_reports_degraded_with_component_and_error_class_when_aurora_is_d
     assert body["checkpoint_backend"]
     assert "checkpoint_durable" in body
     assert "checkpoint_required" in body
+
+
+def _healthy_probe(monkeypatch):
+    from backend import health_probe
+
+    async def fake_probe():
+        return health_probe.AuroraProbeResult(ok=True)
+
+    monkeypatch.setattr(health_probe, "probe_aurora", fake_probe)
+
+
+def test_health_says_the_workflow_runtime_is_configured_when_its_arn_is_set(monkeypatch):
+    _healthy_probe(monkeypatch)
+    arn = "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/MeridianWorkflow-abc"
+    monkeypatch.setenv("AGENTCORE_WORKFLOW_RUNTIME_ARN", arn)
+    body = TestClient(app).get("/api/health").json()
+    assert body["workflow_runtime_configured"] is True
+
+
+def test_health_says_the_workflow_runtime_is_not_configured_without_an_arn(monkeypatch):
+    from backend.agentcore import cli_config
+
+    _healthy_probe(monkeypatch)
+    monkeypatch.setattr(
+        cli_config, "resolve_agentcore_config",
+        lambda: cli_config.AgentCoreDeployedConfig(region="us-east-1"),
+    )
+    body = TestClient(app).get("/api/health").json()
+    assert body["workflow_runtime_configured"] is False
+
+
+def test_health_names_the_missing_snapshot_table_without_calling_aurora_down(monkeypatch):
+    from backend import health_probe
+
+    async def fake_probe():
+        return health_probe.AuroraProbeResult(ok=False, component="workflow_snapshots")
+
+    monkeypatch.setattr(health_probe, "probe_aurora", fake_probe)
+    body = TestClient(app).get("/api/health").json()
+    assert body["status"] == "degraded"
+    assert body["aurora_reachable"] is True
+    assert body["degraded_component"] == "workflow_snapshots"
 
 
 def test_cors_origins_accepts_explicit_allowlist():

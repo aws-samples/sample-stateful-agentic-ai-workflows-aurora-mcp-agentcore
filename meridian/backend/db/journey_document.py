@@ -10,8 +10,9 @@ The read has no workflow side effects.
 """
 
 import json
+import re
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agents.phase_05_workflow.graph import fold_snapshot, next_nodes, snapshot_key
@@ -42,6 +43,16 @@ SELECT COUNT(*) AS n,
        MAX(snapshot_seq) FILTER (WHERE snapshot_seq < %s::BIGINT)::TEXT AS previous_seq
   FROM workflow_snapshots WHERE session_id = %s AND storage_key = %s
 """
+
+SNAPSHOT_WRITER_SQL = "SELECT worker_id FROM workflow_snapshots WHERE snapshot_seq = %s::BIGINT"
+
+SESSION_STOPS_SQL = """
+SELECT runtime_session_id, outcome, stopped_at::TEXT AS stopped_at, stopped_during, last_step
+  FROM workflow_session_stops WHERE journey_id = %s
+ ORDER BY stop_id DESC LIMIT 5
+"""
+
+RUNTIME_WORKER = re.compile(r"^(rt-wf-[A-Za-z0-9_-]+)/(vm-[0-9a-f]{12})$")
 
 HOLD_SQL = """
 SELECT hr.hold_request_id, hr.booking_id, hr.execution_id, hr.created_at,
@@ -97,12 +108,25 @@ def checkpoint_backend_is_durable(kind: str) -> bool:
     return kind in {SNAPSHOT_STORE, "AuroraDataApiSaver", "PostgresSaver (Aurora · pooled)"}
 
 
+def runtime_ids(worker_id: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """Split a Runtime worker id into its session and microVM; other workers give neither."""
+    match = RUNTIME_WORKER.match(worker_id or "")
+    return (match.group(1), match.group(2)) if match else (None, None)
+
+
+def restarted(resumed_from_writer: Optional[str], latest_worker: Optional[str]) -> bool:
+    """A resume restarted when a different worker continued the snapshot it resumed from."""
+    return bool(resumed_from_writer and latest_worker and resumed_from_writer != latest_worker)
+
+
 def _channel(values: Any, name: str) -> Any:
     """Read one channel out of a checkpoint's loaded values."""
     return values.get(name) if isinstance(values, dict) else None
 
 
-def _workflow_document(snapshot, checkpoint, executions, *, latest_execution, resumed_from):
+def _workflow_document(
+    snapshot, checkpoint, executions, *, latest_execution, resumed_from, resumed_from_writer=None
+):
     """The workflow section, folded from the newest snapshot with the steps' own fold.
 
     Args:
@@ -113,6 +137,7 @@ def _workflow_document(snapshot, checkpoint, executions, *, latest_execution, re
         resumed_from: The newest snapshot seq written by any execution other than
             ``latest_execution``, or None. When set, an earlier execution saved progress
             and the latest one carried on from it.
+        resumed_from_writer: The worker id that wrote the ``resumed_from`` snapshot.
 
     A finished run reads as resumed only when ``resumed_from`` is set. Two executions
     alone are not a resume: the first may have failed before it saved anything.
@@ -122,7 +147,7 @@ def _workflow_document(snapshot, checkpoint, executions, *, latest_execution, re
     folded = fold_snapshot(snapshot)
     pending = next_nodes(snapshot) if snapshot["data"]["state"].get("status") != "completed" else []
     items = executions.get("items", []) if isinstance(executions, dict) else []
-    workers = [item.get("worker_id") for item in items]
+    latest_worker = items[-1].get("worker_id") if items else None
     resumed = not pending and resumed_from is not None
     return {
         "status": "observed",
@@ -141,7 +166,7 @@ def _workflow_document(snapshot, checkpoint, executions, *, latest_execution, re
         ),
         "execution_id": latest_execution,
         "resumed_from_checkpoint": resumed_from if resumed else None,
-        "resumed_after_restart": bool(resumed and len(set(workers[-2:])) == 2),
+        "resumed_after_restart": resumed and restarted(resumed_from_writer, latest_worker),
     }
 
 
@@ -197,11 +222,12 @@ async def assemble_journey_document(
         }
 
         document["executions"] = await _executions(q, journey_id)
-        checkpoint, snapshot, latest_execution, resumed_from = await _snapshot(q, thread_id)
+        checkpoint, snapshot, latest_execution, resumed_from, writer = await _snapshot(q, thread_id)
         inline = fold_snapshot(snapshot) if snapshot else {}
         document["workflow"] = _workflow_document(
             snapshot, checkpoint, document["executions"],
             latest_execution=latest_execution, resumed_from=resumed_from,
+            resumed_from_writer=writer,
         )
         document["checkpoint"] = checkpoint
         document["selected_plan"] = _selected_plan(checkpoint, inline)
@@ -214,6 +240,7 @@ async def assemble_journey_document(
         document["authorization"] = await _authorization(
             q, traveler_id, _authorization_bound(journey, document["executions"])
         )
+        document["session_stops"] = await _session_stops(q, journey_id)
         document["rls"] = _unavailable("no scoped probe run this session")
         return document
 
@@ -230,6 +257,8 @@ async def _executions(q, journey_id: str) -> Dict[str, Any]:
                 "execution_id": r["execution_id"],
                 "attempt": int(r["attempt"]),
                 "worker_id": r["worker_id"],
+                "runtime_session_id": runtime_ids(r["worker_id"])[0],
+                "microvm_id": runtime_ids(r["worker_id"])[1],
                 "status": r["status"],
                 "started_at": _iso(r["started_at"]),
                 "ended_at": _iso(r["ended_at"]),
@@ -240,18 +269,42 @@ async def _executions(q, journey_id: str) -> Dict[str, Any]:
     }
 
 
+async def _session_stops(q, journey_id: str) -> Dict[str, Any]:
+    rows = await q(SESSION_STOPS_SQL, (journey_id,))
+    if not rows:
+        return _unavailable("No Runtime session was stopped for this journey.")
+    return {
+        "status": "observed",
+        "source": "workflow_session_stops",
+        "items": [
+            {
+                "runtime_session_id": r["runtime_session_id"],
+                "outcome": r["outcome"],
+                "stopped_at": _iso(r["stopped_at"]),
+                "stopped_during": r["stopped_during"],
+                "last_step": r["last_step"],
+            }
+            for r in rows
+        ],
+    }
+
+
 async def _snapshot(q, thread_id: Optional[str]):
     """The newest snapshot on the thread, with its place in the run's history.
 
     Returns:
-        (checkpoint section, parsed snapshot or None, latest execution id, resumed-from seq)
+        (checkpoint section, parsed snapshot or None, latest execution id, resumed-from seq,
+        worker id that wrote the resumed-from snapshot)
     """
     if not thread_id:
-        return _unavailable("the journey has no active thread"), None, None, None
+        return _unavailable("the journey has no active thread"), None, None, None, None
     key = snapshot_key(thread_id)
     rows = await q(SNAPSHOT_SQL, (thread_id, key))
     if not rows:
-        return _unavailable(f"no workflow snapshot saved on thread {thread_id}"), None, None, None
+        return (
+            _unavailable(f"no workflow snapshot saved on thread {thread_id}"),
+            None, None, None, None,
+        )
     row = rows[0]
     history = (await q(SNAPSHOT_HISTORY_SQL, (row["execution_id"], row["seq"], thread_id, key)))[0]
     checkpoint = {
@@ -264,7 +317,10 @@ async def _snapshot(q, thread_id: Optional[str]):
         "committed_at": _iso(row["saved_at"]),
         "snapshot_count": int(history["n"]),
     }
-    return checkpoint, json.loads(row["snapshot"]), row["execution_id"], history["resumed_from"]
+    resumed_from = history["resumed_from"]
+    writer_rows = await q(SNAPSHOT_WRITER_SQL, (resumed_from,)) if resumed_from else []
+    writer = writer_rows[0]["worker_id"] if writer_rows else None
+    return checkpoint, json.loads(row["snapshot"]), row["execution_id"], resumed_from, writer
 
 
 def _channel_source(checkpoint: Dict[str, Any], channel: str) -> str:

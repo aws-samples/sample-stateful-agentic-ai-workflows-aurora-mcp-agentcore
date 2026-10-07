@@ -264,10 +264,10 @@ async def test_a_run_finished_from_a_saved_step_is_a_verified_resume(journey: Fi
 
     key = snapshot_key(journey.thread_id)
     first = await claim_execution(
-        journey.client, journey.journey_id, journey.thread_id, "worker-jdoc-a"
+        journey.client, journey.journey_id, journey.thread_id, "rt-wf-t/vm-aaaaaaaaaaaa"
     )
     paused = _workflow_snapshot(journey, "interrupted", ["synthesize"])
-    await _storage(journey, first.execution_id, "worker-jdoc-a").write(
+    await _storage(journey, first.execution_id, "rt-wf-t/vm-aaaaaaaaaaaa").write(
         key, json.dumps(paused).encode()
     )
     await release_execution(journey.client, first.execution_id, "paused")
@@ -278,10 +278,10 @@ async def test_a_run_finished_from_a_saved_step_is_a_verified_resume(journey: Fi
     first_seq = saved[0]["seq"]
 
     second = await claim_execution(
-        journey.client, journey.journey_id, journey.thread_id, "worker-jdoc-b"
+        journey.client, journey.journey_id, journey.thread_id, "rt-wf-t/vm-bbbbbbbbbbbb"
     )
     finished = _workflow_snapshot(journey, "completed", [])
-    await _storage(journey, second.execution_id, "worker-jdoc-b").write(
+    await _storage(journey, second.execution_id, "rt-wf-t/vm-bbbbbbbbbbbb").write(
         key, json.dumps(finished).encode()
     )
     await release_execution(journey.client, second.execution_id, "succeeded")
@@ -297,6 +297,8 @@ async def test_a_run_finished_from_a_saved_step_is_a_verified_resume(journey: Fi
     last = doc["executions"]["items"][-1]
     assert last["status"] == "succeeded"
     assert last["execution_id"] == second.execution_id
+    assert last["microvm_id"] == "vm-bbbbbbbbbbbb"
+    assert last["runtime_session_id"] == "rt-wf-t"
 
 
 async def test_a_snapshot_larger_than_64_kb_is_read_for_the_document(

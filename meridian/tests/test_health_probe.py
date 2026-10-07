@@ -1,4 +1,4 @@
-"""Live Aurora probe backing /api/health: real SELECT 1, cached briefly.
+"""Live Aurora probe backing /api/health: a real query, cached briefly.
 
 The old `/api/health` hardcoded `status: "healthy"` and read only startup-time
 checkpoint state, so it kept reporting healthy while the live backend's AWS
@@ -26,7 +26,7 @@ class _OkDb:
 
     async def execute_one(self, sql, params=None):
         self.calls += 1
-        return {"?column?": 1}
+        return {"snapshots": True}
 
 
 class _FailingDb:
@@ -42,10 +42,10 @@ class _FailingDb:
 class _SlowDb:
     async def execute_one(self, sql, params=None):
         await asyncio.sleep(10)
-        return {"?column?": 1}
+        return {"snapshots": True}
 
 
-def test_probe_passes_when_aurora_answers_select_1(monkeypatch):
+def test_probe_passes_when_aurora_answers_and_the_snapshot_table_exists(monkeypatch):
     db = _OkDb()
     monkeypatch.setattr(health_probe, "get_rds_data_client", lambda: db)
 
@@ -54,6 +54,46 @@ def test_probe_passes_when_aurora_answers_select_1(monkeypatch):
     assert result.ok is True
     assert result.error_class is None
     assert db.calls == 1
+
+
+class _TableDb:
+    def __init__(self, snapshots):
+        self.snapshots, self.sql = snapshots, []
+
+    async def execute_one(self, sql, params=None):
+        self.sql.append(sql)
+        return {"snapshots": self.snapshots}
+
+
+def test_probe_checks_that_the_workflow_snapshot_table_exists(monkeypatch):
+    db = _TableDb(True)
+    monkeypatch.setattr(health_probe, "get_rds_data_client", lambda: db)
+
+    result = asyncio.run(health_probe.probe_aurora())
+
+    assert result.ok is True
+    assert result.component is None
+    assert "to_regclass('public.workflow_snapshots')" in db.sql[0]
+
+
+def test_a_reachable_cluster_without_the_snapshot_table_is_degraded(monkeypatch):
+    monkeypatch.setattr(health_probe, "get_rds_data_client", lambda: _TableDb(False))
+
+    result = asyncio.run(health_probe.probe_aurora())
+
+    assert result.ok is False
+    assert result.component == "workflow_snapshots"
+    assert result.error_class is None
+
+
+def test_an_unreachable_cluster_names_aurora_as_the_component(monkeypatch):
+    monkeypatch.setattr(
+        health_probe, "get_rds_data_client", lambda: _FailingDb(RuntimeError("down"))
+    )
+
+    result = asyncio.run(health_probe.probe_aurora())
+
+    assert result.component == "aurora"
 
 
 def test_probe_fails_closed_with_error_class_not_error_text(monkeypatch):

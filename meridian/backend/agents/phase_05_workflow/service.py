@@ -74,7 +74,11 @@ def build_workflow_runner(
 
 
 def workflow_store_status() -> Dict[str, Any]:
-    """What health and receipts report about workflow durability."""
+    """What health and receipts report about workflow durability.
+
+    This is a static description of the configured store. The health probe, not this
+    function, checks that the ``workflow_snapshots`` table exists.
+    """
     return {
         "kind": SNAPSHOT_STORE,
         "durable": True,

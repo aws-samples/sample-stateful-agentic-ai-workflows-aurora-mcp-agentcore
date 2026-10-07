@@ -50,6 +50,7 @@ class HealthResponse(BaseModel):
     checkpoint_durable: bool
     checkpoint_required: bool
     aurora_reachable: bool
+    workflow_runtime_configured: bool
     degraded_component: str | None = None
     degraded_error_class: str | None = None
 
@@ -138,13 +139,14 @@ app.include_router(journeys_router)
 async def _health_payload() -> HealthResponse:
     """Build the health response from what is true right now.
 
-    `status` is `healthy` only when a live Aurora `SELECT 1` just
-    succeeded (see `backend.health_probe`); otherwise it is `degraded`
+    `status` is `healthy` only when a live Aurora query just found the
+    workflow snapshot table (see `backend.health_probe`); otherwise it is `degraded`
     and names the failing component and its error class. The checkpoint
     fields remain the backend's configured checkpoint state, not a
     second live probe.
     """
     from backend.agents.phase_05_workflow.service import workflow_store_status
+    from backend.agentcore.cli_config import resolve_agentcore_config
     from backend.health_probe import probe_aurora
 
     model_id = config.bedrock.model_id
@@ -160,8 +162,9 @@ async def _health_payload() -> HealthResponse:
         checkpoint_backend=checkpoint["kind"],
         checkpoint_durable=checkpoint["durable"],
         checkpoint_required=checkpoint["required"],
-        aurora_reachable=aurora.ok,
-        degraded_component=None if aurora.ok else "aurora",
+        aurora_reachable=aurora.component != "aurora",
+        workflow_runtime_configured=bool(resolve_agentcore_config().workflow_runtime_arn),
+        degraded_component=aurora.component,
         degraded_error_class=aurora.error_class,
     )
 

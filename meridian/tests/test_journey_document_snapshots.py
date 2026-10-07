@@ -5,9 +5,11 @@ import json
 import pytest
 
 from backend.agents.phase_05_workflow.graph import snapshot_key
+from backend.db import journey_document
 from backend.db.journey_document import (
     SNAPSHOT_HISTORY_SQL,
     SNAPSHOT_SQL,
+    SNAPSHOT_WRITER_SQL,
     _snapshot,
     _workflow_document,
     checkpoint_backend_is_durable,
@@ -52,7 +54,8 @@ def test_a_completed_run_after_a_restart_reads_as_resumed():
         {"execution_id": "exe_2", "worker_id": "worker-b", "status": "succeeded"},
     ]}
     doc = _workflow_document(
-        done, CHECKPOINT, executions, latest_execution="exe_2", resumed_from="5"
+        done, CHECKPOINT, executions, latest_execution="exe_2", resumed_from="5",
+        resumed_from_writer="worker-a",
     )
     assert doc["workflow_status"] == "resumed"
     assert doc["resumed_from_checkpoint"] == "5"
@@ -105,3 +108,51 @@ async def test_the_workflow_is_read_by_its_own_storage_key_not_just_the_session(
     key = snapshot_key("t1")
     assert (SNAPSHOT_SQL, ("t1", key)) in asked
     assert (SNAPSHOT_HISTORY_SQL, ("exe_1", "7", "t1", key)) in asked
+
+
+@pytest.mark.parametrize(("worker", "session", "vm"), [
+    ("rt-wf-phase5-abc-0123/vm-0123456789ab", "rt-wf-phase5-abc-0123", "vm-0123456789ab"),
+    ("worker-1a2b3c4d", None, None),
+    ("a/b/c", None, None),
+    (None, None, None),
+])
+def test_runtime_ids_come_from_the_worker_id(worker, session, vm):
+    assert journey_document.runtime_ids(worker) == (session, vm)
+
+
+def test_a_resume_after_a_stop_is_a_restart_when_the_snapshot_writer_differs():
+    assert journey_document.restarted("rt-wf-x/vm-aaaaaaaaaaaa", "rt-wf-x/vm-bbbbbbbbbbbb") is True
+    assert journey_document.restarted("rt-wf-x/vm-aaaaaaaaaaaa", "rt-wf-x/vm-aaaaaaaaaaaa") is False
+    assert journey_document.restarted(None, "rt-wf-x/vm-bbbbbbbbbbbb") is False
+
+
+def test_a_resume_by_the_same_worker_that_wrote_the_snapshot_is_not_a_restart():
+    done = json.loads(json.dumps(PAUSED))
+    done["data"]["state"].update(status="completed", next_nodes_to_execute=[])
+    executions = {"status": "observed", "items": [
+        {"execution_id": "exe_1", "worker_id": "worker-a", "status": "paused"},
+        {"execution_id": "exe_2", "worker_id": "worker-a", "status": "succeeded"},
+    ]}
+    doc = _workflow_document(
+        done, CHECKPOINT, executions, latest_execution="exe_2", resumed_from="5",
+        resumed_from_writer="worker-a",
+    )
+    assert doc["workflow_status"] == "resumed"
+    assert doc["resumed_after_restart"] is False
+
+
+async def test_the_writer_of_the_resumed_from_snapshot_is_read_by_its_seq():
+    asked = []
+
+    async def q(sql, params):
+        asked.append((sql, params))
+        if sql == SNAPSHOT_SQL:
+            return [{"seq": "9", "snapshot": json.dumps(PAUSED), "saved_at": "2026-10-06 20:00:00",
+                     "execution_id": "exe_2"}]
+        if sql == SNAPSHOT_WRITER_SQL:
+            return [{"worker_id": "rt-wf-t/vm-aaaaaaaaaaaa"}]
+        return [{"n": 2, "resumed_from": "5", "previous_seq": "5"}]
+
+    result = await _snapshot(q, "t1")
+    assert (SNAPSHOT_WRITER_SQL, ("5",)) in asked
+    assert result[-1] == "rt-wf-t/vm-aaaaaaaaaaaa"

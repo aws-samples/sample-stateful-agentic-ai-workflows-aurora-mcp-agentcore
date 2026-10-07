@@ -4,7 +4,7 @@
 startup-time checkpoint state - so it kept reporting healthy on a running
 process whose AWS credentials had since expired, while every real Aurora
 read (`/api/products`, `/api/packages`, chat) was already failing. This
-module runs the same real `SELECT 1` any other Aurora read would run, so
+module runs a real query, the `to_regclass` check for the workflow snapshot table, so
 the endpoint reflects what is true right now, not what was true at
 startup. The result is cached briefly so a presenter (or a poller)
 refreshing `/api/health` does not fire a fresh Data API call on every
@@ -22,11 +22,15 @@ from backend.db.rds_data_client import get_rds_data_client
 
 PROBE_TIMEOUT_SECONDS = 2.0
 CACHE_TTL_SECONDS = 10.0
+SNAPSHOT_TABLE_SQL = "SELECT to_regclass('public.workflow_snapshots') IS NOT NULL AS snapshots"
 
 
 @dataclass(frozen=True)
 class AuroraProbeResult:
     """Outcome of one live Aurora reachability check.
+
+    `component` names what failed: `aurora` when the cluster did not answer,
+    `workflow_snapshots` when it answered but the table is missing.
 
     `error_class` is the exception's type name only (e.g.
     `ExpiredTokenException`). The exception's message text is never
@@ -36,6 +40,7 @@ class AuroraProbeResult:
 
     ok: bool
     error_class: Optional[str] = None
+    component: Optional[str] = None
 
 
 _cache: Optional[AuroraProbeResult] = None
@@ -43,15 +48,17 @@ _cache_at: float = 0.0
 
 
 async def _run_probe() -> AuroraProbeResult:
-    """Run one real `SELECT 1` against Aurora through the Data API."""
+    """Ask Aurora through the Data API whether the workflow snapshot table exists."""
     try:
-        await asyncio.wait_for(
-            get_rds_data_client().execute_one("SELECT 1"),
+        row = await asyncio.wait_for(
+            get_rds_data_client().execute_one(SNAPSHOT_TABLE_SQL),
             timeout=PROBE_TIMEOUT_SECONDS,
         )
-        return AuroraProbeResult(ok=True)
     except Exception as exc:  # noqa: BLE001 - reports the failure class, never the text.
-        return AuroraProbeResult(ok=False, error_class=type(exc).__name__)
+        return AuroraProbeResult(ok=False, error_class=type(exc).__name__, component="aurora")
+    if row and row.get("snapshots") is True:
+        return AuroraProbeResult(ok=True)
+    return AuroraProbeResult(ok=False, component="workflow_snapshots")
 
 
 async def probe_aurora() -> AuroraProbeResult:
