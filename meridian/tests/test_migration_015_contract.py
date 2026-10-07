@@ -23,9 +23,9 @@ def test_the_login_is_created_without_login_or_bypass(statements):
     create = next(s for s in statements if "create role meridian_workflow" in s)
     assert "nologin nobypassrls noinherit nocreatedb nocreaterole" in create
     assert "if not exists (select from pg_roles where rolname = 'meridian_workflow')" in create
-    assert (
-        "alter role meridian_workflow nobypassrls noinherit nocreatedb nocreaterole" in statements
-    )
+    assert "elsif exists (" in create
+    assert "raise exception 'meridian_workflow exists with attributes" in create
+    assert not any(s.startswith("alter role meridian_workflow") for s in statements)
 
 
 def test_no_password_lives_in_the_migration():

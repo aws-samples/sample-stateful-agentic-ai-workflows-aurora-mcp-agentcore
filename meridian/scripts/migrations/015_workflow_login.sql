@@ -11,10 +11,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'meridian_workflow') THEN
         CREATE ROLE meridian_workflow NOLOGIN NOBYPASSRLS NOINHERIT NOCREATEDB NOCREATEROLE;
+    ELSIF EXISTS (
+        SELECT FROM pg_roles WHERE rolname = 'meridian_workflow'
+           AND (rolsuper OR rolbypassrls OR rolinherit OR rolcreatedb OR rolcreaterole)
+    ) THEN
+        RAISE EXCEPTION 'meridian_workflow exists with attributes 015 does not allow; fix the role by hand';
     END IF;
 END
 $$;
-ALTER ROLE meridian_workflow NOBYPASSRLS NOINHERIT NOCREATEDB NOCREATEROLE;
 
 GRANT meridian_app TO meridian_workflow WITH INHERIT FALSE, SET TRUE;
 
