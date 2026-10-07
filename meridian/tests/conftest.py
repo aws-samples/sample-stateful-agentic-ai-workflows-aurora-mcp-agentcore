@@ -56,6 +56,15 @@ def isolated_unit_environment(request, monkeypatch):
     assert not attempted, "Unit test attempted an unmocked network connection"
 
 
+@pytest.fixture(autouse=True)
+def isolated_caller_token():
+    """A token bound outside a request or scope must not leak into the next test."""
+    from backend.agentcore.caller_credential import caller_token_scope
+
+    with caller_token_scope(None):
+        yield
+
+
 # Configure Hypothesis default settings
 settings.register_profile(
     "default",

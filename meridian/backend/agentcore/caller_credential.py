@@ -11,8 +11,16 @@ per-request holder:
 - ``current_caller_token`` reads it.
 
 Inside an AgentCore Runtime nothing runs the middleware, so the entry point calls
-``bind_caller_token`` itself. This module is stdlib only because the MeridianWorkflow Runtime
-bundles it. It never logs, prints or formats a token.
+``bind_caller_token`` itself or wraps its work in ``caller_token_scope``. ``bind_caller_token``
+needs a middleware or a scope around it: with neither it creates a holder that nothing ever
+resets, so the token outlives the call that bound it (the test suite wraps every test in a scope).
+
+Tasks and ``asyncio.to_thread`` copy the context and see the holder. ``loop.run_in_executor`` does
+not copy it, so work started that way sees no token and fails closed. When a request ends the
+middleware empties its holder, so a task that outlives the request also sees none.
+
+This module is stdlib only because the MeridianWorkflow Runtime bundles it. It never logs, prints
+or formats a token.
 """
 
 from __future__ import annotations
@@ -53,7 +61,11 @@ def bearer_from_headers(headers: Optional[Mapping[str, Any]]) -> Optional[str]:
 
 
 def bind_caller_token(token: Optional[str]) -> None:
-    """Record the verified caller's token for everything running under this request."""
+    """Record the verified caller's token for everything running under this request.
+
+    Call it inside ``CallerCredentialMiddleware`` or ``caller_token_scope``; outside both the
+    binding is never reset.
+    """
     holder = _HOLDER.get()
     if holder is None:
         holder = _Holder()
@@ -102,8 +114,10 @@ class CallerCredentialMiddleware:
         if scope["type"] not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return
-        reset = _HOLDER.set(_Holder())
+        holder = _Holder()
+        reset = _HOLDER.set(holder)
         try:
             await self.app(scope, receive, send)
         finally:
+            holder.token = None
             _HOLDER.reset(reset)

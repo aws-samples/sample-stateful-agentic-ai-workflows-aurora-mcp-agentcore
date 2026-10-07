@@ -28,6 +28,7 @@ from dataclasses import dataclass
 
 from fastapi import Header, HTTPException, Request, status
 
+from backend.agentcore.auth_mode import AuthModeError, jwt_mode
 from backend.agentcore.caller_credential import bind_caller_token
 from backend.cognito_auth import (
     CognitoUnavailable,
@@ -94,7 +95,19 @@ def _api_traveler_id() -> str:
 
 
 async def _cognito_principal(verifier: CognitoVerifier, token: str) -> HttpPrincipal:
-    """Verify a Cognito access token. The traveler is its verified claim."""
+    """Verify a Cognito access token. The traveler is its verified claim.
+
+    The raw token is kept for the AgentCore clients only in ``jwt`` mode. In ``iam`` mode nothing
+    downstream forwards it, so nothing stores it. An unrecognised mode refuses the request.
+    """
+    try:
+        forward_token = jwt_mode()
+    except AuthModeError as exc:
+        logger.error("%s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Sign-in is misconfigured.",
+        ) from exc
     try:
         identity = await asyncio.to_thread(verifier.verify, token)
     except CognitoUnavailable as exc:
@@ -106,7 +119,8 @@ async def _cognito_principal(verifier: CognitoVerifier, token: str) -> HttpPrinc
     except InvalidCognitoToken as exc:
         logger.info("Rejected a Cognito token: %s", exc.reason)
         raise _unauthorized("A valid Meridian sign-in is required.") from exc
-    bind_caller_token(token)
+    if forward_token:
+        bind_caller_token(token)
     return HttpPrincipal(
         subject_id=identity.subject_id,
         traveler_id=identity.traveler_id,
