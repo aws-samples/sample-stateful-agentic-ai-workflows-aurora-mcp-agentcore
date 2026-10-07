@@ -1,6 +1,6 @@
 """A LangGraph checkpoint saver that persists through the RDS Data API.
 
-The demo cluster's writer is not publicly accessible, so ``AsyncPostgresSaver``
+The cluster's writer is not publicly accessible, so ``AsyncPostgresSaver``
 cannot open a psycopg connection from a laptop. This saver writes the same
 tables over the Data API, which is the transport the rest of the application
 already uses.
@@ -34,7 +34,7 @@ from langgraph.checkpoint.base import (
 )
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
-from backend.db.blob_windows import split_for_write, window_offsets
+from examples.langgraph.blob_windows import split_for_write, window_offsets
 from backend.timing import clock, elapsed_ms
 
 # Recent put timings kept for the workflow to read back after its run.
