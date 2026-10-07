@@ -141,8 +141,9 @@ async def _record_stop(client, owner: str, journey_id: str, thread_id: str,
     checks the lease FOR UPDATE. A hold that committed just before the stop is
     reused on resume through the same holdRequestId.
 
-    Nothing here trusts the read made before the stop. The newest execution and
-    snapshot are read after it, under a row lock. A running execution whose
+    Nothing here trusts the read made before the stop. The newest execution is
+    locked and read after it; the snapshot is read just before that lock, and a
+    stopped worker cannot write another. A running execution whose
     snapshot shows the graph completed only lost its release, so it closes as
     ``succeeded`` and the stop is ``finished``. Any other running execution is
     abandoned and the stop is ``running``. Otherwise the run was waiting. A stop

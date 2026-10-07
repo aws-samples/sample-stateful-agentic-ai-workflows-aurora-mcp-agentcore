@@ -6,7 +6,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OLD_NAMES = ("kill_and_resume_demo", "lost_response_demo")
 # Repo-relative paths only.
-EXEMPT_FILES = {"chalk_talk.md", "STAGE_CHECKLIST.md", "meridian/tests/test_proof_script_names.py"}
+EXEMPT_FILES = {"meridian/tests/test_proof_script_names.py"}
 EXEMPT_PARTS = {".superpowers", ".kiro", ".cache"}
 
 

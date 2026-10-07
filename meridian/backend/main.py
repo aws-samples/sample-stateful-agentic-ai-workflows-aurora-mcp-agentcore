@@ -153,7 +153,7 @@ async def _health_payload() -> HealthResponse:
     model_id = config.bedrock.model_id
     checkpoint = workflow_store_status()
     aurora = await probe_aurora()
-    environment = os.getenv("ENVIRONMENT", "development")
+    environment = os.getenv("ENVIRONMENT", "development").strip().lower()
     runtime_configured = bool(resolve_agentcore_config().workflow_runtime_arn)
     # App Runner always sets AGENTCORE_WORKFLOW_RUNTIME_ARN, so an unresolved ARN is a
     # broken deployment. Local development runs without a Runtime, so it stays healthy there.
