@@ -11,31 +11,34 @@ import re
 import tomllib
 from pathlib import Path
 
-PYPROJECT = (
-    Path(__file__).resolve().parents[1]
-    / "meridian_agentcore"
-    / "app"
-    / "MeridianConcierge"
-    / "pyproject.toml"
-)
+import pytest
+
+APPS = Path(__file__).resolve().parents[1] / "meridian_agentcore" / "app"
+PYPROJECTS = [
+    APPS / "MeridianConcierge" / "pyproject.toml",
+    APPS / "MeridianWorkflow" / "pyproject.toml",
+]
+runtimes = pytest.mark.parametrize("pyproject", PYPROJECTS, ids=lambda p: p.parent.name)
 EXACT = re.compile(r"^[A-Za-z0-9_.\-]+(\[[A-Za-z0-9_,\-]+\])?==[0-9][A-Za-z0-9_.!+\-]*$")
 
 
-def _project() -> dict:
-    return tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+def _project(pyproject: Path) -> dict:
+    return tomllib.loads(pyproject.read_text(encoding="utf-8"))
 
 
 def _name(requirement: str) -> str:
     return re.split(r"[\[=<>!~; ]", requirement, maxsplit=1)[0].lower().replace("_", "-")
 
 
-def test_direct_dependencies_are_pinned_exactly():
-    unpinned = [d for d in _project()["project"]["dependencies"] if not EXACT.match(d)]
+@runtimes
+def test_direct_dependencies_are_pinned_exactly(pyproject):
+    unpinned = [d for d in _project(pyproject)["project"]["dependencies"] if not EXACT.match(d)]
     assert unpinned == []
 
 
-def test_transitive_dependencies_are_pinned_as_constraints():
-    project = _project()
+@runtimes
+def test_transitive_dependencies_are_pinned_as_constraints(pyproject):
+    project = _project(pyproject)
     constraints = project["tool"]["uv"]["constraint-dependencies"]
     assert [c for c in constraints if not EXACT.match(c)] == []
     names = [_name(c) for c in constraints]
@@ -43,10 +46,18 @@ def test_transitive_dependencies_are_pinned_as_constraints():
     assert {"boto3", "opentelemetry-api", "opentelemetry-sdk"} <= set(names)
 
 
-def test_a_direct_dependency_is_not_constrained_to_a_different_version():
-    project = _project()
+@runtimes
+def test_a_direct_dependency_is_not_constrained_to_a_different_version(pyproject):
+    project = _project(pyproject)
     direct = {_name(d): d.split("==")[1] for d in project["project"]["dependencies"]}
     for constraint in project["tool"]["uv"]["constraint-dependencies"]:
         name = _name(constraint)
         if name in direct:
             assert constraint.split("==")[1] == direct[name], name
+
+
+def test_both_runtimes_pin_the_same_strands_and_agentcore_sdk():
+    pins = [{_name(d): d for d in tomllib.loads(p.read_text())["project"]["dependencies"]}
+            for p in PYPROJECTS]
+    for package in ("strands-agents", "bedrock-agentcore"):
+        assert pins[0][package] == pins[1][package]
