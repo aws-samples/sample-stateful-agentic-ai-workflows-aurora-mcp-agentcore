@@ -59,7 +59,7 @@ describe('JourneyContinuityRail', () => {
     expect(screen.getByText('Start a recovery to see each step persist.')).toBeInTheDocument();
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
     expect(screen.queryByText('No journey yet')).not.toBeInTheDocument();
-    expect(screen.getByText('thread: —')).toBeInTheDocument();
+    expect(screen.getByText('thread: none')).toBeInTheDocument();
     expect(screen.queryByText(/no recovery selected/i)).not.toBeInTheDocument();
   });
 

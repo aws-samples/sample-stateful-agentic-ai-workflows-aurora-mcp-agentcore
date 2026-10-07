@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 const globs = {
-  ...import.meta.glob('../../**/*.{ts,tsx,css}', { query: '?raw', import: 'default', eager: true }),
+  ...import.meta.glob('../../../**/*.{ts,tsx,css}', { query: '?raw', import: 'default', eager: true }),
   ...import.meta.glob('../../../../e2e/**/*.ts', { query: '?raw', import: 'default', eager: true }),
   ...import.meta.glob('../../../../index.html', { query: '?raw', import: 'default', eager: true }),
 };
@@ -14,6 +14,10 @@ const BANNED = [
   /\\00b7/i, // CSS escape
   /\\u00b7/i, /\\u\{b7\}/i, /\\xb7/i, // JS string escapes
 ];
+
+// Words people read. Comments are not copy, so a comment may still say what it needs to.
+const USER_FACING_BANNED = [/\u2014/, /&mdash;/i, /\\u2014/i, /\bdemo\b/i];
+const isComment = (line: string) => /^\s*(\/\/|\/\*|\*)/.test(line);
 
 const isTest = (path: string) => /__tests__|\.test\.[tj]sx?$|\.spec\.ts$/.test(path);
 
@@ -32,6 +36,19 @@ describe('showcase copy', () => {
       .map((line, index) => ({ line, at: `${shortName(path)}:${index + 1}` }))
       .filter(({ line }) => !lineIsCommentThatSaysWhy(line)
         && BANNED.some(pattern => pattern.test(line)))
+      .map(({ line, at }) => `${at} ${line.trim().slice(0, 100)}`));
+    expect(offences).toEqual([]);
+  });
+
+  it('uses no em dash and never says demo in the words people read', () => {
+    const copy = Object.keys(sources).filter(
+      path => /\.tsx?$|index\.html$/.test(path) && !isTest(path) && path !== LEGACY_TABLE,
+    );
+    expect(copy.length).toBeGreaterThan(50);
+    const offences = copy.flatMap(path => sources[path].split('\n')
+      .map((line, index) => ({ line, at: `${shortName(path)}:${index + 1}` }))
+      .filter(({ line }) => !isComment(line)
+        && USER_FACING_BANNED.some(pattern => pattern.test(line)))
       .map(({ line, at }) => `${at} ${line.trim().slice(0, 100)}`));
     expect(offences).toEqual([]);
   });

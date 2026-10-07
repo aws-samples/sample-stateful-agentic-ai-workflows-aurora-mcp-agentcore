@@ -1,0 +1,82 @@
+.mds-signin {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--mds-ground);
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+}
+
+.mds-signin-card {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 16px;
+  padding: 32px 28px;
+  border: 1px solid var(--mds-separator);
+  border-radius: var(--mds-radius-l);
+  background: var(--mds-surface);
+  box-shadow: var(--mds-shadow-float);
+}
+
+.mds-signin-card h1 {
+  margin: 0;
+  font: var(--mds-type-title-1);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-signin-card p {
+  margin: 0;
+  color: var(--mds-label-2);
+}
+
+.mds-signin-card .mds-signin-message {
+  padding: 12px 14px;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-red-fill);
+  color: var(--mds-label);
+}
+
+.mds-signin-button {
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-action);
+  color: var(--mds-on-action);
+  font: var(--mds-type-headline);
+  cursor: pointer;
+}
+
+.mds-signin-button:hover:not(:disabled) {
+  background: var(--mds-action-hover);
+}
+
+.mds-signin-button:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.mds-signin-button:focus-visible {
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 2px;
+}
+
+.mds-signout {
+  justify-self: start;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.mds-signout:hover {
+  color: var(--mds-label);
+}
+
+.mds-signout:focus-visible {
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 2px;
+}

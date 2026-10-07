@@ -246,7 +246,7 @@ export function JourneyContinuityRail({
           <code>thread: {document.active_thread_id}</code>
         ) : (
           <code className="mds-continuity-absent">
-            thread: {error ? 'unavailable' : loading ? 'reading…' : '—'}
+            thread: {error ? 'unavailable' : loading ? 'reading…' : 'none'}
           </code>
         )}
         {onStopSession && canStopSession(document) ? (

@@ -156,6 +156,20 @@ export async function deleteMemoryFact(travelerId: string, key: string): Promise
   );
 }
 
+export interface SessionIdentity {
+  traveler_id: string;
+  authentication: string;
+}
+
+/** Ask the API who it believes is calling. The answer comes from the verified credential. */
+export async function fetchSessionIdentity(signal?: AbortSignal): Promise<SessionIdentity> {
+  const identity = await requestJson<SessionIdentity>(`${API_BASE}/me`, { signal });
+  if (typeof identity?.traveler_id !== 'string' || !identity.traveler_id) {
+    throw new Error('The API did not name a traveler.');
+  }
+  return identity;
+}
+
 /**
  * Fetch authenticated backend status with the same deadline as other API calls.
  */

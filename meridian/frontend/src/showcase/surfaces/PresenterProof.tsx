@@ -15,10 +15,10 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'business', label: 'Business result' },
 ];
 
-const DASH = '—';
+const NOT_RECORDED = 'Not recorded';
 
 function shortTime(value: string | null | undefined): string {
-  if (!value) return DASH;
+  if (!value) return NOT_RECORDED;
   const parsed = new Date(parseDatabaseTime(value));
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toISOString().slice(11, 19) + 'Z';
@@ -105,12 +105,12 @@ function SessionCard({
       <Terminal size={18} aria-hidden="true" className="mds-proof-worker-glyph" />
       <span className="mds-proof-worker-role">{role}</span>
       <strong className="mds-proof-worker-id">
-        {execution ? execution.runtime_session_id ?? DASH : fallback}
+        {execution ? execution.runtime_session_id ?? NOT_RECORDED : fallback}
       </strong>
       {execution && <span className="mds-proof-worker-vm">{microvmOf(execution)}</span>}
       <span className="mds-proof-worker-note">{leaseNote(execution, running)}</span>
       <span className="mds-proof-worker-state">
-        {execution ? `attempt ${execution.attempt}, ${status}` : DASH}
+        {execution ? `attempt ${execution.attempt}, ${status}` : NOT_RECORDED}
       </span>
     </div>
   );
@@ -244,18 +244,18 @@ export function PresenterProof({
             </div>
             <div>
               <dt>Thread</dt>
-              <dd>{document.active_thread_id ?? DASH}</dd>
+              <dd>{document.active_thread_id ?? NOT_RECORDED}</dd>
             </div>
             {isObserved(checkpoint) && (
               <>
                 <div>
                   <dt>Snapshots</dt>
-                  <dd>{checkpoint.snapshot_count ?? DASH}</dd>
+                  <dd>{checkpoint.snapshot_count ?? NOT_RECORDED}</dd>
                 </div>
                 <div>
                   <dt>Latest snapshot</dt>
                   <dd>
-                    {checkpoint.status ?? DASH}
+                    {checkpoint.status ?? NOT_RECORDED}
                     {nextNode ? `, next ${nextNode}` : ''}
                   </dd>
                 </div>
@@ -329,7 +329,7 @@ export function PresenterProof({
             <Fact
               label="Snapshot ID"
               mono
-              value={isObserved(checkpoint) ? checkpoint.checkpoint_id : DASH}
+              value={isObserved(checkpoint) ? checkpoint.checkpoint_id : NOT_RECORDED}
             />
             <Fact label="Owner" value={document.traveler_id} />
             <Fact
@@ -339,7 +339,7 @@ export function PresenterProof({
                   ? document.selected_plan.package_id
                   : isObserved(document.pending_decision)
                     ? document.pending_decision.package_id
-                    : DASH
+                    : NOT_RECORDED
               }
             />
             <Fact
@@ -361,7 +361,7 @@ export function PresenterProof({
                 </strong>
                 <p>
                   Recorded {shortTime(auth.observed_at)} as{' '}
-                  <b>{auth.decision.toUpperCase()}</b> — {auth.reason ?? 'no reason recorded'}.
+                  <b>{auth.decision.toUpperCase()}</b>: {auth.reason ?? 'no reason recorded'}.
                 </p>
                 <p className="mds-proof-subject">{auth.subject}</p>
               </div>
@@ -381,7 +381,7 @@ export function PresenterProof({
                 <HoldReceipt holdId={hold.booking_id} createdAt={hold.hold_created_at} expiresAt={hold.hold_expires_at} observedAt={hold.observed_at} receivedAt={document.received_at} confirmedAt={hold.confirmed_at} status={hold.status} />
                 <div className="mds-proof-facts">
                   <Fact label="Request identity" mono value={hold.hold_request_id} />
-                  <Fact label="Travel party" value={hold.travelers_count ? `${hold.travelers_count} travelers` : DASH} />
+                  <Fact label="Travel party" value={hold.travelers_count ? `${hold.travelers_count} travelers` : NOT_RECORDED} />
                   <Fact label="Created by" value={hold.created_by_execution_id === first?.execution_id ? 'Original execution' : hold.created_by_execution_id === latest?.execution_id ? (restarted ? 'Replacement execution' : 'Resumed execution') : hold.created_by_execution_id || 'Not recorded'} />
                   <Fact label="Hold records in journey" value={String(hold.hold_records)} />
                   <Fact label="Confirmed" value={hold.confirmed_at ? `${shortTime(hold.confirmed_at)}, catalog inventory, no payment` : 'Not yet confirmed by the traveler'} />

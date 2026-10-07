@@ -176,7 +176,7 @@ describe('Presenter proof', () => {
       />,
     );
     const panel = screen.getByRole('tabpanel');
-    expect(within(panel).getAllByText('—').length).toBeGreaterThan(0);
+    expect(within(panel).getAllByText('Not recorded').length).toBeGreaterThan(0);
     expect(screen.getByText('Awaiting saved step')).toBeInTheDocument();
   });
 
