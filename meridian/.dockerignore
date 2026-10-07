@@ -1,7 +1,9 @@
 # Only the backend, its dependencies and the SQL examples go into the image.
+# The LangGraph example has its own requirements and stays out.
 *
 !backend/
 !examples/
+examples/langgraph/
 !requirements.txt
 backend/**/__pycache__/
 backend/**/*.pyc

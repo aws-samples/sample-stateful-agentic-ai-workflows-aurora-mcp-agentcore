@@ -1,0 +1,5 @@
+# The LangGraph example only. The backend image does not install these.
+# Install after the backend requirements: pip install -r examples/langgraph/requirements.txt
+langgraph==1.2.11
+langgraph-checkpoint==4.2.0
+langgraph-checkpoint-postgres==3.1.2
