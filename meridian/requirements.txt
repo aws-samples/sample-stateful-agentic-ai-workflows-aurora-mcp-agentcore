@@ -908,9 +908,9 @@ langgraph-prebuilt==1.1.0 \
     --hash=sha256:3c579cf6eed2d17f9c157c2d0fcaddcd8688524e7022d3b22b37a3bf4589d528 \
     --hash=sha256:51e311747d755b751d5c6b39b0c1446124d3a7643d2515017e6714b323508fc9
     # via langgraph
-langgraph-sdk==0.4.2 \
-    --hash=sha256:75fa5096c1177ce39c847096a8fe3745ffd480ddb412995f836e9f5f884c43dd \
-    --hash=sha256:b88f0f5f6328ac0680d6790614a905b2bcfa257f2276dba4e38f0e86db0aa738
+langgraph-sdk==0.4.4 \
+    --hash=sha256:39afe416c91742925e6f8a93715f566d499b36e1b636b804a4ffe3190e4f4e64 \
+    --hash=sha256:4e651ffa09de695681579396375377bdde23bedbc8e35b070e615cbd5af7da8b
     # via langgraph
 langsmith==0.11.0 \
     --hash=sha256:7339f90e6fd9a1a009445b5084a7a0e56a8b6f17305ee5d7e8c5e7582217854f \
@@ -928,7 +928,7 @@ markdownify==1.2.3 \
     --hash=sha256:1a176f05522c8a2cb1dd3ab9d307dcdadbed5c26ae717855bfc42b3b6d38d937 \
     --hash=sha256:a189a0bedfd14009030fde5f85bb6f77c56897cb839b5c25315dd7d4e3e290ba
     # via strands-agents-tools
-mcp==1.29.0 \
+mcp[cli]==1.29.0 \
     --hash=sha256:52d01f334de1868cc3bb2d6604931126a67631f99a6c5d3b82ba47290315ec36 \
     --hash=sha256:f5a075bb611f23d6f4d080c6a1699fa62772eebc562ba9e66b306ddde1c755f7
     # via
@@ -1539,7 +1539,7 @@ propcache==0.5.2 \
     # via
     #   aiohttp
     #   yarl
-psycopg==3.3.4 \
+psycopg[binary,pool]==3.3.4 \
     --hash=sha256:b6bbc25ccf05c8fad3b061d9db2ef0909a555171b84b07f29458a447253d679a \
     --hash=sha256:e21207764952cff81b6b8bdacad9a3939f2793367fdac2987b3aac36a651b5bc
     # via
@@ -1761,7 +1761,7 @@ pygments==2.20.0 \
     # via
     #   pytest
     #   rich
-pyjwt==2.15.1 \
+pyjwt[crypto]==2.15.1 \
     --hash=sha256:42d59d631f7768a1028a64c7ff581a9bf7519804daf91fc5b6c56e30eec5e193 \
     --hash=sha256:4f259e80cdfb6b3fc18a7de51fd1ef9ec79652f25019bae68975ca2468a34df8
     # via
@@ -2101,12 +2101,8 @@ typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
     # via
-    #   aiohttp
-    #   aiosignal
-    #   anyio
     #   beautifulsoup4
     #   fastapi
-    #   httpx2
     #   langchain-core
     #   langchain-protocol
     #   langsmith
@@ -2114,13 +2110,9 @@ typing-extensions==4.16.0 \
     #   opentelemetry-api
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
-    #   psycopg
     #   psycopg-pool
     #   pydantic
     #   pydantic-core
-    #   pytest-asyncio
-    #   referencing
-    #   starlette
     #   strands-agents
     #   strands-agents-tools
     #   typing-inspection
@@ -2236,7 +2228,7 @@ uuid-utils==0.17.0 \
     # via
     #   langchain-core
     #   langsmith
-uvicorn==0.52.3 \
+uvicorn[standard]==0.52.3 \
     --hash=sha256:116af2710dbf47c80f463cd20ee4884b6662f4c9f227d797ddc7279d2fcc2c7c \
     --hash=sha256:18857b9e6579300be55c91c0a1cfd37d9a2cf0cabea33b88275f199eb73b8b58
     # via
