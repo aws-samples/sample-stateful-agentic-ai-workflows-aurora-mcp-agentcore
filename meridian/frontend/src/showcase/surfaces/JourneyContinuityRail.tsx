@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { hasVerifiedResume } from '../journey/evidence';
+import { canStopSession } from '../journey/sessionStop';
 import { AuroraIcon } from '../components/ServiceMark';
 import { STATE_CHANGE, useLiveCues } from '../hooks/useLiveCues';
 import { Check, Circle, ShieldCheck } from 'lucide-react';
@@ -18,20 +19,14 @@ type Step = {
 
 function stopStep(stop: SessionStop | undefined): { label: string; detail: string } {
   if (!stop) return { label: 'Session stopped', detail: '' };
+  if (stop.stopped_during === 'finished') {
+    return { label: 'Session stopped after the run finished', detail: 'the hold was already recorded' };
+  }
   const running = stop.stopped_during === 'running';
   const label = running ? 'Session stopped mid-run' : 'Session stopped while waiting';
   if (stop.outcome === 'not_running') return { label, detail: 'the session had already ended' };
   if (!running) return { label, detail: 'for the review answer' };
   return { label, detail: stop.last_step ? `after ${stop.last_step}, lease released` : 'lease released' };
-}
-
-/** Whether Aurora shows the latest execution as running or paused. */
-// A pure predicate beside its component, tested directly; fast refresh falls back to a reload.
-// eslint-disable-next-line react-refresh/only-export-components
-export function canStopSession(document: JourneyDocument | null): boolean {
-  if (!document || !isObserved(document.executions)) return false;
-  const latest = document.executions.items[document.executions.items.length - 1];
-  return latest?.status === 'running' || latest?.status === 'paused';
 }
 
 /** The continuity claim, one line per fact, each read from the database.
@@ -100,7 +95,9 @@ function stepsFor(document: JourneyDocument | null): Step[] {
   return steps.filter((step) => step.recorded);
 }
 
-function StopSessionControl({ onStop }: { onStop: () => Promise<void> }) {
+function StopSessionControl(
+  { onStop, onStopped }: { onStop: () => Promise<void>; onStopped: () => void },
+) {
   const [phase, setPhase] = useState<'idle' | 'confirm' | 'stopping'>('idle');
   const [failure, setFailure] = useState<string | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -124,7 +121,12 @@ function StopSessionControl({ onStop }: { onStop: () => Promise<void> }) {
       await onStop();
     } catch (err) {
       setFailure(err instanceof Error ? err.message : 'Stopping the session failed.');
+      setPhase('idle');
+      return;
     }
+    // The stop is recorded and this control is about to unmount; keep focus in the rail.
+    opened.current = false;
+    onStopped();
     setPhase('idle');
   };
 
@@ -177,11 +179,12 @@ export function JourneyContinuityRail({
   onStopSession?: () => Promise<void>;
 }) {
   const steps = stepsFor(document);
+  const region = useRef<HTMLDivElement>(null);
   // Rows fade in, and their marks settle, only as a watched run records them.
   const live = useLiveCues(thread, running);
 
   return (
-    <div className="mds-continuity-rail" tabIndex={0} role="region" aria-label="Journey progress">
+    <div ref={region} className="mds-continuity-rail" tabIndex={0} role="region" aria-label="Journey progress">
       <header className="mds-continuity-head">
         <span>Journey continuity</span>
         <span
@@ -247,7 +250,7 @@ export function JourneyContinuityRail({
           </code>
         )}
         {onStopSession && canStopSession(document) ? (
-          <StopSessionControl onStop={onStopSession} />
+          <StopSessionControl onStop={onStopSession} onStopped={() => region.current?.focus()} />
         ) : null}
         <span className="mds-continuity-source">
           <ShieldCheck size={13} aria-hidden="true" />

@@ -196,9 +196,47 @@ describe('JourneyContinuityRail', () => {
       error={null} />);
     expect(screen.getByText('lease released')).toBeInTheDocument();
 
+    rerender(<JourneyContinuityRail document={stopped({ stopped_during: 'finished', last_step: 'synthesize' })}
+      error={null} />);
+    expect(rows()).toContain('Session stopped after the run finished');
+    expect(screen.getByText('the hold was already recorded')).toBeInTheDocument();
+
     rerender(<JourneyContinuityRail document={stopped({ outcome: 'not_running', stopped_during: 'waiting' })}
       error={null} />);
     expect(rows()).toContain('Session stopped while waiting');
     expect(screen.getByText('the session had already ended')).toBeInTheDocument();
+  });
+
+  it('moves focus to the progress region after a stop, not to the page body', async () => {
+    const onStop = vi.fn().mockResolvedValue(undefined);
+    render(<JourneyContinuityRail document={pausedDocument()} error={null} onStopSession={onStop} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop runtime session' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop session' }));
+    await waitFor(() => expect(onStop).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByRole('region', { name: 'Journey progress' })).toHaveFocus());
+  });
+
+  it('keeps focus on the stop control after a failed stop', async () => {
+    const onStop = vi.fn().mockRejectedValue(new Error('Stopping failed'));
+    render(<JourneyContinuityRail document={pausedDocument()} error={null} onStopSession={onStop} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop runtime session' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop session' }));
+    await screen.findByRole('alert');
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Stop runtime session' })).toHaveFocus());
+  });
+
+  it('hides the stop control once a stop is recorded for the paused run', () => {
+    const stopped = {
+      ...pausedDocument(),
+      session_stops: { status: 'observed', source: 'workflow_session_stops',
+        items: [{ runtime_session_id: 'rt-wf-x', outcome: 'stopped',
+          stopped_at: '2026-10-07 10:05:00+00', stopped_during: 'waiting', last_step: null }] },
+    } as JourneyDocument;
+    stopped.executions = { status: 'observed', source: 'journey_executions',
+      items: [execution({ status: 'paused', started_at: '2026-10-07 10:00:00+00' })] };
+    render(<JourneyContinuityRail document={stopped} error={null} onStopSession={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Stop runtime session' })).toBeNull();
   });
 });

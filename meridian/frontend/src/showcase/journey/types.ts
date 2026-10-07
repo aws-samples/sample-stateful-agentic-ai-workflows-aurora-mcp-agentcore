@@ -40,7 +40,7 @@ export type SessionStop = {
   runtime_session_id: string;
   outcome: 'stopped' | 'not_running';
   stopped_at: string;
-  stopped_during: 'waiting' | 'running';
+  stopped_during: 'waiting' | 'running' | 'finished';
   last_step: string | null;
 };
 
