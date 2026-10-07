@@ -2,11 +2,13 @@
 
 This directory is an [AgentCore CLI](https://github.com/aws/agentcore-cli) project.
 It declares the Amazon Bedrock AgentCore resources Meridian's Production and
-Workflow phases use, and deploys them with the CLI's CDK app.
+Workflow phases use, and deploys them with the CLI's CDK app. The Production
+phase runs in `MeridianConcierge`. The Workflow phase runs in `MeridianWorkflow`.
 
 | Resource | Name | Purpose |
 | --- | --- | --- |
 | Runtime | `MeridianConcierge` | Strands agent that plans with Gateway tools and keeps its conversation in Memory |
+| Runtime | `MeridianWorkflow` | Runs the Phase 5 workflow as the `meridian_workflow` database login and resumes a stopped session from saved snapshots on a new microVM |
 | Memory | `meridian_session` | Session store for the runtime (`SEMANTIC` strategy) |
 | Gateway | `meridian-aurora` | MCP endpoint with AWS_IAM inbound auth and the Cedar policy engine attached |
 | Gateway target | `SemanticTripSearchLambda` | Existing Lambda function `meridian-semantic-trip-search` (you create it; see the runbook) |
@@ -25,7 +27,8 @@ meridian_agentcore/
 │   ├── .cli/deployed-state.json   # Written by `agentcore deploy` (gitignored)
 │   ├── cdk/                       # CDK app the CLI synthesizes and deploys
 │   └── gateway_targets/           # Lambda code and tool schemas for both gateway targets
-└── app/MeridianConcierge/         # Runtime code: main.py, turn_trace.py, hold_execution.py
+├── app/MeridianConcierge/         # Runtime code: main.py, turn_trace.py, hold_execution.py
+└── app/MeridianWorkflow/          # Runtime code: main.py; backend/ is staged on render (gitignored)
 ```
 
 ## Configuration templates
@@ -81,6 +84,7 @@ Run these from `meridian/meridian_agentcore/` after rendering:
 | `agentcore deploy -y` | Synthesize and deploy the CDK stack |
 | `agentcore status --json` | Show deployed resources |
 | `agentcore logs --runtime MeridianConcierge --follow` | Tail runtime logs |
+| `agentcore logs --runtime MeridianWorkflow --follow` | Tail the workflow runtime's logs |
 
 The CDK unit test in `agentcore/cdk/test/` synthesizes the stack from the
 template with placeholder test values, so it runs without an AWS account.

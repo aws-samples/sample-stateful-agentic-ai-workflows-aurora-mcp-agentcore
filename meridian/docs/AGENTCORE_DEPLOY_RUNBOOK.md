@@ -10,6 +10,7 @@ commands that need another directory run in a subshell, `( cd ... )`.
 | Resource | Name | Purpose |
 | --- | --- | --- |
 | Runtime | `MeridianConcierge` | Strands agent that plans with the gateway tools, keeps its session in Memory and streams its trace to the backend |
+| Runtime | `MeridianWorkflow` | Runs the Phase 5 workflow as the `meridian_workflow` database login; a stopped session resumes from saved snapshots on a new microVM |
 | Memory | `meridian_session` | Runtime session store, `SEMANTIC` strategy over `/users/{actorId}/sessions/{sessionId}` |
 | Gateway | `meridian-aurora` | MCP endpoint with AWS_IAM inbound auth and the Cedar policy engine attached in `ENFORCE` mode |
 | Gateway target | `SemanticTripSearchLambda` | `semantic_trip_search(query, limit)` over Aurora pgvector, served by the Lambda function you create in step 2 |
@@ -186,6 +187,81 @@ This writes `AGENTCORE_RUNTIME_ARN`, `AGENTCORE_GATEWAY_URL`,
 runtime. The backend also reads the deployment state directly through
 [`backend/agentcore/cli_config.py`](../backend/agentcore/cli_config.py);
 variables in `.env` take precedence.
+
+## Workflow Runtime steps
+
+The `MeridianWorkflow` Runtime runs Phase 5 and connects to AWS Aurora as the
+`meridian_workflow` login, which is not the admin role. Its password lives only
+in a Secrets Manager secret. Run these steps from the repository root, in this
+order. Steps 1, 2, 4, 5 and 7 change the live account or call the deployed
+Runtime, so confirm each before you run it.
+
+1. Apply the migrations that create the login and the stop record, 015 and 016.
+   `apply_migrations.py` applies every pending migration, so read the pending
+   list first and apply on its own:
+
+   ```bash
+   python meridian/scripts/apply_migrations.py
+   ```
+
+2. Give the login its password and its access policy. Without `--apply` the
+   script only reports what it would do. `--write-env` writes
+   `AURORA_WORKFLOW_SECRET_ARN` into `meridian/.env`:
+
+   ```bash
+   python meridian/scripts/provision_workflow_login.py --apply --write-env
+   ```
+
+   The script creates the managed policy `MeridianWorkflowAuroraAccess`, which
+   the Runtime's role references, so run it before the deploy.
+
+3. Render the configuration. The render also stages the backend modules the
+   workflow imports into `meridian/meridian_agentcore/app/MeridianWorkflow/backend/`:
+
+   ```bash
+   python meridian/scripts/render_agentcore_config.py
+   ```
+
+4. Deploy:
+
+   ```bash
+   (cd meridian/meridian_agentcore && agentcore deploy -y)
+   ```
+
+5. Bind the Runtime's execution role to the demo traveler. Run it after the
+   deploy, because the role comes from the deployed state:
+
+   ```bash
+   python meridian/scripts/bind_workflow_runtime.py
+   ```
+
+6. Write `AGENTCORE_WORKFLOW_RUNTIME_ARN` into `meridian/.env`, then restart the
+   backend:
+
+   ```bash
+   python meridian/scripts/sync_agentcore_env.py --write
+   ```
+
+7. Ping the Runtime. This touches no journey and no Aurora row:
+
+   ```bash
+   python meridian/scripts/smoke_workflow_runtime.py
+   ```
+
+8. Check every AgentCore resource, the workflow Runtime included:
+
+   ```bash
+   python meridian/scripts/verify_agentcore.py
+   ```
+
+To rotate the login's password, run step 2 again. Between the database change
+and the secret update, anything that holds the old secret fails, and a second
+run repairs a half-finished rotation.
+
+To prove that a stopped session resumes on a new microVM, start the backend and
+run `scripts/stop_and_resume_proof.py` from `meridian/`. `--during waiting`, the
+default, stops the session while it waits for review. `--during running` stops it
+while the hold step is running. Each run removes the rows it creates.
 
 ## Verify
 
