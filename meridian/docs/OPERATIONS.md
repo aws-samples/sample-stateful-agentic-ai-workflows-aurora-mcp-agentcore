@@ -1,7 +1,8 @@
 # Meridian operations
 
 How to provision Aurora, run the workflow Runtime, exercise its
-recovery behavior, publish the web app, and troubleshoot a deployment.
+recovery behavior, set up the service logins and sign-in, publish the web app,
+and troubleshoot a deployment.
 Commands run from `meridian/` with the virtual environment active unless a
 step says otherwise. The AgentCore deployment has its own
 [runbook](AGENTCORE_DEPLOY_RUNBOOK.md).
@@ -244,6 +245,271 @@ python scripts/release_demo_bookings.py --dry-run
 python scripts/release_demo_bookings.py --booking-id <booking-id>
 ```
 
+## Service logins
+
+Three Aurora logins sit next to `meridian_workflow`. None owns anything or can
+bypass row-level security, and each holds only what its workload queries.
+
+| Login | Workload | Holds |
+| --- | --- | --- |
+| `meridian_backend` | The App Runner backend | SELECT on `traveler_identity_bindings` and `trip_packages`, INSERT on `traveler_access_audit`, EXECUTE on `backend_admin_count`, and SET ROLE to `meridian_app` |
+| `meridian_gateway` | The `MeridianHolds` and `meridian-semantic-trip-search` Lambdas | The same tables and SET ROLE to `meridian_app`, and no function |
+| `meridian_identity` | The Amazon Cognito pre-token-generation Lambda | SELECT on `traveler_identity_bindings` |
+
+The backend counts rows across every traveler in only two places, the RLS probe
+and the session receipt. The master login used to do that without RLS applying
+to it. The backend login calls `backend_admin_count` instead, a definer function
+that answers eight named counts (`rls_traveler_preferences`,
+`rls_trip_interactions`, `rls_conversations`, `rls_conversation_messages`,
+`audit_allow`, `audit_deny`, `agent_audit` and `workflow_snapshots`) and returns
+nothing else. Five of the counted tables force row-level security, so migration
+018 also creates one SELECT policy on each for the role that applies the
+migration (`traveler_preferences_admin_count_select`,
+`trip_interactions_admin_count_select`, `conversations_admin_count_select`,
+`conversation_messages_admin_count_select` and `agent_audit_admin_count_select`).
+No service login can use those policies.
+
+### What is not switched yet
+
+The logins exist, are tested against the live cluster, and have their secrets
+and managed policies in place. No hosted workload uses them yet:
+
+- The App Runner backend still connects as the master login.
+- The `MeridianHolds` and `meridian-semantic-trip-search` Lambdas still connect
+  as the master login.
+- The shared `MERIDIAN_API_TOKEN` and the CloudFront Basic edge credential are
+  still in place, and the hosted web build still has no sign-in (see
+  [Sign-in settings in the web build](#sign-in-settings-in-the-web-build)).
+
+Moving these is the coordinated release that follows (B2). Only the Amazon
+Cognito trigger runs as its own login (`meridian_identity`) from its first
+deploy.
+
+### Create the logins
+
+1. List what is pending. The list must be exactly `018_service_logins.sql`.
+   Apply only that migration, and never run `apply_migrations.py` without
+   `--pending` first:
+
+   ```bash
+   python scripts/apply_migrations.py --pending
+   ```
+
+   The migration creates the three roles with NOLOGIN and stops with an error if
+   a role of that name already exists with other attributes.
+
+2. Report the plan, then provision. This enables LOGIN with a SCRAM-SHA-256
+   verifier, stores each password only in its own AWS Secrets Manager secret
+   (`meridian/aurora/backend-login`, `meridian/aurora/gateway-login` and
+   `meridian/aurora/identity-login`), creates each managed policy
+   (`MeridianBackendAuroraAccess`, `MeridianGatewayAuroraAccess` and
+   `MeridianIdentityAuroraAccess`), checks that the login connects without
+   BYPASSRLS, and writes `AURORA_BACKEND_SECRET_ARN`, `AURORA_GATEWAY_SECRET_ARN`
+   and `AURORA_IDENTITY_SECRET_ARN` to `.env`:
+
+   ```bash
+   python scripts/provision_service_logins.py
+   python scripts/provision_service_logins.py --apply --write-env
+   ```
+
+   Add `--login backend`, `gateway` or `identity` to act on one login. Running
+   `--apply` again rotates the password. Between the `ALTER ROLE` and the secret
+   update, anything holding the old secret fails.
+
+3. Prove the grants against the live cluster, including what each login must
+   not do:
+
+   ```bash
+   python -m pytest tests/test_service_logins_aurora.py tests/test_backend_login_aurora.py \
+     tests/test_gateway_login_aurora.py tests/test_identity_login_aurora.py -m database
+   ```
+
+   The deny tests add `traveler_access_audit` deny rows for the decoy on every
+   run. That is deliberate evidence, not residue.
+
+As `meridian_backend`, the Phase 1 to 3 search agents and the Phase 2 MCP server
+can read only `trip_packages` outside a traveler scope. A Phase 2 prompt that
+asks about any other table is refused by AWS Aurora. The Phase 2 run under the
+backend login has not been exercised against the live cluster.
+
+[SIGNED_SCOPE_EVALUATION.md](SIGNED_SCOPE_EVALUATION.md) records why the
+database does not verify a signed traveler scope itself: the logins can set any
+traveler, so the application check and the workload grant remain the controls.
+
+## Sign-in and who is calling
+
+A signed-in person is the only source of the traveler identity. The Amazon
+Cognito user pool has two seeded users: Jordan Morgan, bound to
+`trv_meridian_demo`, and Jordan Lee, the decoy, bound to `trv_demo_decoy`. The
+web client uses the authorization code flow with PKCE and an access token that
+lasts one hour. A pre-token-generation trigger reads the user's active
+`cognito` row in `traveler_identity_bindings` and copies its `traveler_id` into
+the access token. A user with no active binding cannot sign in.
+
+1. Deploy the identity stack. It needs `AURORA_IDENTITY_SECRET_ARN` in `.env`
+   (step 2 above) and a Hosted UI domain prefix that is unique in the Region.
+   Return URLs are HTTPS, or HTTP on localhost. Run the build and the deploy
+   from `infra/` with the real npm binary; `npm` is an alias in some shells and
+   a chained `npm` command can hide a failure:
+
+   ```bash
+   cd infra
+   npm run build
+   node_modules/.bin/cdk deploy -a "node dist/bin/meridian-identity.js" \
+     -c domainPrefix=<unique-prefix> \
+     -c callbackUrls=http://localhost:5173/showcase,https://<site-host>/showcase
+   cd ..
+   python scripts/sync_cognito_env.py --write
+   ```
+
+   The stack uses the Essentials plan and the V2_0 pre-token-generation
+   trigger, which the account accepted. The client allows the authorization code
+   flow only for browsers, with the openid, profile and email scopes, no client
+   secret, a one-hour access and ID token and a 24-hour refresh token. It also
+   enables `ADMIN_USER_PASSWORD_AUTH`, which only a caller with IAM permission
+   can use; the live tests use it to mint real tokens.
+
+   `sync_cognito_env.py` writes `MERIDIAN_COGNITO_REGION`,
+   `MERIDIAN_COGNITO_USER_POOL_ID` and `MERIDIAN_COGNITO_APP_CLIENT_ID` to `.env`,
+   and `VITE_COGNITO_DOMAIN` and `VITE_COGNITO_CLIENT_ID` to
+   `frontend/.env.development.local`. Vite reads that file only in development,
+   so a hosted build has no sign-in until the coordinated release moves the two
+   lines.
+
+2. Create the users. The script generates each password, stores it in AWS
+   Secrets Manager (`meridian/cognito/jordan` and `meridian/cognito/decoy`) and in
+   the macOS Keychain (service `meridian-cognito`), and writes the binding rows.
+   It prints no password. Without `--apply` it only reports:
+
+   ```bash
+   python scripts/seed_cognito_users.py
+   python scripts/seed_cognito_users.py --apply
+   ```
+
+   What the script does, as verified against the live cluster:
+
+   - It checks that each traveler exists before it creates anything. The
+     `travelers` table forces row-level security, so the check runs inside a
+     transaction pinned to that traveler with `app.current_traveler_id`;
+     an unpinned read returns nothing even when the row exists. A missing
+     traveler stops the run and names the seed script to run first.
+   - It stops when the user's `sub` already has an active `cognito` binding to a
+     different traveler, and tells you to revoke the extra binding (set
+     `status = 'revoked'` as the master login) and re-run. A reset keeps the
+     `sub` and does not revoke bindings, so it warns instead of leaving them.
+   - A run that stops partway is repaired by running it again. An existing user
+     is reset with a new password, and the secret, Keychain item and binding row
+     are rewritten. A reset does not refresh `name` or `picture`.
+
+   The two sign-in emails are `jordan.morgan@example.com` (Jordan Morgan) and
+   `jordan.lee@example.com` (Jordan Lee). To sign in by hand, open the web app
+   locally, choose sign in, and enter one of those emails. Read the password
+   from the Keychain when asked, and never paste it into a file or a chat:
+   `security find-generic-password -s meridian-cognito -a <email> -w`.
+
+   The decoy signs in but is refused its own records. Workload bindings are
+   `aws_iam` grants and are bound to Jordan Morgan only, so a signed-in decoy
+   gets 403 on `me` with `aws_iam subject is not authorized for traveler
+   trv_demo_decoy`, as well as on Jordan's records by id. That is the second
+   check working. It stays that way until B2 decides whether to bind a workload
+   to `trv_demo_decoy`, so a decoy that sees an empty or refused workspace is the
+   expected result, not a broken sign-in.
+
+3. Check the claim, the verification and the refusals against the deployed pool:
+
+   ```bash
+   python -m pytest tests/test_cognito_aurora.py -m database
+   ```
+
+How the backend decides who is calling. `require_http_principal` tries a bearer
+token in this order and never retries a failed token against a weaker check:
+
+1. The shared `MERIDIAN_API_TOKEN`, which the hosted site still uses.
+2. A Cognito access token, when the three `MERIDIAN_COGNITO_*` settings are
+   present. The signature, issuer, `token_use=access`, app client and expiry are
+   verified, and the traveler is the verified `traveler_id` claim. An ID token, a
+   token for another app client and a token with a changed claim are refused.
+3. A direct connection from the same machine in development, so local scripts and
+   tests run without a user pool. This path is skipped when `MERIDIAN_API_TOKEN`
+   is set, because a set token makes every other request fail with 401.
+
+`GET /api/me` returns the traveler the credential is bound to. The page sends
+`me` instead of a traveler id, and the API resolves it. A request that names any
+other traveler id is refused with 403, including one from the decoy that names
+Jordan.
+
+The workload grant is a second check. The App Runner role and the Lambda roles
+are bound to Jordan only, so a signed-in decoy is refused on its own records as
+well.
+
+### Sign-in settings in the web build
+
+`VITE_COGNITO_DOMAIN` and `VITE_COGNITO_CLIENT_ID` together turn on the sign-in
+screen. With neither set, the bundle is an ungated build and writes one console
+line, "Meridian is running as an ungated build: sign-in is not configured."
+`VITE_REQUIRE_SIGN_IN=1` makes a build fail when either variable is missing
+instead of shipping without sign-in; leave it unset for local and plain builds.
+The failure message names both variables.
+
+Today no build sets `VITE_REQUIRE_SIGN_IN`, and `scripts/publish.py` does not
+pass the two Cognito variables, so the hosted site stays ungated and keeps using
+the shared token until the B2 coordinated release. A build that carried its own
+`Authorization` header would be rejected by the CloudFront viewer function,
+which is why the settings live in `frontend/.env.development.local`.
+
+### Roll back the service logins and sign-in
+
+Undo in the reverse of the order above and stop at the step you need.
+
+1. Users. Delete the two Cognito users and the two `meridian/cognito/*`
+   secrets, delete the `cognito` binding rows
+   (`DELETE FROM traveler_identity_bindings WHERE identity_provider = 'cognito'`
+   as the master login), then remove the Keychain items:
+
+   ```bash
+   security delete-generic-password -s meridian-cognito -a jordan.morgan@example.com
+   security delete-generic-password -s meridian-cognito -a jordan.lee@example.com
+   ```
+
+2. Identity stack. From `infra/`, destroy the stack with the same `-c` values
+   you deployed with, then remove the settings it wrote:
+
+   ```bash
+   node_modules/.bin/cdk destroy -a "node dist/bin/meridian-identity.js" \
+     -c domainPrefix=<unique-prefix> -c callbackUrls=<urls> --force
+   sed -i '' '/^MERIDIAN_COGNITO_/d' .env
+   rm frontend/.env.development.local
+   ```
+
+3. Logins (provisioning). For each of the three roles, run
+   `ALTER ROLE <role> NOLOGIN PASSWORD NULL`, delete its secret with
+   `ForceDeleteWithoutRecovery`, delete the non-default versions of its managed
+   policy and then the policy, and remove the three `AURORA_*_SECRET_ARN` lines
+   from `.env`. Do this before the migration rollback.
+
+4. Migration 018. Run these as the master login, in this order. The five
+   `admin_count_select` policies belong to the master, so `DROP OWNED BY` on
+   the service roles does not remove them and each needs its own statement:
+
+   ```sql
+   DROP POLICY IF EXISTS traveler_preferences_admin_count_select ON traveler_preferences;
+   DROP POLICY IF EXISTS trip_interactions_admin_count_select ON trip_interactions;
+   DROP POLICY IF EXISTS conversations_admin_count_select ON conversations;
+   DROP POLICY IF EXISTS conversation_messages_admin_count_select ON conversation_messages;
+   DROP POLICY IF EXISTS agent_audit_admin_count_select ON agent_audit_log;
+   DROP POLICY IF EXISTS traveler_access_audit_backend_insert ON traveler_access_audit;
+   DROP POLICY IF EXISTS traveler_access_audit_gateway_insert ON traveler_access_audit;
+   DROP FUNCTION IF EXISTS backend_admin_count(TEXT, INTERVAL, TEXT);
+   DROP OWNED BY meridian_backend, meridian_gateway, meridian_identity;
+   DROP ROLE meridian_backend;
+   DROP ROLE meridian_gateway;
+   DROP ROLE meridian_identity;
+   DELETE FROM schema_migrations WHERE migration_name = '018_service_logins.sql';
+   ```
+
+   Roll back only while no workload uses the logins. After the coordinated
+   release, move the workloads back to the master login first.
+
 ## Publish the web app
 
 `scripts/publish.py` publishes the frontend to S3 behind CloudFront and the
@@ -314,6 +580,10 @@ explains why App Runner needs this.
 | The runtime replies but the trace has no gateway spans | The runtime runs older code. `agentcore status` shows the version; `agentcore deploy -y` publishes `app/MeridianConcierge`. |
 | `npx agentcore` fails with a cloud assembly schema version error | `npx` resolved an older cached CLI. Run the globally installed `agentcore`. |
 | `/api/health` reports `workflow_runtime_configured: false`, or Phase 5 reports AgentCore is not configured | The backend has no `AGENTCORE_WORKFLOW_RUNTIME_ARN`. Deploy `MeridianWorkflow`, run `python scripts/sync_agentcore_env.py --write` and restart the backend. See [Run the workflow Runtime](#run-the-workflow-runtime). |
+| Sign-in returns to the sign-in screen with "Sign-in was not completed" | The user has no active `cognito` binding, so the trigger refused the token. Run `python scripts/seed_cognito_users.py --apply`. |
+| The API returns 401 "A valid Meridian sign-in is required." | The token failed a check: expired, another app client, an ID token, or no `traveler_id` claim. Sign in again; the backend log names the reason code. |
+| The API returns 503 "Sign-in verification is temporarily unavailable." | The backend could not fetch the pool's signing keys. Check its outbound network and `MERIDIAN_COGNITO_REGION`. |
+| The decoy signs in but its records are refused | Expected until B2. Workload bindings are `aws_iam` grants bound to Jordan Morgan only. See [Sign-in and who is calling](#sign-in-and-who-is-calling). |
 | `stop-session` returns 409 | The journey has no paused or running workflow session, or its session was already stopped. Read the journey before trying again. |
 
 ## Waits, retries and readback

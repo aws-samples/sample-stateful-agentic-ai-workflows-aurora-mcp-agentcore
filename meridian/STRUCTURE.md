@@ -100,6 +100,8 @@ uses the governed Gateway path.
 | `scripts/verify_agentcore.py`, `scripts/smoke_gateway_tools.py`, `scripts/smoke_production_turn.py` | Check the deployed platform, the gateway tools and the governed hold path end to end |
 | `scripts/kill_and_resume_proof.py`, `scripts/lost_response_proof.py`, `scripts/stop_and_resume_proof.py` | Recovery exercises: kill a worker after its hold, discard a committed hold response, or stop the Runtime session and resume |
 | `scripts/provision_workflow_login.py`, `scripts/bind_workflow_runtime.py`, `scripts/stage_workflow_runtime.py` | Create or rotate the `meridian_workflow` login, bind the Runtime's workload, and stage the Runtime's backend copy |
+| `scripts/provision_service_logins.py` | Create or rotate the `meridian_backend`, `meridian_gateway` and `meridian_identity` logins, their secrets and managed policies |
+| `scripts/seed_cognito_users.py`, `scripts/sync_cognito_env.py`, `scripts/cognito_tokens.py` | Create the two sign-in users and their traveler bindings, copy the identity stack outputs into `.env`, and mint real tokens for tests |
 | `scripts/provision_preflight.py` | Read-only checks before provisioning Aurora in an account |
 | `scripts/publish.py`, `scripts/published.py` | Publish the hosted web app to an existing App Runner service; read back its local release record |
 | `scripts/validate_demo.py`, `scripts/release_demo_bookings.py` | End-to-end check of a running deployment; release the sample traveler's bookings |

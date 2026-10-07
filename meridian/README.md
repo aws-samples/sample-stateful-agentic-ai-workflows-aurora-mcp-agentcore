@@ -200,6 +200,9 @@ Every route except `/health` requires the HTTP principal described under
 | `MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS` | Whole-trip ceiling for Cedar when the traveler has no saved budget. Default `400000` |
 | `AGENTCORE_WORKFLOW_RUNTIME_ARN` | ARN of the `MeridianWorkflow` Runtime that runs Phase 5. `scripts/sync_agentcore_env.py --write` sets it |
 | `AURORA_WORKFLOW_SECRET_ARN` | Secret for the `meridian_workflow` login, written by `scripts/provision_workflow_login.py --write-env` |
+| `AURORA_BACKEND_SECRET_ARN`, `AURORA_GATEWAY_SECRET_ARN`, `AURORA_IDENTITY_SECRET_ARN` | Secrets for the `meridian_backend`, `meridian_gateway` and `meridian_identity` logins, written by `scripts/provision_service_logins.py --write-env`. No hosted workload uses the backend or gateway login yet |
+| `MERIDIAN_COGNITO_REGION`, `MERIDIAN_COGNITO_USER_POOL_ID`, `MERIDIAN_COGNITO_APP_CLIENT_ID` | Amazon Cognito sign-in for the API, all three or none, written by `scripts/sync_cognito_env.py --write` |
+| `VITE_COGNITO_DOMAIN`, `VITE_COGNITO_CLIENT_ID`, `VITE_REQUIRE_SIGN_IN` | Web build sign-in. The first two turn the sign-in screen on and are written to `frontend/.env.development.local`; `VITE_REQUIRE_SIGN_IN=1` fails a build that lacks them. The hosted build sets none of them yet. See [Sign-in settings](docs/OPERATIONS.md#sign-in-settings-in-the-web-build) |
 | `MERIDIAN_API_TOKEN`, `CORS_ORIGINS` | API token and allowed origins for any non-loopback deployment |
 
 `requirements.in` lists the direct Python dependencies and `requirements.txt`
