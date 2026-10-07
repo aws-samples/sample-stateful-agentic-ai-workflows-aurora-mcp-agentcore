@@ -21,6 +21,7 @@ FRAMEWORK_FREE = [
     "backend.retrieval.hybrid",
     "backend.retrieval.availability",
     "backend.agents.phase_05_workflow.memory_recall",
+    "backend.agents.phase_05_workflow.snapshot_storage",
 ]
 
 
