@@ -40,6 +40,7 @@ RESULT_KEYS = (
 ERROR_CODES: Tuple[Tuple[type, str], ...] = (
     (WorkflowRequestError, "request"),
     (WorkflowAuthorizationError, "authorization"),
+    (PermissionError, "authorization"),
     (WorkflowConflictError, "conflict"),
     (ExecutionLeaseLostError, "lease_lost"),
     (HoldOutcomeUnknown, "hold_unknown"),

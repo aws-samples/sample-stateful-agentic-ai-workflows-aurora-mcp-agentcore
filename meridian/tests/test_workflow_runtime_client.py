@@ -9,6 +9,8 @@ from botocore.exceptions import ClientError, ReadTimeoutError
 
 from backend.agentcore import workflow_runtime as wr
 from backend.agentcore.runtime import AgentCoreRuntimeAdapter
+from backend.agents.phase_05_workflow import runtime_entry
+from backend.authorization import AuthorizationDecision, TravelerAuthorizationError
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
 from backend.agents.phase_05_workflow.runner import (
     WorkflowCommand, WorkflowConflictError, WorkflowRequestError,
@@ -16,6 +18,7 @@ from backend.agents.phase_05_workflow.runner import (
 from backend.agents.phase_05_workflow.state import WorkflowAuthorizationError
 from backend.db.journey_store import ExecutionLeaseLostError
 
+DENIED = AuthorizationDecision(False, "deny", "trv_meridian_demo", "aws_iam", "role", "role")
 ARN = "arn:aws:bedrock-agentcore:us-east-1:111122223333:runtime/meridianv2_MeridianWorkflow-x"
 COMMAND = WorkflowCommand(query="My flight was canceled.", traveler_id="trv_meridian_demo",
                           thread_id="phase5-0123456789ab", resume=True, travelers_count=2)
@@ -68,6 +71,13 @@ def test_session_ids_are_stable_long_enough_and_distinct_from_the_concierge():
 async def test_error_codes_become_the_domain_errors(code, error):
     client = client_with(frames({"type": "error", "code": code, "message": "m"}))
     with pytest.raises(error, match="m"):
+        await wr.WorkflowRuntimeClient(ARN, client=client).run(COMMAND)
+
+
+async def test_a_traveler_authorization_failure_survives_the_runtime_as_a_403_error():
+    event = runtime_entry._error(TravelerAuthorizationError(DENIED))
+    client = client_with(frames(event))
+    with pytest.raises(WorkflowAuthorizationError, match="not authorized for traveler"):
         await wr.WorkflowRuntimeClient(ARN, client=client).run(COMMAND)
 
 

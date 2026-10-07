@@ -8,11 +8,13 @@ import re
 import pytest
 
 from backend.agents.phase_05_workflow import runtime_entry as entry
+from backend.authorization import AuthorizationDecision, TravelerAuthorizationError
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
 from backend.agents.phase_05_workflow.runner import WorkflowConflictError, WorkflowRequestError
 from backend.agents.phase_05_workflow.state import WorkflowAuthorizationError
 from backend.db.journey_store import ExecutionLeaseLostError
 
+DENIED = AuthorizationDecision(False, "deny", "trv_meridian_demo", "aws_iam", "role", "role")
 START = {"event": "workflow_turn", "mode": "start", "thread_id": "phase5-abc",
          "traveler_id": "trv_meridian_demo", "query": "My flight was canceled.",
          "travelers_count": 2, "review_only": False}
@@ -92,6 +94,8 @@ async def test_heartbeats_flow_while_the_run_works():
 @pytest.mark.parametrize(("error", "code"), [
     (WorkflowRequestError("bad"), "request"),
     (WorkflowAuthorizationError("not yours"), "authorization"),
+    (TravelerAuthorizationError(DENIED), "authorization"),
+    (PermissionError("denied"), "authorization"),
     (WorkflowConflictError("busy"), "conflict"),
     (ExecutionLeaseLostError("lost"), "lease_lost"),
     (HoldOutcomeUnknown("unknown"), "hold_unknown"),
