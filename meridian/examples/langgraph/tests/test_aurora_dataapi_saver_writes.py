@@ -22,9 +22,14 @@ from typing import Any
 import pytest
 from langgraph.checkpoint.base import WRITES_IDX_MAP
 
-from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
-from backend.db.blob_windows import MAX_ROW_BYTES, split_for_write
-from tests.test_aurora_dataapi_saver import Cluster, FaultAfter, _checkpoint, cluster
+from examples.langgraph.aurora_dataapi_saver import AuroraDataApiSaver
+from examples.langgraph.blob_windows import MAX_ROW_BYTES, split_for_write
+from examples.langgraph.tests.test_aurora_dataapi_saver import (
+    Cluster,
+    FaultAfter,
+    _checkpoint,
+    cluster,
+)
 
 __all__ = ["cluster"]
 
@@ -180,14 +185,14 @@ def test_reserved_write_reset_sets_rather_than_concatenates() -> None:
     Reserved-write idempotence depends on this: a re-put of the same
     ``__resume__`` payload must replace the stored blob, not double it.
     """
-    from backend.db.aurora_dataapi_saver import UPSERT_WRITE_SQL
+    from examples.langgraph.aurora_dataapi_saver import UPSERT_WRITE_SQL
 
     assert "blob = EXCLUDED.blob" in UPSERT_WRITE_SQL
 
 
 def test_write_window_sql_casts_both_substring_bounds() -> None:
     """``substring(bytea, bigint, bigint)`` has no overload on PostgreSQL."""
-    from backend.db.aurora_dataapi_saver import WRITE_WINDOW_SQL
+    from examples.langgraph.aurora_dataapi_saver import WRITE_WINDOW_SQL
 
     assert "FROM %s::integer FOR %s::integer" in WRITE_WINDOW_SQL
 

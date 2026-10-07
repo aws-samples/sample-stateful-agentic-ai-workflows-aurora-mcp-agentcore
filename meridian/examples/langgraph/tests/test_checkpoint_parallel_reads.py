@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
+from examples.langgraph.aurora_dataapi_saver import AuroraDataApiSaver
 
 
 @pytest.mark.parametrize("fail", [False, True])

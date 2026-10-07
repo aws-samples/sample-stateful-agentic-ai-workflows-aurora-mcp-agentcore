@@ -1,5 +1,5 @@
 """Vendored from langchain-ai/langgraph, libs/checkpoint/tests/test_memory.py,
-tag checkpoint==4.1.1. See tests/conformance/README.md for provenance and for
+tag checkpoint==4.1.1. See examples/langgraph/tests/conformance/README.md for provenance and for
 the list of adaptations made to point this suite at AuroraDataApiSaver
 instead of InMemorySaver.
 """
@@ -24,7 +24,7 @@ from langgraph.checkpoint.serde.jsonplus import (
     _warned_unregistered_types,
 )
 
-from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
+from examples.langgraph.aurora_dataapi_saver import AuroraDataApiSaver
 
 
 class MemoryPydantic(BaseModel):
@@ -128,7 +128,7 @@ class TestMemorySaver:
         reason=(
             "AuroraDataApiSaver.alist deliberately does not implement metadata "
             "filtering (see its docstring and "
-            "tests/test_aurora_dataapi_saver_writes.py::test_alist_raises_for_"
+            "examples/langgraph/tests/test_aurora_dataapi_saver_writes.py::test_alist_raises_for_"
             "nonempty_filter) -- a documented, already-tested design limit, not "
             "a gap this task should close. See task-6-report.md."
         )
@@ -194,7 +194,7 @@ class TestMemorySaver:
         reason=(
             "AuroraDataApiSaver.alist deliberately does not implement metadata "
             "filtering (see its docstring and "
-            "tests/test_aurora_dataapi_saver_writes.py::test_alist_raises_for_"
+            "examples/langgraph/tests/test_aurora_dataapi_saver_writes.py::test_alist_raises_for_"
             "nonempty_filter) -- a documented, already-tested design limit, not "
             "a gap this task should close. See task-6-report.md."
         )
@@ -307,7 +307,7 @@ async def test_memory_saver_allowlist_silences_warning(
 ) -> None:
     serde = JsonPlusSerializer(
         allowed_msgpack_modules=[
-            ("tests.conformance.test_checkpointer_conformance", "MemoryPydantic")
+            (__name__, "MemoryPydantic")
         ]
     )
     memory_saver = AuroraDataApiSaver(cluster, serde=serde)
@@ -361,7 +361,7 @@ async def test_memory_saver_with_allowlist_proxy_isolated(cluster) -> None:
     serde = JsonPlusSerializer(allowed_msgpack_modules=None)
     memory_saver = AuroraDataApiSaver(cluster, serde=serde)
     proxy = memory_saver.with_allowlist(
-        [("tests.conformance.test_checkpointer_conformance", "MemoryPydantic")]
+        [(__name__, "MemoryPydantic")]
     )
 
     obj = MemoryPydantic(foo="bar")

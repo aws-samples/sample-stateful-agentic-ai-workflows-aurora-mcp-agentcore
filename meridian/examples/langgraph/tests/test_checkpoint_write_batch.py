@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from langgraph.checkpoint.base import WRITES_IDX_MAP
 
-from backend.db.aurora_dataapi_saver import (
+from examples.langgraph.aurora_dataapi_saver import (
     INSERT_WRITE_SQL,
     UPSERT_WRITE_SQL,
     AuroraDataApiSaver,

@@ -110,7 +110,8 @@ uses the governed Gateway path.
 | --- | --- |
 | `examples/rls_app_role.sql`, `examples/rls_for_agents.sql` | The restricted RLS role, RLS policies and the authorization audit view |
 | `examples/memory_mcp_demo.py` | Stand-alone client for the custom memory MCP server |
-| `tests/` | Pytest suite; `tests/conformance/` runs LangGraph's checkpointer conformance tests against `AuroraDataApiSaver` |
+| `tests/` | Pytest suite |
+| `examples/langgraph/` | Maintained LangGraph example: `AuroraDataApiSaver`, a pause and resume graph, and its tests, including the checkpointer conformance suite |
 | `docs/` | Architecture, operations, deployment runbook, code walkthrough and design notes |
 
 ## Naming

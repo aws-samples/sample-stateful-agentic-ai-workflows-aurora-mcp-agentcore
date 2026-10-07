@@ -8,7 +8,7 @@ wire, comfortably inside the limit.
 
 import pytest
 
-from backend.db.blob_windows import MAX_ROW_BYTES, split_for_write, window_offsets
+from examples.langgraph.blob_windows import MAX_ROW_BYTES, split_for_write, window_offsets
 
 
 def test_window_is_half_the_row_limit() -> None:

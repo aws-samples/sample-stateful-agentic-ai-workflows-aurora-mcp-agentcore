@@ -95,7 +95,7 @@ visits every node.
 | `meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py`, `create_courtesy_hold` | Reauthorizes the workload, checks the lease and calls Aurora's idempotent write |
 | `scripts/migrations/008_hold_request_identity.sql` | Replay protection in the same transaction as the business write |
 | `backend/agents/phase_05_workflow/workflow.py`, `_node_synthesize` | Builds the closing status from saved state, including the hold outcome and expiry |
-| `backend/db/aurora_dataapi_saver.py`, `AuroraDataApiSaver` | The LangGraph checkpointer over the RDS Data API |
+| `examples/langgraph/aurora_dataapi_saver.py`, `AuroraDataApiSaver` | The LangGraph checkpointer over the RDS Data API |
 
 A graceful restart, a hard kill and a lost response are different failures;
 [OPERATIONS.md](OPERATIONS.md#exercise-recovery-failures) shows how to

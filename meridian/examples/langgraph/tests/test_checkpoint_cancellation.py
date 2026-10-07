@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-import backend.db.aurora_dataapi_saver as saver_module
-from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
+import examples.langgraph.aurora_dataapi_saver as saver_module
+from examples.langgraph.aurora_dataapi_saver import AuroraDataApiSaver
 
 
 async def test_cancelled_pending_write_rolls_back_without_committing(monkeypatch):

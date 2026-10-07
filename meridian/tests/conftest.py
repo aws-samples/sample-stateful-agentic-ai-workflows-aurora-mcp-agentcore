@@ -185,7 +185,3 @@ TRIP_TYPES = [
     "Family Trips",
     "Business Travel",
 ]
-
-
-# A3 rewrites these against examples/langgraph/; until then they stay out of collection.
-collect_ignore = ["langgraph_example_pending"]

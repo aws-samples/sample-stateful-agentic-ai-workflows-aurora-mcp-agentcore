@@ -23,8 +23,8 @@ from typing import Any, AsyncIterator
 import pytest
 import pytest_asyncio
 
-from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
-from backend.db.blob_windows import MAX_ROW_BYTES, split_for_write
+from examples.langgraph.aurora_dataapi_saver import AuroraDataApiSaver
+from examples.langgraph.blob_windows import MAX_ROW_BYTES, split_for_write
 from backend.db.rds_data_client import get_rds_data_client
 
 CHECKPOINT_TABLES = ("checkpoint_writes", "checkpoint_blobs", "checkpoints")
@@ -228,7 +228,7 @@ def test_blob_window_sql_casts_both_substring_bounds() -> None:
     overload, and ``RDSDataClient`` encodes Python ``int`` as ``longValue``
     (bigint). Both bounds must be cast to ``integer`` explicitly in the SQL.
     """
-    from backend.db.aurora_dataapi_saver import BLOB_WINDOW_SQL
+    from examples.langgraph.aurora_dataapi_saver import BLOB_WINDOW_SQL
 
     assert "FROM %s::integer FOR %s::integer" in BLOB_WINDOW_SQL
 
