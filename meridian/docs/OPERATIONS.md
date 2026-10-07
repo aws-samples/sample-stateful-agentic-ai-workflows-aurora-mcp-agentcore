@@ -484,6 +484,17 @@ To revoke as fast as the system allows:
    users, until you restore them. `AdminUserGlobalSignOut` alone does not do
    this, because the backend never calls Cognito to check a token.
 
+### The browser test suite runs ungated
+
+`npm run test:accessibility` (Playwright, from `frontend/`) starts its dev server
+with `--mode e2e` on port 4174. That mode does not read
+`frontend/.env.development.local`, so a machine that ran
+`scripts/sync_cognito_env.py --write` still gets the showcase and the suite
+passes. The suite is ungated by design. The sign-in screen is covered by the
+`gated` Playwright project (`e2e/gated/signIn.spec.ts`), which starts a second
+server on port 4175 in mode `gated-e2e` with placeholder `VITE_COGNITO_*`
+values, and by the `AuthGate` component tests. Neither uses the real settings.
+
 ### Roll back the service logins and sign-in
 
 Undo in the reverse of the order above and stop at the step you need.
