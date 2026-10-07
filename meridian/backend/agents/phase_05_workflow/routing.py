@@ -84,17 +84,18 @@ def classify_intent(query: str) -> str:
 
 
 def pauses_after_search(query: str, review_only: bool) -> bool:
-    """Whether the run stops for review after search, before availability.
+    """Whether the run stops for review once search has completed.
 
     A review request always does. So does the canonical recovery, which pauses
     after search so the room sees a saved step before availability fan-out.
+    A route that runs no search has nothing to pause after.
 
     Args:
         query: The traveler's request.
         review_only: The caller asked to review the shortlist first.
 
     Returns:
-        True when the graph must interrupt before the availability node.
+        True when the graph must interrupt before the node that follows search.
     """
     if review_only:
         return True
