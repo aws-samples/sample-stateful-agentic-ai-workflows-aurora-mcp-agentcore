@@ -7,6 +7,7 @@ Contains route handlers for:
 - memory: Traveler memory endpoints
 - diagnostics: RLS-probe and other live system diagnostics
 - journeys: journey evidence documents behind Presenter proof
+- session: GET /api/me, the traveler the caller is authenticated as
 """
 
 from .chat import router as chat_router
@@ -14,6 +15,7 @@ from .products import router as packages_router, legacy_router as products_route
 from .memory import router as memory_router
 from .diagnostics import router as diagnostics_router
 from .journeys import router as journeys_router
+from .session import router as session_router
 
 __all__ = [
     "chat_router",
@@ -22,4 +24,5 @@ __all__ = [
     "memory_router",
     "diagnostics_router",
     "journeys_router",
+    "session_router",
 ]

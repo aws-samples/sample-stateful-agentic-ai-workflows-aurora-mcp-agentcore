@@ -35,6 +35,7 @@ from backend.routers import (
     memory_router,
     diagnostics_router,
     journeys_router,
+    session_router,
 )
 
 
@@ -134,6 +135,7 @@ app.include_router(products_router)
 app.include_router(memory_router)
 app.include_router(diagnostics_router)
 app.include_router(journeys_router)
+app.include_router(session_router)
 
 
 async def _health_payload() -> HealthResponse:

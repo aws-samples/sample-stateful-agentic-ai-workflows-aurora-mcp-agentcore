@@ -4,17 +4,43 @@ The AgentCore identity used by the backend authenticates the AWS workload. It
 does not authenticate the browser or API caller. This module supplies that
 separate boundary and makes the authenticated principal's traveler binding
 authoritative for every traveler-scoped request.
+
+``require_http_principal`` is the one seam every route depends on. A bearer token
+is checked in this order, and a token that fails one check is never retried
+against a weaker one:
+
+1. the shared ``MERIDIAN_API_TOKEN`` (hosted release before the Cognito cutover);
+2. a Cognito access token, when ``MERIDIAN_COGNITO_*`` is configured: the traveler
+   is the verified ``traveler_id`` claim and nothing the caller sends can change it;
+3. a direct loopback connection in development, so local scripts and tests run
+   without a user pool.
+
+The cutover release deletes the first and third paths and leaves only the second.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hmac
+import logging
 import os
 from dataclasses import dataclass
 
 from fastapi import Header, HTTPException, Request, status
 
+from backend.cognito_auth import (
+    CognitoUnavailable,
+    CognitoVerifier,
+    InvalidCognitoToken,
+    get_cognito_verifier,
+)
 from backend.memory.store import DEMO_TRAVELER_ID
+
+logger = logging.getLogger(__name__)
+
+# What a browser sends when it means "the traveler I am signed in as". The server resolves it
+# from the verified principal, so the client never needs to know or choose a traveler id.
+CURRENT_TRAVELER = "me"
 
 
 @dataclass(frozen=True)
@@ -47,36 +73,77 @@ def _local_development_allowed() -> bool:
     return os.getenv("ENVIRONMENT", "development").lower() == "development"
 
 
+def _bearer(authorization: str | None) -> str:
+    """The token in an ``Authorization: Bearer`` header, or an empty string."""
+    scheme, _, supplied = (authorization or "").partition(" ")
+    return supplied if scheme.lower() == "bearer" else ""
+
+
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def _api_traveler_id() -> str:
+    return os.getenv("MERIDIAN_API_TRAVELER_ID", DEMO_TRAVELER_ID).strip()
+
+
+async def _cognito_principal(verifier: CognitoVerifier, token: str) -> HttpPrincipal:
+    """Verify a Cognito access token. The traveler is its verified claim."""
+    try:
+        identity = await asyncio.to_thread(verifier.verify, token)
+    except CognitoUnavailable as exc:
+        logger.error("Cognito signing keys unavailable: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Sign-in verification is temporarily unavailable.",
+        ) from exc
+    except InvalidCognitoToken as exc:
+        logger.info("Rejected a Cognito token: %s", exc.reason)
+        raise _unauthorized("A valid Meridian sign-in is required.") from exc
+    return HttpPrincipal(
+        subject_id=identity.subject_id,
+        traveler_id=identity.traveler_id,
+        authentication="cognito",
+    )
+
+
 async def require_http_principal(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> HttpPrincipal:
-    """Authenticate an HTTP caller and return its fixed traveler binding."""
-    traveler_id = os.getenv("MERIDIAN_API_TRAVELER_ID", DEMO_TRAVELER_ID).strip()
+    """Authenticate an HTTP caller and return the traveler it is bound to."""
+    bearer = _bearer(authorization)
     expected_token = os.getenv("MERIDIAN_API_TOKEN", "").strip()
 
-    if expected_token:
-        scheme, _, supplied = (authorization or "").partition(" ")
-        if scheme.lower() != "bearer" or not supplied or not hmac.compare_digest(
-            supplied.encode(), expected_token.encode()
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="A valid Meridian bearer token is required.",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+    if expected_token and bearer and hmac.compare_digest(
+        bearer.encode(), expected_token.encode()
+    ):
         return HttpPrincipal(
             subject_id="configured-api-client",
-            traveler_id=traveler_id,
+            traveler_id=_api_traveler_id(),
             authentication="bearer",
         )
+
+    verifier = get_cognito_verifier()
+    if verifier is not None and bearer:
+        return await _cognito_principal(verifier, bearer)
+
+    if expected_token:
+        raise _unauthorized("A valid Meridian bearer token is required.")
 
     if _local_development_allowed() and _is_loopback(request):
         return HttpPrincipal(
             subject_id="local-workshop",
-            traveler_id=traveler_id,
+            traveler_id=_api_traveler_id(),
             authentication="loopback-development",
         )
+
+    if verifier is not None:
+        raise _unauthorized("Sign in to use Meridian.")
 
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -91,8 +158,14 @@ def authorize_traveler(
     principal: HttpPrincipal,
     requested_traveler_id: str | None,
 ) -> str:
-    """Return the authenticated traveler or reject a caller-controlled mismatch."""
-    if requested_traveler_id and requested_traveler_id != principal.traveler_id:
+    """Return the authenticated traveler or reject a caller-controlled mismatch.
+
+    No id, an empty id and ``CURRENT_TRAVELER`` all mean the principal's own traveler.
+    Any other id must equal the principal's, whatever the caller claims.
+    """
+    if requested_traveler_id in (None, "", CURRENT_TRAVELER):
+        return principal.traveler_id
+    if requested_traveler_id != principal.traveler_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The authenticated caller is not authorized for that traveler.",

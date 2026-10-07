@@ -34,6 +34,13 @@ def isolated_unit_environment(request, monkeypatch):
     }.items():
         monkeypatch.setenv(name, value)
     monkeypatch.delenv("AWS_SESSION_TOKEN", raising=False)
+    # A developer's .env may configure Cognito sign-in; unit tests choose their own.
+    for name in (
+        "MERIDIAN_COGNITO_REGION",
+        "MERIDIAN_COGNITO_USER_POOL_ID",
+        "MERIDIAN_COGNITO_APP_CLIENT_ID",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
     attempted = []
     connect = socket.socket.connect
