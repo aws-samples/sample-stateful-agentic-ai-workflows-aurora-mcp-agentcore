@@ -1,6 +1,7 @@
 """Stopping a journey's Runtime session: only your own journey, only while it runs or waits."""
 
 import json
+import os
 import uuid
 
 import pytest
@@ -20,13 +21,21 @@ pytestmark = pytest.mark.database
 
 JORDAN = HttpPrincipal("test", "trv_meridian_demo", "test")
 
+# Recording stopped_during='finished' needs migration 017's widened check constraint.
+needs_017 = pytest.mark.skipif(
+    os.environ.get("MERIDIAN_MIGRATION_017_APPLIED") != "1",
+    reason="needs migration 017; set MERIDIAN_MIGRATION_017_APPLIED=1 once it is applied",
+)
+
 
 class Runtime:
     def __init__(self, outcome="stopped"):
-        self.stops, self.outcome = [], outcome
+        self.stops, self.outcome, self.while_stopping = [], outcome, None
 
     async def stop_session(self, traveler_id, thread_id):
         self.stops.append((traveler_id, thread_id))
+        if self.while_stopping:
+            await self.while_stopping(thread_id)
         return SessionStop(workflow_session_id(traveler_id, thread_id), self.outcome)
 
 
@@ -36,7 +45,8 @@ async def journey_with(monkeypatch):
     made, runtime = [], Runtime()
     monkeypatch.setattr(journeys, "get_workflow_runtime", lambda: runtime)
 
-    async def make(traveler="trv_meridian_demo", status="paused", completed=None):
+    async def make(traveler="trv_meridian_demo", status="paused", completed=None,
+                   graph_status=None):
         thread = f"stop-{uuid.uuid4().hex[:10]}"
         journey = await create_journey(master, traveler, "Aurora workflow_snapshots")
         await bind_thread(master, journey, thread)
@@ -53,7 +63,7 @@ async def journey_with(monkeypatch):
                 # Strands serializes completed_nodes from a set, so its order is arbitrary;
                 # execution_order is the ordered list the last step must come from.
                 "completed_nodes": completed[-1:] + completed[:-1],
-                "execution_order": completed}}}
+                "execution_order": completed, "status": graph_status}}}
             await master.execute(
                 "INSERT INTO workflow_snapshots (storage_key, session_id, traveler_id, snapshot) "
                 "VALUES (%s, %s, %s, %s::jsonb)",
@@ -214,3 +224,105 @@ async def test_a_failed_stop_call_is_503_and_leaves_the_lease_alone(journey_with
     assert caught.value.status_code == 503
     assert [r["status"] for r in await _statuses(thread)] == ["running"]
     assert await _stop_rows(journey) == []
+
+
+async def _master(sql, params=()):
+    return await get_rds_data_client().execute(sql, params)
+
+
+@needs_017
+async def test_a_completed_run_whose_release_was_lost_is_closed_not_abandoned(journey_with):
+    make, _ = journey_with
+    journey, thread = await make(
+        status="running", completed=["intake", "synthesize"], graph_status="completed")
+    before = (await _statuses(thread))[0]
+    reply = await journeys.stop_session(journey, JORDAN, None)
+    assert reply["stopped_during"] == "finished" and reply["last_step"] == "synthesize"
+    after = await _statuses(thread)
+    assert [r["status"] for r in after] == ["succeeded"]
+    assert after[0]["lease_expires_at"] is None
+    rows = await _stop_rows(journey)
+    assert rows[0]["stopped_during"] == "finished"
+    assert rows[0]["released_execution_id"] == before["execution_id"]
+
+
+
+@needs_017
+async def test_a_worker_that_finishes_before_the_record_is_recorded_as_finished(journey_with):
+    make, runtime = journey_with
+    journey, thread = await make(
+        status="running", completed=["intake", "synthesize"], graph_status="completed")
+
+    async def worker_releases(thread_id):
+        await _master(
+            "UPDATE journey_executions SET status = 'succeeded', ended_at = CURRENT_TIMESTAMP, "
+            "lease_expires_at = NULL WHERE thread_id = %s", (thread_id,))
+
+    runtime.while_stopping = worker_releases
+    reply = await journeys.stop_session(journey, JORDAN, None)
+    assert reply["stopped_during"] == "finished"
+    assert [r["status"] for r in await _statuses(thread)] == ["succeeded"]
+
+
+
+async def test_a_run_that_pauses_while_the_stop_lands_is_recorded_as_waiting(journey_with):
+    make, runtime = journey_with
+    journey, thread = await make(status="running", completed=["intake", "retrieve"])
+
+    async def worker_pauses(thread_id):
+        await _master(
+            "UPDATE journey_executions SET status = 'paused', lease_expires_at = NULL "
+            "WHERE thread_id = %s", (thread_id,))
+
+    runtime.while_stopping = worker_pauses
+    reply = await journeys.stop_session(journey, JORDAN, None)
+    assert reply["stopped_during"] == "waiting"
+    assert [r["status"] for r in await _statuses(thread)] == ["paused"]
+    assert (await _stop_rows(journey))[0]["released_execution_id"] is None
+
+
+async def test_a_newer_claim_during_the_stop_is_the_execution_that_is_released(journey_with):
+    make, runtime = journey_with
+    journey, thread = await make(status="running", completed=["intake", "retrieve"])
+
+    async def resume_claims_first(thread_id):
+        await _master(
+            "UPDATE journey_executions SET status = 'abandoned', lease_expires_at = NULL "
+            "WHERE thread_id = %s", (thread_id,))
+        await _master(
+            "INSERT INTO journey_executions (execution_id, journey_id, thread_id, attempt, "
+            "worker_id, status, lease_expires_at) VALUES (%s, %s, %s, 2, 'w2', 'running', "
+            "CURRENT_TIMESTAMP + interval '300 seconds')",
+            (f"exec-{uuid.uuid4().hex[:12]}", journey, thread_id))
+
+    runtime.while_stopping = resume_claims_first
+    reply = await journeys.stop_session(journey, JORDAN, None)
+    assert reply["stopped_during"] == "running"
+    rows = await _statuses(thread)
+    assert [r["status"] for r in rows] == ["abandoned", "abandoned"]
+    assert (await _stop_rows(journey))[0]["released_execution_id"] == rows[1]["execution_id"]
+    fresh = await claim_execution(get_rds_data_client(), journey, thread, "resumer")
+    assert fresh.claimed is True and fresh.attempt == 3
+
+
+async def test_a_repeat_stop_is_refused_and_adds_no_row(journey_with):
+    make, runtime = journey_with
+    journey, _ = await make(status="paused", completed=["intake"])
+    await journeys.stop_session(journey, JORDAN, None)
+    with pytest.raises(HTTPException) as caught:
+        await journeys.stop_session(journey, JORDAN, None)
+    assert caught.value.status_code == 409
+    assert caught.value.detail == "This session was already stopped."
+    assert len(runtime.stops) == 1
+    assert len(await _stop_rows(journey)) == 1
+
+
+async def test_a_resume_after_a_stop_can_be_stopped_again(journey_with):
+    make, runtime = journey_with
+    journey, thread = await make(status="running", completed=["intake"])
+    await journeys.stop_session(journey, JORDAN, None)
+    fresh = await claim_execution(get_rds_data_client(), journey, thread, "resumer")
+    assert fresh.claimed is True
+    reply = await journeys.stop_session(journey, JORDAN, None)
+    assert reply["stopped_during"] == "running"
+    assert len(runtime.stops) == 2 and len(await _stop_rows(journey)) == 2
