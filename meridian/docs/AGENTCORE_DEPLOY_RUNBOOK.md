@@ -197,8 +197,15 @@ order. Steps 1, 2, 4, 5 and 7 change the live account or call the deployed
 Runtime, so confirm each before you run it.
 
 1. Apply the migrations that create the login and the stop record, 015 and 016.
-   `apply_migrations.py` applies every pending migration, so read the pending
-   list first and apply on its own:
+   Migration 016 joined 015 because it adds the columns the stop record needs.
+   `apply_migrations.py` applies every pending migration, so list the pending
+   ones first. `--pending` only reads and prints names:
+
+   ```bash
+   python meridian/scripts/apply_migrations.py --pending
+   ```
+
+   Apply only when the list is exactly the migrations named here; otherwise stop:
 
    ```bash
    python meridian/scripts/apply_migrations.py

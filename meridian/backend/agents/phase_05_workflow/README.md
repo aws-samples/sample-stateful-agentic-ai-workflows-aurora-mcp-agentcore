@@ -30,7 +30,7 @@ Runtime bundle, where it connects to AWS Aurora as the `meridian_workflow` login
 `runtime_entry.py` is the only entry. The backend invokes the Runtime on a session
 id derived from the thread. A presenter can stop that session; the next resume
 starts a new microVM on the same session id, which claims the next attempt and
-restores the newest saved snapshot from Aurora, so no state lives on the microVM.
+restores the newest saved snapshot from AWS Aurora, so no state lives on the microVM.
 
 ## Live checkpoint
 

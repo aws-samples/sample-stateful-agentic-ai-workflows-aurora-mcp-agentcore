@@ -7,6 +7,7 @@ depends on a newer database contract.
 
 from __future__ import annotations
 
+import argparse
 import os
 from pathlib import Path
 
@@ -70,6 +71,23 @@ def _applied_migrations(client) -> set[str]:
     }
 
 
+def _applied_migrations_read_only(client) -> set[str]:
+    """The applied names without creating the tracking table when it is absent."""
+    exists = _execute(client, "SELECT to_regclass('public.schema_migrations')::text")
+    cells = (exists.get("records") or [[{"isNull": True}]])[0]
+    if not cells or cells[0].get("isNull") or "stringValue" not in cells[0]:
+        return set()
+    return _applied_migrations(client)
+
+
+def _pending_paths(applied: set[str]) -> list[Path]:
+    return [
+        path
+        for path in sorted(MIGRATIONS_DIR.glob("[0-9][0-9][0-9]_*.sql"))
+        if path.name not in applied
+    ]
+
+
 def _apply_migration(client, path: Path) -> None:
     transaction_id = client.begin_transaction(
         resourceArn=CLUSTER_ARN,
@@ -104,7 +122,13 @@ def _apply_migration(client, path: Path) -> None:
         raise
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--pending", action="store_true",
+        help="print the pending migration names and exit; writes nothing",
+    )
+    args = parser.parse_args(argv)
     if not CLUSTER_ARN or not SECRET_ARN:
         console.print("[red]Missing AURORA_CLUSTER_ARN or AURORA_SECRET_ARN[/red]")
         return 2
@@ -113,13 +137,12 @@ def main() -> int:
         return 0
 
     client = boto3.client("rds-data", region_name=REGION)
+    if args.pending:
+        for path in _pending_paths(_applied_migrations_read_only(client)):
+            print(path.name)
+        return 0
     _ensure_migration_table(client)
-    applied = _applied_migrations(client)
-    pending = [
-        path
-        for path in sorted(MIGRATIONS_DIR.glob("[0-9][0-9][0-9]_*.sql"))
-        if path.name not in applied
-    ]
+    pending = _pending_paths(_applied_migrations(client))
 
     if not pending:
         console.print("[green]No pending migrations.[/green]")

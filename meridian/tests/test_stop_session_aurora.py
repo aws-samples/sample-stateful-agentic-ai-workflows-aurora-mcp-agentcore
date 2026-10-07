@@ -49,7 +49,11 @@ async def journey_with(monkeypatch):
                 "THEN CURRENT_TIMESTAMP + interval '300 seconds' END)",
                 (f"exec-{uuid.uuid4().hex[:12]}", journey, thread, status, status))
         if completed is not None:
-            snapshot = {"data": {"state": {"completed_nodes": completed}}}
+            snapshot = {"data": {"state": {
+                # Strands serializes completed_nodes from a set, so its order is arbitrary;
+                # execution_order is the ordered list the last step must come from.
+                "completed_nodes": completed[-1:] + completed[:-1],
+                "execution_order": completed}}}
             await master.execute(
                 "INSERT INTO workflow_snapshots (storage_key, session_id, traveler_id, snapshot) "
                 "VALUES (%s, %s, %s, %s::jsonb)",

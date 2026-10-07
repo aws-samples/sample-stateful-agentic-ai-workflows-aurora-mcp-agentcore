@@ -89,3 +89,45 @@ def test_apply_migration_rolls_back_on_statement_failure(
 
     assert client.commits == []
     assert [call["transactionId"] for call in client.rollbacks] == ["tx-migration"]
+
+
+class ScriptedClient(FakeRdsDataClient):
+    def __init__(self, table: str | None, applied: list[str]) -> None:
+        super().__init__()
+        self.table, self.applied = table, applied
+
+    def execute_statement(self, **kwargs):
+        self.executed.append(kwargs)
+        if "to_regclass" in kwargs["sql"]:
+            cell = {"stringValue": self.table} if self.table else {"isNull": True}
+            return {"records": [[cell]]}
+        return {"records": [[{"stringValue": name}] for name in self.applied]}
+
+
+def _pending_run(monkeypatch, tmp_path, client, capsys) -> tuple[int, list[str]]:
+    for name in ("001_a.sql", "002_b.sql", "003_c.sql"):
+        (tmp_path / name).write_text("SELECT 1;")
+    monkeypatch.setattr(migrations, "MIGRATIONS_DIR", tmp_path)
+    monkeypatch.setattr(migrations, "CLUSTER_ARN", "cluster-arn")
+    monkeypatch.setattr(migrations, "SECRET_ARN", "secret-arn")
+    monkeypatch.setattr(migrations.boto3, "client", lambda *a, **k: client)
+    code = migrations.main(["--pending"])
+    return code, capsys.readouterr().out.split()
+
+
+def test_pending_lists_unapplied_names_and_writes_nothing(monkeypatch, tmp_path, capsys):
+    client = ScriptedClient("schema_migrations", ["001_a.sql"])
+    code, names = _pending_run(monkeypatch, tmp_path, client, capsys)
+    assert (code, names) == (0, ["002_b.sql", "003_c.sql"])
+    statements = " ".join(call["sql"] for call in client.executed).upper()
+    assert "CREATE" not in statements and "INSERT" not in statements
+    assert client.commits == [] and client.executed[0].get("transactionId") is None
+
+
+def test_pending_with_no_tracking_table_lists_everything_without_creating_it(
+    monkeypatch, tmp_path, capsys
+):
+    client = ScriptedClient(None, [])
+    code, names = _pending_run(monkeypatch, tmp_path, client, capsys)
+    assert (code, names) == (0, ["001_a.sql", "002_b.sql", "003_c.sql"])
+    assert all("CREATE" not in call["sql"].upper() for call in client.executed)

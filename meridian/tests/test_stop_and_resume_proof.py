@@ -101,3 +101,21 @@ def test_running_hold_must_carry_the_saved_hold_request_id():
 
 def test_running_two_holds_fail():
     assert any("hold" in f for f in check_running(RUNNING, HELD * 2))
+
+
+def test_running_in_a_different_session_fails():
+    other = doc(["rt-wf-a/vm-aaaaaaaaaaaa", "rt-wf-a/vm-bbbbbbbbbbbb", "rt-wf-b/vm-cccccccccccc"],
+                RUN_STATUSES, during="running", last_step="search")
+    assert any("session" in f for f in check_running(other))
+
+
+def test_running_needs_resumed_after_restart():
+    not_restarted = doc(RUN_WORKERS, RUN_STATUSES, during="running", last_step="search",
+                        restarted=False)
+    assert any("resumed_after_restart" in f for f in check_running(not_restarted))
+
+
+def test_a_waiting_hold_must_carry_a_captured_intent_id():
+    assert proof.check_restart(GOOD, HELD, "waiting", saved_hold_request_id="hr-1") == []
+    assert any("hold_request_id" in f for f in proof.check_restart(
+        GOOD, HELD, "waiting", saved_hold_request_id="hr-other"))

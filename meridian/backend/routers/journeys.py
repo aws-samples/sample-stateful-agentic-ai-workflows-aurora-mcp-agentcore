@@ -29,7 +29,7 @@ SELECT execution_id, status FROM journey_executions
  WHERE thread_id = %s ORDER BY attempt DESC LIMIT 1
 """
 LAST_STEP_SQL = """
-SELECT snapshot #>> '{data,state,completed_nodes,-1}' AS last_step
+SELECT snapshot #>> '{data,state,execution_order,-1}' AS last_step
   FROM workflow_snapshots WHERE session_id = %s AND storage_key = %s
  ORDER BY snapshot_seq DESC LIMIT 1
 """
