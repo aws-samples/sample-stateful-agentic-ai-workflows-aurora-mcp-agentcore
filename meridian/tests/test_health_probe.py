@@ -26,7 +26,7 @@ class _OkDb:
 
     async def execute_one(self, sql, params=None):
         self.calls += 1
-        return {"snapshots": True}
+        return {"snapshots": True, "stops": True}
 
 
 class _FailingDb:
@@ -42,7 +42,7 @@ class _FailingDb:
 class _SlowDb:
     async def execute_one(self, sql, params=None):
         await asyncio.sleep(10)
-        return {"snapshots": True}
+        return {"snapshots": True, "stops": True}
 
 
 def test_probe_passes_when_aurora_answers_and_the_snapshot_table_exists(monkeypatch):
@@ -57,12 +57,12 @@ def test_probe_passes_when_aurora_answers_and_the_snapshot_table_exists(monkeypa
 
 
 class _TableDb:
-    def __init__(self, snapshots):
-        self.snapshots, self.sql = snapshots, []
+    def __init__(self, snapshots, stops=True):
+        self.snapshots, self.stops, self.sql = snapshots, stops, []
 
     async def execute_one(self, sql, params=None):
         self.sql.append(sql)
-        return {"snapshots": self.snapshots}
+        return {"snapshots": self.snapshots, "stops": self.stops}
 
 
 def test_probe_checks_that_the_workflow_snapshot_table_exists(monkeypatch):
@@ -84,6 +84,37 @@ def test_a_reachable_cluster_without_the_snapshot_table_is_degraded(monkeypatch)
     assert result.ok is False
     assert result.component == "workflow_snapshots"
     assert result.error_class is None
+
+
+def test_probe_checks_that_the_session_stops_table_exists(monkeypatch):
+    db = _TableDb(True)
+    monkeypatch.setattr(health_probe, "get_rds_data_client", lambda: db)
+
+    asyncio.run(health_probe.probe_aurora())
+
+    assert "to_regclass('public.workflow_session_stops')" in db.sql[0]
+
+
+def test_a_reachable_cluster_without_the_session_stops_table_is_degraded(monkeypatch):
+    monkeypatch.setattr(
+        health_probe, "get_rds_data_client", lambda: _TableDb(True, stops=False)
+    )
+
+    result = asyncio.run(health_probe.probe_aurora())
+
+    assert result.ok is False
+    assert result.component == "workflow_session_stops"
+    assert result.error_class is None
+
+
+def test_a_missing_snapshot_table_is_named_before_a_missing_stops_table(monkeypatch):
+    monkeypatch.setattr(
+        health_probe, "get_rds_data_client", lambda: _TableDb(False, stops=False)
+    )
+
+    result = asyncio.run(health_probe.probe_aurora())
+
+    assert result.component == "workflow_snapshots"
 
 
 def test_an_unreachable_cluster_names_aurora_as_the_component(monkeypatch):

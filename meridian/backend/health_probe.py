@@ -22,7 +22,10 @@ from backend.db.rds_data_client import get_rds_data_client
 
 PROBE_TIMEOUT_SECONDS = 2.0
 CACHE_TTL_SECONDS = 10.0
-SNAPSHOT_TABLE_SQL = "SELECT to_regclass('public.workflow_snapshots') IS NOT NULL AS snapshots"
+WORKFLOW_TABLES_SQL = """
+SELECT to_regclass('public.workflow_snapshots') IS NOT NULL AS snapshots,
+       to_regclass('public.workflow_session_stops') IS NOT NULL AS stops
+"""
 
 
 @dataclass(frozen=True)
@@ -30,7 +33,8 @@ class AuroraProbeResult:
     """Outcome of one live Aurora reachability check.
 
     `component` names what failed: `aurora` when the cluster did not answer,
-    `workflow_snapshots` when it answered but the table is missing.
+    `workflow_snapshots` or `workflow_session_stops` when it answered but that
+    table is missing.
 
     `error_class` is the exception's type name only (e.g.
     `ExpiredTokenException`). The exception's message text is never
@@ -48,17 +52,19 @@ _cache_at: float = 0.0
 
 
 async def _run_probe() -> AuroraProbeResult:
-    """Ask Aurora through the Data API whether the workflow snapshot table exists."""
+    """Ask Aurora through the Data API whether the workflow tables exist."""
     try:
         row = await asyncio.wait_for(
-            get_rds_data_client().execute_one(SNAPSHOT_TABLE_SQL),
+            get_rds_data_client().execute_one(WORKFLOW_TABLES_SQL),
             timeout=PROBE_TIMEOUT_SECONDS,
         )
     except Exception as exc:  # noqa: BLE001 - reports the failure class, never the text.
         return AuroraProbeResult(ok=False, error_class=type(exc).__name__, component="aurora")
-    if row and row.get("snapshots") is True:
-        return AuroraProbeResult(ok=True)
-    return AuroraProbeResult(ok=False, component="workflow_snapshots")
+    if not row or row.get("snapshots") is not True:
+        return AuroraProbeResult(ok=False, component="workflow_snapshots")
+    if row.get("stops") is not True:
+        return AuroraProbeResult(ok=False, component="workflow_session_stops")
+    return AuroraProbeResult(ok=True)
 
 
 async def probe_aurora() -> AuroraProbeResult:

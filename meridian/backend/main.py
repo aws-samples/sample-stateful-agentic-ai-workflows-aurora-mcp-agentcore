@@ -140,8 +140,9 @@ async def _health_payload() -> HealthResponse:
     """Build the health response from what is true right now.
 
     `status` is `healthy` only when a live Aurora query just found the
-    workflow snapshot table (see `backend.health_probe`); otherwise it is `degraded`
-    and names the failing component and its error class. The checkpoint
+    workflow snapshot and session stop tables (see `backend.health_probe`)
+    and the workflow Runtime ARN resolves; otherwise it is `degraded` and
+    names the failing component and its error class. The checkpoint
     fields remain the backend's configured checkpoint state, not a
     second live probe.
     """
@@ -152,10 +153,16 @@ async def _health_payload() -> HealthResponse:
     model_id = config.bedrock.model_id
     checkpoint = workflow_store_status()
     aurora = await probe_aurora()
+    environment = os.getenv("ENVIRONMENT", "development")
+    runtime_configured = bool(resolve_agentcore_config().workflow_runtime_arn)
+    # App Runner always sets AGENTCORE_WORKFLOW_RUNTIME_ARN, so an unresolved ARN is a
+    # broken deployment. Local development runs without a Runtime, so it stays healthy there.
+    runtime_missing = not runtime_configured and environment != "development"
+    degraded_component = aurora.component or ("workflow_runtime" if runtime_missing else None)
     return HealthResponse(
-        status="healthy" if aurora.ok else "degraded",
+        status="degraded" if (not aurora.ok or runtime_missing) else "healthy",
         version="1.0.0",
-        environment=os.getenv("ENVIRONMENT", "development"),
+        environment=environment,
         bedrock_model_id=model_id,
         bedrock_model_label=bedrock_model_label(model_id),
         embedding_model_id=EMBEDDING_MODEL_ID,
@@ -163,8 +170,8 @@ async def _health_payload() -> HealthResponse:
         checkpoint_durable=checkpoint["durable"],
         checkpoint_required=checkpoint["required"],
         aurora_reachable=aurora.component != "aurora",
-        workflow_runtime_configured=bool(resolve_agentcore_config().workflow_runtime_arn),
-        degraded_component=aurora.component,
+        workflow_runtime_configured=runtime_configured,
+        degraded_component=degraded_component,
         degraded_error_class=aurora.error_class,
     )
 

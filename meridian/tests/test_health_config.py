@@ -141,6 +141,67 @@ def test_health_names_the_missing_snapshot_table_without_calling_aurora_down(mon
     assert body["degraded_component"] == "workflow_snapshots"
 
 
+def _production_without_a_workflow_arn(monkeypatch):
+    from backend.agentcore import cli_config
+    from backend.http_auth import HttpPrincipal, require_http_principal
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setitem(
+        app.dependency_overrides, require_http_principal, lambda: HttpPrincipal("t", "u", "t")
+    )
+
+    monkeypatch.setattr(
+        cli_config, "resolve_agentcore_config",
+        lambda: cli_config.AgentCoreDeployedConfig(region="us-east-1"),
+    )
+
+
+def test_health_names_the_missing_session_stops_table(monkeypatch):
+    from backend import health_probe
+
+    async def fake_probe():
+        return health_probe.AuroraProbeResult(ok=False, component="workflow_session_stops")
+
+    monkeypatch.setattr(health_probe, "probe_aurora", fake_probe)
+    body = TestClient(app).get("/api/health").json()
+    assert body["status"] == "degraded"
+    assert body["aurora_reachable"] is True
+    assert body["degraded_component"] == "workflow_session_stops"
+
+
+def test_health_is_degraded_in_production_when_the_workflow_runtime_arn_is_unresolved(
+    monkeypatch,
+):
+    _healthy_probe(monkeypatch)
+    _production_without_a_workflow_arn(monkeypatch)
+    body = TestClient(app).get("/api/health").json()
+    assert body["status"] == "degraded"
+    assert body["workflow_runtime_configured"] is False
+    assert body["degraded_component"] == "workflow_runtime"
+    assert body["aurora_reachable"] is True
+
+
+def test_health_stays_healthy_in_development_without_a_workflow_runtime_arn(monkeypatch):
+    _healthy_probe(monkeypatch)
+    _production_without_a_workflow_arn(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    body = TestClient(app).get("/api/health").json()
+    assert body["status"] == "healthy"
+    assert body["degraded_component"] is None
+
+
+def test_an_aurora_failure_is_not_hidden_by_the_unresolved_runtime_arn(monkeypatch):
+    from backend import health_probe
+
+    async def fake_probe():
+        return health_probe.AuroraProbeResult(ok=False, error_class="X", component="aurora")
+
+    monkeypatch.setattr(health_probe, "probe_aurora", fake_probe)
+    _production_without_a_workflow_arn(monkeypatch)
+    body = TestClient(app).get("/api/health").json()
+    assert body["degraded_component"] == "aurora"
+
+
 def test_cors_origins_accepts_explicit_allowlist():
     assert parse_cors_origins(" https://app.example,https://preview.example ") == [
         "https://app.example",
