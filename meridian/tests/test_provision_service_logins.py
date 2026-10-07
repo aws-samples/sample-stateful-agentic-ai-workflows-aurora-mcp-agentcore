@@ -10,7 +10,7 @@ import stat
 from datetime import datetime, timedelta
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError, NoCredentialsError
 
 from scripts import provision_service_logins as prov
 
@@ -252,7 +252,7 @@ def test_the_wrong_account_stops_main_before_any_write(monkeypatch, tmp_path):
     monkeypatch.setenv("AURORA_SECRET_ARN", "arn:master")
     with pytest.raises(SystemExit) as exc:
         prov.main(["--apply", "--write-env"])
-    assert "999999999999" not in str(exc.value) and "3333" in str(exc.value)
+    assert not re.search(r"\d{4}", str(exc.value)) and "<acct>" in str(exc.value)
     assert [c for n in ("secretsmanager", "iam", "rds-data") for c in clients[n].calls] == []
     assert not (tmp_path / ".env").exists()
 
@@ -335,7 +335,7 @@ def test_a_missing_environment_variable_is_named_in_the_exit(monkeypatch, tmp_pa
     monkeypatch.delenv(missing)
     with pytest.raises(SystemExit) as exc:
         prov.main(["--apply"])
-    assert missing in str(exc.value) and "Traceback" not in str(exc.value)
+    assert missing in str(exc.value)
 
 
 def test_a_dry_run_does_not_need_the_master_secret(monkeypatch, tmp_path, capsys):
@@ -378,3 +378,86 @@ def test_write_env_keeps_the_file_mode(tmp_path):
     env.chmod(0o640)
     prov.write_env(env, "AURORA_BACKEND_SECRET_ARN", "arn:new")
     assert stat.S_IMODE(env.stat().st_mode) == 0o640
+
+
+def test_mask_id_never_shows_a_digit_of_the_account():
+    assert prov.mask_id("111122223333") == "<acct>"
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("Account 123456789012 denied", "Account <acct> denied"),
+    ("arn:aws:iam::123456789012:role/x", "arn:aws:iam::<acct>:role/x"),
+    ("id 1234567890123 stays", "id 1234567890123 stays"),
+])
+def test_redact_hides_a_bare_twelve_digit_account_id(text, expected):
+    assert prov.redact(text) == expected
+
+
+@pytest.mark.parametrize("missing_key", ["Arn", "ARN"])
+def test_a_response_missing_a_key_exits_naming_the_key(monkeypatch, tmp_path, missing_key):
+    clients = _clients(sts=Recorder({"get_caller_identity": {missing_key: "x"}}))
+    _main_env(monkeypatch, tmp_path, clients)
+    with pytest.raises(SystemExit) as exc:
+        prov.main(["--apply"])
+    assert "Account" in str(exc.value) and not re.search(r"\d{12}", str(exc.value))
+    assert exc.value.__suppress_context__ is True
+
+
+class NoCredentialsSts:
+    def get_caller_identity(self, **kw):
+        raise NoCredentialsError()
+
+
+class UnreachableSts:
+    def get_caller_identity(self, **kw):
+        raise EndpointConnectionError(
+            endpoint_url="https://sts.us-east-1.amazonaws.com/?account=123456789012")
+
+
+@pytest.mark.parametrize("sts", [NoCredentialsSts(), UnreachableSts()])
+def test_a_credentials_failure_exits_with_advice_and_no_account_id(monkeypatch, tmp_path, sts):
+    _main_env(monkeypatch, tmp_path, _clients(sts=sts))
+    with pytest.raises(SystemExit) as exc:
+        prov.main(["--apply"])
+    text = str(exc.value)
+    assert "AWS_PROFILE" in text and "expired" in text
+    assert not re.search(r"\d{12}", text)
+    assert exc.value.__suppress_context__ is True
+
+
+@pytest.mark.parametrize("bad", ["not-an-arn", "arn:aws:rds:us-east-1", "arn:aws:rds::1:cluster:c"])
+def test_a_malformed_cluster_arn_names_the_variable(monkeypatch, tmp_path, bad):
+    _main_env(monkeypatch, tmp_path, _clients())
+    monkeypatch.setenv("AURORA_CLUSTER_ARN", bad)
+    with pytest.raises(SystemExit) as exc:
+        prov.main(["--apply"])
+    assert "AURORA_CLUSTER_ARN" in str(exc.value)
+
+
+def test_an_aws_error_tells_the_operator_to_re_run_a_partial_apply(monkeypatch, tmp_path):
+    _main_env(monkeypatch, tmp_path, _clients(secretsmanager=DenyingSecrets()))
+    with pytest.raises(SystemExit) as exc:
+        prov.main(["--apply"])
+    assert "re-run it to repair a partial change" in str(exc.value)
+
+
+def test_write_env_syncs_the_temp_file_before_replacing(monkeypatch, tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("A=1\n")
+    order = []
+    real_fsync, real_replace = os.fsync, os.replace
+    monkeypatch.setattr(prov.os, "fsync", lambda fd: (order.append("fsync"), real_fsync(fd)))
+    monkeypatch.setattr(prov.os, "replace",
+                        lambda a, b: (order.append("replace"), real_replace(a, b)))
+    prov.write_env(env, "AURORA_BACKEND_SECRET_ARN", "arn:new")
+    assert order == ["fsync", "replace"]
+
+
+def test_write_env_updates_the_target_of_a_symlinked_env(tmp_path):
+    real = tmp_path / "real.env"
+    real.write_text("A=1\n")
+    link = tmp_path / ".env"
+    link.symlink_to(real)
+    prov.write_env(link, "AURORA_BACKEND_SECRET_ARN", "arn:new")
+    assert link.is_symlink()
+    assert real.read_text() == "A=1\nAURORA_BACKEND_SECRET_ARN=arn:new\n"

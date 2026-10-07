@@ -112,11 +112,13 @@ def cluster():
         taken = admin.execute(
             "SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)", (list(SERVICE_ROLES),)
         ).fetchall()
-        assert not taken, f"refusing to run: {taken} already exist on this server"
-        admin.execute(f"CREATE ROLE {owner} CREATEROLE NOSUPERUSER NOBYPASSRLS")
-        admin.execute(f"CREATE DATABASE {database} OWNER {owner}")
-    conn = psycopg.connect(DSN, dbname=database, autocommit=True)
+    assert not taken, f"refusing to run: {taken} already exist on this server"
+    conn = None
     try:
+        with psycopg.connect(DSN, autocommit=True) as admin:
+            admin.execute(f"CREATE ROLE {owner} CREATEROLE NOSUPERUSER NOBYPASSRLS")
+            admin.execute(f"CREATE DATABASE {database} OWNER {owner}")
+        conn = psycopg.connect(DSN, dbname=database, autocommit=True)
         conn.execute(f"SET ROLE {owner}")
         conn.execute(SCHEMA)
         apply_migration(conn)
@@ -125,9 +127,10 @@ def cluster():
             conn.execute(statement)
         yield conn, owner
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
         with psycopg.connect(DSN, autocommit=True) as admin:
-            admin.execute(f"DROP DATABASE {database} WITH (FORCE)")
+            admin.execute(f"DROP DATABASE IF EXISTS {database} WITH (FORCE)")
             for role in (*SERVICE_ROLES[1:], "meridian_app", owner):
                 admin.execute(f"DROP ROLE IF EXISTS {role}")
 
@@ -163,8 +166,8 @@ def test_a_login_without_execute_cannot_call_the_function(cluster):
         conn.execute("RESET ROLE")
 
 
-def test_no_login_reads_a_forced_table_directly(cluster):
-    conn, _ = cluster
+def test_a_login_has_no_table_grant_and_only_the_owner_has_a_policy(cluster):
+    conn, owner = cluster
     conn.execute("SET ROLE meridian_backend")
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         conn.execute("SELECT count(*) FROM agent_audit_log")
@@ -174,7 +177,7 @@ def test_no_login_reads_a_forced_table_directly(cluster):
     ).fetchall()
     assert len(policies) == 5
     for (roles,) in policies:
-        assert len(roles) == 1 and not roles[0].startswith("meridian_")
+        assert roles == [owner]
 
 
 def test_applying_the_migration_twice_keeps_one_owner_policy_per_table(cluster):

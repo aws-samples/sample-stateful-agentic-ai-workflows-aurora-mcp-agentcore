@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -42,6 +42,7 @@ from scripts.provision_workflow_login import (  # noqa: E402
     scram_sha256_verifier,
 )
 
+CLUSTER_ARN_SHAPE = re.compile(r"arn:aws[a-z-]*:rds:[a-z0-9-]+:\d{12}:cluster:[A-Za-z0-9-]+")
 MAX_POLICY_VERSIONS = 5
 VERIFY_ATTEMPTS = 3
 VERIFY_DELAY_SECONDS = 2
@@ -106,9 +107,9 @@ def mask_account(text: str) -> str:
     return re.sub(r":\d{12}:", ":<acct>:", text)
 
 
-def mask_id(account: str) -> str:
-    """Show only the last four digits of an account id."""
-    return account[-4:].rjust(12, "*")
+def mask_id(_account: str) -> str:
+    """Return <acct> in place of an account id; no digit of it is ever printed."""
+    return "<acct>"
 
 
 def policy_document(spec: LoginSpec, cluster_arn: str, secret_arn: str) -> Dict[str, Any]:
@@ -273,6 +274,7 @@ def provision_login(spec: LoginSpec, *, sm, iam, master, cluster_arn: str, datab
 
 def write_env(env_file: Path, env_key: str, secret_arn: str) -> None:
     """Replace or append the one ``env_key`` line in ``env_file``, atomically."""
+    env_file = env_file.resolve()
     line = f"{env_key}={secret_arn}"
     lines = env_file.read_text().splitlines() if env_file.exists() else []
     if any(entry.startswith(f"{env_key}=") for entry in lines):
@@ -284,6 +286,8 @@ def write_env(env_file: Path, env_key: str, secret_arn: str) -> None:
     try:
         with os.fdopen(handle, "w") as temp:
             temp.write("\n".join(lines) + "\n")
+            temp.flush()
+            os.fsync(temp.fileno())
         os.chmod(temp_name, mode)
         os.replace(temp_name, env_file)
     except BaseException:
@@ -317,6 +321,11 @@ def _require_env(name: str) -> str:
 def _run(args: argparse.Namespace) -> None:
     load_dotenv(ENV_FILE)
     cluster_arn = _require_env("AURORA_CLUSTER_ARN")
+    if not CLUSTER_ARN_SHAPE.fullmatch(cluster_arn):
+        raise SystemExit(
+            "AURORA_CLUSTER_ARN is not an Aurora cluster ARN "
+            "(arn:aws:rds:<region>:<account>:cluster:<name>); fix it in meridian/.env, then re-run"
+        )
     master_secret_arn = _require_env("AURORA_SECRET_ARN") if args.apply else \
         os.environ.get("AURORA_SECRET_ARN", "")
     region = cluster_arn.split(":")[3]
@@ -354,7 +363,13 @@ def main(argv: Optional[list] = None) -> None:
         code = err.response.get("Error", {}).get("Code", "unknown")
         raise SystemExit(
             f"{err.operation_name} failed ({code}): {redact(str(err))}; "
-            "check AWS_PROFILE and that the profile has permission for this call"
+            "check AWS_PROFILE and that the profile has permission for this call; "
+            "if --apply had started, re-run it to repair a partial change"
+        ) from None
+    except BotoCoreError as err:
+        raise SystemExit(
+            f"could not reach AWS ({type(err).__name__}: {redact(str(err))}); check AWS_PROFILE "
+            "and that its credentials have not expired, then re-run"
         ) from None
     except KeyError as err:
         raise SystemExit(
