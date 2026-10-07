@@ -31,7 +31,7 @@ export function pausedJourneyDocument(
     journey_id: 'jrn_e2e',
     traveler_id: 'trv_meridian_demo',
     status: 'active',
-    checkpoint_backend: { kind: 'AuroraDataApiSaver', durable: true },
+    checkpoint_backend: { kind: 'Aurora workflow_snapshots', durable: true },
     active_thread_id: threadId,
     workflow: {
       status: 'observed',

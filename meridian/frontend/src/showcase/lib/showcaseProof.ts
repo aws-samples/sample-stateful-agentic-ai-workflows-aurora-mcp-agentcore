@@ -1,4 +1,5 @@
 import type { ShowcaseTraceSpan } from './showcaseAdapters';
+import { isDurableField } from './spanTitles';
 
 export interface McpContract {
   server: string;
@@ -19,7 +20,7 @@ export interface WorkflowStateProof {
   checkpointCount: number;
   table: string;
   durable: boolean;
-  /** The LangGraph thread. Identical before and after a restart is the proof. */
+  /** The workflow thread. Identical before and after a restart is the proof. */
   threadId: string;
   /** A committed courtesy hold, if the recovery path reached the hold node. */
   holdId: string;
@@ -58,7 +59,7 @@ export function deriveMcpContracts(traceSpans: ShowcaseTraceSpan[]): McpContract
 /** Explicit run telemetry wins; known legacy saver names are only a fallback. */
 export function hasDurableCheckpoint(traceSpans: ShowcaseTraceSpan[]): boolean {
   const spans = traceSpans.filter(isCheckpointSpan);
-  const explicit = spans.flatMap(span => span.fields.filter(field => field.label === 'checkpoint_durable'));
+  const explicit = spans.flatMap(span => span.fields.filter(field => isDurableField(field.label)));
   if (explicit.length) return explicit[explicit.length - 1].value === 'true';
   return spans.some(span => /\b(AuroraDataApiSaver|AsyncPostgresSaver|PostgresSaver)\b/i.test(fieldValue(span, 'checkpointer') ?? span.name));
 }
@@ -214,7 +215,7 @@ function fieldValue(span: ShowcaseTraceSpan, label: string): string | null {
 }
 
 function isCheckpointSpan(span: ShowcaseTraceSpan): boolean {
-  return span.status === 'ok' && /checkpoint/i.test(
+  return span.status === 'ok' && /checkpoint|snapshot saved|saved step|workflow_snapshots/i.test(
     [span.name, span.details, span.sql, span.component].filter(Boolean).join(' '),
   );
 }

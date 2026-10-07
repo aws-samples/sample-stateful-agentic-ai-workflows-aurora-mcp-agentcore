@@ -24,7 +24,7 @@ describe('RecoveryLaunchCard', () => {
     ]));
     // Search is confirmed and happens to sit third; the checkpoint is not confirmed.
     rerender(card([
-      pending('checkpoint'), done('understand', 'LangGraph'), done('search', 'Bedrock'),
+      pending('checkpoint'), done('understand', 'Strands Graph'), done('search', 'Bedrock'),
       pending('verify'),
     ]));
     expect(container.querySelector('.mds-aurora-glow')).toBeNull();
@@ -32,11 +32,11 @@ describe('RecoveryLaunchCard', () => {
     expect(screen.getByText('Search and rank').closest('li')).toHaveClass('is-visited');
 
     rerender(card([
-      done('checkpoint', 'Aurora Data API'), done('understand', 'LangGraph'),
+      done('checkpoint', 'AWS Aurora Data API'), done('understand', 'Strands Graph'),
       done('search', 'Bedrock'), pending('verify'),
     ]));
     expect(container.querySelectorAll('.mds-aurora-glow')).toHaveLength(1);
     expect(checkpointRow().querySelector('.mds-aurora-glow')).not.toBeNull();
-    expect(checkpointRow()).toHaveTextContent('Aurora Data API');
+    expect(checkpointRow()).toHaveTextContent('AWS Aurora Data API');
   });
 });

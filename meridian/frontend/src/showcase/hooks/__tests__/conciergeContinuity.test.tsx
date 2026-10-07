@@ -267,7 +267,7 @@ it('keeps a late hold receipt without overwriting a new phase conversation', asy
 });
 
 
-it('restores a saved recovery and sends resume to its original thread', async () => {
+it.each(['Resume workflow from the saved step', 'Resume workflow from checkpoint'])('restores a saved recovery and sends "%s" to its original thread', async (prompt) => {
   const { result } = renderHook(() => useMeridianShowcase());
   await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
   const document = {
@@ -281,7 +281,7 @@ it('restores a saved recovery and sends resume to its original thread', async ()
   expect(result.current.selectedPhase).toBe(5);
   expect(result.current.workflowStatus).toBe('paused');
   expect(result.current.travelersCount).toBe(3);
-  await act(async () => { await result.current.submitPrompt('Resume workflow from checkpoint'); });
+  await act(async () => { await result.current.submitPrompt(prompt); });
   expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ resume: true, conversation_id: 'saved-thread', travelers_count: 3 }), expect.any(AbortSignal));
 });
 

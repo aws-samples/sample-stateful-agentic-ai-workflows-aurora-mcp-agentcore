@@ -387,7 +387,7 @@ function RecoveryDecisionDashboard({
     state.messages.length > 0 || state.isLoading || Boolean(state.error);
   const resumeRecovery = () => {
     state.setSelectedPhase(5);
-    void state.submitPrompt('Resume workflow from checkpoint', 5);
+    void state.submitPrompt('Resume workflow from the saved step', 5);
   };
   const reviewRecoveryPlan = () => {
     const briefing = briefingRef.current;

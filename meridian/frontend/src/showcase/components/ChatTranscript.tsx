@@ -261,7 +261,7 @@ function ChatMessage({
 }
 
 // Clickable suggestions the backend returns with a turn. The Phase 5 workflow
-// emits "Resume workflow from checkpoint" here when a run pauses, so this chip
+// emits "Resume workflow from the saved step" here when a run pauses, so this chip
 // row is what makes the disruption -> Stateful Recovery finale a single click instead
 // of the presenter typing an exact phrase on stage.
 function FollowUpChips({

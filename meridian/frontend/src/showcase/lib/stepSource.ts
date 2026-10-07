@@ -1,4 +1,5 @@
 import type { ShowcaseTraceSpan } from './showcaseAdapters';
+import { isSnapshotTitle } from './spanTitles';
 
 // Joins a value to its unit so a narrow stage never wraps "601" away from "ms".
 const NO_BREAK = '\u00a0';
@@ -36,14 +37,16 @@ const SERVICE_RULES: ServiceRule[] = [
   { service: 'AgentCore Identity', matches: span => /AgentCore Identity/i.test(component(span)) },
   { service: 'AWS STS', matches: span => /AWS STS/i.test(component(span)) },
   { service: 'LangGraph MemorySaver', matches: span => /MemorySaver/i.test(component(span)) },
+  { service: 'AWS Aurora Data API', matches: span => isSnapshotTitle(span.name) },
   { service: 'Aurora RLS', matches: span => /^Aurora RLS/i.test(component(span)) },
   { service: 'Aurora Data API', matches: span => /^Aurora/i.test(component(span)) },
   { service: 'MCP', matches: span => /^(postgres-mcp|meridian-concierge|MCP )/i.test(span.name) },
   { service: 'Strands · Bedrock', matches: span => STRANDS_SUPERVISOR.test(span.name) },
   { service: 'Bedrock', matches: span => BEDROCK_CALL.test(span.name) },
   {
-    service: 'LangGraph',
-    matches: span => /LangGraph/i.test(component(span)) || /^Workflow node:/i.test(span.name),
+    service: 'Strands Graph',
+    matches: span => /^(Strands Graph|LangGraph)/i.test(component(span))
+      || /^Workflow node:/i.test(span.name),
   },
   {
     service: 'Aurora Data API',

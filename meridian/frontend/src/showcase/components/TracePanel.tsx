@@ -29,7 +29,7 @@ const ACTIVITY_GROUPS = [
 function activityGroup(span: ShowcaseTraceSpan): string {
   const { name, category, type } = span;
   if (/^Processing with|disabled/i.test(name) || category === 'security') return 'understand';
-  if (category === 'synthesis' || type === 'result' || /checkpoint|persist|response ready|concierge polish|workflow node: synthes/i.test(name)) return 'optimize';
+  if (category === 'synthesis' || type === 'result' || /checkpoint|snapshot saved|saved step|persist|response ready|concierge polish|workflow node: synthes/i.test(name)) return 'optimize';
   if (['memory_short', 'memory_long'].includes(category) || /recall|memory|preferences|interaction/i.test(name)) return 'recall';
   if (/rerank|rank|compose|turn complete/i.test(name)) return 'curate';
   if (['data', 'tool', 'gateway'].includes(category) || /sql|pgvector|tools\/call|gateway|availability|trip_packages|booking|hybrid|embed|semantic search|lexical|catalog.*hydrat|search agent completed|eligibility filter/i.test(name)) return 'inventory';

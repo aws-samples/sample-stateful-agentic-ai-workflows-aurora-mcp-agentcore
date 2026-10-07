@@ -975,7 +975,7 @@
 }
 
 /* Follow-up chips: the backend's suggested next steps for a turn. The Phase 5
-   "Resume workflow from checkpoint" suggestion lands here, so these read as
+   "Resume workflow from the saved step" suggestion lands here, so these read as
    clear call-to-action affordances rather than passive result summaries. */
 .mds-followups {
   display: flex;

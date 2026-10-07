@@ -1,6 +1,7 @@
 import { hasDurableCheckpoint } from './showcaseProof';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import type { ShowcaseTraceSpan } from './showcaseAdapters';
+import { isDurableField, isSnapshotTitle } from './spanTitles';
 import { formatLatency, stepService, stepSourceLabel } from './stepSource';
 
 export type RecoveryStage = 'action' | 'running' | 'checkpointed' | 'ready';
@@ -71,7 +72,7 @@ export function deriveRecoveryEvidence(
   );
   const recommendationCount = state.recommendations?.length ?? 0;
   const checkpointSpans = texts.filter((text) =>
-    /checkpoint|postgres.?saver|workflow state/.test(text),
+    /checkpoint|snapshot saved|saved step|postgres.?saver|workflow state/.test(text),
   );
 
 
@@ -118,10 +119,8 @@ export interface RecoveryStepView {
 const CLASSIFY_NODE = /^Workflow node: classify/;
 const SEARCH_NODE = /^Workflow node: search$/;
 const VERIFY_NODE = /^Workflow node: availability/;
-const CHECKPOINT = /^Checkpoint · /;
-
 const isStepBoundary = (span: ShowcaseTraceSpan) =>
-  /^Workflow node:/.test(span.name) || CHECKPOINT.test(span.name);
+  /^Workflow node:/.test(span.name) || isSnapshotTitle(span.name);
 
 /** The services a node's own spans called, in the order it called them. */
 function nodeServices(spans: ShowcaseTraceSpan[], nodeIndex: number): string {
@@ -131,7 +130,7 @@ function nodeServices(spans: ShowcaseTraceSpan[], nodeIndex: number): string {
     const service = stepService(span).replace(/ Data API$/, '');
     if (service !== 'Meridian app' && !services.includes(service)) services.push(service);
   }
-  return services.join(' + ') || 'LangGraph';
+  return services.join(' + ') || 'Strands Graph';
 }
 
 function nodeSource(spans: ShowcaseTraceSpan[], node: RegExp): string | null {
@@ -146,9 +145,9 @@ function checkpointSource(spans: ShowcaseTraceSpan[]): string | null {
   const search = spans.findIndex(span => SEARCH_NODE.test(span.name));
   const checkpoint = search < 0
     ? undefined
-    : spans.slice(search + 1).find(span => CHECKPOINT.test(span.name));
+    : spans.slice(search + 1).find(span => isSnapshotTitle(span.name));
   const durable = checkpoint?.fields
-    .some(field => field.label === 'checkpoint_durable' && field.value === 'true');
+    .some(field => isDurableField(field.label) && field.value === 'true');
   return checkpoint && checkpoint.status === 'ok' && durable ? stepSourceLabel(checkpoint) : null;
 }
 

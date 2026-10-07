@@ -59,7 +59,11 @@ describe('stepSourceLabel', () => {
     expect(label({
       name: 'Checkpoint · AuroraDataApiSaver.put',
       component: 'Aurora · LangGraph checkpoint tables', category: 'memory_short', latencyMs: 106,
-    })).toBe(nb('Aurora Data API · 106 ms'));
+    })).toBe(nb('AWS Aurora Data API · 106 ms'));
+    expect(label({
+      name: 'Snapshot saved: AuroraSnapshotStorage.write',
+      component: 'Aurora workflow_snapshots', category: 'memory_short', latencyMs: 106,
+    })).toBe(nb('AWS Aurora Data API · 106 ms'));
   });
 
   it('names the model that wrote the reply on the step it wrote, and only there', () => {
@@ -115,7 +119,7 @@ describe('stepSourceLabel', () => {
     expect(label({ name: 'Workload identity · AWS STS', component: 'AWS STS' })).toBe('AWS STS');
     expect(label({
       name: 'Workflow node: classify → plan', component: 'LangGraph StateGraph', latencyMs: 0,
-    })).toBe(nb('LangGraph · <1 ms'));
+    })).toBe(nb('Strands Graph · <1 ms'));
   });
 
   it('credits the app itself, not a service, for routing and in-memory steps', () => {

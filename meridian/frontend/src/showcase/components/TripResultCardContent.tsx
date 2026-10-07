@@ -58,7 +58,7 @@ function tripSignals(
     (state.workflowStatus === 'paused' ||
       state.workflowStatus === 'resumed' ||
       state.traceSpans.some((span) =>
-        /checkpoint|persist|postgres.?saver|aurora state/i.test(
+        /checkpoint|snapshot saved|saved step|persist|postgres.?saver|aurora state/i.test(
           `${span.name} ${span.details ?? ''}`,
         ),
       ));

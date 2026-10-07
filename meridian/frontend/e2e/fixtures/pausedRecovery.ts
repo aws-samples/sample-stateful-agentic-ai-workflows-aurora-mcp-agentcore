@@ -1,10 +1,10 @@
 /** The spans a paused recovery returns, in order, as the live backend records them:
- *  classify, search, then a durable Aurora checkpoint, each with its measured time. */
+ *  classify, search, then a durable Aurora snapshot, each with its measured time. */
 export const PAUSED_ACTIVITIES = [
-  ['Workflow node: classify → plan', 'LangGraph StateGraph', 0, []],
-  ['Workflow node: search', 'LangGraph → SearchAgent', 956, []],
-  ['Checkpoint · AuroraDataApiSaver.put', 'Aurora · LangGraph checkpoint tables', 458,
-    [{ label: 'checkpoint_durable', value: 'true' }]],
+  ['Workflow node: classify → plan', 'Strands Graph', 0, []],
+  ['Workflow node: search', 'Strands Graph → SearchAgent', 956, []],
+  ['Snapshot saved: AuroraSnapshotStorage.write', 'Aurora workflow_snapshots', 458,
+    [{ label: 'snapshot_durable', value: 'true' }]],
 ].map(([title, component, ms, fields], index) => ({
   id: `paused-${index}`, timestamp: '2026-09-28T18:00:00Z', activity_type: 'tool_call', title,
   execution_time_ms: ms,

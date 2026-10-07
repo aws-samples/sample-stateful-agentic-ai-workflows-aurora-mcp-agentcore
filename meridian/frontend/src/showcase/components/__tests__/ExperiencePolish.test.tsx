@@ -957,7 +957,7 @@ describe('Experience presentation polish', () => {
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Resume and request hold' }));
     expect(submitPrompt).toHaveBeenCalledWith(
-      'Resume workflow from checkpoint',
+      'Resume workflow from the saved step',
       5,
     );
     expect(screen.queryByText('JORDAN')).not.toBeInTheDocument();
@@ -1310,7 +1310,7 @@ describe('Concierge travel states', () => {
     expect(state.clearChat).not.toHaveBeenCalled();
     expect(state.setSelectedPhase).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Resume and request hold' }));
-    expect(state.submitPrompt).toHaveBeenCalledWith('Resume workflow from checkpoint', 5);
+    expect(state.submitPrompt).toHaveBeenCalledWith('Resume workflow from the saved step', 5);
   });
 
   it('opens the closing screen from evidence and can return without clearing the journey', async () => {

@@ -9,6 +9,7 @@ import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { LangGraphMark } from './LangGraphMark';
 import type { ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 import { workflowPathFor } from '../lib/showcaseProof';
+import { isSavedStepTitle } from '../lib/spanTitles';
 
 type NodeName = 'classify' | 'search' | 'availability' | 'memory_recall' | 'prepare_hold' | 'hold' | 'synthesize';
 type GraphNodeName = 'start' | NodeName | 'end';
@@ -74,7 +75,7 @@ function deriveActivation(
       if (intentField) intent = intentField;
     }
 
-    if (/checkpoint/i.test(span.name || '')) {
+    if (isSavedStepTitle(span.name || '')) {
       const ck = fieldValue(span, 'checkpointer');
       if (ck) checkpointer = ck;
       if (lastNode) checkpointAfter.add(lastNode);

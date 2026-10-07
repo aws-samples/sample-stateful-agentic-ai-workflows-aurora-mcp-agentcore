@@ -650,7 +650,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       setLastPrompt(decorated);
       setCurrentPrompt('');
 
-      const resumeRequested = requestPhase === 5 && /^(resume|continue)( workflow)?( from checkpoint)?$/i.test(baseRaw);
+      const resumeRequested = requestPhase === 5 && /^(resume|continue)( workflow)?( from (the saved step|checkpoint))?$/i.test(baseRaw);
       const workflowThread = requestPhase === 5
         ? (resumeRequested ? (conversationPhaseRef.current === 5 ? conversationId : null) : `phase5-${crypto.randomUUID()}`)
         : null;

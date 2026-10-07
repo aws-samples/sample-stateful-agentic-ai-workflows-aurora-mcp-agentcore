@@ -87,7 +87,7 @@ for (const motion of ['no-preference', 'reduce'] as const) {
     const checkpoint = page.locator('.mds-recovery-launch-steps li')
       .filter({ hasText: 'Save an Aurora checkpoint' });
     await expect(checkpoint).toHaveClass(/is-visited/);
-    await expect(checkpoint.locator('.mds-step-source')).toHaveText('Aurora Data API · 458 ms');
+    await expect(checkpoint.locator('.mds-step-source')).toHaveText('AWS Aurora Data API · 458 ms');
     await expect(page.locator('.mds-aurora-glow')).toHaveCount(motion === 'reduce' ? 0 : 1);
     if (motion === 'no-preference') {
       // It mounts at its starting keyframe and animates out, not at its end state.
