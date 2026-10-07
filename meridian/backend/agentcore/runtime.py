@@ -2,7 +2,8 @@
 Bedrock AgentCore Runtime adapter for Phase 4.
 
 Requires a live Runtime deployed via @aws/agentcore CLI. Calls
-``invoke_agent_runtime`` on every turn with ``accept: text/event-stream`` and
+``invoke_agent_runtime`` on every turn with ``accept: text/event-stream`` (or, with
+``MERIDIAN_AGENTCORE_AUTH=jwt``, posts to the invocation URL with the caller's bearer token) and
 collects the JSON events the runtime yields: the spans for every gateway tool
 call it made, the packages it found, the hold or booking it placed or was
 refused, and the traveler-facing message.
@@ -34,8 +35,16 @@ from botocore.exceptions import ClientError, ConnectionClosedError
 
 from backend.chat_stream import emit_chat_event
 from backend.concierge_voice import DirectReplyStream, direct_reply
+from backend.agentcore.auth_mode import jwt_mode
+from backend.agentcore.caller_credential import require_caller_token
 from backend.agentcore.cli_config import resolve_agentcore_config
-from backend.agentcore.errors import AgentCoreNotConfiguredError
+from backend.agentcore.errors import AgentCoreNotConfiguredError, CallerTokenExpired
+from backend.agentcore.runtime_https import (
+    ConnectionDropped,
+    RuntimeHttpClient,
+    RuntimeHttpError,
+    invocation_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +189,9 @@ class AgentCoreRuntimeAdapter:
         runtime_arn: Optional[str] = None,
         qualifier: Optional[str] = None,
         region: Optional[str] = None,
+        http: Optional[RuntimeHttpClient] = None,
     ) -> None:
+        self._http = http
         cli = resolve_agentcore_config()
         self.runtime_arn = runtime_arn or cli.runtime_arn
         self.qualifier = qualifier or cli.runtime_qualifier
@@ -220,6 +231,25 @@ class AgentCoreRuntimeAdapter:
                 ),
             )
         return self._client
+
+    def _invoke(self, arn: str, session_id: str, payload: bytes) -> dict[str, Any]:
+        """One invocation: IAM-signed by default, with the caller's bearer token in jwt mode."""
+        if not jwt_mode():
+            return self._get_client().invoke_agent_runtime(
+                agentRuntimeArn=arn,
+                runtimeSessionId=session_id,
+                payload=payload,
+                qualifier=self.qualifier,
+                contentType="application/json",
+                accept="text/event-stream",
+            )
+        self._http = self._http or RuntimeHttpClient()
+        return self._http.invoke(
+            url=invocation_url(self.region, arn, self.qualifier),
+            token=require_caller_token(),
+            session_id=session_id,
+            payload=payload,
+        )
 
     @staticmethod
     def _build_runtime_session_id(conversation_id: str, traveler_id: str) -> str:
@@ -301,16 +331,9 @@ class AgentCoreRuntimeAdapter:
         )
         for attempt in range(2 if retry_allowed else 1):
             try:
-                response = self._get_client().invoke_agent_runtime(
-                    agentRuntimeArn=arn,
-                    runtimeSessionId=session_id,
-                    payload=payload,
-                    qualifier=self.qualifier,
-                    contentType="application/json",
-                    accept="text/event-stream",
-                )
+                response = self._invoke(arn, session_id, payload)
                 break
-            except ConnectionClosedError:
+            except (ConnectionClosedError, ConnectionDropped):
                 if not retry_allowed or attempt:
                     raise
                 logger.warning(
@@ -322,6 +345,9 @@ class AgentCoreRuntimeAdapter:
                 code = exc.response.get("Error", {}).get("Code", "Unknown")
                 logger.error("invoke_agent_runtime failed: %s", code)
                 raise RuntimeError(f"AgentCore Runtime invoke failed: {code}") from exc
+            except RuntimeHttpError as exc:
+                logger.error("Runtime invocation failed: %s", exc.code)
+                raise
         # Once a response exists, a broken stream or runtime error must surface.
         # Replaying here could repeat work already performed by the runtime.
         return self._decision(arn, session_id, _forward_runtime_events(response))
@@ -350,12 +376,19 @@ class AgentCoreRuntimeAdapter:
                 decision.booking_refused = event.get("refused")
                 decision.policy_decision = event.get("policyDecision")
             elif kind == "error":
-                raise RuntimeError(f"AgentCore Runtime error: {event.get('message')}")
+                _raise_runtime_error(event)
             elif kind == "result":
                 _apply_result(decision, event)
         if not decision.message:
             raise RuntimeError("AgentCore Runtime returned no concierge message.")
         return decision
+
+
+def _raise_runtime_error(event: dict[str, Any]) -> None:
+    """Raise what a Runtime ``error`` event means: an expired token is its own error."""
+    if event.get("code") == "token_expired":
+        raise CallerTokenExpired(str(event.get("message") or "The access token expired."))
+    raise RuntimeError(f"AgentCore Runtime error: {event.get('message')}")
 
 
 def _apply_result(decision: RuntimeDecision, event: dict[str, Any]) -> None:
