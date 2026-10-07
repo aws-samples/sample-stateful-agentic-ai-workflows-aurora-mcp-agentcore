@@ -49,3 +49,19 @@ def test_a_completed_run_after_a_restart_reads_as_resumed():
     assert doc["resumed_from_checkpoint"] == "5"
     assert doc["resumed_after_restart"] is True
     assert doc["execution_id"] == "exe_2"
+    assert doc["next_nodes"] == []
+
+
+def test_two_executions_with_no_earlier_saved_step_is_not_a_resume():
+    done = json.loads(json.dumps(PAUSED))
+    done["data"]["state"].update(status="completed", next_nodes_to_execute=[])
+    executions = {"status": "observed", "items": [
+        {"execution_id": "exe_1", "worker_id": "worker-a", "status": "failed"},
+        {"execution_id": "exe_2", "worker_id": "worker-b", "status": "succeeded"},
+    ]}
+    doc = _workflow_document(
+        done, CHECKPOINT, executions, latest_execution="exe_2", resumed_from=None
+    )
+    assert doc["workflow_status"] == "complete"
+    assert doc["resumed_from_checkpoint"] is None
+    assert doc["resumed_after_restart"] is False

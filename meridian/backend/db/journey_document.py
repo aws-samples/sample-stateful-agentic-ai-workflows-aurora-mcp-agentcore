@@ -103,14 +103,27 @@ def _channel(values: Any, name: str) -> Any:
 
 
 def _workflow_document(snapshot, checkpoint, executions, *, latest_execution, resumed_from):
-    """The workflow section, folded from the newest snapshot with the steps' own fold."""
+    """The workflow section, folded from the newest snapshot with the steps' own fold.
+
+    Args:
+        snapshot: The newest parsed snapshot on the thread, or None.
+        checkpoint: The checkpoint section, used to name the document's source.
+        executions: The executions section, oldest attempt first.
+        latest_execution: The execution that wrote the newest snapshot row.
+        resumed_from: The newest snapshot seq written by any execution other than
+            ``latest_execution``, or None. When set, an earlier execution saved progress
+            and the latest one carried on from it.
+
+    A finished run reads as resumed only when ``resumed_from`` is set. Two executions
+    alone are not a resume: the first may have failed before it saved anything.
+    """
     if not snapshot:
         return _unavailable("no saved workflow to restore")
     folded = fold_snapshot(snapshot)
     pending = next_nodes(snapshot) if snapshot["data"]["state"].get("status") != "completed" else []
     items = executions.get("items", []) if isinstance(executions, dict) else []
     workers = [item.get("worker_id") for item in items]
-    resumed = not pending and len(items) > 1
+    resumed = not pending and resumed_from is not None
     return {
         "status": "observed",
         "source": _channel_source(checkpoint, "workflow"),

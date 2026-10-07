@@ -169,28 +169,44 @@ async def test_executions_report_workers_attempts_and_status(
 # ---------------------------------------------------------------- checkpoint
 
 
-async def test_a_saved_snapshot_is_reported_with_its_thread(journey: Fixture) -> None:
-    from backend.agents.phase_05_workflow.graph import run_task, snapshot_key
-    from backend.agents.phase_05_workflow.snapshot_storage import AuroraSnapshotStorage
+def _workflow_snapshot(fx: Fixture, status: str, next_nodes: list) -> dict:
+    from backend.agents.phase_05_workflow.graph import run_task
 
     delta = {"state": {"hold_package": "TKY-003"}, "spans": []}
-    snapshot = {
+    task = run_task(
+        query="q", traveler_id=TRAVELER, conversation_id=fx.thread_id,
+        journey_id=fx.journey_id, travelers_count=1,
+    )
+    return {
         "scope": "multiAgent", "schema_version": "1.0", "app_data": {},
         "created_at": "2026-10-06T02:13:41+00:00",
         "data": {"orchestrator_id": "phase5", "state": {
-            "type": "graph", "id": "phase5", "status": "interrupted",
-            "completed_nodes": ["hold"], "failed_nodes": [], "interrupted_nodes": ["synthesize"],
-            "next_nodes_to_execute": ["synthesize"], "execution_order": ["hold"],
-            "current_task": run_task(query="q", traveler_id=TRAVELER, conversation_id=journey.thread_id,
-                                     journey_id=journey.journey_id, travelers_count=1),
+            "type": "graph", "id": "phase5", "status": status,
+            "completed_nodes": ["hold"], "failed_nodes": [], "interrupted_nodes": next_nodes,
+            "next_nodes_to_execute": next_nodes, "execution_order": ["hold"],
+            "current_task": task,
             "node_results": {"hold": {"status": "completed", "result": {
                 "type": "agent_result", "stop_reason": "end_turn",
                 "message": {"role": "assistant", "content": [{"text": json.dumps(delta)}]},
             }}},
         }},
     }
-    storage = AuroraSnapshotStorage(journey.client, session_id=journey.thread_id, traveler_id=TRAVELER,
-                                    execution_id="exe_jdoc", worker_id="worker-jdoc")
+
+
+def _storage(fx: Fixture, execution_id: str, worker_id: str):
+    from backend.agents.phase_05_workflow.snapshot_storage import AuroraSnapshotStorage
+
+    return AuroraSnapshotStorage(
+        fx.client, session_id=fx.thread_id, traveler_id=TRAVELER,
+        execution_id=execution_id, worker_id=worker_id,
+    )
+
+
+async def test_a_saved_snapshot_is_reported_with_its_thread(journey: Fixture) -> None:
+    from backend.agents.phase_05_workflow.graph import snapshot_key
+
+    snapshot = _workflow_snapshot(journey, "interrupted", ["synthesize"])
+    storage = _storage(journey, "exe_jdoc", "worker-jdoc")
     for _ in range(2):
         await storage.write(snapshot_key(journey.thread_id), json.dumps(snapshot).encode())
 
@@ -205,7 +221,50 @@ async def test_a_saved_snapshot_is_reported_with_its_thread(journey: Fixture) ->
     assert doc["workflow"]["next_nodes"] == ["synthesize"]
     plan = doc["selected_plan"]
     assert plan["package_id"] == "TKY-003"
-    assert plan["source"] == f"snapshot:{journey.thread_id}/{checkpoint['checkpoint_id']}#channel:hold_package"
+    expected = f"snapshot:{journey.thread_id}/{checkpoint['checkpoint_id']}#channel:hold_package"
+    assert plan["source"] == expected
+
+
+async def test_a_run_finished_from_a_saved_step_is_a_verified_resume(journey: Fixture) -> None:
+    """Two executions, the first saved a step, the second finished: what the UI verifies."""
+    from backend.agents.phase_05_workflow.graph import snapshot_key
+    from backend.db.journey_store import release_execution
+
+    key = snapshot_key(journey.thread_id)
+    first = await claim_execution(
+        journey.client, journey.journey_id, journey.thread_id, "worker-jdoc-a"
+    )
+    paused = _workflow_snapshot(journey, "interrupted", ["synthesize"])
+    await _storage(journey, first.execution_id, "worker-jdoc-a").write(
+        key, json.dumps(paused).encode()
+    )
+    await release_execution(journey.client, first.execution_id, "paused")
+    saved = await journey.client.execute(
+        "SELECT snapshot_seq::TEXT AS seq FROM workflow_snapshots WHERE session_id = %s",
+        (journey.thread_id,),
+    )
+    first_seq = saved[0]["seq"]
+
+    second = await claim_execution(
+        journey.client, journey.journey_id, journey.thread_id, "worker-jdoc-b"
+    )
+    finished = _workflow_snapshot(journey, "completed", [])
+    await _storage(journey, second.execution_id, "worker-jdoc-b").write(
+        key, json.dumps(finished).encode()
+    )
+    await release_execution(journey.client, second.execution_id, "succeeded")
+
+    doc = await _document(journey)
+    workflow = doc["workflow"]
+    assert workflow["workflow_status"] == "resumed"
+    assert workflow["resumed_from_checkpoint"] == first_seq
+    assert workflow["execution_id"] == second.execution_id
+    assert workflow["resumed_after_restart"] is True
+    assert workflow["next_nodes"] == []
+    assert workflow["conversation_id"] == journey.thread_id
+    last = doc["executions"]["items"][-1]
+    assert last["status"] == "succeeded"
+    assert last["execution_id"] == second.execution_id
 
 
 # --------------------------------------------------------------------- hold
