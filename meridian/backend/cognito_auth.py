@@ -94,6 +94,26 @@ class CognitoUnavailable(Exception):
     """The signing keys could not be fetched, so no token can be verified right now."""
 
 
+class _GuardedJWKClient(PyJWKClient):
+    """A ``PyJWKClient`` that does not hammer a JWKS endpoint that just failed.
+
+    ``fetch_data`` runs inside the client's own lock, so concurrent callers queue behind one
+    failed attempt and then see the backoff window instead of each waiting out a timeout.
+    Cache hits never reach ``fetch_data`` and are unaffected.
+    """
+
+    _down_until = 0.0
+
+    def fetch_data(self) -> Any:
+        if time.monotonic() < self._down_until:
+            raise PyJWKClientConnectionError("JWKS unavailable; not retrying yet")
+        try:
+            return super().fetch_data()
+        except (PyJWKClientConnectionError, OSError, ValueError) as exc:
+            self._down_until = time.monotonic() + UNAVAILABLE_BACKOFF_SECONDS
+            raise PyJWKClientConnectionError("JWKS fetch failed") from exc
+
+
 @dataclass(frozen=True)
 class CognitoConfig:
     """The one user pool and app client the API accepts."""
@@ -149,9 +169,9 @@ class CognitoVerifier:
 
     Only ``InvalidCognitoToken.reason`` is safe to log; see the module docstring.
 
-    After the signing keys cannot be fetched, every call raises ``CognitoUnavailable``
-    without touching the network for ``UNAVAILABLE_BACKOFF_SECONDS``, so a down JWKS endpoint
-    cannot make each request wait out the fetch timeout behind PyJWT's client lock.
+    After a JWKS fetch fails, further fetches are refused for ``UNAVAILABLE_BACKOFF_SECONDS``
+    inside PyJWT's client lock, so a down endpoint costs one timeout per window rather than one
+    per request. Tokens whose key is already cached keep verifying.
 
     Args:
         config: The pool and client to accept.
@@ -164,9 +184,8 @@ class CognitoVerifier:
         self, config: CognitoConfig, signing_key_for: Optional[SigningKeyProvider] = None
     ) -> None:
         self._config = config
-        self._unavailable_until = 0.0
         if signing_key_for is None:
-            self._jwks_client = PyJWKClient(
+            self._jwks_client = _GuardedJWKClient(
                 config.jwks_url,
                 lifespan=JWKS_LIFESPAN_SECONDS,
                 timeout=JWKS_TIMEOUT_SECONDS,
@@ -186,6 +205,8 @@ class CognitoVerifier:
                 subject or traveler claim is wrong.
             CognitoUnavailable: The signing keys could not be fetched.
         """
+        if not token.isascii():
+            raise InvalidCognitoToken("malformed")
         claims = self._decode(token)
         if claims.get("token_use") != "access":
             raise InvalidCognitoToken("token_use")
@@ -219,18 +240,12 @@ class CognitoVerifier:
             raise InvalidCognitoToken(_reason(exc)) from exc
 
     def _lookup_key(self, token: str) -> Any:
-        if time.monotonic() < self._unavailable_until:
-            raise CognitoUnavailable("The Cognito signing keys are unavailable; not retrying yet.")
         try:
             return self._signing_key_for(token)
-        except (PyJWKClientConnectionError, OSError, ValueError) as exc:
-            raise self._mark_unavailable() from exc
+        except PyJWKClientConnectionError as exc:
+            raise CognitoUnavailable("The Cognito signing keys could not be fetched.") from exc
         except PyJWTError as exc:
             raise InvalidCognitoToken(_reason(exc)) from exc
-
-    def _mark_unavailable(self) -> CognitoUnavailable:
-        self._unavailable_until = time.monotonic() + UNAVAILABLE_BACKOFF_SECONDS
-        return CognitoUnavailable("The Cognito signing keys could not be fetched.")
 
 
 def _reason(error: Exception) -> str:

@@ -4,7 +4,9 @@ import base64
 import hashlib
 import hmac
 import json
+import threading
 import time
+from urllib.error import URLError
 
 import jwt
 import pytest
@@ -313,6 +315,7 @@ class JwksEndpoint:
         self.keys = {}
         self.error = None
         self.attempts = 0
+        self.delay = 0.0
         self.urls = []
 
     def serve(self, **public_keys):
@@ -321,6 +324,8 @@ class JwksEndpoint:
     def fetch(self, client):
         self.attempts += 1
         self.urls.append(client.uri)
+        if self.delay:
+            time.sleep(self.delay)
         if self.error is not None:
             raise self.error
         data = {
@@ -404,13 +409,15 @@ def test_an_empty_key_set_is_refused_as_a_signing_key_problem(live, endpoint, si
     assert reason_of(live, mint(signing_key)) == "signing_key"
 
 
-@pytest.mark.parametrize("error", [ValueError("Expecting value"), ConnectionResetError("reset")])
-def test_a_key_source_failing_in_transport_is_unavailable(signing_key, error):
-    def failing(token):
-        raise error
-
+@pytest.mark.parametrize(
+    "error",
+    [ValueError("Expecting value"), ConnectionResetError("reset"), URLError("unreachable")],
+)
+def test_a_jwks_fetch_failing_in_transport_is_unavailable(live, endpoint, signing_key, error):
+    endpoint.error = error
     with pytest.raises(CognitoUnavailable):
-        CognitoVerifier(CONFIG, signing_key_for=failing).verify(mint(signing_key))
+        live.verify(mint(signing_key))
+    assert endpoint.attempts == 1
 
 
 def test_a_value_error_from_decoding_is_not_unavailable(monkeypatch, signing_key, verifier):
@@ -446,8 +453,74 @@ def test_the_endpoint_is_retried_after_the_backoff_window(live, endpoint, clock,
 
 
 @pytest.mark.parametrize(
-    "token", ["", "not-a-token", "a.b.c", "\u00e9.\u00e9.\u00e9", "e30.e30.e30", "W10.W10.W10"]
+    "token",
+    [
+        "",
+        "not-a-token",
+        "a.b.c",
+        "\u00e9.\u00e9.\u00e9",
+        "e30.e30.e30",
+        "W10.W10.W10",
+        "\ud800.e30.e30",
+        "e30.\ud800.e30",
+        "e30.e30.\ud800",
+    ],
 )
 def test_hostile_tokens_never_open_the_backoff_window(live, endpoint, signing_key, token):
     assert reason_of(live, token) in {"malformed", "signing_key", "invalid"}
     assert live.verify(mint(signing_key)).traveler_id == "trv_meridian_demo"
+
+
+@pytest.mark.parametrize("token", ["\ud800.e30.e30", "e30.\ud800.e30", "e30.e30.\ud800"])
+def test_a_non_ascii_token_is_malformed_before_any_key_lookup(live, endpoint, signing_key, token):
+    assert reason_of(live, token) == "malformed"
+    assert endpoint.attempts == 0
+    assert live.verify(mint(signing_key)).traveler_id == "trv_meridian_demo"
+
+
+def test_a_valid_cached_key_keeps_verifying_while_a_refresh_is_backing_off(
+    live, endpoint, clock, signing_key
+):
+    live.verify(mint(signing_key))
+    clock.advance(cognito_auth.JWKS_REFETCH_COOLDOWN_SECONDS + 1)
+    endpoint.error = ConnectionResetError("blip")
+    with pytest.raises(CognitoUnavailable):
+        live.verify(mint(signing_key, kid="unknown"))
+    attempts = endpoint.attempts
+    assert live.verify(mint(signing_key)).traveler_id == "trv_meridian_demo"
+    assert endpoint.attempts == attempts
+
+
+def test_the_backoff_window_blocks_fetches_only(live, endpoint, clock, signing_key):
+    endpoint.error = ConnectionResetError("down")
+    for kid in ("unknown-1", "unknown-2"):
+        with pytest.raises(CognitoUnavailable):
+            live.verify(mint(signing_key, kid=kid))
+    assert endpoint.attempts == 1
+    clock.advance(cognito_auth.UNAVAILABLE_BACKOFF_SECONDS + 1)
+    with pytest.raises(CognitoUnavailable):
+        live.verify(mint(signing_key, kid="unknown-3"))
+    assert endpoint.attempts == 2
+
+
+def test_concurrent_requests_at_outage_onset_make_one_fetch_attempt(live, endpoint, signing_key):
+    endpoint.error = ConnectionResetError("down")
+    endpoint.delay = 0.05
+    outcomes = []
+    start = threading.Barrier(10)
+
+    def attempt(index):
+        token = mint(signing_key, kid=f"unknown-{index}")
+        start.wait()
+        try:
+            live.verify(token)
+        except CognitoUnavailable:
+            outcomes.append("unavailable")
+
+    threads = [threading.Thread(target=attempt, args=(index,)) for index in range(10)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert outcomes == ["unavailable"] * 10
+    assert endpoint.attempts == 1
