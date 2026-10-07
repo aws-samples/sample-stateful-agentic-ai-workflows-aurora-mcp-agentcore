@@ -17,6 +17,7 @@ const TEST_VALUES: Record<string, string> = {
     'arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian/aurora/workflow-login-XyZ789',
   GATEWAY_ID: 'meridianv2-meridian-aurora-abcde12345',
   POLICY_ENGINE_ID: 'meridianv2_MeridianGovernance-abcde12345',
+  MERIDIAN_AGENTCORE_AUTH: 'iam',
 };
 const PROJECT_ROOT = resolve(__dirname, '../../..');
 const originalInitCwd = process.env.INIT_CWD;
@@ -29,7 +30,14 @@ function renderTemplate(): Record<string, any> {
     if (value === undefined) throw new Error(`No test value for ${placeholder}`);
     return value;
   });
-  return JSON.parse(rendered);
+  const spec = JSON.parse(rendered);
+  // The default (iam) render leaves out the Cedar rule that only applies to Cognito callers.
+  for (const engine of spec.policyEngines) {
+    engine.policies = engine.policies.filter(
+      (p: { name: string }) => p.name !== 'meridian_traveler_binding',
+    );
+  }
+  return spec;
 }
 
 // The constructs locate the project through agentcore/agentcore.json, which is rendered

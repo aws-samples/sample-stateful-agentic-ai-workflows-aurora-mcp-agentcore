@@ -25,6 +25,10 @@ Placeholder sources:
                             login's secret (scripts/provision_service_logins.py);
                             the MeridianHolds policy may read it from the release
                             that moves the gateway Lambdas to that login
+    {{MERIDIAN_AGENTCORE_AUTH}}
+                            MERIDIAN_AGENTCORE_AUTH: ``iam`` (default) or ``jwt``. In ``jwt`` the
+                            Cedar traveler-binding policy is included; in ``iam`` it is left out so
+                            the rendered config is the one deployed today
     {{GATEWAY_ID}}          --gateway-id, else agentcore/.cli/deployed-state.json
     {{POLICY_ENGINE_ID}}    --policy-engine-id, else the same deployed state
 
@@ -61,6 +65,7 @@ from dotenv import dotenv_values
 MERIDIAN_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MERIDIAN_DIR))
 
+from backend.agentcore.auth_mode import AUTH_MODE_ENV, IAM, JWT, MODES  # noqa: E402
 from scripts import stage_workflow_runtime  # noqa: E402
 
 CONFIG_DIR = MERIDIAN_DIR / "meridian_agentcore" / "agentcore"
@@ -83,6 +88,8 @@ JSON_TYPES = {
     int: "a number",
     float: "a number",
 }
+
+JWT_ONLY_POLICIES = frozenset({"meridian_traveler_binding"})
 
 PLACEHOLDER = re.compile(r"\{\{([A-Z_]+)\}\}")
 CLUSTER_ARN = re.compile(
@@ -159,6 +166,23 @@ def _gateway_secret_arn(
     return arn
 
 
+def identity_mode(env: dict[str, str | None]) -> str:
+    """The AgentCore identity mode: ``iam`` unless MERIDIAN_AGENTCORE_AUTH says ``jwt``.
+
+    Raises:
+        ConfigError: When the setting is neither ``iam`` nor ``jwt``.
+    """
+    raw = (env.get(AUTH_MODE_ENV) or "").strip().lower()
+    if not raw:
+        return IAM
+    if raw not in MODES:
+        raise ConfigError(
+            f"{AUTH_MODE_ENV} must be 'iam' or 'jwt', not '{raw}'; unset it to keep today's "
+            "IAM configuration"
+        )
+    return raw
+
+
 def account_values(env: dict[str, str | None]) -> dict[str, str]:
     """Resolve the account, region and Aurora ARNs the templates need.
 
@@ -167,7 +191,7 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
 
     Returns:
         Values for AWS_ACCOUNT_ID, AWS_REGION, AURORA_CLUSTER_ARN, AURORA_SECRET_ARN,
-        AURORA_WORKFLOW_SECRET_ARN and AURORA_GATEWAY_SECRET_ARN.
+        AURORA_WORKFLOW_SECRET_ARN, AURORA_GATEWAY_SECRET_ARN and MERIDIAN_AGENTCORE_AUTH.
 
     Raises:
         ConfigError: When an ARN is missing or malformed, an ARN names a different
@@ -211,6 +235,7 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
         "AURORA_SECRET_ARN": secret_arn,
         "AURORA_WORKFLOW_SECRET_ARN": workflow_secret_arn,
         "AURORA_GATEWAY_SECRET_ARN": gateway_secret_arn,
+        AUTH_MODE_ENV: identity_mode(env),
     }
 
 
@@ -298,6 +323,16 @@ def unresolved(node: Any) -> set[str]:
     return set()
 
 
+def apply_identity_mode(spec: dict[str, Any], mode: str) -> None:
+    """In ``iam`` mode remove the policies that only make sense for Cognito callers."""
+    if mode == JWT:
+        return
+    for engine in spec.get("policyEngines", []):
+        engine["policies"] = [
+            policy for policy in engine["policies"] if policy["name"] not in JWT_ONLY_POLICIES
+        ]
+
+
 def drop_pending_deployment_values(spec: dict[str, Any]) -> list[str]:
     """Remove the parts of the spec that name resources a deploy has not created yet.
 
@@ -340,6 +375,7 @@ def render(
         )
     spec = substitute(spec_template, values)
     targets = substitute(targets_template, values)
+    apply_identity_mode(spec, values.get(AUTH_MODE_ENV, IAM))
     notes = drop_pending_deployment_values(spec)
     missing = unresolved(spec) | unresolved(targets)
     if missing:
@@ -382,6 +418,7 @@ def main(argv: list[str] | None = None) -> int:
     staged = json.loads(stage_workflow_runtime.stage().read_text(encoding="utf-8"))
     print(f"Wrote {CONFIG_DIR / SPEC_OUTPUT} and {CONFIG_DIR / TARGETS_OUTPUT}")
     print(f"  account {values['AWS_ACCOUNT_ID']}, region {values['AWS_REGION']}")
+    print(f"  AgentCore identity mode: {values[AUTH_MODE_ENV]}")
     print(f"  staged {len(staged)} workflow modules into the MeridianWorkflow bundle")
     for note in notes:
         print(f"  {note}")
