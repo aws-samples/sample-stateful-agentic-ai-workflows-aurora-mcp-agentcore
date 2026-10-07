@@ -7,6 +7,7 @@ holds Lambda and Cedar. The test purges everything it created, as the master rol
 
 import asyncio
 import json
+import logging
 import sys
 import uuid
 from pathlib import Path
@@ -17,6 +18,8 @@ from backend.db.rds_data_client import get_rds_data_client
 from scripts.kill_and_resume_demo import QUERY, _holds_for, _purge
 
 pytestmark = pytest.mark.database
+
+logger = logging.getLogger(__name__)
 
 MERIDIAN = Path(__file__).resolve().parents[1]
 TRAVELER = "trv_meridian_demo"
@@ -35,7 +38,9 @@ async def turn(thread_id: str, mode: str, session_id: str) -> list[dict]:
         cwd=MERIDIAN, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     out, err = await asyncio.wait_for(child.communicate(), timeout=300)
     assert child.returncode == 0, err.decode()[-2000:]
-    return [json.loads(line) for line in out.decode().splitlines() if line.startswith("{")]
+    lines = [json.loads(line) for line in out.decode().splitlines() if line.startswith("{")]
+    assert lines and lines[0] == {"current_user": "meridian_workflow"}, lines[:1]
+    return lines[1:]
 
 
 def final(events: list[dict]) -> dict:
@@ -90,7 +95,10 @@ async def test_a_paused_review_resumes_on_another_session_and_holds_once():
             rows = await master.execute(
                 "SELECT journey_id FROM journey_threads WHERE thread_id = %s", (thread_id,))
             journey_id = rows[0]["journey_id"] if rows else ""
-        await _purge(master, journey_id, thread_id)
+        try:
+            await _purge(master, journey_id, thread_id)
+        except Exception:
+            logger.exception("purge failed for thread %s journey %s", thread_id, journey_id)
     assert await leftovers(master, journey_id, thread_id) == {
         "workflow_snapshots": 0, "journey_executions": 0, "journey_threads": 0,
         "holds": 0, "journeys": 0}
