@@ -580,7 +580,9 @@ Do not start until all of these hold.
    `bedrock-agentcore:TagResource` and `bedrock-agentcore:ListTagsForResource`; the dry run (no
    flags, no AWS call) lists them. If a run is interrupted, `--teardown
    .local/gateway-harness/<name>/ledger.json --i-understand-this-creates-aws-resources` deletes what
-   it left. Exit code 0 is a pass, 1 a failed or unknown check, 2 resources left behind, 3 refused.
+   it left; the ledger must be inside that folder. Flags must be spelled out in full. Exit code 0
+   is a pass, 1 a failed or unknown check or an unexpected error, 2 resources left behind, 3
+   refused (including any command-line usage error).
 2. The interceptor Lambda is deployed with its own role: invoke permission for the Gateway role and
    log access only, no Aurora access.
 3. The Cognito user pool, the two seeded users and their `cognito` binding rows exist, and

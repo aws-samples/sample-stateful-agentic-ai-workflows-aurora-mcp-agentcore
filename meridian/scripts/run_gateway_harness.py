@@ -11,8 +11,9 @@ cannot run by accident:
     AWS_PROFILE=claude-code venv/bin/python scripts/run_gateway_harness.py \\
         --apply --i-understand-this-creates-aws-resources
 
-Clean up after an interrupted run from its saved ledger (same confirmation). A missing, unreadable
-or empty ledger is refused, and only the exact entries whose run tag matches are deleted:
+Clean up after an interrupted run from its saved ledger (same confirmation). The ledger must be
+inside .local/gateway-harness (the resolved path is printed). A missing, unreadable or empty ledger
+is refused, and only the exact entries whose run tag matches are deleted:
     AWS_PROFILE=claude-code venv/bin/python scripts/run_gateway_harness.py \\
         --teardown .local/gateway-harness/<name>/ledger.json \\
         --i-understand-this-creates-aws-resources
@@ -23,8 +24,11 @@ lambda:TagResource and lambda:ListTags, iam:TagRole and iam:ListRoleTags, and Ag
 bedrock-agentcore:TagResource and bedrock-agentcore:ListTagsForResource (gateways and policy
 engines).
 
-Exit codes: 0 every check passed, 1 a check or a create step failed (a check that stayed unknown
-counts), 2 resources were left behind (also: a command-line usage error), 3 refused.
+Flags must be spelled out in full; an abbreviation such as --app is a usage error, not --apply.
+
+Exit codes: 0 every check passed, 1 a check or a create step failed or an unexpected error
+occurred (a check that stayed unknown counts), 2 resources were left behind, 3 refused (also: any
+command-line usage error, so a typo can never look like leftovers).
 """
 
 from __future__ import annotations
@@ -34,7 +38,7 @@ import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import boto3
 from dotenv import dotenv_values
@@ -47,6 +51,11 @@ from scripts.gateway_harness import runner  # noqa: E402
 
 TEMPLATE = MERIDIAN_DIR / "meridian_agentcore" / "agentcore" / "agentcore.template.json"
 OUTPUT = MERIDIAN_DIR / ".local" / "gateway-harness"
+LEFTOVER_HINT = (
+    "Teardown ran in the run's finally block; if TEARDOWN INCOMPLETE was printed above, "
+    f"resources remain: re-run with --teardown {OUTPUT}/<name>/ledger.json "
+    f"{runner.CONFIRM_FLAG}."
+)
 
 
 def make_minter(env: dict[str, Any], *,
@@ -64,9 +73,17 @@ def make_minter(env: dict[str, Any], *,
     return mint
 
 
+class _Parser(argparse.ArgumentParser):
+    """A parser whose usage errors exit 3 (refused), never 2 (resources left behind)."""
+
+    def error(self, message: str) -> NoReturn:
+        self.print_usage(sys.stderr)
+        self.exit(runner.EXIT_REFUSED, f"{self.prog}: error: {message}\n")
+
+
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=(__doc__ or "").split("\n\n")[0], epilog=__doc__,
+    parser = _Parser(
+        description=(__doc__ or "").split("\n\n")[0], epilog=__doc__, allow_abbrev=False,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true", help="create, probe and delete (live)")
@@ -78,6 +95,31 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_ledger(path: Path) -> Path | None:
+    """The ledger's real path when it is inside the harness output folder, else ``None``."""
+    resolved = path.resolve()
+    return resolved if resolved.is_relative_to(OUTPUT.resolve()) else None
+
+
+def _execute(args: argparse.Namespace) -> int:
+    ledger = None
+    if args.teardown is not None:
+        ledger = _resolve_ledger(args.teardown)
+        if ledger is None:
+            runner.say(f"REFUSED: the ledger must be inside {OUTPUT}; {args.teardown.resolve()} "
+                       "is not. Nothing was deleted.")
+            return runner.EXIT_REFUSED
+        runner.say(f"Ledger: {ledger}")
+    env = {**dotenv_values(MERIDIAN_DIR / ".env"), **os.environ}
+    if not (args.apply or ledger):
+        return runner.dry_run(env, TEMPLATE)
+    deps = runner.Dependencies(
+        session=lambda region: boto3.Session(region_name=region), mint=make_minter(env))
+    if args.apply:
+        return runner.run_live(env, TEMPLATE, OUTPUT, deps)
+    return runner.teardown_from_ledger(env, TEMPLATE, ledger, deps)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the dry run, the live run or a ledger teardown; see the module docstring."""
     parser = _parser()
@@ -85,18 +127,20 @@ def main(argv: list[str] | None = None) -> int:
     live = args.apply or args.teardown is not None
     if args.confirmed and not live:
         parser.error(f"{runner.CONFIRM_FLAG} only goes with --apply or --teardown")
-    env = {**dotenv_values(MERIDIAN_DIR / ".env"), **os.environ}
-    if not live:
-        return runner.dry_run(env, TEMPLATE)
-    if not args.confirmed:
+    if live and not args.confirmed:
         runner.say(f"REFUSED: --apply and --teardown change AWS and also need "
                    f"{runner.CONFIRM_FLAG}. Run without flags for the dry run.")
         return runner.EXIT_REFUSED
-    deps = runner.Dependencies(
-        session=lambda region: boto3.Session(region_name=region), mint=make_minter(env))
-    if args.apply:
-        return runner.run_live(env, TEMPLATE, OUTPUT, deps)
-    return runner.teardown_from_ledger(env, TEMPLATE, args.teardown, deps)
+    try:
+        return _execute(args)
+    except KeyboardInterrupt:
+        runner.say(f"INTERRUPTED. {LEFTOVER_HINT}")
+        raise
+    except Exception as exc:  # the last stop: one masked line, never a raw traceback
+        text = runner.mask(str(exc))[:runner.MAX_ERROR_TEXT]
+        runner.say(f"FAILED: {type(exc).__name__}: {text}")
+        runner.say(LEFTOVER_HINT)
+        return runner.EXIT_FAIL
 
 
 if __name__ == "__main__":
