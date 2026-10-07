@@ -5,13 +5,16 @@ writes through. Every write appends a row, so the table keeps each node
 boundary of a run, and the newest row for a key is what a resume restores.
 Rows are stamped with the traveler, execution and worker that trusted code
 supplies after the lease claim, never with values read from the snapshot.
+Each read and write pins that traveler in its own transaction, so the row-level
+security policies decide what the Runtime's login sees and appends.
 A write lands only while its execution is still the thread's running one, so a
 worker that stalled past its lease cannot append an older state after another
 worker took the thread over.
 """
 
 import time
-from typing import Callable, List, Optional
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Callable, List, Optional
 
 from botocore.exceptions import ClientError
 from strands.types.exceptions import StorageError
@@ -21,6 +24,8 @@ from backend.db.journey_store import ExecutionLeaseLostError
 # The Data API refuses a result over 1 MB, so a snapshot this cap admits must still read back.
 # Live tests read back ASCII, multibyte and escape-dense snapshots just under this cap.
 MAX_SNAPSHOT_BYTES = 900_000
+
+PIN_TRAVELER_SQL = "SELECT set_config('app.current_traveler_id', %s, true)"
 
 INSERT_SQL = """
 INSERT INTO workflow_snapshots
@@ -52,8 +57,8 @@ class AuroraSnapshotStorage:
     """One workflow session's snapshots in ``workflow_snapshots``.
 
     Args:
-        client: RDS Data API client. Writes run as its role, outside a scoped
-            session, as the LangGraph saver did under migration 013.
+        client: The Data API client; in the Runtime its secret is meridian_workflow's.
+            Reads and writes pin the traveler in their own transaction.
         session_id: The workflow thread. Keys outside it are refused.
         traveler_id: The traveler the lease claim authorized.
         execution_id: The execution holding the lease. None makes the storage
@@ -107,20 +112,22 @@ class AuroraSnapshotStorage:
         owned = self._owned(key)
         started = time.perf_counter()
         try:
-            rows = await self._query(INSERT_SQL, (
-                owned, self._session_id, self._traveler_id,
-                self._execution_id, self._worker_id, data.decode("utf-8"),
-                self._execution_id, self._session_id,
-            ))
+            async with self._pinned() as tx:
+                rows = await self._client.execute(INSERT_SQL, (
+                    owned, self._session_id, self._traveler_id,
+                    self._execution_id, self._worker_id, data.decode("utf-8"),
+                    self._execution_id, self._session_id,
+                ), transaction_id=tx)
+                if not rows:
+                    raise ExecutionLeaseLostError(
+                        f"Execution {self._execution_id} no longer runs thread "
+                        f"{self._session_id}; its snapshot was not saved. "
+                        "Re-read the saved journey."
+                    )
         except ClientError as exc:
             raise StorageError(
                 f"writing {owned!r} failed: {exc.response['Error']['Code']}"
             ) from exc
-        if not rows:
-            raise ExecutionLeaseLostError(
-                f"Execution {self._execution_id} no longer runs thread {self._session_id}; "
-                "its snapshot was not saved. Re-read the saved journey."
-            )
         if self._on_write is not None:
             self._on_write(round((time.perf_counter() - started) * 1000))
 
@@ -132,15 +139,31 @@ class AuroraSnapshotStorage:
         """
         owned = self._owned(key)
         try:
-            rows = await self._query(READ_SQL, (owned,))
+            async with self._pinned() as tx:
+                rows = await self._client.execute(READ_SQL, (owned,), transaction_id=tx)
         except ClientError as exc:
             raise StorageError(
                 f"reading {owned!r} failed: {exc.response['Error']['Code']}"
             ) from exc
         return rows[0]["snapshot"].encode("utf-8") if rows else None
 
-    async def _query(self, sql: str, params: tuple) -> List[dict]:
-        return await self._client.execute(sql, params)
+    @asynccontextmanager
+    async def _pinned(self) -> AsyncIterator[str]:
+        """A transaction in which RLS sees this storage's traveler.
+
+        Snapshot statements skip scoped_session's grant check and audit row on
+        purpose: the lease claim already ran both for this run, and an audit row
+        per snapshot would bury the authorization evidence. The master role
+        ignores the pin; meridian_workflow is bound by it.
+        """
+        tx = self._client.begin_transaction()
+        try:
+            await self._client.execute(PIN_TRAVELER_SQL, (self._traveler_id,), transaction_id=tx)
+            yield tx
+        except BaseException:
+            self._client.rollback_transaction(tx)
+            raise
+        self._client.commit_transaction(tx)
 
     async def delete(self, key: str) -> None:
         """Refuse: the table is the run's history."""
@@ -153,7 +176,9 @@ class AuroraSnapshotStorage:
             StorageError: Aurora refused the read.
         """
         try:
-            rows = await self._query(LIST_SQL, (self._session_id, _like_prefix(query)))
+            async with self._pinned() as tx:
+                rows = await self._client.execute(
+                    LIST_SQL, (self._session_id, _like_prefix(query)), transaction_id=tx)
         except ClientError as exc:
             raise StorageError(
                 f"listing {query!r} failed: {exc.response['Error']['Code']}"
