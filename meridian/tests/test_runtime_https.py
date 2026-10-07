@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import gzip
 import json
+import logging
 from unittest.mock import MagicMock
 
 import httpx
@@ -10,12 +12,17 @@ import pytest
 
 from backend.agentcore import runtime as runtime_module
 from backend.agentcore.caller_credential import caller_token_scope
-from backend.agentcore.errors import CallerTokenExpired, CallerTokenMissing
+from backend.agentcore.errors import (
+    AgentCoreNotConfiguredError,
+    CallerTokenExpired,
+    CallerTokenMissing,
+)
 from backend.agentcore.runtime import AgentCoreRuntimeAdapter, iter_sse, stream_chunks
 from backend.agentcore.runtime_https import (
     ConnectionDropped,
     RuntimeHttpClient,
     RuntimeHttpError,
+    StreamBody,
     invocation_url,
 )
 from tests.jwt_support import access_token
@@ -135,6 +142,107 @@ def test_other_transport_failures_are_plain_errors_that_never_contain_the_token(
     assert raised.value.code == "ConnectionError" and token not in str(raised.value)
 
 
+@pytest.mark.parametrize("region", [
+    "us-east-1.evil.com/x#", "x@evil.com", "us-east-1/../", "", "US-EAST-1", "us-east-1 ",
+])
+def test_a_region_that_could_redirect_the_bearer_is_refused(region):
+    with pytest.raises(AgentCoreNotConfiguredError):
+        invocation_url(region, ARN, "DEFAULT")
+
+
+@pytest.mark.parametrize("arn", [
+    "arn:aws:bedrock-agentcore:eu-west-1:123456789012:runtime/x",
+    "arn:aws-cn:bedrock-agentcore:us-east-1:123456789012:runtime/x",
+    "arn:aws-us-gov:bedrock-agentcore:us-east-1:123456789012:runtime/x",
+    "arn:aws:bedrock-agentcore:us-east-1:123:runtime/x",
+    "arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/x",
+    "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/x/../y",
+    "not-an-arn", "",
+])
+def test_an_arn_that_is_malformed_or_in_another_region_is_refused(arn):
+    with pytest.raises(AgentCoreNotConfiguredError):
+        invocation_url("us-east-1", arn, "DEFAULT")
+
+
+def test_the_host_is_the_regional_amazonaws_endpoint():
+    assert URL.startswith("https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/")
+
+
+def test_the_request_asks_for_an_uncompressed_body_and_ignores_the_environment():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return streamed(b"x")
+
+    invoke(client(handler))
+    assert seen[0].headers["accept-encoding"] == "identity"
+    assert RuntimeHttpClient()._client._trust_env is False
+
+
+def test_a_compressed_response_is_refused_with_a_typed_error():
+    def handler(request):
+        return httpx.Response(200, headers={"content-encoding": "gzip"},
+                              content=gzip.compress(b"data: x\n\n"))
+
+    with pytest.raises(RuntimeHttpError) as raised:
+        invoke(client(handler))
+    assert raised.value.code == "UnsupportedContentEncoding"
+
+
+def test_a_redirect_is_not_followed_and_the_token_goes_nowhere_else():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(307, headers={"location": "https://other.test/"})
+
+    with pytest.raises(RuntimeHttpError) as raised:
+        invoke(client(handler))
+    assert raised.value.code == "HTTP307"
+    assert len(seen) == 1 and seen[0].url.host == "bedrock-agentcore.us-east-1.amazonaws.com"
+
+
+@pytest.mark.parametrize("failure", [
+    httpx.ReadError("boom https://secret.example/?t=abc"),
+    httpx.ReadTimeout("slow"),
+    httpx.RemoteProtocolError("peer closed"),
+])
+def test_a_failure_mid_stream_is_a_stream_error_without_the_url(failure):
+    def chunks():
+        yield b"data: x"
+        raise failure
+
+    body = invoke(client(lambda r: httpx.Response(200, content=chunks())))["response"]
+    assert isinstance(body, StreamBody) and body.read(100) == b"data: x"
+    with pytest.raises(RuntimeHttpError) as raised:
+        body.read(100)
+    assert (raised.value.code, raised.value.status) == ("StreamError", 0)
+    assert "secret.example" not in str(raised.value) and raised.value.__cause__ is None
+
+
+def test_no_sigv4_headers_are_sent_with_the_bearer():
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return streamed(b"x")
+
+    token = access_token()
+    invoke(client(handler), token)
+    headers = seen[0].headers
+    assert "x-amz-date" not in headers and "x-amz-security-token" not in headers
+    assert headers["authorization"] == f"Bearer {token}"
+
+
+def test_logs_show_neither_the_token_nor_the_response_body(caplog):
+    token = access_token()
+    caplog.set_level(logging.DEBUG)
+    with pytest.raises(RuntimeHttpError):
+        invoke(client(lambda r: httpx.Response(500, text="SECRET-BODY")), token)
+    assert token not in caplog.text and "SECRET-BODY" not in caplog.text
+
+
 # ---- the Concierge adapter chooses the path from the mode ---------------------------------------
 
 RESULT = sse({"type": "result", "message": "Here are two trips.", "recommended_package_ids": []})
@@ -162,7 +270,13 @@ def test_iam_mode_uses_boto_and_never_the_https_client(monkeypatch):
     https_calls = []
     decision = turn(adapter(lambda request: https_calls.append(request), boto))
     assert decision.message == "Here are two trips." and https_calls == []
-    assert boto.invoke_agent_runtime.call_args.kwargs["accept"] == "text/event-stream"
+    kwargs = boto.invoke_agent_runtime.call_args.kwargs
+    assert set(kwargs) == {"agentRuntimeArn", "runtimeSessionId", "payload", "qualifier",
+                           "contentType", "accept"}
+    assert kwargs["agentRuntimeArn"] == ARN and kwargs["qualifier"] == "DEFAULT"
+    assert len(kwargs["runtimeSessionId"]) >= 33
+    assert json.loads(kwargs["payload"])["event"] == "concierge_turn"
+    assert kwargs["contentType"] == "application/json" and kwargs["accept"] == "text/event-stream"
 
 
 def test_jwt_mode_posts_with_the_callers_token_and_never_calls_boto(monkeypatch):
@@ -178,6 +292,8 @@ def test_jwt_mode_posts_with_the_callers_token_and_never_calls_boto(monkeypatch)
     assert decision.message == "Here are two trips."
     assert seen[0].headers["authorization"] == f"Bearer {token}"
     assert json.loads(seen[0].content)["event"] == "concierge_turn"
+    assert str(seen[0].url) == URL
+    assert len(seen[0].headers["x-amzn-bedrock-agentcore-runtime-session-id"]) >= 33
     boto.invoke_agent_runtime.assert_not_called()
 
 

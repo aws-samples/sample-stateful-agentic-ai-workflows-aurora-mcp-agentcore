@@ -18,12 +18,14 @@ retry rules apply unchanged. No message produced here contains the token.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
 from backend.agentcore.caller_claims import ensure_unexpired
+from backend.agentcore.errors import AgentCoreNotConfiguredError
 
 SESSION_HEADER = "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id"
 STATUS_CODES = {
@@ -38,6 +40,11 @@ STATUS_CODES = {
     500: "InternalServerException",
 }
 TOKEN_REJECTED = (401, 403)
+REGION_PATTERN = re.compile(r"[a-z]{2}(-[a-z]+)+-[0-9]")
+RUNTIME_ARN_PATTERN = re.compile(
+    r"arn:aws:bedrock-agentcore:(?P<region>[a-z0-9-]+):[0-9]{12}:runtime/[A-Za-z0-9_-]+"
+)
+STREAM_FAILURES = (httpx.ReadError, httpx.ReadTimeout, httpx.RemoteProtocolError)
 TIMEOUT = httpx.Timeout(connect=5.0, read=45.0, write=10.0, pool=5.0)
 
 
@@ -59,12 +66,33 @@ class ConnectionDropped(RuntimeError):
     """The connection closed before any response header arrived (safe to retry reads)."""
 
 
+def _refuse(missing: str) -> AgentCoreNotConfiguredError:
+    return AgentCoreNotConfiguredError(missing=(missing,), project_dir="", sources=())
+
+
 def invocation_url(region: str, runtime_arn: str, qualifier: str) -> str:
-    """The data-plane URL that invokes ``runtime_arn``."""
-    return (
-        f"https://bedrock-agentcore.{region}.amazonaws.com/runtimes/"
-        f"{quote(runtime_arn, safe='')}/invocations?qualifier={quote(qualifier, safe='')}"
+    """The data-plane URL that invokes ``runtime_arn``.
+
+    The bearer token goes to whatever host this returns, so the region and ARN are checked before
+    they are placed in the URL: the region must be a plain AWS region name, the ARN a commercial
+    partition Runtime ARN in that same region, and the result a ``*.amazonaws.com`` host.
+
+    Raises:
+        AgentCoreNotConfiguredError: The region or ARN is malformed or they disagree.
+    """
+    if not REGION_PATTERN.fullmatch(region or ""):
+        raise _refuse("a valid AWS region name")
+    match = RUNTIME_ARN_PATTERN.fullmatch(runtime_arn or "")
+    if match is None or match["region"] != region:
+        raise _refuse(f"a Runtime ARN in region {region}")
+    host = f"bedrock-agentcore.{region}.amazonaws.com"
+    url = (
+        f"https://{host}/runtimes/{quote(runtime_arn, safe='')}/invocations"
+        f"?qualifier={quote(qualifier, safe='')}"
     )
+    if urlsplit(url).hostname != host:
+        raise _refuse("an AgentCore invocation host under amazonaws.com")
+    return url
 
 
 class StreamBody:
@@ -78,12 +106,24 @@ class StreamBody:
     def read(self, size: int) -> bytes:
         """Up to ``size`` bytes; whatever has arrived, without waiting to fill ``size``."""
         if not self._pending:
-            self._pending = next(self._chunks, b"")
+            try:
+                self._pending = next(self._chunks, b"")
+            except STREAM_FAILURES:
+                self._response.close()
+                raise RuntimeHttpError("StreamError", 0) from None
         taken, self._pending = self._pending[:size], self._pending[size:]
         return taken
 
     def close(self) -> None:
         self._response.close()
+
+
+def _require_identity_encoding(response: httpx.Response) -> None:
+    """Refuse a compressed body: ``StreamBody`` reads raw bytes and the SSE parser needs text."""
+    encoding = response.headers.get("content-encoding", "identity").strip().lower()
+    if encoding not in ("", "identity"):
+        response.close()
+        raise RuntimeHttpError("UnsupportedContentEncoding", 200)
 
 
 class RuntimeHttpClient:
@@ -95,7 +135,7 @@ class RuntimeHttpClient:
 
     def __init__(self, *, transport: Optional[httpx.BaseTransport] = None) -> None:
         self._client = httpx.Client(
-            timeout=TIMEOUT, transport=transport, follow_redirects=False
+            timeout=TIMEOUT, transport=transport, follow_redirects=False, trust_env=False
         )
 
     def invoke(self, *, url: str, token: str, session_id: str, payload: bytes) -> Dict[str, Any]:
@@ -111,6 +151,7 @@ class RuntimeHttpClient:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "Accept": "text/event-stream",
+            "Accept-Encoding": "identity",
             SESSION_HEADER: session_id,
         })
         try:
@@ -120,6 +161,7 @@ class RuntimeHttpClient:
         except httpx.HTTPError as exc:
             raise RuntimeHttpError("ConnectionError", 0) from exc
         if response.status_code == 200:
+            _require_identity_encoding(response)
             return {"response": StreamBody(response)}
         response.close()
         if response.status_code in TOKEN_REJECTED:

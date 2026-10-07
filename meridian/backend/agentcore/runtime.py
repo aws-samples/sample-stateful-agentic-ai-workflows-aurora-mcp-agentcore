@@ -24,6 +24,7 @@ import hashlib
 import json
 import logging
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -198,6 +199,7 @@ class AgentCoreRuntimeAdapter:
         self.region = region or cli.region
         self.cli_sources = cli.sources
         self._client = None
+        self._client_lock = threading.Lock()
 
     @property
     def configured(self) -> bool:
@@ -217,20 +219,30 @@ class AgentCoreRuntimeAdapter:
         return self.runtime_arn
 
     def _get_client(self):
-        if self._client is None:
-            self._client = boto3.client(
-                "bedrock-agentcore",
-                region_name=self.region,
-                config=Config(
-                    # An invocation may commit a governed write before its
-                    # acknowledgement is lost. Keep SDK retries disabled; only
-                    # the narrowly guarded chat retry in invoke_turn is allowed.
-                    retries={"total_max_attempts": 1, "mode": "standard"},
-                    connect_timeout=5,
-                    read_timeout=45,
-                ),
-            )
-        return self._client
+        with self._client_lock:
+            if self._client is None:
+                self._client = self._build_client()
+            return self._client
+
+    def _build_client(self):
+        return boto3.client(
+            "bedrock-agentcore",
+            region_name=self.region,
+            config=Config(
+                # An invocation may commit a governed write before its
+                # acknowledgement is lost. Keep SDK retries disabled; only
+                # the narrowly guarded chat retry in invoke_turn is allowed.
+                retries={"total_max_attempts": 1, "mode": "standard"},
+                connect_timeout=5,
+                read_timeout=45,
+            ),
+        )
+
+    def _get_http(self) -> RuntimeHttpClient:
+        with self._client_lock:
+            if self._http is None:
+                self._http = RuntimeHttpClient()
+            return self._http
 
     def _invoke(self, arn: str, session_id: str, payload: bytes) -> dict[str, Any]:
         """One invocation: IAM-signed by default, with the caller's bearer token in jwt mode."""
@@ -243,8 +255,7 @@ class AgentCoreRuntimeAdapter:
                 contentType="application/json",
                 accept="text/event-stream",
             )
-        self._http = self._http or RuntimeHttpClient()
-        return self._http.invoke(
+        return self._get_http().invoke(
             url=invocation_url(self.region, arn, self.qualifier),
             token=require_caller_token(),
             session_id=session_id,
