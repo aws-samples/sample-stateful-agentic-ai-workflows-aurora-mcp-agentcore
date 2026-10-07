@@ -102,6 +102,69 @@ def test_controls_gate_the_result():
 def test_unprobed_questions_do_not_crash_the_table():
     rows = table(v.Observations())
     assert rows["Q1"].finding == "not probed" and rows["Q4"].status == v.FAIL
+    assert rows["Q1"].status == v.UNKNOWN and rows["Q2"].status == v.UNKNOWN
+
+
+def test_a_server_error_is_inconclusive_for_revalidation_not_a_yes():
+    row = table(observations(omitted_required=v.Outcome("http_error", 503, "x")))["Q2"]
+    assert "inconclusive" in row.finding and "Yes" not in row.finding
+    assert row.status == v.UNKNOWN
+    denied = table(observations(extra_property=DENIED))["Q2"]
+    assert "inconclusive" in denied.finding and denied.status == v.UNKNOWN
+
+
+def test_an_error_that_names_neither_field_is_inconclusive():
+    row = table(observations(omitted_required=v.Outcome("error", 200, "boom")))["Q2"]
+    assert "inconclusive" in row.finding and row.status == v.UNKNOWN
+
+
+def test_a_skipped_probe_cannot_pass_the_table():
+    obs = observations()
+    del obs.outcomes["extra_property"]
+    assert v.passed(v.derive_verdicts(obs)) is False
+    skipped_q1 = observations()
+    del skipped_q1.outcomes["decoy_names_jordan"]
+    assert v.passed(v.derive_verdicts(skipped_q1)) is False
+
+
+def test_the_result_needs_all_eight_rows():
+    assert v.passed([]) is False
+    assert v.format_table([]).endswith("RESULT: FAIL")
+    assert v.passed(v.derive_verdicts(observations())[:-1]) is False
+
+
+def test_an_account_id_in_server_text_is_masked():
+    outcome = v.classify(200, {"error": {"code": 1, "message": "arn:aws:iam::123456789012:role/x"}})
+    assert "123456789012" not in outcome.message and "<acct>" in outcome.message
+    raw = v.Outcome("error", 200, "arn:aws:iam::123456789012:role/x\nline two")
+    text = v.format_table(v.derive_verdicts(observations(forced_refusal=raw)))
+    assert "123456789012" not in text and "<acct>" in text
+
+
+def test_a_token_shaped_string_is_redacted_in_the_table():
+    jwt = "ey" + "Jhbc.eyJzdWIiOiJ4In" + "0.sig_-9"
+    raw = v.Outcome("error", 200, f"bad token {jwt} here")
+    text = v.format_table(v.derive_verdicts(observations(forced_refusal=raw)))
+    assert jwt not in text and "<token>" in text
+    assert jwt not in v.classify(200, {"error": {"code": 1, "message": jwt}}).message
+
+
+def test_the_target_view_flags_credential_like_keys():
+    echo = {"event": {"travelerId": JORDAN}, "custom": {"authorization": "x"}}
+    body = {"result": {"content": [{"type": "text", "text": json.dumps(echo)}]}}
+    finding = table(observations(jordan_names_jordan=v.classify(200, body)))["Q3"].finding
+    assert "No claim" not in finding and "authorization" in finding
+
+
+def test_malformed_shapes_become_errors_not_crashes():
+    assert v.classify(200, {"result": []}).kind == "error"
+    assert v.classify(200, {"result": {"content": "x"}}).kind == "error"
+    null_text = {"result": {"content": [{"type": "text", "text": None}]}}
+    assert v.classify(200, null_text).kind == "error"
+    listed = {"result": {"content": [{"type": "text", "text": json.dumps({"event": []})}]}}
+    outcome = v.classify(200, listed)
+    assert outcome.kind == "ok"
+    assert table(observations(jordan_names_jordan=outcome))["C1"].status == v.FAIL
 
 
 def test_the_table_has_a_row_per_verdict_and_a_result_line():

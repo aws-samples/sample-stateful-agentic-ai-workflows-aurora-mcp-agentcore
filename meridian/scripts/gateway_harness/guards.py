@@ -1,17 +1,26 @@
-"""Refuse to run the harness against anything but a fresh throwaway name in the right account."""
+"""Refuse to run the harness against anything but a fresh throwaway name in the right account.
+
+Requirements for the later harness tasks that build on these guards:
+
+* Teardown deletes only the exact name this run created. It never lists resources and deletes by
+  prefix match.
+* The harness tags what it creates with a run id and verifies that tag before it deletes.
+* ``check_caller`` runs before any other AWS client is built: STS is the only client that exists
+  until it passes. Task 7's tests must assert that ordering.
+"""
 
 from __future__ import annotations
 
 import re
 import secrets
-from typing import Callable, Mapping, Optional
+from collections.abc import Callable, Mapping
 
 REAL_GATEWAY_NAME = "meridian-aurora"
 REAL_PROJECT_NAME = "meridianv2"
 THROWAWAY_PREFIX = "meridian-throwaway-"
 THROWAWAY_NAME = re.compile(r"^meridian-throwaway-[0-9a-f]{8}$")
 CLUSTER_ARN = re.compile(
-    r"^arn:aws[a-z-]*:rds:(?P<region>[a-z0-9-]+):(?P<account>\d{12}):cluster:.+$"
+    r"^arn:aws[a-z-]*:rds:(?P<region>[a-z0-9-]+):(?P<account>[0-9]{12}):cluster:.+$"
 )
 
 
@@ -20,8 +29,12 @@ class HarnessRefusal(RuntimeError):
 
 
 def new_throwaway_name(token_hex: Callable[[int], str] = secrets.token_hex) -> str:
-    """A fresh name such as ``meridian-throwaway-1a2b3c4d``."""
-    return f"{THROWAWAY_PREFIX}{token_hex(4)}"
+    """A fresh name such as ``meridian-throwaway-1a2b3c4d``.
+
+    Raises:
+        HarnessRefusal: ``token_hex`` produced something that is not eight hex digits.
+    """
+    return check_name(f"{THROWAWAY_PREFIX}{token_hex(4)}")
 
 
 def check_name(name: str) -> str:
@@ -43,13 +56,13 @@ def check_name(name: str) -> str:
     return name
 
 
-def deployment_target(env: Mapping[str, Optional[str]]) -> tuple[str, str]:
+def deployment_target(env: Mapping[str, str | None]) -> tuple[str, str]:
     """The account and region the deployment uses, from ``AURORA_CLUSTER_ARN``.
 
     Raises:
         HarnessRefusal: The setting is missing or not an Aurora cluster ARN.
     """
-    match = CLUSTER_ARN.match((env.get("AURORA_CLUSTER_ARN") or "").strip())
+    match = CLUSTER_ARN.fullmatch((env.get("AURORA_CLUSTER_ARN") or "").strip())
     if not match:
         raise HarnessRefusal(
             "AURORA_CLUSTER_ARN is not set to an Aurora cluster ARN; the harness takes the "

@@ -5,13 +5,26 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 DENIAL = re.compile(r"^(?:AuthorizeActionException\s*-\s*)?Tool Execution Denied:", re.I)
 REFUSAL = re.compile(r"^Identity Check Failed:")
 JORDAN = "trv_meridian_demo"
 DECOY = "trv_demo_decoy"
-PASS, FAIL, INFO = "PASS", "FAIL", "INFO"
+ACCOUNT_ID = re.compile(r"\b[0-9]{12}\b")
+JWT_SHAPE = re.compile(r"eyJ[\w-]+\.[\w-]+\.[\w-]*")
+CREDENTIAL_KEY = re.compile(r"token|claim|authorization|jwt", re.I)
+OMITTED_FIELD_NAMED = re.compile(r"travelerId|required|schema|missing|validation", re.I)
+EXTRA_FIELD_NAMED = re.compile(r"unexpectedField|additional|schema|not allowed|validation", re.I)
+PASS, FAIL, INFO, UNKNOWN = "PASS", "FAIL", "INFO", "UNKNOWN"
+KEYS = ("Q1", "Q2", "Q3", "Q4", "C1", "C2", "C3", "C4")
+
+
+def scrub(text: str) -> str:
+    """Mask account ids and token-shaped strings, and collapse whitespace to single spaces."""
+    text = JWT_SHAPE.sub("<token>", text)
+    text = ACCOUNT_ID.sub("<acct>", text)
+    return " ".join(text.split())
 
 
 @dataclass(frozen=True)
@@ -29,30 +42,34 @@ class Outcome:
     kind: str
     status: int
     message: str = ""
-    echo: Optional[Dict[str, Any]] = None
+    echo: dict[str, Any] | None = None
 
 
 def classify(status: int, body: Any) -> Outcome:
     """Classify one MCP ``tools/call`` HTTP reply."""
     if status != 200 or not isinstance(body, dict):
-        return Outcome("http_error", status, str(body)[:300])
+        return Outcome("http_error", status, scrub(str(body))[:300])
     error = body.get("error")
     if isinstance(error, dict):
-        message = str(error.get("message") or "")
+        message = scrub(str(error.get("message") or ""))
         kind = "denied" if error.get("code") == -32002 or DENIAL.match(message) else "error"
         return Outcome(kind, status, message[:300])
     result = body.get("result") or {}
+    content = result.get("content") if isinstance(result, dict) else None
+    if not isinstance(result, dict) or not isinstance(content or [], list):
+        return Outcome("error", status, "unreadable tool result: unexpected reply shape")
     text = "".join(
-        block.get("text", "") for block in result.get("content") or [] if isinstance(block, dict)
+        block["text"] for block in content or []
+        if isinstance(block, dict) and isinstance(block.get("text"), str)
     )
     if result.get("isError"):
         kind = "denied" if DENIAL.match(text.strip()) else (
             "refused" if REFUSAL.match(text.strip()) else "error")
-        return Outcome(kind, status, text[:300])
+        return Outcome(kind, status, scrub(text)[:300])
     try:
         echo = json.loads(text)
     except ValueError:
-        return Outcome("error", status, f"unreadable tool result: {text[:200]}")
+        return Outcome("error", status, f"unreadable tool result: {scrub(text)[:200]}")
     return Outcome("ok", status, echo=echo if isinstance(echo, dict) else None)
 
 
@@ -60,11 +77,12 @@ def classify(status: int, body: Any) -> Outcome:
 class Observations:
     """The outcomes of every probe, keyed by probe name, plus setup facts."""
 
-    outcomes: Dict[str, Outcome] = field(default_factory=dict)
+    outcomes: dict[str, Outcome] = field(default_factory=dict)
     binding_policy_accepted: bool = False
-    listed_tools: List[str] = field(default_factory=list)
+    listed_tools: list[str] = field(default_factory=list)
 
-    def get(self, name: str) -> Optional[Outcome]:
+    def get(self, name: str) -> Outcome | None:
+        """The outcome recorded for probe ``name``, or ``None`` if it was never run."""
         return self.outcomes.get(name)
 
 
@@ -78,17 +96,23 @@ class Verdict:
     status: str
 
 
-def _traveler(outcome: Optional[Outcome]) -> Optional[str]:
+def _traveler(outcome: Outcome | None) -> str | None:
     if outcome is None or outcome.kind != "ok" or not outcome.echo:
         return None
-    return (outcome.echo.get("event") or {}).get("travelerId")
+    event = outcome.echo.get("event")
+    return event.get("travelerId") if isinstance(event, dict) else None
+
+
+def _echo_keys(outcome: Outcome, part: str) -> list[str]:
+    section = (outcome.echo or {}).get(part)
+    return sorted(section) if isinstance(section, dict) else []
 
 
 def _ordering(obs: Observations) -> Verdict:
     outcome = obs.get("decoy_names_jordan")
     question = "Does the interceptor run before Cedar?"
     if outcome is None:
-        return Verdict("Q1", question, "not probed", INFO)
+        return Verdict("Q1", question, "not probed", UNKNOWN)
     if outcome.kind == "ok" and _traveler(outcome) == DECOY:
         return Verdict("Q1", question, "Yes. Cedar saw the rewritten id, so the deny rule "
                        "passed and the target ran with the decoy's id.", INFO)
@@ -98,20 +122,30 @@ def _ordering(obs: Observations) -> Verdict:
     return Verdict("Q1", question, f"Unexpected outcome: {outcome.kind} {outcome.message}", FAIL)
 
 
+def _half(outcome: Outcome, named: re.Pattern[str], reached: bool) -> str:
+    """``Yes``/``No`` when the outcome settles the question, else ``inconclusive (...)``."""
+    if outcome.kind == "ok":
+        return "No" if reached else "inconclusive (ok, but the probe did not reach the target)"
+    if outcome.kind == "error" and named.search(outcome.message):
+        return "Yes"
+    return f"inconclusive ({outcome.kind} {outcome.status})"
+
+
 def _revalidation(obs: Observations) -> Verdict:
     question = "Are rewritten arguments checked against the tool schema?"
     omitted, extra = obs.get("omitted_required"), obs.get("extra_property")
     if omitted is None or extra is None:
-        return Verdict("Q2", question, "not probed", INFO)
-    before = "No" if omitted.kind == "ok" else "Yes"
-    after = "No" if extra.kind == "ok" and (extra.echo or {}).get("event", {}).get(
-        "unexpectedField") else "Yes"
+        return Verdict("Q2", question, "not probed", UNKNOWN)
+    before = _half(omitted, OMITTED_FIELD_NAMED, True)
+    added = isinstance(extra.echo, dict) and isinstance(extra.echo.get("event"), dict) and bool(
+        extra.echo["event"].get("unexpectedField"))
+    after = _half(extra, EXTRA_FIELD_NAMED, added)
     finding = (
-        f"A required argument left out by the caller is checked before the interceptor: {before}"
-        f" ({omitted.kind}). A property the interceptor adds that the schema forbids is "
-        f"rejected after it: {after} ({extra.kind})."
+        f"A required argument left out by the caller is checked before the interceptor: {before}."
+        f" A property the interceptor adds that the schema forbids is rejected after it: {after}."
     )
-    return Verdict("Q2", question, finding, INFO)
+    inconclusive = "inconclusive" in before or "inconclusive" in after
+    return Verdict("Q2", question, finding, UNKNOWN if inconclusive else INFO)
 
 
 def _target_view(obs: Observations) -> Verdict:
@@ -119,12 +153,15 @@ def _target_view(obs: Observations) -> Verdict:
     outcome = obs.get("jordan_names_jordan")
     if outcome is None or outcome.kind != "ok" or not outcome.echo:
         return Verdict("Q3", question, "the control call did not reach the target", FAIL)
-    event = outcome.echo.get("event") or {}
-    custom = sorted((outcome.echo.get("custom") or {}).keys())
+    event, custom = _echo_keys(outcome, "event"), _echo_keys(outcome, "custom")
+    flagged = [key for key in event + custom if CREDENTIAL_KEY.search(key)]
+    reach = (
+        f"Credential-like keys reach the target: {', '.join(flagged)}." if flagged
+        else "No claim or token key reaches the target."
+    )
     finding = (
-        f"The event is the bare argument object (keys: {', '.join(sorted(event))}); "
-        f"client_context.custom keys: {', '.join(custom) or 'none'}. "
-        "No claim or token reaches the target."
+        f"The event is the argument object (keys: {', '.join(event)}); "
+        f"client_context.custom keys: {', '.join(custom) or 'none'}. {reach}"
     )
     return Verdict("Q3", question, finding, INFO)
 
@@ -174,7 +211,7 @@ def _pass_through(obs: Observations) -> Verdict:
                    "No: tools/list did not return the echo tool.", PASS if ok else FAIL)
 
 
-def derive_verdicts(obs: Observations) -> List[Verdict]:
+def derive_verdicts(obs: Observations) -> list[Verdict]:
     """The four open questions, then the controls that make the answers trustworthy."""
     return [
         _ordering(obs), _revalidation(obs), _target_view(obs), _decoy(obs),
@@ -182,17 +219,18 @@ def derive_verdicts(obs: Observations) -> List[Verdict]:
     ]
 
 
-def passed(verdicts: List[Verdict]) -> bool:
-    """True when no row failed."""
-    return all(v.status != FAIL for v in verdicts)
+def passed(verdicts: list[Verdict]) -> bool:
+    """True when all eight rows are present and each is PASS or INFO (UNKNOWN and FAIL fail)."""
+    return {v.key for v in verdicts} >= set(KEYS) and all(
+        v.status in (PASS, INFO) for v in verdicts)
 
 
-def format_table(verdicts: List[Verdict]) -> str:
+def format_table(verdicts: list[Verdict]) -> str:
     """A fixed-width table, one row per verdict."""
     lines = [f"{'#':<3} {'status':<6} question / finding", "-" * 78]
     for verdict in verdicts:
-        lines.append(f"{verdict.key:<3} {verdict.status:<6} {verdict.question}")
-        lines.append(f"{'':<10}{verdict.finding}")
+        lines.append(f"{verdict.key:<3} {verdict.status:<6} {scrub(verdict.question)}")
+        lines.append(f"{'':<10}{scrub(verdict.finding)}")
     lines.append("-" * 78)
     lines.append("RESULT: " + ("PASS" if passed(verdicts) else "FAIL"))
     return "\n".join(lines)
