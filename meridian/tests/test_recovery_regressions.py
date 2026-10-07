@@ -214,30 +214,6 @@ def test_chat_rejects_invalid_party_size(quantity):
 
 
 @pytest.mark.asyncio
-async def test_document_restores_pending_nodes_and_completed_resume(workflow_factory, monkeypatch):
-    from backend.db.journey_document import _workflow_document
-    monkeypatch.setenv("LANGGRAPH_DEMO_INTERRUPT_AFTER", "search")
-    workflow = workflow_factory()
-    await workflow.run("Plan Tokyo and check availability", "alice", "refresh-thread", travelers_count=3)
-    config = {"configurable": {"thread_id": "refresh-thread"}}
-    snapshot = await workflow.graph.aget_state(config)
-    checkpoint = {"thread_id": "refresh-thread", "checkpoint_id": snapshot.config["configurable"]["checkpoint_id"]}
-    doc = _workflow_document(snapshot, checkpoint)
-    assert doc["workflow_status"] == "paused"
-    assert doc["next_nodes"] == ["availability"]
-    assert doc["travelers_count"] == 3
-    monkeypatch.delenv("LANGGRAPH_DEMO_INTERRUPT_AFTER")
-    await workflow_factory().run("Resume workflow from checkpoint", "alice", "refresh-thread", resume=True)
-    reader = workflow_factory()
-    await reader._ensure_checkpoint_backend()
-    snapshot = await reader.graph.aget_state(config)
-    doc = _workflow_document(snapshot, checkpoint)
-    assert doc["workflow_status"] == "resumed"
-    assert doc["resumed_from_checkpoint"] == checkpoint["checkpoint_id"]
-    assert doc["next_nodes"] == []
-
-
-@pytest.mark.asyncio
 async def test_workflow_failure_does_not_report_success_or_claim_no_changes(monkeypatch):
     from fastapi import HTTPException
     from backend.http_auth import HttpPrincipal

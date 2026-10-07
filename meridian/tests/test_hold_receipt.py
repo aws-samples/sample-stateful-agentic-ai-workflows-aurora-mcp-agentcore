@@ -23,13 +23,14 @@ HOLD_INTENT = {"hold_request_id": "request-test", "package_id": "PKG-1"}
     {"workflow_status": "resumed"},
 ])
 def test_completed_intent_is_not_a_pending_decision(completed):
-    result = _pending_decision(CHECKPOINT, {"hold_intent": HOLD_INTENT, **completed})
+    values = {"hold_intent": HOLD_INTENT, **completed}
+    result = _pending_decision(CHECKPOINT, values, workflow_status=values.get("workflow_status"))
     assert result["status"] == "unavailable"
 
 
 def test_prepared_intent_remains_pending_and_identifies_selected_package():
     values = {"hold_intent": HOLD_INTENT, "workflow_status": "paused"}
-    decision = _pending_decision(CHECKPOINT, values)
+    decision = _pending_decision(CHECKPOINT, values, workflow_status=values["workflow_status"])
     assert decision["status"] == "observed"
     assert decision["hold_request_id"] == "request-test"
     selection = _selected_plan(CHECKPOINT, values)

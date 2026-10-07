@@ -10,6 +10,7 @@ Runs against the live cluster. Requires migrations 007 and 008.
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import AsyncIterator
 
@@ -42,10 +43,9 @@ class Fixture:
         )
 
     async def purge(self) -> None:
-        for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
-            await self.client.execute(
-                f"DELETE FROM {table} WHERE thread_id = %s", (self.thread_id,)
-            )
+        await self.client.execute(
+            "DELETE FROM workflow_snapshots WHERE session_id = %s", (self.thread_id,)
+        )
         await self.client.execute(
             "DELETE FROM hold_requests WHERE booking_id = %s", (self.booking_id,)
         )
@@ -78,7 +78,7 @@ async def journey() -> AsyncIterator[Fixture]:
     fx = Fixture(get_rds_data_client())
     async with fx.scoped() as tx:
         db = ScopedDb(fx.client, tx)
-        fx.journey_id = await create_journey(db, TRAVELER, "AuroraDataApiSaver")
+        fx.journey_id = await create_journey(db, TRAVELER, "Aurora workflow_snapshots")
         await bind_thread(db, fx.journey_id, fx.thread_id)
     try:
         yield fx
@@ -100,7 +100,7 @@ async def test_the_document_names_the_journey_its_owner_and_backend(
     assert doc["journey_id"] == journey.journey_id
     assert doc["traveler_id"] == TRAVELER
     assert doc["active_thread_id"] == journey.thread_id
-    assert doc["checkpoint_backend"]["kind"] == "AuroraDataApiSaver"
+    assert doc["checkpoint_backend"]["kind"] == "Aurora workflow_snapshots"
     assert doc["checkpoint_backend"]["durable"] is True
 
 
@@ -169,39 +169,43 @@ async def test_executions_report_workers_attempts_and_status(
 # ---------------------------------------------------------------- checkpoint
 
 
-async def test_a_committed_checkpoint_is_reported_with_its_thread(
-    journey: Fixture,
-) -> None:
-    from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
+async def test_a_saved_snapshot_is_reported_with_its_thread(journey: Fixture) -> None:
+    from backend.agents.phase_05_workflow.graph import run_task, snapshot_key
+    from backend.agents.phase_05_workflow.snapshot_storage import AuroraSnapshotStorage
 
-    saver = AuroraDataApiSaver(journey.client)
-    checkpoint_id = str(uuid.uuid4())
-    config = {"configurable": {"thread_id": journey.thread_id, "checkpoint_ns": ""}}
-    await saver.aput(
-        config,
-        {
-            "v": 1,
-            "id": checkpoint_id,
-            "ts": "2026-09-06T02:13:41+00:00",
-            "channel_values": {"hold_package": "TKY-003"},
-            "channel_versions": {"hold_package": "1"},
-            "versions_seen": {},
-        },
-        {"step": 1},
-        {"hold_package": "1"},
-    )
+    delta = {"state": {"hold_package": "TKY-003"}, "spans": []}
+    snapshot = {
+        "scope": "multiAgent", "schema_version": "1.0", "app_data": {},
+        "created_at": "2026-10-06T02:13:41+00:00",
+        "data": {"orchestrator_id": "phase5", "state": {
+            "type": "graph", "id": "phase5", "status": "interrupted",
+            "completed_nodes": ["hold"], "failed_nodes": [], "interrupted_nodes": ["synthesize"],
+            "next_nodes_to_execute": ["synthesize"], "execution_order": ["hold"],
+            "current_task": run_task(query="q", traveler_id=TRAVELER, conversation_id=journey.thread_id,
+                                     journey_id=journey.journey_id, travelers_count=1),
+            "node_results": {"hold": {"status": "completed", "result": {
+                "type": "agent_result", "stop_reason": "end_turn",
+                "message": {"role": "assistant", "content": [{"text": json.dumps(delta)}]},
+            }}},
+        }},
+    }
+    storage = AuroraSnapshotStorage(journey.client, session_id=journey.thread_id, traveler_id=TRAVELER,
+                                    execution_id="exe_jdoc", worker_id="worker-jdoc")
+    for _ in range(2):
+        await storage.write(snapshot_key(journey.thread_id), json.dumps(snapshot).encode())
 
     doc = await _document(journey)
-    assert doc["checkpoint"]["status"] == "committed"
-    assert doc["checkpoint"]["checkpoint_id"] == checkpoint_id
-    assert doc["checkpoint"]["thread_id"] == journey.thread_id
-    assert doc["checkpoint"]["source"] == "checkpoints"
-    assert doc["checkpoint"]["committed_at"].startswith("2026-09-06")
-
+    checkpoint = doc["checkpoint"]
+    assert checkpoint["status"] == "committed"
+    assert checkpoint["source"] == "workflow_snapshots"
+    assert checkpoint["thread_id"] == journey.thread_id
+    assert checkpoint["snapshot_count"] == 2
+    assert int(checkpoint["parent_checkpoint_id"]) < int(checkpoint["checkpoint_id"])
+    assert doc["workflow"]["workflow_status"] == "paused"
+    assert doc["workflow"]["next_nodes"] == ["synthesize"]
     plan = doc["selected_plan"]
     assert plan["package_id"] == "TKY-003"
-    assert journey.thread_id in plan["source"]
-    assert checkpoint_id in plan["source"]
+    assert plan["source"] == f"snapshot:{journey.thread_id}/{checkpoint['checkpoint_id']}#channel:hold_package"
 
 
 # --------------------------------------------------------------------- hold

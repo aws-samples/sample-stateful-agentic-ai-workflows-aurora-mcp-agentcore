@@ -9,10 +9,13 @@ a missing fact is indistinguishable from one that has the fact.
 The read has no workflow side effects.
 """
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from backend.agentcore.identity import get_agentcore_identity
+from backend.agents.phase_05_workflow.graph import fold_snapshot, next_nodes
+from backend.agents.phase_05_workflow.state import SNAPSHOT_STORE
 
 JOURNEY_SQL = """
 SELECT journey_id, traveler_id, checkpoint_backend, active_thread_id, status,
@@ -27,11 +30,17 @@ SELECT execution_id, attempt, worker_id, status, started_at::TEXT, ended_at::TEX
  ORDER BY attempt
 """
 
-CHECKPOINT_SQL = """
-SELECT checkpoint_id, parent_checkpoint_id, checkpoint_ns,
-       checkpoint ->> 'ts' AS committed_at
-  FROM checkpoints WHERE thread_id = %s
- ORDER BY checkpoint_id DESC LIMIT 1
+SNAPSHOT_SQL = """
+SELECT snapshot_seq::TEXT AS seq, snapshot::TEXT AS snapshot, saved_at::TEXT AS saved_at,
+       execution_id
+  FROM workflow_snapshots WHERE session_id = %s
+ ORDER BY snapshot_seq DESC LIMIT 1
+"""
+SNAPSHOT_HISTORY_SQL = """
+SELECT COUNT(*) AS n,
+       MAX(snapshot_seq) FILTER (WHERE execution_id IS DISTINCT FROM %s)::TEXT AS resumed_from,
+       MAX(snapshot_seq) FILTER (WHERE snapshot_seq < %s::BIGINT)::TEXT AS previous_seq
+  FROM workflow_snapshots WHERE session_id = %s
 """
 
 HOLD_SQL = """
@@ -85,7 +94,7 @@ def _iso(value: Any) -> Optional[str]:
 
 def checkpoint_backend_is_durable(kind: str) -> bool:
     """Only the durable backends adopted by the workflow can support this claim."""
-    return kind in {"AuroraDataApiSaver", "PostgresSaver (Aurora · pooled)"}
+    return kind in {SNAPSHOT_STORE, "AuroraDataApiSaver", "PostgresSaver (Aurora · pooled)"}
 
 
 def _channel(values: Any, name: str) -> Any:
@@ -93,41 +102,33 @@ def _channel(values: Any, name: str) -> Any:
     return values.get(name) if isinstance(values, dict) else None
 
 
-async def _workflow_snapshot(client: Any, thread_id: str, checkpoint_id: str):
-    """Read pending nodes and values using the same graph definition, without running it."""
-    from backend.agents.phase_05_workflow.workflow import OrchestrationAgent
-    from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
-
-    async def read_only(*args, **kwargs):
-        raise RuntimeError("Journey inspection cannot execute workflow nodes")
-
-    workflow = OrchestrationAgent(read_only, read_only)
-    workflow.checkpointer = AuroraDataApiSaver(client)
-    workflow.graph = workflow._build_graph()
-    return await workflow.graph.aget_state({"configurable": {"thread_id": thread_id, "checkpoint_id": checkpoint_id}})
-
-
-def _workflow_document(snapshot, checkpoint):
-    if snapshot is None or not snapshot.values:
+def _workflow_document(snapshot, checkpoint, executions, *, latest_execution, resumed_from):
+    """The workflow section, folded from the newest snapshot with the steps' own fold."""
+    if not snapshot:
         return _unavailable("no saved workflow to restore")
-    values = snapshot.values
-    pending = list(snapshot.next)
+    folded = fold_snapshot(snapshot)
+    pending = next_nodes(snapshot) if snapshot["data"]["state"].get("status") != "completed" else []
+    items = executions.get("items", []) if isinstance(executions, dict) else []
+    workers = [item.get("worker_id") for item in items]
+    resumed = not pending and len(items) > 1
     return {
         "status": "observed",
         "source": _channel_source(checkpoint, "workflow"),
-        "conversation_id": values.get("conversation_id"),
-        "query": values.get("query", ""),
+        "conversation_id": folded.get("conversation_id"),
+        "query": folded.get("query", ""),
         "message": (
             "Your shortlist is saved. Resume to continue from the checkpoint."
-            if pending else values.get("response", "Workflow finished.")
+            if pending else folded.get("response", "Workflow finished.")
         ),
-        "workflow_status": "paused" if pending else (values.get("workflow_status") or "complete"),
+        "workflow_status": "paused" if pending else ("resumed" if resumed else "complete"),
         "next_nodes": pending,
-        "activities": values.get("activities", []),
-        "travelers_count": values.get("travelers_count") or (values.get("hold_intent") or {}).get("quantity", 1),
-        "execution_id": values.get("execution_id"),
-        "resumed_from_checkpoint": values.get("resumed_from_checkpoint"),
-        "resumed_after_restart": bool(values.get("resumed_after_restart")),
+        "activities": folded.get("activities", []),
+        "travelers_count": (
+            folded.get("travelers_count") or (folded.get("hold_intent") or {}).get("quantity", 1)
+        ),
+        "execution_id": latest_execution,
+        "resumed_from_checkpoint": resumed_from if resumed else None,
+        "resumed_after_restart": bool(resumed and len(set(workers[-2:])) == 2),
     }
 
 
@@ -183,18 +184,18 @@ async def assemble_journey_document(
         }
 
         document["executions"] = await _executions(q, journey_id)
-        checkpoint = await _checkpoint(q, thread_id)
-        snapshot = (
-            await _workflow_snapshot(client, thread_id, checkpoint["checkpoint_id"])
-            if checkpoint.get("status") == "committed"
-            else None
+        checkpoint, snapshot, latest_execution, resumed_from = await _snapshot(q, thread_id)
+        inline = fold_snapshot(snapshot) if snapshot else {}
+        document["workflow"] = _workflow_document(
+            snapshot, checkpoint, document["executions"],
+            latest_execution=latest_execution, resumed_from=resumed_from,
         )
-        inline = dict(snapshot.values) if snapshot else {}
-        document["workflow"] = _workflow_document(snapshot, checkpoint)
         document["checkpoint"] = checkpoint
         document["selected_plan"] = _selected_plan(checkpoint, inline)
         document["recommendations"] = _recommendations(checkpoint, inline)
-        document["pending_decision"] = _pending_decision(checkpoint, inline)
+        document["pending_decision"] = _pending_decision(
+            checkpoint, inline, workflow_status=document["workflow"].get("workflow_status"),
+        )
         document["conversation"] = await _conversation(q, thread_id)
         document["hold"] = await _hold(q, journey_id, inline)
         document["authorization"] = await _authorization(
@@ -226,27 +227,35 @@ async def _executions(q, journey_id: str) -> Dict[str, Any]:
     }
 
 
-async def _checkpoint(q, thread_id: Optional[str]) -> Dict[str, Any]:
+async def _snapshot(q, thread_id: Optional[str]):
+    """The newest snapshot on the thread, with its place in the run's history.
+
+    Returns:
+        (checkpoint section, parsed snapshot or None, latest execution id, resumed-from seq)
+    """
     if not thread_id:
-        return _unavailable("the journey has no active thread")
-    rows = await q(CHECKPOINT_SQL, (thread_id,))
+        return _unavailable("the journey has no active thread"), None, None, None
+    rows = await q(SNAPSHOT_SQL, (thread_id,))
     if not rows:
-        return _unavailable(f"no checkpoint committed on thread {thread_id}")
+        return _unavailable(f"no workflow snapshot saved on thread {thread_id}"), None, None, None
     row = rows[0]
-    return {
+    history = (await q(SNAPSHOT_HISTORY_SQL, (row["execution_id"], row["seq"], thread_id)))[0]
+    checkpoint = {
         "status": "committed",
-        "source": "checkpoints",
+        "source": "workflow_snapshots",
         "thread_id": thread_id,
-        "checkpoint_id": row["checkpoint_id"],
-        "parent_checkpoint_id": row["parent_checkpoint_id"],
-        "checkpoint_ns": row["checkpoint_ns"],
-        "committed_at": _iso(row["committed_at"]),
+        "checkpoint_id": row["seq"],
+        "parent_checkpoint_id": history["previous_seq"],
+        "checkpoint_ns": "",
+        "committed_at": _iso(row["saved_at"]),
+        "snapshot_count": int(history["n"]),
     }
+    return checkpoint, json.loads(row["snapshot"]), row["execution_id"], history["resumed_from"]
 
 
 def _channel_source(checkpoint: Dict[str, Any], channel: str) -> str:
     return (
-        f"checkpoint:{checkpoint['thread_id']}/{checkpoint['checkpoint_id']}"
+        f"snapshot:{checkpoint['thread_id']}/{checkpoint['checkpoint_id']}"
         f"#channel:{channel}"
     )
 
@@ -283,14 +292,16 @@ def _recommendations(checkpoint: Dict[str, Any], inline: Any) -> Dict[str, Any]:
     }
 
 
-def _pending_decision(checkpoint: Dict[str, Any], inline: Any) -> Dict[str, Any]:
+def _pending_decision(
+    checkpoint: Dict[str, Any], inline: Any, workflow_status: Optional[str] = None
+) -> Dict[str, Any]:
     if checkpoint.get("status") != "committed":
         return _unavailable("no committed checkpoint to read a pending step from")
     # Retain hold_intent for idempotent replay, but never present a completed
     # operation as a new decision merely because its intent is still saved.
     if _channel(inline, "hold_id"):
         return _unavailable("the hold intent has already produced a booking")
-    if _channel(inline, "workflow_status") in ("complete", "resumed"):
+    if workflow_status in ("complete", "resumed"):
         return _unavailable("the workflow has finished with no pending hold decision")
     intent = _channel(inline, "hold_intent")
     if not intent:
