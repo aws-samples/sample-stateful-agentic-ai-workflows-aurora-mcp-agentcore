@@ -48,6 +48,9 @@ def test_health_includes_model_fields(monkeypatch):
     body = res.json()
     assert "bedrock_model_id" in body
     assert "bedrock_model_label" in body
+    assert body["checkpoint_backend"] == "Aurora workflow_snapshots"
+    assert body["checkpoint_durable"] is True
+    assert body["checkpoint_required"] is True
     assert "embedding_model_id" in body
     assert body["bedrock_model_label"]
 

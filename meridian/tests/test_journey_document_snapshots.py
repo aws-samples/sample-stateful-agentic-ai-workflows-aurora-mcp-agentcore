@@ -2,7 +2,9 @@
 
 import json
 
-from backend.db.journey_document import _workflow_document
+import pytest
+
+from backend.db.journey_document import _workflow_document, checkpoint_backend_is_durable
 
 CLASSIFY_DELTA = json.dumps(
     {"state": {"intent": "plan"}, "spans": [{"title": "Workflow node: classify"}]}
@@ -65,3 +67,18 @@ def test_two_executions_with_no_earlier_saved_step_is_not_a_resume():
     assert doc["workflow_status"] == "complete"
     assert doc["resumed_from_checkpoint"] is None
     assert doc["resumed_after_restart"] is False
+
+
+@pytest.mark.parametrize(
+    ("kind", "durable"),
+    [
+        ("Aurora workflow_snapshots", True),
+        ("AuroraDataApiSaver", True),
+        ("PostgresSaver (Aurora \u00b7 pooled)", True),
+        ("MemorySaver (in-process)", False),
+        ("", False),
+        ("SomethingElse", False),
+    ],
+)
+def test_only_the_aurora_backed_kinds_are_durable(kind, durable):
+    assert checkpoint_backend_is_durable(kind) is durable

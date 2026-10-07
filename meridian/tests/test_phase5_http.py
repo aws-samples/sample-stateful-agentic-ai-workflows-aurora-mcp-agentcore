@@ -2,6 +2,7 @@
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
 from backend.agents.phase_05_workflow.runner import WorkflowConflictError
@@ -76,3 +77,9 @@ async def test_a_paused_run_returns_the_resume_chip_and_a_generated_thread(monke
     assert response.follow_ups == ["Resume workflow from checkpoint"]
     assert runner.commands[0].thread_id.startswith("phase5-")
     assert runner.commands[0].resume is False
+
+
+@pytest.mark.parametrize("quantity", [0, -1, 21, 1.5, True])
+def test_chat_rejects_invalid_party_size(quantity):
+    with pytest.raises(ValidationError):
+        router.ChatRequest(message="Tokyo", phase=5, travelers_count=quantity)

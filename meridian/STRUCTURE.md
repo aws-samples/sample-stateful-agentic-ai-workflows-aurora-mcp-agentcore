@@ -30,7 +30,7 @@ import their agent modules at runtime:
 - `backend/agents/phase_04_production/concierge.py`: identity, traveler grant, and RLS read and write around the managed runtime; `process_hold()` for a hold from the UI
 - `backend/agents/phase_04_production/memory_agent.py`: `@tool` recall and persist methods
 - `backend/agents/budget.py`: the budget ceiling Cedar compares against, shared by Phases 4 and 5
-- `backend/agents/phase_05_workflow/workflow.py`: LangGraph `StateGraph` with `AuroraDataApiSaver` or pooled `AsyncPostgresSaver`; the in-process `MemorySaver` fallback cannot survive a restart
+- `backend/agents/phase_05_workflow/`: `graph.py` builds the Strands graph, `nodes.py` holds its steps, `runner.py` claims the lease and runs or resumes it, and `snapshot_storage.py` saves snapshots to Aurora `workflow_snapshots`
 - `backend/agentcore/runtime.py`, `backend/agentcore/identity.py`: AgentCore adapters (streaming runtime client, identity envelope)
 - `meridian_agentcore/app/MeridianConcierge/`: the Phase 4 agent on AgentCore Runtime: `main.py` (tool loop, memory session, streamed events), `turn_trace.py` (spans and the pinned hold and booking arguments), `hold_execution.py` (confirmed holds and confirmations run by the platform), `prompts.py`, `gateway_auth.py`
 - `meridian_agentcore/agentcore/gateway_targets/meridian_holds/`: the `MeridianHolds` gateway Lambda (`get_package_details`, `create_courtesy_hold`, `confirm_booking`)

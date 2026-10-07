@@ -213,3 +213,19 @@ async def test_synthesize_survives_a_failed_readback(nodes, caplog):
     )
     assert "Recorded status: held" in out["response"]
     assert "could not read booking hold_1 back from Aurora" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ({"hold_id": "bk_other", "traveler_id": "trv_x"}, "bk_mine"),
+        ({"traveler_id": "trv_x"}, None),
+        ({"hold_id": "bk_mine"}, "bk_mine"),
+    ],
+)
+async def test_release_hold_declines_without_touching_aurora(monkeypatch, nodes, state, expected):
+    def forbidden():
+        pytest.fail("release_hold must not reach Aurora for this state")
+
+    monkeypatch.setattr("backend.db.rds_data_client.get_rds_data_client", forbidden)
+    assert await nodes.release_hold(state, expected_hold_id=expected) is False

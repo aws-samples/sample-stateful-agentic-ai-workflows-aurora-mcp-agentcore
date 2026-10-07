@@ -108,11 +108,7 @@ unit of work; it is not long-lived workflow state. See
 
 The canceled-flight prompt runs `classify → search → availability →
 prepare_hold → hold → synthesize`. It pauses after `search` so the checkpoint
-is visible before the workflow checks availability and places a hold. The pause
-comes from a query match in `workflow.py`: the text must contain "canceled" or
-"cancelled", "flight", "then check" and "best three". Setting
-`LANGGRAPH_DEMO_INTERRUPT_AFTER` overrides that and pauses after the named node
-for every Phase 5 query.
+is visible before the workflow checks availability and places a hold. The proof scripts pause with `WorkflowCommand(pause_after=...)`.
 
 - `prepare_hold` saves the hold's request ID and booking ID in the checkpoint
   before the `hold` node calls the Gateway. A resumed or retried run sends the
@@ -201,7 +197,6 @@ Every route except `/health` requires the HTTP principal described under
 | `LANGGRAPH_AUTO_CHECKPOINT_DSN` | Allow a DSN built from discrete settings (on by default only when `ENVIRONMENT=development`). `false` stops that DSN; the Data API saver then runs only if `LANGGRAPH_CHECKPOINT_DATA_API=true` and no `LANGGRAPH_CHECKPOINT_DSN` is set, otherwise the workflow falls back to `MemorySaver` |
 | `LANGGRAPH_CHECKPOINT_REQUIRED` | Fail at startup when no durable checkpoint store is available |
 | `LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP` | Initialize and probe the checkpoint store at startup |
-| `LANGGRAPH_DEMO_INTERRUPT_AFTER` | Pause the workflow after the named node |
 | `MERIDIAN_API_TOKEN`, `CORS_ORIGINS` | API token and allowed origins for any non-loopback deployment |
 
 `requirements.in` lists the direct Python dependencies and `requirements.txt`

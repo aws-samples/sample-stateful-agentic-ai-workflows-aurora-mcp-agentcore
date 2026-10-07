@@ -1,12 +1,14 @@
 """The runner: lease, ownership, conflicts, review, resume, replay, compensation, timings."""
 
 import asyncio
+import json
 from unittest.mock import AsyncMock
 
 import pytest
 from strands.storage import InMemoryStorage
 
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
+from backend.agents.phase_05_workflow.graph import run_task, snapshot_key
 from backend.agents.phase_05_workflow.nodes import WorkflowNodes
 from backend.agents.phase_05_workflow.runner import (
     WorkflowCommand,
@@ -20,6 +22,18 @@ from tests.phase5_support import GatewayFake, InMemoryLease, fake_availability, 
 
 CANONICAL = PROMPT_LADDER[5].works[0]
 RECOVERY = "My flight was canceled. Rework my Tokyo trip and check availability."
+
+
+class SnapshotAppearsOnClaim(InMemoryLease):
+    """A lease whose claim lands after another request saved progress for the thread."""
+
+    def __init__(self, storage, key, snapshot):
+        super().__init__()
+        self._storage, self._key, self._snapshot = storage, key, snapshot
+
+    async def claim(self, *args, **kwargs):
+        await self._storage.write(self._key, self._snapshot)
+        return await super().claim(*args, **kwargs)
 
 
 class World:
@@ -228,3 +242,60 @@ async def test_party_size_is_validated(count):
                 query=CANONICAL, traveler_id="trv_x", thread_id="t1", travelers_count=count
             )
         )
+
+
+async def test_a_snapshot_without_a_recorded_owner_cannot_be_resumed():
+    world = World()
+    ownerless = run_task(
+        query=CANONICAL, conversation_id="t1", journey_id="j", travelers_count=2
+    )
+    envelope = {
+        "data": {
+            "state": {
+                "current_task": ownerless,
+                "next_nodes_to_execute": ["availability"],
+            }
+        }
+    }
+    storage = world.storages.setdefault("t1", InMemoryStorage())
+    await storage.write(snapshot_key("t1"), json.dumps(envelope).encode())
+    with pytest.raises(WorkflowAuthorizationError, match="no recorded owner"):
+        await world.runner().run(command("Resume workflow", resume=True))
+    assert world.lease.executions == []
+    assert world.gateway.calls == []
+
+
+async def test_a_thread_bound_to_another_travelers_journey_is_refused_without_a_snapshot():
+    world = World()
+    world.lease.traveler_threads["t1"] = "trv_other"
+    with pytest.raises(WorkflowAuthorizationError, match="another journey"):
+        await world.runner().run(command())
+    assert world.lease.executions == []
+    assert world.gateway.calls == []
+
+
+async def test_progress_saved_between_the_read_and_the_claim_conflicts_and_fails_the_claim():
+    world = World()
+    await world.runner().run(command(thread="donor"))
+    donor = world.storages["donor"]
+    snapshot = await donor.read(snapshot_key("donor"))
+    storage = world.storages.setdefault("t1", InMemoryStorage())
+    world.lease = SnapshotAppearsOnClaim(storage, snapshot_key("t1"), snapshot)
+    with pytest.raises(WorkflowConflictError, match="now has saved progress"):
+        await world.runner().run(command())
+    assert [e["status"] for e in world.lease.executions] == ["failed"]
+    assert world.gateway.calls == []
+
+
+async def test_a_resume_keeps_the_saved_party_size():
+    world = World()
+    start = WorkflowCommand(
+        query=RECOVERY, traveler_id="trv_x", thread_id="t1", travelers_count=3
+    )
+    await world.runner().run(start)
+    resume = WorkflowCommand(
+        query="Resume workflow", traveler_id="trv_x", thread_id="t1", resume=True,
+        travelers_count=1,
+    )
+    await world.runner("worker-b").run(resume)
+    assert [call["travelers"] for call in world.gateway.calls] == [3]
