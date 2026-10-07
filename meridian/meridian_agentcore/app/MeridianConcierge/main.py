@@ -97,7 +97,7 @@ def memory_span(traveler_id: str, conversation_id: str) -> dict:
     count = len(events.get("events", []))
     return activity(
         "reasoning",
-        "AgentCore Memory · session restored",
+        "AgentCore Memory: session restored",
         f"{count} prior events for this conversation loaded by the session manager",
         {
             "category": "memory_short",
@@ -135,11 +135,11 @@ def turn_context(payload: dict) -> tuple[TurnContext, dict | None, dict | None]:
 def start_span(turn: TurnContext) -> dict:
     return activity(
         "runtime",
-        "AgentCore Runtime · turn started",
+        "AgentCore Runtime: turn started",
         f"microVM session for {turn.conversation_id}",
         {
             "category": "runtime",
-            "component": "Bedrock AgentCore Runtime · MeridianConcierge",
+            "component": "Bedrock AgentCore Runtime, MeridianConcierge",
             "status": "ok",
             "fields": [
                 {"label": "trace_id", "value": trace_id() or "pending", "mono": True},
@@ -155,7 +155,7 @@ def tools_span(tools: list, took: int) -> dict:
     """The tools/list span, carrying the time measured around ``list_tools_sync``."""
     return activity(
         "tool_call",
-        "AgentCore Gateway · tools/list",
+        "AgentCore Gateway: tools/list",
         f"{len(tools)} MCP tools discovered with IAM-signed requests",
         {
             "category": "gateway",

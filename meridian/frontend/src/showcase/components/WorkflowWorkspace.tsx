@@ -17,7 +17,7 @@ export function WorkflowWorkspace({ state, onOpenRecovery }: {
   const canContinue = !state.isLoading && (paused || finished);
   const steps = [
     { title: 'Find alternatives', detail: 'Classify the request and rank the trip options.', done: evidence.searchObserved },
-    { title: 'Save the next step', detail: 'Keep the shortlist and where to resume in a checkpoint.', done: evidence.checkpointObserved },
+    { title: 'Save the next step', detail: 'Keep the shortlist and where to resume in a saved step.', done: evidence.checkpointObserved },
     { title: 'Continue at the desk', detail: 'Check availability and request a timed package hold.', done: finished && evidence.availabilityObserved },
   ];
 
@@ -32,18 +32,18 @@ export function WorkflowWorkspace({ state, onOpenRecovery }: {
     <div className="mc-workflow-handoff" aria-busy={state.isLoading}>
       <div className="mc-workflow-handoff-copy">
         <h2>{state.isLoading ? 'Waiting for the workflow result…' : state.error ? 'Check the saved progress.' : paused ? 'The plan can wait. The progress is saved.' : finished ? 'The workflow has continued.' : 'Pause here. Pick up at the recovery desk.'}</h2>
-        <p>{state.isLoading ? 'Completed steps appear when the backend returns its evidence.' : state.error ? 'The request was interrupted. Open the desk to review the saved state before retrying.' : paused ? 'Carry this shortlist into the recovery desk. Availability is the next step; no inventory is held yet.' : finished ? 'Return to the recovery desk to review the plan and its hold receipt.' : 'Run the search to its checkpoint. Then use the saved plan to continue the traveler’s recovery.'}</p>
+        <p>{state.isLoading ? 'Completed steps appear when the backend returns its evidence.' : state.error ? 'The request was interrupted. Open the desk to review the saved state before retrying.' : paused ? 'Carry this shortlist into the recovery desk. Availability is the next step; no inventory is held yet.' : finished ? 'Return to the recovery desk to review the plan and its hold receipt.' : 'Run the search to its saved step. Then use the saved plan to continue the traveler’s recovery.'}</p>
       </div>
       {canContinue || state.error ? <button type="button" className="mc-session-primary" onClick={onOpenRecovery} disabled={state.isLoading}>
         Continue at recovery desk <ArrowRight size={18} aria-hidden="true" />
       </button> : <button type="button" className="mc-session-primary" disabled={state.isLoading} onClick={() => void state.applyPhaseExample(SHOWCASE_FINALE_PROMPT, true, 5)}>
         {state.isLoading ? <Pause size={18} aria-hidden="true" /> : <Play size={18} aria-hidden="true" />}
-        {state.isLoading ? 'Running to checkpoint…' : 'Run to checkpoint'}
+        {state.isLoading ? 'Running to saved step…' : 'Run to saved step'}
       </button>}
     </div>
     {(state.conversationId || evidence.checkpointObserved) && <dl className="mc-workflow-receipt">
       <div><dt>Same conversation</dt><dd><code>{state.conversationId ?? 'Not recorded'}</code></dd></div>
-      <div><dt><AuroraIcon size={18} aria-hidden="true" /> Checkpoint store</dt><dd>{workflow.checkpoint}{evidence.checkpointObserved && <small>{evidence.durableCheckpoint ? 'Saved outside the worker' : 'In-process only; restart recovery is not proven'}</small>}</dd></div>
+      <div><dt><AuroraIcon size={18} aria-hidden="true" /> Snapshot store</dt><dd>{workflow.checkpoint}{evidence.checkpointObserved && <small>{evidence.durableCheckpoint ? 'Saved outside the worker' : 'In-process only; restart recovery is not proven'}</small>}</dd></div>
     </dl>}
   </section>;
 }

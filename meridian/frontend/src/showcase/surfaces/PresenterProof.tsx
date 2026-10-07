@@ -10,7 +10,7 @@ import { isObserved } from '../journey/types';
 type TabId = 'checkpoint' | 'authorization' | 'business';
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'checkpoint', label: 'Checkpoint' },
+  { id: 'checkpoint', label: 'Saved step' },
   { id: 'authorization', label: 'Authorization' },
   { id: 'business', label: 'Business result' },
 ];
@@ -168,13 +168,13 @@ export function PresenterProof({
         <div>
           <h1>
             {restarted ? 'The worker changed.' : isObserved(checkpoint) ? 'The plan is saved.' : 'The journey has started.'}
-            <span>{resumed ? 'The saved plan resumed.' : isObserved(checkpoint) ? 'The checkpoint remains.' : 'The evidence follows.'}</span>
+            <span>{resumed ? 'The saved plan resumed.' : isObserved(checkpoint) ? 'The saved step remains.' : 'The evidence follows.'}</span>
           </h1>
         </div>
         <div className="mds-proof-head-meta">
           <p>A Tokyo recovery plan.</p>
           <p>
-            {isObserved(checkpoint) ? 'Checkpoint recorded.' : 'Awaiting checkpoint.'}
+            {isObserved(checkpoint) ? 'Saved step recorded.' : 'Awaiting saved step.'}
             {' '}{holdSummary}
           </p>
           <button
@@ -228,7 +228,7 @@ export function PresenterProof({
             }`}
           >
             <ShieldCheck size={15} aria-hidden="true" />
-            {isObserved(checkpoint) ? 'Checkpoint persisted' : 'Awaiting checkpoint'}
+            {isObserved(checkpoint) ? 'Saved step kept' : 'Awaiting saved step'}
           </p>
         </div>
         <span className="mds-proof-arrow" aria-hidden="true">
@@ -274,7 +274,7 @@ export function PresenterProof({
         {tab === 'checkpoint' && (
           <div className="mds-proof-facts">
             <Fact
-              label="Checkpoint ID"
+              label="Snapshot ID"
               mono
               value={isObserved(checkpoint) ? checkpoint.checkpoint_id : DASH}
             />
@@ -292,7 +292,7 @@ export function PresenterProof({
             <Fact
               label="Resume result"
               tone={resumed ? 'good' : 'muted'}
-              value={resumed ? 'Completed from saved checkpoint'
+              value={resumed ? 'Completed from the saved step'
                 : waitingToResume ? 'Not resumed yet' : 'Successful resume not verified'}
             />
           </div>
@@ -337,7 +337,7 @@ export function PresenterProof({
                   {restarted && hold.created_by_execution_id === first?.execution_id
                     ? 'This booking was created by the original execution and is still readable after the replacement started.'
                     : restarted && hold.created_by_execution_id === latest?.execution_id
-                      ? 'The replacement execution created this hold. This run proves checkpoint recovery; it does not yet prove an existing hold survived a restart.'
+                      ? 'The replacement execution created this hold. This run proves saved step recovery; it does not yet prove an existing hold survived a restart.'
                       : 'To prove hold durability, stop the worker after the hold is committed, resume the same thread, then re-read the booking ID and original expiry.'}
                 </p>
               </>
@@ -345,14 +345,14 @@ export function PresenterProof({
               <div className="mc-hold-pending">
                 <strong>Hold no longer in Aurora.</strong>
                 <p>
-                  The checkpoint names hold {hold.checkpoint_hold_id}, but Aurora has no booking
+                  The saved step names hold {hold.checkpoint_hold_id}, but Aurora has no booking
                   for it. Releasing a sample booking removes its rows.
                 </p>
               </div>
             ) : (
               <div className="mc-hold-pending">
                 <strong>No package hold recorded.</strong>
-                <p>A saved shortlist is a workflow checkpoint. The hold begins after availability verification, when Aurora commits the booking.</p>
+                <p>A saved shortlist is a workflow saved step. The hold begins after availability verification, when Aurora commits the booking.</p>
               </div>
             )}
           </div>

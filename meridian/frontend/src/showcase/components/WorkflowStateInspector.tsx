@@ -48,7 +48,7 @@ export function WorkflowStateInspector({ state }: { state: MeridianShowcaseState
               <b>{workflow.nextNode}</b>
             </div>
             <div>
-              <span>Checkpoint</span>
+              <span>Snapshot store</span>
               <b>{workflow.checkpoint}</b>
             </div>
           </div>

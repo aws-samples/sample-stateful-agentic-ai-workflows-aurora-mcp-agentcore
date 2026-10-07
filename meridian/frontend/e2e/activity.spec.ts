@@ -137,7 +137,7 @@ test('all five phases animate waiting and replay spinners and respect reduced mo
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.goto('/showcase?view=ladder');
     await page.getByRole('button', { name: new RegExp(`^Phase ${phase},`) }).click();
-    if (phase === 5) await page.getByRole('button', { name: 'Run to checkpoint', exact: true }).click();
+    if (phase === 5) await page.getByRole('button', { name: 'Run to saved step', exact: true }).click();
     else {
       const input = page.getByRole('textbox', { name: 'Ask Meridian anything' });
       await input.fill('Find a quiet wine-country retreat'); await input.press('Enter');

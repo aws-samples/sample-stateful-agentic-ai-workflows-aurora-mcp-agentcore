@@ -496,7 +496,7 @@ class WorkflowNodes:
                 if replayed
                 else (
                     f"Held {quantity} x {duration} on {package_id} until "
-                    f"{expires_at} · {remaining} package spots left"
+                    f"{expires_at}, {remaining} package spots left"
                 )
             ),
             sql_query=(
@@ -513,7 +513,7 @@ class WorkflowNodes:
             execution_time_ms=elapsed,
             telemetry={
                 "category": "gateway",
-                "component": "AgentCore Gateway · MeridianHolds Lambda · Aurora",
+                "component": "AgentCore Gateway, MeridianHolds Lambda, Aurora",
                 "status": "ok",
                 "fields": [
                     {"label": "gateway_tool", "value": HOLD_TOOL, "mono": True},

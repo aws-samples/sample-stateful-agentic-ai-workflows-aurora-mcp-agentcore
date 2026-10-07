@@ -100,7 +100,7 @@ export function RecoveryBriefing({
                 <span>
                   <small>
                     {checkpointReady
-                      ? 'Checkpoint ready'
+                      ? 'Saved step ready'
                       : state.workflowStatus === 'resumed'
                         ? 'Recovery resumed'
                         : 'Best current match'}

@@ -17,6 +17,18 @@ export const LEGACY_TITLES = {
  *  span title or its details, so the parsers split on it. Nothing here shows it to the room. */
 export const LEGACY_SEPARATOR = '·';
 
+/** The part of a title after its separator: a colon now, a middle dot in saved journeys. */
+export const lastTitlePart = (name: string) =>
+  name.split(new RegExp(`${LEGACY_SEPARATOR}|:`)).pop()?.trim() ?? name;
+
+/** The Runtime's closing span: "AgentCore Runtime: turn complete", or the saved-journey form. */
+export const RUNTIME_TURN_COMPLETE =
+  new RegExp(`AgentCore Runtime(?::|\\s${LEGACY_SEPARATOR}) turn complete`, 'i');
+
+/** The MCP details line: "args=..., result: summary", or the saved-journey "args=... · summary". */
+export const MCP_ARGS_DETAILS =
+  new RegExp(`^args=(.*?)(?:\\s+${LEGACY_SEPARATOR}\\s+|,\\s+result:\\s+)(.*)$`, 's');
+
 /** The component name earlier workflow spans carried, kept so a saved journey still routes. */
 export const isLegacyGraphComponent = (component: string) => /^LangGraph/i.test(component);
 

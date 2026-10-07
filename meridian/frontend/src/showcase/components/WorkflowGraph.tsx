@@ -238,7 +238,7 @@ export function WorkflowGraph({ state }: { state: MeridianShowcaseState }) {
                     {fact && <em>{fact}</em>}
                     {checkpointed && (
                       <span className="mds-wfgraph-route-ckpt">
-                        checkpoint
+                        saved
                       </span>
                     )}
                   </span>

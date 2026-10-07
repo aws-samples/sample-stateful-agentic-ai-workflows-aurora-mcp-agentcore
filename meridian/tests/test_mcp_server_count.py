@@ -27,7 +27,7 @@ def _summary_count(activities: list) -> int:
     """Servers claimed by the turn-complete span."""
     titles = [a.title for a in activities if "MCP turn complete" in (a.title or "")]
     assert len(titles) == 1, f"expected one turn-complete span, got {titles}"
-    return int(titles[0].split("·")[1].strip().split()[0])
+    return int(titles[0].split(":")[1].strip().split()[0])
 
 
 async def _run(monkeypatch, domain_call: Any) -> tuple[list, Optional[str]]:
@@ -71,5 +71,5 @@ async def test_a_custom_server_that_answered_is_counted(monkeypatch) -> None:
 @pytest.mark.parametrize("count,expected", [(0, "0 servers"), (1, "1 server"), (2, "2 servers")])
 def test_the_summary_pluralises_by_the_counted_servers(count: int, expected: str) -> None:
     """Guards the wording the counting feeds, so a zero reads naturally."""
-    title = f"MCP turn complete · {count} server{'' if count == 1 else 's'}"
+    title = f"MCP turn complete: {count} server{'' if count == 1 else 's'}"
     assert title.endswith(expected)

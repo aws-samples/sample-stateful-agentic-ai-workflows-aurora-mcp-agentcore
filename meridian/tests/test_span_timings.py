@@ -143,7 +143,7 @@ def test_mcp_tool_span_carries_the_tool_call_time(clock, monkeypatch):
     _products, activities, _text = asyncio.run(chat_router.mcp_search(
         "What is the price range for Tokyo trips?", traveler_id="trv_meridian_demo",
     ))
-    assert _ms(_span(activities, "meridian-concierge · price_range")) == 180
+    assert _ms(_span(activities, "meridian-concierge: price_range")) == 180
 
 
 def test_postgres_mcp_span_carries_the_query_time(clock, monkeypatch):
@@ -151,7 +151,7 @@ def test_postgres_mcp_span_carries_the_query_time(clock, monkeypatch):
     _products, activities, _text = asyncio.run(chat_router.mcp_search(
         "Show me city trips under $2,000 per traveler.", traveler_id="trv_meridian_demo",
     ))
-    assert _ms(_span(activities, "postgres-mcp · run_query")) == 75
+    assert _ms(_span(activities, "postgres-mcp: run_query")) == 75
 
 
 def test_postgres_mcp_discovery_span_carries_the_session_open_time(clock, monkeypatch):
@@ -169,7 +169,7 @@ def test_postgres_mcp_discovery_span_carries_the_session_open_time(clock, monkey
     discovered = _span(activities, "MCP server discovered: awslabs.postgres-mcp-server")
     # Opening the session starts the server and lists its tools; the query is its own span.
     assert _ms(discovered) == 250
-    assert _ms(_span(activities, "postgres-mcp · run_query")) == 75
+    assert _ms(_span(activities, "postgres-mcp: run_query")) == 75
 
 
 def test_compare_hydration_span_carries_its_query_time(clock, monkeypatch):
@@ -387,9 +387,9 @@ def test_concierge_grant_and_rls_steps_each_carry_their_own_time(clock):
     asyncio.run(agent._authorized_read("Tokyo in spring", "trv_meridian_demo", None))
 
     assert _ms(_span(spans, "Workload traveler grant allowed")) == 55
-    assert _ms(_span(spans, "Aurora RLS · short read unit")) == 32
+    assert _ms(_span(spans, "Aurora RLS: short read unit")) == 32
     # The caller identity is cached for the process; no call runs per turn.
-    assert _ms(_span(spans, "Workload identity · AWS STS")) is None
+    assert _ms(_span(spans, "Workload identity: AWS STS")) is None
 
 
 # -------------------------------------------------------------- AgentCore Runtime
@@ -409,7 +409,7 @@ def test_runtime_turn_span_carries_the_runtime_measurement():
     spans: list = []
     agent.activity_callback = spans.append
     agent._runtime_span(decision)
-    assert _ms(_span(spans, "AgentCore Runtime · turn complete")) == 16827
+    assert _ms(_span(spans, "AgentCore Runtime: turn complete")) == 16827
 
 
 def test_runtime_turn_span_has_no_number_when_the_runtime_reports_none():
@@ -419,6 +419,6 @@ def test_runtime_turn_span_has_no_number_when_the_runtime_reports_none():
     spans: list = []
     agent.activity_callback = spans.append
     agent._runtime_span(decision)
-    span = _span(spans, "AgentCore Runtime · turn complete")
+    span = _span(spans, "AgentCore Runtime: turn complete")
     assert _ms(span) is None
     assert "None" not in span.details and " 0 ms" not in span.details

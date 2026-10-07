@@ -314,9 +314,9 @@ class ProductionAgent:
         configured = bool(scope.workload_identity)
         self._log(
             "reasoning",
-            "AgentCore Identity resolved" if configured else "Workload identity · AWS STS",
+            "AgentCore Identity resolved" if configured else "Workload identity: AWS STS",
             details=(
-                f"workload={scope.workload_identity} · token={scope.token_status}"
+                f"workload={scope.workload_identity}, token={scope.token_status}"
                 if configured
                 else "AgentCore Identity is not configured; the backend acts as its IAM principal"
             ),
@@ -362,9 +362,9 @@ class ProductionAgent:
         )
         self._log(
             "security",
-            "Aurora RLS · short read unit",
+            "Aurora RLS: short read unit",
             details=(
-                f"app.current_traveler_id={traveler_id} · role=meridian_app · "
+                f"app.current_traveler_id={traveler_id}, role=meridian_app, "
                 "commits before external calls"
             ),
             sql_query=READ_UNIT_SQL.format(traveler_id=traveler_id),
@@ -447,16 +447,16 @@ class ProductionAgent:
         # The Runtime measures its own turn and reports it; no report, no number.
         self._log(
             "reasoning",
-            "AgentCore Runtime · turn complete",
+            "AgentCore Runtime: turn complete",
             details=(
-                f"session={decision.runtime_session_id} · "
+                f"session={decision.runtime_session_id}, "
                 f"trace={decision.trace_id or 'pending'}"
             ),
             execution_time_ms=decision.elapsed_ms,
             agent_file=self.RUNTIME_FILE,
             telemetry={
                 "category": "runtime",
-                "component": "Bedrock AgentCore Runtime · MeridianConcierge",
+                "component": "Bedrock AgentCore Runtime, MeridianConcierge",
                 "status": "ok",
                 "fields": [
                     {"label": "runtime_arn", "value": decision.runtime_arn, "mono": True},
@@ -468,7 +468,7 @@ class ProductionAgent:
                     {
                         "label": "tokens",
                         "value": (
-                            f"in {decision.usage.get('inputTokens', '-')} · "
+                            f"in {decision.usage.get('inputTokens', '-')}, "
                             f"out {decision.usage.get('outputTokens', '-')}"
                         ),
                     },
@@ -612,12 +612,12 @@ class ProductionAgent:
                     "Strands @tool persist_turn",
                     details=(
                         "Reauthorized traveler scope; wrote 2 messages + 1 trip_interaction "
-                        f"in a short RLS write unit · {len(shown)} packages recorded"
+                        f"in a short RLS write unit, {len(shown)} packages recorded"
                     ),
                     sql_query=PERSIST_SQL,
                     telemetry={
                         "category": "memory_short",
-                        "component": "Aurora write path · scoped_session",
+                        "component": "Aurora write path: scoped_session",
                         "status": "ok",
                         "fields": [
                             {"label": "table", "value": "conversation_messages + trip_interactions"},
@@ -681,7 +681,7 @@ class ProductionAgent:
         self._log(
             "result",
             "Memory-grounded reply ready",
-            details=f"{len(packages)} packages · Aurora memory updated",
+            details=f"{len(packages)} packages, Aurora memory updated",
             telemetry={"category": "synthesis", "component": "ProductionAgent", "status": "ok"},
         )
         return packages, activities, decision.message, read.conv_id, read.memory_facts
@@ -727,7 +727,7 @@ class ProductionAgent:
             "result",
             "Courtesy hold persisted" if decision.hold else "Courtesy hold not placed",
             details=(
-                f"Hold #{held.get('bookingId')} · expires {held.get('expiresAt')}"
+                f"Hold #{held.get('bookingId')}, expires {held.get('expiresAt')}"
                 if decision.hold
                 else (decision.hold_refused or "The runtime did not call the hold tool.")
             ),
@@ -784,7 +784,7 @@ class ProductionAgent:
             "result",
             "Booking confirmed in Aurora" if decision.booking else "Booking not confirmed",
             details=(
-                f"Booking #{booked.get('bookingId')} · confirmed {booked.get('confirmedAt')}"
+                f"Booking #{booked.get('bookingId')}, confirmed {booked.get('confirmedAt')}"
                 if decision.booking
                 else (decision.booking_refused or "The runtime did not call the confirm tool.")
             ),

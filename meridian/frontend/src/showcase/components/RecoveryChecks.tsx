@@ -51,14 +51,14 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
     },
     {
       id: 'checkpoint', title: 'Save progress',
-      status: checkpoint ? document?.checkpoint_backend.durable ? 'Durable checkpoint' : 'In-process checkpoint' : 'Not yet verified',
+      status: checkpoint ? document?.checkpoint_backend.durable ? 'Durable saved step' : 'In-process saved step' : 'Not yet verified',
       tone: checkpoint ? 'observed' : 'pending',
       description: checkpoint
         ? document?.checkpoint_backend.durable
-          ? 'The journey record reports a durable checkpoint. A replacement worker can resume after the previous lease clears.'
-          : 'The observed checkpoint is in process memory; restart recovery is not established.'
-        : 'A saved shortlist needs a checkpoint record. Open System evidence to inspect the active journey.',
-      facts: checkpoint ? [['Checkpoint', checkpoint.checkpoint_id], ['Thread', checkpoint.thread_id], ['Source', checkpoint.source]] : [],
+          ? 'The journey record reports a durable saved step. A replacement worker can resume after the previous lease clears.'
+          : 'The observed saved step is in process memory; restart recovery is not established.'
+        : 'A saved shortlist needs a saved step record. Open System evidence to inspect the active journey.',
+      facts: checkpoint ? [['Saved step', checkpoint.checkpoint_id], ['Thread', checkpoint.thread_id], ['Source', checkpoint.source]] : [],
     },
     {
       id: 'policy', title: 'Check the hold',
@@ -69,7 +69,7 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
         ? 'The gateway permitted this hold call. Inspect the booking record separately to verify the write.'
         : denied ? 'The gateway refused this hold call before the target ran. Review the reason before changing the request.'
           : policyWaiting
-            ? 'The workflow is paused at its saved checkpoint, so no hold has been requested. '
+            ? 'The workflow is paused at its saved step, so no hold has been requested. '
               + 'This check runs after you resume.'
             : 'Cedar checks confirmation, party size, hold duration and saved budget. No decision is reported for the latest hold attempt.',
       facts: policySpan ? [
@@ -87,7 +87,7 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
       description: hold
         ? 'The active journey returned this booking record. Its recorded status and expiry determine the next step.'
         : receiptWaiting
-          ? 'The workflow is paused at its saved checkpoint, so there is no booking receipt yet. '
+          ? 'The workflow is paused at its saved step, so there is no booking receipt yet. '
             + 'This check runs after you resume.'
           : 'A completed workflow or permitted call does not prove a hold. Check the active journey for its booking receipt.',
       facts: hold ? [['Booking', hold.booking_id], ['Hold records', String(hold.hold_records)], ['Source', hold.source]] : [],

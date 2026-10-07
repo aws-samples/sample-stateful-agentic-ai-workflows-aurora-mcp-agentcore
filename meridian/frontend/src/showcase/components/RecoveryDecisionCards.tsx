@@ -127,7 +127,7 @@ function timelineNote(
 ): string {
   if (failed) return 'Check saved progress before retrying';
   if (stage === 'running') return resumeMode ? `Step 4 of ${total}` : 'Waiting for saved results';
-  if (stage === 'checkpointed') return 'Paused at a saved checkpoint';
+  if (stage === 'checkpointed') return 'Paused at a saved step';
   if (stage === 'ready') return 'Workflow complete';
   return 'Runs after you confirm';
 }
@@ -308,7 +308,7 @@ function DisruptionFlight({ running, failed, errorDetail }: {
           {failed
             ? 'The workflow was interrupted. Check System evidence for saved progress.'
             : running
-              ? 'Meridian is building a checkpointed recovery plan.'
+              ? 'Meridian is building a recovery plan with saved steps.'
               : 'Live trip-package options are ready to search.'}
         </span>
       </div>
@@ -615,7 +615,7 @@ export function RecommendedRecoveryPlanCard({
               <AuroraIcon size={14} aria-hidden="true" />
               {evidence.checkpointObserved
                 ? 'Plan state saved'
-                : 'Checkpoint created during recovery'}
+                : 'Saved step created during recovery'}
             </span>
             <span>
               <FileCheck2 size={14} aria-hidden="true" />
@@ -952,9 +952,9 @@ export function AgentProofCard({
           detail={
             evidence.checkpointObserved
               ? evidence.durableCheckpoint
-                ? 'Checkpoint persisted in Aurora'
-                : 'Checkpoint observed on current worker'
-              : 'Checkpoint not observed yet'
+                ? 'Saved step kept in Aurora'
+                : 'Saved step seen on current worker'
+              : 'Saved step not observed yet'
           }
           status={statusFor(evidence.checkpointObserved)}
         />

@@ -330,7 +330,7 @@ async def session_receipt(
         label="Authorization decisions",
         table="traveler_access_audit",
         count=(allow or 0) + (deny or 0),
-        detail=f"{allow or 0} allow · {deny or 0} deny",
+        detail=f"{allow or 0} allow, {deny or 0} deny",
     ))
 
     audited = await _count_since(

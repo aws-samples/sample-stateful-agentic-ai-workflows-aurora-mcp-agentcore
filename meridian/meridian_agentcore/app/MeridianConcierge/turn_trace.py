@@ -45,22 +45,22 @@ GOVERNED = {"create_courtesy_hold": "hold", "confirm_booking": "booking"}
 SPANS = {
     "semantic_trip_search": (
         "search",
-        "AgentCore Gateway · tools/call → semantic_trip_search",
+        "AgentCore Gateway: tools/call → semantic_trip_search",
         "Aurora pgvector search through the managed MCP tool",
     ),
     "get_package_details": (
         "inventory",
-        "AgentCore Gateway · tools/call → get_package_details",
+        "AgentCore Gateway: tools/call → get_package_details",
         "Live durations, availability and highlights for one package",
     ),
     "create_courtesy_hold": (
         "order",
-        "AgentCore Gateway · tools/call → create_courtesy_hold",
+        "AgentCore Gateway: tools/call → create_courtesy_hold",
         "Cedar decides on the arguments, then one atomic Aurora write",
     ),
     "confirm_booking": (
         "order",
-        "AgentCore Gateway · tools/call → confirm_booking",
+        "AgentCore Gateway: tools/call → confirm_booking",
         "Cedar decides on the arguments, then the held booking becomes confirmed in Aurora",
     ),
 }
@@ -279,7 +279,7 @@ class TraceHooks(HookProvider):
             fields.append({"label": "traveler_grant", "value": governance.get("decision", "")})
         self.emit("activity", activity(
             "search" if name == "semantic_trip_search" else "result",
-            f"{name} · result",
+            f"{name}: result",
             summary,
             {
                 "category": "gateway",

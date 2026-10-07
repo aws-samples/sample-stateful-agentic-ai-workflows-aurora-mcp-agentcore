@@ -95,7 +95,7 @@ describe('WorkflowGraph', () => {
     expect(screen.getByText('intent: plan')).toBeInTheDocument();
     expect(screen.getAllByText('packages=5')).toHaveLength(2);
     expect(screen.getByText('rows=3, 2 of 2')).toBeInTheDocument();
-    expect(screen.getByText('checkpoint')).toBeInTheDocument();
+    expect(screen.getByText('saved')).toBeInTheDocument();
     expect(screen.getByText('Saved step, PostgresSaver')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Strands Graph workflow path' })).toBeInTheDocument();
     expect(screen.getByText('Strands Graph route')).toBeInTheDocument();
@@ -132,7 +132,7 @@ describe.each([
       span({ id: 'saved', name: title, fields: [{ label: 'checkpointer', value: 'Aurora workflow_snapshots' }] }),
     ])} />);
 
-    expect(screen.getByText('checkpoint')).toBeInTheDocument();
+    expect(screen.getByText('saved')).toBeInTheDocument();
     expect(screen.getByText('Saved step, Aurora workflow_snapshots')).toBeInTheDocument();
   });
 });

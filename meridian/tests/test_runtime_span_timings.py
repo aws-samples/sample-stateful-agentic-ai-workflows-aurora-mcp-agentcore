@@ -118,7 +118,7 @@ def runtime(monkeypatch, clock):
 
 def test_memory_span_carries_only_the_list_events_time(runtime):
     span = runtime.memory_span("trv_meridian_demo", "conv-1")
-    assert span["title"] == "AgentCore Memory · session restored"
+    assert span["title"] == "AgentCore Memory: session restored"
     assert span["execution_time_ms"] == 45
 
 
@@ -138,9 +138,9 @@ def test_tools_list_span_carries_only_the_list_tools_time(runtime, clock, monkey
                "conversation_id": "conv-1"}
     started, tools, memory = asyncio.run(_first(runtime.run(payload), 3))
 
-    assert started["title"] == "AgentCore Runtime · turn started"
+    assert started["title"] == "AgentCore Runtime: turn started"
     assert started["execution_time_ms"] is None
-    assert tools["title"] == "AgentCore Gateway · tools/list"
+    assert tools["title"] == "AgentCore Gateway: tools/list"
     # Opening the gateway session (300 ms) is not the tools/list call.
     assert tools["execution_time_ms"] == 120
     assert memory["execution_time_ms"] == 45

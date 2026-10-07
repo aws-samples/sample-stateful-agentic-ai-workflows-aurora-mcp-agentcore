@@ -1,5 +1,5 @@
 import type { ShowcaseTraceSpan } from './showcaseAdapters';
-import { isLegacyGraphComponent, isSnapshotTitle, LEGACY_SEPARATOR } from './spanTitles';
+import { isLegacyGraphComponent, isSnapshotTitle, RUNTIME_TURN_COMPLETE } from './spanTitles';
 
 // Joins a value to its unit so a narrow stage never wraps "601" away from "ms".
 const NO_BREAK = '\u00a0';
@@ -62,7 +62,7 @@ export function stepService(span: ShowcaseTraceSpan): string {
 }
 
 // Steps a model wrote: the Retrieval reply's polish, and the Runtime's turn.
-const MODEL_STEP = new RegExp(`concierge polish|AgentCore Runtime ${LEGACY_SEPARATOR} turn complete`, 'i');
+const MODEL_STEP = new RegExp(`concierge polish|${RUNTIME_TURN_COMPLETE.source}`, 'i');
 
 function stepDetail(span: ShowcaseTraceSpan, service: string, replyModel?: string): string | null {
   const decision = span.fields.find(field => field.label === 'cedar_decision')?.value;

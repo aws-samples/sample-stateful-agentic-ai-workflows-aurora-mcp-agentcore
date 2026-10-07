@@ -57,13 +57,13 @@ function stepsFor(document: JourneyDocument | null): Step[] {
       id: 'retrieved',
       label: 'Alternatives retrieved',
       detail: isObserved(recommendations)
-        ? `${recommendations.items.length} options in the checkpoint` : '',
+        ? `${recommendations.items.length} options in the saved step` : '',
       done: true,
       recorded: isObserved(recommendations),
     },
     {
       id: 'checkpoint',
-      label: 'Checkpoint persisted',
+      label: 'Saved step',
       detail: isObserved(checkpoint) ? checkpoint.checkpoint_id : '',
       done: true,
       recorded: isObserved(checkpoint),
@@ -87,7 +87,7 @@ function stepsFor(document: JourneyDocument | null): Step[] {
     {
       id: 'resumed',
       label: 'Saved plan resumed',
-      detail: 'Completed from the saved checkpoint',
+      detail: 'Completed from the saved step',
       done: true,
       recorded: hasVerifiedResume(document),
     },

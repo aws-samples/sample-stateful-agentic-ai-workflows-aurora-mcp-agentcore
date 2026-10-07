@@ -88,4 +88,4 @@ def test_price_range_reply_names_the_destination_when_no_data_exists():
 
 def test_price_range_summary_has_no_season_label():
     summary = _summarize_domain_result("price_range", {"low": 1199.0, "high": 3299.0})
-    assert summary == "range low=1199.0 · high=3299.0"
+    assert summary == "range low=1199.0, high=3299.0"

@@ -140,7 +140,7 @@ class MemoryAgent:
             execution_time_ms=elapsed,
             telemetry={
                 "category": "memory_short",
-                "component": "Aurora · conversation_messages",
+                "component": "Aurora: conversation_messages",
                 "status": "ok",
                 "memory": {
                     "shortTerm": {
@@ -175,7 +175,7 @@ class MemoryAgent:
             execution_time_ms=elapsed,
             telemetry={
                 "category": "memory_long",
-                "component": "Aurora · traveler_preferences",
+                "component": "Aurora: traveler_preferences",
                 "status": "ok",
                 "memory": {"longTerm": {"label": "Traveler preferences", "facts": facts}},
                 "fields": [{"label": "table", "value": "traveler_preferences"}],
@@ -217,7 +217,7 @@ class MemoryAgent:
             execution_time_ms=elapsed,
             telemetry={
                 "category": "memory_long",
-                "component": "Aurora · interaction_embeddings",
+                "component": "Aurora: interaction_embeddings",
                 "status": "ok" if rows else "cache_hit",
                 "fields": [
                     {"label": "index", "value": "HNSW on embedding"},

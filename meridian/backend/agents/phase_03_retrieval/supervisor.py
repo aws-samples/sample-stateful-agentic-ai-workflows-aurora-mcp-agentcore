@@ -328,7 +328,7 @@ Guidelines:
         self._log_activity(
             activity_type="delegation",
             title="Supervisor processing request",
-            details=f"Traveler: {customer_id} · Message: {message[:100]}{'…' if len(message) > 100 else ''}"
+            details=f"Traveler: {customer_id}, Message: {message[:100]}{'…' if len(message) > 100 else ''}"
         )
 
         start_time = datetime.now(timezone.utc)

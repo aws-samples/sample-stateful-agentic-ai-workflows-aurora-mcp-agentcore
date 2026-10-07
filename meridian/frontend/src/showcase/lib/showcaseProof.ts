@@ -1,5 +1,5 @@
 import type { ShowcaseTraceSpan } from './showcaseAdapters';
-import { isDurableField, LEGACY_SEPARATOR } from './spanTitles';
+import { isDurableField, lastTitlePart, MCP_ARGS_DETAILS } from './spanTitles';
 
 export interface McpContract {
   server: string;
@@ -87,7 +87,7 @@ export function deriveWorkflowState(traceSpans: ShowcaseTraceSpan[]): WorkflowSt
       .find(Boolean) ??
     (checkpoint.toLowerCase().includes('memorysaver')
       ? 'process memory'
-      : durable ? 'checkpoints' : 'not observed');
+      : durable ? 'workflow_snapshots' : 'not observed');
   const holdSpan = [...traceSpans].reverse().find(span => fieldValue(span, 'hold_id'));
   const holdField = (key: string) => holdSpan ? fieldValue(holdSpan, key) ?? '' : '';
   const nextNode = path.find((node) => !visited.includes(node)) ?? 'complete';
@@ -195,7 +195,7 @@ function domainOperation(tool: string): string {
 
 function splitDomainDetails(details?: string): { request: string; result: string } {
   if (!details) return { request: 'args={...}', result: '' };
-  const match = new RegExp(`^args=(.*?)\\s+${LEGACY_SEPARATOR}\\s+(.*)$`, 's').exec(details);
+  const match = MCP_ARGS_DETAILS.exec(details);
   if (!match) return { request: details, result: '' };
   return { request: `args=${match[1]}`, result: match[2] };
 }
@@ -237,7 +237,7 @@ function spanText(span: ShowcaseTraceSpan): string {
 }
 
 function lastToken(name: string): string {
-  return name.split(LEGACY_SEPARATOR).pop()?.trim() ?? name;
+  return lastTitlePart(name);
 }
 
 function compactSql(sql: string): string {

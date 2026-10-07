@@ -63,7 +63,7 @@ test('one run connects Concierge, every capability, evidence, briefing and recov
     await expect(page.getByRole('button', { name: new RegExp(`^Phase ${phase},`) })).toHaveAttribute('aria-current', 'step');
     const before = requests.length;
     if (phase === 5) {
-      await page.getByRole('button', { name: 'Run to checkpoint', exact: true }).click();
+      await page.getByRole('button', { name: 'Run to saved step', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Continue at recovery desk' })).toBeEnabled();
       const thread = new URL(page.url()).searchParams.get('thread');
       await page.getByRole('button', { name: 'Continue at recovery desk' }).click();

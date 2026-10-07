@@ -45,8 +45,8 @@ const BRIEFS: Record<Phase, {
   5: {
     title: 'Resume work after interruption.',
     description: 'Save the current step in Aurora so another worker can pick up where it stopped.',
-    route: ['Recovery request', 'Aurora checkpoint', 'Resume + verify'],
-    evidence: 'Checkpoint, execution attempts, request ID, booking ID and original expiry',
+    route: ['Recovery request', 'Saved step in Aurora', 'Resume + verify'],
+    evidence: 'Saved step, execution attempts, request ID, booking ID and original expiry',
     pattern: 'A Strands Graph in its own AgentCore Runtime saves each step as a snapshot in AWS Aurora. A worker lease prevents competing runs; a stable hold request ID prevents duplicate holds on retry.',
     callout: 'A lost reply can follow a committed hold. Reuse the saved intent and verify the original receipt.',
   },

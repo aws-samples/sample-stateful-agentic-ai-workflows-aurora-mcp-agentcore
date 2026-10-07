@@ -75,7 +75,7 @@ describe('JourneyContinuityRail', () => {
       authorization: authorized, recommendations, checkpoint,
     } as Partial<JourneyDocument>)} />);
     expect(rows())
-      .toEqual(['Traveler authorized', 'Alternatives retrieved', 'Checkpoint persisted']);
+      .toEqual(['Traveler authorized', 'Alternatives retrieved', 'Saved step']);
     const list = screen.getByRole('list');
     expect(within(list).queryByText(/No journey yet|Nothing checkpointed|Awaiting/)).toBeNull();
   });
@@ -98,7 +98,7 @@ describe('JourneyContinuityRail', () => {
       },
     } as Partial<JourneyDocument>)} />);
     expect(rows()).toEqual([
-      'Traveler authorized', 'Alternatives retrieved', 'Checkpoint persisted',
+      'Traveler authorized', 'Alternatives retrieved', 'Saved step',
       'Worker interrupted', 'Saved plan resumed',
     ]);
   });
@@ -113,7 +113,7 @@ describe('JourneyContinuityRail', () => {
       },
     } as Partial<JourneyDocument>)} />);
     expect(rows())
-      .toEqual(['Traveler authorized', 'Alternatives retrieved', 'Checkpoint persisted']);
+      .toEqual(['Traveler authorized', 'Alternatives retrieved', 'Saved step']);
     expect(screen.queryByText(/still running/)).toBeNull();
   });
 

@@ -65,7 +65,7 @@ class RuntimeDecision:
     usage: dict[str, Any] = field(default_factory=dict)
     # The Runtime's own measurement of the turn. None when it reports none.
     elapsed_ms: Optional[int] = None
-    isolation: str = "microVM · session-scoped CPU/memory/filesystem"
+    isolation: str = "microVM, session-scoped CPU/memory/filesystem"
 
 
 def iter_sse(chunks):

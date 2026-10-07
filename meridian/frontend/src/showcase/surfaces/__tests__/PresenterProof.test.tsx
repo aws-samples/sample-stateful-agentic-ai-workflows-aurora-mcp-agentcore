@@ -116,7 +116,7 @@ describe('Presenter proof', () => {
     render(
       <PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
     );
-    expect(screen.getByText('The checkpoint remains.')).toBeInTheDocument();
+    expect(screen.getByText('The saved step remains.')).toBeInTheDocument();
   });
 
   it('names both the stopped worker and the one holding the lease', () => {
@@ -177,7 +177,7 @@ describe('Presenter proof', () => {
     );
     const panel = screen.getByRole('tabpanel');
     expect(within(panel).getAllByText('—').length).toBeGreaterThan(0);
-    expect(screen.getByText('Awaiting checkpoint')).toBeInTheDocument();
+    expect(screen.getByText('Awaiting saved step')).toBeInTheDocument();
   });
 
   it('explains itself when there is no journey at all', () => {

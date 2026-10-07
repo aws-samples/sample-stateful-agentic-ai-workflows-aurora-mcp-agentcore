@@ -150,7 +150,7 @@ export function ChatComposer({
           {!proofMode && !conciergeMode && state.selectedPhase === 4 && (
             <span className="mds-chat-phase-framing" role="note">
               <span>Trace beat</span>
-              <b>AgentCore carries context across turns; Workflow externalizes the dependent plan into Aurora checkpoints.</b>
+              <b>AgentCore carries context across turns; Workflow externalizes the dependent plan into saved steps in Aurora.</b>
             </span>
           )}
         </div>

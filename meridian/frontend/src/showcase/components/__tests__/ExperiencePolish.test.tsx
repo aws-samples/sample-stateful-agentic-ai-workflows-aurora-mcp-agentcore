@@ -644,7 +644,7 @@ describe('Experience presentation polish', () => {
     expect(step('Save a step in Aurora')).toHaveTextContent('Aurora Data API, 106 ms');
     expect(step('Search and rank')).toHaveTextContent('Bedrock + Aurora, 956 ms');
     expect(step('Verify after resume')).toHaveClass('is-pending');
-    expect(screen.getByText('Paused at a saved checkpoint')).toBeInTheDocument();
+    expect(screen.getByText('Paused at a saved step')).toBeInTheDocument();
 
     rerender(<RecoveryWorkspace state={makeState({
       ...base, lastPrompt: 'Resume workflow from checkpoint', workflowStatus: 'paused',
@@ -940,7 +940,7 @@ describe('Experience presentation polish', () => {
     render(<RecoveryWorkspace state={state} />);
 
     expect(screen.getByText('Request')).toBeInTheDocument();
-    expect(screen.getByText('Checkpoint ready')).toBeInTheDocument();
+    expect(screen.getByText('Saved step ready')).toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Recovery briefing' })).getByText('Tokyo Executive Stopover')).toBeVisible();
     expect(screen.getByText('$1,949 / traveler')).toBeInTheDocument();
 
@@ -1143,7 +1143,7 @@ describe('Experience presentation polish', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('Alternative pending')).not.toBeInTheDocument();
     expect(screen.queryByText('No live result observed yet')).not.toBeInTheDocument();
-    expect(screen.queryByText('Checkpoint not observed yet')).not.toBeInTheDocument();
+    expect(screen.queryByText('Saved step not observed yet')).not.toBeInTheDocument();
     expect(screen.queryByText('Seats available')).not.toBeInTheDocument();
     expect(screen.queryByText('Active')).not.toBeInTheDocument();
 

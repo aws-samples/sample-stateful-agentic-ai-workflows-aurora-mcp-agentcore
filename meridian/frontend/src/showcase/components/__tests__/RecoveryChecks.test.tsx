@@ -52,7 +52,7 @@ describe('RecoveryChecks evidence boundaries', () => {
   });
   it('uses matching journey records and discards a previous thread or phase', () => {
     const { rerender } = render(<RecoveryChecks state={state()} journeyDocument={journey()} onOpenProof={vi.fn()} />);
-    expect(screen.getByText('Durable checkpoint')).toBeVisible();
+    expect(screen.getByText('Durable saved step')).toBeVisible();
     expect(screen.getByText('Hold recorded')).toBeVisible();
     rerender(<RecoveryChecks state={state()} journeyDocument={journey('thread-old')} onOpenProof={vi.fn()} />);
     expect(screen.getByText('Receipt unavailable')).toBeVisible();

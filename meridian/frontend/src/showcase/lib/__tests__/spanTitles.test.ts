@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ShowcaseTraceSpan } from '../showcaseAdapters';
 import { deriveRecoverySteps } from '../recoveryState';
 import { deriveWorkflowState, hasDurableCheckpoint } from '../showcaseProof';
+import { lastTitlePart, MCP_ARGS_DETAILS, RUNTIME_TURN_COMPLETE } from '../spanTitles';
 import { stepService, stepSourceLabel } from '../stepSource';
 
 function span(name: string, overrides: Partial<ShowcaseTraceSpan> = {}): ShowcaseTraceSpan {
@@ -88,5 +89,26 @@ describe.each([['current', current], ['legacy', legacy]])('%s Phase 5 titles', (
         ? { ...field, value: 'false' } : field)),
     }));
     expect(hasDurableCheckpoint(notDurable)).toBe(false);
+  });
+});
+
+describe('titles with a colon or the saved-journey middle dot', () => {
+  it('takes the part after either separator', () => {
+    expect(lastTitlePart('postgres-mcp: run_query')).toBe('run_query');
+    expect(lastTitlePart('postgres-mcp \u00b7 run_query')).toBe('run_query');
+    expect(lastTitlePart('run_query')).toBe('run_query');
+  });
+
+  it('finds the Runtime turn in both forms', () => {
+    expect(RUNTIME_TURN_COMPLETE.test('AgentCore Runtime: turn complete')).toBe(true);
+    expect(RUNTIME_TURN_COMPLETE.test('AgentCore Runtime \u00b7 turn complete')).toBe(true);
+    expect(RUNTIME_TURN_COMPLETE.test('AgentCore Runtime: turn started')).toBe(false);
+  });
+
+  it('splits the MCP details line in both forms', () => {
+    const now = MCP_ARGS_DETAILS.exec("args={'a': 1}, result: Compared 2 packages");
+    expect([now?.[1], now?.[2]]).toEqual(["{'a': 1}", 'Compared 2 packages']);
+    const saved = MCP_ARGS_DETAILS.exec("args={'a': 1} \u00b7 Compared 2 packages");
+    expect([saved?.[1], saved?.[2]]).toEqual(["{'a': 1}", 'Compared 2 packages']);
   });
 });

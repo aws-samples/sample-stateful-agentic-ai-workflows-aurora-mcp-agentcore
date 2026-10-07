@@ -43,7 +43,7 @@ export function BriefingArchitecture() {
       {node(578, 42, 236, 'AgentCore Gateway', ['IAM-signed MCP', 'Policy: Cedar checks'], 'agentcore-gateway', 3)}
       {node(578, 202, 236, 'AWS Lambda', ['Search + package details', 'Holds + confirmation'], 'lambda', 4)}
       {node(866, 174, 236, 'Aurora PostgreSQL', ['Catalog + traveler state', 'Saved steps + bookings'], 'aurora', 5)}
-      <text x={250} y={390} className="mds-brief-arch-label">Direct Data API access: catalog, scoped preferences and workflow state</text>
+      <text x={250} y={390} className="mds-brief-arch-label">Direct Data API access: catalog, scoped preferences and saved-step readback</text>
     </svg>
     <ol className="mds-brief-arch-mobile" aria-label="Meridian request and state architecture">
       <li><strong>1. FastAPI - bind the traveler</strong><p>Establish identity and capture confirmation.</p></li>

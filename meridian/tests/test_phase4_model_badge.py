@@ -23,10 +23,10 @@ def _runtime_started(fields: list[dict]) -> ActivityEntry:
         id="rt-start",
         timestamp="2026-09-28T18:00:00Z",
         activity_type="runtime",
-        title="AgentCore Runtime · turn started",
+        title="AgentCore Runtime: turn started",
         telemetry=TraceTelemetry(
             category="runtime",
-            component="Bedrock AgentCore Runtime · MeridianConcierge",
+            component="Bedrock AgentCore Runtime, MeridianConcierge",
             status="ok",
             fields=fields,
         ),
@@ -43,7 +43,7 @@ def test_runtime_model_id_reads_the_model_row_from_the_runtime_span():
 
 def test_runtime_model_id_reads_the_dict_spans_the_concierge_collects():
     span = {
-        "title": "AgentCore Runtime · turn started",
+        "title": "AgentCore Runtime: turn started",
         "telemetry": {"category": "runtime", "fields": [MODEL_ROW]},
     }
     assert runtime_model_id([span]) == MODEL_ROW["value"]
@@ -59,7 +59,7 @@ def test_runtime_model_id_ignores_a_model_field_outside_the_runtime_span():
         id="gw",
         timestamp="2026-09-28T18:00:00Z",
         activity_type="tool_call",
-        title="AgentCore Gateway · tools/list",
+        title="AgentCore Gateway: tools/list",
         telemetry=TraceTelemetry(category="gateway", fields=[MODEL_ROW]),
     )
     assert runtime_model_id([gateway]) is None

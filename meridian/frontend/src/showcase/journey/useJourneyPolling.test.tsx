@@ -92,8 +92,8 @@ it('fills the rail in during the run, in the order Aurora records each step', as
   }
   expect(seen).toEqual([
     ['Traveler authorized'],
-    ['Traveler authorized', 'Checkpoint persisted'],
-    ['Traveler authorized', 'Alternatives retrieved', 'Checkpoint persisted'],
+    ['Traveler authorized', 'Saved step'],
+    ['Traveler authorized', 'Alternatives retrieved', 'Saved step'],
   ]);
 });
 
@@ -149,5 +149,5 @@ it('reports a failed read and recovers on the next one without ending the run', 
   commits = 2;
   await tick(JOURNEY_POLL_MS);
   expect(screen.queryByText(/Read failed/)).toBeNull();
-  expect(rows()).toEqual(['Traveler authorized', 'Checkpoint persisted']);
+  expect(rows()).toEqual(['Traveler authorized', 'Saved step']);
 });

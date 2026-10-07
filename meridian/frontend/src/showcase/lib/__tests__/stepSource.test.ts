@@ -53,12 +53,12 @@ describe('stepSourceLabel', () => {
     expect(label({ name: 'Trip type filter: City Breaks', agent: 'SQLAgent', sql: 'SELECT 1' }))
       .toBe('Aurora Data API');
     expect(label({
-      name: 'Strands @tool recall_session_context', component: 'Aurora · conversation_messages',
+      name: 'Strands @tool recall_session_context', component: 'Aurora: conversation_messages',
       category: 'memory_short', latencyMs: 59,
     })).toBe(nb('Aurora Data API, 59 ms'));
     expect(label({
       name: 'Checkpoint · AuroraDataApiSaver.put',
-      component: 'Aurora · LangGraph checkpoint tables', category: 'memory_short', latencyMs: 106,
+      component: 'Aurora: LangGraph checkpoint tables', category: 'memory_short', latencyMs: 106,
     })).toBe(nb('AWS Aurora Data API, 106 ms'));
     expect(label({
       name: 'Snapshot saved: AuroraSnapshotStorage.write',
@@ -68,15 +68,15 @@ describe('stepSourceLabel', () => {
 
   it('names the model that wrote the reply on the step it wrote, and only there', () => {
     const polish = {
-      name: 'Bedrock · concierge polish (global.anthropic.claude-sonnet-5)', category: 'model',
+      name: 'Bedrock: concierge polish (global.anthropic.claude-sonnet-5)', category: 'model',
       agent: 'RetrievalAgent', latencyMs: 1400,
     };
     expect(label(polish, 'Claude Sonnet 5')).toBe(nb('Bedrock, Claude Sonnet 5, 1.4 s'));
     expect(label({ name: 'Cohere rerank applied', agent: 'SearchAgent', latencyMs: 209 },
       'Claude Sonnet 5')).toBe(nb('Bedrock, 209 ms'));
     const runtime = {
-      name: 'AgentCore Runtime · turn complete', category: 'runtime',
-      component: 'Bedrock AgentCore Runtime · MeridianConcierge', latencyMs: 18363,
+      name: 'AgentCore Runtime: turn complete', category: 'runtime',
+      component: 'Bedrock AgentCore Runtime, MeridianConcierge', latencyMs: 18363,
     };
     expect(label(runtime, 'Claude Sonnet 5'))
       .toBe(nb('AgentCore Runtime, Claude Sonnet 5, 18.4 s'));
@@ -85,7 +85,7 @@ describe('stepSourceLabel', () => {
 
   it('reads the Cedar decision the gateway reported', () => {
     expect(label({
-      name: 'semantic_trip_search · result', category: 'gateway',
+      name: 'semantic_trip_search: result', category: 'gateway',
       component: 'Bedrock AgentCore Gateway', latencyMs: 1143,
       fields: [{ label: 'cedar_decision', value: 'allow' }],
     })).toBe(nb('AgentCore Gateway, Cedar allow, 1.1 s'));
@@ -95,28 +95,56 @@ describe('stepSourceLabel', () => {
       fields: [{ label: 'cedar_decision', value: 'deny' }],
     })).toBe(nb('Cedar, deny, 210 ms'));
     expect(label({
-      name: 'AgentCore Gateway · tools/call → semantic_trip_search', category: 'gateway',
+      name: 'AgentCore Gateway: tools/call → semantic_trip_search', category: 'gateway',
       component: 'Bedrock AgentCore Gateway',
     })).toBe('AgentCore Gateway');
   });
 
+  it('still reads the middle-dot titles that saved journeys and earlier backends carry', () => {
+    const runtime = {
+      name: 'AgentCore Runtime · turn complete', category: 'runtime',
+      component: 'Bedrock AgentCore Runtime · MeridianConcierge', latencyMs: 18363,
+    };
+    expect(label(runtime, 'Claude Sonnet 5'))
+      .toBe(nb('AgentCore Runtime, Claude Sonnet 5, 18.4 s'));
+    expect(label({
+      name: 'Bedrock · concierge polish (global.anthropic.claude-sonnet-5)', category: 'model',
+      agent: 'RetrievalAgent', latencyMs: 1400,
+    }, 'Claude Sonnet 5')).toBe(nb('Bedrock, Claude Sonnet 5, 1.4 s'));
+    expect(label({
+      name: 'AgentCore Gateway · tools/call → semantic_trip_search', category: 'gateway',
+      component: 'Bedrock AgentCore Gateway',
+    })).toBe('AgentCore Gateway');
+    expect(label({ name: 'postgres-mcp · run_query', agent: 'MCPAgent', sql: 'SELECT 1', latencyMs: 75 }))
+      .toBe(nb('MCP, postgres-mcp, 75 ms'));
+    expect(label({ name: 'MCP turn complete · 1 server', agent: 'MCPAgent', latencyMs: 1293 }))
+      .toBe(nb('MCP, 1.3 s'));
+    expect(label({
+      name: 'AgentCore Memory · session restored', component: 'Bedrock AgentCore Memory',
+    })).toBe('AgentCore Memory');
+    expect(label({
+      name: 'Strands @tool recall_session_context', component: 'Aurora · conversation_messages',
+      category: 'memory_short', latencyMs: 59,
+    })).toBe(nb('Aurora Data API, 59 ms'));
+  });
+
   it('names MCP servers and managed services by their spans', () => {
     expect(label({
-      name: 'meridian-concierge · price_range', agent: 'MCPAgent', type: 'mcp', latencyMs: 425,
+      name: 'meridian-concierge: price_range', agent: 'MCPAgent', type: 'mcp', latencyMs: 425,
     })).toBe(nb('MCP, meridian-concierge, 425 ms'));
     expect(label({
-      name: 'postgres-mcp · run_query', agent: 'MCPAgent', sql: 'SELECT 1', latencyMs: 75,
+      name: 'postgres-mcp: run_query', agent: 'MCPAgent', sql: 'SELECT 1', latencyMs: 75,
     })).toBe(nb('MCP, postgres-mcp, 75 ms'));
-    expect(label({ name: 'MCP turn complete · 1 server', agent: 'MCPAgent', latencyMs: 1293 }))
+    expect(label({ name: 'MCP turn complete: 1 server', agent: 'MCPAgent', latencyMs: 1293 }))
       .toBe(nb('MCP, 1.3 s'));
     expect(label({
       name: 'Hydrated compared packages into product cards', agent: 'MCPAgent',
       type: 'database', sql: 'SELECT … FROM trip_packages',
     })).toBe('Aurora Data API');
     expect(label({
-      name: 'AgentCore Memory · session restored', component: 'Bedrock AgentCore Memory',
+      name: 'AgentCore Memory: session restored', component: 'Bedrock AgentCore Memory',
     })).toBe('AgentCore Memory');
-    expect(label({ name: 'Workload identity · AWS STS', component: 'AWS STS' })).toBe('AWS STS');
+    expect(label({ name: 'Workload identity: AWS STS', component: 'AWS STS' })).toBe('AWS STS');
     expect(label({
       name: 'Workflow node: classify → plan', component: 'LangGraph StateGraph', latencyMs: 0,
     })).toBe(nb('Strands Graph, <1 ms'));

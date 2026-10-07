@@ -19,7 +19,7 @@ def test_confirmed_hold_is_sent_to_the_runtime_and_recorded(monkeypatch):
         hold=held,
         policy_decision="allow",
         activities=[{"id": "rt-h", "timestamp": "t", "activity_type": "order",
-                     "title": "AgentCore Gateway · tools/call → create_courtesy_hold"}],
+                     "title": "AgentCore Gateway: tools/call → create_courtesy_hold"}],
     )
     agent = build_agent(events, decision, calls)
     monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
@@ -40,7 +40,7 @@ def test_confirmed_hold_is_sent_to_the_runtime_and_recorded(monkeypatch):
     assert events.index("tx-1:commit") < events.index("external:runtime") < events.index("tx-2:open")
     assert "aurora:audit:production_hold" in events
     titles = [entry.title for entry in outcome.activities]
-    assert "AgentCore Gateway · tools/call → create_courtesy_hold" in titles
+    assert "AgentCore Gateway: tools/call → create_courtesy_hold" in titles
     assert titles[-1] == "Courtesy hold persisted"
     assert outcome.activities[-1].telemetry["status"] == "held"
 
@@ -79,7 +79,7 @@ def test_confirmed_booking_is_sent_to_the_runtime_and_recorded(monkeypatch):
         booking=booked,
         policy_decision="allow",
         activities=[{"id": "rt-b", "timestamp": "t", "activity_type": "order",
-                     "title": "AgentCore Gateway · tools/call → confirm_booking"}],
+                     "title": "AgentCore Gateway: tools/call → confirm_booking"}],
     )
     agent = build_agent(events, decision, calls)
     monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
@@ -102,7 +102,7 @@ def test_confirmed_booking_is_sent_to_the_runtime_and_recorded(monkeypatch):
     assert events.index("tx-1:commit") < events.index("external:runtime") < events.index("tx-2:open")
     assert "aurora:audit:production_booking" in events
     titles = [entry.title for entry in outcome.activities]
-    assert "AgentCore Gateway · tools/call → confirm_booking" in titles
+    assert "AgentCore Gateway: tools/call → confirm_booking" in titles
     assert titles[-1] == "Booking confirmed in Aurora"
     assert outcome.activities[-1].telemetry["status"] == "confirmed"
 

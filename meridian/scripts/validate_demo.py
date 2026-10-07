@@ -127,7 +127,7 @@ def main() -> int:
     record("p2_catalog_sql_transport", "POST", "/api/chat",
            {"message": "Show me city trips under $2,000 per traveler.", "phase": 2, "customer_id": TRAVELER},
            ok=ok, products=has_products,
-           generic_sql=lambda b, s: any(a.get("title") == "postgres-mcp · run_query" and a.get("sql_query")
+           generic_sql=lambda b, s: any(a.get("title") == "postgres-mcp: run_query" and a.get("sql_query")
                                        for a in b["activities"]),
            observed_tools=lambda b, s: any(a.get("title") == "MCP server discovered: awslabs.postgres-mcp-server"
                                           and "run_query" in a.get("details", "") for a in b["activities"]))
@@ -135,7 +135,7 @@ def main() -> int:
            {"message": "Compare three trip types and convert each price to euros.", "phase": 2, "customer_id": TRAVELER},
            ok=ok, compared=lambda b, s: "Compared 3 packages" in b["message"] and "EUR" in b["message"],
            products=has_products,
-           concierge_tools=lambda b, s: any("meridian-concierge · compare_packages" in (a.get("title") or "") for a in b["activities"]))
+           concierge_tools=lambda b, s: any("meridian-concierge: compare_packages" in (a.get("title") or "") for a in b["activities"]))
     record("p2_price_range_tokyo", "POST", "/api/chat",
            {"message": "What is the price range for Tokyo trips?", "phase": 2, "customer_id": TRAVELER},
            ok=ok, band=lambda b, s: "Price range for" in b["message"] or "No pricing data" in b["message"])
@@ -166,7 +166,7 @@ def main() -> int:
                    {"message": "Find Tokyo trips that fit my saved preferences.", "phase": 4, "customer_id": TRAVELER, "memory_enabled": True, "travelers_count": 2},
                    ok=ok, products=has_products,
                    grant=lambda b, s: any(a.get("title") == "Workload traveler grant allowed" for a in b["activities"]),
-                   runtime=lambda b, s: any("AgentCore Runtime · turn complete" in (a.get("title") or "") for a in b["activities"]),
+                   runtime=lambda b, s: any("AgentCore Runtime: turn complete" in (a.get("title") or "") for a in b["activities"]),
                    persisted=lambda b, s: any("persist_turn" in (a.get("title") or "") for a in b["activities"]),
                    facts=lambda b, s: len(b.get("memory_facts") or []) > 0,
                    conversation=lambda b, s: bool(b.get("conversation_id")))

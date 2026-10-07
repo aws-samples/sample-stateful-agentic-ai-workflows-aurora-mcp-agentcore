@@ -647,14 +647,14 @@ async def _postgres_mcp_query(
         activities.append(create_activity(
             activity_type="mcp",
             title="MCP server discovered: awslabs.postgres-mcp-server",
-            details="Generic SQL transport · tools/list returned " + ", ".join(
+            details="Generic SQL transport, tools/list returned " + ", ".join(
                 tool["name"] for tool in client.available_tools
             ),
             execution_time_ms=session_ms,
             agent_name="MCPAgent", agent_file="backend/routers/chat.py",
         ))
         activities.append(create_activity(
-            activity_type="mcp", title="postgres-mcp · session connected",
+            activity_type="mcp", title="postgres-mcp: session connected",
             details="Aurora PostgreSQL via RDS Data API; connection configured at server startup",
             agent_name="MCPAgent", agent_file="backend/routers/chat.py",
         ))
@@ -663,7 +663,7 @@ async def _postgres_mcp_query(
         query_ms = elapsed_ms(query_started)
     activities.append(create_activity(
         activity_type="mcp",
-        title="postgres-mcp · run_query",
+        title="postgres-mcp: run_query",
         details=f"Generic SQL tool: {search_title}",
         sql_query=display_sql,
         execution_time_ms=query_ms,
@@ -703,8 +703,8 @@ def _record_domain_calls(
         summary = _summarize_domain_result(tool_name, tool_result)
         activities.append(create_activity(
             activity_type="mcp",
-            title=f"meridian-concierge · {tool_name}",
-            details=f"args={tool_args} · {summary}",
+            title=f"meridian-concierge: {tool_name}",
+            details=f"args={tool_args}, result: {summary}",
             execution_time_ms=sub.get("elapsed_ms"),
             agent_name="MCPAgent",
             agent_file="backend/mcp/concierge_server.py",
@@ -881,7 +881,7 @@ async def mcp_search(
     activities.append(create_activity(
         activity_type="mcp",
         title=(
-            f"MCP turn complete · {servers_used} server"
+            f"MCP turn complete: {servers_used} server"
             f"{'' if servers_used == 1 else 's'}"
         ),
         details=f"Retrieved {len(results)} rows in {execution_time}ms",
@@ -962,10 +962,10 @@ def _format_domain_reply(tool: str, result: Any) -> str:
             tier = result.get("tier", "—")
             program = result.get("program", "")
             to_next = result.get("points_to_next_tier", 0) or 0
-            tail = f" · {to_next:,} pts to next tier" if to_next else ""
+            tail = f", {to_next:,} pts to next tier" if to_next else ""
             return (
                 f"Loyalty (via meridian-concierge MCP): "
-                f"{pts:,} pts on {program} · tier {tier}{tail}."
+                f"{pts:,} pts on {program}, tier {tier}{tail}."
             )
         if tool == "price_range" and isinstance(result, dict):
             dest = result.get("destination", "—")
@@ -978,7 +978,7 @@ def _format_domain_reply(tool: str, result: Any) -> str:
             note = result.get("note", "")
             return (
                 f"Price range for {dest} (via meridian-concierge MCP, sample={n}): "
-                f"low ${low:,.0f} · average ${avg:,.0f} · high ${high:,.0f}. {note}"
+                f"low ${low:,.0f}, average ${avg:,.0f}, high ${high:,.0f}. {note}"
             ).rstrip()
         if tool == "region_inventory" and isinstance(result, dict):
             region = result.get("region", "—")
@@ -988,7 +988,7 @@ def _format_domain_reply(tool: str, result: Any) -> str:
             by_type_s = ", ".join(f"{k}: {v}" for k, v in by_type.items()) if by_type else "—"
             return (
                 f"Inventory in {region} (via meridian-concierge MCP): "
-                f"{count} packages · {slots} departure slots · by trip type — {by_type_s}."
+                f"{count} packages, {slots} departure slots, by trip type — {by_type_s}."
             )
     except Exception:
         pass
@@ -1014,13 +1014,13 @@ def _summarize_domain_result(tool: str, result: Any) -> str:
             return f"{result.get('amount')} {result.get('from')} = {result.get('converted')} {result.get('to')}"
         if tool == "loyalty_balance" and isinstance(result, dict):
             if result.get("error"):
-                return f"refused · {result.get('error')}"
+                return f"refused, {result.get('error')}"
             pts = result.get("points_balance", 0) or 0
-            return f"{pts:,} pts · tier={result.get('tier')}"
+            return f"{pts:,} pts, tier={result.get('tier')}"
         if tool == "price_range" and isinstance(result, dict):
-            return f"range low={result.get('low')} · high={result.get('high')}"
+            return f"range low={result.get('low')}, high={result.get('high')}"
         if tool == "region_inventory" and isinstance(result, dict):
-            return f"{result.get('package_count')} packages · {result.get('total_departure_slots')} slots"
+            return f"{result.get('package_count')} packages, {result.get('total_departure_slots')} slots"
     except Exception as exc:
         return f"summarize failed: {exc.__class__.__name__}"
     return f"shape={type(result).__name__}"
@@ -1074,7 +1074,7 @@ async def _polish_phase_reply(
                 facts.append(f"highlights={', '.join(p.highlights[:3])}")
             if p.description:
                 facts.append(f"description={p.description[:180]}")
-            lines.append("- " + " · ".join(facts))
+            lines.append("- " + ", ".join(facts))
 
     if memory_facts:
         lines.append("")
@@ -1170,7 +1170,7 @@ async def _polish_and_record(
     if polish.model_id:
         activities.append(create_activity(
             activity_type="reasoning",
-            title=f"Bedrock · concierge polish ({polish.model_id})",
+            title=f"Bedrock: concierge polish ({polish.model_id})",
             details=f"Wrapping {mode_label} reply in concierge tone",
             execution_time_ms=polish.elapsed_ms,
             agent_name=agent_name,

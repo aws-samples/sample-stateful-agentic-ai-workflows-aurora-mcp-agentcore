@@ -45,8 +45,8 @@ describe('showcase proof helpers', () => {
         details: 'tools/list returned compare_packages',
       }),
       span({
-        name: 'meridian-concierge · compare_packages',
-        details: "args={'package_ids': ['trip-1', 'trip-2']} · Compared 2 packages",
+        name: 'meridian-concierge: compare_packages',
+        details: "args={'package_ids': ['trip-1', 'trip-2']}, result: Compared 2 packages",
         agent: 'MCPAgent',
       }),
     ]);
@@ -61,11 +61,27 @@ describe('showcase proof helpers', () => {
     expect(contracts[0].auroraOperation).toContain('compare');
   });
 
+  it('still reads the middle-dot MCP spans that saved journeys carry', () => {
+    const contracts = deriveMcpContracts([
+      span({ name: 'MCP server discovered: meridian-concierge (custom)' }),
+      span({
+        name: 'meridian-concierge · compare_packages',
+        details: "args={'package_ids': ['trip-1', 'trip-2']} · Compared 2 packages",
+        agent: 'MCPAgent',
+      }),
+      span({ name: 'postgres-mcp · session connected' }),
+      span({ name: 'postgres-mcp · run_query', sql: 'SELECT 1' }),
+    ]);
+    expect(contracts.map(contract => contract.tool)).toEqual(['compare_packages', 'run_query']);
+    expect(contracts[0].request).toContain('package_ids');
+    expect(contracts[0].result).toBe('Compared 2 packages');
+  });
+
   it('does not count session setup as an executed SQL tool', () => {
     const contracts = deriveMcpContracts([
       span({ name: 'MCP server discovered: awslabs.postgres-mcp-server' }),
-      span({ name: 'postgres-mcp · session connected' }),
-      span({ name: 'postgres-mcp · run_query', sql: 'SELECT 1' }),
+      span({ name: 'postgres-mcp: session connected' }),
+      span({ name: 'postgres-mcp: run_query', sql: 'SELECT 1' }),
     ]);
     expect(contracts).toHaveLength(1);
     expect(contracts[0].tool).toBe('run_query');
@@ -93,7 +109,7 @@ describe('showcase proof helpers', () => {
     expect(workflow.nextNode).toBe('availability');
     expect(workflow.checkpointCount).toBe(1);
     expect(workflow.durable).toBe(true);
-    expect(workflow.table).toBe('checkpoints');
+    expect(workflow.table).toBe('workflow_snapshots');
   });
 
   it('does not present MemorySaver as durable Aurora proof', () => {
