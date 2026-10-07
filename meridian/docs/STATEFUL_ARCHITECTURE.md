@@ -112,9 +112,10 @@ instead of appending an older state after another worker took the thread.
 ### The hold
 
 The `prepare_hold` node fixes the hold's request ID and booking ID before the
-`hold` node runs. The booking ID is derived from the thread, package and
-duration, so every retry presents the same key and the primary key on `bookings`
-rejects a duplicate. The `hold` node calls the Gateway tool, so Cedar decides it
+`hold` node runs. The request ID is `hrq_` plus a random UUID fragment, generated
+once, and the booking ID is `hold_` plus the same fragment. Both are saved in the
+snapshot, so every replay presents the same key because it was saved, not
+derived, and the primary key on `bookings` rejects a duplicate. The `hold` node calls the Gateway tool, so Cedar decides it
 and the `MeridianHolds` Lambda checks the worker's lease inside the write
 transaction. A snapshot and a business write are separate transactions. The
 design makes the write idempotent and the run resumable; it does not claim
@@ -151,7 +152,8 @@ journey's active thread. The thread comes from the journey under RLS, never from
 the request. The backend then reads the newest snapshot and execution under a
 row lock and records the stop in `workflow_session_stops` as:
 
-- `waiting`: the run was paused for the traveler's review.
+- `waiting`: the execution was paused, neither running nor finished, usually
+  waiting for the traveler's review.
 - `running`: a worker was mid-run. The stop closes its lease as abandoned, so a
   resume claims at once.
 - `finished`: the saved snapshot shows the Graph completed and only the lease
@@ -162,6 +164,12 @@ snapshot, because the insert is fenced on a running execution, and it cannot
 place a hold, because the Lambda checks the lease. The next resume starts a new
 microVM on the same session, claims the next attempt and restores the newest
 snapshot.
+
+Where a mid-run stop lands depends on when it is pressed. It can land before
+the hold, after the hold committed but before its snapshot was saved, or after
+the run finished, which is recorded as `finished`. The `--during running` proof
+can miss that window and then exits 2 with "missed the window"; run it again.
+Only the local kill-and-resume proof stops at an exact step.
 
 ### LangGraph
 

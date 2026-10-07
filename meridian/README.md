@@ -112,8 +112,8 @@ unit of work; it is not long-lived workflow state. See
 The canceled-flight prompt runs `classify → search → availability →
 prepare_hold → hold → synthesize` as a Strands Graph in the `MeridianWorkflow`
 Runtime. It pauses after `search` so the saved snapshot is visible before the
-workflow checks availability and places a hold. A resume needs the traveler's
-answered review. The proof scripts pause by passing `pause_after` to the runner.
+workflow checks availability and places a hold. The hold needs the traveler's
+answered review, and a resume stops again at the confirm gate until it is answered. The proof scripts pause by passing `pause_after` to the runner.
 
 - `prepare_hold` saves the hold's request ID and booking ID in the snapshot
   before the `hold` node calls the Gateway. A resumed or retried run sends the
@@ -168,7 +168,7 @@ hydration and memory persistence. Interrupted text is marked incomplete.
 | `GET` | `/api/chat/bookings/{booking_id}` | Read a booking with its amounts and expiry |
 | `GET` | `/api/journeys` | List the traveler's journeys; `thread_id` selects one workflow and `limit` is 1 to 50 |
 | `GET` | `/api/journeys/{journey_id}` | Saved workflow, snapshot, executions, authorization, session stops and hold evidence |
-| `POST` | `/api/journeys/{journey_id}/stop-session` | Stop the journey's `MeridianWorkflow` Runtime session, record the stop in `workflow_session_stops` and release a running lease. 404 when the journey is not the traveler's, 409 when nothing is paused or running or the session was already stopped, 503 when the Runtime is not configured or the stop failed |
+| `POST` | `/api/journeys/{journey_id}/stop-session` | Stop the journey's `MeridianWorkflow` Runtime session, record the stop in `workflow_session_stops` and release a running lease. 403 when the traveler grant is denied, 404 when the journey is not the traveler's, 409 when nothing is paused or running or the session was already stopped, 503 when the Runtime is not configured or the stop failed |
 | `GET` | `/api/memory/{traveler_id}` | Traveler profile and preference facts |
 | `PATCH` | `/api/memory/{traveler_id}/facts/{preference_key}` | Set the value of one preference fact under RLS |
 | `DELETE` | `/api/memory/{traveler_id}/facts/{preference_key}` | Delete one preference fact under RLS |
@@ -255,7 +255,7 @@ The script crops and resizes each image and reports packages without artwork.
 
 The HTTP layer binds each request to a traveler before workload authorization
 runs. Loopback development (the default `ENVIRONMENT=development`) and the
-hosted sample use one shared sample principal; neither authenticates Jordan as a
+hosted sample use one shared principal; neither authenticates Jordan as a
 person. Set `MERIDIAN_API_TOKEN` and `CORS_ORIGINS` before exposing the API to
 a network.
 

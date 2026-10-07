@@ -133,7 +133,8 @@ The same command repairs a half-finished run.
 `POST /api/journeys/{journey_id}/stop-session` stops the Runtime session of the
 journey's active thread. On the Recovery desk this is **Stop runtime session** on
 the continuity rail. The backend takes the thread from the journey under RLS, so
-a caller can stop only their own journey's session. It answers 404 when the
+a caller can stop only their own journey's session. It answers 403 when the
+traveler grant is denied, 404 when the
 journey is not the traveler's, 409 when nothing is paused or running or the
 session was already stopped, and 503 when the Runtime is not configured or the
 stop failed.
@@ -143,7 +144,7 @@ Runtime session ID, who asked, and:
 
 | `stopped_during` | Meaning | Lease |
 | --- | --- | --- |
-| `waiting` | The run was paused for the traveler's review | Nothing to release |
+| `waiting` | The execution was paused, neither running nor finished, usually waiting for the traveler's review | Nothing to release |
 | `running` | A worker was mid-run | Released as abandoned, so a resume claims at once |
 | `finished` | The snapshot shows the Graph completed and only the release was outstanding | Closed as succeeded |
 
@@ -158,6 +159,12 @@ SELECT stopped_at, stopped_during, last_step, runtime_session_id
 
 The next resume starts a new microVM on the same session ID. It claims the next
 attempt and restores the newest snapshot, so `search` does not run again.
+
+Where a mid-run stop lands depends on when it is pressed. It can land before
+the hold, after the hold committed but before its snapshot was saved, or after
+the run finished, which is recorded as `finished`. The `--during running` proof
+can miss that window and then exits 2 with "missed the window"; run it again.
+Only the local kill-and-resume proof stops at an exact step.
 
 Before exposing the API beyond loopback, set `MERIDIAN_API_TOKEN` and an
 explicit `CORS_ORIGINS` list.

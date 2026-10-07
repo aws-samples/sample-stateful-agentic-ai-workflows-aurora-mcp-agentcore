@@ -227,7 +227,7 @@ The unit tests block network access and ignore `meridian/.env`. Tests marked
 ## Security
 
 This sample authorizes AWS workload identities, not people. Local development
-and the hosted sample use one shared sample principal bound to Jordan. An
+and the hosted sample use one shared principal bound to Jordan. An
 application with real users must authenticate each user and bind the verified
 identity, such as an Amazon Cognito `sub`, to the traveler record. Review
 networking, monitoring, availability and data protection before any production

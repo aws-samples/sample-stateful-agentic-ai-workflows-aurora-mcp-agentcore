@@ -61,7 +61,7 @@ With context off, the turn returns without calling the runtime; the guard is in
 
 | Source and symbol | What it does |
 | --- | --- |
-| `backend/http_auth.py`, `require_http_principal` | Binds the HTTP request to its permitted traveler. The sample uses a shared sample principal, not user authentication. |
+| `backend/http_auth.py`, `require_http_principal` | Binds the HTTP request to its permitted traveler. The sample uses a shared principal, not user authentication. |
 | `backend/db/rds_data_client.py`, `scoped_session` | Checks the workload grant, sets a transaction-local scope and switches to the restricted RLS role |
 | `backend/agents/phase_04_production/concierge.py`, `process_turn` | Short authorization and read, and write and audit, units around the external runtime call |
 | `meridian_agentcore/app/MeridianConcierge/main.py` | The Strands loop on AgentCore Runtime: Gateway tools, the Memory session manager and the streamed events |

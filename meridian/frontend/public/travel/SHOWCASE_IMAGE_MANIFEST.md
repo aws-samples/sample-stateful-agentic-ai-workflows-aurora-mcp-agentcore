@@ -1,6 +1,6 @@
 # Showcase editorial image cache
 
-The trip cards for the demo prompts use images stored in the repository, so
+The trip cards for the example prompts use images stored in the repository, so
 they load without an external image service. Every image listed below is a
 photorealistic generated image supplied by the repository owner; `README.md`
 in this folder records the source of each file.

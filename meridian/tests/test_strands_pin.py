@@ -8,13 +8,19 @@ import tomllib
 from strands.session import SnapshotSessionManager
 
 MERIDIAN = pathlib.Path(__file__).resolve().parents[1]
-RUNTIME_PROJECT = MERIDIAN / "meridian_agentcore" / "app" / "MeridianConcierge" / "pyproject.toml"
+RUNTIME_PROJECTS = [
+    MERIDIAN / "meridian_agentcore" / "app" / name / "pyproject.toml"
+    for name in ("MeridianConcierge", "MeridianWorkflow")
+]
 
 
 def test_backend_runs_the_runtime_strands_release():
-    runtime = tomllib.loads(RUNTIME_PROJECT.read_text())
-    pins = [dep for dep in runtime["project"]["dependencies"] if dep.startswith("strands-agents==")]
-    assert pins == ["strands-agents==1.57.2"]
+    for project in RUNTIME_PROJECTS:
+        runtime = tomllib.loads(project.read_text())
+        pins = [
+            dep for dep in runtime["project"]["dependencies"] if dep.startswith("strands-agents==")
+        ]
+        assert pins == ["strands-agents==1.57.2"], project
     assert importlib.metadata.version("strands-agents") == "1.57.2"
 
 

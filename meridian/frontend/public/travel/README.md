@@ -30,4 +30,4 @@ recovery views do not depend on an external image service.
   replacement at the same path needs no code change.
   `scripts/install_catalog_images.py` crops and resizes new images into place.
 - `SHOWCASE_IMAGE_MANIFEST.md` records the intended composition of the catalog
-  images the demo prompts return.
+  images the example prompts return.
