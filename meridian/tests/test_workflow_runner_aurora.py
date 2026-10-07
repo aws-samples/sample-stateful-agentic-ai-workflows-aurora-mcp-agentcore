@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 import pytest
 import pytest_asyncio
 
-from backend.agents.phase_05_workflow.runner import WorkflowCommand
+from backend.agents.phase_05_workflow.runner import WorkflowCommand, WorkflowConflictError
 from backend.agents.phase_05_workflow.service import build_workflow_runner
 from backend.db.rds_data_client import get_rds_data_client
 from tests.phase5_support import GatewayFake, fake_availability, fake_search
@@ -86,9 +86,7 @@ async def test_a_killed_worker_is_replaced_and_the_hold_runs_once(thread):
         try:
             result = await runner.run(command)
             break
-        except Exception as exc:  # the dead worker's lease must expire first
-            if "already running" not in str(exc):
-                raise
+        except WorkflowConflictError:  # the dead worker's lease must expire first
             await asyncio.sleep(2)
     else:
         raise AssertionError("the dead worker's lease never cleared")

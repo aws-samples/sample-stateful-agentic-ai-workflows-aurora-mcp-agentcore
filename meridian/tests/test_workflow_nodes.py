@@ -57,19 +57,28 @@ async def test_the_hold_sends_confirmation_only_when_the_run_carries_it(nodes, g
              "packages": [{"product_id": "pkg_tokyo", "price": 100,
                            "available_sizes": ["7 nights"], "availability": {"7 nights": 10}}],
              "activities": []}
-    await nodes.hold(state, {"configurable": {"thread_id": "t1", "execution_id": "exe_1"}})
-    await nodes.hold(state, {"configurable": {"thread_id": "t1", "execution_id": "exe_1",
-                                              "traveler_confirmed": True}})
+    unconfirmed = await nodes.hold(
+        state, {"configurable": {"thread_id": "t1", "execution_id": "exe_1"}}
+    )
+    confirmed = await nodes.hold(
+        state,
+        {"configurable": {"thread_id": "t1", "execution_id": "exe_1", "traveler_confirmed": True}},
+    )
     assert [call["travelerConfirmed"] for call in gateway.calls] == [False, True]
+    assert len(gateway.denied) == 1 and len(gateway.receipts) == 1
+    assert "hold_id" not in unconfirmed
+    assert confirmed["hold_id"] == gateway.calls[1]["bookingId"]
     assert {call["tool"] for call in gateway.calls} == {HOLD_TOOL}
     assert gateway.calls[0]["executionId"] == "exe_1"
 
 
 async def test_synthesize_reports_the_booking_status_aurora_holds(nodes):
     nodes._booking_status = AsyncMock(return_value="released")
-    out = await nodes.synthesize({"query": PLAN, "intent": "plan", "packages": [{"product_id": "p"}],
-                                  "availability_checks": 1, "hold_id": "hold_1",
-                                  "hold_status": "held", "traveler_id": "trv_x", "activities": []})
+    out = await nodes.synthesize({
+        "query": PLAN, "intent": "plan", "packages": [{"product_id": "p"}],
+        "availability_checks": 1, "hold_id": "hold_1", "hold_status": "held",
+        "traveler_id": "trv_x", "activities": [],
+    })
     assert "was released after a step failed" in out["response"]
     assert "each step saved to Aurora" in out["response"]
     nodes._booking_status.assert_awaited_once_with("trv_x", "hold_1")
@@ -143,6 +152,41 @@ async def test_hold_without_a_package_or_traveler_returns_only_activities(nodes,
     assert gateway.calls == []
 
 
+async def test_a_placed_hold_returns_the_receipt_and_the_span_the_ui_and_journey_read(
+    nodes, gateway
+):
+    config = {"configurable": {**HOLD_CONFIG["configurable"], "traveler_confirmed": True}}
+    out = await nodes.hold(_hold_state(), config)
+
+    booking = gateway.calls[0]["bookingId"]
+    assert {key: out[key] for key in out if key != "activities"} == {
+        "journey_id": "jrn_test",
+        "hold_id": booking,
+        "hold_expires_at": "2026-10-06T20:15:00Z",
+        "hold_created_at": "2026-10-06T20:00:00Z",
+        "hold_observed_at": "2026-10-06T20:00:01Z",
+        "hold_status": "held",
+        "hold_package": "pkg_tokyo",
+        "hold_duration": "7 nights",
+        "hold_seats_remaining": 9,
+    }
+    span = [a for a in out["activities"] if a["title"] == "Workflow node: hold"][0]
+    assert span["activity_type"] == "database"
+    assert span["execution_time_ms"] is not None
+    assert span["telemetry"]["status"] == "ok"
+    fields = _fields(span)
+    assert fields["hold_id"] == booking
+    assert fields["hold_status"] == "held"
+    assert fields["expires_at"] == "2026-10-06T20:15:00Z"
+    assert fields["hold_request_id"] == gateway.calls[0]["holdRequestId"]
+    assert fields["cedar_decision"] == "allow"
+    assert (fields["package"], fields["duration"], fields["seats_held"]) == (
+        "pkg_tokyo", "7 nights", "2"
+    )
+    assert (fields["seats_remaining"], fields["replayed"]) == ("9", "no")
+    assert out["activities"][-1]["title"].startswith("Checkpoint")
+
+
 async def test_hold_cedar_denial_is_a_refusal_span_not_an_exception(nodes):
     nodes._gateway_call = lambda *_: _envelope(
         text="Tool Execution Denied: [No policy applies to the request (denied by default).]",
@@ -200,18 +244,20 @@ async def test_synthesize_without_a_hold_id_never_reads_aurora(nodes):
 
 async def test_synthesize_falls_back_to_the_saved_status_when_the_row_is_missing(nodes):
     out = await nodes.synthesize(
-        _synth_state(hold_id="hold_1", hold_status="held", hold_package="p", hold_duration="7")
+        _synth_state(hold_id="hold_1", hold_status="expired", hold_package="p", hold_duration="7")
     )
     nodes._booking_status.assert_awaited_once_with("trv_x", "hold_1")
-    assert "Recorded status: held" in out["response"]
+    assert "Recorded status: expired" in out["response"]
+    assert "was released" not in out["response"]
 
 
 async def test_synthesize_survives_a_failed_readback(nodes, caplog):
     nodes._booking_status = AsyncMock(side_effect=RuntimeError("aurora down"))
     out = await nodes.synthesize(
-        _synth_state(hold_id="hold_1", hold_status="held", hold_package="p", hold_duration="7")
+        _synth_state(hold_id="hold_1", hold_status="expired", hold_package="p", hold_duration="7")
     )
-    assert "Recorded status: held" in out["response"]
+    assert "Recorded status: expired" in out["response"]
+    assert "was released" not in out["response"]
     assert "could not read booking hold_1 back from Aurora" in caplog.text
 
 
