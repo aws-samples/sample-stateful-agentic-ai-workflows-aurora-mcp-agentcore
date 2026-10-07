@@ -1538,7 +1538,11 @@ async def orchestration_workflow(
     story is "explicit edges and saved steps" rather than different search code.
     """
     from backend.agents.phase_05_workflow import service
-    from backend.agents.phase_05_workflow.runner import WorkflowCommand, WorkflowConflictError
+    from backend.agents.phase_05_workflow.runner import (
+        WorkflowCommand,
+        WorkflowConflictError,
+        WorkflowRequestError,
+    )
     from backend.agents.phase_05_workflow.state import WorkflowAuthorizationError
     from backend.db.journey_store import ExecutionLeaseLostError
 
@@ -1554,6 +1558,8 @@ async def orchestration_workflow(
         final_state = await service.build_workflow_runner().run(command)
     except WorkflowAuthorizationError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except WorkflowRequestError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except (WorkflowConflictError, ExecutionLeaseLostError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 

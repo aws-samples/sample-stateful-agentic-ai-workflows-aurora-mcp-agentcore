@@ -5,11 +5,17 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
-from backend.agents.phase_05_workflow.runner import WorkflowConflictError
+from backend.agents.phase_05_workflow.nodes import WorkflowNodes
+from backend.agents.phase_05_workflow.runner import (
+    WorkflowConflictError,
+    WorkflowRequestError,
+    WorkflowRunner,
+)
 from backend.agents.phase_05_workflow.state import WorkflowAuthorizationError
 from backend.db.journey_store import ExecutionLeaseLostError
 from backend.http_auth import HttpPrincipal
 from backend.routers import chat as router
+from tests.phase5_support import InMemoryLease, fake_availability, fake_search
 
 BUILD = "backend.agents.phase_05_workflow.service.build_workflow_runner"
 
@@ -34,12 +40,31 @@ def principal():
     (WorkflowAuthorizationError("Thread t belongs to another traveler."), 403),
     (WorkflowConflictError("This recovery is already running."), 409),
     (ExecutionLeaseLostError("lost"), 409),
+    (WorkflowRequestError("thread_id 'a/b' cannot be used"), 422),
 ])
 async def test_runner_refusals_keep_their_status(monkeypatch, error, status):
     monkeypatch.setattr(BUILD, lambda: Runner(error))
     with pytest.raises(HTTPException) as caught:
         await router.chat(router.ChatRequest(message="Tokyo recovery", phase=5), principal())
     assert caught.value.status_code == status
+
+
+async def test_a_conversation_id_strands_cannot_use_is_a_422_before_any_claim(monkeypatch):
+    lease = InMemoryLease()
+    runner = WorkflowRunner(
+        WorkflowNodes(fake_search, fake_availability),
+        storage_for=lambda *args: pytest.fail("no storage may be built for a refused request"),
+        lease=lease,
+    )
+    monkeypatch.setattr(BUILD, lambda: runner)
+    with pytest.raises(HTTPException) as caught:
+        await router.chat(
+            router.ChatRequest(message="Tokyo recovery", phase=5, conversation_id="a/b"),
+            principal(),
+        )
+    assert caught.value.status_code == 422
+    assert "thread_id" in caught.value.detail
+    assert lease.traveler_threads == {} and lease.executions == []
 
 
 async def test_an_unknown_hold_outcome_says_to_reread(monkeypatch):

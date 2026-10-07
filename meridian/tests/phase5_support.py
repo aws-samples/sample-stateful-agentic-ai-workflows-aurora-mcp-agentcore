@@ -22,15 +22,32 @@ async def fake_availability(query: str, package_id: Optional[str] = None):
     return [{**TOKYO, "product_id": package_id or TOKYO["product_id"]}], [], ""
 
 
+CEDAR_DENIAL = (
+    "AuthorizeActionException - Tool Execution Denied: Tool call not allowed due to policy "
+    "enforcement [No policy applies to the request (denied by default).]"
+)
+
+
 @dataclass
 class GatewayFake:
-    """The Gateway's ``tools/call``: records arguments, answers like the holds Lambda."""
+    """The Gateway's ``tools/call``: records arguments, answers like the holds Lambda.
+
+    Like the Cedar policy in front of the real Gateway, it refuses a hold unless the
+    arguments carry ``travelerConfirmed: true``. The refusal is the Gateway's tool-result
+    denial envelope; it is recorded in ``calls`` and ``denied`` and creates no receipt.
+    """
 
     calls: List[Dict[str, Any]] = field(default_factory=list)
+    denied: List[Dict[str, Any]] = field(default_factory=list)
     receipts: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def __call__(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         self.calls.append({"tool": name, **arguments})
+        if arguments.get("travelerConfirmed") is not True:
+            self.denied.append({"tool": name, **arguments})
+            return {"result": {"isError": True, "content": [
+                {"type": "text", "text": CEDAR_DENIAL},
+            ]}}
         replayed = arguments["holdRequestId"] in self.receipts
         receipt = self.receipts.setdefault(arguments["holdRequestId"], {
             "bookingId": arguments["bookingId"], "status": "held",

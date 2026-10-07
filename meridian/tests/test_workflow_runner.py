@@ -2,6 +2,9 @@
 
 import asyncio
 import json
+import logging
+import threading
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -13,6 +16,7 @@ from backend.agents.phase_05_workflow.nodes import WorkflowNodes
 from backend.agents.phase_05_workflow.runner import (
     WorkflowCommand,
     WorkflowConflictError,
+    WorkflowRequestError,
     WorkflowRunner,
 )
 from backend.agents.phase_05_workflow.state import WorkflowAuthorizationError
@@ -43,11 +47,9 @@ class World:
         self.storages = {}
         self.lease = InMemoryLease()
         self.gateway = GatewayFake()
-        self.writes = []
 
     def storage_for(self, thread_id, traveler_id, execution_id, worker_id, on_write):
         storage = self.storages.setdefault(thread_id, InMemoryStorage())
-        self.writes.append(on_write)
         return storage
 
     def runner(self, worker_id="worker-a", *, gateway=None, release=None, synthesize=None):
@@ -375,3 +377,122 @@ async def test_a_snapshot_write_refused_for_a_lost_lease_stops_the_run_as_lease_
     assert world.gateway.calls == []
     assert released == []
     assert [e["status"] for e in world.lease.executions] == ["failed"]
+
+
+@pytest.mark.parametrize("thread", ["a/b", "../x", "..", ".", "   "])
+async def test_a_thread_id_strands_rejects_is_refused_before_any_claim(thread):
+    world = World()
+    with pytest.raises(WorkflowRequestError, match="thread_id"):
+        await world.runner().run(command(thread=thread))
+    assert world.lease.traveler_threads == {}
+    assert world.lease.executions == []
+    assert world.storages == {}
+
+
+async def test_a_failed_release_does_not_hide_the_lease_loss():
+    world = World()
+    world.lease.renewals_left = 0
+
+    async def release(*args, **kwargs):
+        raise RuntimeError("aurora blip during release")
+
+    world.lease.release = release
+
+    async def slow(state, config=None):
+        await asyncio.sleep(3)
+        return {"response": "late", "activities": state["activities"]}
+
+    with pytest.raises(ExecutionLeaseLostError):
+        await world.runner(synthesize=slow).run(command("Find me a romantic trip to Paris"))
+
+
+async def test_a_failed_release_is_logged_with_its_execution(caplog):
+    world = World()
+
+    async def release(*args, **kwargs):
+        raise RuntimeError("aurora blip during release")
+
+    world.lease.release = release
+    with caplog.at_level(logging.ERROR, logger="backend.agents.phase_05_workflow.runner"):
+        result = await world.runner().run(command("Find me a romantic trip to Paris"))
+    assert result["workflow_status"] == "complete"
+    assert any(
+        "exe_t1_1" in record.getMessage() and "t1" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+class _Node:
+    def __init__(self, node_id):
+        self.node_id = node_id
+
+
+def _unfinished_graph(*, interrupted=()):
+    state = SimpleNamespace(
+        completed_nodes=set(), interrupted_nodes={_Node(n) for n in interrupted},
+        task="{}", execution_order=[], results={},
+    )
+    return SimpleNamespace(state=state)
+
+
+async def test_a_graph_that_ended_unfinished_with_nothing_waiting_is_an_error():
+    runner = World().runner()
+    with pytest.raises(RuntimeError, match="ended without finishing"):
+        runner._outcome(
+            command=command(), graph=_unfinished_graph(), prior=None, previous_worker=None,
+            claim=SimpleNamespace(execution_id="exe_1"), activities=[],
+        )
+
+
+async def test_a_graph_waiting_on_an_interrupt_is_reported_paused():
+    runner = World().runner()
+    result = runner._outcome(
+        command=command(), graph=_unfinished_graph(interrupted=["prepare_hold"]), prior=None,
+        previous_worker=None, claim=SimpleNamespace(execution_id="exe_1"), activities=[],
+    )
+    assert result["workflow_status"] == "paused"
+    assert "continue with prepare_hold." in result["response"]
+
+
+async def test_a_corrupt_current_task_means_no_recorded_owner():
+    world = World()
+    envelope = {"data": {"state": {
+        "current_task": "{not json", "next_nodes_to_execute": ["availability"],
+    }}}
+    storage = world.storages.setdefault("t1", InMemoryStorage())
+    await storage.write(snapshot_key("t1"), json.dumps(envelope).encode())
+    with pytest.raises(WorkflowAuthorizationError, match="no recorded owner"):
+        await world.runner().run(command("Resume workflow", resume=True))
+    assert world.lease.executions == []
+    assert world.gateway.calls == []
+
+
+async def test_cancelling_the_run_inside_the_hold_fails_the_lease_and_a_resume_replays_it():
+    """A cancelled run did not finish and its hold outcome is unknown, so the lease is
+    released as ``failed``: that frees the thread at once and records no success. No
+    compensation runs, because the hold may have committed; the resume replays it."""
+    world = World()
+    await world.runner("worker-a").run(command(RECOVERY))
+    entered, proceed = threading.Event(), threading.Event()
+
+    def blocked(name, arguments):
+        entered.set()
+        proceed.wait(5)
+        return world.gateway(name, arguments)
+
+    task = asyncio.create_task(
+        world.runner("worker-a", gateway=blocked).run(command(RECOVERY, resume=True))
+    )
+    assert await asyncio.to_thread(entered.wait, 5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    proceed.set()
+    assert [e["status"] for e in world.lease.executions] == ["paused", "failed"]
+
+    result = await world.runner("worker-b").run(command(RECOVERY, resume=True))
+    assert result["workflow_status"] == "resumed"
+    assert len({call["holdRequestId"] for call in world.gateway.calls}) == 1
+    assert len(world.gateway.receipts) == 1
+    assert result["hold_id"] == world.gateway.calls[0]["bookingId"]
+    assert [e["status"] for e in world.lease.executions] == ["paused", "failed", "succeeded"]

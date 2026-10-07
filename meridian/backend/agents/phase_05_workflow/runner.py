@@ -9,6 +9,7 @@ inside AgentCore Runtime.
 import asyncio
 import json
 import logging
+import os
 import uuid
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Set
@@ -48,6 +49,10 @@ CONSENT_INTERRUPTS = frozenset({REVIEW_INTERRUPT, CONFIRM_INTERRUPT})
 
 StorageFactory = Callable[[str, str, Optional[str], str, Callable[[int], None]], Any]
 AfterPause = Callable[[Dict[str, Any], ExecutionClaim], Awaitable[None]]
+
+
+class WorkflowRequestError(ValueError):
+    """The request itself is unusable, whatever the thread's state."""
 
 
 class WorkflowConflictError(RuntimeError):
@@ -97,17 +102,36 @@ class LeaseStore(Protocol):
     ) -> Optional[str]: ...
 
 
+def _usable_session_id(thread_id: str) -> bool:
+    """The thread is the Strands session id, which must name one path segment."""
+    return bool(thread_id.strip()) and thread_id not in (".", "..") and (
+        os.path.basename(thread_id) == thread_id
+    )
+
+
 def _validate(command: WorkflowCommand) -> None:
     count = command.travelers_count
     if not isinstance(count, int) or isinstance(count, bool) or not 1 <= count <= 20:
-        raise ValueError("travelers_count must be an integer between 1 and 20")
+        raise WorkflowRequestError("travelers_count must be an integer between 1 and 20")
     if not command.thread_id:
-        raise ValueError("thread_id is required")
+        raise WorkflowRequestError("thread_id is required")
+    if not _usable_session_id(command.thread_id):
+        raise WorkflowRequestError(
+            f"thread_id {command.thread_id!r} cannot be used: it must be a single path segment, "
+            "not blank, '.', '..' or containing '/'"
+        )
 
 
 def _owner(prior: Optional[Dict[str, Any]]) -> str:
+    """The traveler the saved task names; an unreadable task names no one."""
     task = prior["data"]["state"].get("current_task") if prior else None
-    return str(json.loads(task).get("traveler_id") or "") if isinstance(task, str) else ""
+    if not isinstance(task, str):
+        return ""
+    try:
+        parsed = json.loads(task)
+    except ValueError:
+        return ""
+    return str(parsed.get("traveler_id") or "") if isinstance(parsed, dict) else ""
 
 
 def _authorize(prior: Optional[Dict[str, Any]], command: WorkflowCommand) -> None:
@@ -241,7 +265,7 @@ class WorkflowRunner:
         """Run a fresh request or resume the saved one.
 
         Raises:
-            ValueError: Invalid party size or thread.
+            WorkflowRequestError: Invalid party size, or a thread id Strands cannot use.
             WorkflowAuthorizationError: The thread belongs to another traveler.
             WorkflowConflictError: Saved progress, nothing to resume, or a live owner.
             ExecutionLeaseLostError: Another worker took the thread mid-run.
@@ -291,9 +315,24 @@ class WorkflowRunner:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(work, pulse, return_exceptions=True)
-            # A dead process cannot run this: its lease expires and the next
-            # claimant marks it abandoned. A pause releases immediately.
+            await self._release(command, journey_id, claim, terminal)
+
+    async def _release(
+        self, command: WorkflowCommand, journey_id: str, claim: ExecutionClaim, terminal: str
+    ) -> None:
+        """Release the lease; a failure is logged and never replaces what the run raised.
+
+        A dead process cannot run this: its lease expires and the next claimant
+        marks it abandoned, so an unreleased lease only delays a retry.
+        """
+        try:
             await self._lease.release(command.traveler_id, journey_id, claim.execution_id, terminal)
+        except Exception:
+            logger.exception(
+                "execution_id=<%s>, thread_id=<%s>, status=<%s> | lease release failed; "
+                "the lease expires on its own",
+                claim.execution_id, command.thread_id, terminal,
+            )
 
     async def _heartbeat(self, command: WorkflowCommand, claim: ExecutionClaim) -> None:
         while True:
@@ -351,7 +390,12 @@ class WorkflowRunner:
             else None
         )
         result = self._outcome(
-            command, graph, prior, previous, claim, _timed(graph.state, completed_before, write_ms)
+            command=command,
+            graph=graph,
+            prior=prior,
+            previous_worker=previous,
+            claim=claim,
+            activities=_timed(graph.state, completed_before, write_ms),
         )
         if after_pause is not None and result["workflow_status"] == "paused":
             await after_pause(result, claim)
@@ -385,7 +429,16 @@ class WorkflowRunner:
         )
         await self._nodes.release_hold(state, expected_hold_id=expected)
 
-    def _outcome(self, command, graph, prior, previous_worker, claim, activities) -> Dict[str, Any]:
+    def _outcome(
+        self,
+        *,
+        command: WorkflowCommand,
+        graph: Any,
+        prior: Optional[Dict[str, Any]],
+        previous_worker: Optional[str],
+        claim: ExecutionClaim,
+        activities: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
         state = fold_state(graph.state)
         thread_id = command.thread_id
         base = {
@@ -398,6 +451,11 @@ class WorkflowRunner:
         finished = "synthesize" in {node.node_id for node in graph.state.completed_nodes}
         if not finished:
             pending = sorted(node.node_id for node in graph.state.interrupted_nodes)
+            if not pending:
+                raise RuntimeError(
+                    f"The graph for thread {thread_id} ended without finishing and nothing is "
+                    "waiting for an answer. Re-read the saved journey before retrying."
+                )
             return {
                 **base,
                 "workflow_status": "paused",
