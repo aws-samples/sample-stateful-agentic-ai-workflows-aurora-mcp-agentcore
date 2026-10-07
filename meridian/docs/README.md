@@ -12,7 +12,8 @@
 2. [Source map](../STRUCTURE.md) - where requests, tools and state live.
 3. [Stateful architecture](STATEFUL_ARCHITECTURE.md) - snapshots, memory, transactions and recovery.
 4. [Dogwood assessment](DOGWOOD_POLICY_ASSESSMENT.md) - optional temporal-policy learning, with implemented and proposed behavior kept separate.
-5. [Product](../../PRODUCT.md) and [design system](../../DESIGN.md) - presentation priorities and UI conventions.
+5. [Signed scope evaluation](SIGNED_SCOPE_EVALUATION.md) - whether Aurora should verify a signed traveler scope, evaluated and not built.
+6. [Product](../../PRODUCT.md) and [design system](../../DESIGN.md) - presentation priorities and UI conventions.
 
 ## Operate and validate
 
