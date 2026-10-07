@@ -202,6 +202,7 @@ python scripts/publish.py --account <account-id> --region <region> --service-arn
 
 The publisher checks that `AGENTCORE_WORKFLOW_RUNTIME_ARN` is set and that the
 MeridianWorkflow Runtime is READY, and it refuses otherwise, even on a dry run.
+The operator running it needs `bedrock-agentcore:GetAgentRuntime` for that check.
 It does not create or delete App Runner services, rotate
 credentials or read secret values. App Runner reads the API token from the
 Secrets Manager secret `meridian/web/api-token`. The release record is written

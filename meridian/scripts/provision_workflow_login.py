@@ -9,9 +9,8 @@ Migration 015 creates the role with NOLOGIN. This script:
 4. connects as the new login and checks it is meridian_workflow without BYPASSRLS.
 
 Re-running rotates the password and repairs a half-finished run. During a rotation,
-between ALTER ROLE and put_secret_value, anything holding the old secret fails, and a
-re-run repairs a half-finished rotation. Without --apply
-it only reports what it would do. Run from meridian/ with AWS_PROFILE set.
+between ALTER ROLE and put_secret_value, anything holding the old secret fails.
+Without --apply it only reports what it would do. Run from meridian/ with AWS_PROFILE set.
 """
 
 import argparse

@@ -228,7 +228,8 @@ async def stop_session(
     Raises:
         HTTPException: 404 when the journey is not this traveler's or has no
             thread, 409 when the latest execution is neither running nor
-            paused or its session was already stopped, 503 when the Runtime is not configured or the stop failed.
+            paused or its session was already stopped, 503 when the Runtime is
+            not configured or the stop failed.
     """
     owner = authorize_traveler(principal, traveler_id)
     client = get_rds_data_client()

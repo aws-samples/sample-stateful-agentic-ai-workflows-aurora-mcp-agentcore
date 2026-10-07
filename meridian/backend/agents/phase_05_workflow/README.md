@@ -36,7 +36,7 @@ restores the newest saved snapshot from AWS Aurora, so no state lives on the mic
 
 > My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration availability for the best three options.
 
-Continue at Recovery desk, restart the backend, then resume. System evidence should show the same thread and an actual persisted hold. The lost-response exercise additionally verifies the same booking ID and original expiry.
+Continue at Recovery desk and choose Stop runtime session on the continuity rail, then resume. The rail records whether the stop caught the run waiting, mid-run or already finished. `scripts/kill_and_resume_demo.py` and `scripts/lost_response_demo.py` (with `--worker-login` to run the worker as the workflow login) prove the crash cases against live Aurora. System evidence should show the same thread and an actual persisted hold. The lost-response exercise additionally verifies the same booking ID and original expiry.
 
 ## Architectural takeaway
 

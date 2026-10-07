@@ -75,10 +75,11 @@ class World:
 
     async def finish(self, thread):
         """Resume the thread until it completes."""
-        while (await self.runner().run(command(RECOVERY, resume=True, thread=thread)))[
-            "workflow_status"
-        ] == "paused":
-            pass
+        for _ in range(5):
+            state = await self.runner().run(command(RECOVERY, resume=True, thread=thread))
+            if state["workflow_status"] != "paused":
+                return
+        raise AssertionError(f"Thread {thread} was still paused after 5 resumes")
 
     async def snapshot(self, thread):
         return await self.storages[thread].read(snapshot_key(thread))
