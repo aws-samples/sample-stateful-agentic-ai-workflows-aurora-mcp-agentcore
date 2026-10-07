@@ -92,7 +92,7 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
                       data.negative_control.decision.toUpperCase() === 'ALLOW' ? 'is-allow' : 'is-deny'
                     }`}
                   >
-                    {data.negative_control.decision.toUpperCase()}
+                    {data.negative_control.decision.toUpperCase().replace('_', ' ')}
                   </span>
                   {data.negative_control.display_name ?? 'the decoy traveler'}
                 </strong>

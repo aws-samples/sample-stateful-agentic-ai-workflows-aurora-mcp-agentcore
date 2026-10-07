@@ -26,7 +26,7 @@ AWS docs:
   - PostgreSQL RLS: https://www.postgresql.org/docs/current/ddl-rowsecurity.html
 """
 
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -90,6 +90,28 @@ class RlsProbeResponse(BaseModel):
     debug: Optional[dict] = None
 
 
+async def _negative_control(db, traveler_id: str, authorization) -> dict:
+    """Ask for the decoy's record; not applicable when the principal is the decoy itself."""
+    if traveler_id == NEGATIVE_CONTROL_TRAVELER_ID:
+        return {
+            "requested_traveler_id": NEGATIVE_CONTROL_TRAVELER_ID,
+            "display_name": NEGATIVE_CONTROL_DISPLAY_NAME,
+            "decision": "not_applicable",
+            "reason": "the signed-in traveler is the decoy, so this control cannot be denied",
+            "audit_id": None,
+        }
+    negative = await db.check_traveler_authorization(
+        NEGATIVE_CONTROL_TRAVELER_ID, authorization, write_audit=True
+    )
+    return {
+        "requested_traveler_id": negative.traveler_id,
+        "display_name": NEGATIVE_CONTROL_DISPLAY_NAME,
+        "decision": negative.decision,
+        "reason": negative.reason,
+        "audit_id": negative.audit_id,
+    }
+
+
 async def _count(db, table: str, transaction_id: Optional[str]) -> int:
     # table is whitelisted (see ALLOWED_TABLES) so this f-string is safe.
     rows = await db.execute(
@@ -126,11 +148,7 @@ async def rls_probe(
     )
     if not decision.allowed:
         raise HTTPException(status_code=403, detail=str(TravelerAuthorizationError(decision)))
-    negative = await db.check_traveler_authorization(
-        NEGATIVE_CONTROL_TRAVELER_ID,
-        authorization,
-        write_audit=True,
-    )
+    negative = await _negative_control(db, traveler_id, authorization)
 
     for table in tables:
         try:
@@ -206,13 +224,7 @@ async def rls_probe(
             "binding_id": decision.binding_id,
             "audit_id": decision.audit_id,
         },
-        negative_control={
-            "requested_traveler_id": negative.traveler_id,
-            "display_name": NEGATIVE_CONTROL_DISPLAY_NAME,
-            "decision": negative.decision,
-            "reason": negative.reason,
-            "audit_id": negative.audit_id,
-        },
+        negative_control=negative,
         tables=results,
         policies=policies,
         debug=debug,
@@ -278,7 +290,7 @@ async def _count_since(
     return int(rows[0]["n"]) if rows else 0
 
 
-async def _load_policies(db, tables: List[str]) -> List[RlsPolicy]:
+async def _load_policies(db, tables: Sequence[str]) -> List[RlsPolicy]:
     """The real USING clause for each table's policy, from pg_catalog.
 
     The read is best-effort: the counts are the real proof, so a failed lookup is skipped.
@@ -304,22 +316,30 @@ async def _load_policies(db, tables: List[str]) -> List[RlsPolicy]:
     return policies
 
 
-async def _admin_count_or_none(db, kind: str, *, window: str) -> Optional[int]:
+async def _admin_count_or_none(
+    db, kind: str, *, window: Optional[str] = None, key: Optional[str] = None
+) -> Optional[int]:
     """A cross-traveler count, or None when Aurora cannot answer it."""
     try:
-        return await admin_count(db, kind, window=window)
+        return await admin_count(db, kind, window=window, key=key)
     except Exception:  # noqa: BLE001 - an unavailable count is an answer, not a fault
         return None
 
 
-async def _tables_exist(db, tables: tuple) -> bool:
-    """True when every named table exists. ``to_regclass`` needs no privilege on the table."""
-    for table in tables:
-        rows = await db.execute(
-            "SELECT to_regclass(%s) IS NOT NULL AS present", (f"public.{table}",)
-        )
-        if not rows or rows[0]["present"] is not True:
-            return False
+async def _tables_exist(db, tables: Sequence[str]) -> bool:
+    """True when every named table exists; False when Aurora cannot say.
+
+    ``to_regclass`` needs no privilege on the table.
+    """
+    try:
+        for table in tables:
+            rows = await db.execute(
+                "SELECT to_regclass(%s) IS NOT NULL AS present", (f"public.{table}",)
+            )
+            if not rows or rows[0]["present"] is not True:
+                return False
+    except Exception:  # noqa: BLE001 - an unanswerable probe is an answer, not a fault
+        return False
     return True
 
 
@@ -420,11 +440,11 @@ async def session_receipt(
     # the one number on this receipt that has to be beyond argument.
     # "No thread to count" and "no such table" are different answers, so the
     # relation is probed first and the count follows only for a real thread.
-    checkpoint_total = 0
+    checkpoint_total: Optional[int] = 0
     thread_id = request.conversation_id
     checkpoints_exist = await _tables_exist(db, CHECKPOINT_TABLES)
     if checkpoints_exist and thread_id:
-        checkpoint_total = await admin_count(db, "workflow_snapshots", key=thread_id)
+        checkpoint_total = await _admin_count_or_none(db, "workflow_snapshots", key=thread_id)
 
     from backend.agents.phase_05_workflow.service import workflow_store_status
 
@@ -436,6 +456,8 @@ async def session_receipt(
         checkpoint_detail = "no workflow snapshot table in this database, so nothing was written"
     elif thread_id is None:
         checkpoint_detail = "no workflow thread ran in this session"
+    elif checkpoint_total is None:
+        checkpoint_detail = f"workflow snapshots for thread {thread_id} could not be counted"
     elif checkpoint_total:
         checkpoint_detail = f"workflow position externalized into Aurora for thread {thread_id}"
     else:
@@ -444,7 +466,7 @@ async def session_receipt(
     lines.append(ReceiptLine(
         label="Workflow snapshot rows",
         table=", ".join(CHECKPOINT_TABLES),
-        count=checkpoint_total,
+        count=checkpoint_total or 0,
         detail=checkpoint_detail,
     ))
 
@@ -453,7 +475,7 @@ async def session_receipt(
         since=f"last {request.window_minutes} minutes",
         lines=lines,
         authorization_subject=authorization.subject_id if authorization else None,
-        durable_checkpoints=checkpoints_exist and checkpoint_total > 0,
+        durable_checkpoints=checkpoints_exist and bool(checkpoint_total),
         checkpoint_backend=backend_kind,
         checkpoint_backend_durable=backend_durable,
     )

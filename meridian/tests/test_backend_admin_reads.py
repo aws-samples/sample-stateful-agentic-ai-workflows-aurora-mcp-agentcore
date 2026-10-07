@@ -6,6 +6,8 @@ that no unscoped SELECT over a traveler table remains in the two endpoints.
 """
 
 import contextlib
+import re
+from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -22,9 +24,10 @@ IDENTITY = Mock(authorization_context=lambda: AuthorizationContext("aws_iam", "s
 class RecordingDb:
     """Answers each statement by its shape and records what was asked."""
 
-    def __init__(self, *, scoped=17, baseline=22, missing=()):
+    def __init__(self, *, scoped=17, baseline=22, missing=(), no_table=False, probe_error=False):
         self.statements = []
         self.scoped, self.baseline, self.missing = scoped, baseline, set(missing)
+        self.no_table, self.probe_error = no_table, probe_error
         self.check_traveler_authorization = AsyncMock(side_effect=self._decision)
 
     async def _decision(self, traveler_id, authorization, **_):
@@ -45,7 +48,9 @@ class RecordingDb:
                 raise RuntimeError("function backend_admin_count does not exist")
             return [{"n": self.baseline}]
         if "to_regclass" in sql:
-            return [{"present": "workflow_snapshots" not in self.missing}]
+            if self.probe_error:
+                raise RuntimeError("Data API unavailable")
+            return [{"present": not self.no_table}]
         if "pg_policies" in sql:
             return []
         if "current_user" in sql:
@@ -98,9 +103,20 @@ async def test_the_rls_probe_baseline_comes_from_the_definer_function(db):
 async def test_the_rls_probe_defaults_to_the_authenticated_traveler(db):
     response = await diagnostics.rls_probe(diagnostics.RlsProbeRequest(), PRINCIPAL)
     assert response.traveler_id == "trv_meridian_demo"
+    assert response.negative_control["decision"] == "allow"
+    db.check_traveler_authorization.reset_mock()
     decoy = HttpPrincipal("subject", "trv_demo_decoy", "test")
     response = await diagnostics.rls_probe(diagnostics.RlsProbeRequest(), decoy)
     assert response.traveler_id == "trv_demo_decoy"
+    assert response.negative_control["decision"] == "not_applicable"
+    assert response.negative_control["requested_traveler_id"] == "trv_demo_decoy"
+    assert "decoy" in response.negative_control["reason"]
+    assert response.negative_control["audit_id"] is None
+    assert fake_checks(db) == 1
+
+
+def fake_checks(db):
+    return db.check_traveler_authorization.await_count
 
 
 async def test_the_session_receipt_counts_governance_through_the_function(db):
@@ -128,7 +144,7 @@ async def test_a_receipt_without_a_thread_counts_no_snapshots(db):
 
 
 async def test_a_missing_snapshot_table_is_reported_not_counted(monkeypatch):
-    fake = RecordingDb(missing=("workflow_snapshots",))
+    fake = RecordingDb(no_table=True)
     monkeypatch.setattr(diagnostics, "get_rds_data_client", lambda: fake)
     monkeypatch.setattr(diagnostics, "get_agentcore_identity", lambda: IDENTITY)
     request = diagnostics.SessionReceiptRequest(conversation_id="thread-1")
@@ -144,3 +160,50 @@ async def test_an_unavailable_count_degrades_its_line_and_not_the_receipt(monkey
     response = await diagnostics.session_receipt(diagnostics.SessionReceiptRequest(), PRINCIPAL)
     line = next(line for line in response.lines if line.table == "traveler_access_audit")
     assert line.count == 0 and line.detail == "0 allow, 0 deny"
+
+
+def _patch(monkeypatch, fake):
+    monkeypatch.setattr(diagnostics, "get_rds_data_client", lambda: fake)
+    monkeypatch.setattr(diagnostics, "get_agentcore_identity", lambda: IDENTITY)
+
+
+async def test_a_failing_snapshot_count_degrades_its_line_and_not_the_receipt(monkeypatch):
+    fake = RecordingDb(missing=("workflow_snapshots",))
+    _patch(monkeypatch, fake)
+    request = diagnostics.SessionReceiptRequest(conversation_id="thread-1")
+    response = await diagnostics.session_receipt(request, PRINCIPAL)
+    line = next(line for line in response.lines if line.table == "workflow_snapshots")
+    assert line.count == 0 and "could not be counted" in line.detail
+    assert response.durable_checkpoints is False
+
+
+async def test_a_failing_table_probe_degrades_the_receipt_and_not_the_endpoint(monkeypatch):
+    fake = RecordingDb(probe_error=True)
+    _patch(monkeypatch, fake)
+    request = diagnostics.SessionReceiptRequest(conversation_id="thread-1")
+    response = await diagnostics.session_receipt(request, PRINCIPAL)
+    line = next(line for line in response.lines if line.table == "workflow_snapshots")
+    assert line.count == 0 and "no workflow snapshot table" in line.detail
+    assert response.durable_checkpoints is False
+
+
+MIGRATION = Path(__file__).parents[1] / "scripts" / "migrations" / "018_service_logins.sql"
+
+
+def _function_body():
+    sql = MIGRATION.read_text()
+    start = sql.index("CREATE OR REPLACE FUNCTION backend_admin_count(")
+    return sql[start:sql.index("REVOKE ALL ON FUNCTION backend_admin_count", start)]
+
+
+def _kinds_in_source(path):
+    source = Path(path).read_text()
+    return set(re.findall(r'admin_count(?:_or_none)?\(\s*db,\s*"([a-z_]+)"', source))
+
+
+def test_every_kind_the_backend_asks_for_is_a_branch_of_the_function():
+    body = _function_body()
+    branches = set(re.findall(r"'([a-z_]+)'", body))
+    asked = set(RLS_BASELINE_KINDS.values()) | _kinds_in_source(diagnostics.__file__)
+    assert {"audit_allow", "audit_deny", "agent_audit", "workflow_snapshots"} <= asked
+    assert asked - branches == set()
