@@ -38,8 +38,11 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv()
 
 from backend.agentcore.identity import get_agentcore_identity  # noqa: E402
-from backend.agents.phase_05_workflow.workflow import (  # noqa: E402
-    initialize_checkpoint_backend,
+from backend.agents.phase_05_workflow import service  # noqa: E402
+from backend.agents.phase_05_workflow.nodes import WorkflowNodes  # noqa: E402
+from backend.agents.phase_05_workflow.runner import (  # noqa: E402
+    WorkflowCommand,
+    WorkflowConflictError,
 )
 from backend.db.journey_store import (  # noqa: E402
     ScopedDb,
@@ -75,33 +78,35 @@ def scoped(client):
 
 
 async def _run_workflow(
-    thread_id: str, *, resume: bool, after_pause=None, gateway_call_wrapper=None,
+    thread_id: str,
+    *,
+    resume: bool,
+    pause_after: str | None = None,
+    after_pause=None,
+    gateway_wrapper=None,
 ) -> dict:
     """Run the real graph, with the app's own retrieval functions."""
-    from backend.agents.phase_05_workflow.workflow import OrchestrationAgent
-    from backend.agents.phase_05_workflow.memory_recall import workflow_memory_recall
-    from backend.retrieval.availability import retrieval_availability_search
-    from backend.retrieval.hybrid import retrieval_search
-
-    workflow = OrchestrationAgent(
-        search_fn=retrieval_search,
-        availability_fn=retrieval_availability_search,
-        memory_recall_fn=workflow_memory_recall,
+    gateway_call = (
+        gateway_wrapper(WorkflowNodes._configured_gateway) if gateway_wrapper else None
     )
-    if gateway_call_wrapper is not None:
-        workflow._gateway_call = gateway_call_wrapper(workflow._gateway_call)
-    from backend.agents.phase_05_workflow import execution
-    execution.LEASE_SECONDS = LEASE_SECONDS
-    execution.HEARTBEAT_SECONDS = max(1, LEASE_SECONDS // 3)
-    return await execution.run_http_workflow(
-        workflow, QUERY, TRAVELER, thread_id, resume=resume,
-        travelers_count=2, after_pause=after_pause,
+    runner = service.build_workflow_runner(
+        lease_seconds=LEASE_SECONDS,
+        heartbeat_seconds=max(1, LEASE_SECONDS // 3),
+        gateway_call=gateway_call,
     )
+    command = WorkflowCommand(
+        query=QUERY,
+        traveler_id=TRAVELER,
+        thread_id=thread_id,
+        resume=resume,
+        travelers_count=2,
+        pause_after=pause_after,
+    )
+    return await runner.run(command, after_pause=after_pause)
 
 
 async def _worker_one(journey_id: str, thread_id: str) -> None:
     """Pause for review, resume to commit the hold, then stay alive until killed."""
-    os.environ["LANGGRAPH_DEMO_INTERRUPT_AFTER"] = "hold"
     reviewed = await _run_workflow(thread_id, resume=False)
     if reviewed.get("workflow_status") != "paused":
         raise RuntimeError("A fresh run must stop for the traveler's review before any hold")
@@ -112,7 +117,9 @@ async def _worker_one(journey_id: str, thread_id: str) -> None:
         print(json.dumps({"event": "paused", "status": state["workflow_status"]}), flush=True)
         await asyncio.Event().wait()
 
-    await _run_workflow(thread_id, resume=True, after_pause=wait_for_kill)
+    await _run_workflow(
+        thread_id, resume=True, pause_after="hold", after_pause=wait_for_kill
+    )
 
 
 # ------------------------------------------------------------------- driver
@@ -121,13 +128,26 @@ async def _worker_one(journey_id: str, thread_id: str) -> None:
 async def _read_committed_checkpoint(client, thread_id: str) -> dict | None:
     rows = await client.execute(
         """
-        SELECT checkpoint_id, parent_checkpoint_id
-          FROM checkpoints WHERE thread_id = %s
-         ORDER BY checkpoint_id DESC LIMIT 1
+        SELECT snapshot_seq::TEXT AS checkpoint_id, status
+          FROM workflow_snapshots WHERE session_id = %s
+         ORDER BY snapshot_seq DESC LIMIT 1
         """,
         (thread_id,),
     )
     return rows[0] if rows else None
+
+
+async def read_newest_snapshot(client, thread_id: str) -> dict | None:
+    """The newest saved snapshot envelope for a thread, as Aurora holds it."""
+    rows = await client.execute(
+        """
+        SELECT snapshot::TEXT AS snapshot
+          FROM workflow_snapshots WHERE session_id = %s
+         ORDER BY snapshot_seq DESC LIMIT 1
+        """,
+        (thread_id,),
+    )
+    return json.loads(rows[0]["snapshot"]) if rows else None
 
 
 async def _holds_for(client, journey_id: str) -> list[dict]:
@@ -148,10 +168,9 @@ async def _purge(client, journey_id: str, thread_id: str) -> None:
             await client.execute(
                 f"DELETE FROM {table} WHERE booking_id = %s", (row["booking_id"],)
             )
-    for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
-        await client.execute(
-            f"DELETE FROM {table} WHERE thread_id = %s", (thread_id,)
-        )
+    await client.execute(
+        "DELETE FROM workflow_snapshots WHERE session_id = %s", (thread_id,)
+    )
     await client.execute(
         "DELETE FROM journey_executions WHERE thread_id = %s", (thread_id,)
     )
@@ -200,15 +219,12 @@ def _verify_replacement(state: dict, executions: list[dict], first_worker: str) 
 async def main(keep: bool) -> int:
     client = get_rds_data_client()
 
-    backend = await initialize_checkpoint_backend()
-    say("backend", f"{backend.kind} · durable={backend.durable}")
-    if not backend.durable:
-        say("abort", "checkpoints are not durable; nothing to demonstrate", RED)
-        return 1
+    store = service.workflow_store_status()
+    say("backend", f"{store['kind']} · durable={store['durable']}")
 
     async with scoped(client) as tx:
         db = ScopedDb(client, tx)
-        journey_id = await create_journey(db, TRAVELER, backend.kind)
+        journey_id = await create_journey(db, TRAVELER, store["kind"])
         thread_id = f"demo-{uuid.uuid4().hex[:10]}"
         await bind_thread(db, journey_id, thread_id)
     say("journey", f"{journey_id} · thread {thread_id}")
@@ -237,15 +253,11 @@ async def main(keep: bool) -> int:
         await asyncio.wait_for(child.wait(), timeout=10)
         say("kill", f"worker 1 is gone (exit {child.returncode})", RED)
 
-        from fastapi import HTTPException
-        os.environ.pop("LANGGRAPH_DEMO_INTERRUPT_AFTER", None)
         for attempt in range(60):
             try:
                 state = await _run_workflow(thread_id, resume=True)
                 break
-            except HTTPException as exc:
-                if exc.status_code != 409:
-                    raise
+            except WorkflowConflictError:
                 if attempt == 0:
                     say("worker 2", "takeover refused until the lease and any interrupted transaction clear")
                 await asyncio.sleep(3)
@@ -278,9 +290,9 @@ async def main(keep: bool) -> int:
         say("hold", "same booking and original expiry after restart", GREEN)
 
         history = await client.execute(
-            "SELECT count(*) AS n FROM checkpoints WHERE thread_id = %s", (thread_id,)
+            "SELECT count(*) AS n FROM workflow_snapshots WHERE session_id = %s", (thread_id,)
         )
-        say("aurora", f"checkpoints on this thread: {history[0]['n']}")
+        say("aurora", f"workflow snapshots on this thread: {history[0]['n']}")
         return 0
     finally:
         if child.returncode is None:

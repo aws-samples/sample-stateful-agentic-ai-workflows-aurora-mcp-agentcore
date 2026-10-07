@@ -87,14 +87,15 @@ PHASE_CATALOG: Dict[int, PhaseSpec] = {
     5: PhaseSpec(
         phase=5,
         label="Orchestration Agent",
-        primary_agent="OrchestrationAgent",
-        agent_file="agents/phase_05_workflow/workflow.py",
-        method="LangGraph StateGraph (classify → branch → synthesize)",
+        primary_agent="WorkflowRunner",
+        agent_file="agents/phase_05_workflow/graph.py",
+        method="Strands Graph (classify → branch → synthesize)",
         specialists=("SearchAgent", "PackageAgent"),
         skills=(
-            SkillSpec("classify", "OrchestrationAgent", "classify_intent(state)", "agents/phase_05_workflow/workflow.py"),
-            SkillSpec("checkpoint", "PostgresSaver", "save_checkpoint(thread_id, state)", "agents/phase_05_workflow/workflow.py"),
-            SkillSpec("synthesize", "OrchestrationAgent", "synthesize_reply(state)", "agents/phase_05_workflow/workflow.py"),
+            SkillSpec("classify", "WorkflowNodes", "classify(state)", "agents/phase_05_workflow/nodes.py"),
+            SkillSpec("snapshot", "SnapshotSessionManager", "AuroraSnapshotStorage.write(key, data)", "agents/phase_05_workflow/snapshot_storage.py"),
+            SkillSpec("hold", "WorkflowNodes", "hold(state, config)", "agents/phase_05_workflow/nodes.py"),
+            SkillSpec("synthesize", "WorkflowNodes", "synthesize(state)", "agents/phase_05_workflow/nodes.py"),
         ),
     ),
 }

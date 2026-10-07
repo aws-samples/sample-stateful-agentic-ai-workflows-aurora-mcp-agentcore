@@ -19,7 +19,7 @@ def restore_logging():
 def test_backend_module_loggers_follow_the_configured_level_and_log_once(capsys):
     setup_logging(level="INFO", json_output=False)
 
-    logging.getLogger("backend.agents.phase_05_workflow.workflow").info("hold released")
+    logging.getLogger("backend.agents.phase_05_workflow.runner").info("hold released")
     logging.getLogger("backend.routers.chat").debug("too chatty")
 
     lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]

@@ -251,10 +251,9 @@ async def rls_probe(
 # receipt is itself subject to the governance it reports on.
 # =============================================================================
 
-# LangGraph's checkpoint tables only exist once PostgresSaver has run. Their
-# absence is a legitimate answer ("the durable store was never configured"),
-# not an error.
-CHECKPOINT_TABLES = ("checkpoints", "checkpoint_writes")
+# The workflow snapshot table exists once migration 014 has run. Its absence is
+# a legitimate answer ("the durable store was never configured"), not an error.
+CHECKPOINT_TABLES = ("workflow_snapshots",)
 
 
 class ReceiptLine(BaseModel):
@@ -416,7 +415,7 @@ async def session_receipt(
     for table in CHECKPOINT_TABLES:
         count = await _count_since(
             db,
-            f"SELECT COUNT(*) AS n FROM {table} WHERE thread_id = %s",
+            f"SELECT COUNT(*) AS n FROM {table} WHERE session_id = %s",
             (thread_id,),
         ) if thread_id else None
         if count is None and thread_id is None:
@@ -430,23 +429,23 @@ async def session_receipt(
             checkpoints_exist = True
             checkpoint_total += count
 
-    from backend.agents.phase_05_workflow.workflow import checkpoint_backend_status
+    from backend.agents.phase_05_workflow.service import workflow_store_status
 
-    backend_status = checkpoint_backend_status()
+    backend_status = workflow_store_status()
     backend_kind = str(backend_status.get("kind") or "not initialized")
     backend_durable = bool(backend_status.get("durable"))
 
     if not checkpoints_exist:
-        checkpoint_detail = "no checkpoint tables in this database, so nothing was written"
+        checkpoint_detail = "no workflow snapshot table in this database, so nothing was written"
     elif thread_id is None:
         checkpoint_detail = "no workflow thread ran in this session"
     elif checkpoint_total:
         checkpoint_detail = f"workflow position externalized into Aurora for thread {thread_id}"
     else:
-        checkpoint_detail = f"thread {thread_id} wrote no checkpoint rows"
+        checkpoint_detail = f"thread {thread_id} wrote no workflow snapshot rows"
 
     lines.append(ReceiptLine(
-        label="LangGraph checkpoint rows",
+        label="Workflow snapshot rows",
         table=", ".join(CHECKPOINT_TABLES),
         count=checkpoint_total,
         detail=checkpoint_detail,

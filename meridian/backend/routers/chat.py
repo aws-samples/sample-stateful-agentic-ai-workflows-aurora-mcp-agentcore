@@ -6,7 +6,7 @@ Handles chat interactions with the AI travel concierge across five phases:
 - Phase 2: Via MCP (awslabs.postgres-mcp-server) abstraction
 - Phase 3: Hybrid retrieval (semantic + lexical) + Cohere rerank
 - Phase 4: Production concierge with AgentCore Runtime, Gateway, Memory
-- Phase 5: LangGraph workflow orchestration
+- Phase 5: Strands Graph workflow orchestration
 
 AWS docs (by phase):
   Phase 1/2/3/4 data plane — RDS Data API:
@@ -35,9 +35,8 @@ from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse
 from backend.activity import ActivityEntry, Product, TraceTelemetry, create_activity
 from backend.chat_stream import chat_event_sink
-from backend.retrieval.hybrid import retrieval_search
 from backend.retrieval.availability import retrieval_availability_search
-from backend.agents.phase_05_workflow.memory_recall import workflow_memory_recall
+from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agents.phase_04_production.concierge import runtime_model_id
@@ -1533,40 +1532,30 @@ async def orchestration_workflow(
     travelers_count: int = 1,
     review_only: bool = False,
 ) -> tuple[List[Product], List[ActivityEntry], str, str, str, bool]:
-    """
-    Phase 5: LangGraph StateGraph orchestrates classify → branch → synthesize.
+    """Phase 5: a Strands Graph classifies, branches and saves each step in Aurora.
 
-    Reuses Phase 3's retrieval search and availability check as graph nodes so the
-    workflow story is "explicit edges + checkpoints" rather than "different
-    search code." The process-wide checkpoint backend is pooled PostgresSaver
-    when configured, otherwise an explicitly ephemeral MemorySaver.
+    Reuses Phase 3's retrieval and availability as graph steps, so the workflow
+    story is "explicit edges and saved steps" rather than different search code.
     """
-    from backend.agents.phase_05_workflow.workflow import (
-        OrchestrationAgent,
-        WorkflowAuthorizationError,
-    )
+    from backend.agents.phase_05_workflow import service
+    from backend.agents.phase_05_workflow.runner import WorkflowCommand, WorkflowConflictError
+    from backend.agents.phase_05_workflow.state import WorkflowAuthorizationError
+    from backend.db.journey_store import ExecutionLeaseLostError
 
-    workflow = OrchestrationAgent(
-        search_fn=retrieval_search,
-        availability_fn=retrieval_availability_search,
-        memory_recall_fn=workflow_memory_recall,
+    command = WorkflowCommand(
+        query=query,
+        traveler_id=traveler_id,
+        thread_id=conversation_id or f"phase5-{uuid.uuid4().hex[:12]}",
+        resume=resume,
+        travelers_count=travelers_count,
         review_only=review_only,
     )
     try:
-        from backend.agents.phase_05_workflow.execution import run_http_workflow
-        final_state = await run_http_workflow(
-            workflow,
-            query,
-            traveler_id=traveler_id,
-            conversation_id=conversation_id or "",
-            resume=resume,
-            travelers_count=travelers_count,
-        )
+        final_state = await service.build_workflow_runner().run(command)
     except WorkflowAuthorizationError as exc:
-        # Refused, not broken: the thread exists and belongs to someone else.
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except (WorkflowConflictError, ExecutionLeaseLostError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     raw_activities = final_state.get("activities", []) or []
     activities = [_dict_to_activity_entry(a) for a in raw_activities]
@@ -2024,7 +2013,7 @@ async def chat(
                 error=str(e),
             )
 
-    # Phase 5: LangGraph workflow with explicit StateGraph + checkpointer.
+    # Phase 5: Strands Graph workflow with snapshots saved in Aurora.
     if request.phase == 5:
         from backend.memory.store import DEMO_TRAVELER_ID
         try:
@@ -2097,6 +2086,12 @@ async def chat(
         except HTTPException:
             # Preserve authorization/conflict HTTP status from the workflow.
             raise
+        except HoldOutcomeUnknown as e:
+            log_error("orchestration_workflow", error=str(e))
+            raise HTTPException(
+                status_code=503,
+                detail=f"{e} Re-read the saved journey before retrying.",
+            ) from e
         except TravelerAuthorizationError as e:
             log_error("workflow_authorization", error=str(e))
             raise HTTPException(status_code=403, detail=str(e)) from e

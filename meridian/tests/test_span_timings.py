@@ -19,11 +19,9 @@ import backend.retrieval.hybrid as hybrid
 import backend.routers.chat as chat_router
 from backend import timing
 from backend.agentcore.runtime import RuntimeDecision, _apply_result
-from backend.agents.phase_05_workflow.workflow import _with_checkpoint_timings
 from backend.agents.phase_04_production.concierge import ProductionAgent
 from backend.agents.phase_03_retrieval.search_agent import SearchAgent
 from backend.authorization import AuthorizationContext
-from backend.db.aurora_dataapi_saver import AuroraDataApiSaver
 from backend.db.rds_data_client import RDSDataClient, ScopeTimings
 from backend.llm_polish import PolishResult
 
@@ -424,39 +422,3 @@ def test_runtime_turn_span_has_no_number_when_the_runtime_reports_none():
     span = _span(spans, "AgentCore Runtime · turn complete")
     assert _ms(span) is None
     assert "None" not in span.details and " 0 ms" not in span.details
-
-
-# ------------------------------------------------------------ Aurora checkpoints
-
-class FakeCheckpointClient:
-    def __init__(self, clock: FakeClock) -> None:
-        self.clock = clock
-
-    async def execute(self, _sql, _params=None):
-        self.clock.spend(53)
-        return []
-
-
-def test_saver_times_each_put_and_the_workflow_attaches_it_to_its_checkpoint_span(clock):
-    saver = AuroraDataApiSaver(FakeCheckpointClient(clock))
-    node = {"id": "node-span", "title": "Workflow node: search", "execution_time_ms": 956}
-    checkpoint = {"id": "checkpoint-span", "title": "Checkpoint · AuroraDataApiSaver.put",
-                  "execution_time_ms": None}
-    asyncio.run(saver.aput(
-        {"configurable": {"thread_id": "t1", "checkpoint_ns": "", "checkpoint_id": None}},
-        {"id": "cp-1", "channel_values": {"activities": [node, checkpoint]}},
-        {"step": 1},
-        {"activities": "1"},
-    ))
-    # One blob and one checkpoint row, 53 ms each, measured as one put.
-    assert saver.put_timings == {"checkpoint-span": 106}
-
-    timed = _with_checkpoint_timings([node, checkpoint], saver.put_timings)
-    assert _ms(timed[1]) == 106
-    assert _ms(timed[0]) == 956
-    assert saver.put_timings == {}
-
-
-def test_checkpoint_spans_keep_no_number_when_the_saver_measures_nothing():
-    checkpoint = {"id": "c", "title": "Checkpoint · MemorySaver.put", "execution_time_ms": None}
-    assert _with_checkpoint_timings([checkpoint], None) == [checkpoint]

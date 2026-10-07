@@ -39,7 +39,7 @@ class RecordingDb:
 
 
 def checkpoint_queries(db: RecordingDb) -> list[tuple[str, tuple]]:
-    return [(sql, params) for sql, params in db.queries if re.search(r"\bFROM checkpoint", sql)]
+    return [(sql, params) for sql, params in db.queries if re.search(r"\bFROM workflow_snapshots", sql)]
 
 
 def test_checkpoint_count_is_scoped_to_the_thread():
@@ -50,7 +50,7 @@ def test_checkpoint_count_is_scoped_to_the_thread():
         asyncio.run(
             diagnostics._count_since(
                 db,
-                f"SELECT COUNT(*) AS n FROM {table} WHERE thread_id = %s",
+                f"SELECT COUNT(*) AS n FROM {table} WHERE session_id = %s",
                 (request.conversation_id,),
             )
         )
@@ -58,7 +58,7 @@ def test_checkpoint_count_is_scoped_to_the_thread():
     counted = checkpoint_queries(db)
     assert counted, "the receipt must count checkpoint tables"
     for sql, params in counted:
-        assert "WHERE thread_id = %s" in sql, f"unscoped checkpoint count: {sql}"
+        assert "WHERE session_id = %s" in sql, f"unscoped checkpoint count: {sql}"
         assert params == ("thread-under-test",)
 
 
@@ -67,14 +67,14 @@ def test_a_foreign_thread_does_not_count_toward_this_session():
     db = RecordingDb()
     mine = asyncio.run(
         diagnostics._count_since(
-            db, "SELECT COUNT(*) AS n FROM checkpoints WHERE thread_id = %s", ("mine",)
+            db, "SELECT COUNT(*) AS n FROM workflow_snapshots WHERE session_id = %s", ("mine",)
         )
     )
     assert mine == 0
 
     sql, params = checkpoint_queries(db)[0]
     assert params == ("mine",), "the thread id has to reach the query as a parameter"
-    assert "thread_id" in sql
+    assert "session_id" in sql
 
 
 def test_request_model_accepts_a_conversation_id():

@@ -37,7 +37,7 @@ def isolated_unit_environment(request, monkeypatch):
         "LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP": "false",
     }.items():
         monkeypatch.setenv(name, value)
-    for name in ("AWS_SESSION_TOKEN", "LANGGRAPH_CHECKPOINT_DSN", "LANGGRAPH_DEMO_INTERRUPT_AFTER"):
+    for name in ("AWS_SESSION_TOKEN", "LANGGRAPH_CHECKPOINT_DSN"):
         monkeypatch.delenv(name, raising=False)
 
     attempted = []
@@ -185,3 +185,7 @@ TRIP_TYPES = [
     "Family Trips",
     "Business Travel",
 ]
+
+
+# A3 rewrites these against examples/langgraph/; until then they stay out of collection.
+collect_ignore = ["langgraph_example_pending"]

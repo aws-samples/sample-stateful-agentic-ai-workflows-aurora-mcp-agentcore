@@ -73,27 +73,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     print(f"AWS Region: {os.getenv('AWS_DEFAULT_REGION', 'us-east-1')}")
     print(f"Log level: {os.getenv('LOG_LEVEL', 'INFO')} · agent verbose: {os.getenv('LOG_AGENT_VERBOSE', 'true')}")
 
-    checkpoint_required = os.getenv(
-        "LANGGRAPH_CHECKPOINT_REQUIRED", "false"
-    ).lower() in {"1", "true", "yes", "on"}
-    checkpoint_startup = os.getenv(
-        "LANGGRAPH_CHECKPOINT_INIT_ON_STARTUP", "false"
-    ).lower() in {"1", "true", "yes", "on"}
-    if checkpoint_required or checkpoint_startup:
-        from backend.agents.phase_05_workflow.workflow import (
-            initialize_checkpoint_backend,
-        )
-
-        await initialize_checkpoint_backend()
-
     try:
         yield
     finally:
-        from backend.agents.phase_05_workflow.workflow import (
-            close_checkpoint_backend,
-        )
-
-        await close_checkpoint_backend()
         print("Shutting down Meridian Backend...")
 
 
@@ -162,11 +144,11 @@ async def _health_payload() -> HealthResponse:
     fields remain the backend's configured checkpoint state, not a
     second live probe.
     """
-    from backend.agents.phase_05_workflow.workflow import checkpoint_backend_status
+    from backend.agents.phase_05_workflow.service import workflow_store_status
     from backend.health_probe import probe_aurora
 
     model_id = config.bedrock.model_id
-    checkpoint = checkpoint_backend_status()
+    checkpoint = workflow_store_status()
     aurora = await probe_aurora()
     return HealthResponse(
         status="healthy" if aurora.ok else "degraded",

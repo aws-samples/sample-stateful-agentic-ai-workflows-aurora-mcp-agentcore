@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 from pathlib import Path
 import sys
 import uuid
@@ -24,12 +23,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.kill_and_resume_demo import (  # noqa: E402
     TRAVELER, ScopedDb, _holds_for, _purge, _run_workflow, bind_thread,
-    create_journey, get_rds_data_client, initialize_checkpoint_backend, say, scoped,
+    create_journey, get_rds_data_client, read_newest_snapshot, say, scoped,
 )
 from backend.agentcore.gateway import AgentCoreGatewayAdapter  # noqa: E402
 from backend.agents.phase_05_workflow.governed_hold import (  # noqa: E402
     HOLD_TOOL, HoldOutcomeUnknown, hold_arguments, place_governed_hold,
 )
+from backend.agents.phase_05_workflow.graph import fold_snapshot  # noqa: E402
+from backend.agents.phase_05_workflow.service import workflow_store_status  # noqa: E402
 
 EXPECTED_LOSS_EXIT = 75
 
@@ -51,14 +52,13 @@ def drop_committed_hold_reply(call_tool):
 
 
 async def worker(thread_id: str) -> int:
-    os.environ.pop("LANGGRAPH_DEMO_INTERRUPT_AFTER", None)
     paused = await _run_workflow(thread_id, resume=False)
     if paused.get("workflow_status") != "paused":
         return 1  # A fresh run must stop for the traveler's review before any hold.
     try:
         # The traveler's resume is what confirms the hold.
         await _run_workflow(
-            thread_id, resume=True, gateway_call_wrapper=drop_committed_hold_reply,
+            thread_id, resume=True, gateway_wrapper=drop_committed_hold_reply,
         )
     except HoldOutcomeUnknown:
         return EXPECTED_LOSS_EXIT
@@ -84,14 +84,11 @@ def check_denials(intent: dict, thread_id: str) -> None:
 
 
 async def main() -> int:
-    os.environ.pop("LANGGRAPH_DEMO_INTERRUPT_AFTER", None)
     client = get_rds_data_client()
-    backend = await initialize_checkpoint_backend()
-    if not backend.durable:
-        raise RuntimeError("A durable Aurora saver is required")
+    store = workflow_store_status()
     async with scoped(client) as tx:
         db = ScopedDb(client, tx)
-        journey_id = await create_journey(db, TRAVELER, backend.kind)
+        journey_id = await create_journey(db, TRAVELER, store["kind"])
         thread_id = f"loss-{uuid.uuid4().hex[:10]}"
         await bind_thread(db, journey_id, thread_id)
     say("journey", f"{journey_id} · thread {thread_id}")
@@ -116,8 +113,10 @@ async def main() -> int:
         before = await _holds_for(client, journey_id)
         if len(before) != 1 or before[0]["booking_id"] != lost["booking_id"]:
             raise AssertionError("Expected exactly one committed hold before retry")
-        checkpoint = await backend.saver.aget_tuple({"configurable": {"thread_id": thread_id}})
-        values = checkpoint.checkpoint["channel_values"]
+        snapshot = await read_newest_snapshot(client, thread_id)
+        if snapshot is None:
+            raise AssertionError("No workflow snapshot reached Aurora")
+        values = fold_snapshot(snapshot)
         intent = values["hold_intent"]
         if values.get("hold_id") or intent["booking_id"] != before[0]["booking_id"]:
             raise AssertionError("Expected the prepared intent without a hold acknowledgement")
@@ -133,7 +132,7 @@ async def main() -> int:
             raise AssertionError("Replacement workflow did not finish its resume")
         if result.get("hold_id") != before[0]["booking_id"]:
             raise AssertionError("Replacement worker did not receive the persisted hold")
-        if result.get("resumed_from_checkpoint") != checkpoint.config["configurable"]["checkpoint_id"]:
+        if result.get("resumed_from_checkpoint") != snapshot.get("created_at"):
             raise AssertionError("Replacement worker resumed a different checkpoint")
         executions = await client.execute(
             "SELECT status, worker_id FROM journey_executions "

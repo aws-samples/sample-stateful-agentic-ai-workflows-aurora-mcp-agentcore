@@ -9,12 +9,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.agents.phase_05_workflow.workflow import OrchestrationAgent
+from backend.agents.phase_05_workflow.nodes import WorkflowNodes
 from backend.db.journey_document import _hold, _pending_decision, _recommendations, _selected_plan
 
 
 CHECKPOINT = {"status": "committed", "thread_id": "thread-test", "checkpoint_id": "cp-test"}
 HOLD_INTENT = {"hold_request_id": "request-test", "package_id": "PKG-1"}
+
+
+async def unused_step(*_args, **_kwargs):
+    raise AssertionError("the hold node must not search")
 
 
 @pytest.mark.parametrize("completed", [
@@ -102,10 +106,8 @@ def test_hold_reports_the_gateway_receipt_even_when_it_is_old(monkeypatch, repla
     monkeypatch.setattr("backend.agentcore.identity.get_agentcore_identity", lambda: SimpleNamespace(authorization_context=lambda: {}))
     monkeypatch.setattr("backend.memory.store.get_memory_store", lambda: SimpleNamespace(recall_preferences=recall_preferences))
     monkeypatch.setattr("backend.agentcore.gateway.get_agentcore_gateway", lambda: SimpleNamespace(call_tool=call_tool))
-    agent = OrchestrationAgent.__new__(OrchestrationAgent)
-    agent.checkpointer_kind = "unit-test"
-    agent.checkpointer_durable = False
-    result = asyncio.run(agent._node_hold({
+    nodes = WorkflowNodes(unused_step, unused_step)
+    result = asyncio.run(nodes.hold({
         "traveler_id": "traveler-test", "conversation_id": "thread-test", "journey_id": "journey-test",
         "packages": [{"product_id": "PKG-1", "price": 100, "available_sizes": ["2 nights"]}],
         "hold_intent": {"package_id": "PKG-1", "duration": "2 nights", "quantity": 2, "unit_price": 100, "hold_request_id": "request-test", "booking_id": "HLD-TEST", "fingerprint": "test"},
@@ -149,10 +151,8 @@ def test_a_policy_denial_leaves_the_plan_unheld(monkeypatch):
     monkeypatch.setattr("backend.agentcore.identity.get_agentcore_identity", lambda: SimpleNamespace(authorization_context=lambda: {}))
     monkeypatch.setattr("backend.memory.store.get_memory_store", lambda: SimpleNamespace(recall_preferences=recall_preferences))
     monkeypatch.setattr("backend.agentcore.gateway.get_agentcore_gateway", lambda: SimpleNamespace(call_tool=call_tool))
-    agent = OrchestrationAgent.__new__(OrchestrationAgent)
-    agent.checkpointer_kind = "unit-test"
-    agent.checkpointer_durable = False
-    result = asyncio.run(agent._node_hold({
+    nodes = WorkflowNodes(unused_step, unused_step)
+    result = asyncio.run(nodes.hold({
         "traveler_id": "traveler-test", "conversation_id": "thread-test", "journey_id": "journey-test",
         "packages": [{"product_id": "PKG-1", "price": 100, "available_sizes": ["2 nights"]}],
         "hold_intent": {"package_id": "PKG-1", "duration": "2 nights", "quantity": 2, "unit_price": 100, "hold_request_id": "request-test", "booking_id": "HLD-TEST", "fingerprint": "test"},

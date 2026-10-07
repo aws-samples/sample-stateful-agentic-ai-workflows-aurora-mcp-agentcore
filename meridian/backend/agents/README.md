@@ -20,7 +20,7 @@ numbered guide for the running code, demo prompt, evidence and takeaway.
 | 4 | **Production Agent** | `phase_04_production/concierge.py` | Identity, traveler grant, RLS read and write around the managed runtime |
 | 4 | Concierge runtime | `../../meridian_agentcore/app/MeridianConcierge/main.py` | Strands agent in AgentCore Runtime: tools from AgentCore Gateway over MCP, AgentCore Memory session, Cedar-governed hold and booking confirmation |
 | 4 | Traveler Memory Agent | `phase_04_production/memory_agent.py` | `@tool` recall / persist for Aurora memory |
-| 5 | **Orchestration Agent** | `phase_05_workflow/workflow.py` | LangGraph `StateGraph` + Aurora checkpoints; the hold node places its courtesy hold through the AgentCore Gateway tool under Cedar (`phase_05_workflow/governed_hold.py`) |
+| 5 | **Orchestration Agent** | `phase_05_workflow/graph.py` | Strands `Graph` + Aurora `workflow_snapshots`; the hold node places its courtesy hold through the AgentCore Gateway tool under Cedar (`phase_05_workflow/governed_hold.py`) |
 
 ## Live API routing (`backend/routers/chat.py`)
 
@@ -30,7 +30,7 @@ numbered guide for the running code, demo prompt, evidence and takeaway.
 | 2 | `mcp_search()`: MCP only (postgres-mcp-server) | No (reference only) |
 | 3 | `retrieval_supervisor_search()`: Strands + Bedrock delegation | **Yes** (supervisor, SearchAgent, PackageAgent, and read-only pricing specialist) |
 | 4 | `production_search()` → `ProductionAgent.process_turn()` → AgentCore Runtime (which calls the gateway tools); `production_hold()` → `process_hold()` for the one-click hold | **Yes** (concierge + TravelerMemoryAgent; the runtime agent lives in `meridian_agentcore/app/MeridianConcierge`) |
-| 5 | `orchestration_workflow()` → `OrchestrationAgent` | LangGraph (not Strands) |
+| 5 | `orchestration_workflow()` → `WorkflowRunner` | **Yes** (Strands `Graph`; snapshots saved in Aurora) |
 
 The Phase 1 and 2 agent modules show the Strands structure for those patterns; the API runs the same SQL and MCP steps without the model loop, so their results do not depend on model tool selection. Phases 3 to 5 import their agent modules at runtime.
 
