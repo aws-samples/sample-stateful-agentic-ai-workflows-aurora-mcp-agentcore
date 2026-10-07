@@ -105,7 +105,7 @@ A Data API transaction keeps the RLS role and traveler scope together for one
 unit of work; it is not long-lived workflow state. See
 [docs/STATEFUL_ARCHITECTURE.md](docs/STATEFUL_ARCHITECTURE.md).
 
-![Recovery desk before a run: the traveler-reported disruption, the 15-minute courtesy hold explanation and the Start recovery action](docs/meridian-recovery.jpg)
+![Recovery desk paused at a saved step: the shortlist saved to Aurora and the journey continuity panel](docs/meridian-recovery.jpg)
 
 ## Recovery behavior
 
