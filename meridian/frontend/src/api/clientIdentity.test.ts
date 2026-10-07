@@ -11,6 +11,7 @@ import {
   sendChatMessage,
   stopRuntimeSession,
 } from './client';
+import { requestJson } from './request';
 
 afterEach(() => { setAccessTokenProvider(null); vi.unstubAllGlobals(); });
 
@@ -46,6 +47,13 @@ describe('the bearer token', () => {
       .catch(() => undefined);
     expect(request().url).toMatch(/\/chat\/stream$/);
     expect(request().headers.get('Authorization')).toBe('Bearer access.jwt');
+  });
+
+  it('is withheld from a request to any other origin', async () => {
+    setAccessTokenProvider(() => 'access.jwt');
+    const request = stubFetch({});
+    await requestJson('https://elsewhere.example.test/api/me');
+    expect(request().headers.has('Authorization')).toBe(false);
   });
 
   it('is absent when nobody signed in', async () => {

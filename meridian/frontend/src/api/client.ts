@@ -1,8 +1,8 @@
 /**
  * API client for Meridian backend
  */
-import { requestJson } from './request';
-import { getAccessToken } from '../auth/accessToken';
+import { authorizedFetch, requestJson } from './request';
+import { setBearerOrigin } from '../auth/accessToken';
 import { CURRENT_TRAVELER } from './currentTraveler';
 import { readChatStream, type ChatStreamEvent } from './chatStream';
 import type {
@@ -73,13 +73,7 @@ export function healthOriginFor(apiBase: string, fallbackOrigin: string): string
   }
 }
 
-function apiHeaders(json = false): HeadersInit {
-  const token = getAccessToken();
-  return {
-    ...(json ? { 'Content-Type': 'application/json' } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export function healthUrlsFor(origin: string): string[] {
   const normalized = trimTrailingSlash(origin);
@@ -88,9 +82,10 @@ export function healthUrlsFor(origin: string): string[] {
   return [`${normalized}/api/health`];
 }
 
-const HEALTH_URL_CANDIDATES = healthUrlsFor(
-  healthOriginFor(API_BASE, BACKEND_ORIGIN),
-);
+const API_ORIGIN = healthOriginFor(API_BASE, BACKEND_ORIGIN);
+const HEALTH_URL_CANDIDATES = healthUrlsFor(API_ORIGIN);
+// The access token goes to the API's origin and nowhere else.
+setBearerOrigin(API_ORIGIN);
 
 /**
  * Fetch all products from the backend
@@ -117,14 +112,14 @@ export async function fetchProduct(productId: string): Promise<Product> {
  */
 export async function sendChatMessage(request: ChatRequest, signal?: AbortSignal, onEvent?: (event: ChatStreamEvent) => void): Promise<ChatResponse> {
   if (request.phase === 4 && onEvent) {
-    const response = await fetch(`${API_BASE}/chat/stream`, {
+    const response = await authorizedFetch(`${API_BASE}/chat/stream`, {
       method: 'POST', signal, cache: 'no-store',
-      headers: { ...apiHeaders(true), Accept: 'text/event-stream' }, body: JSON.stringify(request),
+      headers: { ...JSON_HEADERS, Accept: 'text/event-stream' }, body: JSON.stringify(request),
     });
     return readChatStream(response, onEvent, signal);
   }
   return requestJson(`${API_BASE}/chat`, {
-    method: 'POST', signal, headers: apiHeaders(true), body: JSON.stringify(request),
+    method: 'POST', signal, headers: JSON_HEADERS, body: JSON.stringify(request),
   });
 }
 
@@ -133,7 +128,6 @@ export async function sendChatMessage(request: ChatRequest, signal?: AbortSignal
  */
 export async function fetchMemoryProfile(travelerId = CURRENT_TRAVELER, signal?: AbortSignal): Promise<MemoryProfileResponse> {
   return requestJson(`${API_BASE}/memory/${encodeURIComponent(travelerId)}`, {
-    headers: apiHeaders(),
     signal,
   });
 }
@@ -147,7 +141,7 @@ export async function updateMemoryFact(
     `${API_BASE}/memory/${encodeURIComponent(travelerId)}/facts/${encodeURIComponent(key)}`,
     {
       method: 'PATCH',
-      headers: apiHeaders(true),
+      headers: JSON_HEADERS,
       body: JSON.stringify({ value }),
     },
   );
@@ -156,7 +150,7 @@ export async function updateMemoryFact(
 export async function deleteMemoryFact(travelerId: string, key: string): Promise<void> {
   return requestJson(
     `${API_BASE}/memory/${encodeURIComponent(travelerId)}/facts/${encodeURIComponent(key)}`,
-    { method: 'DELETE', headers: apiHeaders() },
+    { method: 'DELETE' },
   );
 }
 
@@ -196,13 +190,13 @@ export async function searchProducts(query: string, phase: 1 | 2 | 3 = 3): Promi
  */
 export async function confirmBooking(request: BookingRequest, signal?: AbortSignal): Promise<BookingResponse> {
   return requestJson(`${API_BASE}/chat/book`, {
-    method: 'POST', signal, headers: apiHeaders(true), body: JSON.stringify(request),
+    method: 'POST', signal, headers: JSON_HEADERS, body: JSON.stringify(request),
   });
 }
 
 export async function processOrder(request: OrderRequest, signal?: AbortSignal): Promise<OrderResponse> {
   return requestJson(`${API_BASE}/chat/order`, {
-    method: 'POST', signal, headers: apiHeaders(true), body: JSON.stringify(request),
+    method: 'POST', signal, headers: JSON_HEADERS, body: JSON.stringify(request),
   });
 }
 
@@ -275,7 +269,7 @@ export async function fetchRlsProbe(
 ): Promise<RlsProbeResponse> {
   return requestJson(`${API_BASE}/diagnostics/rls-probe`, {
     method: 'POST',
-    headers: apiHeaders(true),
+    headers: JSON_HEADERS,
     body: JSON.stringify({ traveler_id: travelerId }),
   });
 
@@ -308,7 +302,7 @@ export async function fetchSessionReceipt(
 ): Promise<SessionReceiptResponse> {
   return requestJson(`${API_BASE}/diagnostics/session-receipt`, {
     method: 'POST',
-    headers: apiHeaders(true),
+    headers: JSON_HEADERS,
     body: JSON.stringify({
       traveler_id: travelerId,
       window_minutes: windowMinutes,
@@ -359,6 +353,6 @@ export async function stopRuntimeSession(
 ): Promise<StopSessionResponse> {
   return requestJson<StopSessionResponse>(
     `${API_BASE}/journeys/${encodeURIComponent(journeyId)}/stop-session`,
-    { method: 'POST', signal, headers: apiHeaders(true) },
+    { method: 'POST', signal, headers: JSON_HEADERS },
   );
 }
