@@ -9,7 +9,11 @@ const sources = globs as Record<string, string>;
 
 // spanTitles.ts is the one place that still names the wording saved journeys were stored with.
 const LEGACY_TABLE = '../spanTitles.ts';
-const BANNED = [/LangGraph/i, /·/, /&middot;/i, /&#183;/, /&#xb7;/i, /\\00b7/i];
+const BANNED = [
+  /LangGraph/i, /\u00b7/, /&middot;/i, /&#183;/, /&#xb7;/i,
+  /\\00b7/i, // CSS escape
+  /\\u00b7/i, /\\u\{b7\}/i, /\\xb7/i, // JS string escapes
+];
 
 const isTest = (path: string) => /__tests__|\.test\.[tj]sx?$|\.spec\.ts$/.test(path);
 

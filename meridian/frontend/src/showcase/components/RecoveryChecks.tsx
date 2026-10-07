@@ -51,13 +51,13 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
     },
     {
       id: 'checkpoint', title: 'Save progress',
-      status: checkpoint ? document?.checkpoint_backend.durable ? 'Durable saved step' : 'In-process saved step' : 'Not yet verified',
+      status: checkpoint ? document?.checkpoint_backend.durable ? 'Saved outside the worker' : 'Worker memory only' : 'Not yet verified',
       tone: checkpoint ? 'observed' : 'pending',
       description: checkpoint
         ? document?.checkpoint_backend.durable
-          ? 'The journey record reports a durable saved step. A replacement worker can resume after the previous lease clears.'
-          : 'The observed saved step is in process memory; restart recovery is not established.'
-        : 'A saved shortlist needs a saved step record. Open System evidence to inspect the active journey.',
+          ? 'The journey record shows the step was saved outside the worker. A replacement worker can resume after the previous lease clears.'
+          : 'The saved step lives in worker memory only; restart recovery is not established.'
+        : 'A saved shortlist needs a saved step before it can resume. Open System evidence to inspect the active journey.',
       facts: checkpoint ? [['Saved step', checkpoint.checkpoint_id], ['Thread', checkpoint.thread_id], ['Source', checkpoint.source]] : [],
     },
     {

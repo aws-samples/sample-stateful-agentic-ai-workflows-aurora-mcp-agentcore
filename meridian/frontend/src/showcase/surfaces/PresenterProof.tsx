@@ -337,7 +337,7 @@ export function PresenterProof({
                   {restarted && hold.created_by_execution_id === first?.execution_id
                     ? 'This booking was created by the original execution and is still readable after the replacement started.'
                     : restarted && hold.created_by_execution_id === latest?.execution_id
-                      ? 'The replacement execution created this hold. This run proves saved step recovery; it does not yet prove an existing hold survived a restart.'
+                      ? 'The replacement execution created this hold. This run shows recovery from a saved step; it does not yet prove an existing hold survived a restart.'
                       : 'To prove hold durability, stop the worker after the hold is committed, resume the same thread, then re-read the booking ID and original expiry.'}
                 </p>
               </>
@@ -352,7 +352,7 @@ export function PresenterProof({
             ) : (
               <div className="mc-hold-pending">
                 <strong>No package hold recorded.</strong>
-                <p>A saved shortlist is a workflow saved step. The hold begins after availability verification, when Aurora commits the booking.</p>
+                <p>A saved shortlist is only a saved step in the workflow. The hold begins after availability verification, when Aurora commits the booking.</p>
               </div>
             )}
           </div>
