@@ -54,6 +54,16 @@ from backend.agentcore.errors import AgentCoreNotConfiguredError
 logger = logging.getLogger(__name__)
 
 
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Surface a 3xx as an HTTPError so the bearer token never reaches a redirect target."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(_RefuseRedirects)
+
+
 class AgentCoreGatewayAdapter:
     """MCP client for an AgentCore Gateway endpoint (tools/list + tools/call)."""
 
@@ -157,8 +167,9 @@ class AgentCoreGatewayAdapter:
             headers=headers,
             method="POST",
         )
+        open_request = NO_REDIRECT_OPENER.open if jwt_mode() else urllib.request.urlopen
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with open_request(req, timeout=30) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             if exc.code == 401 and jwt_mode():

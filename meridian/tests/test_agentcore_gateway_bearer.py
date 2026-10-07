@@ -1,7 +1,9 @@
 """The Gateway client signs with IAM by default and sends the caller's token in jwt mode."""
 
+import http.client
 import io
 import json
+import time
 import urllib.error
 from unittest.mock import patch
 
@@ -19,6 +21,7 @@ URL = "https://gw-1.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
 @pytest.fixture
 def adapter(monkeypatch):
     monkeypatch.delenv("AGENTCORE_GATEWAY_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("MERIDIAN_AGENTCORE_AUTH", raising=False)
     return gateway_module.AgentCoreGatewayAdapter(gateway_url=URL, region="us-east-1")
 
 
@@ -48,11 +51,22 @@ def test_iam_mode_still_signs_with_sigv4_and_sends_no_bearer(adapter):
     assert "x-amz-date" in headers
 
 
+def test_iam_mode_ignores_a_bound_caller_token(adapter):
+    token = access_token()
+    with caller_token_scope(token), patch.object(
+        gateway_module.urllib.request, "urlopen", return_value=Reply({})
+    ) as urlopen:
+        adapter.call_tool("t", {})
+    authorization = sent_request(urlopen).get_header("Authorization")
+    assert authorization.startswith("AWS4-HMAC-SHA256")
+    assert token not in authorization
+
+
 def test_jwt_mode_sends_the_callers_token_and_nothing_signed(adapter, monkeypatch):
     monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
     token = access_token()
     with caller_token_scope(token), patch.object(
-        gateway_module.urllib.request, "urlopen", return_value=Reply({"result": {}})
+        gateway_module.NO_REDIRECT_OPENER, "open", return_value=Reply({"result": {}})
     ) as urlopen:
         adapter.call_tool("t", {"a": 1})
     headers = {k.lower(): v for k, v in sent_request(urlopen).header_items()}
@@ -65,7 +79,7 @@ def test_the_static_gateway_token_override_is_ignored_in_jwt_mode(monkeypatch):
     adapter = gateway_module.AgentCoreGatewayAdapter(
         gateway_url=URL, region="us-east-1", access_token="static-override")
     with caller_token_scope(access_token()), patch.object(
-        gateway_module.urllib.request, "urlopen", return_value=Reply({})
+        gateway_module.NO_REDIRECT_OPENER, "open", return_value=Reply({})
     ) as urlopen:
         adapter.call_tool("t", {})
     assert "static-override" not in sent_request(urlopen).get_header("Authorization")
@@ -73,7 +87,7 @@ def test_the_static_gateway_token_override_is_ignored_in_jwt_mode(monkeypatch):
 
 def test_jwt_mode_without_a_caller_token_fails_before_any_network_call(adapter, monkeypatch):
     monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
-    with patch.object(gateway_module.urllib.request, "urlopen") as urlopen:
+    with patch.object(gateway_module.NO_REDIRECT_OPENER, "open") as urlopen:
         with pytest.raises(CallerTokenMissing):
             adapter.call_tool("t", {})
     urlopen.assert_not_called()
@@ -82,7 +96,7 @@ def test_jwt_mode_without_a_caller_token_fails_before_any_network_call(adapter, 
 def test_an_expired_token_is_a_coded_expiry_before_any_network_call(adapter, monkeypatch):
     monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
     with caller_token_scope(access_token(expires_in=-5)), patch.object(
-        gateway_module.urllib.request, "urlopen"
+        gateway_module.NO_REDIRECT_OPENER, "open"
     ) as urlopen:
         with pytest.raises(CallerTokenExpired):
             adapter.call_tool("t", {})
@@ -104,7 +118,7 @@ def test_a_401_after_the_token_ran_out_in_flight_is_a_coded_expiry(adapter, monk
 
     monkeypatch.setattr(gateway_module, "ensure_unexpired", ensure_unexpired)
     with caller_token_scope(access_token()), patch.object(
-        gateway_module.urllib.request, "urlopen", side_effect=http_error(401)
+        gateway_module.NO_REDIRECT_OPENER, "open", side_effect=http_error(401)
     ):
         with pytest.raises(CallerTokenExpired):
             adapter.call_tool("t", {})
@@ -113,7 +127,7 @@ def test_a_401_after_the_token_ran_out_in_flight_is_a_coded_expiry(adapter, monk
 def test_a_401_for_a_live_token_is_a_plain_gateway_error(adapter, monkeypatch):
     monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
     with caller_token_scope(access_token()), patch.object(
-        gateway_module.urllib.request, "urlopen", side_effect=http_error(401)
+        gateway_module.NO_REDIRECT_OPENER, "open", side_effect=http_error(401)
     ):
         with pytest.raises(RuntimeError, match="Gateway HTTP 401"):
             adapter.call_tool("t", {})
@@ -126,3 +140,67 @@ def test_an_interceptor_refusal_is_a_refusal_not_an_unknown_outcome():
     outcome = place_governed_hold(lambda *_: refusal, {"packageId": "TKY-003"})
     assert not outcome.placed and outcome.policy_decision == "deny"
     assert outcome.error.startswith("Identity Check Failed:")
+
+
+def test_a_401_for_a_token_that_expired_in_flight_by_the_real_clock_is_a_coded_expiry(
+    adapter, monkeypatch
+):
+    monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
+    real_build = adapter._build_headers
+
+    def build_then_jump_ahead(body):
+        headers = real_build(body)
+        monkeypatch.setattr(time, "time", lambda: real_now + 5)
+        return headers
+
+    real_now = time.time()
+    monkeypatch.setattr(adapter, "_build_headers", build_then_jump_ahead)
+    with caller_token_scope(access_token(expires_in=11)), patch.object(
+        gateway_module.NO_REDIRECT_OPENER, "open", side_effect=http_error(401)
+    ):
+        with pytest.raises(CallerTokenExpired):
+            adapter.call_tool("t", {})
+
+
+class FakeSocket:
+    def __init__(self, reply):
+        self._reply = reply
+
+    def makefile(self, *args, **kwargs):
+        return io.BytesIO(self._reply)
+
+    def sendall(self, data):
+        return None
+
+    def close(self):
+        return None
+
+
+@pytest.fixture
+def redirecting_network(monkeypatch):
+    """Real urllib redirect handling over a fake wire: gateway.test 302s to elsewhere.test."""
+    sent = []
+    replies = {
+        "gateway.test": b"HTTP/1.1 302 Found\r\nLocation: http://elsewhere.test/steal\r\n"
+                        b"Content-Length: 0\r\n\r\n",
+        "elsewhere.test": b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}",
+    }
+
+    def send(connection, data):
+        connection.sock = FakeSocket(replies[connection.host])
+        sent.append((connection.host, bytes(data)))
+
+    monkeypatch.setattr(http.client.HTTPConnection, "send", send)
+    return sent
+
+
+def test_jwt_mode_does_not_follow_a_redirect_with_the_token(monkeypatch, redirecting_network):
+    monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
+    adapter = gateway_module.AgentCoreGatewayAdapter(
+        gateway_url="http://gateway.test/mcp", region="us-east-1")
+    token = access_token()
+    with caller_token_scope(token):
+        with pytest.raises(RuntimeError, match="Gateway HTTP 302"):
+            adapter.call_tool("t", {})
+    assert {host for host, _ in redirecting_network} == {"gateway.test"}
+    assert all(b"elsewhere.test" not in data for _, data in redirecting_network)
