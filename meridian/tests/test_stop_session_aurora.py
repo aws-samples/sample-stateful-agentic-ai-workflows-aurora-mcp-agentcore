@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 import uuid
 
 import pytest
@@ -21,13 +20,6 @@ from backend.routers import journeys
 pytestmark = pytest.mark.database
 
 JORDAN = HttpPrincipal("test", "trv_meridian_demo", "test")
-
-# Recording stopped_during='finished' needs migration 017's widened check constraint.
-needs_017 = pytest.mark.skipif(
-    os.environ.get("MERIDIAN_MIGRATION_017_APPLIED") != "1",
-    reason="needs migration 017; set MERIDIAN_MIGRATION_017_APPLIED=1 once it is applied",
-)
-
 
 class Runtime:
     def __init__(self, outcome="stopped"):
@@ -231,7 +223,6 @@ async def _master(sql, params=()):
     return await get_rds_data_client().execute(sql, params)
 
 
-@needs_017
 async def test_a_completed_run_whose_release_was_lost_is_closed_not_abandoned(journey_with):
     make, _ = journey_with
     journey, thread = await make(
@@ -247,7 +238,6 @@ async def test_a_completed_run_whose_release_was_lost_is_closed_not_abandoned(jo
     assert rows[0]["released_execution_id"] == before["execution_id"]
 
 
-@needs_017
 async def test_a_worker_that_finishes_before_the_record_is_recorded_as_finished(journey_with):
     make, runtime = journey_with
     journey, thread = await make(
