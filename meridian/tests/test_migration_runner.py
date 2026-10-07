@@ -131,3 +131,10 @@ def test_pending_with_no_tracking_table_lists_everything_without_creating_it(
     code, names = _pending_run(monkeypatch, tmp_path, client, capsys)
     assert (code, names) == (0, ["001_a.sql", "002_b.sql", "003_c.sql"])
     assert all("CREATE" not in call["sql"].upper() for call in client.executed)
+
+
+def test_pending_says_so_when_every_migration_is_applied(monkeypatch, tmp_path, capsys):
+    client = ScriptedClient("schema_migrations", ["001_a.sql", "002_b.sql", "003_c.sql"])
+    code, words = _pending_run(monkeypatch, tmp_path, client, capsys)
+    assert (code, " ".join(words)) == (0, "No pending migrations.")
+    assert client.commits == []

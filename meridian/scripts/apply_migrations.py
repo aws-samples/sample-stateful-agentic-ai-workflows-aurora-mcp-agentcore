@@ -138,8 +138,10 @@ def main(argv: list[str] | None = None) -> int:
 
     client = boto3.client("rds-data", region_name=REGION)
     if args.pending:
-        for path in _pending_paths(_applied_migrations_read_only(client)):
-            print(path.name)
+        pending_names = [
+            path.name for path in _pending_paths(_applied_migrations_read_only(client))
+        ]
+        print("\n".join(pending_names) or "No pending migrations.")
         return 0
     _ensure_migration_table(client)
     pending = _pending_paths(_applied_migrations(client))
