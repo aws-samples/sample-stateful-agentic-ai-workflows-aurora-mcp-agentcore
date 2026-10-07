@@ -94,6 +94,7 @@ async def test_five_conflicts_in_a_row_fail_after_five_calls():
 
 
 async def test_a_mid_stream_read_timeout_propagates_without_a_second_invoke():
+    """One invoke and the error propagates. It does not depend on the explicit close."""
     body = MagicMock()
     body.read.side_effect = ReadTimeoutError(endpoint_url="https://example.invalid")
     client = client_with({"response": body})
@@ -103,17 +104,20 @@ async def test_a_mid_stream_read_timeout_propagates_without_a_second_invoke():
     body.close.assert_called_once()
 
 
-async def test_the_body_is_closed_after_a_result():
-    response = frames({"type": "result", "state": {}}, {"type": "heartbeat"})
-    await wr.WorkflowRuntimeClient(ARN, client=client_with(response)).run(COMMAND)
-    response["response"].close.assert_called_once()
-
-
-async def test_the_body_is_closed_after_an_error():
-    response = frames({"type": "error", "code": "conflict", "message": "m"})
-    with pytest.raises(WorkflowConflictError):
-        await wr.WorkflowRuntimeClient(ARN, client=client_with(response)).run(COMMAND)
-    response["response"].close.assert_called_once()
+async def test_the_body_is_closed_before_run_returns_even_with_the_stream_unfinished(
+        monkeypatch):
+    calls, generators = [], []
+    real = wr.stream_chunks
+    monkeypatch.setattr(
+        wr, "stream_chunks", lambda response: generators.append(real(response)) or generators[-1])
+    body = MagicMock()
+    result = f"data: {json.dumps(json.dumps({'type': 'result', 'state': {}}))}\n\n".encode()
+    heartbeat = f"data: {json.dumps(json.dumps({'type': 'heartbeat'}))}\n\n".encode()
+    chunks = iter([result + heartbeat, heartbeat, heartbeat])
+    body.read.side_effect = lambda size: calls.append("read") or next(chunks, b"")
+    body.close.side_effect = lambda: calls.append("close")
+    await wr.WorkflowRuntimeClient(ARN, client=client_with({"response": body})).run(COMMAND)
+    assert generators and calls[-1] == "close"
 
 
 async def test_a_failed_invoke_logs_the_code_and_session_but_not_the_payload(caplog):

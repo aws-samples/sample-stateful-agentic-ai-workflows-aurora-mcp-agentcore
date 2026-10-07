@@ -76,12 +76,6 @@ class StopTarget:
     thread_id: str
     execution_id: str
     status: str
-    last_step: Optional[str]
-
-    @property
-    def during(self) -> str:
-        """Whether the stop lands on a worker mid-run or on a run waiting for review."""
-        return "running" if self.status == "running" else "waiting"
 
 
 async def _stop_target(client, journey_id: str, owner: str) -> StopTarget:
@@ -96,39 +90,44 @@ async def _stop_target(client, journey_id: str, owner: str) -> StopTarget:
                 status_code=409,
                 detail="This journey has no paused or running workflow session to stop.",
             )
-        step = await client.execute(
-            LAST_STEP_SQL, (thread_id, snapshot_key(thread_id)), transaction_id=tx
-        )
-    return StopTarget(
-        thread_id, latest[0]["execution_id"], latest[0]["status"],
-        step[0]["last_step"] if step else None,
-    )
+    return StopTarget(thread_id, latest[0]["execution_id"], latest[0]["status"])
 
 
 async def _record_stop(client, owner: str, journey_id: str, target: StopTarget,
-                       stop: Any, requested_by: str) -> str:
-    """Release a running lease and record the stop in one transaction.
+                       stop: Any, requested_by: str) -> Dict[str, Any]:
+    """Read the last step, release a running lease and record the stop in one transaction.
 
     Releasing is safe once StopRuntimeSession has returned. The stopped worker
     can no longer save a snapshot, because the snapshot INSERT is fenced on a
     running execution. It can no longer place a hold, because the holds Lambda
     checks the lease FOR UPDATE. A hold that committed just before the stop is
-    reused on resume through the same holdRequestId.
+    reused on resume through the same holdRequestId. The step is read here,
+    after the stop, so it is the last one the run saved.
+
+    ``stopped_during`` follows what the UPDATE did, not what the earlier read
+    saw: if the run paused between the read and the update, the fenced UPDATE
+    matches no row, and the stop is recorded as ``waiting``, not as a mid-run stop.
     """
     async with _scoped(client, owner) as tx:
+        step = await client.execute(
+            LAST_STEP_SQL, (target.thread_id, snapshot_key(target.thread_id)),
+            transaction_id=tx,
+        )
+        last_step = step[0]["last_step"] if step else None
         released = []
         if target.status == "running":
             released = await client.execute(
                 RELEASE_LEASE_SQL, (target.execution_id,), transaction_id=tx
             )
+        during = "running" if released else "waiting"
         row = (await client.execute(
             RECORD_STOP_SQL,
             (journey_id, target.thread_id, stop.runtime_session_id, stop.outcome,
-             requested_by, target.during, target.last_step,
+             requested_by, during, last_step,
              released[0]["execution_id"] if released else None),
             transaction_id=tx,
         ))[0]
-    return row["stopped_at"]
+    return {"stopped_at": row["stopped_at"], "stopped_during": during, "last_step": last_step}
 
 
 @router.get("")
@@ -217,19 +216,23 @@ async def stop_session(
     """
     owner = authorize_traveler(principal, traveler_id)
     client = get_rds_data_client()
-    target = await _stop_target(client, journey_id, owner)
+    try:
+        target = await _stop_target(client, journey_id, owner)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     try:
         stop = await get_workflow_runtime().stop_session(owner, target.thread_id)
     except (AgentCoreNotConfiguredError, RuntimeError) as exc:
         raise HTTPException(status_code=503, detail=str(exc).splitlines()[0]) from exc
-    stopped_at = await _record_stop(
-        client, owner, journey_id, target, stop, principal.subject_id
-    )
+    try:
+        recorded = await _record_stop(
+            client, owner, journey_id, target, stop, principal.subject_id
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     return {
         "stopped": True,
         "runtime_session_id": stop.runtime_session_id,
         "outcome": stop.outcome,
-        "stopped_at": stopped_at,
-        "stopped_during": target.during,
-        "last_step": target.last_step,
+        **recorded,
     }

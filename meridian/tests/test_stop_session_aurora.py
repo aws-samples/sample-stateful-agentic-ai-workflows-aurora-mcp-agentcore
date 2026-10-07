@@ -94,6 +94,15 @@ async def test_a_paused_journey_stops_its_own_session_and_records_it(journey_wit
     assert [r["status"] for r in await _statuses(thread)] == ["paused"]
 
 
+async def test_a_session_that_was_not_running_is_recorded_as_such(journey_with):
+    make, runtime = journey_with
+    runtime.outcome = "not_running"
+    journey, _ = await make(status="paused")
+    reply = await journeys.stop_session(journey, JORDAN, None)
+    assert reply["outcome"] == "not_running"
+    assert (await _stop_rows(journey))[0]["outcome"] == "not_running"
+
+
 async def test_a_running_journey_is_released_at_once_and_can_be_claimed(journey_with):
     make, _ = journey_with
     journey, thread = await make(status="running", completed=["intake", "retrieve", "plan"])
