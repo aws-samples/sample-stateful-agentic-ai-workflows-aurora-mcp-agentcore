@@ -18,7 +18,7 @@ export const PAUSED_ACTIVITIES = [
  */
 export function pausedRecovery(products: object[], conversationId: string) {
   return {
-    message: 'Workflow paused after a committed checkpoint.',
+    message: 'Workflow paused after a saved step.',
     workflow_status: 'paused',
     products,
     activities: PAUSED_ACTIVITIES,

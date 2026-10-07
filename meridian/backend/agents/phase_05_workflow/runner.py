@@ -476,7 +476,7 @@ class WorkflowRunner:
                 "resumed_from_checkpoint": None,
                 "activities": activities + [_paused_span(thread_id, pending)],
                 "response": (
-                    f"Workflow paused after a committed checkpoint. Resume thread "
+                    f"Workflow paused after a saved step. Resume thread "
                     f"{thread_id} to continue with {', '.join(pending)}."
                 ),
             }

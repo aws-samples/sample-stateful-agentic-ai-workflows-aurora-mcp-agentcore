@@ -108,7 +108,7 @@ async def test_any_other_failure_is_a_referenced_503(monkeypatch):
 async def test_a_paused_run_returns_the_resume_chip_and_a_generated_thread(monkeypatch):
     runner = Runner({
         "workflow_status": "paused",
-        "response": "Workflow paused after a committed checkpoint.",
+        "response": "Workflow paused after a saved step.",
         "activities": [], "packages": [], "conversation_id": "phase5-generated",
     })
     monkeypatch.setattr(GET_RUNTIME, lambda: runner)

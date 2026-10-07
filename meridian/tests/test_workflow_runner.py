@@ -122,7 +122,7 @@ async def test_a_paused_run_releases_its_lease_as_paused():
     world = World()
     result = await world.runner().run(command())
     assert result["workflow_status"] == "paused"
-    assert result["response"].startswith("Workflow paused after a committed checkpoint.")
+    assert result["response"].startswith("Workflow paused after a saved step.")
     assert result["activities"][-1]["title"] == "Workflow paused at a saved step"
     assert [e["status"] for e in world.lease.executions] == ["paused"]
     assert world.gateway.calls == []

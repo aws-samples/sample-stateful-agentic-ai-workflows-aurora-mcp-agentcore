@@ -38,7 +38,7 @@ export function pausedJourneyDocument(
       source: 'checkpoint',
       conversation_id: threadId,
       query: 'My flight to Tokyo was cancelled. Find me alternatives.',
-      message: 'Workflow paused after a committed checkpoint.',
+      message: 'Workflow paused after a saved step.',
       workflow_status: 'paused',
       next_nodes: ['hold'],
       activities: PAUSED_ACTIVITIES as never,
