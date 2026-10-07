@@ -31,7 +31,7 @@ def test_the_verifier_matches_the_rfc_7677_server_signature():
     stored_key = base64.b64decode(verifier.split("$")[2].split(":")[0])
     client_signature = hmac.new(stored_key, RFC7677_AUTH.encode(), hashlib.sha256).digest()
     proof = base64.b64decode("dHzbZapWIk4jUhN+Ute9ytag9zjfMHgsqmmiz7AndVQ=")
-    client_key = bytes(a ^ b for a, b in zip(proof, client_signature))
+    client_key = bytes(a ^ b for a, b in zip(proof, client_signature, strict=True))
     assert hashlib.sha256(client_key).digest() == stored_key
     assert verifier.startswith("SCRAM-SHA-256$4096:W22ZaJ0SNY7soEsUEjb6gQ==$")
 
