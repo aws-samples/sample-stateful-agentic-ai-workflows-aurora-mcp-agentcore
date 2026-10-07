@@ -5,6 +5,7 @@ Main entry point for the Meridian travel concierge demo backend.
 Provides REST API endpoints for chat, trip catalog, and traveler memory.
 """
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -16,9 +17,10 @@ from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from pydantic import BaseModel
 
 from backend.agentcore.caller_credential import CallerCredentialMiddleware
-from backend.agentcore.errors import CallerCredentialError
+from backend.agentcore.errors import CallerCredentialError, CallerTokenExpired
 from backend.authorization import TravelerAuthorizationError
 from backend.http_auth import require_http_principal
+from backend.token_expiry import TOKEN_EXPIRED_CODE, is_token_expired, token_expired_error
 
 # Load environment variables from .env file
 load_dotenv()
@@ -27,6 +29,8 @@ from backend.logging_config import setup_logging, log_startup_banner
 
 # Honour LOG_LEVEL / LOG_JSON from .env before other imports log anything.
 setup_logging()
+logger = logging.getLogger(__name__)
+SIGN_IN_AGAIN = "Your sign-in has expired or is missing. Sign in again."
 log_startup_banner()
 
 # Import routers
@@ -235,11 +239,18 @@ async def traveler_authorization_exception_handler(request, exc: TravelerAuthori
 
 @app.exception_handler(CallerCredentialError)
 async def caller_credential_exception_handler(request, exc: CallerCredentialError):
-    """A missing or expired caller token means sign in again, whichever route hit it."""
+    """A missing or expired caller token means sign in again, whichever route hit it.
+
+    Expiry carries the retryable ``token_expired`` code; a missing token is a plain 401.
+    Neither body echoes the exception text.
+    """
     from fastapi.responses import JSONResponse
+    logger.info("Caller credential refused: %s", exc.__class__.__name__)
+    if isinstance(exc, CallerTokenExpired):
+        return await http_exception_handler(request, token_expired_error())
     return JSONResponse(
         status_code=401,
-        content={"error": str(exc)},
+        content={"error": SIGN_IN_AGAIN},
         headers={"WWW-Authenticate": "Bearer"},
     )
 
@@ -248,11 +259,10 @@ async def caller_credential_exception_handler(request, exc: CallerCredentialErro
 async def http_exception_handler(request, exc: HTTPException):
     """Handle HTTP exceptions with consistent error format."""
     from fastapi.responses import JSONResponse
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error": exc.detail},
-        headers=exc.headers,
-    )
+    content = {"error": exc.detail}
+    if is_token_expired(exc):
+        content["code"] = TOKEN_EXPIRED_CODE
+    return JSONResponse(status_code=exc.status_code, content=content, headers=exc.headers)
 
 
 @app.exception_handler(Exception)

@@ -44,5 +44,7 @@ def test_the_journeys_stop_route_answers_401_not_503(monkeypatch, error):
     finally:
         main.app.dependency_overrides.pop(require_http_principal, None)
     assert response.status_code == 401
-    assert response.headers["www-authenticate"] == "Bearer"
-    assert "token problem" in response.json()["error"]
+    assert "token problem" not in response.text
+    expired = error is CallerTokenExpired
+    assert response.json().get("code") == ("token_expired" if expired else None)
+    assert ("invalid_token" in response.headers["www-authenticate"]) is expired
