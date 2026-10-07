@@ -420,6 +420,59 @@
   font-style: italic;
 }
 
+.mds-continuity-stop {
+  display: grid;
+  gap: 8px;
+}
+
+.mds-continuity-stop [role='group'] {
+  display: grid;
+  gap: 8px;
+}
+
+.mds-continuity-stop p {
+  margin: 0;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-continuity-stop .mds-continuity-stop-error {
+  color: var(--mds-red);
+}
+
+.mds-continuity-stop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mds-continuity-stop button {
+  min-height: 40px;
+  padding: 0 13px;
+  border: 1px solid var(--mds-separator);
+  border-radius: var(--mds-radius-s);
+  color: var(--mds-label);
+  background: transparent;
+  font: var(--mds-type-footnote);
+  cursor: pointer;
+}
+
+.mds-continuity-stop button.is-primary {
+  border-color: var(--mds-action);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
+}
+
+.mds-continuity-stop button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.mds-continuity-stop button:focus-visible {
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 2px;
+}
+
 .mds-continuity-source {
   display: flex;
   gap: 6px;

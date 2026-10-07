@@ -1,8 +1,8 @@
-import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
 import { JourneyContinuityRail } from '../JourneyContinuityRail';
-import type { JourneyDocument, JourneyExecution } from '../../journey/types';
+import type { JourneyDocument, JourneyExecution, SessionStop } from '../../journey/types';
 
 const unavailable = (reason: string) => ({ status: 'unavailable' as const, reason });
 
@@ -45,6 +45,10 @@ const checkpoint = {
   status: 'committed', source: 'checkpoints', thread_id: 'thread_test', checkpoint_id: 'cp_01',
   parent_checkpoint_id: null, checkpoint_ns: '', committed_at: '2026-09-28T18:00:00Z',
 };
+
+const pausedDocument = () => makeDocument({ executions: {
+  status: 'observed', source: 'journey_executions', items: [execution({ status: 'paused' })],
+} });
 
 const rows = () => screen.queryAllByRole('listitem')
   .map(row => row.querySelector('strong')?.textContent);
@@ -128,5 +132,73 @@ describe('JourneyContinuityRail', () => {
     const [row] = screen.getAllByRole('listitem');
     expect(row.style.opacity).toBe('0');
   });
-});
 
+  it('offers the stop only while the latest execution runs or waits', () => {
+    for (const [status, offered] of [
+      ['paused', true], ['running', true], ['succeeded', false], ['abandoned', false],
+    ] as const) {
+      const { unmount } = render(
+        <JourneyContinuityRail document={makeDocument({ executions: {
+          status: 'observed', source: 'journey_executions', items: [execution({ status })],
+        } })} error={null} onStopSession={vi.fn()} />,
+      );
+      expect(!!screen.queryByRole('button', { name: 'Stop runtime session' })).toBe(offered);
+      unmount();
+    }
+  });
+
+  it('asks before stopping and calls the handler once on confirm', async () => {
+    const onStop = vi.fn().mockResolvedValue(undefined);
+    render(<JourneyContinuityRail document={pausedDocument()} error={null} onStopSession={onStop} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop runtime session' }));
+    expect(screen.getByRole('group', { name: 'Confirm stopping the runtime session' }))
+      .toBeInTheDocument();
+    expect(screen.getByText(/saved steps stay in Aurora/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Keep running' }));
+    expect(onStop).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Stop runtime session' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop session' }));
+    await waitFor(() => expect(onStop).toHaveBeenCalledTimes(1));
+  });
+
+  it('shows a failed stop without claiming it happened', async () => {
+    const onStop = vi.fn().mockRejectedValue(
+      new Error('Stopping the workflow Runtime session failed: AccessDeniedException'));
+    render(<JourneyContinuityRail document={pausedDocument()} error={null} onStopSession={onStop} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop runtime session' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop session' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('AccessDeniedException');
+    expect(rows()).not.toContain('Session stopped mid-run');
+    expect(rows()).not.toContain('Session stopped while waiting');
+  });
+
+  it('records the stop only from Aurora, naming the case', () => {
+    const document = pausedDocument();
+    const stopped = (item: Partial<SessionStop>) => ({
+      ...document,
+      session_stops: { status: 'observed', source: 'workflow_session_stops',
+        items: [{ runtime_session_id: 'rt-wf-x', outcome: 'stopped', stopped_at: '2026-10-07 10:00:00+00',
+          stopped_during: 'waiting', last_step: null, ...item }] },
+    } as JourneyDocument);
+    const { rerender } = render(<JourneyContinuityRail document={document} error={null} />);
+    expect(rows().join()).not.toMatch(/Session stopped/);
+
+    rerender(<JourneyContinuityRail document={stopped({})} error={null} />);
+    expect(rows()).toContain('Session stopped while waiting');
+    expect(screen.getByText('for the review answer')).toBeInTheDocument();
+
+    rerender(<JourneyContinuityRail document={stopped({ stopped_during: 'running', last_step: 'search' })}
+      error={null} />);
+    expect(rows()).toContain('Session stopped mid-run');
+    expect(screen.getByText('after search, lease released')).toBeInTheDocument();
+
+    rerender(<JourneyContinuityRail document={stopped({ stopped_during: 'running', last_step: null })}
+      error={null} />);
+    expect(screen.getByText('lease released')).toBeInTheDocument();
+
+    rerender(<JourneyContinuityRail document={stopped({ outcome: 'not_running', stopped_during: 'waiting' })}
+      error={null} />);
+    expect(rows()).toContain('Session stopped while waiting');
+    expect(screen.getByText('the session had already ended')).toBeInTheDocument();
+  });
+});

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { pausedJourneyDocument } from './fixtures/journeyDocument';
 import { pausedRecovery } from './fixtures/pausedRecovery';
 
 // Deterministic UI fixture, using real catalog destination and duration
@@ -100,3 +101,79 @@ for (const motion of ['no-preference', 'reduce'] as const) {
     }
   });
 }
+
+/** Routes the journey list, document and stop endpoints for one recovery thread. */
+async function routeJourney(
+  page: import('@playwright/test').Page,
+  documentFor: (thread: string, stopped: boolean) => object,
+) {
+  const state = { thread: '', stopped: false, stopCalls: 0 };
+  await page.route(url => url.pathname === '/api/journeys', route => {
+    const thread = new URL(route.request().url()).searchParams.get('thread_id') ?? state.thread;
+    return route.fulfill({ json: { journeys: thread ? [{
+      journey_id: 'jrn_e2e', status: 'active', checkpoint_backend: 'AuroraDataApiSaver',
+      active_thread_id: thread, execution_count: 1,
+      created_at: '2026-10-07 09:59:00+00', updated_at: '2026-10-07 09:59:00+00',
+    }] : [] } });
+  });
+  await page.route(url => url.pathname === '/api/journeys/jrn_e2e', route => route.fulfill({
+    json: documentFor(state.thread, state.stopped),
+  }));
+  return state;
+}
+
+test('a presenter stop while the session waits shows the rail row from Aurora', async ({ page }) => {
+  const state = await routeJourney(page, (thread, stopped) =>
+    pausedJourneyDocument(thread, { stopped, products }));
+  await page.route(url => url.pathname === '/api/chat', route => {
+    state.thread = route.request().postDataJSON().conversation_id;
+    return route.fulfill({ json: pausedRecovery(products, state.thread) });
+  });
+  await page.route(url => url.pathname === '/api/journeys/jrn_e2e/stop-session', route => {
+    state.stopped = true;
+    state.stopCalls += 1;
+    return route.fulfill({ json: { stopped: true, runtime_session_id: 'rt-wf-e2e',
+      outcome: 'stopped', stopped_at: '2026-10-07 10:00:00+00',
+      stopped_during: 'waiting', last_step: null } });
+  });
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/showcase?view=recovery');
+  await page.getByRole('button', { name: 'Start recovery' }).click();
+  await page.getByRole('button', { name: 'Stop runtime session' }).click();
+  await page.getByRole('button', { name: 'Stop session' }).click();
+  const rail = page.getByRole('region', { name: 'Journey progress' });
+  await expect(rail.getByText('Session stopped while waiting')).toBeVisible();
+  await expect(rail.getByText('for the review answer')).toBeVisible();
+  expect(state.stopCalls).toBe(1);
+});
+
+test('a presenter stop mid-run fails the request and the desk offers Resume', async ({ page }) => {
+  const state = await routeJourney(page, (thread, stopped) => pausedJourneyDocument(thread, stopped
+    ? { stopped, status: 'abandoned', stoppedDuring: 'running', lastStep: 'search', products }
+    : { stopped, status: 'running', products }));
+  let releaseChat!: () => void;
+  const chatReleased = new Promise<void>(resolve => { releaseChat = resolve; });
+  await page.route(url => url.pathname === '/api/chat', async route => {
+    state.thread = route.request().postDataJSON().conversation_id;
+    await chatReleased;
+    return route.fulfill({ status: 503, json: { error: 'Recovery was interrupted. The saved steps stay in Aurora.' } });
+  });
+  await page.route(url => url.pathname === '/api/journeys/jrn_e2e/stop-session', route => {
+    state.stopped = true;
+    state.stopCalls += 1;
+    releaseChat();
+    return route.fulfill({ json: { stopped: true, runtime_session_id: 'rt-wf-e2e',
+      outcome: 'stopped', stopped_at: '2026-10-07 10:00:00+00',
+      stopped_during: 'running', last_step: 'search' } });
+  });
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.goto('/showcase?view=recovery');
+  await page.getByRole('button', { name: 'Start recovery' }).click();
+  await page.getByRole('button', { name: 'Stop runtime session' }).click();
+  await page.getByRole('button', { name: 'Stop session' }).click();
+  const rail = page.getByRole('region', { name: 'Journey progress' });
+  await expect(rail.getByText('Session stopped mid-run')).toBeVisible();
+  await expect(rail.getByText('after search, lease released')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Resume and request hold' })).toBeVisible();
+  expect(state.stopCalls).toBe(1);
+});

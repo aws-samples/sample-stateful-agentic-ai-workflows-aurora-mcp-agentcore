@@ -8,6 +8,7 @@ import {
   fetchJourneys,
   fetchRlsProbe,
   fetchSessionReceipt,
+  stopRuntimeSession,
   updateMemoryFact,
 } from './client';
 
@@ -33,6 +34,21 @@ describe('bounded evidence and profile operations', () => {
     expect(signal.aborted).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(1); // No automatic replay of a possible write.
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('stopRuntimeSession', () => {
+  it('POSTs to the journey stop-session route', async () => {
+    const body = { stopped: true, runtime_session_id: 'rt-wf-1', outcome: 'stopped',
+      stopped_at: '2026-10-07 10:00:00+00', stopped_during: 'waiting', last_step: null };
+    const fetch = vi.fn(async () => new Response(JSON.stringify(body), { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(stopRuntimeSession('jrn 1')).resolves.toEqual(body);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toMatch(/\/journeys\/jrn%201\/stop-session$/);
+    expect(init.method).toBe('POST');
   });
 });
 

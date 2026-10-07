@@ -1,10 +1,11 @@
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { hasVerifiedResume } from '../journey/evidence';
 import { AuroraIcon } from '../components/ServiceMark';
 import { STATE_CHANGE, useLiveCues } from '../hooks/useLiveCues';
 import { Check, Circle, ShieldCheck } from 'lucide-react';
 
-import type { JourneyDocument } from '../journey/types';
+import type { JourneyDocument, SessionStop } from '../journey/types';
 import { isObserved } from '../journey/types';
 
 type Step = {
@@ -14,6 +15,24 @@ type Step = {
   detail: string;
   done: boolean;
 };
+
+function stopStep(stop: SessionStop | undefined): { label: string; detail: string } {
+  if (!stop) return { label: 'Session stopped', detail: '' };
+  const running = stop.stopped_during === 'running';
+  const label = running ? 'Session stopped mid-run' : 'Session stopped while waiting';
+  if (stop.outcome === 'not_running') return { label, detail: 'the session had already ended' };
+  if (!running) return { label, detail: 'for the review answer' };
+  return { label, detail: stop.last_step ? `after ${stop.last_step}, lease released` : 'lease released' };
+}
+
+/** Whether Aurora shows the latest execution as running or paused. */
+// A pure predicate beside its component, tested directly; fast refresh falls back to a reload.
+// eslint-disable-next-line react-refresh/only-export-components
+export function canStopSession(document: JourneyDocument | null): boolean {
+  if (!document || !isObserved(document.executions)) return false;
+  const latest = document.executions.items[document.executions.items.length - 1];
+  return latest?.status === 'running' || latest?.status === 'paused';
+}
 
 /** The continuity claim, one line per fact, each read from the database.
  *
@@ -26,6 +45,8 @@ function stepsFor(document: JourneyDocument | null): Step[] {
 
   const executions = isObserved(document.executions) ? document.executions.items : [];
   const abandoned = executions.filter((e) => e.status === 'abandoned');
+  const stops = isObserved(document.session_stops) ? document.session_stops.items : [];
+  const stopped = stopStep(stops[0]);
   const auth = document.authorization;
   const checkpoint = document.checkpoint;
   const recommendations = document.recommendations;
@@ -62,6 +83,13 @@ function stepsFor(document: JourneyDocument | null): Step[] {
       recorded: abandoned.length > 0,
     },
     {
+      id: 'stopped',
+      label: stopped.label,
+      detail: stopped.detail,
+      done: true,
+      recorded: stops.length > 0,
+    },
+    {
       id: 'resumed',
       label: 'Saved plan resumed',
       detail: 'Completed from the saved checkpoint',
@@ -72,12 +100,71 @@ function stepsFor(document: JourneyDocument | null): Step[] {
   return steps.filter((step) => step.recorded);
 }
 
+function StopSessionControl({ onStop }: { onStop: () => Promise<void> }) {
+  const [phase, setPhase] = useState<'idle' | 'confirm' | 'stopping'>('idle');
+  const [failure, setFailure] = useState<string | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const keep = useRef<HTMLButtonElement>(null);
+  const opened = useRef(false);
+
+  useEffect(() => {
+    if (phase === 'confirm') {
+      opened.current = true;
+      keep.current?.focus();
+    } else if (phase === 'idle' && opened.current) {
+      opened.current = false;
+      trigger.current?.focus();
+    }
+  }, [phase]);
+
+  const confirm = async () => {
+    setPhase('stopping');
+    setFailure(null);
+    try {
+      await onStop();
+    } catch (err) {
+      setFailure(err instanceof Error ? err.message : 'Stopping the session failed.');
+    }
+    setPhase('idle');
+  };
+
+  return (
+    <div className="mds-continuity-stop">
+      {phase === 'idle' ? (
+        <button ref={trigger} type="button" className="is-secondary"
+          onClick={() => { setFailure(null); setPhase('confirm'); }}>
+          Stop runtime session
+        </button>
+      ) : (
+        <div role="group" aria-label="Confirm stopping the runtime session">
+          <p>
+            Stop the AgentCore Runtime session for this journey? The saved steps stay in
+            Aurora, and Resume starts a new microVM.
+          </p>
+          <div className="mds-continuity-stop-actions">
+            <button ref={keep} type="button" className="is-secondary" disabled={phase === 'stopping'}
+              onClick={() => setPhase('idle')}>
+              Keep running
+            </button>
+            <button type="button" className="is-primary" disabled={phase === 'stopping'}
+              onClick={() => void confirm()}>
+              {phase === 'stopping' ? 'Stopping…' : 'Stop session'}
+            </button>
+          </div>
+        </div>
+      )}
+      {failure ? <p role="alert" className="mds-continuity-stop-error">{failure}</p> : null}
+    </div>
+  );
+}
+
 export function JourneyContinuityRail({
   document,
   error,
   loading = false,
   thread = null,
   running = false,
+  onStopSession,
 }: {
   document: JourneyDocument | null;
   error: string | null;
@@ -86,6 +173,8 @@ export function JourneyContinuityRail({
   thread?: string | null;
   /** Whether that recovery's request is in flight. */
   running?: boolean;
+  /** Stops the journey's Runtime session; offered while it runs or waits. */
+  onStopSession?: () => Promise<void>;
 }) {
   const steps = stepsFor(document);
   // Rows fade in, and their marks settle, only as a watched run records them.
@@ -157,6 +246,9 @@ export function JourneyContinuityRail({
             thread: {error ? 'unavailable' : loading ? 'reading…' : '—'}
           </code>
         )}
+        {onStopSession && canStopSession(document) ? (
+          <StopSessionControl onStop={onStopSession} />
+        ) : null}
         <span className="mds-continuity-source">
           <ShieldCheck size={13} aria-hidden="true" />
           {error ? 'Read failed; any displayed evidence is from the last load.' : document ? 'Source: Aurora journey records.' : loading ? 'Waiting for current Aurora journey evidence.' : 'Start a recovery or open a saved journey.'}

@@ -32,6 +32,16 @@ export type JourneyExecution = {
   started_at: string | null;
   ended_at: string | null;
   lease_expires_at: string | null;
+  runtime_session_id?: string | null;
+  microvm_id?: string | null;
+};
+
+export type SessionStop = {
+  runtime_session_id: string;
+  outcome: 'stopped' | 'not_running';
+  stopped_at: string;
+  stopped_during: 'waiting' | 'running';
+  last_step: string | null;
 };
 
 export type JourneyCheckpoint = {
@@ -110,6 +120,7 @@ export type JourneyDocument = {
     resumed_after_restart: boolean;
   }>;
   executions: Evidence<{ items: JourneyExecution[] }>;
+  session_stops?: Evidence<{ items: SessionStop[] }>;
   checkpoint: Evidence<JourneyCheckpoint>;
   selected_plan: Evidence<{ package_id: string }>;
   recommendations: Evidence<{ items: JourneyRecommendation[] }>;

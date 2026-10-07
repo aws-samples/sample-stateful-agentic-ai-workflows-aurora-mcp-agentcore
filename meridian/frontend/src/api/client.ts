@@ -18,6 +18,7 @@ import type {
 import type {
   JourneyDocument,
   JourneySummary,
+  SessionStop,
 } from '../showcase/journey/types';
 
 function trimTrailingSlash(value: string): string {
@@ -321,4 +322,24 @@ export async function fetchJourneyDocument(
     `${API_BASE}/journeys/${encodeURIComponent(journeyId)}`, { signal },
   );
   return { ...document, received_at: Date.now() };
+}
+
+export type StopSessionResponse = {
+  stopped: boolean;
+  runtime_session_id: string;
+  outcome: SessionStop['outcome'];
+  stopped_at: string;
+  stopped_during: SessionStop['stopped_during'];
+  last_step: string | null;
+};
+
+/** Stop the journey's workflow Runtime session; Aurora records the stop. */
+export async function stopRuntimeSession(
+  journeyId: string,
+  signal?: AbortSignal,
+): Promise<StopSessionResponse> {
+  return requestJson<StopSessionResponse>(
+    `${API_BASE}/journeys/${encodeURIComponent(journeyId)}/stop-session`,
+    { method: 'POST', signal, headers: apiHeaders(true) },
+  );
 }

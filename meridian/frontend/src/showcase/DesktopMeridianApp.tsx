@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ComponentType } from 'react';
 import { motion } from 'motion/react';
 import {
@@ -24,6 +24,7 @@ import { JourneyChooser } from './journey/JourneyChooser';
 import { RequestWaitNotice } from './components/RequestWaitNotice';
 import { PresenterProof } from './surfaces/PresenterProof';
 import { ConciergeConversation } from './components/ConciergeConversation';
+import { stopRuntimeSession } from '../api/client';
 import { JourneyContinuityRail } from './surfaces/JourneyContinuityRail';
 import { ChatTranscript } from './components/ChatTranscript';
 import { LadderEmptyStage } from './components/LadderEmptyStage';
@@ -123,6 +124,12 @@ export function DesktopMeridianApp({
     watchingRecovery,
   );
   const refreshJourney = journey.refresh;
+  const journeyIdForStop = journey.document?.journey_id;
+  const stopSession = useCallback(async () => {
+    if (!journeyIdForStop) return;
+    await stopRuntimeSession(journeyIdForStop);
+    refreshJourney();
+  }, [journeyIdForStop, refreshJourney]);
   const latestWorkflowRead = useRef<string | null>(null);
   useEffect(() => {
     // Recovery polling owns its final read; other views refresh after a workflow reply.
@@ -639,6 +646,7 @@ export function DesktopMeridianApp({
             loading={journey.loading || (runPhase === 5 && state.isLoading)}
             thread={runPhase === 5 ? state.conversationId : null}
             running={runPhase === 5 && state.isLoading}
+            onStopSession={stopSession}
           />
         </aside>
       )}
