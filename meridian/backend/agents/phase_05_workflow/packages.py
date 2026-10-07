@@ -9,7 +9,7 @@ from typing import Any, Dict
 
 
 def package_to_dict(package: Any) -> Dict[str, Any]:
-    """Normalize API/domain models before LangGraph checkpoints serialize them."""
+    """Normalize API/domain models to plain dicts before a Strands snapshot saves them."""
     if isinstance(package, dict):
         return dict(package)
     if hasattr(package, "model_dump"):
