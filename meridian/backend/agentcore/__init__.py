@@ -26,20 +26,28 @@ AWS docs:
     https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/
 """
 
-from backend.agentcore.cli_config import (
-    agentcore_project_dir,
-    deployed_state_path,
-    resolve_agentcore_config,
-)
-from backend.agentcore.gateway import get_agentcore_gateway
-from backend.agentcore.identity import get_agentcore_identity
-from backend.agentcore.runtime import get_agentcore_runtime
+from importlib import import_module
+from typing import Any
 
-__all__ = [
-    "agentcore_project_dir",
-    "deployed_state_path",
-    "resolve_agentcore_config",
-    "get_agentcore_gateway",
-    "get_agentcore_identity",
-    "get_agentcore_runtime",
-]
+# Each public name is imported on first use. The package is imported by every module inside it, and
+# the MeridianWorkflow Runtime bundles auth_mode, caller_credential and caller_claims with stdlib
+# only, so importing one of them must not load boto3 or the Gateway, Identity and Runtime clients.
+_EXPORTS = {
+    "agentcore_project_dir": "backend.agentcore.cli_config",
+    "deployed_state_path": "backend.agentcore.cli_config",
+    "resolve_agentcore_config": "backend.agentcore.cli_config",
+    "get_agentcore_gateway": "backend.agentcore.gateway",
+    "get_agentcore_identity": "backend.agentcore.identity",
+    "get_agentcore_runtime": "backend.agentcore.runtime",
+}
+
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    module = _EXPORTS.get(name)
+    if module is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module), name)
+    globals()[name] = value
+    return value
