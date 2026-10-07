@@ -1,5 +1,6 @@
 """Stopping a journey's Runtime session: only your own journey, only while it runs or waits."""
 
+import asyncio
 import json
 import os
 import uuid
@@ -246,7 +247,6 @@ async def test_a_completed_run_whose_release_was_lost_is_closed_not_abandoned(jo
     assert rows[0]["released_execution_id"] == before["execution_id"]
 
 
-
 @needs_017
 async def test_a_worker_that_finishes_before_the_record_is_recorded_as_finished(journey_with):
     make, runtime = journey_with
@@ -262,7 +262,6 @@ async def test_a_worker_that_finishes_before_the_record_is_recorded_as_finished(
     reply = await journeys.stop_session(journey, JORDAN, None)
     assert reply["stopped_during"] == "finished"
     assert [r["status"] for r in await _statuses(thread)] == ["succeeded"]
-
 
 
 async def test_a_run_that_pauses_while_the_stop_lands_is_recorded_as_waiting(journey_with):
@@ -326,3 +325,45 @@ async def test_a_resume_after_a_stop_can_be_stopped_again(journey_with):
     reply = await journeys.stop_session(journey, JORDAN, None)
     assert reply["stopped_during"] == "running"
     assert len(runtime.stops) == 2 and len(await _stop_rows(journey)) == 2
+
+
+async def test_two_concurrent_stops_record_exactly_one_row(journey_with):
+    make, runtime = journey_with
+    journey, _ = await make(status="running", completed=["intake"])
+    both_stopping = asyncio.Event()
+
+    async def wait_for_the_other_stop(thread_id):
+        if len(runtime.stops) == 2:
+            both_stopping.set()
+        await asyncio.wait_for(both_stopping.wait(), timeout=10)
+
+    runtime.while_stopping = wait_for_the_other_stop
+    results = await asyncio.gather(
+        journeys.stop_session(journey, JORDAN, None),
+        journeys.stop_session(journey, JORDAN, None),
+        return_exceptions=True)
+    refused = [r for r in results if isinstance(r, HTTPException)]
+    stopped = [r for r in results if isinstance(r, dict)]
+    assert len(stopped) == 1 and len(refused) == 1
+    assert refused[0].status_code == 409
+    assert refused[0].detail == "This session was already stopped."
+    assert len(await _stop_rows(journey)) == 1
+
+
+@pytest.mark.parametrize("worker_status", ["failed", "abandoned"])
+async def test_a_run_that_died_while_the_stop_landed_is_recorded_as_running(
+    journey_with, worker_status
+):
+    make, runtime = journey_with
+    journey, thread = await make(status="running", completed=["intake", "retrieve"])
+
+    async def worker_dies(thread_id):
+        await _master(
+            "UPDATE journey_executions SET status = %s, lease_expires_at = NULL "
+            "WHERE thread_id = %s", (worker_status, thread_id))
+
+    runtime.while_stopping = worker_dies
+    reply = await journeys.stop_session(journey, JORDAN, None)
+    assert reply["stopped_during"] == "running"
+    assert (await _stop_rows(journey))[0]["released_execution_id"] is None
+    assert [r["status"] for r in await _statuses(thread)] == [worker_status]

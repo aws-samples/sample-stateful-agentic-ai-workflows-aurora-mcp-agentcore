@@ -31,8 +31,12 @@ SELECT execution_id, status,
  WHERE thread_id = %s ORDER BY attempt DESC LIMIT 1
 """
 LOCK_LATEST_EXECUTION_SQL = """
-SELECT execution_id, status FROM journey_executions
+SELECT execution_id, status, started_at FROM journey_executions
  WHERE thread_id = %s ORDER BY attempt DESC LIMIT 1 FOR UPDATE
+"""
+NEWER_STOP_SQL = """
+SELECT EXISTS (SELECT 1 FROM workflow_session_stops
+                WHERE journey_id = %s AND stopped_at > %s::timestamptz) AS already_stopped
 """
 SNAPSHOT_SQL = """
 SELECT snapshot #>> '{data,state,execution_order,-1}' AS last_step,
@@ -95,15 +99,26 @@ async def _stop_target(client, journey_id: str, owner: str) -> str:
     return thread_id
 
 
-async def _settle_execution(tx_execute, thread_id: str, graph_status: Optional[str]):
+async def _settle_execution(tx_execute, journey_id: str, thread_id: str,
+                            graph_status: Optional[str]):
     """Lock the thread's newest execution and close it as the stop found it.
 
     Returns ``(stopped_during, released_execution_id)``. The newest execution
     is read here, under the lock, because a worker may have paused, finished or
-    been replaced by a resume while the Runtime call was in flight.
+    been replaced by a resume while the Runtime call was in flight. The lock
+    also serialises concurrent stops: the one that gets the lock second sees
+    the first stop's row and is refused with 409 before it records anything.
+    A failed or abandoned execution that never completed its graph means the
+    worker died mid-run: that is a ``running`` stop with nothing released.
     """
     rows = await tx_execute(LOCK_LATEST_EXECUTION_SQL, (thread_id,))
     latest = rows[0] if rows else None
+    if latest:
+        # A separate statement: the lock query's snapshot predates the wait, so a stop
+        # committed by the lock's previous holder is only visible to a fresh statement.
+        newer = await tx_execute(NEWER_STOP_SQL, (journey_id, latest["started_at"]))
+        if newer[0]["already_stopped"]:
+            raise HTTPException(status_code=409, detail="This session was already stopped.")
     finished = graph_status == "completed"
     if latest and latest["status"] == "running":
         outcome = "succeeded" if finished else "abandoned"
@@ -111,6 +126,8 @@ async def _settle_execution(tx_execute, thread_id: str, graph_status: Optional[s
         return ("finished" if finished else "running"), latest["execution_id"]
     if latest and latest["status"] != "paused" and finished:
         return "finished", None
+    if latest and latest["status"] in ("failed", "abandoned"):
+        return "running", None
     return "waiting", None
 
 
@@ -128,7 +145,8 @@ async def _record_stop(client, owner: str, journey_id: str, thread_id: str,
     snapshot are read after it, under a row lock. A running execution whose
     snapshot shows the graph completed only lost its release, so it closes as
     ``succeeded`` and the stop is ``finished``. Any other running execution is
-    abandoned and the stop is ``running``. Otherwise the run was waiting.
+    abandoned and the stop is ``running``. Otherwise the run was waiting. A stop
+    that finds a newer stop row after taking the lock is refused with 409.
     """
     async with _scoped(client, owner) as tx:
         async def tx_execute(sql, params):
@@ -137,7 +155,8 @@ async def _record_stop(client, owner: str, journey_id: str, thread_id: str,
         snap = await tx_execute(SNAPSHOT_SQL, (thread_id, snapshot_key(thread_id)))
         last_step = snap[0]["last_step"] if snap else None
         graph_status = snap[0]["graph_status"] if snap else None
-        during, released_id = await _settle_execution(tx_execute, thread_id, graph_status)
+        during, released_id = await _settle_execution(
+            tx_execute, journey_id, thread_id, graph_status)
         row = (await tx_execute(
             RECORD_STOP_SQL,
             (journey_id, thread_id, stop.runtime_session_id, stop.outcome,
