@@ -59,9 +59,26 @@ def container_engine() -> str:
 
 def validate_environment(environment: dict, account: str, region: str) -> None:
     for key, service in (("AURORA_CLUSTER_ARN", "rds"), ("AURORA_SECRET_ARN", "secretsmanager"),
-                         ("AGENTCORE_RUNTIME_ARN", "bedrock-agentcore")):
+                         ("AGENTCORE_RUNTIME_ARN", "bedrock-agentcore"),
+                         ("AGENTCORE_WORKFLOW_RUNTIME_ARN", "bedrock-agentcore")):
         if not environment.get(key, "").startswith(f"arn:aws:{service}:{region}:{account}:"):
             raise ValueError(f"{key} must belong to the selected account and region")
+
+
+def check_workflow_runtime(control, arn: str) -> None:
+    """Refuse to publish unless MeridianWorkflow is READY, so Phase 5 can never ship broken."""
+    runtime_id = arn.split("runtime/", 1)[-1]
+    try:
+        status = control.get_agent_runtime(agentRuntimeId=runtime_id)["status"]
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] != "ResourceNotFoundException":
+            raise
+        status = "not deployed"
+    if status != "READY":
+        raise SystemExit(
+            f"MeridianWorkflow is {status}: deploy it with the workflow Runtime steps in "
+            "docs/AGENTCORE_DEPLOY_RUNBOOK.md, then run publish again."
+        )
 
 
 def service_definition(service: dict, image_uri: str, environment: dict, roles: dict, secret_arn: str) -> dict:
@@ -151,7 +168,10 @@ def publish(args) -> None:
     run(["npm", "run", "build"], INFRA)
     run(["npx", "cdk", "synth", "--quiet"], INFRA, env)
     template = json.loads((INFRA / "cdk.out" / "MeridianWebBackend.template.json").read_text())
-    validate_environment(json.loads(template["Outputs"]["ServiceEnvironment"]["Value"]), args.account, args.region)
+    service_environment = json.loads(template["Outputs"]["ServiceEnvironment"]["Value"])
+    validate_environment(service_environment, args.account, args.region)
+    control = session.client("bedrock-agentcore-control", config=CONFIG)
+    check_workflow_runtime(control, service_environment["AGENTCORE_WORKFLOW_RUNTIME_ARN"])
     # Template-only diff is read-only: it does not create a change set or publish assets.
     run(["npx", "cdk", "diff", "--no-change-set"], INFRA, env)
     if not args.apply:

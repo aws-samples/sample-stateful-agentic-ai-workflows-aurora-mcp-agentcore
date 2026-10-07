@@ -1532,12 +1532,15 @@ async def orchestration_workflow(
     travelers_count: int = 1,
     review_only: bool = False,
 ) -> tuple[List[Product], List[ActivityEntry], str, str, str, bool]:
-    """Phase 5: a Strands Graph classifies, branches and saves each step in Aurora.
+    """Phase 5: the MeridianWorkflow AgentCore Runtime runs a Strands Graph.
+
+    The graph saves each step in Aurora.
 
     Reuses Phase 3's retrieval and availability as graph steps, so the workflow
     story is "explicit edges and saved steps" rather than different search code.
     """
-    from backend.agents.phase_05_workflow import service
+    from backend.agentcore.errors import AgentCoreNotConfiguredError
+    from backend.agentcore.workflow_runtime import get_workflow_runtime
     from backend.agents.phase_05_workflow.runner import (
         WorkflowCommand,
         WorkflowConflictError,
@@ -1555,7 +1558,13 @@ async def orchestration_workflow(
         review_only=review_only,
     )
     try:
-        final_state = await service.build_workflow_runner().run(command)
+        final_state = await get_workflow_runtime().run(command)
+    except AgentCoreNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=("The workflow Runtime is not configured: set AGENTCORE_WORKFLOW_RUNTIME_ARN "
+                    "or deploy MeridianWorkflow."),
+        ) from exc
     except WorkflowAuthorizationError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except WorkflowRequestError as exc:

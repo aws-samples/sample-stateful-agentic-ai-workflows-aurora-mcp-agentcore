@@ -235,6 +235,9 @@ Adding a gateway tool together with a policy that names it takes two deploys:
 the tool first, then the policy, because a policy is validated against the
 gateway's tool schema.
 
+Publishing the web app checks that MeridianWorkflow is READY and that its ARN is
+set, and refuses otherwise.
+
 ## Tear down
 
 Resources incur charges while they exist. Delete the AgentCore stack, then the

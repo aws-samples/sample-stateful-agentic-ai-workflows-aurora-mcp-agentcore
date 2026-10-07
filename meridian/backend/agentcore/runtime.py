@@ -106,7 +106,7 @@ def parse_sse(raw: bytes) -> list[dict[str, Any]]:
     return list(iter_sse([raw]))
 
 
-def _stream_chunks(response: dict[str, Any]):
+def stream_chunks(response: dict[str, Any]):
     body = response.get("response")
     try:
         if hasattr(body, "read"):
@@ -128,7 +128,7 @@ def _forward_runtime_events(response):
     raw_text, display_text = [], []
     paragraph_pending = False
     narration = DirectReplyStream()
-    for event in iter_sse(_stream_chunks(response)):
+    for event in iter_sse(stream_chunks(response)):
         if event.get("type") == "token" and isinstance(event.get("text"), str):
             text = event["text"]
             raw_text.append(text)

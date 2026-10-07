@@ -1,9 +1,10 @@
-"""Phase 5 over HTTP keeps its contract on the Strands runner."""
+"""Phase 5 over HTTP keeps its status contract on the workflow Runtime client."""
 
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
+from backend.agentcore.errors import AgentCoreNotConfiguredError
 from backend.agents.phase_05_workflow.governed_hold import HoldOutcomeUnknown
 from backend.agents.phase_05_workflow.nodes import WorkflowNodes
 from backend.agents.phase_05_workflow.runner import (
@@ -17,7 +18,7 @@ from backend.http_auth import HttpPrincipal
 from backend.routers import chat as router
 from tests.phase5_support import InMemoryLease, fake_availability, fake_search
 
-BUILD = "backend.agents.phase_05_workflow.service.build_workflow_runner"
+GET_RUNTIME = "backend.agentcore.workflow_runtime.get_workflow_runtime"
 
 
 class Runner:
@@ -43,20 +44,35 @@ def principal():
     (WorkflowRequestError("thread_id 'a/b' cannot be used"), 422),
 ])
 async def test_runner_refusals_keep_their_status(monkeypatch, error, status):
-    monkeypatch.setattr(BUILD, lambda: Runner(error))
+    monkeypatch.setattr(GET_RUNTIME, lambda: Runner(error))
     with pytest.raises(HTTPException) as caught:
         await router.chat(router.ChatRequest(message="Tokyo recovery", phase=5), principal())
     assert caught.value.status_code == status
 
 
+async def test_an_unconfigured_workflow_runtime_is_a_503_naming_the_setting(monkeypatch):
+    error = AgentCoreNotConfiguredError(
+        missing=("workflow_runtime_arn",), project_dir="p", sources=())
+    monkeypatch.setattr(GET_RUNTIME, lambda: Runner(error))
+    with pytest.raises(HTTPException) as caught:
+        await router.chat(router.ChatRequest(message="Tokyo recovery", phase=5), principal())
+    assert caught.value.status_code == 503
+    assert "AGENTCORE_WORKFLOW_RUNTIME_ARN" in caught.value.detail
+
+
 async def test_a_conversation_id_strands_cannot_use_is_a_422_before_any_claim(monkeypatch):
     lease = InMemoryLease()
-    runner = WorkflowRunner(
+    real_runner = WorkflowRunner(
         WorkflowNodes(fake_search, fake_availability),
         storage_for=lambda *args: pytest.fail("no storage may be built for a refused request"),
         lease=lease,
     )
-    monkeypatch.setattr(BUILD, lambda: runner)
+
+    class InsideTheRuntime:
+        async def run(self, command):
+            return await real_runner.run(command)
+
+    monkeypatch.setattr(GET_RUNTIME, lambda: InsideTheRuntime())
     with pytest.raises(HTTPException) as caught:
         await router.chat(
             router.ChatRequest(message="Tokyo recovery", phase=5, conversation_id="a/b"),
@@ -68,7 +84,8 @@ async def test_a_conversation_id_strands_cannot_use_is_a_422_before_any_claim(mo
 
 
 async def test_an_unknown_hold_outcome_says_to_reread(monkeypatch):
-    monkeypatch.setattr(BUILD, lambda: Runner(HoldOutcomeUnknown("The hold outcome is unknown.")))
+    unknown = HoldOutcomeUnknown("The hold outcome is unknown.")
+    monkeypatch.setattr(GET_RUNTIME, lambda: Runner(unknown))
     with pytest.raises(HTTPException) as caught:
         await router.chat(
             router.ChatRequest(message="Resume workflow", phase=5, resume=True,
@@ -80,7 +97,7 @@ async def test_an_unknown_hold_outcome_says_to_reread(monkeypatch):
 
 
 async def test_any_other_failure_is_a_referenced_503(monkeypatch):
-    monkeypatch.setattr(BUILD, lambda: Runner(RuntimeError("boom")))
+    monkeypatch.setattr(GET_RUNTIME, lambda: Runner(RuntimeError("boom")))
     with pytest.raises(HTTPException) as caught:
         await router.chat(router.ChatRequest(message="Tokyo recovery", phase=5), principal())
     assert caught.value.status_code == 503
@@ -94,7 +111,7 @@ async def test_a_paused_run_returns_the_resume_chip_and_a_generated_thread(monke
         "response": "Workflow paused after a committed checkpoint.",
         "activities": [], "packages": [], "conversation_id": "phase5-generated",
     })
-    monkeypatch.setattr(BUILD, lambda: runner)
+    monkeypatch.setattr(GET_RUNTIME, lambda: runner)
     response = await router.chat(
         router.ChatRequest(message="Rework my canceled Tokyo trip", phase=5), principal()
     )
