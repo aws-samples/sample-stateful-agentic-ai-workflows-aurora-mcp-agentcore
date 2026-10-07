@@ -322,7 +322,7 @@ class RDSDataClient:
                 transactionId=transaction_id,
             )
         except Exception:
-            pass
+            logger.exception("Rolling back transaction %s failed", transaction_id)
 
     async def check_traveler_authorization(
         self,

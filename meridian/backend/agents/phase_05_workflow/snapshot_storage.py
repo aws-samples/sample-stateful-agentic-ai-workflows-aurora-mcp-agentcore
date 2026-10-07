@@ -64,7 +64,8 @@ class AuroraSnapshotStorage:
         execution_id: The execution holding the lease. None makes the storage
             read-only: a write is refused, because nothing fences it.
         worker_id: The process or Runtime session doing the work.
-        on_write: Called with each write's duration in milliseconds.
+        on_write: Called with each write's duration in milliseconds. The time covers
+            begin, traveler pin, statement and commit.
     """
 
     def __init__(

@@ -19,12 +19,15 @@ from unittest.mock import AsyncMock  # noqa: E402
 
 from backend.agents.phase_05_workflow.runner import WorkflowCommand  # noqa: E402
 from backend.agents.phase_05_workflow.service import build_workflow_runner  # noqa: E402
+from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
 from tests.phase5_support import GatewayFake, fake_availability, fake_search  # noqa: E402
 
 QUERY = "My flight was canceled. Rework my Tokyo trip and check availability."
 
 
 async def main(thread_id: str, mode: str) -> None:
+    who = await get_rds_data_client().execute("SELECT current_user AS u")
+    print(json.dumps({"current_user": who[0]["u"]}), flush=True)
     runner = build_workflow_runner(
         search_fn=fake_search, availability_fn=fake_availability,
         gateway_call=GatewayFake(), lease_seconds=15, heartbeat_seconds=3,
@@ -36,7 +39,8 @@ async def main(thread_id: str, mode: str) -> None:
         resume=mode == "resume", travelers_count=2,
     )
     result = await runner.run(command)
-    print(json.dumps({"event": "done", "workflow_status": result["workflow_status"]}), flush=True)
+    print(json.dumps({"event": "done", "workflow_status": result["workflow_status"],
+                      "worker": result["worker_instance_id"]}), flush=True)
 
 
 if __name__ == "__main__":

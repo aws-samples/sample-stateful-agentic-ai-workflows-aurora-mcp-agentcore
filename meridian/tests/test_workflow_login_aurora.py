@@ -8,11 +8,15 @@ import uuid
 
 import pytest
 import pytest_asyncio
-from strands.types.exceptions import StorageError
 
 from backend.agents.phase_05_workflow.lease import AuroraLeaseStore
 from backend.agents.phase_05_workflow.snapshot_storage import AuroraSnapshotStorage
-from backend.db.journey_store import ExecutionLeaseLostError, bind_thread, create_journey
+from backend.db.journey_store import (
+    ExecutionLeaseLostError,
+    bind_thread,
+    claim_execution,
+    create_journey,
+)
 from backend.db.rds_data_client import RDSDataClient, get_rds_data_client
 
 pytestmark = pytest.mark.database
@@ -83,12 +87,41 @@ async def test_the_login_cannot_see_another_travelers_snapshot(login, made):
     assert await jordan.list("") == []
 
 
-async def test_the_login_cannot_append_to_a_thread_of_another_traveler(login, made):
+async def test_a_real_execution_of_another_travelers_thread_cannot_be_written_to(login, made):
+    """The lease check refuses it, because RLS hides the decoy's execution from the login.
+
+    The execution is real and running. With TRAVELER pinned, the fence's subquery on
+    journey_executions sees no row, so the fenced INSERT returns nothing.
+    """
     thread = await _thread(made, DECOY)
+    master = get_rds_data_client()
+    journey = made[-1][1]
+    claim = await claim_execution(master, journey, thread, "worker-decoy", 30)
+    assert claim.claimed
     forged = AuroraSnapshotStorage(login, session_id=thread, traveler_id=TRAVELER,
-                                   execution_id="exec-forged", worker_id="worker-login")
-    with pytest.raises((StorageError, ExecutionLeaseLostError)):
+                                   execution_id=claim.execution_id, worker_id="worker-login")
+    with pytest.raises(ExecutionLeaseLostError):
         await forged.write(key(thread), b'{"data": {}}')
+    rows = await master.execute(
+        "SELECT COUNT(*) AS n FROM workflow_snapshots WHERE session_id = %s", (thread,))
+    assert rows[0]["n"] == 0
+
+
+async def test_the_insert_policy_refuses_a_row_stamped_for_another_traveler(login, made):
+    """Only the INSERT policy's WITH CHECK can stop this: no lease fence is involved."""
+    thread = await _thread(made, TRAVELER)
+    tx = login.begin_transaction()
+    try:
+        await login.execute(
+            "SELECT set_config('app.current_traveler_id', %s, true)", (TRAVELER,),
+            transaction_id=tx)
+        with pytest.raises(Exception, match="row-level security"):
+            await login.execute(
+                "INSERT INTO workflow_snapshots (storage_key, session_id, traveler_id, snapshot) "
+                "VALUES (%s, %s, %s, '{}'::jsonb)", (key(thread), thread, DECOY),
+                transaction_id=tx)
+    finally:
+        login.rollback_transaction(tx)
     rows = await get_rds_data_client().execute(
         "SELECT COUNT(*) AS n FROM workflow_snapshots WHERE session_id = %s", (thread,))
     assert rows[0]["n"] == 0
@@ -120,14 +153,21 @@ async def test_a_resume_of_another_travelers_thread_reads_as_nothing_to_resume(l
 async def test_the_workflow_pauses_and_resumes_under_the_login(made):
     # The subprocess sets AURORA_SECRET_ARN to the login's secret before importing
     # backend, so every client in the run, the lease included, is meridian_workflow.
+    # _prepare_governed_hold and _booking_status are mocked there, so the grants they
+    # need are proven later by the local Runtime run (Task 9).
     thread = await _thread(made, TRAVELER)
+    workers = set()
     for mode, expected in (("start", "paused"), ("resume", "resumed")):
         child = await asyncio.create_subprocess_exec(
             sys.executable, "-m", "tests.workflow_login_process", thread, mode,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         out, err = await asyncio.wait_for(child.communicate(), timeout=180)
         assert child.returncode == 0, err.decode()[-2000:]
-        assert json.loads(out.decode().strip().splitlines()[-1])["workflow_status"] == expected
+        lines = [json.loads(line) for line in out.decode().splitlines() if line.startswith("{")]
+        assert {"current_user": "meridian_workflow"} in lines
+        assert lines[-1]["workflow_status"] == expected
+        workers.add(lines[-1]["worker"])
     rows = await get_rds_data_client().execute(
         "SELECT DISTINCT worker_id FROM workflow_snapshots WHERE session_id = %s", (thread,))
     assert rows
+    assert {row["worker_id"] for row in rows} == workers
