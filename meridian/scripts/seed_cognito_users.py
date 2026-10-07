@@ -198,11 +198,31 @@ def _select(rds, conn: Dict[str, str], sql: str, **values: str) -> list:
     return [row[0]["stringValue"] for row in response.get("records", [])]
 
 
+def _traveler_visible(rds, conn: Dict[str, str], traveler_id: str) -> bool:
+    """Whether ``travelers`` shows the row once the transaction is pinned to that traveler.
+
+    ``travelers`` forces row level security on ``app.current_traveler_id`` and the master
+    login is not BYPASSRLS, so an unpinned read returns nothing even for a row that exists.
+    """
+    transaction = rds.begin_transaction(**conn)["transactionId"]
+    try:
+        values = [{"name": "traveler_id", "value": {"stringValue": traveler_id}}]
+        rds.execute_statement(
+            **conn, transactionId=transaction, parameters=values,
+            sql="SELECT set_config('app.current_traveler_id', :traveler_id, true)")
+        response = rds.execute_statement(
+            **conn, transactionId=transaction, parameters=values,
+            sql="SELECT 1 FROM travelers WHERE traveler_id = :traveler_id")
+    except BaseException:
+        rds.rollback_transaction(transactionId=transaction, **conn)
+        raise
+    rds.commit_transaction(transactionId=transaction, **conn)
+    return bool(response.get("records"))
+
+
 def require_traveler(rds, conn: Dict[str, str], user: SeedUser) -> None:
     """Stop when the traveler row is missing, before anything is created for the user."""
-    found = _select(rds, conn, "SELECT traveler_id FROM travelers WHERE traveler_id = :traveler_id",
-                    traveler_id=user.traveler_id)
-    if not found:
+    if not _traveler_visible(rds, conn, user.traveler_id):
         raise SystemExit(
             f"traveler {user.traveler_id} for {user.key} is not in the travelers table; run "
             f"{user.seed_script} first, then re-run this script")

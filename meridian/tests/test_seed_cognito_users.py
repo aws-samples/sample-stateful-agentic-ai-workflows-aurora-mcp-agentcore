@@ -30,17 +30,40 @@ class Recorder:
 
 
 class FakeRds:
-    """A Data API that knows which travelers exist and what the sub is already bound to."""
+    """A Data API that enforces the travelers policy: rows show only under a pinned traveler."""
 
     def __init__(self, travelers=("trv_meridian_demo", "trv_demo_decoy"), other_bindings=()):
         self.travelers, self.other_bindings, self.calls = travelers, other_bindings, []
+        self.pins, self.open_transactions, self.finished = {}, set(), []
+
+    def begin_transaction(self, **kwargs):
+        self.calls.append(("begin_transaction", kwargs))
+        txn = f"txn-{len(self.pins) + len(self.open_transactions) + 1}"
+        self.open_transactions.add(txn)
+        return {"transactionId": txn}
+
+    def commit_transaction(self, **kwargs):
+        self.calls.append(("commit_transaction", kwargs))
+        self.open_transactions.discard(kwargs["transactionId"])
+        self.finished.append("commit")
+        return {}
+
+    def rollback_transaction(self, **kwargs):
+        self.calls.append(("rollback_transaction", kwargs))
+        self.open_transactions.discard(kwargs["transactionId"])
+        self.finished.append("rollback")
+        return {}
 
     def execute_statement(self, **kwargs):
         self.calls.append(("execute_statement", kwargs))
-        sql = kwargs["sql"]
+        sql, txn = kwargs["sql"], kwargs.get("transactionId")
         values = {p["name"]: p["value"]["stringValue"] for p in kwargs.get("parameters", [])}
-        if sql.startswith("SELECT traveler_id FROM travelers"):
-            found = [values["traveler_id"]] if values["traveler_id"] in self.travelers else []
+        if "set_config('app.current_traveler_id'" in sql:
+            self.pins[txn] = values["traveler_id"]
+            return {"records": [[{"stringValue": values["traveler_id"]}]]}
+        if sql.startswith("SELECT 1 FROM travelers"):
+            visible = txn in self.open_transactions and self.pins.get(txn) == values["traveler_id"]
+            found = ["1"] if visible and values["traveler_id"] in self.travelers else []
         elif sql.startswith("SELECT traveler_id FROM traveler_identity_bindings"):
             found = list(self.other_bindings)
         else:
@@ -48,7 +71,12 @@ class FakeRds:
         return {"records": [[{"stringValue": t}] for t in found]}
 
     def inserts(self):
-        return [kw for _, kw in self.calls if kw["sql"].startswith("INSERT")]
+        return [kw for name, kw in self.calls if name == "execute_statement"
+                and kw["sql"].startswith("INSERT")]
+
+    def statements(self):
+        return [(kw["sql"], kw.get("transactionId")) for name, kw in self.calls
+                if name == "execute_statement"]
 
 
 def _error(code):
@@ -375,3 +403,40 @@ def test_a_failure_before_cognito_changed_has_no_repair_hint(monkeypatch, tmp_pa
     with pytest.raises(SystemExit) as exit_info:
         seed.main(["--user", "jordan", "--apply"])
     assert "stored nowhere safe" not in str(exit_info.value)
+
+
+def test_the_traveler_check_pins_the_traveler_in_one_transaction_before_the_select():
+    rds = FakeRds()
+    seed.require_traveler(rds, {"resourceArn": CLUSTER, "secretArn": "s", "database": "d"},
+                          seed.USERS["jordan"])
+    names = [n for n, _ in rds.calls]
+    assert names == ["begin_transaction", "execute_statement", "execute_statement",
+                     "commit_transaction"]
+    (pin_sql, pin_txn), (read_sql, read_txn) = rds.statements()
+    assert "set_config('app.current_traveler_id', :traveler_id, true)" in pin_sql
+    assert read_sql.startswith("SELECT 1 FROM travelers WHERE traveler_id = :traveler_id")
+    assert pin_txn == read_txn is not None
+    assert rds.calls[-1][1]["transactionId"] == pin_txn
+    assert "trv_meridian_demo" not in pin_sql + read_sql
+
+
+def test_a_missing_traveler_is_reported_and_the_transaction_is_closed():
+    rds = FakeRds(travelers=())
+    with pytest.raises(SystemExit, match="trv_meridian_demo"):
+        seed.require_traveler(rds, {"resourceArn": CLUSTER, "secretArn": "s", "database": "d"},
+                              seed.USERS["jordan"])
+    assert rds.open_transactions == set() and len(rds.finished) == 1
+
+
+def test_a_failed_read_rolls_the_transaction_back():
+    class Failing(FakeRds):
+        def execute_statement(self, **kwargs):
+            if kwargs["sql"].startswith("SELECT 1 FROM travelers"):
+                raise _error("StatementTimeoutException")
+            return super().execute_statement(**kwargs)
+
+    rds = Failing()
+    with pytest.raises(ClientError):
+        seed.require_traveler(rds, {"resourceArn": CLUSTER, "secretArn": "s", "database": "d"},
+                              seed.USERS["jordan"])
+    assert rds.finished == ["rollback"] and rds.open_transactions == set()
