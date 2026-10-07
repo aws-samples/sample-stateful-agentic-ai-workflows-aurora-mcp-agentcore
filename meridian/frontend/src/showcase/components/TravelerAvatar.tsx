@@ -6,6 +6,9 @@ export function TravelerAvatar({ traveler, width, height }: {
   traveler: TravelerIdentity; width: number; height: number;
 }) {
   return traveler.avatarUrl
-    ? <img src={traveler.avatarUrl} alt="" width={width} height={height} loading="lazy" />
+    ? <img
+        src={traveler.avatarUrl} alt="" width={width} height={height} loading="lazy"
+        decoding="async" referrerPolicy="no-referrer"
+      />
     : <span className="mds-traveler-initials" aria-hidden="true">{traveler.initials}</span>;
 }

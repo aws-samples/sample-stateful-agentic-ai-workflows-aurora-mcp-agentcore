@@ -50,7 +50,7 @@ describe('a signed-in traveler', () => {
     });
     await waitFor(() => expect(fetchMemoryProfile).toHaveBeenCalled());
     expect(result.current.traveler).toEqual({
-      id: 'trv_demo_decoy', name: 'Jordan Lee', initials: 'JL', avatarUrl: null,
+      id: 'trv_demo_decoy', name: 'Jordan Lee', initials: 'JL', avatarUrl: null, idVerified: false,
     });
     expect(vi.mocked(fetchMemoryProfile).mock.calls.every(([id]) => id === 'me')).toBe(true);
   });
@@ -83,5 +83,18 @@ describe('a signed-in traveler', () => {
     expect(result.current.selectedPhase).not.toBe(5);
     act(() => result.current.restoreJourney(savedJourney('trv_demo_decoy')));
     expect(result.current.selectedPhase).toBe(5);
+  });
+
+  it('shows initials and the neutral name for an account with an empty profile and no photo', async () => {
+    vi.mocked(fetchMemoryProfile).mockResolvedValue({
+      traveler_id: 'trv_demo_decoy', profile: {}, facts: [],
+    });
+    const { result } = renderHook(() => useMeridianShowcase(), {
+      wrapper: signedInAs('trv_demo_decoy'),
+    });
+    await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+    expect(result.current.traveler).toMatchObject({
+      id: 'trv_demo_decoy', name: 'Your account', initials: 'YA', avatarUrl: null,
+    });
   });
 });

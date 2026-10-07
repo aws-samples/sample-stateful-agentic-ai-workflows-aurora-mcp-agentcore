@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MeridianShowcaseState } from '../../hooks/useMeridianShowcase';
 import { TravelerContextPanel } from '../TravelerContextPanel';
-import { JORDAN_IDENTITY } from '../../../test/signedIn';
+import { ALEX_IDENTITY, JORDAN_IDENTITY, UNKNOWN_IDENTITY } from '../../../test/signedIn';
 
 function state(
   overrides: Partial<MeridianShowcaseState> = {},
@@ -75,5 +75,37 @@ describe('TravelerContextPanel memory capability', () => {
     expect(screen.getByText('Prior plans')).toBeInTheDocument();
     expect(screen.getByText('Aurora, RLS scoped')).toBeInTheDocument();
     expect(screen.getByText('Tokyo culture trip Oct 12-19')).toBeInTheDocument();
+  });
+});
+
+describe('TravelerContextPanel naming', () => {
+  const loading = { selectedPhase: 4 as const, phaseLabel: 'Production', memoryEnabled: true, memoryLoading: true };
+
+  it.each([
+    [ALEX_IDENTITY, "Authorizing Alex's context"],
+    [UNKNOWN_IDENTITY, 'Authorizing your context'],
+  ])('says whose context is loading for %j', (traveler, text) => {
+    const { container } = render(
+      <TravelerContextPanel state={state({ ...loading, traveler })} onOpenMemory={vi.fn()} />,
+    );
+    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(container.textContent).not.toContain('Jordan');
+  });
+
+  const enabled = { selectedPhase: 4 as const, phaseLabel: 'Production', memoryEnabled: true };
+
+  it('calls the id a claim from the sign-in, not authorized, until the API confirms it', () => {
+    const claimed = { ...ALEX_IDENTITY, idVerified: false };
+    render(<TravelerContextPanel state={state({ ...enabled, traveler: claimed })}
+      onOpenMemory={vi.fn()} />);
+    expect(screen.getByText('From your sign-in: trv_alex')).toBeInTheDocument();
+    expect(screen.queryByText('Authorized')).not.toBeInTheDocument();
+  });
+
+  it('marks the traveler authorized once the API confirmed the id', () => {
+    render(<TravelerContextPanel state={state({ ...enabled, traveler: ALEX_IDENTITY })}
+      onOpenMemory={vi.fn()} />);
+    expect(screen.getByText('Authorized')).toBeInTheDocument();
+    expect(screen.getByText('trv_alex')).toBeInTheDocument();
   });
 });

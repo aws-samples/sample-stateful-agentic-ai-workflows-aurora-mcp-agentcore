@@ -25,7 +25,7 @@ import { TripResultCardContent } from '../TripResultCardContent';
 import { TripDetailDrawer } from '../TripDetailDrawer';
 import { ConciergeAssistanceCard } from '../RecoveryDecisionCards';
 import { SessionClose } from '../../surfaces/SessionClose';
-import { JORDAN_IDENTITY } from '../../../test/signedIn';
+import { ALEX_IDENTITY, JORDAN_IDENTITY, UNKNOWN_IDENTITY } from '../../../test/signedIn';
 
 function makeState(
   overrides: Partial<MeridianShowcaseState> = {},
@@ -1587,3 +1587,68 @@ describe('Navigation, waits and focus', () => {
   });
 });
 
+
+describe('copy names only the signed-in traveler', () => {
+  const tokyo = {
+    product_id: 'CTY-002', name: 'Tokyo trip', price: 2499, available_sizes: ['5 nights'],
+    description: '', image_url: '', brand: 'Meridian', category: 'city',
+  };
+  const heldTokyo = { productId: tokyo.product_id, order: {
+    order_id: 'HLD-1', status: 'held', hold_expires_at: '2099-01-01T00:00:00Z',
+    items: [{
+      product_id: tokyo.product_id, name: tokyo.name, size: '5 nights', quantity: 2, unit_price: 2499,
+    }],
+    subtotal: 4998, total: 4998, tax: 0, shipping: 0,
+  } };
+  const heldHandoff = {
+    status: 'held', booking_id: 'HLD-current', package_id: 'CTY-002', duration: '3 nights',
+    travelers_count: 2, unit_price: '2000.00', total_amount: '4000.00',
+    hold_expires_at: '2099-01-01T00:00:00Z',
+  };
+
+  it('asks Alex, not Jordan, to confirm a held trip', () => {
+    render(<TripDetailDrawer state={makeState({
+      traveler: ALEX_IDENTITY, selectedTrip: tokyo, tripDetailsOpen: true, tripHolds: [heldTokyo],
+    })} />);
+    expect(screen.getByRole('button', { name: 'Confirm this trip for Alex' })).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('Jordan');
+  });
+
+  it('asks without a name when the account is unnamed', () => {
+    render(<TripDetailDrawer state={makeState({
+      traveler: UNKNOWN_IDENTITY, selectedTrip: tokyo, tripDetailsOpen: true, tripHolds: [heldTokyo],
+    })} />);
+    expect(screen.getByRole('button', { name: 'Confirm this trip' })).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('Jordan');
+  });
+
+  it.each([
+    [ALEX_IDENTITY, 'Confirm this trip for Alex?'],
+    [UNKNOWN_IDENTITY, 'Confirm this trip?'],
+  ])('restates the booking to %j with its own name', (traveler, heading) => {
+    render(<TripDetailDrawer state={makeState({
+      traveler, selectedTrip: tokyo, tripDetailsOpen: true, tripHolds: [heldTokyo],
+      bookingPrompt: heldTokyo,
+    })} />);
+    expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('Jordan');
+  });
+
+  it.each([
+    [ALEX_IDENTITY, "Alex's JFK to Tokyo recovery", 'Take it back to Alex'],
+    [UNKNOWN_IDENTITY, 'Your JFK to Tokyo recovery', 'Take it back to your trip'],
+  ])('titles and hands off the recovery for %j', (traveler, title, handoff) => {
+    const document = { active_thread_id: 'current-thread', hold: heldHandoff } as JourneyDocument;
+    const { container } = render(<RecoveryWorkspace
+      state={makeState({ traveler, selectedPhase: 5, conversationId: 'current-thread' })}
+      journeyDocument={document} onOpenConcierge={vi.fn()} />);
+    expect(screen.getByRole('heading', { name: title })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: handoff })).toBeInTheDocument();
+    expect(container.textContent).not.toContain('Jordan');
+  });
+
+  it('names nobody in the session close', () => {
+    const { container } = render(<SessionClose onEvidence={vi.fn()} onConcierge={vi.fn()} />);
+    expect(container.textContent).not.toContain('Jordan');
+  });
+});

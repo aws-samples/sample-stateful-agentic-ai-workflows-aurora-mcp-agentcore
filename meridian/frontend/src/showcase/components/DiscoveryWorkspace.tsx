@@ -6,6 +6,7 @@ import type { Product } from '../../types';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { tripVisualPhoto } from '../lib/tripVisualPhoto';
 import { derivePersonalization } from '../lib/discoveryPersonalization';
+import { firstNameOf } from '../lib/travelerIdentity';
 
 const NO_TRIPS: Product[] = [];
 
@@ -102,6 +103,8 @@ export function DiscoveryWorkspace({ state, onClear, onDiscover }: {
   onDiscover?: () => void;
 }) {
   const hasTurn = state.messages.length > 0;
+  const firstName = firstNameOf(state.traveler);
+  const greetingHeading = firstName ? `Your next chapter, ${firstName}.` : 'Your next chapter.';
   const latestMessage = state.messages[state.messages.length - 1];
   const replyStarted = latestMessage?.role === 'bot' && Boolean(latestMessage.text.trim());
   // Pre-turn, the pool is exactly the live Aurora catalog - never a bundled
@@ -126,7 +129,7 @@ export function DiscoveryWorkspace({ state, onClear, onDiscover }: {
   return (
     <section className="mc-workspace" aria-label="Meridian concierge">
       <header className="mc-welcome">
-        <div><h1>{hasTurn ? 'Let’s make it your kind of trip.' : 'Your next chapter, Jordan.'}</h1>
+        <div><h1>{hasTurn ? 'Let’s make it your kind of trip.' : greetingHeading}</h1>
         <span>A trip that feels like you.</span></div>
         <button type="button" className="mc-text-button mc-walkthrough" onClick={onClear} aria-label="How it works: start the capability ladder at Phase 1">How it works<ArrowRight size={15} aria-hidden="true" /></button>
       </header>

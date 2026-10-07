@@ -7,6 +7,7 @@ import { TripVisual } from './TripVisual';
 import { TripHoldReceipt } from './TripHoldReceipt';
 import { BookingConfirmation } from './BookingConfirmation';
 import { useHoldClock } from '../hooks/useHoldClock';
+import { firstNameOf } from '../lib/travelerIdentity';
 
 function duration(product: Product) {
   return product.available_sizes?.[0] ?? 'Flexible duration';
@@ -22,6 +23,8 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
   const confirmed = hold?.order.status === 'confirmed';
   const confirming = Boolean(hold) && state.bookingPrompt?.order.order_id === hold?.order.order_id;
   const stopRef = useRef<HTMLButtonElement>(null);
+  const firstName = firstNameOf(state.traveler);
+  const confirmLabel = firstName ? `Confirm this trip for ${firstName}` : 'Confirm this trip';
   // Confirming removes the focused button, and a finished write removes Stop
   // waiting. Keep keyboard focus in the dialog instead of dropping it on the page.
   useEffect(() => {
@@ -73,6 +76,7 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
           {hold && confirming && (
             <BookingConfirmation
               product={product}
+              traveler={state.traveler}
               hold={hold}
               budgetPerTravelerCents={state.budgetCeilingPerTravelerCents}
               busy={state.isLoading}
@@ -141,7 +145,7 @@ export function TripDetailDrawer({ state }: { state: MeridianShowcaseState }) {
               >
                 {state.pendingWrite === 'confirm' ? 'Confirming…'
                   : state.pendingWrite === 'hold' ? 'Creating hold…'
-                  : confirmed ? 'Trip confirmed' : activeHold ? 'Confirm this trip for Jordan' : 'Request 12-hour hold'}
+                  : confirmed ? 'Trip confirmed' : activeHold ? confirmLabel : 'Request 12-hour hold'}
               </button>
             )}
           </footer>

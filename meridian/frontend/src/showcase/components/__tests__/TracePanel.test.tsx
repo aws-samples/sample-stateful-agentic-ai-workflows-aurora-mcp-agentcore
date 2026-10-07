@@ -32,7 +32,7 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     phaseLabel: 'SQL',
     phaseHint: null,
     dismissPhaseHint: vi.fn(),
-    traveler: { id: 'traveler-demo', name: 'Test Traveler', initials: 'TT', avatarUrl: null },
+    traveler: { id: 'traveler-demo', name: 'Test Traveler', initials: 'TT', avatarUrl: null, idVerified: true },
     messages: [],
     currentPrompt: '',
     recommendations: [],

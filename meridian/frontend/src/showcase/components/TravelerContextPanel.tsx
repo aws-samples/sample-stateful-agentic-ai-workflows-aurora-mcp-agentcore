@@ -13,6 +13,7 @@ import { ServiceMark } from './ServiceMark';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { TravelerAvatar } from './TravelerAvatar';
 import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
+import { firstNameOf } from '../lib/travelerIdentity';
 
 // Snake-case schema keys read as "authentic Aurora data" for some fields
 // (no_red_eye, vegetarian_friendly) but feel awkward for multi-word
@@ -54,6 +55,8 @@ export function TravelerContextPanel({
   const prefersReducedMotion = usePrefersReducedMotion();
   const memoryAvailable = state.selectedPhase >= 4;
   const memoryOn = memoryAvailable && state.memoryEnabled;
+  const ownerName = firstNameOf(state.traveler);
+  const contextOwner = ownerName ? `Authorizing ${ownerName}'s context` : 'Authorizing your context';
   const facts = memoryOn
     ? state.memoryFacts
         .filter((fact) => !DRAWER_ONLY_KEYS.has(fact.key))
@@ -198,7 +201,7 @@ export function TravelerContextPanel({
             <div className="mds-memory-gate is-loading" role="status">
               <Loader2 size={22} aria-hidden="true" />
               <div>
-                <strong>Authorizing Jordan's context</strong>
+                <strong>{contextOwner}</strong>
                 <span>Applying the traveler grant and loading scoped Aurora facts.</span>
               </div>
             </div>
@@ -226,12 +229,17 @@ export function TravelerContextPanel({
                 </span>
                 <div>
                   <strong>{state.traveler.name}</strong>
-                  {state.traveler.id && <small>{state.traveler.id}</small>}
+                  {state.traveler.id && (
+                    <small>{state.traveler.idVerified
+                      ? state.traveler.id : `From your sign-in: ${state.traveler.id}`}</small>
+                  )}
                 </div>
-                <span className="mds-memory-authorized">
-                  <CheckCircle2 size={13} aria-hidden="true" />
-                  Authorized
-                </span>
+                {state.traveler.idVerified && (
+                  <span className="mds-memory-authorized">
+                    <CheckCircle2 size={13} aria-hidden="true" />
+                    Authorized
+                  </span>
+                )}
               </div>
 
               <div className="mds-memory-provenance">

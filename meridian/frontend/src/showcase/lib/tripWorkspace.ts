@@ -1,6 +1,7 @@
 import type { Product } from '../../types';
 
-const STORAGE_KEY = 'meridian.trip-workspace.v1';
+const LEGACY_STORAGE_KEY = 'meridian.trip-workspace.v1';
+const storageKeyFor = (travelerKey: string) => `meridian:trip-workspace:v1:${travelerKey}`;
 const MAX_COMPARE_TRIPS = 3;
 
 export interface TripWorkspace {
@@ -45,20 +46,26 @@ export function parseTripWorkspace(raw: string | null): TripWorkspace {
   }
 }
 
-/** Saved and compared trips are a convenience; blocked storage must not stop the app. */
-export function loadTripWorkspace(): TripWorkspace {
+/**
+ * Saved and compared trips are a convenience kept per traveler, so two people on one browser never
+ * see each other's. Nobody identified yet means nothing is read or kept. Blocked storage must not
+ * stop the app. The one shared key an older build wrote is removed, never handed to anyone.
+ */
+export function loadTripWorkspace(travelerKey: string | null): TripWorkspace {
   if (typeof window === 'undefined') return EMPTY_TRIP_WORKSPACE;
   try {
-    return parseTripWorkspace(window.localStorage.getItem(STORAGE_KEY));
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    if (!travelerKey) return EMPTY_TRIP_WORKSPACE;
+    return parseTripWorkspace(window.localStorage.getItem(storageKeyFor(travelerKey)));
   } catch {
     return EMPTY_TRIP_WORKSPACE;
   }
 }
 
-export function saveTripWorkspace(workspace: TripWorkspace): void {
-  if (typeof window === 'undefined') return;
+export function saveTripWorkspace(travelerKey: string | null, workspace: TripWorkspace): void {
+  if (typeof window === 'undefined' || !travelerKey) return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace));
+    window.localStorage.setItem(storageKeyFor(travelerKey), JSON.stringify(workspace));
   } catch {
     // Blocked or full storage keeps the workspace for this page only.
   }

@@ -17,7 +17,7 @@ import type { ChatStreamEvent } from '../../api/chatStream';
 import { CURRENT_TRAVELER } from '../../api/currentTraveler';
 import { runWithDeadline } from '../../api/request';
 import { useSession } from '../../auth/SessionContext';
-import { travelerIdentity, type TravelerIdentity } from '../lib/travelerIdentity';
+import { firstNameOf, travelerIdentity, type TravelerIdentity } from '../lib/travelerIdentity';
 import { holdIntentKey, loadBookingRecovery, saveBookingRecovery, type SavedHoldIntent } from '../lib/bookingRecovery';
 import type {
   ChatResponse,
@@ -45,8 +45,10 @@ import {
 } from '../lib/showcaseAdapters';
 import { SHOWCASE_INITIAL_PROMPT } from '../lib/showcaseFallbackData';
 import {
+  EMPTY_TRIP_WORKSPACE,
   loadTripWorkspace,
   saveTripWorkspace,
+  type TripWorkspace,
   toggleComparedTrip,
   toggleSavedTrip,
 } from '../lib/tripWorkspace';
@@ -255,12 +257,37 @@ function clearWorkflowAddress() {
 
 const PHASE_DELAYS: Record<Phase, number> = { 1: 420, 2: 360, 3: 300, 4: 280, 5: 260 };
 
+/**
+ * Saved and compared trips for whoever is using the page. They are read and kept under that
+ * traveler's id; when the id changes the trips change with it, and the previous traveler's trips
+ * are never written under the new id. With nobody identified they stay in memory only.
+ */
+function useTripWorkspace(travelerId: string | null) {
+  const [stored, setStored] = useState<{ owner: string | null; workspace: TripWorkspace }>(
+    () => ({ owner: travelerId, workspace: loadTripWorkspace(travelerId) }),
+  );
+  if (stored.owner !== travelerId) {
+    setStored({ owner: travelerId, workspace: loadTripWorkspace(travelerId) });
+  }
+  const workspace = stored.owner === travelerId ? stored.workspace : EMPTY_TRIP_WORKSPACE;
+  useEffect(() => {
+    if (stored.owner === travelerId) saveTripWorkspace(stored.owner, stored.workspace);
+  }, [stored, travelerId]);
+  const setWorkspace = useCallback(
+    (update: (prior: TripWorkspace) => TripWorkspace) => setStored(prior => ({
+      owner: prior.owner, workspace: update(prior.workspace),
+    })),
+    [],
+  );
+  return { workspace, setWorkspace };
+}
+
 export function useMeridianShowcase(): MeridianShowcaseState {
-  const { traveler: signedIn } = useSession();
+  const { traveler: signedIn, verifiedTravelerId } = useSession();
   // Requests say CURRENT_TRAVELER and the API resolves it from the verified credential. The id the
   // page knows is only a key for this browser's own saved state, so two people never share it.
   const travelerKey = useRef(CURRENT_TRAVELER);
-  travelerKey.current = signedIn?.travelerId ?? CURRENT_TRAVELER;
+  travelerKey.current = verifiedTravelerId ?? signedIn?.travelerId ?? CURRENT_TRAVELER;
   // Start the showcase at Phase 1 (SQL) so a stage walk-through can begin
   // with the simplest data path - direct SQL filters over Aurora - and
   // progressively introduce MCP, Retrieval, Production, and Workflow.
@@ -292,7 +319,6 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const writeController = useRef<AbortController | null>(null);
   const [bookingPrompt, setBookingPrompt] = useState<TripHold | null>(null);
   const bookingPending = useRef(false);
-  const [workspace, setWorkspace] = useState(loadTripWorkspace);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [memoryFacts, setMemoryFacts] = useState<LongTermMemoryFact[]>([]);
   const [travelerProfile, setTravelerProfile] = useState<TravelerProfile | null>(null);
@@ -302,6 +328,12 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   // authorizes the workload, so the ladder still earns its reveal.
   const [previewFacts, setPreviewFacts] = useState<LongTermMemoryFact[]>([]);
   const [previewProfile, setPreviewProfile] = useState<TravelerProfile | null>(null);
+  const traveler = useMemo(
+    () => travelerIdentity(signedIn, (travelerProfile ?? previewProfile)?.full_name, verifiedTravelerId),
+    [signedIn, travelerProfile, previewProfile, verifiedTravelerId],
+  );
+  const { workspace, setWorkspace } = useTripWorkspace(traveler.id);
+  const firstName = firstNameOf(traveler);
   // Read from the same saved fact the gateway policy reads, so the budget on
   // screen is the basis Cedar judged rather than a second, unrelated number.
   const [budgetCeilingPerTravelerCents, setBudgetCeiling] = useState<number | null>(null);
@@ -369,10 +401,6 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     () => new Set(workspace.savedTrips.map((product) => product.product_id)),
     [workspace.savedTrips],
   );
-
-  useEffect(() => {
-    saveTripWorkspace(workspace);
-  }, [workspace]);
 
   useEffect(() => {
     if (!workspaceNotice) return undefined;
@@ -1072,7 +1100,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           order: response.order,
           live: true,
         });
-        setWorkspaceNotice(response.order?.status === 'confirmed' ? `${product.name} is confirmed for Jordan.` : response.message);
+        setWorkspaceNotice(response.order?.status === 'confirmed' ? `${product.name} is confirmed${firstName ? ` for ${firstName}` : ''}.` : response.message);
       } catch {
         if (!mounted.current || generation !== requestGeneration.current) return;
         setError(
@@ -1088,7 +1116,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         }
       }
     },
-    [conversationId, isLoading, selectedPhase, tripHolds, rememberOrder],
+    [conversationId, isLoading, selectedPhase, tripHolds, rememberOrder, firstName],
   );
 
   const adoptJourneyHold = useCallback((hold: AdoptableHold) => {
@@ -1141,7 +1169,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         savedTrips: toggleSavedTrip(prior.savedTrips, product),
       };
     });
-  }, []);
+  }, [setWorkspace]);
 
   const compareTrip = useCallback((product: Product) => {
     setSelectedTrip(product);
@@ -1156,7 +1184,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       return { ...prior, compareTrips: next };
     });
     setComparisonOpen(true);
-  }, []);
+  }, [setWorkspace]);
 
   const removeComparedTrip = useCallback((productId: string) => {
     setWorkspace((prior) => ({
@@ -1165,7 +1193,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         (product) => product.product_id !== productId,
       ),
     }));
-  }, []);
+  }, [setWorkspace]);
 
   const updateMemoryPreference = useCallback(async (key: string, value: string) => {
     const previous = memoryFacts;
@@ -1258,11 +1286,6 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const inspectCurrentRun = useCallback(() => {
     if (lastRequestPhase) setSelectedPhaseState(lastRequestPhase);
   }, [lastRequestPhase]);
-
-  const traveler = useMemo(
-    () => travelerIdentity(signedIn, (travelerProfile ?? previewProfile)?.full_name),
-    [signedIn, travelerProfile, previewProfile],
-  );
 
   const totalLatencyMs = useMemo(
     () => traceSpans.reduce((total, span) => total + (span.latencyMs ?? 0), 0),

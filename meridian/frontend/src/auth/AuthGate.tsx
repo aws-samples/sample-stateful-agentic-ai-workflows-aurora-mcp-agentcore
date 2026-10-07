@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { fetchSessionIdentity } from '../api/client';
+import { setUnauthorizedHandler } from '../api/request';
 import { setAccessTokenProvider } from './accessToken';
 import type { SignedInTraveler } from './claims';
 import type { AuthConfig } from './config';
@@ -22,6 +23,25 @@ function withoutSignInResult(location: Location): string {
   return `${location.pathname}${query ? `?${query}` : ''}${location.hash}`;
 }
 
+/**
+ * Asks the API who it believes is signed in. The sign-in claims are unverified hints; this answer
+ * is what the page may present as confirmed. A failed lookup leaves the claim unconfirmed.
+ */
+function useVerifiedTravelerId(signedInId: string | null): string | null {
+  const [verified, setVerified] = useState<{ for: string; id: string } | null>(null);
+  useEffect(() => {
+    if (!signedInId) return undefined;
+    const controller = new AbortController();
+    Promise.resolve()
+      .then(() => fetchSessionIdentity(controller.signal))
+      .then(identity => setVerified({ for: signedInId, id: identity.traveler_id }))
+      // Unconfirmed is a state the panels show; the failure itself needs no second report here.
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [signedInId]);
+  return verified && verified.for === signedInId ? verified.id : null;
+}
+
 function CognitoGate({ config, children }: { config: AuthConfig; children: ReactNode }) {
   const [session] = useState(() => createBrowserSession(config));
   const [returning, setReturning] = useState(() => hasSignInResult(window.location.search));
@@ -35,6 +55,18 @@ function CognitoGate({ config, children }: { config: AuthConfig; children: React
     setAccessTokenProvider(session.getAccessToken);
     return () => setAccessTokenProvider(null);
   }, [session]);
+
+  // An expired token is refreshed once; a refusal after that signs the person out.
+  useEffect(() => {
+    setUnauthorizedHandler({
+      refresh: () => session.refreshNow(),
+      signOut: () => session.signOut(),
+    });
+    return () => setUnauthorizedHandler(null);
+  }, [session]);
+
+  const signedInId = state.status === 'signed-in' ? state.traveler?.travelerId ?? null : null;
+  const verifiedTravelerId = useVerifiedTravelerId(signedInId);
 
   useEffect(() => {
     let live = true;
@@ -58,7 +90,10 @@ function CognitoGate({ config, children }: { config: AuthConfig; children: React
   if (state.status === 'signed-in') {
     return (
       <SessionContext.Provider
-        value={{ traveler: state.traveler, source: 'cognito', signOut: () => session.signOut() }}
+        value={{
+          traveler: state.traveler, verifiedTravelerId,
+          source: 'cognito', signOut: () => session.signOut(),
+        }}
       >
         {children}
       </SessionContext.Provider>
@@ -93,7 +128,10 @@ function ApiIdentityGate({ children }: { children: ReactNode }) {
 
   return (
     <SessionContext.Provider
-      value={{ traveler, source: traveler ? 'api' : 'none', signOut: null }}
+      value={{
+        traveler, verifiedTravelerId: traveler?.travelerId ?? null,
+        source: traveler ? 'api' : 'none', signOut: null,
+      }}
     >
       {children}
     </SessionContext.Provider>

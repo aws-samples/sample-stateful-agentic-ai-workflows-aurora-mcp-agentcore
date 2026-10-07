@@ -32,6 +32,7 @@ import {
   RecoveryLaunchCard,
   RecommendedRecoveryPlanCard,
 } from './RecoveryDecisionCards';
+import { firstNameOf } from '../lib/travelerIdentity';
 
 const STAY_PROMPT =
   'Find a well-rated hotel near Haneda for tonight with lounge access and an easy airport transfer.';
@@ -174,8 +175,9 @@ function recoveryStatusLabel(stage: RecoveryStage, error: string | null): string
         : error ? 'Recovery needs reconciliation' : 'Recovery ready to start';
 }
 
-function RecoveryOverview({ stage, error, showHeading, headingRef }: {
+function RecoveryOverview({ stage, error, showHeading, headingRef, firstName }: {
   stage: RecoveryStage;
+  firstName: string | null;
   error: string | null;
   showHeading: boolean;
   headingRef: RefObject<HTMLHeadingElement>;
@@ -183,7 +185,9 @@ function RecoveryOverview({ stage, error, showHeading, headingRef }: {
   return (
     <header className={`mds-recovery-overview is-${stage}`}>
       {showHeading && <div className="mds-recovery-overview-title">
-        <h1 tabIndex={-1} ref={headingRef}>Jordan&apos;s JFK to Tokyo recovery</h1>
+        <h1 tabIndex={-1} ref={headingRef}>
+          {firstName ? `${firstName}'s` : 'Your'} JFK to Tokyo recovery
+        </h1>
         <span className="mds-recovery-cancelled-badge">
           <AlertTriangle size={14} aria-hidden="true" />
           Traveler-reported disruption
@@ -227,13 +231,15 @@ function RecoveryContext({ stage, state }: {
   );
 }
 
-/** The hold this recovery recorded, and the step that takes it back to Jordan. */
+/** The hold this recovery recorded, and the step that takes it back to the traveler. */
 function RecoveryHoldHandoff({ state, journeyDocument, onOpenProof, onOpenConcierge }: {
   state: MeridianShowcaseState;
   journeyDocument?: JourneyDocument | null;
   onOpenProof: () => void;
   onOpenConcierge?: (hold: AdoptableHold) => void;
 }) {
+  const firstName = firstNameOf(state.traveler);
+  const confirmer = firstName ? `${firstName} confirms` : 'You confirm';
   const workflowProof = deriveWorkflowState(state.traceSpans);
   const savedHold = journeyDocument?.active_thread_id === state.conversationId
     && isObserved(journeyDocument?.hold) ? journeyDocument.hold : null;
@@ -258,10 +264,10 @@ function RecoveryHoldHandoff({ state, journeyDocument, onOpenProof, onOpenConcie
         <div className="mds-recovery-handoff">
           <div>
             <strong>Bring it home.</strong>
-            <span>The package is held. Jordan confirms the trip with the concierge; the booking policy decides before Aurora confirms.</span>
+            <span>The package is held. {confirmer} the trip with the concierge; the booking policy decides before Aurora confirms.</span>
           </div>
           <button type="button" className="mc-session-primary" onClick={() => onOpenConcierge(handoffHold)}>
-            Take it back to Jordan<ArrowRight size={16} aria-hidden="true" />
+            {firstName ? `Take it back to ${firstName}` : 'Take it back to your trip'}<ArrowRight size={16} aria-hidden="true" />
           </button>
         </div>
       )}
@@ -641,6 +647,7 @@ export function RecoveryWorkspace({
     >
       <RecoveryOverview
         stage={recoveryStage} error={state.error} showHeading={showHeading} headingRef={headingRef}
+        firstName={firstNameOf(state.traveler)}
       />
 
       {!launchFirst && recoveryContext}

@@ -351,7 +351,7 @@ for (const theme of ['light', 'dark']) {
     });
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto(`/showcase?present=1&view=recovery&theme=${theme}`);
-    const title = page.getByRole('heading', { name: "Jordan's JFK to Tokyo recovery" });
+    const title = page.getByRole('heading', { name: "Your JFK to Tokyo recovery" });
     await expect(title).toBeFocused();
     expect((await outline('.mds-recovery-overview-title h1')).style).toBe('none');
     await page.keyboard.press('Tab');

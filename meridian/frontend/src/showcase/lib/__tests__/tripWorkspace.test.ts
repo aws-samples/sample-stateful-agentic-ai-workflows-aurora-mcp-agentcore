@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Product } from '../../../types';
 import {
   loadTripWorkspace,
@@ -16,6 +16,30 @@ const product = (id: string): Product => ({
   description: 'A trip',
   image_url: '',
   category: 'City Breaks',
+});
+
+describe('trip workspace per traveler', () => {
+  beforeEach(() => window.localStorage.clear());
+
+  it('returns each traveler their own trips and no one else\'s', () => {
+    saveTripWorkspace('trv_a', { savedTrips: [product('a')], compareTrips: [product('b')] });
+    expect(loadTripWorkspace('trv_b')).toEqual({ savedTrips: [], compareTrips: [] });
+    expect(loadTripWorkspace('trv_a').savedTrips.map(trip => trip.product_id)).toEqual(['a']);
+    expect(window.localStorage.getItem('meridian:trip-workspace:v1:trv_a')).toContain('"a"');
+  });
+
+  it('keeps nothing while nobody is identified', () => {
+    saveTripWorkspace(null, { savedTrips: [product('a')], compareTrips: [] });
+    expect(window.localStorage.length).toBe(0);
+    expect(loadTripWorkspace(null)).toEqual({ savedTrips: [], compareTrips: [] });
+  });
+
+  it('drops the shared key an older build wrote instead of handing it to anyone', () => {
+    const legacy = JSON.stringify({ savedTrips: [product('old')], compareTrips: [] });
+    window.localStorage.setItem('meridian.trip-workspace.v1', legacy);
+    expect(loadTripWorkspace('trv_a')).toEqual({ savedTrips: [], compareTrips: [] });
+    expect(window.localStorage.getItem('meridian.trip-workspace.v1')).toBeNull();
+  });
 });
 
 describe('trip workspace persistence', () => {
@@ -50,9 +74,9 @@ describe('trip workspace persistence', () => {
       );
       vi.spyOn(owner('getItem'), 'getItem').mockImplementation(() => { throw blocked; });
       vi.spyOn(owner('setItem'), 'setItem').mockImplementation(() => { throw blocked; });
-      expect(loadTripWorkspace()).toEqual({ savedTrips: [], compareTrips: [] });
+      expect(loadTripWorkspace('trv_a')).toEqual({ savedTrips: [], compareTrips: [] });
       const workspace = { savedTrips: [product('a')], compareTrips: [] };
-      expect(() => saveTripWorkspace(workspace)).not.toThrow();
+      expect(() => saveTripWorkspace('trv_a', workspace)).not.toThrow();
     });
   });
 });

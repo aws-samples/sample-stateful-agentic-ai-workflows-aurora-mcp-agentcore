@@ -4,7 +4,7 @@ import type { Product } from '../../../types';
 import { EMPTY_FILTERS, type MeridianShowcaseState } from '../../hooks/useMeridianShowcase';
 import { DiscoveryWorkspace } from '../DiscoveryWorkspace';
 import { ConciergeConversation } from '../ConciergeConversation';
-import { JORDAN_IDENTITY } from '../../../test/signedIn';
+import { ALEX_IDENTITY, JORDAN_IDENTITY, UNKNOWN_IDENTITY } from '../../../test/signedIn';
 
 const LIVE_PRODUCT: Product = {
   product_id: 'AUR-001',
@@ -131,4 +131,20 @@ it('shows streamed catalog matches before completion with actions disabled', () 
   rerender(<DiscoveryWorkspace state={{ ...state, isLoading: false, streamingRecommendations: [], recommendations: [] }} onClear={vi.fn()} />);
   expect(screen.queryByRole('heading', { name: LIVE_PRODUCT.name })).not.toBeInTheDocument();
   expect(screen.getByText('A different direction?')).toBeInTheDocument();
+});
+
+describe('DiscoveryWorkspace greeting', () => {
+  it('greets the signed-in traveler by first name and nobody else', () => {
+    const { container } = render(<DiscoveryWorkspace
+      state={makeState({ traveler: ALEX_IDENTITY })} onClear={vi.fn()} greeting="morning" />);
+    expect(screen.getByRole('heading', { name: 'Your next chapter, Alex.' })).toBeInTheDocument();
+    expect(container.textContent).not.toContain('Jordan');
+  });
+
+  it('greets without a name when the account is unnamed', () => {
+    const { container } = render(<DiscoveryWorkspace
+      state={makeState({ traveler: UNKNOWN_IDENTITY })} onClear={vi.fn()} greeting="morning" />);
+    expect(screen.getByRole('heading', { name: 'Your next chapter.' })).toBeInTheDocument();
+    expect(container.textContent).not.toContain('Jordan');
+  });
 });

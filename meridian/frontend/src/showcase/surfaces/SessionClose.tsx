@@ -14,7 +14,7 @@ export function SessionClose({ onEvidence, onConcierge }: {
   return <section className={`mc-session-close${questions ? ' is-questions' : ''}`} aria-label={questions ? 'Questions and discussion' : 'Session takeaways'}>
     <div className="mc-session-close-main">
       <h1 ref={heading} tabIndex={-1}>{questions ? 'What would you build\nfor your customers?' : 'A canceled flight.\nA clear way forward.'}</h1>
-      <p className="mc-session-lead">{questions ? 'Your questions on Aurora, AgentCore, and bringing these patterns to your application.' : 'Help Jordan find relevant alternatives, carry preferences forward, and hold a package while deciding.'}</p>
+      <p className="mc-session-lead">{questions ? 'Your questions on Aurora, AgentCore, and bringing these patterns to your application.' : 'Help a traveler find relevant alternatives, carry preferences forward, and hold a package while deciding.'}</p>
       {questions ? <p className="mc-session-discussion">From disrupted trips to delayed orders, which customer journey needs a better way forward?</p> : <dl className="mc-session-patterns">
         <div>
           <dt><ServiceMark name="aurora" size={36} /><span>AWS Aurora</span></dt>

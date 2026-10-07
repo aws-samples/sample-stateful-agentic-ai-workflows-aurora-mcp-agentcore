@@ -167,17 +167,35 @@ describe('Presenter proof', () => {
     expect(within(screen.getByRole('tabpanel')).getByText('2')).toBeInTheDocument();
   });
 
-  it('shows who owns the journey beside who is signed in', () => {
+  it('shows who owns the journey beside who the API confirmed is signed in', () => {
+    render(<PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
+      { wrapper: signedInAs('trv_demo_decoy', 'Jordan Lee', 'trv_demo_decoy') });
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByText('trv_meridian_demo')).toBeInTheDocument();
+    expect(within(panel).getByText('Signed in as')).toBeInTheDocument();
+    expect(within(panel).getByText('Jordan Lee (trv_demo_decoy)')).toBeInTheDocument();
+  });
+
+  it('calls the sign-in claim a claim until the API has confirmed it', () => {
     render(<PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
       { wrapper: signedInAs('trv_demo_decoy', 'Jordan Lee') });
     const panel = screen.getByRole('tabpanel');
-    expect(within(panel).getByText('trv_meridian_demo')).toBeInTheDocument();
+    expect(within(panel).getByText('From your sign-in')).toBeInTheDocument();
+    expect(within(panel).queryByText('Signed in as')).not.toBeInTheDocument();
     expect(within(panel).getByText('Jordan Lee (trv_demo_decoy)')).toBeInTheDocument();
+  });
+
+  it('shows the id /api/me returned when it differs from the claim, and names the claim', () => {
+    render(<PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
+      { wrapper: signedInAs('trv_claimed', 'Alex Lee', 'trv_from_api') });
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByText('Alex Lee (trv_from_api), the sign-in says trv_claimed'))
+      .toBeInTheDocument();
   });
 
   it('shows the traveler id alone when the sign-in carries no name', () => {
     render(<PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
-      { wrapper: signedInAs('trv_meridian_demo') });
+      { wrapper: signedInAs('trv_meridian_demo', null, 'trv_meridian_demo') });
     expect(within(screen.getByRole('tabpanel')).getAllByText('trv_meridian_demo')).toHaveLength(2);
   });
 

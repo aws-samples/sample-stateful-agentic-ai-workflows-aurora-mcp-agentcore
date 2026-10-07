@@ -5,6 +5,7 @@ import type { Product } from '../../types';
 import { SHOWCASE_EXAMPLE_PROMPTS, SHOWCASE_PHASES } from '../lib/showcaseAdapters';
 import { resultRankLabel } from '../lib/resultRankLabel';
 import { ShowcaseSheet } from './ShowcaseSheet';
+import { firstNameOf } from '../lib/travelerIdentity';
 
 // Lightweight-but-complete side panels for the sidebar nav. Each panel
 // renders REAL session / Aurora state - no fixtures - so a visitor can
@@ -189,7 +190,7 @@ function MessagesPanel({ state }: { state: MeridianShowcaseState }) {
           key={`${message.role}-${idx}`}
           className={`mds-navpanel-msg is-${message.role}`}
         >
-          <span className="mds-navpanel-msg-role">{message.role === 'user' ? 'Jordan' : 'Meridian'}</span>
+          <span className="mds-navpanel-msg-role">{message.role === 'user' ? (firstNameOf(state.traveler) ?? 'You') : 'Meridian'}</span>
           <span className="mds-navpanel-msg-text">{message.text}</span>
         </div>
       ))}

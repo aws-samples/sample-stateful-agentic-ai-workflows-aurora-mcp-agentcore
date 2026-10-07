@@ -23,22 +23,37 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
 describe('ConciergeRail traveler', () => {
   it('names the signed-in traveler and nobody else', () => {
     const { container } = render(<ConciergeRail state={makeState({
-      traveler: { id: 'trv_demo_decoy', name: 'Jordan Lee', initials: 'JL', avatarUrl: null },
+      traveler: {
+        id: 'trv_demo_decoy', name: 'Jordan Lee', initials: 'JL', avatarUrl: null, idVerified: true,
+      },
     })} />);
     expect(container.querySelector('.mc-traveler strong')?.textContent).toBe('Jordan Lee');
     expect(container.querySelector('.mc-traveler .mds-traveler-initials')?.textContent).toBe('JL');
     expect(container.textContent).not.toContain('Jordan Morgan');
   });
 
+  it('shows initials and a neutral name for an account with no profile and no photo', () => {
+    const { container } = render(<ConciergeRail state={makeState({
+      traveler: { id: 'trv_demo_decoy', name: 'Your account', initials: 'YA', avatarUrl: null,
+        idVerified: true },
+    })} />);
+    expect(container.querySelector('.mc-traveler strong')?.textContent).toBe('Your account');
+    expect(container.querySelector('.mc-traveler .mds-traveler-initials')?.textContent).toBe('YA');
+    expect(container.querySelector('.mc-traveler img')).toBeNull();
+    expect(container.textContent).not.toContain('Jordan');
+  });
+
   it('shows the photo from the sign-in when there is one', () => {
     const { container } = render(<ConciergeRail state={makeState({
       traveler: {
         id: 'trv_meridian_demo', name: 'Jordan Morgan', initials: 'JM',
-        avatarUrl: '/travel/jordan-morgan.jpg',
+        avatarUrl: '/travel/jordan-morgan.jpg', idVerified: true,
       },
     })} />);
     expect(container.querySelector('.mc-traveler img'))
       .toHaveAttribute('src', '/travel/jordan-morgan.jpg');
+    expect(container.querySelector('.mc-traveler img')).toHaveAttribute('referrerpolicy', 'no-referrer');
+    expect(container.querySelector('.mc-traveler img')).toHaveAttribute('decoding', 'async');
     expect(container.querySelector('.mds-traveler-initials')).toBeNull();
   });
 });

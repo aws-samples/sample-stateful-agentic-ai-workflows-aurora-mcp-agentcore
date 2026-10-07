@@ -1,7 +1,8 @@
 import { StrictMode, useEffect } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getAccessToken } from './accessToken';
+import { getAccessToken, setBearerOrigin } from './accessToken';
+import { requestJson } from '../api/request';
 import { AuthGate } from './AuthGate';
 import { useSession } from './SessionContext';
 import { AuthSession } from './session';
@@ -29,12 +30,13 @@ let navigate = vi.fn();
 let fetchFn = vi.fn();
 
 function Who() {
-  const { traveler, source, signOut } = useSession();
+  const { traveler, source, signOut, verifiedTravelerId } = useSession();
   return (
     <div>
       <span data-testid="who">
         {`${source}:${traveler?.travelerId ?? 'nobody'}:${traveler?.displayName ?? ''}`}
       </span>
+      <span data-testid="verified">{verifiedTravelerId ?? 'unverified'}</span>
       {signOut && <button type="button" onClick={signOut}>Sign out</button>}
     </div>
   );
@@ -132,6 +134,54 @@ describe('AuthGate with sign-in configured', () => {
     expect(getAccessToken()).toBe(tokens.accessToken);
     expect(fetchFn).toHaveBeenCalledTimes(1);
     replaceState.mockRestore();
+  });
+
+  async function signInAsJordan() {
+    const session = install();
+    await session.startSignIn();
+    const { state } = JSON.parse(values.get('meridian:auth:pkce')!);
+    const tokens = jordanTokens();
+    fetchFn.mockResolvedValue(tokenResponse(tokens.accessToken, tokens.idToken));
+    window.history.replaceState(null, '', `/showcase?view=proof&code=c1&state=${state}`);
+    return session;
+  }
+
+  it('shows the traveler id the API confirms once /api/me answers', async () => {
+    await signInAsJordan();
+    vi.mocked(fetchSessionIdentity)
+      .mockResolvedValue({ traveler_id: 'trv_from_api', authentication: 'bearer' });
+    render(<AuthGate config={config}><Who /></AuthGate>);
+    await waitFor(() => expect(screen.getByTestId('who'))
+      .toHaveTextContent('cognito:trv_meridian_demo'));
+    await waitFor(() => expect(screen.getByTestId('verified')).toHaveTextContent('trv_from_api'));
+  });
+
+  it('leaves the id unverified when /api/me cannot answer', async () => {
+    await signInAsJordan();
+    vi.mocked(fetchSessionIdentity).mockRejectedValue(new Error('offline'));
+    render(<AuthGate config={config}><Who /></AuthGate>);
+    await waitFor(() => expect(fetchSessionIdentity).toHaveBeenCalled());
+    expect(screen.getByTestId('verified')).toHaveTextContent('unverified');
+  });
+
+  it('refreshes the session when the API refuses the token, then retries once', async () => {
+    const session = await signInAsJordan();
+    vi.mocked(fetchSessionIdentity).mockResolvedValue(
+      { traveler_id: 'trv_meridian_demo', authentication: 'bearer' },
+    );
+    const refresh = vi.spyOn(session, 'refreshNow').mockResolvedValue();
+    render(<AuthGate config={config}><Who /></AuthGate>);
+    await waitFor(() => expect(getAccessToken()).not.toBeNull());
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }))
+      .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    setBearerOrigin('https://api.example.test');
+    await expect(requestJson('https://api.example.test/api/x')).resolves.toEqual({ ok: true });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+    setBearerOrigin(null);
   });
 
   it('shows a refused sign-in as a message on the sign-in screen', async () => {
@@ -305,6 +355,7 @@ describe('AuthGate without sign-in settings', () => {
     expect(screen.getByTestId('who')).toHaveTextContent('none:nobody');
     await waitFor(() => expect(screen.getByTestId('who'))
       .toHaveTextContent('api:trv_meridian_demo:'));
+    expect(screen.getByTestId('verified')).toHaveTextContent('trv_meridian_demo');
     expect(screen.queryByRole('button', { name: 'Sign out' })).not.toBeInTheDocument();
   });
 

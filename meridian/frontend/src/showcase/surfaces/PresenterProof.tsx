@@ -7,6 +7,7 @@ import { ArrowRight, RefreshCw, ShieldCheck, Terminal } from 'lucide-react';
 import type { JourneyDocument, JourneyExecution, SessionStop } from '../journey/types';
 import { isObserved } from '../journey/types';
 import { useSession } from '../../auth/SessionContext';
+import type { SignedInTraveler } from '../../auth/claims';
 
 type TabId = 'checkpoint' | 'authorization' | 'business';
 
@@ -124,6 +125,26 @@ function SessionCard({
  * `traveler_access_audit`. Nothing on this surface is simulated, so where the
  * database has no evidence the surface says so instead of showing a number.
  */
+/**
+ * Who is using the page. The id the API confirmed is shown as "Signed in as"; the id in the
+ * sign-in claims is only a claim until then, and says so. A confirmed id that differs from the
+ * claim wins, and the claim is named beside it.
+ */
+function describeSignedIn(
+  signedIn: SignedInTraveler | null, verifiedId: string | null | undefined,
+): { label: string; value: string } {
+  if (!signedIn && !verifiedId) return { label: 'Signed in as', value: 'Not confirmed' };
+  const id = verifiedId ?? signedIn?.travelerId ?? '';
+  const named = signedIn?.displayName ? `${signedIn.displayName} (${id})` : id;
+  if (!verifiedId) return { label: 'From your sign-in', value: named };
+  const claimed = signedIn?.travelerId;
+  const differs = claimed && claimed !== verifiedId;
+  return {
+    label: 'Signed in as',
+    value: differs ? `${named}, the sign-in says ${claimed}` : named,
+  };
+}
+
 export function PresenterProof({
   document,
   loading,
@@ -139,10 +160,8 @@ export function PresenterProof({
 }) {
   const [tab, setTab] = useState<TabId>('checkpoint');
   const now = useEvidenceClock(document);
-  const { traveler: signedIn } = useSession();
-  const signedInAs = signedIn
-    ? (signedIn.displayName ? `${signedIn.displayName} (${signedIn.travelerId})` : signedIn.travelerId)
-    : 'Not confirmed';
+  const { traveler: signedIn, verifiedTravelerId } = useSession();
+  const signedInFact = describeSignedIn(signedIn, verifiedTravelerId);
 
   if (error && !document) {
     return (
@@ -337,7 +356,7 @@ export function PresenterProof({
               value={isObserved(checkpoint) ? checkpoint.checkpoint_id : NOT_RECORDED}
             />
             <Fact label="Owner" value={document.traveler_id} />
-            <Fact label="Signed in as" value={signedInAs} />
+            <Fact label={signedInFact.label} value={signedInFact.value} />
             <Fact
               label="Selected package"
               value={

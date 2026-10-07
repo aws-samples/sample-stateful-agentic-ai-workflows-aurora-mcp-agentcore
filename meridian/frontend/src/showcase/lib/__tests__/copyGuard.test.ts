@@ -30,6 +30,20 @@ function lineIsCommentThatSaysWhy(line: string): boolean {
 
 const shortName = (path: string) => path.replace(/^(\.\.\/)+/, '');
 
+const isPageCode = (path: string) => /\.tsx?$/.test(path) && !isTest(path)
+  && !/\.\.\/test\//.test(path) && !/\/e2e\//.test(path);
+
+const NAMED_TRAVELER = [
+  /trv_meridian_demo/, /\bJordan\b/, /SHOWCASE_TRAVELER_ID/, /lib\/personas/,
+];
+
+function namedTravelerOffences(files: Record<string, string>, paths: string[]): string[] {
+  return paths.flatMap(path => files[path].split('\n')
+    .map((line, index) => ({ line, at: `${shortName(path)}:${index + 1}` }))
+    .filter(({ line }) => !isComment(line) && NAMED_TRAVELER.some(pattern => pattern.test(line)))
+    .map(({ line, at }) => `${at} ${line.trim().slice(0, 100)}`));
+}
+
 describe('showcase copy', () => {
   it('names no LangGraph and uses no middle dot outside the legacy-title table', () => {
     const files = Object.keys(sources).filter(path => !isTest(path) && path !== LEGACY_TABLE);
@@ -64,16 +78,20 @@ describe('showcase copy', () => {
   });
 
   it('names no particular traveler in the page code; the API says who is signed in', () => {
-    const NAMED = [/trv_meridian_demo/, /Jordan Morgan/, /SHOWCASE_TRAVELER_ID/, /lib\/personas/];
-    const files = Object.keys(sources).filter(
-      path => /\.tsx?$/.test(path) && !isTest(path) && !/\.\.\/test\//.test(path)
-        && !/\/e2e\//.test(path),
-    );
+    const files = Object.keys(sources).filter(path => isPageCode(path));
     expect(files.length).toBeGreaterThan(50);
-    const offences = files.flatMap(path => sources[path].split('\n')
-      .map((line, index) => ({ line, at: `${shortName(path)}:${index + 1}` }))
-      .filter(({ line }) => !isComment(line) && NAMED.some(pattern => pattern.test(line)))
-      .map(({ line, at }) => `${at} ${line.trim().slice(0, 100)}`));
-    expect(offences).toEqual([]);
+    expect(namedTravelerOffences(sources, files)).toEqual([]);
+  });
+
+  it('flags a planted first name in page code, and ignores tests and comments', () => {
+    const planted: Record<string, string> = {
+      '../../components/Scratch.tsx': "export const hello = 'Welcome back, Jordan.';\n",
+      '../../components/Possessive.tsx': "export const t = `Jordan's trip`;\n",
+      '../../components/Quiet.tsx': "// Jordan used to be named here.\nexport const t = 'Hello.';\n",
+      '../../components/__tests__/Scratch.test.tsx': "it('Jordan', () => {});\n",
+    };
+    const files = Object.keys(planted).filter(path => isPageCode(path));
+    expect(namedTravelerOffences(planted, files).map(entry => entry.split(' ')[0]))
+      .toEqual(['components/Scratch.tsx:1', 'components/Possessive.tsx:1']);
   });
 });
