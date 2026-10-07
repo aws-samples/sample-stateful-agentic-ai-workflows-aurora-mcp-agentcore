@@ -13,9 +13,11 @@ worker took the thread over.
 import time
 from typing import Callable, List, Optional
 
+from botocore.exceptions import ClientError
 from strands.types.exceptions import StorageError
 
 from backend.db.journey_store import ExecutionLeaseLostError
+from backend.db.snapshot_text import MAX_SNAPSHOT_BYTES, latest_snapshot_text
 
 INSERT_SQL = """
 INSERT INTO workflow_snapshots
@@ -26,10 +28,6 @@ SELECT %s, %s, %s, %s, %s, %s::jsonb
       WHERE execution_id = %s AND thread_id = %s AND status = 'running'
  )
 RETURNING snapshot_seq
-"""
-READ_SQL = """
-SELECT snapshot::TEXT AS snapshot FROM workflow_snapshots
- WHERE storage_key = %s ORDER BY snapshot_seq DESC LIMIT 1
 """
 LIST_SQL = """
 SELECT DISTINCT storage_key FROM workflow_snapshots
@@ -84,7 +82,8 @@ class AuroraSnapshotStorage:
         """Append one snapshot row while this execution still holds the thread.
 
         Raises:
-            StorageError: The storage has no execution, or the key is outside the session.
+            StorageError: The storage has no execution, the key is outside the session,
+                the snapshot is over ``MAX_SNAPSHOT_BYTES``, or Aurora refused the write.
             ExecutionLeaseLostError: The execution no longer runs the thread; nothing was written.
         """
         if self._execution_id is None:
@@ -92,12 +91,23 @@ class AuroraSnapshotStorage:
                 f"read-only storage for workflow session {self._session_id}: "
                 "bind an execution before writing"
             )
+        if len(data) > MAX_SNAPSHOT_BYTES:
+            raise StorageError(
+                f"snapshot for {key!r} is {len(data)} bytes; the Data API read path returns at "
+                f"most {MAX_SNAPSHOT_BYTES} bytes. Reduce what the nodes return."
+            )
+        owned = self._owned(key)
         started = time.perf_counter()
-        rows = await self._client.execute(INSERT_SQL, (
-            self._owned(key), self._session_id, self._traveler_id,
-            self._execution_id, self._worker_id, data.decode("utf-8"),
-            self._execution_id, self._session_id,
-        ))
+        try:
+            rows = await self._query(INSERT_SQL, (
+                owned, self._session_id, self._traveler_id,
+                self._execution_id, self._worker_id, data.decode("utf-8"),
+                self._execution_id, self._session_id,
+            ))
+        except ClientError as exc:
+            raise StorageError(
+                f"writing {owned!r} failed: {exc.response['Error']['Code']}"
+            ) from exc
         if not rows:
             raise ExecutionLeaseLostError(
                 f"Execution {self._execution_id} no longer runs thread {self._session_id}; "
@@ -107,15 +117,37 @@ class AuroraSnapshotStorage:
             self._on_write(round((time.perf_counter() - started) * 1000))
 
     async def read(self, key: str) -> Optional[bytes]:
-        """Return the newest snapshot for ``key``, or None."""
-        rows = await self._client.execute(READ_SQL, (self._owned(key),))
-        return rows[0]["snapshot"].encode("utf-8") if rows else None
+        """Return the newest snapshot for ``key``, or None.
+
+        Raises:
+            StorageError: The key is outside the session, or Aurora refused the read.
+        """
+        owned = self._owned(key)
+        try:
+            text = await latest_snapshot_text(self._query, owned)
+        except ClientError as exc:
+            raise StorageError(
+                f"reading {owned!r} failed: {exc.response['Error']['Code']}"
+            ) from exc
+        return text.encode("utf-8") if text is not None else None
+
+    async def _query(self, sql: str, params: tuple) -> List[dict]:
+        return await self._client.execute(sql, params)
 
     async def delete(self, key: str) -> None:
         """Refuse: the table is the run's history."""
         raise StorageError(f"workflow snapshots are append-only; refused to delete {key!r}")
 
     async def list(self, query: str = "") -> List[str]:
-        """Return this session's keys that start with ``query``, sorted."""
-        rows = await self._client.execute(LIST_SQL, (self._session_id, _like_prefix(query)))
+        """Return this session's keys that start with ``query``, sorted.
+
+        Raises:
+            StorageError: Aurora refused the read.
+        """
+        try:
+            rows = await self._query(LIST_SQL, (self._session_id, _like_prefix(query)))
+        except ClientError as exc:
+            raise StorageError(
+                f"listing {query!r} failed: {exc.response['Error']['Code']}"
+            ) from exc
         return [row["storage_key"] for row in rows]

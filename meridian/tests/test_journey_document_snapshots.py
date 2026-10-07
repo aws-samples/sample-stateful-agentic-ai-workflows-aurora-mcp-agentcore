@@ -12,6 +12,7 @@ from backend.db.journey_document import (
     _workflow_document,
     checkpoint_backend_is_durable,
 )
+from backend.db.snapshot_text import BY_SEQ_SQL, WINDOW_CHARS
 
 CLASSIFY_DELTA = json.dumps(
     {"state": {"intent": "plan"}, "spans": [{"title": "Workflow node: classify"}]}
@@ -91,17 +92,39 @@ def test_only_the_aurora_backed_kinds_are_durable(kind, durable):
     assert checkpoint_backend_is_durable(kind) is durable
 
 
+def _windows(doc: str):
+    return [{"part": i, "chunk": doc[i * WINDOW_CHARS:(i + 1) * WINDOW_CHARS]}
+            for i in range((len(doc) - 1) // WINDOW_CHARS + 1)]
+
+
 async def test_the_workflow_is_read_by_its_own_storage_key_not_just_the_session():
     asked = []
 
     async def q(sql, params):
         asked.append((sql, params))
         if sql == SNAPSHOT_SQL:
-            return [{"seq": "7", "snapshot": json.dumps(PAUSED), "saved_at": "2026-10-06 20:00:00",
-                     "execution_id": "exe_1"}]
+            return [{"seq": "7", "saved_at": "2026-10-06 20:00:00", "execution_id": "exe_1"}]
+        if sql == BY_SEQ_SQL:
+            return _windows(json.dumps(PAUSED))
         return [{"n": 1, "resumed_from": None, "previous_seq": None}]
 
-    await _snapshot(q, "t1")
+    checkpoint, snapshot, _, _ = await _snapshot(q, "t1")
     key = snapshot_key("t1")
     assert (SNAPSHOT_SQL, ("t1", key)) in asked
+    assert (BY_SEQ_SQL, ("7",)) in asked
     assert (SNAPSHOT_HISTORY_SQL, ("exe_1", "7", "t1", key)) in asked
+    assert "snapshot::TEXT" not in SNAPSHOT_SQL
+    assert checkpoint["status"] == "committed"
+    assert snapshot == PAUSED
+
+
+async def test_a_snapshot_that_disappears_between_the_two_reads_is_unavailable_evidence():
+    async def q(sql, params):
+        if sql == SNAPSHOT_SQL:
+            return [{"seq": "7", "saved_at": "2026-10-06 20:00:00", "execution_id": "exe_1"}]
+        return []
+
+    checkpoint, snapshot, execution, resumed_from = await _snapshot(q, "t1")
+    assert snapshot is None and execution is None and resumed_from is None
+    assert checkpoint["status"] == "unavailable"
+    assert "snapshot 7 disappeared while it was read" in checkpoint["reason"]

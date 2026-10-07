@@ -299,6 +299,27 @@ async def test_a_run_finished_from_a_saved_step_is_a_verified_resume(journey: Fi
     assert last["execution_id"] == second.execution_id
 
 
+async def test_a_snapshot_past_the_data_api_row_limit_is_read_for_the_document(
+    journey: Fixture,
+) -> None:
+    from backend.agents.phase_05_workflow.graph import snapshot_key
+
+    snapshot = _workflow_snapshot(journey, "interrupted", ["synthesize"])
+    snapshot["data"]["state"]["padding"] = "é" * 120_000
+    claim = await claim_execution(
+        journey.client, journey.journey_id, journey.thread_id, "worker-jdoc"
+    )
+    await _storage(journey, claim.execution_id, "worker-jdoc").write(
+        snapshot_key(journey.thread_id), json.dumps(snapshot).encode()
+    )
+
+    doc = await _document(journey)
+    assert doc["checkpoint"]["status"] == "committed"
+    assert doc["checkpoint"]["snapshot_count"] >= 1
+    assert doc["workflow"]["workflow_status"] == "paused"
+    assert doc["workflow"]["next_nodes"] == ["synthesize"]
+
+
 # --------------------------------------------------------------------- hold
 
 

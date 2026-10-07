@@ -255,3 +255,27 @@ async def test_a_stalled_worker_cannot_append_after_another_worker_took_the_thre
         "SELECT execution_id FROM workflow_snapshots WHERE session_id = %s", (thread_id,)
     )
     assert [r["execution_id"] for r in rows] == [taker.execution_id]
+
+
+async def test_a_snapshot_past_the_data_api_row_limit_round_trips(threads):
+    client, made = threads
+    thread_id, _, storage = await writer(client, made)
+    big = {"data": {"state": {"status": "executing", "padding": "é" * 120_000}}}
+    await storage.write(key(thread_id), json.dumps(big).encode())
+
+    assert json.loads(await storage.read(key(thread_id))) == big
+    size = await client.execute(
+        "SELECT octet_length(snapshot::TEXT) AS n FROM workflow_snapshots WHERE session_id = %s",
+        (thread_id,),
+    )
+    assert size[0]["n"] > 64 * 1024
+
+
+async def test_a_snapshot_over_the_read_ceiling_is_refused_and_not_written(threads):
+    client, made = threads
+    thread_id, _, storage = await writer(client, made)
+    huge = json.dumps({"data": {"state": {"padding": "x" * 950_000}}}).encode()
+
+    with pytest.raises(StorageError, match="900000"):
+        await storage.write(key(thread_id), huge)
+    assert await rows_for(client, thread_id) == []
