@@ -33,9 +33,7 @@ function renderTemplate(): Record<string, any> {
   const spec = JSON.parse(rendered);
   // The default (iam) render leaves out the Cedar rule that only applies to Cognito callers.
   for (const engine of spec.policyEngines) {
-    engine.policies = engine.policies.filter(
-      (p: { name: string }) => p.name !== 'meridian_traveler_binding',
-    );
+    engine.policies = engine.policies.filter((p: { name: string }) => p.name !== 'meridian_traveler_binding');
   }
   return spec;
 }
