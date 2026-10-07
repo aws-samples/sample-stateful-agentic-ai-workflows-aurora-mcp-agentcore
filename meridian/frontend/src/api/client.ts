@@ -2,6 +2,8 @@
  * API client for Meridian backend
  */
 import { requestJson } from './request';
+import { getAccessToken } from '../auth/accessToken';
+import { CURRENT_TRAVELER } from './currentTraveler';
 import { readChatStream, type ChatStreamEvent } from './chatStream';
 import type {
   BookingRequest,
@@ -72,8 +74,10 @@ export function healthOriginFor(apiBase: string, fallbackOrigin: string): string
 }
 
 function apiHeaders(json = false): HeadersInit {
+  const token = getAccessToken();
   return {
     ...(json ? { 'Content-Type': 'application/json' } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }
 
@@ -127,7 +131,7 @@ export async function sendChatMessage(request: ChatRequest, signal?: AbortSignal
 /**
  * Fetch long-term memory profile from Aurora (Phase 4)
  */
-export async function fetchMemoryProfile(travelerId = 'trv_meridian_demo', signal?: AbortSignal): Promise<MemoryProfileResponse> {
+export async function fetchMemoryProfile(travelerId = CURRENT_TRAVELER, signal?: AbortSignal): Promise<MemoryProfileResponse> {
   return requestJson(`${API_BASE}/memory/${encodeURIComponent(travelerId)}`, {
     headers: apiHeaders(),
     signal,
@@ -267,7 +271,7 @@ export interface RlsProbeResponse {
 }
 
 export async function fetchRlsProbe(
-  travelerId = 'trv_meridian_demo',
+  travelerId = CURRENT_TRAVELER,
 ): Promise<RlsProbeResponse> {
   return requestJson(`${API_BASE}/diagnostics/rls-probe`, {
     method: 'POST',
@@ -298,7 +302,7 @@ export interface SessionReceiptResponse {
 
 /** Everything this session committed to Aurora, counted table by table. */
 export async function fetchSessionReceipt(
-  travelerId = 'trv_meridian_demo',
+  travelerId = CURRENT_TRAVELER,
   windowMinutes = 90,
   conversationId: string | null = null,
 ): Promise<SessionReceiptResponse> {

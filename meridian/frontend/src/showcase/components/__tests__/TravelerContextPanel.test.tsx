@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MeridianShowcaseState } from '../../hooks/useMeridianShowcase';
 import { TravelerContextPanel } from '../TravelerContextPanel';
+import { JORDAN_IDENTITY } from '../../../test/signedIn';
 
 function state(
   overrides: Partial<MeridianShowcaseState> = {},
@@ -9,7 +10,7 @@ function state(
   return {
     selectedPhase: 3,
     phaseLabel: 'Retrieval',
-    travelerId: 'trv_meridian_demo',
+    traveler: JORDAN_IDENTITY,
     memoryEnabled: false,
     memoryLoading: false,
     memoryToggleError: null,

@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PresenterProof } from '../PresenterProof';
 import type { JourneyDocument } from '../../journey/types';
+import { signedInAs } from '../../../test/signedIn';
 
 const unavailable = (reason: string) => ({ status: 'unavailable' as const, reason });
 
@@ -164,6 +165,25 @@ describe('Presenter proof', () => {
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Business result' }));
     expect(within(screen.getByRole('tabpanel')).getByText('2')).toBeInTheDocument();
+  });
+
+  it('shows who owns the journey beside who is signed in', () => {
+    render(<PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
+      { wrapper: signedInAs('trv_demo_decoy', 'Jordan Lee') });
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByText('trv_meridian_demo')).toBeInTheDocument();
+    expect(within(panel).getByText('Jordan Lee (trv_demo_decoy)')).toBeInTheDocument();
+  });
+
+  it('shows the traveler id alone when the sign-in carries no name', () => {
+    render(<PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
+      { wrapper: signedInAs('trv_meridian_demo') });
+    expect(within(screen.getByRole('tabpanel')).getAllByText('trv_meridian_demo')).toHaveLength(2);
+  });
+
+  it('does not claim a sign-in it cannot confirm', () => {
+    render(<PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />);
+    expect(within(screen.getByRole('tabpanel')).getByText('Not confirmed')).toBeInTheDocument();
   });
 
   it('shows a dash where the database holds no evidence', () => {

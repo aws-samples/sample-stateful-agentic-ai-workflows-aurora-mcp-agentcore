@@ -6,6 +6,7 @@ import { ArrowRight, RefreshCw, ShieldCheck, Terminal } from 'lucide-react';
 
 import type { JourneyDocument, JourneyExecution, SessionStop } from '../journey/types';
 import { isObserved } from '../journey/types';
+import { useSession } from '../../auth/SessionContext';
 
 type TabId = 'checkpoint' | 'authorization' | 'business';
 
@@ -138,6 +139,10 @@ export function PresenterProof({
 }) {
   const [tab, setTab] = useState<TabId>('checkpoint');
   const now = useEvidenceClock(document);
+  const { traveler: signedIn } = useSession();
+  const signedInAs = signedIn
+    ? (signedIn.displayName ? `${signedIn.displayName} (${signedIn.travelerId})` : signedIn.travelerId)
+    : 'Not confirmed';
 
   if (error && !document) {
     return (
@@ -332,6 +337,7 @@ export function PresenterProof({
               value={isObserved(checkpoint) ? checkpoint.checkpoint_id : NOT_RECORDED}
             />
             <Fact label="Owner" value={document.traveler_id} />
+            <Fact label="Signed in as" value={signedInAs} />
             <Fact
               label="Selected package"
               value={

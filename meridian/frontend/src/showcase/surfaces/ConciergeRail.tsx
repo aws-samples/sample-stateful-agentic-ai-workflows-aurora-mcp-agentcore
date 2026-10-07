@@ -1,5 +1,5 @@
 import { ArrowRight, CalendarDays, Check, Heart, Plane, ShieldCheck, UsersRound, Utensils } from 'lucide-react';
-import { DEMO_TRAVELER_IMAGE_URL } from '../lib/personas';
+import { TravelerAvatar } from '../components/TravelerAvatar';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { TripHoldReceipt } from '../components/TripHoldReceipt';
 import { BudgetCeiling } from '../components/BudgetCeiling';
@@ -20,7 +20,7 @@ export function ConciergeRail({ state, onSaved, onRecovery, onPreferences }: {
   const filters = state.chatFilters;
   const party = state.travelersCount;
   const dates = filters.startDate
-    ? `${dateLabel(filters.startDate)}${filters.endDate ? ` – ${dateLabel(filters.endDate)}` : ' onward'}`
+    ? `${dateLabel(filters.startDate)}${filters.endDate ? ` to ${dateLabel(filters.endDate)}` : ' onward'}`
     : 'Dates not set';
   const preferences = [
     { value: profile?.seat_preference, icon: Plane },
@@ -37,9 +37,9 @@ export function ConciergeRail({ state, onSaved, onRecovery, onPreferences }: {
     <header className="mc-brief-header"><h2>Your travel brief</h2><span>Always part of the conversation.</span></header>
     {state.tripHolds?.slice(-1).map(hold => <TripHoldReceipt key={hold.order.order_id} hold={hold} compact />)}
     <div className="mc-traveler">
-      <img src={DEMO_TRAVELER_IMAGE_URL} alt="" width="44" height="44" />
+      <TravelerAvatar traveler={state.traveler} width={44} height={44} />
       <div>
-        <strong>Jordan Morgan</strong>
+        <strong>{state.traveler.name}</strong>
         <span>
           {profile ? 'Your preferences, remembered' : 'Let’s get to know your travel style'}
         </span>

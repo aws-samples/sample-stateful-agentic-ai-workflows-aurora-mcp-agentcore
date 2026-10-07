@@ -2,9 +2,11 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { EMPTY_FILTERS, type MeridianShowcaseState } from '../../hooks/useMeridianShowcase';
 import { ConciergeRail } from '../ConciergeRail';
+import { JORDAN_IDENTITY } from '../../../test/signedIn';
 
 function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShowcaseState {
   return {
+    traveler: JORDAN_IDENTITY,
     tripHolds: [],
     travelersCount: 1,
     chatFilters: EMPTY_FILTERS,
@@ -17,6 +19,29 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     ...overrides,
   } as unknown as MeridianShowcaseState;
 }
+
+describe('ConciergeRail traveler', () => {
+  it('names the signed-in traveler and nobody else', () => {
+    const { container } = render(<ConciergeRail state={makeState({
+      traveler: { id: 'trv_demo_decoy', name: 'Jordan Lee', initials: 'JL', avatarUrl: null },
+    })} />);
+    expect(container.querySelector('.mc-traveler strong')?.textContent).toBe('Jordan Lee');
+    expect(container.querySelector('.mc-traveler .mds-traveler-initials')?.textContent).toBe('JL');
+    expect(container.textContent).not.toContain('Jordan Morgan');
+  });
+
+  it('shows the photo from the sign-in when there is one', () => {
+    const { container } = render(<ConciergeRail state={makeState({
+      traveler: {
+        id: 'trv_meridian_demo', name: 'Jordan Morgan', initials: 'JM',
+        avatarUrl: '/travel/jordan-morgan.jpg',
+      },
+    })} />);
+    expect(container.querySelector('.mc-traveler img'))
+      .toHaveAttribute('src', '/travel/jordan-morgan.jpg');
+    expect(container.querySelector('.mds-traveler-initials')).toBeNull();
+  });
+});
 
 describe('ConciergeRail unset values', () => {
   it('renders every unset value as quiet words, never as display type or a dash', () => {

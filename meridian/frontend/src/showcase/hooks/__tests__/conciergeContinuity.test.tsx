@@ -271,7 +271,7 @@ it.each(['Resume workflow from the saved step', 'Resume workflow from checkpoint
   const { result } = renderHook(() => useMeridianShowcase());
   await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
   const document = {
-    traveler_id: result.current.travelerId, active_thread_id: 'saved-thread',
+    traveler_id: 'trv_meridian_demo', active_thread_id: 'saved-thread',
     workflow: { status: 'observed', source: 'checkpoint', conversation_id: 'saved-thread',
       query: 'My Tokyo flight was canceled. Rework the trip.', message: 'Shortlist saved.',
       workflow_status: 'paused', next_nodes: ['availability'], activities: [], travelers_count: 3 },

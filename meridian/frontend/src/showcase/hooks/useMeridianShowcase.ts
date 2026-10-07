@@ -14,7 +14,10 @@ import {
   updateMemoryFact,
 } from '../../api/client';
 import type { ChatStreamEvent } from '../../api/chatStream';
+import { CURRENT_TRAVELER } from '../../api/currentTraveler';
 import { runWithDeadline } from '../../api/request';
+import { useSession } from '../../auth/SessionContext';
+import { travelerIdentity, type TravelerIdentity } from '../lib/travelerIdentity';
 import { holdIntentKey, loadBookingRecovery, saveBookingRecovery, type SavedHoldIntent } from '../lib/bookingRecovery';
 import type {
   ChatResponse,
@@ -40,7 +43,7 @@ import {
   type ShowcaseTraceSpan,
   type ShowcaseTraceTab,
 } from '../lib/showcaseAdapters';
-import { SHOWCASE_INITIAL_PROMPT, SHOWCASE_TRAVELER_ID } from '../lib/showcaseFallbackData';
+import { SHOWCASE_INITIAL_PROMPT } from '../lib/showcaseFallbackData';
 import {
   loadTripWorkspace,
   saveTripWorkspace,
@@ -97,7 +100,8 @@ export interface MeridianShowcaseState {
    *  switch. Drives the phase-diff banner. */
   phaseHint: { label: string; adds: string; tech?: string } | null;
   dismissPhaseHint: () => void;
-  travelerId: string;
+  /** Who is signed in: their name and photo come from their sign-in or their Aurora profile. */
+  traveler: TravelerIdentity;
   messages: Message[];
   lastRequestPhase: Phase | null;
   recoveryRequest: string | null;
@@ -252,6 +256,11 @@ function clearWorkflowAddress() {
 const PHASE_DELAYS: Record<Phase, number> = { 1: 420, 2: 360, 3: 300, 4: 280, 5: 260 };
 
 export function useMeridianShowcase(): MeridianShowcaseState {
+  const { traveler: signedIn } = useSession();
+  // Requests say CURRENT_TRAVELER and the API resolves it from the verified credential. The id the
+  // page knows is only a key for this browser's own saved state, so two people never share it.
+  const travelerKey = useRef(CURRENT_TRAVELER);
+  travelerKey.current = signedIn?.travelerId ?? CURRENT_TRAVELER;
   // Start the showcase at Phase 1 (SQL) so a stage walk-through can begin
   // with the simplest data path - direct SQL filters over Aurora - and
   // progressively introduce MCP, Retrieval, Production, and Workflow.
@@ -421,7 +430,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       const [health, trips, profile] = await Promise.allSettled([
         fetchHealth<BackendHealth>(controller.signal),
         fetchProducts(undefined, 50, false, controller.signal),
-        fetchMemoryProfile(SHOWCASE_TRAVELER_ID, controller.signal),
+        fetchMemoryProfile(CURRENT_TRAVELER, controller.signal),
       ]);
       if (!mounted.current || generation !== connectionGeneration.current) return;
       const serverReady = health.status === 'fulfilled' && healthResponseToStatus(health.value) === 'online';
@@ -483,7 +492,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     memoryReadController.current = controller;
     const timeout = window.setTimeout(() => controller.abort(), 45000);
     try {
-      const profile = await fetchMemoryProfile(SHOWCASE_TRAVELER_ID, controller.signal);
+      const profile = await fetchMemoryProfile(CURRENT_TRAVELER, controller.signal);
       if (!isCurrent()) return;
       setMemoryFacts(memoryResponseToFacts(profile));
       setTravelerProfile(profile.profile ?? null);
@@ -572,7 +581,8 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, []);
 
   const restoreJourney = useCallback((document: JourneyDocument) => {
-    if (isLoading || document.traveler_id !== SHOWCASE_TRAVELER_ID || !isObserved(document.workflow)) return;
+    const known = travelerKey.current !== CURRENT_TRAVELER;
+    if (isLoading || (known && document.traveler_id !== travelerKey.current) || !isObserved(document.workflow)) return;
     const saved = document.workflow;
     unresolvedWorkflow.current = null;
     if (!saved.conversation_id || saved.conversation_id !== document.active_thread_id) return;
@@ -715,7 +725,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           ...(options?.reviewOnly ? { review_only: true } : {}),
           ...(requestPhase >= 4
             ? {
-                customer_id: SHOWCASE_TRAVELER_ID,
+                customer_id: CURRENT_TRAVELER,
                 travelers_count: travelersCount,
                 // Concierge uses Production without advancing the teaching ladder.
                 // Authorize recall on the server for every product turn, even
@@ -875,9 +885,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     // Display the returned receipt even if storage becomes unavailable later.
     setTripHolds(prior => [...prior.filter(hold => hold.productId !== productId), { productId, order }]);
     try {
-      const saved = loadBookingRecovery(SHOWCASE_TRAVELER_ID);
+      const saved = loadBookingRecovery(travelerKey.current);
       saved.bookings[productId] = order.order_id;
-      saveBookingRecovery(SHOWCASE_TRAVELER_ID, saved);
+      saveBookingRecovery(travelerKey.current, saved);
     } catch {
       setError('The receipt was returned, but its reference could not be saved on this device. Keep the booking ID before reloading.');
     }
@@ -889,7 +899,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     let cancelled = false;
     const restore = async () => {
       try {
-        const saved = loadBookingRecovery(SHOWCASE_TRAVELER_ID);
+        const saved = loadBookingRecovery(travelerKey.current);
         const intents = Object.values(saved.intents);
         const productsWithIntent = new Set(intents.map(intent => intent.productId));
         const reads = [
@@ -940,7 +950,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       const prompt = `Request a 12-hour courtesy hold: ${product.name}`;
       try {
         const response = await runWithDeadline(async signal => {
-          const saved = loadBookingRecovery(SHOWCASE_TRAVELER_ID);
+          const saved = loadBookingRecovery(travelerKey.current);
           let intent: SavedHoldIntent | undefined = saved.intents[intentKey];
           if (intent) {
             // Read before every retry, including after refresh. A failed read
@@ -964,12 +974,12 @@ export function useMeridianShowcase(): MeridianShowcaseState {
               replacesBookingId: existing?.order.order_id,
             };
             saved.intents[intentKey] = intent;
-            try { saveBookingRecovery(SHOWCASE_TRAVELER_ID, saved); }
+            try { saveBookingRecovery(travelerKey.current, saved); }
             catch { throw new Error('This device cannot save the hold request identity. Enable browser storage before requesting a hold.'); }
           }
           return processOrder({
             product_id: intent.productId, size: intent.duration, quantity: intent.quantity,
-            phase: selectedPhase, traveler_id: SHOWCASE_TRAVELER_ID, action: 'hold',
+            phase: selectedPhase, traveler_id: CURRENT_TRAVELER, action: 'hold',
             conversation_id: intent.conversationId,
           }, signal);
         }, controller.signal);
@@ -1035,7 +1045,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           return confirmBooking({
           booking_id: hold.order.order_id,
           phase: 4,
-          traveler_id: SHOWCASE_TRAVELER_ID,
+          traveler_id: CURRENT_TRAVELER,
           conversation_id: conversationId ?? undefined,
         }, signal);
         }, controller.signal);
@@ -1165,7 +1175,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       fact.key === key ? { ...fact, value, source: 'traveler_edit', confidence: 1 } : fact
     )));
     try {
-      const updated = await updateMemoryFact(SHOWCASE_TRAVELER_ID, key, value);
+      const updated = await updateMemoryFact(CURRENT_TRAVELER, key, value);
       if (!mounted.current) return false;
       if (generation === memoryReadGeneration.current) {
         setMemoryFacts((facts) => facts.map((fact) => (
@@ -1188,7 +1198,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setMemoryMutationError(null);
     setMemoryFacts((facts) => facts.filter((fact) => fact.key !== key));
     try {
-      await deleteMemoryFact(SHOWCASE_TRAVELER_ID, key);
+      await deleteMemoryFact(CURRENT_TRAVELER, key);
       if (!mounted.current) return false;
       await refreshConnection();
       return true;
@@ -1249,6 +1259,11 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     if (lastRequestPhase) setSelectedPhaseState(lastRequestPhase);
   }, [lastRequestPhase]);
 
+  const traveler = useMemo(
+    () => travelerIdentity(signedIn, (travelerProfile ?? previewProfile)?.full_name),
+    [signedIn, travelerProfile, previewProfile],
+  );
+
   const totalLatencyMs = useMemo(
     () => traceSpans.reduce((total, span) => total + (span.latencyMs ?? 0), 0),
     [traceSpans],
@@ -1259,7 +1274,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     phaseLabel: phaseLabelFor(selectedPhase),
     phaseHint,
     dismissPhaseHint,
-    travelerId: SHOWCASE_TRAVELER_ID,
+    traveler,
     messages,
     lastRequestPhase,
     recoveryRequest,

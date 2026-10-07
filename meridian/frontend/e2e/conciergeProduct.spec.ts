@@ -26,7 +26,7 @@ test('Concierge leads with remembered context and offers a reviewable recovery w
   });
   await page.goto('/showcase?view=ladder');
   await expect(page.getByRole('button', { name: /^Phase 1,/ })).toHaveAttribute('aria-current', 'step');
-  await page.getByRole('button', { name: 'Open Jordan Morgan travel brief', exact: true }).click();
+  await page.getByRole('button', { name: 'Open your travel brief', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your concierge', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Phase 1,/ })).toHaveCount(0);
   const brief = page.getByRole('region', { name: 'Travel brief details', exact: true });
@@ -36,7 +36,7 @@ test('Concierge leads with remembered context and offers a reviewable recovery w
   await expect(brief.getByText('No shellfish', { exact: true })).toBeVisible();
   expect(requests).toHaveLength(0);
   await page.getByText('Your travel context', { exact: true }).click();
-  await page.getByRole('button', { name: 'Open Jordan Morgan travel brief', exact: true }).click();
+  await page.getByRole('button', { name: 'Open your travel brief', exact: true }).click();
   await expect(brief).toBeVisible();
   await expect(brief.getByRole('button', { name: 'Edit preferences', exact: true })).toBeVisible();
   await brief.getByRole('button', { name: 'Edit preferences', exact: true }).click();
@@ -76,7 +76,7 @@ test('Concierge leads with remembered context and offers a reviewable recovery w
   expect(new URL(page.url()).searchParams.get('thread')).toBe(thread);
   expect(requests).toHaveLength(3);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'Open Jordan Morgan travel brief', exact: true }).click();
+  await page.getByRole('button', { name: 'Open your travel brief', exact: true }).click();
   await expect(brief.getByRole('heading', { name: 'Your travel brief', exact: true })).toBeInViewport();
   await expect(brief.getByText('Quiet boutique hotels', { exact: true })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);

@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { ServiceMark } from './ServiceMark';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
-import { DEMO_TRAVELER_IMAGE_URL, DEMO_TRAVELER_NAME } from '../lib/personas';
+import { TravelerAvatar } from './TravelerAvatar';
 import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 
 // Snake-case schema keys read as "authentic Aurora data" for some fields
@@ -222,17 +222,11 @@ export function TravelerContextPanel({
             >
               <div className="mds-profile-line">
                 <span className="mds-avatar is-photo" aria-hidden="true">
-                  <img
-                    src={DEMO_TRAVELER_IMAGE_URL}
-                    alt={DEMO_TRAVELER_NAME}
-                    width="640"
-                    height="960"
-                    loading="lazy"
-                  />
+                  <TravelerAvatar traveler={state.traveler} width={640} height={960} />
                 </span>
                 <div>
-                  <strong>Jordan Morgan</strong>
-                  <small>{state.travelerId}</small>
+                  <strong>{state.traveler.name}</strong>
+                  {state.traveler.id && <small>{state.traveler.id}</small>}
                 </div>
                 <span className="mds-memory-authorized">
                   <CheckCircle2 size={13} aria-hidden="true" />

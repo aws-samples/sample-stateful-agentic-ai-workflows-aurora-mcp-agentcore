@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchRlsProbe, type RlsProbeResponse } from '../../../api/client';
 import { RlsProbeCard } from '../RlsProbeCard';
@@ -58,5 +58,28 @@ describe('RlsProbeCard negative control', () => {
     expect(badge).toHaveClass('is-allow');
     expect(step).toHaveClass('is-allow');
     expect(step).not.toHaveClass('is-deny');
+  });
+});
+
+describe('RlsProbeCard traveler', () => {
+  beforeEach(() => {
+    vi.mocked(fetchRlsProbe).mockReset();
+    vi.mocked(fetchRlsProbe).mockResolvedValue({
+      ...probe('deny'),
+      traveler_id: 'trv_demo_decoy',
+      authorization: { ...probe('deny').authorization, requested_traveler_id: 'trv_demo_decoy' },
+    });
+  });
+
+  it('names the signed-in traveler in the grant step', async () => {
+    render(<RlsProbeCard travelerId="trv_demo_decoy" travelerName="Jordan Lee" />);
+    await waitFor(() => expect(screen.getByText('2. Traveler grant')).toBeInTheDocument());
+    expect(screen.getByText('2. Traveler grant').parentElement).toHaveTextContent('Jordan Lee');
+    expect(screen.queryByText(/Jordan Morgan/)).not.toBeInTheDocument();
+  });
+
+  it('probes the signed-in traveler when the page does not know the id', async () => {
+    render(<RlsProbeCard />);
+    await waitFor(() => expect(fetchRlsProbe).toHaveBeenCalledWith(undefined));
   });
 });

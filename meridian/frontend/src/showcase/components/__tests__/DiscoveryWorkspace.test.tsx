@@ -4,6 +4,7 @@ import type { Product } from '../../../types';
 import { EMPTY_FILTERS, type MeridianShowcaseState } from '../../hooks/useMeridianShowcase';
 import { DiscoveryWorkspace } from '../DiscoveryWorkspace';
 import { ConciergeConversation } from '../ConciergeConversation';
+import { JORDAN_IDENTITY } from '../../../test/signedIn';
 
 const LIVE_PRODUCT: Product = {
   product_id: 'AUR-001',
@@ -22,6 +23,7 @@ const LIVE_PRODUCT: Product = {
 
 function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShowcaseState {
   return {
+    traveler: JORDAN_IDENTITY,
     messages: [],
     savedTrips: [],
     phaseExamples: [],

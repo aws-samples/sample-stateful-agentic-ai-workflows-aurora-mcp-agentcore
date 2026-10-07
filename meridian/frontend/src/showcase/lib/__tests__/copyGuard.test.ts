@@ -59,4 +59,18 @@ describe('showcase copy', () => {
     const offences = fixtures.filter(path => BANNED.some(pattern => pattern.test(sources[path])));
     expect(offences).toEqual([]);
   });
+
+  it('names no particular traveler in the page code; the API says who is signed in', () => {
+    const NAMED = [/trv_meridian_demo/, /Jordan Morgan/, /SHOWCASE_TRAVELER_ID/, /lib\/personas/];
+    const files = Object.keys(sources).filter(
+      path => /\.tsx?$/.test(path) && !isTest(path) && !/\.\.\/test\//.test(path)
+        && !/\/e2e\//.test(path),
+    );
+    expect(files.length).toBeGreaterThan(50);
+    const offences = files.flatMap(path => sources[path].split('\n')
+      .map((line, index) => ({ line, at: `${shortName(path)}:${index + 1}` }))
+      .filter(({ line }) => !isComment(line) && NAMED.some(pattern => pattern.test(line)))
+      .map(({ line, at }) => `${at} ${line.trim().slice(0, 100)}`));
+    expect(offences).toEqual([]);
+  });
 });

@@ -44,8 +44,8 @@ export function NavPanelDrawer({
         if (!nextOpen) onClose();
       }}
       title={PANEL_TITLE[panel]}
-      subtitle="Jordan Morgan"
-      description={`${PANEL_TITLE[panel]} workspace for Jordan Morgan`}
+      subtitle={state.traveler.name}
+      description={`${PANEL_TITLE[panel]} workspace for ${state.traveler.name}`}
       closeLabel={`Close ${PANEL_TITLE[panel]}`}
     >
       {panel === 'trips' && <TripsPanel state={state} onClose={onClose} />}

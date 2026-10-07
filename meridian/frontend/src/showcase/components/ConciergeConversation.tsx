@@ -5,7 +5,7 @@ import { ShowcaseMarkdown } from './ChatTranscript';
 import { ConciergeBell } from '../icons/TravelIcons';
 import { ConciergeRail } from '../surfaces/ConciergeRail';
 import { TripHoldReceipt } from './TripHoldReceipt';
-import { DEMO_TRAVELER_IMAGE_URL } from '../lib/personas';
+import { TravelerAvatar } from './TravelerAvatar';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import type { Message } from '../../types';
 import { useStreamingText } from '../hooks/useStreamingText';
@@ -162,7 +162,7 @@ export function ConciergeConversation({ state, onSaved, onRecovery, onReviewReco
         <div className="mc-studio-brief-body" role="region" aria-label="Travel brief details" tabIndex={0}><ConciergeRail state={state} onSaved={onSaved} onRecovery={onRecovery} onPreferences={onPreferences} /></div>
       </details>
       <div className="mc-studio-context-values">
-        <span className="mc-studio-person"><img src={DEMO_TRAVELER_IMAGE_URL} width="40" height="40" alt="" />Jordan Morgan</span>
+        <span className="mc-studio-person"><TravelerAvatar traveler={state.traveler} width={40} height={40} />{state.traveler.name}</span>
         <span><Plane size={20} aria-hidden="true" />{profile?.home_airport || 'Airport not set'}</span>
         <span><UsersRound size={20} aria-hidden="true" />{state.travelersCount ? `${state.travelersCount} ${state.travelersCount === 1 ? 'adult' : 'adults'}` : 'Party not set'}</span>
         <span><CalendarDays size={20} aria-hidden="true" />{dates}</span>

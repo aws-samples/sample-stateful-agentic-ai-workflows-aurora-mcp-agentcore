@@ -4,7 +4,7 @@ import { AuroraIcon } from './ServiceMark';
  *
  * Calls POST /api/diagnostics/rls-probe, which runs the SAME COUNT(*) twice
  * per table - once through the fail-closed app role and once through the
- * privileged migration connection. The bar animates from the administrative
+ * backend_admin_count definer function. The bar animates from the all-traveler
  * baseline down to the scoped count, so the audience
  * watches the row set collapse to just this traveler's data. Below each table
  * we show the real CREATE POLICY USING clause from pg_policies.
@@ -25,7 +25,11 @@ function decisionToneClass(decision: string): string {
   return 'is-deny';
 }
 
-export function RlsProbeCard({ travelerId }: { travelerId: string }) {
+export function RlsProbeCard({ travelerId, travelerName = 'the signed-in traveler' }: {
+  /** Omit to probe the signed-in traveler; the API resolves who that is. */
+  travelerId?: string;
+  travelerName?: string;
+}) {
   const prefersReducedMotion = usePrefersReducedMotion();
   const [data, setData] = useState<RlsProbeResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -84,7 +88,7 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
                 <small>2. Traveler grant</small>
                 <strong>
                   <span className="mds-authz-decision is-allow">ALLOW</span>
-                  Jordan Morgan
+                  {travelerName}
                 </strong>
                 <code>{data.authorization.binding_id ?? 'traveler_identity_bindings'}</code>
               </div>

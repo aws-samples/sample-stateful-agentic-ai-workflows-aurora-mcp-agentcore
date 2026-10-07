@@ -5,6 +5,7 @@ import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { type ShowcaseTraceSpan, type ShowcaseTraceTab } from '../lib/showcaseAdapters';
 import { WorkflowGraph } from './WorkflowGraph';
 import { RlsProbeCard } from './RlsProbeCard';
+import type { TravelerIdentity } from '../lib/travelerIdentity';
 import { McpToolContractPanel } from './McpToolContractPanel';
 import { WorkflowStateInspector } from './WorkflowStateInspector';
 import { IconTooltip } from './ShowcaseTooltip';
@@ -214,14 +215,14 @@ function EvidenceInspector({ state }: { state: MeridianShowcaseState }) {
       </div>}
       {selected === 'tools' && <McpToolContractPanel state={state} />}
       {selected === 'workflow' && <><WorkflowStateInspector state={state} /><WorkflowGraph state={state} /></>}
-      {selected === 'rls' && <RlsEvidence key={state.travelerId} travelerId={state.travelerId} />}
+      {selected === 'rls' && <RlsEvidence key={state.traveler.id ?? 'me'} traveler={state.traveler} />}
     </details>
   );
 }
 
-function RlsEvidence({ travelerId }: { travelerId: string }) {
+function RlsEvidence({ traveler }: { traveler: TravelerIdentity }) {
   const [requested, setRequested] = useState(false);
-  return requested ? <RlsProbeCard travelerId={travelerId} /> : <div className="mds-evidence-probe">
+  return requested ? <RlsProbeCard travelerId={traveler.id ?? undefined} travelerName={traveler.name} /> : <div className="mds-evidence-probe">
     <p>Check which rows this traveler can access. This runs a live diagnostic.</p>
     <button type="button" onClick={() => setRequested(true)}>Run RLS probe</button>
   </div>;

@@ -25,11 +25,13 @@ import { TripResultCardContent } from '../TripResultCardContent';
 import { TripDetailDrawer } from '../TripDetailDrawer';
 import { ConciergeAssistanceCard } from '../RecoveryDecisionCards';
 import { SessionClose } from '../../surfaces/SessionClose';
+import { JORDAN_IDENTITY } from '../../../test/signedIn';
 
 function makeState(
   overrides: Partial<MeridianShowcaseState> = {},
 ): MeridianShowcaseState {
   return {
+    traveler: JORDAN_IDENTITY,
     tripHolds: [],
     travelersCount: overrides.chatFilters?.travelers || 2,
     restoreJourney: vi.fn(),
@@ -1412,7 +1414,7 @@ describe('Concierge travel states', () => {
   it('carries the active party and date selections into the trip brief', () => {
     render(<ConciergeRail state={makeState({ chatFilters: { ...EMPTY_FILTERS, travelers: 3, startDate: '2026-10-12', endDate: '2026-10-19' } })} />);
     expect(screen.getByText('3 adults')).toBeInTheDocument();
-    expect(screen.getByText('Oct 12 – Oct 19')).toBeInTheDocument();
+    expect(screen.getByText('Oct 12 to Oct 19')).toBeInTheDocument();
   });
 
   it('renders the reported itinerary without inventing a flight or seat assignment', () => {

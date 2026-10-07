@@ -44,7 +44,9 @@ import { IconTooltip } from './components/ShowcaseTooltip';
 import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
 import type { Phase } from '../types';
 import { MERIDIAN_MARK_SRC } from '../lib/meridianBrand';
-import { DEMO_TRAVELER_IMAGE_URL, DEMO_TRAVELER_NAME } from './lib/personas';
+import { TravelerAvatar } from './components/TravelerAvatar';
+import { SignOutButton } from '../auth/SignOutButton';
+import { travelBriefLabel } from './lib/travelerIdentity';
 import { usePrefersReducedMotion } from './lib/prefersReducedMotion';
 import { SHOWCASE_PHASES } from './lib/showcaseAdapters';
 
@@ -342,25 +344,20 @@ export function DesktopMeridianApp({
           type="button"
           className="mds-account-mini"
           onClick={() => openNavItem('profile')}
-          aria-label="Open Jordan Morgan travel brief"
+          aria-label={travelBriefLabel(state.traveler)}
         >
           <span className="mds-avatar is-photo" aria-hidden="true">
-            <img
-              src={DEMO_TRAVELER_IMAGE_URL}
-              alt={DEMO_TRAVELER_NAME}
-              width="640"
-              height="960"
-              loading="lazy"
-            />
+            <TravelerAvatar traveler={state.traveler} width={640} height={960} />
           </span>
           <div className="mds-account-copy">
-            <strong>Jordan Morgan</strong>
+            <strong>{state.traveler.name}</strong>
             <span className="mds-account-loyalty">
               <span>Travel brief</span>
             </span>
           </div>
           <ChevronRight className="mds-account-chevron" size={16} aria-hidden="true" />
         </button>
+        <SignOutButton />
       </aside>
 
       <header className="mds-shell-header">
@@ -398,7 +395,7 @@ export function DesktopMeridianApp({
         </nav>
 
         <div className="mds-shell-status">
-          {isProduct && <button type="button" className="mc-profile-toggle" onClick={() => openNavItem('profile')} aria-label="Open Jordan Morgan travel brief"><img src={DEMO_TRAVELER_IMAGE_URL} alt="" width="40" height="40" /></button>}
+          {isProduct && <button type="button" className="mc-profile-toggle" onClick={() => openNavItem('profile')} aria-label={travelBriefLabel(state.traveler)}><TravelerAvatar traveler={state.traveler} width={40} height={40} /></button>}
           <span
             className={`mds-status-pill ${runtimeStatus.className}`}
             role="status"

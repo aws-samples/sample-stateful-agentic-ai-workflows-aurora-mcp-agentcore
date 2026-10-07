@@ -17,7 +17,7 @@ export function MemoryDrawer({ state, open, onClose, product = false }: { state:
         if (!nextOpen) onClose();
       }}
       title={product ? 'Your preferences' : 'Traveler memory'}
-      subtitle="Jordan Morgan"
+      subtitle={state.traveler.name}
       description={product ? 'Review the details Meridian uses to plan your trips' : 'Review and update Aurora-backed traveler preferences'}
       closeLabel="Close memory drawer"
     >

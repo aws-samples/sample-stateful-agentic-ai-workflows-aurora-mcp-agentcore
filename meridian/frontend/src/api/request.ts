@@ -1,3 +1,5 @@
+import { withBearer } from '../auth/accessToken';
+
 /** Browser deadlines end the wait, not a server-side transaction. */
 export const REQUEST_TIMEOUT_MS = 55_000;
 
@@ -31,7 +33,7 @@ export function runWithDeadline<T>(
 
 export async function requestJson<T>(url: string, init: RequestInit = {}): Promise<T> {
   return runWithDeadline(async signal => {
-    const response = await fetch(url, { cache: 'no-store', ...init, signal });
+    const response = await fetch(url, { cache: 'no-store', ...init, headers: withBearer(init.headers), signal });
     if (!response.ok) {
       let detail = `Request failed (${response.status}).`;
       try {
