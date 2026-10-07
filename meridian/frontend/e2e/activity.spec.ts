@@ -59,7 +59,7 @@ for (const theme of ['light', 'dark']) {
       await expect(queryEvent).toBeVisible();
       await queryEvent.focus();
       await page.keyboard.press('Space');
-      await expect(steps.locator('.mds-activity-event-detail').filter({ hasText: 'data · ok' })).toBeVisible();
+      await expect(steps.locator('.mds-activity-event-detail').filter({ hasText: 'data, ok' })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Run RLS probe' })).toBeHidden();
       await page.getByText('Inspect evidence', { exact: true }).click();
       await expect(page.getByRole('button', { name: 'Run RLS probe' })).toBeVisible();
@@ -72,7 +72,7 @@ for (const theme of ['light', 'dark']) {
       await page.getByRole('button', { name: 'Replay trace', exact: true }).click();
       await expect(steps.locator('[aria-current="step"]')).toBeVisible();
       await expect(page.getByText(/Replaying recorded activity/)).toBeVisible();
-      await expect(page.locator('.mds-thinking-caption')).toHaveText(/Recorded activity · 5 events/, { timeout: 10000 });
+      await expect(page.locator('.mds-thinking-caption')).toHaveText(/Recorded activity: 5 events/, { timeout: 10000 });
       await expect(steps.locator('.is-done')).toHaveCount(5);
       const audit = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa', 'best-practice']).analyze();
       expect(audit.violations.map(v => ({ id: v.id, targets: v.nodes.map(n => n.target) }))).toEqual([]);
@@ -157,7 +157,7 @@ test('all five phases animate waiting and replay spinners and respect reduced mo
     await expect(page.locator('.mds-thinking-wait')).toHaveCount(0);
     await page.getByRole('button', { name: 'Replay trace', exact: true }).click();
     await expect(page.locator('.mds-thinking-item.is-active .mds-activity-spinner')).toHaveCSS('animation-name', 'mds-activity-spin');
-    await expect(page.locator('.mds-thinking-caption')).toHaveText('Recorded activity · 5 events');
+    await expect(page.locator('.mds-thinking-caption')).toHaveText('Recorded activity: 5 events');
     if (phase === 4) {
       await page.getByText('Inspect evidence', { exact: true }).click();
       await page.getByRole('button', { name: 'Run RLS probe', exact: true }).click();

@@ -23,7 +23,7 @@ const BRIEFS: Record<Phase, {
     description: 'Search, compare trips, and convert prices through named tools.',
     route: ['Agent request', 'MCP tool contract', 'Aurora rows'],
     evidence: 'Tool name, inputs, and result',
-    pattern: 'An MCP contract defines each tool’s inputs and result. The local demo calls MCP servers over stdio.',
+    pattern: 'An MCP contract defines each tool’s inputs and result. The local app calls MCP servers over stdio.',
     callout: 'A named tool still needs authorization and validated inputs. FX rates here are illustrative.',
   },
   3: {
@@ -47,7 +47,7 @@ const BRIEFS: Record<Phase, {
     description: 'Save the current step in Aurora so another worker can pick up where it stopped.',
     route: ['Recovery request', 'Aurora checkpoint', 'Resume + verify'],
     evidence: 'Checkpoint, execution attempts, request ID, booking ID and original expiry',
-    pattern: 'LangGraph saves values and the next step. A worker lease prevents competing runs; a stable hold request ID prevents duplicate holds on retry.',
+    pattern: 'A Strands Graph in its own AgentCore Runtime saves each step as a snapshot in AWS Aurora. A worker lease prevents competing runs; a stable hold request ID prevents duplicate holds on retry.',
     callout: 'A lost reply can follow a committed hold. Reuse the saved intent and verify the original receipt.',
   },
 };
@@ -69,7 +69,7 @@ export function CapabilityBrief({ phase }: { phase: Phase }) {
         </ol>
         <dl className="mc-capability-facts">
           <div><dt>How it works</dt><dd>{brief.pattern}</dd></div>
-          <div><dt>Technology</dt><dd>{phase === 5 ? 'LangGraph · Aurora PostgreSQL' : current.tech}</dd></div>
+          <div><dt>Technology</dt><dd>{current.tech}</dd></div>
           <div><dt>Verify in the trace</dt><dd>{brief.evidence}</dd></div>
         </dl>
       </details>

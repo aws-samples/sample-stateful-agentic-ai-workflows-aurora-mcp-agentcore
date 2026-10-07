@@ -83,7 +83,7 @@ function WorkerCard({
           : 'No execution recorded'}
       </span>
       <span className="mds-proof-worker-state">
-        {execution ? `attempt ${execution.attempt} · ${status}` : DASH}
+        {execution ? `attempt ${execution.attempt}, ${status}` : DASH}
       </span>
     </div>
   );
@@ -331,7 +331,7 @@ export function PresenterProof({
                   <Fact label="Travel party" value={hold.travelers_count ? `${hold.travelers_count} travelers` : DASH} />
                   <Fact label="Created by" value={hold.created_by_execution_id === first?.execution_id ? 'Original execution' : hold.created_by_execution_id === latest?.execution_id ? (first?.worker_id && latest?.worker_id && first.worker_id !== latest.worker_id ? 'Replacement execution' : 'Resumed execution') : hold.created_by_execution_id || 'Not recorded'} />
                   <Fact label="Hold records in journey" value={String(hold.hold_records)} />
-                  <Fact label="Confirmed" value={hold.confirmed_at ? `${shortTime(hold.confirmed_at)} · catalog inventory, no payment` : 'Not yet confirmed by the traveler'} />
+                  <Fact label="Confirmed" value={hold.confirmed_at ? `${shortTime(hold.confirmed_at)}, catalog inventory, no payment` : 'Not yet confirmed by the traveler'} />
                 </div>
                 <p className="mc-hold-proof-note">
                   {restarted && hold.created_by_execution_id === first?.execution_id
@@ -346,7 +346,7 @@ export function PresenterProof({
                 <strong>Hold no longer in Aurora.</strong>
                 <p>
                   The checkpoint names hold {hold.checkpoint_hold_id}, but Aurora has no booking
-                  for it. Releasing a demo booking removes its rows.
+                  for it. Releasing a sample booking removes its rows.
                 </p>
               </div>
             ) : (
@@ -360,10 +360,10 @@ export function PresenterProof({
       </div>
 
       <footer className="mds-proof-foot">
-        <span>Aurora · MCP · AgentCore · Strands · LangGraph</span>
+        <span>Aurora, MCP, AgentCore, Strands Graph</span>
         <span>
           Read from {document.checkpoint_backend.kind}
-          {document.checkpoint_backend.durable ? ' · survives restart' : document.checkpoint_backend.kind === 'MemorySaver (in-process)' ? ' · worker memory only' : ' · durability not verified'}
+          {document.checkpoint_backend.durable ? ', survives restart' : document.checkpoint_backend.kind === 'MemorySaver (in-process)' ? ', worker memory only' : ', durability not verified'}
         </span>
       </footer>
     </section>

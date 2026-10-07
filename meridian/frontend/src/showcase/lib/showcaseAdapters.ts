@@ -76,7 +76,7 @@ export const PHASE_QUERY_BOUNDARIES: Record<Phase, string> = {
   2: 'These tools take explicit inputs. Retrieval adds matches by meaning.',
   3: 'Search uses this request. Production adds authorized traveler memory.',
   4: 'Memory saves the conversation. Workflow also saves which step runs next.',
-  5: 'Pause, then resume the same thread. Airline ticketing remains outside this demo.',
+  5: 'Pause, then resume the same thread. Airline ticketing remains outside this scenario.',
 };
 
 const SHOWCASE_PROMPT_LABELS: Record<string, string> = {
@@ -152,17 +152,17 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     takeaway: 'Authenticate the workload, authorize Jordan, let the agent call governed tools, and audit every turn.',
     proofPoint: 'Runtime + RLS',
     adds: 'The agent runs in AgentCore Runtime, calls Aurora tools through AgentCore Gateway, and Cedar policy checks every call before it runs.',
-    tech: 'AgentCore Runtime · Gateway · Policy · Memory · Aurora RLS',
+    tech: 'AgentCore Runtime, Gateway, Policy, Memory, Aurora RLS',
   },
   {
     label: 'Workflow',
     phase: 5,
-    description: 'LangGraph orchestration with checkpointing',
+    description: 'Strands Graph on AgentCore Runtime with saved steps',
     capability: 'Durable Workflow',
     takeaway: 'Make multi-step work explicit, inspectable, checkpointed, and resumable.',
     proofPoint: 'Checkpoint written',
-    adds: 'LangGraph saves progress in Aurora so a replacement worker can resume the same thread.',
-    tech: 'LangGraph · Aurora PostgreSQL',
+    adds: 'The Strands Graph runs in its own AgentCore Runtime and saves each step in AWS Aurora, so a replacement worker can resume the same thread.',
+    tech: 'Strands Graph on AgentCore Runtime, AWS Aurora',
   },
 ];
 

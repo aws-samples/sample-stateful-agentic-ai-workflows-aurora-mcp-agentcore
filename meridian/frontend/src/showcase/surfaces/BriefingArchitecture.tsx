@@ -3,7 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import { ServiceMark } from '../components/ServiceMark';
 import './briefingArchitecture.css';
 
-/** Phase 5 runs in FastAPI, not AgentCore Runtime. Both use governed tools. */
+/** Phase 4 and Phase 5 each run in their own AgentCore Runtime. Both use governed tools. */
 export function BriefingArchitecture() {
   const id = useId();
   const node = (x: number, y: number, width: number, title: string, lines: string[], icon?: string, step?: number) => (
@@ -21,7 +21,7 @@ export function BriefingArchitecture() {
   return <figure className="mds-brief-architecture">
     <svg className="mds-brief-arch-diagram" viewBox="0 0 1120 410" role="img" aria-labelledby={`${id}-title ${id}-description`}>
       <title id={`${id}-title`}>Meridian request and state architecture</title>
-      <desc id={`${id}-description`}>FastAPI on App Runner invokes the Phase 4 Strands agent in AgentCore Runtime and runs the Phase 5 LangGraph workflow itself. Both call AgentCore Gateway, where Cedar policy governs calls before Lambda tools access Aurora PostgreSQL. FastAPI also reads catalog and traveler data through the Data API and persists workflow checkpoints and leases in Aurora. Bedrock supplies models and retrieval; AgentCore Memory retains Phase 4 conversation context.</desc>
+      <desc id={`${id}-description`}>FastAPI on App Runner invokes the Phase 4 Strands agent and the Phase 5 Strands Graph workflow, each in its own AgentCore Runtime. Both call AgentCore Gateway, where Cedar policy governs calls before Lambda tools access Aurora PostgreSQL. FastAPI also reads catalog and traveler data through the Data API. The workflow Runtime saves its steps and worker leases in AWS Aurora. Bedrock supplies models and retrieval; AgentCore Memory retains Phase 4 conversation context.</desc>
       <defs><marker id={`${id}-arrow`} viewBox="0 0 10 10" refX={9} refY={5} markerWidth={6} markerHeight={6} orient="auto"><path d="M0 0 10 5 0 10z" /></marker></defs>
       <g className="mds-brief-arch-edges" markerEnd={`url(#${id}-arrow)`}>
         <path d="M218 158H240V94H268" />
@@ -33,17 +33,17 @@ export function BriefingArchitecture() {
         <path className="is-secondary" d="M118 230V358H984V286" />
         <path className="is-secondary" d="M386 314V358" />
       </g>
-      <text x={18} y={90} className="mds-brief-arch-label">Phases 1–3 · data + retrieval</text>
+      <text x={18} y={90} className="mds-brief-arch-label">Phases 1–3: data + retrieval</text>
       {node(18, 118, 200, 'FastAPI', ['SQL / MCP / retrieval', 'Identity + confirmation'], 'app-runner', 1)}
-      <text x={268} y={18} className="mds-brief-arch-label">Phase 4 · managed concierge</text>
+      <text x={268} y={18} className="mds-brief-arch-label">Phase 4: managed concierge</text>
       {node(268, 42, 236, 'AgentCore Runtime', ['Strands agent', 'Conversation context'], 'agentcore-runtime', 2)}
-      <text x={268} y={188} className="mds-brief-arch-label">Phase 5 · durable workflow</text>
-      {node(268, 202, 236, 'LangGraph', ['Runs in FastAPI', 'Checkpoints + worker lease'])}
+      <text x={268} y={188} className="mds-brief-arch-label">Phase 5: durable workflow</text>
+      {node(268, 202, 236, 'AgentCore Runtime', ['Strands Graph workflow', 'Saved steps + worker lease'], 'agentcore-runtime')}
       <text x={578} y={18} className="mds-brief-arch-label">Shared governed tool path</text>
       {node(578, 42, 236, 'AgentCore Gateway', ['IAM-signed MCP', 'Policy: Cedar checks'], 'agentcore-gateway', 3)}
       {node(578, 202, 236, 'AWS Lambda', ['Search + package details', 'Holds + confirmation'], 'lambda', 4)}
-      {node(866, 174, 236, 'Aurora PostgreSQL', ['Catalog + traveler state', 'Checkpoints + bookings'], 'aurora', 5)}
-      <text x={250} y={390} className="mds-brief-arch-label">Direct Data API access · catalog, scoped preferences and workflow state</text>
+      {node(866, 174, 236, 'Aurora PostgreSQL', ['Catalog + traveler state', 'Saved steps + bookings'], 'aurora', 5)}
+      <text x={250} y={390} className="mds-brief-arch-label">Direct Data API access: catalog, scoped preferences and workflow state</text>
     </svg>
     <ol className="mds-brief-arch-mobile" aria-label="Meridian request and state architecture">
       <li><strong>1. FastAPI - bind the traveler</strong><p>Establish identity and capture confirmation.</p></li>
@@ -51,7 +51,7 @@ export function BriefingArchitecture() {
       <li><strong>3. AgentCore Gateway - authorize the call</strong><p>AgentCore Policy evaluates Cedar before the tool runs.</p></li>
       <li><strong>4. AWS Lambda - execute the tool</strong><p>Validate the input and recheck the action at the target.</p></li>
       <li><strong>5. Aurora PostgreSQL - record the outcome</strong><p>Read scoped facts and commit replay-safe business writes.</p></li>
-      <li><strong>Phase 5: LangGraph in FastAPI</strong><p>Uses the same Gateway tool path. The Data API persists checkpoints and worker leases in Aurora.</p></li>
+      <li><strong>Phase 5: Strands Graph in its own AgentCore Runtime</strong><p>Uses the same Gateway tool path. Its saved steps and worker leases live in AWS Aurora.</p></li>
     </ol>
     <figcaption><span className="mds-brief-arch-legend">Phase 4: follow 1–5. Phase 5 joins at Gateway. Dashed path: direct Data API access.</span></figcaption>
     <details className="mds-brief-platform">

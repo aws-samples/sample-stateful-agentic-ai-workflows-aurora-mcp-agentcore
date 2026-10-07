@@ -62,15 +62,15 @@ describe.each([['current', current], ['legacy', legacy]])('%s Phase 5 titles', (
   it('labels workflow nodes Strands Graph and the snapshot AWS Aurora Data API', () => {
     expect(stepService(spans[0])).toBe('Strands Graph');
     expect(stepService(spans[2])).toBe('AWS Aurora Data API');
-    expect(stepSourceLabel(spans[2])).toBe(nb('AWS Aurora Data API · 458 ms'));
+    expect(stepSourceLabel(spans[2])).toBe(nb('AWS Aurora Data API, 458 ms'));
   });
 
   it('confirms the understand, search and snapshot steps from the spans', () => {
     const steps = deriveRecoverySteps(spans, 'checkpointed', flow);
     expect(steps.map(step => step.state))
       .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-pending']);
-    expect(steps[0].source).toBe(nb('Strands Graph · <1 ms'));
-    expect(steps[2].source).toBe(nb('AWS Aurora Data API · 458 ms'));
+    expect(steps[0].source).toBe(nb('Strands Graph, <1 ms'));
+    expect(steps[2].source).toBe(nb('AWS Aurora Data API, 458 ms'));
   });
 
   it('reads a durable snapshot and counts the ok snapshot span', () => {

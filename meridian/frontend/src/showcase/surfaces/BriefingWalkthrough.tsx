@@ -47,7 +47,7 @@ export function BriefingPreparation() {
       <li>
         <div><h3>Package descriptions</h3><p>“Ubud villa, yoga mornings, temple tour…”</p></div>
         <StepContent incoming service="bedrock" title="Embed meaning, index words" detail="Cohere Embed v4 on Bedrock; full-text processing in PostgreSQL" />
-        <StepContent incoming service="aurora" title="Two search indexes" detail="pgvector for meaning · tsvector for words" />
+        <StepContent incoming service="aurora" title="Two search indexes" detail="pgvector for meaning, tsvector for words" />
       </li>
       <li>
         <div><h3>Traveler facts</h3><p>Preferences and a saved budget</p></div>
@@ -77,14 +77,14 @@ export function BriefingPhases({ onOpenPhase, busy }: { onOpenPhase?: (phase: Ca
         <MiniFlow label="Phase 2 MCP path" steps={[
           { service: 'app-runner', title: 'FastAPI', detail: 'MCP client' },
           { icon: Braces, title: 'Concierge MCP', detail: 'Compare + convert' },
-          { service: 'aurora', title: 'Catalog + rates', detail: 'Aurora + demo FX' },
+          { service: 'aurora', title: 'Catalog + rates', detail: 'Aurora + sample FX' },
         ]} />
         <p className="mds-brief-phase-evidence">Check tool names, inputs and results. Gateway governs the production tools in Phase 4.</p>
       </Phase>
     </div>
     <Phase number={3} name="Retrieval" claim="Find the meaning as well as the words." onOpen={onOpenPhase} busy={busy}>
       <figure className="mds-brief-retrieval" aria-labelledby="brief-retrieval-query">
-        <div className="mds-brief-query"><MessageSquare size={23} aria-hidden="true" /><div><p id="brief-retrieval-query">“A Bali villa with yoga and a beach day”</p><span>Illustrative query · seeded catalog example</span></div></div>
+        <div className="mds-brief-query"><MessageSquare size={23} aria-hidden="true" /><div><p id="brief-retrieval-query">“A Bali villa with yoga and a beach day”</p><span>Illustrative query, seeded catalog example</span></div></div>
         <div className="mds-brief-retrieval-layout">
           <ol className="mds-brief-search-flow" aria-label="Hybrid retrieval pipeline">
             <li>
@@ -109,7 +109,7 @@ export function BriefingPhases({ onOpenPhase, busy }: { onOpenPhase?: (phase: Ca
           </ol>
           <div className="mds-brief-destination-output"><ArrowRight className="mds-brief-result-connector" size={20} aria-hidden="true" /><div className="mds-brief-destination">
             <img src="/travel/catalog/BCH-003.jpg" alt="Green rice terraces and palms in Bali" width={320} height={180} loading="lazy" />
-            <div><span>Example candidate · BCH-003</span><h4>Bali Rice Terrace Retreat</h4><p>Ubud villa · yoga mornings · beach club day</p></div>
+            <div><span>Example candidate BCH-003</span><h4>Bali Rice Terrace Retreat</h4><p>Ubud villa, yoga mornings, beach club day</p></div>
           </div></div>
         </div>
         <figcaption>Check observed scores in Phase 3. Relevance is a candidate signal; tools still verify price, availability and access.</figcaption>
@@ -126,19 +126,19 @@ export function BriefingPhases({ onOpenPhase, busy }: { onOpenPhase?: (phase: Ca
         <p className="mds-brief-phase-evidence">Check both the policy decision and the Aurora receipt. Permission to call a tool is not proof of a committed write.</p>
       </Phase>
       <Phase number={5} name="Workflow" claim="Resume the work after a worker stops." onOpen={onOpenPhase} busy={busy}>
-        <p className="mds-brief-workflow-host"><Workflow size={24} aria-hidden="true" /><strong>LangGraph in FastAPI</strong><span>Aurora checkpoints through the RDS Data API</span></p>
+        <p className="mds-brief-workflow-host"><Workflow size={24} aria-hidden="true" /><strong>Strands Graph in its own AgentCore Runtime</strong><span>Saved steps in AWS Aurora through the RDS Data API</span></p>
         <ol className="mds-brief-workflow-sequence" aria-label="Phase 5 durable workflow path">
           {[
             ['Classify', 'Understand the disruption'], ['Search', 'Rank options, then pause'],
-            ['Availability', 'Recheck stock'], ['Prepare hold', 'Checkpoint the write intent'],
+            ['Availability', 'Recheck stock'], ['Prepare hold', 'Save the write intent'],
             ['Hold', 'Gateway to Lambda'], ['Synthesize', 'Read the saved result'],
           ].map(([title, detail], index) => <li key={title}><span aria-hidden="true">{index + 1}</span><div><strong>{title}</strong><p>{detail}</p></div></li>)}
         </ol>
         <p>After lease release or expiry, resume the same thread with the same request and booking IDs.</p>
-        <p className="mds-brief-phase-evidence">Check one hold, the same booking ID and the original expiry. Aurora checkpoints restore work; AgentCore Memory carries conversation context.</p>
+        <p className="mds-brief-phase-evidence">Check one hold, the same booking ID and the original expiry. Saved steps in Aurora restore work; AgentCore Memory carries conversation context.</p>
       </Phase>
     </div>
-    <p className="mds-brief-note">Fictional Meridian inventory. Holds and confirmations affect the demo catalog; no supplier is contacted and no payment is taken.</p>
+    <p className="mds-brief-note">Fictional Meridian inventory. Holds and confirmations affect the sample catalog; no supplier is contacted and no payment is taken.</p>
     </div>
   </details>;
 }

@@ -1,5 +1,5 @@
 import type { ShowcaseTraceSpan } from './showcaseAdapters';
-import { isDurableField } from './spanTitles';
+import { isDurableField, LEGACY_SEPARATOR } from './spanTitles';
 
 export interface McpContract {
   server: string;
@@ -195,7 +195,7 @@ function domainOperation(tool: string): string {
 
 function splitDomainDetails(details?: string): { request: string; result: string } {
   if (!details) return { request: 'args={...}', result: '' };
-  const match = /^args=(.*?)\s+·\s+(.*)$/s.exec(details);
+  const match = new RegExp(`^args=(.*?)\\s+${LEGACY_SEPARATOR}\\s+(.*)$`, 's').exec(details);
   if (!match) return { request: details, result: '' };
   return { request: `args=${match[1]}`, result: match[2] };
 }
@@ -237,7 +237,7 @@ function spanText(span: ShowcaseTraceSpan): string {
 }
 
 function lastToken(name: string): string {
-  return name.split('·').pop()?.trim() ?? name;
+  return name.split(LEGACY_SEPARATOR).pop()?.trim() ?? name;
 }
 
 function compactSql(sql: string): string {

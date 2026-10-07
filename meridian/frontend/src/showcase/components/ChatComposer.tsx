@@ -203,7 +203,7 @@ export function ChatComposer({
           )}
         </button>
       </form>
-      <p className="mc-composer-hint" id={keyboardHintId}>Enter to send · Shift + Enter for a new line</p>
+      <p className="mc-composer-hint" id={keyboardHintId}>Enter to send. Shift + Enter for a new line</p>
       {!compact && !proofMode && (
         <div className="mds-chat-quick-actions" aria-label="Quick concierge actions">
           <TravelersChip

@@ -163,7 +163,7 @@ export function DiscoveryWorkspace({ state, onClear, onDiscover }: {
         <TripCard key={options[0].product_id} product={options[0]} state={state} featured />
         <div className="mc-supporting-trips">{options.slice(1).map(product => <TripCard key={product.product_id} product={product} state={state} />)}</div>
         {onDiscover && !state.isLoading && <button type="button" className="mc-text-button" onClick={onDiscover}>Explore more<ArrowRight size={15} aria-hidden="true" /></button>}
-        <p className="mc-catalog-note">Meridian collection<span>·</span>USD per traveler. Dates and availability confirmed when you plan.</p>
+        <p className="mc-catalog-note">Meridian collection, USD per traveler. Dates and availability confirmed when you plan.</p>
       </section>}
       {hasTurn && !state.isLoading && !state.error && options.length === 0 && <div className="mc-empty-results"><Compass size={24} aria-hidden="true" /><div>
         {state.recoveryRequest ? <><strong>Review your recovery options</strong><p>Open the recovery plan to find alternatives. You’ll review the shortlist before requesting a hold.</p></>

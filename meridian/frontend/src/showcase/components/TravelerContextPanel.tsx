@@ -241,7 +241,7 @@ export function TravelerContextPanel({
               </div>
 
               <div className="mds-memory-provenance">
-                <span><ServiceMark name="aurora" size={13} />Aurora · RLS scoped</span>
+                <span><ServiceMark name="aurora" size={13} />Aurora, RLS scoped</span>
                 {agentCoreObserved && <span><ServiceMark name="agentcore" size={13} />AgentCore session recalled</span>}
               </div>
 

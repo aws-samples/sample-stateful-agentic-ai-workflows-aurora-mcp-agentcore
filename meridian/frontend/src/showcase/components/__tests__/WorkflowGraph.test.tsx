@@ -42,7 +42,7 @@ describe('WorkflowGraph', () => {
     expect(screen.getByText('Request governed hold')).toBeInTheDocument();
   });
 
-  it('renders the routed LangGraph path with branch labels and checkpoint badges', () => {
+  it('renders the routed Strands Graph path with branch labels and checkpoint badges', () => {
     render(
       <WorkflowGraph
         state={state([
@@ -94,9 +94,11 @@ describe('WorkflowGraph', () => {
     expect(screen.getByText('4 steps')).toBeInTheDocument();
     expect(screen.getByText('intent: plan')).toBeInTheDocument();
     expect(screen.getAllByText('packages=5')).toHaveLength(2);
-    expect(screen.getByText('rows=3 · 2 of 2')).toBeInTheDocument();
+    expect(screen.getByText('rows=3, 2 of 2')).toBeInTheDocument();
     expect(screen.getByText('checkpoint')).toBeInTheDocument();
-    expect(screen.getByText('checkpointed · PostgresSaver')).toBeInTheDocument();
+    expect(screen.getByText('Saved step, PostgresSaver')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Strands Graph workflow path' })).toBeInTheDocument();
+    expect(screen.getByText('Strands Graph route')).toBeInTheDocument();
   });
 
   it('marks the current node during trace replay', () => {
@@ -131,6 +133,6 @@ describe.each([
     ])} />);
 
     expect(screen.getByText('checkpoint')).toBeInTheDocument();
-    expect(screen.getByText('checkpointed · Aurora workflow_snapshots')).toBeInTheDocument();
+    expect(screen.getByText('Saved step, Aurora workflow_snapshots')).toBeInTheDocument();
   });
 });

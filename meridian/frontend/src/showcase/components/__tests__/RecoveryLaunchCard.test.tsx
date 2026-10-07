@@ -15,7 +15,7 @@ function card(steps: RecoveryStepView[]) {
   );
 }
 
-const checkpointRow = () => screen.getByText('Save an Aurora checkpoint').closest('li')!;
+const checkpointRow = () => screen.getByText('Save a step in Aurora').closest('li')!;
 
 describe('RecoveryLaunchCard', () => {
   it('keys the Aurora glow on the checkpoint step, wherever it sits in the list', () => {

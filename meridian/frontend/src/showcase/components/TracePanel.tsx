@@ -327,7 +327,7 @@ function ActivityTrace({ state, arriving }: { state: MeridianShowcaseState; arri
 
   return (
     <div className="mds-thinking">
-      <p className="mds-thinking-caption" role="status">{state.isReplaying ? 'Replaying recorded activity' : 'Recorded activity'} · {spans.length} {spans.length === 1 ? 'event' : 'events'}</p>
+      <p className="mds-thinking-caption" role="status">{state.isReplaying ? 'Replaying recorded activity' : 'Recorded activity'}: {spans.length} {spans.length === 1 ? 'event' : 'events'}</p>
       <ol className="mds-thinking-list" aria-label="Recorded request steps">
         {ACTIVITY_GROUPS.filter(group => spans.some(span => activityGroup(span) === group.id)).map(group => {
           const recorded = reached.filter(span => activityGroup(span) === group.id);
@@ -393,10 +393,10 @@ function TraceSpanRow({ span, index, active, replyModel }: {
       </summary>
       <div className="mds-activity-event-detail">
         <p className="mds-activity-event-meta">
-          {span.category} · {statusLabel}{latency ? ` · ${latency}` : ''}
-          {span.component ? ` · ${span.component}` : ''}
+          {span.category}, {statusLabel}{latency ? `, ${latency}` : ''}
+          {span.component ? `, ${span.component}` : ''}
         </p>
-        {(span.agent || span.file) && <p className="mds-activity-event-source">{span.agent ?? 'Agent'}{span.file ? ` · ${span.file}` : ''}</p>}
+        {(span.agent || span.file) && <p className="mds-activity-event-source">{span.agent ?? 'Agent'}{span.file ? `, ${span.file}` : ''}</p>}
         <p>{span.details || span.output || 'No output payload on this event.'}</p>
         {span.sql && <pre>{span.sql}</pre>}
         {span.fields.map(field => <p key={`${span.id}-${field.label}`}>{field.label}: <SpanFieldValue value={field.value} /></p>)}

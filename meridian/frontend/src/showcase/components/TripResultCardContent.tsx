@@ -64,7 +64,7 @@ function tripSignals(
       ));
 
   if (checkpointObserved) {
-    signals.push({ label: 'Checkpointed', tone: 'checkpoint', icon: AuroraIcon });
+    signals.push({ label: 'Saved step', tone: 'checkpoint', icon: AuroraIcon });
   }
   if (travelerContextObserved) {
     signals.push({ label: 'Traveler context recalled', tone: 'plain', icon: Sparkles });

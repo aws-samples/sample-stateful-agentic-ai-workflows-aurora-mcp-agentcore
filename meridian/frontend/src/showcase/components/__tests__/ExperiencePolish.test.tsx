@@ -535,7 +535,7 @@ describe('Experience presentation polish', () => {
       screen.getByRole('list', { name: 'Recovery workflow progress' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Search and rank')).toBeInTheDocument();
-    expect(screen.getByText('Save an Aurora checkpoint')).toBeInTheDocument();
+    expect(screen.getByText('Save a step in Aurora')).toBeInTheDocument();
     expect(
       screen.queryByRole('textbox', { name: 'Ask Meridian anything' }),
     ).not.toBeInTheDocument();
@@ -640,9 +640,9 @@ describe('Experience presentation polish', () => {
     const { rerender } = render(<RecoveryWorkspace state={makeState({
       ...base, lastPrompt: SHOWCASE_FINALE_PROMPT, workflowStatus: 'paused', traceSpans: paused,
     })} />);
-    expect(step('Save an Aurora checkpoint')).toHaveClass('is-visited');
-    expect(step('Save an Aurora checkpoint')).toHaveTextContent('Aurora Data API · 106 ms');
-    expect(step('Search and rank')).toHaveTextContent('Bedrock + Aurora · 956 ms');
+    expect(step('Save a step in Aurora')).toHaveClass('is-visited');
+    expect(step('Save a step in Aurora')).toHaveTextContent('Aurora Data API, 106 ms');
+    expect(step('Search and rank')).toHaveTextContent('Bedrock + Aurora, 956 ms');
     expect(step('Verify after resume')).toHaveClass('is-pending');
     expect(screen.getByText('Paused at a saved checkpoint')).toBeInTheDocument();
 
@@ -650,7 +650,7 @@ describe('Experience presentation polish', () => {
       ...base, lastPrompt: 'Resume workflow from checkpoint', workflowStatus: 'paused',
       isLoading: true, traceSpans: [],
     })} />);
-    expect(step('Save an Aurora checkpoint')).toHaveTextContent('Aurora Data API · 106 ms');
+    expect(step('Save a step in Aurora')).toHaveTextContent('Aurora Data API, 106 ms');
     expect(step('Verify after resume')).toHaveAttribute('aria-current', 'step');
 
     // The resumed run returns the paused run's spans without the write time.
@@ -662,9 +662,9 @@ describe('Experience presentation polish', () => {
         traceSpan('PackageAgent: Finding package', { latencyMs: 40 }),
       ],
     })} />);
-    expect(step('Save an Aurora checkpoint')).toHaveTextContent('Aurora Data API · 106 ms');
+    expect(step('Save a step in Aurora')).toHaveTextContent('Aurora Data API, 106 ms');
     expect(step('Verify after resume')).toHaveClass('is-visited');
-    expect(step('Verify after resume')).toHaveTextContent('Aurora · 54 ms');
+    expect(step('Verify after resume')).toHaveTextContent('Aurora, 54 ms');
   });
 
   it('glows the Aurora mark once, when a watched run confirms the checkpoint', () => {
@@ -698,7 +698,7 @@ describe('Experience presentation polish', () => {
     })} />);
     watched.rerender(<RecoveryWorkspace state={checkpointed} />);
     expect(watched.container.querySelectorAll('.mds-aurora-glow')).toHaveLength(1);
-    const mark = screen.getByText('Save an Aurora checkpoint').closest('li')!
+    const mark = screen.getByText('Save a step in Aurora').closest('li')!
       .querySelector<HTMLElement>('.mds-recovery-step-icon')!;
     expect(mark.style.opacity).toBe('0');
   });
@@ -832,7 +832,7 @@ describe('Experience presentation polish', () => {
     expect(screen.getByText('Check saved progress before retrying')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry recovery' })).toBeInTheDocument();
     expect(
-      screen.getByText('Save an Aurora checkpoint').closest('li'),
+      screen.getByText('Save a step in Aurora').closest('li'),
     ).toHaveClass('is-pending');
   });
 
@@ -1071,7 +1071,7 @@ describe('Experience presentation polish', () => {
       </article>,
     );
 
-    expect(screen.getByText('Checkpointed').closest('span')).toHaveClass('is-checkpoint');
+    expect(screen.getByText('Saved step').closest('span')).toHaveClass('is-checkpoint');
     expect(screen.getByText('Lounge access').closest('span')).not.toHaveClass('is-checkpoint');
     expect(screen.getByText('Lounge access').closest('span')?.className).toBe('');
   });
@@ -1096,7 +1096,7 @@ describe('Experience presentation polish', () => {
       }],
     });
     render(<article><TripResultCardContent product={product} state={state} matchPct={null} featured /></article>);
-    expect(screen.getByText('Checkpointed')).toBeInTheDocument();
+    expect(screen.getByText('Saved step')).toBeInTheDocument();
   });
 
   it('does not present a previous Concierge booking as a new recovery receipt', () => {
@@ -1175,7 +1175,7 @@ describe('Experience presentation polish', () => {
 
     expect(screen.getByRole('button', { name: 'Review this plan' })).toBeInTheDocument();
     expect(screen.getAllByText('Tokyo Executive Stopover').length).toBeGreaterThan(0);
-    expect(screen.getByText(/JAL Premium · Tokyo/i)).toBeInTheDocument();
+    expect(screen.getByText(/JAL Premium, Tokyo/i)).toBeInTheDocument();
     expect(screen.getAllByText('$1,949').length).toBeGreaterThan(0);
     expect(screen.getByText('5 places across 2 stays')).toBeInTheDocument();
     expect(
@@ -1323,7 +1323,7 @@ describe('Concierge travel states', () => {
     window.history.replaceState(null, '', '/showcase?view=ladder');
     const state = makeState({ selectedPhase: 5, workflowStatus: 'paused', conversationId: 'same-thread', lastPrompt: SHOWCASE_FINALE_PROMPT });
     render(<DesktopMeridianApp state={state} theme="dark" onToggleTheme={vi.fn()} />);
-    expect(screen.getByRole('region', { name: 'Workflow checkpoint demonstration' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Recovery workflow saved steps' })).toBeInTheDocument();
     expect(screen.queryByText('Not valid for boarding')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Continue at recovery desk' }));
     expect(await screen.findByRole('heading', { name: "Jordan's JFK to Tokyo recovery" })).toBeInTheDocument();

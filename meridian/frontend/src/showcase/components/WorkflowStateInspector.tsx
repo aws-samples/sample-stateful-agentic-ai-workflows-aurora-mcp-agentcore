@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { LangGraphMark } from './LangGraphMark';
 import { ChevronDown, GitBranch } from 'lucide-react';
-import { AuroraIcon } from './ServiceMark';
+import { AuroraIcon, ServiceMark } from './ServiceMark';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { deriveWorkflowState } from '../lib/showcaseProof';
 
@@ -23,7 +22,7 @@ export function WorkflowStateInspector({ state }: { state: MeridianShowcaseState
       >
         <ChevronDown className="mds-workflow-state-chevron" size={15} strokeWidth={2.4} aria-hidden="true" />
         <span className="mds-workflow-state-icon" aria-hidden="true">
-          <LangGraphMark size={16} />
+          <ServiceMark name="agentcore-runtime" size={16} />
         </span>
           <div>
             <strong>Workflow state</strong>

@@ -18,15 +18,15 @@ export function SessionClose({ onEvidence, onConcierge }: {
       {questions ? <p className="mc-session-discussion">From disrupted trips to delayed orders, which customer journey needs a better way forward?</p> : <dl className="mc-session-patterns">
         <div>
           <dt><ServiceMark name="aurora" size={36} /><span>AWS Aurora</span></dt>
-          <dd><strong>Find the options. Keep the plan.</strong><p>One PostgreSQL database for hybrid search, traveler context, checkpoints, and holds.</p></dd>
+          <dd><strong>Find the options. Keep the plan.</strong><p>One PostgreSQL database for hybrid search, traveler context, saved steps, and holds.</p></dd>
         </div>
         <div>
           <dt><ServiceMark name="agentcore" size={36} /><span>Amazon Bedrock AgentCore</span></dt>
           <dd><strong>Run the concierge. Carry context forward.</strong><p>Managed runtime, session memory, and workload identity. Traveler grants and RLS stay in Aurora.</p></dd>
         </div>
         <div>
-          <dt><Workflow size={30} aria-hidden="true" /><span>MCP + LangGraph</span></dt>
-          <dd><strong>Resume from the saved step.</strong><p>MCP connects reusable tools. LangGraph resumes Aurora checkpoints; stable request IDs protect hold retries.</p></dd>
+          <dt><Workflow size={30} aria-hidden="true" /><span>MCP + Strands Graph</span></dt>
+          <dd><strong>Resume from the saved step.</strong><p>MCP connects reusable tools. The Strands Graph resumes from steps saved in AWS Aurora; stable request IDs protect hold retries.</p></dd>
         </div>
       </dl>}
       <div className="mc-session-actions">

@@ -26,7 +26,7 @@ export function JourneyChooser({ disabled, onSelect }: { disabled: boolean; onSe
     {loading ? <p role="status">Reading saved journeys…</p> : error ? <p role="alert">{error}</p>
       : journeys.length ? <ul>{journeys.map(journey => <li key={journey.journey_id}>
         <button type="button" disabled={disabled} onClick={() => { onSelect(journey.journey_id); setOpen(false); }}>
-          {journey.journey_id} · {journey.status} · {new Date(journey.updated_at).toLocaleString()}
+          {journey.journey_id}, {journey.status}, {new Date(journey.updated_at).toLocaleString()}
         </button>
       </li>)}</ul> : <p>No saved recoveries were returned.</p>}
   </details>;

@@ -157,7 +157,7 @@ function workflowErrorDetailOf(spans: ShowcaseTraceSpan[]): string | null {
     (span) =>
       span.status === 'error' ||
       span.category === 'error' ||
-      /workflow error|langgraph error/i.test(
+      /workflow error/i.test(
         `${span.name} ${span.details ?? ''}`,
       ),
   );
@@ -168,7 +168,7 @@ function recoveryStatusLabel(stage: RecoveryStage, error: string | null): string
   return stage === 'ready'
     ? 'Recovery plan ready'
     : stage === 'checkpointed'
-      ? 'Shortlist saved · ready to verify'
+      ? 'Shortlist saved, ready to verify'
       : stage === 'running'
         ? 'Recovery in progress'
         : error ? 'Recovery needs reconciliation' : 'Recovery ready to start';
@@ -217,7 +217,7 @@ function RecoveryContext({ stage, state }: {
             <strong>JFK</strong><ArrowRight size={19} aria-hidden="true" /><strong>Tokyo</strong>
           </span>
           <span className="mc-trip-context-note">
-            Original flight canceled<small>Traveler-reported · inspect itinerary</small>
+            Original flight canceled<small>Traveler-reported, inspect itinerary</small>
           </span>
           <ChevronDown size={18} aria-hidden="true" />
         </summary>

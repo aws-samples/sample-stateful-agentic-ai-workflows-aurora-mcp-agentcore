@@ -13,6 +13,13 @@ export const LEGACY_TITLES = {
   durableField: 'checkpoint_durable',
 } as const;
 
+/** Phases 3 and 4 and journeys saved earlier still carry a middle dot between the parts of a
+ *  span title or its details, so the parsers split on it. Nothing here shows it to the room. */
+export const LEGACY_SEPARATOR = '·';
+
+/** The component name earlier workflow spans carried, kept so a saved journey still routes. */
+export const isLegacyGraphComponent = (component: string) => /^LangGraph/i.test(component);
+
 const startsWithAny = (name: string, prefixes: string[]) =>
   prefixes.some(prefix => name.startsWith(prefix));
 

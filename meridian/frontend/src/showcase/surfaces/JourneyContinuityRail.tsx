@@ -49,7 +49,7 @@ function stepsFor(document: JourneyDocument | null): Step[] {
     {
       id: 'auth',
       label: 'Traveler authorized',
-      detail: isObserved(auth) ? `${document.traveler_id} · ${auth.decision}` : '',
+      detail: isObserved(auth) ? `${document.traveler_id}, ${auth.decision}` : '',
       done: isObserved(auth) && auth.decision === 'allow',
       recorded: isObserved(auth),
     },

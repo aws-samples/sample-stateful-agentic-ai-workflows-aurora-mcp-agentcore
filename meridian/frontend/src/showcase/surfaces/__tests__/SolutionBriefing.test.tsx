@@ -21,12 +21,12 @@ describe('SolutionBriefing', () => {
     expect(screen.getByText('Query vector → pgvector')).toBeVisible();
     expect(screen.getByText('Query text → tsvector')).toBeVisible();
     expect(screen.getByText('Merge candidates by package ID')).toBeVisible();
-    expect(screen.getByText('Illustrative query · seeded catalog example')).toBeVisible();
+    expect(screen.getByText('Illustrative query, seeded catalog example')).toBeVisible();
     expect(screen.getByRole('img', { name: 'Green rice terraces and palms in Bali' })).toHaveAttribute('src', '/travel/catalog/BCH-003.jpg');
     expect(screen.getByText('Prepare hold', { exact: true })).not.toBeVisible();
     fireEvent.click(screen.getByRole('heading', { name: 'Phase 5 - Workflow' }));
     expect(screen.getByText('Prepare hold', { exact: true })).toBeVisible();
-    expect(screen.getByText('Checkpoint the write intent')).toBeVisible();
+    expect(screen.getByText('Save the write intent')).toBeVisible();
   });
 
   it('reveals policy details only after opening the verification section', () => {
@@ -51,7 +51,7 @@ describe('SolutionBriefing', () => {
     fireEvent.click(screen.getByText('Implementation reference'));
     expect(screen.getByText(/seed_data.py loads Aurora/)).toBeVisible();
     fireEvent.click(screen.getByText('Recovery guarantees & evidence'));
-    for (const text of ['Before the hold', 'Write committed, response lost', 'After the hold checkpoint']) {
+    for (const text of ['Before the hold', 'Write committed, response lost', 'After the hold step is saved']) {
       expect(screen.getByText(text)).toBeVisible();
     }
     expect(screen.getByText(/separate transactions/)).toBeVisible();

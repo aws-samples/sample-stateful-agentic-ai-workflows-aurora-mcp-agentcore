@@ -107,7 +107,7 @@ test('mobile reduced motion and stop preserve the partial response without enabl
     await expect(page.locator('.mc-response-spinner')).toHaveCSS('animation-name', 'none');
     await expect(page.locator('.mc-message.is-bot .mds-message-text')).toHaveText('Here are the Tokyo options received so far.');
     await page.getByRole('button', { name: 'Stop waiting', exact: true }).click();
-    await expect(page.getByText('· Incomplete response', { exact: true })).toBeVisible();
+    await expect(page.getByText('Incomplete response', { exact: true })).toBeVisible();
     await expect(page.locator('.mc-response-spinner')).toHaveCount(0);
     await expect(page.getByRole('article', { name: trip.name })).toHaveCount(0);
     await expect(page.locator('.mc-message.is-bot .mds-message-text')).toHaveText('Here are the Tokyo options received so far.');

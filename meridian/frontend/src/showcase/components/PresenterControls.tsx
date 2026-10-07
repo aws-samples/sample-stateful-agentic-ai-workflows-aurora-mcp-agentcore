@@ -15,7 +15,7 @@ export function PresenterControls({ mode }: { mode: PresentationMode }) {
     <section className="mc-presenter-controls" aria-label="Presenter controls" hidden={mode.fullscreen}>
       <div className="mc-presenter-caption">
         <strong><Monitor size={17} aria-hidden="true" /> Presenter controls</strong>
-        <span>Hidden in fullscreen · Esc to return</span>
+        <span>Hidden in fullscreen. Esc to return</span>
       </div>
       <div className="mc-presenter-actions">
         <details className="mc-display-settings" ref={settings} onKeyDown={(event) => {

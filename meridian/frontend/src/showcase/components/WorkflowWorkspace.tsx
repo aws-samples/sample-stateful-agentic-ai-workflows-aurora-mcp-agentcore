@@ -21,7 +21,7 @@ export function WorkflowWorkspace({ state, onOpenRecovery }: {
     { title: 'Continue at the desk', detail: 'Check availability and request a timed package hold.', done: finished && evidence.availabilityObserved },
   ];
 
-  return <section className="mc-workflow-lab" aria-label="Workflow checkpoint demonstration">
+  return <section className="mc-workflow-lab" aria-label="Recovery workflow saved steps">
     <p className="mc-workflow-request">“My JFK-to-Tokyo flight was canceled. Help me find another way.”</p>
     <ol className="mc-workflow-steps" aria-label="Recovery workflow path">
       {steps.map((step, index) => <li key={step.title} data-complete={step.done}>

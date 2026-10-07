@@ -90,7 +90,7 @@ describe('DiscoveryWorkspace catalog states', () => {
     });
     render(<ConciergeConversation state={state} onSaved={vi.fn()} onRecovery={vi.fn()} />);
 
-    expect(screen.getByText('· Claude Haiku 4.5')).toBeInTheDocument();
+    expect(screen.getByText('Claude Haiku 4.5')).toBeInTheDocument();
   });
 
   it('shows no model badge on a pure tool-result reply', () => {
@@ -102,7 +102,7 @@ describe('DiscoveryWorkspace catalog states', () => {
     });
     render(<ConciergeConversation state={state} onSaved={vi.fn()} onRecovery={vi.fn()} />);
 
-    expect(screen.queryByText(/^· /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Claude/)).not.toBeInTheDocument();
   });
 
   it('renders live catalog items once the fetch succeeds, never invented preview cards', () => {

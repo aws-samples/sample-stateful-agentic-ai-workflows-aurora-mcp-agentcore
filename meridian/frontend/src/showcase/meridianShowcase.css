@@ -583,7 +583,11 @@
   animation: mds-status-pulse 1.4s ease-in-out infinite;
 }
 .mds-status-sep {
-  color: var(--mds-label-3);
+  flex: none;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--mds-label-3);
 }
 .mds-status-unit {
   color: var(--mds-label-3);
@@ -3902,7 +3906,7 @@
 }
 
 /* ============================================================================
-   FEATURE 3 — Phase 5 LangGraph StateGraph diagram
+   FEATURE 3 — Phase 5 Strands Graph diagram
    Compact execution route for the narrow trace panel. It favors presenter-scale
    labels over dense graph geometry while still lighting real trace spans.
    ========================================================================== */
@@ -3931,6 +3935,10 @@
   justify-content: space-between;
   gap: 6px;
   margin-bottom: 7px;
+}
+.mds-wfgraph-title .mds-service-mark {
+  margin-right: 6px;
+  vertical-align: -4px;
 }
 .mds-wfgraph-title {
   min-width: 0;
@@ -4510,14 +4518,6 @@
    just optical alignment with the text beside it. */
 .mds-mcp-mark {
   flex: none;
-  vertical-align: -2px;
-}
-
-/* Monochrome brand marks (MCP, LangGraph). They take currentColor, so they
-   only need optical alignment and a little room from the label. */
-.mds-mono-mark {
-  flex: none;
-  margin-right: 6px;
   vertical-align: -2px;
 }
 

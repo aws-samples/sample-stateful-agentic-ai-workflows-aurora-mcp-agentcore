@@ -73,7 +73,7 @@ function TripsPanel({ state, onClose }: { state: MeridianShowcaseState; onClose:
     <div className="mds-drawer-list">
       {saved.length > 0 && (
         <div className="mds-navpanel-section">
-          <div className="mds-navpanel-section-head">Saved · {saved.length}</div>
+          <div className="mds-navpanel-section-head">Saved: {saved.length}</div>
           {saved.map((p, index) => (
             <TripRow key={p.product_id} product={p} state={state} index={index} onClose={onClose} saved />
           ))}
@@ -81,7 +81,7 @@ function TripsPanel({ state, onClose }: { state: MeridianShowcaseState; onClose:
       )}
       {browsing.length > 0 && <div className="mds-navpanel-section">
         <div className="mds-navpanel-section-head">
-          {saved.length > 0 ? 'This turn' : `Results · ${browsing.length}`}
+          {saved.length > 0 ? 'This turn' : `Results: ${browsing.length}`}
         </div>
         {browsing.map((p, index) => (
           <TripRow key={p.product_id} product={p} state={state} index={index} onClose={onClose} />

@@ -48,8 +48,8 @@ describe('deriveRecoverySteps', () => {
     expect(steps.map(step => step.state))
       .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-pending']);
     expect(steps.map(step => step.source)).toEqual([
-      nb('Strands Graph · <1 ms'), nb('Bedrock + Aurora · 956 ms'),
-      nb('AWS Aurora Data API · 106 ms'), null,
+      nb('Strands Graph, <1 ms'), nb('Bedrock + Aurora, 956 ms'),
+      nb('AWS Aurora Data API, 106 ms'), null,
     ]);
   });
 
@@ -57,7 +57,7 @@ describe('deriveRecoverySteps', () => {
     const steps = deriveRecoverySteps(resumed, 'ready', checkpointed);
     expect(steps.map(step => step.state))
       .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-visited']);
-    expect(steps[3].source).toBe(nb('Aurora · 54 ms'));
+    expect(steps[3].source).toBe(nb('Aurora, 54 ms'));
   });
 
   it('does not claim an Aurora checkpoint for an in-process one', () => {
@@ -80,7 +80,7 @@ describe('deriveRecoverySteps', () => {
     const steps = deriveRecoverySteps(paused, 'running', { resumeMode: true, failed: false });
     expect(steps.map(step => step.state))
       .toEqual(['is-visited', 'is-visited', 'is-visited', 'is-current']);
-    expect(steps[2].source).toBe(nb('AWS Aurora Data API · 106 ms'));
+    expect(steps[2].source).toBe(nb('AWS Aurora Data API, 106 ms'));
     expect(steps[3].source).toBeNull();
   });
 
@@ -103,7 +103,7 @@ describe('deriveRecoverySteps', () => {
       : item));
     const steps = deriveRecoverySteps(inProcess, 'running', { resumeMode: true, failed: false });
     expect(steps[2]).toEqual({ id: 'checkpoint', state: 'is-pending', source: null });
-    expect(steps[1].source).toBe(nb('Bedrock + Aurora · 956 ms'));
+    expect(steps[1].source).toBe(nb('Bedrock + Aurora, 956 ms'));
   });
 
   it('marks nothing complete after a failure or before the traveler starts', () => {

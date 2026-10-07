@@ -1,5 +1,5 @@
 import type { ShowcaseTraceSpan } from './showcaseAdapters';
-import { isSnapshotTitle } from './spanTitles';
+import { isLegacyGraphComponent, isSnapshotTitle, LEGACY_SEPARATOR } from './spanTitles';
 
 // Joins a value to its unit so a narrow stage never wraps "601" away from "ms".
 const NO_BREAK = '\u00a0';
@@ -36,16 +36,17 @@ const SERVICE_RULES: ServiceRule[] = [
   { service: 'AgentCore Memory', matches: span => /AgentCore Memory/i.test(named(span)) },
   { service: 'AgentCore Identity', matches: span => /AgentCore Identity/i.test(component(span)) },
   { service: 'AWS STS', matches: span => /AWS STS/i.test(component(span)) },
-  { service: 'LangGraph MemorySaver', matches: span => /MemorySaver/i.test(component(span)) },
+  { service: 'Worker memory', matches: span => /MemorySaver/i.test(component(span)) },
   { service: 'AWS Aurora Data API', matches: span => isSnapshotTitle(span.name) },
   { service: 'Aurora RLS', matches: span => /^Aurora RLS/i.test(component(span)) },
   { service: 'Aurora Data API', matches: span => /^Aurora/i.test(component(span)) },
   { service: 'MCP', matches: span => /^(postgres-mcp|meridian-concierge|MCP )/i.test(span.name) },
-  { service: 'Strands · Bedrock', matches: span => STRANDS_SUPERVISOR.test(span.name) },
+  { service: 'Strands on Bedrock', matches: span => STRANDS_SUPERVISOR.test(span.name) },
   { service: 'Bedrock', matches: span => BEDROCK_CALL.test(span.name) },
   {
     service: 'Strands Graph',
-    matches: span => /^(Strands Graph|LangGraph)/i.test(component(span))
+    matches: span => /^Strands Graph/i.test(component(span))
+      || isLegacyGraphComponent(component(span))
       || /^Workflow node:/i.test(span.name),
   },
   {
@@ -61,7 +62,7 @@ export function stepService(span: ShowcaseTraceSpan): string {
 }
 
 // Steps a model wrote: the Retrieval reply's polish, and the Runtime's turn.
-const MODEL_STEP = /concierge polish|AgentCore Runtime · turn complete/i;
+const MODEL_STEP = new RegExp(`concierge polish|AgentCore Runtime ${LEGACY_SEPARATOR} turn complete`, 'i');
 
 function stepDetail(span: ShowcaseTraceSpan, service: string, replyModel?: string): string | null {
   const decision = span.fields.find(field => field.label === 'cedar_decision')?.value;
@@ -71,12 +72,12 @@ function stepDetail(span: ShowcaseTraceSpan, service: string, replyModel?: strin
   return MODEL_STEP.test(span.name) && replyModel ? replyModel : null;
 }
 
-/** "Service · detail · time" for one recorded step, for example
- *  "Aurora Data API · 38 ms" or "Bedrock · Claude Sonnet 5 · 1.4 s". The model
+/** "Service, detail, time" for one recorded step, for example
+ *  "Aurora Data API, 38 ms" or "Bedrock, Claude Sonnet 5, 1.4 s". The model
  *  is the one that wrote this reply; the time is only ever a measured one. */
 export function stepSourceLabel(span: ShowcaseTraceSpan, replyModel?: string): string {
   const service = stepService(span);
   return [service, stepDetail(span, service, replyModel), formatLatency(span.latencyMs)]
     .filter(Boolean)
-    .join(' · ');
+    .join(', ');
 }

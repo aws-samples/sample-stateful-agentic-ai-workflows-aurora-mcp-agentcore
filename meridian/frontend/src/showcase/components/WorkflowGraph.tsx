@@ -1,12 +1,12 @@
 /**
- * Phase 5 LangGraph execution view.
+ * Phase 5 Strands Graph execution view.
  *
  * The right rail is narrow, so this renders the executed route as large,
  * readable cards instead of a dense canvas. The route, facts, checkpoints, and
  * replay focus still come from real OrchestrationAgent trace spans.
  */
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
-import { LangGraphMark } from './LangGraphMark';
+import { ServiceMark } from './ServiceMark';
 import type { ShowcaseTraceSpan } from '../lib/showcaseAdapters';
 import { workflowPathFor } from '../lib/showcaseProof';
 import { isSavedStepTitle } from '../lib/spanTitles';
@@ -122,7 +122,7 @@ function nodeFact(node: NodeName, span: ShowcaseTraceSpan): string | null {
   if (node === 'availability') {
     const rows = fieldValue(span, 'rows');
     const step = fieldValue(span, 'step');
-    return [rows ? `rows=${rows}` : null, step].filter(Boolean).join(' · ') || compactDetails(span.details);
+    return [rows ? `rows=${rows}` : null, step].filter(Boolean).join(', ') || compactDetails(span.details);
   }
   if (node === 'memory_recall') return compactDetails(span.details) ?? 'context recalled';
   if (node === 'synthesize') {
@@ -168,7 +168,7 @@ export function WorkflowGraph({ state }: { state: MeridianShowcaseState }) {
     return (
       <div className="mds-wfgraph is-unmatched" role="status">
         <div className="mds-wfgraph-head">
-          <span className="mds-wfgraph-title"><LangGraphMark size={18} />LangGraph route</span>
+          <span className="mds-wfgraph-title"><ServiceMark name="agentcore-runtime" size={18} />Strands Graph route</span>
         </div>
         <p className="mds-wfgraph-empty">
           Workflow spans received, but node labels were not recognized. Check
@@ -187,9 +187,9 @@ export function WorkflowGraph({ state }: { state: MeridianShowcaseState }) {
   const workflowPathNodes = pathNodes.filter(isWorkflowNode);
 
   return (
-    <div className="mds-wfgraph" role="img" aria-label="LangGraph workflow path">
+    <div className="mds-wfgraph" role="img" aria-label="Strands Graph workflow path">
       <div className="mds-wfgraph-head">
-        <span className="mds-wfgraph-title"><LangGraphMark size={18} />LangGraph route</span>
+        <span className="mds-wfgraph-title"><ServiceMark name="agentcore-runtime" size={18} />Strands Graph route</span>
         {intent && <span className="mds-wfgraph-intent">intent: {intent}</span>}
       </div>
 
@@ -252,7 +252,7 @@ export function WorkflowGraph({ state }: { state: MeridianShowcaseState }) {
       {checkpointer && (
         <div className="mds-wfgraph-foot">
           <span className="mds-wfgraph-ckpt-dot" aria-hidden="true" />
-          checkpointed · {checkpointer}
+          Saved step, {checkpointer}
         </div>
       )}
     </div>

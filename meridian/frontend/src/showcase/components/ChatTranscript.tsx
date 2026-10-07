@@ -225,7 +225,7 @@ function ChatMessage({
     <div className={wrapperClass}>
       <div className="mds-message-role">{message.role === 'user' ? 'You' : <>
         <ConciergeBell size={16} aria-hidden="true" />Meridian
-        {message.modelLabel && <span className="mds-message-model">· {message.modelLabel}</span>}
+        {message.modelLabel && <span className="mds-message-model">{message.modelLabel}</span>}
       </>}</div>
       {!isEmptyStream && (
         <div className={bubbleClass}>
@@ -383,7 +383,7 @@ function ProductSummaryChip({
       </span>
       <span className="mds-msg-result-chip-text">
         <b>{products.length} {products.length === 1 ? 'trip' : 'trips'}</b>
-        {priceRange && <span> · {priceRange}</span>}
+        {priceRange && <span>, {priceRange}</span>}
       </span>
       <span className="mds-msg-result-chip-caret" aria-hidden="true">
         <ChevronDown size={14} strokeWidth={2.4} />
@@ -453,7 +453,7 @@ function InlineProductGrid({
       {rerankArmed && (
         <div className="mds-rerank-controls">
           <span className="mds-rerank-caption">
-            {reranked ? 'Cohere Rerank 3.5 · final order' : 'Hybrid candidates · pre-rerank'}
+            {reranked ? 'Cohere Rerank 3.5, final order' : 'Hybrid candidates, before rerank'}
           </span>
           <button
             type="button"
@@ -535,7 +535,7 @@ function InlineConciergeCard({
           height="900"
           loading="lazy"
         />
-        <span>Haneda · Tokyo</span>
+        <span>Haneda, Tokyo</span>
       </div>
       <div className="mds-inline-concierge-copy">
         <header>

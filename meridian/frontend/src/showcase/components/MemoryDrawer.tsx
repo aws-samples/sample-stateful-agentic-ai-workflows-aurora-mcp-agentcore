@@ -32,7 +32,7 @@ export function MemoryDrawer({ state, open, onClose, product = false }: { state:
               {editing === fact.key ? (
                 <input value={value} disabled={busy !== null} onChange={(e) => setValue(e.target.value)} aria-label={`Edit ${fact.key}`} autoFocus />
               ) : <b>{product ? preferenceValue(fact.key, fact.value) : fact.value}</b>}
-              {!product && <small>{fact.source ?? 'memory'} · confidence {fact.confidence?.toFixed(2) ?? 'n/a'}</small>}
+              {!product && <small>{fact.source ?? 'memory'}, confidence {fact.confidence?.toFixed(2) ?? 'n/a'}</small>}
             </div>
             <div>
               {editing === fact.key ? (

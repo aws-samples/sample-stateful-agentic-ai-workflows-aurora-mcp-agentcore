@@ -24,8 +24,8 @@ const ConciergeReply = memo(function ConciergeReply({ message, progress, latest 
       {writing ? <Loader2 className="mc-response-spinner" size={16} aria-hidden="true" /> : <ConciergeBell size={16} aria-hidden="true" />}
       Meridian
       {writing && <span className="mc-message-model mc-response-status" role="status">{progress || 'Writing your reply…'}</span>}
-      {message.incomplete && <span className="mc-message-model">· Incomplete response</span>}
-      {!writing && message.modelLabel && <span className="mc-message-model">· {message.modelLabel}</span>}
+      {message.incomplete && <span className="mc-message-model">Incomplete response</span>}
+      {!writing && message.modelLabel && <span className="mc-message-model">{message.modelLabel}</span>}
     </span>
     <div className={`mc-response-body${writing ? ' is-streaming' : ''}`} aria-busy={writing} aria-live={latest ? 'polite' : 'off'} aria-atomic="true">
       {text && <ResponseMarkdown source={text} />}

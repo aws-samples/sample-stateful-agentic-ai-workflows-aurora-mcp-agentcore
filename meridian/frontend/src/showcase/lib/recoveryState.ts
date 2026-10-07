@@ -112,7 +112,7 @@ export interface RecoveryStepView {
   /** Which step this is, so a view never depends on its position in a list. */
   id: RecoveryStepId;
   state: RecoveryStepState;
-  /** "Service · time" once the step is confirmed; the service alone when unmeasured. */
+  /** "Service, time" once the step is confirmed; the service alone when unmeasured. */
   source: string | null;
 }
 
@@ -137,7 +137,7 @@ function nodeSource(spans: ShowcaseTraceSpan[], node: RegExp): string | null {
   const index = spans.findIndex(span => node.test(span.name) && span.status === 'ok');
   if (index < 0) return null;
   return [nodeServices(spans, index), formatLatency(spans[index].latencyMs)]
-    .filter(Boolean).join(' · ');
+    .filter(Boolean).join(', ');
 }
 
 /** The checkpoint written after the search node, and only a durable one. */

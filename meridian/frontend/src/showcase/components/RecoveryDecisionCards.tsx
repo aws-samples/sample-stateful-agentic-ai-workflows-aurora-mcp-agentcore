@@ -107,7 +107,7 @@ const LAUNCH_STEPS: {
   {
     id: 'checkpoint',
     icon: AuroraIcon,
-    label: 'Save an Aurora checkpoint',
+    label: 'Save a step in Aurora',
     detail: 'Persist the shortlist before verification.',
   },
   {
@@ -589,7 +589,7 @@ export function RecommendedRecoveryPlanCard({
             <div>
               <small>
                 {product.brand || 'Meridian partner'}
-                {product.destination ? ` · ${product.destination}` : ''}
+                {product.destination ? `, ${product.destination}` : ''}
               </small>
               <strong>{product.name}</strong>
               {product.description && <p>{product.description}</p>}
@@ -831,7 +831,7 @@ export function ConciergeAssistanceCard({
         <span className="mds-concierge-hotel-media-shade" />
         <em>{ready ? 'Search ready' : 'Queued'}</em>
         <div>
-          <small>Haneda · hotel assistance</small>
+          <small>Haneda, hotel assistance</small>
           <strong>Airport-area stay shortlist</strong>
           <span>
             {product

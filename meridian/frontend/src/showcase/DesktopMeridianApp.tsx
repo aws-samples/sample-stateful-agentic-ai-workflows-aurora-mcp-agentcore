@@ -407,7 +407,7 @@ export function DesktopMeridianApp({
           >
             <span className="mds-status-dot" aria-hidden="true" />
             {runtimeStatus.label}
-            <span className="mds-status-sep" aria-hidden="true">·</span>
+            <span className="mds-status-sep" aria-hidden="true" />
             <span className="mds-status-unit">{runtimeStatus.detail}</span>
           </span>
           <IconTooltip label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>

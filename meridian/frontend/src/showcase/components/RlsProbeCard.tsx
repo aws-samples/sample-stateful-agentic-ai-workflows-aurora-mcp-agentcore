@@ -41,7 +41,7 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
   return (
     <div className="mds-rls">
       <div className="mds-rls-head">
-        <span className="mds-rls-title">Workload authorization + RLS · live</span>
+        <span className="mds-rls-title">Workload authorization + RLS: live</span>
         <button
           type="button"
           className="mds-rls-run"
@@ -66,7 +66,7 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
             <div className="mds-authz-step">
               <span className="mds-authz-icon"><Fingerprint size={16} aria-hidden="true" /></span>
               <div>
-                <small>1 · Authenticated workload</small>
+                <small>1. Authenticated workload</small>
                 <strong>{data.authorization.provider}</strong>
                 <code>{data.authorization.subject_id}</code>
               </div>
@@ -74,7 +74,7 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
             <div className="mds-authz-step is-allow">
               <span className="mds-authz-icon"><BadgeCheck size={16} aria-hidden="true" /></span>
               <div>
-                <small>2 · Traveler grant</small>
+                <small>2. Traveler grant</small>
                 <strong>
                   <span className="mds-authz-decision is-allow">ALLOW</span>
                   Jordan Morgan
@@ -103,7 +103,7 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
 
           <div className="mds-rls-layer-label">
             <AuroraIcon size={14} aria-hidden="true" />
-            <span>3 · Aurora RLS filters the authorized traveler scope</span>
+            <span>3. Aurora RLS filters the authorized traveler scope</span>
           </div>
 
           {data.tables.map((t) => {
@@ -153,7 +153,7 @@ export function RlsProbeCard({ travelerId }: { travelerId: string }) {
 
           {data.policies.length > 0 && (
             <div className="mds-rls-policies">
-              <div className="mds-rls-policies-title">CREATE POLICY · USING</div>
+              <div className="mds-rls-policies-title">CREATE POLICY ... USING</div>
               {data.policies.map((p) => (
                 <div className="mds-rls-policy" key={`${p.table}-${p.policy}`}>
                   <small>{p.policy}</small>

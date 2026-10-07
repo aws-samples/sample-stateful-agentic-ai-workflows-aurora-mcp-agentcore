@@ -103,7 +103,7 @@ export function derivePersonalization(
     if (goalMatchesTrip) {
       pills.push({
         id: 'goal',
-        label: `Matches your saved plan · ${goal}`,
+        label: `Matches your saved plan: ${goal}`,
         tone: 'match',
         source: sourceLabel(goalFact),
       });
@@ -119,7 +119,7 @@ export function derivePersonalization(
       clash
         ? {
             id: 'dietary',
-            label: `Shellfish allergy · check the ${clash}`,
+            label: `Shellfish allergy: check the ${clash}`,
             tone: 'caution',
             source: sourceLabel(dietaryFact),
           }
@@ -139,7 +139,7 @@ export function derivePersonalization(
     if (marker) {
       pills.push({
         id: 'lodging',
-        label: `Boutique over chain · ${marker} stay`,
+        label: `Boutique over chain: ${marker} stay`,
         tone: 'match',
         source: sourceLabel(lodgingFact),
       });

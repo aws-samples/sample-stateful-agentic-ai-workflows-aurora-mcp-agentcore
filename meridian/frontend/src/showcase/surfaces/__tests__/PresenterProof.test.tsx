@@ -125,8 +125,8 @@ describe('Presenter proof', () => {
     );
     expect(screen.getByText('worker_01')).toBeInTheDocument();
     expect(screen.getByText('worker_02')).toBeInTheDocument();
-    expect(screen.getByText(/attempt 1 · abandoned/)).toBeInTheDocument();
-    expect(screen.getByText(/attempt 2 · running/)).toBeInTheDocument();
+    expect(screen.getByText(/attempt 1, abandoned/)).toBeInTheDocument();
+    expect(screen.getByText(/attempt 2, running/)).toBeInTheDocument();
   });
 
   it('distinguishes a hold created after replacement from a surviving hold', () => {

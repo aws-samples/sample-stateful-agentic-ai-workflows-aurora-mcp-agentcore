@@ -72,7 +72,7 @@ describe('TravelerContextPanel memory capability', () => {
     expect(screen.getByText('Profile')).toBeInTheDocument();
     expect(screen.getByText('Preferences')).toBeInTheDocument();
     expect(screen.getByText('Prior plans')).toBeInTheDocument();
-    expect(screen.getByText('Aurora · RLS scoped')).toBeInTheDocument();
+    expect(screen.getByText('Aurora, RLS scoped')).toBeInTheDocument();
     expect(screen.getByText('Tokyo culture trip Oct 12-19')).toBeInTheDocument();
   });
 });

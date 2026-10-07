@@ -47,9 +47,9 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
             ['Seed', 'travel_catalog.py defines fictional inventory; seed_data.py loads Aurora and embeds descriptions.'],
             ['Retrieve', 'Query and catalog use the same embedding model. Tools recheck price, availability and access.'],
             ['Deliver', 'CloudFront serves S3 and routes the API to FastAPI on App Runner. Local development uses Vite and the same backend.'],
-            ['Persist', 'The RDS Data API connects Aurora catalog, traveler state, checkpoints, leases and bookings. AgentCore resources are declared in agentcore.json.'],
+            ['Persist', 'The RDS Data API connects Aurora catalog, traveler state, saved steps, leases and bookings. AgentCore resources are declared in agentcore.json.'],
           ]} />
-          <p>AgentCore also offers <a href="https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory-integrate-lang.html">LangGraph checkpoint persistence</a>; Meridian uses Aurora. A checkpoint is separate from the booking receipt.</p>
+          <p>The workflow keeps its saved steps in AWS Aurora snapshots. A saved step is separate from the booking receipt.</p>
         </Detail>
         <Detail title="Tool contracts & Cedar policies">
           <p>The model interprets the request, chooses tools and writes grounded replies. Application code establishes the traveler, pins explicit confirmation and the saved budget, and validates the returned inventory. The model cannot choose its own authorization scope or budget ceiling.</p>
@@ -64,17 +64,17 @@ export function SolutionBriefing({ onOpenLadder, onOpenEvidence, onOpenPhase, bu
           <p>Trusted identity and row-level security govern access. Application deadlines, bounded retries and concurrency controls address workload pressure; separate pools alone do not reserve database compute.</p>
         </Detail>
         <Detail title="Recovery guarantees & evidence">
-          <p>The workflow runs classify → search → availability → prepare_hold → hold → synthesize. Before the write, prepare_hold checkpoints the request and booking IDs. The worker renews its lease in <code>journey_executions</code>; both worker and Lambda check the lease, with another Lambda check inside the write transaction.</p>
+          <p>The workflow runs classify → search → availability → prepare_hold → hold → synthesize. Before the write, prepare_hold saves the request and booking IDs as a step. The worker renews its lease in <code>journey_executions</code>; both worker and Lambda check the lease, with another Lambda check inside the write transaction.</p>
           <Facts items={[
             ['Before the hold', 'After lease release or expiry, resume the saved graph with the intended request and booking IDs.'],
             ['Write committed, response lost', 'Retry the same intent. Aurora returns the existing booking with its original expiry. A permitted call alone does not prove that the write committed.'],
-            ['After the hold checkpoint', 'Continue the remaining nodes. Compare the saved hold with the persisted booking and successful execution receipt.'],
+            ['After the hold step is saved', 'Continue the remaining nodes. Compare the saved hold with the persisted booking and successful execution receipt.'],
           ]} />
-          <p>A checkpoint and a Gateway write are separate transactions. The workflow may retry; Aurora makes this business effect idempotent. A hard process-death rehearsal and a lost-response rehearsal test different failure windows.</p>
+          <p>A saved step and a Gateway write are separate transactions. The workflow may retry; Aurora makes this business effect idempotent. A hard process-death rehearsal and a lost-response rehearsal test different failure windows.</p>
           <p>Browser reload proves saved-state readback. The separate lost-response rehearsal discards a real committed reply, resumes on a replacement worker and checks the original receipt. It uses its own journey; it does not inject a fault into the open browser session.</p>
           <h3>Follow the result to its evidence</h3>
-          <p>System evidence shows SQL and tool results, retrieval scores, traveler binding and RLS records, policy decisions, and persisted hold identity. Recovery desk shows the active thread, checkpoints and worker lease. Missing records remain unavailable.</p>
-          <p>ADOT instruments Phase 4 model, Gateway and Memory operations as CloudWatch spans. Trace IDs connect those operations to the displayed run. Phase 5 adds workflow nodes, checkpoints and its Gateway hold decision. This briefing explains the design without making service calls.</p>
+          <p>System evidence shows SQL and tool results, retrieval scores, traveler binding and RLS records, policy decisions, and persisted hold identity. Recovery desk shows the active thread, saved steps and worker lease. Missing records remain unavailable.</p>
+          <p>ADOT instruments Phase 4 model, Gateway and Memory operations as CloudWatch spans. Trace IDs connect those operations to the displayed run. Phase 5 adds workflow nodes, saved steps and its Gateway hold decision. This briefing explains the design without making service calls.</p>
         </Detail>
         </div>
       </details>
