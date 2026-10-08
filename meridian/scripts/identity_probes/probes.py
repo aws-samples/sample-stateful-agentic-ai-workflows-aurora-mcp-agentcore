@@ -40,6 +40,9 @@ CONCIERGE_EVENT_LIMIT = 5000
 TRAVELERS = (JORDAN_TRAVELER, DECOY_TRAVELER)
 AUDIT_RESIDUE = (
     "audit rows (traveler_access_audit, the agent audit log) are append-only and stay")
+MEMORY_RESIDUE = (
+    f"AgentCore Memory events written for actor {JORDAN_TRAVELER} by the Concierge turn are not "
+    "deleted by this command; they age out under the memory's event expiry")
 BookingRef = tuple[str, str]
 
 
@@ -117,11 +120,8 @@ class Context:
         """What the run leaves behind on purpose, for the receipt."""
         notes = [f"Residue: {AUDIT_RESIDUE}."]
         if self.memory_sessions:
-            notes.append(
-                "AgentCore Memory: the Concierge turns with session id(s) "
-                f"{', '.join(self.memory_sessions)} write events for actor {JORDAN_TRAVELER} "
-                "when they run; this command does not delete them, they age out under the "
-                "memory's event expiry.")
+            notes.append(f"AgentCore Memory, session id(s) {', '.join(self.memory_sessions)}: "
+                         f"{MEMORY_RESIDUE}.")
         return notes
 
 

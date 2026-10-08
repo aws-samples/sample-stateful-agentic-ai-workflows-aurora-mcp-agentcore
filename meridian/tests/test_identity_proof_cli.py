@@ -63,6 +63,17 @@ def test_with_no_flags_it_prints_the_plan_and_calls_nothing(tmp_path, capsys):
     assert not list(tmp_path.iterdir())
 
 
+def test_the_dry_run_declares_the_residue_including_the_concierge_memory_events(
+        tmp_path, capsys):
+    deps, _ = make_deps(tmp_path)
+
+    _, out = run([], deps, capsys)
+
+    assert "AgentCore Memory" in out and "not deleted by this command" in out
+    assert "append-only" in out
+    assert "17 probes" in out
+
+
 def test_the_dry_run_says_what_would_be_refused(tmp_path, capsys):
     deps, _ = make_deps(tmp_path, env={"MERIDIAN_AGENTCORE_AUTH": "iam"}, changes=[" M a.py"])
 
@@ -107,6 +118,16 @@ def test_an_output_directory_outside_local_is_refused(tmp_path, capsys):
     code, out = run([*APPLY, "--output-dir", str(tmp_path / "elsewhere")], deps, capsys)
 
     assert code == 3 and built == [] and "inside" in out
+
+
+def test_printed_text_masks_pool_client_and_arn_ids(tmp_path, capsys):
+    pool = "us-east-1" + "_" + "AbCdEfGhI"
+    failure = RuntimeError(f"cannot reach {pool} at arn:aws:s3:::x")
+    deps, _ = make_deps(tmp_path, build_error=failure)
+
+    code, out = run(APPLY, deps, capsys)
+
+    assert code == 1 and pool not in out and "arn:aws" not in out and "<pool-id>" in out
 
 
 def test_a_passing_run_writes_a_private_clean_receipt_and_two_pages(tmp_path, capsys):
@@ -191,6 +212,62 @@ def test_render_rebuilds_the_pages_from_a_recorded_receipt(tmp_path, capsys):
     assert code == 0 and (tmp_path / "identity-proof" / "latest.summary.html").exists()
 
 
+def test_render_recomputes_the_verdict_and_does_not_trust_a_stored_pass(tmp_path, capsys):
+    deps, _ = make_deps(tmp_path)
+    folder = tmp_path / "identity-proof"
+    folder.mkdir()
+    data = good_receipt_dict()
+    data["outcomes"][0].update(result="allowed", refused_by=None, passed=True)
+    data["ok"] = True
+    (folder / "forged.json").write_text(json.dumps(data))
+
+    code, _ = run(["--render", str(folder / "forged.json")], deps, capsys)
+
+    page = (folder / "forged.full.html").read_text()
+    assert code == 0 and "Result: FAIL" in page and "Result: PASS" not in page
+
+
+def test_render_refuses_a_receipt_outside_the_local_folder(tmp_path, capsys):
+    deps, _ = make_deps(tmp_path / "local")
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "r.json").write_text(json.dumps(good_receipt_dict()))
+
+    code, out = run(["--render", str(outside / "r.json")], deps, capsys)
+
+    assert code == 3 and "inside" in out and not list(outside.glob("*.html"))
+
+
+def test_render_refuses_a_receipt_whose_pages_would_leak_and_writes_nothing(tmp_path, capsys):
+    deps, _ = make_deps(tmp_path)
+    folder = tmp_path / "identity-proof"
+    folder.mkdir()
+    data = good_receipt_dict()
+    data["cleanup"]["problems"] = ["arn:aws:rds:us-east-1:123456789012:cluster:meridian"]
+    (folder / "leaky.json").write_text(json.dumps(data))
+
+    code, out = run(["--render", str(folder / "leaky.json")], deps, capsys)
+
+    assert code == 3 and "arn" in out and not list(folder.glob("*.html"))
+
+
+def test_render_writes_private_pages_and_does_not_follow_a_symlink(tmp_path, capsys):
+    deps, _ = make_deps(tmp_path)
+    run(APPLY, deps, capsys)
+    folder = tmp_path / "identity-proof"
+    target = tmp_path / "victim.txt"
+    target.write_text("keep")
+    link = folder / "latest.summary.html"
+    link.unlink(missing_ok=True)
+    link.symlink_to(target)
+
+    code, _ = run(["--render", str(folder / "latest.json")], deps, capsys)
+
+    assert code == 0 and target.read_text() == "keep" and not link.is_symlink()
+    assert stat.S_IMODE(link.stat().st_mode) == 0o600
+    assert stat.S_IMODE((folder / "latest.full.html").stat().st_mode) == 0o600
+
+
 def test_render_refuses_a_file_that_is_not_a_receipt(tmp_path, capsys):
     deps, _ = make_deps(tmp_path)
     bad = tmp_path / "bad.json"
@@ -208,6 +285,17 @@ def test_a_usage_error_or_an_abbreviation_is_a_refusal_not_a_traceback(tmp_path,
     code, out = run(argv, deps, capsys)
 
     assert code == 3 and built == [] and "Traceback" not in out
+
+
+def good_receipt_dict():
+    world, _ = good_world()
+    from scripts.identity_probes.probes import Context
+    from scripts.identity_probes.runner import Header, run_proof
+
+    header = Header(at="2026-10-08T12:00:00+00:00", git_sha="a" * 40, region="us-east-1",
+                    design="both", site_host="site.example.net")
+    return run_proof(world, FakeCleanup(), Context(run_id="abc12345", design="both"),
+                     header).to_dict()
 
 
 def latest(tmp_path):
@@ -241,20 +329,22 @@ def test_an_interrupt_invalidates_an_older_passing_receipt_and_reports_the_clean
     assert "Interrupted" in out and "cleanup:" in out and "0 leftover(s)" in out
 
 
-def test_sigterm_is_handled_like_an_interrupt(tmp_path, capsys):
+@pytest.mark.parametrize("name", ["SIGTERM", "SIGHUP"])
+def test_a_termination_signal_is_handled_like_an_interrupt(tmp_path, capsys, name):
     world, _ = good_world()
+    number = getattr(signal, name)
 
     def terminate(*args):
-        os.kill(os.getpid(), signal.SIGTERM)
+        os.kill(os.getpid(), number)
         raise AssertionError("the handler should have raised first")
 
     broken = world.__class__(**{**world.__dict__, "http": terminate})
-    before = signal.getsignal(signal.SIGTERM)
+    before = signal.getsignal(number)
 
     code, out = passing_run_then(tmp_path, capsys, ports=broken)
 
     assert code == 1 and "Interrupted" in out and latest(tmp_path)["ok"] is False
-    assert signal.getsignal(signal.SIGTERM) is before
+    assert signal.getsignal(number) is before
 
 
 def test_an_interrupt_inside_the_cleanup_fails_the_receipt_and_names_the_problem(

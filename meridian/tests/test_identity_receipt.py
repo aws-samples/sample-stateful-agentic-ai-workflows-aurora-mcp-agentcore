@@ -171,6 +171,41 @@ def test_leaks_finds_a_token_an_account_id_and_a_key_id():
     assert leaks("nothing here") == []
 
 
+POOL_ID = "us-east-1" + "_" + "AbCdEfGhI"
+CLIENT_ID = "3n8q5v2k7" + "abcdefghij" + "k4m9x1z"
+ARN = "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/MeridianWorkflow-abc123"
+
+
+def test_leaks_finds_a_pool_id_a_client_id_and_an_arn():
+    assert leaks("pool " + POOL_ID) == ["pool id"]
+    assert leaks("client " + CLIENT_ID) == ["client id"]
+    assert "arn" in leaks("runtime " + ARN)
+
+
+@pytest.mark.parametrize(("raw", "masked"), [
+    ("pool " + POOL_ID + " failed", "pool <pool-id> failed"),
+    ("client " + CLIENT_ID + " failed", "client <client-id> failed"),
+    ("called " + ARN + " and died", "called <arn> and died"),
+])
+def test_scrub_masks_pool_client_and_arn_ids(raw, masked):
+    assert scrub(raw) == masked and leaks(scrub(raw)) == []
+
+
+def test_scrub_leaves_ordinary_identifiers_alone():
+    text = ("phase5-proof-idpabc12345wj HLD-TEST0001 backend.decoy_reads_jordan_memory "
+            "trv_demo_decoy")
+
+    assert scrub(text) == text and leaks(text) == []
+
+
+def test_a_receipt_whose_note_holds_an_arn_is_not_written(tmp_path):
+    built = complete()
+    built.notes = ["see " + ARN]
+
+    with pytest.raises(ValueError, match="arn"):
+        write_receipt(tmp_path / "r.json", built)
+
+
 def test_scrub_masks_and_truncates():
     text = scrub("denied for 123456789012 with " + FAKE_TOKEN + " " + "x" * 400)
 

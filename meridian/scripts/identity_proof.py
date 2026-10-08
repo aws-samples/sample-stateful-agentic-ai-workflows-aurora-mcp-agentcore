@@ -2,12 +2,19 @@
 """Prove that a second signed-in user is refused at four layers and Jordan is allowed at each.
 
 After the Cognito release, this signs in as the two seeded users (tokens minted in memory from
-Secrets Manager, never printed or stored) and sends fifteen probes at four layers: the hosted
+Secrets Manager, never printed or stored) and sends seventeen probes at four layers: the hosted
 backend, the two Runtimes, the Gateway and the database. For every probe it records the layer
 that answered. The decoy (a valid token, a real second traveler) must be refused at all four
-layers; Jordan must be allowed at all four. Jordan's controls write two things: one review-only
-Workflow run and one courtesy hold. Both are removed by id at the end, and a leftover fails the
-receipt.
+layers, each time by a layer named with evidence (a recognised refusal text or code, or a new
+deny row); a 401, a 5xx, a timeout or any other failure is an error, not a refusal. Jordan must
+be allowed at all four layers, and a decoy refusal counts only beside a passing Jordan control at
+the same layer. The decoy is also let in where it should be (its own identity, a Workflow ping,
+a Gateway read). Jordan's controls write three things: one review-only Workflow run, one
+courtesy hold, and one Concierge turn. The run and the hold are removed by id; both travelers'
+bookings are compared with a baseline taken before the first probe, and any booking the run
+cannot tie to itself is reported and never deleted. A leftover fails the receipt. The Concierge
+turn writes AgentCore Memory events that this command does not delete; the dry run, the receipt
+and the operations guide declare them.
 
 The database probe opens its own Data API transaction, pins the decoy's traveler, steps down to
 meridian_app and counts Jordan's rows. It does not go through the workload grant, which the
@@ -29,11 +36,14 @@ with a failed receipt that says how the run stopped. It refuses a checkout with 
 changes, because the receipt names the commit.
 
 Files, all under .local/identity-proof/: receipt-<stamp>.json and latest.json (mode 0600, no
-token, no account id), receipt-<stamp>.summary.html and receipt-<stamp>.full.html.
+token, no account id, no pool, client or ARN identifier), receipt-<stamp>.summary.html and
+receipt-<stamp>.full.html (also 0600). --render recomputes every verdict from the recorded
+outcomes and refuses a receipt outside .local/.
 
 Exit codes: 0 every probe met its expectation and nothing was left behind; 1 a probe failed or
 errored, a layer has no probe, a leftover remains, or the run crashed or was interrupted;
-3 refused (a guard, a usage error, a missing flag or a bad output path).
+3 refused (a guard, a usage error, a missing flag or a bad output or render path). A dry run
+exits 0 even when it prints WOULD REFUSE, because it only reports; the apply run refuses with 3.
 """
 
 from __future__ import annotations
@@ -56,25 +66,32 @@ from dotenv import dotenv_values, load_dotenv
 MERIDIAN_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MERIDIAN_DIR))
 
-from scripts.identity_probes.probes import PLAN, Context, Ports  # noqa: E402
+from scripts.identity_probes.probes import (  # noqa: E402
+    AUDIT_RESIDUE,
+    MEMORY_RESIDUE,
+    PLAN,
+    Context,
+    Ports,
+)
 from scripts.identity_probes.receipt import (  # noqa: E402
     FULL,
     JORDAN_ONLY,
     Receipt,
-    leaks,
+    mask_text,
     render_table,
     scrub,
+    write_private_text,
     write_receipt,
 )
-from scripts.identity_probes.render_html import full_html, summary_html  # noqa: E402
+from scripts.identity_probes.render_html import pages  # noqa: E402
 from scripts.identity_probes.runner import Cleanup, Header, run_proof  # noqa: E402
 from scripts.identity_release import settings  # noqa: E402
-from scripts.prove_backend_login import mask  # noqa: E402
 
 LOCAL_DIR = MERIDIAN_DIR / ".local"
 EXIT_PASS, EXIT_FAIL, EXIT_REFUSED = 0, 1, 3
 LOOPBACK = {"localhost", "127.0.0.1", "::1"}
 STAMP = "%Y%m%dT%H%M%SZ"
+STOP_SIGNALS = (signal.SIGTERM, signal.SIGHUP)
 COMMAND = f"python scripts/identity_proof.py --apply {settings.CONFIRM_FLAG}"
 
 
@@ -116,8 +133,8 @@ class UsageError(Exception):
 
 
 def say(text: str) -> None:
-    """Print with account ids, tokens and keys masked."""
-    print(mask(text))
+    """Print with account ids, tokens, keys, ARNs and pool or client ids masked."""
+    print(mask_text(text))
 
 
 def refuse(text: str) -> int:
@@ -181,18 +198,27 @@ def check_account(deps: Dependencies) -> None:
             f"(its Region is {region}); sign in to the right account")
 
 
+def inside_local(deps: Dependencies, path: Path, what: str) -> Path:
+    """``path`` resolved, which must be the local root or inside it.
+
+    Raises:
+        settings.ReleaseConfigError: When it is elsewhere.
+    """
+    resolved = path.resolve()
+    root = deps.local_root.resolve()
+    if resolved != root and root not in resolved.parents:
+        raise settings.ReleaseConfigError(
+            f"the {what} must be inside {root.name}/, which Git ignores")
+    return resolved
+
+
 def output_dir(deps: Dependencies, requested: Path | None) -> Path:
     """The folder for the files, which must be inside the local root.
 
     Raises:
         settings.ReleaseConfigError: When the folder is elsewhere.
     """
-    folder = (requested or deps.local_root / "identity-proof").resolve()
-    root = deps.local_root.resolve()
-    if folder != root and root not in folder.parents:
-        raise settings.ReleaseConfigError(
-            f"the output folder must be inside {root.name}/, which Git ignores")
-    return folder
+    return inside_local(deps, requested or deps.local_root / "identity-proof", "output folder")
 
 
 def dry_run(deps: Dependencies, args: argparse.Namespace) -> int:
@@ -208,8 +234,10 @@ def dry_run(deps: Dependencies, args: argparse.Namespace) -> int:
         say(f"  {spec.layer:<9} {spec.actor:<6} {spec.expected:<8} {spec.id}: {spec.sends}")
     say("On --apply it also checks that the AWS credentials match the deployment's account and "
         "Region.")
-    say("Residue: Jordan's review-only Workflow run and one courtesy hold are removed by id; "
-        "audit rows (traveler_access_audit, the agent audit log) are append-only and stay.")
+    say("Removed by id at the end: Jordan's review-only Workflow run and one courtesy hold (and "
+        "any booking a decoy probe makes, which also fails the receipt).")
+    say(f"Residue that stays: {AUDIT_RESIDUE}.")
+    say(f"Residue that stays: {MEMORY_RESIDUE}.")
     say(f"Run it (ASK FIRST): {COMMAND}")
     return EXIT_PASS
 
@@ -221,18 +249,13 @@ def save(receipt: Receipt, folder: Path, stamp: str) -> list[Path]:
         ValueError: When the receipt or a page would hold a token, key id, long secret or
             account id; nothing more is written.
     """
-    data = receipt.to_dict()
-    pages = {".summary.html": summary_html(data), ".full.html": full_html(data)}
-    for name, text in pages.items():
-        found = leaks(text)
-        if found:
-            raise ValueError(f"the {name} page would contain {', '.join(found)}; not written")
+    built = pages(receipt.to_dict())
     dated = folder / f"receipt-{stamp}.json"
     write_receipt(dated, receipt)
     write_receipt(folder / "latest.json", receipt)
-    for suffix, text in pages.items():
-        dated.with_suffix(suffix).write_text(text, encoding="utf-8")
-    return [dated, *[dated.with_suffix(suffix) for suffix in pages]]
+    for suffix, text in built.items():
+        write_private_text(dated.with_suffix(suffix), text)
+    return [dated, *[dated.with_suffix(suffix) for suffix in built]]
 
 
 def shown(path: Path) -> str:
@@ -300,24 +323,39 @@ def prove(args: argparse.Namespace, deps: Dependencies, target: Target, folder: 
     return EXIT_PASS if receipt.ok else EXIT_FAIL
 
 
-def render_command(path: Path) -> int:
-    """Write the summary and full pages next to a recorded receipt. Nothing else is touched."""
+def render_command(deps: Dependencies, path: Path) -> int:
+    """Write the summary and full pages next to a recorded receipt. Nothing else is touched.
+
+    The receipt must be inside the local folder. Every verdict is recomputed from its outcomes,
+    so a stored ``ok`` or ``passed`` is never trusted, and the pages are scanned for secrets
+    before either is written.
+    """
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        full, summary = full_html(data), summary_html(data)
-    except (OSError, ValueError, KeyError, TypeError):
+        resolved = inside_local(deps, path, "receipt")
+    except settings.ReleaseConfigError as exc:
+        return refuse(str(exc))
+    try:
+        receipt = Receipt.from_dict(json.loads(resolved.read_text(encoding="utf-8")))
+        data = receipt.to_dict()
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return refuse(f"{shown(path)} is not a receipt this command wrote")
-    path.with_suffix(".summary.html").write_text(summary, encoding="utf-8")
-    path.with_suffix(".full.html").write_text(full, encoding="utf-8")
-    say(f"Wrote {shown(path.with_suffix('.summary.html'))} and "
-        f"{shown(path.with_suffix('.full.html'))}")
+    try:
+        built = pages(data)
+    except ValueError as exc:
+        return refuse(str(exc))
+    written = []
+    for suffix, text in built.items():
+        target = resolved.with_suffix(suffix)
+        write_private_text(target, text)
+        written.append(shown(target))
+    say(f"Wrote {' and '.join(written)}")
     return EXIT_PASS
 
 
 def run(args: argparse.Namespace, deps: Dependencies) -> int:
     """Render, print the plan, refuse, or run the proof."""
     if args.render:
-        return render_command(args.render)
+        return render_command(deps, args.render)
     if not args.apply:
         return dry_run(deps, args)
     if not args.confirmed:
@@ -361,7 +399,7 @@ def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int
         args = build_parser().parse_args(argv)
     except UsageError as exc:
         return refuse(str(exc))
-    previous = signal.signal(signal.SIGTERM, _raise_interrupt)
+    previous = {number: signal.signal(number, _raise_interrupt) for number in STOP_SIGNALS}
     try:
         return run(args, deps or default_dependencies())
     except KeyboardInterrupt as exc:
@@ -375,7 +413,8 @@ def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int
             say(note)
         return EXIT_FAIL
     finally:
-        signal.signal(signal.SIGTERM, previous)
+        for number, handler in previous.items():
+            signal.signal(number, handler)
 
 
 def _caller(region: str) -> tuple[str, str]:

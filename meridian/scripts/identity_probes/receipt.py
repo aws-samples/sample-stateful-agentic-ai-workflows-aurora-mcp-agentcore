@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
@@ -29,19 +30,33 @@ REFUSER_LABELS = {
     "gateway_workload_grant": "Holds Lambda: workload grant",
     "database_rls": "AWS Aurora: row-level security",
 }
+POOL_ID = re.compile(r"\b[a-z]{2}(?:-[a-z]+)+-\d_[A-Za-z0-9]{9}\b")
+CLIENT_ID = re.compile(
+    r"(?<![A-Za-z0-9_-])(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{26}(?![A-Za-z0-9_-])")
+ARN = re.compile(r"\barn:aws[a-z-]*:[A-Za-z0-9-]*:[A-Za-z0-9-]*:[A-Za-z0-9<>*-]*:[^\s\"',;]+")
 LEAK_PATTERNS = {
     "token": TOKEN,
     "account id": ACCOUNT_ID,
     "access key id": AWS_KEY_ID,
     "long secret": LONG_SECRET,
+    "pool id": POOL_ID,
+    "client id": CLIENT_ID,
+    "arn": ARN,
 }
 TABLE_HEAD = ("LAYER", "PROBE", "ACTOR", "EXPECTED", "RESULT", "REFUSED BY", "EVIDENCE")
 TABLE_WIDTHS = (9, 42, 6, 9, 8, 34, 44)
 
 
+def mask_text(text: str) -> str:
+    """``text`` with ARNs, pool and client ids, tokens, key ids, secrets and accounts masked."""
+    text = ARN.sub("<arn>", text)
+    text = POOL_ID.sub("<pool-id>", text)
+    return mask(CLIENT_ID.sub("<client-id>", text))
+
+
 def scrub(text: object, limit: int = DETAIL_LIMIT) -> str:
-    """One line of ``text`` with tokens, key ids, long secrets and account ids masked."""
-    return mask(" ".join(str(text).split()))[:limit]
+    """One masked line of ``text``, cut to ``limit`` characters."""
+    return mask_text(" ".join(str(text).split()))[:limit]
 
 
 def leaks(text: str) -> list[str]:
@@ -207,17 +222,12 @@ def render_table(receipt: Receipt) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_receipt(path: Path, receipt: Receipt) -> None:
-    """Write the receipt as JSON, mode 0600, through a temporary file renamed over ``path``.
+def write_private_text(path: Path, text: str) -> None:
+    """Write ``text`` mode 0600 through a temporary file renamed over ``path``.
 
-    Raises:
-        ValueError: When the serialized receipt would hold a token, key id, long secret or
-            account id; nothing is written.
+    The temporary file is opened without following a symlink, and the rename replaces a symlink
+    at ``path`` instead of writing through it.
     """
-    text = json.dumps(receipt.to_dict(), indent=2) + "\n"
-    found = leaks(text)
-    if found:
-        raise ValueError(f"the receipt would contain {', '.join(found)}; it was not written")
     path.parent.mkdir(parents=True, exist_ok=True)
     scratch = path.with_name(path.name + ".tmp")
     try:
@@ -229,3 +239,17 @@ def write_receipt(path: Path, receipt: Receipt) -> None:
         os.replace(scratch, path)
     finally:
         scratch.unlink(missing_ok=True)
+
+
+def write_receipt(path: Path, receipt: Receipt) -> None:
+    """Write the receipt as JSON, mode 0600, through a temporary file renamed over ``path``.
+
+    Raises:
+        ValueError: When the serialized receipt would hold a secret or an identifier that
+            ``leaks`` finds; nothing is written.
+    """
+    text = json.dumps(receipt.to_dict(), indent=2) + "\n"
+    found = leaks(text)
+    if found:
+        raise ValueError(f"the receipt would contain {', '.join(found)}; it was not written")
+    write_private_text(path, text)
