@@ -400,7 +400,13 @@ def apply_jwt_authorizers(spec: dict[str, Any], values: dict[str, str]) -> None:
 
 
 def tighten_holds_policy(spec: dict[str, Any], values: dict[str, str]) -> None:
-    """Leave the MeridianHolds Lambda able to read only the meridian_gateway login's secret."""
+    """Leave the MeridianHolds Lambda able to read only the meridian_gateway login's secret.
+
+    Raises:
+        ConfigError: When the spec does not contain exactly one MeridianHolds statement that
+            allows only ``secretsmanager:GetSecretValue``, so nothing is rewritten silently.
+    """
+    rewritten = 0
     for gateway in spec.get("agentCoreGateways", []):
         for target in gateway.get("targets", []):
             policy = (target.get("compute") or {}).get("iamPolicy")
@@ -409,6 +415,12 @@ def tighten_holds_policy(spec: dict[str, Any], values: dict[str, str]) -> None:
             for statement in policy["Statement"]:
                 if statement.get("Action") == ["secretsmanager:GetSecretValue"]:
                     statement["Resource"] = [values["AURORA_GATEWAY_SECRET_ARN"]]
+                    rewritten += 1
+    if rewritten != 1:
+        raise ConfigError(
+            "--tighten needs exactly one MeridianHolds policy statement whose Action is "
+            f"['secretsmanager:GetSecretValue'], but found {rewritten}; check the MeridianHolds "
+            "iamPolicy in the gateway targets template")
 
 
 def drop_pending_deployment_values(spec: dict[str, Any]) -> list[str]:

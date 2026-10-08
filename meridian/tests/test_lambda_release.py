@@ -9,7 +9,7 @@ from scripts.identity_release import lambda_release as lambdas
 from tests import release_support as rs
 from tests.aws_recorders import client_error, violations
 from tests.lambda_release_support import (
-    GATEWAY, HOLDS_ARN, HOLDS_NAME, MASTER, LambdaClient, World, policy)
+    GATEWAY, HOLDS_ARN, HOLDS_NAME, HOLDS_ROLE, MASTER, LambdaClient, World, policy)
 
 STAMP = "20261008T130000Z"
 WHERE = {"account": rs.ACCOUNT, "region": rs.REGION}
@@ -105,13 +105,81 @@ def test_a_grant_for_another_action_is_not_a_read_of_the_secret():
 def test_a_customer_managed_policy_attached_to_the_role_is_read_too():
     extra = f"arn:aws:iam::{rs.ACCOUNT}:policy/Extra"
     world = World(holds_grants=(GATEWAY,), semantic_grants=(GATEWAY,),
-                  holds_attached=[{"PolicyArn": extra},
-                                  {"PolicyArn": "arn:aws:iam::aws:policy/AdministratorAccess"}])
+                  holds_attached=[{"PolicyArn": extra}])
 
     found = world.check("tightened")
 
     assert len(found) == 1 and "MeridianHolds" in found[0]
     assert world.iam.args("get_policy") == [{"PolicyArn": extra}]
+
+
+ADMIN = "arn:aws:iam::aws:policy/AdministratorAccess"
+READ_WRITE = "arn:aws:iam::aws:policy/SecretsManagerReadWrite"
+
+
+def administrator():
+    return {"Version": "2012-10-17", "Statement": [
+        {"Effect": "Allow", "Action": "*", "Resource": "*"}]}
+
+
+@pytest.mark.parametrize("arn", [ADMIN, READ_WRITE])
+def test_an_aws_managed_policy_that_reads_every_secret_is_a_grant_of_the_master(arn):
+    document = administrator() if arn == ADMIN else {"Version": "2012-10-17", "Statement": [
+        {"Effect": "Allow", "Action": "secretsmanager:*", "Resource": "*"}]}
+    world = World(holds_attached=[{"PolicyArn": arn}], managed={arn: document})
+
+    found = world.check("tightened")
+
+    assert found == ["Lambda MeridianHolds: its role still can read the master login's secret"]
+    assert world.iam.args("get_policy") == [{"PolicyArn": arn}]
+    assert world.iam.args("get_policy_version") == [{"PolicyArn": arn, "VersionId": "v1"}]
+
+
+def test_an_aws_managed_policy_for_another_service_is_not_a_grant():
+    arn = "arn:aws:iam::aws:policy/AWSLambdaBasicExecutionRole"
+    other = {"Version": "2012-10-17", "Statement": [
+        {"Effect": "Allow", "Action": ["logs:PutLogEvents"], "Resource": "*"}]}
+    world = World(holds_attached=[{"PolicyArn": arn}], managed={arn: other})
+
+    assert world.check("tightened") == []
+
+
+def doc(effect="Allow", **statement):
+    return {"Version": "2012-10-17", "Statement": [
+        {"Effect": effect, "Resource": "*", **statement}]}
+
+
+@pytest.mark.parametrize("statement, reads", [
+    ({"NotAction": ["iam:*"]}, True),
+    ({"NotAction": "ec2:Describe*"}, True),
+    ({"NotAction": ["secretsmanager:*"]}, False),
+    ({"NotAction": ["secretsmanager:GetSecretValue"]}, False),
+    ({"NotAction": ["secretsmanager:Get*"], "Resource": "*"}, False),
+    ({"Action": ["secretsmanager:GetSecretValue"], "NotResource": [MASTER]}, False),
+    ({"Action": ["secretsmanager:GetSecretValue"],
+      "NotResource": ["arn:aws:secretsmanager:*:*:secret:other-*"]}, True),
+    ({"Action": ["secretsmanager:GetSecretValue"],
+      "NotResource": ["arn:aws:secretsmanager:*:*:secret:meridian-*"]}, False),
+])
+def test_not_action_and_not_resource_allows_are_read_as_a_grant_unless_they_exclude_it(
+        statement, reads):
+    world = World(holds_grants=(GATEWAY,))
+    statement = {"Resource": "*", **statement} if "NotResource" not in statement else statement
+    world.roles[HOLDS_ROLE] = {"Version": "2012-10-17", "Statement": [
+        {"Effect": "Allow", **statement}]}
+
+    found = world.check("tightened")
+
+    master_read = any("still can read the master" in line and "MeridianHolds" in line
+                      for line in found)
+    assert master_read is reads
+
+
+def test_a_not_action_deny_is_not_a_grant():
+    world = World(holds_grants=(GATEWAY,))
+    world.roles[HOLDS_ROLE] = doc("Deny", NotAction=["iam:*"])
+
+    assert not any("still can read" in line for line in world.check("tightened"))
 
 
 def test_a_missing_semantic_function_is_a_finding_not_a_crash():
@@ -134,7 +202,8 @@ def test_an_unknown_stage_is_refused():
 
 
 def test_the_check_makes_only_the_listed_read_calls_and_they_match_the_service_models():
-    world = World(holds_attached=[{"PolicyArn": f"arn:aws:iam::{rs.ACCOUNT}:policy/Extra"}])
+    world = World(holds_attached=[{"PolicyArn": f"arn:aws:iam::{rs.ACCOUNT}:policy/Extra"},
+                                  {"PolicyArn": ADMIN}], managed={ADMIN: administrator()})
 
     world.check("tightened")
 
@@ -143,6 +212,8 @@ def test_the_check_makes_only_the_listed_read_calls_and_they_match_the_service_m
     assert set(world.iam.names()) == {
         "list_role_policies", "get_role_policy", "list_attached_role_policies", "get_policy",
         "get_policy_version"}
+    assert all(not name.startswith(("put_", "delete_", "attach_", "create_", "update_"))
+               for name in world.iam.names())
     assert set(world.control.names()) == {"list_gateway_targets", "get_gateway_target"}
     for service, client in (("ssm", world.ssm), ("lambda", world.lam), ("iam", world.iam),
                             ("bedrock-agentcore-control", world.control)):
@@ -157,6 +228,24 @@ def test_the_holds_function_is_found_through_the_gateway_target():
         {"gatewayIdentifier": rs.GATEWAY_ID, "targetId": "T2"}]
     world.control.answers["list_gateway_targets"] = {"items": []}
     with pytest.raises(lambdas.LambdaError, match="MeridianHolds"):
+        lambdas.holds_function_arn(world.control, rs.GATEWAY_ID)
+
+
+def test_a_parameter_that_differs_only_by_whitespace_says_so():
+    world = World(ssm=GATEWAY + "\n")
+
+    found = world.check("gateway")
+
+    assert len(found) == 1 and "whitespace" in found[0] and found[0].startswith("SSM /meridian")
+    assert lambdas.remedies(found, "gateway")
+
+
+def test_a_target_that_is_not_a_lambda_is_named_not_a_key_error():
+    world = World()
+    world.control.answers["get_gateway_target"] = {
+        "targetConfiguration": {"mcp": {"openApiSchema": {}}}}
+
+    with pytest.raises(lambdas.LambdaError, match="not a Lambda target"):
         lambdas.holds_function_arn(world.control, rs.GATEWAY_ID)
 
 
@@ -188,6 +277,19 @@ def test_a_stale_parameter_points_at_the_publisher_with_the_gateway_flag():
     assert len(steps) == 1 and "publish_gateway_parameters.py --gateway-login" in steps[0]
     master = lambdas.remedies(World().check("master"), "master")
     assert all("--gateway-login" not in step for step in master)
+
+
+def test_the_semantic_search_role_findings_get_the_exact_manual_step():
+    world = World(semantic_grants=(MASTER,))
+
+    missing = lambdas.remedies(world.check("gateway"), "gateway")
+
+    assert len(missing) == 1 and missing[0].startswith("MANUAL STEP")
+    assert lambdas.SEMANTIC_FUNCTION in missing[0] and "GetSecretValue" in missing[0]
+    assert "AURORA_GATEWAY_SECRET_ARN" in missing[0]
+    tightened = World(semantic_grants=(MASTER, GATEWAY))
+    still = lambdas.remedies(tightened.check("tightened"), "tightened")
+    assert len(still) == 1 and "remove" in still[0] and lambdas.SEMANTIC_FUNCTION in still[0]
 
 
 def test_nothing_to_fix_means_no_steps():
@@ -284,4 +386,50 @@ def test_a_marker_that_did_not_land_is_an_error():
     world.lam.answers["update_function_configuration"] = lambda FunctionName, **changes: {}
 
     with pytest.raises(lambdas.LambdaError, match="marker"):
+        restart(world)
+
+
+def test_an_environment_the_lambda_could_not_decrypt_is_never_replaced():
+    world = World()
+    world.configs[HOLDS_ARN]["Environment"] = {
+        "Error": {"ErrorCode": "AccessDeniedException", "Message": "kms"}}
+
+    with pytest.raises(lambdas.LambdaError, match="cannot read its environment"):
+        restart(world)
+
+    assert "update_function_configuration" not in world.lam.names()
+
+
+def test_an_environment_with_no_variables_is_never_replaced():
+    world = World()
+    world.configs[HOLDS_ARN]["Environment"] = {}
+
+    with pytest.raises(lambdas.LambdaError, match="cannot read its environment"):
+        restart(world)
+
+    assert "update_function_configuration" not in world.lam.names()
+
+
+def test_a_function_with_no_environment_at_all_gets_only_the_marker():
+    world = World()
+    del world.configs[HOLDS_ARN]["Environment"]
+
+    restart(world)
+
+    assert world.lam.args("update_function_configuration")[0]["Environment"] == {
+        "Variables": {"MERIDIAN_COLD_START": STAMP}}
+
+
+def test_a_read_back_that_lost_a_variable_is_an_error():
+    world = World()
+
+    def lossy(FunctionName, **changes):
+        sent = changes["Environment"]["Variables"]
+        world.configs[FunctionName]["Environment"] = {
+            "Variables": {k: v for k, v in sent.items() if k != "EXISTING"}}
+        return world.configs[FunctionName]
+
+    world.lam.answers["update_function_configuration"] = lossy
+
+    with pytest.raises(lambdas.LambdaError, match="environment"):
         restart(world)

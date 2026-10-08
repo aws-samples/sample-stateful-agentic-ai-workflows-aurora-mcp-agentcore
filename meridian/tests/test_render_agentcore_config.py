@@ -682,6 +682,38 @@ def test_tightening_changes_nothing_but_that_one_statement() -> None:
     assert tight == plain
 
 
+def holds_target(spec: dict) -> dict:
+    return next(t for t in spec["agentCoreGateways"][0]["targets"] if t["name"] == "MeridianHolds")
+
+
+def test_tightening_refuses_when_the_statement_has_another_shape() -> None:
+    spec, _, _ = render_config.render(*templates(), base_values())
+    for statement in holds_target(spec)["compute"]["iamPolicy"]["Statement"]:
+        if statement["Action"] == ["secretsmanager:GetSecretValue"]:
+            statement["Action"] = "secretsmanager:GetSecretValue"
+
+    with pytest.raises(render_config.ConfigError, match="exactly one"):
+        render_config.tighten_holds_policy(spec, base_values())
+
+
+def test_tightening_refuses_when_there_is_no_holds_target() -> None:
+    spec, _, _ = render_config.render(*templates(), base_values())
+    spec["agentCoreGateways"][0]["targets"] = []
+
+    with pytest.raises(render_config.ConfigError, match="MeridianHolds"):
+        render_config.tighten_holds_policy(spec, base_values())
+
+
+def test_tightening_refuses_two_matching_statements() -> None:
+    spec, _, _ = render_config.render(*templates(), base_values())
+    statements = holds_target(spec)["compute"]["iamPolicy"]["Statement"]
+    secret = next(s for s in statements if s["Action"] == ["secretsmanager:GetSecretValue"])
+    statements.append(dict(secret))
+
+    with pytest.raises(render_config.ConfigError, match="exactly one"):
+        render_config.tighten_holds_policy(spec, base_values())
+
+
 def test_main_tighten_writes_the_tightened_policy_and_says_so(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

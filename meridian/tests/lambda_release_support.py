@@ -31,7 +31,7 @@ class World:
     """The holds Lambda, the semantic Lambda, their roles, the SSM parameter and the target list."""
 
     def __init__(self, *, ssm=GATEWAY, holds_grants=(GATEWAY,), semantic_env=GATEWAY,
-                 semantic_grants=(GATEWAY,), holds_attached=None):
+                 semantic_grants=(GATEWAY,), holds_attached=None, managed=None):
         self.control = Recorder({
             "list_gateway_targets": {"items": [
                 {"name": "SemanticTripSearchLambda", "targetId": "T1"},
@@ -60,7 +60,7 @@ class World:
                 "AttachedPolicies": attached if RoleName == HOLDS_ROLE else []},
             "get_policy": lambda PolicyArn: {"Policy": {"DefaultVersionId": "v1"}},
             "get_policy_version": lambda PolicyArn, VersionId: {
-                "PolicyVersion": {"Document": policy(MASTER)}}})
+                "PolicyVersion": {"Document": (managed or {}).get(PolicyArn, policy(MASTER))}}})
         self.sts = Recorder({"get_caller_identity": {"Account": rs.ACCOUNT}})
 
     def update(self, FunctionName, **changes):
