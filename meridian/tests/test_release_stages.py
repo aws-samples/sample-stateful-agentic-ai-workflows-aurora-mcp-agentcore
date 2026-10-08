@@ -65,3 +65,30 @@ def test_deployed_ids_read_the_cli_state_for_the_named_gateway():
 def test_deployed_ids_of_an_empty_or_odd_state_are_all_absent():
     assert stages.deployed_ids({}, "default", "g") == DeployedIds(None, None, None)
     assert stages.deployed_ids({"targets": []}, "default", "g") == DeployedIds(None, None, None)
+
+
+def spec(*, holds=True, engines=True, engine_variable=True):
+    targets = [{"name": "SemanticTripSearchLambda"}]
+    if holds:
+        targets.append({"name": "MeridianHolds"})
+    variables = [{"name": "MERIDIAN_POLICY_MODE", "value": "ENFORCE"}]
+    if engine_variable:
+        variables.append({"name": "MERIDIAN_POLICY_ENGINE_ID", "value": "engine-1"})
+    return {"agentCoreGateways": [{"name": "g", "targets": targets}],
+            "policyEngines": [{"name": "MeridianGovernance", "policies": []}] if engines else [],
+            "runtimes": [{"name": "MeridianConcierge", "envVars": variables}]}
+
+
+@pytest.mark.parametrize(("rendered", "expected"), [
+    (spec(holds=False, engines=False, engine_variable=False), stages.GATEWAY),
+    (spec(holds=True, engines=False, engine_variable=False), stages.TARGETS),
+    (spec(holds=True, engines=True, engine_variable=False), stages.GOVERNANCE),
+    (spec(), stages.COMPLETE),
+])
+def test_a_rendered_spec_says_which_stage_it_is(rendered, expected):
+    assert stages.stage_of_render(rendered) == expected
+
+
+def test_a_spec_with_no_gateway_or_runtime_reads_as_the_first_stage():
+    assert stages.stage_of_render({}) == stages.GATEWAY
+    assert stages.stage_of_render({"agentCoreGateways": "x", "runtimes": None}) == stages.GATEWAY

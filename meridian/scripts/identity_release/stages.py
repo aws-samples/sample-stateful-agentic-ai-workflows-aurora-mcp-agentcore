@@ -26,6 +26,7 @@ from scripts.identity_release import settings
 GATEWAY, TARGETS, GOVERNANCE, COMPLETE = "gateway", "targets", "governance", "complete"
 STAGES = (GATEWAY, TARGETS, GOVERNANCE, COMPLETE)
 ENGINE_NAME = "MeridianGovernance"
+ENGINE_VARIABLE = "MERIDIAN_POLICY_ENGINE_ID"
 
 
 @dataclass(frozen=True)
@@ -108,3 +109,23 @@ def deployed_ids(state: Any, target: str, gateway: str) -> DeployedIds:
         _text(resources, (*gateway_keys(gateway), "gatewayId")),
         _text(resources, holds_keys(gateway)),
         _text(resources, ENGINE_KEYS))
+
+
+def stage_of_render(spec: Any) -> str:
+    """The stage a rendered ``agentcore.json`` is: what it holds, from the first resource down."""
+    document = spec if isinstance(spec, dict) else {}
+    gateways = [g for g in _list(document.get("agentCoreGateways")) if isinstance(g, dict)]
+    holds = any(isinstance(t, dict) and t.get("name") == settings.HOLDS_TARGET
+                for g in gateways for t in _list(g.get("targets")))
+    runtimes = [r for r in _list(document.get("runtimes")) if isinstance(r, dict)]
+    engine_variable = any(isinstance(v, dict) and v.get("name") == ENGINE_VARIABLE
+                          for r in runtimes for v in _list(r.get("envVars")))
+    if not holds:
+        return GATEWAY
+    if not _list(document.get("policyEngines")):
+        return TARGETS
+    return COMPLETE if engine_variable else GOVERNANCE
+
+
+def _list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
