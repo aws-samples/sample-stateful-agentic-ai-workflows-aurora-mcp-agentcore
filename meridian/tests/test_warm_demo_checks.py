@@ -10,8 +10,9 @@ def test_every_step_has_a_check():
 
 
 @pytest.mark.parametrize(("check", "reply", "passes"), [
-    (warm_demo.check_catalog, {"packages": [{"package_id": "p1"}], "total": 1}, True),
-    (warm_demo.check_catalog, {"packages": [], "total": 0}, False),
+    (warm_demo.check_catalog, {"products": [{"product_id": "p1"}], "total": 1}, True),
+    (warm_demo.check_catalog, {"products": [], "total": 0}, False),
+    (warm_demo.check_catalog, {"packages": [{"package_id": "p1"}]}, False),
     (warm_demo.check_catalog, {"error": "x"}, False),
     (warm_demo.check_profile, {"traveler_id": warm_demo.TRAVELER_ID, "facts": []}, True),
     (warm_demo.check_profile, {"traveler_id": "trv_demo_decoy", "facts": []}, False),

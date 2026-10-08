@@ -94,9 +94,9 @@ def check_turn(result: dict) -> str | None:
 
 
 def check_catalog(result: dict) -> str | None:
-    """The catalog must list at least one package."""
-    packages = result.get("packages")
-    return None if isinstance(packages, list) and packages else "the catalog is empty"
+    """The catalog must list at least one product."""
+    products = result.get("products")
+    return None if isinstance(products, list) and products else "the catalog is empty"
 
 
 def check_profile(result: dict, traveler: str = TRAVELER_ID) -> str | None:
