@@ -90,6 +90,24 @@ def check_turn(result: dict) -> str | None:
     return None if result.get("message") else "empty reply"
 
 
+def check_catalog(result: dict) -> str | None:
+    """The catalog must list at least one package."""
+    packages = result.get("packages")
+    return None if isinstance(packages, list) and packages else "the catalog is empty"
+
+
+def check_profile(result: dict) -> str | None:
+    """The profile read under RLS must be this traveler's and carry a facts list."""
+    if result.get("traveler_id") != TRAVELER_ID:
+        return f"the profile is for {result.get('traveler_id')!r}, not {TRAVELER_ID}"
+    return None if isinstance(result.get("facts"), list) else "the profile has no facts list"
+
+
+def check_journeys(result: dict) -> str | None:
+    """The saved-journey list must be a list, empty or not."""
+    return None if isinstance(result.get("journeys"), list) else "no journeys list in the reply"
+
+
 def steps() -> list[tuple[str, str, dict | None, object]]:
     """The warm-up sequence: label, path, request body, result check."""
     def turn(phase: int, prompt: str) -> dict:
@@ -97,13 +115,13 @@ def steps() -> list[tuple[str, str, dict | None, object]]:
 
     return [
         ("Health and Aurora", "/api/health", None, check_health),
-        ("Catalog", "/api/products?limit=50", None, None),
-        ("Traveler profile (RLS)", f"/api/memory/{TRAVELER_ID}", None, None),
+        ("Catalog", "/api/products?limit=50", None, check_catalog),
+        ("Traveler profile (RLS)", f"/api/memory/{TRAVELER_ID}", None, check_profile),
         ("Phase 1 SQL", "/api/chat", turn(1, PROMPT_LADDER[1].works[0]), check_turn),
         ("Phase 2 MCP", "/api/chat", turn(2, PROMPT_LADDER[2].works[0]), check_turn),
         ("Phase 3 Retrieval", "/api/chat", turn(3, PROMPT_LADDER[3].works[0]), check_turn),
         ("Phase 4 Production", "/api/chat", turn(4, PROMPT_LADDER[4].works[1]), check_turn),
-        ("Saved journeys", "/api/journeys?limit=5", None, None),
+        ("Saved journeys", "/api/journeys?limit=5", None, check_journeys),
     ]
 
 
