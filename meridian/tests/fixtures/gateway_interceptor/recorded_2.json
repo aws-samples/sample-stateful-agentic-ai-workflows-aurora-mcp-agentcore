@@ -1,0 +1,46 @@
+{
+  "interceptorInputVersion": "1.0",
+  "mcp": {
+    "gatewayRequest": {
+      "path": "/mcp",
+      "httpMethod": "POST",
+      "headers": {
+        "x-amzn-tls-version": "TLSv1.3",
+        "x-amzn-vpce-config": "",
+        "Accept": "application/json, text/event-stream",
+        "X-Forwarded-Proto": "https",
+        "User-Agent": "python-httpx/0.28.1",
+        "Host": "gw-test.gateway.bedrock-agentcore.us-east-1.amazonaws.com",
+        "x-amzn-vpc-id": "",
+        "Accept-Encoding": "gzip, deflate, zstd",
+        "x-amzn-vpce-policy-url": "",
+        "X-Forwarded-Port": "443",
+        "X-Amzn-Trace-Id": "Root=1-00000000-000000000000000000000000",
+        "Authorization": "Bearer {{TOKEN}}",
+        "x-amzn-tls-cipher-suite": "TLS_AES_128_GCM_SHA256",
+        "X-Forwarded-For": "192.0.2.1",
+        "Content-Length": "161",
+        "x-amzn-vpce-id": "",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "method": "initialize",
+        "params": {
+          "clientInfo": {
+            "name": "meridian-harness",
+            "version": "1"
+          },
+          "protocolVersion": "2025-06-18",
+          "capabilities": {}
+        }
+      },
+      "context": null
+    },
+    "gatewayResponse": null,
+    "rawGatewayRequest": {
+      "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"meridian-harness\",\"version\":\"1\"}}}"
+    }
+  }
+}
