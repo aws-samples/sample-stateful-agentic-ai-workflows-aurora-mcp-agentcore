@@ -17,4 +17,5 @@ def test_the_backend_secret_connects_as_the_login_without_bypassrls():
 
     who = proof._identity(secret, dict(os.environ))
 
-    assert who == {"login": proof.BACKEND_LOGIN, "bypass_rls": False}
+    assert who == {"login": proof.BACKEND_LOGIN, "bypass_rls": False, "superuser": False,
+                   "master_member": False}
