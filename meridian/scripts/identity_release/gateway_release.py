@@ -53,7 +53,7 @@ KEPT_FIELDS = (
 CHANGED_FIELDS = ("authorizerType", "authorizerConfiguration", "interceptorConfigurations")
 READ_ONLY_FIELDS = (
     "gatewayId", "gatewayArn", "gatewayUrl", "status", "statusReasons", "createdAt", "updatedAt",
-    "webAclArn", "workloadIdentityDetails",
+    "webAclArn", "workloadIdentityDetails", "ResponseMetadata",
 )
 REQUIRED_FIELDS = ("gatewayId", "gatewayArn", "name", "roleArn", "authorizerType", "status")
 INVOKE_POLICY_NAME = "MeridianTravelerPinInvoke"

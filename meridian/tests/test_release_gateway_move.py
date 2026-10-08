@@ -155,6 +155,12 @@ def test_a_new_field_with_no_value_does_not_block_the_snapshot():
     gw.read_snapshot(Control(current(someNewSetting=None)), rs.GATEWAY_ID, target("jwt"))
 
 
+def test_the_response_metadata_boto3_adds_does_not_block_the_snapshot():
+    metadata = {"RequestId": "r", "HTTPStatusCode": 200, "RetryAttempts": 0}
+
+    gw.read_snapshot(Control(current(ResponseMetadata=metadata)), rs.GATEWAY_ID, target("jwt"))
+
+
 def test_an_update_that_would_not_reach_the_wanted_state_is_a_plan_problem():
     engine = {"arn": rs.ENGINE_ARN, "mode": "LOG_ONLY"}
     engine_off = current("iam", policyEngineConfiguration=engine)
