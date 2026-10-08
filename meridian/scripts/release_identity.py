@@ -8,6 +8,8 @@ Every command that changes AWS is a dry run unless it gets both ``--apply`` and
     python scripts/release_identity.py interceptor [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py interceptor-delete [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py lambdas [--expect master|gateway|tightened] [--restart-holds]
+    python scripts/release_identity.py gateway [--to iam|jwt] [--only grant|move]
+        [--apply --i-understand-this-changes-aws]
 
 ``check`` compares the Gateway, both Runtimes, the Cedar rules, the identity stack, the backend
 login proof, the interceptor Lambda's environment and the App Runner environment against the mode
@@ -20,6 +22,9 @@ each delete.
 ``lambdas`` checks that the SSM parameter, the semantic-search Lambda and both roles are at a stage
 of the move to the meridian_gateway login (read-only); with ``--restart-holds`` (a dry run unless
 both flags) it forces the holds Lambda to re-read its configuration.
+``gateway`` moves the live Gateway to the mode (dry run by default: before and after of the
+authorizer, allowed clients and interceptor, and every precondition); an apply writes the invoke
+grants, sends the complete update and reads it back; ``--to iam`` is the rollback of the move.
 
 Exit codes, the same for every command:
 
@@ -55,6 +60,7 @@ from backend.agentcore.auth_mode import IAM, JWT  # noqa: E402
 from scripts.gateway_harness.verdicts import JWT_SHAPE  # noqa: E402
 from scripts.identity_release import interceptor_lambda, preflight, settings  # noqa: E402
 from scripts.identity_release import lambda_release  # noqa: E402
+from scripts.identity_release import gateway_release  # noqa: E402
 from scripts.provision_service_logins import redact, require_account  # noqa: E402
 from scripts.sync_cognito_env import FRONTEND_ENV_FILE, stack_outputs  # noqa: E402
 
@@ -134,6 +140,10 @@ def build_parser() -> argparse.ArgumentParser:
     move_lambdas.add_argument("--restart-holds", action="store_true",
                               help="force the holds Lambda to re-read its configuration")
     add_apply_flags(move_lambdas)
+    move_gateway = commands.add_parser(
+        "gateway", allow_abbrev=False,
+        help="move the live Gateway's authorizer and interceptor (dry run by default)")
+    gateway_release.add_arguments(move_gateway)
     return parser
 
 
@@ -292,8 +302,14 @@ def run_lambdas(args: argparse.Namespace, deps: Dependencies) -> int:
     return lambda_release.run(args, deps, say)
 
 
+def run_gateway(args: argparse.Namespace, deps: Dependencies) -> int:
+    """Plan, or apply and read back, the Gateway's move to a mode."""
+    return gateway_release.run(args, deps, say=say)
+
+
 HANDLERS = {"check": run_check, "interceptor": run_interceptor,
-            "interceptor-delete": run_interceptor_delete, "lambdas": run_lambdas}
+            "interceptor-delete": run_interceptor_delete, "lambdas": run_lambdas,
+            "gateway": run_gateway}
 
 
 def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int:
@@ -302,7 +318,8 @@ def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int
     deps = deps or default_dependencies()
     try:
         return HANDLERS[args.command](args, deps)
-    except (settings.ReleaseConfigError, interceptor_lambda.DeployError) as exc:
+    except (settings.ReleaseConfigError, interceptor_lambda.DeployError,
+            gateway_release.GatewayError) as exc:
         print(f"error: {mask(str(exc))}", file=sys.stderr)
         return EXIT_COULD_NOT_RUN
     except (BotoCoreError, ClientError) as exc:
