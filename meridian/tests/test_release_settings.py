@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -61,6 +62,37 @@ def test_each_design_says_which_layers_it_uses():
         False, True)
     assert (settings.uses_interceptor("interceptor"),
             settings.uses_cedar_binding("interceptor")) == (True, False)
+
+
+def test_each_mode_names_its_own_gateway_and_the_url_variable_the_cdk_wires():
+    assert settings.gateway_logical_name("iam") == "meridian-aurora"
+    assert settings.gateway_logical_name("jwt") == "meridian-aurora-jwt"
+    assert settings.gateway_physical_name("iam") == "meridianv2-meridian-aurora"
+    assert settings.gateway_physical_name("jwt") == "meridianv2-meridian-aurora-jwt"
+    assert settings.gateway_url_variable("iam") == "AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL"
+    assert settings.gateway_url_variable("jwt") == "AGENTCORE_GATEWAY_MERIDIAN_AURORA_JWT_URL"
+
+
+def test_an_unknown_mode_has_no_gateway_name():
+    with pytest.raises(settings.ReleaseConfigError, match="iam.*jwt"):
+        settings.gateway_physical_name("both")
+
+
+def test_the_gateway_names_fit_the_service_pattern_and_the_template_default():
+    template = json.loads(
+        (settings.AGENTCORE_DIR / "agentcore" / "agentcore.template.json").read_text())
+    pattern = re.compile(r"([0-9a-zA-Z][-]?){1,48}")
+    for mode in ("iam", "jwt"):
+        assert pattern.fullmatch(settings.gateway_physical_name(mode))
+    assert template["name"] == settings.PROJECT_NAME
+    assert [g["name"] for g in template["agentCoreGateways"]] == [
+        settings.gateway_logical_name("iam")]
+
+
+def test_the_two_gateway_names_differ_in_logical_id_and_in_the_url_variable():
+    names = {settings.gateway_logical_name(m) for m in ("iam", "jwt")}
+    variables = {settings.gateway_url_variable(m) for m in ("iam", "jwt")}
+    assert len(names) == len(variables) == 2
 
 
 def test_the_pool_settings_give_the_issuer_and_the_discovery_url():

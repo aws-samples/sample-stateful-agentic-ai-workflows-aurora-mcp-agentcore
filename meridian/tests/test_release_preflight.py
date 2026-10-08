@@ -837,3 +837,179 @@ def test_an_image_service_with_no_environment_has_empty_ones():
     service = {"SourceConfiguration": {"ImageRepository": {"ImageIdentifier": "x"}}}
 
     assert preflight.image_environment(service) == ({}, {})
+
+
+# ----------------------------------------------- the replaced Gateway, found by name
+
+
+@pytest.mark.parametrize("mode", ["iam", "jwt"])
+def test_each_modes_gateway_must_carry_that_modes_name(mode):
+    wrong = rs.mutated(rs.gateway(mode), "name", settings.gateway_physical_name(
+        "iam" if mode == "jwt" else "jwt"))
+
+    found = gateway_findings(wrong, mode)
+
+    assert len(found) == 1 and found[0].startswith("Gateway: name is ")
+    assert settings.gateway_physical_name(mode) in found[0]
+    assert "sync_agentcore_env.py --write" in found[0]
+
+
+def test_a_gateway_with_no_name_is_a_name_finding():
+    found = gateway_findings(rs.mutated(rs.gateway("jwt"), "name", None))
+
+    assert len(found) == 1 and "name" in found[0]
+
+
+def test_the_target_knows_its_modes_gateway_name():
+    assert rs.target("jwt").gateway_name == "meridianv2-meridian-aurora-jwt"
+    assert rs.target("iam").gateway_name == "meridianv2-meridian-aurora"
+
+
+def test_a_gateway_without_its_interceptor_is_fine_while_the_release_is_still_building():
+    bare = rs.mutated(rs.gateway("jwt"), "interceptorConfigurations", None)
+
+    assert preflight.check_gateway(bare, rs.target("jwt"), expect_interceptor=False) == []
+    assert any("no request interceptor" in line for line in gateway_findings(bare))
+
+
+def test_an_attached_interceptor_is_still_checked_when_it_is_not_required_yet():
+    wrong = rs.mutated(rs.gateway("jwt"), "interceptorConfigurations", [{
+        "interceptor": {"lambda": {"arn": "arn:aws:lambda:us-east-1:123456789012:function:x"}},
+        "interceptionPoints": ["REQUEST"], "inputConfiguration": {"passRequestHeaders": True}}])
+
+    found = preflight.check_gateway(wrong, rs.target("jwt"), expect_interceptor=False)
+
+    assert len(found) == 1 and "traveler-pin" in found[0]
+
+
+def gateway_list(*named, token=None):
+    page = {"items": [{"gatewayId": gid, "name": name} for name, gid in named]}
+    if token:
+        page["nextToken"] = token
+    return page
+
+
+def test_a_gateway_is_found_by_its_exact_name_across_pages():
+    control = Mock()
+    control.list_gateways.side_effect = [
+        gateway_list(("meridianv2-meridian-aurora-jwt-old", "gw-a"), token="next"),
+        gateway_list(("meridianv2-meridian-aurora-jwt", "gw-b"))]
+
+    assert preflight.find_gateway_id(control, "meridianv2-meridian-aurora-jwt") == "gw-b"
+    assert control.list_gateways.call_count == 2
+
+
+def test_a_gateway_that_does_not_exist_is_none_and_a_prefix_is_not_a_match():
+    control = Mock()
+    control.list_gateways.return_value = gateway_list(("meridianv2-meridian-aurora-jwt", "gw-b"))
+
+    assert preflight.find_gateway_id(control, "meridianv2-meridian-aurora") is None
+
+
+def test_two_gateways_with_one_name_are_refused_not_guessed():
+    control = Mock()
+    control.list_gateways.return_value = gateway_list(("same", "gw-a"), ("same", "gw-b"))
+
+    with pytest.raises(settings.ReleaseConfigError, match="more than one"):
+        preflight.find_gateway_id(control, "same")
+
+
+def test_a_repeating_gateway_page_token_stops_the_search():
+    control = Mock()
+    control.list_gateways.return_value = gateway_list(("x", "gw-a"), token="same")
+
+    with pytest.raises(settings.ReleaseConfigError, match="nextToken"):
+        preflight.find_gateway_id(control, "wanted")
+
+
+def test_a_gateway_that_the_settings_name_but_no_longer_exists_says_how_to_refresh():
+    from botocore.exceptions import ClientError
+
+    control = fake_control()
+    control.get_gateway.side_effect = ClientError(
+        {"Error": {"Code": "ResourceNotFoundException", "Message": "gone"}}, "GetGateway")
+
+    with pytest.raises(settings.ReleaseConfigError, match="sync_agentcore_env.py --write"):
+        preflight.read_state(control, rs.GATEWAY_ID, rs.RUNTIME_IDS)
+
+
+def test_any_other_gateway_read_error_is_not_swallowed():
+    from botocore.exceptions import ClientError
+
+    control = fake_control()
+    control.get_gateway.side_effect = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "no"}}, "GetGateway")
+
+    with pytest.raises(ClientError):
+        preflight.read_state(control, rs.GATEWAY_ID, rs.RUNTIME_IDS)
+
+
+# ---------------------------------------- the Runtimes point at the live Gateway
+
+
+def bound_state(mode="jwt", **changes):
+    gateway = rs.gateway(mode)
+    runtimes = {name: rs.runtime(name, mode) for name in rs.RUNTIME_IDS}
+    for path, value in changes.items():
+        name, _, key = path.partition("__")
+        runtimes[name] = rs.mutated(runtimes[name], f"environmentVariables.{key}", value)
+    return preflight.HopState(gateway=gateway, runtimes=runtimes,
+                              policies=rs.policy_modes(rs.BASE_POLICIES + [rs.BINDING_POLICY]))
+
+
+@pytest.mark.parametrize("mode", ["iam", "jwt"])
+def test_runtimes_bound_to_the_live_gateway_have_no_binding_findings(mode):
+    assert preflight.binding_findings(bound_state(mode), rs.target(mode)) == []
+
+
+def test_a_runtime_that_still_carries_the_replaced_gateways_url_is_a_finding():
+    state = bound_state(MeridianConcierge__AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL="https://old")
+
+    found = preflight.binding_findings(state, rs.target("jwt"))
+
+    assert len(found) == 1 and found[0].startswith("Runtime MeridianConcierge: ")
+    assert "AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL" in found[0] and "replaced" in found[0]
+
+
+def test_a_runtime_whose_gateway_url_is_not_the_live_gateways_is_a_finding():
+    state = bound_state(MeridianWorkflow__AGENTCORE_GATEWAY_MERIDIAN_AURORA_JWT_URL="https://x")
+
+    found = preflight.binding_findings(state, rs.target("jwt"))
+
+    assert len(found) == 1 and "MeridianWorkflow" in found[0] and "URL" in found[0]
+
+
+@pytest.mark.parametrize("variable", ["MERIDIAN_GATEWAY_ID", "MERIDIAN_POLICY_ENGINE_ID"])
+@pytest.mark.parametrize("value", ["other-id", None])
+def test_a_runtime_with_the_wrong_or_missing_gateway_or_engine_id_is_a_finding(variable, value):
+    state = bound_state(**{f"MeridianConcierge__{variable}": value})
+
+    found = preflight.binding_findings(state, rs.target("jwt"))
+
+    assert len(found) == 1 and variable in found[0]
+
+
+def test_a_gateway_with_no_engine_asks_nothing_of_the_runtimes_engine_variable():
+    state = bound_state()
+    state.gateway = rs.mutated(state.gateway, "policyEngineConfiguration", None)
+    for name in state.runtimes:
+        state.runtimes[name] = rs.mutated(
+            state.runtimes[name], "environmentVariables.MERIDIAN_POLICY_ENGINE_ID", None)
+
+    found = preflight.binding_findings(state, rs.target("jwt"))
+
+    assert found == []
+
+
+def test_the_binding_check_survives_a_state_of_garbage():
+    state = preflight.HopState(gateway=None, runtimes={"MeridianConcierge": None}, policies=None)
+
+    assert preflight.binding_findings(state, rs.target()) == []
+
+
+def test_the_hop_findings_include_the_binding_findings():
+    state = bound_state(MeridianConcierge__MERIDIAN_GATEWAY_ID="other-id")
+
+    found = preflight.hop_findings(state, rs.target("jwt"))
+
+    assert len(found) == 1 and "MERIDIAN_GATEWAY_ID" in found[0]

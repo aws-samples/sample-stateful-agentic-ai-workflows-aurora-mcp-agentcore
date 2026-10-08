@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from backend.agentcore.auth_mode import AUTH_MODE_ENV, IAM, MODES
+from backend.agentcore.auth_mode import AUTH_MODE_ENV, IAM, JWT, MODES
 
 ENFORCEMENT_ENV = "MERIDIAN_GATEWAY_ENFORCEMENT"
 BOTH, CEDAR, INTERCEPTOR = "both", "cedar", "interceptor"
@@ -22,6 +22,10 @@ COGNITO_KEYS = (
     "MERIDIAN_COGNITO_USER_POOL_ID",
     "MERIDIAN_COGNITO_APP_CLIENT_ID",
 )
+
+PROJECT_NAME = "meridianv2"
+GATEWAY_LOGICAL_NAMES = {IAM: "meridian-aurora", JWT: "meridian-aurora-jwt"}
+HOLDS_TARGET = "MeridianHolds"
 
 CONFIRM_FLAG = "--i-understand-this-changes-aws"
 INTERCEPTOR_FUNCTION = "meridian-gateway-traveler-pin"
@@ -103,6 +107,37 @@ def deployment_target(env: Mapping[str, str | None]) -> tuple[str, str]:
         raise ReleaseConfigError("AURORA_CLUSTER_ARN must be an Aurora cluster ARN; set it in "
                                  "meridian/.env")
     return parts[4], parts[3]
+
+
+def gateway_logical_name(mode: str) -> str:
+    """The Gateway's name in ``agentcore.json``; the CDK builds its logical id from it.
+
+    The ``jwt`` Gateway is a different resource from the ``iam`` one because CloudFormation cannot
+    change an existing Gateway's authorizer type: the only way to a token authorizer is a new
+    Gateway.
+
+    Raises:
+        ReleaseConfigError: When ``mode`` is neither ``iam`` nor ``jwt``.
+    """
+    try:
+        return GATEWAY_LOGICAL_NAMES[mode]
+    except KeyError:
+        raise ReleaseConfigError(
+            f"unknown release mode {mode!r}; expected 'iam' or 'jwt'") from None
+
+
+def gateway_physical_name(mode: str) -> str:
+    """The name ``get_gateway`` reports: the CDK prefixes the project name."""
+    return f"{PROJECT_NAME}-{gateway_logical_name(mode)}"
+
+
+def gateway_url_variable(mode: str) -> str:
+    """The Runtime environment variable the CDK sets to the Gateway's URL.
+
+    The CDK names it after the Gateway, so each mode's Gateway has its own variable and a
+    Runtime has exactly one of them.
+    """
+    return f"AGENTCORE_GATEWAY_{gateway_logical_name(mode).upper().replace('-', '_')}_URL"
 
 
 def interceptor_arn(account: str, region: str) -> str:

@@ -83,6 +83,11 @@ class Target:
     master_secret_arn: str | None = None
     backend_secret_arn: str | None = None
 
+    @property
+    def gateway_name(self) -> str:
+        """The name ``get_gateway`` reports for this mode's Gateway."""
+        return settings.gateway_physical_name(self.mode)
+
     def __post_init__(self) -> None:
         if self.mode not in MODES:
             raise settings.ReleaseConfigError(
@@ -145,7 +150,8 @@ def _authorizer_findings(subject: str, authorizer: Mapping[str, Any], target: Ta
     return found
 
 
-def _interceptor_findings(gateway: Mapping[str, Any], target: Target) -> list[str]:
+def _interceptor_findings(gateway: Mapping[str, Any], target: Target,
+                          expect_interceptor: bool = True) -> list[str]:
     raw = gateway.get("interceptorConfigurations")
     if raw is not None and not isinstance(raw, list):
         return ["Gateway: interceptorConfigurations is not a list"]
@@ -155,6 +161,8 @@ def _interceptor_findings(gateway: Mapping[str, Any], target: Target) -> list[st
             return ["Gateway: has an interceptor attached, but this design uses none"]
         return []
     if not attached:
+        if not expect_interceptor:
+            return []
         return ["Gateway: no request interceptor is attached, so the traveler is not pinned"]
     if len(attached) != 1:
         return [f"Gateway: has {len(attached)} interceptors, expected exactly one"]
@@ -176,11 +184,25 @@ def _interceptor_entry_findings(entry: Mapping[str, Any], target: Target) -> lis
     return found
 
 
-def check_gateway(gateway: Any, target: Target) -> list[str]:
-    """Findings for the Gateway's status, authorizer, interceptor and policy engine mode."""
+def _name_findings(gateway: Mapping[str, Any], target: Target) -> list[str]:
+    if gateway.get("name") == target.gateway_name:
+        return []
+    return [f"Gateway: name is {gateway.get('name')!r}, expected {target.gateway_name!r}; the "
+            f"Gateway in meridian/.env is not the {target.mode} release's Gateway (a deploy "
+            "replaces the Gateway when the mode changes; run scripts/sync_agentcore_env.py "
+            "--write once it has finished)"]
+
+
+def check_gateway(gateway: Any, target: Target, *, expect_interceptor: bool = True) -> list[str]:
+    """Findings for the Gateway's name, status, authorizer, interceptor and policy engine mode.
+
+    ``expect_interceptor=False`` is for a release that is still being built: the interceptor
+    is attached after the last deploy, so its absence is not yet a finding. One that is attached
+    is checked either way.
+    """
     if not isinstance(gateway, Mapping):
         return _unreadable("Gateway", gateway)
-    found = []
+    found = _name_findings(gateway, target)
     if gateway.get("status") != "READY":
         found.append(f"Gateway: status is {gateway.get('status')}, not READY")
     wanted = "CUSTOM_JWT" if target.mode == JWT else "AWS_IAM"
@@ -192,7 +214,7 @@ def check_gateway(gateway: Any, target: Target) -> list[str]:
     elif gateway.get("authorizerConfiguration"):
         found.append("Gateway: iam mode still has a leftover authorizerConfiguration "
                      "(a JWT authorizer block)")
-    found += _interceptor_findings(gateway, target)
+    found += _interceptor_findings(gateway, target, expect_interceptor)
     if _as_dict(gateway.get("policyEngineConfiguration")).get("mode") != "ENFORCE":
         found.append("Gateway: the policy engine is not attached in ENFORCE mode")
     return found
@@ -568,15 +590,106 @@ def _policy_modes(control: Any, engine_id: str) -> dict[str, str | None]:
         seen.add(token)
 
 
+def find_gateway_id(control: Any, name: str) -> str | None:
+    """The id of the Gateway called exactly ``name``, or ``None`` when there is none.
+
+    The name is the authority: a deploy that replaces the Gateway leaves the id in
+    ``meridian/.env`` pointing at a Gateway that is gone.
+
+    Raises:
+        ReleaseConfigError: When two Gateways carry the name, or a page token repeats.
+    """
+    found: list[str] = []
+    seen: set[str] = set()
+    token = None
+    while True:
+        page = _as_dict(control.list_gateways(**({"nextToken": token} if token else {})))
+        found += [entry["gatewayId"] for entry in _as_list(page.get("items"))
+                  if isinstance(entry, Mapping) and entry.get("name") == name
+                  and isinstance(entry.get("gatewayId"), str)]
+        token = page.get("nextToken")
+        if not token:
+            break
+        if not isinstance(token, str) or token in seen:
+            raise settings.ReleaseConfigError(
+                "list_gateways returned a nextToken it had already returned; cannot search all "
+                "of the Gateways")
+        seen.add(token)
+    if len(found) > 1:
+        raise settings.ReleaseConfigError(
+            f"more than one Gateway is called {name}; the release cannot tell which is meant")
+    return found[0] if found else None
+
+
+def _read_gateway(control: Any, gateway_id: str) -> Any:
+    try:
+        return control.get_gateway(gatewayIdentifier=gateway_id)
+    except ClientError as error:
+        if error.response.get("Error", {}).get("Code") != "ResourceNotFoundException":
+            raise
+        raise settings.ReleaseConfigError(
+            "the Gateway named by AGENTCORE_GATEWAY_URL in meridian/.env does not exist (a deploy "
+            "replaces the Gateway when the mode changes); run scripts/sync_agentcore_env.py "
+            "--write") from error
+
+
 def read_state(control: Any, gateway_id: str, runtime_ids: Mapping[str, str]) -> HopState:
     """Describe the Gateway, both Runtimes and the policy engine's active rules."""
-    gateway = control.get_gateway(gatewayIdentifier=gateway_id)
+    gateway = _read_gateway(control, gateway_id)
     runtimes = {name: control.get_agent_runtime(agentRuntimeId=runtime_id)
                 for name, runtime_id in runtime_ids.items()}
     engine_arn = _as_dict(_as_dict(gateway).get("policyEngineConfiguration")).get("arn")
     has_engine = isinstance(engine_arn, str) and bool(engine_arn)
     policies = _policy_modes(control, engine_arn.rsplit("/", 1)[-1]) if has_engine else {}
     return HopState(gateway=gateway, runtimes=runtimes, policies=policies)
+
+
+def _engine_id(gateway: Mapping[str, Any]) -> str | None:
+    arn = _as_dict(gateway.get("policyEngineConfiguration")).get("arn")
+    return arn.rsplit("/", 1)[-1] if isinstance(arn, str) and arn else None
+
+
+def _binding_variables(gateway: Mapping[str, Any], target: Target) -> dict[str, str | None]:
+    """The Runtime variables that must name the live Gateway, and the value each must hold."""
+    expected: dict[str, str | None] = {
+        settings.gateway_url_variable(target.mode): gateway.get("gatewayUrl"),
+        "MERIDIAN_GATEWAY_ID": gateway.get("gatewayId")}
+    engine = _engine_id(gateway)
+    if engine:
+        expected["MERIDIAN_POLICY_ENGINE_ID"] = engine
+    return expected
+
+
+def _runtime_binding_findings(name: str, runtime: Any, gateway: Mapping[str, Any],
+                              target: Target) -> list[str]:
+    environment = _as_dict(_as_dict(runtime).get("environmentVariables"))
+    found = []
+    for variable, wanted in _binding_variables(gateway, target).items():
+        if environment.get(variable) != wanted:
+            found.append(f"Runtime {name}: {variable} is not the live Gateway's value, so the "
+                         "Runtime is not wired to it; redeploy with the stage render")
+    other = settings.gateway_url_variable(IAM if target.mode == JWT else JWT)
+    if other in environment:
+        found.append(f"Runtime {name}: still carries {other}, the replaced Gateway's URL")
+    return found
+
+
+def binding_findings(state: HopState, target: Target) -> list[str]:
+    """Findings for a Runtime that is not wired to the live Gateway after a replacement.
+
+    The CDK sets the Gateway's URL on each Runtime under a variable named for the Gateway, and
+    the render sets the Gateway's and the engine's ids; all must name the Gateway that is live.
+    A state that could not be read is left to ``hop_findings``' other checks.
+    """
+    gateway = state.gateway
+    if not isinstance(gateway, Mapping):
+        return []
+    runtimes = _as_dict(state.runtimes)
+    found: list[str] = []
+    for name in RUNTIME_NAMES.values():
+        if isinstance(runtimes.get(name), Mapping):
+            found += _runtime_binding_findings(name, runtimes[name], gateway, target)
+    return found
 
 
 def hop_findings(state: HopState, target: Target) -> list[str]:
@@ -588,7 +701,7 @@ def hop_findings(state: HopState, target: Target) -> list[str]:
             found += check_runtime(name, runtimes[name], target)
         else:
             found.append(f"Runtime {name}: was not read")
-    return found + check_policies(state.policies, target)
+    return found + binding_findings(state, target) + check_policies(state.policies, target)
 
 
 def refuse_if_any(findings: list[str], mode: str) -> None:

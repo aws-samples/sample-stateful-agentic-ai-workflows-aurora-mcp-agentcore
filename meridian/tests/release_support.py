@@ -17,7 +17,9 @@ COGNITO_ENV = {
     "MERIDIAN_COGNITO_APP_CLIENT_ID": CLIENT,
 }
 GATEWAY_ID = "meridianv2-meridian-aurora-abcde12345"
-ENGINE_ARN = f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT}:policy-engine/meridianv2_Engine-abc"
+ENGINE_ID = "meridianv2_Engine-abc"
+ENGINE_ARN = f"arn:aws:bedrock-agentcore:{REGION}:{ACCOUNT}:policy-engine/{ENGINE_ID}"
+GATEWAY_URL = f"https://{GATEWAY_ID}.gateway.bedrock-agentcore.{REGION}.amazonaws.com/mcp"
 INTERCEPTOR_ARN = f"arn:aws:lambda:{REGION}:{ACCOUNT}:function:{settings.INTERCEPTOR_FUNCTION}"
 GATEWAY_ROLE = f"arn:aws:iam::{ACCOUNT}:role/AgentCore-meridianv2-gateway-role"
 RUNTIME_IDS = {"MeridianConcierge": "meridianv2_MeridianConcierge-LpDBbFBjsc",
@@ -52,7 +54,8 @@ def gateway(mode: str = "jwt", design: str = settings.BOTH) -> dict:
     """``get_gateway`` for a Gateway in the given mode."""
     described = {
         "gatewayId": GATEWAY_ID, "status": "READY", "roleArn": GATEWAY_ROLE,
-        "name": "meridian-aurora", "protocolType": "MCP",
+        "gatewayUrl": GATEWAY_URL, "name": settings.gateway_physical_name(mode),
+        "protocolType": "MCP",
         "policyEngineConfiguration": {"arn": ENGINE_ARN, "mode": "ENFORCE"},
         "authorizerType": "AWS_IAM",
     }
@@ -72,13 +75,16 @@ def runtime(name: str, mode: str = "jwt", *, iam_env: bool = False) -> dict:
     """``get_agent_runtime`` for a Runtime in the given mode."""
     described = {
         "agentRuntimeId": RUNTIME_IDS[name], "status": "READY",
-        "roleArn": f"arn:aws:iam::{ACCOUNT}:role/{name}", "environmentVariables": {}}
+        "roleArn": f"arn:aws:iam::{ACCOUNT}:role/{name}",
+        "environmentVariables": {
+            settings.gateway_url_variable(mode): GATEWAY_URL,
+            "MERIDIAN_GATEWAY_ID": GATEWAY_ID, "MERIDIAN_POLICY_ENGINE_ID": ENGINE_ID}}
     if mode == "jwt":
         described["authorizerConfiguration"] = jwt_authorizer()
         described["requestHeaderConfiguration"] = {"requestHeaderAllowlist": ["Authorization"]}
-        described["environmentVariables"] = {"MERIDIAN_AGENTCORE_AUTH": "jwt"}
+        described["environmentVariables"]["MERIDIAN_AGENTCORE_AUTH"] = "jwt"
     elif iam_env:
-        described["environmentVariables"] = {"MERIDIAN_AGENTCORE_AUTH": "iam"}
+        described["environmentVariables"]["MERIDIAN_AGENTCORE_AUTH"] = "iam"
     return described
 
 
