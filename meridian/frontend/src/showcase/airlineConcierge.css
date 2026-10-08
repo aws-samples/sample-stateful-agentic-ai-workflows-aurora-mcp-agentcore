@@ -725,30 +725,33 @@
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip:hover:not(:disabled) {
   background: var(--mds-surface-2); border-color: var(--mds-tint);
 }
-/* Green marks an example this capability supports; yellow points to the next
+/* Starters sit on a neutral surface with the primary label color. A small rung accent
+   carries the meaning: green for an example this capability supports, yellow for the next
    capability. These are teaching cues, not receipts for an executed request. */
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip.is-works {
   --mds-starter-color: var(--mds-green);
-  --mds-starter-fill: var(--mds-green-fill);
 }
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip.is-stretch {
   --mds-starter-color: var(--mds-yellow);
-  --mds-starter-fill: var(--mds-yellow-fill);
-  border-style: dashed;
 }
-.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip:is(.is-works, .is-stretch),
+.mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip:is(.is-works, .is-stretch) {
+  border-left: 3px solid var(--mds-starter-color);
+  padding-left: 8px;
+}
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip:is(.is-works, .is-stretch):hover:not(:disabled) {
-  border-color: var(--mds-starter-color);
-  background: var(--mds-starter-fill);
+  border-color: var(--mds-label-3);
+  border-left-color: var(--mds-starter-color);
+  background: var(--mds-surface-2);
 }
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip small {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: var(--mds-starter-color);
+  color: var(--mds-label-2);
+  font-weight: var(--mds-weight-semibold);
 }
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip small > svg {
-  display: block; flex: none; width: 1em; height: 1em;
+  display: block; flex: none; width: 1em; height: 1em; color: var(--mds-starter-color);
 }
 .mds-root[data-theme] .mds-chat-composer-wrap.is-proof .mds-chat-starter-chip:focus-visible {
   outline: 2px solid var(--mds-tint); outline-offset: 2px;
@@ -783,24 +786,23 @@
 }
 .mds-root[data-theme] .mc-ladder-empty-card {
   --mds-starter-color: var(--mds-green);
-  --mds-starter-fill: var(--mds-green-fill);
   flex: 1 1 320px; max-width: 520px; min-height: 120px; padding: 20px 24px;
   display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
   gap: 10px; text-align: left; cursor: pointer;
-  border: 1px solid var(--mds-starter-color); border-radius: var(--mds-radius-m);
-  background: var(--mds-starter-fill); color: var(--mds-label);
+  border: 1px solid var(--mds-control-line); border-left: 4px solid var(--mds-starter-color);
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface); color: var(--mds-label);
   font: var(--mds-type-title-3); font-family: var(--mds-font);
 }
 .mds-root[data-theme] .mc-ladder-empty-card.is-stretch {
   --mds-starter-color: var(--mds-yellow);
-  --mds-starter-fill: var(--mds-yellow-fill);
-  border-style: dashed;
 }
 .mds-root[data-theme] .mc-ladder-empty-card small {
-  display: inline-flex; align-items: center; gap: 6px; color: var(--mds-starter-color);
+  display: inline-flex; align-items: center; gap: 6px; color: var(--mds-label-2);
   font: var(--mds-type-body); font-weight: var(--mds-weight-semibold);
 }
-.mds-root[data-theme] .mc-ladder-empty-card:hover:not(:disabled) { border-color: var(--mds-tint); }
+.mds-root[data-theme] .mc-ladder-empty-card small > svg { color: var(--mds-starter-color); }
+.mds-root[data-theme] .mc-ladder-empty-card:hover:not(:disabled) { border-color: var(--mds-label-3); border-left-color: var(--mds-starter-color); background: var(--mds-surface-2); }
 .mds-root[data-theme] .mc-ladder-empty-card:focus-visible {
   outline: 2px solid var(--mds-tint); outline-offset: 2px;
 }

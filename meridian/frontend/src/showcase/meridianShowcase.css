@@ -761,12 +761,12 @@
    injected on hast by rehypeMemoryHighlight, so it survives skipHtml and
    reapplies as the typewriter reveals each phrase. */
 .mds-md mark.mds-memory-highlight {
-  color: var(--mds-yellow);
-  background: var(--mds-yellow-fill);
-  border-bottom: 2px solid var(--mds-yellow);
-  border-radius: var(--mds-radius-s);
-  padding: 1px 4px;
-  font-weight: var(--mds-weight-bold);
+  color: inherit;
+  background: var(--mds-memory-fill);
+  border-bottom: 2px solid var(--mds-memory);
+  border-radius: var(--mds-radius-s) var(--mds-radius-s) 0 0;
+  padding: 1px 5px;
+  font-weight: var(--mds-weight-semibold);
   /* Keep multi-word phrases from breaking their tint across a line wrap. */
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;

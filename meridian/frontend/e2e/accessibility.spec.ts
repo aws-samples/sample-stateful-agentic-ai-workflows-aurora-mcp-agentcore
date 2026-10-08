@@ -280,6 +280,65 @@ for (const theme of ['light', 'dark']) for (const present of [false, true]) {
   });
 }
 
+for (const theme of ['light', 'dark']) {
+  test(`${theme} ladder pills: neutral surfaces, rung accents and memory highlights keep contrast`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await mockLiveCatalog(page);
+    await page.route('**/api/chat', route => route.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify({
+        message: 'Flying from your home airport, JFK, I found a boutique hotel with a no red-eye return.',
+        conversation_id: 'pill-contrast', memory_facts: [], activities: [],
+      }),
+    }));
+    await page.goto(`/showcase?view=ladder&theme=${theme}`);
+    await page.getByRole('button', { name: /^Phase 4,/ }).click();
+    const cards = page.locator('.mc-ladder-empty-card');
+    await expect(cards).toHaveCount(2);
+    const colors = await page.locator('.mds-root').evaluate(el => {
+      const css = getComputedStyle(el);
+      return Object.fromEntries(['--mds-green', '--mds-yellow', '--mds-memory', '--mds-surface', '--mds-ground']
+        .map(token => [token, css.getPropertyValue(token).trim()]));
+    });
+    for (const [index, accent] of [colors['--mds-green'], colors['--mds-yellow']].entries()) {
+      const card = cards.nth(index);
+      const painted = await card.evaluate(el => {
+        const css = getComputedStyle(el);
+        const tag = getComputedStyle(el.querySelector('small')!);
+        return { label: css.color, tag: tag.color, surface: css.backgroundColor, edge: css.borderTopColor,
+          wraps: el.querySelector('small')!.getBoundingClientRect().height > parseFloat(tag.lineHeight) * 1.5 };
+      });
+      expect(contrastRatio(painted.label, painted.surface), `card ${index} label`).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(painted.tag, painted.surface), `card ${index} tag`).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(painted.edge, painted.surface), `card ${index} edge`).toBeGreaterThanOrEqual(3);
+      expect(contrastRatio(accent, painted.surface), `card ${index} rung accent`).toBeGreaterThanOrEqual(3);
+      expect(painted.wraps, `card ${index} tag stays on one line`).toBe(false);
+    }
+    await page.getByRole('switch', { name: 'Use traveler context: off', exact: true }).click();
+    const input = page.getByRole('textbox', { name: 'Ask Meridian anything' });
+    await input.fill('Show me Tokyo trips');
+    await input.press('Enter');
+    const marks = page.locator('mark.mds-memory-highlight');
+    await expect(marks.first()).toBeVisible();
+    await expect(marks).not.toHaveCount(0);
+    const mark = await marks.first().evaluate((el, ground) => {
+      const css = getComputedStyle(el);
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 1;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = ground;
+      ctx.fillRect(0, 0, 1, 1);
+      ctx.fillStyle = css.backgroundColor;
+      ctx.fillRect(0, 0, 1, 1);
+      const [r, g, b] = Array.from(ctx.getImageData(0, 0, 1, 1).data);
+      return { text: css.color, fill: `rgb(${r}, ${g}, ${b})`, underline: css.borderBottomColor,
+        body: getComputedStyle(el.parentElement!).color };
+    }, colors['--mds-ground']);
+    expect(mark.text, 'memory text keeps the body color').toBe(mark.body);
+    expect(contrastRatio(mark.text, mark.fill), 'memory text on tint').toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(mark.underline, mark.fill), 'memory underline on tint').toBeGreaterThanOrEqual(3);
+  });
+}
+
 test('offline notice is one content-height strip in every surface', async ({ page }) => {
   for (const [width, height] of [[1920, 1080], [1280, 720]]) {
     await page.setViewportSize({ width, height });

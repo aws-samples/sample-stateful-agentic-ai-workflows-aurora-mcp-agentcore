@@ -20,6 +20,8 @@
   --mds-yellow: #f3c300;
   --mds-red: #fe897a;
   --mds-cyan: #64d2ff;
+  --mds-memory: #b79dff;
+  --mds-memory-fill: color-mix(in srgb, var(--mds-memory) 22%, transparent);
   --mds-blue-fill: color-mix(in srgb, var(--mds-blue) 16%, var(--mds-surface));
   --mds-green-fill: color-mix(in srgb, var(--mds-green) 16%, var(--mds-surface));
   --mds-yellow-fill: color-mix(in srgb, var(--mds-yellow) 16%, var(--mds-surface));
@@ -63,6 +65,8 @@
   --mds-yellow: #785f03;
   --mds-red: #c60213;
   --mds-cyan: #056897;
+  --mds-memory: #6b3fd6;
+  --mds-memory-fill: color-mix(in srgb, var(--mds-memory) 14%, transparent);
   --mds-blue-fill: color-mix(in srgb, var(--mds-blue) 10%, var(--mds-surface));
   --mds-green-fill: color-mix(in srgb, var(--mds-green) 10%, var(--mds-surface));
   --mds-yellow-fill: color-mix(in srgb, var(--mds-yellow) 10%, var(--mds-surface));
