@@ -26,6 +26,8 @@ import urllib.request
 from functools import partial
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.demo_prompts import PROMPT_LADDER  # noqa: E402
@@ -33,6 +35,8 @@ from scripts.agentcore_caller import (  # noqa: E402
     TRAVELER_USERS, bearer_headers, require_token_safe_url, traveler_for_user,
 )
 from scripts.published import load_record, release_url  # noqa: E402
+
+load_dotenv()
 
 LOCAL_URL = "http://127.0.0.1:8013"
 TRAVELER_ID = "trv_meridian_demo"

@@ -18,11 +18,14 @@ from pathlib import Path
 from typing import Mapping
 
 import httpx
+from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.agents.phase_05_workflow.state import SNAPSHOT_STORE  # noqa: E402
 from scripts.agentcore_caller import bearer_headers  # noqa: E402
+
+load_dotenv()
 
 BASE = "http://127.0.0.1:8013"
 TRAVELER = os.getenv("DEMO_TRAVELER_ID", "trv_meridian_demo")

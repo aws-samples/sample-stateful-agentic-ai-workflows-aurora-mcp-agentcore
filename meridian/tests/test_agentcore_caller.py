@@ -80,3 +80,19 @@ def test_the_gateway_smoke_script_lists_and_calls_inside_a_caller_scope(monkeypa
     monkeypatch.setattr(sys, "argv", ["smoke_gateway_tools.py"])
     assert smoke_gateway_tools.main() == 0
     assert bound == ["jordan-token", "jordan-token"]
+
+
+@pytest.mark.parametrize("script", [
+    "smoke_workflow_runtime.py", "warm_demo.py", "validate_demo.py",
+])
+def test_a_script_that_signs_in_reads_the_mode_from_dotenv(script):
+    """Without load_dotenv the script sees no jwt mode, signs with IAM and a jwt Runtime refuses it."""
+    import ast
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "scripts" / script).read_text()
+    called = {
+        node.func.id for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "load_dotenv" in called

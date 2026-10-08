@@ -6,10 +6,14 @@ import asyncio
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.agentcore.workflow_runtime import get_workflow_runtime, workflow_session_id  # noqa: E402
 from scripts.agentcore_caller import caller_scope  # noqa: E402
+
+load_dotenv()
 
 
 def main() -> int:
