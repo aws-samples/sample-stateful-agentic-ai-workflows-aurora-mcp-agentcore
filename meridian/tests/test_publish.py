@@ -169,15 +169,28 @@ def test_the_refusal_names_the_runbook():
         publish.check_workflow_runtime(control_returning("FAILED"), WORKFLOW_ARN)
 
 
-def planned_publish(monkeypatch, tmp_path, control):
+class Commands(list):
+    """The commands publish() ran; ``envs`` keeps the extra environment each one was given."""
+
+    def __init__(self):
+        super().__init__()
+        self.envs = []
+
+    def env_of(self, *command):
+        return next(env for ran, env in self.envs if ran == command)
+
+
+def planned_publish(monkeypatch, tmp_path, control, dotenv=None, outputs=None):
     """Prepare the mocks and files for publish(); return the list that records the commands.
 
-    This does not run publish(). The caller does, and the list fills as it runs.
+    This does not run publish(). The caller does, and the list fills as it runs. ``dotenv`` is
+    what meridian/.env and the process environment hold (default: nothing, so iam mode).
     """
-    commands = []
+    commands = Commands()
     cdk_out = tmp_path / "infra" / "cdk.out"
     cdk_out.mkdir(parents=True)
     template = {"Outputs": {"ServiceEnvironment": {"Value": json.dumps(hosted_environment())}}}
+    monkeypatch.setattr(publish, "release_environment", lambda: dict(dotenv or {}))
     (cdk_out / "MeridianWebBackend.template.json").write_text(json.dumps(template))
     session = Mock()
     clients = {"sts": Mock(), "apprunner": Mock(), "cloudformation": Mock(),
@@ -186,19 +199,23 @@ def planned_publish(monkeypatch, tmp_path, control):
     clients["apprunner"].describe_service.return_value = {"Service": {
         "Status": "RUNNING", "ServiceUrl": "x.example.com"}}
     complete = {"Stacks": [{"StackStatus": "UPDATE_COMPLETE"}]}
-    clients["cloudformation"].describe_stacks.return_value = complete
+    clients["cloudformation"].describe_stacks.side_effect = lambda StackName: (
+        {"Stacks": [{"StackStatus": "UPDATE_COMPLETE", "Outputs": [
+            {"OutputKey": key, "OutputValue": value} for key, value in outputs.items()]}]}
+        if StackName == "MeridianIdentity" and outputs is not None else complete)
     clients["secretsmanager"].describe_secret.return_value = {"ARN": "arn:secret"}
     session.client.side_effect = lambda name, **kwargs: clients[name]
     monkeypatch.setattr(publish.boto3, "Session", lambda **kwargs: session)
     monkeypatch.setattr(publish, "container_engine", lambda: "finch")
-    monkeypatch.setattr(publish, "run", lambda command, cwd, env=None: commands.append(command))
+    monkeypatch.setattr(publish, "run", lambda command, cwd, env=None: (
+        commands.append(command), commands.envs.append((tuple(command), env or {}))))
     monkeypatch.setattr(publish, "INFRA", tmp_path / "infra")
     return commands
 
 
 SERVICE_ARN = "arn:aws:apprunner:us-east-1:123456789012:service/meridian-web/abc123"
 ARGS = SimpleNamespace(account="123456789012", region="us-east-1", apply=False,
-                       service_arn=SERVICE_ARN)
+                       stage=False, tighten=False, service_arn=SERVICE_ARN)
 
 
 def test_a_dry_run_refuses_an_unready_workflow_runtime_before_the_diff(monkeypatch, tmp_path):
@@ -213,3 +230,168 @@ def test_a_dry_run_with_a_ready_workflow_runtime_reaches_the_diff(monkeypatch, t
     commands = planned_publish(monkeypatch, tmp_path, control_returning("READY"))
     publish.publish(ARGS)
     assert commands[-1] == ["npx", "cdk", "diff", "--no-change-set"]
+
+
+# ------------------------------------------------------------- the jwt release
+
+POOL = "us-east-1_AbCdEfGhI"
+CLIENT = "exampleclientid123"
+IDENTITY_OUTPUTS = {
+    "UserPoolId": POOL, "AppClientId": CLIENT,
+    "HostedUiDomain": "meridian-travelers-9cb4a1.auth.us-east-1.amazoncognito.com",
+    "Issuer": f"https://cognito-idp.us-east-1.amazonaws.com/{POOL}",
+}
+JWT_DOTENV = {
+    "MERIDIAN_AGENTCORE_AUTH": "jwt",
+    "MERIDIAN_COGNITO_REGION": "us-east-1",
+    "MERIDIAN_COGNITO_USER_POOL_ID": POOL,
+    "MERIDIAN_COGNITO_APP_CLIENT_ID": CLIENT,
+}
+
+
+def jwt_publish(monkeypatch, tmp_path, **overrides):
+    commands = planned_publish(
+        monkeypatch, tmp_path, control_returning("READY"), dotenv={**JWT_DOTENV, **overrides},
+        outputs=IDENTITY_OUTPUTS)
+    return commands
+
+
+def test_the_jwt_service_has_no_shared_token_secret_or_loopback_switch():
+    service = existing()
+    service["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"][
+        "RuntimeEnvironmentSecrets"]["MERIDIAN_API_TOKEN"] = "old-reference"
+    service["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"][
+        "RuntimeEnvironmentVariables"]["MERIDIAN_ALLOW_INSECURE_LOCALHOST"] = "1"
+    before = deepcopy(service)
+
+    definition = publish.service_definition(
+        service, "new", {"MERIDIAN_AGENTCORE_AUTH": "jwt"},
+        {"AccessRoleArn": "pull", "InstanceRoleArn": "task"}, "token-reference", "jwt")
+
+    config = definition["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"]
+    assert config["RuntimeEnvironmentSecrets"] == {"OTHER_SECRET": "other-reference"}
+    assert "MERIDIAN_ALLOW_INSECURE_LOCALHOST" not in config["RuntimeEnvironmentVariables"]
+    assert config["RuntimeEnvironmentVariables"]["EXISTING_SETTING"] == "preserve"
+    assert config["RuntimeEnvironmentVariables"]["MERIDIAN_AGENTCORE_AUTH"] == "jwt"
+    assert service == before
+
+
+def test_the_iam_service_definition_removes_what_only_the_jwt_release_set():
+    service = existing()
+    variables = service["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"][
+        "RuntimeEnvironmentVariables"]
+    variables.update({"MERIDIAN_AGENTCORE_AUTH": "jwt", **{
+        key: "x" for key in JWT_DOTENV if key.startswith("MERIDIAN_COGNITO")}})
+
+    definition = publish.service_definition(
+        service, "new", {"AWS_REGION": "us-east-1"},
+        {"AccessRoleArn": "pull", "InstanceRoleArn": "task"}, "token-reference")
+
+    config = definition["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"]
+    assert set(config["RuntimeEnvironmentVariables"]) == {"EXISTING_SETTING", "AWS_REGION"}
+    assert config["RuntimeEnvironmentSecrets"]["MERIDIAN_API_TOKEN"] == "token-reference"
+
+
+def test_the_signed_in_build_gets_the_pool_from_the_stack_outputs_and_must_not_ship_ungated():
+    assert publish.frontend_build_environment("jwt", IDENTITY_OUTPUTS) == {
+        "VITE_API_BASE_URL": "", "VITE_API_ORIGIN": "", "VITE_REQUIRE_SIGN_IN": "1",
+        "VITE_COGNITO_DOMAIN": IDENTITY_OUTPUTS["HostedUiDomain"],
+        "VITE_COGNITO_CLIENT_ID": CLIENT,
+    }
+
+
+def test_the_iam_build_blanks_any_sign_in_setting_the_shell_exported():
+    assert publish.frontend_build_environment("iam", None) == {
+        "VITE_API_BASE_URL": "", "VITE_API_ORIGIN": "", "VITE_REQUIRE_SIGN_IN": "",
+        "VITE_COGNITO_DOMAIN": "", "VITE_COGNITO_CLIENT_ID": "",
+    }
+
+
+def test_identity_outputs_are_read_from_the_stack_and_a_missing_one_is_named():
+    cfn = Mock()
+    cfn.describe_stacks.return_value = {"Stacks": [{"Outputs": [
+        {"OutputKey": key, "OutputValue": value} for key, value in IDENTITY_OUTPUTS.items()]}]}
+    assert publish.identity_outputs(cfn) == IDENTITY_OUTPUTS
+    cfn.describe_stacks.assert_called_once_with(StackName="MeridianIdentity")
+    cfn.describe_stacks.return_value = {"Stacks": [{"Outputs": [
+        {"OutputKey": "UserPoolId", "OutputValue": POOL}]}]}
+    with pytest.raises(RuntimeError, match="AppClientId, HostedUiDomain, Issuer"):
+        publish.identity_outputs(cfn)
+
+
+def test_the_stack_and_the_env_file_must_name_the_same_pool_and_client():
+    cognito = publish.settings.cognito_settings(JWT_DOTENV)
+    publish.check_outputs_match_settings(IDENTITY_OUTPUTS, cognito)
+    for key in ("UserPoolId", "AppClientId"):
+        with pytest.raises(RuntimeError, match=key):
+            publish.check_outputs_match_settings({**IDENTITY_OUTPUTS, key: "other"}, cognito)
+
+
+def test_a_jwt_plan_builds_the_signed_in_site_and_tells_cdk_the_mode_and_the_host(
+        monkeypatch, tmp_path):
+    commands = jwt_publish(monkeypatch, tmp_path)
+
+    publish.publish(ARGS)
+
+    build = commands.env_of("npm", "run", "build")
+    assert build["VITE_REQUIRE_SIGN_IN"] == "1"
+    assert build["VITE_COGNITO_CLIENT_ID"] == CLIENT
+    synth = commands.env_of("npx", "cdk", "synth", "--quiet")
+    assert synth["MERIDIAN_AGENTCORE_AUTH"] == "jwt"
+    assert synth["MERIDIAN_COGNITO_HOSTED_UI_DOMAIN"] == IDENTITY_OUTPUTS["HostedUiDomain"]
+    assert "MERIDIAN_TIGHTEN_ROLE" not in synth
+
+
+def test_an_iam_plan_builds_without_sign_in_and_passes_no_pool(monkeypatch, tmp_path):
+    commands = planned_publish(monkeypatch, tmp_path, control_returning("READY"))
+
+    publish.publish(ARGS)
+
+    assert commands.env_of("npm", "run", "build")["VITE_REQUIRE_SIGN_IN"] == ""
+    synth = commands.env_of("npx", "cdk", "synth", "--quiet")
+    assert synth["MERIDIAN_AGENTCORE_AUTH"] == "iam"
+    assert "MERIDIAN_COGNITO_HOSTED_UI_DOMAIN" not in synth
+
+
+def test_tighten_sets_the_role_switch_only_in_jwt_mode(monkeypatch, tmp_path):
+    commands = jwt_publish(monkeypatch, tmp_path)
+    publish.publish(SimpleNamespace(**{**vars(ARGS), "tighten": True}))
+    assert commands.env_of("npx", "cdk", "synth", "--quiet")["MERIDIAN_TIGHTEN_ROLE"] == "1"
+
+    commands = planned_publish(monkeypatch, tmp_path / "iam", control_returning("READY"))
+    with pytest.raises(ValueError, match="--tighten applies only to the jwt release"):
+        publish.publish(SimpleNamespace(**{**vars(ARGS), "tighten": True}))
+    assert ["npx", "cdk", "synth", "--quiet"] not in commands
+
+
+def test_a_jwt_plan_without_the_identity_stack_is_refused_before_the_build(
+        monkeypatch, tmp_path):
+    commands = planned_publish(
+        monkeypatch, tmp_path, control_returning("READY"), dotenv=JWT_DOTENV, outputs={})
+
+    with pytest.raises(RuntimeError, match="MeridianIdentity has no output"):
+        publish.publish(ARGS)
+    assert ["npm", "run", "build"] not in commands
+
+
+def test_stage_builds_and_pushes_the_image_and_changes_nothing_else(monkeypatch, tmp_path):
+    commands = jwt_publish(monkeypatch, tmp_path)
+    monkeypatch.setattr(publish, "LOCAL", tmp_path / ".local")
+    (tmp_path / ".local").mkdir()
+    (tmp_path / ".local" / "MeridianWebBackend-outputs.json").write_text(
+        json.dumps({"MeridianWebBackend": {"ImageUri": "ecr/image:tag"}}))
+
+    publish.publish(SimpleNamespace(**{**vars(ARGS), "stage": True}))
+
+    deploys = [c for c in commands if c[:3] == ["npx", "cdk", "deploy"]]
+    assert [c[3] for c in deploys] == ["MeridianWebBackend"]
+    assert ["npx", "cdk", "diff", "--no-change-set"] not in commands
+
+
+def test_stage_and_apply_cannot_be_combined():
+    with pytest.raises(SystemExit):
+        publish.build_parser().parse_args(
+            ["--account", "1", "--service-arn", "x", "--stage", "--apply"])
+    parsed = publish.build_parser().parse_args(
+        ["--account", "1", "--service-arn", "x", "--tighten"])
+    assert parsed.tighten is True and parsed.stage is False

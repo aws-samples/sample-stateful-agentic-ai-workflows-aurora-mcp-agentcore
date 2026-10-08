@@ -24,12 +24,25 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from botocore.paginate import Paginator
+from dotenv import dotenv_values
 
 MERIDIAN = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(MERIDIAN))
+
+from backend.agentcore.auth_mode import JWT  # noqa: E402
+from scripts.identity_release import settings  # noqa: E402
+
 INFRA = MERIDIAN / "infra"
 LOCAL = MERIDIAN / ".local"
 STACKS = ("MeridianWebRoles", "MeridianWebBackend", "MeridianWeb")
 SECRET_NAME = "meridian/web/api-token"
+IDENTITY_STACK = "MeridianIdentity"
+IDENTITY_OUTPUTS = ("UserPoolId", "AppClientId", "HostedUiDomain", "Issuer")
+JWT_ONLY_VARIABLES = (
+    "MERIDIAN_AGENTCORE_AUTH", "MERIDIAN_COGNITO_REGION", "MERIDIAN_COGNITO_USER_POOL_ID",
+    "MERIDIAN_COGNITO_APP_CLIENT_ID",
+)
+JWT_FORBIDDEN_VARIABLES = ("MERIDIAN_API_TOKEN", "MERIDIAN_ALLOW_INSECURE_LOCALHOST")
 SERVICE_WAIT_SECONDS = 1200
 CONFIG = Config(connect_timeout=10, read_timeout=30, retries={"mode": "standard", "total_max_attempts": 3})
 
@@ -86,15 +99,74 @@ def check_workflow_runtime(control, arn: str) -> None:
         )
 
 
-def service_definition(service: dict, image_uri: str, environment: dict, roles: dict, secret_arn: str) -> dict:
-    """Preserve service settings and replace the legacy plaintext token with a reference."""
+def release_environment() -> dict:
+    """meridian/.env under the process environment, the way the other release scripts read it."""
+    return {**dotenv_values(MERIDIAN / ".env"), **os.environ}
+
+
+def identity_outputs(cfn) -> dict:
+    """The identity stack's outputs, which the signed-in site is built from.
+
+    Raises:
+        RuntimeError: When the stack lacks an output the site or the content security policy needs.
+    """
+    stack = cfn.describe_stacks(StackName=IDENTITY_STACK)["Stacks"][0]
+    outputs = {item["OutputKey"]: item["OutputValue"] for item in stack.get("Outputs", [])}
+    missing = [key for key in IDENTITY_OUTPUTS if key not in outputs]
+    if missing:
+        raise RuntimeError(
+            f"{IDENTITY_STACK} has no output {', '.join(missing)}; deploy the identity stack "
+            "first (docs/OPERATIONS.md, Sign-in and who is calling)")
+    return outputs
+
+
+def check_outputs_match_settings(outputs: dict, cognito: settings.CognitoSettings) -> None:
+    """The site signs in to the stack's client; the backend verifies the .env client. Same one."""
+    for key, expected in (("UserPoolId", cognito.pool_id), ("AppClientId", cognito.client_id)):
+        if outputs[key] != expected:
+            raise RuntimeError(
+                f"{IDENTITY_STACK} output {key} differs from meridian/.env; run "
+                "scripts/sync_cognito_env.py --write so the site and the backend trust one client")
+
+
+def frontend_build_environment(mode: str, outputs: dict | None) -> dict:
+    """The VITE_ settings of the production build, which the process environment sets last.
+
+    The signed-in build must fail rather than ship ungated, hence VITE_REQUIRE_SIGN_IN. An iam
+    build blanks all three so a variable exported in the operator's shell cannot gate it.
+    """
+    base = {"VITE_API_BASE_URL": "", "VITE_API_ORIGIN": ""}
+    if mode != JWT:
+        return {**base, "VITE_REQUIRE_SIGN_IN": "", "VITE_COGNITO_DOMAIN": "",
+                "VITE_COGNITO_CLIENT_ID": ""}
+    return {**base, "VITE_REQUIRE_SIGN_IN": "1", "VITE_COGNITO_DOMAIN": outputs["HostedUiDomain"],
+            "VITE_COGNITO_CLIENT_ID": outputs["AppClientId"]}
+
+
+def service_definition(service: dict, image_uri: str, environment: dict, roles: dict,
+                       secret_arn: str, mode: str = "iam") -> dict:
+    """Preserve service settings; the mode decides the shared token and the sign-in settings.
+
+    In ``iam`` the legacy plaintext token becomes a secret reference and the settings only the jwt
+    release sets are removed, so this is also the rollback. In ``jwt`` there is no shared token:
+    the secret reference and the loopback switch are removed.
+    """
     current = service["SourceConfiguration"]
     image = current["ImageRepository"]
     config = dict(image.get("ImageConfiguration", {}))
     variables = {**config.get("RuntimeEnvironmentVariables", {}), **environment}
+    secrets = dict(config.get("RuntimeEnvironmentSecrets", {}))
     variables.pop("MERIDIAN_API_TOKEN", None)
+    if mode == JWT:
+        for key in JWT_FORBIDDEN_VARIABLES:
+            variables.pop(key, None)
+        secrets.pop("MERIDIAN_API_TOKEN", None)
+    else:
+        for key in JWT_ONLY_VARIABLES:
+            variables.pop(key, None)
+        secrets["MERIDIAN_API_TOKEN"] = secret_arn
     config["RuntimeEnvironmentVariables"] = variables
-    config["RuntimeEnvironmentSecrets"] = {**config.get("RuntimeEnvironmentSecrets", {}), "MERIDIAN_API_TOKEN": secret_arn}
+    config["RuntimeEnvironmentSecrets"] = secrets
     config.setdefault("Port", "8000")
     return {
         "SourceConfiguration": {
@@ -146,8 +218,23 @@ def cdk_deploy(stack: str, env: dict) -> dict:
     return json.loads(outputs.read_text())[stack]
 
 
-def publish(args) -> None:
-    session = boto3.Session(region_name=args.region)
+def cdk_environment(base: dict, mode: str, outputs: dict | None, tighten: bool) -> dict:
+    """What `cdk synth` and `cdk deploy` need to know about the release."""
+    env = {**base, "MERIDIAN_AGENTCORE_AUTH": mode}
+    if mode == JWT:
+        env["MERIDIAN_COGNITO_HOSTED_UI_DOMAIN"] = outputs["HostedUiDomain"]
+        if tighten:
+            env["MERIDIAN_TIGHTEN_ROLE"] = "1"
+    return env
+
+
+def inspect_target(session, args) -> tuple:
+    """Check the account, the running service, the three stacks and the origin token secret.
+
+    Returns:
+        The App Runner client, the service description, the CloudFormation client and the
+        origin token secret.
+    """
     actual = session.client("sts", config=CONFIG).get_caller_identity()["Account"]
     validate_target(args.account, args.region, args.service_arn, actual)
     client = session.client("apprunner", config=CONFIG)
@@ -162,30 +249,16 @@ def publish(args) -> None:
     secret = session.client("secretsmanager", config=CONFIG).describe_secret(SecretId=SECRET_NAME)
     if secret.get("DeletedDate"):
         raise RuntimeError("Origin token secret is scheduled for deletion")
-    engine = container_engine()
-    env = {"CDK_DOCKER": engine, "MERIDIAN_WEB_REGION": args.region, "AWS_DEFAULT_REGION": args.region,
-           "AWS_REGION": args.region, "CDK_DEFAULT_REGION": args.region, "CDK_DEFAULT_ACCOUNT": args.account,
-           "MERIDIAN_BACKEND_HOST": service["ServiceUrl"]}
-    run(["npm", "ci"], MERIDIAN / "frontend")
-    # Hosted clients use CloudFront's authenticated, same-origin /api route.
-    run(["npm", "run", "build"], MERIDIAN / "frontend", {"VITE_API_BASE_URL": "", "VITE_API_ORIGIN": ""})
-    run(["npm", "ci"], INFRA)
-    run(["npm", "run", "build"], INFRA)
-    run(["npx", "cdk", "synth", "--quiet"], INFRA, env)
-    template = json.loads((INFRA / "cdk.out" / "MeridianWebBackend.template.json").read_text())
-    service_environment = json.loads(template["Outputs"]["ServiceEnvironment"]["Value"])
-    validate_environment(service_environment, args.account, args.region)
-    control = session.client("bedrock-agentcore-control", config=CONFIG)
-    check_workflow_runtime(control, service_environment["AGENTCORE_WORKFLOW_RUNTIME_ARN"])
-    # Template-only diff is read-only: it does not create a change set or publish assets.
-    run(["npx", "cdk", "diff", "--no-change-set"], INFRA, env)
-    if not args.apply:
-        print("Plan complete. No hosted resources changed. Repeat with --apply to execute.")
-        return
+    return client, service, cfn, secret
+
+
+def deploy_release(client, args, env: dict, service: dict, secret_arn: str, mode: str) -> None:
+    """Deploy the roles, the image, the service and the site in order, with a release receipt."""
     LOCAL.mkdir(mode=0o700, exist_ok=True)
     receipt_path = LOCAL / "hosted-release.json"
     receipt = {"startedAt": datetime.now(timezone.utc).isoformat(), "account": args.account,
                "region": args.region, "serviceArn": args.service_arn, "status": "in_progress",
+               "identityMode": mode,
                "previousImage": service["SourceConfiguration"]["ImageRepository"]["ImageIdentifier"]}
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
     receipt_path.chmod(0o600)
@@ -195,7 +268,8 @@ def publish(args) -> None:
     # is bounded and never treats a failed service update as permission to delete it.
     time.sleep(30)
     latest = client.describe_service(ServiceArn=args.service_arn)["Service"]
-    definition = service_definition(latest, backend["ImageUri"], json.loads(backend["ServiceEnvironment"]), roles, secret["ARN"])
+    definition = service_definition(
+        latest, backend["ImageUri"], json.loads(backend["ServiceEnvironment"]), roles, secret_arn, mode)
     update_service(client, latest, definition)
     site = cdk_deploy(STACKS[2], env)
     receipt.update({"status": "deployed_pending_verification", "image": backend["ImageUri"], "site": site,
@@ -204,13 +278,64 @@ def publish(args) -> None:
     print(f"Deployed. Non-secret release receipt: {receipt_path}. Run authenticated hosted validation next.")
 
 
-def main() -> int:
+def publish(args) -> None:
+    dotenv = release_environment()
+    mode = settings.release_mode(dotenv)
+    if args.tighten and mode != JWT:
+        raise ValueError("--tighten applies only to the jwt release (MERIDIAN_AGENTCORE_AUTH=jwt)")
+    session = boto3.Session(region_name=args.region)
+    client, service, cfn, secret = inspect_target(session, args)
+    outputs = None
+    if mode == JWT:
+        outputs = identity_outputs(cfn)
+        check_outputs_match_settings(outputs, settings.cognito_settings(dotenv))
+    engine = container_engine()
+    env = cdk_environment(
+        {"CDK_DOCKER": engine, "MERIDIAN_WEB_REGION": args.region, "AWS_DEFAULT_REGION": args.region,
+         "AWS_REGION": args.region, "CDK_DEFAULT_REGION": args.region,
+         "CDK_DEFAULT_ACCOUNT": args.account, "MERIDIAN_BACKEND_HOST": service["ServiceUrl"]},
+        mode, outputs, args.tighten)
+    run(["npm", "ci"], MERIDIAN / "frontend")
+    # Hosted clients use CloudFront's same-origin /api route; a jwt build is the signed-in site.
+    run(["npm", "run", "build"], MERIDIAN / "frontend", frontend_build_environment(mode, outputs))
+    run(["npm", "ci"], INFRA)
+    run(["npm", "run", "build"], INFRA)
+    run(["npx", "cdk", "synth", "--quiet"], INFRA, env)
+    template = json.loads((INFRA / "cdk.out" / "MeridianWebBackend.template.json").read_text())
+    service_environment = json.loads(template["Outputs"]["ServiceEnvironment"]["Value"])
+    validate_environment(service_environment, args.account, args.region)
+    control = session.client("bedrock-agentcore-control", config=CONFIG)
+    check_workflow_runtime(control, service_environment["AGENTCORE_WORKFLOW_RUNTIME_ARN"])
+    if args.stage:
+        backend = cdk_deploy(STACKS[1], env)
+        print(f"Staged the image {backend['ImageUri']} and built the site. The roles, the service "
+              "and the site are unchanged.")
+        return
+    # Template-only diff is read-only: it does not create a change set or publish assets.
+    run(["npx", "cdk", "diff", "--no-change-set"], INFRA, env)
+    if not args.apply:
+        print("Plan complete. No hosted resources changed. Repeat with --apply to execute.")
+        return
+    deploy_release(client, args, env, service, secret["ARN"], mode)
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--account", required=True)
     parser.add_argument("--region", default="us-east-1")
     parser.add_argument("--service-arn", required=True)
-    parser.add_argument("--apply", action="store_true")
-    args = parser.parse_args()
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--apply", action="store_true")
+    action.add_argument("--stage", action="store_true",
+                        help="build the site and push the backend image; change nothing live")
+    parser.add_argument("--tighten", action="store_true",
+                        help="jwt release only: drop the master and shared-token secret grants "
+                             "from the App Runner instance role")
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
     try:
         publish(args)
     except ClientError as exc:
