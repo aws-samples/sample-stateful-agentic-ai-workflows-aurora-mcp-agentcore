@@ -62,7 +62,8 @@ def wired(monkeypatch):
 
 def test_a_confirmed_booking_becomes_a_confirmed_order(wired):
     wired["use"](_outcome())
-    request = BookingRequest(booking_id="HLD-1", conversation_id="conv-1")
+    request = BookingRequest(
+        booking_id="HLD-1", conversation_id="conv-1", traveler_id="trv_meridian_demo")
 
     response = asyncio.run(production_booking(request))
 

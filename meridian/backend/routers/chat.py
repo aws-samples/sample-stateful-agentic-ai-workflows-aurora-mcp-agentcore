@@ -48,6 +48,7 @@ from backend.timing import clock, elapsed_ms
 from backend.logging_config import log_exception, log_search, log_order, log_error, log_turn_start, log_turn_complete, log_activity_entry
 from backend.agentcore.errors import CallerCredentialError
 from backend.http_auth import (
+    CURRENT_TRAVELER,
     HttpPrincipal,
     authorize_traveler,
     require_http_principal,
@@ -2414,7 +2415,7 @@ class OrderRequest(BaseModel):
     size: Optional[str] = Field(default=None, min_length=1, max_length=50)
     quantity: int = Field(default=1, gt=0, le=12)
     phase: Literal[1, 2, 3, 4, 5]
-    traveler_id: str = Field(default="trv_meridian_demo", min_length=1, max_length=50)
+    traveler_id: str = Field(default=CURRENT_TRAVELER, min_length=1, max_length=50)
     action: Literal["hold"] = "hold"
     # Phase 4 holds run inside the conversation's AgentCore Memory session, so
     # the showcase passes the active conversation id along with the hold.
@@ -2521,7 +2522,7 @@ class BookingRequest(BaseModel):
     """Request model for confirming a held package. Catalog inventory only, no payment."""
     booking_id: str = Field(min_length=1, max_length=50)
     phase: Literal[4] = 4
-    traveler_id: str = Field(default="trv_meridian_demo", min_length=1, max_length=50)
+    traveler_id: str = Field(default=CURRENT_TRAVELER, min_length=1, max_length=50)
     conversation_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
 
 
