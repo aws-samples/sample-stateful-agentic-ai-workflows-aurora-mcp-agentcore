@@ -6,7 +6,7 @@ import json
 import re
 import stat
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -337,3 +337,75 @@ def test_files_that_are_not_snapshots_are_ignored(world, tmp_path):
     (tmp_path / "snapshot-notes.json").write_text("{}")
 
     assert snapshot.latest_complete(tmp_path) == (None, [])
+
+
+# ------------------------------------------------------- placeholders, names, structure
+
+
+def test_a_placeholder_inside_a_longer_string_is_found():
+    node = {"a": "see <token> here", "b": ["x", {"c": "k=<redacted>"}], "d": "clean"}
+
+    assert snapshot.placeholders(node) == ["a", "b[1].c"]
+
+
+def test_a_non_secret_name_that_contains_token_is_kept(world):
+    world.runtimes[rs.RUNTIME_IDS["MeridianConcierge"]]["environmentVariables"][
+        "TOKEN_USE"] = "access"
+    saved = ss.taken(world)
+
+    assert saved["runtimes"]["MeridianConcierge"]["environmentVariables"]["TOKEN_USE"] == "access"
+    assert not [path for path in saved["redacted"] if "TOKEN_USE" in path]
+
+
+def test_the_redacted_paths_are_covered_by_the_integrity_hash(world, tmp_path):
+    world.runtimes[rs.RUNTIME_IDS["MeridianConcierge"]]["environmentVariables"][
+        "NOTE"] = "prefix " + ss.PLANTED[2]
+    path = snapshot.write(ss.taken(world), tmp_path, NOW)
+    document = json.loads(path.read_text())
+    assert document["redacted"] == ["runtimes.MeridianConcierge.environmentVariables.NOTE"]
+    document["redacted"] = []
+    path.write_text(json.dumps(document))
+
+    with pytest.raises(snapshot.SnapshotError, match="integrity"):
+        snapshot.load(path)
+
+
+def test_the_name_and_the_time_are_in_utc_whatever_the_zone_of_now(world, tmp_path):
+    local = datetime(2026, 10, 8, 17, 30, 5, tzinfo=timezone(timedelta(hours=5)))
+
+    path = snapshot.write(ss.taken(world), tmp_path, local)
+
+    assert path.name == "snapshot-20261008T123005Z.json"
+    assert snapshot.utc_stamp(local) == "20261008T123005Z"
+
+
+def test_a_time_without_a_zone_is_refused(world, tmp_path):
+    with pytest.raises(snapshot.SnapshotError, match="time zone"):
+        snapshot.write(ss.taken(world), tmp_path, datetime(2026, 10, 8, 12, 30, 5))
+
+
+def test_a_snapshot_file_others_can_read_is_refused(world, tmp_path):
+    path = snapshot.write(ss.taken(world), tmp_path, NOW)
+    path.chmod(0o644)
+
+    with pytest.raises(snapshot.SnapshotError, match="0600"):
+        snapshot.load(path)
+
+
+@pytest.mark.parametrize("change", [
+    lambda d: d.update(mode="sideways"),
+    lambda d: d.pop("takenAt"),
+    lambda d: d.update(account=12),
+    lambda d: d.update(gateway=[]),
+    lambda d: d.update(runtimes=[]),
+    lambda d: d["service"].pop("ServiceArn"),
+    lambda d: d.update(baselineFindings="x"),
+    lambda d: d.update(redacted="x"),
+])
+def test_a_snapshot_with_a_malformed_top_level_is_refused_by_load(world, tmp_path, change):
+    saved = json.loads(json.dumps(ss.taken(world)))
+    change(saved)
+    path = snapshot.write(saved, tmp_path, NOW)
+
+    with pytest.raises(snapshot.SnapshotError, match="snapshot-"):
+        snapshot.load(path)

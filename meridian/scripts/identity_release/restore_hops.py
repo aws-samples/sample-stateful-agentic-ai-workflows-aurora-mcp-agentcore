@@ -7,15 +7,17 @@ Gateway, the Runtimes and the service are replaced whole, so every field the API
 The roles stack and the Cedar rules belong to CloudFormation and ``agentcore deploy``; they have a
 ``check`` and a printed remedy, and nothing here deletes them.
 
-Nothing here deletes anything. A hop whose saved copy holds a redaction placeholder is refused
-rather than restored with the placeholder.
+Nothing here deletes anything. A hop whose saved copy was redacted anywhere, or holds a
+placeholder inside any string, is refused rather than restored with the placeholder.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 import botocore.session
@@ -26,9 +28,10 @@ from scripts.identity_release import lambda_release, preflight, snapshot
 
 WAIT_ATTEMPTS = 60
 POLL_SECONDS = 5
-MAX_LINES = 14
 CONTROL = "bedrock-agentcore-control"
 STATUS_PREFIX = "status "
+NOT_RESTORABLE = "not restorable here: "
+PENDING_RESTART = "ssm"
 
 
 class RestoreRefused(RuntimeError):
@@ -46,6 +49,7 @@ class Context:
     sleep: Callable[[float], None]
     stamp: str
     pending: set[str] = field(default_factory=set)
+    journal: Callable[[], None] = lambda: None
 
     @property
     def target(self) -> preflight.Target:
@@ -56,27 +60,30 @@ class Context:
 
 @dataclass(frozen=True)
 class Step:
-    """One hop: how to compare it, how to restore it (``None``: not by this tool), the remedy."""
+    """One hop: how to compare it, how to restore it (``None``: not by this tool), the remedy.
+
+    ``needs`` names the steps that must not have failed for this one to run.
+    """
 
     name: str
     check: Callable[[Context], list[str]]
     restore: Callable[[Context], None] | None = None
     remedy: Callable[[Context], list[str]] | None = None
+    needs: tuple[str, ...] = ()
 
 
 # ----------------------------------------------------------------------- helpers
 
 
-def short(value: Any) -> str:
-    """A value as one short line; absent as ``(absent)``."""
+def show(value: Any) -> str:
+    """A value as one line, in full; absent as ``(absent)``."""
     if value is None:
         return "(absent)"
-    text = value if isinstance(value, str) else json.dumps(value, sort_keys=True)
-    return text if len(text) <= 70 else text[:67] + "..."
+    return value if isinstance(value, str) else json.dumps(value, sort_keys=True)
 
 
 def differences(current: Any, saved: Any, path: str = "") -> list[str]:
-    """Lines for each place ``current`` differs from ``saved`` (values shortened)."""
+    """Lines for each place ``current`` differs from ``saved``, with both values in full."""
     if isinstance(current, dict) and isinstance(saved, dict):
         lines: list[str] = []
         for key in sorted(set(current) | set(saved)):
@@ -84,25 +91,22 @@ def differences(current: Any, saved: Any, path: str = "") -> list[str]:
         return lines
     if current == saved:
         return []
-    return [f"{path}: {short(current)} -> {short(saved)}"]
+    return [f"{path}: {show(current)} -> {show(saved)}"]
 
 
 def compare(label: str, current: Mapping[str, Any], saved: Mapping[str, Any]) -> list[str]:
-    """Differences between redacted views, capped, labelled with the hop."""
+    """Every difference between redacted views, labelled with the hop."""
     cleaned, _ = snapshot.redact(dict(current))
-    lines = [f"{label} {line}" for line in differences(cleaned, dict(saved))]
-    if len(lines) > MAX_LINES:
-        lines = lines[:MAX_LINES] + [f"{label} ... and {len(lines) - MAX_LINES} more"]
-    return lines
+    return [f"{label} {line}" for line in differences(cleaned, dict(saved))]
 
 
-def refuse_placeholders(label: str, saved_view: Any) -> None:
-    """Refuse a saved view that holds a redaction placeholder.
+def refuse_placeholders(ctx: Context, label: str, saved_view: Any, prefix: str) -> None:
+    """Refuse a hop whose saved copy was redacted or holds a placeholder in any string.
 
     Raises:
         RestoreRefused: Naming the paths (never values).
     """
-    paths = snapshot.placeholders(saved_view)
+    paths = snapshot.redacted_under(ctx.saved, prefix) + snapshot.placeholders(saved_view)
     if paths:
         raise RestoreRefused(
             f"{label}: the saved copy holds redacted value(s) at {', '.join(paths[:5])}; a "
@@ -115,10 +119,16 @@ def new_findings(ctx: Context, lines: list[str]) -> list[str]:
     return [f"new finding: {line}" for line in lines if line not in known]
 
 
+@lru_cache(maxsize=None)
+def input_shape(service: str, operation: str) -> Any:
+    """The installed botocore model's input shape for ``operation``."""
+    model = botocore.session.get_session().get_service_model(service)
+    return model.operation_model(operation).input_shape
+
+
 def request_problems(service: str, operation: str, arguments: Mapping[str, Any]) -> list[str]:
     """Where ``arguments`` is not a valid call for the installed service model."""
-    model = botocore.session.get_session().get_service_model(service)
-    shape = model.operation_model(operation).input_shape
+    shape = input_shape(service, operation)
     report = ParamValidator().validate(dict(arguments), shape)
     return [report.generate_report()] if report.has_errors() else []
 
@@ -158,13 +168,22 @@ def code_of(error: ClientError) -> str:
 # ----------------------------------------------------------------------- Gateway
 
 
-def gateway_check(ctx: Context) -> list[str]:
+def gateway_arguments(ctx: Context) -> dict[str, Any]:
+    """The complete, model-valid ``update_gateway`` request for the saved Gateway."""
     saved = ctx.saved["gateway"]
     if saved.get("gatewayId") != ctx.where.gateway_id:
         raise RestoreRefused("Gateway: the saved copy is for another Gateway than the configured "
                              "one")
     view = snapshot.gateway_view(saved)
-    refuse_placeholders("Gateway", view)
+    refuse_placeholders(ctx, "Gateway", view, "gateway")
+    arguments = {"gatewayIdentifier": ctx.where.gateway_id, **view}
+    require_valid(CONTROL, "UpdateGateway", arguments)
+    return arguments
+
+
+def gateway_check(ctx: Context) -> list[str]:
+    arguments = gateway_arguments(ctx)
+    view = {k: v for k, v in arguments.items() if k != "gatewayIdentifier"}
     current = ctx.clients.control.get_gateway(gatewayIdentifier=ctx.where.gateway_id)
     lines = compare("Gateway", snapshot.gateway_view(current), view)
     if current.get("status") != "READY":
@@ -173,9 +192,7 @@ def gateway_check(ctx: Context) -> list[str]:
 
 
 def gateway_restore(ctx: Context) -> None:
-    arguments = {"gatewayIdentifier": ctx.where.gateway_id,
-                 **snapshot.gateway_view(ctx.saved["gateway"])}
-    require_valid(CONTROL, "UpdateGateway", arguments)
+    arguments = gateway_arguments(ctx)
     settle(ctx, lambda: gateway_busy(ctx), "the Gateway")
     ctx.clients.control.update_gateway(**arguments)
 
@@ -188,15 +205,24 @@ def gateway_busy(ctx: Context) -> list[str]:
 # ---------------------------------------------------------------------- Runtimes
 
 
-def runtime_check(ctx: Context, name: str) -> list[str]:
+def runtime_arguments(ctx: Context, name: str) -> dict[str, Any]:
+    """The complete, model-valid ``update_agent_runtime`` request for the saved Runtime."""
     saved = ctx.saved["runtimes"][name]
     runtime_id = ctx.where.runtime_ids[name]
     if saved.get("agentRuntimeId") != runtime_id:
         raise RestoreRefused(f"Runtime {name}: the saved copy is for another Runtime than the "
                              "configured one")
     view = snapshot.runtime_view(saved)
-    refuse_placeholders(f"Runtime {name}", view)
-    current = ctx.clients.control.get_agent_runtime(agentRuntimeId=runtime_id)
+    refuse_placeholders(ctx, f"Runtime {name}", view, f"runtimes.{name}")
+    arguments = {"agentRuntimeId": runtime_id, **view}
+    require_valid(CONTROL, "UpdateAgentRuntime", arguments)
+    return arguments
+
+
+def runtime_check(ctx: Context, name: str) -> list[str]:
+    arguments = runtime_arguments(ctx, name)
+    view = {k: v for k, v in arguments.items() if k != "agentRuntimeId"}
+    current = ctx.clients.control.get_agent_runtime(agentRuntimeId=ctx.where.runtime_ids[name])
     lines = compare(f"Runtime {name}", snapshot.runtime_view(current), view)
     if current.get("status") != "READY":
         lines.append(f"{STATUS_PREFIX}{current.get('status')}, not READY")
@@ -204,9 +230,8 @@ def runtime_check(ctx: Context, name: str) -> list[str]:
 
 
 def runtime_restore(ctx: Context, name: str) -> None:
+    arguments = runtime_arguments(ctx, name)
     runtime_id = ctx.where.runtime_ids[name]
-    arguments = {"agentRuntimeId": runtime_id, **snapshot.runtime_view(ctx.saved["runtimes"][name])}
-    require_valid(CONTROL, "UpdateAgentRuntime", arguments)
 
     def busy() -> list[str]:
         status = ctx.clients.control.get_agent_runtime(agentRuntimeId=runtime_id).get("status")
@@ -228,11 +253,20 @@ def service_arn(ctx: Context) -> str:
     return arn
 
 
-def service_check(ctx: Context) -> list[str]:
+def service_arguments(ctx: Context) -> dict[str, Any]:
+    """The complete, model-valid ``update_service`` request for the saved service."""
     arn = service_arn(ctx)
     view = snapshot.service_view(ctx.saved["service"])
-    refuse_placeholders("Service", view)
-    current = ctx.clients.apprunner.describe_service(ServiceArn=arn)["Service"]
+    refuse_placeholders(ctx, "Service", view, "service")
+    arguments = {"ServiceArn": arn, **view}
+    require_valid("apprunner", "UpdateService", arguments)
+    return arguments
+
+
+def service_check(ctx: Context) -> list[str]:
+    arguments = service_arguments(ctx)
+    view = {k: v for k, v in arguments.items() if k != "ServiceArn"}
+    current = ctx.clients.apprunner.describe_service(ServiceArn=arguments["ServiceArn"])["Service"]
     lines = compare("Service", snapshot.service_view(current), view)
     if current.get("Status") != "RUNNING":
         lines.append(f"{STATUS_PREFIX}{current.get('Status')}, not RUNNING")
@@ -242,9 +276,8 @@ def service_check(ctx: Context) -> list[str]:
 
 
 def service_restore(ctx: Context) -> None:
-    arn = service_arn(ctx)
-    arguments = {"ServiceArn": arn, **snapshot.service_view(ctx.saved["service"])}
-    require_valid("apprunner", "UpdateService", arguments)
+    arguments = service_arguments(ctx)
+    arn = arguments["ServiceArn"]
 
     def busy() -> list[str]:
         status = ctx.clients.apprunner.describe_service(ServiceArn=arn)["Service"].get("Status")
@@ -259,7 +292,8 @@ def service_restore(ctx: Context) -> None:
 
 def site_check(ctx: Context) -> list[str]:
     saved = ctx.saved["site"]
-    refuse_placeholders("Site", [saved["viewerFunction"], saved["responseHeadersPolicy"]])
+    refuse_placeholders(ctx, "Site", [saved["viewerFunction"], saved["responseHeadersPolicy"]],
+                        "site")
     cloudfront = ctx.clients.cloudfront
     live = snapshot.read_viewer(cloudfront, "LIVE")
     lines = []
@@ -274,9 +308,9 @@ def site_check(ctx: Context) -> list[str]:
                      policy["config"])
     config = cloudfront.get_distribution_config(Id=saved["distributionId"])["DistributionConfig"]
     if snapshot.behaviors_of(config) != saved["behaviors"]:
-        lines.append("Site distribution: the behaviors' function associations or response "
-                     "headers policy differ; this command does not rewrite the distribution, "
-                     "run publish.py in the saved mode")
+        lines.append(f"{NOT_RESTORABLE}Site distribution: the behaviors' function associations "
+                     "or response headers policy differ; this command does not rewrite the "
+                     "distribution")
     return lines
 
 
@@ -302,6 +336,31 @@ def site_restore(ctx: Context) -> None:
 # --------------------------------------------------------- roles stack and rules
 
 
+def printable_commit(commit: str) -> str:
+    """The commit as it can be printed whole: a 12-digit run would be masked as an account id,
+    so such a commit is shortened to 11 characters."""
+    return commit[:11] if re.search(r"\d{12}", commit) else commit
+
+
+def checkout_lines(ctx: Context) -> list[str]:
+    """How to get a checkout of the snapshot's commit, with the ids taken from ``.env``."""
+    commit = printable_commit(str(ctx.saved["commit"]))
+    folder = f".local/worktrees/rollback-{commit[:11]}"
+    return [
+        f"MANUAL (ASK FIRST): run the next commands from a checkout of the snapshot's commit "
+        f"{commit}, not from the current one (the current code would deploy the new release "
+        "again):",
+        f"  from the repository root: git worktree add {folder} {commit}",
+        f"  then: cd {folder}/meridian and copy your meridian/.env into it",
+        "  set ACCOUNT, REGION and SERVICE_ARN from your own meridian/.env (AURORA_CLUSTER_ARN "
+        "gives the account and Region); this output never prints them",
+    ]
+
+
+def finish_line() -> str:
+    return "  then re-run rollback to re-attach the interceptor and verify"
+
+
 def roles_check(ctx: Context) -> list[str]:
     saved = ctx.saved["roles"]
     stack = ctx.clients.cfn.describe_stacks(StackName=snapshot.ROLES_STACK)["Stacks"][0]
@@ -315,11 +374,12 @@ def roles_check(ctx: Context) -> list[str]:
     return lines
 
 
-def roles_remedy(ctx: Context) -> list[str]:
-    return [f"MANUAL (ASK FIRST): MERIDIAN_AGENTCORE_AUTH={ctx.saved['mode']} python "
-            f"scripts/publish.py --account {ctx.where.account} --region {ctx.where.region} "
-            f"--service-arn {ctx.where.service_arn} --apply   (redeploys the roles stack, "
-            "the service and the site from the code; run it after the steps above)"]
+def publish_remedy(ctx: Context) -> list[str]:
+    """Redeploy the roles stack, the service and the site in the saved mode, from that commit."""
+    return [*checkout_lines(ctx),
+            f"  MERIDIAN_AGENTCORE_AUTH={ctx.saved['mode']} python scripts/publish.py "
+            '--account "$ACCOUNT" --region "$REGION" --service-arn "$SERVICE_ARN" --apply',
+            finish_line()]
 
 
 def rules_check(ctx: Context) -> list[str]:
@@ -328,10 +388,12 @@ def rules_check(ctx: Context) -> list[str]:
 
 
 def rules_remedy(ctx: Context) -> list[str]:
-    return [f"MANUAL (ASK FIRST): from meridian/: MERIDIAN_AGENTCORE_AUTH={ctx.saved['mode']} "
-            "python scripts/render_agentcore_config.py, then in meridian_agentcore/: "
-            "/opt/homebrew/bin/agentcore deploy -y   (the rules are deployed with the Runtimes; "
-            "this command never deletes one)"]
+    return [*checkout_lines(ctx),
+            f"  MERIDIAN_AGENTCORE_AUTH={ctx.saved['mode']} "
+            "python scripts/render_agentcore_config.py",
+            "  cd ../meridian_agentcore && /opt/homebrew/bin/agentcore deploy -y   (the rules are "
+            "deployed with the Runtimes; this command never deletes one)",
+            finish_line()]
 
 
 # ------------------------------------------------------------------------ Lambdas
@@ -351,12 +413,14 @@ def ssm_check(ctx: Context) -> list[str]:
         found = None
     if found == saved["value"]:
         return []
-    ctx.pending.add("ssm")
-    return [f"SSM {saved['name']}: {short(found)} -> {short(saved['value'])}"]
+    ctx.pending.add(PENDING_RESTART)
+    return [f"SSM {saved['name']}: {show(found)} -> {show(saved['value'])}"]
 
 
 def ssm_restore(ctx: Context) -> None:
     saved = ctx.saved["lambdas"]["ssmSecretArn"]
+    ctx.pending.add(PENDING_RESTART)
+    ctx.journal()
     ctx.clients.ssm.put_parameter(Name=saved["name"], Value=saved["value"], Type=saved["type"],
                                   Overwrite=True)
 
@@ -372,13 +436,14 @@ def settle_lambda(lam: Any, function: str) -> None:
 
 
 def environment_lines(ctx: Context, label: str, function: str, saved: Mapping[str, str],
-                      restart: bool = False) -> list[str]:
-    refuse_placeholders(label, dict(saved))
+                      prefix: str, restart: bool = False) -> list[str]:
+    refuse_placeholders(ctx, label, dict(saved), prefix)
     configuration = ctx.clients.lam.get_function_configuration(FunctionName=function)
-    current = snapshot.read_environment(configuration)
+    current = snapshot.read_environment(configuration, label)
     lines = compare(label, current, dict(saved))
     variables = (configuration.get("Environment") or {}).get("Variables") or {}
-    if restart and "ssm" in ctx.pending and variables.get(lambda_release.MARKER) != ctx.stamp:
+    if restart and PENDING_RESTART in ctx.pending \
+            and variables.get(lambda_release.MARKER) != ctx.stamp:
         lines.append(f"{label}: restart needed so it reads the restored parameter")
     return lines
 
@@ -396,14 +461,23 @@ def holds_function(ctx: Context) -> str:
 def holds_check(ctx: Context) -> list[str]:
     function = holds_function(ctx)
     return environment_lines(ctx, "Lambda holds", function,
-                             ctx.saved["lambdas"]["holds"]["environment"], restart=True)
+                             ctx.saved["lambdas"]["holds"]["environment"], "lambdas.holds",
+                             restart=True)
 
 
 def apply_environment(ctx: Context, function: str, saved: Mapping[str, str],
                       marker: bool) -> None:
+    """Replace the function's environment with ``saved`` and verify the whole map afterwards.
+
+    Raises:
+        RestoreRefused: When the environment cannot be read in full before, a wait runs out, or
+            the environment afterwards is not exactly the one sent.
+    """
     lam = ctx.clients.lam
+    label = function.rsplit(":", 1)[-1]
     settle_lambda(lam, function)
     configuration = lam.get_function_configuration(FunctionName=function)
+    snapshot.read_environment(configuration, label)
     variables = dict(saved)
     if marker:
         variables[lambda_release.MARKER] = ctx.stamp
@@ -411,17 +485,24 @@ def apply_environment(ctx: Context, function: str, saved: Mapping[str, str],
     lam.update_function_configuration(
         FunctionName=function, Environment={"Variables": variables}, **revision)
     settle_lambda(lam, function)
+    after = lam.get_function_configuration(FunctionName=function)
+    if (after.get("Environment") or {}).get("Variables") != variables:
+        raise RestoreRefused(f"the Lambda {label}: its environment after the update is not the "
+                             "one sent (a variable or the restart marker differs); read it with "
+                             "get-function-configuration and repair it before going on")
 
 
 def holds_restore(ctx: Context) -> None:
     apply_environment(ctx, holds_function(ctx), ctx.saved["lambdas"]["holds"]["environment"], True)
+    ctx.pending.discard(PENDING_RESTART)
 
 
 def semantic_check(ctx: Context) -> list[str]:
     saved = ctx.saved["lambdas"]["semantic"]
     if saved["name"] != lambda_release.SEMANTIC_FUNCTION:
         raise RestoreRefused("Lambda semantic: the saved copy is for another function")
-    return environment_lines(ctx, "Lambda semantic", saved["name"], saved["environment"])
+    return environment_lines(ctx, "Lambda semantic", saved["name"], saved["environment"],
+                             "lambdas.semantic")
 
 
 def semantic_restore(ctx: Context) -> None:
@@ -429,20 +510,23 @@ def semantic_restore(ctx: Context) -> None:
     apply_environment(ctx, saved["name"], saved["environment"], False)
 
 
+SECRET_STEP = "lambda secret parameter"
+
+
 def steps(runtime_names: list[str]) -> list[Step]:
     """The hops in the reverse of the release order: site, service, roles, Gateway, Runtimes,
-    rules, then the Lambdas."""
+    rules, then the Lambdas. A Runtime needs the Gateway step; the Lambdas need the secret."""
     runtimes = [Step(f"runtime {name}", lambda ctx, n=name: runtime_check(ctx, n),
-                     lambda ctx, n=name: runtime_restore(ctx, n)) for name in runtime_names]
+                     lambda ctx, n=name: runtime_restore(ctx, n), needs=("gateway",))
+                for name in runtime_names]
     return [
-        Step("site", site_check, site_restore),
+        Step("site", site_check, site_restore, publish_remedy),
         Step("service", service_check, service_restore),
-        Step("roles stack", roles_check, None, roles_remedy),
+        Step("roles stack", roles_check, None, publish_remedy),
         Step("gateway", gateway_check, gateway_restore),
         *runtimes,
         Step("cedar rules", rules_check, None, rules_remedy),
-        Step("lambda secret parameter", ssm_check, ssm_restore),
-        Step("lambda holds", holds_check, holds_restore),
-        Step("lambda semantic", semantic_check, semantic_restore),
+        Step(SECRET_STEP, ssm_check, ssm_restore),
+        Step("lambda holds", holds_check, holds_restore, needs=(SECRET_STEP,)),
+        Step("lambda semantic", semantic_check, semantic_restore, needs=(SECRET_STEP,)),
     ]
-

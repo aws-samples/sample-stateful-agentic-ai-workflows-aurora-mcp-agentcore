@@ -24,7 +24,7 @@ import re
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +41,7 @@ HOSTED_RELEASE_PATH = settings.MERIDIAN_DIR / ".local" / "hosted-release.json"
 SENSITIVE_NAME = re.compile(
     r"TOKEN|PASSWORD|SECRET|CREDENTIAL|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY|(^|[_-])KEY($|[_-])",
     re.IGNORECASE)
+NOT_SENSITIVE = re.compile(r"(^|[_-])TOKEN[_-]USE$", re.IGNORECASE)
 ACCESS_KEY_SHAPE = re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")
 DISTRIBUTION_ID = re.compile(r"^E[A-Z0-9]{8,20}$")
 REDACTED = "<redacted>"
@@ -48,6 +49,11 @@ MASKED = "<token>"
 STAMP = "%Y%m%dT%H%M%SZ"
 NAME = re.compile(r"snapshot-\d{8}T\d{6}Z\.json")
 SECTIONS = ("gateway", "runtimes", "service", "site", "roles", "lambdas", "policies")
+MODES = (IAM, JWT)
+TOP_LEVEL_TYPES = (
+    ("takenAt", str), ("commit", str), ("account", str), ("region", str), ("gateway", dict),
+    ("runtimes", dict), ("service", dict), ("site", dict), ("roles", dict), ("lambdas", dict),
+    ("policies", dict), ("baselineFindings", list), ("redacted", list))
 RECEIPT_FIELDS = ("status", "identityMode", "previousImage", "image")
 SERVICE_KEPT = ("ServiceName", "ServiceArn", "SourceConfiguration", "InstanceConfiguration",
                 "HealthCheckConfiguration", "NetworkConfiguration", "ObservabilityConfiguration",
@@ -141,7 +147,7 @@ def _clean(node: Any, path: str, found: list[str]) -> Any:
         for key, value in node.items():
             here = f"{path}.{key}" if path else key
             secret = isinstance(value, str) and value and SENSITIVE_NAME.search(key) \
-                and not value.startswith("arn:")
+                and not NOT_SENSITIVE.search(key) and not value.startswith("arn:")
             if secret:
                 out[key] = REDACTED
                 found.append(here)
@@ -163,14 +169,42 @@ def redact(node: Any, root: str = "") -> tuple[Any, list[str]]:
 
 
 def placeholders(node: Any, path: str = "") -> list[str]:
-    """Paths in ``node`` that hold a redaction or token placeholder."""
+    """Paths in ``node`` with a redaction or token placeholder anywhere inside a string."""
     if isinstance(node, dict):
         return [p for key, value in node.items()
                 for p in placeholders(value, f"{path}.{key}" if path else key)]
     if isinstance(node, list):
         return [p for index, item in enumerate(node)
                 for p in placeholders(item, f"{path}[{index}]")]
-    return [path] if node in (REDACTED, MASKED) else []
+    marked = isinstance(node, str) and (REDACTED in node or MASKED in node)
+    return [path] if marked else []
+
+
+def redacted_under(saved: Mapping[str, Any], prefix: str) -> list[str]:
+    """The paths the snapshot redacted or masked inside the hop at ``prefix``."""
+    return [path for path in saved.get("redacted") or []
+            if path == prefix or path.startswith((f"{prefix}.", f"{prefix}["))]
+
+
+def utc_stamp(moment: datetime) -> str:
+    """``moment`` in UTC as the stamp used in file names and the restart marker.
+
+    Raises:
+        SnapshotError: When ``moment`` has no time zone.
+    """
+    return as_utc(moment).strftime(STAMP)
+
+
+def as_utc(moment: datetime) -> datetime:
+    """``moment`` converted to UTC.
+
+    Raises:
+        SnapshotError: When ``moment`` has no time zone (its UTC time would be a guess).
+    """
+    if moment.tzinfo is None:
+        raise SnapshotError("a time without a time zone was given; the stamps are UTC and need "
+                            "an explicit zone")
+    return moment.astimezone(timezone.utc)
 
 
 # ---------------------------------------------------------------------- taking
@@ -272,9 +306,24 @@ def _roles_section(cfn: Any) -> dict[str, Any]:
             "templateSha256": template_hash(cfn)}
 
 
-def read_environment(configuration: Mapping[str, Any]) -> dict[str, str]:
-    """A Lambda's environment variables, without the restart marker."""
-    variables = dict((configuration.get("Environment") or {}).get("Variables") or {})
+def read_environment(configuration: Mapping[str, Any], label: str = "the Lambda") -> dict[str, str]:
+    """A Lambda's environment variables, without the restart marker.
+
+    Raises:
+        SnapshotError: When Lambda returned an error instead of the variables, or an
+            environment with no variables (for example a KMS key that cannot decrypt them):
+            what is not read in full is never saved or replaced.
+    """
+    environment = configuration.get("Environment")
+    if environment is None:
+        return {}
+    if not isinstance(environment, Mapping) or environment.get("Error") \
+            or "Variables" not in environment:
+        raise SnapshotError(
+            f"{label}: the function's configuration cannot read its environment in full (Lambda "
+            "returned an error or no variables, for example when a customer-managed KMS key "
+            "cannot decrypt them); nothing was saved or changed for it")
+    variables = dict(environment["Variables"] or {})
     variables.pop(lambda_release.MARKER, None)
     return variables
 
@@ -290,9 +339,9 @@ def _lambdas_section(clients: Clients, where: Where) -> dict[str, Any]:
     return {
         "ssmSecretArn": {"name": lambda_release.SSM_SECRET_PARAMETER, "type": value["Type"],
                          "value": value["Value"]},
-        "holds": {"arn": holds_arn, "environment": read_environment(holds)},
+        "holds": {"arn": holds_arn, "environment": read_environment(holds, "Lambda holds")},
         "semantic": {"name": lambda_release.SEMANTIC_FUNCTION,
-                     "environment": read_environment(semantic)},
+                     "environment": read_environment(semantic, "Lambda semantic")},
     }
 
 
@@ -313,8 +362,8 @@ def take(clients: Clients, where: Where, *, now: datetime, commit: str,
     target = preflight.target_for(mode, where.env, where.account, where.region)
     service = _service_section(clients.apprunner, where.service_arn)
     document = _json_safe({
-        "schema": SCHEMA, "takenAt": now.isoformat(), "commit": commit, "account": where.account,
-        "region": where.region, "mode": mode,
+        "schema": SCHEMA, "takenAt": as_utc(now).isoformat(), "commit": commit,
+        "account": where.account, "region": where.region, "mode": mode,
         "gateway": _gateway_section(state, where, target),
         "runtimes": {name: _runtime_section(name, described)
                      for name, described in state.runtimes.items()},
@@ -348,7 +397,7 @@ def write(saved: Mapping[str, Any], directory: Path, now: datetime) -> Path:
     """
     private_dir(directory)
     directory.chmod(0o700)
-    path = directory / f"snapshot-{now.strftime(STAMP)}.json"
+    path = directory / f"snapshot-{utc_stamp(now)}.json"
     if path.exists():
         raise SnapshotError(f"{path.name} already exists; a saved snapshot is never overwritten")
     document = {**saved, "integrity": {"algorithm": "sha256", "digest": _digest(saved)}}
@@ -356,21 +405,31 @@ def write(saved: Mapping[str, Any], directory: Path, now: datetime) -> Path:
     return path
 
 
-def load(path: Path) -> dict[str, Any]:
-    """Read a snapshot and refuse one that is unreadable, changed, incomplete or foreign.
-
-    Raises:
-        SnapshotError: With the file name and the reason.
-    """
+def _read_document(path: Path) -> dict[str, Any]:
     try:
+        mode = path.stat().st_mode
         document = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
         raise SnapshotError(
             f"cannot read the snapshot {path.name}: {type(error).__name__}") from None
+    if mode & 0o077:
+        raise SnapshotError(f"the snapshot {path.name} can be read by others (mode "
+                            f"{mode & 0o777:03o}); it must be mode 0600, run chmod 600 on it")
     if not isinstance(document, dict):
         raise SnapshotError(f"the snapshot {path.name} is not a JSON object")
     if document.get("schema") != SCHEMA:
         raise SnapshotError(f"the snapshot {path.name} has an unknown schema")
+    return document
+
+
+def load(path: Path) -> dict[str, Any]:
+    """Read a snapshot and refuse one that is unreadable, open to others, changed, incomplete,
+    malformed or foreign.
+
+    Raises:
+        SnapshotError: With the file name and the reason.
+    """
+    document = _read_document(path)
     claimed = document.pop("integrity", None)
     if not isinstance(claimed, dict) or claimed.get("digest") != _digest(document):
         raise SnapshotError(f"the snapshot {path.name} fails its integrity check; it was "
@@ -380,7 +439,25 @@ def load(path: Path) -> dict[str, Any]:
     missing = [key for key in SECTIONS if key not in document]
     if missing:
         raise SnapshotError(f"the snapshot {path.name} lacks {', '.join(missing)}")
+    problems = structure_problems(document)
+    if problems:
+        raise SnapshotError(f"the snapshot {path.name} is malformed: {'; '.join(problems)}")
     return document
+
+
+def structure_problems(document: Mapping[str, Any]) -> list[str]:
+    """Where the document's top level is not the shape the rollback reads (names, not values)."""
+    problems = [f"{key} is not a {kind.__name__}" for key, kind in TOP_LEVEL_TYPES
+                if not isinstance(document.get(key), kind)]
+    if document.get("mode") not in MODES:
+        problems.append("mode is not iam or jwt")
+    runtimes = document.get("runtimes")
+    if isinstance(runtimes, dict) and not all(isinstance(r, dict) for r in runtimes.values()):
+        problems.append("a Runtime is not an object")
+    service = document.get("service")
+    if isinstance(service, dict) and not isinstance(service.get("ServiceArn"), str):
+        problems.append("service has no ServiceArn")
+    return problems
 
 
 def latest_complete(directory: Path) -> tuple[Path | None, list[str]]:
@@ -404,6 +481,9 @@ def latest_complete(directory: Path) -> tuple[Path | None, list[str]]:
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     """The ``snapshot`` command's flags."""
     parser.add_argument("--service-arn", required=True, help="the App Runner service to save")
+    parser.add_argument("--accept-baseline", action="store_true",
+                        help="save the snapshot even though some hops already report findings "
+                             "(a release that is under way, or drift): it then holds that state")
 
 
 def command(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> int:
@@ -427,18 +507,23 @@ def command(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> 
     where = Where(account, region, gateway_id, runtime_ids, args.service_arn, env)
     saved = take(clients, where, now=deps.now(), commit=deps.head_sha(),
                  hosted_release_path=deps.hosted_release_path)
+    for line in saved["baselineFindings"]:
+        say(f"  BASELINE  {line}")
+    if saved["baselineFindings"] and not args.accept_baseline:
+        say(f"NOT saved: {len(saved['baselineFindings'])} finding(s) are already present, so the "
+            "hops are not in one clean state (a release under way, or drift). Fix them, or save "
+            "this state on purpose with --accept-baseline.")
+        return 1
     path = write(saved, deps.release_dir, deps.now())
     report(saved, path, say)
     return 0
 
 
 def report(saved: Mapping[str, Any], path: Path, say: Callable[[str], None]) -> None:
-    """Say what was saved, what was redacted and what the hops already report."""
+    """Say what was saved and what was redacted."""
     say(f"Saved {path} (mode {saved['mode']}, commit {str(saved['commit'])[:12]}, "
         f"{len(saved['redacted'])} plain value(s) redacted, "
         f"{len(saved['baselineFindings'])} finding(s) already present)")
-    for line in saved["baselineFindings"]:
-        say(f"  BASELINE  {line}")
     for item in saved["redacted"]:
         say(f"  REDACTED  {item}: the rollback cannot restore this hop automatically; move the "
             "value into a secret reference")

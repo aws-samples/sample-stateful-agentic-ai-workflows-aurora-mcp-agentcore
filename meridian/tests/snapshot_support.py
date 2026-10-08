@@ -1,9 +1,12 @@
 """A stateful fake of every service the snapshot and the rollback touch (no AWS, no network).
 
 ``SnapWorld`` starts in the IAM configuration. ``release()`` moves every hop to the Cognito
-configuration the way the window does. The fakes keep what the real services keep, and the
-write operations replace what the real ones replace (``update_gateway`` and
-``update_agent_runtime`` drop any field left out), so a restore that forgets a field shows.
+configuration the way the window does. The fakes keep what the real services keep. By default the
+write operations replace what the real ones may replace (``update_gateway`` and
+``update_agent_runtime`` drop any field left out), so a restore that forgets a field shows;
+``keeps_omitted = True`` models the other possibility, that the service keeps a field the update
+leaves out. Every update moves the hop to UPDATING (Lambda: InProgress) for ``settle_reads`` reads
+before it is READY again. Real behavior is only proven by the Task 22 rehearsal.
 """
 
 from __future__ import annotations
@@ -14,6 +17,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import Mock
+
+from botocore.exceptions import WaiterError
 
 from scripts.identity_release import lambda_release, snapshot
 from tests import release_support as rs
@@ -59,26 +64,38 @@ class Fake:
 class Control(Fake):
     def get_gateway(self, **kw):
         self._enter("get_gateway", kw)
-        return deepcopy(self.world.gateway)
+        described = deepcopy(self.world.gateway)
+        if self.world.updating.get("gateway", 0) > 0:
+            self.world.updating["gateway"] -= 1
+            described["status"] = "UPDATING"
+        return described
 
     def update_gateway(self, **kw):
         self._enter("update_gateway", kw, write=True)
-        keep = {k: v for k, v in self.world.gateway.items() if k in gateway_readonly()}
-        self.world.gateway = {**keep, **deepcopy({k: v for k, v in kw.items()
-                                                  if k != "gatewayIdentifier"})}
-        self.world.gateway["status"] = "READY"
+        sent = deepcopy({k: v for k, v in kw.items() if k != "gatewayIdentifier"})
+        base = (deepcopy(self.world.gateway) if self.world.keeps_omitted else
+                {k: v for k, v in self.world.gateway.items() if k in gateway_readonly()})
+        self.world.gateway = {**base, **sent, "status": "READY"}
+        self.world.updating["gateway"] = self.world.settle_reads
         return {}
 
     def get_agent_runtime(self, **kw):
         self._enter("get_agent_runtime", kw)
-        return deepcopy(self.world.runtimes[kw["agentRuntimeId"]])
+        key = kw["agentRuntimeId"]
+        described = deepcopy(self.world.runtimes[key])
+        if self.world.updating.get(key, 0) > 0:
+            self.world.updating[key] -= 1
+            described["status"] = "UPDATING"
+        return described
 
     def update_agent_runtime(self, **kw):
         self._enter("update_agent_runtime", kw, write=True)
         old = self.world.runtimes[kw["agentRuntimeId"]]
-        keep = {k: v for k, v in old.items() if k in runtime_readonly()}
         sent = {k: v for k, v in kw.items() if k not in ("agentRuntimeId", "clientToken")}
-        self.world.runtimes[kw["agentRuntimeId"]] = {**keep, **deepcopy(sent), "status": "READY"}
+        base = (deepcopy(old) if self.world.keeps_omitted else
+                {k: v for k, v in old.items() if k in runtime_readonly()})
+        self.world.runtimes[kw["agentRuntimeId"]] = {**base, **deepcopy(sent), "status": "READY"}
+        self.world.updating[kw["agentRuntimeId"]] = self.world.settle_reads
         return {}
 
     def list_policies(self, **kw):
@@ -202,6 +219,18 @@ class Ssm(Fake):
         return {"Version": 2}
 
 
+class LambdaWaiter:
+    """Waits by letting the pending update finish; ``lambda_stuck`` never lets it."""
+
+    def __init__(self, world: "SnapWorld"):
+        self.world = world
+
+    def wait(self, **kwargs):
+        if self.world.lambda_stuck:
+            raise WaiterError("FunctionUpdated", "Max attempts exceeded", {})
+        self.world.lambda_updating.clear()
+
+
 class Lam(Fake):
     def _find(self, name):
         key = HOLDS_ARN if name == HOLDS_ARN or "Holds" in name else name
@@ -209,18 +238,26 @@ class Lam(Fake):
 
     def get_function_configuration(self, **kw):
         self._enter("get_function_configuration", kw)
-        return deepcopy(self._find(kw["FunctionName"]))
+        config = deepcopy(self._find(kw["FunctionName"]))
+        name = config.get("FunctionName")
+        if self.world.lambda_updating.get(name, 0) > 0:
+            self.world.lambda_updating[name] -= 1
+            config["LastUpdateStatus"] = "InProgress"
+        return config
 
     def update_function_configuration(self, **kw):
         self._enter("update_function_configuration", kw, write=True)
         config = self._find(kw["FunctionName"])
-        config["Environment"] = deepcopy(kw["Environment"])
+        variables = {k: v for k, v in kw["Environment"]["Variables"].items()
+                     if k not in self.world.lambda_drops}
+        config["Environment"] = {"Variables": variables}
         config["RevisionId"] = config["RevisionId"] + "n"
+        self.world.lambda_updating[config["FunctionName"]] = self.world.settle_reads
         return {}
 
     def get_waiter(self, name):
         self.world.log.append(("read", "lambda", "wait"))
-        return super().get_waiter(name)
+        return LambdaWaiter(self.world)
 
 
 class SnapWorld:
@@ -231,6 +268,10 @@ class SnapWorld:
         self.log: list[tuple[str, str, str]] = []
         self.failures: dict = {}
         self.busy, self.update_takes = 0, 1
+        self.settle_reads, self.keeps_omitted = 2, False
+        self.updating: dict[str, int] = {}
+        self.lambda_updating: dict[str, int] = {}
+        self.lambda_stuck, self.lambda_drops = False, set()
         self.gateway = runtime_gateway(mode)
         self.runtimes = {rs.RUNTIME_IDS[name]: runtime_state(name, mode) for name in rs.RUNTIME_IDS}
         self.service = service_state(mode)
@@ -249,6 +290,8 @@ class SnapWorld:
             lambda_release.SEMANTIC_FUNCTION: lambda_config(
                 lambda_release.SEMANTIC_FUNCTION, {"AURORA_SECRET_ARN": rs.MASTER_SECRET})}
         self.policies = {name: "ACTIVE" for name in rs.BASE_POLICIES}
+        if mode == "jwt":
+            self.policies[rs.BINDING_POLICY] = "ACTIVE"
         self.hosted_release = tmp_path / "hosted-release.json"
         self.hosted_release.write_text(json.dumps({
             "status": "verified", "identityMode": mode, "previousImage": "ecr/meridian:older",

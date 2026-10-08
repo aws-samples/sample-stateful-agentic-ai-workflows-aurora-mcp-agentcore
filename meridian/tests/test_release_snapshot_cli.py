@@ -8,9 +8,10 @@ import stat
 import pytest
 
 from scripts import release_identity
-from scripts.identity_release import rollback, settings, snapshot
+from scripts.identity_release import lambda_release, rollback, settings, snapshot
 from tests import release_support as rs
 from tests import snapshot_support as ss
+from tests.aws_recorders import client_error
 from tests.test_release_identity_cli import NOW, env
 
 FLAG = settings.CONFIRM_FLAG
@@ -227,3 +228,121 @@ def test_a_jwt_snapshot_without_the_pool_settings_stops_before_any_client(tmp_pa
     assert run(["rollback"], jwt_world, tmp_path, bare) == 2
 
     assert jwt_world.built == [] and "MERIDIAN_COGNITO" in capsys.readouterr().err
+
+
+# ------------------------------------------------------- baseline, older file, pending restart
+
+
+def test_a_snapshot_taken_with_findings_exits_one_and_saves_nothing(world, tmp_path, capsys):
+    world.service = ss.service_state("jwt")
+
+    assert run(["snapshot", "--service-arn", ss.SERVICE_ARN], world, tmp_path) == 1
+
+    out = capsys.readouterr().out
+    assert "BASELINE" in out and "--accept-baseline" in out
+    assert not list((tmp_path / "release-b2").glob("snapshot-*.json"))
+
+
+def test_accepting_the_baseline_saves_the_snapshot_with_its_findings(world, tmp_path, capsys):
+    world.service = ss.service_state("jwt")
+
+    code = run(["snapshot", "--service-arn", ss.SERVICE_ARN, "--accept-baseline"], world, tmp_path)
+
+    assert code == 0
+    saved = snapshot.load(tmp_path / "release-b2" / SNAP_NAME)
+    assert saved["baselineFindings"] and "BASELINE" in capsys.readouterr().out
+
+
+def test_an_older_snapshot_is_announced_with_its_time_and_commit_before_any_client(
+        world, tmp_path, capsys):
+    save(world, tmp_path)
+    (tmp_path / "release-b2" / "snapshot-20261009T000000Z.json").write_text("{")
+    capsys.readouterr()
+    seen: list[str] = []
+    built = world.session
+
+    def watched(region):
+        seen.append(capsys.readouterr().out)
+        return built(region)
+
+    world.session = watched
+
+    assert run(["rollback"], world, tmp_path) == 0
+
+    assert seen and "OLDER SNAPSHOT" in seen[0]
+    assert "2026-10-08T12:00:00+00:00" in seen[0] and rs.SHA[:12] in seen[0]
+    assert "snapshot-20261009T000000Z.json" in seen[0]
+
+
+def test_a_rollback_with_a_malformed_hop_still_writes_the_result_file(world, tmp_path):
+    save(world, tmp_path)
+    world.release(manual=False)
+    path = tmp_path / "release-b2" / SNAP_NAME
+    saved = json.loads(path.read_text())
+    del saved["integrity"]
+    del saved["site"]["viewerFunction"]["code"]
+    path.unlink()
+    snapshot.write(saved, tmp_path / "release-b2", NOW.replace(hour=12))
+
+    assert run(["rollback", "--apply", FLAG], world, tmp_path) == 1
+
+    result = json.loads((tmp_path / "release-b2" / rollback.RESULT_NAME).read_text())
+    assert {step["name"]: step["status"] for step in result["steps"]}["site"] == "failed"
+
+
+def holds_failed_after_the_secret_was_restored(world, tmp_path):
+    """SSM restored, the holds restart failed; the holds variables already match the saved ones."""
+    save(world, tmp_path)
+    world.release(manual=False)
+    holds = world.lambdas[ss.HOLDS_ARN]["Environment"]["Variables"]
+    holds["AURORA_SECRET_ARN"] = rs.MASTER_SECRET
+    world.failures["update_function_configuration"] = client_error("ThrottlingException")
+    assert run(["rollback", "--apply", FLAG], world, tmp_path) == 1
+    return tmp_path / "release-b2" / rollback.RESULT_NAME
+
+
+def test_a_failed_holds_restart_is_remembered_and_done_by_the_next_run(world, tmp_path, capsys):
+    result = holds_failed_after_the_secret_was_restored(world, tmp_path)
+    assert json.loads(result.read_text())["pending"] == ["ssm"]
+    holds = world.lambdas[ss.HOLDS_ARN]["Environment"]["Variables"]
+    assert lambda_release.MARKER not in holds
+
+    assert run(["rollback", "--apply", FLAG], world, tmp_path) == 0
+
+    holds = world.lambdas[ss.HOLDS_ARN]["Environment"]["Variables"]
+    assert holds[lambda_release.MARKER] == "20261008T120000Z"
+    assert json.loads(result.read_text())["pending"] == []
+    assert "Rollback complete" in capsys.readouterr().out
+
+
+def test_a_dry_run_after_a_failed_holds_restart_says_the_restart_is_needed(
+        world, tmp_path, capsys):
+    holds_failed_after_the_secret_was_restored(world, tmp_path)
+    capsys.readouterr()
+
+    assert run(["rollback"], world, tmp_path) == 0
+
+    assert "restart needed" in capsys.readouterr().out
+
+
+def test_an_unreadable_result_file_means_the_restart_is_done_to_be_safe(world, tmp_path, capsys):
+    result = holds_failed_after_the_secret_was_restored(world, tmp_path)
+    result.write_text("{")
+    capsys.readouterr()
+
+    assert run(["rollback", "--apply", FLAG], world, tmp_path) == 0
+
+    out = capsys.readouterr().out
+    assert "rollback-result.json" in out and "restart" in out
+    assert lambda_release.MARKER in world.lambdas[ss.HOLDS_ARN]["Environment"]["Variables"]
+
+
+def test_a_pending_restart_of_another_snapshot_is_ignored(world, tmp_path):
+    result = holds_failed_after_the_secret_was_restored(world, tmp_path)
+    document = json.loads(result.read_text())
+    document["snapshot"] = "snapshot-20200101T000000Z.json"
+    result.write_text(json.dumps(document))
+
+    assert run(["rollback", "--apply", FLAG], world, tmp_path) == 0
+
+    assert lambda_release.MARKER not in world.lambdas[ss.HOLDS_ARN]["Environment"]["Variables"]

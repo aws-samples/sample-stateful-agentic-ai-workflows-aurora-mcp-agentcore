@@ -10,7 +10,7 @@ Every command that changes AWS is a dry run unless it gets both ``--apply`` and
     python scripts/release_identity.py lambdas [--expect master|gateway|tightened] [--restart-holds]
     python scripts/release_identity.py gateway [--to iam|jwt] [--only grant|move]
         [--apply --i-understand-this-changes-aws]
-    python scripts/release_identity.py snapshot --service-arn ARN
+    python scripts/release_identity.py snapshot --service-arn ARN [--accept-baseline]
     python scripts/release_identity.py rollback [--snapshot FILE]
         [--apply --i-understand-this-changes-aws]
 
@@ -29,7 +29,8 @@ both flags) it forces the holds Lambda to re-read its configuration.
 authorizer, allowed clients and interceptor, and every precondition); an apply writes the invoke
 grant, sends the complete update and reads it back; ``--to iam`` is the rollback of the move.
 ``snapshot`` (read-only) saves the replaced configuration of every hop to ``.local/release-b2/``
-before the window, with no secret value. ``rollback`` restores it in the reverse of the release
+before the window, with no secret value (exit 1 and nothing saved when a hop already reports a
+finding, unless ``--accept-baseline``). ``rollback`` restores it in the reverse of the release
 order, reading each hop back (dry run by default; the roles stack and the Cedar rules are checked
 and their commands printed); it exits 1 when any hop is not restored.
 
