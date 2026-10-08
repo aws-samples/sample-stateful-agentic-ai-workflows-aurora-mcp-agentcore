@@ -664,11 +664,83 @@ omitted for this deploy`); compare the files with the saved configuration before
 python scripts/render_agentcore_config.py
 ```
 
-The release then changes, in one window and with a read-back after each step: the interceptor and
-the Cedar rule, both Runtimes (JWT authorizer and `Authorization` allowlist), the Gateway authorizer,
-and last the backend and the hosted service with `MERIDIAN_AGENTCORE_AUTH=jwt`. Setting `jwt` on the
-backend alone, or on one Runtime alone, makes that hop send or expect a credential the next hop
-refuses.
+The release then changes, in one window and with a read-back after each step: the Gateway
+(authorizer, allowed clients and interceptor), then both Runtimes and the Cedar rule through the
+stack deploy, then the holds Lambda, and last the backend and the hosted service with
+`MERIDIAN_AGENTCORE_AUTH=jwt`. Setting `jwt` on the backend alone, or on one Runtime alone, makes
+that hop send or expect a credential the next hop refuses.
+
+### The window order
+
+CloudFormation cannot change an existing Gateway's authorizer type: `agentcore deploy -y` fails with
+"Authorizer type cannot be updated for an existing gateway" and the stack rolls back. The template
+cannot declare the interceptor either, and an update that leaves `interceptorConfigurations` out
+detaches it. So the Gateway moves first through the `UpdateGateway` API, the deploy runs against a
+template that already equals the live Gateway, and the Gateway is read back afterwards. Every
+command below is a dry run until it gets `--apply --i-understand-this-changes-aws`; read the plan,
+then ask. Use `check --skip-service` for every read until the service moves (step 9).
+
+1. Set `MERIDIAN_AGENTCORE_AUTH=jwt` in `.env`, then `venv/bin/python scripts/release_identity.py
+   check --skip-service`. It lists drift for the Gateway, both Runtimes and the rule. Nothing live
+   changes.
+2. Render with the Cedar rule left out and validate (the rule is validated against the Gateway, so
+   it joins in step 7): `MERIDIAN_GATEWAY_ENFORCEMENT=interceptor venv/bin/python
+   scripts/render_agentcore_config.py`, then `(cd meridian_agentcore &&
+   /opt/homebrew/bin/agentcore validate --json)`.
+3. Move the Gateway. The outage starts here: every SigV4 caller of the Gateway fails.
+
+   ```bash
+   venv/bin/python scripts/release_identity.py gateway
+   venv/bin/python scripts/release_identity.py gateway --apply --i-understand-this-changes-aws
+   ```
+
+   One `UpdateGateway` call carries the `CUSTOM_JWT` authorizer, the discovery URL, the allowed
+   client and the interceptor, after the invoke grant is written, and the Gateway is read back.
+4. Deploy the stack with the tool, never with a bare `agentcore deploy`:
+
+   ```bash
+   venv/bin/python scripts/release_identity.py deploy
+   venv/bin/python scripts/release_identity.py deploy --apply --i-understand-this-changes-aws
+   ```
+
+   The ordering preflight refuses (exit 2, nothing deployed) unless the rendered `agentcore.json`
+   is for the mode, and the live Gateway already reports that authorizer, the same discovery URL
+   and allowed client, and the interceptor. The apply runs `/opt/homebrew/bin/agentcore deploy -y`
+   from `meridian_agentcore/`, waits for the Gateway to be READY, and reads it back. If the deploy
+   changed the authorizer or detached the interceptor, it prints what changed and sends the
+   `gateway` update again, then reads back again. This deploy removes the `InvokeGateway`
+   statement from both Runtime roles, adds the gateway-secret read to the holds Lambda's role and
+   moves both Runtimes to the Cognito authorizer.
+5. `venv/bin/python scripts/release_identity.py check --skip-service`. Only the missing Cedar rule
+   is listed.
+6. Move the holds Lambda and its SSM parameter to the gateway login. They wait for step 4,
+   because the holds role can read the gateway secret only after that deploy; the parameter
+   write refuses (exit 2, nothing written) until it can.
+
+   ```bash
+   python scripts/publish_gateway_parameters.py --gateway-login
+   python scripts/publish_gateway_parameters.py --gateway-login --apply --i-understand-this-changes-aws
+   python scripts/release_identity.py lambdas --restart-holds --apply --i-understand-this-changes-aws
+   python scripts/release_identity.py lambdas --expect gateway
+   ```
+
+7. Render with the rule and deploy again, again through the tool (it re-reads the Gateway after
+   this deploy too): `venv/bin/python scripts/render_agentcore_config.py`, then `release_identity.py
+   deploy` and `release_identity.py deploy --apply --i-understand-this-changes-aws`.
+8. `venv/bin/python scripts/release_identity.py check --skip-service` prints `OK` for every hop.
+9. Publish the roles, the service and the site (`scripts/publish.py`, plan first). The outage
+   ends. Then `venv/bin/python scripts/release_identity.py check --service-arn "$SERVICE_ARN"`.
+
+What is verified and what is assumed:
+
+| Statement | Status |
+| --- | --- |
+| The AgentCore CDK construct used here (`@aws/agentcore-cdk` 0.1.0-alpha.47) never sets `InterceptorConfigurations`, so the template cannot declare the interceptor | Verified in the installed code |
+| An update that omits `interceptorConfigurations` detaches the interceptor | Measured on the throwaway Gateway (check C5) |
+| CloudFormation refuses to change the authorizer type of an existing Gateway | Observed in the first window |
+| CloudFormation accepts a template whose authorizer already equals the live Gateway's | Assumed, not verified. If its handler compares the template with its own previous state instead, the deploy fails with the same message; `deploy` then names this and stops, and the answer is `rollback --apply` and an owner decision |
+| A deploy that does update the Gateway sends the template's properties, so it can detach the interceptor or revert a field | Assumed possible, so it is never relied on: the Gateway is read back after every deploy (authorizer, allowed clients, interceptor and policy engine) and re-applied when it differs |
+| The deploy leaves the other Gateway fields (description, protocol configuration, exception level) alone | Not read back by `deploy`; the rollback dry run compares them with the snapshot |
 
 ### Read the release back
 
@@ -676,10 +748,10 @@ refuses.
 rules, the identity stack, the backend login proof, the interceptor Lambda's environment and the
 App Runner service with the mode in `.env`. Name the service with `--service-arn ARN`, or leave it
 out on purpose with `--skip-service`. A `check` with neither prints `NOT CHECKED` and exits 4 even
-when every hop matches, so use `--skip-service` for every read before the service moves (the
-window's W3, W4 and W6) and `--service-arn` after it. The backend login proof is compared only in
+when every hop matches, so use `--skip-service` for every read before the service moves (steps 1 to 8 of the
+window) and `--service-arn` after it. The backend login proof is compared only in
 `jwt` mode, so `check --expect iam` shows no proof line even when no receipt exists.
-`interceptor`, `interceptor-delete`, `lambdas --restart-holds`, `semantic-lambda`, `gateway` and
+`interceptor`, `interceptor-delete`, `lambdas --restart-holds`, `semantic-lambda`, `gateway`, `deploy` and
 `rollback` are dry runs unless they get `--apply --i-understand-this-changes-aws`. The backend
 login proof comes from `scripts/prove_backend_login.py --apply
 --i-understand-this-changes-aws`. Exit codes of `release_identity.py`:
@@ -688,7 +760,7 @@ login proof comes from `scripts/prove_backend_login.py --apply
 | --- | --- |
 | 0 | ok: every hop matches, or a dry run |
 | 1 | drift: one `DRIFT` line per problem |
-| 2 | could not run or compare: a bad setting, another account, an AWS error, a foreign resource |
+| 2 | could not run or compare: a bad setting, another account, an AWS error, a foreign resource, or an ordering precondition of `gateway` or `deploy` that is not met |
 | 3 | usage error, or an apply refused because the confirmation flag is missing |
 | 4 | every hop matches but the App Runner service was not named, so it is not fully checked |
 
@@ -698,7 +770,7 @@ you ran; `-` means the tool never returns it:
 | Tool | 0 | 1 | 2 | 3 | 4 |
 | --- | --- | --- | --- | --- | --- |
 | `release_identity.py` | ok, or a dry run | drift, or a hop not restored | could not run or compare | usage error, or apply without the confirmation flag | hops match, service not checked |
-| `publish_gateway_parameters.py` | written and read back, or a dry run | a parameter did not read back as written | could not run (setting, account, AWS error) | usage error, or apply without the flag | - |
+| `publish_gateway_parameters.py` | written and read back, or a dry run | a parameter did not read back as written | could not run (setting, account, AWS error, or with `--gateway-login` the holds role cannot read the gateway secret yet) | usage error, or apply without the flag | - |
 | `prove_backend_login.py` | passed | a check failed, the backend never answered, a crash or an interrupt | - | refused (precondition, usage, missing flag) | - |
 | `run_gateway_harness.py` | pass | a check failed or stayed unknown, or an unexpected error | resources left behind | refused (also any usage error) | - |
 | `publish.py` | published, or a plan | a refusal or a failure | - | usage error, or `--apply`/`--stage` without the flag | - |
@@ -710,6 +782,13 @@ the SSM parameter `/meridian/aurora/secret_arn`) and `meridian-semantic-trip-sea
 `AURORA_SECRET_ARN` variable). Every command below is a dry run until it gets `--apply
 --i-understand-this-changes-aws`, checks that the credentials belong to the account and Region of
 `AURORA_CLUSTER_ARN` before it builds any other client, and prints no secret value.
+
+The order matters. The semantic Lambda's role is outside the stack, so `semantic-lambda` can run
+before the window. The holds Lambda's role belongs to the AgentCore stack and gets the read on the
+gateway login's secret only from the first jwt deploy (step 4 of the window). The
+`--gateway-login --apply` of `publish_gateway_parameters.py` therefore reads the holds role first
+and refuses, with nothing written, until it can read that secret: moving the parameter earlier
+would leave every new holds cold start unable to connect.
 
 ```bash
 python scripts/publish_gateway_parameters.py --gateway-login
@@ -789,17 +868,33 @@ Restore order, which is the true reverse of the release:
 
 1. the site (viewer function and response headers policy), then the App Runner service
 2. the roles stack (checked; a manual command is printed)
-3. the Gateway (authorizer back to IAM, interceptor detached), then both Runtimes
-4. the Cedar rules (checked; a manual command is printed)
+3. the Gateway through the `UpdateGateway` API (authorizer back to IAM, interceptor detached),
+   then both Runtimes
+4. the AgentCore stack (checked; commands printed): the Cedar rules and the `InvokeGateway`
+   statement on both Runtime roles
 5. the secret parameter, then the holds Lambda (restarted) and the semantic Lambda
+
+The Gateway comes first among the AgentCore hops because CloudFormation cannot change an authorizer
+type back either: an IAM render deployed while the Gateway still reads `CUSTOM_JWT` fails the same
+way the forward deploy did. Step 4 is skipped, and says so, when the Gateway step failed.
+
+The jwt deploy removes the `InvokeGateway` statement from both Runtime roles, and restoring a
+Runtime with `UpdateAgentRuntime` does not bring it back, so an IAM Runtime could not reach its
+tools. Only the IAM render does, so step 4 reads both roles and, until they can call the Gateway,
+prints the exact commands: a checkout of the snapshot's commit, `MERIDIAN_AGENTCORE_AUTH=iam python
+scripts/render_agentcore_config.py`, `/opt/homebrew/bin/agentcore deploy -y` from that checkout's
+`meridian_agentcore/`, then, from the current checkout, `venv/bin/python
+scripts/release_identity.py check --expect iam --service-arn "$SERVICE_ARN"`, which also reads the
+Runtime roles, and `rollback` again. `snapshot` in `iam` mode records a role that already lacks
+the grant as a baseline finding, so a snapshot never demands more than the release started with.
 
 Between steps 1 and 3 the service is back in `iam` while the Gateway and the Runtimes still expect
 `jwt`, so signed-in traffic through the service fails until step 3 finishes. The release has the
 mirror window (Runtimes in `jwt` before the service moves), so this is the same size; keep the
 maintenance window open until the command reports "Rollback complete".
 
-The roles stack, the Cedar rules and the distribution's behaviors are not changed by this command.
-Each is printed with the snapshot's commit and the commands to run from a checkout (`git worktree
+The roles stack, the AgentCore stack and the distribution's behaviors are not changed by this
+command. Each is printed with the snapshot's commit and the commands to run from a checkout (`git worktree
 add`) of that commit, with the account, Region and service ARN taken from your own `.env` as shell
 variables. Do not run them from the current checkout: it would deploy the new release again. After
 them, run `rollback` again to re-attach the interceptor and verify; the exit code is 1 until every

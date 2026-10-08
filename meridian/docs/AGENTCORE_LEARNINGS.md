@@ -48,6 +48,24 @@ deployment steps. Each note names the code or step it explains.
 - **App Runner does not run the start command through a shell.** Quotes are literal and `sh -c '...'` fails.
 - **CloudTrail shows what CloudFormation sends.** `lookup-events` on `CreateService` shows the fields the resource handler adds, which helps when a service created by a stack fails and the same service created by the CLI works. The App Runner service itself is managed outside CloudFormation; `scripts/publish.py` updates it through the SDK.
 
+## Gateway authorizer: what the first window showed
+
+- **CloudFormation cannot change an existing Gateway's authorizer type.** The first coordinated window
+  failed when `agentcore deploy -y` reported "Authorizer type cannot be updated for an existing
+  gateway"; the stack rolled back cleanly. The resource documentation calls the change an in-place
+  update, and the handler refuses it. The `UpdateGateway` API does it, so the release moves the Gateway
+  with `release_identity.py gateway` first and deploys with `release_identity.py deploy`.
+- **The interceptor is outside the template.** The installed `@aws/agentcore-cdk` never sets
+  `InterceptorConfigurations`, and an update that omits it detaches the interceptor (harness check C5). The
+  deploy command reads the Gateway back and re-applies the update when the deploy changed it.
+- **Unverified: what the handler compares.** Whether the handler accepts a template whose authorizer already
+  equals the live Gateway, or compares the template with its own previous state and refuses again, was not
+  known when the order was changed. `deploy` names that case and stops.
+- **The jwt deploy takes `InvokeGateway` off the Runtime roles**, and `UpdateAgentRuntime` does not put it
+  back, so a rollback to IAM needs the IAM render deployed. `check --expect iam` reads both roles.
+- **The holds role reads the gateway secret only after the first jwt deploy**, so the SSM parameter moves
+  after it, and the parameter write refuses before.
+
 ## Gateway identity: what the harness measured
 
 The throwaway-Gateway harness (`scripts/run_gateway_harness.py`) answered the questions the design depended on, on a

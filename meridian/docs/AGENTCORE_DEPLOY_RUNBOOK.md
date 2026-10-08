@@ -343,6 +343,38 @@ Tail the runtime while you use the app:
 (cd meridian/meridian_agentcore && agentcore logs --runtime MeridianConcierge --follow)
 ```
 
+## Deploy the identity release (jwt)
+
+Moving the Gateway and both Runtimes to the Cognito authorizer is a release, not a plain deploy.
+CloudFormation cannot change an existing Gateway's authorizer type: `agentcore deploy -y` fails
+with "Authorizer type cannot be updated for an existing gateway" and the stack rolls back. The
+template cannot declare the Gateway's request interceptor either, and an update that omits
+`interceptorConfigurations` detaches it. So the order is fixed, and `release_identity.py deploy`
+enforces it:
+
+1. Render the `jwt` configuration (`MERIDIAN_AGENTCORE_AUTH=jwt`, Cedar rule left out for the first
+   deploy) and validate it.
+2. Move the live Gateway with the API: `release_identity.py gateway --apply
+   --i-understand-this-changes-aws`. One `UpdateGateway` call sets the `CUSTOM_JWT` authorizer,
+   its discovery URL and allowed client, and the interceptor.
+3. Deploy through the tool: `release_identity.py deploy --apply
+   --i-understand-this-changes-aws`. It refuses unless the render and the live Gateway agree on
+   the authorizer and the Gateway reports the interceptor; it runs
+   `/opt/homebrew/bin/agentcore deploy -y`; it reads the Gateway back and sends the `gateway`
+   update again if the deploy changed it.
+4. Only now, point the holds Lambda's SSM parameter at the gateway login
+   (`publish_gateway_parameters.py --gateway-login --apply
+   --i-understand-this-changes-aws`, then `release_identity.py lambdas --restart-holds`). This
+   deploy is what lets the holds role read that secret, and the parameter write refuses before it.
+5. Render with the Cedar rule and run step 3 again.
+
+The full window, with every command, the read after each step and what is assumed rather than
+verified, is in [Operations](OPERATIONS.md#the-window-order). The rollback runs the same order in
+reverse: the Gateway returns to IAM through the API first, then an IAM render is deployed from the
+snapshot's commit, which also puts back the `InvokeGateway` statement the `jwt` deploy removes from
+both Runtime roles (`release_identity.py rollback` prints the commands and `check --expect iam`
+verifies them).
+
 ## Change the deployment
 
 Edit `meridian/meridian_agentcore/agentcore/agentcore.template.json`, then
