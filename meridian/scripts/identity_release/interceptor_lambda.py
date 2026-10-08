@@ -211,13 +211,29 @@ def _ensure_role(iam: Any, wanted: Desired, sleep: Callable[[float], None]) -> l
         return [f"IAM role {wanted.role_name}: created",
                 f"IAM role {wanted.role_name}: policy {POLICY_NAME} written"]
     _require_ours(_role_tags(role), f"IAM role {wanted.role_name}")
-    _recheck_ours(iam, wanted.role_name)
-    iam.update_assume_role_policy(RoleName=wanted.role_name, PolicyDocument=wanted.trust_policy)
-    _recheck_ours(iam, wanted.role_name)
-    iam.put_role_policy(RoleName=wanted.role_name, PolicyName=POLICY_NAME,
-                        PolicyDocument=json.dumps(wanted.role_policy))
-    return [f"IAM role {wanted.role_name}: trust policy rewritten",
-            f"IAM role {wanted.role_name}: policy {POLICY_NAME} written"]
+    notes = []
+    if _normalize_policy(role.get("AssumeRolePolicyDocument")) != json.loads(wanted.trust_policy):
+        _recheck_ours(iam, wanted.role_name)
+        iam.update_assume_role_policy(RoleName=wanted.role_name,
+                                      PolicyDocument=wanted.trust_policy)
+        notes.append(f"IAM role {wanted.role_name}: trust policy rewritten")
+    if _log_policy(iam, wanted.role_name) != wanted.role_policy:
+        _recheck_ours(iam, wanted.role_name)
+        iam.put_role_policy(RoleName=wanted.role_name, PolicyName=POLICY_NAME,
+                            PolicyDocument=json.dumps(wanted.role_policy))
+        notes.append(f"IAM role {wanted.role_name}: policy {POLICY_NAME} written")
+    return notes or [f"IAM role {wanted.role_name}: unchanged"]
+
+
+def _log_policy(iam: Any, role_name: str) -> Any:
+    """The role's log policy as parsed JSON, or ``None`` when the role has none."""
+    try:
+        document = iam.get_role_policy(RoleName=role_name, PolicyName=POLICY_NAME)
+    except ClientError as error:
+        if _missing(error, "NoSuchEntity"):
+            return None
+        raise
+    return _normalize_policy(document["PolicyDocument"])
 
 
 def _wait(lam: Any, waiter: str, name: str) -> None:

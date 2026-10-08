@@ -72,6 +72,16 @@ def iam_with(role=True, policy=None, tags=None):
     return Recorder(answers, failures)
 
 
+def drifted_iam(**changes):
+    """An existing role whose trust and log policy both differ from the wanted ones."""
+    empty = {"Version": "2012-10-17", "Statement": []}
+    iam = iam_with(**changes)
+    iam.answers["get_role"] = {"Role": {
+        **role_answer()["Role"], "AssumeRolePolicyDocument": empty}}
+    iam.answers["get_role_policy"] = {"PolicyDocument": empty}
+    return iam
+
+
 def lambda_with(existing=None, **kwargs):
     answers = {"create_function": function()["Configuration"],
                "get_function": existing or function()}
@@ -221,18 +231,59 @@ def test_changed_code_is_uploaded_and_changed_settings_are_updated():
     assert violations("lambda", lam.calls) == []
 
 
-def test_an_existing_role_gets_its_trust_and_policy_rewritten_every_time():
+def test_an_existing_role_that_already_matches_is_not_written_and_says_so():
     iam = iam_with()
+
+    notes = deploy.apply(iam, lambda_with(existing=function()), desired(), sleep=lambda s: None)
+
+    assert "update_assume_role_policy" not in iam.names()
+    assert "put_role_policy" not in iam.names()
+    assert not any("rewritten" in note or "written" in note for note in notes)
+    assert f"IAM role {settings.INTERCEPTOR_FUNCTION}: unchanged" in notes
+
+
+def test_a_url_encoded_trust_document_that_matches_is_still_not_rewritten():
+    iam = iam_with()
+    encoded = urllib.parse.quote(desired().trust_policy)
+    iam.answers["get_role"] = {"Role": {
+        **role_answer()["Role"], "AssumeRolePolicyDocument": encoded}}
 
     deploy.apply(iam, lambda_with(existing=function()), desired(), sleep=lambda s: None)
 
-    assert iam.names().count("update_assume_role_policy") == 1
-    assert iam.args("put_role_policy")[0]["PolicyName"] == deploy.POLICY_NAME
+    assert "update_assume_role_policy" not in iam.names()
+
+
+def test_a_drifted_trust_policy_is_put_back_and_the_policy_left_alone():
+    iam = iam_with()
+    drifted = {"Version": "2012-10-17", "Statement": []}
+    iam.answers["get_role"] = {"Role": {
+        **role_answer()["Role"], "AssumeRolePolicyDocument": drifted}}
+
+    notes = deploy.apply(iam, lambda_with(existing=function()), desired(), sleep=lambda s: None)
+
+    assert json.loads(iam.args("update_assume_role_policy")[0]["PolicyDocument"]) == json.loads(
+        desired().trust_policy)
+    assert "put_role_policy" not in iam.names()
+    assert f"IAM role {settings.INTERCEPTOR_FUNCTION}: trust policy rewritten" in notes
     assert violations("iam", iam.calls) == []
 
 
+def test_a_drifted_or_missing_log_policy_is_put_back_and_the_trust_left_alone():
+    for failure in ({"PolicyDocument": {"Version": "2012-10-17", "Statement": []}}, None):
+        iam = iam_with()
+        if failure is None:
+            iam.failures["get_role_policy"] = [client_error("NoSuchEntity")]
+        else:
+            iam.answers["get_role_policy"] = failure
+
+        deploy.apply(iam, lambda_with(existing=function()), desired(), sleep=lambda s: None)
+
+        assert iam.args("put_role_policy")[0]["PolicyName"] == deploy.POLICY_NAME
+        assert "update_assume_role_policy" not in iam.names()
+
+
 def test_a_missing_role_error_from_the_trust_update_does_not_create_a_role():
-    iam = iam_with()
+    iam = drifted_iam()
     iam.failures["update_assume_role_policy"] = [client_error("NoSuchEntity")]
 
     with pytest.raises(Exception, match="NoSuchEntity"):
@@ -327,7 +378,7 @@ def test_a_new_role_that_never_shows_up_stops_with_the_reason():
 
 
 def test_a_policy_write_to_an_existing_role_does_not_retry_no_such_entity():
-    iam = iam_with()
+    iam = drifted_iam()
     iam.failures["put_role_policy"] = [client_error("NoSuchEntity")]
 
     with pytest.raises(Exception, match="NoSuchEntity"):
@@ -336,8 +387,10 @@ def test_a_policy_write_to_an_existing_role_does_not_retry_no_such_entity():
 
 
 def test_the_role_tags_are_reread_before_each_write_and_a_change_stops_the_writes():
-    iam = iam_with()
-    answers = iter([role_answer(), role_answer(), role_answer(OTHER)])
+    iam = drifted_iam()
+    drifted = iam.answers["get_role"]
+    answers = iter([drifted, drifted, {"Role": {**drifted["Role"], "Tags": [
+        {"Key": k, "Value": v} for k, v in OTHER.items()]}}])
     iam.answers["get_role"] = lambda **kwargs: next(answers)
 
     with pytest.raises(deploy.DeployError, match="not tagged"):
