@@ -22,6 +22,7 @@ COGNITO_KEYS = (
     "MERIDIAN_COGNITO_APP_CLIENT_ID",
 )
 
+CONFIRM_FLAG = "--i-understand-this-changes-aws"
 INTERCEPTOR_FUNCTION = "meridian-gateway-traveler-pin"
 MERIDIAN_DIR = Path(__file__).resolve().parents[2]
 RELEASE_DIR = MERIDIAN_DIR / ".local" / "release-b2"
