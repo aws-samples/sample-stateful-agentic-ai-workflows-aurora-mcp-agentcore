@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import os
 from pathlib import Path
@@ -23,18 +24,35 @@ CLUSTER_ARN = os.getenv("AURORA_CLUSTER_ARN")
 SECRET_ARN = os.getenv("AURORA_SECRET_ARN")
 DATABASE = os.getenv("AURORA_DATABASE", "meridian")
 TRAVELER_ID = os.getenv("MERIDIAN_DEMO_TRAVELER_ID", "trv_meridian_demo")
+DEMO_TRAVELER_ID = "trv_meridian_demo"
 DECOY_TRAVELER_ID = "trv_demo_decoy"
+SEEDED_TRAVELERS = (DEMO_TRAVELER_ID, DECOY_TRAVELER_ID)
 MIGRATION = Path(__file__).resolve().parent / "migrations" / "005_bind_identity_to_traveler.sql"
 
 
-def refuse_decoy() -> None:
-    """The decoy gets no workload binding, so the workload grant refuses it as RLS does."""
-    if TRAVELER_ID == DECOY_TRAVELER_ID:
+def refuse_decoy(traveler_id: str, *, allow_decoy: bool) -> None:
+    """Refuse a decoy binding unless the caller is one of the two entry points that may make it.
+
+    Only ``bind_web_backend_role.py`` and ``bind_workflow_runtime.py`` set ``allow_decoy``.
+    The Gateway holds role and this laptop identity stay Jordan Morgan only.
+    """
+    if traveler_id == DECOY_TRAVELER_ID and not allow_decoy:
         raise SystemExit(
-            f"Refusing to bind a workload to {DECOY_TRAVELER_ID}: the decoy has no aws_iam "
-            "binding by design (docs/OPERATIONS.md, Sign-in and who is calling). Unset "
-            "MERIDIAN_DEMO_TRAVELER_ID or set it to trv_meridian_demo."
+            f"Refusing to bind a workload to {DECOY_TRAVELER_ID}: only bind_web_backend_role.py "
+            "and bind_workflow_runtime.py bind the decoy (--traveler). The Gateway holds role "
+            "and this laptop identity stay Jordan Morgan only (docs/OPERATIONS.md, Sign-in and "
+            "who is calling). Unset MERIDIAN_DEMO_TRAVELER_ID or set it to trv_meridian_demo."
         )
+
+
+def add_traveler_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add ``--traveler`` and ``--apply`` to a binding script that may bind the decoy."""
+    parser.add_argument(
+        "--traveler", choices=SEEDED_TRAVELERS, default=DEMO_TRAVELER_ID,
+        help="the seeded Cognito traveler to bind (default: %(default)s, Jordan Morgan)")
+    parser.add_argument(
+        "--apply", action="store_true",
+        help="write the binding; without it the script only prints what it would bind")
 
 
 def execute(client, sql: str, parameters: list[dict] | None = None) -> None:
@@ -52,13 +70,20 @@ def execute(client, sql: str, parameters: list[dict] | None = None) -> None:
 def bind(
     db,
     *,
+    traveler_id: str,
     provider: str,
     subject_id: str,
     principal: str,
+    allow_decoy: bool = False,
 ) -> None:
-    refuse_decoy()
+    """Write one active binding of a workload to ``traveler_id``.
+
+    Raises:
+        SystemExit: The traveler is the decoy and the caller did not pass ``allow_decoy``.
+    """
+    refuse_decoy(traveler_id, allow_decoy=allow_decoy)
     digest = hashlib.sha256(
-        f"{provider}:{subject_id}:{TRAVELER_ID}".encode()
+        f"{provider}:{subject_id}:{traveler_id}".encode()
     ).hexdigest()[:16]
     execute(
         db,
@@ -79,17 +104,17 @@ def bind(
             {"name": "binding_id", "value": {"stringValue": f"bind_{digest}"}},
             {"name": "provider", "value": {"stringValue": provider}},
             {"name": "subject_id", "value": {"stringValue": subject_id}},
-            {"name": "traveler_id", "value": {"stringValue": TRAVELER_ID}},
+            {"name": "traveler_id", "value": {"stringValue": traveler_id}},
             {"name": "principal", "value": {"stringValue": principal}},
         ],
     )
     console.print(
-        f"[green]Authorized {provider}:{subject_id} for {TRAVELER_ID}[/green]"
+        f"[green]Authorized a {provider} workload for {traveler_id}[/green]"
     )
 
 
 def main() -> None:
-    refuse_decoy()
+    refuse_decoy(TRAVELER_ID, allow_decoy=False)
     if not CLUSTER_ARN or not SECRET_ARN:
         raise SystemExit("AURORA_CLUSTER_ARN and AURORA_SECRET_ARN are required")
 
@@ -105,6 +130,7 @@ def main() -> None:
 
     bind(
         db,
+        traveler_id=TRAVELER_ID,
         provider="aws_iam",
         subject_id=subject_id,
         principal=principal,
@@ -119,6 +145,7 @@ def main() -> None:
     if workload_identity:
         bind(
             db,
+            traveler_id=TRAVELER_ID,
             provider="agentcore_workload",
             subject_id=workload_identity,
             principal=principal,

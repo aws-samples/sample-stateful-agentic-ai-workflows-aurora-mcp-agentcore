@@ -17,8 +17,7 @@ turn writes AgentCore Memory events that this command does not delete; the dry r
 and the operations guide declare them.
 
 The database probe opens its own Data API transaction, pins the decoy's traveler, steps down to
-meridian_app and counts Jordan's rows. It does not go through the workload grant, which the
-decoy lacks by decision. The Gateway refusal is attributed with a before and after count of
+meridian_app and counts Jordan's rows. It does not go through the workload grant. The Gateway refusal is attributed with a before and after count of
 traveler_access_audit deny rows: a new row means the Holds Lambda refused after the interceptor
 rewrote the traveler, no row means Cedar or the interceptor refused first.
 

@@ -276,7 +276,8 @@ Runtime, so confirm each before you run it.
    deploy, because the role comes from the deployed state:
 
    ```bash
-   python meridian/scripts/bind_workflow_runtime.py
+   python meridian/scripts/bind_workflow_runtime.py --apply
+   python meridian/scripts/bind_workflow_runtime.py --traveler trv_demo_decoy --apply
    ```
 
 6. Write `AGENTCORE_WORKFLOW_RUNTIME_ARN` into `meridian/.env`, then restart the

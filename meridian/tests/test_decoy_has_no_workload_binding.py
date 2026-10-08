@@ -1,31 +1,30 @@
-"""Decision: the decoy never gets an aws_iam workload binding, so it is refused at the grant too.
+"""Decision: the Gateway holds role stays Jordan Morgan only; the decoy has its own data elsewhere.
 
-The Cognito binding makes a person their traveler. A workload binding would make the App Runner
-role, the Lambdas or the Runtimes act for the decoy. Leaving it out keeps the decoy refused on its
-own records at the workload grant as well as at RLS (docs/OPERATIONS.md, Sign-in and who is
-calling). The static test pins the scripts, tests/test_bind_refuses_the_decoy.py pins the
-shared guard they all go through, and the database test pins the cluster.
+Jordan Lee (``trv_demo_decoy``) uses the app with their own records, so the App Runner role and
+the MeridianWorkflow Runtime role are bound to the decoy. The holds Lambda is not: holds stay
+Jordan Morgan's, and the recorded proof's Gateway row (the decoy refused at the holds grant)
+depends on it. The static tests pin the scripts, tests/test_bind_refuses_the_decoy.py pins the
+shared rule they go through, and the database test pins the cluster
+(docs/OPERATIONS.md, Sign-in and who is calling).
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
+import boto3
 import pytest
 
 from backend.db.rds_data_client import get_rds_data_client
+from scripts.bind_gateway_workload import DEFAULT_FUNCTION, role_subject
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 DECOY = "trv_demo_decoy"
 
 
-GUARD = "bind_current_identity.py"  # names the decoy only to refuse it; behavior is tested
-SCRIPTS_TO_GREP = sorted(p for p in SCRIPTS.glob("bind_*.py") if p.name != GUARD)
-
-
-@pytest.mark.parametrize("script", SCRIPTS_TO_GREP, ids=lambda p: p.name)
-def test_no_script_binds_a_workload_to_the_decoy(script):
-    assert DECOY not in script.read_text(encoding="utf-8")
+def test_the_gateway_binding_script_never_names_the_decoy():
+    assert DECOY not in (SCRIPTS / "bind_gateway_workload.py").read_text(encoding="utf-8")
 
 
 def test_there_is_a_binding_script_for_every_workload_and_they_were_all_checked():
@@ -35,11 +34,22 @@ def test_there_is_a_binding_script_for_every_workload_and_they_were_all_checked(
             "bind_workflow_runtime.py", "bind_current_identity.py"} <= names
 
 
+def gateway_holds_role() -> tuple[str, str]:
+    """The holds Lambda's (RoleId, role ARN), read the way bind_gateway_workload reads them."""
+    region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+    role_arn = boto3.client("lambda", region_name=region).get_function_configuration(
+        FunctionName=DEFAULT_FUNCTION)["Role"]
+    return role_subject(boto3.client("iam"), role_arn)
+
+
 @pytest.mark.database
-async def test_the_cluster_has_no_active_workload_binding_for_the_decoy():
+async def test_the_cluster_has_no_active_decoy_binding_for_the_gateway_holds_role():
+    subject_id, role_arn = gateway_holds_role()
+
     rows = await get_rds_data_client().execute(
         "SELECT count(*) AS n FROM traveler_identity_bindings "
-        "WHERE traveler_id = %s AND identity_provider = 'aws_iam' AND status = 'active'",
-        (DECOY,))
+        "WHERE traveler_id = %s AND identity_provider = 'aws_iam' AND status = 'active' "
+        "AND (subject_id = %s OR granted_by = %s)",
+        (DECOY, subject_id, role_arn))
 
     assert rows[0]["n"] == 0

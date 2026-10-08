@@ -49,16 +49,31 @@ def test_a_missing_state_file_says_to_deploy_first(tmp_path):
         bind_script.workflow_role_arn(tmp_path / "absent.json")
 
 
-def test_main_binds_the_role_id_to_the_demo_traveler(tmp_path, capsys):
+def test_run_binds_the_role_id_to_the_chosen_traveler(tmp_path, capsys):
     state = write_state(tmp_path / "state.json", {"MeridianWorkflow": {"roleArn": ROLE_ARN}})
     bound = []
     iam = FakeIam()
 
     code = bind_script.run(
-        state, iam=iam, db="db", bind=lambda db, **kwargs: bound.append((db, kwargs)))
+        state, traveler_id="trv_demo_decoy", apply=True, iam=iam, db="db",
+        bind=lambda db, **kwargs: bound.append((db, kwargs)))
 
     assert code == 0
     assert iam.asked == [ROLE_ARN.rsplit("/", 1)[-1]]
-    assert bound == [("db", {"provider": "aws_iam", "subject_id": "AROAWORKFLOWROLE",
+    assert bound == [("db", {"traveler_id": "trv_demo_decoy", "allow_decoy": True,
+                             "provider": "aws_iam", "subject_id": "AROAWORKFLOWROLE",
                              "principal": ROLE_ARN})]
-    assert f"Bound AROAWORKFLOWROLE ({ROLE_ARN}) to trv_meridian_demo" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Bound the" in out and "trv_demo_decoy" in out
+    assert "AROAWORKFLOWROLE" not in out and "123456789012" not in out
+
+
+def test_run_without_apply_binds_nothing(tmp_path, capsys):
+    state = write_state(tmp_path / "state.json", {"MeridianWorkflow": {"roleArn": ROLE_ARN}})
+    bound = []
+
+    bind_script.run(state, traveler_id="trv_meridian_demo", apply=False, iam=FakeIam(),
+                    db="db", bind=lambda db, **kwargs: bound.append(kwargs))
+
+    assert bound == []
+    assert "Dry run" in capsys.readouterr().out

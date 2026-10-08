@@ -4,7 +4,8 @@
 The gateway Lambda is a workload like the FastAPI backend: before it sets a
 traveler scope it must hold an active row in traveler_identity_bindings. The
 subject is the role's stable RoleId, which is what sts:GetCallerIdentity returns
-as the first part of UserId inside the function.
+as the first part of UserId inside the function. Holds stay Jordan Morgan's: this script
+refuses to bind the decoy traveler.
 
 Usage:
     cd meridian
@@ -22,7 +23,7 @@ import boto3
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.bind_current_identity import bind  # noqa: E402
+from scripts import bind_current_identity as identity  # noqa: E402
 
 load_dotenv()
 DEFAULT_FUNCTION = "meridianv2-MeridianHolds"
@@ -43,8 +44,9 @@ def main() -> None:
         FunctionName=args.function
     )["Role"]
     subject_id, principal = role_subject(boto3.client("iam"), role_arn)
-    bind(
+    identity.bind(
         boto3.client("rds-data", region_name=region),
+        traveler_id=identity.TRAVELER_ID,
         provider="aws_iam",
         subject_id=subject_id,
         principal=principal,

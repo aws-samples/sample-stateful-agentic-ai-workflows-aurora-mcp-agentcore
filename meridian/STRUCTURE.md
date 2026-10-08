@@ -98,12 +98,12 @@ uses the governed Gateway path.
 | `scripts/render_agentcore_config.py` | Render the AgentCore configuration templates for your account and deployed IDs |
 | `scripts/sync_agentcore_env.py` | Copy deployed AgentCore IDs from the CLI state into `.env` |
 | `scripts/publish_gateway_parameters.py` | Publish the Aurora settings the holds Lambda reads from SSM |
-| `scripts/bind_gateway_workload.py`, `scripts/bind_web_backend_role.py` | Grant the holds Lambda role and the App Runner instance role access to Jordan |
+| `scripts/bind_gateway_workload.py`, `scripts/bind_web_backend_role.py` | Grant the holds Lambda role (Jordan Morgan only) and the App Runner instance role (`--traveler`, `--apply`) access to a seeded traveler |
 | `scripts/verify_agentcore.py`, `scripts/smoke_gateway_tools.py`, `scripts/smoke_production_turn.py` | Check the deployed platform, the gateway tools and the governed hold path end to end |
 | `scripts/run_gateway_harness.py`, `scripts/gateway_harness/` | Create a separate throwaway Gateway, answer the interceptor and Cedar questions with real tokens, print a verdict table and delete everything; dry run by default, live only with `--apply --i-understand-this-creates-aws-resources` |
 | `scripts/agentcore_caller.py` | Bind a seeded user's real access token for a smoke script in `jwt` mode; does nothing in `iam` mode |
 | `scripts/kill_and_resume_proof.py`, `scripts/lost_response_proof.py`, `scripts/stop_and_resume_proof.py` | Recovery exercises: kill a worker after its hold, discard a committed hold response, or stop the Runtime session and resume |
-| `scripts/provision_workflow_login.py`, `scripts/bind_workflow_runtime.py`, `scripts/stage_workflow_runtime.py` | Create or rotate the `meridian_workflow` login, bind the Runtime's workload, and stage the Runtime's backend copy |
+| `scripts/provision_workflow_login.py`, `scripts/bind_workflow_runtime.py`, `scripts/stage_workflow_runtime.py` | Create or rotate the `meridian_workflow` login, bind the Runtime's workload (`--traveler`, `--apply`), and stage the Runtime's backend copy |
 | `scripts/provision_service_logins.py` | Create or rotate the `meridian_backend`, `meridian_gateway` and `meridian_identity` logins, their secrets and managed policies |
 | `scripts/seed_cognito_users.py`, `scripts/sync_cognito_env.py`, `scripts/cognito_tokens.py` | Create the two sign-in users and their traveler bindings, copy the identity stack outputs into `.env`, and mint real tokens for tests |
 | `scripts/provision_preflight.py` | Read-only checks before provisioning Aurora in an account |

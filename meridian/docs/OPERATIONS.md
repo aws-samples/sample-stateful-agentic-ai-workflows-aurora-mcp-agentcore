@@ -73,7 +73,9 @@ AgentCore workload access to the sample traveler.
 Each workload that sets a traveler scope needs its own grant: the backend's
 identity (`seed_data.py` or `bind_current_identity.py`), the holds Lambda role
 (`bind_gateway_workload.py`) and, for the hosted app, the App Runner instance
-role (`bind_web_backend_role.py`).
+role (`bind_web_backend_role.py --apply`). The backend role and the Workflow
+Runtime role are also bound to the second traveler, Jordan Lee
+(`--traveler trv_demo_decoy`); the holds role and your laptop identity are not.
 
 ## Run the workflow Runtime
 
@@ -99,8 +101,8 @@ works you need three things:
 3. The deployed Runtime. Follow the [runbook](AGENTCORE_DEPLOY_RUNBOOK.md) to
    deploy `MeridianWorkflow`, then run `python scripts/sync_agentcore_env.py --write`
    so `.env` has `AGENTCORE_WORKFLOW_RUNTIME_ARN`, and
-   `python scripts/bind_workflow_runtime.py` to grant the Runtime's role its
-   traveler binding.
+   `python scripts/bind_workflow_runtime.py --apply` to grant the Runtime's role its
+   traveler binding. Add `--traveler trv_demo_decoy --apply` for Jordan Lee.
 
 Confirm with `curl http://127.0.0.1:8013/api/health`:
 
@@ -464,13 +466,26 @@ the access token. A user with no active binding cannot sign in.
    from the Keychain when asked, and never paste it into a file or a chat:
    `security find-generic-password -s meridian-cognito -a <email> -w`.
 
-   The decoy signs in but is refused its own records. Workload bindings are
-   `aws_iam` grants and are bound to Jordan Morgan only, so a signed-in decoy
-   gets 403 on `me` with `aws_iam subject is not authorized for traveler
-   trv_demo_decoy`, as well as on Jordan's records by id. That is the second
-   check working. It stays that way until B2 decides whether to bind a workload
-   to `trv_demo_decoy`, so a decoy that sees an empty or refused workspace is the
-   expected result, not a broken sign-in.
+   Jordan Lee signs in and uses the app with their own data. The App Runner
+   instance role and the `MeridianWorkflow` Runtime role hold an `aws_iam`
+   binding for `trv_demo_decoy` as well as for `trv_meridian_demo`:
+
+   ```bash
+   python scripts/bind_web_backend_role.py --traveler trv_demo_decoy            # dry run
+   python scripts/bind_web_backend_role.py --traveler trv_demo_decoy --apply
+   python scripts/bind_workflow_runtime.py --traveler trv_demo_decoy            # dry run
+   python scripts/bind_workflow_runtime.py --traveler trv_demo_decoy --apply
+   ```
+
+   `--traveler` accepts only the two seeded Cognito travelers and defaults to
+   Jordan Morgan. Without `--apply` the script prints the plan and writes
+   nothing. The holds Lambda role stays bound to Jordan Morgan only, so a hold
+   for the decoy is refused at the holds grant, and `bind_gateway_workload.py`
+   and `bind_current_identity.py` refuse `trv_demo_decoy` before any write.
+   `tests/test_decoy_has_no_workload_binding.py` pins the Gateway rule, and its
+   database test checks that the cluster has no active decoy binding for the
+   holds role. If Jordan Lee sees "Traveler details are unavailable", the
+   backend role has no decoy binding yet. Sign in again after the grant.
 
 3. Check the claim, the verification and the refusals against the deployed pool:
 
@@ -495,9 +510,11 @@ token in this order and never retries a failed token against a weaker check:
 other traveler id is refused with 403, including one from the decoy that names
 Jordan.
 
-The workload grant is a second check. The App Runner role and the Lambda roles
-are bound to Jordan only, so a signed-in decoy is refused on its own records as
-well.
+The workload grant is a second check. The App Runner role and the Workflow
+Runtime role are bound to both seeded travelers, so Jordan Lee reaches their own
+records; the holds Lambda role is bound to Jordan Morgan only, so a hold for the
+decoy is refused there. A request that names another traveler is refused before
+the grant by the identity check.
 
 ### Sign-in settings in the web build
 
@@ -1123,9 +1140,12 @@ and not from a layer that turns the decoy away for any request.
 | `gateway.decoy_holds_for_jordan` | Gateway | decoy | `create_courtesy_hold` with `travelerId` set to Jordan |
 | `gateway.jordan_places_hold` | Gateway | Jordan | `create_courtesy_hold`, released afterwards |
 
-The database probe opens its own Data API transaction. It does not use the workload grant, which the decoy lacks by
-decision (`tests/test_decoy_has_no_workload_binding.py`), so a zero count is row-level security's answer and nothing
-else.
+The database probe opens its own Data API transaction. It does not use the workload grant, so a zero count is
+row-level security's answer and nothing else. No probe depends on the decoy being refused its own records at the
+backend or the Workflow: the backend and Runtime probes that must end `refused` all name Jordan's traveler and are
+refused by the identity check before the grant. The Gateway holds role is the one workload the decoy stays unbound
+for (`tests/test_decoy_has_no_workload_binding.py`), which is what makes `gateway.decoy_holds_for_jordan` end at the
+holds grant.
 
 ### Read the receipt
 
@@ -1141,7 +1161,7 @@ traveler and Cedar denies a mismatch), `cedar` or `interceptor`. `refused_by` is
 | Value | Meaning |
 | --- | --- |
 | `backend_identity_check` | The API compared the request's traveler with the token's and refused with 403 |
-| `workload_grant` | The API reached the database grant check, which has no binding for the decoy |
+| `workload_grant` | The API reached the database grant check, which has no binding for the caller's workload |
 | `runtime_traveler_check` | The Runtime read the traveler from the token and the payload named another |
 | `gateway_cedar` | Cedar denied a traveler argument that differed from the token's |
 | `gateway_interceptor` | The interceptor refused the call |
@@ -1228,7 +1248,9 @@ Phase 4 and Phase 5 requests on the hosted site fail with
 `aws_iam subject is not authorized for traveler`:
 
 ```bash
-python scripts/bind_web_backend_role.py
+python scripts/bind_web_backend_role.py            # dry run, writes nothing
+python scripts/bind_web_backend_role.py --apply
+python scripts/bind_web_backend_role.py --traveler trv_demo_decoy --apply   # Jordan Lee
 ```
 
 A Git push runs CI only; it does not deploy the hosted app or the AgentCore
@@ -1266,7 +1288,7 @@ explains why App Runner needs this.
 | Gateway reports `no targets were configured` | A target is missing. Check that `meridian-semantic-trip-search` exists, render the config and run `agentcore deploy -y`. |
 | Production returns no packages | Run `python scripts/verify_agentcore.py` (expect four tools) and watch `agentcore logs --runtime MeridianConcierge --follow` while you repeat the prompt. |
 | A hold returns `traveler_not_authorized` | The holds Lambda role has no grant. Run `python scripts/bind_gateway_workload.py`. |
-| Hosted Phase 4 or 5 returns `aws_iam subject is not authorized for traveler` | The App Runner instance role has no grant. Run `python scripts/bind_web_backend_role.py`. |
+| Hosted Phase 4 or 5 returns `aws_iam subject is not authorized for traveler` | The App Runner instance role has no grant for that traveler. Run `python scripts/bind_web_backend_role.py --apply`, with `--traveler trv_demo_decoy` for Jordan Lee. |
 | Every hold is denied, including confirmed ones | If `verify_agentcore.py` shows the policy engine `MISSING`, render (it must print `Configuration complete.`) and deploy. If it shows `ACTIVE` and `ENFORCE`, read the denied span's `arguments`: the ceiling is the traveler's saved per-person budget times the party size, and packages above it are refused. |
 | The runtime replies but the trace has no gateway spans | The runtime runs older code. `agentcore status` shows the version; `agentcore deploy -y` publishes `app/MeridianConcierge`. |
 | `npx agentcore` fails with a cloud assembly schema version error | `npx` resolved an older cached CLI. Run the globally installed `agentcore`. |

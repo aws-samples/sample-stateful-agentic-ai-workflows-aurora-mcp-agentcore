@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Grant the MeridianWorkflow Runtime's execution role access to the demo traveler.
+"""Grant the MeridianWorkflow Runtime's execution role access to a seeded traveler.
 
 The workflow Runtime is a workload like the backend and the holds Lambda: before it
 sets a traveler scope it must hold an active row in traveler_identity_bindings. The
@@ -7,13 +7,19 @@ subject is the role's stable RoleId, which sts:GetCallerIdentity returns as the 
 part of UserId inside the Runtime. The role ARN comes from the AgentCore CLI's
 deployed state, so run this after ``agentcore deploy``.
 
+The role is bound to Jordan Morgan (trv_meridian_demo) by default. Run it again with
+``--traveler trv_demo_decoy`` so Jordan Lee can use the app with their own data. Without
+``--apply`` it prints the plan and writes nothing.
+
 Usage:
     cd meridian
-    python scripts/bind_workflow_runtime.py
+    python scripts/bind_workflow_runtime.py [--traveler ID]
+    python scripts/bind_workflow_runtime.py [--traveler ID] --apply
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -24,7 +30,7 @@ import boto3
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.bind_current_identity import TRAVELER_ID, bind  # noqa: E402
+from scripts.bind_current_identity import add_traveler_arguments, bind  # noqa: E402
 from scripts.bind_gateway_workload import role_subject  # noqa: E402
 
 load_dotenv()
@@ -56,19 +62,32 @@ def workflow_role_arn(state_path: Path) -> str:
     raise SystemExit(missing)
 
 
-def run(state_path: Path, *, iam: Any, db: Any, bind: Callable[..., None]) -> int:
-    """Bind the workflow role's RoleId to the demo traveler and report it."""
+def run(
+    state_path: Path, *, traveler_id: str, apply: bool, iam: Any, db: Any, bind: Callable[..., None]
+) -> int:
+    """Bind the workflow role's RoleId to a seeded traveler and report it, or only report."""
     role_arn = workflow_role_arn(state_path)
     subject_id, principal = role_subject(iam, role_arn)
-    bind(db, provider="aws_iam", subject_id=subject_id, principal=principal)
-    print(f"Bound {subject_id} ({principal}) to {TRAVELER_ID}")
+    role_name = principal.rsplit("/", 1)[-1]
+    if not apply:
+        print(f"Dry run: would bind the {role_name} role to {traveler_id}. "
+              "Re-run with --apply to write it.")
+        return 0
+    bind(db, traveler_id=traveler_id, provider="aws_iam", subject_id=subject_id,
+         principal=principal, allow_decoy=True)
+    print(f"Bound the {role_name} role to {traveler_id}")
     return 0
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    add_traveler_arguments(parser)
+    args = parser.parse_args()
     region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
     return run(
         DEPLOYED_STATE,
+        traveler_id=args.traveler,
+        apply=args.apply,
         iam=boto3.client("iam"),
         db=boto3.client("rds-data", region_name=region),
         bind=bind,
