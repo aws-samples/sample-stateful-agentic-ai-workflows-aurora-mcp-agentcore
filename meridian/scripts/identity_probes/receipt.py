@@ -20,6 +20,7 @@ DECOY, JORDAN = "decoy", "jordan"
 REFUSED, ALLOWED, ERROR = "refused", "allowed", "error"
 FULL, JORDAN_ONLY = "full", "jordan-only"
 UNPROVEN = "unproven"
+DECOY_CONTROL_LAYERS = ("runtime", "gateway")
 DETAIL_LIMIT = 160
 REFUSER_LABELS = {
     "backend_identity_check": "Backend: token traveler check",
@@ -137,16 +138,22 @@ class Receipt:
         return cls(
             at=data["at"], git_sha=data["git_sha"], region=data["region"], design=data["design"],
             site_host=data["site_host"], mode=data["mode"], outcomes=outcomes,
-            cleanup=dict(data["cleanup"]), notes=list(data.get("notes", [])))
+            cleanup=_cleanup_from(data["cleanup"]), notes=list(data.get("notes", [])))
 
     def coverage_gaps(self) -> list[str]:
-        """Layers that lack a decoy refusal probe (full mode) or a Jordan control."""
+        """Layers that lack a decoy refusal probe, a Jordan control or a passing decoy control.
+
+        In full mode the Runtime and the Gateway must also let the decoy in where it is entitled
+        (a ping, a package read): a layer that refuses the decoy everywhere proves nothing.
+        """
         gaps = []
         for layer in LAYERS:
             mine = [o for o in self.outcomes if o.layer == layer]
             if self.mode == FULL and not any(
                     o.actor == DECOY and o.expected == REFUSED for o in mine):
                 gaps.append(f"{layer}: no decoy refusal probe ran")
+            if self.mode == FULL and not decoy_let_in(mine, layer):
+                gaps.append(f"{layer}: the decoy was not let in where it should be")
             if not any(o.actor == JORDAN and o.expected == ALLOWED for o in mine):
                 gaps.append(f"{layer}: no Jordan control ran")
         return gaps
@@ -173,6 +180,22 @@ class Receipt:
         }
 
 
+def _cleanup_from(stored: dict[str, Any]) -> dict[str, Any]:
+    """The stored cleanup, which must say what it left (``leftovers``) and what failed."""
+    missing = [key for key in ("leftovers", "problems") if key not in stored]
+    if missing:
+        raise KeyError(f"the receipt's cleanup lacks {', '.join(missing)}")
+    return dict(stored)
+
+
+def decoy_let_in(layer_outcomes: list[Outcome], layer: str) -> bool:
+    """True when the layer needs no decoy control or has one and every such control passed."""
+    if layer not in DECOY_CONTROL_LAYERS:
+        return True
+    controls = [o for o in layer_outcomes if o.actor == DECOY and o.expected == ALLOWED]
+    return bool(controls) and all(o.passed for o in controls)
+
+
 def _verdict(outcomes: list[Outcome], wanted: str) -> str:
     relevant = [o for o in outcomes if o.expected == wanted]
     if not relevant:
@@ -184,8 +207,9 @@ def summary_rows(receipt: Receipt) -> list[dict[str, str]]:
     """One row per layer: how the decoy fared, how Jordan fared and who refused the decoy.
 
     A decoy refusal counts only beside a passing Jordan control at the same layer, because a
-    layer that refuses everyone proves nothing about the decoy. Without one the decoy shows
-    ``unproven`` and no refuser is named.
+    layer that refuses everyone proves nothing about the decoy. The same holds where the decoy
+    must be let in (Runtime, Gateway) and was not. Without one the decoy shows ``unproven`` and
+    no refuser is named.
     """
     rows = []
     for layer in LAYERS:
@@ -193,7 +217,8 @@ def summary_rows(receipt: Receipt) -> list[dict[str, str]]:
         decoy = [o for o in mine if o.actor == DECOY]
         jordan = _verdict([o for o in mine if o.actor == JORDAN], ALLOWED)
         decoy_verdict = _verdict(decoy, REFUSED)
-        if decoy_verdict == REFUSED and jordan != ALLOWED:
+        let_in = receipt.mode != FULL or decoy_let_in(mine, layer)
+        if decoy_verdict == REFUSED and (jordan != ALLOWED or not let_in):
             decoy_verdict = UNPROVEN
         refusers = sorted({REFUSER_LABELS.get(o.refused_by or "", "") for o in decoy
                            if o.refused_by}) if decoy_verdict == REFUSED else []

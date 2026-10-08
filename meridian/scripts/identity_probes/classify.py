@@ -11,6 +11,7 @@ from scripts.identity_probes.receipt import ALLOWED, ERROR, REFUSED, scrub
 IDENTITY_CHECK = "not authorized for that traveler"
 GRANT_CHECKS = ("is not authorized for traveler", "not authorized for the current workload")
 DIFFERENT_TRAVELER = "different traveler"
+LAMBDA_DENY = "traveler_not_authorized"
 INTERCEPTOR_PREFIX = "Identity Check Failed: "
 CEDAR_PREFIX = re.compile(r"^(?:AuthorizeActionException - )?Tool Execution Denied")
 CEDAR_CODE = -32002
@@ -136,14 +137,22 @@ def _evidence_refuser(raw: dict, shape: str, text: str) -> str | None:
     return None
 
 
+def _grant_refuser(raw: dict, deny_rows: int) -> str | None:
+    """The workload grant, when a new deny row sits beside the Lambda's own refusal payload."""
+    if deny_rows > 0 and tool_payload(raw).get("error") == LAMBDA_DENY:
+        return "gateway_workload_grant"
+    return None
+
+
 def classify_gateway(raw: Any, *, deny_rows: int, design: str) -> Verdict:
     """Classify a Gateway tool call and attribute a refusal to the layer that made it.
 
     A refusal counts only with evidence of its layer: an HTTP 200 tool error that carries the
     interceptor's ``Identity Check Failed: `` text or Cedar's ``Tool Execution Denied`` text or
-    JSON-RPC code -32002, or a new deny row in ``traveler_access_audit`` (the Holds Lambda's
-    workload grant). An HTTP 4xx or 5xx, a timeout, a validation error or any other failure is an
-    error, because it does not show that identity was the reason.
+    JSON-RPC code -32002, or a new deny row in ``traveler_access_audit`` beside the Lambda's own
+    ``traveler_not_authorized`` payload (the Holds Lambda's workload grant). An HTTP 4xx or 5xx,
+    a timeout, a validation error or any other failure is an error, because it does not show
+    that identity was the reason.
 
     Args:
         raw: What ``call_tool`` returned, or an ``{"error": {"http_status": ...}}`` stand-in.
@@ -162,7 +171,7 @@ def classify_gateway(raw: Any, *, deny_rows: int, design: str) -> Verdict:
     if evidence and deny_rows > 0:
         return Verdict(ERROR, None, f"contradictory evidence: {evidence} text with "
                        f"{deny_rows} new deny row; {text}")
-    refuser = evidence or ("gateway_workload_grant" if deny_rows > 0 else None)
+    refuser = evidence or _grant_refuser(raw, deny_rows)
     if refuser is None:
         return Verdict(ERROR, None, f"a failure with no refusal evidence ({shape}): {text}")
     if refuser not in DESIGN_REFUSERS.get(design, set()):

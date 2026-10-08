@@ -107,6 +107,17 @@ def text_result(payload: dict, *, is_error: bool = False) -> dict:
     return {"result": result}
 
 
+def lambda_hold(booking: str) -> dict:
+    """The Holds Lambda's success payload: the booking id sits under ``hold``."""
+    return {"hold": {"bookingId": booking, "status": "held"}, "governance": {"allowed": True},
+            "summary": f"Held CTY-002 (5 nights) for 1 traveler(s) as {booking}"}
+
+
+def lambda_refusal() -> dict:
+    """The Holds Lambda's refusal payload when the workload grant denies the traveler."""
+    return {"error": "traveler_not_authorized", "governance": {"allowed": False}}
+
+
 def fake_http(user, method, path, body):
     """A backend that refuses the decoy whenever a request names Jordan."""
     if path == "/api/me":
@@ -135,10 +146,9 @@ def fake_gateway(database: FakeDatabase):
             return text_result({"package": PACKAGE})
         if user == DECOY:
             database.deny_rows += 1
-            return text_result({"detail": f"aws_iam subject is not authorized for traveler "
-                                          f"{DECOY_TRAVELER}"}, is_error=True)
+            return text_result(lambda_refusal(), is_error=True)
         database.add_booking(JORDAN_TRAVELER, "HLD-TEST0001", arguments["journeyRef"])
-        return text_result({"bookingId": "HLD-TEST0001"})
+        return text_result(lambda_hold("HLD-TEST0001"))
 
     return gateway
 

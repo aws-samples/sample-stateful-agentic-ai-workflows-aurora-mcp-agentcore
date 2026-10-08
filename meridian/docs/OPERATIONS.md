@@ -877,10 +877,13 @@ traveler and Cedar denies a mismatch), `cedar` or `interceptor`. `refused_by` is
 
 The summary has one row per layer with the decoy's result, Jordan's result and the refuser. A decoy refusal counts
 only beside a passing Jordan control at the same layer, because a layer that refuses everyone proves nothing about the
-decoy. Without one the decoy shows `unproven` and no refuser is named, and the receipt fails.
+decoy. Without one the decoy shows `unproven` and no refuser is named, and the receipt fails. The same holds for the
+Runtimes and the Gateway when a decoy control is missing or did not pass: the receipt lists the gap "the decoy was not
+let in where it should be" and the layer shows `unproven`.
 
 The Gateway rules are strict. A refusal counts only with evidence of its layer: a new deny row for the decoy in
-`traveler_access_audit` (the Lambda was reached and its grant check refused), the interceptor's
+`traveler_access_audit` together with the Lambda's own `traveler_not_authorized` answer (the Lambda was reached and its
+grant check refused; a deny row beside any other failure is an `error`), the interceptor's
 `Identity Check Failed: ` text, or Cedar's `Tool Execution Denied` text or JSON-RPC code `-32002`. A 401 or 403, a 5xx, a
 timeout, a validation error, a failure with none of that evidence, a refusal from a layer the shipped `design` does not
 have, and evidence that contradicts itself (layer text together with a new deny row) are all `error`. There is no
@@ -888,12 +891,12 @@ fallback label for a refusal that names no layer. Exit codes:
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Every probe met its expectation, every layer has a decoy refusal beside a passing Jordan control, nothing was left behind |
+| 0 | Every probe met its expectation, every layer has a decoy refusal beside a passing Jordan control, the Runtimes and the Gateway let the decoy in, nothing was left behind |
 | 1 | A probe failed or errored, a layer has no probe, a leftover remains, or the run crashed or was interrupted |
 | 3 | Refused to start: a guard, a usage error, a missing flag or an output folder outside `.local/` |
 
 The guards are the mode (`jwt`), the Cognito settings, a clean `meridian/` tree, the AWS account and Region of the
-deployment, and an `https` site address (or `http` on localhost).
+deployment, and an `https` site address (or `http` on localhost). The Gateway address must be `https`, with no localhost exception.
 
 Before the first probe, a preflight reads the tables the proof counts without a traveler scope
 (`traveler_access_audit`, `journey_threads`, `hold_requests`, `workflow_snapshots` and `journey_executions`). It stops
@@ -901,15 +904,16 @@ the run unless the Aurora role sees their rows: a table with forced row-level se
 bypasses, would answer with zero rows and no error, and the deny-row attribution and the leftover check would pass for
 the wrong reason. It must pass on the live cluster before the proof counts for anything.
 
-Jordan's controls write a review-only Workflow run and one courtesy hold. Cleanup releases bookings by exact id, and only
-a booking that the call's own answer or its journey reference ties to this run. Any other booking that appears while a
-probe runs is reported and never deleted, and it fails the receipt, as does any booking a decoy probe makes. Threads
-are purged after the bookings are released, and every step runs even if an earlier one failed. A leftover or a cleanup
-problem fails the receipt.
+Jordan's controls write a review-only Workflow run and one courtesy hold. Cleanup releases bookings by exact id. Before
+it commits, it recounts the booking's rows in `bookings`, `booking_lines` and `hold_requests`; any row left cancels the
+release and is reported. It releases only a booking that the call's own answer or its journey reference ties to this
+run. Any other booking that appears while a probe runs is reported and never deleted, and it fails the receipt, as does
+any booking a decoy probe makes. Threads are purged after the bookings are released, and every step runs even if an
+earlier one failed. A leftover or a cleanup problem fails the receipt.
 
 Some residue stays on purpose and is listed under `notes` in the receipt. Audit rows (`traveler_access_audit` and the
 agent audit log) are append-only. The Concierge probes write AgentCore Memory events for Jordan's traveler, under the
-session ids the receipt names, and this command does not delete them; they age out under the memory's event expiry.
+session ids the receipt names, and this command does not delete them; they expire with the memory's 30-day event expiry.
 
 The proof, the captures that use it and the deck slide that shows it all run after the release, in the window the
 owner approves. Nothing here has been run against the deployed system yet.

@@ -1,11 +1,13 @@
 """The real ports send the right requests, keep tokens in memory and always roll back."""
 
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
 
 from backend.agentcore.caller_credential import current_caller_token
+from scripts.identity_probes import effects
 from scripts.identity_probes.effects import (
     UNSCOPED_TABLES,
     AuroraCleanup,
@@ -379,3 +381,87 @@ def test_the_gateway_port_refuses_a_url_that_may_not_receive_a_token():
     with pytest.raises(SystemExit, match="Refusing to send a credential"):
         GatewayPort(FakeGateway({}), tokens()[0], url="http://gateway.example.net/mcp")
     GatewayPort(FakeGateway({}), tokens()[0], url="https://gateway.example.net/mcp")
+
+
+class Remnant(FakeRds):
+    """A Data API client whose DELETE of one table does not take effect."""
+
+    def __init__(self, stuck_table, **kwargs):
+        super().__init__(**kwargs)
+        self.stuck_table = stuck_table
+
+    async def execute(self, query, params=None, transaction_id=None):
+        if query.startswith("DELETE FROM " + self.stuck_table):
+            self.sql.append((query, params, transaction_id))
+            return []
+        if query.startswith("SELECT COUNT(*)") and "FROM " + self.stuck_table in query:
+            return [{"n": 1}]
+        return await super().execute(query, params, transaction_id)
+
+
+@pytest.mark.parametrize("table", ["bookings", "booking_lines", "hold_requests"])
+def test_release_raises_and_does_not_commit_when_a_row_of_the_booking_remains(table):
+    rds = Remnant(table)
+
+    with pytest.raises(RuntimeError, match=table):
+        AuroraCleanup(rds).release_bookings([("trv_meridian_demo", "HLD-1")])
+
+    assert rds.committed == [] and rds.rolled_back == ["tx-1"]
+
+
+def test_release_recounts_all_three_tables_before_it_commits():
+    rds = FakeRds()
+
+    AuroraCleanup(rds).release_bookings([("trv_meridian_demo", "HLD-1")])
+
+    counted = [q for q, _, _ in rds.sql if q.startswith("SELECT COUNT(*)")]
+    assert [t for t in ("hold_requests", "booking_lines", "bookings")
+            if any(f"FROM {t} " in q for q in counted)] == [
+                "hold_requests", "booking_lines", "bookings"]
+
+
+class Config:
+    workflow_runtime_arn = "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/W-abc"
+    runtime_arn = "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/C-abc"
+
+
+def rig_world(monkeypatch, gateway_url):
+    gateway = SimpleNamespace(gateway_url=gateway_url)
+    monkeypatch.setattr(effects, "resolve_agentcore_config", Config)
+    monkeypatch.setattr(effects, "get_agentcore_gateway", lambda: gateway)
+    monkeypatch.setattr(effects, "RDSDataClient", lambda **kwargs: object())
+
+
+@pytest.mark.parametrize(("base", "gateway", "message"), [
+    ("http://site.example.net", GATEWAY, "Refusing to send a credential"),
+    (BASE, "http://gateway.example.net/mcp", "https"),
+])
+def test_build_rig_turns_a_refused_url_into_an_error_main_can_mask(
+        monkeypatch, base, gateway, message):
+    rig_world(monkeypatch, gateway)
+
+    with pytest.raises(RuntimeError, match=message):
+        effects.build_rig({}, "us-east-1", base, tokens=tokens()[0])
+
+
+def test_build_rig_refuses_plain_http_on_loopback_for_the_gateway(monkeypatch):
+    rig_world(monkeypatch, "http://localhost:8080/mcp")
+
+    with pytest.raises(RuntimeError, match="https"):
+        effects.build_rig({}, "us-east-1", BASE, tokens=tokens()[0])
+
+
+def test_build_rig_still_accepts_a_loopback_http_backend(monkeypatch):
+    rig_world(monkeypatch, GATEWAY)
+
+    ports, _ = effects.build_rig({}, "us-east-1", "http://localhost:8000", tokens=tokens()[0])
+
+    assert ports.http is not None
+
+
+def test_build_rig_accepts_https_urls(monkeypatch):
+    rig_world(monkeypatch, GATEWAY)
+
+    ports, _ = effects.build_rig({}, "us-east-1", BASE, tokens=tokens()[0])
+
+    assert ports.gateway is not None

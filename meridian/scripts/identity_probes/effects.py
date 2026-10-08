@@ -14,6 +14,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -45,6 +46,7 @@ PIN_SQL = ("SELECT set_config('row_security', 'on', true), "
 BOOKING_PIN_SQL = ("SELECT set_config('row_security', 'on', true), "
                    "set_config('app.current_traveler_id', %s, true), "
                    "set_config('app.agent_type', %s, true)")
+COUNT_BOOKING_SQL = "SELECT COUNT(*) AS n FROM {table} WHERE booking_id = %s"
 RELEASE_TABLES = ("hold_requests", "booking_lines", "bookings")
 UNSCOPED_TABLES = ("traveler_access_audit", "journey_threads", "hold_requests",
                    "workflow_snapshots", "journey_executions")
@@ -280,6 +282,18 @@ class AuroraCleanup:
                 await self._client.execute(
                     f"DELETE FROM {table} WHERE booking_id = %s", (booking,),
                     transaction_id=transaction)
+            await self._require_gone(booking, transaction)
+
+    async def _require_gone(self, booking: str, transaction: str) -> None:
+        remaining = []
+        for table in RELEASE_TABLES:
+            rows = await self._client.execute(
+                COUNT_BOOKING_SQL.format(table=table), (booking,), transaction_id=transaction)
+            if _count(rows):
+                remaining.append(table)
+        if remaining:
+            raise RuntimeError(f"booking {booking} still has rows in {', '.join(remaining)} "
+                               "after its delete, so nothing was committed")
 
     def leftovers(self, prefix: str, baseline: Mapping[str, frozenset[str]]) -> list[str]:
         """Threads with the prefix, and bookings that are not in the baseline, by name."""
@@ -295,6 +309,12 @@ class AuroraCleanup:
         return items
 
 
+def require_https(url: str, what: str) -> None:
+    """Raise unless ``url`` is https: the Gateway never gets a token over plain http."""
+    if urlparse(url).scheme != "https":
+        raise RuntimeError(f"{what} must be an https URL; the proof sends tokens to it")
+
+
 def build_rig(
     env: Mapping[str, str | None], region: str, base_url: str, *,
     tokens: TokenCache | None = None,
@@ -302,7 +322,8 @@ def build_rig(
     """The real ports and cleanup for the deployment named by ``env``.
 
     Raises:
-        RuntimeError: When a Runtime ARN is not configured, or a seeded user cannot sign in.
+        RuntimeError: When a Runtime ARN is not configured, a seeded user cannot sign in, or the
+            backend URL may not receive a token or the Gateway URL is not https.
     """
     config = resolve_agentcore_config()
     arns = {WORKFLOW: config.workflow_runtime_arn, CONCIERGE: config.runtime_arn}
@@ -314,14 +335,18 @@ def build_rig(
     if not gateway.gateway_url:
         raise RuntimeError(
             "no Gateway URL is configured; run scripts/sync_agentcore_env.py --write")
+    require_https(gateway.gateway_url, "the Gateway URL")
     cache = tokens or TokenCache()
     cache.warm()
     client = RDSDataClient(
         cluster_arn=env.get("AURORA_CLUSTER_ARN"), secret_arn=env.get("AURORA_SECRET_ARN"),
         database=env.get("AURORA_DATABASE") or None, region=region)
-    ports = Ports(
-        http=HttpPort(base_url, cache), runtime=RuntimePort(region, arns, cache),
-        gateway=GatewayPort(gateway, cache, url=gateway.gateway_url),
-        database=AuroraPort(client),
-        clock=time.monotonic, now=utc_now)
+    try:
+        ports = Ports(
+            http=HttpPort(base_url, cache), runtime=RuntimePort(region, arns, cache),
+            gateway=GatewayPort(gateway, cache, url=gateway.gateway_url),
+            database=AuroraPort(client),
+            clock=time.monotonic, now=utc_now)
+    except SystemExit as exc:
+        raise RuntimeError(str(exc)) from exc
     return ports, AuroraCleanup(client)

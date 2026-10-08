@@ -43,6 +43,10 @@ def complete() -> Receipt:
         built.outcomes.append(outcome(layer=layer, refused_by=refuser))
         built.outcomes.append(outcome(layer=layer, actor=JORDAN, expected=ALLOWED, result=ALLOWED,
                                       refused_by=None, probe=f"{layer}.jordan"))
+        if layer in ("runtime", "gateway"):
+            built.outcomes.append(outcome(layer=layer, expected=ALLOWED, result=ALLOWED,
+                                          refused_by=None, probe=f"{layer}.decoy_control"))
+    built.cleanup = {"leftovers": 0, "problems": []}
     return built
 
 
@@ -236,7 +240,7 @@ def test_write_receipt_is_private_and_round_trips(tmp_path):
 
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
     data = json.loads(target.read_text())
-    assert data["ok"] is True and data["schema"] == 1 and len(data["outcomes"]) == 8
+    assert data["ok"] is True and data["schema"] == 1 and len(data["outcomes"]) == 10
     assert [row["layer"] for row in data["summary"]] == list(LAYERS)
 
 
@@ -261,3 +265,59 @@ def test_the_table_lists_the_gaps_when_the_run_fails():
     text = render_table(built)
 
     assert "database: no decoy refusal probe ran" in text and text.rstrip().endswith("RESULT: FAIL")
+
+
+DECOY_LET_IN = "{layer}: the decoy was not let in where it should be"
+
+
+@pytest.mark.parametrize("layer", ["runtime", "gateway"])
+def test_a_refused_decoy_control_is_a_gap_and_fails_the_receipt(layer):
+    built = complete()
+    index = next(i for i, o in enumerate(built.outcomes)
+                 if o.layer == layer and o.actor == DECOY and o.expected == ALLOWED)
+    built.outcomes[index] = outcome(layer=layer, expected=ALLOWED, result=REFUSED,
+                                    refused_by="runtime_traveler_check",
+                                    probe=f"{layer}.decoy_control")
+
+    assert built.coverage_gaps() == [DECOY_LET_IN.format(layer=layer)]
+    assert built.ok is False
+    assert f"GAP: {DECOY_LET_IN.format(layer=layer)}" in render_table(built)
+
+
+@pytest.mark.parametrize("layer", ["runtime", "gateway"])
+def test_a_missing_decoy_control_is_a_gap(layer):
+    built = complete()
+    built.outcomes = [o for o in built.outcomes
+                      if not (o.layer == layer and o.actor == DECOY and o.expected == ALLOWED)]
+
+    assert built.coverage_gaps() == [DECOY_LET_IN.format(layer=layer)]
+    assert built.ok is False
+
+
+@pytest.mark.parametrize("layer", ["runtime", "gateway"])
+def test_a_failed_decoy_control_leaves_the_layer_unproven(layer):
+    built = complete()
+    index = next(i for i, o in enumerate(built.outcomes)
+                 if o.layer == layer and o.actor == DECOY and o.expected == ALLOWED)
+    built.outcomes[index] = outcome(layer=layer, expected=ALLOWED, result=ERROR,
+                                    refused_by=None, probe=f"{layer}.decoy_control")
+
+    row = next(r for r in summary_rows(built) if r["layer"] == layer)
+
+    assert row["decoy"] == "unproven" and row["refused_by"] == ""
+
+
+def test_a_jordan_only_receipt_needs_no_decoy_control():
+    built = receipt(mode=JORDAN_ONLY)
+    built.outcomes = [o for o in complete().outcomes if o.actor == JORDAN]
+
+    assert built.coverage_gaps() == []
+
+
+@pytest.mark.parametrize("missing", ["leftovers", "problems"])
+def test_from_dict_requires_the_cleanup_to_say_what_it_found(missing):
+    stored = complete().to_dict()
+    del stored["cleanup"][missing]
+
+    with pytest.raises(KeyError, match=missing):
+        Receipt.from_dict(stored)

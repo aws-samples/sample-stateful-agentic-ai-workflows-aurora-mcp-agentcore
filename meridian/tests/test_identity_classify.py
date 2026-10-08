@@ -150,11 +150,22 @@ def test_a_failure_that_is_not_a_recognised_refusal_is_an_error(raw):
 
 
 def test_a_new_deny_audit_row_means_the_holds_lambda_grant_refused():
-    raw = text_result({"detail": "not authorized"}, is_error=True)
+    raw = text_result({"error": "traveler_not_authorized"})
 
     verdict = classify_gateway(raw, deny_rows=1, design="both")
 
     assert (verdict.result, verdict.refused_by) == ("refused", "gateway_workload_grant")
+
+
+@pytest.mark.parametrize("raw", [
+    text_result({"error": "internal error"}, is_error=True),
+    text_result({"detail": "something odd"}, is_error=True),
+    refusal_text("The server is overloaded"),
+])
+def test_a_deny_row_without_the_lambdas_own_refusal_payload_is_an_error(raw):
+    verdict = classify_gateway(raw, deny_rows=1, design="both")
+
+    assert (verdict.result, verdict.refused_by) == ("error", None)
 
 
 def test_a_deny_row_does_not_turn_an_http_failure_into_a_refusal():

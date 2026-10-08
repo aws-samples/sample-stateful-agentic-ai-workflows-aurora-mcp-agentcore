@@ -14,7 +14,14 @@ from scripts.identity_probes.probes import (
     select,
 )
 from scripts.identity_probes.receipt import ALLOWED, DECOY, ERROR, JORDAN, LAYERS, REFUSED
-from tests.identity_proof_support import PACKAGE, good_world, text_result
+from scripts.identity_probes.runner import tidy
+from tests.identity_proof_support import (
+    PACKAGE,
+    FakeCleanup,
+    good_world,
+    lambda_hold,
+    text_result,
+)
 
 
 def run_all(ports, design="both", only=None):
@@ -107,7 +114,7 @@ def test_a_gateway_that_accepts_the_decoy_and_books_for_jordan_is_an_error_and_i
         if tool.endswith("get_package_details"):
             return text_result({"package": PACKAGE})
         database.add_booking(JORDAN_TRAVELER, "HLD-LEAK0001", arguments["journeyRef"])
-        return text_result({"bookingId": "HLD-LEAK0001"})
+        return text_result(lambda_hold("HLD-LEAK0001"))
 
     broken = ports.__class__(**{**ports.__dict__, "gateway": accept_everything})
 
@@ -126,7 +133,7 @@ def test_a_hold_booked_for_the_decoy_is_tracked_under_the_decoy():
         if tool.endswith("get_package_details"):
             return text_result({"package": PACKAGE})
         database.add_booking(DECOY_TRAVELER, "HLD-DECOY001", arguments["journeyRef"])
-        return text_result({"bookingId": "HLD-DECOY001"})
+        return text_result(lambda_hold("HLD-DECOY001"))
 
     broken = ports.__class__(**{**ports.__dict__, "gateway": rewrites_to_the_decoy})
 
@@ -199,7 +206,8 @@ def test_an_order_that_books_something_for_the_decoy_probe_is_an_error_with_the_
 
     def books(user, method, path, body):
         database.add_booking(DECOY_TRAVELER, "HLD-ORDER001", None)
-        return 200, {"order": {"order_id": "HLD-ORDER001"}}
+        return 200, {"message": "Held.", "order": {"order_id": "HLD-ORDER001", "status": "held"},
+                     "activities": []}
 
     broken = ports.__class__(**{**ports.__dict__, "http": books})
 
@@ -330,3 +338,85 @@ def test_hold_arguments_use_the_catalog_price_an_open_duration_and_a_fresh_refer
 def test_a_package_that_cannot_make_a_hold_is_refused_with_a_reason(package):
     with pytest.raises(ValueError):
         build_hold_arguments(package, "trv_x", "ref")
+
+
+def test_a_hold_is_tied_by_the_bookingId_in_the_lambdas_real_payload():
+    ports, database = good_world()
+
+    def books_without_a_journey_record(user, tool, arguments):
+        if tool.endswith("get_package_details"):
+            return text_result({"package": PACKAGE})
+        database.add_booking(JORDAN_TRAVELER, "HLD-PAYLOAD1", None)
+        return text_result(lambda_hold("HLD-PAYLOAD1"))
+
+    world = ports.__class__(**{**ports.__dict__, "gateway": books_without_a_journey_record})
+
+    ctx, outcomes = run_all(world, only={"gateway.jordan_reads_package",
+                                          "gateway.jordan_places_hold"})
+    cleanup = FakeCleanup()
+    tidy(cleanup, ctx)
+
+    assert outcomes["gateway.jordan_places_hold"].result == ALLOWED
+    assert ctx.owned_bookings == {(JORDAN_TRAVELER, "HLD-PAYLOAD1")}
+    assert cleanup.released == [(JORDAN_TRAVELER, "HLD-PAYLOAD1")]
+
+
+def test_a_top_level_bookingId_is_not_where_the_lambda_puts_it():
+    ports, database = good_world()
+
+    def wrong_shape(user, tool, arguments):
+        if tool.endswith("get_package_details"):
+            return text_result({"package": PACKAGE})
+        database.add_booking(JORDAN_TRAVELER, "HLD-FLAT0001", None)
+        return text_result({"bookingId": "HLD-FLAT0001"})
+
+    world = ports.__class__(**{**ports.__dict__, "gateway": wrong_shape})
+
+    ctx, outcomes = run_all(world, only={"gateway.jordan_reads_package",
+                                          "gateway.jordan_places_hold"})
+
+    assert ctx.owned_bookings == set()
+    assert outcomes["gateway.jordan_places_hold"].result == ERROR
+
+
+def test_an_order_is_tied_by_the_order_id_of_the_real_order_response():
+    ports, database = good_world()
+
+    def books(user, method, path, body):
+        database.add_booking(DECOY_TRAVELER, "HLD-ORDER002", None)
+        return 200, {"message": "Held.", "activities": [],
+                     "order": {"order_id": "HLD-ORDER002", "status": "held", "items": []}}
+
+    world = ports.__class__(**{**ports.__dict__, "http": books})
+
+    ctx, _ = run_all(world, only={"backend.decoy_orders_for_jordan"})
+
+    assert ctx.owned_bookings == {(DECOY_TRAVELER, "HLD-ORDER002")}
+
+
+def test_a_decoy_ping_the_runtime_refuses_does_not_pass():
+    ports, _ = good_world()
+    refusing = ports.__class__(**{**ports.__dict__, "runtime": lambda *a: [
+        {"type": "error", "code": "authorization", "message": "The token was refused."}]})
+
+    _, outcomes = run_all(refusing, only={"runtime.decoy_pings_workflow"})
+
+    assert outcomes["runtime.decoy_pings_workflow"].result == ERROR
+    assert not outcomes["runtime.decoy_pings_workflow"].passed
+
+
+def test_a_decoy_package_read_the_gateway_refuses_does_not_pass():
+    ports, _ = good_world()
+
+    def refuses_the_decoy(user, tool, arguments):
+        if user == DECOY:
+            return {"result": {"isError": True, "content": [
+                {"type": "text", "text": "Tool Execution Denied: not allowed"}]}}
+        return text_result({"package": PACKAGE})
+
+    world = ports.__class__(**{**ports.__dict__, "gateway": refuses_the_decoy})
+
+    _, outcomes = run_all(world, only={"gateway.decoy_reads_package"})
+
+    assert outcomes["gateway.decoy_reads_package"].result == REFUSED
+    assert not outcomes["gateway.decoy_reads_package"].passed

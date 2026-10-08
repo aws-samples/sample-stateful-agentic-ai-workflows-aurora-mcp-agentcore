@@ -42,7 +42,7 @@ AUDIT_RESIDUE = (
     "audit rows (traveler_access_audit, the agent audit log) are append-only and stay")
 MEMORY_RESIDUE = (
     f"AgentCore Memory events written for actor {JORDAN_TRAVELER} by the Concierge turn are not "
-    "deleted by this command; they age out under the memory's event expiry")
+    "deleted by this command; they expire with the memory's 30-day event expiry")
 BookingRef = tuple[str, str]
 
 
@@ -177,7 +177,8 @@ def watch_bookings(ports: Ports, ctx: Context, journey_ref: str | None) -> Itera
 
 
 def _payload_booking_ids(raw: Any) -> set[str]:
-    booking = tool_payload(raw).get("bookingId")
+    hold = tool_payload(raw).get("hold")
+    booking = hold.get("bookingId") if isinstance(hold, dict) else None
     return {booking} if isinstance(booking, str) else set()
 
 
