@@ -14,13 +14,14 @@ check mode only: it validates the settings and the pipe, mints nothing and start
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-NODE = "/Users/shayons/.nvm/versions/node/v22.20.0/bin/node"
+NODE = shutil.which("node") or "node"
 
 
 def default_minter_cmd() -> list[str]:

@@ -8,7 +8,7 @@ import pytest
 from scripts.identity_capture import capture_session
 
 SENTINEL = "SENTINEL-TOKEN-NOT-A-REAL-JWT"
-NODE = "/Users/shayons/.nvm/versions/node/v22.20.0/bin/node"
+NODE = shutil.which("node") or "node"
 
 FAKE_MINTER = (
     "import os, stat, sys\n"

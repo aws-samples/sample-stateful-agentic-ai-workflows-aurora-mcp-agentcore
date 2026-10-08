@@ -76,7 +76,7 @@ npm run format:check
   `frontend/.env.development.local`. The sign-in screen is covered by the `gated` project.
 - macOS: `npm` and `npx` are nvm aliases that contain a `;`. In `npm run a && npm run b` the `;`
   ends the chain, so a failed gate is ignored. Call the real binary
-  (`/Users/shayons/.nvm/versions/node/v22.20.0/bin/npm`), run each gate as its own command, and
+  (`$HOME/.nvm/versions/node/v22.20.0/bin/npm`), run each gate as its own command, and
   read its exit status. Do not put the nvm bin directory first on `PATH`.
 - `git apply` from a subdirectory silently skips paths outside it. From the Git root use
   `git apply --directory=meridian`, or use `patch -p1`.
