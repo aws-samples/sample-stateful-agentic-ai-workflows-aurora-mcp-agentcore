@@ -217,6 +217,11 @@ def _gateway_section(state: preflight.HopState, where: Where,
     problems = gateway_release.snapshot_problems(state.gateway, where.gateway_id, target)
     if problems:
         raise SnapshotError("the Gateway cannot be saved in full:\n  " + "\n  ".join(problems))
+    if state.gateway.get("name") != target.gateway_name:
+        raise SnapshotError(
+            f"the Gateway is not named for the {target.mode} release (expected "
+            f"{target.gateway_name!r}); a rollback finds the Gateway again by that name after a "
+            "deploy replaces it, so a Gateway under another name cannot be saved")
     return {key: value for key, value in state.gateway.items() if key != "ResponseMetadata"}
 
 

@@ -9,6 +9,14 @@ The roles stack and the Cedar rules belong to CloudFormation and ``agentcore dep
 
 Nothing here deletes anything. A hop whose saved copy was redacted anywhere, or holds a
 placeholder inside any string, is refused rather than restored with the placeholder.
+
+A release replaces the Gateway (CloudFormation cannot change a Gateway's authorizer type, so a
+mode change builds a new one under another name and the stack deletes the old one), and a
+rollback to the saved mode builds a third. The Gateway is found again by its saved name. When it
+has another id than the saved one, or is gone, the Gateway, both Runtimes and the service are not
+restored through their APIs: their saved environments name a Gateway that no longer exists, and
+sending them would break what the stack deploys rewired. They are compared with what is
+legitimately different left out, and the staged deploys that rebuild them are printed.
 """
 
 from __future__ import annotations
@@ -24,7 +32,7 @@ import botocore.session
 from botocore.exceptions import ClientError, WaiterError
 from botocore.validate import ParamValidator
 
-from backend.agentcore.auth_mode import IAM
+from backend.agentcore.auth_mode import IAM, JWT
 from scripts.identity_release import lambda_release, preflight, runtime_roles, settings
 from scripts.identity_release import snapshot
 
@@ -34,6 +42,10 @@ CONTROL = "bedrock-agentcore-control"
 STATUS_PREFIX = "status "
 NOT_RESTORABLE = "not restorable here: "
 PENDING_RESTART = "ssm"
+GATEWAY_VALUES = re.compile(
+    r"AGENTCORE_GATEWAY_(?:[A-Z0-9_]+_)?URL|MERIDIAN_GATEWAY_ID|MERIDIAN_POLICY_ENGINE_ID")
+SERVICE_URL = "AGENTCORE_GATEWAY_URL"
+RECREATED = ("roleArn", "policyEngineConfiguration.arn")
 
 
 class RestoreRefused(RuntimeError):
@@ -52,6 +64,7 @@ class Context:
     stamp: str
     pending: set[str] = field(default_factory=set)
     journal: Callable[[], None] = lambda: None
+    identity: tuple[bool, str | None] | None = None
 
     @property
     def target(self) -> preflight.Target:
@@ -183,7 +196,59 @@ def gateway_arguments(ctx: Context) -> dict[str, Any]:
     return arguments
 
 
+def gateway_identity(ctx: Context) -> tuple[bool, str | None]:
+    """Whether the saved Gateway was replaced, and the id of the Gateway now called its name.
+
+    Replaced means the Gateway of the saved name has another id than the saved one, or does not
+    exist. The answer is read once per run.
+    """
+    if ctx.identity is None:
+        saved = ctx.saved["gateway"]
+        live = preflight.find_gateway_id(ctx.clients.control, saved["name"])
+        ctx.identity = (live != saved.get("gatewayId"), live)
+    return ctx.identity
+
+
+def replaced(ctx: Context) -> bool:
+    """True when the saved Gateway no longer exists under its saved id."""
+    return gateway_identity(ctx)[0]
+
+
+def not_restorable(lines: list[str], what: str) -> list[str]:
+    """``lines`` marked as beyond this command, led by why; empty stays empty."""
+    if not lines:
+        return []
+    reason = (f"{what}: the Gateway was replaced by a stack deploy (a new id and URL), so this "
+              "command does not restore it; the staged deploys under 'agentcore stack' do")
+    return [f"{NOT_RESTORABLE}{line}" for line in [reason, *lines]]
+
+
+def without_recreated(view: Mapping[str, Any]) -> dict[str, Any]:
+    """A Gateway view without the fields a re-creation changes (its role and engine ARN)."""
+    kept = json.loads(json.dumps(dict(view)))
+    kept.pop("roleArn", None)
+    (kept.get("policyEngineConfiguration") or {}).pop("arn", None)
+    return kept
+
+
+def replaced_gateway_lines(ctx: Context) -> list[str]:
+    _, live = gateway_identity(ctx)
+    saved = ctx.saved["gateway"]
+    if live is None:
+        return [f"{NOT_RESTORABLE}Gateway: no Gateway named {saved['name']} exists (a stack "
+                "deploy replaced it and nothing has rebuilt it yet)"]
+    current = ctx.clients.control.get_gateway(gatewayIdentifier=live)
+    lines = compare("Gateway", without_recreated(snapshot.gateway_view(current)),
+                    without_recreated(snapshot.gateway_view(saved)))
+    if current.get("status") != "READY":
+        lines.append(f"{STATUS_PREFIX}{current.get('status')}, not READY")
+    lines += new_findings(ctx, preflight.check_gateway(current, ctx.target))
+    return not_restorable(lines, "Gateway")
+
+
 def gateway_check(ctx: Context) -> list[str]:
+    if replaced(ctx):
+        return replaced_gateway_lines(ctx)
     arguments = gateway_arguments(ctx)
     view = {k: v for k, v in arguments.items() if k != "gatewayIdentifier"}
     current = ctx.clients.control.get_gateway(gatewayIdentifier=ctx.where.gateway_id)
@@ -221,7 +286,30 @@ def runtime_arguments(ctx: Context, name: str) -> dict[str, Any]:
     return arguments
 
 
+def without_gateway_values(view: Mapping[str, Any]) -> dict[str, Any]:
+    """A Runtime view without the variables the stack deploys rewire to the live Gateway."""
+    kept = json.loads(json.dumps(dict(view)))
+    variables = kept.get("environmentVariables")
+    if isinstance(variables, dict):
+        for key in [key for key in variables if GATEWAY_VALUES.fullmatch(key)]:
+            del variables[key]
+    return kept
+
+
+def replaced_runtime_lines(ctx: Context, name: str) -> list[str]:
+    current = ctx.clients.control.get_agent_runtime(agentRuntimeId=ctx.where.runtime_ids[name])
+    saved = snapshot.runtime_view(ctx.saved["runtimes"][name])
+    lines = compare(f"Runtime {name}", without_gateway_values(snapshot.runtime_view(current)),
+                    without_gateway_values(saved))
+    if current.get("status") != "READY":
+        lines.append(f"{STATUS_PREFIX}{current.get('status')}, not READY")
+    lines += new_findings(ctx, preflight.check_runtime(name, current, ctx.target))
+    return not_restorable(lines, f"Runtime {name}")
+
+
 def runtime_check(ctx: Context, name: str) -> list[str]:
+    if replaced(ctx):
+        return replaced_runtime_lines(ctx, name)
     arguments = runtime_arguments(ctx, name)
     view = {k: v for k, v in arguments.items() if k != "agentRuntimeId"}
     current = ctx.clients.control.get_agent_runtime(agentRuntimeId=ctx.where.runtime_ids[name])
@@ -265,7 +353,34 @@ def service_arguments(ctx: Context) -> dict[str, Any]:
     return arguments
 
 
+def without_service_url(view: Mapping[str, Any]) -> dict[str, Any]:
+    """A service view without the Gateway URL, which a hosted release rewrites."""
+    kept = json.loads(json.dumps(dict(view)))
+    image = (kept.get("SourceConfiguration") or {}).get("ImageRepository") or {}
+    ((image.get("ImageConfiguration") or {}).get("RuntimeEnvironmentVariables") or {}).pop(
+        SERVICE_URL, None)
+    return kept
+
+
+def replaced_service_lines(ctx: Context) -> list[str]:
+    arn = service_arn(ctx)
+    current = ctx.clients.apprunner.describe_service(ServiceArn=arn)["Service"]
+    lines = compare("Service", without_service_url(snapshot.service_view(current)),
+                    without_service_url(snapshot.service_view(ctx.saved["service"])))
+    if current.get("Status") != "RUNNING":
+        lines.append(f"{STATUS_PREFIX}{current.get('Status')}, not RUNNING")
+    environment = preflight.image_environment(current) or ({}, {})
+    lines += new_findings(ctx, preflight.check_service_environment(*environment, ctx.target))
+    _, live = gateway_identity(ctx)
+    url = str(environment[0].get(SERVICE_URL) or "")
+    if live and live not in url:
+        lines.append(f"Service: {SERVICE_URL} does not name the live Gateway")
+    return not_restorable(lines, "Service")
+
+
 def service_check(ctx: Context) -> list[str]:
+    if replaced(ctx):
+        return replaced_service_lines(ctx)
     arguments = service_arguments(ctx)
     view = {k: v for k, v in arguments.items() if k != "ServiceArn"}
     current = ctx.clients.apprunner.describe_service(ServiceArn=arguments["ServiceArn"])["Service"]
@@ -385,19 +500,30 @@ def publish_remedy(ctx: Context) -> list[str]:
             finish_line()]
 
 
+def stack_gateway_id(ctx: Context) -> str | None:
+    """The Gateway the stack hops are read through: the one now called the saved name when the
+    saved one was replaced, else the configured one. ``None`` when there is none."""
+    was_replaced, live = gateway_identity(ctx)
+    return live if was_replaced else ctx.where.gateway_id
+
+
 def rules_check(ctx: Context) -> list[str]:
-    state = preflight.read_state(ctx.clients.control, ctx.where.gateway_id, ctx.where.runtime_ids)
+    gateway_id = stack_gateway_id(ctx)
+    if gateway_id is None:
+        return ["Cedar rules: no Gateway of the saved name exists, so its rules cannot be read"]
+    state = preflight.read_state(ctx.clients.control, gateway_id, ctx.where.runtime_ids)
     return compare("Cedar rules", dict(state.policies), dict(ctx.saved["policies"]))
 
 
 def roles_grant_check(ctx: Context) -> list[str]:
     """In an ``iam`` snapshot, findings for a Runtime role that lost ``InvokeGateway``."""
-    if ctx.saved["mode"] != IAM or ctx.clients.iam is None:
+    gateway_id = stack_gateway_id(ctx)
+    if ctx.saved["mode"] != IAM or ctx.clients.iam is None or gateway_id is None:
         return []
     control = ctx.clients.control
     runtimes = {name: control.get_agent_runtime(agentRuntimeId=runtime_id)
                 for name, runtime_id in ctx.where.runtime_ids.items()}
-    arn = runtime_roles.gateway_arn(ctx.where.account, ctx.where.region, ctx.where.gateway_id)
+    arn = runtime_roles.gateway_arn(ctx.where.account, ctx.where.region, gateway_id)
     return new_findings(ctx, runtime_roles.findings(ctx.clients.iam, runtimes, arn))
 
 
@@ -406,24 +532,73 @@ def stack_check(ctx: Context) -> list[str]:
     return rules_check(ctx) + roles_grant_check(ctx)
 
 
-def stack_remedy(ctx: Context) -> list[str]:
-    """Redeploy the snapshot's render with the CLI, from the snapshot's commit."""
+def revoke_lines(ctx: Context) -> list[str]:
+    """The command that removes the interceptor grant from the Gateway the stack will delete.
+
+    The grant is an inline policy written outside the stack, and CloudFormation cannot delete a
+    role that still has one. It is only listed when that Gateway is live and has an interceptor.
+    """
+    other = IAM if ctx.saved["mode"] == JWT else JWT
+    control = ctx.clients.control
+    gateway_id = preflight.find_gateway_id(control, settings.gateway_physical_name(other))
+    if gateway_id is None:
+        return []
+    if not control.get_gateway(gatewayIdentifier=gateway_id).get("interceptorConfigurations"):
+        return []
+    return [f"  first remove the interceptor grant from the live {other} Gateway's role, which "
+            "the stack cannot delete while it holds that policy: python "
+            f"scripts/release_identity.py gateway --to {other} --only revoke --apply "
+            f"{settings.CONFIRM_FLAG}"]
+
+
+def replaced_remedy(ctx: Context) -> list[str]:
     mode = ctx.saved["mode"]
-    authorizer = "AWS_IAM" if mode == IAM else "CUSTOM_JWT"
     return [
-        *checkout_lines(ctx),
-        f"  precondition: run this only after the gateway step above restored the Gateway to "
-        f"{authorizer} through the UpdateGateway API. CloudFormation cannot change the authorizer "
-        f"type back, and the render keeps the Gateway resource on AWS_IAM in both modes, so no "
-        "stack step may run while the live Gateway still reads the token authorizer",
+        f"  the {mode} Gateway no longer exists under its saved id (a stack deploy replaced it) "
+        "and CloudFormation cannot change a Gateway's authorizer type, so it is rebuilt in four "
+        "deploys; the Gateway comes back with a NEW id and URL",
+        *revoke_lines(ctx),
+        "  repeat these two commands until the render prints `Configuration complete.` (the four "
+        "stages are gateway, targets, governance, complete):",
+        f"    MERIDIAN_AGENTCORE_AUTH={mode} python scripts/render_agentcore_config.py",
+        f"    python scripts/release_identity.py deploy --to {mode} --apply "
+        f"{settings.CONFIRM_FLAG}",
+        "  the holds Lambda and its role were recreated: python scripts/bind_gateway_workload.py",
+        "  from the current checkout, point meridian/.env at the new Gateway: python "
+        "scripts/sync_agentcore_env.py --write",
+        f"  the backend and the hosted service name the old Gateway URL: MERIDIAN_AGENTCORE_AUTH="
+        f"{mode} python scripts/publish.py --account \"$ACCOUNT\" --region \"$REGION\" "
+        f"--service-arn \"$SERVICE_ARN\" --apply {settings.CONFIRM_FLAG}",
+        f"  then read every hop back from the current checkout: venv/bin/python "
+        f"scripts/release_identity.py check --expect {mode} --service-arn \"$SERVICE_ARN\"",
+        "  then re-run rollback to verify (exit 1 until every hop is as saved)",
+    ]
+
+
+def intact_remedy(ctx: Context) -> list[str]:
+    mode = ctx.saved["mode"]
+    return [
         f"  MERIDIAN_AGENTCORE_AUTH={mode} python scripts/render_agentcore_config.py",
-        "  cd ../meridian_agentcore && /opt/homebrew/bin/agentcore deploy -y   (this restores "
-        "the Runtime roles' InvokeGateway statement and the Cedar rules, and never deletes a rule)",
+        f"  python scripts/release_identity.py deploy --to {mode} --apply {settings.CONFIRM_FLAG}"
+        "   (it runs /opt/homebrew/bin/agentcore deploy -y from meridian_agentcore/ after its "
+        "checks; this restores the Runtime roles' InvokeGateway statement and the Cedar rules, "
+        "and never deletes a rule)",
         "  then, from the current checkout, read every hop back: venv/bin/python "
         f"scripts/release_identity.py check --expect {mode} --service-arn \"$SERVICE_ARN\"",
-        "  then re-run rollback to verify (it also re-attaches the interceptor when the snapshot "
-        "had one)",
+        "  then re-run rollback to verify",
     ]
+
+
+def stack_remedy(ctx: Context) -> list[str]:
+    """Rebuild the snapshot's stack part with the release tool, from the snapshot's commit."""
+    steps_after = replaced_remedy(ctx) if replaced(ctx) else intact_remedy(ctx)
+    return [*checkout_lines(ctx), *steps_after]
+
+
+def replaced_note(ctx: Context) -> list[str]:
+    """Why a hop is left to the stage deploys; printed with the hop's manual result."""
+    return ["  nothing is restored here: the staged deploys listed under 'agentcore stack' "
+            "rewire this hop to the rebuilt Gateway"]
 
 
 # ------------------------------------------------------------------------ Lambdas
@@ -480,7 +655,15 @@ def environment_lines(ctx: Context, label: str, function: str, saved: Mapping[st
 
 def holds_function(ctx: Context) -> str:
     saved = ctx.saved["lambdas"]["holds"]["arn"]
-    live = lambda_release.holds_function_arn(ctx.clients.control, ctx.where.gateway_id)
+    try:
+        live = lambda_release.holds_function_arn(ctx.clients.control, ctx.where.gateway_id)
+    except ClientError as error:
+        if code_of(error) != "ResourceNotFoundException":
+            raise
+        raise RestoreRefused(
+            "Lambda holds: the Gateway named by AGENTCORE_GATEWAY_URL in meridian/.env does not "
+            "exist (a stack deploy replaced it); run scripts/sync_agentcore_env.py --write and "
+            "run the rollback again") from error
     if saved != live:
         raise RestoreRefused("Lambda holds: the saved function is not the Gateway's MeridianHolds "
                              "target")
@@ -547,13 +730,14 @@ def steps(runtime_names: list[str]) -> list[Step]:
     """The hops in the reverse of the release order: site, service, roles, Gateway, Runtimes,
     rules, then the Lambdas. A Runtime needs the Gateway step; the Lambdas need the secret."""
     runtimes = [Step(f"runtime {name}", lambda ctx, n=name: runtime_check(ctx, n),
-                     lambda ctx, n=name: runtime_restore(ctx, n), needs=("gateway",))
+                     lambda ctx, n=name: runtime_restore(ctx, n), replaced_note,
+                     needs=("gateway",))
                 for name in runtime_names]
     return [
         Step("site", site_check, site_restore, publish_remedy),
-        Step("service", service_check, service_restore),
+        Step("service", service_check, service_restore, publish_remedy),
         Step("roles stack", roles_check, None, publish_remedy),
-        Step("gateway", gateway_check, gateway_restore),
+        Step("gateway", gateway_check, gateway_restore, replaced_note),
         *runtimes,
         Step("agentcore stack", stack_check, None, stack_remedy, needs=("gateway",)),
         Step(SECRET_STEP, ssm_check, ssm_restore),

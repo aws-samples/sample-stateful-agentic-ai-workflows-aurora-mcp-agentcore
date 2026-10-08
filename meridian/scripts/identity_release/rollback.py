@@ -13,6 +13,13 @@ and the commands to run from a checkout of the snapshot's commit are printed (ex
 are run). A holds restart that is still owed (the secret parameter was restored) is kept in the
 result file, so a later run does it. Running it twice is safe: a hop that already matches is only
 read. Nothing is deleted.
+
+A release replaces the Gateway, so a rollback usually finds the saved Gateway gone or rebuilt
+under a new id. The Gateway is looked up by its saved name; when its id is not the saved one the
+Gateway, both Runtimes and the service are compared (leaving out what a re-creation changes) but
+never written, because their saved environments name a Gateway that no longer exists. The staged
+deploys that rebuild them are printed under the AgentCore stack step, and the exit code stays 1
+until a later run finds every hop as saved.
 """
 
 from __future__ import annotations

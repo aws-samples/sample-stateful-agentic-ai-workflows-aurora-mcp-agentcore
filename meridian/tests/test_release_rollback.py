@@ -27,9 +27,9 @@ def released(tmp_path, manual=True, mode="iam"):
     return world, saved, before
 
 
-def context(world, saved, apply=True, sleeps=None):
+def context(world, saved, apply=True, sleeps=None, gateway_id=rs.GATEWAY_ID):
     return rollback.Context(
-        saved=saved, clients=ss.clients_of(world), where=ss.where_of(), apply=apply,
+        saved=saved, clients=ss.clients_of(world), where=ss.where_of(gateway_id), apply=apply,
         sleep=(sleeps.append if sleeps is not None else (lambda seconds: None)),
         stamp="20261008T123005Z")
 
@@ -95,7 +95,7 @@ def test_the_gateway_update_is_complete_and_valid(tmp_path):
 
 def test_a_gateway_saved_with_the_interceptor_gets_it_back(tmp_path):
     world, saved, before = released(tmp_path, mode="jwt")
-    world.gateway = ss.runtime_gateway("iam")
+    world.gateway = {**ss.runtime_gateway("iam"), "name": saved["gateway"]["name"]}
 
     go(world, saved)
 
@@ -323,14 +323,14 @@ def test_a_lambda_saved_with_a_redacted_value_is_not_restored(tmp_path):
     assert "SERVICE_TOKEN" in "\n".join(said)
 
 
-def test_a_gateway_of_another_id_than_the_saved_one_is_refused(tmp_path):
+def test_a_gateway_of_another_id_than_the_saved_one_is_never_written(tmp_path):
     world, saved, _ = released(tmp_path)
     saved["gateway"]["gatewayId"] = "someone-elses-gateway"
 
     outcome, _ = go(world, saved)
 
-    assert "gateway" in [r.name for r in outcome.results if r.status == "failed"]
-    assert "update_gateway" not in world.writes()
+    assert "gateway" not in [r.name for r in outcome.results if r.status == "restored"]
+    assert not [w for w in world.writes() if w in API_WRITES]
 
 
 def test_a_service_arn_in_another_account_is_refused(tmp_path):
@@ -381,3 +381,200 @@ def test_the_saved_snapshot_is_not_altered_by_a_rollback(tmp_path):
     go(world, saved)
 
     assert saved == copy
+
+
+# ----------------------------------------- a Gateway that a stack deploy replaced
+
+API_WRITES = ("update_gateway", "update_agent_runtime", "update_service")
+NEW_ID = ss.NEW_GATEWAY_ID
+
+
+def replaced_by_the_release(tmp_path):
+    """Saved in iam; the release then replaced the iam Gateway with the jwt one."""
+    world, saved, before = released(tmp_path)
+    world.replace_gateway("jwt")
+    return world, saved, before
+
+
+def test_a_gateway_the_release_replaced_is_not_restored_and_no_environment_is_sent(tmp_path):
+    world, saved, _ = replaced_by_the_release(tmp_path)
+
+    outcome, said = go(world, saved, gateway_id=NEW_ID)
+
+    by_name = {r.name: r.status for r in outcome.results}
+    for hop in ("gateway", "runtime MeridianConcierge", "runtime MeridianWorkflow", "service"):
+        assert by_name[hop] == "manual", hop
+    assert not [w for w in world.writes() if w in API_WRITES]
+    assert outcome.code == 1
+    assert "replaced" in "\n".join(said)
+
+
+def test_the_hops_that_do_not_depend_on_the_gateway_are_still_restored_by_api(tmp_path):
+    world, saved, before = replaced_by_the_release(tmp_path)
+
+    outcome, _ = go(world, saved, gateway_id=NEW_ID)
+
+    restored = {r.name for r in outcome.results if r.status == "restored"}
+    assert restored == {"site", "lambda secret parameter", "lambda holds", "lambda semantic"}
+    assert world.state()["parameters"] == before["parameters"]
+
+
+def test_a_gateway_that_is_gone_is_reported_as_missing_not_as_an_aws_error(tmp_path):
+    world, saved, _ = replaced_by_the_release(tmp_path)
+
+    outcome, said = go(world, saved, gateway_id=NEW_ID)
+
+    gateway = next(r for r in outcome.results if r.name == "gateway")
+    assert gateway.status == "manual"
+    assert any("not restorable here" in line and "no Gateway named" in line
+               for line in gateway.lines)
+    assert "ResourceNotFound" not in "\n".join(said)
+
+
+def test_a_recreated_gateway_with_a_new_id_role_and_engine_counts_as_the_saved_one(tmp_path):
+    world = ss.SnapWorld(tmp_path)
+    saved = json.loads(json.dumps(ss.taken(world)))
+    world.replace_gateway("iam", "meridianv2-meridian-aurora-recreated1")
+
+    outcome, _ = go(world, saved, gateway_id="meridianv2-meridian-aurora-recreated1")
+
+    by_name = {r.name: r.status for r in outcome.results}
+    for hop in ("gateway", "runtime MeridianConcierge", "runtime MeridianWorkflow", "service"):
+        assert by_name[hop] == "unchanged", hop
+    assert not [w for w in world.writes() if w in API_WRITES]
+    assert outcome.code == 0 and by_name["agentcore stack"] == "unchanged"
+
+
+def test_a_recreated_gateway_that_differs_in_a_real_field_is_reported_with_both_values(tmp_path):
+    world = ss.SnapWorld(tmp_path)
+    saved = json.loads(json.dumps(ss.taken(world)))
+    world.replace_gateway("iam", "recreated-1")
+    world.gateway["exceptionLevel"] = "NONE"
+    assert world.gateway["roleArn"] != saved["gateway"]["roleArn"]
+
+    outcome, _ = go(world, saved, gateway_id="recreated-1")
+
+    gateway = next(r for r in outcome.results if r.name == "gateway")
+    assert gateway.status == "manual"
+    assert any("exceptionLevel: " in line and "NONE" in line and "DEBUG" in line
+               for line in gateway.lines)
+    assert not any("roleArn" in line or "policyEngineConfiguration.arn" in line
+                   for line in gateway.lines)
+    assert "update_gateway" not in world.writes()
+
+
+def test_a_service_still_naming_a_dead_gateway_is_not_restored_and_points_at_publish(tmp_path):
+    world, saved, _ = replaced_by_the_release(tmp_path)
+
+    outcome, said = go(world, saved, gateway_id=NEW_ID)
+
+    service = next(r for r in outcome.results if r.name == "service")
+    assert service.status == "manual"
+    assert "publish.py" in "\n".join(said)
+    assert "update_service" not in world.writes()
+
+
+def test_the_replaced_gateway_remedy_lists_the_four_stage_deploys_and_what_follows(tmp_path):
+    world, saved, _ = replaced_by_the_release(tmp_path)
+
+    outcome, said = go(world, saved, gateway_id=NEW_ID)
+
+    text = "\n".join(said)
+    assert "MERIDIAN_AGENTCORE_AUTH=iam python scripts/render_agentcore_config.py" in text
+    assert ("python scripts/release_identity.py deploy --to iam --apply "
+            "--i-understand-this-changes-aws") in text
+    assert "Configuration complete." in text
+    for word in ("gateway, targets, governance, complete", "NEW id and URL",
+                 "scripts/bind_gateway_workload.py", "scripts/sync_agentcore_env.py --write",
+                 "scripts/publish.py", "release_identity.py check --expect iam"):
+        assert word in text, word
+    assert "UpdateGateway API first" not in text and "restored the Gateway to" not in text
+    assert [r for r in outcome.results if r.name == "agentcore stack"][0].status == "manual"
+
+
+def test_a_gateway_to_be_replaced_that_carries_the_interceptor_gets_a_revoke_line(tmp_path):
+    world, saved, _ = replaced_by_the_release(tmp_path)
+
+    _, said = go(world, saved, gateway_id=NEW_ID)
+
+    assert ("python scripts/release_identity.py gateway --to jwt --only revoke --apply "
+            "--i-understand-this-changes-aws") in "\n".join(said)
+
+
+def test_no_revoke_line_when_the_gateway_to_be_replaced_has_no_interceptor(tmp_path):
+    world, saved, _ = replaced_by_the_release(tmp_path)
+    world.gateway.pop("interceptorConfigurations", None)
+
+    _, said = go(world, saved, gateway_id=NEW_ID)
+
+    assert "--only revoke" not in "\n".join(said)
+
+
+def test_the_holds_step_with_a_gateway_id_that_no_longer_exists_says_to_sync_the_settings(tmp_path):
+    world, saved, _ = replaced_by_the_release(tmp_path)
+
+    outcome, said = go(world, saved)
+
+    holds = next(r for r in outcome.results if r.name == "lambda holds")
+    assert holds.status == "failed"
+    assert "sync_agentcore_env.py --write" in "\n".join(holds.lines)
+    assert "ResourceNotFound" not in "\n".join(said)
+
+
+def test_a_dry_run_of_a_replaced_gateway_writes_nothing_and_still_prints_the_remedy(tmp_path):
+    world, saved, _ = replaced_by_the_release(tmp_path)
+
+    outcome, said = go(world, saved, apply=False, gateway_id=NEW_ID)
+
+    assert world.writes() == [] and outcome.code == 0
+    assert "render_agentcore_config.py" in "\n".join(said)
+
+
+def test_an_unreplaced_gateway_keeps_the_api_restore_and_its_old_remedy(tmp_path):
+    world, saved, before = released(tmp_path)
+
+    outcome, said = go(world, saved)
+
+    assert world.state()["gateway"] == before["gateway"]
+    assert "replaced" not in "\n".join(said)
+    assert "release_identity.py deploy --to iam" in "\n".join(said)
+    assert "through the UpdateGateway API" not in "\n".join(said)
+
+
+def test_a_service_that_still_names_the_dead_gateway_is_held_back_even_when_all_else_matches(
+        tmp_path):
+    world = ss.SnapWorld(tmp_path)
+    saved = json.loads(json.dumps(ss.taken(world)))
+    world.replace_gateway("iam", "meridianv2-meridian-aurora-recreated1")
+    config = world.service["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"]
+    config["RuntimeEnvironmentVariables"]["AGENTCORE_GATEWAY_URL"] = rs.GATEWAY_URL
+
+    outcome, said = go(world, saved, gateway_id="meridianv2-meridian-aurora-recreated1")
+
+    service = next(r for r in outcome.results if r.name == "service")
+    assert service.status == "manual"
+    assert any("does not name the live Gateway" in line for line in service.lines)
+    assert "update_service" not in world.writes()
+
+
+def test_the_stack_hops_are_read_through_the_live_gateway_not_the_stale_settings_id(tmp_path):
+    world = ss.SnapWorld(tmp_path)
+    saved = json.loads(json.dumps(ss.taken(world)))
+    world.replace_gateway("iam", "meridianv2-meridian-aurora-recreated1")
+
+    outcome, _ = go(world, saved, gateway_id=rs.GATEWAY_ID)
+
+    stack = next(r for r in outcome.results if r.name == "agentcore stack")
+    assert stack.status == "unchanged", stack.lines
+
+
+def test_any_other_error_reading_the_holds_target_is_not_blamed_on_the_settings(tmp_path):
+    world, saved, _ = released(tmp_path, manual=False)
+    world.failures["list_gateway_targets"] = client_error("AccessDeniedException", "no")
+
+    outcome, _ = go(world, saved)
+
+    holds = next(r for r in outcome.results if r.name == "lambda holds")
+    assert holds.status == "failed"
+    assert any("AccessDeniedException" in line for line in holds.lines)
+    assert not any("sync_agentcore_env" in line for line in holds.lines)

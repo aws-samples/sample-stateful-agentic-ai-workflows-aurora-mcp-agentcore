@@ -20,7 +20,7 @@ from unittest.mock import Mock
 
 from botocore.exceptions import WaiterError
 
-from scripts.identity_release import lambda_release, snapshot
+from scripts.identity_release import lambda_release, settings, snapshot
 from tests import release_support as rs
 from tests.aws_recorders import Waiters, client_error, violations
 from tests.gateway_release_support import current as gateway_current
@@ -38,6 +38,8 @@ DISTRIBUTION = "E2EXAMPLE12345"
 VIEWER_ARN = f"arn:aws:cloudfront::{rs.ACCOUNT}:function/{snapshot.EDGE_FUNCTION}"
 STORE_ARN = f"arn:aws:cloudfront::{rs.ACCOUNT}:key-value-store/11111111-2222-3333-4444-555555555555"
 ENGINE_ID = rs.ENGINE_ARN.rsplit("/", 1)[-1]
+NEW_GATEWAY_ID = "meridianv2-meridian-aurora-jwt-zyxwv98765"
+NEW_ENGINE_ID = "meridianv2_MeridianGovernance-zyxwv98765"
 IAM_CODE = "async function handler(event) { /* basic auth at the edge */ return event.request; }"
 JWT_CODE = "async function handler(event) { /* token passes through */ return event.request; }"
 PLANTED = ("hunter2-plain-secret", "AKIAABCDEFGHIJKLMNOP", "e" + "yJhbGciOiJSUzI1NiJ9.e"
@@ -62,8 +64,19 @@ class Fake:
 
 
 class Control(Fake):
+    def _require_live(self, gateway_id):
+        if gateway_id != self.world.gateway["gatewayId"]:
+            raise client_error("ResourceNotFoundException", "no such gateway")
+
+    def list_gateways(self, **kw):
+        self._enter("list_gateways", kw)
+        gateway = self.world.gateway
+        return {"items": [{"gatewayId": gateway["gatewayId"], "name": gateway["name"]}]
+                + list(self.world.other_gateways)}
+
     def get_gateway(self, **kw):
         self._enter("get_gateway", kw)
+        self._require_live(kw["gatewayIdentifier"])
         described = deepcopy(self.world.gateway)
         if self.world.updating.get("gateway", 0) > 0:
             self.world.updating["gateway"] -= 1
@@ -105,6 +118,7 @@ class Control(Fake):
 
     def list_gateway_targets(self, **kw):
         self._enter("list_gateway_targets", kw)
+        self._require_live(kw["gatewayIdentifier"])
         return {"items": [{"name": "MeridianHolds", "targetId": "t1"}]}
 
     def get_gateway_target(self, **kw):
@@ -289,6 +303,7 @@ class SnapWorld:
         self.updating: dict[str, int] = {}
         self.lambda_updating: dict[str, int] = {}
         self.lambda_stuck, self.lambda_drops = False, set()
+        self.other_gateways: list[dict] = []
         self.gateway = runtime_gateway(mode)
         self.runtimes = {rs.RUNTIME_IDS[name]: runtime_state(name, mode) for name in rs.RUNTIME_IDS}
         self.service = service_state(mode)
@@ -356,8 +371,12 @@ class SnapWorld:
                          "parameters": self.parameters, "lambdas": lambdas})
 
     def release(self, manual: bool = True) -> None:
-        """Move every hop the way the window does."""
-        self.gateway = runtime_gateway("jwt")
+        """Move every hop the way an in-place window would: the Gateway keeps its id and name.
+
+        A real release replaces the Gateway (see ``replace_gateway``); this keeps the one the
+        rollback can still restore through the API, which is the unreplaced case.
+        """
+        self.gateway = {**runtime_gateway("jwt"), "name": self.gateway["name"]}
         for name, runtime_id in rs.RUNTIME_IDS.items():
             self.runtimes[runtime_id] = runtime_state(name, "jwt")
         self.service = service_state("jwt")
@@ -372,6 +391,29 @@ class SnapWorld:
             self.policies[rs.BINDING_POLICY] = "ACTIVE"
             self.role_policies = {name: None for name in rs.RUNTIME_IDS}
 
+    def replace_gateway(self, mode: str, gateway_id: str = NEW_GATEWAY_ID) -> None:
+        """What a stack deploy does when the mode changes: a new Gateway with a new id, URL, role
+        and engine replaces the old one, and the CDK rewires both Runtimes to it."""
+        url = gateway_url(gateway_id)
+        engine = f"arn:aws:bedrock-agentcore:{rs.REGION}:{rs.ACCOUNT}:policy-engine/{NEW_ENGINE_ID}"
+        self.gateway = {**runtime_gateway(mode), "gatewayId": gateway_id, "gatewayUrl": url,
+                        "gatewayArn": f"arn:aws:bedrock-agentcore:{rs.REGION}:{rs.ACCOUNT}:"
+                                      f"gateway/{gateway_id}",
+                        "roleArn": f"arn:aws:iam::{rs.ACCOUNT}:role/AgentCore-new-gateway-role",
+                        "policyEngineConfiguration": {"arn": engine, "mode": "ENFORCE"}}
+        for described in self.runtimes.values():
+            variables = described["environmentVariables"]
+            for other in ("iam", "jwt"):
+                variables.pop(settings.gateway_url_variable(other), None)
+            variables.update({settings.gateway_url_variable(mode): url,
+                              "AGENTCORE_GATEWAY_URL": url, "MERIDIAN_GATEWAY_ID": gateway_id,
+                              "MERIDIAN_POLICY_ENGINE_ID": NEW_ENGINE_ID})
+        config = self.service["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"]
+        config["RuntimeEnvironmentVariables"]["AGENTCORE_GATEWAY_URL"] = url
+        if mode == "iam":
+            policy = invoke_gateway_policy(gateway_id)
+            self.role_policies = {name: deepcopy(policy) for name in rs.RUNTIME_IDS}
+
     def deploy_iam_render(self) -> None:
         """What `agentcore deploy -y` of the IAM render does to the parts the API cannot reach."""
         self.template = {"Resources": {"Role": {"Type": "AWS::IAM::Role", "Tight": False}}}
@@ -379,10 +421,14 @@ class SnapWorld:
         self.role_policies = {name: invoke_gateway_policy() for name in rs.RUNTIME_IDS}
 
 
-def invoke_gateway_policy() -> dict:
+def gateway_url(gateway_id: str) -> str:
+    return f"https://{gateway_id}.gateway.bedrock-agentcore.{rs.REGION}.amazonaws.com/mcp"
+
+
+def invoke_gateway_policy(gateway_id: str = rs.GATEWAY_ID) -> dict:
     return {"Version": "2012-10-17", "Statement": [{
         "Effect": "Allow", "Action": "bedrock-agentcore:InvokeGateway",
-        "Resource": f"arn:aws:bedrock-agentcore:{rs.REGION}:{rs.ACCOUNT}:gateway/{rs.GATEWAY_ID}"}]}
+        "Resource": f"arn:aws:bedrock-agentcore:{rs.REGION}:{rs.ACCOUNT}:gateway/{gateway_id}"}]}
 
 
 def runtime_gateway(mode: str) -> dict:
@@ -402,12 +448,13 @@ def runtime_state(name: str, mode: str) -> dict:
         "protocolConfiguration": {"serverProtocol": "HTTP"},
         "description": f"{name} runtime"})
     described["environmentVariables"] = {**described["environmentVariables"],
-                                         "AGENTCORE_GATEWAY_URL": "https://gw.example.test/mcp"}
+                                         "AGENTCORE_GATEWAY_URL": rs.GATEWAY_URL}
     return described
 
 
 def service_state(mode: str) -> dict:
-    variables = {"AWS_REGION": rs.REGION, "ENVIRONMENT": "production"}
+    variables = {"AWS_REGION": rs.REGION, "ENVIRONMENT": "production",
+                 "AGENTCORE_GATEWAY_URL": rs.GATEWAY_URL}
     secrets = {"MERIDIAN_API_TOKEN": API_SECRET}
     image = "ecr/meridian:old"
     if mode == "jwt":
@@ -487,8 +534,8 @@ ENV = {
 }
 
 
-def where_of() -> snapshot.Where:
-    return snapshot.Where(account=rs.ACCOUNT, region=rs.REGION, gateway_id=rs.GATEWAY_ID,
+def where_of(gateway_id: str = rs.GATEWAY_ID) -> snapshot.Where:
+    return snapshot.Where(account=rs.ACCOUNT, region=rs.REGION, gateway_id=gateway_id,
                           runtime_ids=dict(rs.RUNTIME_IDS), service_arn=SERVICE_ARN, env=ENV)
 
 

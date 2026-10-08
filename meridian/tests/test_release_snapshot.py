@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from scripts.identity_release import lambda_release, snapshot
+from scripts.identity_release import lambda_release, settings, snapshot
 from tests import release_support as rs
 from tests import snapshot_support as ss
 from tests.aws_recorders import client_error
@@ -47,7 +47,7 @@ def test_the_snapshot_holds_every_hop_the_release_changes(world):
     assert (saved["account"], saved["region"], saved["mode"]) == (rs.ACCOUNT, rs.REGION, "iam")
     assert saved["takenAt"] == NOW.isoformat() and saved["commit"] == "abc1234"
     assert saved["gateway"]["authorizerType"] == "AWS_IAM"
-    assert saved["gateway"]["description"] == "Gateway for meridian-aurora"
+    assert saved["gateway"]["description"] == "Gateway for meridianv2-meridian-aurora"
     assert saved["gateway"]["policyEngineConfiguration"]["mode"] == "ENFORCE"
     assert set(saved["runtimes"]) == {"MeridianConcierge", "MeridianWorkflow"}
     runtime = saved["runtimes"]["MeridianConcierge"]
@@ -420,3 +420,37 @@ def test_a_snapshot_with_a_malformed_top_level_is_refused_by_load(world, tmp_pat
 
     with pytest.raises(snapshot.SnapshotError, match="snapshot-"):
         snapshot.load(path)
+
+
+# ------------------------------------------- a Gateway is saved only under its mode's name
+
+
+@pytest.mark.parametrize("mode", ["iam", "jwt"])
+def test_the_snapshot_names_the_mode_it_detected_and_saves_that_modes_gateway(tmp_path, mode):
+    saved = ss.taken(ss.SnapWorld(tmp_path, mode=mode))
+
+    assert saved["mode"] == mode
+    assert saved["gateway"]["name"] == settings.gateway_physical_name(mode)
+
+
+def test_a_gateway_not_named_for_its_modes_is_refused_not_saved(world):
+    world.gateway["name"] = settings.gateway_physical_name("jwt")
+
+    with pytest.raises(snapshot.SnapshotError, match="named for the iam release"):
+        ss.taken(world)
+
+
+def test_a_gateway_with_no_name_is_refused(world):
+    world.gateway.pop("name")
+
+    with pytest.raises(snapshot.SnapshotError, match="Gateway"):
+        ss.taken(world)
+
+
+def test_the_baseline_carries_the_new_binding_finding_when_a_runtime_names_another_gateway(world):
+    world.runtimes[rs.RUNTIME_IDS["MeridianConcierge"]]["environmentVariables"][
+        "MERIDIAN_GATEWAY_ID"] = "some-other-gateway"
+
+    saved = ss.taken(world)
+
+    assert any("MERIDIAN_GATEWAY_ID" in line for line in saved["baselineFindings"])

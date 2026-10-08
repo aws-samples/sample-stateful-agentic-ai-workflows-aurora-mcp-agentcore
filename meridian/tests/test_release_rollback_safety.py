@@ -264,7 +264,7 @@ def test_a_dry_run_prints_full_values_and_every_difference(tmp_path):
 
 def test_a_dry_run_validates_the_requests_it_would_send(tmp_path):
     world, saved, _ = released(tmp_path, manual=False)
-    saved["gateway"]["name"] = 123
+    saved["gateway"]["exceptionLevel"] = 5
 
     outcome, said = go(world, saved, apply=False)
 
@@ -330,3 +330,39 @@ def test_a_malformed_sub_key_fails_only_its_hop(tmp_path):
     assert statuses["site"] == "failed" and statuses["gateway"] == "restored"
     assert "malformed" in "\n".join(said) and outcome.code == 1
 
+
+
+# ------------------------------------ a replaced Gateway never gets a saved environment back
+
+FORBIDDEN = ("update_gateway", "update_agent_runtime", "update_service")
+
+
+@pytest.mark.parametrize("apply", [True, False])
+@pytest.mark.parametrize("gateway_gone", [True, False])
+def test_a_replaced_gateway_never_causes_a_gateway_runtime_or_service_write(
+        tmp_path, apply, gateway_gone):
+    world = ss.SnapWorld(tmp_path)
+    saved = json.loads(json.dumps(ss.taken(world)))
+    world.release(manual=False)
+    world.replace_gateway("jwt" if gateway_gone else "iam")
+
+    go(world, saved, apply=apply)
+
+    assert not [w for w in world.writes() if w in FORBIDDEN]
+    sent = [kw for op, kw in world.clients["bedrock-agentcore-control"].calls
+            if op == "update_agent_runtime"]
+    assert sent == []
+    assert world.violations() == []
+
+
+def test_a_replaced_gateway_leaves_the_new_runtime_environment_exactly_as_it_was(tmp_path):
+    world = ss.SnapWorld(tmp_path)
+    saved = json.loads(json.dumps(ss.taken(world)))
+    world.release(manual=False)
+    world.replace_gateway("jwt")
+    runtimes = json.loads(json.dumps(world.runtimes))
+    service = json.loads(json.dumps(world.service))
+
+    go(world, saved, gateway_id=ss.NEW_GATEWAY_ID)
+
+    assert world.runtimes == runtimes and world.service == service
