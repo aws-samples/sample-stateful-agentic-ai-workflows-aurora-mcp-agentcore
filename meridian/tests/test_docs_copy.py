@@ -61,7 +61,12 @@ def prose_lines(text: str) -> list[tuple[int, str]]:
 def test_the_scan_covers_the_public_documents():
     names = {path.relative_to(REPO).as_posix() for path in public_markdown()}
 
-    assert {"README.md", "meridian/README.md", "meridian/docs/STATEFUL_ARCHITECTURE.md"} <= names
+    assert {
+        "README.md",
+        "meridian/README.md",
+        "meridian/AGENTS.md",
+        "meridian/docs/STATEFUL_ARCHITECTURE.md",
+    } <= names
     assert not any("examples/langgraph" in name or ".superpowers" in name for name in names)
 
 

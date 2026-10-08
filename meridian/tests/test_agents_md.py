@@ -1,0 +1,141 @@
+"""meridian/AGENTS.md exists, names real paths, quotes real CI commands and keeps the copy rules."""
+
+import json
+import re
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+REPO = ROOT.parent
+AGENTS = ROOT / "AGENTS.md"
+CI = REPO / ".github" / "workflows" / "application-ci.yml"
+FORBIDDEN = {"middle dot": "·", "em dash": "—", "en dash": "–"}
+FAKE_ACCOUNT_IDS = {"123456789012", "111122223333", "999999999999"}
+PATH_ROOTS = (
+    "venv/bin/", "scripts/", "tests/", "docs/", "backend/", "frontend/", "infra/",
+    "meridian_agentcore/", "examples/", ".github/", "../",
+)
+UNTRACKED_PREFIXES = (
+    ".local/", ".superpowers/", "frontend/.env", "meridian_agentcore/agentcore/agentcore.json",
+    "meridian_agentcore/agentcore/aws-targets.json", "meridian_agentcore/agentcore/.cli/",
+)
+VALIDATION_BLOCK = re.compile(r"^```validation\n(.*?)^```", re.MULTILINE | re.DOTALL)
+CODE_SPAN = re.compile(r"`([^`\n]+)`")
+CI_RUN = re.compile(r"^\s*-\s*run:\s*(.+?)\s*$", re.MULTILINE)
+DIRECTORY = re.compile(r"^#\s*in\s+(\S+)\s*$")
+
+
+def agents_text() -> str:
+    assert AGENTS.is_file(), f"{AGENTS} is missing"
+    return AGENTS.read_text()
+
+
+def validation_commands() -> list[tuple[str, str]]:
+    """(directory, command) pairs from the block labelled validation."""
+    blocks = VALIDATION_BLOCK.findall(agents_text())
+    assert len(blocks) == 1, "expected exactly one fenced block labelled validation"
+    directory, found = ".", []
+    for line in blocks[0].splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        match = DIRECTORY.match(line)
+        if match:
+            directory = match.group(1)
+        elif not line.startswith("#"):
+            found.append((directory, line))
+    return found
+
+
+def ci_commands() -> set[str]:
+    return {command.strip("'\"") for command in CI_RUN.findall(CI.read_text())}
+
+
+def named_paths() -> list[str]:
+    paths = []
+    for span in CODE_SPAN.findall(agents_text()):
+        token = span.split()[0]
+        if token.startswith(PATH_ROOTS) and not re.search(r"[*<>{}$]", token):
+            paths.append(token.rstrip(",.;:").split("#")[0])
+    return paths
+
+
+def test_the_file_exists_and_is_a_reasonable_length():
+    lines = agents_text().splitlines()
+
+    assert 100 <= len(lines) <= 300
+
+
+def test_every_named_path_exists():
+    named = [path for path in named_paths() if not path.startswith(UNTRACKED_PREFIXES)]
+    missing = []
+    for path in named:
+        if path.startswith("venv/") and not (ROOT / "venv").exists():
+            continue
+        base = REPO if path.startswith(".github/") else ROOT
+        if not (base / path).exists():
+            missing.append(path)
+
+    assert len(named) > 20
+    assert not missing, f"AGENTS.md names paths that do not exist: {missing}"
+
+
+def test_the_validation_block_quotes_only_ci_commands():
+    commands = ci_commands()
+    stale = []
+    for _, line in validation_commands():
+        bare = line.removeprefix("venv/bin/")
+        if bare not in commands:
+            stale.append(line)
+
+    assert validation_commands(), "the validation block is empty"
+    assert not stale, f"not run by application-ci.yml: {stale}"
+
+
+def test_every_quoted_npm_script_exists_in_its_package():
+    missing = []
+    for directory, line in validation_commands():
+        match = re.match(r"npm (?:run )?(\S+)", line)
+        if not match or match.group(1) in {"ci", "audit", "test"}:
+            continue
+        scripts = json.loads((ROOT / directory / "package.json").read_text())["scripts"]
+        if match.group(1) not in scripts:
+            missing.append(f"{directory}: {line}")
+    for directory, line in validation_commands():
+        if line.startswith("npm test"):
+            scripts = json.loads((ROOT / directory / "package.json").read_text())["scripts"]
+            if "test" not in scripts:
+                missing.append(f"{directory}: {line}")
+
+    assert not missing, f"npm scripts that do not exist: {missing}"
+
+
+def test_the_block_covers_every_ci_job_directory():
+    directories = {directory for directory, _ in validation_commands()}
+
+    assert {".", "frontend", "infra", "meridian_agentcore/agentcore/cdk"} <= directories
+
+
+@pytest.mark.parametrize("name,character", FORBIDDEN.items())
+def test_the_file_has_no_forbidden_punctuation(name, character):
+    found = [n for n, line in enumerate(agents_text().splitlines(), 1) if character in line]
+
+    assert not found, f"{name} at lines {found}"
+
+
+def test_the_file_holds_no_real_looking_account_id_or_pool_host():
+    text = agents_text()
+    ids = set(re.findall(r"(?<!\d)\d{12}(?!\d)", text)) - FAKE_ACCOUNT_IDS
+
+    assert not ids, "12-digit ids other than the documented fakes"
+    assert "amazoncognito.com" not in text
+    assert not re.search(r"us-east-1_[A-Za-z0-9]{9}", text)
+    assert not re.search(r"AKIA[0-9A-Z]{16}", text)
+
+
+def test_the_file_uses_the_project_vocabulary():
+    text = agents_text()
+
+    assert "Amazon Aurora" not in text
+    assert "AWS Aurora" in text
