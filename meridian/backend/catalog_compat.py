@@ -1,6 +1,6 @@
 """Map trip_packages rows to legacy API Product shape (frontend compat)."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 
 def row_to_api_product(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -20,7 +20,3 @@ def row_to_api_product(row: Dict[str, Any]) -> Dict[str, Any]:
         "highlights": row.get("highlights"),
         "similarity": float(sim) if sim is not None else None,
     }
-
-
-def rows_to_api_products(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    return [row_to_api_product(r) for r in rows]

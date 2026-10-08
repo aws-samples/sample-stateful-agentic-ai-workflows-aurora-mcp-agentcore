@@ -202,10 +202,3 @@ async def concierge_mcp_session():
             await client.disconnect()
         except Exception as exc:
             logger.warning("concierge MCP disconnect raised: %s", exc)
-
-
-# Backward-compat shim - some older code paths still call this. Returns
-# a one-shot client that callers must connect/disconnect themselves;
-# new code should use the `concierge_mcp_session()` context manager.
-def get_concierge_mcp_client() -> MeridianConciergeMCPClient:
-    return MeridianConciergeMCPClient()
