@@ -349,6 +349,14 @@ def test_a_function_that_is_not_this_projects_holds_function_is_never_changed(ar
     assert "update_function_configuration" not in world.lam.names()
 
 
+@pytest.mark.parametrize("name", [
+    "meridianv2-MeridianHolds",
+    "AgentCore-meridianv2-MeridianHolds1",
+])
+def test_the_names_the_deployed_holds_function_can_carry_are_accepted(name):
+    assert lambdas.HOLDS_NAME.match(name)
+
+
 def test_a_missing_holds_function_is_refused_not_a_crash():
     world = World()
     world.lam.failures["get_function_configuration"] = [client_error("ResourceNotFoundException")]

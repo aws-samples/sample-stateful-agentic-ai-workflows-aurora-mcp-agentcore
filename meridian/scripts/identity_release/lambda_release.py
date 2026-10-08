@@ -50,7 +50,7 @@ STAGES = ("master", "gateway", "tightened")
 READ_ACTION = "secretsmanager:getsecretvalue"
 STAMP = "%Y%m%dT%H%M%SZ"
 WAIT = {"Delay": 5, "MaxAttempts": 24}
-HOLDS_NAME = re.compile(r"^AgentCore-[A-Za-z0-9_-]+-MeridianHolds[A-Za-z0-9]*$")
+HOLDS_NAME = re.compile(r"^(AgentCore-)?[A-Za-z0-9_-]+-MeridianHolds[A-Za-z0-9]*$")
 FUNCTION_ARN = re.compile(r"^arn:aws:lambda:(?P<region>[^:]+):(?P<account>\d{12}):function:"
                           r"(?P<name>[A-Za-z0-9_-]+)$")
 OK, DRIFT, REFUSED = 0, 1, 3
