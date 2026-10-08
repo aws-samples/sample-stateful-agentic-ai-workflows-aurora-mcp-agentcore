@@ -65,7 +65,12 @@ class World:
         self.cfn.describe_stacks.return_value = {"Stacks": [{"Outputs": IDENTITY_OUTPUTS}]}
         self.apprunner = Mock()
         self.apprunner.describe_service.return_value = {"Service": service or {}}
-        self.iam = Recorder()
+        self.iam = Recorder({
+            "list_role_policies": {"PolicyNames": ["runtime-policy"]},
+            "get_role_policy": {"PolicyDocument": {"Version": "2012-10-17", "Statement": [{
+                "Effect": "Allow", "Action": "bedrock-agentcore:InvokeGateway",
+                "Resource": "*"}]}},
+            "list_attached_role_policies": {"AttachedPolicies": []}})
         self.lam = LambdaClient(answers={"get_function_configuration": deployed_configuration()})
 
     def session(self, region):

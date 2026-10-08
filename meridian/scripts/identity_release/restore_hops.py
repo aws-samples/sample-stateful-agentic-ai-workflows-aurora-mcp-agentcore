@@ -24,7 +24,9 @@ import botocore.session
 from botocore.exceptions import ClientError, WaiterError
 from botocore.validate import ParamValidator
 
-from scripts.identity_release import lambda_release, preflight, settings, snapshot
+from backend.agentcore.auth_mode import IAM
+from scripts.identity_release import lambda_release, preflight, runtime_roles, settings
+from scripts.identity_release import snapshot
 
 WAIT_ATTEMPTS = 60
 POLL_SECONDS = 5
@@ -388,13 +390,40 @@ def rules_check(ctx: Context) -> list[str]:
     return compare("Cedar rules", dict(state.policies), dict(ctx.saved["policies"]))
 
 
-def rules_remedy(ctx: Context) -> list[str]:
-    return [*checkout_lines(ctx),
-            f"  MERIDIAN_AGENTCORE_AUTH={ctx.saved['mode']} "
-            "python scripts/render_agentcore_config.py",
-            "  cd ../meridian_agentcore && /opt/homebrew/bin/agentcore deploy -y   (the rules are "
-            "deployed with the Runtimes; this command never deletes one)",
-            finish_line()]
+def roles_grant_check(ctx: Context) -> list[str]:
+    """In an ``iam`` snapshot, findings for a Runtime role that lost ``InvokeGateway``."""
+    if ctx.saved["mode"] != IAM or ctx.clients.iam is None:
+        return []
+    control = ctx.clients.control
+    runtimes = {name: control.get_agent_runtime(agentRuntimeId=runtime_id)
+                for name, runtime_id in ctx.where.runtime_ids.items()}
+    arn = runtime_roles.gateway_arn(ctx.where.account, ctx.where.region, ctx.where.gateway_id)
+    return new_findings(ctx, runtime_roles.findings(ctx.clients.iam, runtimes, arn))
+
+
+def stack_check(ctx: Context) -> list[str]:
+    """The AgentCore stack's part the API cannot restore: the Cedar rules and the Runtime roles."""
+    return rules_check(ctx) + roles_grant_check(ctx)
+
+
+def stack_remedy(ctx: Context) -> list[str]:
+    """Redeploy the snapshot's render with the CLI, from the snapshot's commit."""
+    mode = ctx.saved["mode"]
+    authorizer = "AWS_IAM" if mode == IAM else "CUSTOM_JWT"
+    return [
+        *checkout_lines(ctx),
+        f"  precondition: run this only after the gateway step above restored the Gateway to "
+        f"{authorizer} through the UpdateGateway API. CloudFormation cannot change the authorizer "
+        f"type back, so deploying this render while the Gateway reads the other type fails and "
+        "rolls the stack back",
+        f"  MERIDIAN_AGENTCORE_AUTH={mode} python scripts/render_agentcore_config.py",
+        "  cd ../meridian_agentcore && /opt/homebrew/bin/agentcore deploy -y   (this restores "
+        "the Runtime roles' InvokeGateway statement and the Cedar rules, and never deletes a rule)",
+        "  then, from the current checkout, read every hop back: venv/bin/python "
+        f"scripts/release_identity.py check --expect {mode} --service-arn \"$SERVICE_ARN\"",
+        "  then re-run rollback to verify (it also re-attaches the interceptor when the snapshot "
+        "had one)",
+    ]
 
 
 # ------------------------------------------------------------------------ Lambdas
@@ -526,7 +555,7 @@ def steps(runtime_names: list[str]) -> list[Step]:
         Step("roles stack", roles_check, None, publish_remedy),
         Step("gateway", gateway_check, gateway_restore),
         *runtimes,
-        Step("cedar rules", rules_check, None, rules_remedy),
+        Step("agentcore stack", stack_check, None, stack_remedy, needs=("gateway",)),
         Step(SECRET_STEP, ssm_check, ssm_restore),
         Step("lambda holds", holds_check, holds_restore, needs=(SECRET_STEP,)),
         Step("lambda semantic", semantic_check, semantic_restore, needs=(SECRET_STEP,)),

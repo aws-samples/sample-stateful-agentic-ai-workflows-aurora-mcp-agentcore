@@ -31,7 +31,8 @@ from typing import Any
 from backend.agentcore.auth_mode import IAM, JWT
 from scripts.gateway_harness.private_files import private_dir, write_private
 from scripts.gateway_harness.verdicts import JWT_SHAPE
-from scripts.identity_release import gateway_release, lambda_release, preflight, settings
+from scripts.identity_release import gateway_release, lambda_release, preflight, runtime_roles
+from scripts.identity_release import settings
 from scripts.provision_service_logins import require_account
 
 SCHEMA = "meridian-release-snapshot/1"
@@ -87,6 +88,7 @@ class Clients:
     cfn: Any
     ssm: Any
     lam: Any
+    iam: Any = None
 
 
 @dataclass(frozen=True)
@@ -350,6 +352,15 @@ def detected_mode(gateway: Mapping[str, Any]) -> str:
     return JWT if gateway.get("authorizerType") == "CUSTOM_JWT" else IAM
 
 
+def role_baseline(clients: Clients, where: Where, state: preflight.HopState,
+                  mode: str) -> list[str]:
+    """In ``iam`` mode, the Runtime roles that cannot call the Gateway already."""
+    if mode != IAM or clients.iam is None:
+        return []
+    arn = runtime_roles.gateway_arn(where.account, where.region, where.gateway_id)
+    return runtime_roles.findings(clients.iam, state.runtimes, arn)
+
+
 def take(clients: Clients, where: Where, *, now: datetime, commit: str,
          hosted_release_path: Path) -> dict[str, Any]:
     """Read everything the release replaces. Only reads; returns a plain, redacted document.
@@ -374,6 +385,7 @@ def take(clients: Clients, where: Where, *, now: datetime, commit: str,
     baseline = preflight.hop_findings(state, target)
     variables, secrets = preflight.image_environment(service) or ({}, {})
     baseline += preflight.check_service_environment(variables, secrets, target)
+    baseline += role_baseline(clients, where, state, mode)
     document, redacted = redact(document)
     document.update({"baselineFindings": baseline, "redacted": sorted(redacted),
                      "complete": True})
@@ -503,7 +515,7 @@ def command(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> 
     clients = Clients(
         control=session.client("bedrock-agentcore-control"), apprunner=session.client("apprunner"),
         cloudfront=session.client("cloudfront"), cfn=session.client("cloudformation"),
-        ssm=session.client("ssm"), lam=session.client("lambda"))
+        ssm=session.client("ssm"), lam=session.client("lambda"), iam=session.client("iam"))
     where = Where(account, region, gateway_id, runtime_ids, args.service_arn, env)
     saved = take(clients, where, now=deps.now(), commit=deps.head_sha(),
                  hosted_release_path=deps.hosted_release_path)

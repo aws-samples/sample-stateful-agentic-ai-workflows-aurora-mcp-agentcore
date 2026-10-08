@@ -8,11 +8,17 @@ from scripts import publish_gateway_parameters as publisher
 from scripts.identity_release import settings
 from tests import release_support as rs
 from tests.aws_recorders import Recorder, client_error, violations
-from tests.lambda_release_support import GATEWAY, MASTER
+from tests.lambda_release_support import GATEWAY, MASTER, World
 
 CLUSTER = f"arn:aws:rds:{rs.REGION}:{rs.ACCOUNT}:cluster:meridian"
 ENV = {"AURORA_CLUSTER_ARN": CLUSTER, "AURORA_SECRET_ARN": MASTER,
-       "AURORA_GATEWAY_SECRET_ARN": GATEWAY, "AURORA_DATABASE": "meridian"}
+       "AURORA_GATEWAY_SECRET_ARN": GATEWAY, "AURORA_DATABASE": "meridian",
+       "AGENTCORE_GATEWAY_URL": f"https://{rs.GATEWAY_ID}.gateway.bedrock-agentcore."
+                                f"{rs.REGION}.amazonaws.com/mcp",
+       "AGENTCORE_RUNTIME_ARN": f"arn:aws:bedrock-agentcore:{rs.REGION}:{rs.ACCOUNT}:runtime/"
+                                + rs.RUNTIME_IDS["MeridianConcierge"],
+       "AGENTCORE_WORKFLOW_RUNTIME_ARN": f"arn:aws:bedrock-agentcore:{rs.REGION}:{rs.ACCOUNT}:"
+                                         "runtime/" + rs.RUNTIME_IDS["MeridianWorkflow"]}
 APPLY = ["--apply", settings.CONFIRM_FLAG]
 SECRET = "/meridian/aurora/secret_arn"
 
@@ -36,18 +42,21 @@ class Ssm(Recorder):
 
 
 class Session:
-    def __init__(self, ssm, account=rs.ACCOUNT):
+    def __init__(self, ssm, account=rs.ACCOUNT, world=None):
         self.ssm, self.regions = ssm, []
         self.sts = Recorder({"get_caller_identity": {"Account": account}})
+        self.world = world or World()
         self.created = []
 
     def client(self, name, **kwargs):
         self.created.append(name)
-        return {"sts": self.sts, "ssm": self.ssm}[name]
+        return {"sts": self.sts, "ssm": self.ssm, "iam": self.world.iam,
+                "lambda": self.world.lam,
+                "bedrock-agentcore-control": self.world.control}[name]
 
 
-def run(argv, ssm=None, *, env=None, account=rs.ACCOUNT):
-    session = Session(ssm or Ssm(), account)
+def run(argv, ssm=None, *, env=None, account=rs.ACCOUNT, world=None):
+    session = Session(ssm or Ssm(), account, world)
     code = publisher.main(argv, env=env or ENV, session=lambda region: session)
     return code, session
 
@@ -94,6 +103,47 @@ def test_a_confirmed_apply_writes_the_three_parameters_and_reads_them_back(capsy
     assert ssm.names().count("get_parameter") >= 3
     assert violations("ssm", ssm.calls) == []
     assert "OK" in capsys.readouterr().out
+
+
+def test_the_gateway_login_dry_run_says_the_apply_waits_for_the_holds_role_grant(capsys):
+    code, session = run(["--gateway-login"])
+
+    assert code == 0 and session.created == []
+    out = capsys.readouterr().out
+    assert "refuses until the MeridianHolds role can read the gateway secret" in out
+    assert "first jwt `agentcore deploy -y`" in out
+
+
+def test_the_gateway_login_is_refused_while_the_holds_role_cannot_read_its_secret(capsys):
+    ssm = Ssm()
+    world = World(holds_grants=(MASTER,))
+
+    code, session = run([*APPLY, "--gateway-login"], ssm, world=world)
+
+    assert code == 2
+    assert ssm.store == {} and "put_parameter" not in ssm.names()
+    err = capsys.readouterr().err
+    assert "Lambda MeridianHolds: its role cannot read the meridian_gateway secret" in err
+    assert "agentcore deploy" in err and "after" in err
+    assert "ssm" not in session.created
+
+
+def test_the_master_login_apply_is_not_gated_on_the_gateway_grant():
+    ssm = Ssm()
+
+    code, session = run(APPLY, ssm, world=World(holds_grants=(MASTER,)))
+
+    assert code == 0 and session.created == ["sts", "ssm"]
+
+
+def test_a_holds_function_that_cannot_be_found_also_blocks_the_gateway_login(capsys):
+    world = World()
+    world.control.answers["list_gateway_targets"] = {"items": []}
+
+    code, _ = run([*APPLY, "--gateway-login"], Ssm(), world=world)
+
+    assert code == 2
+    assert "MeridianHolds target" in capsys.readouterr().err
 
 
 def test_the_gateway_login_flag_writes_the_gateway_secret():

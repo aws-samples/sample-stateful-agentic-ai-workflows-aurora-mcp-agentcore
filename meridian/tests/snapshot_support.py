@@ -219,6 +219,23 @@ class Ssm(Fake):
         return {"Version": 2}
 
 
+class Iam(Fake):
+    """The Runtime roles' inline policies: one policy each, holding the InvokeGateway grant."""
+
+    def list_role_policies(self, **kw):
+        self._enter("list_role_policies", kw)
+        document = self.world.role_policies.get(kw["RoleName"])
+        return {"PolicyNames": [] if document is None else ["runtime-policy"], "IsTruncated": False}
+
+    def get_role_policy(self, **kw):
+        self._enter("get_role_policy", kw)
+        return {"PolicyDocument": deepcopy(self.world.role_policies[kw["RoleName"]])}
+
+    def list_attached_role_policies(self, **kw):
+        self._enter("list_attached_role_policies", kw)
+        return {"AttachedPolicies": [], "IsTruncated": False}
+
+
 class LambdaWaiter:
     """Waits by letting the pending update finish; ``lambda_stuck`` never lets it."""
 
@@ -305,7 +322,9 @@ class SnapWorld:
             "bedrock-agentcore-control": Control(self, "bedrock-agentcore-control"),
             "apprunner": AppRunner(self, "apprunner"), "cloudfront": CloudFront(self, "cloudfront"),
             "cloudformation": Cfn(self, "cloudformation"), "ssm": Ssm(self, "ssm"),
-            "lambda": Lam(self, "lambda")}
+            "lambda": Lam(self, "lambda"), "iam": Iam(self, "iam")}
+        self.role_policies = {name: invoke_gateway_policy() if mode == "iam" else None
+                              for name in rs.RUNTIME_IDS}
 
     def session(self, region):
         def client(name, **kwargs):
@@ -351,6 +370,19 @@ class SnapWorld:
         if manual:
             self.template = {"Resources": {"Role": {"Type": "AWS::IAM::Role", "Tight": True}}}
             self.policies[rs.BINDING_POLICY] = "ACTIVE"
+            self.role_policies = {name: None for name in rs.RUNTIME_IDS}
+
+    def deploy_iam_render(self) -> None:
+        """What `agentcore deploy -y` of the IAM render does to the parts the API cannot reach."""
+        self.template = {"Resources": {"Role": {"Type": "AWS::IAM::Role", "Tight": False}}}
+        self.policies.pop(rs.BINDING_POLICY, None)
+        self.role_policies = {name: invoke_gateway_policy() for name in rs.RUNTIME_IDS}
+
+
+def invoke_gateway_policy() -> dict:
+    return {"Version": "2012-10-17", "Statement": [{
+        "Effect": "Allow", "Action": "bedrock-agentcore:InvokeGateway",
+        "Resource": f"arn:aws:bedrock-agentcore:{rs.REGION}:{rs.ACCOUNT}:gateway/{rs.GATEWAY_ID}"}]}
 
 
 def runtime_gateway(mode: str) -> dict:
@@ -446,7 +478,7 @@ def clients_of(world: SnapWorld) -> snapshot.Clients:
     return snapshot.Clients(
         control=world.clients["bedrock-agentcore-control"], apprunner=world.clients["apprunner"],
         cloudfront=world.clients["cloudfront"], cfn=world.clients["cloudformation"],
-        ssm=world.clients["ssm"], lam=world.clients["lambda"])
+        ssm=world.clients["ssm"], lam=world.clients["lambda"], iam=world.clients["iam"])
 
 
 ENV = {

@@ -12,16 +12,19 @@ Every command that changes AWS is a dry run unless it gets both ``--apply`` and
         [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py gateway [--to iam|jwt] [--only grant|move]
         [--apply --i-understand-this-changes-aws]
+    python scripts/release_identity.py deploy [--to iam|jwt]
+        [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py snapshot --service-arn ARN [--accept-baseline]
     python scripts/release_identity.py rollback [--snapshot FILE]
         [--apply --i-understand-this-changes-aws]
 
 ``check`` compares the Gateway, both Runtimes, the Cedar rules, the identity stack, the backend
 login proof, the interceptor Lambda's environment and the App Runner environment against the mode
-in ``meridian/.env`` (or ``--expect``). The service must be named: ``--service-arn`` reads it,
-``--skip-service`` leaves it out on purpose. ``interceptor`` deploys the Gateway request
-interceptor Lambda and its log-only role (dry run by default) and then reads it back. Both
-resources carry the release tags; one that exists without them is never modified.
+in ``meridian/.env`` (or ``--expect``); in ``iam`` mode it also reads both Runtime roles for the
+``bedrock-agentcore:InvokeGateway`` grant that the jwt deploy removes. The service must be named:
+``--service-arn`` reads it, ``--skip-service`` leaves it out on purpose. ``interceptor`` deploys
+the Gateway request interceptor Lambda and its log-only role (dry run by default) and then reads
+it back. Both resources carry the release tags; one that exists without them is never modified.
 ``interceptor-delete`` removes only resources that carry those tags, re-reading the tags before
 each delete.
 ``lambdas`` checks that the SSM parameter, the semantic-search Lambda and both roles are at a stage
@@ -34,11 +37,18 @@ back, and ``--remove-grant`` also deletes the policy the tool added.
 ``gateway`` moves the live Gateway to the mode (dry run by default: before and after of the
 authorizer, allowed clients and interceptor, and every precondition); an apply writes the invoke
 grant, sends the complete update and reads it back; ``--to iam`` is the rollback of the move.
+``deploy`` is the only safe way to run ``agentcore deploy -y`` in a release: CloudFormation cannot
+change an existing Gateway's authorizer type, and the interceptor cannot be declared in the
+template. A dry run reads the rendered ``agentcore.json`` and the live Gateway and refuses
+(exit 2) unless the Gateway already reports the mode's authorizer, allowed clients and
+interceptor, equal to the render. An apply then runs ``/opt/homebrew/bin/agentcore deploy -y``,
+reads the Gateway back and, when the deploy changed it, re-applies the ``gateway`` update.
 ``snapshot`` (read-only) saves the replaced configuration of every hop to ``.local/release-b2/``
 before the window, with no secret value (exit 1 and nothing saved when a hop already reports a
 finding, unless ``--accept-baseline``). ``rollback`` restores it in the reverse of the release
 order, reading each hop back (dry run by default; the roles stack and the Cedar rules are checked
-and their commands printed); it exits 1 when any hop is not restored.
+and their commands printed, including the IAM render and ``agentcore deploy -y`` that put the
+Runtime roles' InvokeGateway statement back); it exits 1 when any hop is not restored.
 
 Exit codes, the same for every command:
 
@@ -58,7 +68,7 @@ import argparse
 import os
 import sys
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -72,7 +82,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.agentcore.auth_mode import IAM, JWT  # noqa: E402
 from scripts.gateway_harness.verdicts import JWT_SHAPE  # noqa: E402
-from scripts.identity_release import interceptor_lambda, preflight, settings  # noqa: E402
+from scripts.identity_release import deploy_order, interceptor_lambda, preflight  # noqa: E402
+from scripts.identity_release import runtime_roles, settings  # noqa: E402
 from scripts.identity_release import lambda_release  # noqa: E402
 from scripts.identity_release import gateway_release  # noqa: E402
 from scripts.identity_release import rollback, semantic_lambda, snapshot  # noqa: E402
@@ -109,6 +120,8 @@ class Dependencies:
     release_dir: Path = field(default=settings.RELEASE_DIR)
     hosted_release_path: Path = field(default=snapshot.HOSTED_RELEASE_PATH)
     sleep: Callable[[float], None] = time.sleep
+    agentcore_dir: Path = field(default=settings.AGENTCORE_DIR)
+    run_command: Callable[[Sequence[str], Path], tuple[int, str]] = deploy_order.run_command
 
 
 def default_dependencies() -> Dependencies:
@@ -164,6 +177,10 @@ def build_parser() -> argparse.ArgumentParser:
         "gateway", allow_abbrev=False,
         help="move the live Gateway's authorizer and interceptor (dry run by default)")
     gateway_release.add_arguments(move_gateway)
+    ship = commands.add_parser(
+        "deploy", allow_abbrev=False,
+        help="deploy the AgentCore stack after the Gateway moved, then read the Gateway back")
+    deploy_order.add_arguments(ship)
     save = commands.add_parser("snapshot", allow_abbrev=False,
                                help="save the configuration the release replaces (read-only)")
     snapshot.add_arguments(save)
@@ -232,6 +249,9 @@ def run_check(args: argparse.Namespace, deps: Dependencies) -> int:
     findings += preflight.hop_findings(state, target)
     if mode == JWT:
         findings += identity_stack_findings(session, deps, target)
+    else:
+        arn = runtime_roles.gateway_arn(account, region, gateway_id)
+        findings += runtime_roles.findings(session.client("iam"), state.runtimes, arn)
     if target.interceptor_arn:
         findings += interceptor_findings(session, target)
     if args.service_arn:
@@ -331,6 +351,11 @@ def run_gateway(args: argparse.Namespace, deps: Dependencies) -> int:
     return gateway_release.run(args, deps, say=say)
 
 
+def run_deploy(args: argparse.Namespace, deps: Dependencies) -> int:
+    """Plan, or run, `agentcore deploy -y` in the order CloudFormation allows."""
+    return deploy_order.run(args, deps, say)
+
+
 def run_snapshot(args: argparse.Namespace, deps: Dependencies) -> int:
     """Save the configuration the release replaces."""
     return snapshot.command(args, deps, say)
@@ -344,7 +369,7 @@ def run_rollback(args: argparse.Namespace, deps: Dependencies) -> int:
 HANDLERS = {"check": run_check, "interceptor": run_interceptor,
             "interceptor-delete": run_interceptor_delete, "lambdas": run_lambdas,
             "semantic-lambda": run_semantic_lambda, "gateway": run_gateway,
-            "snapshot": run_snapshot, "rollback": run_rollback}
+            "deploy": run_deploy, "snapshot": run_snapshot, "rollback": run_rollback}
 
 
 def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int:
@@ -354,7 +379,7 @@ def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int
     try:
         return HANDLERS[args.command](args, deps)
     except (settings.ReleaseConfigError, interceptor_lambda.DeployError,
-            gateway_release.GatewayError) as exc:
+            gateway_release.GatewayError, deploy_order.DeployOrderError) as exc:
         print(f"error: {mask(str(exc))}", file=sys.stderr)
         return EXIT_COULD_NOT_RUN
     except (BotoCoreError, ClientError) as exc:

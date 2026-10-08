@@ -8,7 +8,9 @@ reads. Nothing secret is published: a secret ARN is a pointer, not a secret.
 By default /meridian/aurora/secret_arn names the master login's secret. With
 --gateway-login it names the meridian_gateway login's secret instead
 (AURORA_GATEWAY_SECRET_ARN), which is what the MeridianHolds Lambda reads at its next cold
-start. Run it with that flag only in the release that moves the Lambdas off the master login.
+start. Run it with that flag only in the release that moves the Lambdas off the master login,
+and only after the first jwt ``agentcore deploy -y``: the stack deploy is what lets the holds
+Lambda's role read that secret, and the apply refuses (exit 2, nothing written) until it can.
 
 This changes AWS, so without --apply and the confirmation flag it only prints the three
 parameter names. An apply checks that the credentials belong to the account and Region of
@@ -23,8 +25,8 @@ Usage:
         --i-understand-this-changes-aws
 
 Exit codes: 0 ok (or a dry run), 1 a parameter did not read back as written, 2 could not run
-(a missing or malformed setting, another account, an AWS error), 3 usage error or an apply
-without the confirmation flag.
+(a missing or malformed setting, another account, an AWS error, or the holds role cannot read
+the gateway secret yet), 3 usage error or an apply without the confirmation flag.
 """
 
 from __future__ import annotations
@@ -42,7 +44,7 @@ from dotenv import dotenv_values
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.identity_release import lambda_release, settings  # noqa: E402
+from scripts.identity_release import lambda_release, preflight, settings  # noqa: E402
 from scripts.identity_release.usage import UsageParser  # noqa: E402
 from scripts.provision_service_logins import redact, require_account  # noqa: E402
 
@@ -113,10 +115,31 @@ def _plan(parameters: dict[str, str], gateway_login: bool) -> int:
     print(f"DRY RUN. Would put these SSM parameters ({SECRET_NAME} names {login} secret):")
     for name in parameters:
         print(f"  {name}")
+    if gateway_login:
+        print("The apply refuses until the MeridianHolds role can read the gateway secret; "
+              "the first jwt `agentcore deploy -y` grants that read, so run it after that deploy.")
     print("Apply (ASK FIRST): python scripts/publish_gateway_parameters.py"
           + (" --gateway-login" if gateway_login else "")
           + f" --apply {settings.CONFIRM_FLAG}")
     return OK
+
+
+def require_holds_grant(env: Mapping[str, str | None], opened: Any) -> None:
+    """Refuse the gateway login until the holds Lambda's role can read its secret.
+
+    Raises:
+        ReleaseConfigError: With the findings and the order to follow.
+    """
+    gateway_id, _ = preflight.hop_ids(env)
+    found = lambda_release.holds_read_findings(
+        opened.client("lambda"), opened.client("iam"), opened.client("bedrock-agentcore-control"),
+        gateway_id, lambda_release.login_secrets(env))
+    if found:
+        raise settings.ReleaseConfigError(
+            "refusing to point the holds Lambda at the gateway login yet:\n  "
+            + "\n  ".join(found)
+            + "\nthe first jwt `agentcore deploy -y` (release_identity.py deploy) grants that "
+              "read; run this command only after it")
 
 
 
@@ -125,6 +148,8 @@ def _apply(env: Mapping[str, str | None], parameters: dict[str, str], gateway_lo
     _account, region = settings.deployment_target(env)
     opened = session(region)
     require_account(opened.client("sts"), str(env["AURORA_CLUSTER_ARN"]))
+    if gateway_login:
+        require_holds_grant(env, opened)
     ssm = opened.client("ssm")
     write_parameters(ssm, parameters)
     findings = read_back(ssm, parameters, gateway_login)

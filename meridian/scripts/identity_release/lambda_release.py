@@ -116,19 +116,19 @@ class Grant:
                 and not any(_matches(p, secret_arn) for p in self.exclude))
 
 
-def _reads_secret(statement: Mapping[str, Any]) -> bool:
+def _allows_action(statement: Mapping[str, Any], action: str) -> bool:
     if "NotAction" in statement:
         excluded = [a.lower() for a in _as_list(statement["NotAction"])]
-        return not any(_matches(a, READ_ACTION) for a in excluded)
+        return not any(_matches(a, action) for a in excluded)
     actions = [a.lower() for a in _as_list(statement.get("Action"))]
-    return any(_matches(a, READ_ACTION) for a in actions)
+    return any(_matches(a, action) for a in actions)
 
 
-def _document_grants(document: dict[str, Any]) -> list[Grant]:
+def _document_grants(document: dict[str, Any], action: str = READ_ACTION) -> list[Grant]:
     statements = document.get("Statement", [])
     grants: list[Grant] = []
     for statement in [statements] if isinstance(statements, dict) else list(statements):
-        if statement.get("Effect") != "Allow" or not _reads_secret(statement):
+        if statement.get("Effect") != "Allow" or not _allows_action(statement, action):
             continue
         if "NotResource" in statement:
             grants.append(Grant(("*",), tuple(_as_list(statement["NotResource"]))))
@@ -148,17 +148,21 @@ def _paged(call: Callable[..., dict[str, Any]], key: str, **kwargs: Any) -> list
             return items
 
 
-def secret_grants(iam: Any, role: str) -> list[Grant]:
-    """Every grant in the role's inline, customer-managed and AWS-managed policies."""
+def secret_grants(iam: Any, role: str, action: str = READ_ACTION) -> list[Grant]:
+    """Every grant of ``action`` (lower case) in the role's inline and attached policies.
+
+    Customer-managed and AWS-managed attached policies are both read. The default action is the
+    secret read the Lambda moves care about.
+    """
     grants: list[Grant] = []
     for name in _paged(iam.list_role_policies, "PolicyNames", RoleName=role):
         document = iam.get_role_policy(RoleName=role, PolicyName=name)["PolicyDocument"]
-        grants += _document_grants(document)
+        grants += _document_grants(document, action)
     for attached in _paged(iam.list_attached_role_policies, "AttachedPolicies", RoleName=role):
         arn = attached["PolicyArn"]
         version = iam.get_policy(PolicyArn=arn)["Policy"]["DefaultVersionId"]
         document = iam.get_policy_version(PolicyArn=arn, VersionId=version)["PolicyVersion"]
-        grants += _document_grants(document["Document"])
+        grants += _document_grants(document["Document"], action)
     return grants
 
 
@@ -203,6 +207,15 @@ def _holds_findings(lam: Any, iam: Any, arn: str, secrets: Secrets, stage: str) 
         return [f"Lambda {HOLDS_TARGET}: does not exist"]
     grants = secret_grants(iam, role_name(holds))
     return _role_findings(f"Lambda {HOLDS_TARGET}", grants, secrets, stage)
+
+
+def holds_read_findings(lam: Any, iam: Any, control: Any, gateway_id: str,
+                        secrets: Secrets) -> list[str]:
+    """Findings when the holds Lambda's role cannot read the gateway login's secret yet.
+
+    The grant comes from the stack deploy, so the parameter and the Lambda move only after it.
+    """
+    return _holds_findings(lam, iam, holds_function_arn(control, gateway_id), secrets, "gateway")
 
 
 def semantic_findings(lam: Any, iam: Any, wanted: str, named: str, secrets: Secrets,

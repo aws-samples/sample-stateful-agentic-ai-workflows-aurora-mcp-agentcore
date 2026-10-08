@@ -283,7 +283,7 @@ def command(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> 
     clients = snapshot.Clients(
         control=session.client("bedrock-agentcore-control"), apprunner=session.client("apprunner"),
         cloudfront=session.client("cloudfront"), cfn=session.client("cloudformation"),
-        ssm=session.client("ssm"), lam=session.client("lambda"))
+        ssm=session.client("ssm"), lam=session.client("lambda"), iam=session.client("iam"))
     where = snapshot.Where(account, region, gateway_id, runtime_ids,
                            saved["service"]["ServiceArn"], env)
     ctx = Context(saved=saved, clients=clients, where=where, apply=args.apply,

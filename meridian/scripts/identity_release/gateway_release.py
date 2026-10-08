@@ -359,7 +359,7 @@ def preconditions(clients: Clients, deps: Any, wanted: preflight.Target,
 # --------------------------------------------------------------------- applying
 
 
-def _wait_ready(control: Any, gateway_id: str, sleep: Callable[[float], None],
+def wait_ready(control: Any, gateway_id: str, sleep: Callable[[float], None],
                 clock: Callable[[], float]) -> dict[str, Any]:
     deadline = clock() + UPDATE_TIMEOUT_SECONDS
     while True:
@@ -380,7 +380,7 @@ def _read_back(control: Any, gateway_id: str, wanted: preflight.Target,
                clock: Callable[[], float]) -> tuple[dict[str, Any], list[str]]:
     """READY, then the check; repeat for a while, since READY can come before UPDATING."""
     for attempt in range(SETTLE_ATTEMPTS):
-        described = _wait_ready(control, gateway_id, sleep, clock)
+        described = wait_ready(control, gateway_id, sleep, clock)
         findings = preflight.check_gateway(described, wanted)
         if not findings:
             break

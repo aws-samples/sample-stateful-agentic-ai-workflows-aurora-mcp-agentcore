@@ -99,8 +99,9 @@ def test_taking_only_reads_and_every_call_matches_the_service_models(world):
     assert sorted({op for client in world.clients.values() for op, _ in client.calls}) == [
         "describe_function", "describe_service", "describe_stacks", "get_agent_runtime",
         "get_distribution_config", "get_function", "get_function_configuration", "get_gateway",
-        "get_gateway_target", "get_parameter", "get_response_headers_policy", "get_template",
-        "list_gateway_targets", "list_policies"]
+        "get_gateway_target", "get_parameter", "get_response_headers_policy", "get_role_policy",
+        "get_template", "list_attached_role_policies", "list_gateway_targets", "list_policies",
+        "list_role_policies"]
 
 
 def test_the_input_descriptions_are_not_changed(world):

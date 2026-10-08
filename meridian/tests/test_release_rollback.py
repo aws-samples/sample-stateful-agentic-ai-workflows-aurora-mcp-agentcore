@@ -173,7 +173,7 @@ def test_the_roles_stack_and_the_rules_are_reported_with_the_exact_commands(tmp_
     outcome, said = go(world, saved)
 
     manual = {r.name: r for r in outcome.results if r.status == "manual"}
-    assert set(manual) == {"roles stack", "cedar rules"}
+    assert set(manual) == {"roles stack", "agentcore stack"}
     text = "\n".join(said)
     assert "publish.py" in text and "agentcore deploy -y" in text
     assert "MERIDIAN_AGENTCORE_AUTH=iam" in text
