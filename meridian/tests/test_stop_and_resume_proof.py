@@ -1,5 +1,7 @@
 """The stop-and-resume proof's checks fail on the evidence that would make it a lie."""
 
+import pytest
+
 from scripts import stop_and_resume_proof as proof
 
 
@@ -119,3 +121,35 @@ def test_a_waiting_hold_must_carry_a_captured_intent_id():
     assert proof.check_restart(GOOD, HELD, "waiting", saved_hold_request_id="hr-1") == []
     assert any("hold_request_id" in f for f in proof.check_restart(
         GOOD, HELD, "waiting", saved_hold_request_id="hr-other"))
+
+
+class FakeClient:
+    def __init__(self, thread_count):
+        self.thread_count = thread_count
+        self.statements = []
+
+    async def execute(self, sql, params=(), **_kwargs):
+        self.statements.append(sql)
+        if "FROM journey_threads WHERE thread_id" in sql:
+            return [{"journey_id": "jrn-1"}]
+        if "COUNT(*) AS n FROM journey_threads" in sql:
+            return [{"n": self.thread_count}]
+        return []
+
+
+async def test_the_clean_up_refuses_to_purge_a_journey_that_has_other_threads():
+    client = FakeClient(thread_count=2)
+
+    with pytest.raises(RuntimeError, match="other threads"):
+        await proof._purge_run(client, "phase5-proof-abcd1234")
+
+    assert not any(sql.lstrip().startswith("DELETE") for sql in client.statements)
+
+
+async def test_the_clean_up_refuses_a_thread_the_proof_did_not_create():
+    client = FakeClient(thread_count=1)
+
+    with pytest.raises(RuntimeError, match="not created by this proof"):
+        await proof._purge_run(client, "jordan-real-thread")
+
+    assert client.statements == []
