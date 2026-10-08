@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
-const { App, aws_s3_deployment: s3deploy } = require('aws-cdk-lib');
+const { App, aws_s3_deployment: s3deploy, aws_cloudfront: cloudfront } = require('aws-cdk-lib');
 const { Template } = require('aws-cdk-lib/assertions');
 const {
   MeridianWebStack,
@@ -115,6 +115,7 @@ test('the distribution sends the policy that allows the Cognito host on every ro
 });
 
 const FUNCTIONS = path.join(__dirname, '..', 'functions');
+const CACHING_DISABLED = '4135ea2d-6df8-44a3-9df3-4b5a84be39ad';
 const ALL_VIEWER_EXCEPT_HOST_HEADER = 'b689b0a8-53d0-40ab-baf2-68738e2966ac';
 
 function loadHandler(file) {
@@ -145,7 +146,8 @@ test('the jwt viewer function never asks for a Basic credential or reads the acc
   const result = await jwtViewer(request('/showcase'));
   assert.equal(result.statusCode, undefined);
   assert.equal(result.headers['www-authenticate'], undefined);
-  const source = fs.readFileSync(path.join(FUNCTIONS, 'viewer-request-jwt.js'), 'utf8');
+  const source = fs.readFileSync(path.join(FUNCTIONS, 'viewer-request-jwt.js'), 'utf8')
+    .split('\n').filter((line) => !line.trimStart().startsWith('//')).join('\n');
   assert.ok(!source.includes('kvs') && !source.includes('Basic'));
 });
 
@@ -158,13 +160,61 @@ test('the jwt viewer function keeps the token away from S3 and rewrites client r
   }
 });
 
-function webTemplate(mode, t) {
+const TOKEN = 'Bearer browser-token';
+const CLASSIFICATION = [
+  ['/api/../index.html', 'api'],
+  ['//api', '/index.html'],
+  ['/api%2Fx', '/index.html'],
+  ['/APIx', '/index.html'],
+  ['/API/x', '/index.html'],
+  ['/api', '/index.html'],
+  ['/health', 'api'],
+  ['/health/', '/index.html'],
+  ['/healthz', '/index.html'],
+  ['/x/../api/y', '/x/../api/y'],
+  ['/api/..', 'api'],
+  ['/apix', '/index.html'],
+  ['/apis/x', '/index.html'],
+  ['/api/x', 'api'],
+];
+
+test('the jwt viewer function classifies every tricky uri exactly', async () => {
+  for (const [uri, expected] of CLASSIFICATION) {
+    const headers = { authorization: { value: TOKEN } };
+    const result = await jwtViewer({ request: { uri, headers } });
+    if (expected === 'api') {
+      assert.equal(result.uri, uri, uri);
+      assert.equal(result.headers.authorization.value, TOKEN, uri);
+    } else {
+      assert.equal(result.uri, expected, uri);
+      assert.equal(result.headers.authorization, undefined, uri);
+    }
+  }
+});
+
+test('the jwt viewer function removes a multiValue Authorization header entirely', async () => {
+  const headers = { authorization: { value: TOKEN, multiValue: [{ value: TOKEN }] } };
+  const result = await jwtViewer({ request: { uri: '/showcase', headers } });
+  assert.equal('authorization' in result.headers, false);
+});
+
+test('the jwt viewer function creates no header on an API path with empty headers', async () => {
+  const result = await jwtViewer({ request: { uri: '/api/me', headers: {} } });
+  assert.deepEqual(result.headers, {});
+});
+
+test('the jwt viewer function passes an API request without a headers object through', async () => {
+  const api = await jwtViewer({ request: { uri: '/api/me' } });
+  assert.equal(api.headers, undefined);
+});
+
+function webTemplate(mode, t, stackId = `Web${mode}`) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'meridian-site-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   fs.writeFileSync(path.join(directory, 'index.html'), '<!doctype html><title>Meridian</title>');
   const sourceAsset = s3deploy.Source.asset;
   t.mock.method(s3deploy.Source, 'asset', () => sourceAsset(directory));
-  return Template.fromStack(new MeridianWebStack(new App(), `Web${mode}`, {
+  return Template.fromStack(new MeridianWebStack(new App(), stackId, {
     env: { account: '123456789012', region: 'us-east-1' },
     backendHost: 'test.us-east-1.awsapprunner.com',
     ...(mode ? { identityMode: mode } : {}),
@@ -196,6 +246,28 @@ for (const mode of ['iam', 'jwt']) {
     for (const behavior of behaviors) {
       assert.equal(behavior.OriginRequestPolicyId, ALL_VIEWER_EXCEPT_HOST_HEADER);
       assert.equal(behavior.FunctionAssociations.length, 1);
+      assert.equal(behavior.CachePolicyId, CACHING_DISABLED);
     }
   });
 }
+
+test('the managed CachingDisabled id matches the one the stack uses', () => {
+  assert.equal(cloudfront.CachePolicy.CACHING_DISABLED.cachePolicyId, CACHING_DISABLED);
+});
+
+test('the default and iam templates are identical, and jwt differs only in the function', (t) => {
+  const plain = webTemplate(undefined, t, 'WebCompare').toJSON();
+  assert.deepEqual(webTemplate('iam', t, 'WebCompare').toJSON(), plain);
+  const jwt = webTemplate('jwt', t, 'WebCompare').toJSON();
+  const strip = (template) => JSON.parse(JSON.stringify(template, (key, value) => (
+    key === 'FunctionCode' || key === 'Comment' ? undefined : value
+  )));
+  const [viewerId] = Object.keys(
+    Object.fromEntries(Object.entries(jwt.Resources).filter(([, r]) => r.Type === 'AWS::CloudFront::Function')),
+  );
+  const changed = Object.keys(jwt.Resources).filter(
+    (id) => JSON.stringify(jwt.Resources[id]) !== JSON.stringify(plain.Resources[id]),
+  );
+  assert.deepEqual(changed.filter((id) => id !== viewerId), []);
+  assert.deepEqual(strip(jwt), strip(plain));
+});
