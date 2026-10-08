@@ -136,7 +136,7 @@ def test_the_recorded_proof_satisfies_the_publish_preflight(tmp_path):
 
 @pytest.mark.parametrize(("field", "value"), [
     ("ok", False), ("ok", "true"), ("at", "2026-10-08T12:00:00"),
-    ("at", "2026-09-01T00:00:00+00:00"), ("account", "210987654321"), ("region", "eu-west-1"),
+    ("at", "2026-09-01T00:00:00+00:00"), ("account", "999999999999"), ("region", "eu-west-1"),
     ("user_pool_id", "us-east-1_Other"),
     ("git_sha", "f" * 40), ("login", "meridian_admin"), ("checks", {}),
     ("checks", {"warm": False}),
