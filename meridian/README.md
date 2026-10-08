@@ -257,17 +257,20 @@ The script crops and resizes each image and reports packages without artwork.
 ## Governance boundary
 
 The HTTP layer binds each request to a traveler before workload authorization
-runs. Loopback development (the default `ENVIRONMENT=development`) and the
-hosted sample use one shared principal; neither authenticates Jordan as a
-person. Set `MERIDIAN_API_TOKEN` and `CORS_ORIGINS` before exposing the API to
-a network.
+runs. After the identity release, that traveler is the one named by the verified
+Amazon Cognito access token. Until the release, the default
+`MERIDIAN_AGENTCORE_AUTH=iam` applies and the hosted site still uses the
+shared `MERIDIAN_API_TOKEN`. Loopback development (the default
+`ENVIRONMENT=development`) is open as Jordan without a token, and the hosted
+service refuses that mode. Set `CORS_ORIGINS` before exposing the API to a
+network.
 
 Traveler-scoped operations and gateway actions pass these controls:
 
-1. AWS STS or AgentCore Identity authenticates the workload.
+1. AWS STS authenticates the workload (the App Runner instance role or a Lambda role). Meridian does not use the AgentCore Identity service.
 2. `traveler_identity_bindings` in Aurora authorizes that workload for the requested traveler. A missing grant fails before any RLS scope is set.
 3. Aurora row-level security filters rows to that traveler under the restricted `meridian_app` role.
-4. AgentCore Gateway serves the tools over MCP with SigV4, and its Cedar policy engine (`MeridianGovernance`, `ENFORCE` mode) decides each tool call on its arguments before a Lambda runs. Reads are permitted. A courtesy hold is permitted only when the traveler confirmed it, for at most 12 hours and 6 travelers, within the traveler's saved budget ceiling. A confirmation is permitted only when the traveler confirmed it and the total is within that ceiling. Any other call is denied by default.
+4. AgentCore Gateway serves the tools over MCP (signed with AWS credentials in `iam` mode, with the caller's Amazon Cognito access token in `jwt` mode), and its Cedar policy engine (`MeridianGovernance`, `ENFORCE` mode) decides each tool call on its arguments before a Lambda runs. Reads are permitted. A courtesy hold is permitted only when the traveler confirmed it, for at most 12 hours and 6 travelers, within the traveler's saved budget ceiling. A confirmation is permitted only when the traveler confirmed it and the total is within that ceiling. Any other call is denied by default.
 5. The `MeridianHolds` Lambda is a workload with its own grant. It sets the traveler scope, switches to `meridian_app`, and calls `create_courtesy_hold` or `confirm_booking`. The Phase 4 concierge and the Phase 5 workflow both place holds through this tool; the workflow also passes its request ID, booking ID and execution ID so the Lambda can check the worker's lease.
 
 The runtime pins the traveler ID, the confirmation flag, the budget ceiling and
@@ -281,9 +284,24 @@ turns link the authorization subject to the RLS scope in `agent_iam_audit`.
 Missing AgentCore configuration fails closed. IAM and target failures are
 reported where they happen, not as Cedar denials.
 
-An application with real users must authenticate each user and bind the
-verified user identity, such as an Amazon Cognito `sub`, to the traveler,
-instead of treating one workload as every user.
+Meridian does this. A pre-token-generation trigger copies the traveler bound to
+the user's Cognito `sub` into the access token, and every layer checks that
+token (see Who the traveler is, below).
+
+### Who the traveler is
+
+After the identity release, a signed-in person is the only source of the
+traveler. The hosted backend, both Runtimes and the Gateway each verify the
+person's Amazon Cognito access token, and row-level security is the last check.
+A second seeded user, the decoy, has a valid token and a real traveler row;
+`scripts/identity_proof.py` records that the decoy is refused at all four layers
+(backend, Runtimes, Gateway and AWS Aurora) and that Jordan is allowed at each.
+The proof runs after the release. The five hops are in
+[docs/STATEFUL_ARCHITECTURE.md](docs/STATEFUL_ARCHITECTURE.md#identity-five-hops),
+the command is in
+[docs/OPERATIONS.md](docs/OPERATIONS.md#prove-the-decoy-is-refused), and the
+decision not to have the database verify a signed scope is in
+[docs/SIGNED_SCOPE_EVALUATION.md](docs/SIGNED_SCOPE_EVALUATION.md).
 
 ### Cedar and Dogwood
 
@@ -322,5 +340,6 @@ Start with the [documentation index](docs/README.md), the
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Provision Aurora, run the workflow Runtime, exercise recovery, publish the web app, troubleshoot |
 | [docs/AGENTCORE_LEARNINGS.md](docs/AGENTCORE_LEARNINGS.md) | AgentCore, Cedar and App Runner behavior that shaped the code |
 | [docs/DOGWOOD_POLICY_ASSESSMENT.md](docs/DOGWOOD_POLICY_ASSESSMENT.md) | Design for an optional temporal policy |
+| [docs/SIGNED_SCOPE_EVALUATION.md](docs/SIGNED_SCOPE_EVALUATION.md) | Whether Aurora should verify a signed traveler scope, evaluated and not built |
 | [meridian_agentcore/README.md](meridian_agentcore/README.md) | The AgentCore CLI project and its configuration templates |
 | [backend/agents/README.md](backend/agents/README.md) | The agent modules for each phase |

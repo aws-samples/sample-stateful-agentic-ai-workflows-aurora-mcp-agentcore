@@ -177,6 +177,28 @@ The application does not import LangGraph. The maintained LangGraph example, wit
 its Data API checkpoint saver and its own tests, is in
 [`examples/langgraph/`](../examples/langgraph/README.md).
 
+## Identity: five hops
+
+After the identity release, a signed-in person is the only source of the traveler. The Amazon Cognito access token
+carries a `traveler_id` claim, copied from the user's active `cognito` row in `traveler_identity_bindings` by a
+pre-token-generation trigger. Each hop below checks the token itself; none trusts the one before it. Until the release,
+`MERIDIAN_AGENTCORE_AUTH` defaults to `iam` and the Runtimes and the Gateway still use IAM authorizers (see
+[Switch the AgentCore identity mode](OPERATIONS.md#switch-the-agentcore-identity-mode)).
+
+| Hop | What happens | What a refusal looks like |
+| --- | --- | --- |
+| Browser | Authorization code with PKCE against the hosted sign-in page. The tokens live in memory and are refreshed a minute before they expire | The sign-in screen |
+| Backend | FastAPI verifies signature, issuer, `token_use`, client and expiry, then takes the traveler from the claim. A request that names another traveler is refused | 401 `sign_in_required` or `token_expired`; 403 for another traveler |
+| Runtimes | Both Runtimes have a JWT authorizer and allowlist `Authorization`. The traveler comes from the claim, and a payload that names someone else is refused | A coded `authorization` event |
+| Gateway | The Gateway verifies the token (`CUSTOM_JWT`). Which layers pin the traveler depends on the design that shipped, recorded in each receipt's `design` field: `both` (an interceptor replaces `travelerId` with the token's traveler and Cedar denies a mismatch), `cedar` or `interceptor`. The measured behavior is in [AGENTCORE_LEARNINGS.md](AGENTCORE_LEARNINGS.md#gateway-identity-what-the-harness-measured) | A tool error; a deny row in `traveler_access_audit` when the Holds Lambda refused |
+| AWS Aurora | The Lambda sets `app.current_traveler_id` from the argument and steps down to `meridian_app`. Row-level security filters every row to that traveler | Zero rows; a grant denial before any scope is set |
+
+`scripts/identity_proof.py` records, for each layer, that a second signed-in user (the decoy) is refused and that
+Jordan is allowed (see [Prove the decoy is refused](OPERATIONS.md#prove-the-decoy-is-refused)); it runs after the
+release. One limit stays. Aurora cannot see the token behind the Data API, so the traveler setting is pinned by our
+code. Having the database verify a signed scope was evaluated and not shipped; see
+[SIGNED_SCOPE_EVALUATION.md](SIGNED_SCOPE_EVALUATION.md).
+
 ## Production guidance
 
 - Apply the tracked migrations before starting the application, and run

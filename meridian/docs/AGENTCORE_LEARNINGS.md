@@ -48,6 +48,31 @@ deployment steps. Each note names the code or step it explains.
 - **App Runner does not run the start command through a shell.** Quotes are literal and `sh -c '...'` fails.
 - **CloudTrail shows what CloudFormation sends.** `lookup-events` on `CreateService` shows the fields the resource handler adds, which helps when a service created by a stack fails and the same service created by the CLI works. The App Runner service itself is managed outside CloudFormation; `scripts/publish.py` updates it through the SDK.
 
+## Gateway identity: what the harness measured
+
+The throwaway-Gateway harness (`scripts/run_gateway_harness.py`) answered the questions the design depended on, on a
+separate Gateway that it created and deleted, before anything was released. The rows are the harness's own.
+
+| Row | Question | Measured |
+| --- | --- | --- |
+| Q1 | Does the interceptor run before Cedar? | Yes. Cedar saw the rewritten traveler id, the deny rule passed, and the target ran with the decoy's id. |
+| Q2 | Does the Gateway re-validate rewritten arguments against the tool schema? | Not measured (UNKNOWN). Cedar denies a retyped or removed `travelerId` first, which masks the schema check. A required argument omitted by the caller is not rejected before the interceptor. Measuring it needs a Gateway whose engine holds only `permit_all`. |
+| Q3 | Does any token claim reach the Lambda? | No. The target event is the argument object (`note`, `travelerId`); the client context holds only `bedrockAgentCore*` ids. No claim or token reaches the target. |
+| Q4 | Does the interceptor replace a traveler the caller named? | PASS. A decoy token naming Jordan's id reached the target with the decoy's id. |
+| Q5 | Does Cedar alone deny the decoy? | Yes. Cedar alone denied the decoy's call naming Jordan's id, so a Cedar-only release is available. |
+| C1 | Does Jordan's own token reach the target as Jordan? | PASS |
+| C2 | Does the Gateway accept the interceptor's refusal shape? | PASS. A 200 result with `isError` reaches the MCP client as a tool error whose text begins `Identity Check Failed: `. |
+| C3 | Does the Policy validator accept the traveler-binding rule? | PASS. It accepts `forbid ... unless { hasTag && has travelerId && getTag != "" && getTag == input }` under `FAIL_ON_ANY_FINDINGS`. It rejected the earlier `!(hasTag) \|\| ...` form: the validator cannot carry the guard through the negated `\|\|`. |
+| C4 | Do `initialize` and `tools/list` still work? | PASS. Both pass through the interceptor. |
+| C5 | Does an update without the interceptor detach it? | PASS. `update_gateway` without `interceptorConfigurations` leaves no interceptor attached, so one call is the rollback. |
+
+The design that shipped is `both`: the interceptor replaces `travelerId` with the token's traveler and Cedar denies a
+mismatch, with `MERIDIAN_GATEWAY_ENFORCEMENT` unset. Cedar alone (`cedar`) is a valid fallback because of Q5. The
+Cedar denial text was not stored by the run; it is known only as `Tool Execution Denied` in an `isError` result, so
+the identity proof attributes a Gateway refusal by the change in `traveler_access_audit` deny rows and records
+`not_attributed` when the text matches no layer. The identity proof records, in every receipt, which part of the
+Gateway refused the decoy.
+
 ## Why two directories
 
 - `meridian/` is the application: backend, frontend, tests and scripts.
