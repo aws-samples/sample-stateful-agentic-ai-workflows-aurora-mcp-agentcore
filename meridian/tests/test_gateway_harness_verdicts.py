@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from scripts.gateway_harness import verdicts as v
 
 JORDAN, DECOY = v.JORDAN, v.DECOY
@@ -43,6 +45,7 @@ def observations(**outcomes):
         "bad_type": BAD_TYPE_ACCEPTED,
         "drop_required": DROP_ACCEPTED,
         "forced_refusal": REFUSED,
+        "cedar_alone_control": ok(JORDAN),
         "cedar_alone": DENIED,
     }
     return v.Observations({**base, **outcomes}, binding_policy_accepted=True,
@@ -113,7 +116,7 @@ def test_an_accepted_rewrite_that_did_not_arrive_as_rewritten_is_inconclusive():
     assert row.finding.count("inconclusive") == 2 and row.status == v.UNKNOWN
 
 
-def test_cedar_alone_is_information_and_never_fails_the_run():
+def test_cedar_alone_is_informative_and_never_fails_the_run():
     denied = table(observations())["Q5"]
     assert denied.status == v.INFO and denied.finding.startswith("Yes. Cedar denied")
     leaked = table(observations(cedar_alone=ok(JORDAN)))["Q5"]
@@ -123,10 +126,52 @@ def test_cedar_alone_is_information_and_never_fails_the_run():
 
 def test_cedar_alone_reports_an_unexpected_outcome_without_deciding():
     odd = table(observations(cedar_alone=v.Outcome("http_error", 502, "bad gateway")))["Q5"]
-    assert odd.status == v.INFO and odd.finding.startswith("Inconclusive: http_error 502")
+    assert odd.status == v.UNKNOWN and odd.finding.startswith("Inconclusive: http_error 502")
     missing = observations()
     del missing.outcomes["cedar_alone"]
     assert table(missing)["Q5"].finding == "not probed"
+
+
+@pytest.mark.parametrize("control", [
+    v.Outcome("error", 200, "boom"), v.Outcome("http_error", 0, "transport failure"),
+    v.Outcome("refused", 200, "Identity Check Failed: x"), ok(DECOY), echoed({"note": "x"}),
+    v.Outcome("ok", 200, echo=None), None])
+def test_a_denial_without_a_working_off_mode_control_is_inconclusive(control):
+    obs = observations()
+    if control is None:
+        del obs.outcomes["cedar_alone_control"]
+    else:
+        obs.outcomes["cedar_alone_control"] = control
+    row = table(obs)["Q5"]
+    assert row.status == v.UNKNOWN
+    assert row.finding == "Inconclusive: the off-mode control did not reach the target"
+
+
+def test_a_denial_with_other_32002_text_is_not_cedars():
+    other = v.Outcome("denied", 200, "some other -32002 text")
+    row = table(observations(cedar_alone=other))["Q5"]
+    assert row.status == v.UNKNOWN and row.finding.startswith("Inconclusive")
+    exact = v.classify(200, {"error": {"code": -32002, "message": "Tool Execution Denied: x"}})
+    assert table(observations(cedar_alone=exact))["Q5"].finding.startswith("Yes.")
+
+
+@pytest.mark.parametrize("outcome", [
+    v.Outcome("refused", 200, "Identity Check Failed: x"), ok(DECOY),
+    v.Outcome("ok", 200, echo=None)])
+def test_other_cedar_alone_outcomes_are_inconclusive(outcome):
+    row = table(observations(cedar_alone=outcome))["Q5"]
+    assert row.status == v.UNKNOWN and row.finding.startswith("Inconclusive")
+
+
+def test_inconclusive_q5_is_distinguishable_from_yes_and_no_yet_does_not_fail_a_pass():
+    yes, no = table(observations())["Q5"], table(observations(cedar_alone=ok(JORDAN)))["Q5"]
+    odd = observations(cedar_alone=v.Outcome("error", 200, "x"))
+    inconclusive = table(odd)["Q5"]
+    assert inconclusive.status not in (yes.status, no.status)
+    assert v.passed(v.derive_verdicts(odd)), "Q5 only picks between fallbacks after a failure"
+    failing = observations(cedar_alone=v.Outcome("error", 200, "x"),
+                           decoy_names_jordan=ok(JORDAN))
+    assert not v.passed(v.derive_verdicts(failing))
 
 
 def test_detaching_must_leave_no_interceptor_or_the_run_fails():
@@ -146,6 +191,12 @@ def test_an_unprobed_detach_is_information_so_older_observations_still_pass():
     row = table(observations())["C5"]
     assert row.finding == "not probed" and row.status == v.INFO
     assert v.passed(v.derive_verdicts(observations()))
+
+
+def test_passed_requires_the_q5_row():
+    rows = v.derive_verdicts(observations())
+    assert v.passed(rows)
+    assert not v.passed([row for row in rows if row.key != "Q5"])
 
 
 def test_the_target_view_lists_event_keys_and_context_keys():
@@ -195,7 +246,7 @@ def test_a_skipped_probe_cannot_pass_the_table():
     assert v.passed(v.derive_verdicts(skipped_q1)) is False
 
 
-def test_the_result_needs_all_eight_rows():
+def test_the_result_needs_every_row():
     assert v.passed([]) is False
     assert v.format_table([]).endswith("RESULT: FAIL")
     without_c4 = [row for row in v.derive_verdicts(observations()) if row.key != "C4"]

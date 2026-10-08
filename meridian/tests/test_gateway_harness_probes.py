@@ -76,9 +76,11 @@ class FakeGateway:
 def test_the_probes_are_the_q2_redesign_and_none_uses_additional_properties():
     assert [p.name for p in probes.PROBES] == [
         "jordan_names_jordan", "decoy_names_jordan", "omitted_required", "bad_type",
-        "drop_required", "forced_refusal", "cedar_alone"]
+        "drop_required", "forced_refusal", "cedar_alone_control", "cedar_alone"]
     assert [p.mode for p in probes.PROBES] == [
-        "pin", "pin", "pin", "bad_type", "drop_required", "refuse", "off"]
+        "pin", "pin", "pin", "bad_type", "drop_required", "refuse", "off", "off"]
+    control = probes.PROBES[-2]
+    assert (control.who, control.arguments["travelerId"]) == ("jordan", JORDAN)
     assert "travelerId" not in probes.PROBES[2].arguments
     assert not any("extra" in p.name for p in probes.PROBES)
 
@@ -101,7 +103,7 @@ def test_probes_run_in_mode_groups_with_each_users_token():
     obs = probes.run_probes(gateway, mcp(handler), {"jordan": "J", "decoy": "D"},
                             sleep=lambda s: None)
     assert gateway.modes == ["bad_type", "drop_required", "refuse", "off"]
-    assert [auth for auth, _ in calls] == ["Bearer J"] + ["Bearer D"] * 6
+    assert [auth for auth, _ in calls] == ["Bearer J"] + ["Bearer D"] * 5 + ["Bearer J", "Bearer D"]
     assert calls[-1][1]["travelerId"] == JORDAN, "the Cedar-alone probe names Jordan"
     assert obs.listed_tools == ["EchoTarget___echo"]
     assert set(obs.outcomes) == {p.name for p in probes.PROBES}

@@ -1,4 +1,4 @@
-"""Turn probe outcomes into the answers to the four open questions."""
+"""Turn probe outcomes into the answers to the open questions and the controls."""
 
 from __future__ import annotations
 
@@ -17,7 +17,10 @@ CREDENTIAL_KEY = re.compile(r"token|claim|authorization|jwt", re.I)
 OMITTED_FIELD_NAMED = re.compile(r"travelerId|required|schema|missing|validation", re.I)
 WRONG_TYPE_NAMED = re.compile(r"travelerId|type|string|integer|schema|validation", re.I)
 PASS, FAIL, INFO, UNKNOWN = "PASS", "FAIL", "INFO", "UNKNOWN"
-KEYS = ("Q1", "Q2", "Q3", "Q4", "C1", "C2", "C3", "C4")
+KEYS = ("Q1", "Q2", "Q3", "Q4", "Q5", "C1", "C2", "C3", "C4")
+# Q5 only chooses between fallback designs after Q4 or C5 has already failed the run (plan
+# decision table, cases C to E), so an inconclusive Q5 must not fail an otherwise passing run.
+MAY_BE_UNKNOWN = ("Q5",)
 
 
 def scrub(text: str) -> str:
@@ -199,17 +202,21 @@ def _decoy(obs: Observations) -> Verdict:
 
 def _cedar_alone(obs: Observations) -> Verdict:
     question = "Does Cedar alone keep the decoy out when the interceptor changes nothing?"
-    outcome = obs.get("cedar_alone")
+    outcome, control = obs.get("cedar_alone"), obs.get("cedar_alone_control")
     if outcome is None:
-        return Verdict("Q5", question, "not probed", INFO)
-    if outcome.kind == "denied":
-        return Verdict("Q5", question, "Yes. Cedar denied the decoy's call naming Jordan's id, "
-                       "so a Cedar-only release is available.", INFO)
+        return Verdict("Q5", question, "not probed", UNKNOWN)
     if outcome.kind == "ok" and _traveler(outcome) == JORDAN:
         return Verdict("Q5", question, "No. Cedar did not stop the decoy's call naming Jordan's "
                        "id; the target received it. Cedar alone is not enough.", INFO)
+    if outcome.kind == "denied" and not (control and control.kind == "ok"
+                                         and _traveler(control) == JORDAN):
+        return Verdict("Q5", question, "Inconclusive: the off-mode control did not reach the "
+                       "target", UNKNOWN)
+    if outcome.kind == "denied" and DENIAL.match(outcome.message.strip()):
+        return Verdict("Q5", question, "Yes. Cedar denied the decoy's call naming Jordan's id, "
+                       "so a Cedar-only release is available.", INFO)
     return Verdict("Q5", question, f"Inconclusive: {outcome.kind} {outcome.status} "
-                   f"{outcome.message}".rstrip(), INFO)
+                   f"{outcome.message}".rstrip(), UNKNOWN)
 
 
 def _control(obs: Observations) -> Verdict:
@@ -256,7 +263,7 @@ def _detached(obs: Observations) -> Verdict:
 
 
 def derive_verdicts(obs: Observations) -> list[Verdict]:
-    """The four open questions, then the controls that make the answers trustworthy."""
+    """The five open questions (Q1 to Q5), then the five controls (C1 to C5) behind them."""
     return [
         _ordering(obs), _revalidation(obs), _target_view(obs), _decoy(obs), _cedar_alone(obs),
         _control(obs), _refusal_shape(obs), _policy_accepted(obs), _pass_through(obs),
@@ -265,9 +272,13 @@ def derive_verdicts(obs: Observations) -> list[Verdict]:
 
 
 def passed(verdicts: list[Verdict]) -> bool:
-    """True when all eight rows are present and each is PASS or INFO (UNKNOWN and FAIL fail)."""
+    """True when all nine rows are present and each is PASS or INFO.
+
+    FAIL and UNKNOWN fail the run, except an UNKNOWN row named in ``MAY_BE_UNKNOWN`` (Q5).
+    """
     return {v.key for v in verdicts} >= set(KEYS) and all(
-        v.status in (PASS, INFO) for v in verdicts)
+        v.status in (PASS, INFO) or (v.status == UNKNOWN and v.key in MAY_BE_UNKNOWN)
+        for v in verdicts)
 
 
 def format_table(verdicts: list[Verdict]) -> str:

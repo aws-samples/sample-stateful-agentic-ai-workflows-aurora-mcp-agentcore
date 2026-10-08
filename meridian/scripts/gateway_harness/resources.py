@@ -550,8 +550,10 @@ class ThrowawayGateway:
     # ----------------------------------------------------------------- switch
 
     def set_interceptor_mode(self, mode: str) -> None:
-        """Switch the interceptor wrapper between ``pin``, ``bad_type``, ``drop_required`` and
-        ``refuse``.
+        """Switch the interceptor wrapper between its five modes.
+
+        The modes are ``pin``, ``bad_type``, ``drop_required``, ``refuse`` and ``off`` (forward
+        the request unchanged, so only Cedar stands between a caller and the target).
 
         Raises:
             HarnessRefusal: ``mode`` is none of those; nothing is called.
