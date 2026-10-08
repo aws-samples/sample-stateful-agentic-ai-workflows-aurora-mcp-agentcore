@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from backend.agentcore.auth_mode import AUTH_MODE_ENV, IAM, MODES
 
@@ -20,6 +21,11 @@ COGNITO_KEYS = (
     "MERIDIAN_COGNITO_USER_POOL_ID",
     "MERIDIAN_COGNITO_APP_CLIENT_ID",
 )
+
+INTERCEPTOR_FUNCTION = "meridian-gateway-traveler-pin"
+MERIDIAN_DIR = Path(__file__).resolve().parents[2]
+RELEASE_DIR = MERIDIAN_DIR / ".local" / "release-b2"
+PROOF_PATH = RELEASE_DIR / "backend-login-proof.json"
 
 REGION = re.compile(r"^[a-z]{2}(-[a-z]+)+-\d+$")
 POOL_ID = re.compile(r"^[a-z]{2}(-[a-z]+)+-\d+_[A-Za-z0-9]+$")
@@ -68,6 +74,24 @@ def enforcement(env: Mapping[str, str | None]) -> str:
             "throwaway-Gateway harness verdicts decide which"
         )
     return raw
+
+
+def deployment_target(env: Mapping[str, str | None]) -> tuple[str, str]:
+    """The account and Region of the deployment, from the Aurora cluster ARN.
+
+    Raises:
+        ReleaseConfigError: When AURORA_CLUSTER_ARN is missing or not a cluster ARN.
+    """
+    parts = _setting(env, "AURORA_CLUSTER_ARN").split(":")
+    if len(parts) < 6 or parts[2] != "rds" or not re.fullmatch(r"\d{12}", parts[4]):
+        raise ReleaseConfigError("AURORA_CLUSTER_ARN must be an Aurora cluster ARN; set it in "
+                                 "meridian/.env")
+    return parts[4], parts[3]
+
+
+def interceptor_arn(account: str, region: str) -> str:
+    """The ARN of the traveler-pin interceptor function in this deployment."""
+    return f"arn:aws:lambda:{region}:{account}:function:{INTERCEPTOR_FUNCTION}"
 
 
 def uses_interceptor(design: str) -> bool:
