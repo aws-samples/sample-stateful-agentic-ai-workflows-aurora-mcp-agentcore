@@ -45,7 +45,7 @@ import type { MeridianShowcaseState } from './hooks/useMeridianShowcase';
 import type { Phase } from '../types';
 import { MERIDIAN_MARK_SRC } from '../lib/meridianBrand';
 import { TravelerAvatar } from './components/TravelerAvatar';
-import { SignOutButton } from '../auth/SignOutButton';
+import { HeaderAccount } from './components/HeaderAccount';
 import { travelBriefLabel } from './lib/travelerIdentity';
 import { usePrefersReducedMotion } from './lib/prefersReducedMotion';
 import { SHOWCASE_PHASES } from './lib/showcaseAdapters';
@@ -357,7 +357,6 @@ export function DesktopMeridianApp({
           </div>
           <ChevronRight className="mds-account-chevron" size={16} aria-hidden="true" />
         </button>
-        <SignOutButton />
       </aside>
 
       <header className="mds-shell-header">
@@ -419,6 +418,7 @@ export function DesktopMeridianApp({
                 : <Moon size={17} aria-hidden="true" />}
             </button>
           </IconTooltip>
+          <HeaderAccount traveler={state.traveler} />
         </div>
       </header>
 

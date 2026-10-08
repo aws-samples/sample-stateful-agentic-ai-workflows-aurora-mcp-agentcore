@@ -61,26 +61,6 @@
   outline-offset: 2px;
 }
 
-.mds-signout {
-  justify-self: start;
-  padding: 6px 0;
-  border: 0;
-  background: none;
-  color: var(--mds-label-2);
-  font: var(--mds-type-footnote);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.mds-signout:hover {
-  color: var(--mds-label);
-}
-
-.mds-signout:focus-visible {
-  outline: 2px solid var(--mds-tint);
-  outline-offset: 2px;
-}
-
 .mds-visually-hidden {
   position: absolute;
   width: 1px;
