@@ -34,11 +34,14 @@ def isolated_unit_environment(request, monkeypatch):
     }.items():
         monkeypatch.setenv(name, value)
     monkeypatch.delenv("AWS_SESSION_TOKEN", raising=False)
-    # A developer's .env may configure Cognito sign-in; unit tests choose their own.
+    # A developer's .env may configure Cognito sign-in or the jwt release; unit tests choose
+    # their own, so the default iam mode applies unless a test sets one.
     for name in (
         "MERIDIAN_COGNITO_REGION",
         "MERIDIAN_COGNITO_USER_POOL_ID",
         "MERIDIAN_COGNITO_APP_CLIENT_ID",
+        "MERIDIAN_AGENTCORE_AUTH",
+        "MERIDIAN_GATEWAY_ENFORCEMENT",
     ):
         monkeypatch.delenv(name, raising=False)
 
