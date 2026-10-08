@@ -103,6 +103,10 @@ class World:
             text = "Identity Check Failed: the access token carries no single traveler."
             return {"jsonrpc": "2.0", "id": 1, "result": {
                 "isError": True, "content": [{"type": "text", "text": text}]}}
+        if mode == "off" and arguments.get("travelerId") != who:
+            text = "Tool Execution Denied: Tool call not allowed due to policy enforcement"
+            return {"jsonrpc": "2.0", "id": 1, "result": {
+                "isError": True, "content": [{"type": "text", "text": text}]}}
         event = {**arguments, "travelerId": who}
         if mode == "bad_type":
             event["travelerId"] = 12345
@@ -174,7 +178,8 @@ def test_a_live_run_prints_the_table_saves_events_and_deletes_everything(tmp_pat
     assert len(list((tmp_path / NAME / "recorded").glob("event_*.json"))) == 3
     rows = json.loads((tmp_path / NAME / "verdicts.json").read_text())
     assert {row["key"]: row["status"] for row in rows}["Q4"] == "PASS"
-    assert len(world.requests) == 8
+    assert {row["key"]: row["finding"] for row in rows}["Q5"].startswith("Yes. Cedar denied")
+    assert len(world.requests) == 9
     assert world.minted == ["jordan", "decoy"]
 
 

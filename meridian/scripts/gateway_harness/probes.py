@@ -48,6 +48,7 @@ PROBES = (
     Probe("drop_required", "drop_required", "decoy",
           {"travelerId": DECOY, "note": "travelerId removed"}),
     Probe("forced_refusal", "refuse", "decoy", {"travelerId": DECOY, "note": "refused"}),
+    Probe("cedar_alone", "off", "decoy", {"travelerId": JORDAN, "note": "interceptor off"}),
 )
 
 

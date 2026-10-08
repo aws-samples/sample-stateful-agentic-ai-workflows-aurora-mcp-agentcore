@@ -196,6 +196,21 @@ def _decoy(obs: Observations) -> Verdict:
     return Verdict("Q4", question, f"No. Outcome {outcome.kind}; target saw {reached}.", FAIL)
 
 
+def _cedar_alone(obs: Observations) -> Verdict:
+    question = "Does Cedar alone keep the decoy out when the interceptor changes nothing?"
+    outcome = obs.get("cedar_alone")
+    if outcome is None:
+        return Verdict("Q5", question, "not probed", INFO)
+    if outcome.kind == "denied":
+        return Verdict("Q5", question, "Yes. Cedar denied the decoy's call naming Jordan's id, "
+                       "so a Cedar-only release is available.", INFO)
+    if outcome.kind == "ok" and _traveler(outcome) == JORDAN:
+        return Verdict("Q5", question, "No. Cedar did not stop the decoy's call naming Jordan's "
+                       "id; the target received it. Cedar alone is not enough.", INFO)
+    return Verdict("Q5", question, f"Inconclusive: {outcome.kind} {outcome.status} "
+                   f"{outcome.message}".rstrip(), INFO)
+
+
 def _control(obs: Observations) -> Verdict:
     question = "Does Jordan's own token reach the target as Jordan?"
     outcome = obs.get("jordan_names_jordan")
@@ -230,7 +245,7 @@ def _pass_through(obs: Observations) -> Verdict:
 def derive_verdicts(obs: Observations) -> list[Verdict]:
     """The four open questions, then the controls that make the answers trustworthy."""
     return [
-        _ordering(obs), _revalidation(obs), _target_view(obs), _decoy(obs),
+        _ordering(obs), _revalidation(obs), _target_view(obs), _decoy(obs), _cedar_alone(obs),
         _control(obs), _refusal_shape(obs), _policy_accepted(obs), _pass_through(obs),
     ]
 

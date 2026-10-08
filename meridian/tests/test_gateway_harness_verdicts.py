@@ -43,6 +43,7 @@ def observations(**outcomes):
         "bad_type": BAD_TYPE_ACCEPTED,
         "drop_required": DROP_ACCEPTED,
         "forced_refusal": REFUSED,
+        "cedar_alone": DENIED,
     }
     return v.Observations({**base, **outcomes}, binding_policy_accepted=True,
                           listed_tools=["EchoTarget___echo"])
@@ -110,6 +111,22 @@ def test_one_rejected_rewrite_is_enough_to_show_the_gateway_revalidates():
 def test_an_accepted_rewrite_that_did_not_arrive_as_rewritten_is_inconclusive():
     row = table(observations(bad_type=ok(DECOY), drop_required=ok(DECOY)))["Q2"]
     assert row.finding.count("inconclusive") == 2 and row.status == v.UNKNOWN
+
+
+def test_cedar_alone_is_information_and_never_fails_the_run():
+    denied = table(observations())["Q5"]
+    assert denied.status == v.INFO and denied.finding.startswith("Yes. Cedar denied")
+    leaked = table(observations(cedar_alone=ok(JORDAN)))["Q5"]
+    assert leaked.status == v.INFO and leaked.finding.startswith("No. Cedar did not stop")
+    assert v.passed(v.derive_verdicts(observations(cedar_alone=ok(JORDAN))))
+
+
+def test_cedar_alone_reports_an_unexpected_outcome_without_deciding():
+    odd = table(observations(cedar_alone=v.Outcome("http_error", 502, "bad gateway")))["Q5"]
+    assert odd.status == v.INFO and odd.finding.startswith("Inconclusive: http_error 502")
+    missing = observations()
+    del missing.outcomes["cedar_alone"]
+    assert table(missing)["Q5"].finding == "not probed"
 
 
 def test_the_target_view_lists_event_keys_and_context_keys():
@@ -201,7 +218,7 @@ def test_malformed_shapes_become_errors_not_crashes():
 
 def test_the_table_has_a_row_per_verdict_and_a_result_line():
     text = v.format_table(v.derive_verdicts(observations()))
-    for key in ("Q1", "Q2", "Q3", "Q4", "C1", "C2", "C3", "C4"):
+    for key in ("Q1", "Q2", "Q3", "Q4", "Q5", "C1", "C2", "C3", "C4"):
         assert f"\n{key} " in text
     assert text.endswith("RESULT: PASS")
     assert v.format_table(v.derive_verdicts(v.Observations())).endswith("RESULT: FAIL")

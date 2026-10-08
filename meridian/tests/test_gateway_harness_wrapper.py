@@ -90,6 +90,24 @@ def test_refuse_mode_answers_with_the_production_refusal(wrapper, monkeypatch):
     assert wrapper.lambda_handler(event, None) == load_interceptor().refusal(7, "claim")
 
 
+def test_off_mode_forwards_the_callers_own_arguments_untouched(wrapper, monkeypatch):
+    monkeypatch.setenv("HARNESS_MODE", "off")
+    event = load("documented_tools_call_hold", token_for(traveler_id=DECOY))
+    body = event["mcp"]["gatewayRequest"]["body"]
+    output = wrapper.lambda_handler(event, None)
+    assert output == {
+        "interceptorOutputVersion": "1.0",
+        "mcp": {"transformedGatewayRequest": {"body": body}},
+    }
+    assert arguments_of(output)["travelerId"] == body["params"]["arguments"]["travelerId"]
+
+
+def test_off_mode_does_not_decode_the_token(wrapper, monkeypatch):
+    monkeypatch.setenv("HARNESS_MODE", "off")
+    event = load("documented_tools_call_hold", "not-a-token")
+    assert "transformedGatewayRequest" in wrapper.lambda_handler(event, None)["mcp"]
+
+
 def test_refuse_mode_leaves_other_methods_alone(wrapper, monkeypatch):
     monkeypatch.setenv("HARNESS_MODE", "refuse")
     event = load("documented_tools_list", token_for(traveler_id=JORDAN))

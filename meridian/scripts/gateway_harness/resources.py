@@ -36,7 +36,7 @@ TEMPLATE_ACTIONS = (
     'AgentCore::Action::"MeridianHolds___create_courtesy_hold", '
     'AgentCore::Action::"MeridianHolds___confirm_booking"'
 )
-INTERCEPTOR_MODES = ("pin", "bad_type", "drop_required", "refuse")
+INTERCEPTOR_MODES = ("pin", "bad_type", "drop_required", "refuse", "off")
 LOG_ACTIONS = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
 TEARDOWN_KINDS = ("target", "gateway", "policy", "policy-engine", "lambda", "iam-role")
 GONE = {"ResourceNotFoundException", "NoSuchEntity", "ResourceNotFound"}

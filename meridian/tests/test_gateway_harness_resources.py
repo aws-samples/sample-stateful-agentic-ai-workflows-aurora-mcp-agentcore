@@ -246,7 +246,7 @@ def test_the_interceptor_mode_is_switched_with_a_function_configuration_update()
     assert update["Environment"]["Variables"]["PINNED_TOOLS"] == "EchoTarget___echo"
 
 
-@pytest.mark.parametrize("mode", ["pin", "bad_type", "drop_required", "refuse"])
+@pytest.mark.parametrize("mode", ["pin", "bad_type", "drop_required", "refuse", "off"])
 def test_every_valid_interceptor_mode_is_accepted(mode):
     harness, clients, _ = build()
     harness.create()

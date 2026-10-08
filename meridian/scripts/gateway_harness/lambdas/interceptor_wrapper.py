@@ -11,6 +11,9 @@ raises ``ValueError`` rather than silently behaving like ``pin``):
   required, for the same question.
 - ``refuse``: answer every ``tools/call`` with the production refusal, to prove an MCP client
   understands that shape.
+- ``off``: forward every request exactly as the caller sent it, so the Gateway's own Cedar policy is
+  the only thing between a decoy token naming Jordan and Jordan's records. It does not read the
+  token at all.
 
 With ``HARNESS_RECORD=1`` each event is logged with every bearer token replaced by a placeholder,
 so the committed contract fixtures can be recorded from real Gateway events. The masking is by
@@ -27,7 +30,7 @@ import lambda_function as production
 
 RECORD_MARKER = "RECORDED_EVENT "
 TOKEN_PLACEHOLDER = "Bearer {{TOKEN}}"
-MODES = ("pin", "bad_type", "drop_required", "refuse")
+MODES = ("pin", "bad_type", "drop_required", "refuse", "off")
 BEARER_TEXT = re.compile(r"Bearer\s+[^\s\"\\]+", re.IGNORECASE)
 JWT_TEXT = re.compile(r"\bey[\w-]{6,}\.[\w-]+\.[\w-]*")
 WRONG_TYPE_TRAVELER = 12345
@@ -90,12 +93,23 @@ def _refusal_for(event):
     return None
 
 
+def _passthrough(event):
+    """The request body, forwarded unchanged."""
+    body = event["mcp"]["gatewayRequest"]["body"]
+    return {
+        "interceptorOutputVersion": production.INTERCEPTOR_VERSION,
+        "mcp": {"transformedGatewayRequest": {"body": body}},
+    }
+
+
 def lambda_handler(event, context):
     mode = os.getenv("HARNESS_MODE", "pin")
     if mode not in MODES:
         raise ValueError(f"HARNESS_MODE must be one of {', '.join(MODES)}")
     if os.getenv("HARNESS_RECORD") == "1":
         print(RECORD_MARKER + json.dumps(redacted(event)), flush=True)
+    if mode == "off":
+        return _passthrough(event)
     if mode == "refuse":
         refused = _refusal_for(event)
         if refused is not None:
