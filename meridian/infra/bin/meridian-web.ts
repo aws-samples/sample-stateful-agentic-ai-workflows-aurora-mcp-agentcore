@@ -2,7 +2,7 @@
 import { App } from 'aws-cdk-lib';
 import { MeridianWebBackendStack } from '../lib/meridian-web-backend-stack';
 import { MeridianWebRolesStack } from '../lib/meridian-web-roles-stack';
-import { MeridianWebStack, backendHost, loadServiceEnvironment } from '../lib/meridian-web-stack';
+import { MeridianWebStack, backendHost, identityMode, loadDotenv, serviceEnvironment } from '../lib/meridian-web-stack';
 
 const app = new App();
 
@@ -11,7 +11,10 @@ const app = new App();
 // default profile region, which may differ.
 const region = process.env.MERIDIAN_WEB_REGION ?? 'us-east-1';
 const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region };
-const environment = loadServiceEnvironment(region);
+const dotenv = loadDotenv();
+const mode = identityMode(dotenv);
+const environment = serviceEnvironment(dotenv, region, mode);
+const jwt = mode === 'jwt';
 
 // scripts/publish.py deploys these in order: the App Runner roles (which must
 // exist, and have propagated, before the service), the backend image, then the
@@ -20,6 +23,8 @@ const environment = loadServiceEnvironment(region);
 new MeridianWebRolesStack(app, 'MeridianWebRoles', {
   env,
   environment,
+  masterSecretArn: jwt ? dotenv.AURORA_SECRET_ARN : undefined,
+  tighten: jwt && process.env.MERIDIAN_TIGHTEN_ROLE === '1',
   description: 'Meridian travel concierge: the App Runner roles, deployed ahead of the service',
 });
 

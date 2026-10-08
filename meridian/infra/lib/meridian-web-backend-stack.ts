@@ -6,7 +6,7 @@ import { Construct } from 'constructs';
 const meridianDir = path.resolve(__dirname, '..', '..', '..');
 
 export interface MeridianWebBackendStackProps extends StackProps {
-  /** From loadServiceEnvironment(); the non-secret App Runner environment. */
+  /** From serviceEnvironment(); the non-secret App Runner environment. */
   environment: Record<string, string>;
 }
 

@@ -5,6 +5,14 @@ import { API_TOKEN_SECRET_NAME } from './meridian-web-stack';
 export interface MeridianWebRolesStackProps extends StackProps {
   /** The App Runner environment from serviceEnvironment(); supplies the ARNs the role may touch. */
   environment: Record<string, string>;
+  /**
+   * The master login's secret, in the jwt release only. The service no longer uses it, but the role
+   * keeps the grant (and the shared-token secret's) until the tighten release, so a rollback to the
+   * iam release still starts.
+   */
+  masterSecretArn?: string;
+  /** Drop the master and shared-token grants. Valid only with `masterSecretArn`. */
+  tighten?: boolean;
 }
 
 /**
@@ -24,7 +32,19 @@ export class MeridianWebRolesStack extends Stack {
 
   constructor(scope: Construct, id: string, props: MeridianWebRolesStackProps) {
     super(scope, id, props);
-    const { environment } = props;
+    const { environment, masterSecretArn, tighten } = props;
+    if (tighten && !masterSecretArn) {
+      throw new Error('tighten applies only to the jwt release; there is no master grant to drop in iam mode');
+    }
+    const apiTokenSecretArn = this.formatArn({
+      service: 'secretsmanager', resource: 'secret',
+      resourceName: `${API_TOKEN_SECRET_NAME}-??????`, arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+    });
+    const secretGrants = masterSecretArn
+      ? (tighten
+        ? [environment.AURORA_SECRET_ARN]
+        : [environment.AURORA_SECRET_ARN, masterSecretArn, apiTokenSecretArn])
+      : [environment.AURORA_SECRET_ARN, apiTokenSecretArn];
 
     this.instanceRole = new iam.Role(this, 'BackendRole', {
       assumedBy: new iam.ServicePrincipal('tasks.apprunner.amazonaws.com'),
@@ -54,10 +74,7 @@ export class MeridianWebRolesStack extends Stack {
     this.instanceRole.addToPolicy(
       new iam.PolicyStatement({
         actions: ['secretsmanager:GetSecretValue'],
-        resources: [environment.AURORA_SECRET_ARN, this.formatArn({
-          service: 'secretsmanager', resource: 'secret',
-          resourceName: `${API_TOKEN_SECRET_NAME}-??????`, arnFormat: ArnFormat.COLON_RESOURCE_NAME,
-        })],
+        resources: secretGrants,
       }),
     );
     // The meridian_backend login's own secret and Data API access, created by

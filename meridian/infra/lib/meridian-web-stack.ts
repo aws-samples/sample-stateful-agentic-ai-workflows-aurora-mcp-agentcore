@@ -99,7 +99,58 @@ export function readDotenv(file: string): Record<string, string> {
   return values;
 }
 
-export function serviceEnvironment(dotenv: Record<string, string>, region: string): Record<string, string> {
+/** Which credential every AgentCore hop expects: AWS signatures (`iam`) or the Cognito access token (`jwt`). */
+export type IdentityMode = 'iam' | 'jwt';
+
+const COGNITO_ENV = [
+  'MERIDIAN_COGNITO_REGION',
+  'MERIDIAN_COGNITO_USER_POOL_ID',
+  'MERIDIAN_COGNITO_APP_CLIENT_ID',
+] as const;
+
+/** The mode: the process environment wins over meridian/.env, as scripts/publish.py reads it. */
+export function identityMode(
+  dotenv: Record<string, string>,
+  processEnv: Record<string, string | undefined> = process.env,
+): IdentityMode {
+  const raw = (processEnv.MERIDIAN_AGENTCORE_AUTH ?? dotenv.MERIDIAN_AGENTCORE_AUTH ?? '').trim().toLowerCase();
+  if (raw === '') return 'iam';
+  if (raw === 'iam' || raw === 'jwt') return raw;
+  throw new Error(`MERIDIAN_AGENTCORE_AUTH must be 'iam' or 'jwt', not '${raw}'; unset it to keep IAM`);
+}
+
+function jwtServiceEnvironment(dotenv: Record<string, string>): Record<string, string> {
+  const missing = [...COGNITO_ENV, 'AURORA_BACKEND_SECRET_ARN'].filter((key) => !dotenv[key]);
+  if (missing.length) {
+    throw new Error(
+      `meridian/.env is missing ${missing.join(', ')}; run scripts/sync_cognito_env.py --write and ` +
+        'scripts/provision_service_logins.py --login backend --apply --write-env first',
+    );
+  }
+  if (dotenv.AURORA_BACKEND_SECRET_ARN === dotenv.AURORA_SECRET_ARN) {
+    throw new Error(
+      'AURORA_BACKEND_SECRET_ARN must differ from AURORA_SECRET_ARN: the hosted backend runs as the ' +
+        'meridian_backend login, not the master',
+    );
+  }
+  return {
+    MERIDIAN_AGENTCORE_AUTH: 'jwt',
+    MERIDIAN_COGNITO_REGION: dotenv.MERIDIAN_COGNITO_REGION,
+    MERIDIAN_COGNITO_USER_POOL_ID: dotenv.MERIDIAN_COGNITO_USER_POOL_ID,
+    MERIDIAN_COGNITO_APP_CLIENT_ID: dotenv.MERIDIAN_COGNITO_APP_CLIENT_ID,
+    AURORA_SECRET_ARN: dotenv.AURORA_BACKEND_SECRET_ARN,
+  };
+}
+
+/**
+ * The App Runner environment. In `jwt` mode the service also gets the pool settings and the mode,
+ * and its database login becomes the meridian_backend secret (the container's AURORA_SECRET_ARN).
+ */
+export function serviceEnvironment(
+  dotenv: Record<string, string>,
+  region: string,
+  mode: IdentityMode = 'iam',
+): Record<string, string> {
   const missing = REQUIRED_ENV.filter((key) => !dotenv[key]);
   if (missing.length) {
     throw new Error(`meridian/.env is missing ${missing.join(', ')}; run agentcore deploy and sync_agentcore_env.py first`);
@@ -117,15 +168,15 @@ export function serviceEnvironment(dotenv: Record<string, string>, region: strin
   for (const key of ENV_PASSTHROUGH) {
     if (dotenv[key]) env[key] = dotenv[key];
   }
-  return env;
+  return mode === 'jwt' ? { ...env, ...jwtServiceEnvironment(dotenv) } : env;
 }
 
 // Compiled to infra/dist/lib, so three levels up is meridian/.
 const meridianDir = path.resolve(__dirname, '..', '..', '..');
 
-/** The App Runner environment for this region, read from meridian/.env. */
-export function loadServiceEnvironment(region: string): Record<string, string> {
-  return serviceEnvironment(readDotenv(path.join(meridianDir, '.env')), region);
+/** meridian/.env as a map. */
+export function loadDotenv(): Record<string, string> {
+  return readDotenv(path.join(meridianDir, '.env'));
 }
 
 /** The App Runner service host the distribution routes the API to, e.g. abc.us-east-1.awsapprunner.com. */
