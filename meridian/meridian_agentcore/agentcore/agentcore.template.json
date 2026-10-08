@@ -380,9 +380,9 @@
         },
         {
           "name": "meridian_traveler_binding",
-          "description": "Used only when MERIDIAN_AGENTCORE_AUTH=jwt. A hold or a booking runs only when its travelerId equals the traveler_id claim of the signed-in caller's access token. A token without that claim, or a call without that argument, is denied. The permits above stay as they are and still decide everything else.",
+          "description": "Used only when MERIDIAN_AGENTCORE_AUTH=jwt. A hold or a booking runs only when its travelerId equals the traveler_id claim of the signed-in caller's access token. A token without that claim or with an empty one, or a call without that argument, is denied. The permits above stay as they are and still decide everything else.",
           "validationMode": "FAIL_ON_ANY_FINDINGS",
-          "statement": "forbid(principal is AgentCore::OAuthUser, action in [AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", AgentCore::Action::\"MeridianHolds___confirm_booking\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:gateway/{{GATEWAY_ID}}\") when { !(principal.hasTag(\"traveler_id\")) || !(context.input has travelerId) || principal.getTag(\"traveler_id\") != context.input.travelerId };"
+          "statement": "forbid(principal is AgentCore::OAuthUser, action in [AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", AgentCore::Action::\"MeridianHolds___confirm_booking\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:{{AWS_REGION}}:{{AWS_ACCOUNT_ID}}:gateway/{{GATEWAY_ID}}\") unless { principal.hasTag(\"traveler_id\") && context.input has travelerId && principal.getTag(\"traveler_id\") != \"\" && principal.getTag(\"traveler_id\") == context.input.travelerId };"
         }
       ]
     }

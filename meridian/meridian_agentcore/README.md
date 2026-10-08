@@ -87,6 +87,9 @@ to the Gateway, the Gateway's request interceptor
 (`agentcore/interceptors/traveler_pin/`) pins `travelerId` to the token's `traveler_id` claim, and
 Cedar denies a mismatch. The render script writes the value into both Runtimes' environment, and in
 `jwt` mode it adds the `meridian_traveler_binding` policy.
+The policy is a `forbid ... unless` rule whose condition is one `&&` chain that starts with the
+`hasTag` and `has` guards, because the AgentCore Policy validator rejects a negated `hasTag` guard
+joined with `||`. An empty `traveler_id` claim is denied.
 
 Do not set `jwt` by itself on a deployed system. A Runtime accepts IAM or a JWT, never both, so the
 Gateway authorizer, both Runtime authorizers and header allowlists, the interceptor attachment and
