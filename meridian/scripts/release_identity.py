@@ -51,10 +51,12 @@ mode's Gateway needs is in place. An apply then reads the plan with ``agentcore 
 -y`` and reads the Gateway back by name; it never changes the Gateway itself.
 ``snapshot`` (read-only) saves the replaced configuration of every hop to ``.local/release-b2/``
 before the window, with no secret value (exit 1 and nothing saved when a hop already reports a
-finding, unless ``--accept-baseline``). ``rollback`` restores it in the reverse of the release
-order, reading each hop back (dry run by default; the roles stack and the Cedar rules are checked
-and their commands printed, including the IAM render and ``agentcore deploy -y`` that put the
-Runtime roles' InvokeGateway statement back); it exits 1 when any hop is not restored.
+finding, unless ``--accept-baseline``). ``rollback`` restores it (the newest snapshot of the
+release that is not live, or ``--snapshot FILE``, which every command it prints passes) in the
+reverse of the release order, reading each hop back (dry run by default; the roles stack and the
+Cedar rules are checked and their commands printed, including the IAM render and ``agentcore
+deploy -y`` that put the Runtime roles' InvokeGateway statement back); it exits 1 when any hop is
+not restored.
 
 Exit codes, the same for every command:
 
@@ -122,6 +124,7 @@ class Dependencies:
     session: Callable[[str], Any]
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     head_sha: Callable[[], str] = settings.git_head
+    tree_changes: Callable[[], list[str]] = settings.working_tree_changes
     proof_path: Path = field(default=settings.PROOF_PATH)
     release_dir: Path = field(default=settings.RELEASE_DIR)
     hosted_release_path: Path = field(default=snapshot.HOSTED_RELEASE_PATH)

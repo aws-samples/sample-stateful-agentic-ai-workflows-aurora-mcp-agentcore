@@ -486,7 +486,9 @@ def test_the_replaced_gateway_remedy_lists_the_four_stage_deploys_and_what_follo
     assert "Configuration complete." in text
     for word in ("gateway, targets, governance, complete", "NEW id and URL",
                  "scripts/bind_gateway_workload.py", "scripts/sync_agentcore_env.py --write",
-                 "scripts/publish.py", "release_identity.py check --expect iam"):
+                 "scripts/publish.py", "release_identity.py check --expect iam",
+                 "then verify (exit 1 until every hop is as saved): python "
+                 "scripts/release_identity.py rollback --snapshot FILE"):
         assert word in text, word
     assert "UpdateGateway API first" not in text and "restored the Gateway to" not in text
     assert [r for r in outcome.results if r.name == "agentcore stack"][0].status == "manual"
@@ -518,6 +520,8 @@ def test_the_holds_step_with_a_gateway_id_that_no_longer_exists_says_to_sync_the
     holds = next(r for r in outcome.results if r.name == "lambda holds")
     assert holds.status == "failed"
     assert "sync_agentcore_env.py --write" in "\n".join(holds.lines)
+    assert "run python scripts/release_identity.py rollback --snapshot FILE again" in (
+        "\n".join(holds.lines))
     assert "ResourceNotFound" not in "\n".join(said)
 
 

@@ -18,6 +18,11 @@ FLAG = settings.CONFIRM_FLAG
 SNAP_NAME = "snapshot-20261008T120000Z.json"
 
 
+def SAVED(tmp_path):  # noqa: N802 - reads like the constant it stands for
+    """The snapshot file the helpers above write."""
+    return tmp_path / "release-b2" / SNAP_NAME
+
+
 def run(argv, world, tmp_path, environment=None):
     deps = release_identity.Dependencies(
         env=environment or env(MERIDIAN_AGENTCORE_AUTH="iam"), session=world.session,
@@ -176,6 +181,7 @@ def test_apply_exits_one_and_prints_the_manual_commands_for_what_the_api_cannot_
 
     out = capsys.readouterr().out
     assert "roles stack" in out and "publish.py" in out and "agentcore deploy -y" in out
+    assert f"Run python scripts/release_identity.py rollback --snapshot {SAVED(tmp_path)}" in out
     assert rs.ACCOUNT not in out
 
 
@@ -193,6 +199,7 @@ def test_an_explicit_snapshot_is_used_instead_of_the_newest(world, tmp_path, cap
 
 def test_a_newer_broken_snapshot_is_named_and_skipped(world, tmp_path, capsys):
     save(world, tmp_path)
+    world.release()
     (tmp_path / "release-b2" / "snapshot-20261009T000000Z.json").write_text("{")
     capsys.readouterr()
 
@@ -205,6 +212,7 @@ def test_a_newer_broken_snapshot_is_named_and_skipped(world, tmp_path, capsys):
 def test_an_unexpected_error_prints_one_masked_line_and_no_traceback(
         world, tmp_path, capsys, monkeypatch):
     save(world, tmp_path)
+    world.release()
 
     def boom(*args, **kwargs):
         raise RuntimeError(f"failed in {rs.ACCOUNT} with Bearer abc")
@@ -225,7 +233,7 @@ def test_a_jwt_snapshot_without_the_pool_settings_stops_before_any_client(tmp_pa
     bare = {key: value for key, value in env(MERIDIAN_AGENTCORE_AUTH="iam").items()
             if key not in rs.COGNITO_ENV}
 
-    assert run(["rollback"], jwt_world, tmp_path, bare) == 2
+    assert run(["rollback", "--snapshot", str(SAVED(tmp_path))], jwt_world, tmp_path, bare) == 2
 
     assert jwt_world.built == [] and "MERIDIAN_COGNITO" in capsys.readouterr().err
 
@@ -253,25 +261,19 @@ def test_accepting_the_baseline_saves_the_snapshot_with_its_findings(world, tmp_
     assert saved["baselineFindings"] and "BASELINE" in capsys.readouterr().out
 
 
-def test_an_older_snapshot_is_announced_with_its_time_and_commit_before_any_client(
+def test_an_older_snapshot_is_announced_with_its_time_and_commit_before_any_hop_is_read(
         world, tmp_path, capsys):
     save(world, tmp_path)
+    world.release()
     (tmp_path / "release-b2" / "snapshot-20261009T000000Z.json").write_text("{")
     capsys.readouterr()
-    seen: list[str] = []
-    built = world.session
-
-    def watched(region):
-        seen.append(capsys.readouterr().out)
-        return built(region)
-
-    world.session = watched
 
     assert run(["rollback"], world, tmp_path) == 0
 
-    assert seen and "OLDER SNAPSHOT" in seen[0]
-    assert "2026-10-08T12:00:00+00:00" in seen[0] and rs.SHA[:12] in seen[0]
-    assert "snapshot-20261009T000000Z.json" in seen[0]
+    out = capsys.readouterr().out
+    assert out.index("OLDER SNAPSHOT") < out.index("step 1 of")
+    assert "2026-10-08T12:00:00+00:00" in out and rs.SHA[:12] in out
+    assert "snapshot-20261009T000000Z.json" in out
 
 
 def test_a_rollback_with_a_malformed_hop_still_writes_the_result_file(world, tmp_path):
@@ -307,7 +309,8 @@ def test_a_failed_holds_restart_is_remembered_and_done_by_the_next_run(world, tm
     holds = world.lambdas[ss.HOLDS_ARN]["Environment"]["Variables"]
     assert lambda_release.MARKER not in holds
 
-    assert run(["rollback", "--apply", FLAG], world, tmp_path) == 0
+    assert run(["rollback", "--snapshot", str(SAVED(tmp_path)), "--apply", FLAG],
+               world, tmp_path) == 0
 
     holds = world.lambdas[ss.HOLDS_ARN]["Environment"]["Variables"]
     assert holds[lambda_release.MARKER] == "20261008T120000Z"
@@ -320,7 +323,7 @@ def test_a_dry_run_after_a_failed_holds_restart_says_the_restart_is_needed(
     holds_failed_after_the_secret_was_restored(world, tmp_path)
     capsys.readouterr()
 
-    assert run(["rollback"], world, tmp_path) == 0
+    assert run(["rollback", "--snapshot", str(SAVED(tmp_path))], world, tmp_path) == 0
 
     assert "restart needed" in capsys.readouterr().out
 
@@ -330,7 +333,8 @@ def test_an_unreadable_result_file_means_the_restart_is_done_to_be_safe(world, t
     result.write_text("{")
     capsys.readouterr()
 
-    assert run(["rollback", "--apply", FLAG], world, tmp_path) == 0
+    assert run(["rollback", "--snapshot", str(SAVED(tmp_path)), "--apply", FLAG],
+               world, tmp_path) == 0
 
     out = capsys.readouterr().out
     assert "rollback-result.json" in out and "restart" in out
@@ -343,6 +347,121 @@ def test_a_pending_restart_of_another_snapshot_is_ignored(world, tmp_path):
     document["snapshot"] = "snapshot-20200101T000000Z.json"
     result.write_text(json.dumps(document))
 
-    assert run(["rollback", "--apply", FLAG], world, tmp_path) == 0
+    assert run(["rollback", "--snapshot", str(SAVED(tmp_path)), "--apply", FLAG],
+               world, tmp_path) == 0
 
     assert lambda_release.MARKER not in world.lambdas[ss.HOLDS_ARN]["Environment"]["Variables"]
+
+
+# --------------------------------------- the snapshot is chosen by mode, never by recency alone
+
+
+def after_a_jwt_release(tmp_path):
+    """A jwt release is live; the iam snapshot was taken before it, a jwt one for the gate."""
+    before = tmp_path / "before-the-window"
+    before.mkdir()
+    saved_iam = ss.taken(ss.SnapWorld(before, mode="iam"))
+    live = ss.SnapWorld(tmp_path, mode="jwt")
+    saved_jwt = ss.taken(live)
+    release = tmp_path / "release-b2"
+    iam_file = snapshot.write(saved_iam, release, NOW.replace(day=7))
+    jwt_file = snapshot.write(saved_jwt, release, NOW)
+    return live, iam_file, jwt_file
+
+
+def test_the_default_rollback_after_a_jwt_release_uses_the_iam_snapshot_not_the_newer_jwt_one(
+        tmp_path, capsys):
+    live, iam_file, jwt_file = after_a_jwt_release(tmp_path)
+    assert jwt_file.name > iam_file.name
+
+    assert run(["rollback"], live, tmp_path) == 0
+
+    out = capsys.readouterr().out
+    assert f"Rolling back from {iam_file.name}" in out and "mode iam" in out
+    assert "Rolling back from " + jwt_file.name not in out
+
+
+def test_the_default_rollback_after_the_iam_rebuild_goes_the_other_way(tmp_path, capsys):
+    live, iam_file, jwt_file = after_a_jwt_release(tmp_path)
+    rebuilt = ss.SnapWorld(tmp_path / "rebuilt-iam", mode="iam") if (
+        tmp_path / "rebuilt-iam").mkdir() is None else None
+
+    assert run(["rollback"], rebuilt, tmp_path) == 0
+
+    assert f"Rolling back from {jwt_file.name}" in capsys.readouterr().out
+
+
+def test_the_default_rollback_never_picks_a_snapshot_of_the_mode_that_is_live(tmp_path, capsys):
+    live, iam_file, jwt_file = after_a_jwt_release(tmp_path)
+    iam_file.unlink()
+    live.built.clear()
+
+    assert run(["rollback"], live, tmp_path) == 2
+
+    err = capsys.readouterr().err
+    assert "jwt release, which is the one live" in err and "--snapshot FILE" in err
+    assert live.writes() == []
+
+
+def test_an_explicit_snapshot_of_the_live_mode_is_still_allowed(tmp_path, capsys):
+    live, iam_file, jwt_file = after_a_jwt_release(tmp_path)
+
+    assert run(["rollback", "--snapshot", str(jwt_file)], live, tmp_path) == 0
+
+    assert f"Rolling back from {jwt_file.name}" in capsys.readouterr().out
+
+
+def test_two_live_releases_make_the_default_ambiguous(tmp_path, capsys):
+    live, iam_file, jwt_file = after_a_jwt_release(tmp_path)
+    live.other_gateways.append({"gatewayId": "gw-iam", "name": settings.gateway_physical_name(
+        "iam")})
+    live.clients["bedrock-agentcore-control"].get_gateway = lambda **kw: (
+        ss.runtime_gateway("iam") if kw["gatewayIdentifier"] == "gw-iam"
+        else ss.runtime_gateway("jwt"))
+
+    assert run(["rollback"], live, tmp_path) == 2
+
+    assert "cannot tell which release is live" in capsys.readouterr().err
+
+
+def test_a_default_rollback_with_a_foreign_snapshot_still_builds_no_client(tmp_path, capsys):
+    live, iam_file, jwt_file = after_a_jwt_release(tmp_path)
+    for path in (iam_file, jwt_file):
+        document = json.loads(path.read_text())
+        document["account"] = "999999999999"
+        path.unlink()
+        document.pop("integrity")
+        snapshot.write(document, tmp_path / "release-b2", NOW.replace(day=3 if path == iam_file
+                                                                      else 4))
+    live.built.clear()
+
+    assert run(["rollback"], live, tmp_path) == 2
+
+    assert live.built == [] and "another account" in capsys.readouterr().err
+
+
+def test_every_rollback_command_the_tool_prints_names_the_snapshot_file(tmp_path, capsys):
+    live, iam_file, jwt_file = after_a_jwt_release(tmp_path)
+
+    assert run(["rollback"], live, tmp_path) == 0
+
+    out = capsys.readouterr().out
+    commands = [line for line in out.splitlines() if "release_identity.py rollback" in line]
+    assert len(commands) >= 2
+    for line in commands:
+        assert f"--snapshot {iam_file}" in line, line
+    assert f"rollback --snapshot {iam_file} --apply {FLAG}" in out
+
+
+def test_the_remedy_for_an_intact_gateway_also_names_the_snapshot_file(world, tmp_path, capsys):
+    path = save(world, tmp_path)
+    world.release()
+    capsys.readouterr()
+
+    assert run(["rollback", "--snapshot", str(path)], world, tmp_path) == 0
+
+    out = capsys.readouterr().out
+    reruns = [line for line in out.splitlines() if "release_identity.py rollback" in line]
+    assert len(reruns) >= 2 and all(f"--snapshot {path}" in line for line in reruns)
+    assert any("then verify: python scripts/release_identity.py rollback" in line
+               for line in reruns)

@@ -313,7 +313,8 @@ def test_the_remedy_names_the_commit_and_takes_ids_from_the_operators_environmen
     assert saved["commit"] in text and "git worktree add" in text
     assert '--account "$ACCOUNT"' in text and '--service-arn "$SERVICE_ARN"' in text
     assert "<acct>" not in remedies and rs.ACCOUNT not in text
-    assert "then re-run rollback to re-attach the interceptor and verify" in text
+    assert ("then re-attach the interceptor and verify: python scripts/release_identity.py "
+            "rollback --snapshot FILE") in text
     assert "checkout of the snapshot's commit" in text
 
 

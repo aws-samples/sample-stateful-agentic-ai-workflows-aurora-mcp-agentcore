@@ -65,6 +65,12 @@ class Context:
     pending: set[str] = field(default_factory=set)
     journal: Callable[[], None] = lambda: None
     identity: tuple[bool, str | None] | None = None
+    snapshot_ref: str = "FILE"
+
+    @property
+    def rerun(self) -> str:
+        """The rollback command that checks this snapshot again (a dry run)."""
+        return f"python scripts/release_identity.py rollback --snapshot {self.snapshot_ref}"
 
     @property
     def target(self) -> preflight.Target:
@@ -474,8 +480,8 @@ def checkout_lines(ctx: Context) -> list[str]:
     ]
 
 
-def finish_line() -> str:
-    return "  then re-run rollback to re-attach the interceptor and verify"
+def finish_line(ctx: Context) -> str:
+    return f"  then re-attach the interceptor and verify: {ctx.rerun}"
 
 
 def roles_check(ctx: Context) -> list[str]:
@@ -497,7 +503,7 @@ def publish_remedy(ctx: Context) -> list[str]:
             f"  MERIDIAN_AGENTCORE_AUTH={ctx.saved['mode']} python scripts/publish.py "
             '--account "$ACCOUNT" --region "$REGION" --service-arn "$SERVICE_ARN" '
             f"--apply {settings.CONFIRM_FLAG}",
-            finish_line()]
+            finish_line(ctx)]
 
 
 def stack_gateway_id(ctx: Context) -> str | None:
@@ -571,7 +577,7 @@ def replaced_remedy(ctx: Context) -> list[str]:
         f"--service-arn \"$SERVICE_ARN\" --apply {settings.CONFIRM_FLAG}",
         f"  then read every hop back from the current checkout: venv/bin/python "
         f"scripts/release_identity.py check --expect {mode} --service-arn \"$SERVICE_ARN\"",
-        "  then re-run rollback to verify (exit 1 until every hop is as saved)",
+        f"  then verify (exit 1 until every hop is as saved): {ctx.rerun}",
     ]
 
 
@@ -585,7 +591,7 @@ def intact_remedy(ctx: Context) -> list[str]:
         "and never deletes a rule)",
         "  then, from the current checkout, read every hop back: venv/bin/python "
         f"scripts/release_identity.py check --expect {mode} --service-arn \"$SERVICE_ARN\"",
-        "  then re-run rollback to verify",
+        f"  then verify: {ctx.rerun}",
     ]
 
 
@@ -663,7 +669,7 @@ def holds_function(ctx: Context) -> str:
         raise RestoreRefused(
             "Lambda holds: the Gateway named by AGENTCORE_GATEWAY_URL in meridian/.env does not "
             "exist (a stack deploy replaced it); run scripts/sync_agentcore_env.py --write and "
-            "run the rollback again") from error
+            f"run {ctx.rerun} again") from error
     if saved != live:
         raise RestoreRefused("Lambda holds: the saved function is not the Gateway's MeridianHolds "
                              "target")

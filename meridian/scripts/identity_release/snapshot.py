@@ -477,19 +477,18 @@ def structure_problems(document: Mapping[str, Any]) -> list[str]:
     return problems
 
 
-def latest_complete(directory: Path) -> tuple[Path | None, list[str]]:
-    """The newest snapshot that loads, and the names of newer ones that were skipped."""
+def complete_snapshots(directory: Path) -> tuple[list[tuple[Path, dict[str, Any]]], list[str]]:
+    """Every snapshot that loads, newest first, and the names of the files that did not."""
     if not directory.is_dir():
-        return None, []
+        return [], []
+    loaded: list[tuple[Path, dict[str, Any]]] = []
     skipped: list[str] = []
     for path in sorted((p for p in directory.iterdir() if NAME.fullmatch(p.name)), reverse=True):
         try:
-            load(path)
+            loaded.append((path, load(path)))
         except SnapshotError:
             skipped.append(path.name)
-            continue
-        return path, skipped
-    return None, skipped
+    return loaded, skipped
 
 
 # -------------------------------------------------------------------- the command

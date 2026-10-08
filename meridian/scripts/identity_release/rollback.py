@@ -1,12 +1,16 @@
 """The one-command rollback: put the saved configuration back, hop by hop, reading each back.
 
-``rollback`` loads the newest complete snapshot (or the one named), refuses one that is missing,
-changed, partial or for another account or Region, and prints what it will restore. Nothing is
-changed without ``--apply`` and the confirmation flag. The hops are restored in the reverse of the
-release order (site, service, roles stack, Gateway, Runtimes, Cedar rules, Lambdas); after each
-write the hop is read back until it matches the snapshot, a bounded number of times. A failed hop
-is reported and the steps that do not depend on it still run; a step that needs a failed one
-(the Runtimes need the Gateway, the Lambdas need the secret parameter) is skipped and says so.
+``rollback`` loads the snapshot named by ``--snapshot``, or else the newest complete one of the
+release that is not live (a snapshot of the live mode is never chosen on its own: after a ``jwt``
+release the ``iam`` snapshot is the way back, even when a newer ``jwt`` one was taken for the
+deploy gate). It refuses one that is missing, changed, partial or for another account or Region,
+and prints what it will restore; every rollback command it prints passes ``--snapshot FILE``.
+Nothing is changed without ``--apply`` and the confirmation flag. The hops are restored in the
+reverse of the release order (site, service, roles stack, Gateway, Runtimes, Cedar rules,
+Lambdas); after each write the hop is read back until it matches the snapshot, a bounded number
+of times. A failed hop is reported and the steps that do not depend on it still run; a step that
+needs a failed one (the Runtimes need the Gateway, the Lambdas need the secret parameter) is
+skipped and says so.
 The exit code is then 1. The roles stack, the Cedar rules and the distribution's behaviors cannot
 be restored through their APIs without deleting or bypassing CloudFormation, so they are checked
 and the commands to run from a checkout of the snapshot's commit are printed (exit 1 until they
@@ -34,6 +38,7 @@ from typing import Any
 
 from botocore.exceptions import BotoCoreError, ClientError
 
+from backend.agentcore.auth_mode import IAM, JWT
 from scripts.gateway_harness.private_files import write_private
 from scripts.gateway_harness.verdicts import JWT_SHAPE
 from scripts.identity_release import preflight, restore_hops, settings, snapshot
@@ -184,19 +189,20 @@ def run(ctx: Context, say: Callable[[str], None]) -> Outcome:
     skipped = [r.name for r in results if r.status == SKIPPED]
     manual = [r.name for r in results if r.status == MANUAL]
     code = 1 if failed or (ctx.apply and manual) else 0
-    emit(_closing(ctx.apply, failed, manual, skipped))
+    emit(_closing(ctx, failed, manual, skipped))
     return Outcome(results, code)
 
 
-def _closing(apply: bool, failed: list[str], manual: list[str], skipped: list[str]) -> str:
-    if not apply:
+def _closing(ctx: Context, failed: list[str], manual: list[str], skipped: list[str]) -> str:
+    if not ctx.apply:
         return "DRY RUN done. Nothing was changed."
     if not failed and not manual:
         return "Rollback complete: every hop is as saved."
     parts = [f"failed: {', '.join(failed)}"] if failed else []
     parts += [f"skipped: {', '.join(skipped)}"] if skipped else []
     parts += [f"to run by hand: {', '.join(manual)}"] if manual else []
-    return "Rollback finished, not complete (" + "; ".join(parts) + "). Run it again after fixing."
+    return ("Rollback finished, not complete (" + "; ".join(parts) + "). Run "
+            f"{ctx.rerun} --apply {settings.CONFIRM_FLAG} again after fixing.")
 
 
 # -------------------------------------------------------------------- the command
@@ -208,17 +214,65 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="the snapshot file to restore instead of the newest complete one")
 
 
-def _choose(args: argparse.Namespace, directory: Path) -> tuple[Path, list[str]]:
-    if args.snapshot is not None:
-        return args.snapshot, []
-    found, skipped = snapshot.latest_complete(directory)
-    if found is None and skipped:
-        snapshot.load(directory / skipped[0])
-    if found is None:
+def display_path(path: Path) -> str:
+    """The path as it is typed from ``meridian/``: relative when it lies below it."""
+    try:
+        return str(path.resolve().relative_to(settings.MERIDIAN_DIR.resolve()))
+    except ValueError:
+        return str(path)
+
+
+def live_mode(control: Any) -> str:
+    """The release that is live: the mode of the Gateway (or Gateways) found by name.
+
+    Raises:
+        ReleaseConfigError: When none exists or the two modes both do.
+    """
+    modes: set[str] = set()
+    for mode in (IAM, JWT):
+        gateway_id = preflight.find_gateway_id(control, settings.gateway_physical_name(mode))
+        if gateway_id is not None:
+            modes.add(snapshot.detected_mode(control.get_gateway(gatewayIdentifier=gateway_id)))
+    if len(modes) != 1:
+        raise settings.ReleaseConfigError(
+            f"cannot tell which release is live ({len(modes)} found among the Gateways named "
+            "for the two modes), so no snapshot can be chosen for you; name one with "
+            "--snapshot FILE")
+    return next(iter(modes))
+
+
+def _open_session(deps: Any, env: Mapping[str, Any], region: str) -> Any:
+    session = deps.session(region)
+    require_account(session.client("sts"), env["AURORA_CLUSTER_ARN"])
+    return session
+
+
+def _choose(deps: Any, env: Mapping[str, Any], account: str,
+            region: str) -> tuple[Path, list[str], Any]:
+    """The newest complete snapshot of the release that is not live; the session it needed.
+
+    The local checks come first, so a missing or foreign snapshot builds no client.
+    """
+    loaded, broken = snapshot.complete_snapshots(deps.release_dir)
+    if not loaded:
+        if broken:
+            snapshot.load(deps.release_dir / broken[0])
         raise settings.ReleaseConfigError(
             "no complete snapshot to roll back from; run `python scripts/release_identity.py "
             "snapshot --service-arn <arn>` before the window")
-    return found, skipped
+    here = [(path, document) for path, document in loaded
+            if document.get("account") == account and document.get("region") == region]
+    if not here:
+        require_same_deployment(loaded[0][1], account, region)
+    session = _open_session(deps, env, region)
+    live = live_mode(session.client(restore_hops.CONTROL))
+    chosen = next((path for path, document in here if document.get("mode") != live), None)
+    if chosen is None:
+        raise settings.ReleaseConfigError(
+            f"every complete snapshot is of the {live} release, which is the one live; a "
+            "rollback does not choose that on its own. Name the snapshot you mean with "
+            "--snapshot FILE")
+    return chosen, [name for name in broken if name > chosen.name], session
 
 
 def _record(directory: Path, name: str, results: list[Result], code: int | None,
@@ -276,7 +330,10 @@ def command(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> 
     if not settings.REGION.fullmatch(region):
         raise settings.ReleaseConfigError(
             "the Region in AURORA_CLUSTER_ARN is not a Region name; check meridian/.env")
-    path, skipped = _choose(args, deps.release_dir)
+    if args.snapshot is None:
+        path, skipped, session = _choose(deps, env, account, region)
+    else:
+        path, skipped, session = args.snapshot, [], None
     saved = snapshot.load(path)
     require_same_deployment(saved, account, region)
     preflight.target_for(saved["mode"], env, account, region)
@@ -285,16 +342,16 @@ def command(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> 
     if note:
         say(note)
     gateway_id, runtime_ids = preflight.hop_ids(env)
-    session = deps.session(region)
-    require_account(session.client("sts"), env["AURORA_CLUSTER_ARN"])
+    session = session or _open_session(deps, env, region)
     clients = snapshot.Clients(
-        control=session.client("bedrock-agentcore-control"), apprunner=session.client("apprunner"),
+        control=session.client(restore_hops.CONTROL), apprunner=session.client("apprunner"),
         cloudfront=session.client("cloudfront"), cfn=session.client("cloudformation"),
         ssm=session.client("ssm"), lam=session.client("lambda"), iam=session.client("iam"))
     where = snapshot.Where(account, region, gateway_id, runtime_ids,
                            saved["service"]["ServiceArn"], env)
     ctx = Context(saved=saved, clients=clients, where=where, apply=args.apply,
-                  sleep=deps.sleep, stamp=snapshot.utc_stamp(deps.now()), pending=pending)
+                  sleep=deps.sleep, stamp=snapshot.utc_stamp(deps.now()), pending=pending,
+                  snapshot_ref=display_path(path))
     when = snapshot.as_utc(deps.now()).isoformat()
     if args.apply:
         ctx.journal = lambda: _record(deps.release_dir, path.name, [], None, ctx.pending, when)
@@ -304,6 +361,6 @@ def command(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> 
     if args.apply:
         _record(deps.release_dir, path.name, outcome.results, outcome.code, ctx.pending, when)
     else:
-        say(f"Run it (ASK FIRST): python scripts/release_identity.py rollback --apply "
-            f"{settings.CONFIRM_FLAG}")
+        say(f"Run it (ASK FIRST): python scripts/release_identity.py rollback --snapshot "
+            f"{ctx.snapshot_ref} --apply {settings.CONFIRM_FLAG}")
     return outcome.code

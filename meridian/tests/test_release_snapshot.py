@@ -309,13 +309,15 @@ def test_a_missing_file_is_refused_with_its_name(tmp_path):
         snapshot.load(tmp_path / "snapshot-20261008T000000Z.json")
 
 
-def test_the_newest_complete_snapshot_is_the_one_found(world, tmp_path):
+def test_the_complete_snapshots_come_newest_first(world, tmp_path):
     saved = ss.taken(world)
     older = snapshot.write(saved, tmp_path, datetime(2026, 10, 7, tzinfo=timezone.utc))
     newer = snapshot.write(saved, tmp_path, NOW)
 
-    assert snapshot.latest_complete(tmp_path) == (newer, [])
-    assert newer != older
+    found, skipped = snapshot.complete_snapshots(tmp_path)
+
+    assert [path for path, _ in found] == [newer, older] and skipped == []
+    assert all(document["complete"] is True for _, document in found)
 
 
 def test_a_newer_broken_snapshot_is_skipped_and_named(world, tmp_path):
@@ -324,20 +326,20 @@ def test_a_newer_broken_snapshot_is_skipped_and_named(world, tmp_path):
     bad = tmp_path / "snapshot-20261008T000000Z.json"
     bad.write_text("{")
 
-    found, skipped = snapshot.latest_complete(tmp_path)
+    found, skipped = snapshot.complete_snapshots(tmp_path)
 
-    assert found == good and [name for name in skipped] == [bad.name]
+    assert [path for path, _ in found] == [good] and skipped == [bad.name]
 
 
 def test_no_snapshot_directory_means_none(tmp_path):
-    assert snapshot.latest_complete(tmp_path / "none") == (None, [])
+    assert snapshot.complete_snapshots(tmp_path / "none") == ([], [])
 
 
 def test_files_that_are_not_snapshots_are_ignored(world, tmp_path):
     (tmp_path / "gateway-move.json").write_text("{}")
     (tmp_path / "snapshot-notes.json").write_text("{}")
 
-    assert snapshot.latest_complete(tmp_path) == (None, [])
+    assert snapshot.complete_snapshots(tmp_path) == ([], [])
 
 
 # ------------------------------------------------------- placeholders, names, structure

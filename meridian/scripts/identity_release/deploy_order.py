@@ -11,18 +11,23 @@ the CLI's deployed state and the live Gateway say is next. It is the only sancti
 Before it runs anything it checks, and an apply refuses (nothing deployed) on any finding:
 
 1. the rendered Gateway is the mode's (name, authorizer type and, for jwt, the pool);
-2. the stage of the render equals the stage the deployed state implies;
+2. the stage of the render equals the stage the deployed state implies, and, once the Gateway
+   exists, the stage its own targets and policy engine imply;
 3. the stage agrees with the live Gateway found by name: the first stage needs none to exist
    (otherwise the state file is stale and the plan would delete resources), the others need it;
-4. in the first stage, when the other mode's Gateway exists and is about to be deleted: its role
-   carries no invoke grant and it has no interceptor, and for jwt the identity stack, the backend
-   login proof at HEAD and the interceptor function are in place, and a complete snapshot of the
-   other mode exists, because the deletion cannot be undone.
+4. in the first stage the working tree is clean (the deploy builds from it and the proof is bound
+   to HEAD) and, when the other mode's Gateway exists and is about to be deleted: its role carries
+   no invoke grant and it has no interceptor, and for jwt the identity stack, the backend login
+   proof at HEAD and the interceptor function are in place, and a complete snapshot of the
+   replaced mode exists that was taken of that very Gateway (same id, account and Region),
+   because the deletion cannot be undone.
 
 Then it reads the plan (``agentcore deploy --diff --json``) and refuses one that is not the plan
 of the stage (``deploy_diff``), runs ``agentcore deploy -y`` (``/opt/homebrew/bin/agentcore``
-only), waits for the Gateway to be READY and reads it back. It never changes the Gateway itself:
-the interceptor is attached afterwards by ``release_identity.py gateway``.
+only), waits for the Gateway to be READY and reads it back; after the first stage it also reports
+the replaced Gateway as drift when it still exists. Whatever the read-back finds, the next steps
+are printed, because the deployed state has moved on. It never changes the Gateway itself: the
+interceptor is attached afterwards by ``release_identity.py gateway``.
 """
 
 from __future__ import annotations
@@ -32,8 +37,12 @@ import json
 import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from botocore.exceptions import BotoCoreError, ClientError
 
 from backend.agentcore.auth_mode import IAM, JWT
 from scripts.identity_release import deploy_diff, gateway_release, preflight, settings, snapshot
@@ -153,7 +162,30 @@ def render_findings(rendered: Mapping[str, Any], wanted: preflight.Target) -> li
                     for line in preflight.check_authorizer(subject, authorizer, wanted)]
 
 
-def stage_findings(rendered: str, deployed: str, live: str | None, name: str) -> list[str]:
+def live_gateway_stage(control: Any, gateway_id: str) -> str:
+    """The next stage the live Gateway's own targets and policy engine imply.
+
+    No holds target means the targets stage is next; a holds target without an engine, the
+    governance stage; both, the last stage. The CLI's state file is a second opinion, not the only
+    one.
+    """
+    described = control.get_gateway(gatewayIdentifier=gateway_id)
+    token = None
+    holds = False
+    while not holds:
+        extra = {"nextToken": token} if token else {}
+        page = control.list_gateway_targets(gatewayIdentifier=gateway_id, **extra)
+        holds = any(t.get("name") == settings.HOLDS_TARGET for t in page.get("items") or [])
+        token = page.get("nextToken")
+        if not token:
+            break
+    if not holds:
+        return stages.TARGETS
+    return stages.COMPLETE if described.get("policyEngineConfiguration") else stages.GOVERNANCE
+
+
+def stage_findings(rendered: str, deployed: str, live: str | None, live_stage: str | None,
+                   name: str) -> list[str]:
     """Where the render, the deployed state and the live Gateway disagree on the stage."""
     found = []
     if rendered != deployed:
@@ -168,6 +200,10 @@ def stage_findings(rendered: str, deployed: str, live: str | None, name: str) ->
     if rendered != stages.GATEWAY and live is None:
         found.append(f"the render is {stage_label(rendered)}, which needs the Gateway, but no "
                      f"Gateway named {name} exists yet; build the first stage first")
+    if live_stage is not None and rendered not in (stages.GATEWAY, live_stage):
+        found.append(f"the render is {stage_label(rendered)} but the live Gateway's targets and "
+                     f"policy engine say the next stage is {stage_label(live_stage)}: the render "
+                     f"or the state file is stale; run {RENDER} again")
     return found
 
 
@@ -187,19 +223,72 @@ def residue_findings(control: Any, iam: Any, mode: str, gateway_id: str) -> list
     return found
 
 
-def snapshot_findings(deps: Any, replaced: str) -> list[str]:
-    """The replaced mode needs a complete snapshot: the deletion cannot be undone."""
-    path, _ = snapshot.latest_complete(deps.release_dir)
-    take = ("python scripts/release_identity.py snapshot --service-arn ARN "
-            "(--accept-baseline when the hops already report findings)")
-    if path is None:
-        return [f"no complete snapshot of the {replaced} release exists, and the replaced "
-                f"Gateway cannot be restored from anything else; run {take}"]
-    mode = snapshot.load(path).get("mode")
-    if mode != replaced:
-        return [f"the newest complete snapshot is of the {mode} release, but the {replaced} "
-                f"Gateway is the one being deleted; take one now: {take}"]
-    return []
+def age_text(taken: datetime, now: datetime) -> str:
+    """``45 min``, ``5 h`` or ``1 day 6 h``: how long before ``now`` something was taken."""
+    minutes = max(int((now - taken).total_seconds() // 60), 0)
+    if minutes < 60:
+        return f"{minutes} min"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours} h"
+    days = hours // 24
+    return f"{days} day{'' if days == 1 else 's'} {hours % 24} h"
+
+
+def _take_command(replaced: str) -> str:
+    needs = ("; it reads the Gateway that AGENTCORE_GATEWAY_URL names" + (
+        ", and needs the MERIDIAN_COGNITO_* settings and MERIDIAN_GATEWAY_ENFORCEMENT from "
+        "meridian/.env" if replaced == JWT else ""))
+    return ("python scripts/release_identity.py snapshot --service-arn ARN (add "
+            f"--accept-baseline when the hops already report findings{needs})")
+
+
+def _snapshot_problem(document: Mapping[str, Any], gateway_id: str,
+                      wanted: preflight.Target) -> str | None:
+    if document.get("account") != wanted.account:
+        return "was taken in another account than the cluster's"
+    if document.get("region") != wanted.region:
+        return "was taken in another Region than the cluster's"
+    saved = (document.get("gateway") or {}).get("gatewayId")
+    if saved != gateway_id:
+        return ("is not of the Gateway that is about to be deleted (its Gateway id is not the "
+                "live one's), so it could not restore that Gateway")
+    return None
+
+
+def snapshot_findings(deps: Any, replaced: str, gateway_id: str,
+                      wanted: preflight.Target) -> tuple[list[str], list[str]]:
+    """The replaced Gateway needs a complete snapshot taken of it: the deletion is permanent.
+
+    Returns the findings and, when one is usable, a line naming it with its commit and age.
+    """
+    take = _take_command(replaced)
+    loaded, _ = snapshot.complete_snapshots(deps.release_dir)
+    of_mode = [(path, document) for path, document in loaded if document.get("mode") == replaced]
+    if not of_mode:
+        newest = f"; the newest complete snapshot is of the {loaded[0][1].get('mode')} release" \
+            if loaded else ""
+        return [f"no complete snapshot of the {replaced} release exists{newest}, and the "
+                f"{replaced} Gateway is the one being deleted and cannot be restored from "
+                f"anything else; take one now: {take}"], []
+    problems = [_snapshot_problem(document, gateway_id, wanted) for _, document in of_mode]
+    usable = next((i for i, problem in enumerate(problems) if problem is None), None)
+    if usable is None:
+        return [f"the newest {replaced} snapshot, {of_mode[0][0].name}, {problems[0]}; take "
+                f"one now: {take}"], []
+    path, document = of_mode[usable]
+    return [], [_snapshot_note(path, document, deps.now())]
+
+
+def _snapshot_note(path: Path, document: Mapping[str, Any], now: datetime) -> str:
+    taken = snapshot.as_utc(datetime.fromisoformat(str(document["takenAt"])))
+    accepted = len(document.get("baselineFindings") or [])
+    text = (f"snapshot {path.name}: commit {str(document.get('commit'))[:12]}, taken "
+            f"{age_text(taken, snapshot.as_utc(now))} ago ({document['takenAt']})")
+    if accepted:
+        text += (f"; {accepted} baseline finding(s) accepted when it was taken (read them in "
+                 "the file before relying on it)")
+    return text
 
 
 def jwt_findings(session: Any, deps: Any, wanted: preflight.Target) -> list[str]:
@@ -215,18 +304,39 @@ def jwt_findings(session: Any, deps: Any, wanted: preflight.Target) -> list[str]
     return found
 
 
+def tree_findings(deps: Any) -> list[str]:
+    """The first stage builds from the working tree and the proof names HEAD: it must be clean."""
+    changes = [line.strip() for line in deps.tree_changes()]
+    if not changes:
+        return []
+    shown = ", ".join(changes[:5]) + (f" and {len(changes) - 5} more" if len(changes) > 5 else "")
+    return [f"the working tree has uncommitted changes ({len(changes)}: {shown}); commit them "
+            "first, because the deploy builds from the tree and the proof receipt is bound to "
+            "HEAD"]
+
+
+@dataclass
+class FirstStage:
+    """What the first stage adds: findings, the snapshot line, the replaced Gateway."""
+
+    found: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    replacing: bool = False
+
+
 def first_stage_findings(session: Any, deps: Any, control: Any,
-                         wanted: preflight.Target) -> tuple[list[str], bool]:
+                         wanted: preflight.Target) -> FirstStage:
     """The first stage's extra findings, and whether the other mode's Gateway is replaced."""
     other = OTHER_MODE[wanted.mode]
     other_id = preflight.find_gateway_id(control, settings.gateway_physical_name(other))
-    found = []
+    first = FirstStage(found=tree_findings(deps), replacing=other_id is not None)
     if wanted.mode == JWT:
-        found += jwt_findings(session, deps, wanted)
+        first.found += jwt_findings(session, deps, wanted)
     if other_id is not None:
-        found += residue_findings(control, session.client("iam"), other, other_id)
-        found += snapshot_findings(deps, other)
-    return found, other_id is not None
+        first.found += residue_findings(control, session.client("iam"), other, other_id)
+        found, first.notes = snapshot_findings(deps, other, other_id, wanted)
+        first.found += found
+    return first
 
 
 # ------------------------------------------------------------------- the command
@@ -242,8 +352,15 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
                         help="required with --apply: it changes AWS")
 
 
-def _tail(output: str) -> list[str]:
-    return [line for line in output.splitlines() if line.strip()][-TAIL_LINES:]
+def known_values(env: Mapping[str, str | None]) -> list[str]:
+    """The pool id, the client id and the hosted-UI host in use, to hide from CLI output."""
+    keys = (*settings.COGNITO_KEYS[1:], "VITE_COGNITO_DOMAIN")
+    return [value for value in ((env.get(key) or "").strip() for key in keys) if value]
+
+
+def _tail(output: str, known: Sequence[str]) -> list[str]:
+    lines = [line for line in output.splitlines() if line.strip()][-TAIL_LINES:]
+    return [deploy_diff.mask_identifiers(line, known) for line in lines]
 
 
 def _check_plan(deps: Any, say: Callable[[str], None], stage: str, mode: str,
@@ -251,7 +368,7 @@ def _check_plan(deps: Any, say: Callable[[str], None], stage: str, mode: str,
     say(f"Reading the plan: {' '.join(DIFF_ARGV)} in meridian_agentcore.")
     code, output = deps.run_command(list(DIFF_ARGV), deps.agentcore_dir)
     found = deploy_diff.plan_findings(code, output, DIFF_ARGV, stage=stage, mode=mode,
-                                      replacing=replacing)
+                                      replacing=replacing, known=known_values(deps.env))
     if found:
         raise DeployOrderError("refusing: the deploy plan is not safe to apply:\n  "
                                + "\n  ".join(found))
@@ -260,25 +377,46 @@ def _check_plan(deps: Any, say: Callable[[str], None], stage: str, mode: str,
 def _deploy(deps: Any, say: Callable[[str], None]) -> None:
     say(f"Running {' '.join(DEPLOY_ARGV)} in meridian_agentcore (this takes minutes).")
     code, output = deps.run_command(list(DEPLOY_ARGV), deps.agentcore_dir)
-    for line in _tail(output):
+    for line in _tail(output, known_values(deps.env)):
         say(f"  {line}")
     if code == 0:
         return
     if CLI_ERROR in output:
         raise DeployOrderError(
             "CloudFormation refused to change a Gateway's authorizer type: the render did not "
-            "rename the Gateway, so the template changed the existing one. The stack rolled "
-            f"back by itself. Run {RENDER} in the release mode (it gives the jwt Gateway its own "
-            "name) and start again from the first stage")
+            "rename the Gateway, so the template changed the existing one. Read the stack "
+            "status in CloudFormation first, then run "
+            f"{RENDER} in the release mode (it gives the jwt Gateway its own name) and start "
+            "again from the first stage")
     raise DeployOrderError(
-        f"the deploy failed (exit {code}). CloudFormation rolls the stack back by itself, so "
-        "the stack is as it was before this stage. Read every hop first: python "
-        "scripts/release_identity.py check --skip-service; then fix the cause, render again and "
-        "re-run this stage")
+        f"the deploy failed (exit {code}); read the stack status in CloudFormation first, it "
+        "may be rolled back, still rolling back or stuck:\n"
+        "  UPDATE_ROLLBACK_FAILED: run aws cloudformation continue-update-rollback "
+        "--stack-name <the AgentCore stack> (with --resources-to-skip for a resource it cannot "
+        "restore), then read the status again\n"
+        "  after a finished rollback: read every hop with python scripts/release_identity.py "
+        "check --skip-service, fix the cause, render again and re-run this stage")
+
+
+def _replaced_findings(control: Any, wanted: preflight.Target, say: Callable[[str], None],
+                       ) -> int:
+    other = OTHER_MODE[wanted.mode]
+    left = preflight.find_gateway_id(control, settings.gateway_physical_name(other))
+    if left is None:
+        return OK
+    say(f"DRIFT  the replaced {other} Gateway ({left}) still exists after the deploy. Read the "
+        "stack status in CloudFormation first. If the stack finished without deleting it, the "
+        "Gateway is no longer managed by the stack: delete each of its targets, then it (ASK "
+        "FIRST, this cannot be undone):")
+    say(f"  aws bedrock-agentcore-control list-gateway-targets --gateway-identifier {left}")
+    say("  aws bedrock-agentcore-control delete-gateway-target --gateway-identifier "
+        f"{left} --target-id TARGET_ID   (once per target)")
+    say(f"  aws bedrock-agentcore-control delete-gateway --gateway-identifier {left}")
+    return DRIFT
 
 
 def _read_back(control: Any, wanted: preflight.Target, stage: str, deps: Any,
-               say: Callable[[str], None]) -> int:
+               replaced: bool, say: Callable[[str], None]) -> int:
     gateway_id = preflight.find_gateway_id(control, wanted.gateway_name)
     if gateway_id is None:
         say(f"DRIFT  no Gateway named {wanted.gateway_name} exists after the deploy")
@@ -289,7 +427,29 @@ def _read_back(control: Any, wanted: preflight.Target, stage: str, deps: Any,
         expect_engine=stage in (stages.GOVERNANCE, stages.COMPLETE))
     for line in found:
         say(f"DRIFT  {line}")
-    return DRIFT if found else OK
+    left = _replaced_findings(control, wanted, say) if replaced else OK
+    return DRIFT if found or left else OK
+
+
+def _finish(control: Any, wanted: preflight.Target, stage: str, deps: Any, replaced: bool,
+            say: Callable[[str], None]) -> int:
+    """Read the Gateway back, then print the next steps whatever the read-back found.
+
+    The deploy has run, so the CLI's state has moved on: the next steps are needed even when the
+    read-back failed, and the stage must not be run again.
+    """
+    failure: Exception | None = None
+    try:
+        code = _read_back(control, wanted, stage, deps, replaced, say)
+    except (gateway_release.GatewayError, ClientError, BotoCoreError) as error:
+        failure, code = error, COULD_NOT_RUN
+    if code != OK:
+        say("The deploy finished but the read-back did not pass: do not run this stage again, "
+            "the deployed state has moved on. Read the problem above first, then continue:")
+    _next_steps(stage, wanted, say)
+    if failure is not None:
+        raise failure
+    return code
 
 
 def _next_steps(stage: str, wanted: preflight.Target, say: Callable[[str], None]) -> None:
@@ -309,11 +469,13 @@ def _next_steps(stage: str, wanted: preflight.Target, say: Callable[[str], None]
     say("Then: python scripts/release_identity.py check --skip-service")
 
 
-def _dry_run(wanted: preflight.Target, stage: str, found: list[str],
+def _dry_run(wanted: preflight.Target, stage: str, first: FirstStage, found: list[str],
              say: Callable[[str], None]) -> int:
     say("DRY RUN. Nothing is deployed.")
     say(f"  this is {stage_label(stage)} for the {wanted.mode} release")
     for line in _steps(stage):
+        say(f"  {line}")
+    for line in first.notes:
         say(f"  {line}")
     for line in found:
         say(f"BLOCKED  {line}")
@@ -324,25 +486,27 @@ def _dry_run(wanted: preflight.Target, stage: str, found: list[str],
 
 def _steps(stage: str) -> list[str]:
     first = ("1. checked now: the render, the deployed state and the live Gateway agree on this "
-             "stage" + ("; the other mode's Gateway has no grant or interceptor and a complete "
-                        "snapshot exists; for jwt the identity stack, the backend login proof "
-                        "and the interceptor function are in place"
+             "stage" + ("; the working tree is clean; the other mode's Gateway has no grant or "
+                        "interceptor and a complete snapshot of it, taken of that Gateway in "
+                        "this account and Region, exists; for jwt the identity stack, the "
+                        "backend login proof and the interceptor function are in place"
                         if stage == stages.GATEWAY else ""))
     return [
         first,
         f"2. plan, refused unless it is this stage's plan: {' '.join(DIFF_ARGV)}   "
         "(run in meridian_agentcore)",
         f"3. deploy: {' '.join(DEPLOY_ARGV)}   (run in meridian_agentcore)",
-        "4. read the Gateway back by name once it is READY (the interceptor is attached "
-        "afterwards, by the gateway command)",
+        "4. read the Gateway back by name once it is READY, and after the first stage check the "
+        "replaced Gateway is gone (the interceptor is attached afterwards, by the gateway "
+        "command)",
     ]
 
 
 def run(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> int:
     """Plan, or run, one build stage and read the Gateway back.
 
-    ``deps`` also carries ``agentcore_dir`` and ``run_command`` (the release CLI's
-    ``Dependencies``).
+    ``deps`` also carries ``agentcore_dir``, ``run_command`` and ``tree_changes`` (the release
+    CLI's ``Dependencies``).
 
     Raises:
         DeployOrderError: When a check fails (apply), or the plan or the deploy fails.
@@ -366,19 +530,19 @@ def run(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> int:
     live = preflight.find_gateway_id(control, wanted.gateway_name)
     found = render_findings(spec["agentCoreGateways"][0], wanted)
     found += stage_findings(stage, deployed_stage(deps.agentcore_dir, mode), live,
+                            live_gateway_stage(control, live) if live else None,
                             wanted.gateway_name)
-    replacing = False
+    first = FirstStage()
     if stage == stages.GATEWAY and live is None:
-        extra, replacing = first_stage_findings(session, deps, control, wanted)
-        found += extra
+        first = first_stage_findings(session, deps, control, wanted)
+        found += first.found
     if not args.apply:
-        return _dry_run(wanted, stage, found, say)
+        return _dry_run(wanted, stage, first, found, say)
     if found:
         raise DeployOrderError("refusing: " + str(len(found)) + " problem(s):\n  "
                                + "\n  ".join(found))
-    _check_plan(deps, say, stage, mode, replacing)
+    for note in first.notes:
+        say(note)
+    _check_plan(deps, say, stage, mode, first.replacing)
     _deploy(deps, say)
-    code = _read_back(control, wanted, stage, deps, say)
-    if code == OK:
-        _next_steps(stage, wanted, say)
-    return code
+    return _finish(control, wanted, stage, deps, first.replacing, say)
