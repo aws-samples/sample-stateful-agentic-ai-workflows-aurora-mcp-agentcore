@@ -10,6 +10,9 @@ Every command that changes AWS is a dry run unless it gets both ``--apply`` and
     python scripts/release_identity.py lambdas [--expect master|gateway|tightened] [--restart-holds]
     python scripts/release_identity.py gateway [--to iam|jwt] [--only grant|move]
         [--apply --i-understand-this-changes-aws]
+    python scripts/release_identity.py snapshot --service-arn ARN
+    python scripts/release_identity.py rollback [--snapshot FILE]
+        [--apply --i-understand-this-changes-aws]
 
 ``check`` compares the Gateway, both Runtimes, the Cedar rules, the identity stack, the backend
 login proof, the interceptor Lambda's environment and the App Runner environment against the mode
@@ -25,6 +28,10 @@ both flags) it forces the holds Lambda to re-read its configuration.
 ``gateway`` moves the live Gateway to the mode (dry run by default: before and after of the
 authorizer, allowed clients and interceptor, and every precondition); an apply writes the invoke
 grants, sends the complete update and reads it back; ``--to iam`` is the rollback of the move.
+``snapshot`` (read-only) saves the replaced configuration of every hop to ``.local/release-b2/``
+before the window, with no secret value. ``rollback`` restores it in the reverse of the release
+order, reading each hop back (dry run by default; the roles stack and the Cedar rules are checked
+and their commands printed); it exits 1 when any hop is not restored.
 
 Exit codes, the same for every command:
 
@@ -61,6 +68,7 @@ from scripts.gateway_harness.verdicts import JWT_SHAPE  # noqa: E402
 from scripts.identity_release import interceptor_lambda, preflight, settings  # noqa: E402
 from scripts.identity_release import lambda_release  # noqa: E402
 from scripts.identity_release import gateway_release  # noqa: E402
+from scripts.identity_release import rollback, snapshot  # noqa: E402
 from scripts.provision_service_logins import redact, require_account  # noqa: E402
 from scripts.sync_cognito_env import FRONTEND_ENV_FILE, stack_outputs  # noqa: E402
 
@@ -92,6 +100,7 @@ class Dependencies:
     head_sha: Callable[[], str] = settings.git_head
     proof_path: Path = field(default=settings.PROOF_PATH)
     release_dir: Path = field(default=settings.RELEASE_DIR)
+    hosted_release_path: Path = field(default=snapshot.HOSTED_RELEASE_PATH)
     sleep: Callable[[float], None] = time.sleep
 
 
@@ -144,6 +153,13 @@ def build_parser() -> argparse.ArgumentParser:
         "gateway", allow_abbrev=False,
         help="move the live Gateway's authorizer and interceptor (dry run by default)")
     gateway_release.add_arguments(move_gateway)
+    save = commands.add_parser("snapshot", allow_abbrev=False,
+                               help="save the configuration the release replaces (read-only)")
+    snapshot.add_arguments(save)
+    back = commands.add_parser("rollback", allow_abbrev=False,
+                               help="restore the saved configuration (dry run by default)")
+    rollback.add_arguments(back)
+    add_apply_flags(back)
     return parser
 
 
@@ -307,9 +323,19 @@ def run_gateway(args: argparse.Namespace, deps: Dependencies) -> int:
     return gateway_release.run(args, deps, say=say)
 
 
+def run_snapshot(args: argparse.Namespace, deps: Dependencies) -> int:
+    """Save the configuration the release replaces."""
+    return snapshot.command(args, deps, say)
+
+
+def run_rollback(args: argparse.Namespace, deps: Dependencies) -> int:
+    """Show, or run, the rollback from a snapshot."""
+    return rollback.command(args, deps, say)
+
+
 HANDLERS = {"check": run_check, "interceptor": run_interceptor,
             "interceptor-delete": run_interceptor_delete, "lambdas": run_lambdas,
-            "gateway": run_gateway}
+            "gateway": run_gateway, "snapshot": run_snapshot, "rollback": run_rollback}
 
 
 def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int:
