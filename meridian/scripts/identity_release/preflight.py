@@ -394,6 +394,33 @@ def check_backend_login_proof(path: Path, target: Target, git_sha: str,
             for problem in _receipt_problems(proof, target, git_sha, now)]
 
 
+def interceptor_environment_findings(configuration: Any, target: Target) -> list[str]:
+    """Findings for the deployed interceptor's environment, from ``GetFunctionConfiguration``.
+
+    ``PINNED_TOOLS`` must be unset (an override replaces the default tool list) and the expected
+    client and issuer must be the pool's. Values are never printed.
+    """
+    environment = configuration.get("Environment") if isinstance(configuration, dict) else None
+    variables = environment.get("Variables") if isinstance(environment, dict) else None
+    if not isinstance(variables, dict):
+        variables = {}
+    found = []
+    if "PINNED_TOOLS" in variables:
+        found.append("Interceptor Lambda: PINNED_TOOLS is set; unset it, an override replaces "
+                     "the default tool list")
+    if target.cognito is None:
+        return found
+    expected = (("EXPECTED_CLIENT_ID", target.cognito.client_id),
+                ("EXPECTED_ISSUER", target.cognito.issuer))
+    for name, value in expected:
+        if not variables.get(name):
+            found.append(f"Interceptor Lambda: {name} is not set")
+        elif variables[name] != value:
+            found.append(f"Interceptor Lambda: {name} is not the pool's; run "
+                         "scripts/release_identity.py interceptor to redeploy it")
+    return found
+
+
 def _receipt_problems(proof: Any, target: Target, git_sha: str, now: datetime) -> list[str]:
     if not isinstance(proof, dict) or proof.get("ok") is not True:
         return ["the last run did not pass"]

@@ -611,6 +611,24 @@ and last the backend and the hosted service with `MERIDIAN_AGENTCORE_AUTH=jwt`. 
 backend alone, or on one Runtime alone, makes that hop send or expect a credential the next hop
 refuses.
 
+### Read the release back
+
+`scripts/release_identity.py check` only reads. It compares the Gateway, both Runtimes, the Cedar
+rules, the identity stack, the backend login proof, the interceptor Lambda's environment and the
+App Runner service with the mode in `.env`. Name the service with `--service-arn ARN`, or leave it
+out on purpose with `--skip-service`. `interceptor` and `interceptor-delete` are dry runs unless
+they get `--apply --i-understand-this-changes-aws`. The backend login proof comes from
+`scripts/prove_backend_login.py --apply --i-understand-this-changes-aws`. Exit codes of
+`release_identity.py`:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | ok: every hop matches, or a dry run |
+| 1 | drift: one `DRIFT` line per problem |
+| 2 | could not run or compare: a bad setting, another account, an AWS error, a foreign resource |
+| 3 | usage error, or an apply refused because the confirmation flag is missing |
+| 4 | every hop matches but the App Runner service was not named, so it is not fully checked |
+
 ### Run the smoke scripts as a seeded user
 
 In `jwt` mode `smoke_workflow_runtime.py`, `smoke_gateway_tools.py` and `smoke_production_turn.py`

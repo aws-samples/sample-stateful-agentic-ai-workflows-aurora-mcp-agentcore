@@ -42,6 +42,13 @@ class LambdaClient(Recorder, Waiters):
         Waiters.__init__(self)
 
 
+def deployed_configuration(**variables):
+    wanted = interceptor_lambda.desired(
+        rs.ACCOUNT, rs.REGION, settings.cognito_settings(rs.COGNITO_ENV))
+    return {"FunctionName": wanted.function_name,
+            "Environment": {"Variables": {**wanted.environment, **variables}}}
+
+
 class World:
     """Recording fake clients for every service the commands may use."""
 
@@ -59,7 +66,7 @@ class World:
         self.apprunner = Mock()
         self.apprunner.describe_service.return_value = {"Service": service or {}}
         self.iam = Recorder()
-        self.lam = LambdaClient()
+        self.lam = LambdaClient(answers={"get_function_configuration": deployed_configuration()})
 
     def session(self, region):
         clients = {"sts": self.sts, "bedrock-agentcore-control": self.control,
@@ -193,7 +200,7 @@ def test_a_service_arn_and_skip_service_together_are_refused(tmp_path, capsys):
     with pytest.raises(SystemExit) as stopped:
         run(["check", "--service-arn", SERVICE_ARN, SKIP], World("jwt"), tmp_path)
 
-    assert stopped.value.code == 2
+    assert stopped.value.code == release_identity.EXIT_USAGE
 
 
 @pytest.mark.parametrize("arn", [
@@ -315,9 +322,12 @@ def test_check_makes_only_read_calls(tmp_path):
     run(["check", "--service-arn", SERVICE_ARN], world, tmp_path)
 
     called = {c[0] for mock in (world.control, world.cfn, world.apprunner, world.sts)
-              for c in mock.method_calls}
+              for c in mock.method_calls} | set(world.lam.names())
     assert called <= {"get_gateway", "get_agent_runtime", "list_policies", "describe_stacks",
-                      "describe_service", "get_caller_identity"}
+                      "describe_service", "get_caller_identity",
+                      # lambda:GetFunctionConfiguration reads the interceptor's environment
+                      "get_function_configuration"}
+    assert "get_function_configuration" in called
 
 
 # --------------------------------------------------------------- interceptor
@@ -348,7 +358,8 @@ def interceptor_world(exists=False):
         "get_function": [client_error("ResourceNotFoundException")]}
     world.lam = LambdaClient(
         answers={"get_function": {"Configuration": configuration, "Tags": dict(TAGS)},
-                 "create_function": configuration},
+                 "create_function": configuration,
+                 "get_function_configuration": configuration},
         failures=missing)
     return world
 
@@ -473,3 +484,133 @@ def test_the_delete_command_works_whatever_the_enforcement_design(tmp_path):
 def test_abbreviated_flags_are_not_accepted(tmp_path):
     with pytest.raises(SystemExit):
         run(["interceptor", "--app"], interceptor_world(), tmp_path)
+
+
+# ---------------------------------------------------------------- usage errors
+
+
+def test_the_exit_codes_are_the_documented_table():
+    assert (release_identity.EXIT_DRIFT, release_identity.EXIT_COULD_NOT_RUN,
+            release_identity.EXIT_USAGE, release_identity.EXIT_NOT_CHECKED) == (1, 2, 3, 4)
+    assert release_identity.EXIT_REFUSED == release_identity.EXIT_USAGE
+
+
+@pytest.mark.parametrize("argv", [
+    ["interceptor", rs.ACCOUNT, FAKE_TOKEN],
+    ["check", "--expect", rs.ACCOUNT + FAKE_TOKEN],
+    ["check", rs.ACCOUNT, FAKE_TOKEN],
+    [rs.ACCOUNT, FAKE_TOKEN],
+])
+def test_a_usage_error_exits_three_and_echoes_neither_an_account_id_nor_a_token(
+        tmp_path, capsys, argv):
+    with pytest.raises(SystemExit) as stopped:
+        run(argv, World("jwt"), tmp_path)
+
+    captured = capsys.readouterr()
+    assert stopped.value.code == 3
+    for stream in (captured.err, captured.out):
+        assert rs.ACCOUNT not in stream and FAKE_TOKEN not in stream
+    assert "error:" in captured.err and ("<acct>" in captured.err or "<token>" in captured.err)
+
+
+def test_help_still_exits_zero(tmp_path):
+    with pytest.raises(SystemExit) as stopped:
+        run(["--help"], World("jwt"), tmp_path)
+
+    assert stopped.value.code == 0
+
+
+def test_every_usage_line_names_the_real_confirmation_flag():
+    text = release_identity.__doc__ + release_identity.build_parser().format_help()
+    for command in ("interceptor", "interceptor-delete"):
+        assert f"{command} [--apply {settings.CONFIRM_FLAG}]" in text
+    assert "--apply FLAG" not in text
+
+
+# ----------------------------------------------- the interceptor's environment in check
+
+
+def test_a_deployed_interceptor_with_the_right_environment_is_not_drift(tmp_path, capsys):
+    world = World("jwt")
+
+    assert run(["check", SKIP], world, tmp_path) == 0
+
+    assert world.lam.args("get_function_configuration") == [
+        {"FunctionName": settings.interceptor_arn(rs.ACCOUNT, rs.REGION)}]
+
+
+def test_a_pinned_tools_override_on_the_interceptor_is_drift(tmp_path, capsys):
+    world = World("jwt")
+    world.lam.answers["get_function_configuration"] = deployed_configuration(PINNED_TOOLS="x")
+
+    assert run(["check", SKIP], world, tmp_path) == 1
+
+    assert "DRIFT  Interceptor Lambda: PINNED_TOOLS is set" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("name", ["EXPECTED_CLIENT_ID", "EXPECTED_ISSUER"])
+def test_an_interceptor_that_trusts_another_client_or_issuer_is_drift(tmp_path, capsys, name):
+    world = World("jwt")
+    world.lam.answers["get_function_configuration"] = deployed_configuration(**{name: "other"})
+
+    assert run(["check", SKIP], world, tmp_path) == 1
+
+    out = capsys.readouterr().out
+    assert f"{name} is not the pool's" in out and "other" not in out
+
+
+def test_an_interceptor_with_no_environment_is_drift_naming_both_variables(tmp_path, capsys):
+    world = World("jwt")
+    world.lam.answers["get_function_configuration"] = {"FunctionName": "x"}
+
+    assert run(["check", SKIP], world, tmp_path) == 1
+
+    out = capsys.readouterr().out
+    assert "EXPECTED_CLIENT_ID is not set" in out and "EXPECTED_ISSUER is not set" in out
+
+
+def test_a_missing_interceptor_is_reported_as_not_deployed(tmp_path, capsys):
+    world = World("jwt")
+    world.lam = LambdaClient(failures={
+        "get_function_configuration": client_error("ResourceNotFoundException")})
+
+    assert run(["check", SKIP], world, tmp_path) == 1
+
+    assert "DRIFT  Interceptor Lambda: not deployed" in capsys.readouterr().out
+
+
+def test_an_unreadable_interceptor_configuration_is_drift_not_a_crash(tmp_path, capsys):
+    world = World("jwt")
+    world.lam.answers["get_function_configuration"] = {"Environment": "garbage"}
+
+    assert run(["check", SKIP], world, tmp_path) == 1
+
+    assert "Interceptor Lambda" in capsys.readouterr().out
+
+
+def test_the_cedar_only_design_does_not_read_the_lambda(tmp_path):
+    world = World("jwt")
+    world.control.get_gateway.return_value = rs.gateway("jwt", settings.CEDAR)
+
+    assert run(["check", SKIP], world, tmp_path, env(MERIDIAN_GATEWAY_ENFORCEMENT="cedar")) == 0
+
+    assert world.lam.calls == []
+
+
+def test_the_iam_mode_does_not_read_the_lambda(tmp_path):
+    world = World("iam")
+
+    assert run(["check", "--expect", "iam", SKIP], world, tmp_path, with_proof=False) == 0
+
+    assert world.lam.calls == []
+
+
+def test_an_access_denied_on_the_lambda_read_exits_two_masked(tmp_path, capsys):
+    world = World("jwt")
+    world.lam = LambdaClient(failures={"get_function_configuration": client_error(
+        "AccessDeniedException", f"arn:aws:iam::{rs.ACCOUNT}:user/x")})
+
+    assert run(["check", SKIP], world, tmp_path) == 2
+
+    err = capsys.readouterr().err
+    assert "AccessDeniedException" in err and rs.ACCOUNT not in err

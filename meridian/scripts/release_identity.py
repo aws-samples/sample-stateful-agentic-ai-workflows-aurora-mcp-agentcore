@@ -5,23 +5,28 @@ Every command that changes AWS is a dry run unless it gets both ``--apply`` and
 ``--i-understand-this-changes-aws``. ``check`` only reads.
 
     python scripts/release_identity.py check [--expect iam|jwt] (--service-arn ARN | --skip-service)
-    python scripts/release_identity.py interceptor [--apply FLAG]
-    python scripts/release_identity.py interceptor-delete [--apply FLAG]
+    python scripts/release_identity.py interceptor [--apply --i-understand-this-changes-aws]
+    python scripts/release_identity.py interceptor-delete [--apply --i-understand-this-changes-aws]
 
 ``check`` compares the Gateway, both Runtimes, the Cedar rules, the identity stack, the backend
-login proof and the App Runner environment against the mode in ``meridian/.env`` (or
-``--expect``). The service must be named: ``--service-arn`` reads it, ``--skip-service`` leaves
-it out on purpose. Exit codes of ``check``: 0 every hop reports the mode (and the service was
-checked or skipped on purpose); 1 drift, one ``DRIFT`` line per problem; 2 nothing could be
-compared (a missing or malformed setting, credentials for another account, an AWS read failure,
-an unexpected error); 4 the hops match but the service was not named, so the release is not
-fully checked.
+login proof, the interceptor Lambda's environment and the App Runner environment against the mode
+in ``meridian/.env`` (or ``--expect``). The service must be named: ``--service-arn`` reads it,
+``--skip-service`` leaves it out on purpose. ``interceptor`` deploys the Gateway request
+interceptor Lambda and its log-only role (dry run by default) and then reads it back. Both
+resources carry the release tags; one that exists without them is never modified.
+``interceptor-delete`` removes only resources that carry those tags, re-reading the tags before
+each delete.
 
-``interceptor`` deploys the Gateway request interceptor Lambda and its log-only role (dry run by
-default; ``FLAG`` is ``--i-understand-this-changes-aws``) and then reads it back. Both resources
-carry the release tags; one that exists without them is never modified. ``interceptor-delete``
-removes only resources that carry those tags, re-reading the tags before each delete. A refused or
-unconfirmed apply exits 3; an AWS error, a failed wait or a foreign resource exits 2.
+Exit codes, the same for every command:
+
+    0  ok: every hop matches (and the service was checked or skipped on purpose), or a dry run
+    1  drift: one ``DRIFT`` line per problem, or the read-back after an apply found a difference
+    2  could not run or compare: a missing or malformed setting, credentials for another
+       account, an AWS error or failed wait, a foreign resource, an unexpected error
+    3  usage error (unknown or misspelled argument), or an apply refused because the
+       confirmation flag is missing
+    4  every hop matches but the App Runner service was not named, so the release is not fully
+       checked
 """
 
 from __future__ import annotations
@@ -34,7 +39,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -49,7 +54,10 @@ from scripts.provision_service_logins import redact, require_account  # noqa: E4
 from scripts.sync_cognito_env import FRONTEND_ENV_FILE, stack_outputs  # noqa: E402
 
 IDENTITY_STACK = "MeridianIdentity"
-EXIT_REFUSED = 3
+EXIT_DRIFT = 1
+EXIT_COULD_NOT_RUN = 2
+EXIT_USAGE = 3
+EXIT_REFUSED = EXIT_USAGE
 EXIT_NOT_CHECKED = 4
 
 
@@ -85,10 +93,19 @@ def default_dependencies() -> Dependencies:
     )
 
 
+class MaskingParser(argparse.ArgumentParser):
+    """A parser whose usage errors exit 3 and never echo an account id or a token."""
+
+    def error(self, message: str) -> NoReturn:
+        """Print the usage and the masked message to stderr, then exit with ``EXIT_USAGE``."""
+        self.print_usage(sys.stderr)
+        print(f"{self.prog}: error: {mask(message)}", file=sys.stderr)
+        sys.exit(EXIT_USAGE)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The command line."""
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
-                                     allow_abbrev=False)
+    parser = MaskingParser(description=__doc__.split("\n\n")[0], allow_abbrev=False)
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="read every hop back and report drift",
                                 allow_abbrev=False)
@@ -135,6 +152,19 @@ def service_findings(session: Any, service_arn: str, target: preflight.Target) -
     return preflight.check_service_environment(*environment, target)
 
 
+def interceptor_findings(session: Any, target: preflight.Target) -> list[str]:
+    """Findings for the interceptor's environment; reads it with ``GetFunctionConfiguration``."""
+    try:
+        configuration = session.client("lambda").get_function_configuration(
+            FunctionName=target.interceptor_arn)
+    except ClientError as error:
+        if error.response.get("Error", {}).get("Code") != "ResourceNotFoundException":
+            raise
+        return ["Interceptor Lambda: not deployed; run scripts/release_identity.py interceptor "
+                f"--apply {settings.CONFIRM_FLAG}"]
+    return preflight.interceptor_environment_findings(configuration, target)
+
+
 def identity_stack_findings(session: Any, deps: Dependencies,
                             target: preflight.Target) -> list[str]:
     """Findings for the identity stack and the backend login proof (jwt only)."""
@@ -160,6 +190,8 @@ def run_check(args: argparse.Namespace, deps: Dependencies) -> int:
     findings += preflight.hop_findings(state, target)
     if mode == JWT:
         findings += identity_stack_findings(session, deps, target)
+    if target.interceptor_arn:
+        findings += interceptor_findings(session, target)
     if args.service_arn:
         findings += service_findings(session, args.service_arn, target)
     for line in findings:
@@ -174,7 +206,7 @@ def verdict(findings: list[str], mode: str, args: argparse.Namespace) -> int:
         print("NOT CHECKED  App Runner service: pass --service-arn ARN to check it, or "
               "--skip-service to leave it out on purpose")
     if findings:
-        return 1
+        return EXIT_DRIFT
     if unchecked:
         return EXIT_NOT_CHECKED
     note = " (App Runner service skipped by request)" if args.skip_service else ""
@@ -217,7 +249,7 @@ def run_interceptor(args: argparse.Namespace, deps: Dependencies) -> int:
     for line in findings:
         say(f"DRIFT  {line}")
     if findings:
-        return 1
+        return EXIT_DRIFT
     interceptor_lambda.record_outputs(deps.release_dir, wanted, deps.now().isoformat())
     say("OK  the interceptor function matches what the release wants")
     return 0
@@ -254,23 +286,23 @@ def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int
         return HANDLERS[args.command](args, deps)
     except (settings.ReleaseConfigError, interceptor_lambda.DeployError) as exc:
         print(f"error: {mask(str(exc))}", file=sys.stderr)
-        return 2
+        return EXIT_COULD_NOT_RUN
     except (BotoCoreError, ClientError) as exc:
         print(f"error: AWS call failed ({type(exc).__name__}): {mask(str(exc))}; "
               "check AWS_PROFILE and the Region", file=sys.stderr)
-        return 2
+        return EXIT_COULD_NOT_RUN
     except OSError as exc:
         print(f"error: could not write the release outputs ({type(exc).__name__}): "
               f"{mask(str(exc))}", file=sys.stderr)
-        return 2
+        return EXIT_COULD_NOT_RUN
     except SystemExit as stopped:
         if not isinstance(stopped.code, str):
             raise
         print(f"error: {mask(stopped.code)}", file=sys.stderr)
-        return 2
+        return EXIT_COULD_NOT_RUN
     except Exception as exc:  # noqa: BLE001 - last resort: one line, the type only, no leak
         print(f"error: unexpected ({type(exc).__name__})", file=sys.stderr)
-        return 2
+        return EXIT_COULD_NOT_RUN
 
 
 if __name__ == "__main__":
