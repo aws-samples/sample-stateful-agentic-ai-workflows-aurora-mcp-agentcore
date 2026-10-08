@@ -6,6 +6,9 @@ synthesize all three stacks and show their diffs. --apply executes that plan.
 Secrets are referenced by ARN for App Runner to resolve; this process never
 fetches secret values, changes the edge access store, or deletes services.
 New-account provisioning is a separate operation; see docs/OPERATIONS.md.
+
+--apply and --stage change AWS, so each also needs --i-understand-this-changes-aws. Exit codes:
+0 done (or a plan), 1 a refusal or a failure, 3 a usage error or a missing confirmation flag.
 """
 from __future__ import annotations
 
@@ -32,6 +35,7 @@ sys.path.insert(0, str(MERIDIAN))
 
 from backend.agentcore.auth_mode import JWT  # noqa: E402
 from scripts.identity_release import preflight, settings  # noqa: E402
+from scripts.identity_release.usage import UsageParser  # noqa: E402
 
 INFRA = MERIDIAN / "infra"
 LOCAL = MERIDIAN / ".local"
@@ -406,7 +410,7 @@ def publish(args) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = UsageParser(description=__doc__)
     parser.add_argument("--account", required=True)
     parser.add_argument("--region", default="us-east-1")
     parser.add_argument("--service-arn", required=True)
@@ -417,11 +421,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tighten", action="store_true",
                         help="jwt release only: drop the master and shared-token secret grants "
                              "from the App Runner instance role")
+    parser.add_argument(settings.CONFIRM_FLAG, action="store_true", dest="confirmed",
+                        help="required with --apply or --stage: they change AWS")
     return parser
 
 
+def require_confirmation(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """Exit 3 unless ``--apply`` or ``--stage`` comes with the confirmation flag."""
+    if (args.apply or args.stage) and not args.confirmed:
+        flag = "--apply" if args.apply else "--stage"
+        parser.error(f"{flag} also needs {settings.CONFIRM_FLAG}; it changes AWS")
+
+
 def main() -> int:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+    require_confirmation(parser, args)
     try:
         publish(args)
     except ClientError as exc:

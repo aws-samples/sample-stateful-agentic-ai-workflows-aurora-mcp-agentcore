@@ -131,7 +131,7 @@ def steps(traveler: str = TRAVELER_ID) -> list[tuple[str, str, dict | None, obje
 
 def build_parser() -> argparse.ArgumentParser:
     """The command line: the target (local or hosted) and the user to sign in as."""
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], allow_abbrev=False)
     target = parser.add_mutually_exclusive_group()
     target.add_argument("--hosted", action="store_true",
                         help="warm the hosted site from the local release record")

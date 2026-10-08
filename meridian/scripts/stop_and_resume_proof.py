@@ -397,13 +397,19 @@ async def run(during: str, keep: bool) -> int:
     return 0 if not failures else 1
 
 
-def main(argv: Optional[list[str]] = None) -> int:
-    """Parse arguments and run the proof."""
-    parser = argparse.ArgumentParser(description="Prove a stopped Runtime session resumes.")
+def build_parser() -> argparse.ArgumentParser:
+    """The command line."""
+    parser = argparse.ArgumentParser(
+        description="Prove a stopped Runtime session resumes.", allow_abbrev=False)
     parser.add_argument("--during", choices=sorted(EXPECTED_STATUSES), default="waiting",
                         help="stop the session while it waits for review or while it runs")
     parser.add_argument("--keep", action="store_true", help="leave the run's rows behind")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    """Parse arguments and run the proof."""
+    args = build_parser().parse_args(argv)
     require_token_safe_url(API)
     AUTH_HEADERS.update(bearer_headers(user_for_traveler(TRAVELER)))
     try:

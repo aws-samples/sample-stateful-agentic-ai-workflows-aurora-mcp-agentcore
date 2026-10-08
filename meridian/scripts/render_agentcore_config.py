@@ -483,13 +483,22 @@ def render(
     return spec, targets, notes
 
 
+def binding_rule_included(spec: dict[str, Any]) -> bool:
+    """Whether a rendered policy engine holds the Cedar traveler-binding rule."""
+    return any(
+        policy["name"] in JWT_ONLY_POLICIES
+        for engine in spec.get("policyEngines", [])
+        for policy in engine["policies"]
+    )
+
+
 def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Render the AgentCore CLI config for your account."
+        description="Render the AgentCore CLI config for your account.", allow_abbrev=False
     )
     parser.add_argument(
         "--gateway-id", help="deployed gateway ID (default: the CLI deployment state)"
@@ -526,6 +535,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  AgentCore identity mode: {values[AUTH_MODE_ENV]}")
     if values[AUTH_MODE_ENV] == JWT:
         print(f"  Gateway enforcement: {values[settings.ENFORCEMENT_ENV]}")
+        print("  Cedar rule: " + (
+            "included (meridian_traveler_binding)" if binding_rule_included(spec)
+            else "omitted for this deploy"))
     if args.tighten:
         print("  Tightened: MeridianHolds may read only the meridian_gateway secret")
     print(f"  staged {len(staged)} workflow modules into the MeridianWorkflow bundle")

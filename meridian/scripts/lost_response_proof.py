@@ -171,14 +171,19 @@ async def main(worker_login: bool = False) -> int:
         say("cleanup", "isolated rehearsal rows removed")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
+def build_parser() -> argparse.ArgumentParser:
+    """The command line."""
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument(
         "--worker-login", action="store_true",
         help="run the worker subprocess as the meridian_workflow login",
     )
     parser.add_argument("--worker", help=argparse.SUPPRESS)
-    args = parser.parse_args()
+    return parser
+
+
+if __name__ == "__main__":
+    args = build_parser().parse_args()
     with caller_scope(user_for_traveler(TRAVELER)):
         raise SystemExit(
             asyncio.run(worker(args.worker) if args.worker else main(args.worker_login)))

@@ -24,7 +24,7 @@ import botocore.session
 from botocore.exceptions import ClientError, WaiterError
 from botocore.validate import ParamValidator
 
-from scripts.identity_release import lambda_release, preflight, snapshot
+from scripts.identity_release import lambda_release, preflight, settings, snapshot
 
 WAIT_ATTEMPTS = 60
 POLL_SECONDS = 5
@@ -378,7 +378,8 @@ def publish_remedy(ctx: Context) -> list[str]:
     """Redeploy the roles stack, the service and the site in the saved mode, from that commit."""
     return [*checkout_lines(ctx),
             f"  MERIDIAN_AGENTCORE_AUTH={ctx.saved['mode']} python scripts/publish.py "
-            '--account "$ACCOUNT" --region "$REGION" --service-arn "$SERVICE_ARN" --apply',
+            '--account "$ACCOUNT" --region "$REGION" --service-arn "$SERVICE_ARN" '
+            f"--apply {settings.CONFIRM_FLAG}",
             finish_line()]
 
 

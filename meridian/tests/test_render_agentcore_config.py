@@ -615,6 +615,40 @@ def test_main_reports_the_mode_and_the_enforcement_design(
     assert "Gateway enforcement: both" in out
 
 
+def jwt_main(project: Path, monkeypatch: pytest.MonkeyPatch, **env: str) -> None:
+    write_state(project, deployed("gw-1"))
+    monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
+    for name, value in {**COGNITO_ENV, **env}.items():
+        monkeypatch.setenv(name, value)
+    assert render_config.main([]) == 0
+
+
+def test_main_says_the_cedar_rule_is_included_when_the_rendered_engine_holds_it(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    jwt_main(project, monkeypatch)
+
+    assert "Cedar rule: included (meridian_traveler_binding)" in capsys.readouterr().out
+
+
+def test_main_says_the_cedar_rule_is_omitted_when_the_design_leaves_it_out(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    jwt_main(project, monkeypatch, MERIDIAN_GATEWAY_ENFORCEMENT="interceptor")
+
+    assert "Cedar rule: omitted for this deploy" in capsys.readouterr().out
+
+
+def test_main_prints_no_cedar_line_in_iam_mode(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_state(project, deployed("gw-1"))
+
+    assert render_config.main([]) == 0
+
+    assert "Cedar rule" not in capsys.readouterr().out
+
+
 def test_the_cdk_fixture_is_the_jwt_render_with_the_cdk_test_values() -> None:
     """cdk.test.ts synthesizes this file, so a render change must change it too.
 

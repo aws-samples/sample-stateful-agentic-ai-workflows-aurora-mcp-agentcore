@@ -359,13 +359,19 @@ async def cleanup() -> None:
     print(f"Cleanup: removed this run's {len(conversations)} conversations and {len(bookings)} direct booking receipts; cloud audit traces retained.")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
+def build_parser() -> argparse.ArgumentParser:
+    """The command line."""
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--base-url", default=BASE)
     parser.add_argument("--output", type=Path, default=OUT)
     parser.add_argument("--keep", action="store_true", help="Keep this run's database records for inspection")
     parser.add_argument("--allow-hosted-demo-writes", action="store_true",
                         help="Explicitly allow this script's scoped demo writes at the supplied HTTPS URL")
+    return parser
+
+
+if __name__ == "__main__":
+    parser = build_parser()
     args = parser.parse_args()
     BASE, OUT = args.base_url, args.output
     # This command creates test bookings. Do not silently target a hosted site.

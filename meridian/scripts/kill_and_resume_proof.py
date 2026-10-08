@@ -490,8 +490,9 @@ async def main(keep: bool, worker_login: bool = False) -> int:
             say("cleanup", "rehearsal rows removed", DIM)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
+def build_parser() -> argparse.ArgumentParser:
+    """The command line."""
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--keep", action="store_true", help="leave the rows behind")
     parser.add_argument(
         "--worker-login", action="store_true",
@@ -499,7 +500,11 @@ if __name__ == "__main__":
     )
     parser.add_argument("--worker-one", nargs=2, metavar=("JOURNEY", "THREAD"))
     parser.add_argument("--worker-two", metavar="THREAD", help=argparse.SUPPRESS)
-    args = parser.parse_args()
+    return parser
+
+
+if __name__ == "__main__":
+    args = build_parser().parse_args()
 
     with caller_scope(user_for_traveler(TRAVELER)):
         if args.worker_two:
