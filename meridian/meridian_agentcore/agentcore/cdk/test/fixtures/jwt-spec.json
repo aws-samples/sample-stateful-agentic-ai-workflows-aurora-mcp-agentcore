@@ -1,0 +1,426 @@
+{
+  "$schema": "https://schema.agentcore.aws.dev/v1/agentcore.json",
+  "name": "meridianv2",
+  "version": 1,
+  "managedBy": "CDK",
+  "tags": {
+    "agentcore:created-by": "agentcore-cli",
+    "agentcore:project-name": "meridianv2"
+  },
+  "runtimes": [
+    {
+      "name": "MeridianConcierge",
+      "build": "CodeZip",
+      "entrypoint": "main.py",
+      "codeLocation": "app/MeridianConcierge/",
+      "runtimeVersion": "PYTHON_3_14",
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP",
+      "envVars": [
+        {
+          "name": "AGENT_OBSERVABILITY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OTEL_PYTHON_DISTRO",
+          "value": "aws_distro"
+        },
+        {
+          "name": "OTEL_PYTHON_CONFIGURATOR",
+          "value": "aws_configurator"
+        },
+        {
+          "name": "OTEL_RESOURCE_ATTRIBUTES",
+          "value": "service.name=meridian-concierge"
+        },
+        {
+          "name": "MERIDIAN_AGENTCORE_AUTH",
+          "value": "jwt"
+        },
+        {
+          "name": "BEDROCK_MODEL_ID",
+          "value": "us.openai.gpt-6-sol"
+        },
+        {
+          "name": "BEDROCK_MAX_TOKENS",
+          "value": "2048"
+        },
+        {
+          "name": "BEDROCK_REASONING_EFFORT",
+          "value": "low"
+        },
+        {
+          "name": "MERIDIAN_GATEWAY_ID",
+          "value": "meridianv2-meridian-aurora-abcde12345"
+        },
+        {
+          "name": "MERIDIAN_POLICY_ENGINE_ID",
+          "value": "meridianv2_MeridianGovernance-abcde12345"
+        },
+        {
+          "name": "MERIDIAN_POLICY_MODE",
+          "value": "ENFORCE"
+        }
+      ],
+      "authorizerType": "CUSTOM_JWT",
+      "authorizerConfiguration": {
+        "customJwtAuthorizer": {
+          "discoveryUrl": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AbCdEfGhI/.well-known/openid-configuration",
+          "allowedClients": [
+            "exampleclientid123"
+          ]
+        }
+      },
+      "requestHeaderAllowlist": [
+        "Authorization"
+      ]
+    },
+    {
+      "name": "MeridianWorkflow",
+      "description": "Phase 5 recovery workflow: Strands Graph with snapshots in Aurora",
+      "build": "CodeZip",
+      "entrypoint": "main.py",
+      "codeLocation": "app/MeridianWorkflow/",
+      "runtimeVersion": "PYTHON_3_14",
+      "networkMode": "PUBLIC",
+      "protocol": "HTTP",
+      "lifecycleConfiguration": {
+        "idleRuntimeSessionTimeout": 900,
+        "maxLifetime": 3600
+      },
+      "additionalPolicies": [
+        "arn:aws:iam::123456789012:policy/MeridianWorkflowAuroraAccess"
+      ],
+      "envVars": [
+        {
+          "name": "AGENT_OBSERVABILITY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OTEL_PYTHON_DISTRO",
+          "value": "aws_distro"
+        },
+        {
+          "name": "OTEL_PYTHON_CONFIGURATOR",
+          "value": "aws_configurator"
+        },
+        {
+          "name": "OTEL_RESOURCE_ATTRIBUTES",
+          "value": "service.name=meridian-workflow"
+        },
+        {
+          "name": "MERIDIAN_AGENTCORE_AUTH",
+          "value": "jwt"
+        },
+        {
+          "name": "AURORA_CLUSTER_ARN",
+          "value": "arn:aws:rds:us-east-1:123456789012:cluster:meridian"
+        },
+        {
+          "name": "AURORA_SECRET_ARN",
+          "value": "arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian/aurora/workflow-login-XyZ789"
+        },
+        {
+          "name": "AURORA_DATABASE",
+          "value": "meridian"
+        },
+        {
+          "name": "AGENTCORE_SKIP_CLI_SYNC",
+          "value": "1"
+        },
+        {
+          "name": "ENVIRONMENT",
+          "value": "production"
+        },
+        {
+          "name": "RLS_APP_ROLE",
+          "value": "meridian_app"
+        }
+      ],
+      "authorizerType": "CUSTOM_JWT",
+      "authorizerConfiguration": {
+        "customJwtAuthorizer": {
+          "discoveryUrl": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AbCdEfGhI/.well-known/openid-configuration",
+          "allowedClients": [
+            "exampleclientid123"
+          ]
+        }
+      },
+      "requestHeaderAllowlist": [
+        "Authorization"
+      ]
+    }
+  ],
+  "memories": [
+    {
+      "name": "meridian_session",
+      "eventExpiryDuration": 30,
+      "strategies": [
+        {
+          "type": "SEMANTIC",
+          "namespaceTemplates": [
+            "/users/{actorId}/sessions/{sessionId}"
+          ]
+        }
+      ]
+    }
+  ],
+  "credentials": [],
+  "evaluators": [],
+  "onlineEvalConfigs": [],
+  "agentCoreGateways": [
+    {
+      "name": "meridian-aurora",
+      "description": "Gateway for meridian-aurora",
+      "targets": [
+        {
+          "name": "SemanticTripSearchLambda",
+          "targetType": "lambdaFunctionArn",
+          "lambdaFunctionArn": {
+            "lambdaArn": "arn:aws:lambda:us-east-1:123456789012:function:meridian-semantic-trip-search",
+            "toolSchemaFile": "./agentcore/gateway_targets/semantic_trip_search/tool-schema.json"
+          }
+        },
+        {
+          "name": "MeridianHolds",
+          "targetType": "lambda",
+          "toolDefinitions": [
+            {
+              "name": "get_package_details",
+              "description": "Read one Meridian trip package with its live durations, availability and highlights.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "packageId": {
+                    "type": "string",
+                    "description": "Catalog package id, for example CTY-002."
+                  }
+                },
+                "required": [
+                  "packageId"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "name": "create_courtesy_hold",
+              "description": "Place a courtesy hold on one package duration for the authorized traveler. No payment. Cedar policy decides on the arguments before this runs.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "travelerId": {
+                    "type": "string",
+                    "description": "Traveler id. The platform pins this to the authorized traveler."
+                  },
+                  "packageId": {
+                    "type": "string",
+                    "description": "Catalog package id from the search results."
+                  },
+                  "duration": {
+                    "type": "string",
+                    "description": "Duration label exactly as the catalog publishes it, for example 7 nights."
+                  },
+                  "travelers": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 12,
+                    "description": "Number of travelers on the hold."
+                  },
+                  "unitPriceCents": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Price per traveler in cents from the catalog."
+                  },
+                  "totalCents": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "unitPriceCents multiplied by travelers."
+                  },
+                  "holdMinutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 720,
+                    "description": "How long the hold lasts. 720 is twelve hours."
+                  },
+                  "travelerConfirmed": {
+                    "type": "boolean",
+                    "description": "Set by the platform from the traveler's confirmation, never by the model."
+                  },
+                  "budgetCeilingCents": {
+                    "type": "integer",
+                    "description": "The traveler's saved budget ceiling in cents, set by the platform."
+                  },
+                  "journeyRef": {
+                    "type": "string",
+                    "description": "Stable journey reference for replay, set by the platform."
+                  },
+                  "holdRequestId": {
+                    "type": "string",
+                    "description": "Optional. A caller that checkpointed its own hold intent passes its request id so a resumed run replays the same booking."
+                  },
+                  "bookingId": {
+                    "type": "string",
+                    "description": "Optional. The booking id the caller checkpointed for this request."
+                  },
+                  "executionId": {
+                    "type": "string",
+                    "description": "Optional. A workflow worker's execution id; the hold is written only while that worker still holds its lease."
+                  }
+                },
+                "required": [
+                  "travelerId",
+                  "packageId",
+                  "duration",
+                  "travelers",
+                  "unitPriceCents",
+                  "totalCents",
+                  "holdMinutes",
+                  "travelerConfirmed",
+                  "budgetCeilingCents",
+                  "journeyRef"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "name": "confirm_booking",
+              "description": "Confirm the traveler's held booking. Books catalog inventory in the Meridian database only; no supplier, no payment. Cedar policy decides on the arguments before this runs.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "travelerId": {
+                    "type": "string",
+                    "description": "Traveler id. The platform pins this to the authorized traveler."
+                  },
+                  "bookingId": {
+                    "type": "string",
+                    "description": "The held booking id from the hold receipt."
+                  },
+                  "totalCents": {
+                    "type": "integer",
+                    "description": "The booking total in cents as Aurora holds it, set by the platform."
+                  },
+                  "travelerConfirmed": {
+                    "type": "boolean",
+                    "description": "Set by the platform from the traveler's confirmation, never by the model."
+                  },
+                  "budgetCeilingCents": {
+                    "type": "integer",
+                    "description": "The traveler's saved budget ceiling in cents, set by the platform."
+                  },
+                  "journeyRef": {
+                    "type": "string",
+                    "description": "Stable journey reference for the audit trail, set by the platform."
+                  }
+                },
+                "required": [
+                  "travelerId",
+                  "bookingId",
+                  "totalCents",
+                  "travelerConfirmed",
+                  "budgetCeilingCents",
+                  "journeyRef"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "compute": {
+            "host": "Lambda",
+            "implementation": {
+              "language": "Python",
+              "path": "./agentcore/gateway_targets/meridian_holds",
+              "handler": "lambda_function.lambda_handler"
+            },
+            "pythonVersion": "PYTHON_3_13",
+            "timeout": 30,
+            "memorySize": 512,
+            "iamPolicy": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:GetParameters"
+                  ],
+                  "Resource": "arn:aws:ssm:us-east-1:123456789012:parameter/meridian/aurora/*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "rds-data:ExecuteStatement",
+                    "rds-data:BeginTransaction",
+                    "rds-data:CommitTransaction",
+                    "rds-data:RollbackTransaction"
+                  ],
+                  "Resource": "arn:aws:rds:us-east-1:123456789012:cluster:meridian"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
+                  "Resource": [
+                    "arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian-AbC123",
+                    "arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian/aurora/gateway-login-GwY456"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "authorizerType": "CUSTOM_JWT",
+      "enableSemanticSearch": true,
+      "exceptionLevel": "NONE",
+      "policyEngineConfiguration": {
+        "policyEngineName": "MeridianGovernance",
+        "mode": "ENFORCE"
+      },
+      "authorizerConfiguration": {
+        "customJwtAuthorizer": {
+          "discoveryUrl": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AbCdEfGhI/.well-known/openid-configuration",
+          "allowedClients": [
+            "exampleclientid123"
+          ]
+        }
+      }
+    }
+  ],
+  "policyEngines": [
+    {
+      "name": "MeridianGovernance",
+      "description": "Cedar policies over the Meridian gateway tools. Default deny. A hold needs the traveler's confirmation and must stay within budget; confirming a booking needs the traveler's confirmation and a total within budget.",
+      "policies": [
+        {
+          "name": "meridian_read_tools",
+          "description": "Any authenticated caller may search packages and read package details.",
+          "validationMode": "FAIL_ON_ANY_FINDINGS",
+          "statement": "permit(principal, action in [AgentCore::Action::\"SemanticTripSearchLambda___semantic_trip_search\", AgentCore::Action::\"MeridianHolds___get_package_details\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-abcde12345\");"
+        },
+        {
+          "name": "meridian_hold_governance",
+          "description": "A courtesy hold runs only after the traveler confirmed it, for at most 12 hours, at most 6 travelers, and within the traveler's saved budget ceiling. Nothing else permits the hold, so any other call is denied by default.",
+          "validationMode": "FAIL_ON_ANY_FINDINGS",
+          "statement": "permit(principal, action == AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-abcde12345\") when { context.input.travelerConfirmed == true && context.input.holdMinutes <= 720 && context.input.travelers <= 6 && context.input.totalCents <= context.input.budgetCeilingCents };"
+        },
+        {
+          "name": "meridian_booking_governance",
+          "description": "A held booking is confirmed only after the traveler confirmed it and only when its total is within the traveler's saved budget ceiling. Aurora enforces that the booking is held, unexpired and owned by the traveler. Nothing else permits confirm_booking, so any other call is denied by default.",
+          "validationMode": "FAIL_ON_ANY_FINDINGS",
+          "statement": "permit(principal, action == AgentCore::Action::\"MeridianHolds___confirm_booking\", resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-abcde12345\") when { context.input.travelerConfirmed == true && context.input.totalCents <= context.input.budgetCeilingCents };"
+        },
+        {
+          "name": "meridian_traveler_binding",
+          "description": "Used only when MERIDIAN_AGENTCORE_AUTH=jwt. A hold or a booking runs only when its travelerId equals the traveler_id claim of the signed-in caller's access token. A token without that claim, or a call without that argument, is denied. The permits above stay as they are and still decide everything else.",
+          "validationMode": "FAIL_ON_ANY_FINDINGS",
+          "statement": "forbid(principal is AgentCore::OAuthUser, action in [AgentCore::Action::\"MeridianHolds___create_courtesy_hold\", AgentCore::Action::\"MeridianHolds___confirm_booking\"], resource == AgentCore::Gateway::\"arn:aws:bedrock-agentcore:us-east-1:123456789012:gateway/meridianv2-meridian-aurora-abcde12345\") when { !(principal.hasTag(\"traveler_id\")) || !(context.input has travelerId) || principal.getTag(\"traveler_id\") != context.input.travelerId };"
+        }
+      ]
+    }
+  ],
+  "configBundles": [],
+  "abTests": [],
+  "httpGateways": [],
+  "datasets": []
+}

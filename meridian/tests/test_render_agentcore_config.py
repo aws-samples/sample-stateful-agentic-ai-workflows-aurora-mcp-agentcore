@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -452,3 +453,173 @@ def test_rendered_files_are_gitignored() -> None:
             check=False,
         )
         assert result.returncode == 0, f"{rendered} must be gitignored"
+
+
+# ------------------------------------------------------------------ jwt mode
+
+POOL_ID = "us-east-1_AbCdEfGhI"
+CLIENT_ID = "exampleclientid123"
+DISCOVERY_URL = (
+    f"https://cognito-idp.us-west-2.amazonaws.com/{POOL_ID}/.well-known/openid-configuration"
+)
+COGNITO_ENV = {
+    "MERIDIAN_COGNITO_REGION": "us-west-2",
+    "MERIDIAN_COGNITO_USER_POOL_ID": POOL_ID,
+    "MERIDIAN_COGNITO_APP_CLIENT_ID": CLIENT_ID,
+}
+JWT_FIXTURE = (
+    render_config.CONFIG_DIR / "cdk" / "test" / "fixtures" / "jwt-spec.json"
+)
+
+
+def env_for(**extra: str) -> dict[str, str]:
+    return {
+        "AURORA_CLUSTER_ARN": CLUSTER_ARN,
+        "AURORA_SECRET_ARN": SECRET_ARN,
+        "AURORA_WORKFLOW_SECRET_ARN": WORKFLOW_SECRET_ARN,
+        "AURORA_GATEWAY_SECRET_ARN": GATEWAY_SECRET_ARN,
+        **extra,
+    }
+
+
+def jwt_spec(**extra: str) -> dict:
+    env = env_for(MERIDIAN_AGENTCORE_AUTH="jwt", **COGNITO_ENV, **extra)
+    values = {**render_config.account_values(env), "GATEWAY_ID": GATEWAY_ID,
+              "POLICY_ENGINE_ID": POLICY_ENGINE_ID}
+    return render_config.render(*templates(), values)[0]
+
+
+def policy_names(spec: dict) -> list[str]:
+    return [p["name"] for p in spec["policyEngines"][0]["policies"]]
+
+
+def test_jwt_mode_gives_both_runtimes_the_authorizer_and_the_header_allowlist() -> None:
+    spec = jwt_spec()
+
+    assert [r["name"] for r in spec["runtimes"]] == ["MeridianConcierge", "MeridianWorkflow"]
+    for runtime in spec["runtimes"]:
+        assert runtime["authorizerType"] == "CUSTOM_JWT"
+        assert runtime["authorizerConfiguration"] == {
+            "customJwtAuthorizer": {"discoveryUrl": DISCOVERY_URL, "allowedClients": [CLIENT_ID]}
+        }
+        assert runtime["requestHeaderAllowlist"] == ["Authorization"]
+
+
+def test_jwt_mode_gives_the_gateway_the_same_authorizer() -> None:
+    gateway = jwt_spec()["agentCoreGateways"][0]
+
+    assert gateway["authorizerType"] == "CUSTOM_JWT"
+    assert gateway["authorizerConfiguration"] == {
+        "customJwtAuthorizer": {"discoveryUrl": DISCOVERY_URL, "allowedClients": [CLIENT_ID]}
+    }
+
+
+def test_the_authorizers_check_the_client_id_claim_and_never_an_audience() -> None:
+    spec = jwt_spec()
+    blocks = [r["authorizerConfiguration"] for r in spec["runtimes"]]
+    blocks.append(spec["agentCoreGateways"][0]["authorizerConfiguration"])
+
+    for block in blocks:
+        assert set(block["customJwtAuthorizer"]) == {"discoveryUrl", "allowedClients"}
+    assert "allowedAudience" not in json.dumps(spec)
+
+
+def test_the_iam_render_has_no_authorizer_and_no_allowlist() -> None:
+    spec, _, _ = render_config.render(*templates(), base_values())
+
+    for runtime in spec["runtimes"]:
+        assert not {"authorizerType", "authorizerConfiguration", "requestHeaderAllowlist"} & set(
+            runtime)
+    gateway = spec["agentCoreGateways"][0]
+    assert gateway["authorizerType"] == "AWS_IAM" and "authorizerConfiguration" not in gateway
+
+
+def test_jwt_mode_without_the_pool_settings_is_refused_naming_them() -> None:
+    with pytest.raises(render_config.ConfigError) as refused:
+        render_config.account_values(env_for(MERIDIAN_AGENTCORE_AUTH="jwt"))
+
+    assert "MERIDIAN_COGNITO_USER_POOL_ID" in str(refused.value)
+    assert "MERIDIAN_COGNITO_APP_CLIENT_ID" in str(refused.value)
+
+
+def test_iam_mode_does_not_need_the_pool_settings() -> None:
+    assert render_config.account_values(env_for())["MERIDIAN_AGENTCORE_AUTH"] == "iam"
+
+
+def test_the_default_enforcement_renders_the_binding_rule() -> None:
+    assert policy_names(jwt_spec())[-1] == "meridian_traveler_binding"
+
+
+def test_cedar_enforcement_keeps_the_binding_rule() -> None:
+    spec = jwt_spec(MERIDIAN_GATEWAY_ENFORCEMENT="cedar")
+
+    assert policy_names(spec)[-1] == "meridian_traveler_binding"
+
+
+def test_interceptor_only_enforcement_leaves_the_binding_rule_out() -> None:
+    spec = jwt_spec(MERIDIAN_GATEWAY_ENFORCEMENT="interceptor")
+
+    assert policy_names(spec) == [
+        "meridian_read_tools", "meridian_hold_governance", "meridian_booking_governance"]
+
+
+def test_an_unknown_enforcement_design_is_a_render_error() -> None:
+    with pytest.raises(render_config.ConfigError, match="MERIDIAN_GATEWAY_ENFORCEMENT"):
+        render_config.account_values(
+            env_for(MERIDIAN_AGENTCORE_AUTH="jwt", MERIDIAN_GATEWAY_ENFORCEMENT="neither",
+                    **COGNITO_ENV))
+
+
+def test_a_bad_mode_is_still_a_render_error_with_the_same_words() -> None:
+    with pytest.raises(render_config.ConfigError, match="must be 'iam' or 'jwt', not 'true'"):
+        render_config.identity_mode({"MERIDIAN_AGENTCORE_AUTH": "true"})
+
+
+def test_main_reports_the_mode_and_the_enforcement_design(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
+    for name, value in COGNITO_ENV.items():
+        monkeypatch.setenv(name, value)
+
+    assert render_config.main([]) == 0
+
+    out = capsys.readouterr().out
+    assert "AgentCore identity mode: jwt" in out
+    assert "Gateway enforcement: both" in out
+
+
+def test_the_cdk_fixture_is_the_jwt_render_with_the_cdk_test_values() -> None:
+    """cdk.test.ts synthesizes this file, so a render change must change it too.
+
+    Regenerate with ``MERIDIAN_UPDATE_FIXTURES=1`` and this test's name in ``-k``.
+    """
+    cdk_values = {
+        "cluster": "arn:aws:rds:us-east-1:123456789012:cluster:meridian",
+        "secret": "arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian-AbC123",
+        "workflow": "arn:aws:secretsmanager:us-east-1:123456789012:secret:"
+                    "meridian/aurora/workflow-login-XyZ789",
+        "gateway": "arn:aws:secretsmanager:us-east-1:123456789012:secret:"
+                   "meridian/aurora/gateway-login-GwY456",
+    }
+    env = {
+        "AURORA_CLUSTER_ARN": cdk_values["cluster"],
+        "AURORA_SECRET_ARN": cdk_values["secret"],
+        "AURORA_WORKFLOW_SECRET_ARN": cdk_values["workflow"],
+        "AURORA_GATEWAY_SECRET_ARN": cdk_values["gateway"],
+        "MERIDIAN_AGENTCORE_AUTH": "jwt",
+        "MERIDIAN_COGNITO_REGION": "us-east-1",
+        "MERIDIAN_COGNITO_USER_POOL_ID": POOL_ID,
+        "MERIDIAN_COGNITO_APP_CLIENT_ID": CLIENT_ID,
+    }
+    values = {
+        **render_config.account_values(env),
+        "GATEWAY_ID": "meridianv2-meridian-aurora-abcde12345",
+        "POLICY_ENGINE_ID": "meridianv2_MeridianGovernance-abcde12345",
+    }
+    spec = render_config.render(*templates(), values)[0]
+
+    if os.environ.get("MERIDIAN_UPDATE_FIXTURES") == "1":
+        JWT_FIXTURE.parent.mkdir(parents=True, exist_ok=True)
+        JWT_FIXTURE.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
+    assert json.loads(JWT_FIXTURE.read_text(encoding="utf-8")) == spec

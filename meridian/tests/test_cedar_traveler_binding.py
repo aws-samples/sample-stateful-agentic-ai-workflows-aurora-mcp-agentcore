@@ -27,6 +27,9 @@ def values(mode: str | None) -> dict[str, str]:
             f"arn:aws:secretsmanager:us-west-2:{ACCOUNT}:secret:meridian/wf-XyZ789",
         "AURORA_GATEWAY_SECRET_ARN":
             f"arn:aws:secretsmanager:us-west-2:{ACCOUNT}:secret:meridian/gw-GwY456",
+        "MERIDIAN_COGNITO_REGION": "us-west-2",
+        "MERIDIAN_COGNITO_USER_POOL_ID": "us-west-2_AbCdEfGhI",
+        "MERIDIAN_COGNITO_APP_CLIENT_ID": "exampleclientid123",
         **({"MERIDIAN_AGENTCORE_AUTH": mode} if mode is not None else {}),
     }
     return {**render_config.account_values(env), "GATEWAY_ID": GATEWAY_ID}

@@ -108,3 +108,36 @@ test('AgentCoreStack synthesizes the Meridian specification template', () => {
   expect(secretStatement.Resource).toEqual([TEST_VALUES.AURORA_SECRET_ARN, TEST_VALUES.AURORA_GATEWAY_SECRET_ARN]);
   expect(Object.keys(resources).length).toBeGreaterThan(0);
 });
+
+type Resource = { Type: string; Properties: Record<string, any> };
+
+test('AgentCoreStack synthesizes the Cognito JWT specification', () => {
+  const spec = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'jwt-spec.json'), 'utf8'));
+  writeFileSync(join(testProjectRoot, 'agentcore', 'agentcore.json'), JSON.stringify(spec));
+  const stack = new AgentCoreStack(new cdk.App(), 'JwtStack', { spec: spec as never, mcpSpec: spec as never });
+  const resources = Object.values(Template.fromStack(stack).toJSON().Resources ?? {}) as Resource[];
+  const ofType = (type: string) => resources.filter(r => r.Type === type);
+  const discoveryUrl =
+    'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AbCdEfGhI/.well-known/openid-configuration';
+
+  const runtimes = ofType('AWS::BedrockAgentCore::Runtime');
+  expect(runtimes).toHaveLength(2);
+  for (const runtime of runtimes) {
+    const authorizer = runtime.Properties.AuthorizerConfiguration.CustomJWTAuthorizer;
+    expect(authorizer.DiscoveryUrl).toBe(discoveryUrl);
+    expect(authorizer.AllowedClients).toEqual(['exampleclientid123']);
+    expect(authorizer.AllowedAudience).toBeUndefined();
+    expect(runtime.Properties.RequestHeaderConfiguration.RequestHeaderAllowlist).toEqual(['Authorization']);
+    const environment = runtime.Properties.EnvironmentVariables;
+    expect(environment.MERIDIAN_AGENTCORE_AUTH).toBe('jwt');
+  }
+
+  const [gateway] = ofType('AWS::BedrockAgentCore::Gateway');
+  expect(gateway.Properties.AuthorizerType).toBe('CUSTOM_JWT');
+  expect(gateway.Properties.AuthorizerConfiguration.CustomJWTAuthorizer.DiscoveryUrl).toBe(discoveryUrl);
+  expect(gateway.Properties.AuthorizerConfiguration.CustomJWTAuthorizer.AllowedClients).toEqual(['exampleclientid123']);
+
+  const policyNames = ofType('AWS::BedrockAgentCore::Policy').map(p => p.Properties.Name);
+  expect(policyNames).toContain('meridian_traveler_binding');
+  expect(policyNames).toHaveLength(4);
+});

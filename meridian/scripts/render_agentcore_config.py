@@ -27,8 +27,11 @@ Placeholder sources:
                             that moves the gateway Lambdas to that login
     {{MERIDIAN_AGENTCORE_AUTH}}
                             MERIDIAN_AGENTCORE_AUTH: ``iam`` (default) or ``jwt``. In ``jwt`` the
-                            Cedar traveler-binding policy is included; in ``iam`` it is left out so
-                            the rendered config is the one deployed today
+                            Gateway and both Runtimes get a Cognito JWT authorizer (from the
+                            MERIDIAN_COGNITO_* settings), both Runtimes allowlist the
+                            ``Authorization`` header, and the Cedar traveler-binding policy is
+                            included unless MERIDIAN_GATEWAY_ENFORCEMENT=interceptor; in ``iam``
+                            none of that is rendered, so the config is the one deployed today
     {{GATEWAY_ID}}          --gateway-id, else agentcore/.cli/deployed-state.json
     {{POLICY_ENGINE_ID}}    --policy-engine-id, else the same deployed state
 
@@ -65,8 +68,9 @@ from dotenv import dotenv_values
 MERIDIAN_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MERIDIAN_DIR))
 
-from backend.agentcore.auth_mode import AUTH_MODE_ENV, IAM, JWT, MODES  # noqa: E402
+from backend.agentcore.auth_mode import AUTH_MODE_ENV, IAM, JWT  # noqa: E402
 from scripts import stage_workflow_runtime  # noqa: E402
+from scripts.identity_release import settings  # noqa: E402
 
 CONFIG_DIR = MERIDIAN_DIR / "meridian_agentcore" / "agentcore"
 SPEC_TEMPLATE = "agentcore.template.json"
@@ -90,6 +94,7 @@ JSON_TYPES = {
 }
 
 JWT_ONLY_POLICIES = frozenset({"meridian_traveler_binding"})
+AUTHORIZATION_HEADER = "Authorization"
 
 PLACEHOLDER = re.compile(r"\{\{([A-Z_]+)\}\}")
 CLUSTER_ARN = re.compile(
@@ -172,15 +177,24 @@ def identity_mode(env: dict[str, str | None]) -> str:
     Raises:
         ConfigError: When the setting is neither ``iam`` nor ``jwt``.
     """
-    raw = (env.get(AUTH_MODE_ENV) or "").strip().lower()
-    if not raw:
-        return IAM
-    if raw not in MODES:
-        raise ConfigError(
-            f"{AUTH_MODE_ENV} must be 'iam' or 'jwt', not '{raw}'; unset it to keep today's "
-            "IAM configuration"
-        )
-    return raw
+    try:
+        return settings.release_mode(env)
+    except settings.ReleaseConfigError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def jwt_values(env: dict[str, str | None]) -> dict[str, str]:
+    """The enforcement design and the pool's discovery URL and client, for ``jwt`` mode."""
+    try:
+        pool = settings.cognito_settings(env)
+        design = settings.enforcement(env)
+    except settings.ReleaseConfigError as exc:
+        raise ConfigError(str(exc)) from exc
+    return {
+        settings.ENFORCEMENT_ENV: design,
+        "COGNITO_DISCOVERY_URL": pool.discovery_url,
+        "COGNITO_APP_CLIENT_ID": pool.client_id,
+    }
 
 
 def account_values(env: dict[str, str | None]) -> dict[str, str]:
@@ -191,7 +205,9 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
 
     Returns:
         Values for AWS_ACCOUNT_ID, AWS_REGION, AURORA_CLUSTER_ARN, AURORA_SECRET_ARN,
-        AURORA_WORKFLOW_SECRET_ARN, AURORA_GATEWAY_SECRET_ARN and MERIDIAN_AGENTCORE_AUTH.
+        AURORA_WORKFLOW_SECRET_ARN, AURORA_GATEWAY_SECRET_ARN and MERIDIAN_AGENTCORE_AUTH. In
+        ``jwt`` mode also MERIDIAN_GATEWAY_ENFORCEMENT, COGNITO_DISCOVERY_URL and
+        COGNITO_APP_CLIENT_ID.
 
     Raises:
         ConfigError: When an ARN is missing or malformed, an ARN names a different
@@ -228,7 +244,7 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
     )
     if not REGION.match(region):
         raise ConfigError(f"'{region}' is not an AWS Region name such as us-east-1")
-    return {
+    values = {
         "AWS_ACCOUNT_ID": cluster["account"],
         "AWS_REGION": region,
         "AURORA_CLUSTER_ARN": cluster_arn,
@@ -237,6 +253,9 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
         "AURORA_GATEWAY_SECRET_ARN": gateway_secret_arn,
         AUTH_MODE_ENV: identity_mode(env),
     }
+    if values[AUTH_MODE_ENV] == JWT:
+        values.update(jwt_values(env))
+    return values
 
 
 def state_value(state: Any, keys: tuple[str, ...], state_path: Path) -> str | None:
@@ -323,14 +342,43 @@ def unresolved(node: Any) -> set[str]:
     return set()
 
 
-def apply_identity_mode(spec: dict[str, Any], mode: str) -> None:
-    """In ``iam`` mode remove the policies that only make sense for Cognito callers."""
-    if mode == JWT:
+def apply_identity_mode(
+    spec: dict[str, Any], mode: str, design: str = settings.BOTH
+) -> None:
+    """Drop the policies the chosen mode and Gateway design do not use.
+
+    ``iam`` removes every policy that only makes sense for Cognito callers. ``jwt`` removes the
+    traveler-binding rule only under the ``interceptor`` design, where the interceptor pins the
+    traveler and Cedar adds nothing.
+    """
+    if mode == JWT and settings.uses_cedar_binding(design):
         return
     for engine in spec.get("policyEngines", []):
         engine["policies"] = [
             policy for policy in engine["policies"] if policy["name"] not in JWT_ONLY_POLICIES
         ]
+
+
+def jwt_authorizer(discovery_url: str, client_id: str) -> dict[str, Any]:
+    """A Cognito access-token authorizer: the ``client_id`` claim, never an audience."""
+    return {"customJwtAuthorizer": {"discoveryUrl": discovery_url, "allowedClients": [client_id]}}
+
+
+def apply_jwt_authorizers(spec: dict[str, Any], values: dict[str, str]) -> None:
+    """Move the Gateway and both Runtimes to the Cognito authorizer.
+
+    A Runtime accepts IAM or JWT callers, never both, and the Gateway has one authorizer type, so
+    this changes every hop in one render. The Runtimes also allowlist ``Authorization`` so their
+    code can read the caller's token and forward it to the Gateway.
+    """
+    url, client = values["COGNITO_DISCOVERY_URL"], values["COGNITO_APP_CLIENT_ID"]
+    for runtime in spec.get("runtimes", []):
+        runtime["authorizerType"] = "CUSTOM_JWT"
+        runtime["authorizerConfiguration"] = jwt_authorizer(url, client)
+        runtime["requestHeaderAllowlist"] = [AUTHORIZATION_HEADER]
+    for gateway in spec.get("agentCoreGateways", []):
+        gateway["authorizerType"] = "CUSTOM_JWT"
+        gateway["authorizerConfiguration"] = jwt_authorizer(url, client)
 
 
 def drop_pending_deployment_values(spec: dict[str, Any]) -> list[str]:
@@ -375,7 +423,10 @@ def render(
         )
     spec = substitute(spec_template, values)
     targets = substitute(targets_template, values)
-    apply_identity_mode(spec, values.get(AUTH_MODE_ENV, IAM))
+    mode = values.get(AUTH_MODE_ENV, IAM)
+    apply_identity_mode(spec, mode, values.get(settings.ENFORCEMENT_ENV, settings.BOTH))
+    if mode == JWT:
+        apply_jwt_authorizers(spec, values)
     notes = drop_pending_deployment_values(spec)
     missing = unresolved(spec) | unresolved(targets)
     if missing:
@@ -419,6 +470,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Wrote {CONFIG_DIR / SPEC_OUTPUT} and {CONFIG_DIR / TARGETS_OUTPUT}")
     print(f"  account {values['AWS_ACCOUNT_ID']}, region {values['AWS_REGION']}")
     print(f"  AgentCore identity mode: {values[AUTH_MODE_ENV]}")
+    if values[AUTH_MODE_ENV] == JWT:
+        print(f"  Gateway enforcement: {values[settings.ENFORCEMENT_ENV]}")
     print(f"  staged {len(staged)} workflow modules into the MeridianWorkflow bundle")
     for note in notes:
         print(f"  {note}")
