@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -99,3 +101,60 @@ def test_the_git_head_is_a_full_sha_for_a_repository(tmp_path):
     assert re.fullmatch(r"[0-9a-f]{40}", settings.git_head())
     with pytest.raises(settings.ReleaseConfigError, match="git HEAD"):
         settings.git_head(tmp_path)
+
+
+def test_a_git_head_that_is_not_a_full_lowercase_sha_is_refused(monkeypatch):
+    for output in ("HEAD\n", "abc123\n", "A" * 40 + "\n", ""):
+        monkeypatch.setattr(subprocess, "run", lambda *a, _o=output, **k: (
+            subprocess.CompletedProcess(a, 0, stdout=_o, stderr="")))
+        with pytest.raises(settings.ReleaseConfigError, match="git HEAD"):
+            settings.git_head()
+
+
+def git(repo: Path, *argv: str) -> None:
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com",
+                    *argv], check=True, capture_output=True)
+
+
+@pytest.fixture
+def checkout(tmp_path):
+    """A repository whose ``meridian/`` folder holds one tracked file, ``.local`` ignored."""
+    git(tmp_path, "init", "-q")
+    folder = tmp_path / "meridian"
+    (folder / ".local").mkdir(parents=True)
+    (folder / "tracked.py").write_text("x = 1\n")
+    (folder / ".gitignore").write_text("ignored.txt\n")
+    (tmp_path / "outside.txt").write_text("a\n")
+    git(tmp_path, "add", "-A")
+    git(tmp_path, "commit", "-q", "-m", "first")
+    return folder
+
+
+def test_a_clean_checkout_has_no_working_tree_changes(checkout):
+    (checkout / "ignored.txt").write_text("x")
+    (checkout / ".local" / "release.json").write_text("{}")
+    (checkout.parent / "outside.txt").write_text("changed outside meridian\n")
+
+    assert settings.working_tree_changes(checkout) == []
+
+
+@pytest.mark.parametrize("change", ["modify", "untracked", "staged", "deleted"])
+def test_any_tracked_or_untracked_change_under_the_folder_is_listed(checkout, change):
+    if change == "modify":
+        (checkout / "tracked.py").write_text("x = 2\n")
+    elif change == "untracked":
+        (checkout / "new.py").write_text("y = 1\n")
+    elif change == "staged":
+        (checkout / "tracked.py").write_text("x = 3\n")
+        git(checkout.parent, "add", "meridian/tracked.py")
+    else:
+        (checkout / "tracked.py").unlink()
+
+    found = settings.working_tree_changes(checkout)
+
+    assert len(found) == 1 and ("tracked.py" in found[0] or "new.py" in found[0])
+
+
+def test_working_tree_changes_outside_a_repository_are_refused(tmp_path):
+    with pytest.raises(settings.ReleaseConfigError, match="git status"):
+        settings.working_tree_changes(tmp_path)

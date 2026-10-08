@@ -167,18 +167,45 @@ def cognito_settings(env: Mapping[str, str | None]) -> CognitoSettings:
     return CognitoSettings(*(values[key] for key in COGNITO_KEYS))
 
 
+SHA = re.compile(r"[0-9a-f]{40}")
+
+
+def _git(repo: Path, *argv: str, what: str) -> str:
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(repo), *argv],
+            capture_output=True, text=True, check=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ReleaseConfigError(
+            f"cannot read {what} of {repo} ({type(exc).__name__}); the backend login "
+            "proof is bound to a commit") from exc
+    return done.stdout
+
+
 def git_head(repo: Path = MERIDIAN_DIR) -> str:
     """The full sha of the repository's HEAD commit, which a proof receipt must name.
 
     Raises:
-        ReleaseConfigError: When ``repo`` is not a git work tree or git is not installed.
+        ReleaseConfigError: When ``repo`` is not a git work tree, git is not installed or the
+            output is not a 40-character lowercase hexadecimal sha.
     """
-    try:
-        done = subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "HEAD"],
-            capture_output=True, text=True, check=True, timeout=30)
-    except (OSError, subprocess.SubprocessError) as exc:
+    sha = _git(repo, "rev-parse", "HEAD", what="the git HEAD").strip()
+    if not SHA.fullmatch(sha):
         raise ReleaseConfigError(
-            f"cannot read the git HEAD of {repo} ({type(exc).__name__}); the backend login "
-            "proof is bound to a commit") from exc
-    return done.stdout.strip()
+            f"the git HEAD of {repo} is not a full commit sha; the backend login proof is "
+            "bound to a commit")
+    return sha
+
+
+def working_tree_changes(repo: Path = MERIDIAN_DIR) -> list[str]:
+    """The `git status --porcelain` lines for tracked or untracked changes under ``repo``.
+
+    Ignored files and anything under ``.local/`` are not changes. A receipt names HEAD, so a
+    run on a tree that differs from HEAD proves nothing about that commit.
+
+    Raises:
+        ReleaseConfigError: When git status cannot be read.
+    """
+    output = _git(repo, "status", "--porcelain", "--untracked-files=all", "--", ".",
+                  ":(exclude).local", what="the git status")
+    return [line for line in output.splitlines() if line.strip()]
