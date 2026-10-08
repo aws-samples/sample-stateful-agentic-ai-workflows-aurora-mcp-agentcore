@@ -77,8 +77,10 @@ def runtime(name: str, mode: str = "jwt", *, iam_env: bool = False) -> dict:
         "agentRuntimeId": RUNTIME_IDS[name], "status": "READY",
         "roleArn": f"arn:aws:iam::{ACCOUNT}:role/{name}",
         "environmentVariables": {
-            settings.gateway_url_variable(mode): GATEWAY_URL,
-            "MERIDIAN_GATEWAY_ID": GATEWAY_ID, "MERIDIAN_POLICY_ENGINE_ID": ENGINE_ID}}
+            settings.gateway_url_variable(mode): GATEWAY_URL}}
+    if name == "MeridianConcierge":
+        described["environmentVariables"].update(
+            {"MERIDIAN_GATEWAY_ID": GATEWAY_ID, "MERIDIAN_POLICY_ENGINE_ID": ENGINE_ID})
     if mode == "jwt":
         described["authorizerConfiguration"] = jwt_authorizer()
         described["requestHeaderConfiguration"] = {"requestHeaderAllowlist": ["Authorization"]}

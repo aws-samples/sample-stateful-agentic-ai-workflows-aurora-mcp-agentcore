@@ -29,6 +29,7 @@ ENFORCING = "ACTIVE"
 RUNTIME_ENV_KEYS = ("AGENTCORE_RUNTIME_ARN", "AGENTCORE_WORKFLOW_RUNTIME_ARN")
 RUNTIME_NAMES = {"AGENTCORE_RUNTIME_ARN": "MeridianConcierge",
                  "AGENTCORE_WORKFLOW_RUNTIME_ARN": "MeridianWorkflow"}
+ID_VARIABLE_RUNTIME = "MeridianConcierge"
 PROOF_MAX_AGE = timedelta(days=7)
 PROOF_FUTURE_SKEW = timedelta(minutes=5)
 PROOF_LOGIN = "meridian_backend"
@@ -657,11 +658,18 @@ def _engine_id(gateway: Mapping[str, Any]) -> str | None:
     return arn.rsplit("/", 1)[-1] if isinstance(arn, str) and arn else None
 
 
-def _binding_variables(gateway: Mapping[str, Any], target: Target) -> dict[str, str | None]:
-    """The Runtime variables that must name the live Gateway, and the value each must hold."""
+def _binding_variables(gateway: Mapping[str, Any], target: Target,
+                       runtime_name: str) -> dict[str, str | None]:
+    """The Runtime variables that must name the live Gateway, and the value each must hold.
+
+    Only the Concierge carries the Gateway and engine ids (they label its trace); the Workflow
+    Runtime never has them, so asking for them reported a false drift on every read.
+    """
     expected: dict[str, str | None] = {
-        settings.gateway_url_variable(target.mode): gateway.get("gatewayUrl"),
-        "MERIDIAN_GATEWAY_ID": gateway.get("gatewayId")}
+        settings.gateway_url_variable(target.mode): gateway.get("gatewayUrl")}
+    if runtime_name != ID_VARIABLE_RUNTIME:
+        return expected
+    expected["MERIDIAN_GATEWAY_ID"] = gateway.get("gatewayId")
     engine = _engine_id(gateway)
     if engine:
         expected["MERIDIAN_POLICY_ENGINE_ID"] = engine
@@ -672,7 +680,7 @@ def _runtime_binding_findings(name: str, runtime: Any, gateway: Mapping[str, Any
                               target: Target) -> list[str]:
     environment = _as_dict(_as_dict(runtime).get("environmentVariables"))
     found = []
-    for variable, wanted in _binding_variables(gateway, target).items():
+    for variable, wanted in _binding_variables(gateway, target, name).items():
         if environment.get(variable) != wanted:
             found.append(f"Runtime {name}: {variable} is not the live Gateway's value, so the "
                          "Runtime is not wired to it; redeploy with the stage render")

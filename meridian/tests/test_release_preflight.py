@@ -989,6 +989,14 @@ def test_a_runtime_with_the_wrong_or_missing_gateway_or_engine_id_is_a_finding(v
     assert len(found) == 1 and variable in found[0]
 
 
+@pytest.mark.parametrize("mode", ["iam", "jwt"])
+def test_the_workflow_runtime_is_not_asked_for_the_gateway_and_engine_ids(mode):
+    state = bound_state(mode)
+
+    assert "MERIDIAN_GATEWAY_ID" not in state.runtimes["MeridianWorkflow"]["environmentVariables"]
+    assert preflight.binding_findings(state, rs.target(mode)) == []
+
+
 def test_a_gateway_with_no_engine_asks_nothing_of_the_runtimes_engine_variable():
     state = bound_state()
     state.gateway = rs.mutated(state.gateway, "policyEngineConfiguration", None)
