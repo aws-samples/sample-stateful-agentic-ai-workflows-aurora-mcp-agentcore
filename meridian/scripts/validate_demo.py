@@ -15,6 +15,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Mapping
 
 import httpx
 
@@ -53,6 +54,31 @@ def receipt_rows_counted(body: dict, status: int) -> bool:
         if line["count"] is None:
             raise ValueError(f"receipt line {line.get('label')!r} could not be counted")
     return sum(line["count"] for line in lines) > 0
+
+
+def request_auth(environ: Mapping[str, str]) -> tuple[httpx.Auth | None, dict[str, str]]:
+    """The credential for the checks: Jordan's access token in jwt mode, else the edge's.
+
+    In jwt mode only the bearer is sent; a Basic credential would override it. Otherwise the
+    hosted Basic credential wins over the shared API token, as before.
+
+    Raises:
+        ValueError: ``MERIDIAN_HOSTED_AUTH`` is not username/password JSON.
+    """
+    bearer = bearer_headers("jordan")
+    if bearer:
+        return None, bearer
+    basic = environ.get("MERIDIAN_HOSTED_AUTH", "")
+    token = environ.get("MERIDIAN_API_TOKEN", "")
+    if basic:
+        try:
+            credentials = json.loads(basic)
+            return httpx.BasicAuth(credentials["username"], credentials["password"]), {}
+        except (KeyError, TypeError) as error:
+            raise ValueError("MERIDIAN_HOSTED_AUTH lacks a username or password") from error
+    if token and not token.startswith("{{resolve:"):
+        return None, {"Authorization": f"Bearer {token}"}
+    return None, {}
 
 
 def now() -> str:
@@ -350,19 +376,10 @@ if __name__ == "__main__":
         parser.error("Never put credentials in --base-url; use asm-exec environment references")
     if hosted and (not args.allow_hosted_demo_writes or target.scheme != "https"):
         parser.error("Hosted checks require HTTPS and --allow-hosted-demo-writes")
-    auth = None
-    headers = {}
-    basic = os.getenv("MERIDIAN_HOSTED_AUTH", "")
-    token = os.getenv("MERIDIAN_API_TOKEN", "")
-    if basic:
-        try:
-            credentials = json.loads(basic)
-            auth = httpx.BasicAuth(credentials["username"], credentials["password"])
-        except (ValueError, KeyError, TypeError):
-            parser.error("MERIDIAN_HOSTED_AUTH must be resolved by asm-exec to username/password JSON")
-    elif token and not token.startswith("{{resolve:"):
-        headers["Authorization"] = f"Bearer {token}"
-    headers.update(bearer_headers("jordan"))  # the checks below are Jordan's journey
+    try:
+        auth, headers = request_auth(os.environ)
+    except ValueError:
+        parser.error("MERIDIAN_HOSTED_AUTH must be resolved by asm-exec to username/password JSON")
     if hosted and not (auth or headers):
         parser.error("Hosted checks require authentication resolved through asm-exec")
     with httpx.Client(base_url=BASE, timeout=60.0, auth=auth, headers=headers) as client:

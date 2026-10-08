@@ -44,7 +44,9 @@ from backend.agents.phase_05_workflow.graph import (  # noqa: E402
     snapshot_key,
 )
 from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
-from scripts.agentcore_caller import bearer_headers, user_for_traveler  # noqa: E402
+from scripts.agentcore_caller import (  # noqa: E402
+    bearer_headers, require_token_safe_url, user_for_traveler,
+)
 from scripts.kill_and_resume_proof import (  # noqa: E402
     _count,
     _holds_for,
@@ -402,8 +404,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="stop the session while it waits for review or while it runs")
     parser.add_argument("--keep", action="store_true", help="leave the run's rows behind")
     args = parser.parse_args(argv)
+    require_token_safe_url(API)
     AUTH_HEADERS.update(bearer_headers(user_for_traveler(TRAVELER)))
-    return asyncio.run(run(args.during, args.keep))
+    try:
+        return asyncio.run(run(args.during, args.keep))
+    finally:
+        AUTH_HEADERS.clear()
 
 
 if __name__ == "__main__":

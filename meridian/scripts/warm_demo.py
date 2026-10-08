@@ -23,12 +23,15 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from functools import partial
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.demo_prompts import PROMPT_LADDER  # noqa: E402
-from scripts.agentcore_caller import TRAVELER_USERS, bearer_headers  # noqa: E402
+from scripts.agentcore_caller import (  # noqa: E402
+    TRAVELER_USERS, bearer_headers, require_token_safe_url, traveler_for_user,
+)
 from scripts.published import load_record, release_url  # noqa: E402
 
 LOCAL_URL = "http://127.0.0.1:8013"
@@ -96,10 +99,10 @@ def check_catalog(result: dict) -> str | None:
     return None if isinstance(packages, list) and packages else "the catalog is empty"
 
 
-def check_profile(result: dict) -> str | None:
+def check_profile(result: dict, traveler: str = TRAVELER_ID) -> str | None:
     """The profile read under RLS must be this traveler's and carry a facts list."""
-    if result.get("traveler_id") != TRAVELER_ID:
-        return f"the profile is for {result.get('traveler_id')!r}, not {TRAVELER_ID}"
+    if result.get("traveler_id") != traveler:
+        return f"the profile is for {result.get('traveler_id')!r}, not {traveler}"
     return None if isinstance(result.get("facts"), list) else "the profile has no facts list"
 
 
@@ -108,15 +111,16 @@ def check_journeys(result: dict) -> str | None:
     return None if isinstance(result.get("journeys"), list) else "no journeys list in the reply"
 
 
-def steps() -> list[tuple[str, str, dict | None, object]]:
-    """The warm-up sequence: label, path, request body, result check."""
+def steps(traveler: str = TRAVELER_ID) -> list[tuple[str, str, dict | None, object]]:
+    """The warm-up sequence for ``traveler``: label, path, request body, result check."""
     def turn(phase: int, prompt: str) -> dict:
-        return {"message": prompt, "phase": phase, "customer_id": TRAVELER_ID}
+        return {"message": prompt, "phase": phase, "customer_id": traveler}
 
     return [
         ("Health and Aurora", "/api/health", None, check_health),
         ("Catalog", "/api/products?limit=50", None, check_catalog),
-        ("Traveler profile (RLS)", f"/api/memory/{TRAVELER_ID}", None, check_profile),
+        ("Traveler profile (RLS)", f"/api/memory/{traveler}", None,
+         partial(check_profile, traveler=traveler)),
         ("Phase 1 SQL", "/api/chat", turn(1, PROMPT_LADDER[1].works[0]), check_turn),
         ("Phase 2 MCP", "/api/chat", turn(2, PROMPT_LADDER[2].works[0]), check_turn),
         ("Phase 3 Retrieval", "/api/chat", turn(3, PROMPT_LADDER[3].works[0]), check_turn),
@@ -132,19 +136,21 @@ def build_parser() -> argparse.ArgumentParser:
     target.add_argument("--hosted", action="store_true",
                         help="warm the hosted site from the local release record")
     target.add_argument("--base-url", default=LOCAL_URL,
-                        help=f"warm this backend instead of {LOCAL_URL}")
+                        help=f"warm this backend instead of {LOCAL_URL} (a credential goes only "
+                             "to https, or http on localhost)")
     parser.add_argument("--as", dest="as_user", choices=sorted(set(TRAVELER_USERS.values())),
                         default="jordan", help="the seeded user to sign in as in jwt mode")
     return parser
 
 
-def main() -> int:
-    args = build_parser().parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
     base = release_url(load_record()).rstrip("/") if args.hosted else args.base_url.rstrip("/")
+    require_token_safe_url(base, always=args.hosted)
     headers = request_headers(args.hosted, args.as_user)
     print(f"Warming {base}")
     failures = 0
-    for label, path, body, check in steps():
+    for label, path, body, check in steps(traveler_for_user(args.as_user)):
         started = time.monotonic()
         try:
             problem = check(call(base, headers, path, body)) if check else None

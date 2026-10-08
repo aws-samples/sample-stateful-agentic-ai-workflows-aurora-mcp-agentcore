@@ -10,17 +10,42 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from typing import Callable, Iterator, Optional
+from urllib.parse import urlparse
 
 from backend.agentcore.auth_mode import jwt_mode
 from backend.agentcore.caller_credential import caller_token_scope
 from scripts.cognito_tokens import mint_access_token
 
 TRAVELER_USERS = {"trv_meridian_demo": "jordan", "trv_demo_decoy": "decoy"}
+USER_TRAVELERS = {user: traveler for traveler, user in TRAVELER_USERS.items()}
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
 def user_for_traveler(traveler_id: str) -> str:
     """The seeded Cognito user whose token proves ``traveler_id``."""
     return TRAVELER_USERS.get(traveler_id, "jordan")
+
+
+def traveler_for_user(user_key: str) -> str:
+    """The traveler a seeded Cognito user signs in as (the inverse of ``TRAVELER_USERS``)."""
+    return USER_TRAVELERS[user_key]
+
+
+def require_token_safe_url(url: str, *, always: bool = False) -> None:
+    """Exit unless ``url`` may receive a credential: HTTPS, or plain HTTP on loopback.
+
+    Applies in ``jwt`` mode, where a token is minted, and whenever ``always`` is set, for a
+    script that sends another credential.
+    """
+    if not (always or jwt_mode()):
+        return
+    target = urlparse(url)
+    if target.scheme == "https" or (target.scheme == "http" and target.hostname in LOOPBACK_HOSTS):
+        return
+    raise SystemExit(
+        f"Refusing to send a credential to {target.scheme}://{target.hostname}: "
+        "use an https URL, or http on localhost."
+    )
 
 
 def bearer_headers(
