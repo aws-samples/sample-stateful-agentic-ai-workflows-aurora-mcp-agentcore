@@ -332,6 +332,51 @@ can read only `trip_packages` outside a traveler scope. A Phase 2 prompt that
 asks about any other table is refused by AWS Aurora. The Phase 2 run under the
 backend login has not been exercised against the live cluster.
 
+4. Prove the running backend, not just the secret, before the release:
+
+   ```bash
+   python scripts/prove_backend_login.py
+   python scripts/prove_backend_login.py --apply --i-understand-this-changes-aws
+   ```
+
+   The first command prints the plan. The second starts the real backend on
+   127.0.0.1:8014 with the `meridian_backend` secret, refuses to start if that
+   port is already bound, and checks that `/api/health` reports
+   `database_user` as `meridian_backend`. It then runs the warm-up, two Phase 2
+   turns that must show successful MCP tool activity with rows (the generic
+   postgres-mcp server and the custom concierge server), the RLS probe, the
+   session receipt and the Phase 5 stop-and-resume recovery, and writes
+   `.local/release-b2/backend-login-proof.json`. An invalid receipt is written
+   before anything starts, and a failed, crashed or interrupted (Ctrl-C or
+   SIGTERM) run overwrites it with `ok: false`, so an older passing receipt
+   never survives. A timed-out step gets SIGINT, then SIGTERM, each with a grace
+   period, before SIGKILL, so its own clean-up runs. After the recovery, passed
+   or failed, the run sweeps every `phase5-proof-` thread through the same purge;
+   a thread found there fails the receipt. The purge counts `bookings`,
+   `booking_lines`, `hold_requests`, `journeys`, `journey_executions`,
+   `journey_threads`, `workflow_snapshots` and `workflow_session_stops` at zero,
+   reading and deleting the two booking tables in a transaction pinned to the
+   traveler and the booking agent, because they force row level security.
+
+   Run it only from a checkout with no uncommitted change under `meridian/`
+   (it refuses with exit 3 otherwise), since the receipt names the commit.
+   `release_identity.py` and `publish.py` do not re-check the working tree.
+
+   While it runs, the backend on 127.0.0.1:8014 is open as Jordan
+   (`trv_meridian_demo`) without a token; any process on the machine can call it.
+
+   Residue the run does not delete: the warm-up turns write
+   `conversation_messages`, `trip_interactions`, `conversations` and
+   `traveler_preferences` rows for Jordan, and the access checks add
+   append-only audit rows (`traveler_access_audit` and the agent audit log).
+   Only the recovery step's own rows are removed.
+
+   | Code | Meaning |
+   | --- | --- |
+   | 0 | every check passed and the receipt was written |
+   | 1 | a check failed, the backend never answered or exited, the run crashed, or it was interrupted |
+   | 3 | refused: a missing setting, a dirty tree, the wrong account or Region, a login that is not least-privilege, a bound port, a usage error or a missing confirmation flag |
+
 [SIGNED_SCOPE_EVALUATION.md](SIGNED_SCOPE_EVALUATION.md) records why the
 database does not verify a signed traveler scope itself: the logins can set any
 traveler, so the application check and the workload grant remain the controls.
