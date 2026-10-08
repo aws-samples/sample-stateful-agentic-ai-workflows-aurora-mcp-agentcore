@@ -8,6 +8,9 @@ a booking or starts a recovery workflow.
 Local (default): python scripts/warm_demo.py
 Hosted:          MERIDIAN_HOSTED_AUTH='{"username": ..., "password": ...}' \
                  python scripts/warm_demo.py --hosted
+
+With MERIDIAN_AGENTCORE_AUTH=jwt the script signs in as a seeded user (``--as jordan`` or
+``--as decoy``) and sends that access token; the edge credential is not used.
 """
 
 from __future__ import annotations
@@ -25,7 +28,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.demo_prompts import PROMPT_LADDER  # noqa: E402
-from published import load_record, release_url  # noqa: E402
+from scripts.agentcore_caller import TRAVELER_USERS, bearer_headers  # noqa: E402
+from scripts.published import load_record, release_url  # noqa: E402
 
 LOCAL_URL = "http://127.0.0.1:8013"
 TRAVELER_ID = "trv_meridian_demo"
@@ -46,6 +50,14 @@ def basic_auth_header() -> dict[str, str]:
     except (ValueError, KeyError) as error:
         raise SystemExit("MERIDIAN_HOSTED_AUTH must contain username and password") from error
     return {"Authorization": "Basic " + base64.b64encode(token).decode()}
+
+
+def request_headers(hosted: bool, user: str) -> dict[str, str]:
+    """The seeded user's token in jwt mode; otherwise the edge credential for a hosted site."""
+    token = bearer_headers(user)
+    if token:
+        return token
+    return basic_auth_header() if hosted else {}
 
 
 def call(base: str, headers: dict[str, str], path: str, body: dict | None = None) -> object:
@@ -95,13 +107,23 @@ def steps() -> list[tuple[str, str, dict | None, object]]:
     ]
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """The command line: the target (local or hosted) and the user to sign in as."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--hosted", action="store_true",
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument("--hosted", action="store_true",
                         help="warm the hosted site from the local release record")
-    args = parser.parse_args()
-    base = release_url(load_record()).rstrip("/") if args.hosted else LOCAL_URL
-    headers = basic_auth_header() if args.hosted else {}
+    target.add_argument("--base-url", default=LOCAL_URL,
+                        help=f"warm this backend instead of {LOCAL_URL}")
+    parser.add_argument("--as", dest="as_user", choices=sorted(set(TRAVELER_USERS.values())),
+                        default="jordan", help="the seeded user to sign in as in jwt mode")
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    base = release_url(load_record()).rstrip("/") if args.hosted else args.base_url.rstrip("/")
+    headers = request_headers(args.hosted, args.as_user)
     print(f"Warming {base}")
     failures = 0
     for label, path, body, check in steps():

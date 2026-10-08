@@ -21,6 +21,7 @@ import httpx
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.agents.phase_05_workflow.state import SNAPSHOT_STORE  # noqa: E402
+from scripts.agentcore_caller import bearer_headers  # noqa: E402
 
 BASE = "http://127.0.0.1:8013"
 TRAVELER = os.getenv("DEMO_TRAVELER_ID", "trv_meridian_demo")
@@ -361,6 +362,7 @@ if __name__ == "__main__":
             parser.error("MERIDIAN_HOSTED_AUTH must be resolved by asm-exec to username/password JSON")
     elif token and not token.startswith("{{resolve:"):
         headers["Authorization"] = f"Bearer {token}"
+    headers.update(bearer_headers("jordan"))  # the checks below are Jordan's journey
     if hosted and not (auth or headers):
         parser.error("Hosted checks require authentication resolved through asm-exec")
     with httpx.Client(base_url=BASE, timeout=60.0, auth=auth, headers=headers) as client:

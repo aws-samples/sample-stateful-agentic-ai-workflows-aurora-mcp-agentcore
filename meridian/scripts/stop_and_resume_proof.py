@@ -44,6 +44,7 @@ from backend.agents.phase_05_workflow.graph import (  # noqa: E402
     snapshot_key,
 )
 from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
+from scripts.agentcore_caller import bearer_headers, user_for_traveler  # noqa: E402
 from scripts.kill_and_resume_proof import (  # noqa: E402
     _holds_for,
     _purge,
@@ -51,7 +52,9 @@ from scripts.kill_and_resume_proof import (  # noqa: E402
 )
 
 API = os.getenv("MERIDIAN_PROOF_API", "http://127.0.0.1:8013/api")
+AUTH_HEADERS: dict[str, str] = {}
 TRAVELER = os.getenv("DEMO_TRAVELER_ID", "trv_meridian_demo")
+PROOF_THREAD_PREFIX = "phase5-proof-"
 CANONICAL = ("My JFK-to-Tokyo flight was canceled. Rework the trip, then check duration "
              "availability for the best three options.")
 RESUME_MESSAGE = "Resume workflow from the saved step"
@@ -82,7 +85,7 @@ def call(path: str, body: Optional[dict] = None) -> dict:
     """GET, or POST when a body is given, against the backend as JSON."""
     request = urllib.request.Request(
         API + path, data=json.dumps(body).encode() if body is not None else None,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", **AUTH_HEADERS},
         method="POST" if body is not None else "GET",
     )
     with urllib.request.urlopen(request, timeout=240) as response:
@@ -329,7 +332,18 @@ async def _purge_by_thread(client, thread: str) -> None:
         await client.execute(f"DELETE FROM {table} WHERE {column} = %s", (thread,))
 
 
+async def _check_owned(client, journey: str, thread: str) -> None:
+    """Refuse to delete a journey that has any thread besides the proof's own."""
+    rows = await client.execute(
+        "SELECT COUNT(*) AS n FROM journey_threads WHERE journey_id = %s", (journey,))
+    if int(rows[0]["n"]) != 1:
+        raise RuntimeError(f"journey {journey} has other threads than {thread}; "
+                           "not purging a journey this proof did not create")
+
+
 async def _purge_run(client, thread: str) -> None:
+    if not thread.startswith(PROOF_THREAD_PREFIX):
+        raise RuntimeError(f"thread {thread} was not created by this proof; not purging it")
     rows = await client.execute("SELECT journey_id FROM journey_threads WHERE thread_id = %s",
                                 (thread,))
     if not rows:
@@ -337,6 +351,7 @@ async def _purge_run(client, thread: str) -> None:
         print(f"cleanup: no journey row for {thread}; purged its snapshots and executions")
         return
     journey = rows[0]["journey_id"]
+    await _check_owned(client, journey, thread)
     await _purge(client, journey, thread)
     left = await client.execute(
         "SELECT COUNT(*) AS n FROM workflow_snapshots WHERE session_id = %s", (thread,))
@@ -358,7 +373,7 @@ async def _cleanup(client, thread: str) -> None:
 async def run(during: str, keep: bool) -> int:
     """Run one proof in the given mode and return its exit code (0, 1 or 2)."""
     client = get_rds_data_client()
-    thread = f"phase5-proof-{uuid.uuid4().hex[:8]}"
+    thread = f"{PROOF_THREAD_PREFIX}{uuid.uuid4().hex[:8]}"
     try:
         journey, expected, case = await _drive(client, thread, during)
         document = await asyncio.to_thread(call, f"/journeys/{journey}")
@@ -384,6 +399,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="stop the session while it waits for review or while it runs")
     parser.add_argument("--keep", action="store_true", help="leave the run's rows behind")
     args = parser.parse_args(argv)
+    AUTH_HEADERS.update(bearer_headers(user_for_traveler(TRAVELER)))
     return asyncio.run(run(args.during, args.keep))
 
 

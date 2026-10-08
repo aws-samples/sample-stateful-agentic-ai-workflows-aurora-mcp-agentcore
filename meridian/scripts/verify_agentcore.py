@@ -50,6 +50,7 @@ from rich.table import Table
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.agentcore.cli_config import resolve_agentcore_config  # noqa: E402
+from scripts.agentcore_caller import caller_scope  # noqa: E402
 
 load_dotenv()
 console = Console()
@@ -91,10 +92,15 @@ def check_policy_engine(control, gateway_id: str) -> tuple[bool, str, str]:
 
 
 def check_gateway_tools(cfg) -> tuple[bool, str, str]:
-    """List the gateway's MCP tools with a SigV4-signed request from this laptop."""
+    """List the gateway's MCP tools from this laptop.
+
+    The request is SigV4-signed in iam mode; in jwt mode it carries the seeded user's access token.
+    """
     from backend.agentcore.gateway import AgentCoreGatewayAdapter
 
-    tools, _ = AgentCoreGatewayAdapter(gateway_url=cfg.gateway_url, region=cfg.region).list_tools()
+    with caller_scope():
+        tools, _ = AgentCoreGatewayAdapter(
+            gateway_url=cfg.gateway_url, region=cfg.region).list_tools()
     names = sorted(tool["name"] for tool in tools)
     expected = {
         "SemanticTripSearchLambda___semantic_trip_search",

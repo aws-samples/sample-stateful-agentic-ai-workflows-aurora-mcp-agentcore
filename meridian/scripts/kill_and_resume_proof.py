@@ -58,6 +58,7 @@ from backend.db.journey_store import (  # noqa: E402
     create_journey,
 )
 from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
+from scripts.agentcore_caller import caller_scope, user_for_traveler  # noqa: E402
 
 TRAVELER = os.getenv("DEMO_TRAVELER_ID", "trv_meridian_demo")
 # A cold worker spends several seconds in the search and availability nodes
@@ -428,9 +429,10 @@ if __name__ == "__main__":
     parser.add_argument("--worker-two", metavar="THREAD", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
-    if args.worker_two:
-        raise SystemExit(asyncio.run(_worker_two(args.worker_two)))
-    if args.worker_one:
-        asyncio.run(_worker_one(*args.worker_one))
-    else:
-        raise SystemExit(asyncio.run(main(args.keep, args.worker_login)))
+    with caller_scope(user_for_traveler(TRAVELER)):
+        if args.worker_two:
+            raise SystemExit(asyncio.run(_worker_two(args.worker_two)))
+        if args.worker_one:
+            asyncio.run(_worker_one(*args.worker_one))
+        else:
+            raise SystemExit(asyncio.run(main(args.keep, args.worker_login)))

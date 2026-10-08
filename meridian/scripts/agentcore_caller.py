@@ -23,6 +23,19 @@ def user_for_traveler(traveler_id: str) -> str:
     return TRAVELER_USERS.get(traveler_id, "jordan")
 
 
+def bearer_headers(
+    user_key: str = "jordan", *, mint: Optional[Callable[[str], str]] = None
+) -> dict[str, str]:
+    """The ``Authorization`` header for calls to the backend as a seeded user (jwt mode only).
+
+    In ``iam`` mode the backend needs no credential from a local script, so the header is empty
+    and nobody is signed in.
+    """
+    if not jwt_mode():
+        return {}
+    return {"Authorization": "Bearer " + (mint or mint_access_token)(user_key)}
+
+
 @contextmanager
 def caller_scope(
     user_key: str = "jordan", *, mint: Optional[Callable[[str], str]] = None

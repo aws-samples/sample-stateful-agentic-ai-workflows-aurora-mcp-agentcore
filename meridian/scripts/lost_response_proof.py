@@ -32,6 +32,7 @@ from scripts.kill_and_resume_proof import (  # noqa: E402
     require_worker_login, run_takeover, say, scoped, worker_env,
 )
 from backend.agentcore.gateway import AgentCoreGatewayAdapter  # noqa: E402
+from scripts.agentcore_caller import caller_scope, user_for_traveler  # noqa: E402
 from backend.agents.phase_05_workflow.governed_hold import (  # noqa: E402
     HOLD_TOOL, HoldOutcomeUnknown, hold_arguments, place_governed_hold,
 )
@@ -178,4 +179,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--worker", help=argparse.SUPPRESS)
     args = parser.parse_args()
-    raise SystemExit(asyncio.run(worker(args.worker) if args.worker else main(args.worker_login)))
+    with caller_scope(user_for_traveler(TRAVELER)):
+        raise SystemExit(
+            asyncio.run(worker(args.worker) if args.worker else main(args.worker_login)))
