@@ -3,7 +3,8 @@ const { test } = require('node:test');
 const { App } = require('aws-cdk-lib');
 const { Match, Template } = require('aws-cdk-lib/assertions');
 const { MeridianWebRolesStack } = require('../dist/lib/meridian-web-roles-stack');
-const { serviceEnvironment } = require('../dist/lib/meridian-web-stack');
+const { identityMode, serviceEnvironment } = require('../dist/lib/meridian-web-stack');
+const { rolesStackWiring } = require('../dist/lib/meridian-web-wiring');
 
 const environment = {
   AURORA_CLUSTER_ARN: 'arn:aws:rds:us-east-1:123456789012:cluster:meridian',
@@ -102,94 +103,174 @@ test('the hosted configuration requires a Gateway endpoint', () => {
   assert.throws(() => serviceEnvironment(missingGateway, 'us-east-1'), /AGENTCORE_GATEWAY_URL/);
 });
 
-
-const { identityMode } = require('../dist/lib/meridian-web-stack');
-
-const BACKEND_LOGIN = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian/aurora/backend-login-AbC123';
+const BACKEND_LOGIN =
+  'arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian/aurora/backend-login-AbC123';
 const COGNITO = {
   MERIDIAN_COGNITO_REGION: 'us-east-1',
   MERIDIAN_COGNITO_USER_POOL_ID: 'us-east-1_AbCdEfGhI',
-  MERIDIAN_COGNITO_APP_CLIENT_ID: 'exampleclientid123',
+  MERIDIAN_COGNITO_APP_CLIENT_ID: 'exampleclientid1234567',
 };
 const jwtDotenv = { ...environment, AURORA_BACKEND_SECRET_ARN: BACKEND_LOGIN, ...COGNITO };
 
+const BASE_ENV = {
+  AWS_DEFAULT_REGION: 'us-east-1',
+  AWS_REGION: 'us-east-1',
+  ENVIRONMENT: 'production',
+  LOG_LEVEL: 'INFO',
+  LOG_AGENT_VERBOSE: 'false',
+  AGENTCORE_SKIP_CLI_SYNC: '1',
+  MCP_CONNECTION_METHOD: 'rdsapi',
+  MCP_DATABASE_TYPE: 'APG',
+  AURORA_CLUSTER_ARN: environment.AURORA_CLUSTER_ARN,
+  AURORA_DATABASE: environment.AURORA_DATABASE,
+  AGENTCORE_RUNTIME_ARN: environment.AGENTCORE_RUNTIME_ARN,
+  AGENTCORE_WORKFLOW_RUNTIME_ARN: environment.AGENTCORE_WORKFLOW_RUNTIME_ARN,
+  AGENTCORE_GATEWAY_URL: environment.AGENTCORE_GATEWAY_URL,
+  AURORA_BACKEND_SECRET_ARN: BACKEND_LOGIN,
+};
+
 test('the mode comes from the process first, then meridian/.env, and defaults to iam', () => {
+  const dotenvJwt = { MERIDIAN_AGENTCORE_AUTH: 'jwt' };
   assert.equal(identityMode({}, {}), 'iam');
-  assert.equal(identityMode({ MERIDIAN_AGENTCORE_AUTH: 'jwt' }, {}), 'jwt');
-  assert.equal(identityMode({ MERIDIAN_AGENTCORE_AUTH: 'jwt' }, { MERIDIAN_AGENTCORE_AUTH: 'iam' }), 'iam');
-  assert.equal(identityMode({ MERIDIAN_AGENTCORE_AUTH: 'iam' }, { MERIDIAN_AGENTCORE_AUTH: ' JWT ' }), 'jwt');
-  assert.equal(identityMode({ MERIDIAN_AGENTCORE_AUTH: 'jwt' }, { MERIDIAN_AGENTCORE_AUTH: '' }), 'iam');
+  assert.equal(identityMode(dotenvJwt, {}), 'jwt');
+  assert.equal(identityMode(dotenvJwt, { MERIDIAN_AGENTCORE_AUTH: 'iam' }), 'iam');
+  const dotenvIam = { MERIDIAN_AGENTCORE_AUTH: 'iam' };
+  assert.equal(identityMode(dotenvIam, { MERIDIAN_AGENTCORE_AUTH: ' JWT ' }), 'jwt');
+  assert.equal(identityMode(dotenvJwt, { MERIDIAN_AGENTCORE_AUTH: '' }), 'iam');
 });
 
 test('any other mode is refused by name', () => {
-  assert.throws(() => identityMode({ MERIDIAN_AGENTCORE_AUTH: 'true' }, {}), /MERIDIAN_AGENTCORE_AUTH.*iam.*jwt/);
+  assert.throws(
+    () => identityMode({ MERIDIAN_AGENTCORE_AUTH: 'true' }, {}),
+    /MERIDIAN_AGENTCORE_AUTH.*iam.*jwt/,
+  );
 });
 
-test('in iam mode the service environment carries no sign-in setting and keeps the master login', () => {
-  const env = serviceEnvironment(jwtDotenv, 'us-east-1', 'iam');
-  assert.equal(env.AURORA_SECRET_ARN, environment.AURORA_SECRET_ARN);
-  for (const key of ['MERIDIAN_AGENTCORE_AUTH', ...Object.keys(COGNITO), 'MERIDIAN_API_TOKEN']) {
-    assert.equal(env[key], undefined, key);
-  }
-  assert.deepEqual(env, serviceEnvironment(jwtDotenv, 'us-east-1'));
+test('the iam service environment is exactly the master login and no sign-in setting', () => {
+  const expected = { ...BASE_ENV, AURORA_SECRET_ARN: environment.AURORA_SECRET_ARN };
+  assert.deepEqual(serviceEnvironment(jwtDotenv, 'us-east-1', 'iam'), expected);
+  assert.deepEqual(serviceEnvironment(jwtDotenv, 'us-east-1'), expected);
 });
 
-test('in jwt mode the service gets the pool, the mode and the backend login as its database login', () => {
-  const env = serviceEnvironment(jwtDotenv, 'us-east-1', 'jwt');
-  assert.equal(env.MERIDIAN_AGENTCORE_AUTH, 'jwt');
-  assert.equal(env.AURORA_SECRET_ARN, BACKEND_LOGIN);
-  assert.equal(env.AURORA_BACKEND_SECRET_ARN, BACKEND_LOGIN);
-  for (const [key, value] of Object.entries(COGNITO)) assert.equal(env[key], value);
-  assert.equal(env.ENVIRONMENT, 'production');
-  for (const key of ['MERIDIAN_API_TOKEN', 'MERIDIAN_ALLOW_INSECURE_LOCALHOST', 'MERIDIAN_API_TRAVELER_ID']) {
-    assert.equal(env[key], undefined, key);
-  }
+test('the jwt service environment is exactly the pool, the mode and the backend login', () => {
+  assert.deepEqual(serviceEnvironment(jwtDotenv, 'us-east-1', 'jwt'), {
+    ...BASE_ENV,
+    ...COGNITO,
+    MERIDIAN_AGENTCORE_AUTH: 'jwt',
+    AURORA_SECRET_ARN: BACKEND_LOGIN,
+  });
 });
 
-test('jwt mode refuses to build a service environment that is missing its sign-in or login', () => {
+test('jwt mode refuses an environment missing its sign-in or login', () => {
   for (const key of [...Object.keys(COGNITO), 'AURORA_BACKEND_SECRET_ARN']) {
-    const { [key]: _removed, ...rest } = jwtDotenv;
+    const rest = { ...jwtDotenv };
+    delete rest[key];
     assert.throws(() => serviceEnvironment(rest, 'us-east-1', 'jwt'), new RegExp(key));
   }
   assert.throws(
-    () => serviceEnvironment({ ...jwtDotenv, AURORA_BACKEND_SECRET_ARN: environment.AURORA_SECRET_ARN }, 'us-east-1', 'jwt'),
+    () => serviceEnvironment(
+      { ...jwtDotenv, AURORA_BACKEND_SECRET_ARN: environment.AURORA_SECRET_ARN },
+      'us-east-1',
+      'jwt',
+    ),
     /must differ from AURORA_SECRET_ARN/,
   );
 });
 
-function secretResources(extra) {
-  const template = Template.fromStack(new MeridianWebRolesStack(new App(), 'RolesJwt', {
+test('jwt mode refuses a pool, client or secret of the wrong shape', () => {
+  const wrong = {
+    MERIDIAN_COGNITO_USER_POOL_ID: ['us-east-1', 'us-east-1_', 'US-EAST-1_AbC', 'us-east-1_a b'],
+    MERIDIAN_COGNITO_APP_CLIENT_ID: ['short', 'UPPERCASEUPPERCASEUPPER', 'has-dash-has-dash-has'],
+    AURORA_BACKEND_SECRET_ARN: [
+      'not-an-arn',
+      'arn:aws:secretsmanager:eu-west-1:123456789012:secret:b-AbC123',
+    ],
+  };
+  for (const [key, values] of Object.entries(wrong)) {
+    for (const value of values) {
+      assert.throws(
+        () => serviceEnvironment({ ...jwtDotenv, [key]: value }, 'us-east-1', 'jwt'),
+        new RegExp(key),
+        `${key}=${value}`,
+      );
+    }
+  }
+});
+
+test('jwt mode refuses a pool id from another region than MERIDIAN_COGNITO_REGION', () => {
+  assert.throws(
+    () => serviceEnvironment(
+      { ...jwtDotenv, MERIDIAN_COGNITO_REGION: 'eu-west-1' }, 'us-east-1', 'jwt',
+    ),
+    /MERIDIAN_COGNITO_USER_POOL_ID.*MERIDIAN_COGNITO_REGION/,
+  );
+});
+
+function rolesTemplate(extra) {
+  return Template.fromStack(new MeridianWebRolesStack(new App(), 'RolesJwt', {
     env: { account: '123456789012', region: 'us-east-1' },
     ...extra,
   }));
-  const statements = Object.values(template.findResources('AWS::IAM::Policy'))
-    .flatMap((policy) => policy.Properties.PolicyDocument.Statement)
-    .filter((s) => JSON.stringify(s.Action) === '"secretsmanager:GetSecretValue"');
-  assert.equal(statements.length, 1);
-  return JSON.stringify(statements[0].Resource);
 }
 
+function secretStatements(extra) {
+  return Object.values(rolesTemplate(extra).findResources('AWS::IAM::Policy'))
+    .flatMap((policy) => policy.Properties.PolicyDocument.Statement)
+    .filter((s) => JSON.stringify(s.Action).includes('secretsmanager:'));
+}
+
+const API_TOKEN_ARN = {
+  'Fn::Join': ['', [
+    'arn:',
+    { Ref: 'AWS::Partition' },
+    ':secretsmanager:us-east-1:123456789012:secret:meridian/web/api-token-??????',
+  ]],
+};
 const jwtEnvironment = serviceEnvironment(jwtDotenv, 'us-east-1', 'jwt');
 
-test('the first jwt release keeps the master and shared-token grants so a rollback still works', () => {
-  const text = secretResources({ environment: jwtEnvironment, masterSecretArn: environment.AURORA_SECRET_ARN });
-  assert.ok(text.includes('backend-login'));
-  assert.ok(text.includes(environment.AURORA_SECRET_ARN));
-  assert.ok(text.includes('meridian/web/api-token'));
+test('the first jwt release grants exactly the backend login, master and shared token', () => {
+  assert.deepEqual(
+    secretStatements({
+      environment: jwtEnvironment, masterSecretArn: environment.AURORA_SECRET_ARN,
+    }),
+    [{
+      Action: 'secretsmanager:GetSecretValue',
+      Effect: 'Allow',
+      Resource: [BACKEND_LOGIN, environment.AURORA_SECRET_ARN, API_TOKEN_ARN],
+    }],
+  );
 });
 
-test('the tighten release leaves the instance role only the backend login secret', () => {
-  const text = secretResources({
-    environment: jwtEnvironment, masterSecretArn: environment.AURORA_SECRET_ARN, tighten: true,
-  });
-  assert.ok(text.includes('backend-login'));
-  assert.ok(!text.includes(environment.AURORA_SECRET_ARN));
-  assert.ok(!text.includes('api-token'));
+test('the tighten release grants exactly the backend login secret', () => {
+  assert.deepEqual(
+    secretStatements({
+      environment: jwtEnvironment, masterSecretArn: environment.AURORA_SECRET_ARN, tighten: true,
+    }),
+    [{ Action: 'secretsmanager:GetSecretValue', Effect: 'Allow', Resource: BACKEND_LOGIN }],
+  );
 });
 
 test('tightening without the jwt cutover is refused so it cannot cut the iam service off', () => {
   assert.throws(
-    () => secretResources({ environment, tighten: true }),
+    () => rolesTemplate({ environment, tighten: true }),
     /tighten applies only to the jwt release/,
   );
+});
+
+test('the roles stack wiring passes the master secret only in jwt mode', () => {
+  assert.deepEqual(
+    rolesStackWiring(jwtDotenv, 'iam', {}),
+    { masterSecretArn: undefined, tighten: false },
+  );
+  assert.deepEqual(
+    rolesStackWiring(jwtDotenv, 'jwt', {}),
+    { masterSecretArn: environment.AURORA_SECRET_ARN, tighten: false },
+  );
+});
+
+test('MERIDIAN_TIGHTEN_ROLE=1 tightens in jwt mode and is ignored in iam mode', () => {
+  const tighten = { MERIDIAN_TIGHTEN_ROLE: '1' };
+  assert.equal(rolesStackWiring(jwtDotenv, 'jwt', tighten).tighten, true);
+  assert.equal(rolesStackWiring(jwtDotenv, 'iam', tighten).tighten, false);
+  assert.equal(rolesStackWiring(jwtDotenv, 'jwt', { MERIDIAN_TIGHTEN_ROLE: '0' }).tighten, false);
 });

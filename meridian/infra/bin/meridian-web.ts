@@ -2,7 +2,15 @@
 import { App } from 'aws-cdk-lib';
 import { MeridianWebBackendStack } from '../lib/meridian-web-backend-stack';
 import { MeridianWebRolesStack } from '../lib/meridian-web-roles-stack';
-import { MeridianWebStack, backendHost, cognitoHostFromEnv, identityMode, loadDotenv, serviceEnvironment } from '../lib/meridian-web-stack';
+import {
+  MeridianWebStack,
+  backendHost,
+  cognitoHostFromEnv,
+  identityMode,
+  loadDotenv,
+  serviceEnvironment,
+} from '../lib/meridian-web-stack';
+import { rolesStackWiring } from '../lib/meridian-web-wiring';
 
 const app = new App();
 
@@ -14,7 +22,6 @@ const env = { account: process.env.CDK_DEFAULT_ACCOUNT, region };
 const dotenv = loadDotenv();
 const mode = identityMode(dotenv);
 const environment = serviceEnvironment(dotenv, region, mode);
-const jwt = mode === 'jwt';
 
 // scripts/publish.py deploys these in order: the App Runner roles (which must
 // exist, and have propagated, before the service), the backend image, then the
@@ -23,8 +30,7 @@ const jwt = mode === 'jwt';
 new MeridianWebRolesStack(app, 'MeridianWebRoles', {
   env,
   environment,
-  masterSecretArn: jwt ? dotenv.AURORA_SECRET_ARN : undefined,
-  tighten: jwt && process.env.MERIDIAN_TIGHTEN_ROLE === '1',
+  ...rolesStackWiring(dotenv, mode, process.env),
   description: 'Meridian travel concierge: the App Runner roles, deployed ahead of the service',
 });
 
@@ -40,6 +46,8 @@ if (process.env.MERIDIAN_BACKEND_HOST) {
     backendHost: backendHost(),
     cognitoHost: cognitoHostFromEnv(process.env.MERIDIAN_COGNITO_HOSTED_UI_DOMAIN),
     identityMode: mode,
-    description: 'Meridian travel concierge: Vite build on S3 behind CloudFront, routing the API to App Runner',
+    description:
+      'Meridian travel concierge: Vite build on S3 behind CloudFront, ' +
+      'routing the API to App Runner',
   });
 }

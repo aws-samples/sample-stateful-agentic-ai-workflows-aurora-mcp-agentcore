@@ -124,6 +124,32 @@ export function identityMode(
   throw new Error(`MERIDIAN_AGENTCORE_AUTH must be 'iam' or 'jwt', not '${raw}'; unset it to keep IAM`);
 }
 
+function assertCognitoShape(dotenv: Record<string, string>): void {
+  const poolId = dotenv.MERIDIAN_COGNITO_USER_POOL_ID;
+  const region = dotenv.MERIDIAN_COGNITO_REGION;
+  if (!/^[a-z]{2}-[a-z]+-\d_[A-Za-z0-9]+$/.test(poolId)) {
+    throw new Error(
+      `MERIDIAN_COGNITO_USER_POOL_ID '${poolId}' is not a pool id like us-east-1_AbCdEfGhI`,
+    );
+  }
+  if (poolId.split('_')[0] !== region) {
+    throw new Error(
+      `MERIDIAN_COGNITO_USER_POOL_ID '${poolId}' is not in MERIDIAN_COGNITO_REGION '${region}'`,
+    );
+  }
+  if (!/^[a-z0-9]{20,}$/.test(dotenv.MERIDIAN_COGNITO_APP_CLIENT_ID)) {
+    throw new Error(
+      'MERIDIAN_COGNITO_APP_CLIENT_ID must be at least 20 lowercase letters or digits',
+    );
+  }
+  if (!dotenv.AURORA_BACKEND_SECRET_ARN.startsWith(`arn:aws:secretsmanager:${region}:`)) {
+    throw new Error(
+      `AURORA_BACKEND_SECRET_ARN must be a Secrets Manager ARN in ${region}, ` +
+        `not '${dotenv.AURORA_BACKEND_SECRET_ARN}'`,
+    );
+  }
+}
+
 function jwtServiceEnvironment(dotenv: Record<string, string>): Record<string, string> {
   const missing = [...COGNITO_ENV, 'AURORA_BACKEND_SECRET_ARN'].filter((key) => !dotenv[key]);
   if (missing.length) {
@@ -132,6 +158,7 @@ function jwtServiceEnvironment(dotenv: Record<string, string>): Record<string, s
         'scripts/provision_service_logins.py --login backend --apply --write-env first',
     );
   }
+  assertCognitoShape(dotenv);
   if (dotenv.AURORA_BACKEND_SECRET_ARN === dotenv.AURORA_SECRET_ARN) {
     throw new Error(
       'AURORA_BACKEND_SECRET_ARN must differ from AURORA_SECRET_ARN: the hosted backend runs as the ' +
