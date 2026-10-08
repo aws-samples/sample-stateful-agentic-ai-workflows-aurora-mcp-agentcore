@@ -649,3 +649,45 @@ def test_the_cdk_fixture_is_the_jwt_render_with_the_cdk_test_values() -> None:
         JWT_FIXTURE.parent.mkdir(parents=True, exist_ok=True)
         JWT_FIXTURE.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
     assert json.loads(JWT_FIXTURE.read_text(encoding="utf-8")) == spec
+
+
+# ---------------------------------------------------------------- --tighten
+
+
+def holds_secret_resources(spec: dict) -> list:
+    holds = next(t for t in spec["agentCoreGateways"][0]["targets"] if t["name"] == "MeridianHolds")
+    statement = next(s for s in holds["compute"]["iamPolicy"]["Statement"]
+                     if s["Action"] == ["secretsmanager:GetSecretValue"])
+    return statement["Resource"]
+
+
+def test_tightening_leaves_the_holds_lambda_only_the_gateway_logins_secret() -> None:
+    spec, _, _ = render_config.render(*templates(), base_values(), tighten=True)
+
+    assert holds_secret_resources(spec) == [GATEWAY_SECRET_ARN]
+
+
+def test_without_tightening_the_holds_lambda_still_reads_both_secrets() -> None:
+    spec, _, _ = render_config.render(*templates(), base_values())
+
+    assert holds_secret_resources(spec) == [SECRET_ARN, GATEWAY_SECRET_ARN]
+
+
+def test_tightening_changes_nothing_but_that_one_statement() -> None:
+    plain, _, _ = render_config.render(*templates(), base_values())
+    tight, _, _ = render_config.render(*templates(), base_values(), tighten=True)
+    holds_secret_resources(tight).clear()
+    holds_secret_resources(plain).clear()
+
+    assert tight == plain
+
+
+def test_main_tighten_writes_the_tightened_policy_and_says_so(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert render_config.main(["--tighten"]) == 0
+
+    spec, _ = written(project)
+    assert holds_secret_resources(spec) == [GATEWAY_SECRET_ARN]
+    assert "Tightened: MeridianHolds may read only the meridian_gateway secret" in (
+        capsys.readouterr().out)

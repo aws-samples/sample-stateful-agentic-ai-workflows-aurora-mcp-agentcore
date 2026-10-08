@@ -49,6 +49,10 @@ gateway ID is refused, because the engine it names could not be rendered. Run
 it again after each ``agentcore deploy`` until it reports a complete
 configuration.
 
+``--tighten`` renders the MeridianHolds Lambda's policy with only the meridian_gateway login's
+secret. Use it after the Lambda reads that secret (see scripts/release_identity.py lambdas), or it
+stops being able to read the master one while it still uses it.
+
 After it writes both files it stages the MeridianWorkflow Runtime's backend
 bundle (scripts/stage_workflow_runtime.py), so a deploy never ships a stale copy.
 
@@ -395,6 +399,18 @@ def apply_jwt_authorizers(spec: dict[str, Any], values: dict[str, str]) -> None:
         gateway["authorizerConfiguration"] = jwt_authorizer(url, client)
 
 
+def tighten_holds_policy(spec: dict[str, Any], values: dict[str, str]) -> None:
+    """Leave the MeridianHolds Lambda able to read only the meridian_gateway login's secret."""
+    for gateway in spec.get("agentCoreGateways", []):
+        for target in gateway.get("targets", []):
+            policy = (target.get("compute") or {}).get("iamPolicy")
+            if target.get("name") != "MeridianHolds" or not policy:
+                continue
+            for statement in policy["Statement"]:
+                if statement.get("Action") == ["secretsmanager:GetSecretValue"]:
+                    statement["Resource"] = [values["AURORA_GATEWAY_SECRET_ARN"]]
+
+
 def drop_pending_deployment_values(spec: dict[str, Any]) -> list[str]:
     """Remove the parts of the spec that name resources a deploy has not created yet.
 
@@ -423,8 +439,12 @@ def render(
     spec_template: dict[str, Any],
     targets_template: list[dict[str, Any]],
     values: dict[str, str],
+    *,
+    tighten: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
     """Fill both templates and prune what the current deployment pass cannot supply.
+
+    ``tighten`` leaves the holds Lambda only the meridian_gateway login's secret.
 
     Raises:
         ConfigError: When a required placeholder has no value, or a policy engine ID
@@ -442,6 +462,8 @@ def render(
     apply_identity_mode(spec, mode, values.get(settings.ENFORCEMENT_ENV, settings.BOTH))
     if mode == JWT:
         apply_jwt_authorizers(spec, values)
+    if tighten:
+        tighten_holds_policy(spec, values)
     notes = drop_pending_deployment_values(spec)
     missing = unresolved(spec) | unresolved(targets)
     if missing:
@@ -464,6 +486,10 @@ def main(argv: list[str] | None = None) -> int:
         "--policy-engine-id",
         help="deployed policy engine ID (default: the CLI deployment state)",
     )
+    parser.add_argument(
+        "--tighten", action="store_true",
+        help="leave the MeridianHolds Lambda only the meridian_gateway login's secret",
+    )
     args = parser.parse_args(argv)
 
     env = {**dotenv_values(MERIDIAN_DIR / ".env"), **os.environ}
@@ -474,7 +500,8 @@ def main(argv: list[str] | None = None) -> int:
         values.update(deployed_ids(CONFIG_DIR / DEPLOYED_STATE, targets_template[0]["name"]))
         overrides = {"GATEWAY_ID": args.gateway_id, "POLICY_ENGINE_ID": args.policy_engine_id}
         values.update({key: value for key, value in overrides.items() if value})
-        spec, targets, notes = render(spec_template, targets_template, values)
+        spec, targets, notes = render(
+            spec_template, targets_template, values, tighten=args.tighten)
     except ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -487,6 +514,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  AgentCore identity mode: {values[AUTH_MODE_ENV]}")
     if values[AUTH_MODE_ENV] == JWT:
         print(f"  Gateway enforcement: {values[settings.ENFORCEMENT_ENV]}")
+    if args.tighten:
+        print("  Tightened: MeridianHolds may read only the meridian_gateway secret")
     print(f"  staged {len(staged)} workflow modules into the MeridianWorkflow bundle")
     for note in notes:
         print(f"  {note}")

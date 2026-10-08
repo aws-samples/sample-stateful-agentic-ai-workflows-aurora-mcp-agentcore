@@ -7,6 +7,7 @@ Every command that changes AWS is a dry run unless it gets both ``--apply`` and
     python scripts/release_identity.py check [--expect iam|jwt] (--service-arn ARN | --skip-service)
     python scripts/release_identity.py interceptor [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py interceptor-delete [--apply --i-understand-this-changes-aws]
+    python scripts/release_identity.py lambdas [--expect master|gateway|tightened] [--restart-holds]
 
 ``check`` compares the Gateway, both Runtimes, the Cedar rules, the identity stack, the backend
 login proof, the interceptor Lambda's environment and the App Runner environment against the mode
@@ -16,6 +17,9 @@ interceptor Lambda and its log-only role (dry run by default) and then reads it 
 resources carry the release tags; one that exists without them is never modified.
 ``interceptor-delete`` removes only resources that carry those tags, re-reading the tags before
 each delete.
+``lambdas`` checks that the SSM parameter, the semantic-search Lambda and both roles are at a stage
+of the move to the meridian_gateway login (read-only); with ``--restart-holds`` (a dry run unless
+both flags) it forces the holds Lambda to re-read its configuration.
 
 Exit codes, the same for every command:
 
@@ -50,6 +54,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.agentcore.auth_mode import IAM, JWT  # noqa: E402
 from scripts.gateway_harness.verdicts import JWT_SHAPE  # noqa: E402
 from scripts.identity_release import interceptor_lambda, preflight, settings  # noqa: E402
+from scripts.identity_release import lambda_release  # noqa: E402
 from scripts.provision_service_logins import redact, require_account  # noqa: E402
 from scripts.sync_cognito_env import FRONTEND_ENV_FILE, stack_outputs  # noqa: E402
 
@@ -121,6 +126,14 @@ def build_parser() -> argparse.ArgumentParser:
     remove = commands.add_parser("interceptor-delete", allow_abbrev=False,
                                  help="delete the interceptor Lambda and role (tagged ones only)")
     add_apply_flags(remove)
+    move_lambdas = commands.add_parser(
+        "lambdas", allow_abbrev=False,
+        help="check the Lambdas' move to the meridian_gateway login, or restart the holds Lambda")
+    move_lambdas.add_argument("--expect", choices=lambda_release.STAGES, default="gateway",
+                              help="the stage to expect (default: gateway)")
+    move_lambdas.add_argument("--restart-holds", action="store_true",
+                              help="force the holds Lambda to re-read its configuration")
+    add_apply_flags(move_lambdas)
     return parser
 
 
@@ -274,8 +287,13 @@ def run_interceptor_delete(args: argparse.Namespace, deps: Dependencies) -> int:
     return 0
 
 
+def run_lambdas(args: argparse.Namespace, deps: Dependencies) -> int:
+    """Check the Lambdas against a stage, or restart the holds Lambda."""
+    return lambda_release.run(args, deps, say)
+
+
 HANDLERS = {"check": run_check, "interceptor": run_interceptor,
-            "interceptor-delete": run_interceptor_delete}
+            "interceptor-delete": run_interceptor_delete, "lambdas": run_lambdas}
 
 
 def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int:
