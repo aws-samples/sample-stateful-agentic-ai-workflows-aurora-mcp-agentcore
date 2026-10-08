@@ -743,6 +743,18 @@ with `scripts/cognito_tokens.py`, reads the password from Secrets Manager, print
 binds the token for the one call block. `smoke_production_turn.py --traveler trv_demo_decoy` signs in
 as the decoy user; any other traveler id signs in as Jordan Morgan. In `iam` mode nothing is minted.
 
+### Capture the signed-in app
+
+`scripts/identity_capture/capture_session.py` signs the seeded users in for a screen capture without
+anyone typing a password. The rule: tokens are minted only into an inherited pipe, never to standard
+output. The launcher creates a private pipe, gives the write end to `mint_session.py` and the read end
+to `capture.mjs` as `--token-fd N`, and the tokens never reach standard output, standard error, argv,
+the environment or a file. `mint_session.py` refuses to run without `--token-fd`, and refuses a
+descriptor that is 0, 1 or 2, a terminal, or not a pipe. Do not wrap it in a shell pipe: an agent
+shell's standard output is a pipe too, which is how tokens were once printed by mistake. To test the
+plumbing, run `venv/bin/python scripts/identity_capture/capture_session.py --check`. It validates the
+settings and the pipe, calls neither Secrets Manager nor Cognito, and starts no browser.
+
 ### Expired and missing tokens
 
 An access token lasts one hour. A request with an expired token is answered with 401, the code
