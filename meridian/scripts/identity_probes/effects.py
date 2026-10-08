@@ -25,7 +25,8 @@ from backend.agentcore.runtime_https import RuntimeHttpClient, invocation_url
 from backend.db.rds_data_client import RDSDataClient
 from scripts.agentcore_caller import require_token_safe_url
 from scripts.cognito_tokens import mint_access_token
-from scripts.identity_probes.probes import CONCIERGE, JORDAN_TRAVELER, WORKFLOW, Ports
+from scripts.kill_and_resume_proof import BOOKING_AGENT, pinned_to_traveler
+from scripts.identity_probes.probes import CONCIERGE, WORKFLOW, BookingRef, Ports
 from scripts.identity_probes.receipt import DECOY, JORDAN
 from scripts.prove_backend_login import SWEEP_SQL
 
@@ -34,10 +35,25 @@ COUNT_SQL = "SELECT COUNT(*) AS n FROM traveler_preferences WHERE traveler_id = 
 DENY_SQL = ("SELECT COUNT(*) AS n FROM traveler_access_audit "
             "WHERE requested_traveler_id = %s AND decision = 'deny'")
 BOOKING_SQL = "SELECT booking_id FROM bookings WHERE traveler_id = %s"
-BOOKING_EXISTS_SQL = "SELECT booking_id FROM bookings WHERE booking_id = %s"
+BOOKING_OWNED_SQL = ("SELECT booking_id FROM bookings WHERE booking_id = %s AND traveler_id = %s "
+                     "FOR UPDATE")
+HOLD_SQL = ("SELECT hr.booking_id FROM hold_requests hr "
+            "JOIN journey_threads jt ON jt.journey_id = hr.journey_id WHERE jt.thread_id = %s")
 ROLE_SQL = "SELECT current_user AS role, row_security_active('traveler_preferences') AS active"
 PIN_SQL = ("SELECT set_config('row_security', 'on', true), "
            "set_config('app.current_traveler_id', %s, true)")
+BOOKING_PIN_SQL = ("SELECT set_config('row_security', 'on', true), "
+                   "set_config('app.current_traveler_id', %s, true), "
+                   "set_config('app.agent_type', %s, true)")
+RELEASE_TABLES = ("hold_requests", "booking_lines", "bookings")
+UNSCOPED_TABLES = ("traveler_access_audit", "journey_threads", "hold_requests",
+                   "workflow_snapshots", "journey_executions")
+VISIBILITY_SQL = (
+    "SELECT c.relname AS table_name, c.relrowsecurity AS secured, "
+    "c.relforcerowsecurity AS forced, "
+    "(pg_has_role(current_user, c.relowner, 'USAGE') OR COALESCE("
+    "(SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user), false)) AS exempt "
+    "FROM pg_class c WHERE c.relkind = 'r' AND c.relname = ANY(string_to_array(%s, ','))")
 HTTP_REFUSAL = re.compile(r"^Gateway HTTP (4\d\d): (.*)$", re.DOTALL)
 HTTP_SECONDS = 60
 
@@ -115,7 +131,8 @@ class RuntimePort:
 class GatewayPort:
     """Tool calls through the Gateway with the user's token bound for the one call."""
 
-    def __init__(self, gateway: Any, tokens: TokenCache) -> None:
+    def __init__(self, gateway: Any, tokens: TokenCache, *, url: str) -> None:
+        require_token_safe_url(url, always=True)
         self._gateway, self._tokens = gateway, tokens
 
     def __call__(self, user: str, tool: str, arguments: dict):
@@ -133,16 +150,20 @@ def _count(rows: list[dict]) -> int:
     return int(rows[0]["n"]) if rows else 0
 
 
-async def pinned_rows(client: RDSDataClient, traveler: str, query: str,
-                      params: tuple) -> list[dict]:
+async def pinned_rows(client: RDSDataClient, traveler: str, query: str, params: tuple,
+                      *, agent: str | None = None) -> list[dict]:
     """Read with ``traveler`` pinned in one transaction that is always rolled back.
 
     The tables the proof reads force row-level security, so an unscoped read can match zero rows
-    even when rows exist; pinning the traveler is what makes the answer mean something.
+    even when rows exist; pinning the traveler is what makes the answer mean something. The
+    booking tables also need ``agent`` (``app.agent_type``) in their policy, so pass it for them.
     """
     transaction = client.begin_transaction()
     try:
-        await client.execute(PIN_SQL, (traveler,), transaction_id=transaction)
+        if agent is None:
+            await client.execute(PIN_SQL, (traveler,), transaction_id=transaction)
+        else:
+            await client.execute(BOOKING_PIN_SQL, (traveler, agent), transaction_id=transaction)
         return await client.execute(query, params, transaction_id=transaction)
     finally:
         client.rollback_transaction(transaction)
@@ -188,9 +209,33 @@ class AuroraPort:
         return _count(asyncio.run(self._client.execute(DENY_SQL, (traveler_id,))))
 
     def booking_ids(self, traveler_id: str) -> set[str]:
-        """The traveler's booking ids, read with the traveler pinned."""
-        rows = asyncio.run(pinned_rows(self._client, traveler_id, BOOKING_SQL, (traveler_id,)))
+        """The traveler's booking ids, read with the traveler and the booking agent pinned."""
+        rows = asyncio.run(pinned_rows(
+            self._client, traveler_id, BOOKING_SQL, (traveler_id,), agent=BOOKING_AGENT))
         return {row["booking_id"] for row in rows}
+
+    def hold_bookings(self, journey_ref: str) -> set[str]:
+        """The booking ids the Holds Lambda recorded against a journey reference."""
+        rows = asyncio.run(self._client.execute(HOLD_SQL, (journey_ref,)))
+        return {row["booking_id"] for row in rows}
+
+    def preflight(self) -> None:
+        """Raise unless every table the proof reads without a scope shows its rows to this role.
+
+        A table with row-level security that is forced, or that this role neither owns nor
+        bypasses, answers an unscoped read with zero rows and no error, which would make the
+        deny-row attribution and the leftover sweep pass for the wrong reason.
+        """
+        rows = asyncio.run(self._client.execute(VISIBILITY_SQL, (",".join(UNSCOPED_TABLES),)))
+        seen = {row["table_name"]: row for row in rows}
+        hidden = [name for name in UNSCOPED_TABLES if name not in seen or (
+            _truthy(seen[name]["secured"])
+            and (_truthy(seen[name]["forced"]) or not _truthy(seen[name]["exempt"])))]
+        if hidden:
+            raise RuntimeError(
+                f"an unscoped read of {', '.join(hidden)} could return zero rows without an "
+                "error (missing, forced row-level security, or a role that neither owns nor "
+                "bypasses it), so the proof's counts would prove nothing")
 
 
 class AuroraCleanup:
@@ -205,22 +250,49 @@ class AuroraCleanup:
 
         asyncio.run(recovery._purge_run(self._client, thread))
 
-    def release_bookings(self, booking_ids: list[str]) -> int:
-        """Release Jordan's bookings by id, with their lines and hold requests."""
-        from scripts.release_demo_bookings import release
+    def release_bookings(self, bookings: list[BookingRef]) -> int:
+        """Release ``(traveler, booking)`` pairs by exact id, each in its own pinned transaction.
 
-        return sum(asyncio.run(release(JORDAN_TRAVELER, False, False, booking_id))
-                   for booking_id in booking_ids)
+        Raises:
+            RuntimeError: After trying every booking, when any is not visible in its traveler's
+                pinned scope (so its deletion cannot be proven).
+        """
+        released, failures = 0, []
+        for traveler, booking in bookings:
+            try:
+                asyncio.run(self._release_one(traveler, booking))
+                released += 1
+            except RuntimeError as exc:
+                failures.append(str(exc))
+        if failures:
+            raise RuntimeError("; ".join(failures))
+        return released
 
-    def leftovers(self, prefix: str, booking_ids: list[str]) -> int:
-        """Threads with the prefix plus listed bookings that still exist."""
-        threads = {row["thread"] for row in asyncio.run(
-            self._client.execute(SWEEP_SQL, (prefix + "%",) * 3))}
-        existing = sum(
-            len(asyncio.run(pinned_rows(
-                self._client, JORDAN_TRAVELER, BOOKING_EXISTS_SQL, (booking_id,))))
-            for booking_id in booking_ids)
-        return len(threads) + existing
+    async def _release_one(self, traveler: str, booking: str) -> None:
+        async with pinned_to_traveler(self._client, traveler) as transaction:
+            seen = await self._client.execute(
+                BOOKING_OWNED_SQL, (booking, traveler), transaction_id=transaction)
+            if not seen:
+                raise RuntimeError(
+                    f"booking {booking} is not visible as {traveler} with the booking agent "
+                    "pinned, so it was not deleted")
+            for table in RELEASE_TABLES:
+                await self._client.execute(
+                    f"DELETE FROM {table} WHERE booking_id = %s", (booking,),
+                    transaction_id=transaction)
+
+    def leftovers(self, prefix: str, baseline: Mapping[str, frozenset[str]]) -> list[str]:
+        """Threads with the prefix, and bookings that are not in the baseline, by name."""
+        threads = sorted({row["thread"] for row in asyncio.run(
+            self._client.execute(SWEEP_SQL, (prefix + "%",) * 3))})
+        items = [f"thread {thread}" for thread in threads]
+        for traveler, known in sorted(baseline.items()):
+            current = asyncio.run(pinned_rows(
+                self._client, traveler, BOOKING_SQL, (traveler,), agent=BOOKING_AGENT))
+            items.extend(f"booking {row['booking_id']} of {traveler}"
+                         for row in sorted(current, key=lambda r: r["booking_id"])
+                         if row["booking_id"] not in known)
+        return items
 
 
 def build_rig(
@@ -238,6 +310,10 @@ def build_rig(
     if missing:
         raise RuntimeError(f"no Runtime ARN is configured for: {', '.join(missing)}; run "
                            "scripts/sync_agentcore_env.py --write")
+    gateway = get_agentcore_gateway()
+    if not gateway.gateway_url:
+        raise RuntimeError(
+            "no Gateway URL is configured; run scripts/sync_agentcore_env.py --write")
     cache = tokens or TokenCache()
     cache.warm()
     client = RDSDataClient(
@@ -245,6 +321,7 @@ def build_rig(
         database=env.get("AURORA_DATABASE") or None, region=region)
     ports = Ports(
         http=HttpPort(base_url, cache), runtime=RuntimePort(region, arns, cache),
-        gateway=GatewayPort(get_agentcore_gateway(), cache), database=AuroraPort(client),
+        gateway=GatewayPort(gateway, cache, url=gateway.gateway_url),
+        database=AuroraPort(client),
         clock=time.monotonic, now=utc_now)
     return ports, AuroraCleanup(client)

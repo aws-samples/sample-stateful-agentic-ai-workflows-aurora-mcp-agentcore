@@ -1,10 +1,14 @@
 """Against the live cluster: row-level security hides Jordan's rows from the decoy's scope."""
 
+import asyncio
+import uuid
+
 import pytest
 
 from backend.db.rds_data_client import get_rds_data_client
-from scripts.identity_probes.effects import AuroraPort
+from scripts.identity_probes.effects import AuroraCleanup, AuroraPort
 from scripts.identity_probes.probes import DECOY_TRAVELER, JORDAN_TRAVELER
+from scripts.kill_and_resume_proof import pinned_to_traveler
 
 
 @pytest.mark.database
@@ -16,3 +20,37 @@ def test_the_decoy_sees_none_of_jordans_rows_and_jordan_sees_all_of_them():
     assert baseline > 0
     assert port.scoped_count(DECOY_TRAVELER, JORDAN_TRAVELER) == 0
     assert port.scoped_count(JORDAN_TRAVELER, JORDAN_TRAVELER) == baseline
+
+
+INSERT_BOOKING = ("INSERT INTO bookings (booking_id, traveler_id, status, total_amount) "
+                  "VALUES (%s, %s, 'held', 1)")
+
+
+async def insert_booking(client, booking: str) -> None:
+    async with pinned_to_traveler(client, JORDAN_TRAVELER) as transaction:
+        await client.execute(INSERT_BOOKING, (booking, JORDAN_TRAVELER), transaction_id=transaction)
+
+
+@pytest.mark.database
+def test_the_unscoped_tables_the_proof_reads_show_their_rows_to_this_role():
+    AuroraPort(get_rds_data_client()).preflight()
+
+
+@pytest.mark.database
+def test_a_booking_is_found_pinned_listed_as_new_released_and_gone():
+    client = get_rds_data_client()
+    port, cleanup = AuroraPort(client), AuroraCleanup(client)
+    baseline = {t: frozenset(port.booking_ids(t)) for t in (JORDAN_TRAVELER, DECOY_TRAVELER)}
+    booking = f"HLD-IDP{uuid.uuid4().hex[:8].upper()}"
+    pair = (JORDAN_TRAVELER, booking)
+    prefix = "phase5-proof-idp-live-test"
+    try:
+        asyncio.run(insert_booking(client, booking))
+        assert booking in port.booking_ids(JORDAN_TRAVELER)
+        assert booking not in port.booking_ids(DECOY_TRAVELER)
+        assert cleanup.leftovers(prefix, baseline) == [f"booking {booking} of {JORDAN_TRAVELER}"]
+    finally:
+        if booking in port.booking_ids(JORDAN_TRAVELER):
+            cleanup.release_bookings([pair])
+
+    assert cleanup.leftovers(prefix, baseline) == []

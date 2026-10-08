@@ -25,26 +25,30 @@ class FakeCleanup:
     """A cleanup port that records what it was asked to remove."""
 
     def __init__(self, *, fail_purge=False, fail_release=False, leftovers=0, fail_check=False):
-        self.purged, self.released, self.prefix = [], [], None
+        self.purged, self.released, self.prefix, self.baseline = [], [], None, None
+        self.order = []
         self.fail_purge, self.fail_release = fail_purge, fail_release
         self._leftovers, self.fail_check = leftovers, fail_check
 
     def purge_thread(self, thread):
+        self.order.append("purge")
         if self.fail_purge:
             raise RuntimeError("purge refused for 123456789012")
         self.purged.append(thread)
 
-    def release_bookings(self, booking_ids):
+    def release_bookings(self, bookings):
+        self.order.append("release")
         if self.fail_release:
             raise RuntimeError("release failed")
-        self.released.extend(booking_ids)
-        return len(booking_ids)
+        self.released.extend(bookings)
+        return len(bookings)
 
-    def leftovers(self, prefix, booking_ids):
+    def leftovers(self, prefix, baseline):
+        self.order.append("check")
         if self.fail_check:
             raise RuntimeError("cannot count")
-        self.prefix = prefix
-        return self._leftovers
+        self.prefix, self.baseline = prefix, baseline
+        return [f"leftover {n}" for n in range(self._leftovers)]
 
 
 class FakeDatabase:
@@ -54,7 +58,17 @@ class FakeDatabase:
         self.rls_hides = rls_hides
         self.baseline = baseline
         self.deny_rows = 0
-        self.bookings: set[str] = set()
+        self.bookings: dict[str, set[str]] = {JORDAN_TRAVELER: set(), DECOY_TRAVELER: set()}
+        self.holds: dict[str, set[str]] = {}
+        self.preflights = 0
+
+    def add_booking(self, traveler: str, booking: str, ref: str | None = None) -> None:
+        self.bookings[traveler].add(booking)
+        if ref:
+            self.holds.setdefault(ref, set()).add(booking)
+
+    def preflight(self) -> None:
+        self.preflights += 1
 
     def scoped_count(self, context_traveler: str, target_traveler: str) -> int:
         if context_traveler == target_traveler:
@@ -68,7 +82,10 @@ class FakeDatabase:
         return self.deny_rows
 
     def booking_ids(self, traveler_id: str) -> set[str]:
-        return set(self.bookings)
+        return set(self.bookings[traveler_id])
+
+    def hold_bookings(self, journey_ref: str) -> set[str]:
+        return set(self.holds.get(journey_ref, set()))
 
 
 def ticker():
@@ -120,7 +137,7 @@ def fake_gateway(database: FakeDatabase):
             database.deny_rows += 1
             return text_result({"detail": f"aws_iam subject is not authorized for traveler "
                                           f"{DECOY_TRAVELER}"}, is_error=True)
-        database.bookings.add("HLD-TEST0001")
+        database.add_booking(JORDAN_TRAVELER, "HLD-TEST0001", arguments["journeyRef"])
         return text_result({"bookingId": "HLD-TEST0001"})
 
     return gateway

@@ -4,6 +4,8 @@ import pytest
 
 from scripts import stop_and_resume_proof as recovery
 from scripts.identity_probes.probes import (
+    DECOY_TRAVELER,
+    JORDAN_TRAVELER,
     PLAN,
     THREAD_PREFIX,
     Context,
@@ -21,10 +23,10 @@ def run_all(ports, design="both", only=None):
     return ctx, {spec.id: run_probe(spec, ports, ctx) for spec in chosen}
 
 
-def test_the_plan_has_fifteen_unique_probes_and_every_layer_has_both_kinds():
+def test_the_plan_has_seventeen_unique_probes_and_every_layer_has_both_kinds():
     ids = [spec.id for spec in PLAN]
 
-    assert len(ids) == 15 and len(set(ids)) == 15
+    assert len(ids) == 17 and len(set(ids)) == 17
     for layer in LAYERS:
         mine = [spec for spec in PLAN if spec.layer == layer]
         assert any(s.actor == DECOY and s.expected == REFUSED for s in mine), layer
@@ -34,8 +36,22 @@ def test_the_plan_has_fifteen_unique_probes_and_every_layer_has_both_kinds():
 def test_the_gateway_reads_the_package_before_any_hold_is_built():
     order = [spec.id for spec in PLAN if spec.layer == "gateway"]
 
-    assert order == ["gateway.jordan_reads_package", "gateway.decoy_holds_for_jordan",
-                     "gateway.jordan_places_hold"]
+    assert order == ["gateway.jordan_reads_package", "gateway.decoy_reads_package",
+                     "gateway.decoy_holds_for_jordan", "gateway.jordan_places_hold"]
+
+
+def test_the_runtime_and_the_gateway_each_have_a_control_the_decoy_is_allowed():
+    allowed = {spec.id for spec in PLAN if spec.actor == DECOY and spec.expected == ALLOWED}
+
+    assert {"runtime.decoy_pings_workflow", "gateway.decoy_reads_package"} <= allowed
+
+
+def test_no_two_probes_share_a_thread_or_a_conversation_name():
+    ports, _ = good_world()
+    ctx, _ = run_all(ports)
+
+    assert len(ctx.threads) == len(set(ctx.threads))
+    assert len(ctx.memory_sessions) == len(set(ctx.memory_sessions)) == 2
 
 
 def test_probe_threads_are_ones_the_recovery_purge_accepts():
@@ -55,13 +71,13 @@ def test_in_a_correct_system_every_probe_passes_and_each_refusal_names_its_layer
     assert outcomes["database.decoy_sees_jordan_rows"].refused_by == "database_rls"
     assert outcomes["gateway.decoy_holds_for_jordan"].evidence["deny_audit_rows"] == 1
     assert outcomes["gateway.decoy_holds_for_jordan"].evidence["shape"] == "result.isError"
-    assert ctx.created_bookings == {"HLD-TEST0001"}
+    assert ctx.owned_bookings == {(JORDAN_TRAVELER, "HLD-TEST0001")}
     assert any(t.startswith(THREAD_PREFIX + "abc12345") for t in ctx.threads)
 
 
 def test_jordan_only_selects_just_the_controls():
     assert {spec.actor for spec in select(jordan_only=True)} == {JORDAN}
-    assert len(select(jordan_only=True)) == 8 and len(select(jordan_only=False)) == 15
+    assert len(select(jordan_only=True)) == 8 and len(select(jordan_only=False)) == 17
 
 
 def test_rls_that_hides_nothing_fails_the_database_probe():
@@ -90,7 +106,7 @@ def test_a_gateway_that_accepts_the_decoy_and_books_for_jordan_is_an_error_and_i
     def accept_everything(user, tool, arguments):
         if tool.endswith("get_package_details"):
             return text_result({"package": PACKAGE})
-        database.bookings.add("HLD-LEAK0001")
+        database.add_booking(JORDAN_TRAVELER, "HLD-LEAK0001", arguments["journeyRef"])
         return text_result({"bookingId": "HLD-LEAK0001"})
 
     broken = ports.__class__(**{**ports.__dict__, "gateway": accept_everything})
@@ -100,7 +116,124 @@ def test_a_gateway_that_accepts_the_decoy_and_books_for_jordan_is_an_error_and_i
 
     assert outcomes["gateway.decoy_holds_for_jordan"].result == ERROR
     assert "HLD-LEAK0001" in outcomes["gateway.decoy_holds_for_jordan"].detail
-    assert ctx.created_bookings == {"HLD-LEAK0001"}
+    assert ctx.owned_bookings == {(JORDAN_TRAVELER, "HLD-LEAK0001")}
+
+
+def test_a_hold_booked_for_the_decoy_is_tracked_under_the_decoy():
+    ports, database = good_world()
+
+    def rewrites_to_the_decoy(user, tool, arguments):
+        if tool.endswith("get_package_details"):
+            return text_result({"package": PACKAGE})
+        database.add_booking(DECOY_TRAVELER, "HLD-DECOY001", arguments["journeyRef"])
+        return text_result({"bookingId": "HLD-DECOY001"})
+
+    broken = ports.__class__(**{**ports.__dict__, "gateway": rewrites_to_the_decoy})
+
+    ctx, outcomes = run_all(broken, only={"gateway.jordan_reads_package",
+                                           "gateway.decoy_holds_for_jordan"})
+
+    assert outcomes["gateway.decoy_holds_for_jordan"].result == ERROR
+    assert ctx.owned_bookings == {(DECOY_TRAVELER, "HLD-DECOY001")}
+
+
+def test_a_booking_is_recorded_even_when_the_gateway_call_then_raises():
+    ports, database = good_world()
+
+    def books_then_fails(user, tool, arguments):
+        if tool.endswith("get_package_details"):
+            return text_result({"package": PACKAGE})
+        database.add_booking(JORDAN_TRAVELER, "HLD-LATE0001", arguments["journeyRef"])
+        raise TimeoutError("the response never arrived")
+
+    broken = ports.__class__(**{**ports.__dict__, "gateway": books_then_fails})
+
+    ctx, outcomes = run_all(broken, only={"gateway.jordan_reads_package",
+                                           "gateway.jordan_places_hold"})
+
+    assert outcomes["gateway.jordan_places_hold"].result == ERROR
+    assert ctx.owned_bookings == {(JORDAN_TRAVELER, "HLD-LATE0001")}
+
+
+def test_a_booking_this_run_cannot_tie_to_itself_is_reported_and_never_owned():
+    ports, database = good_world()
+    real_gateway = ports.gateway
+
+    def with_a_concurrent_booking(user, tool, arguments):
+        if tool.endswith("create_courtesy_hold"):
+            database.add_booking(JORDAN_TRAVELER, "HLD-REALUSER", None)
+        return real_gateway(user, tool, arguments)
+
+    noisy = ports.__class__(**{**ports.__dict__, "gateway": with_a_concurrent_booking})
+
+    ctx, outcomes = run_all(noisy, only={"gateway.jordan_reads_package",
+                                          "gateway.jordan_places_hold"})
+
+    assert (JORDAN_TRAVELER, "HLD-REALUSER") not in ctx.owned_bookings
+    assert ctx.owned_bookings == {(JORDAN_TRAVELER, "HLD-TEST0001")}
+    assert outcomes["gateway.jordan_places_hold"].result == ERROR
+    assert "HLD-REALUSER" in outcomes["gateway.jordan_places_hold"].detail
+
+
+def test_jordans_hold_without_a_visible_booking_is_an_error_not_a_pass():
+    ports, database = good_world()
+    real_gateway = ports.gateway
+
+    def books_nothing_visible(user, tool, arguments):
+        raw = real_gateway(user, tool, arguments)
+        database.bookings[JORDAN_TRAVELER].clear()
+        database.holds.clear()
+        return raw
+
+    blind = ports.__class__(**{**ports.__dict__, "gateway": books_nothing_visible})
+
+    _, outcomes = run_all(blind, only={"gateway.jordan_reads_package",
+                                        "gateway.jordan_places_hold"})
+
+    assert outcomes["gateway.jordan_places_hold"].result == ERROR
+    assert "no booking" in outcomes["gateway.jordan_places_hold"].detail
+
+
+def test_an_order_that_books_something_for_the_decoy_probe_is_an_error_with_the_booking_named():
+    ports, database = good_world()
+
+    def books(user, method, path, body):
+        database.add_booking(DECOY_TRAVELER, "HLD-ORDER001", None)
+        return 200, {"order": {"order_id": "HLD-ORDER001"}}
+
+    broken = ports.__class__(**{**ports.__dict__, "http": books})
+
+    ctx, outcomes = run_all(broken, only={"backend.decoy_orders_for_jordan"})
+
+    outcome = outcomes["backend.decoy_orders_for_jordan"]
+    assert outcome.result == ERROR and "HLD-ORDER001" in outcome.detail
+    assert ctx.owned_bookings == {(DECOY_TRAVELER, "HLD-ORDER001")}
+
+
+def test_the_concierge_session_names_are_recorded_for_the_residue_note():
+    ports, _ = good_world()
+
+    ctx, _ = run_all(ports, only={"runtime.decoy_tampers_concierge",
+                                   "runtime.jordan_opens_concierge"})
+
+    notes = ctx.residue_notes()
+    assert any("AgentCore Memory" in n and ctx.memory_sessions[1] in n for n in notes)
+    assert any("append-only" in n for n in notes)
+
+
+def test_the_concierge_is_read_to_its_result_not_abandoned_at_the_first_event():
+    ports, _ = good_world()
+    seen = []
+
+    def recording(user, runtime, payload, limit):
+        seen.append((runtime, limit))
+        return [{"type": "result", "message": "hi"}]
+
+    probe = ports.__class__(**{**ports.__dict__, "runtime": recording})
+
+    run_all(probe, only={"runtime.jordan_opens_concierge"})
+
+    assert seen[0][0] == "concierge" and seen[0][1] >= 1000
 
 
 @pytest.mark.parametrize("probe", ["runtime.decoy_tampers_workflow",

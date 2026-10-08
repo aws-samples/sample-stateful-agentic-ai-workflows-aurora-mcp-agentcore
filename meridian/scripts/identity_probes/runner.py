@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from scripts.identity_probes.probes import THREAD_PREFIX, Context, Ports, run_probe, select
+from scripts.identity_probes.probes import (
+    THREAD_PREFIX,
+    BookingRef,
+    Context,
+    Ports,
+    run_probe,
+    select,
+    snapshot_bookings,
+)
 from scripts.identity_probes.receipt import FULL, Receipt, scrub
 
 
@@ -16,11 +24,11 @@ class Cleanup(Protocol):
     def purge_thread(self, thread: str) -> None:
         """Remove a journey or thread the run created, and its snapshots and executions."""
 
-    def release_bookings(self, booking_ids: list[str]) -> int:
-        """Remove bookings (with their lines and hold requests); return how many."""
+    def release_bookings(self, bookings: list[BookingRef]) -> int:
+        """Remove ``(traveler, booking)`` pairs (with lines and hold requests); return how many."""
 
-    def leftovers(self, prefix: str, booking_ids: list[str]) -> int:
-        """Threads with the run's prefix plus listed bookings that still exist."""
+    def leftovers(self, prefix: str, baseline: Mapping[str, frozenset[str]]) -> list[str]:
+        """Describe what remains: threads with the prefix and bookings not in ``baseline``."""
 
 
 @dataclass(frozen=True)
@@ -54,26 +62,34 @@ def _attempt(problems: list[str], what: str, step: Callable[[], Any], default: A
 
 
 def tidy(cleanup: Cleanup, ctx: Context) -> dict[str, Any]:
-    """Purge the run's threads, release its bookings and count what remains.
+    """Release the run's bookings, purge its threads and list what remains.
 
-    Every step runs even when an earlier one failed or was interrupted. A step that cannot run
-    is reported as a problem. A check that cannot run counts as one leftover, because an
-    unknown state is not a clean one.
+    Bookings go first, by exact id, because purging a thread removes the hold requests that
+    tie a booking to the run. Every step runs even when an earlier one failed or was
+    interrupted. A step that cannot run is reported as a problem. A check that cannot run
+    counts as one leftover, because an unknown state is not a clean one.
     """
     problems: list[str] = []
+    owned = sorted(ctx.owned_bookings)
+    released = _attempt(
+        problems, "release", lambda: cleanup.release_bookings(owned) if owned else 0, 0)
     purged = 0
     for thread in dict.fromkeys(ctx.threads):
         purged += _attempt(problems, thread, lambda t=thread: _purge(cleanup, t), 0)
-    ids = sorted(ctx.created_bookings)
-    released = _attempt(
-        problems, "release", lambda: cleanup.release_bookings(ids) if ids else 0, 0)
-    leftovers = _attempt(
-        problems, "leftover check", lambda: cleanup.leftovers(THREAD_PREFIX + ctx.run_id, ids),
-        None)
-    if leftovers is None:
-        leftovers = 1
-    return {"threads_purged": purged, "bookings_released": released, "leftovers": leftovers,
-            "problems": problems}
+    items = _leftover_items(cleanup, ctx, problems)
+    return {"threads_purged": purged, "bookings_released": released, "leftovers": len(items),
+            "leftover_items": [scrub(item) for item in items], "problems": problems}
+
+
+def _leftover_items(cleanup: Cleanup, ctx: Context, problems: list[str]) -> list[str]:
+    prefix = THREAD_PREFIX + ctx.run_id
+    items = _attempt(problems, "leftover check",
+                     lambda: cleanup.leftovers(prefix, ctx.baseline or {}), None)
+    listed = ["the leftover check could not run"] if items is None else list(items)
+    if ctx.baseline is None:
+        problems.append("leftover check: no booking baseline was taken before the plan")
+        listed.append("the leftover check had no booking baseline")
+    return listed
 
 
 def _purge(cleanup: Cleanup, thread: str) -> int:
@@ -95,12 +111,15 @@ def run_proof(
         mode=header.mode,
     )
     try:
+        ports.database.preflight()
+        ctx.baseline = snapshot_bookings(ports)
         for spec in select(jordan_only):
             receipt.outcomes.append(run_probe(spec, ports, ctx))
     except BaseException as exc:
         exc.add_note(describe_cleanup(tidy(cleanup, ctx)))
         raise
     receipt.cleanup = tidy(cleanup, ctx)
+    receipt.notes = ctx.residue_notes()
     return receipt
 
 

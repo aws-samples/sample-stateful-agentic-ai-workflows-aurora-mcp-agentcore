@@ -61,7 +61,7 @@ def test_values_are_escaped():
 def test_the_full_page_lists_every_probe_and_the_cleanup():
     page = full_html(recorded())
 
-    assert page.count("<tr>") == 16
+    assert page.count("<tr>") == 18
     assert "gateway.decoy_holds_for_jordan" in page and "Holds Lambda: workload grant" in page
     assert "threads purged" in page and "leftovers 0" in page
 
