@@ -690,11 +690,49 @@ that reaches an AgentCore client with no token is answered with 401 and the code
 `sign_in_required`. Neither is a 503. After `token_expired`, sign in again and repeat the request; a
 paused workflow resumes from its last saved step with the new token.
 
-### Roll back
+### Save the configuration, then roll back
 
-Return to `iam` in the reverse order: the backend and hosted service, the Gateway authorizer, both
-Runtimes, then the interceptor and the Cedar rule, using the configurations saved in prerequisite 5.
-The Aurora logins and the Cognito pool work with both modes and are not rolled back.
+Before the window, `python scripts/release_identity.py snapshot --service-arn ARN` reads (and
+changes nothing) the Gateway, both Runtimes, the App Runner service, the site's viewer function and
+response headers policy, the roles stack, the holds and semantic Lambdas and the active Cedar rules,
+and writes them to `.local/release-b2/snapshot-<UTC time>.json` (mode 0600, with a SHA-256 over the
+content). It holds no secret value: a plain value under a credential-looking name is replaced with
+`<redacted>`, a token-shaped or access-key-shaped string with `<token>`, and the paths are listed
+under `redacted`. The command exits 1 and saves nothing when a hop already reports a finding (a
+release under way, or drift); `--accept-baseline` saves that state on purpose.
+
+`python scripts/release_identity.py rollback` is a dry run: it prints, for every hop, each
+difference from the snapshot with both values in full. `rollback --apply
+--i-understand-this-changes-aws` restores them. It uses the newest intact snapshot (`--snapshot
+FILE` pins one) and prints the time and commit of the one it uses, loudly when a newer file was
+skipped. Each write is read back, up to 60 checks 5 seconds apart, until the hop equals the
+snapshot. A hop whose saved copy was redacted anywhere is refused, not restored, and a failed hop
+skips only the steps that need it: the Runtimes are skipped when the Gateway step failed, and the
+Lambdas when the secret parameter step failed. Running it again is safe; a hop that already matches
+is only read, and nothing is ever deleted. `rollback-result.json` records each step and any holds
+restart still owed, so a later run does it.
+
+Restore order, which is the true reverse of the release:
+
+1. the site (viewer function and response headers policy), then the App Runner service
+2. the roles stack (checked; a manual command is printed)
+3. the Gateway (authorizer back to IAM, interceptor detached), then both Runtimes
+4. the Cedar rules (checked; a manual command is printed)
+5. the secret parameter, then the holds Lambda (restarted) and the semantic Lambda
+
+Between steps 1 and 3 the service is back in `iam` while the Gateway and the Runtimes still expect
+`jwt`, so signed-in traffic through the service fails until step 3 finishes. The release has the
+mirror window (Runtimes in `jwt` before the service moves), so this is the same size; keep the
+maintenance window open until the command reports "Rollback complete".
+
+The roles stack, the Cedar rules and the distribution's behaviors are not changed by this command.
+Each is printed with the snapshot's commit and the commands to run from a checkout (`git worktree
+add`) of that commit, with the account, Region and service ARN taken from your own `.env` as shell
+variables. Do not run them from the current checkout: it would deploy the new release again. After
+them, run `rollback` again to re-attach the interceptor and verify; the exit code is 1 until every
+hop matches. The Aurora logins and the Cognito pool work with both modes and are not rolled back.
+The restore uses the service APIs and has been exercised only against recording fakes; its first
+real exercise is the rehearsal.
 
 ## Publish the web app
 
