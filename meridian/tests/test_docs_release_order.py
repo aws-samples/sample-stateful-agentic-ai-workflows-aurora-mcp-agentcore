@@ -92,7 +92,7 @@ def test_every_release_document_says_the_jwt_gateway_is_a_new_resource():
 
 
 COMMAND = re.compile(r"release_identity\.py\s+((?:check|interceptor-delete|interceptor|lambdas|"
-                     r"semantic-lambda|gateway|deploy|snapshot|rollback)\b[^`\n]*)")
+                     r"semantic-lambda|gateway|deploy|holds-logs|snapshot|rollback)\b[^`\n]*)")
 
 
 def documented_commands() -> list[list[str]]:
@@ -164,3 +164,66 @@ def test_the_failed_deploy_advice_names_the_stack_status_and_the_stuck_rollback(
 
     assert "stack status in CloudFormation first" in text
     assert "UPDATE_ROLLBACK_FAILED" in text and "continue-update-rollback" in text
+
+
+# ------------------------------------------- the retained holds log group (stage 1 to 2)
+
+LOG_GROUP = "/aws/lambda/meridianv2-MeridianHolds"
+HOLDS_LOGS = f"release_identity.py holds-logs {CONFIRM}"
+
+
+def test_the_window_deletes_the_holds_log_group_between_stage_one_and_stage_two():
+    text = window()
+
+    stage_one = text.index("release_identity.py deploy --apply")
+    logs = text.index(HOLDS_LOGS)
+    stage_two = text.index("7. Stage 2")
+    bind = text.index("bind_gateway_workload.py")
+    assert stage_one < logs < stage_two < bind
+
+
+def test_the_design_note_explains_the_log_group_collision_and_the_permissions():
+    text = flat(replacement())
+
+    assert LOG_GROUP in text and "CloudFormation" in text and "retained" in text
+    assert "no log export" in text or "not exported" in text
+    for word in ("logs:DescribeLogGroups", "logs:DeleteLogGroup",
+                 "lambda:GetFunctionConfiguration"):
+        assert word in text, word
+    assert "exact name" in text and "refuses" in text
+
+
+def test_the_stage_table_says_stage_two_refuses_while_the_log_group_exists():
+    start = OPERATIONS.index("| 2 `targets`")
+    row = flat(OPERATIONS[start:OPERATIONS.index("\n", start)])
+
+    assert "holds-logs" in row
+
+
+def test_the_rollback_steps_delete_the_log_group_between_the_first_two_deploys():
+    start = OPERATIONS.index("Rolling back to `iam` after the release")
+    text = OPERATIONS[start:OPERATIONS.index("The `iam` Gateway that comes back")]
+
+    deploy = text.index("deploy --to iam --apply")
+    logs = text.index("release_identity.py holds-logs")
+    bind = text.index("bind_gateway_workload.py")
+    assert deploy < logs < bind
+
+
+def test_the_rollback_docs_say_deploy_finds_its_snapshot_and_takes_no_flag():
+    start = OPERATIONS.index("### Save the configuration, then roll back")
+    text = flat(OPERATIONS[start:OPERATIONS.index("## Prove the decoy is refused")])
+
+    assert "`deploy` takes no `--snapshot`" in text and "finds the snapshot" in text
+
+
+def test_the_runbook_and_the_scripts_readme_name_the_log_group_step():
+    for text in (RUNBOOK, README):
+        assert "holds-logs" in text
+    assert LOG_GROUP in flat(RUNBOOK)
+
+
+def test_the_documented_log_group_name_is_the_one_the_code_derives():
+    from scripts.identity_release import holds_logs
+
+    assert holds_logs.log_group_name() == LOG_GROUP

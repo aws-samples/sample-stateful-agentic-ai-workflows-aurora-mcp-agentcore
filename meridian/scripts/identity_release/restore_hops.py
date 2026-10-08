@@ -34,7 +34,7 @@ from botocore.validate import ParamValidator
 
 from backend.agentcore.auth_mode import IAM, JWT
 from scripts.identity_release import lambda_release, preflight, runtime_roles, settings
-from scripts.identity_release import snapshot
+from scripts.identity_release import holds_logs, snapshot
 
 WAIT_ATTEMPTS = 60
 POLL_SECONDS = 5
@@ -569,6 +569,13 @@ def replaced_remedy(ctx: Context) -> list[str]:
         f"    MERIDIAN_AGENTCORE_AUTH={mode} python scripts/render_agentcore_config.py",
         f"    python scripts/release_identity.py deploy --to {mode} --apply "
         f"{settings.CONFIRM_FLAG}",
+        "  the first of those deploys (stage gateway) deletes the other Gateway, so it wants a "
+        "complete snapshot taken of that very Gateway, which it found by itself in "
+        ".local/release-b2/ and does not take as an option; if it refuses for lack of one, take "
+        "one as it says: python scripts/release_identity.py snapshot --service-arn ARN",
+        "  after stage gateway and before stage targets, delete the log group the deleted holds "
+        "function left behind (the second deploy recreates it and CloudFormation refuses a name "
+        f"that exists): {holds_logs.command()}",
         "  the holds Lambda and its role were recreated: python scripts/bind_gateway_workload.py",
         "  from the current checkout, point meridian/.env at the new Gateway: python "
         "scripts/sync_agentcore_env.py --write",

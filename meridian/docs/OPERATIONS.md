@@ -724,10 +724,31 @@ and the live Gateway agree, reads the plan, deploys once and reads the Gateway b
 
 | Stage | The render holds | What the deploy does | Why it is separate |
 | --- | --- | --- | --- |
-| 1 `gateway` | The new Gateway, `SemanticTripSearchLambda`, no `MeridianHolds`, no Cedar engine, both Runtimes with the Cognito authorizer | Creates the Gateway, its role and target; moves both Runtimes to the Cognito authorizer; deletes the old Gateway, its role, its targets, the old holds Lambda, the Cedar engine and its rules | The old holds Lambda holds the function name until CloudFormation deletes it |
-| 2 `targets` | Adds `MeridianHolds` and the Gateway id on the Runtimes | Creates the holds Lambda and role and the target | Cedar validates a rule against the tools that exist, so the tool comes before the rule |
+| 1 `gateway` | The new Gateway, `SemanticTripSearchLambda`, no `MeridianHolds`, no Cedar engine, both Runtimes with the Cognito authorizer | Creates the Gateway, its role and target; moves both Runtimes to the Cognito authorizer; deletes the old Gateway, its role, its targets, the old holds Lambda, the Cedar engine and its rules | The old holds Lambda holds the function name until CloudFormation deletes it. Its log group is kept, so `holds-logs` deletes it before stage 2 |
+| 2 `targets` | Adds `MeridianHolds` and the Gateway id on the Runtimes | Creates the holds Lambda, its log group and role and the target. The tool refuses while the old log group exists and prints the `holds-logs` command | Cedar validates a rule against the tools that exist, so the tool comes before the rule |
 | 3 `governance` | Adds the Cedar engine, the rules and the association | Creates the engine and rules and attaches the engine in `ENFORCE` mode | The rules name the Gateway, whose id is known only after stage 1 |
 | 4 `complete` | Adds the engine id on the Runtimes | Updates both Runtimes | The engine id is known only after stage 3 |
+
+**The retained holds log group.** The CDK creates the holds Lambda's log group with an explicit name,
+`/aws/lambda/meridianv2-MeridianHolds`, and keeps it when the function is deleted (the plan shows it as
+retained). Stage 2 creates the function again together with a log group of that very name, and CloudFormation
+refuses to create a log group that exists, so stage 2 would fail after the irreversible stage 1. The same
+collision hits stage 2 of a rollback to `iam`. The tool therefore deletes that one group between the two
+stages, with no log export (the contents are the old function's debug logs; export them first if you want
+them):
+
+```bash
+venv/bin/python scripts/release_identity.py holds-logs
+venv/bin/python scripts/release_identity.py holds-logs --apply --i-understand-this-changes-aws
+```
+
+`holds-logs` derives the group's exact name from the project name and the target name, never a pattern, and
+lists by that prefix only to find a group whose name is exactly that one (a group that merely starts with it is
+never touched). It refuses (exit 2) while the holds function still exists, since stage 1 has not deleted it.
+It deletes the group, reads back that it is gone (exit 1 with `DRIFT` if it stays), and is a clean no-op when
+the group is already absent. The stage 2 preflight reads the same group and refuses, in the dry run as well,
+while it exists, with the command to run. The operator profile needs `logs:DescribeLogGroups` and
+`logs:DeleteLogGroup` on that log group and `lambda:GetFunctionConfiguration` on the holds function.
 
 **What the plan gate accepts.** `release_identity.py deploy` runs `agentcore deploy --diff --json` and reads the
 resource lines (`[+]`, `[~]`, `[-]`, a type, a path and a logical id). It refuses a plan with no parsed
@@ -820,9 +841,18 @@ ask. Use `check --skip-service` for every read until the service moves (step 14)
    read-back found, because the deployed state has moved on. A failed deploy sends you to the stack status in
    CloudFormation first; a stack in `UPDATE_ROLLBACK_FAILED` needs `aws cloudformation
    continue-update-rollback` before anything else.
+
+   Then delete the old holds function's retained log group, which stage 2 would otherwise collide with (see
+   the design note above; the logs are not exported):
+
+   ```bash
+   venv/bin/python scripts/release_identity.py holds-logs
+   venv/bin/python scripts/release_identity.py holds-logs --apply --i-understand-this-changes-aws
+   ```
+
 7. Stage 2: `venv/bin/python scripts/render_agentcore_config.py`, then `release_identity.py deploy` and
-   `deploy --apply ...` as in step 6. The preflight refuses if the plan removes anything or does not add the
-   holds target and Lambda.
+   `deploy --apply ...` as in step 6. The preflight refuses while the old holds log group exists (it names the
+   `holds-logs` command), and if the plan removes anything or does not add the holds target and Lambda.
 8. Bind the new holds role: `venv/bin/python scripts/bind_gateway_workload.py`.
 9. Move the holds Lambda and its parameter to the gateway login. The write refuses until the new holds
    role can read that secret, which stage 2 grants.
@@ -867,7 +897,7 @@ out on purpose with `--skip-service`. A `check` with neither prints `NOT CHECKED
 when every hop matches, so use `--skip-service` for every read before the service moves (steps 1 to 8 of the
 window) and `--service-arn` after it. The backend login proof is compared only in
 `jwt` mode, so `check --expect iam` shows no proof line even when no receipt exists.
-`interceptor`, `interceptor-delete`, `lambdas --restart-holds`, `semantic-lambda`, `gateway`, `deploy` and
+`interceptor`, `interceptor-delete`, `lambdas --restart-holds`, `semantic-lambda`, `gateway`, `deploy`, `holds-logs` and
 `rollback` are dry runs unless they get `--apply --i-understand-this-changes-aws`. The backend
 login proof comes from `scripts/prove_backend_login.py --apply
 --i-understand-this-changes-aws`. Exit codes of `release_identity.py`:
@@ -1007,7 +1037,10 @@ rollback prints is, from a checkout of the snapshot's commit:
    `python scripts/release_identity.py gateway --to jwt --only revoke --apply --i-understand-this-changes-aws`.
 2. Repeat until the render prints `Configuration complete.` (four stages: gateway, targets, governance,
    complete): `MERIDIAN_AGENTCORE_AUTH=iam python scripts/render_agentcore_config.py`, then
-   `python scripts/release_identity.py deploy --to iam --apply --i-understand-this-changes-aws`.
+   `python scripts/release_identity.py deploy --to iam --apply --i-understand-this-changes-aws`. Between
+   the first deploy (stage gateway) and the second (stage targets) run
+   `python scripts/release_identity.py holds-logs --apply --i-understand-this-changes-aws`, which deletes
+   the log group the deleted holds function left behind; the second deploy refuses until it is gone.
 3. `python scripts/bind_gateway_workload.py` (the holds Lambda and its role were recreated), then
    `python scripts/sync_agentcore_env.py --write`, then `scripts/publish.py` in the saved mode so the
    backend and the service name the new Gateway.
@@ -1023,8 +1056,10 @@ taken before the release (or the one you name). Taking a `jwt` snapshot reads th
 `AGENTCORE_GATEWAY_URL` names, so run `sync_agentcore_env.py --write` first if `.env` is stale, and it needs the
 `MERIDIAN_COGNITO_*` settings and `MERIDIAN_GATEWAY_ENFORCEMENT` from `.env` (they stay set in `iam` mode). The
 mode of a snapshot comes from the Gateway, not from `MERIDIAN_AGENTCORE_AUTH`, which the `snapshot` command does
-not read. After the rebuild the `iam` release is live, so a repeat `rollback` needs `--snapshot FILE`, which every
-printed command carries.
+not read. The first-stage `deploy` finds the snapshot itself in `.local/release-b2/` (it looks for a complete
+snapshot of the replaced release taken of that Gateway); `deploy` takes no `--snapshot`, so the printed
+`deploy` commands run as printed. After the rebuild the `iam` release is live, so a repeat `rollback` needs
+`--snapshot FILE`, which every printed command carries.
 
 The jwt release removes the `InvokeGateway` statement from both Runtime roles, and the IAM render
 puts it back for the new IAM Gateway. `check --expect iam` reads both roles. `snapshot` in `iam`

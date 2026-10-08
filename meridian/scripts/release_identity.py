@@ -14,6 +14,7 @@ Every command that changes AWS is a dry run unless it gets both ``--apply`` and
         [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py deploy [--to iam|jwt]
         [--apply --i-understand-this-changes-aws]
+    python scripts/release_identity.py holds-logs [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py snapshot --service-arn ARN [--accept-baseline]
     python scripts/release_identity.py rollback [--snapshot FILE]
         [--apply --i-understand-this-changes-aws]
@@ -49,6 +50,11 @@ agree on the stage and, for the first stage, everything the irreversible replace
 mode's Gateway needs is in place. An apply then reads the plan with ``agentcore deploy --diff
 --json`` and refuses one that is not the stage's plan, runs ``/opt/homebrew/bin/agentcore deploy
 -y`` and reads the Gateway back by name; it never changes the Gateway itself.
+``holds-logs`` deletes the old holds function's retained log group (``/aws/lambda/`` plus the
+function's fixed name) between stage 1 and stage 2, in a replacement and in a rollback: stage 2
+creates a log group of that name and CloudFormation refuses one that exists. It finds the group by
+its exact name, refuses while the holds function exists, exports nothing, reads back that the
+group is gone and does nothing when it is absent; the stage 2 deploy refuses while it exists.
 ``snapshot`` (read-only) saves the replaced configuration of every hop to ``.local/release-b2/``
 before the window, with no secret value (exit 1 and nothing saved when a hop already reports a
 finding, unless ``--accept-baseline``). ``rollback`` restores it (the newest snapshot of the
@@ -94,7 +100,7 @@ from scripts.identity_release import deploy_order, interceptor_lambda, preflight
 from scripts.identity_release import runtime_roles, settings  # noqa: E402
 from scripts.identity_release import lambda_release  # noqa: E402
 from scripts.identity_release import gateway_release  # noqa: E402
-from scripts.identity_release import rollback, semantic_lambda, snapshot  # noqa: E402
+from scripts.identity_release import holds_logs, rollback, semantic_lambda, snapshot  # noqa: E402
 from scripts.provision_service_logins import redact, require_account  # noqa: E402
 from scripts.sync_cognito_env import FRONTEND_ENV_FILE, stack_outputs  # noqa: E402
 
@@ -190,6 +196,11 @@ def build_parser() -> argparse.ArgumentParser:
         "deploy", allow_abbrev=False,
         help="deploy one build stage of the mode's Gateway, then read the Gateway back")
     deploy_order.add_arguments(ship)
+    holds = commands.add_parser(
+        "holds-logs", allow_abbrev=False,
+        help="delete the old holds function's retained log group between stage 1 and stage 2")
+    holds_logs.add_arguments(holds)
+    add_apply_flags(holds)
     save = commands.add_parser("snapshot", allow_abbrev=False,
                                help="save the configuration the release replaces (read-only)")
     snapshot.add_arguments(save)
@@ -394,6 +405,11 @@ def run_deploy(args: argparse.Namespace, deps: Dependencies) -> int:
     return deploy_order.run(args, deps, say)
 
 
+def run_holds_logs(args: argparse.Namespace, deps: Dependencies) -> int:
+    """Plan, or delete, the holds function's retained log group and read back that it is gone."""
+    return holds_logs.run(args, deps, say)
+
+
 def run_snapshot(args: argparse.Namespace, deps: Dependencies) -> int:
     """Save the configuration the release replaces."""
     return snapshot.command(args, deps, say)
@@ -407,7 +423,8 @@ def run_rollback(args: argparse.Namespace, deps: Dependencies) -> int:
 HANDLERS = {"check": run_check, "interceptor": run_interceptor,
             "interceptor-delete": run_interceptor_delete, "lambdas": run_lambdas,
             "semantic-lambda": run_semantic_lambda, "gateway": run_gateway,
-            "deploy": run_deploy, "snapshot": run_snapshot, "rollback": run_rollback}
+            "deploy": run_deploy, "holds-logs": run_holds_logs,
+            "snapshot": run_snapshot, "rollback": run_rollback}
 
 
 def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int:
@@ -417,7 +434,8 @@ def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int
     try:
         return HANDLERS[args.command](args, deps)
     except (settings.ReleaseConfigError, interceptor_lambda.DeployError,
-            gateway_release.GatewayError, deploy_order.DeployOrderError) as exc:
+            gateway_release.GatewayError, deploy_order.DeployOrderError,
+            holds_logs.HoldsLogsError) as exc:
         print(f"error: {mask(str(exc))}", file=sys.stderr)
         return EXIT_COULD_NOT_RUN
     except (BotoCoreError, ClientError) as exc:

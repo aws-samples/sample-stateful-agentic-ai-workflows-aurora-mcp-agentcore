@@ -22,6 +22,10 @@ Before it runs anything it checks, and an apply refuses (nothing deployed) on an
    replaced mode exists that was taken of that very Gateway (same id, account and Region),
    because the deletion cannot be undone.
 
+5. in the second stage the old holds function's retained log group (``holds_logs``) is gone,
+   because the stage creates a log group of that name and CloudFormation refuses one that exists;
+   ``release_identity.py holds-logs`` deletes it.
+
 Then it reads the plan (``agentcore deploy --diff --json``) and refuses one that is not the plan
 of the stage (``deploy_diff``), runs ``agentcore deploy -y`` (``/opt/homebrew/bin/agentcore``
 only), waits for the Gateway to be READY and reads it back; after the first stage it also reports
@@ -45,7 +49,8 @@ from typing import Any
 from botocore.exceptions import BotoCoreError, ClientError
 
 from backend.agentcore.auth_mode import IAM, JWT
-from scripts.identity_release import deploy_diff, gateway_release, preflight, settings, snapshot
+from scripts.identity_release import deploy_diff, gateway_release, holds_logs, preflight
+from scripts.identity_release import settings, snapshot
 from scripts.identity_release import stages
 from scripts.provision_service_logins import require_account
 
@@ -457,6 +462,8 @@ def _next_steps(stage: str, wanted: preflight.Target, say: Callable[[str], None]
     following = stages.next_stage(stage)
     if stage == stages.GATEWAY:
         say(f"Next: {SYNC}, so meridian/.env names the new Gateway.")
+        say(f"Then, before stage {stages.TARGETS} (its holds function would create a log group "
+            f"CloudFormation finds already there): {holds_logs.command()}")
     if following:
         say(f"Next: {RENDER}")
         say(f"Then: python scripts/release_identity.py deploy --to {wanted.mode} --apply "
@@ -491,7 +498,7 @@ def _steps(stage: str) -> list[str]:
                         "this account and Region, exists; for jwt the identity stack, the "
                         "backend login proof and the interceptor function are in place"
                         if stage == stages.GATEWAY else ""))
-    return [
+    steps = [
         first,
         f"2. plan, refused unless it is this stage's plan: {' '.join(DIFF_ARGV)}   "
         "(run in meridian_agentcore)",
@@ -500,6 +507,14 @@ def _steps(stage: str) -> list[str]:
         "replaced Gateway is gone (the interceptor is attached afterwards, by the gateway "
         "command)",
     ]
+    if stage == stages.GATEWAY:
+        steps.append(f"5. afterwards, before stage {stages.TARGETS}: {holds_logs.command()}   "
+                     "(deletes the old holds function's retained log group, which that stage "
+                     "would otherwise collide with)")
+    if stage == stages.TARGETS:
+        steps[0] += ("; the retained log group of the old holds function is gone (otherwise "
+                     "the stage refuses and names the holds-logs command)")
+    return steps
 
 
 def run(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> int:
@@ -532,6 +547,8 @@ def run(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> int:
     found += stage_findings(stage, deployed_stage(deps.agentcore_dir, mode), live,
                             live_gateway_stage(control, live) if live else None,
                             wanted.gateway_name)
+    if stage == stages.TARGETS:
+        found += holds_logs.gate_findings(session.client("logs"), session.client("lambda"))
     first = FirstStage()
     if stage == stages.GATEWAY and live is None:
         first = first_stage_findings(session, deps, control, wanted)

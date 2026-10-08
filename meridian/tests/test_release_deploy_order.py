@@ -17,6 +17,7 @@ import pytest
 
 from scripts import release_identity
 from scripts.identity_release import deploy_order, snapshot, stages, settings
+from tests import holds_logs_support as hs
 from tests import release_plan_fixtures as fx
 from tests import release_support as rs
 from tests.aws_recorders import Recorder, client_error
@@ -104,7 +105,8 @@ class Roles:
 
 
 class World:
-    def __init__(self, mode="jwt", *live, account=rs.ACCOUNT, roles=None, lam=None, **extras):
+    def __init__(self, mode="jwt", *live, account=rs.ACCOUNT, roles=None, lam=None,
+                 log_groups=(), **extras):
         from unittest.mock import Mock
         self.mode = mode
         self.sts = Mock()
@@ -114,12 +116,13 @@ class World:
         self.cfn = Mock()
         self.cfn.describe_stacks.return_value = {"Stacks": [{"Outputs": rs.identity_outputs()}]}
         self.lam = lam or _interceptor_lambda()
+        self.logs = hs.FakeLogs(*log_groups)
         self.built = []
 
     def session(self, region):
         from unittest.mock import Mock
         clients = {"sts": self.sts, "bedrock-agentcore-control": self.cloud, "iam": self.iam,
-                   "cloudformation": self.cfn, "lambda": self.lam}
+                   "cloudformation": self.cfn, "lambda": self.lam, "logs": self.logs}
 
         def client(name, **kwargs):
             self.built.append(name)
@@ -1007,3 +1010,95 @@ def test_the_first_stage_touches_only_the_clients_and_calls_it_needs(tmp_path):
     assert set(world.built) <= {"sts", "bedrock-agentcore-control", "iam", "cloudformation",
                                 "lambda"}
     assert lam_calls and all(rs.INTERCEPTOR_ARN == name for name in lam_calls)
+
+
+# ------------------------------------------- the holds log group between stage 1 and 2
+
+HOLDS_LOGS = f"python scripts/release_identity.py holds-logs --apply {FLAG}"
+
+
+def test_stage_two_refuses_while_the_retained_holds_log_group_exists(tmp_path, capsys):
+    world = World("jwt", "jwt", log_groups=[hs.GROUP])
+    runner = Cli(world)
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.TARGETS)
+
+    err = capsys.readouterr().err
+    assert code == 2 and runner.deploys == [] and runner.diffs == []
+    assert hs.GROUP in err and HOLDS_LOGS in err
+
+
+def test_the_stage_two_dry_run_blocks_with_the_command(tmp_path, capsys):
+    world = World("jwt", "jwt", log_groups=[hs.GROUP])
+
+    code = run(["deploy"], world, tmp_path, Cli(world), stage=stages.TARGETS)
+
+    out = capsys.readouterr().out
+    assert code == 2 and f"BLOCKED  the log group {hs.GROUP}" in out and HOLDS_LOGS in out
+
+
+def test_stage_two_proceeds_once_the_group_is_gone(tmp_path):
+    world = World("jwt", "jwt", log_groups=hs.NEIGHBOURS)
+    runner = Cli(world)
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner,
+               stage=stages.TARGETS) == 0
+
+    assert runner.events == ["diff", "deploy"]
+
+
+def test_stage_two_with_a_live_holds_function_does_not_offer_the_delete(tmp_path, capsys):
+    world = World("jwt", "jwt", log_groups=[hs.GROUP])
+    world.lam.holds_exists = True
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, Cli(world), stage=stages.TARGETS)
+
+    err = capsys.readouterr().err
+    assert code == 2 and "still exists" in err and HOLDS_LOGS not in err
+
+
+@pytest.mark.parametrize("stage", [stages.GOVERNANCE, stages.COMPLETE])
+def test_the_later_stages_do_not_read_the_log_group(tmp_path, stage):
+    world = World("jwt", "jwt", log_groups=[hs.GROUP])
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, Cli(world), stage=stage) == 0
+
+    assert world.logs.calls == []
+
+
+def test_the_first_stage_does_not_read_the_log_group(tmp_path):
+    world = replacement()
+    runner = Cli(world, JWT_REPLACES_IAM, creates="jwt", removes="iam")
+
+    run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY)
+
+    assert world.logs.calls == [] and "logs" not in world.built
+
+
+def test_stage_one_prints_the_log_group_step_between_the_sync_and_the_next_render(
+        tmp_path, capsys):
+    world = replacement()
+    runner = Cli(world, JWT_REPLACES_IAM, creates="jwt", removes="iam")
+
+    run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY)
+
+    out = capsys.readouterr().out
+    assert out.index("sync_agentcore_env.py") < out.index(HOLDS_LOGS) < out.index(
+        "render_agentcore_config.py")
+    assert "before stage targets" in out
+
+
+def test_only_the_first_stage_prints_the_log_group_step(tmp_path, capsys):
+    world = World("jwt", "jwt")
+
+    run(["deploy", "--apply", FLAG], world, tmp_path, Cli(world), stage=stages.TARGETS)
+
+    assert "holds-logs" not in capsys.readouterr().out
+
+
+def test_the_stage_one_dry_run_lists_the_log_group_hand_over(tmp_path, capsys):
+    world = replacement()
+
+    run(["deploy"], world, tmp_path, Cli(world), stage=stages.GATEWAY)
+
+    assert "holds-logs" in capsys.readouterr().out

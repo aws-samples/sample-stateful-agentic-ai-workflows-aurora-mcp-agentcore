@@ -6,7 +6,7 @@ import json
 from copy import deepcopy
 
 from scripts.identity_release import gateway_release as gw
-from scripts.identity_release import interceptor_lambda, settings
+from scripts.identity_release import holds_logs, interceptor_lambda, settings
 from tests import release_support as rs
 from tests.aws_recorders import Recorder, client_error
 
@@ -95,6 +95,8 @@ def iam_client(installed=True, events=None):
 class FakeLambda(Recorder):
     """get_function for the interceptor; it has no resource-policy calls to record."""
 
+    holds_exists = False
+
     def __init__(self, tags=None, **variables):
         super().__init__()
         wanted = interceptor_lambda.desired(
@@ -107,6 +109,13 @@ class FakeLambda(Recorder):
     def get_function(self, **kwargs):
         self.calls.append(("get_function", kwargs))
         return deepcopy(self.function)
+
+    def get_function_configuration(self, FunctionName):
+        """The holds function: absent unless ``holds_exists`` (the stack deletes it in stage 1)."""
+        self.calls.append(("get_function_configuration", {"FunctionName": FunctionName}))
+        if FunctionName == holds_logs.function_name() and self.holds_exists:
+            return {"FunctionName": FunctionName}
+        raise client_error("ResourceNotFoundException", operation="GetFunctionConfiguration")
 
 
 def lambda_client(**keywords):

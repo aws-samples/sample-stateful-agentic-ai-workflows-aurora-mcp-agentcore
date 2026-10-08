@@ -494,6 +494,48 @@ def test_the_replaced_gateway_remedy_lists_the_four_stage_deploys_and_what_follo
     assert [r for r in outcome.results if r.name == "agentcore stack"][0].status == "manual"
 
 
+def test_the_replaced_gateway_remedy_deletes_the_holds_log_group_between_stage_one_and_two(
+        tmp_path):
+    world, saved, _ = replaced_by_the_release(tmp_path)
+
+    _, said = go(world, saved, gateway_id=NEW_ID)
+
+    text = "\n".join(said)
+    command = ("python scripts/release_identity.py holds-logs --apply "
+               "--i-understand-this-changes-aws")
+    assert command in text
+    assert text.index("deploy --to iam --apply") < text.index(command) < text.index(
+        "bind_gateway_workload.py")
+    assert "stage gateway" in text and "before stage targets" in text
+
+
+def test_the_remedy_says_where_the_first_stage_finds_the_snapshot_it_wants(tmp_path):
+    world, saved, _ = replaced_by_the_release(tmp_path)
+
+    _, said = go(world, saved, gateway_id=NEW_ID)
+
+    text = "\n".join(said)
+    assert "release_identity.py snapshot --service-arn" in text
+    assert "found by itself" in text
+
+
+def test_every_release_command_the_rollback_prints_is_accepted_by_the_real_parser(tmp_path):
+    from scripts import release_identity
+    world, saved, _ = replaced_by_the_release(tmp_path)
+
+    _, said = go(world, saved, gateway_id=NEW_ID)
+
+    printed = [line for line in said if "release_identity.py " in line]
+    assert printed
+    stand_ins = {"FILE": "snapshot.json", "ARN": "arn", '"$SERVICE_ARN"': "arn"}
+    for line in printed:
+        words = line.split("release_identity.py ", 1)[1].split()
+        end = next((i for i, w in enumerate(words) if w.startswith("(") or w == "again"),
+                   len(words))
+        tokens = [stand_ins.get(word, word) for word in words[:end]]
+        release_identity.build_parser().parse_args(tokens)
+
+
 def test_a_gateway_to_be_replaced_that_carries_the_interceptor_gets_a_revoke_line(tmp_path):
     world, saved, _ = replaced_by_the_release(tmp_path)
 

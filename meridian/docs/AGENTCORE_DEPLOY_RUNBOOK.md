@@ -363,6 +363,9 @@ The order, enforced by the tools:
    `release_identity.py gateway --to iam --apply --i-understand-this-changes-aws`.
 2. Stage 1: `render_agentcore_config.py`, then `release_identity.py deploy --apply
    --i-understand-this-changes-aws`, then `sync_agentcore_env.py --write`. The old Gateway is deleted here.
+   The old holds Lambda goes with it, but its log group `/aws/lambda/meridianv2-MeridianHolds` is kept and
+   stage 2 would create it again, which CloudFormation refuses. Delete it before stage 2 (no export):
+   `release_identity.py holds-logs --apply --i-understand-this-changes-aws`. Stage 2 refuses while it exists.
 3. Stages 2, 3 and 4: render and deploy again each time, until the render prints `Configuration complete.`
 4. After stage 2, `bind_gateway_workload.py`, then point the holds Lambda's SSM parameter at the gateway
    login (`publish_gateway_parameters.py --gateway-login --apply --i-understand-this-changes-aws`, then
@@ -372,7 +375,8 @@ The order, enforced by the tools:
 
 The full window, with every command, the consumers of the new Gateway, the outage and the rollback, is in
 [Operations](OPERATIONS.md#the-window-order). Rolling back is the same four stages with
-`MERIDIAN_AGENTCORE_AUTH=iam`, and creates a new `iam` Gateway with a new URL.
+`MERIDIAN_AGENTCORE_AUTH=iam` (including `holds-logs` between its first two deploys), and creates a
+new `iam` Gateway with a new URL.
 
 ## Change the deployment
 
