@@ -259,7 +259,7 @@ POOL = "us-east-1_AbCdEfGhI"
 CLIENT = "exampleclientid123"
 IDENTITY_OUTPUTS = {
     "UserPoolId": POOL, "AppClientId": CLIENT,
-    "HostedUiDomain": "meridian-travelers-9cb4a1.auth.us-east-1.amazoncognito.com",
+    "HostedUiDomain": "meridian-x.auth.us-east-1.amazoncognito.com",
     "Issuer": f"https://cognito-idp.us-east-1.amazonaws.com/{POOL}",
 }
 JWT_DOTENV = {

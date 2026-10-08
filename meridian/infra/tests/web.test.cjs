@@ -38,7 +38,7 @@ test('every hosted route receives the browser security policy', (t) => {
   }
 });
 
-const COGNITO_HOST = 'meridian-travelers-9cb4a1.auth.us-east-1.amazoncognito.com';
+const COGNITO_HOST = 'meridian-x.auth.us-east-1.amazoncognito.com';
 
 function connectSrc(policy) {
   return policy.split('; ').find((directive) => directive.startsWith('connect-src '));
