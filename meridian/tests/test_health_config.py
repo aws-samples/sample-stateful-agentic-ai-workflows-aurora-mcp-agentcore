@@ -259,3 +259,27 @@ def test_origin_routes_require_authentication(monkeypatch, path):
 def test_public_liveness_does_not_expose_configuration(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "production")
     assert TestClient(app).get("/health").json() == {"status": "healthy"}
+
+
+def test_health_names_the_database_login_the_backend_is_connected_as(monkeypatch):
+    from backend import health_probe
+
+    async def fake_probe():
+        return health_probe.AuroraProbeResult(ok=True, db_user="meridian_backend")
+
+    monkeypatch.setattr(health_probe, "probe_aurora", fake_probe)
+    body = TestClient(app).get("/api/health").json()
+
+    assert body["database_user"] == "meridian_backend"
+
+
+def test_health_reports_no_database_login_when_aurora_is_down(monkeypatch):
+    from backend import health_probe
+
+    async def fake_probe():
+        return health_probe.AuroraProbeResult(
+            ok=False, error_class="ExpiredTokenException", component="aurora")
+
+    monkeypatch.setattr(health_probe, "probe_aurora", fake_probe)
+
+    assert TestClient(app).get("/api/health").json()["database_user"] is None

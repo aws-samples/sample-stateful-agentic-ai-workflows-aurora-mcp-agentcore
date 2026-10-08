@@ -187,3 +187,17 @@ def test_probe_cache_expires_after_ten_seconds(monkeypatch):
 
     assert result.ok is False
     assert failing.calls == 1
+
+
+class _LoginDb:
+    async def execute_one(self, sql, params=None):
+        assert "current_user" in sql
+        return {"snapshots": True, "stops": True, "db_user": "meridian_backend"}
+
+
+def test_the_probe_reports_the_login_the_query_ran_as(monkeypatch):
+    monkeypatch.setattr(health_probe, "get_rds_data_client", lambda: _LoginDb())
+
+    result = asyncio.run(health_probe.probe_aurora())
+
+    assert result.ok is True and result.db_user == "meridian_backend"

@@ -60,6 +60,7 @@ class HealthResponse(BaseModel):
     workflow_runtime_configured: bool
     degraded_component: str | None = None
     degraded_error_class: str | None = None
+    database_user: str | None = None
 
 
 class ErrorResponse(BaseModel):
@@ -184,6 +185,7 @@ async def _health_payload() -> HealthResponse:
         workflow_runtime_configured=runtime_configured,
         degraded_component=degraded_component,
         degraded_error_class=aurora.error_class,
+        database_user=aurora.db_user,
     )
 
 

@@ -24,7 +24,8 @@ PROBE_TIMEOUT_SECONDS = 2.0
 CACHE_TTL_SECONDS = 10.0
 WORKFLOW_TABLES_SQL = """
 SELECT to_regclass('public.workflow_snapshots') IS NOT NULL AS snapshots,
-       to_regclass('public.workflow_session_stops') IS NOT NULL AS stops
+       to_regclass('public.workflow_session_stops') IS NOT NULL AS stops,
+       current_user AS db_user
 """
 
 
@@ -40,11 +41,16 @@ class AuroraProbeResult:
     `ExpiredTokenException`). The exception's message text is never
     captured here - it can carry internal detail (ARNs, hostnames) that
     `/api/health` must not expose.
+
+    `db_user` is the database role the probe query ran as (`current_user`). A
+    role name carries no secret, and it is what proves which login the running
+    process really uses.
     """
 
     ok: bool
     error_class: Optional[str] = None
     component: Optional[str] = None
+    db_user: Optional[str] = None
 
 
 _cache: Optional[AuroraProbeResult] = None
@@ -60,11 +66,12 @@ async def _run_probe() -> AuroraProbeResult:
         )
     except Exception as exc:  # noqa: BLE001 - reports the failure class, never the text.
         return AuroraProbeResult(ok=False, error_class=type(exc).__name__, component="aurora")
+    db_user = (row or {}).get("db_user")
     if not row or row.get("snapshots") is not True:
-        return AuroraProbeResult(ok=False, component="workflow_snapshots")
+        return AuroraProbeResult(ok=False, component="workflow_snapshots", db_user=db_user)
     if row.get("stops") is not True:
-        return AuroraProbeResult(ok=False, component="workflow_session_stops")
-    return AuroraProbeResult(ok=True)
+        return AuroraProbeResult(ok=False, component="workflow_session_stops", db_user=db_user)
+    return AuroraProbeResult(ok=True, db_user=db_user)
 
 
 async def probe_aurora() -> AuroraProbeResult:
