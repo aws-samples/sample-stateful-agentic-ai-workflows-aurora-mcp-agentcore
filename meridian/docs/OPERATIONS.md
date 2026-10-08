@@ -358,6 +358,18 @@ backend login has not been exercised against the live cluster.
    reading and deleting the two booking tables in a transaction pinned to the
    traveler and the booking agent, because they force row level security.
 
+   The proof follows the identity mode the live Runtimes and the Gateway are in. `--mode iam|jwt`
+   picks it; without the flag it reads `MERIDIAN_AGENTCORE_AUTH` from `.env` or the shell. In `iam`
+   mode everything signs with the shell's AWS credentials, as above. In `jwt` mode (run it again
+   after the Runtimes move, with `--mode jwt` or with the setting in `.env`) the backend runs with
+   the pool settings, so it verifies a bearer token and forwards it to the Runtimes and the
+   Gateway. The tool signs Jordan in through `scripts/cognito_tokens.py` and sends the token
+   only in the `Authorization` header of its own requests to 127.0.0.1:8014; the token is never
+   put in an argument or an environment variable. The warm-up and recovery scripts sign in
+   themselves. The receipt has the same eight fields, so a jwt run that fails (for example because
+   a Runtime refuses the token) records `ok: false`, and `publish.py`, `gateway --apply` and
+   `check` then refuse until a run passes. A run in the wrong mode fails the same way.
+
    Run it only from a checkout with no uncommitted change under `meridian/`
    (it refuses with exit 3 otherwise), since the receipt names the commit.
    `release_identity.py` and `publish.py` do not re-check the working tree.
@@ -644,7 +656,9 @@ Do not start until all of these hold.
 
 Set `MERIDIAN_AGENTCORE_AUTH` in `.env` and render. The render writes the value into both Runtimes'
 environment and adds the Cedar rule in the same pass. It writes only the ignored local files and
-prints `AgentCore identity mode: jwt`; compare them with the saved configuration before deploying.
+prints `AgentCore identity mode: jwt`, the Gateway enforcement design and, in `jwt` mode, whether
+the Cedar rule is in the render (`Cedar rule: included (meridian_traveler_binding)` or `Cedar rule:
+omitted for this deploy`); compare the files with the saved configuration before deploying.
 
 ```bash
 python scripts/render_agentcore_config.py
@@ -661,10 +675,14 @@ refuses.
 `scripts/release_identity.py check` only reads. It compares the Gateway, both Runtimes, the Cedar
 rules, the identity stack, the backend login proof, the interceptor Lambda's environment and the
 App Runner service with the mode in `.env`. Name the service with `--service-arn ARN`, or leave it
-out on purpose with `--skip-service`. `interceptor` and `interceptor-delete` are dry runs unless
-they get `--apply --i-understand-this-changes-aws`. The backend login proof comes from
-`scripts/prove_backend_login.py --apply --i-understand-this-changes-aws`. Exit codes of
-`release_identity.py`:
+out on purpose with `--skip-service`. A `check` with neither prints `NOT CHECKED` and exits 4 even
+when every hop matches, so use `--skip-service` for every read before the service moves (the
+window's W3, W4 and W6) and `--service-arn` after it. The backend login proof is compared only in
+`jwt` mode, so `check --expect iam` shows no proof line even when no receipt exists.
+`interceptor`, `interceptor-delete`, `lambdas --restart-holds`, `semantic-lambda`, `gateway` and
+`rollback` are dry runs unless they get `--apply --i-understand-this-changes-aws`. The backend
+login proof comes from `scripts/prove_backend_login.py --apply
+--i-understand-this-changes-aws`. Exit codes of `release_identity.py`:
 
 | Code | Meaning |
 | --- | --- |
@@ -673,6 +691,49 @@ they get `--apply --i-understand-this-changes-aws`. The backend login proof come
 | 2 | could not run or compare: a bad setting, another account, an AWS error, a foreign resource |
 | 3 | usage error, or an apply refused because the confirmation flag is missing |
 | 4 | every hop matches but the App Runner service was not named, so it is not fully checked |
+
+Exit codes differ by tool, because 2 was taken before they were aligned. Read the row of the tool
+you ran; `-` means the tool never returns it:
+
+| Tool | 0 | 1 | 2 | 3 | 4 |
+| --- | --- | --- | --- | --- | --- |
+| `release_identity.py` | ok, or a dry run | drift, or a hop not restored | could not run or compare | usage error, or apply without the confirmation flag | hops match, service not checked |
+| `publish_gateway_parameters.py` | written and read back, or a dry run | a parameter did not read back as written | could not run (setting, account, AWS error) | usage error, or apply without the flag | - |
+| `prove_backend_login.py` | passed | a check failed, the backend never answered, a crash or an interrupt | - | refused (precondition, usage, missing flag) | - |
+| `run_gateway_harness.py` | pass | a check failed or stayed unknown, or an unexpected error | resources left behind | refused (also any usage error) | - |
+| `publish.py` | published, or a plan | a refusal or a failure | - | usage error, or `--apply`/`--stage` without the flag | - |
+
+### Move the Lambdas to the gateway login
+
+Two Lambdas still connect as the master login until this step: the `MeridianHolds` Lambda (through
+the SSM parameter `/meridian/aurora/secret_arn`) and `meridian-semantic-trip-search` (through its
+`AURORA_SECRET_ARN` variable). Every command below is a dry run until it gets `--apply
+--i-understand-this-changes-aws`, checks that the credentials belong to the account and Region of
+`AURORA_CLUSTER_ARN` before it builds any other client, and prints no secret value.
+
+```bash
+python scripts/publish_gateway_parameters.py --gateway-login
+python scripts/publish_gateway_parameters.py --gateway-login --apply --i-understand-this-changes-aws
+python scripts/release_identity.py lambdas --restart-holds --apply --i-understand-this-changes-aws
+python scripts/release_identity.py semantic-lambda
+python scripts/release_identity.py semantic-lambda --apply --i-understand-this-changes-aws
+python scripts/release_identity.py lambdas --expect gateway
+```
+
+`publish_gateway_parameters.py` writes the three parameters and reads each back (the secret
+parameter with the same comparison `lambdas` makes). The holds Lambda keeps its cached value until
+`lambdas --restart-holds`. `semantic-lambda` first gives the semantic Lambda's role an inline policy
+(`meridian-gateway-login-read`, one statement marked `MeridianGatewayLoginRead`) that allows
+`secretsmanager:GetSecretValue` on the gateway login's secret alone; a policy of that name without
+the mark is never touched. It then reads the Lambda's whole environment, changes only
+`AURORA_SECRET_ARN` and sends every variable back with the revision it read, and reads both
+changes back. It refuses a function whose environment cannot be read in full (a KMS error, no
+variables), one whose `AURORA_SECRET_ARN` names neither login's secret, and a role in another
+account. A second run changes nothing. The way back is `semantic-lambda --to master --apply
+--i-understand-this-changes-aws`, which keeps the grant; add `--remove-grant` to delete the policy
+the tool added. The operator profile needs `iam:GetRolePolicy` and `iam:PutRolePolicy` (and
+`iam:DeleteRolePolicy` for `--remove-grant`) on that role, `lambda:UpdateFunctionConfiguration`
+on the function and `ssm:PutParameter` on `/meridian/aurora/*`.
 
 ### Run the smoke scripts as a seeded user
 
@@ -741,11 +802,13 @@ backend image to an existing AWS App Runner service, using the CDK app in
 `infra/bin/meridian-web.ts` (stacks `MeridianWebRoles`, `MeridianWebBackend`
 and `MeridianWeb`). It needs the exact account, Region and App Runner service
 ARN. Without `--apply` it builds the frontend, synthesizes the stacks and shows
-their diffs; with `--apply` it deploys them:
+their diffs; with `--apply` it deploys them. `--apply` and `--stage` change AWS, so each also
+needs `--i-understand-this-changes-aws` and is refused with exit 3 without it. Abbreviated flags
+(`--app` for `--apply`) are refused:
 
 ```bash
 python scripts/publish.py --account <account-id> --region <region> --service-arn <app-runner-service-arn>
-python scripts/publish.py --account <account-id> --region <region> --service-arn <app-runner-service-arn> --apply
+python scripts/publish.py --account <account-id> --region <region> --service-arn <app-runner-service-arn> --apply --i-understand-this-changes-aws
 ```
 
 The publisher checks that `AGENTCORE_WORKFLOW_RUNTIME_ARN` is set and that the

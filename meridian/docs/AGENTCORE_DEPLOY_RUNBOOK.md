@@ -145,7 +145,12 @@ parameters, the cluster and the secret:
 
 ```bash
 python meridian/scripts/publish_gateway_parameters.py
+python meridian/scripts/publish_gateway_parameters.py --apply --i-understand-this-changes-aws
 ```
+
+The first command is a dry run that prints the three parameter names. The second checks that the
+credentials belong to the account and Region of `AURORA_CLUSTER_ARN`, writes the parameters and
+reads them back.
 
 ## 4. Bootstrap CDK
 
