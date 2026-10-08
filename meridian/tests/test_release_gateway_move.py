@@ -13,8 +13,7 @@ from scripts.identity_release import settings
 from tests import release_support as rs
 from tests.aws_recorders import client_error, violations
 from tests.gateway_release_support import (
-    GATEWAY_ARN, ROLE_NAME, Control, FakeLambda, clients, current, fast, iam_client,
-    lambda_client, statement,
+    ROLE_NAME, Control, clients, current, fast, iam_client, lambda_client,
 )
 
 CONTROL = "bedrock-agentcore-control"
@@ -179,64 +178,46 @@ def test_the_gateway_role_may_invoke_the_interceptor_and_nothing_else():
     assert gw.role_name(rs.GATEWAY_ROLE) == ROLE_NAME
 
 
-def test_the_resource_grant_is_limited_to_this_gateway_and_account():
-    lam = lambda_client(permitted=False)
+def test_no_lambda_resource_policy_is_read_or_written():
+    lam = lambda_client()
+    iam = iam_client(installed=False)
 
-    gw.grant(clients(Control(current()), lam=lam), rs.GATEWAY_ROLE, target(), GATEWAY_ARN)
+    gw.grant(clients(Control(current()), iam, lam), rs.GATEWAY_ROLE, target())
+    gw.grant_findings(clients(Control(current()), iam, lam), rs.GATEWAY_ROLE, target())
+    gw.revoke(clients(Control(current()), iam, lam), rs.GATEWAY_ROLE)
 
-    assert lam.args("add_permission") == [{
-        "FunctionName": rs.INTERCEPTOR_ARN, "StatementId": gw.PERMISSION_ID,
-        "Action": "lambda:InvokeFunction", "Principal": gw.GATEWAY_PRINCIPAL,
-        "SourceArn": GATEWAY_ARN, "SourceAccount": rs.ACCOUNT}]
-    assert violations("lambda", lam.calls) == []
-
-
-def test_granting_twice_changes_nothing_the_second_time():
-    lam, iam = lambda_client(permitted=False), iam_client(installed=False)
-    both = clients(Control(current()), iam, lam)
-    gw.grant(both, rs.GATEWAY_ROLE, target(), GATEWAY_ARN)
-    lam.calls.clear()
-
-    notes = gw.grant(both, rs.GATEWAY_ROLE, target(), GATEWAY_ARN)
-
-    assert lam.names() == ["get_policy"] and "unchanged" in notes[1]
+    assert lam.calls == []
+    for name in ("PERMISSION_ID", "GATEWAY_PRINCIPAL", "permission_findings",
+                 "_grant_permission"):
+        assert not hasattr(gw, name)
 
 
-def test_a_grant_that_names_another_gateway_is_replaced():
-    other = GATEWAY_ARN.replace("abcde", "zzzzz")
-    stale = statement(Condition={"ArnLike": {"AWS:SourceArn": other},
-                                 "StringEquals": {"AWS:SourceAccount": rs.ACCOUNT}})
-    lam = FakeLambda([stale])
+def test_granting_twice_writes_the_same_role_policy_both_times():
+    iam = iam_client(installed=False)
+    both = clients(Control(current()), iam, lambda_client())
+    gw.grant(both, rs.GATEWAY_ROLE, target())
+    first = iam.args("put_role_policy")[0]
 
-    gw.grant(clients(Control(current()), lam=lam), rs.GATEWAY_ROLE, target(), GATEWAY_ARN)
+    gw.grant(both, rs.GATEWAY_ROLE, target())
 
-    assert lam.names()[-2:] == ["remove_permission", "add_permission"]
-    assert gw.permission_findings(lam, rs.INTERCEPTOR_ARN, GATEWAY_ARN, rs.ACCOUNT) == []
+    assert iam.args("put_role_policy") == [first, first]
+    assert gw.grant_findings(both, rs.GATEWAY_ROLE, target()) == []
 
 
-def test_the_grant_findings_name_a_missing_or_widened_grant():
+def test_the_grant_findings_name_a_missing_or_widened_role_policy():
     both = clients(Control(current()))
-    assert gw.grant_findings(both, rs.GATEWAY_ROLE, target(), GATEWAY_ARN) == []
+    assert gw.grant_findings(both, rs.GATEWAY_ROLE, target()) == []
 
-    missing = clients(Control(current()), iam_client(installed=False), lambda_client(False))
-    found = gw.grant_findings(missing, rs.GATEWAY_ROLE, target(), GATEWAY_ARN)
-    assert len(found) == 2 and gw.INVOKE_POLICY_NAME in found[0] and gw.PERMISSION_ID in found[1]
+    missing = clients(Control(current()), iam_client(installed=False), lambda_client())
+    found = gw.grant_findings(missing, rs.GATEWAY_ROLE, target())
+    assert len(found) == 1 and gw.INVOKE_POLICY_NAME in found[0]
 
     wide_iam = iam_client()
     wide_iam.document = {"Version": "2012-10-17", "Statement": [
         {"Effect": "Allow", "Action": "lambda:*", "Resource": "*"}]}
-    wide_lambda = FakeLambda([statement(Principal={"Service": "events.amazonaws.com"})])
-    wide = clients(Control(current()), wide_iam, wide_lambda)
+    wide = clients(Control(current()), wide_iam, lambda_client())
     assert all("differs" in line for line in gw.grant_findings(
-        wide, rs.GATEWAY_ROLE, target(), GATEWAY_ARN))
-
-
-def test_an_unreadable_resource_policy_is_an_error_not_a_pass():
-    lam = FakeLambda([statement()])
-    lam.get_policy = lambda **kw: {"Policy": "not json"}
-
-    with pytest.raises(gw.GatewayError, match="unreadable"):
-        gw.permission_findings(lam, rs.INTERCEPTOR_ARN, GATEWAY_ARN, rs.ACCOUNT)
+        wide, rs.GATEWAY_ROLE, target()))
 
 
 # ------------------------------------------------------------ the preconditions
@@ -322,7 +303,7 @@ def test_moving_to_jwt_grants_first_then_updates_then_reads_back():
     control = Control(current("iam"), current("jwt", status="UPDATING"), current("jwt"),
                       events=order)
     iam = iam_client(installed=False, events=order)
-    lam = lambda_client(permitted=False)
+    lam = lambda_client()
 
     result = move(control, iam, lam)
 
@@ -331,11 +312,11 @@ def test_moving_to_jwt_grants_first_then_updates_then_reads_back():
     assert iam.args("put_role_policy")[0]["PolicyName"] == gw.INVOKE_POLICY_NAME
     assert json.loads(iam.args("put_role_policy")[0]["PolicyDocument"]) == gw.invoke_policy(
         rs.INTERCEPTOR_ARN)
-    assert "add_permission" in lam.names()
+    assert lam.calls == []
     assert "Gateway: updated to jwt" in result.notes
     assert result.findings == [] and result.after["authorizerType"] == "CUSTOM_JWT"
     assert result.before.described == current("iam")
-    assert violations("iam", iam.calls) == [] and violations("lambda", lam.calls) == []
+    assert violations("iam", iam.calls) == []
     sent = control.args("update_gateway")[0]
     assert violations(CONTROL, [("update_gateway", sent)]) == []
 
@@ -370,19 +351,19 @@ def test_a_move_whose_grants_are_missing_is_refused_before_the_update():
     control = Control(current("iam"), current("jwt"))
 
     with pytest.raises(gw.GatewayError, match="cannot invoke the interceptor yet"):
-        move(control, iam_client(installed=False), lambda_client(False), only="move")
+        move(control, iam_client(installed=False), lambda_client(), only="move")
 
     assert "update_gateway" not in control.names()
 
 
 def test_only_grant_writes_the_grants_and_does_not_touch_the_gateway():
     control = Control(current("iam"))
-    iam, lam = iam_client(installed=False), lambda_client(permitted=False)
+    iam, lam = iam_client(installed=False), lambda_client()
 
     result = move(control, iam, lam, only="grant")
 
     assert "update_gateway" not in control.names() and result.after is None
-    assert iam.names().count("put_role_policy") == 1 and "add_permission" in lam.names()
+    assert iam.names().count("put_role_policy") == 1 and lam.calls == []
 
 
 def test_only_move_does_not_write_the_grants():
@@ -391,7 +372,7 @@ def test_only_move_does_not_write_the_grants():
 
     move(control, iam, lam, only="move")
 
-    assert "put_role_policy" not in iam.names() and "add_permission" not in lam.names()
+    assert "put_role_policy" not in iam.names() and lam.calls == []
     assert "update_gateway" in control.names()
 
 
@@ -436,9 +417,9 @@ def test_the_cedar_only_design_grants_nothing_and_revokes_leftovers():
 
     result = move(control, iam, lam, design=settings.CEDAR)
 
-    assert "put_role_policy" not in iam.names() and "add_permission" not in lam.names()
+    assert "put_role_policy" not in iam.names() and lam.calls == []
     assert result.findings == []
-    assert "delete_role_policy" in iam.names() and "remove_permission" in lam.names()
+    assert "delete_role_policy" in iam.names() and lam.calls == []
 
 
 def test_moving_back_to_iam_updates_then_removes_both_grants():
@@ -451,16 +432,15 @@ def test_moving_back_to_iam_updates_then_removes_both_grants():
     assert order == ["update", "revoke"]
     assert iam.args("delete_role_policy") == [
         {"RoleName": ROLE_NAME, "PolicyName": gw.INVOKE_POLICY_NAME}]
-    assert lam.args("remove_permission") == [
-        {"FunctionName": rs.INTERCEPTOR_ARN, "StatementId": gw.PERMISSION_ID}]
+    assert lam.calls == []
     assert any("removed" in note for note in result.notes) and result.findings == []
-    assert violations("iam", iam.calls) == [] and violations("lambda", lam.calls) == []
+    assert violations("iam", iam.calls) == []
 
 
 def test_a_grant_that_is_already_gone_is_not_an_error_on_rollback():
     control = Control(current("jwt"), current("iam"))
 
-    result = move(control, iam_client(installed=False), lambda_client(False), mode="iam")
+    result = move(control, iam_client(installed=False), lambda_client(), mode="iam")
 
     assert result.findings == []
 
@@ -472,7 +452,7 @@ def test_a_rollback_whose_interceptor_stays_attached_keeps_the_grants():
     result = move(control, iam, lam, mode="iam")
 
     assert any("interceptor" in line for line in result.findings)
-    assert iam.args("delete_role_policy") == [] and lam.args("remove_permission") == []
+    assert iam.args("delete_role_policy") == [] and lam.calls == []
 
 
 def test_the_record_is_private_and_holds_masked_summaries_only(tmp_path):

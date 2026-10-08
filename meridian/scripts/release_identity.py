@@ -27,7 +27,7 @@ of the move to the meridian_gateway login (read-only); with ``--restart-holds`` 
 both flags) it forces the holds Lambda to re-read its configuration.
 ``gateway`` moves the live Gateway to the mode (dry run by default: before and after of the
 authorizer, allowed clients and interceptor, and every precondition); an apply writes the invoke
-grants, sends the complete update and reads it back; ``--to iam`` is the rollback of the move.
+grant, sends the complete update and reads it back; ``--to iam`` is the rollback of the move.
 ``snapshot`` (read-only) saves the replaced configuration of every hop to ``.local/release-b2/``
 before the window, with no secret value. ``rollback`` restores it in the reverse of the release
 order, reading each hop back (dry run by default; the roles stack and the Cedar rules are checked

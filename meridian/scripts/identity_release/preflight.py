@@ -187,6 +187,9 @@ def check_gateway(gateway: Any, target: Target) -> list[str]:
     elif target.mode == JWT:
         found += _authorizer_findings(
             "Gateway", _jwt_authorizer(gateway.get("authorizerConfiguration")), target)
+    elif gateway.get("authorizerConfiguration"):
+        found.append("Gateway: iam mode still has a leftover authorizerConfiguration "
+                     "(a JWT authorizer block)")
     found += _interceptor_findings(gateway, target)
     if _as_dict(gateway.get("policyEngineConfiguration")).get("mode") != "ENFORCE":
         found.append("Gateway: the policy engine is not attached in ENFORCE mode")

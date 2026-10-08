@@ -53,23 +53,6 @@ class Control(Recorder):
         return {}
 
 
-def statement(**changes):
-    """The function-policy statement the tool writes, as Lambda stores it."""
-    found = {
-        "Sid": gw.PERMISSION_ID, "Effect": "Allow",
-        "Principal": {"Service": gw.GATEWAY_PRINCIPAL}, "Action": "lambda:InvokeFunction",
-        "Resource": rs.INTERCEPTOR_ARN,
-        "Condition": {"ArnLike": {"AWS:SourceArn": GATEWAY_ARN},
-                      "StringEquals": {"AWS:SourceAccount": rs.ACCOUNT}},
-    }
-    found.update(changes)
-    return found
-
-
-def policy_document(*statements):
-    return json.dumps({"Version": "2012-10-17", "Statement": list(statements)})
-
-
 class FakeIam(Recorder):
     """One inline policy on the Gateway's role, written, read and deleted like IAM does."""
 
@@ -105,9 +88,9 @@ def iam_client(installed=True, events=None):
 
 
 class FakeLambda(Recorder):
-    """get_function and a resource policy that add_permission and remove_permission change."""
+    """get_function for the interceptor; it has no resource-policy calls to record."""
 
-    def __init__(self, statements=(), tags=None, **variables):
+    def __init__(self, tags=None, **variables):
         super().__init__()
         wanted = interceptor_lambda.desired(
             rs.ACCOUNT, rs.REGION, settings.cognito_settings(rs.COGNITO_ENV))
@@ -115,37 +98,14 @@ class FakeLambda(Recorder):
             "Configuration": {"FunctionName": wanted.function_name,
                               "Environment": {"Variables": {**wanted.environment, **variables}}},
             "Tags": dict(interceptor_lambda.TAGS if tags is None else tags)}
-        self.statements = list(statements)
 
     def get_function(self, **kwargs):
         self.calls.append(("get_function", kwargs))
         return deepcopy(self.function)
 
-    def get_policy(self, **kwargs):
-        self.calls.append(("get_policy", kwargs))
-        if not self.statements:
-            raise client_error("ResourceNotFoundException")
-        return {"Policy": policy_document(*self.statements)}
 
-    def add_permission(self, **kwargs):
-        self.calls.append(("add_permission", kwargs))
-        self.statements.append(statement(
-            Sid=kwargs["StatementId"], Principal={"Service": kwargs["Principal"]},
-            Condition={"ArnLike": {"AWS:SourceArn": kwargs["SourceArn"]},
-                       "StringEquals": {"AWS:SourceAccount": kwargs["SourceAccount"]}}))
-        return {}
-
-    def remove_permission(self, **kwargs):
-        self.calls.append(("remove_permission", kwargs))
-        kept = [s for s in self.statements if s["Sid"] != kwargs["StatementId"]]
-        if len(kept) == len(self.statements):
-            raise client_error("ResourceNotFoundException")
-        self.statements = kept
-        return {}
-
-
-def lambda_client(permitted=True, **keywords):
-    return FakeLambda([statement()] if permitted else [], **keywords)
+def lambda_client(**keywords):
+    return FakeLambda(**keywords)
 
 
 def clients(control, iam=None, lam=None, cfn=None):

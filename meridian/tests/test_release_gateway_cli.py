@@ -21,12 +21,12 @@ FLAG = settings.CONFIRM_FLAG
 class GatewayWorld:
     """Recording fake clients for the services the gateway command may use."""
 
-    def __init__(self, before="iam", *after, account=rs.ACCOUNT, permitted=False, installed=False):
+    def __init__(self, before="iam", *after, account=rs.ACCOUNT, installed=False):
         self.sts = Mock()
         self.sts.get_caller_identity.return_value = {"Account": account}
         self.control = Control(current(before), *(after or (current("jwt"),)))
         self.iam = iam_client(installed=installed)
-        self.lam = lambda_client(permitted=permitted)
+        self.lam = lambda_client()
         self.cfn = Mock()
         self.cfn.describe_stacks.return_value = {"Stacks": [{"Outputs": rs.identity_outputs()}]}
         self.built: list[str] = []
@@ -64,24 +64,24 @@ def test_the_dry_run_prints_before_and_after_and_writes_nothing(tmp_path, capsys
     assert "before: interceptor none" in out and "after : passRequestHeaders True" in out
     assert "resent unchanged: name, roleArn, description" in out
     assert "would change: Gateway: authorizer is AWS_IAM" in out
-    assert "would ensure: Gateway role" in out and "would ensure: Interceptor Lambda" in out
+    assert "would ensure: Gateway role" in out and "Interceptor Lambda" not in out
     assert FLAG in out and rs.ACCOUNT not in out
     assert world.control.names() == ["get_gateway"] and world.iam.calls == []
     assert world.lam.names() == ["get_function"]
     assert not (tmp_path / "release").exists()
 
 
-def test_the_dry_run_with_a_blocker_says_what_would_refuse_and_exits_one(tmp_path, capsys):
+def test_the_dry_run_with_a_blocker_says_what_would_refuse_and_exits_two(tmp_path, capsys):
     world = GatewayWorld()
 
-    assert run(["gateway"], world, tmp_path, with_proof=False) == 1
+    assert run(["gateway"], world, tmp_path, with_proof=False) == 2
 
     assert "BLOCKED  Backend login proof: none recorded" in capsys.readouterr().out
     assert "update_gateway" not in world.control.names()
 
 
 def test_the_dry_run_says_when_nothing_would_change(tmp_path, capsys):
-    world = GatewayWorld("jwt", permitted=True, installed=True)
+    world = GatewayWorld("jwt", installed=True)
 
     assert run(["gateway"], world, tmp_path) == 0
 
@@ -120,7 +120,8 @@ def test_apply_grants_updates_and_reads_back(tmp_path, capsys):
 
     out = capsys.readouterr().out
     assert "put_role_policy" in world.iam.names()
-    assert "update_gateway" in world.control.names() and "add_permission" in world.lam.names()
+    assert "update_gateway" in world.control.names()
+    assert world.lam.names() == ["get_function"]
     assert "Gateway: updated to jwt" in out and "OK  the Gateway reports jwt" in out
     record = tmp_path / "release" / gw.OUTPUT_NAME
     assert stat.S_IMODE(record.stat().st_mode) == 0o600
@@ -134,7 +135,6 @@ def test_apply_refuses_before_any_write_when_a_precondition_fails(tmp_path, caps
     err = capsys.readouterr().err
     assert "precondition(s) not met" in err and "Backend login proof" in err
     assert world.iam.calls == [] and "update_gateway" not in world.control.names()
-    assert "add_permission" not in world.lam.names()
 
 
 def test_apply_refuses_when_the_gateway_cannot_be_read_in_full(tmp_path, capsys):
@@ -188,7 +188,7 @@ def test_only_grant_writes_the_grants_and_leaves_the_gateway(tmp_path, capsys):
     assert run(["gateway", "--only", "grant", "--apply", FLAG], world, tmp_path) == 0
 
     assert "update_gateway" not in world.control.names()
-    assert "put_role_policy" in world.iam.names() and "add_permission" in world.lam.names()
+    assert "put_role_policy" in world.iam.names() and world.lam.names() == ["get_function"]
 
 
 def test_only_grant_is_refused_for_a_design_without_the_interceptor(tmp_path, capsys):
@@ -201,7 +201,7 @@ def test_only_grant_is_refused_for_a_design_without_the_interceptor(tmp_path, ca
 
 
 def test_to_iam_is_the_rollback_and_needs_no_pool_or_proof(tmp_path, capsys):
-    world = GatewayWorld("jwt", current("iam"), permitted=True, installed=True)
+    world = GatewayWorld("jwt", current("iam"), installed=True)
     environment = {k: v for k, v in env().items() if not k.startswith("MERIDIAN_COGNITO")}
 
     code = run(["gateway", "--to", "iam", "--apply", FLAG], world, tmp_path, environment,
@@ -210,3 +210,70 @@ def test_to_iam_is_the_rollback_and_needs_no_pool_or_proof(tmp_path, capsys):
     assert code == 0
     assert world.iam.names().count("delete_role_policy") == 1
     assert "Gateway: updated to iam" in capsys.readouterr().out
+
+
+def test_the_findings_are_printed_before_the_record_is_written(tmp_path, capsys, monkeypatch):
+    world = GatewayWorld("iam", current("iam"))
+
+    def unwritable(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr(gw, "record", unwritable)
+
+    code = run(["gateway", "--apply", FLAG], world, tmp_path)
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert "DRIFT  Gateway: authorizer is AWS_IAM" in captured.out
+    assert "WARNING  the change record was not written" in captured.out
+    assert "Traceback" not in captured.err
+
+
+def test_a_clean_apply_whose_record_cannot_be_written_still_exits_zero(
+        tmp_path, capsys, monkeypatch):
+    world = GatewayWorld()
+
+    def unwritable(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr(gw, "record", unwritable)
+
+    assert run(["gateway", "--apply", FLAG], world, tmp_path) == 0
+
+    captured = capsys.readouterr()
+    assert "OK  the Gateway reports jwt" in captured.out
+    assert "WARNING  the change record was not written" in captured.out
+
+
+def test_the_dry_run_for_only_grant_shows_the_grant_and_not_a_gateway_change(
+        tmp_path, capsys):
+    world = GatewayWorld()
+
+    assert run(["gateway", "--only", "grant"], world, tmp_path) == 0
+
+    out = capsys.readouterr().out
+    assert "would ensure: Gateway role" in out and "would change" not in out
+    assert "--only grant --apply" in out
+
+
+def test_the_dry_run_for_only_move_does_not_promise_the_grant(tmp_path, capsys):
+    world = GatewayWorld()
+
+    assert run(["gateway", "--only", "move"], world, tmp_path) == 0
+
+    out = capsys.readouterr().out
+    assert "would change: Gateway: authorizer is AWS_IAM" in out
+    assert "would ensure" not in out and "--only move --apply" in out
+
+
+def test_only_grant_reads_the_grant_back_and_reports_a_vanished_one(tmp_path, capsys):
+    world = GatewayWorld()
+    real_put = world.iam.put_role_policy
+
+    def put_then_lose(**kwargs):
+        real_put(**kwargs)
+        world.iam.document = None
+        return {}
+    world.iam.put_role_policy = put_then_lose
+
+    code = run(["gateway", "--only", "grant", "--apply", FLAG], world, tmp_path)
+
+    assert code == 1 and "DRIFT  Gateway role" in capsys.readouterr().out

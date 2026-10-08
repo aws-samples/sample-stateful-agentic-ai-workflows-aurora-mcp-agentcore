@@ -94,6 +94,14 @@ def test_an_iam_gateway_must_be_iam_with_no_interceptor():
     assert any("interceptor" in line for line in gateway_findings(leftover, "iam"))
 
 
+def test_an_iam_gateway_that_keeps_a_jwt_authorizer_configuration_is_a_finding():
+    leftover = rs.mutated(rs.gateway("iam"), "authorizerConfiguration", rs.jwt_authorizer())
+
+    found = gateway_findings(leftover, "iam")
+
+    assert len(found) == 1 and "authorizerConfiguration" in found[0] and "iam" in found[0].lower()
+
+
 # ------------------------------------------------------------------- Runtimes
 
 
