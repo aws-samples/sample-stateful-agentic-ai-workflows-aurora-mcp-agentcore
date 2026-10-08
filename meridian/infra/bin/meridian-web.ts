@@ -2,7 +2,7 @@
 import { App } from 'aws-cdk-lib';
 import { MeridianWebBackendStack } from '../lib/meridian-web-backend-stack';
 import { MeridianWebRolesStack } from '../lib/meridian-web-roles-stack';
-import { MeridianWebStack, backendHost, identityMode, loadDotenv, serviceEnvironment } from '../lib/meridian-web-stack';
+import { MeridianWebStack, backendHost, cognitoHostFromEnv, identityMode, loadDotenv, serviceEnvironment } from '../lib/meridian-web-stack';
 
 const app = new App();
 
@@ -38,7 +38,7 @@ if (process.env.MERIDIAN_BACKEND_HOST) {
   new MeridianWebStack(app, 'MeridianWeb', {
     env,
     backendHost: backendHost(),
-    cognitoHost: process.env.MERIDIAN_COGNITO_HOSTED_UI_DOMAIN || undefined,
+    cognitoHost: cognitoHostFromEnv(process.env.MERIDIAN_COGNITO_HOSTED_UI_DOMAIN),
     identityMode: mode,
     description: 'Meridian travel concierge: Vite build on S3 behind CloudFront, routing the API to App Runner',
   });

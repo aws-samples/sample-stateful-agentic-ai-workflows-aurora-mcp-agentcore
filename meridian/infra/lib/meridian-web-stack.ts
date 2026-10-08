@@ -17,7 +17,7 @@ import { Construct } from 'constructs';
 export const API_TOKEN_SECRET_NAME = 'meridian/web/api-token';
 
 const COGNITO_HOSTED_UI_DOMAIN =
-  /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.auth\.[a-z0-9-]+\.amazoncognito\.com$/;
+  /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.auth\.[a-z]{2}(?:-[a-z]+)+-\d\.amazoncognito\.com$/;
 
 /**
  * The production bundle serves its scripts and fonts from the same origin.
@@ -50,6 +50,11 @@ export function contentSecurityPolicy(cognitoHost?: string): string {
     "frame-ancestors 'none'",
     "form-action 'self'",
   ].join('; ');
+}
+
+/** The hosted UI domain `bin/meridian-web.ts` forwards: trimmed, and absent when blank. */
+export function cognitoHostFromEnv(value: string | undefined): string | undefined {
+  return value?.trim() || undefined;
 }
 
 /** The policy a build without sign-in ships. */

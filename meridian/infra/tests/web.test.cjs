@@ -9,6 +9,7 @@ const {
   MeridianWebStack,
   contentSecurityPolicy,
   CONTENT_SECURITY_POLICY,
+  cognitoHostFromEnv,
 } = require('../dist/lib/meridian-web-stack');
 
 test('every hosted route receives the browser security policy', (t) => {
@@ -43,17 +44,41 @@ function connectSrc(policy) {
   return policy.split('; ').find((directive) => directive.startsWith('connect-src '));
 }
 
-test("without a Cognito host the connect-src directive is exactly today's", () => {
+const REVIEWED_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+].join('; ');
+
+test('the default policy is exactly the reviewed string', () => {
+  assert.equal(CONTENT_SECURITY_POLICY, REVIEWED_POLICY);
+  assert.equal(contentSecurityPolicy(), REVIEWED_POLICY);
+  assert.equal(contentSecurityPolicy(''), REVIEWED_POLICY);
   assert.equal(connectSrc(CONTENT_SECURITY_POLICY), "connect-src 'self'");
-  assert.equal(contentSecurityPolicy(), CONTENT_SECURITY_POLICY);
+});
+
+test('bin/meridian-web.ts forwards the trimmed hosted UI domain, or nothing when blank', () => {
+  assert.equal(cognitoHostFromEnv(`  ${COGNITO_HOST}\n`), COGNITO_HOST);
+  assert.equal(cognitoHostFromEnv(''), undefined);
+  assert.equal(cognitoHostFromEnv('   '), undefined);
+  assert.equal(cognitoHostFromEnv(undefined), undefined);
+  const bin = fs.readFileSync(path.join(__dirname, '..', 'bin', 'meridian-web.ts'), 'utf8');
+  assert.match(bin, /cognitoHost: cognitoHostFromEnv\(process\.env\.MERIDIAN_COGNITO_HOSTED_UI_DOMAIN\)/);
 });
 
 test('the Cognito host is the only origin added to connect-src, and nothing else changes', () => {
   const policy = contentSecurityPolicy(COGNITO_HOST);
   assert.equal(connectSrc(policy), `connect-src 'self' https://${COGNITO_HOST}`);
   assert.equal(
-    policy.replace(connectSrc(policy), connectSrc(CONTENT_SECURITY_POLICY)),
-    CONTENT_SECURITY_POLICY,
+    policy,
+    REVIEWED_POLICY.replace("connect-src 'self'", `connect-src 'self' https://${COGNITO_HOST}`),
   );
   assert.ok(!policy.includes('*'));
 });
@@ -65,13 +90,9 @@ for (const host of [
   '*.auth.us-east-1.amazoncognito.com',
   `${COGNITO_HOST}; script-src *`,
   'x.auth.us-east-1.amazoncognito.com.evil.com',
-  '',
+  'x.auth.evil.amazoncognito.com',
 ]) {
   test(`a host that is not a bare Cognito domain is refused: ${JSON.stringify(host)}`, () => {
-    if (host === '') {
-      assert.equal(contentSecurityPolicy(host), CONTENT_SECURITY_POLICY);
-      return;
-    }
     assert.throws(() => contentSecurityPolicy(host), /Cognito hosted UI domain/);
   });
 }
