@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 from botocore.exceptions import ClientError
 
-from scripts.gateway_harness.resources import ACTION, ThrowawayGateway
+from scripts.gateway_harness.resources import ACTION, HarnessFailure, ThrowawayGateway
 from scripts.gateway_harness.verdicts import (
     DECOY,
     JORDAN,
@@ -20,6 +20,7 @@ from scripts.gateway_harness.verdicts import (
     Observations,
     Outcome,
     classify,
+    scrub,
 )
 
 RECORD_MARKER = "RECORDED_EVENT "
@@ -135,8 +136,21 @@ def run_probes(gateway: ThrowawayGateway, http: McpHttp, tokens: dict[str, str],
         observations.outcomes[probe.name] = outcome
         if probe is PROBES[0]:
             observations.listed_tools = http.list_tools(tokens["jordan"])
-    observations.interceptors_after_detach = gateway.detach_interceptor()
+    _detach(gateway, observations)
     return observations
+
+
+def _detach(gateway: ThrowawayGateway, observations: Observations) -> None:
+    """Run the detach check; a failure becomes a masked reason so every other row survives."""
+    try:
+        remaining = gateway.detach_interceptor()
+        if isinstance(remaining, bool) or not isinstance(remaining, int) or remaining < 0:
+            raise HarnessFailure(
+                f"the detach returned {remaining!r}, not a non-negative interceptor count")
+    except (ClientError, HarnessFailure) as exc:
+        observations.detach_error = scrub(str(exc))[:300]
+        return
+    observations.interceptors_after_detach = remaining
 
 
 def recorded_events(logs: Any, function_name: str, *, wanted: int = 3, attempts: int = 12,

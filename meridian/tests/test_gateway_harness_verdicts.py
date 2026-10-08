@@ -49,7 +49,7 @@ def observations(**outcomes):
         "cedar_alone": DENIED,
     }
     return v.Observations({**base, **outcomes}, binding_policy_accepted=True,
-                          listed_tools=["EchoTarget___echo"])
+                          listed_tools=["EchoTarget___echo"], interceptors_after_detach=0)
 
 
 def table(obs):
@@ -175,28 +175,38 @@ def test_inconclusive_q5_is_distinguishable_from_yes_and_no_yet_does_not_fail_a_
 
 
 def test_detaching_must_leave_no_interceptor_or_the_run_fails():
-    gone = v.Observations(observations().outcomes, binding_policy_accepted=True,
-                          listed_tools=["EchoTarget___echo"], interceptors_after_detach=0)
-    row = table(gone)["C5"]
-    assert row.status == v.PASS and row.finding.startswith("Yes. An update without")
-    assert v.passed(v.derive_verdicts(gone))
-    stuck = v.Observations(observations().outcomes, binding_policy_accepted=True,
-                           listed_tools=["EchoTarget___echo"], interceptors_after_detach=1)
+    gone = table(observations())["C5"]
+    assert gone.status == v.PASS and gone.finding.startswith("Yes. An update without")
+    assert v.passed(v.derive_verdicts(observations()))
+    stuck = observations()
+    stuck.interceptors_after_detach = 1
     row = table(stuck)["C5"]
     assert row.status == v.FAIL and "still reports 1 interceptor" in row.finding
     assert not v.passed(v.derive_verdicts(stuck))
 
 
-def test_an_unprobed_detach_is_information_so_older_observations_still_pass():
-    row = table(observations())["C5"]
-    assert row.finding == "not probed" and row.status == v.INFO
-    assert v.passed(v.derive_verdicts(observations()))
+def test_an_unprobed_detach_is_unknown_and_fails_the_run():
+    unprobed = observations()
+    unprobed.interceptors_after_detach = None
+    row = table(unprobed)["C5"]
+    assert row.finding == "not probed" and row.status == v.UNKNOWN
+    assert not v.passed(v.derive_verdicts(unprobed))
 
 
-def test_passed_requires_the_q5_row():
+def test_a_detach_error_is_a_failing_row_with_the_reason():
+    broken = observations()
+    broken.interceptors_after_detach = None
+    broken.detach_error = "gateway detach still UPDATING after 300 s"
+    row = table(broken)["C5"]
+    assert row.status == v.FAIL and "UPDATING after 300 s" in row.finding
+    assert not v.passed(v.derive_verdicts(broken))
+
+
+def test_passed_requires_the_q5_and_c5_rows():
     rows = v.derive_verdicts(observations())
     assert v.passed(rows)
-    assert not v.passed([row for row in rows if row.key != "Q5"])
+    for key in ("Q5", "C5"):
+        assert not v.passed([row for row in rows if row.key != key])
 
 
 def test_the_target_view_lists_event_keys_and_context_keys():

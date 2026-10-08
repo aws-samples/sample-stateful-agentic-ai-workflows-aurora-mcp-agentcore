@@ -457,7 +457,8 @@ def test_rendered_files_are_gitignored() -> None:
 
 # ------------------------------------------------------------------ jwt mode
 
-POOL_ID = "us-east-1_AbCdEfGhI"
+POOL_ID = "us-west-2_AbCdEfGhI"
+CDK_POOL_ID = "us-east-1_AbCdEfGhI"
 CLIENT_ID = "exampleclientid123"
 DISCOVERY_URL = (
     f"https://cognito-idp.us-west-2.amazonaws.com/{POOL_ID}/.well-known/openid-configuration"
@@ -570,6 +571,31 @@ def test_an_unknown_enforcement_design_is_a_render_error() -> None:
                     **COGNITO_ENV))
 
 
+def test_a_pool_in_another_region_than_the_cognito_region_is_refused() -> None:
+    mismatched = {**COGNITO_ENV, "MERIDIAN_COGNITO_REGION": "eu-west-1"}
+
+    with pytest.raises(render_config.ConfigError, match="MERIDIAN_COGNITO_USER_POOL_ID"):
+        render_config.account_values(env_for(MERIDIAN_AGENTCORE_AUTH="jwt", **mismatched))
+
+
+def render_values(**overrides: str) -> dict:
+    values = {**render_config.account_values(env_for()), "GATEWAY_ID": GATEWAY_ID,
+              "POLICY_ENGINE_ID": POLICY_ENGINE_ID}
+    values.update(overrides)
+    return render_config.render(*templates(), values)
+
+
+def test_render_refuses_an_unknown_enforcement_design_instead_of_dropping_the_rule() -> None:
+    with pytest.raises(render_config.ConfigError, match="MERIDIAN_GATEWAY_ENFORCEMENT"):
+        render_values(MERIDIAN_AGENTCORE_AUTH="jwt", MERIDIAN_GATEWAY_ENFORCEMENT="neither",
+                      COGNITO_DISCOVERY_URL="https://x", COGNITO_APP_CLIENT_ID="c")
+
+
+def test_render_refuses_an_unknown_mode_instead_of_treating_it_as_iam() -> None:
+    with pytest.raises(render_config.ConfigError, match="MERIDIAN_AGENTCORE_AUTH"):
+        render_values(MERIDIAN_AGENTCORE_AUTH="JWT")
+
+
 def test_a_bad_mode_is_still_a_render_error_with_the_same_words() -> None:
     with pytest.raises(render_config.ConfigError, match="must be 'iam' or 'jwt', not 'true'"):
         render_config.identity_mode({"MERIDIAN_AGENTCORE_AUTH": "true"})
@@ -609,7 +635,7 @@ def test_the_cdk_fixture_is_the_jwt_render_with_the_cdk_test_values() -> None:
         "AURORA_GATEWAY_SECRET_ARN": cdk_values["gateway"],
         "MERIDIAN_AGENTCORE_AUTH": "jwt",
         "MERIDIAN_COGNITO_REGION": "us-east-1",
-        "MERIDIAN_COGNITO_USER_POOL_ID": POOL_ID,
+        "MERIDIAN_COGNITO_USER_POOL_ID": CDK_POOL_ID,
         "MERIDIAN_COGNITO_APP_CLIENT_ID": CLIENT_ID,
     }
     values = {

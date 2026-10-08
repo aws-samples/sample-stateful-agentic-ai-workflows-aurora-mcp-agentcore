@@ -145,4 +145,9 @@ def cognito_settings(env: Mapping[str, str | None]) -> CognitoSettings:
     for key, pattern in checks:
         if not pattern.fullmatch(values[key]):
             raise ReleaseConfigError(f"{key} is not in the expected format; check meridian/.env")
+    if values[COGNITO_KEYS[1]].split("_", 1)[0] != values[COGNITO_KEYS[0]]:
+        raise ReleaseConfigError(
+            f"{COGNITO_KEYS[1]} is in a different Region than {COGNITO_KEYS[0]}; the pool ID "
+            "starts with its Region, so the discovery URL would not resolve"
+        )
     return CognitoSettings(*(values[key] for key in COGNITO_KEYS))

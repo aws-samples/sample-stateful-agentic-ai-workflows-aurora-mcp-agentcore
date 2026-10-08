@@ -265,15 +265,53 @@ def test_detaching_updates_the_gateway_without_interceptors_and_reports_none_lef
     assert "interceptorConfigurations" not in detach
     assert detach["authorizerType"] == "CUSTOM_JWT" and detach["roleArn"] == updates[0]["roleArn"]
     assert detach["policyEngineConfiguration"] == updates[0]["policyEngineConfiguration"]
-    assert clients.control.names()[-3:] == ["update_gateway", "get_gateway", "get_gateway"]
+    assert clients.control.names()[-4:] == [
+        "get_gateway", "update_gateway", "get_gateway", "get_gateway"]
 
 
-def test_detaching_reports_the_interceptors_the_gateway_still_has():
+def gateway_reads(clients, counts):
+    """Make get_gateway report READY with the next interceptor count from ``counts``."""
+    remaining = iter(counts)
+    last = [counts[-1]]
+
+    def read(**kwargs):
+        count = next(remaining, last[0])
+        return {"status": "READY", "interceptorConfigurations": [{}] * count}
+
+    clients.control.get_gateway = read
+
+
+def test_detaching_reports_the_interceptors_the_gateway_still_has_after_the_deadline():
     harness, clients, _ = build()
     harness.create()
-    still = {"status": "READY", "interceptorConfigurations": [{"interceptionPoints": ["REQUEST"]}]}
-    clients.control.get_gateway = lambda **kwargs: still
+    gateway_reads(clients, [1])
     assert harness.detach_interceptor() == 1
+
+
+def test_detaching_without_an_interceptor_to_start_with_fails_instead_of_passing():
+    harness, clients, _ = build()
+    harness.create()
+    gateway_reads(clients, [0])
+    with pytest.raises(res.HarnessFailure, match="no interceptor attached before"):
+        harness.detach_interceptor()
+    assert len(clients.control.args("update_gateway")) == 1, "the update was never sent"
+
+
+def test_the_read_back_waits_for_an_update_that_has_not_started_yet():
+    harness, clients, _ = build()
+    harness.create()
+    gateway_reads(clients, [1, 1, 1, 0])
+    assert harness.detach_interceptor() == 0
+
+
+def test_the_read_back_gives_up_when_the_deadline_passes():
+    harness, clients, _ = build()
+    harness.create()
+    gateway_reads(clients, [1])
+    sleeps = []
+    harness._sleep = sleeps.append
+    assert harness.detach_interceptor(settle_seconds=30) == 1
+    assert sleeps and sum(sleeps) >= 25
 
 
 @pytest.mark.parametrize("mode", ["extra_argument", "", "PIN", "pin; refuse"])

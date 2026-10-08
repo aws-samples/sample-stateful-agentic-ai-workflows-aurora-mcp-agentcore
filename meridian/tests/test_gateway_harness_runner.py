@@ -248,6 +248,27 @@ def test_failed_checks_exit_one_and_the_table_says_so(tmp_path, capsys):
     assert "RESULT: FAIL" in out and world.control.names().count("delete_gateway") == 1
 
 
+def test_a_failed_detach_still_prints_the_table_and_saves_the_other_rows(tmp_path, capsys):
+    world = World()
+    updates = []
+
+    def update_gateway(**kwargs):
+        updates.append(kwargs)
+        if len(updates) == 2:
+            raise client_error("ValidationException", "detach refused for 123456789012")
+        return {}
+
+    world.control.answers["update_gateway"] = update_gateway
+    assert runner.run_live(ENV, TEMPLATE, tmp_path, world.deps()) == runner.EXIT_FAIL
+    out = capsys.readouterr().out
+    assert "RESULT: FAIL" in out and "123456789012" not in out
+    rows = {row["key"]: row for row in json.loads(
+        (tmp_path / NAME / "verdicts.json").read_text())}
+    assert rows["C5"]["status"] == "FAIL" and "detach step failed" in rows["C5"]["finding"]
+    assert rows["Q4"]["status"] == "PASS" and rows["Q5"]["finding"].startswith("Yes.")
+    assert world.control.names().count("delete_gateway") == 1
+
+
 # ------------------------------------------------------------------- guards
 
 

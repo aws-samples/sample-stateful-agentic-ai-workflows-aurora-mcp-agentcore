@@ -32,6 +32,10 @@ Placeholder sources:
                             ``Authorization`` header, and the Cedar traveler-binding policy is
                             included unless MERIDIAN_GATEWAY_ENFORCEMENT=interceptor; in ``iam``
                             none of that is rendered, so the config is the one deployed today
+    {{MERIDIAN_GATEWAY_ENFORCEMENT}}
+                            ``jwt`` only: ``both`` (default, the interceptor plus the Cedar
+                            rule), ``cedar`` (the Cedar rule alone) or ``interceptor`` (no Cedar
+                            rule). The interceptor itself is attached out of band, not rendered
     {{GATEWAY_ID}}          --gateway-id, else agentcore/.cli/deployed-state.json
     {{POLICY_ENGINE_ID}}    --policy-engine-id, else the same deployed state
 
@@ -68,7 +72,7 @@ from dotenv import dotenv_values
 MERIDIAN_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MERIDIAN_DIR))
 
-from backend.agentcore.auth_mode import AUTH_MODE_ENV, IAM, JWT  # noqa: E402
+from backend.agentcore.auth_mode import AUTH_MODE_ENV, IAM, JWT, MODES  # noqa: E402
 from scripts import stage_workflow_runtime  # noqa: E402
 from scripts.identity_release import settings  # noqa: E402
 
@@ -347,10 +351,20 @@ def apply_identity_mode(
 ) -> None:
     """Drop the policies the chosen mode and Gateway design do not use.
 
+    Raises:
+        ConfigError: When ``mode`` is not ``iam`` or ``jwt``, or ``design`` is not a known design.
+
     ``iam`` removes every policy that only makes sense for Cognito callers. ``jwt`` removes the
     traveler-binding rule only under the ``interceptor`` design, where the interceptor pins the
     traveler and Cedar adds nothing.
     """
+    if mode not in MODES:
+        raise ConfigError(f"{AUTH_MODE_ENV} must be 'iam' or 'jwt', not '{mode}'")
+    if design not in settings.ENFORCEMENTS:
+        raise ConfigError(
+            f"{settings.ENFORCEMENT_ENV} must be one of {', '.join(settings.ENFORCEMENTS)}, "
+            f"not '{design}'"
+        )
     if mode == JWT and settings.uses_cedar_binding(design):
         return
     for engine in spec.get("policyEngines", []):
@@ -414,7 +428,8 @@ def render(
 
     Raises:
         ConfigError: When a required placeholder has no value, or a policy engine ID
-            comes without the gateway ID its policies name.
+            comes without the gateway ID its policies name, or the identity mode or
+            enforcement design in ``values`` is not one of the known choices.
     """
     if values.get("POLICY_ENGINE_ID") and not values.get("GATEWAY_ID"):
         raise ConfigError(

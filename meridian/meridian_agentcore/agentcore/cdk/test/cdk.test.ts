@@ -113,8 +113,19 @@ type Resource = { Type: string; Properties: Record<string, any> };
 
 test('AgentCoreStack synthesizes the Cognito JWT specification', () => {
   const spec = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'jwt-spec.json'), 'utf8'));
-  writeFileSync(join(testProjectRoot, 'agentcore', 'agentcore.json'), JSON.stringify(spec));
-  const stack = new AgentCoreStack(new cdk.App(), 'JwtStack', { spec: spec as never, mcpSpec: spec as never });
+  const jwtProjectRoot = mkdtempSync(join(tmpdir(), 'meridian-agentcore-jwt-'));
+  mkdirSync(join(jwtProjectRoot, 'agentcore'));
+  writeFileSync(join(jwtProjectRoot, 'agentcore', 'agentcore.json'), JSON.stringify(spec));
+  symlinkSync(join(PROJECT_ROOT, 'app'), join(jwtProjectRoot, 'app'));
+  symlinkSync(join(PROJECT_ROOT, 'agentcore', 'gateway_targets'), join(jwtProjectRoot, 'agentcore', 'gateway_targets'));
+  process.env.INIT_CWD = jwtProjectRoot;
+  let stack: AgentCoreStack;
+  try {
+    stack = new AgentCoreStack(new cdk.App(), 'JwtStack', { spec: spec as never, mcpSpec: spec as never });
+  } finally {
+    process.env.INIT_CWD = testProjectRoot;
+    rmSync(jwtProjectRoot, { recursive: true, force: true });
+  }
   const resources = Object.values(Template.fromStack(stack).toJSON().Resources ?? {}) as Resource[];
   const ofType = (type: string) => resources.filter(r => r.Type === type);
   const discoveryUrl =

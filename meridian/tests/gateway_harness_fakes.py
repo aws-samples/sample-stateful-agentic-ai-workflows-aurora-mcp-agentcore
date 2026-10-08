@@ -150,7 +150,12 @@ class FakeControl(Fake):
         return {"status": ready}
 
     def get_gateway(self, **kw):
-        return self._get("get_gateway", "gateway", "READY", kw)
+        reply = self._get("get_gateway", "gateway", "READY", kw)
+        detached = any(name == "update_gateway" and "interceptorConfigurations" not in kwargs
+                       for name, kwargs in self.calls)
+        if not detached:
+            reply["interceptorConfigurations"] = [{"interceptionPoints": ["REQUEST"]}]
+        return reply
 
     def get_gateway_target(self, **kw):
         return self._get("get_gateway_target", "target", "READY", kw)

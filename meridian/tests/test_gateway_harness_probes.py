@@ -7,6 +7,7 @@ import pytest
 from botocore.exceptions import ClientError
 
 from scripts.gateway_harness import probes
+from scripts.gateway_harness import resources as res
 from scripts.gateway_harness.verdicts import DECOY, JORDAN
 
 
@@ -59,17 +60,23 @@ def test_a_transport_failure_is_an_http_error_that_names_no_url_or_token():
 
 
 class FakeGateway:
-    def __init__(self, remaining=0):
+    def __init__(self, remaining=0, error=None):
         self.modes = []
         self.detached = 0
         self.remaining = remaining
+        self.error = error
+        self.order = []
         self.live = type("Live", (), {"binding_policy_accepted": True})()
 
     def set_interceptor_mode(self, mode):
         self.modes.append(mode)
+        self.order.append(f"mode:{mode}")
 
     def detach_interceptor(self):
         self.detached += 1
+        self.order.append("detach")
+        if self.error is not None:
+            raise self.error
         return self.remaining
 
 
@@ -118,6 +125,50 @@ def test_the_detach_check_runs_last_and_records_what_the_gateway_still_has():
         {"jordan": "J", "decoy": "D"}, sleep=lambda s: None)
     assert gateway.modes[-1] == "off" and gateway.detached == 1
     assert obs.interceptors_after_detach == 2
+
+
+def run_with(gateway, handler=None):
+    handler = handler or (lambda request: httpx.Response(200, json=echo_reply(DECOY)))
+    return probes.run_probes(gateway, mcp(handler), {"jordan": "J", "decoy": "D"},
+                             sleep=lambda s: None)
+
+
+def test_the_detach_runs_after_every_probe_group_in_one_shared_call_order():
+    order = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        if body["method"] == "tools/call":
+            order.append("probe:" + body["params"]["arguments"]["note"])
+        return httpx.Response(200, json=echo_reply(DECOY))
+
+    gateway = FakeGateway()
+    gateway.order = order
+    run_with(gateway, handler)
+    assert order[-1] == "detach" and order.count("detach") == 1
+    last_mode = max(i for i, item in enumerate(order) if item.startswith("mode:"))
+    last_probe = max(i for i, item in enumerate(order) if item.startswith("probe:"))
+    assert last_mode < last_probe < order.index("detach")
+    assert order.index("mode:off") < order.index("probe:interceptor off control")
+
+
+@pytest.mark.parametrize("error", [
+    res.HarnessFailure("gateway detach still UPDATING after 300 s"),
+    ClientError({"Error": {"Code": "ValidationException",
+                           "Message": "arn:aws:iam::123456789012:role/x is bad"}}, "UpdateGateway"),
+])
+def test_a_detach_error_is_recorded_masked_and_keeps_every_probe_outcome(error):
+    obs = run_with(FakeGateway(error=error))
+    assert obs.interceptors_after_detach is None
+    assert obs.detach_error and "123456789012" not in obs.detach_error
+    assert set(obs.outcomes) == {p.name for p in probes.PROBES}
+
+
+@pytest.mark.parametrize("remaining", [-1, "0", None, True, 1.0])
+def test_a_detach_count_that_is_not_a_non_negative_int_is_an_error_not_a_pass(remaining):
+    obs = run_with(FakeGateway(remaining=remaining))
+    assert obs.interceptors_after_detach is None
+    assert obs.detach_error and "interceptor count" in obs.detach_error
 
 
 def test_the_control_probe_is_retried_while_the_gateway_settles():

@@ -74,6 +74,14 @@ def test_missing_pool_settings_are_all_named_in_one_message():
     assert "sync_cognito_env.py --write" in str(refused.value)
 
 
+def test_pool_id_region_must_match_cognito_region():
+    with pytest.raises(settings.ReleaseConfigError, match="MERIDIAN_COGNITO_USER_POOL_ID"):
+        settings.cognito_settings(
+            {**COGNITO, "MERIDIAN_COGNITO_REGION": "eu-west-1",
+             "MERIDIAN_COGNITO_USER_POOL_ID": "us-west-2_AbC"}
+        )
+
+
 @pytest.mark.parametrize(("key", "value"), [
     ("MERIDIAN_COGNITO_REGION", "us east 1"),
     ("MERIDIAN_COGNITO_USER_POOL_ID", "pool/with/slashes"),

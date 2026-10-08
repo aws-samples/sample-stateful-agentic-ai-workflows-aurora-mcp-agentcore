@@ -37,6 +37,7 @@ TEMPLATE_ACTIONS = (
     'AgentCore::Action::"MeridianHolds___confirm_booking"'
 )
 INTERCEPTOR_MODES = ("pin", "bad_type", "drop_required", "refuse", "off")
+DETACH_SETTLE_SECONDS = 60.0
 LOG_ACTIONS = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
 TEARDOWN_KINDS = ("target", "gateway", "policy", "policy-engine", "lambda", "iam-role")
 GONE = {"ResourceNotFoundException", "NoSuchEntity", "ResourceNotFound"}
@@ -530,22 +531,43 @@ class ThrowawayGateway:
         wait_for(lambda: _status(control.get_gateway(gatewayIdentifier=self.live.gateway_id)),
                  "READY", what="gateway update", sleep=self._sleep, clock=self._clock)
 
-    def detach_interceptor(self) -> int:
+    def _interceptor_count(self) -> int:
+        control = self.aws.control
+        gateway = control.get_gateway(gatewayIdentifier=self.live.gateway_id)
+        return len(gateway.get("interceptorConfigurations") or [])
+
+    def detach_interceptor(self, *, settle_seconds: float = DETACH_SETTLE_SECONDS,
+                           interval: float = 5) -> int:
         """Update the Gateway without its interceptor and report how many it still has.
 
         This is the rollback the real release would use: ``update_gateway`` replaces what it is
         given, and the API refuses an empty list, so the only way to detach is to leave the
-        field out. The read-back is what proves it worked.
+        field out. The read-back is what proves it worked. The Gateway can report READY before
+        it starts UPDATING, so the read-back repeats until it shows none or ``settle_seconds``
+        pass; only then is a nonzero count believed.
+
+        Raises:
+            HarnessFailure: The Gateway had no interceptor before the update (the check would
+                prove nothing), or the update did not reach READY.
         """
         control = self.aws.control
+        before = self._interceptor_count()
+        if before < 1:
+            raise HarnessFailure(
+                f"no interceptor attached before the detach (found {before}); "
+                "the check would prove nothing")
         request = self._update_request(
             self.live.gateway_id, self._role_arn, self.live.engine_arn)
         del request["interceptorConfigurations"]
         control.update_gateway(**request)
         wait_for(lambda: _status(control.get_gateway(gatewayIdentifier=self.live.gateway_id)),
                  "READY", what="gateway detach", sleep=self._sleep, clock=self._clock)
-        after = control.get_gateway(gatewayIdentifier=self.live.gateway_id)
-        return len(after.get("interceptorConfigurations") or [])
+        deadline = self._clock() + settle_seconds
+        while True:
+            remaining = self._interceptor_count()
+            if remaining == 0 or self._clock() >= deadline:
+                return remaining
+            self._sleep(interval)
 
     # ----------------------------------------------------------------- switch
 

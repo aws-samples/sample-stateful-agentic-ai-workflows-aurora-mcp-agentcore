@@ -17,7 +17,7 @@ CREDENTIAL_KEY = re.compile(r"token|claim|authorization|jwt", re.I)
 OMITTED_FIELD_NAMED = re.compile(r"travelerId|required|schema|missing|validation", re.I)
 WRONG_TYPE_NAMED = re.compile(r"travelerId|type|string|integer|schema|validation", re.I)
 PASS, FAIL, INFO, UNKNOWN = "PASS", "FAIL", "INFO", "UNKNOWN"
-KEYS = ("Q1", "Q2", "Q3", "Q4", "Q5", "C1", "C2", "C3", "C4")
+KEYS = ("Q1", "Q2", "Q3", "Q4", "Q5", "C1", "C2", "C3", "C4", "C5")
 # Q5 only chooses between fallback designs after Q4 or C5 has already failed the run (plan
 # decision table, cases C to E), so an inconclusive Q5 must not fail an otherwise passing run.
 MAY_BE_UNKNOWN = ("Q5",)
@@ -84,6 +84,7 @@ class Observations:
     binding_policy_accepted: bool = False
     listed_tools: list[str] = field(default_factory=list)
     interceptors_after_detach: int | None = None
+    detach_error: str | None = None
 
     def get(self, name: str) -> Outcome | None:
         """The outcome recorded for probe ``name``, or ``None`` if it was never run."""
@@ -253,8 +254,10 @@ def _pass_through(obs: Observations) -> Verdict:
 def _detached(obs: Observations) -> Verdict:
     question = "Does updating the Gateway without an interceptor remove it (the rollback)?"
     remaining = obs.interceptors_after_detach
+    if obs.detach_error is not None:
+        return Verdict("C5", question, f"No. The detach step failed: {obs.detach_error}", FAIL)
     if remaining is None:
-        return Verdict("C5", question, "not probed", INFO)
+        return Verdict("C5", question, "not probed", UNKNOWN)
     if remaining == 0:
         return Verdict("C5", question, "Yes. An update without interceptorConfigurations left "
                        "none attached, so one update_gateway call is the rollback.", PASS)
@@ -272,7 +275,7 @@ def derive_verdicts(obs: Observations) -> list[Verdict]:
 
 
 def passed(verdicts: list[Verdict]) -> bool:
-    """True when all nine rows are present and each is PASS or INFO.
+    """True when all ten rows are present and each is PASS or INFO.
 
     FAIL and UNKNOWN fail the run, except an UNKNOWN row named in ``MAY_BE_UNKNOWN`` (Q5).
     """
