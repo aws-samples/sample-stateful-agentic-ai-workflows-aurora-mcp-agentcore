@@ -52,7 +52,7 @@ export function RlsProbeCard({ travelerId, travelerName = 'the signed-in travele
   return (
     <div className="mds-rls">
       <div className="mds-rls-head">
-        <span className="mds-rls-title">Workload authorization + RLS: live</span>
+        <span className="mds-rls-title">Access check + RLS: live</span>
         <button
           type="button"
           className="mds-rls-run"
@@ -77,7 +77,7 @@ export function RlsProbeCard({ travelerId, travelerName = 'the signed-in travele
             <div className="mds-authz-step">
               <span className="mds-authz-icon"><Fingerprint size={16} aria-hidden="true" /></span>
               <div>
-                <small>1. Authenticated workload</small>
+                <small>1. Verified caller</small>
                 <strong>{data.authorization.provider}</strong>
                 <code>{data.authorization.subject_id}</code>
               </div>

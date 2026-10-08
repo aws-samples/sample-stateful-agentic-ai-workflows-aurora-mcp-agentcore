@@ -22,7 +22,7 @@ export function SessionClose({ onEvidence, onConcierge }: {
         </div>
         <div>
           <dt><ServiceMark name="agentcore" size={36} /><span>Amazon Bedrock AgentCore</span></dt>
-          <dd><strong>Run the concierge. Carry context forward.</strong><p>Managed runtime, session memory, and workload identity. Traveler grants and RLS stay in Aurora.</p></dd>
+          <dd><strong>Run the concierge. Carry context forward.</strong><p>Managed runtime, session memory, and an access check at each hop. Traveler grants and RLS stay in Aurora.</p></dd>
         </div>
         <div>
           <dt><Workflow size={30} aria-hidden="true" /><span>MCP + Strands Graph</span></dt>

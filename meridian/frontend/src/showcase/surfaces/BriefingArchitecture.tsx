@@ -40,7 +40,7 @@ export function BriefingArchitecture() {
       <text x={268} y={188} className="mds-brief-arch-label">Phase 5: durable workflow</text>
       {node(268, 202, 236, 'AgentCore Runtime', ['Strands Graph workflow', 'Saved steps + worker lease'], 'agentcore-runtime')}
       <text x={578} y={18} className="mds-brief-arch-label">Shared governed tool path</text>
-      {node(578, 42, 236, 'AgentCore Gateway', ['IAM-signed MCP', 'Policy: Cedar checks'], 'agentcore-gateway', 3)}
+      {node(578, 42, 236, 'AgentCore Gateway', ['Access checked on every call', 'Policy: Cedar checks'], 'agentcore-gateway', 3)}
       {node(578, 202, 236, 'AWS Lambda', ['Search + package details', 'Holds + confirmation'], 'lambda', 4)}
       {node(866, 174, 236, 'Aurora PostgreSQL', ['Catalog + traveler state', 'Saved steps + bookings'], 'aurora', 5)}
       <text x={250} y={390} className="mds-brief-arch-label">Direct Data API access: catalog, scoped preferences and saved-step readback</text>

@@ -37,6 +37,13 @@ const NAMED_TRAVELER = [
   /trv_meridian_demo/, /\bJordan\b/, /SHOWCASE_TRAVELER_ID/, /lib\/personas/,
 ];
 
+// How callers are authenticated differs by release, so the screens say what holds in both.
+const AUTH_CLAIMS = [
+  /IAM[- ]signed/i, /\bSigV4\b/i, /\bAWS IAM\b/i, /AWS credentials/i, /shared[- ]token/i,
+  /\bBasic (auth|credential)/i, /Workload identity/i, /Authenticate the workload/i,
+  /Authenticated workload/i, /Workload authorization/i,
+];
+
 function namedTravelerOffences(files: Record<string, string>, paths: string[]): string[] {
   return paths.flatMap(path => files[path].split('\n')
     .map((line, index) => ({ line, at: `${shortName(path)}:${index + 1}` }))
@@ -81,6 +88,16 @@ describe('showcase copy', () => {
     const files = Object.keys(sources).filter(path => isPageCode(path));
     expect(files.length).toBeGreaterThan(50);
     expect(namedTravelerOffences(sources, files)).toEqual([]);
+  });
+
+  it('makes no claim about IAM, SigV4, shared tokens or workload identity in the page code', () => {
+    const files = Object.keys(sources).filter(path => isPageCode(path));
+    expect(files.length).toBeGreaterThan(50);
+    const offences = files.flatMap(path => sources[path].split('\n')
+      .map((line, index) => ({ line, at: `${shortName(path)}:${index + 1}` }))
+      .filter(({ line }) => !isComment(line) && AUTH_CLAIMS.some(pattern => pattern.test(line)))
+      .map(({ line, at }) => `${at} ${line.trim().slice(0, 100)}`));
+    expect(offences).toEqual([]);
   });
 
   it('flags a planted first name in page code, and ignores tests and comments', () => {

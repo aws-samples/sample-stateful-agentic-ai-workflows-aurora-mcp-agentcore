@@ -29,6 +29,18 @@ describe('SolutionBriefing', () => {
     expect(screen.getByText('Save the write intent')).toBeVisible();
   });
 
+  it('states how access is checked without naming a signing scheme', () => {
+    const { container } = render(<SolutionBriefing onOpenLadder={() => {}} onOpenEvidence={() => {}} />);
+    const architecture = container.querySelector('.mds-brief-architecture')?.textContent ?? '';
+    expect(architecture).toContain('Access checked on every call');
+    expect(architecture).toContain('Policy: Cedar checks');
+    const text = container.textContent ?? '';
+    expect(text).not.toMatch(/IAM|SigV4|signed MCP|shared token|workload identity/i);
+    expect(screen.getByText('Check access at every hop')).toBeInTheDocument();
+    expect(screen.getByText(/each check the caller before acting, and the database applies its own row-level security/))
+      .toBeInTheDocument();
+  });
+
   it('reveals policy details only after opening the verification section', () => {
     render(<SolutionBriefing onOpenLadder={() => {}} onOpenEvidence={() => {}} />);
     expect(screen.getByText('Tool contracts & Cedar policies')).not.toBeVisible();

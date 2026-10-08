@@ -24,9 +24,9 @@ export const POLICIES: [string, string, string][] = [
 ];
 
 export const CONTROLS: [string, string][] = [
-  ['Authenticate the workload', 'AWS IAM roles identify the backend, Runtime and holds Lambda. Meridian uses workload grants; AgentCore Identity is not enabled as an end-user sign-in service.'],
+  ['Check access at every hop', 'The backend, both Runtimes and the Gateway each check the caller before acting, and the database applies its own row-level security again.'],
   ['Authorize the traveler', 'traveler_identity_bindings in Aurora grants that subject a traveler. A missing grant fails before any row-level scope is set, and both allow and deny land in traveler_access_audit.'],
   ['Scope every row', 'Row-Level Security filters rows to the authorized traveler under the least-privilege meridian_app role, inside one Data API transaction.'],
-  ['Decide every tool call', 'AgentCore Gateway serves the tools over MCP with SigV4; its Cedar policy engine, MeridianGovernance in ENFORCE mode, decides each call on the arguments before any Lambda runs.'],
+  ['Decide every tool call', 'AgentCore Gateway serves the tools over MCP; its Cedar policy engine, MeridianGovernance in ENFORCE mode, decides each call on the arguments before any Lambda runs.'],
   ['Make the writer a workload too', 'The MeridianHolds Lambda holds its own grant, sets the traveler scope, steps down to meridian_app and calls create_courtesy_hold or confirm_booking, so a retried call replays the same booking or the same confirmation.'],
 ];

@@ -37,9 +37,9 @@ const BRIEFS: Record<Phase, {
   4: {
     title: 'Remember the traveler. Govern the action.',
     description: 'Use saved preferences only after checking who may access them, and let policy decide every tool call.',
-    route: ['Workload identity', 'Runtime + Gateway tools', 'Cedar decision', 'RLS write + audit'],
+    route: ['Verified caller', 'Runtime + Gateway tools', 'Cedar decision', 'RLS write + audit'],
     evidence: 'Traveler authorization, Cedar allow or deny, hold row, and audit event',
-    pattern: 'Workload identity identifies the agent. A traveler grant allows access. The agent calls tools through the gateway, Cedar policy sees the arguments before code runs, RLS limits the rows, and an audit record captures each decision.',
+    pattern: 'Each hop checks the caller. A traveler grant allows access. The agent calls tools through the gateway, Cedar policy sees the arguments before code runs, RLS limits the rows, and an audit record captures each decision.',
     callout: 'The application pins traveler, confirmation and budget. The model cannot grant itself authority.',
   },
   5: {
