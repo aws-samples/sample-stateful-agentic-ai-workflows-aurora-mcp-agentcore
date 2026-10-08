@@ -32,9 +32,10 @@ ENV = {
     "MERIDIAN_COGNITO_REGION": "us-east-1",
     "MERIDIAN_COGNITO_USER_POOL_ID": "us-east-1_AbCdEfGhI",
     "MERIDIAN_COGNITO_APP_CLIENT_ID": "exampleclientid123",
-    "MERIDIAN_AGENTCORE_AUTH": "jwt",
+    "MERIDIAN_AGENTCORE_AUTH": "iam",
     "ENVIRONMENT": "production",
 }
+JWT_ENV = {**ENV, "MERIDIAN_AGENTCORE_AUTH": "jwt"}
 ALL_CHECKS = {"backend_login", "warm", "phase2_sql_mcp", "phase2_concierge_mcp", "rls_probe",
               "session_receipt", "recovery", "purge"}
 
@@ -106,6 +107,17 @@ class Harness:
         self.chat = [(200, mcp_reply("postgres-mcp: run_query")),
                      (200, mcp_reply("meridian-concierge: compare_packages"))]
         self.chat_bodies: list[dict] = []
+        self.http_headers: list[dict] = []
+        self.minted: list[str] = []
+        self.mint_crash = None
+        self.env = ENV
+
+    def mint(self, user_key):
+        self.events.append(f"mint {user_key}")
+        if self.mint_crash:
+            raise self.mint_crash
+        self.minted.append(user_key)
+        return "eyJ-minted-for-" + user_key
 
     def caller(self, region):
         self.events.append("guard")
@@ -133,8 +145,9 @@ class Harness:
             self.backend.dead = True
         return self.healthy and alive()
 
-    def http(self, method, path, body=None):
+    def http(self, method, path, body=None, headers=None):
         self.events.append(f"{method} {path}")
+        self.http_headers.append(dict(headers or {}))
         if path == "/api/chat":
             self.chat_bodies.append(body)
             return self.chat.pop(0)
@@ -160,7 +173,8 @@ class Harness:
 
     def deps(self) -> proof.Dependencies:
         return proof.Dependencies(
-            env=ENV, caller=self.caller, identity=self.identity, port_free=self.port_free,
+            env=self.env, caller=self.caller, mint=self.mint, identity=self.identity,
+            port_free=self.port_free,
             start_backend=self.start, wait_healthy=self.wait, http=self.http,
             run_step=self.run_step, sweep=self.sweep, dirty=lambda: self.dirty, now=self.now,
             git_sha=lambda: SHA, receipt_path=self.path)
@@ -1003,3 +1017,136 @@ def test_the_dry_run_never_reads_the_working_tree_or_the_network(tmp_path):
     assert proof.main([], harness.deps()) == 0
 
     assert harness.events == []
+
+
+# ------------------------------------------------------------------ the jwt mode
+
+
+def jwt_harness(tmp_path, **kwargs) -> Harness:
+    harness = Harness(tmp_path, **kwargs)
+    harness.env = JWT_ENV
+    return harness
+
+
+def test_the_iam_path_signs_in_nobody_and_sends_no_credential(tmp_path):
+    harness = Harness(tmp_path)
+
+    assert run(harness) == 0
+
+    assert harness.minted == []
+    assert all(headers == {} for headers in harness.http_headers)
+    for step in harness.steps_run:
+        assert step.env["MERIDIAN_AGENTCORE_AUTH"] == "iam"
+        assert step.env["MERIDIAN_API_TOKEN"] == "shared"
+
+
+def test_a_jwt_run_starts_the_backend_in_jwt_mode_with_the_pool_and_no_shared_token(tmp_path):
+    harness = jwt_harness(tmp_path)
+
+    assert run(harness) == 0
+
+    started = harness.started_with
+    assert started["MERIDIAN_AGENTCORE_AUTH"] == "jwt"
+    assert started["AURORA_SECRET_ARN"] == BACKEND_SECRET and started["MERIDIAN_API_TOKEN"] == ""
+    assert started["MERIDIAN_COGNITO_USER_POOL_ID"] == JWT_ENV["MERIDIAN_COGNITO_USER_POOL_ID"]
+    assert started["MERIDIAN_COGNITO_APP_CLIENT_ID"] == JWT_ENV["MERIDIAN_COGNITO_APP_CLIENT_ID"]
+    assert started["MERIDIAN_COGNITO_REGION"] == "us-east-1"
+
+
+def test_a_jwt_run_sends_jordans_bearer_on_every_http_step_and_keeps_it_out_of_the_steps(tmp_path):
+    harness = jwt_harness(tmp_path)
+
+    assert run(harness) == 0
+
+    assert set(harness.minted) == {"jordan"}
+    assert len(harness.http_headers) == 5
+    assert all(h == {"Authorization": "Bearer eyJ-minted-for-jordan"}
+               for h in harness.http_headers)
+    for step in harness.steps_run:
+        assert step.env["MERIDIAN_AGENTCORE_AUTH"] == "jwt"
+        assert step.env["MERIDIAN_API_TOKEN"] == ""
+        assert step.env["AURORA_SECRET_ARN"] == MASTER_SECRET
+        assert "eyJ" not in " ".join(step.argv) + " ".join(step.env.values())
+    assert "eyJ" not in " ".join(harness.started_with.values())
+    assert json.loads(harness.path.read_text())["ok"] is True
+
+
+def test_the_mode_flag_overrides_the_setting_and_a_bad_mode_is_a_usage_error(tmp_path, capsys):
+    harness = Harness(tmp_path)
+
+    assert run(harness, "--mode", "jwt") == 0
+    assert harness.started_with["MERIDIAN_AGENTCORE_AUTH"] == "jwt"
+    assert proof.main(["--mode", "saml"], Harness(tmp_path).deps()) == 3
+    assert "usage" in capsys.readouterr().out.lower()
+
+
+def test_a_jwt_run_whose_runtime_step_fails_records_a_failed_receipt(tmp_path):
+    harness = jwt_harness(tmp_path, failing="warm")
+
+    assert run(harness) == 1
+
+    receipt = json.loads(harness.path.read_text())
+    assert receipt["ok"] is False and receipt["checks"] == {"backend_login": True, "warm": False}
+    assert harness.backend.stopped
+
+
+def test_a_jwt_run_that_cannot_sign_in_fails_the_first_check_and_prints_no_token(
+        tmp_path, capsys):
+    harness = jwt_harness(tmp_path)
+    harness.mint_crash = RuntimeError("sign-in for jordan failed; eyJabc12345.def.ghi")
+
+    assert run(harness) == 1
+
+    receipt = json.loads(harness.path.read_text())
+    assert receipt["ok"] is False and receipt["checks"] == {"backend_login": False}
+    assert "eyJabc12345" not in capsys.readouterr().out
+
+
+def test_the_dry_run_names_the_mode(tmp_path, capsys):
+    proof.main([], jwt_harness(tmp_path).deps())
+
+    assert "jwt" in capsys.readouterr().out
+
+
+def test_the_real_sign_in_uses_the_pool_of_the_env_file_not_the_process_environment(
+        monkeypatch):
+    import boto3
+
+    from scripts import cognito_tokens
+
+    seen = {}
+    monkeypatch.setattr(boto3, "client", lambda name, region_name=None: (name, region_name))
+    monkeypatch.setattr(cognito_tokens, "mint_access_token",
+                        lambda user, **kwargs: seen.update(user=user, **kwargs) or "tok")
+    monkeypatch.delenv("MERIDIAN_COGNITO_USER_POOL_ID", raising=False)
+
+    assert proof._mint(JWT_ENV, "jordan") == "tok"
+
+    assert seen["user"] == "jordan" and seen["pool_id"] == "us-east-1_AbCdEfGhI"
+    assert seen["client_id"] == "exampleclientid123"
+    assert seen["sm"] == ("secretsmanager", "us-east-1") and seen["idp"][0] == "cognito-idp"
+
+
+def test_the_real_http_call_adds_the_authorization_header(monkeypatch):
+    captured = {}
+
+    class Reply:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return b"{}"
+
+    def fake_open(request, timeout):
+        captured.update(request.header_items())
+        return Reply()
+
+    monkeypatch.setattr(proof.urllib.request, "urlopen", fake_open)
+
+    assert proof._http("GET", "/api/health", None, {"Authorization": "Bearer x"})[0] == 200
+    assert captured["Authorization"] == "Bearer x"

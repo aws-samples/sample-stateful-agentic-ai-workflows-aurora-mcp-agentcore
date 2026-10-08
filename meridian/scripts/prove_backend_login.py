@@ -28,11 +28,19 @@ removed.
 A passing run writes ``.local/release-b2/backend-login-proof.json``; ``publish.py`` refuses the jwt
 release without a recent one. A failing or interrupted run overwrites it with ``ok: false``, and an
 invalid receipt is written before anything starts, so an older passing receipt cannot survive.
+The proof follows the identity mode the live Runtimes and Gateway are in: ``--mode iam|jwt``,
+default the mode in ``.env`` or the shell (``MERIDIAN_AGENTCORE_AUTH``). In ``iam`` mode the
+backend and the two proof scripts sign with the shell's AWS credentials. In ``jwt`` mode the
+backend runs with the pool settings and verifies Jordan's Cognito access token, this tool signs
+Jordan in through ``scripts/cognito_tokens.py`` (the token lives in memory and goes only into the
+``Authorization`` header of its own requests to the loopback backend), and the proof scripts
+sign in themselves. The receipt has the same eight fields in both modes.
 Without ``--apply`` it prints the plan. With it, the run calls Bedrock and the deployed
 MeridianWorkflow Runtime, places one test hold and removes what the recovery made.
 
     python scripts/prove_backend_login.py
     python scripts/prove_backend_login.py --apply --i-understand-this-changes-aws
+    python scripts/prove_backend_login.py --mode jwt --apply --i-understand-this-changes-aws
 
 Exit codes: 0 passed, 1 a check failed, the backend never answered, the run crashed or was
 interrupted (SIGINT or SIGTERM), 3 refused (a precondition, a usage error or a missing flag).
@@ -64,6 +72,7 @@ from dotenv import dotenv_values
 MERIDIAN_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MERIDIAN_DIR))
 
+from backend.agentcore.auth_mode import IAM, JWT, MODES  # noqa: E402
 from backend.demo_prompts import PROMPT_LADDER  # noqa: E402
 from scripts.identity_release import settings  # noqa: E402
 
@@ -86,6 +95,8 @@ CHECKS = ("backend_login", "warm", "phase2_sql_mcp", "phase2_concierge_mcp", "rl
           "session_receipt", "recovery", "purge")
 STRIPPED = ("MERIDIAN_API_TOKEN", "MERIDIAN_COGNITO_REGION", "MERIDIAN_COGNITO_USER_POOL_ID",
             "MERIDIAN_COGNITO_APP_CLIENT_ID")
+JWT_STRIPPED = ("MERIDIAN_API_TOKEN",)
+SIGNED_IN_USER = "jordan"
 AWS_SETTINGS = ("AWS_PROFILE", "AWS_DEFAULT_REGION", "AWS_REGION")
 ACCOUNT_ID = re.compile(r"(?<!\d)\d{12}(?!\d)")
 TOKEN = re.compile(r"\bey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.?[A-Za-z0-9_-]*")
@@ -160,33 +171,44 @@ class Dependencies:
     port_free: Callable[[int], bool]
     start_backend: Callable[[dict[str, str], int], Any]
     wait_healthy: Callable[[str, Callable[[], bool]], bool]
-    http: Callable[[str, str, dict | None], tuple[int, Any]]
+    http: Callable[[str, str, dict | None, Mapping[str, str]], tuple[int, Any]]
     run_step: Callable[[Step], StepResult]
     sweep: Callable[[Mapping[str, str | None]], list[str]]
+    mint: Callable[[str], str] = lambda user: ""
+    mode: str = IAM
     dirty: Callable[[], list[str]] = settings.working_tree_changes
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
     git_sha: Callable[[], str] = settings.git_head
     receipt_path: Path = settings.PROOF_PATH
 
 
-def backend_environment(env: Mapping[str, str | None], secret_arn: str) -> dict[str, str]:
+def backend_environment(env: Mapping[str, str | None], secret_arn: str,
+                        mode: str = IAM) -> dict[str, str]:
     """The backend process's environment: the login's secret, no shared token, loopback allowed.
 
-    The shared token and the pool settings are blanked rather than removed, because the backend
-    loads ``.env`` without overriding variables that are already set, and would put them back.
+    The shared token (and, in ``iam`` mode, the pool settings) are blanked rather than removed,
+    because the backend loads ``.env`` without overriding variables that are already set, and
+    would put them back. In ``jwt`` mode the pool settings stay, so the backend verifies the
+    bearer token it is sent and forwards it to the Runtimes and the Gateway.
     """
     child = {k: v for k, v in env.items() if v is not None}
-    child.update({name: "" for name in STRIPPED})
+    child.update({name: "" for name in (JWT_STRIPPED if mode == JWT else STRIPPED)})
     child.update({"AURORA_SECRET_ARN": secret_arn, "ENVIRONMENT": "development",
-                  "MERIDIAN_ALLOW_INSECURE_LOCALHOST": "1", "MERIDIAN_AGENTCORE_AUTH": "iam",
+                  "MERIDIAN_ALLOW_INSECURE_LOCALHOST": "1", "MERIDIAN_AGENTCORE_AUTH": mode,
                   "AGENTCORE_SKIP_CLI_SYNC": "1"})
     return child
 
 
-def plan_steps(env: Mapping[str, str | None], port: int) -> list[Step]:
-    """The two proof scripts, run with the shell's own login (the master) against the backend."""
+def plan_steps(env: Mapping[str, str | None], port: int, mode: str = IAM) -> list[Step]:
+    """The two proof scripts, run with the shell's own login (the master) against the backend.
+
+    In ``jwt`` mode they sign in themselves (``scripts/agentcore_caller.py``); the shared token
+    is blanked so nothing falls back to it.
+    """
     base = {k: v for k, v in env.items() if v is not None}
-    base["MERIDIAN_AGENTCORE_AUTH"] = "iam"
+    base["MERIDIAN_AGENTCORE_AUTH"] = mode
+    if mode == JWT:
+        base.update({name: "" for name in JWT_STRIPPED})
     scripts = MERIDIAN_DIR / "scripts"
     return [
         Step("warm", [sys.executable, str(scripts / "warm_demo.py"), "--base-url",
@@ -340,33 +362,39 @@ def check_receipt(status: int, body: Any) -> str | None:
     return None if turns and turns[0] > 0 else "the receipt shows no persisted conversation turns"
 
 
+def _call(deps: Dependencies, method: str, path: str, body: dict | None) -> tuple[int, Any]:
+    """One request to the proof backend; in ``jwt`` mode it carries Jordan's fresh token."""
+    headers = {"Authorization": "Bearer " + deps.mint(SIGNED_IN_USER)} if deps.mode == JWT else {}
+    return deps.http(method, path, body, headers)
+
+
 def _chat_body(prompt: str) -> dict:
     return {"message": prompt, "phase": 2, "customer_id": TRAVELER}
 
 
 def _phase_two(deps: Dependencies, prompt: str, tool: str) -> str | None:
-    status, reply = deps.http("POST", "/api/chat", _chat_body(prompt))
+    status, reply = _call(deps, "POST", "/api/chat", _chat_body(prompt))
     return f"the chat route answered HTTP {status}" if status != 200 else check_mcp_turn(
         reply, tool)
 
 
 def check_plan(deps: Dependencies) -> list[tuple[str, Callable[[], StepResult]]]:
     """The ordered checks: each returns a result, and the run stops at the first that fails."""
-    warm, recovery = plan_steps(deps.env, PORT)
+    warm, recovery = plan_steps(deps.env, PORT, deps.mode)
     probe = "/api/diagnostics/rls-probe"
     receipt = "/api/diagnostics/session-receipt"
     return [
         ("backend_login", lambda: _timed("backend_login", lambda: check_login(
-            *deps.http("GET", "/api/health", None)))),
+            *_call(deps, "GET", "/api/health", None)))),
         ("warm", lambda: deps.run_step(warm)),
         ("phase2_sql_mcp", lambda: _timed("phase2_sql_mcp", lambda: _phase_two(
             deps, SQL_PROMPT, SQL_TOOL))),
         ("phase2_concierge_mcp", lambda: _timed("phase2_concierge_mcp", lambda: _phase_two(
             deps, CONCIERGE_PROMPT, CONCIERGE_TOOL))),
         ("rls_probe", lambda: _timed("rls_probe", lambda: check_probe(
-            *deps.http("POST", probe, {})))),
+            *_call(deps, "POST", probe, {})))),
         ("session_receipt", lambda: _timed("session_receipt", lambda: check_receipt(
-            *deps.http("POST", receipt, {"window_minutes": RECEIPT_WINDOW_MINUTES})))),
+            *_call(deps, "POST", receipt, {"window_minutes": RECEIPT_WINDOW_MINUTES})))),
         ("recovery", lambda: deps.run_step(recovery)),
     ]
 
@@ -415,7 +443,8 @@ def prove(secret_arn: str, binding: Binding, deps: Dependencies) -> int:
     backend = None
     failure: BaseException | None = None
     try:
-        backend = deps.start_backend(backend_environment(deps.env, secret_arn), PORT)
+        backend = deps.start_backend(
+            backend_environment(deps.env, secret_arn, deps.mode), PORT)
         run_checks(backend, checks, deps)
     except BaseException as exc:  # noqa: BLE001 - recorded in the receipt, then re-raised
         failure = exc
@@ -442,12 +471,24 @@ def refuse(text: str) -> int:
     return EXIT_REFUSED
 
 
-def dry_run(deps: Dependencies) -> int:
+def _mode(deps: Dependencies, chosen: str | None) -> str:
+    """The identity mode: ``--mode``, else the setting.
+
+    Raises:
+        settings.ReleaseConfigError: When the setting is neither ``iam`` nor ``jwt``.
+    """
+    return chosen or settings.release_mode(deps.env)
+
+
+def dry_run(deps: Dependencies, chosen: str | None = None) -> int:
     """Print what an applied run would do."""
+    deps = replace(deps, mode=_mode(deps, chosen))
     say(f"DRY RUN. The backend would run on port {PORT} as {BACKEND_LOGIN} "
         "(AURORA_SECRET_ARN set for that process only), refusing to start if the port is bound.")
+    say(f"Identity mode: {deps.mode} (the mode the live Runtimes and Gateway are in; "
+        "--mode overrides).")
     say("Checks, in order, stopping at the first failure: " + ", ".join(CHECKS) + ".")
-    for step in plan_steps(deps.env, PORT):
+    for step in plan_steps(deps.env, PORT, deps.mode):
         say(f"  {step.name}: {' '.join(Path(part).name for part in step.argv[1:])}")
     say(OPEN_BACKEND)
     say(RESIDUE)
@@ -492,11 +533,15 @@ def run(args: argparse.Namespace, deps: Dependencies) -> int:
         return refuse("AURORA_BACKEND_SECRET_ARN is not set; run "
                       "scripts/provision_service_logins.py --login backend --apply --write-env")
     if not args.apply:
-        return dry_run(deps)
+        try:
+            return dry_run(deps, args.mode)
+        except settings.ReleaseConfigError as exc:
+            return refuse(str(exc))
     if not args.confirmed:
         return refuse(f"--apply also needs {settings.CONFIRM_FLAG}; it calls AWS and places "
                       "a test hold")
     try:
+        mode = _mode(deps, args.mode)
         binding = bind(deps)
         _account, region = guard_deployment(deps)
     except settings.ReleaseConfigError as exc:
@@ -507,7 +552,7 @@ def run(args: argparse.Namespace, deps: Dependencies) -> int:
     if not deps.port_free(PORT):
         return refuse(f"port {PORT} is already bound, so a backend there may not be the one "
                       "this run starts; stop it and run again")
-    with_region = replace(deps, env={**deps.env, "AWS_DEFAULT_REGION": region})
+    with_region = replace(deps, env={**deps.env, "AWS_DEFAULT_REGION": region}, mode=mode)
     return prove(secret_arn, binding, with_region)
 
 
@@ -520,6 +565,9 @@ def build_parser() -> argparse.ArgumentParser:
     """The command line."""
     parser = _Parser(description=__doc__.split("\n\n")[0], allow_abbrev=False)
     parser.add_argument("--apply", action="store_true", help="run the proof (live)")
+    parser.add_argument("--mode", choices=MODES, default=None,
+                        help="identity mode of the live Runtimes and Gateway; default: the "
+                             "MERIDIAN_AGENTCORE_AUTH setting")
     parser.add_argument(settings.CONFIRM_FLAG, action="store_true", dest="confirmed",
                         help="required with --apply: it calls AWS and places a test hold")
     return parser
@@ -610,12 +658,13 @@ def _wait_healthy(url: str, alive: Callable[[], bool]) -> bool:
     return False
 
 
-def _http(method: str, path: str, body: dict | None) -> tuple[int, Any]:
+def _http(method: str, path: str, body: dict | None,
+          headers: Mapping[str, str]) -> tuple[int, Any]:
     """One JSON request to the loopback backend; the status and the parsed body."""
     request = urllib.request.Request(
         f"http://127.0.0.1:{PORT}{path}", method=method,
         data=json.dumps(body).encode() if body is not None else None,
-        headers={"Content-Type": "application/json"})
+        headers={"Content-Type": "application/json", **headers})
     try:
         with urllib.request.urlopen(request, timeout=HTTP_SECONDS) as response:
             return response.status, json.loads(response.read() or b"{}")
@@ -722,6 +771,24 @@ def _sweep(env: Mapping[str, str | None]) -> list[str]:
     return asyncio.run(_sweep_threads(env))
 
 
+def _mint(env: Mapping[str, str | None], user_key: str) -> str:
+    """Jordan's access token, signed in with the shell's AWS credentials and the pool of ``env``.
+
+    The pool and the Region come from ``env`` (not ``os.environ``), so a value only in ``.env``
+    is honoured. The token is returned in memory and never printed.
+    """
+    import boto3
+
+    from scripts.cognito_tokens import mint_access_token
+
+    pool = settings.cognito_settings(env)
+    region = pool.region
+    return mint_access_token(
+        user_key, pool_id=pool.pool_id, client_id=pool.client_id,
+        sm=boto3.client("secretsmanager", region_name=region),
+        idp=boto3.client("cognito-idp", region_name=region))
+
+
 def default_dependencies() -> Dependencies:
     """The real environment, subprocesses and Data API."""
     env = {**dotenv_values(MERIDIAN_DIR / ".env"), **os.environ}
@@ -729,7 +796,7 @@ def default_dependencies() -> Dependencies:
     return Dependencies(
         env=env, caller=_caller, identity=lambda arn: _identity(arn, env),
         port_free=_port_is_free, start_backend=_start_backend, wait_healthy=_wait_healthy,
-        http=_http, run_step=_run_step, sweep=_sweep)
+        http=_http, run_step=_run_step, sweep=_sweep, mint=lambda user: _mint(env, user))
 
 
 if __name__ == "__main__":
