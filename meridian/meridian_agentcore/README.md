@@ -94,10 +94,11 @@ joined with `||`. An empty `traveler_id` claim is denied.
 Do not set `jwt` by itself on a deployed system. A Runtime accepts IAM or a JWT, never both, so the
 Gateway authorizer, both Runtime authorizers and header allowlists, the interceptor attachment and
 the backend's environment change together in one release.
-CloudFormation cannot change a deployed Gateway's authorizer type and compares the template with the
-deployed stack, so in `jwt` mode the rendered Gateway resource deliberately stays `AWS_IAM`; the
-release moves the live Gateway with the API (`scripts/release_identity.py gateway`) and deploys
-through `scripts/release_identity.py deploy`, never with a bare `agentcore deploy -y`.
+CloudFormation cannot change a deployed Gateway's authorizer type, so in `jwt` mode the render names the
+Gateway `meridian-aurora-jwt` with a `CUSTOM_JWT` authorizer: a new resource, built in four staged deploys
+through `scripts/release_identity.py deploy`, never with a bare `agentcore deploy -y`. The stack deletes the
+`iam` Gateway in the first stage. The release attaches the interceptor afterwards with
+`scripts/release_identity.py gateway`.
 `scripts/run_gateway_harness.py` tests the Gateway behavior first, on a separate throwaway Gateway.
 The release steps and what stays unswitched until then are in
 [Operations](../docs/OPERATIONS.md#switch-the-agentcore-identity-mode).

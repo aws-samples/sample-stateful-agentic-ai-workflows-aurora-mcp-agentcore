@@ -12,7 +12,7 @@ commands that need another directory run in a subshell, `( cd ... )`.
 | Runtime | `MeridianConcierge` | Strands agent that plans with the gateway tools, keeps its session in Memory and streams its trace to the backend |
 | Runtime | `MeridianWorkflow` | Runs the Phase 5 workflow as the `meridian_workflow` database login; a stopped session resumes from saved snapshots on a new microVM |
 | Memory | `meridian_session` | Runtime session store, `SEMANTIC` strategy over `/users/{actorId}/sessions/{sessionId}` |
-| Gateway | `meridian-aurora` | MCP endpoint with AWS_IAM inbound auth and the Cedar policy engine attached in `ENFORCE` mode |
+| Gateway | `meridian-aurora` (`meridian-aurora-jwt` in `jwt` mode) | MCP endpoint with AWS_IAM inbound auth (Cognito JWT in `jwt` mode) and the Cedar policy engine attached in `ENFORCE` mode |
 | Gateway target | `SemanticTripSearchLambda` | `semantic_trip_search(query, limit)` over Aurora pgvector, served by the Lambda function you create in step 2 |
 | Gateway target | `MeridianHolds` | Lambda built by the CDK app: `get_package_details`, `create_courtesy_hold` and `confirm_booking` |
 | Policy engine | `MeridianGovernance` | `meridian_read_tools` permits the reads; `meridian_hold_governance` permits a hold only when confirmed, at most 12 hours, at most 6 travelers and within budget; `meridian_booking_governance` permits a confirmation only when confirmed and within budget |
@@ -347,41 +347,32 @@ Tail the runtime while you use the app:
 
 Moving the Gateway and both Runtimes to the Cognito authorizer is a release, not a plain deploy.
 CloudFormation cannot change an existing Gateway's authorizer type: `agentcore deploy -y` fails
-with "Authorizer type cannot be updated for an existing gateway" and the stack rolls back. The
-template cannot declare the Gateway's request interceptor either, and an update that omits
-`interceptorConfigurations` detaches it. CloudFormation also compares the template with the
-deployed stack template, not with the live Gateway.
+with "Authorizer type cannot be updated for an existing gateway" and the stack rolls back, and the
+`UpdateGateway` API refuses it with the same words. Only a new Gateway can be `CUSTOM_JWT`, so in `jwt`
+mode the render names the Gateway `meridian-aurora-jwt` (a new CloudFormation resource, new id and URL)
+and the stack deletes `meridian-aurora`. The stack cannot hold both Gateways (their targets share names,
+and the holds Lambda has a fixed name), so the new one is built in four deploys that replay the first
+deployment: the Gateway, the holds target, the Cedar engine and rules, the engine id on the Runtimes.
+The interceptor cannot be declared in the template, so `release_identity.py gateway` attaches it last.
+Never run `agentcore deploy` bare in `jwt` mode: use `release_identity.py deploy`, which runs one stage
+and refuses unless the render, the deployed state and the live Gateway agree and the plan matches the stage.
 
-The divergence is deliberate: in `jwt` mode the render keeps the Gateway resource as the deployed
-stack has it (`AWS_IAM`, no JWT block), while the live Gateway is `CUSTOM_JWT` after
-`release_identity.py gateway`. `check` and `deploy` compare the live Gateway with the mode, not
-with the template. Change the Gateway's authorizer only through the release command, and never
-run `agentcore deploy` bare in `jwt` mode: use `release_identity.py deploy`. So the order is fixed,
-and that command enforces it:
+The order, enforced by the tools:
 
-1. Render the `jwt` configuration (`MERIDIAN_AGENTCORE_AUTH=jwt`, Cedar rule left out for the first
-   deploy) and validate it.
-2. Move the live Gateway with the API: `release_identity.py gateway --apply
-   --i-understand-this-changes-aws`. One `UpdateGateway` call sets the `CUSTOM_JWT` authorizer,
-   its discovery URL and allowed client, and the interceptor.
-3. Deploy through the tool: `release_identity.py deploy --apply
-   --i-understand-this-changes-aws`. It refuses unless the rendered Gateway is the stack's
-   (`AWS_IAM`) and the live Gateway reports the `jwt` authorizer and the interceptor; it runs
-   `/opt/homebrew/bin/agentcore deploy --diff --json` and refuses if the plan changes the Gateway
-   authorizer; it then runs `/opt/homebrew/bin/agentcore deploy -y`; it reads the Gateway back and sends the `gateway`
-   update again if the deploy changed it.
-4. Only now, point the holds Lambda's SSM parameter at the gateway login
-   (`publish_gateway_parameters.py --gateway-login --apply
-   --i-understand-this-changes-aws`, then `release_identity.py lambdas --restart-holds`). This
-   deploy is what lets the holds role read that secret, and the parameter write refuses before it.
-5. Render with the Cedar rule and run step 3 again.
+1. Snapshot and prove the `iam` release; set `jwt` in `.env`; clear the old Gateway's role with
+   `release_identity.py gateway --to iam --apply --i-understand-this-changes-aws`.
+2. Stage 1: `render_agentcore_config.py`, then `release_identity.py deploy --apply
+   --i-understand-this-changes-aws`, then `sync_agentcore_env.py --write`. The old Gateway is deleted here.
+3. Stages 2, 3 and 4: render and deploy again each time, until the render prints `Configuration complete.`
+4. After stage 2, `bind_gateway_workload.py`, then point the holds Lambda's SSM parameter at the gateway
+   login (`publish_gateway_parameters.py --gateway-login --apply --i-understand-this-changes-aws`, then
+   `release_identity.py lambdas --restart-holds`).
+5. `release_identity.py gateway --to jwt --apply --i-understand-this-changes-aws` attaches the interceptor,
+   then `check`, then `publish.py`.
 
-The full window, with every command, the read after each step and what is assumed rather than
-verified, is in [Operations](OPERATIONS.md#the-window-order). The rollback runs the same order in
-reverse: the Gateway returns to IAM through the API first, then an IAM render is deployed from the
-snapshot's commit, which also puts back the `InvokeGateway` statement the `jwt` deploy removes from
-both Runtime roles (`release_identity.py rollback` prints the commands and `check --expect iam`
-verifies them).
+The full window, with every command, the consumers of the new Gateway, the outage and the rollback, is in
+[Operations](OPERATIONS.md#the-window-order). Rolling back is the same four stages with
+`MERIDIAN_AGENTCORE_AUTH=iam`, and creates a new `iam` Gateway with a new URL.
 
 ## Change the deployment
 

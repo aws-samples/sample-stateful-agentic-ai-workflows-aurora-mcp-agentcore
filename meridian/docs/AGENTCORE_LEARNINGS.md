@@ -48,28 +48,29 @@ deployment steps. Each note names the code or step it explains.
 - **App Runner does not run the start command through a shell.** Quotes are literal and `sh -c '...'` fails.
 - **CloudTrail shows what CloudFormation sends.** `lookup-events` on `CreateService` shows the fields the resource handler adds, which helps when a service created by a stack fails and the same service created by the CLI works. The App Runner service itself is managed outside CloudFormation; `scripts/publish.py` updates it through the SDK.
 
-## Gateway authorizer: what the first window showed
+## Gateway authorizer: what the first three windows showed
 
-- **CloudFormation cannot change an existing Gateway's authorizer type.** The first coordinated window
-  failed when `agentcore deploy -y` reported "Authorizer type cannot be updated for an existing
-  gateway"; the stack rolled back cleanly. The resource documentation calls the change an in-place
-  update, and the handler refuses it. The `UpdateGateway` API does it, so the release moves the Gateway
-  with `release_identity.py gateway` first and deploys with `release_identity.py deploy`.
+- **An existing Gateway's authorizer type can never change.** The first window failed when
+  `agentcore deploy -y` reported "Authorizer type cannot be updated for an existing gateway"; the
+  third window got the same words from `UpdateGateway`. The CloudFormation resource specification lists no
+  property of the Gateway as causing replacement, so a name change does not help either: only a new
+  construct id (a new Gateway name in the specification) creates a new Gateway.
+- **The stack cannot hold the old and the new Gateway.** Two Gateways with the same target names fail
+  synthesis (the CDK adds target outputs at stack scope under one construct id), and the holds Lambda is named
+  `<project>-MeridianHolds`, so a single deploy that swaps Gateways would create the new function before it
+  deletes the old one. The jwt Gateway is therefore built in four deploys, and the old Gateway is deleted by the
+  first. A target name is the prefix of every tool name, so renaming targets to avoid this was not chosen.
+- **A rule is validated against the tools that exist**, so the holds target is deployed before the Cedar rules.
 - **The interceptor is outside the template.** The installed `@aws/agentcore-cdk` never sets
-  `InterceptorConfigurations`, and an update that omits it detaches the interceptor (harness check C5). The
-  deploy command reads the Gateway back and re-applies the update when the deploy changed it.
-- **CloudFormation compares the template with the deployed stack template, not with the live Gateway.**
-  The second window's read-only diff planned `AWS_IAM` to `CUSTOM_JWT` against the stack template, which
-  means moving the live Gateway through the API cannot make a `CUSTOM_JWT` template deployable (inferred, not
-  yet confirmed by a deploy). The
-  render therefore keeps the Gateway resource as the stack has it (`AWS_IAM`, no JWT block) in `jwt` mode, and
-  `release_identity.py gateway` alone owns the live authorizer and interceptor. The live `CUSTOM_JWT`
-  Gateway under an `AWS_IAM` template is the expected state. `deploy` refuses when its plan changes the
-  Gateway authorizer.
-- **The jwt deploy takes `InvokeGateway` off the Runtime roles**, and `UpdateAgentRuntime` does not put it
-  back, so a rollback to IAM needs the IAM render deployed. `check --expect iam` reads both roles.
-- **The holds role reads the gateway secret only after the first jwt deploy**, so the SSM parameter moves
-  after it, and the parameter write refuses before.
+  `InterceptorConfigurations`, and an update that omits it detaches the interceptor (harness check C5). It is
+  attached after the last stage; `check` is the drift read after any later deploy that updates the Gateway.
+- **The jwt deploy takes `InvokeGateway` off the Runtime roles** (the CDK adds it only for `AWS_IAM`
+  Gateways), and `UpdateAgentRuntime` does not put it back, so a rollback to IAM needs the staged IAM render.
+  `check --expect iam` reads both roles.
+- **The holds role is new**, so the holds Lambda needs `bind_gateway_workload.py` again, and it reads the
+  gateway secret from the moment stage two creates it; the SSM parameter moves after that stage.
+- **The deploy plan is text.** `agentcore deploy --diff --json` prints the CDK diff lines and then a JSON status
+  object; the plan gate reads the lines (read from the installed CLI source, not yet seen live).
 
 ## Gateway identity: what the harness measured
 
