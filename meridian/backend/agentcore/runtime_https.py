@@ -70,8 +70,10 @@ def _refuse(missing: str) -> AgentCoreNotConfiguredError:
     return AgentCoreNotConfiguredError(missing=(missing,), project_dir="", sources=())
 
 
-def invocation_url(region: str, runtime_arn: str, qualifier: str) -> str:
-    """The data-plane URL that invokes ``runtime_arn``.
+def invocation_url(
+    region: str, runtime_arn: str, qualifier: str, action: str = "invocations"
+) -> str:
+    """The data-plane URL that invokes (or, with ``action``, stops a session of) ``runtime_arn``.
 
     The bearer token goes to whatever host this returns, so the region and ARN are checked before
     they are placed in the URL: the region must be a plain AWS region name, the ARN a commercial
@@ -87,7 +89,7 @@ def invocation_url(region: str, runtime_arn: str, qualifier: str) -> str:
         raise _refuse(f"a Runtime ARN in region {region}")
     host = f"bedrock-agentcore.{region}.amazonaws.com"
     url = (
-        f"https://{host}/runtimes/{quote(runtime_arn, safe='')}/invocations"
+        f"https://{host}/runtimes/{quote(runtime_arn, safe='')}/{action}"
         f"?qualifier={quote(qualifier, safe='')}"
     )
     if urlsplit(url).hostname != host:
@@ -164,6 +166,34 @@ class RuntimeHttpClient:
             _require_identity_encoding(response)
             return {"response": StreamBody(response)}
         response.close()
+        if response.status_code in TOKEN_REJECTED:
+            ensure_unexpired(token)
+        raise RuntimeHttpError(
+            STATUS_CODES.get(response.status_code, f"HTTP{response.status_code}"),
+            response.status_code,
+        )
+
+    def stop(self, *, url: str, token: str, session_id: str) -> None:
+        """Stop one Runtime session with the caller's bearer token.
+
+        A Runtime with a JWT authorizer refuses a SigV4 ``StopRuntimeSession`` ("Authorization
+        method mismatch"), so the stop is posted the same way an invocation is.
+
+        Raises:
+            CallerTokenExpired: The token is expired, or the Runtime refused it after it expired.
+            RuntimeHttpError: The Runtime answered with an error status, or no answer arrived.
+        """
+        ensure_unexpired(token)
+        try:
+            response = self._client.post(url, content=b"{}", headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                SESSION_HEADER: session_id,
+            })
+        except httpx.HTTPError as exc:
+            raise RuntimeHttpError("ConnectionError", 0) from exc
+        if response.status_code == 200:
+            return
         if response.status_code in TOKEN_REJECTED:
             ensure_unexpired(token)
         raise RuntimeHttpError(

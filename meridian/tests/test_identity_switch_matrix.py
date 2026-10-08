@@ -167,11 +167,17 @@ def test_the_rendered_config_carries_the_mode_and_the_binding_rule_only_in_jwt(m
     assert render.JWT_ONLY_POLICIES == {"meridian_traveler_binding"}
 
 
-def test_stopping_a_session_stays_iam_in_both_modes(mode):
+def test_stopping_a_session_follows_the_mode(mode):
     boto = MagicMock()
-    client = WorkflowRuntimeClient(ARN, region="us-east-1", client=boto)
-    assert asyncio.run(client.stop_session(JORDAN, "phase5-0123456789ab")).outcome == "stopped"
-    boto.stop_runtime_session.assert_called_once()
+    seen = []
+    http = RuntimeHttpClient(transport=httpx.MockTransport(
+        lambda request: seen.append(request) or httpx.Response(200, json={})))
+    client = WorkflowRuntimeClient(ARN, region="us-east-1", client=boto, http=http)
+    with caller_token_scope(access_token()):
+        stop = asyncio.run(client.stop_session(JORDAN, "phase5-0123456789ab"))
+    assert stop.outcome == "stopped"
+    expected = (1, 0) if mode == "jwt" else (0, 1)
+    assert (len(seen), boto.stop_runtime_session.call_count) == expected
 
 
 BRANCHING_FILES = {

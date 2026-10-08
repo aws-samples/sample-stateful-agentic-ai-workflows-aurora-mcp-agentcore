@@ -625,7 +625,7 @@ The code for `jwt` mode is in the repository and tested in both modes. Nothing d
   mode. The hosted site still uses the shared `MERIDIAN_API_TOKEN`.
 - The command-line proofs and checks other than the three smoke scripts still sign with AWS
   credentials and stop working against a `jwt` Runtime until they are converted.
-- `StopRuntimeSession` stays IAM-signed in both modes.
+- `StopRuntimeSession` is posted with the bearer token in `jwt` mode: a JWT Runtime refuses a SigV4 stop ("Authorization method mismatch").
 
 ### Prerequisites
 

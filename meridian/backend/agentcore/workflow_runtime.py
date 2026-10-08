@@ -8,7 +8,7 @@ the workflow's own exception, so chat.py maps HTTP status exactly as before.
 
 With ``MERIDIAN_AGENTCORE_AUTH=jwt`` the Runtime has a JWT authorizer, so a run or ping is posted
 over HTTPS with the signed-in caller's bearer token (``runtime_https``) instead of being signed with
-IAM. Stopping a session stays IAM-signed: ``StopRuntimeSession`` takes no bearer token.
+IAM, and so is stopping a session: a JWT Runtime refuses a SigV4 ``StopRuntimeSession``.
 """
 
 import asyncio
@@ -204,14 +204,27 @@ class WorkflowRuntimeClient:
         payload = json.dumps({"event": WORKFLOW_EVENT, "mode": "ping"}).encode("utf-8")
         return await asyncio.to_thread(self._run_sync, session_id, payload)
 
-    def _stop_sync(self, session_id: str) -> SessionStop:
-        try:
+    def _stop_request(self, session_id: str) -> None:
+        """One stop: IAM-signed by default, with the caller's bearer token in jwt mode."""
+        if not jwt_mode():
             self._client_for().stop_runtime_session(
                 agentRuntimeArn=self._arn(), runtimeSessionId=session_id,
                 qualifier=self._qualifier or "DEFAULT",
             )
-        except ClientError as exc:
-            code = exc.response["Error"]["Code"]
+            return
+        self._http = self._http or RuntimeHttpClient()
+        region = self._region or resolve_agentcore_config().region
+        self._http.stop(
+            url=invocation_url(region, self._arn(), self._qualifier or "DEFAULT",
+                               "stopruntimesession"),
+            token=require_caller_token(), session_id=session_id,
+        )
+
+    def _stop_sync(self, session_id: str) -> SessionStop:
+        try:
+            self._stop_request(session_id)
+        except (ClientError, RuntimeHttpError) as exc:
+            code = exc.code if isinstance(exc, RuntimeHttpError) else exc.response["Error"]["Code"]
             if code == "ResourceNotFoundException":
                 return SessionStop(session_id, "not_running")
             logger.warning("Workflow Runtime stop failed: code=%s session=%s", code, session_id)

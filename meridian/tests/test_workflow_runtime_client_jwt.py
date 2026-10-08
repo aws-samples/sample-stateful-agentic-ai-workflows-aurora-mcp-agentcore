@@ -107,12 +107,46 @@ async def test_a_ping_uses_the_token_too():
     assert state["workflow_status"] == "ready" and json.loads(seen[0].content)["mode"] == "ping"
 
 
-async def test_stopping_a_session_is_still_iam_signed():
-    boto = MagicMock()
-    stop = await workflow_client(lambda request: pytest.fail("no HTTPS call"), boto).stop_session(
-        "trv_meridian_demo", "phase5-0123456789ab")
+async def test_stopping_a_session_posts_with_the_callers_token():
+    seen, token, boto = [], access_token(), MagicMock()
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={})
+
+    with caller_token_scope(token):
+        stop = await workflow_client(handler, boto).stop_session(
+            "trv_meridian_demo", "phase5-0123456789ab")
+    request = seen[0]
     assert stop.outcome == "stopped"
-    assert boto.stop_runtime_session.call_args.kwargs["agentRuntimeArn"] == ARN
+    assert request.url.path.endswith("/stopruntimesession")
+    assert request.url.params["qualifier"] == "DEFAULT"
+    assert request.headers["authorization"] == f"Bearer {token}"
+    assert request.headers["x-amzn-bedrock-agentcore-runtime-session-id"] == (
+        wr.workflow_session_id("trv_meridian_demo", "phase5-0123456789ab"))
+    boto.stop_runtime_session.assert_not_called()
+
+
+async def test_stopping_a_session_that_is_gone_is_not_running():
+    with caller_token_scope(access_token()):
+        stop = await workflow_client(lambda request: httpx.Response(404, json={})).stop_session(
+            "trv_meridian_demo", "phase5-0123456789ab")
+    assert stop.outcome == "not_running"
+
+
+async def test_a_refused_stop_is_an_error_with_its_code():
+    with caller_token_scope(access_token()), pytest.raises(RuntimeError) as raised:
+        await workflow_client(lambda request: httpx.Response(429, json={})).stop_session(
+            "trv_meridian_demo", "phase5-0123456789ab")
+    assert "ThrottlingException" in str(raised.value)
+
+
+async def test_stopping_without_a_bound_token_sends_nothing():
+    seen = []
+    with pytest.raises(CallerTokenMissing):
+        await workflow_client(lambda request: seen.append(request)).stop_session(
+            "trv_meridian_demo", "phase5-0123456789ab")
+    assert seen == []
 
 
 async def test_an_expired_token_is_refused_before_anything_is_sent():
@@ -165,7 +199,7 @@ async def test_iam_mode_still_signs_with_boto_and_never_uses_https(monkeypatch):
         "trv_meridian_demo", "phase5-0123456789ab")
 
 
-async def test_stopping_a_session_is_iam_signed_in_iam_mode_too(monkeypatch):
+async def test_stopping_a_session_is_iam_signed_in_iam_mode(monkeypatch):
     monkeypatch.delenv("MERIDIAN_AGENTCORE_AUTH")
     boto = MagicMock()
     stop = await workflow_client(lambda request: pytest.fail("no HTTPS call"), boto).stop_session(
