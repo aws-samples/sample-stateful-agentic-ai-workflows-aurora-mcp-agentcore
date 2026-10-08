@@ -166,8 +166,8 @@ def test_after_the_jwt_deploy_the_rollback_reports_the_missing_grant_and_the_exa
     assert "Runtime MeridianWorkflow: its role cannot call" in text
     assert "MERIDIAN_AGENTCORE_AUTH=iam python scripts/render_agentcore_config.py" in text
     assert "/opt/homebrew/bin/agentcore deploy -y" in text
-    assert "only after the gateway step above" in text
-    assert "CloudFormation cannot change the authorizer type back" in text
+    assert "release_identity.py deploy --to iam --apply" in text
+    assert "only after the gateway step above" not in text
     assert "check --expect iam --service-arn" in text
     assert rs.ACCOUNT not in "\n".join(said) and outcome.code == 1
 
