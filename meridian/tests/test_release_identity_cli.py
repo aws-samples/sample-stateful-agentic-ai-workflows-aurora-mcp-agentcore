@@ -9,9 +9,11 @@ from unittest.mock import Mock
 import pytest
 
 from scripts import release_identity
-from scripts.identity_release import settings
+from scripts.identity_release import interceptor_lambda, settings
 from tests import release_support as rs
+from tests.aws_recorders import Recorder, Waiters, client_error
 
+FAKE_TOKEN = "e" + "yJ" + "abc.def.ghi"
 NOW = datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
 CLUSTER = f"arn:aws:rds:{rs.REGION}:{rs.ACCOUNT}:cluster:meridian"
 SERVICE_ARN = f"arn:aws:apprunner:{rs.REGION}:{rs.ACCOUNT}:service/meridian-web/abc123"
@@ -36,8 +38,14 @@ def env(**extra):
     }
 
 
+class LambdaClient(Recorder, Waiters):
+    def __init__(self, **kwargs):
+        Recorder.__init__(self, **kwargs)
+        Waiters.__init__(self)
+
+
 class World:
-    """Recording fake clients for every service `check` may read."""
+    """Recording fake clients for every service the commands may use."""
 
     def __init__(self, mode="jwt", account=rs.ACCOUNT, service=None):
         self.sts = Mock()
@@ -52,10 +60,13 @@ class World:
         self.cfn.describe_stacks.return_value = {"Stacks": [{"Outputs": IDENTITY_OUTPUTS}]}
         self.apprunner = Mock()
         self.apprunner.describe_service.return_value = {"Service": service or {}}
+        self.iam = Recorder()
+        self.lam = LambdaClient()
 
     def session(self, region):
         clients = {"sts": self.sts, "bedrock-agentcore-control": self.control,
-                   "cloudformation": self.cfn, "apprunner": self.apprunner}
+                   "cloudformation": self.cfn, "apprunner": self.apprunner,
+                   "iam": self.iam, "lambda": self.lam}
         return Mock(client=lambda name, **kwargs: clients[name])
 
 
@@ -68,7 +79,8 @@ def proof(tmp_path, ok=True):
 def run(argv, world, tmp_path, environment=None, with_proof=True):
     deps = release_identity.Dependencies(
         env=environment or env(), session=world.session, now=lambda: NOW,
-        proof_path=proof(tmp_path) if with_proof else tmp_path / "none.json")
+        proof_path=proof(tmp_path) if with_proof else tmp_path / "none.json",
+        release_dir=tmp_path / "release", sleep=lambda seconds: None)
     return release_identity.main(argv, deps)
 
 
@@ -186,3 +198,154 @@ def test_check_makes_only_read_calls(tmp_path):
               for c in mock.method_calls}
     assert called <= {"get_gateway", "get_agent_runtime", "list_policies", "describe_stacks",
                       "describe_service", "get_caller_identity"}
+
+
+# --------------------------------------------------------------- interceptor
+
+TAGS = interceptor_lambda.TAGS
+
+
+def interceptor_world(exists=False):
+    """A World whose interceptor function exists (or does not) and matches what is wanted."""
+    wanted = interceptor_lambda.desired(
+        rs.ACCOUNT, rs.REGION, settings.cognito_settings(rs.COGNITO_ENV))
+    configuration = {
+        "FunctionName": wanted.function_name, "State": "Active",
+        "CodeSha256": wanted.code_sha256, "Handler": interceptor_lambda.HANDLER,
+        "Runtime": interceptor_lambda.RUNTIME, "Role": wanted.role_arn,
+        "Timeout": interceptor_lambda.TIMEOUT_SECONDS, "MemorySize": interceptor_lambda.MEMORY_MB,
+        "Environment": {"Variables": wanted.environment}}
+    pairs = [{"Key": k, "Value": v} for k, v in TAGS.items()]
+    world = World("jwt")
+    world.iam = Recorder({
+        "get_role": {"Role": {"Arn": wanted.role_arn, "Tags": pairs}},
+        "list_role_policies": {"PolicyNames": [interceptor_lambda.POLICY_NAME]},
+        "get_role_policy": {"PolicyDocument": wanted.role_policy},
+        "list_attached_role_policies": {"AttachedPolicies": []}})
+    missing = {} if exists else {
+        "get_function": [client_error("ResourceNotFoundException")]}
+    world.lam = LambdaClient(
+        answers={"get_function": {"Configuration": configuration, "Tags": dict(TAGS)},
+                 "create_function": configuration},
+        failures=missing)
+    return world
+
+
+def test_the_interceptor_command_is_a_dry_run_unless_both_flags_are_given(tmp_path, capsys):
+    world = interceptor_world()
+
+    assert run(["interceptor"], world, tmp_path) == 0
+
+    out = capsys.readouterr().out
+    assert "DRY RUN" in out and "IAM role meridian-gateway-traveler-pin" in out
+    assert world.iam.calls == [] and world.lam.calls == []
+    assert settings.CONFIRM_FLAG in out and rs.ACCOUNT not in out
+    assert not (tmp_path / "release").exists()
+
+
+def test_apply_without_the_confirmation_changes_nothing_and_exits_three(tmp_path, capsys):
+    world = interceptor_world()
+
+    assert run(["interceptor", "--apply"], world, tmp_path) == 3
+
+    assert settings.CONFIRM_FLAG in capsys.readouterr().out
+    assert world.iam.calls == [] and world.lam.calls == []
+
+
+def test_apply_deploys_the_function_then_reads_it_back(tmp_path, capsys):
+    world = interceptor_world()
+
+    assert run(["interceptor", "--apply", settings.CONFIRM_FLAG], world, tmp_path) == 0
+
+    out = capsys.readouterr().out
+    assert "create_function" in world.lam.names()
+    assert "Lambda meridian-gateway-traveler-pin: created" in out
+    assert "OK  the interceptor function matches" in out
+    assert rs.ACCOUNT not in out
+    saved = tmp_path / "release" / interceptor_lambda.OUTPUT_NAME
+    assert oct(saved.stat().st_mode & 0o777) == "0o600" and rs.ACCOUNT not in saved.read_text()
+
+
+def test_apply_reports_drift_the_read_back_finds_and_exits_one(tmp_path, capsys):
+    world = interceptor_world(exists=True)
+    world.iam.answers["list_attached_role_policies"] = {
+        "AttachedPolicies": [{"PolicyName": "AdministratorAccess"}]}
+
+    assert run(["interceptor", "--apply", settings.CONFIRM_FLAG], world, tmp_path) == 1
+
+    assert "DRIFT  IAM role meridian-gateway-traveler-pin: has the managed policy" in (
+        capsys.readouterr().out)
+    assert not (tmp_path / "release" / interceptor_lambda.OUTPUT_NAME).exists()
+
+
+def test_the_interceptor_command_refuses_the_cedar_only_design(tmp_path, capsys):
+    world = interceptor_world()
+
+    assert run(["interceptor"], world, tmp_path, env(MERIDIAN_GATEWAY_ENFORCEMENT="cedar")) == 2
+
+    assert "cedar" in capsys.readouterr().err and world.lam.calls == []
+
+
+def test_credentials_for_another_account_stop_the_interceptor_command(tmp_path):
+    world = interceptor_world()
+    world.sts.get_caller_identity.return_value = {"Account": "999999999999"}
+
+    with pytest.raises(SystemExit):
+        run(["interceptor", "--apply", settings.CONFIRM_FLAG], world, tmp_path)
+    assert world.lam.calls == [] and world.iam.calls == []
+
+
+def test_an_aws_failure_during_apply_is_masked_and_has_no_traceback(tmp_path, capsys):
+    world = interceptor_world()
+    world.iam.failures["get_role"] = [client_error(
+        "AccessDenied", f"not allowed on arn:aws:iam::{rs.ACCOUNT}:role/x token {FAKE_TOKEN}")]
+
+    assert run(["interceptor", "--apply", settings.CONFIRM_FLAG], world, tmp_path) == 2
+
+    err = capsys.readouterr().err
+    assert "AccessDenied" in err and "<acct>" in err and "<token>" in err
+    assert rs.ACCOUNT not in err and FAKE_TOKEN not in err and "Traceback" not in err
+
+
+def test_a_foreign_function_makes_apply_exit_two_and_change_nothing(tmp_path, capsys):
+    world = interceptor_world(exists=True)
+    world.lam.answers["get_function"]["Tags"] = {"project": "other"}
+
+    assert run(["interceptor", "--apply", settings.CONFIRM_FLAG], world, tmp_path) == 2
+
+    assert "not tagged" in capsys.readouterr().err
+    assert "update_function_code" not in world.lam.names()
+
+
+def test_the_delete_command_is_a_dry_run_unless_both_flags_are_given(tmp_path, capsys):
+    world = interceptor_world(exists=True)
+
+    assert run(["interceptor-delete"], world, tmp_path) == 0
+    assert "DRY RUN" in capsys.readouterr().out
+    assert run(["interceptor-delete", "--apply"], world, tmp_path) == 3
+    assert world.iam.calls == [] and world.lam.calls == []
+
+
+def test_the_delete_command_removes_only_the_tagged_resources_and_the_outputs(tmp_path, capsys):
+    world = interceptor_world(exists=True)
+    release = tmp_path / "release"
+    release.mkdir()
+    (release / interceptor_lambda.OUTPUT_NAME).write_text("{}")
+
+    assert run(["interceptor-delete", "--apply", settings.CONFIRM_FLAG], world, tmp_path) == 0
+
+    assert "delete_function" in world.lam.names() and "delete_role" in world.iam.names()
+    assert not (release / interceptor_lambda.OUTPUT_NAME).exists()
+    assert rs.ACCOUNT not in capsys.readouterr().out
+
+
+def test_the_delete_command_works_whatever_the_enforcement_design(tmp_path):
+    world = interceptor_world(exists=True)
+
+    assert run(["interceptor-delete", "--apply", settings.CONFIRM_FLAG], world, tmp_path,
+               env(MERIDIAN_GATEWAY_ENFORCEMENT="cedar")) == 0
+
+
+def test_abbreviated_flags_are_not_accepted(tmp_path):
+    with pytest.raises(SystemExit):
+        run(["interceptor", "--app"], interceptor_world(), tmp_path)
