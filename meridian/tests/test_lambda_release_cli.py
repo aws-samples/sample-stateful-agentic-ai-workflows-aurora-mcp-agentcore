@@ -52,7 +52,8 @@ def test_the_lambdas_command_lists_what_has_not_moved_and_exits_one(tmp_path, ca
 
     out = capsys.readouterr().out
     assert "DRIFT  SSM /meridian/aurora/secret_arn:" in out
-    assert "MANUAL STEP" in out and "publish_gateway_parameters.py --gateway-login" in out
+    assert "semantic-lambda --to gateway --apply" in out
+    assert "publish_gateway_parameters.py --gateway-login --apply" in out
 
 
 def test_the_tightened_stage_fails_while_a_role_can_still_read_the_master_secret(

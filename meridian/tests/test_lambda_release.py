@@ -6,6 +6,7 @@ import pytest
 from botocore.exceptions import WaiterError
 
 from scripts.identity_release import lambda_release as lambdas
+from scripts.identity_release import settings
 from tests import release_support as rs
 from tests.aws_recorders import client_error, violations
 from tests.lambda_release_support import (
@@ -263,12 +264,15 @@ def test_the_target_list_is_followed_across_pages():
 # ------------------------------------------------------------------ remedies
 
 
-def test_a_stale_semantic_environment_gets_the_exact_manual_step():
+def test_a_stale_semantic_environment_points_at_the_guarded_command():
     steps = lambdas.remedies(World(semantic_env=MASTER).check("gateway"), "gateway")
 
-    assert len(steps) == 1 and steps[0].startswith("MANUAL STEP")
-    assert "AURORA_GATEWAY_SECRET_ARN" in steps[0] and lambdas.SEMANTIC_FUNCTION in steps[0]
-    assert "replaces the whole environment" in steps[0]
+    assert len(steps) == 1 and steps[0].startswith("FIX semantic Lambda (ASK FIRST")
+    assert "release_identity.py semantic-lambda --to gateway --apply" in steps[0]
+    assert settings.CONFIRM_FLAG in steps[0]
+    master = lambdas.remedies(World(ssm=MASTER, semantic_env=GATEWAY).check("master"), "master")
+    assert len(master) == 1 and "semantic-lambda --to master" in master[0]
+    assert "grants" not in master[0]
 
 
 def test_a_stale_parameter_points_at_the_publisher_with_the_gateway_flag():
@@ -279,14 +283,15 @@ def test_a_stale_parameter_points_at_the_publisher_with_the_gateway_flag():
     assert all("--gateway-login" not in step for step in master)
 
 
-def test_the_semantic_search_role_findings_get_the_exact_manual_step():
+def test_the_semantic_search_role_findings_get_one_guarded_step_or_the_manual_removal():
     world = World(semantic_grants=(MASTER,))
 
     missing = lambdas.remedies(world.check("gateway"), "gateway")
 
-    assert len(missing) == 1 and missing[0].startswith("MANUAL STEP")
-    assert lambdas.SEMANTIC_FUNCTION in missing[0] and "GetSecretValue" in missing[0]
-    assert "AURORA_GATEWAY_SECRET_ARN" in missing[0]
+    assert len(missing) == 1 and "semantic-lambda --to gateway --apply" in missing[0]
+    both = lambdas.remedies(World(semantic_env=MASTER, semantic_grants=(MASTER,)).check(
+        "gateway"), "gateway")
+    assert len(both) == 1
     tightened = World(semantic_grants=(MASTER, GATEWAY))
     still = lambdas.remedies(tightened.check("tightened"), "tightened")
     assert len(still) == 1 and "remove" in still[0] and lambdas.SEMANTIC_FUNCTION in still[0]

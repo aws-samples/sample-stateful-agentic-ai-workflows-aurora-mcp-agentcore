@@ -175,7 +175,7 @@ def _role_findings(subject: str, grants: list[Grant], secrets: Secrets, stage: s
     return found
 
 
-def _configuration(lam: Any, name: str) -> dict[str, Any] | None:
+def function_configuration(lam: Any, name: str) -> dict[str, Any] | None:
     try:
         return lam.get_function_configuration(FunctionName=name)
     except ClientError as error:
@@ -193,29 +193,40 @@ def _parameter(ssm: Any) -> str | None:
         raise
 
 
-def _role_name(configuration: dict[str, Any]) -> str:
+def role_name(configuration: dict[str, Any]) -> str:
     return configuration["Role"].rsplit("/", 1)[-1]
 
 
 def _holds_findings(lam: Any, iam: Any, arn: str, secrets: Secrets, stage: str) -> list[str]:
-    holds = _configuration(lam, arn)
+    holds = function_configuration(lam, arn)
     if holds is None:
         return [f"Lambda {HOLDS_TARGET}: does not exist"]
-    grants = secret_grants(iam, _role_name(holds))
+    grants = secret_grants(iam, role_name(holds))
     return _role_findings(f"Lambda {HOLDS_TARGET}", grants, secrets, stage)
 
 
-def _semantic_findings(lam: Any, iam: Any, wanted: str, named: str, secrets: Secrets,
+def semantic_findings(lam: Any, iam: Any, wanted: str, named: str, secrets: Secrets,
                        stage: str) -> list[str]:
-    semantic = _configuration(lam, SEMANTIC_FUNCTION)
+    semantic = function_configuration(lam, SEMANTIC_FUNCTION)
     if semantic is None:
         return [f"Lambda {SEMANTIC_FUNCTION}: does not exist"]
     found = []
     if semantic.get("Environment", {}).get("Variables", {}).get("AURORA_SECRET_ARN") != wanted:
         found.append(f"Lambda {SEMANTIC_FUNCTION}: AURORA_SECRET_ARN is not the {named} login's "
                      "secret")
-    grants = secret_grants(iam, _role_name(semantic))
+    grants = secret_grants(iam, role_name(semantic))
     return found + _role_findings(f"Lambda {SEMANTIC_FUNCTION}", grants, secrets, stage)
+
+
+def parameter_findings(ssm: Any, wanted: str, named: str) -> list[str]:
+    """Findings when the SSM secret parameter does not hold exactly ``wanted``. Only reads."""
+    value = _parameter(ssm)
+    if value is not None and value != wanted and value.strip() == wanted:
+        return [f"SSM {SSM_SECRET_PARAMETER}: names the {named} login's secret with "
+                "whitespace around it, so the holds Lambda would not find the secret"]
+    if value != wanted:
+        return [f"SSM {SSM_SECRET_PARAMETER}: does not name the {named} login's secret"]
+    return []
 
 
 def check(ssm: Any, lam: Any, iam: Any, control: Any, gateway_id: str, secrets: Secrets,
@@ -229,15 +240,9 @@ def check(ssm: Any, lam: Any, iam: Any, control: Any, gateway_id: str, secrets: 
         raise ValueError(f"stage must be one of {', '.join(STAGES)}, not {stage!r}")
     wanted = secrets.master if stage == "master" else secrets.gateway
     named = "master" if stage == "master" else "meridian_gateway"
-    found = []
-    value = _parameter(ssm)
-    if value is not None and value != wanted and value.strip() == wanted:
-        found.append(f"SSM {SSM_SECRET_PARAMETER}: names the {named} login's secret with "
-                     "whitespace around it, so the holds Lambda would not find the secret")
-    elif value != wanted:
-        found.append(f"SSM {SSM_SECRET_PARAMETER}: does not name the {named} login's secret")
+    found = parameter_findings(ssm, wanted, named)
     found += _holds_findings(lam, iam, holds_function_arn(control, gateway_id), secrets, stage)
-    return found + _semantic_findings(lam, iam, wanted, named, secrets, stage)
+    return found + semantic_findings(lam, iam, wanted, named, secrets, stage)
 
 
 def remedies(findings: list[str], stage: str) -> list[str]:
@@ -247,13 +252,18 @@ def remedies(findings: list[str], stage: str) -> list[str]:
     steps = []
     if any(line.startswith(f"SSM {SSM_SECRET_PARAMETER}:") for line in findings):
         steps.append("FIX SSM (ASK FIRST): python scripts/publish_gateway_parameters.py" + flag
-                     + ", then lambdas --restart-holds")
-    if any(f"{SEMANTIC_FUNCTION}: AURORA_SECRET_ARN" in line for line in findings):
+                     + f" --apply {settings.CONFIRM_FLAG}, then lambdas --restart-holds")
+    subject = f"Lambda {SEMANTIC_FUNCTION}: "
+    if any(line.startswith((f"{subject}AURORA_SECRET_ARN", f"{subject}its role cannot read"))
+           for line in findings):
+        target = "master" if stage == "master" else "gateway"
+        grant = "" if stage == "master" else (
+            "it grants the role the read on the gateway login's secret first; ")
         steps.append(
-            f"MANUAL STEP (the {SEMANTIC_FUNCTION} Lambda is outside the CDK app): set its "
-            f"AURORA_SECRET_ARN environment variable to {key} from meridian/.env. "
-            "update-function-configuration replaces the whole environment, so read it first "
-            "(get-function-configuration) and send every variable back with this one changed.")
+            f"FIX semantic Lambda (ASK FIRST; {SEMANTIC_FUNCTION} is outside the CDK app): python "
+            f"scripts/release_identity.py semantic-lambda --to {target} --apply "
+            f"{settings.CONFIRM_FLAG} ({grant}it sets AURORA_SECRET_ARN from {key} in "
+            "meridian/.env keeping every other variable, and reads both back)")
     steps += _role_remedies(findings)
     return steps
 
@@ -261,12 +271,6 @@ def remedies(findings: list[str], stage: str) -> list[str]:
 def _role_remedies(findings: list[str]) -> list[str]:
     subject = f"Lambda {SEMANTIC_FUNCTION}: its role"
     steps = []
-    if any(line.startswith(f"{subject} cannot read") for line in findings):
-        steps.append(
-            f"MANUAL STEP (the {SEMANTIC_FUNCTION} Lambda and its role are outside the CDK app): "
-            "add an inline policy to that role that allows secretsmanager:GetSecretValue on the "
-            "secret named by AURORA_GATEWAY_SECRET_ARN in meridian/.env (iam put-role-policy), "
-            "then run lambdas again.")
     if any(line.startswith(f"{subject} still can read") for line in findings):
         steps.append(
             f"MANUAL STEP (ASK FIRST; the {SEMANTIC_FUNCTION} role is outside the CDK app): "
@@ -291,7 +295,7 @@ def require_holds(lam: Any, function_arn: str, account: str, region: str) -> dic
     if not HOLDS_NAME.match(parsed["name"]):
         raise LambdaError(f"the {HOLDS_TARGET} target names a function that is not an AgentCore "
                           f"{HOLDS_TARGET} function ({parsed['name']})")
-    configuration = _configuration(lam, function_arn)
+    configuration = function_configuration(lam, function_arn)
     if configuration is None:
         raise LambdaError(f"the {HOLDS_TARGET} function does not exist")
     if f":{account}:role/" not in configuration.get("Role", ""):
@@ -349,7 +353,7 @@ def restart_holds(lam: Any, function_arn: str, stamp: str, *, account: str, regi
     return f"Lambda {HOLDS_TARGET}: restarted ({MARKER}={stamp})"
 
 
-def _secrets(env: Mapping[str, str | None]) -> Secrets:
+def login_secrets(env: Mapping[str, str | None]) -> Secrets:
     secrets = Secrets(master=(env.get("AURORA_SECRET_ARN") or "").strip(),
                       gateway=(env.get("AURORA_GATEWAY_SECRET_ARN") or "").strip())
     if not secrets.master or not secrets.gateway:
@@ -380,7 +384,7 @@ def run(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> int:
     """
     env = deps.env
     account, region = settings.deployment_target(env)
-    secrets = _secrets(env)
+    secrets = login_secrets(env)
     if args.apply and not (args.restart_holds and args.confirmed):
         say(f"REFUSED: --apply needs --restart-holds and {settings.CONFIRM_FLAG}; it changes AWS.")
         return REFUSED

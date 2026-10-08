@@ -8,6 +8,8 @@ Every command that changes AWS is a dry run unless it gets both ``--apply`` and
     python scripts/release_identity.py interceptor [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py interceptor-delete [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py lambdas [--expect master|gateway|tightened] [--restart-holds]
+    python scripts/release_identity.py semantic-lambda [--to gateway|master] [--remove-grant]
+        [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py gateway [--to iam|jwt] [--only grant|move]
         [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py snapshot --service-arn ARN [--accept-baseline]
@@ -25,6 +27,10 @@ each delete.
 ``lambdas`` checks that the SSM parameter, the semantic-search Lambda and both roles are at a stage
 of the move to the meridian_gateway login (read-only); with ``--restart-holds`` (a dry run unless
 both flags) it forces the holds Lambda to re-read its configuration.
+``semantic-lambda`` gives the semantic-search Lambda's role read access to the gateway login's
+secret and then points the Lambda at it (dry run by default; the whole environment is read,
+changed in one value and sent back, then both changes are read back); ``--to master`` is the way
+back, and ``--remove-grant`` also deletes the policy the tool added.
 ``gateway`` moves the live Gateway to the mode (dry run by default: before and after of the
 authorizer, allowed clients and interceptor, and every precondition); an apply writes the invoke
 grant, sends the complete update and reads it back; ``--to iam`` is the rollback of the move.
@@ -69,7 +75,7 @@ from scripts.gateway_harness.verdicts import JWT_SHAPE  # noqa: E402
 from scripts.identity_release import interceptor_lambda, preflight, settings  # noqa: E402
 from scripts.identity_release import lambda_release  # noqa: E402
 from scripts.identity_release import gateway_release  # noqa: E402
-from scripts.identity_release import rollback, snapshot  # noqa: E402
+from scripts.identity_release import rollback, semantic_lambda, snapshot  # noqa: E402
 from scripts.provision_service_logins import redact, require_account  # noqa: E402
 from scripts.sync_cognito_env import FRONTEND_ENV_FILE, stack_outputs  # noqa: E402
 
@@ -150,6 +156,10 @@ def build_parser() -> argparse.ArgumentParser:
     move_lambdas.add_argument("--restart-holds", action="store_true",
                               help="force the holds Lambda to re-read its configuration")
     add_apply_flags(move_lambdas)
+    semantic = commands.add_parser(
+        "semantic-lambda", allow_abbrev=False,
+        help="move the semantic-search Lambda to the gateway login (dry run by default)")
+    semantic_lambda.add_arguments(semantic)
     move_gateway = commands.add_parser(
         "gateway", allow_abbrev=False,
         help="move the live Gateway's authorizer and interceptor (dry run by default)")
@@ -311,6 +321,11 @@ def run_lambdas(args: argparse.Namespace, deps: Dependencies) -> int:
     return lambda_release.run(args, deps, say)
 
 
+def run_semantic_lambda(args: argparse.Namespace, deps: Dependencies) -> int:
+    """Plan, or apply and read back, the semantic-search Lambda's move to the gateway login."""
+    return semantic_lambda.run(args, deps, say)
+
+
 def run_gateway(args: argparse.Namespace, deps: Dependencies) -> int:
     """Plan, or apply and read back, the Gateway's move to a mode."""
     return gateway_release.run(args, deps, say=say)
@@ -328,7 +343,8 @@ def run_rollback(args: argparse.Namespace, deps: Dependencies) -> int:
 
 HANDLERS = {"check": run_check, "interceptor": run_interceptor,
             "interceptor-delete": run_interceptor_delete, "lambdas": run_lambdas,
-            "gateway": run_gateway, "snapshot": run_snapshot, "rollback": run_rollback}
+            "semantic-lambda": run_semantic_lambda, "gateway": run_gateway,
+            "snapshot": run_snapshot, "rollback": run_rollback}
 
 
 def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int:
