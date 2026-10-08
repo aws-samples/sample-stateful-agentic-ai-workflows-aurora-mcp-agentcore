@@ -41,7 +41,7 @@ HOSTED_RELEASE_PATH = settings.MERIDIAN_DIR / ".local" / "hosted-release.json"
 SENSITIVE_NAME = re.compile(
     r"TOKEN|PASSWORD|SECRET|CREDENTIAL|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY|(^|[_-])KEY($|[_-])",
     re.IGNORECASE)
-NOT_SENSITIVE = re.compile(r"(^|[_-])TOKEN[_-]USE$", re.IGNORECASE)
+NOT_SENSITIVE = re.compile(r"(^|[_-])TOKEN[_-]USE$|(^|[_-])MAX[_-]TOKENS$", re.IGNORECASE)
 ACCESS_KEY_SHAPE = re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")
 DISTRIBUTION_ID = re.compile(r"^E[A-Z0-9]{8,20}$")
 REDACTED = "<redacted>"

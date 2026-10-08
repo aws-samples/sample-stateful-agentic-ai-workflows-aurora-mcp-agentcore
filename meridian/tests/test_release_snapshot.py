@@ -357,6 +357,16 @@ def test_a_non_secret_name_that_contains_token_is_kept(world):
     assert not [path for path in saved["redacted"] if "TOKEN_USE" in path]
 
 
+def test_a_token_count_setting_is_kept(world):
+    world.runtimes[rs.RUNTIME_IDS["MeridianConcierge"]]["environmentVariables"][
+        "BEDROCK_MAX_TOKENS"] = "4096"
+    saved = ss.taken(world)
+
+    assert saved["runtimes"]["MeridianConcierge"]["environmentVariables"][
+        "BEDROCK_MAX_TOKENS"] == "4096"
+    assert not [path for path in saved["redacted"] if "MAX_TOKENS" in path]
+
+
 def test_the_redacted_paths_are_covered_by_the_integrity_hash(world, tmp_path):
     world.runtimes[rs.RUNTIME_IDS["MeridianConcierge"]]["environmentVariables"][
         "NOTE"] = "prefix " + ss.PLANTED[2]
