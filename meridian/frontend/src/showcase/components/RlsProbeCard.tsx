@@ -14,8 +14,9 @@ import { AuroraIcon } from './ServiceMark';
  */
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { BadgeCheck, Fingerprint, RefreshCw, ShieldX } from 'lucide-react';
+import { BadgeCheck, Fingerprint, RefreshCw, ShieldX, UserCheck } from 'lucide-react';
 import { fetchRlsProbe, type RlsProbeResponse } from '../../api/client';
+import { useSession } from '../../auth/SessionContext';
 import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 
 function decisionToneClass(decision: string): string {
@@ -31,6 +32,8 @@ export function RlsProbeCard({ travelerId, travelerName = 'the signed-in travele
   travelerName?: string;
 }) {
   const prefersReducedMotion = usePrefersReducedMotion();
+  const { source, traveler: signedIn, verifiedTravelerId } = useSession();
+  const personId = verifiedTravelerId ?? signedIn?.travelerId ?? null;
   const [data, setData] = useState<RlsProbeResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +77,16 @@ export function RlsProbeCard({ travelerId, travelerName = 'the signed-in travele
       {!error && data && (
         <>
           <div className="mds-authz-chain" aria-label="Identity and authorization proof">
+            {source === 'cognito' && personId && (
+              <div className="mds-authz-step is-allow">
+                <span className="mds-authz-icon"><UserCheck size={16} aria-hidden="true" /></span>
+                <div>
+                  <small>Signed-in person</small>
+                  <strong>{signedIn?.displayName ?? personId}</strong>
+                  <code>{verifiedTravelerId ? personId : `${personId}, from the sign-in`}</code>
+                </div>
+              </div>
+            )}
             <div className="mds-authz-step">
               <span className="mds-authz-icon"><Fingerprint size={16} aria-hidden="true" /></span>
               <div>
