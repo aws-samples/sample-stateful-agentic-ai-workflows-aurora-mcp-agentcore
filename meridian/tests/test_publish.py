@@ -1,6 +1,7 @@
 """Established deployments must fail closed without deleting or rotating access."""
 import json
 from copy import deepcopy
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -8,18 +9,22 @@ import pytest
 from botocore.exceptions import ClientError
 
 from scripts import publish
+from tests import release_support as rs
 
 
 RUNTIME_ID = "meridianv2_MeridianWorkflow-x"
 WORKFLOW_ARN = f"arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/{RUNTIME_ID}"
+CONCIERGE_ARN = "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/example"
+GATEWAY_URL = "https://gw1.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
 
 
 def hosted_environment(**overrides):
     environment = {
         "AURORA_CLUSTER_ARN": "arn:aws:rds:us-east-1:123456789012:cluster:example",
         "AURORA_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:123456789012:secret:example-abcdef",
-        "AGENTCORE_RUNTIME_ARN": "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/example",
+        "AGENTCORE_RUNTIME_ARN": CONCIERGE_ARN,
         "AGENTCORE_WORKFLOW_RUNTIME_ARN": WORKFLOW_ARN,
+        "AGENTCORE_GATEWAY_URL": GATEWAY_URL,
     }
     environment.update(overrides)
     return environment
@@ -138,9 +143,17 @@ def test_the_backend_login_secret_is_optional_but_must_belong_to_the_account():
             hosted_environment(AURORA_BACKEND_SECRET_ARN=other), "123456789012", "us-east-1")
 
 
-def control_returning(status):
+def control_returning(status, mode="iam", *, gateway_mode=None):
+    """A control plane whose hops are in ``mode``; the workflow Runtime reports ``status``."""
     control = Mock()
-    control.get_agent_runtime.return_value = {"status": status}
+    runtimes = {
+        "example": rs.runtime("MeridianConcierge", mode),
+        RUNTIME_ID: {**rs.runtime("MeridianWorkflow", mode), "status": status},
+    }
+    control.get_agent_runtime.side_effect = lambda agentRuntimeId: runtimes[agentRuntimeId]
+    control.get_gateway.return_value = rs.gateway(gateway_mode or mode)
+    names = rs.BASE_POLICIES + ([rs.BINDING_POLICY] if mode == "jwt" else [])
+    control.list_policies.return_value = {"policies": rs.policies(names)}
     return control
 
 
@@ -180,7 +193,8 @@ class Commands(list):
         return next(env for ran, env in self.envs if ran == command)
 
 
-def planned_publish(monkeypatch, tmp_path, control, dotenv=None, outputs=None):
+def planned_publish(monkeypatch, tmp_path, control, dotenv=None, outputs=None,
+                    service_environment=None, proof=False):
     """Prepare the mocks and files for publish(); return the list that records the commands.
 
     This does not run publish(). The caller does, and the list fills as it runs. ``dotenv`` is
@@ -189,15 +203,22 @@ def planned_publish(monkeypatch, tmp_path, control, dotenv=None, outputs=None):
     commands = Commands()
     cdk_out = tmp_path / "infra" / "cdk.out"
     cdk_out.mkdir(parents=True)
-    template = {"Outputs": {"ServiceEnvironment": {"Value": json.dumps(hosted_environment())}}}
+    planned = service_environment if service_environment is not None else hosted_environment()
+    template = {"Outputs": {"ServiceEnvironment": {"Value": json.dumps(planned)}}}
     monkeypatch.setattr(publish, "release_environment", lambda: dict(dotenv or {}))
+    proof_path = tmp_path / "backend-login-proof.json"
+    if proof:
+        proof_path.write_text(json.dumps({
+            "ok": True, "login": "meridian_backend",
+            "at": datetime.now(timezone.utc).isoformat()}))
+    monkeypatch.setattr(publish, "PROOF_PATH", proof_path)
     (cdk_out / "MeridianWebBackend.template.json").write_text(json.dumps(template))
     session = Mock()
     clients = {"sts": Mock(), "apprunner": Mock(), "cloudformation": Mock(),
                "secretsmanager": Mock(), "bedrock-agentcore-control": control}
     clients["sts"].get_caller_identity.return_value = {"Account": "123456789012"}
     clients["apprunner"].describe_service.return_value = {"Service": {
-        "Status": "RUNNING", "ServiceUrl": "x.example.com"}}
+        **existing(), "ServiceUrl": "x.example.com"}}
     complete = {"Stacks": [{"StackStatus": "UPDATE_COMPLETE"}]}
     clients["cloudformation"].describe_stacks.side_effect = lambda StackName: (
         {"Stacks": [{"StackStatus": "UPDATE_COMPLETE", "Outputs": [
@@ -249,11 +270,17 @@ JWT_DOTENV = {
 }
 
 
-def jwt_publish(monkeypatch, tmp_path, **overrides):
-    commands = planned_publish(
-        monkeypatch, tmp_path, control_returning("READY"), dotenv={**JWT_DOTENV, **overrides},
-        outputs=IDENTITY_OUTPUTS)
-    return commands
+def jwt_service_environment(**overrides):
+    return {**hosted_environment(), **rs.jwt_service_variables(), **overrides}
+
+
+def jwt_publish(monkeypatch, tmp_path, *, control=None, proof=True, service_environment=None,
+                **overrides):
+    """A publish whose hops, planned service and proof are all ready for the jwt release."""
+    return planned_publish(
+        monkeypatch, tmp_path, control or control_returning("READY", "jwt"),
+        dotenv={**JWT_DOTENV, **overrides}, outputs=IDENTITY_OUTPUTS, proof=proof,
+        service_environment=service_environment or jwt_service_environment())
 
 
 def test_the_jwt_service_has_no_shared_token_secret_or_loopback_switch():
@@ -395,3 +422,121 @@ def test_stage_and_apply_cannot_be_combined():
     parsed = publish.build_parser().parse_args(
         ["--account", "1", "--service-arn", "x", "--tighten"])
     assert parsed.tighten is True and parsed.stage is False
+
+
+# ----------------------------------------------------- the refusing preflight
+
+
+def test_an_iam_plan_with_every_hop_in_iam_reaches_the_diff(monkeypatch, tmp_path):
+    commands = planned_publish(monkeypatch, tmp_path, control_returning("READY"))
+
+    publish.publish(ARGS)
+
+    assert commands[-1] == ["npx", "cdk", "diff", "--no-change-set"]
+
+
+def test_a_jwt_plan_with_every_hop_ready_reaches_the_diff(monkeypatch, tmp_path):
+    commands = jwt_publish(monkeypatch, tmp_path)
+
+    publish.publish(ARGS)
+
+    assert commands[-1] == ["npx", "cdk", "diff", "--no-change-set"]
+
+
+def test_a_jwt_plan_refuses_while_the_hops_are_still_iam_and_says_which(monkeypatch, tmp_path):
+    commands = jwt_publish(monkeypatch, tmp_path, control=control_returning("READY", "iam"))
+
+    with pytest.raises(SystemExit) as refused:
+        publish.publish(ARGS)
+
+    text = str(refused.value)
+    assert "refusing:" in text and "do not report jwt" in text
+    assert "Gateway: authorizer is AWS_IAM, expected CUSTOM_JWT" in text
+    assert "Runtime MeridianConcierge: has no JWT authorizer" in text
+    assert "Runtime MeridianWorkflow: has no JWT authorizer" in text
+    assert "traveler_binding rule is missing" in text
+    assert ["npx", "cdk", "diff", "--no-change-set"] not in commands
+
+
+def test_a_jwt_plan_refuses_when_only_the_gateway_has_not_moved(monkeypatch, tmp_path):
+    jwt_publish(monkeypatch, tmp_path, control=control_returning(
+        "READY", "jwt", gateway_mode="iam"))
+
+    with pytest.raises(SystemExit) as refused:
+        publish.publish(ARGS)
+
+    lines = str(refused.value).splitlines()
+    assert any(line.startswith("  Gateway: ") for line in lines)
+    assert not any("Runtime" in line for line in lines)
+
+
+def test_an_iam_plan_refuses_while_the_hops_are_still_jwt(monkeypatch, tmp_path):
+    planned_publish(monkeypatch, tmp_path, control_returning("READY", "jwt"))
+
+    with pytest.raises(SystemExit, match="Gateway: authorizer is CUSTOM_JWT, expected AWS_IAM"):
+        publish.publish(ARGS)
+
+
+def test_a_jwt_plan_refuses_without_the_backend_login_proof(monkeypatch, tmp_path):
+    jwt_publish(monkeypatch, tmp_path, proof=False)
+
+    with pytest.raises(SystemExit, match="Backend login proof: none recorded"):
+        publish.publish(ARGS)
+
+
+def test_a_jwt_plan_refuses_a_service_environment_that_still_uses_the_master_login(
+        monkeypatch, tmp_path):
+    master = "arn:aws:secretsmanager:us-east-1:123456789012:secret:example-abcdef"
+    jwt_publish(monkeypatch, tmp_path,
+                service_environment=jwt_service_environment(AURORA_SECRET_ARN=master))
+
+    with pytest.raises(SystemExit, match="would not run as the meridian_backend login"):
+        publish.publish(ARGS)
+
+
+def test_a_jwt_plan_refuses_a_service_environment_without_the_pool(monkeypatch, tmp_path):
+    environment = jwt_service_environment()
+    del environment["MERIDIAN_COGNITO_APP_CLIENT_ID"]
+    jwt_publish(monkeypatch, tmp_path, service_environment=environment)
+
+    with pytest.raises(SystemExit, match="MERIDIAN_COGNITO_APP_CLIENT_ID"):
+        publish.publish(ARGS)
+
+
+def test_the_planned_service_never_keeps_the_shared_token_in_the_jwt_release():
+    variables, secrets = publish.planned_service(
+        existing(), jwt_service_environment(), "token-reference", "jwt")
+
+    assert "MERIDIAN_API_TOKEN" not in variables and "MERIDIAN_API_TOKEN" not in secrets
+    assert variables["MERIDIAN_AGENTCORE_AUTH"] == "jwt"
+    assert secrets == {"OTHER_SECRET": "other-reference"}
+
+
+def test_the_planned_iam_service_keeps_the_shared_token_reference():
+    variables, secrets = publish.planned_service(
+        existing(), hosted_environment(), "token-reference", "iam")
+
+    assert secrets["MERIDIAN_API_TOKEN"] == "token-reference"
+
+
+def test_staging_does_not_need_the_hops_to_have_moved(monkeypatch, tmp_path):
+    commands = jwt_publish(monkeypatch, tmp_path, control=control_returning("READY", "iam"),
+                           proof=False)
+    monkeypatch.setattr(publish, "LOCAL", tmp_path / ".local")
+    (tmp_path / ".local").mkdir()
+    (tmp_path / ".local" / "MeridianWebBackend-outputs.json").write_text(
+        json.dumps({"MeridianWebBackend": {"ImageUri": "ecr/image:tag"}}))
+
+    publish.publish(SimpleNamespace(**{**vars(ARGS), "stage": True}))
+
+    assert [c[3] for c in commands if c[:3] == ["npx", "cdk", "deploy"]] == ["MeridianWebBackend"]
+
+
+def test_the_identity_output_check_reports_every_mismatch_in_one_error():
+    cognito = publish.settings.cognito_settings(JWT_DOTENV)
+    wrong = {**IDENTITY_OUTPUTS, "UserPoolId": "other", "AppClientId": "other"}
+
+    with pytest.raises(RuntimeError) as raised:
+        publish.check_outputs_match_settings(wrong, cognito)
+
+    assert "UserPoolId" in str(raised.value) and "AppClientId" in str(raised.value)

@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,7 +31,7 @@ MERIDIAN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MERIDIAN))
 
 from backend.agentcore.auth_mode import JWT  # noqa: E402
-from scripts.identity_release import settings  # noqa: E402
+from scripts.identity_release import preflight, settings  # noqa: E402
 
 INFRA = MERIDIAN / "infra"
 LOCAL = MERIDIAN / ".local"
@@ -43,6 +44,7 @@ JWT_ONLY_VARIABLES = (
     "MERIDIAN_COGNITO_APP_CLIENT_ID",
 )
 JWT_FORBIDDEN_VARIABLES = ("MERIDIAN_API_TOKEN", "MERIDIAN_ALLOW_INSECURE_LOCALHOST")
+PROOF_PATH = settings.PROOF_PATH
 SERVICE_WAIT_SECONDS = 1200
 CONFIG = Config(connect_timeout=10, read_timeout=30, retries={"mode": "standard", "total_max_attempts": 3})
 
@@ -122,11 +124,9 @@ def identity_outputs(cfn) -> dict:
 
 def check_outputs_match_settings(outputs: dict, cognito: settings.CognitoSettings) -> None:
     """The site signs in to the stack's client; the backend verifies the .env client. Same one."""
-    for key, expected in (("UserPoolId", cognito.pool_id), ("AppClientId", cognito.client_id)):
-        if outputs[key] != expected:
-            raise RuntimeError(
-                f"{IDENTITY_STACK} output {key} differs from meridian/.env; run "
-                "scripts/sync_cognito_env.py --write so the site and the backend trust one client")
+    mismatches = preflight.identity_findings(outputs, cognito)
+    if mismatches:
+        raise RuntimeError("; ".join(mismatches))
 
 
 def frontend_build_environment(mode: str, outputs: dict | None) -> dict:
@@ -216,6 +216,46 @@ def cdk_deploy(stack: str, env: dict) -> dict:
     run(["npx", "cdk", "deploy", stack, "--exclusively", "--require-approval", "never",
          "--outputs-file", str(outputs)], INFRA, env)
     return json.loads(outputs.read_text())[stack]
+
+
+@dataclass(frozen=True)
+class Release:
+    """What one publish is about to ship: the mode, the target and the planned service."""
+
+    mode: str
+    dotenv: dict
+    account: str
+    region: str
+    service_environment: dict
+
+
+def planned_service(service: dict, service_environment: dict, secret_arn: str,
+                    mode: str) -> tuple[dict, dict]:
+    """The plain and secret environment the service would run with after this release."""
+    definition = service_definition(
+        service, "planned", service_environment,
+        {"AccessRoleArn": "", "InstanceRoleArn": ""}, secret_arn, mode)
+    config = definition["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"]
+    return config["RuntimeEnvironmentVariables"], config["RuntimeEnvironmentSecrets"]
+
+
+def release_findings(control, release: Release, service: dict, secret_arn: str) -> list[str]:
+    """Everything that must already be true before this release's service and site go out.
+
+    The hops are read back from the control plane (the publish is the last step of the window),
+    the service environment is the one this publish would apply, and the jwt release also
+    needs the backend login proof.
+    """
+    target = preflight.target_for(release.mode, release.dotenv, release.account, release.region)
+    gateway_id, runtime_ids = preflight.hop_ids(release.service_environment)
+    state = preflight.read_state(control, gateway_id, runtime_ids)
+    variables, secrets = planned_service(
+        service, release.service_environment, secret_arn, release.mode)
+    findings = preflight.hop_findings(state, target)
+    findings += preflight.check_service_environment(variables, secrets, target)
+    if release.mode == JWT:
+        findings += preflight.check_backend_login_proof(PROOF_PATH)
+    return findings
 
 
 def cdk_environment(base: dict, mode: str, outputs: dict | None, tighten: bool) -> dict:
@@ -311,6 +351,8 @@ def publish(args) -> None:
         print(f"Staged the image {backend['ImageUri']} and built the site. The roles, the service "
               "and the site are unchanged.")
         return
+    release = Release(mode, dotenv, args.account, args.region, service_environment)
+    preflight.refuse_if_any(release_findings(control, release, service, secret["ARN"]), mode)
     # Template-only diff is read-only: it does not create a change set or publish assets.
     run(["npx", "cdk", "diff", "--no-change-set"], INFRA, env)
     if not args.apply:
