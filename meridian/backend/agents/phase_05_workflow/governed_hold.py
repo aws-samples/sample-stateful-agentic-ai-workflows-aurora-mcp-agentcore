@@ -1,8 +1,7 @@
 """Place the workflow's courtesy hold through the governed gateway tool.
 
-Phase 5 used to call the ``create_courtesy_hold`` SQL function directly from
-the LangGraph node. It now asks AgentCore Gateway for the same hold the Phase 4
-agent uses, so Cedar sees every hold the application places and there is one
+Phase 5 asks AgentCore Gateway for the same hold the Phase 4 agent uses,
+so Cedar sees every hold the application places and there is one
 door for business effects. The worker keeps its own lease check; it also passes
 its execution id so the Lambda verifies the lease again inside the write
 transaction, and it passes the checkpointed request and booking ids so a

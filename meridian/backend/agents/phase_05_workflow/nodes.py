@@ -1,8 +1,8 @@
-"""The Phase 5 workflow's seven steps, ported from the LangGraph nodes.
+"""The Phase 5 workflow's seven steps.
 
 Each step takes the folded workflow state and returns the keys it changes,
-including the span list with its own spans appended, exactly as the LangGraph
-nodes did. ``graph.Step`` turns that output into the delta Strands persists.
+including the span list with its own spans appended. ``graph.Step`` turns
+that output into the delta Strands persists.
 """
 
 import asyncio

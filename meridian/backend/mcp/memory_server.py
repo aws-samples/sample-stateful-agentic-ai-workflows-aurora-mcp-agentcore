@@ -10,8 +10,8 @@ abstract claims "MCP servers for contextual memory" — so this module
 exposes Phase 4's traveler memory (durable preferences, conversation
 history, semantic recall) over the same Model Context Protocol.
 
-Any MCP-capable client (Strands, Claude Desktop, the LangGraph adapter,
-etc.) can attach to it via stdio and call:
+Any MCP-capable client (Strands, Claude Desktop, etc.) can attach to it
+via stdio and call:
 
     - recall_traveler_profile(traveler_id)       → name + home airport + budget
     - recall_preferences(traveler_id, limit)     → durable preference rows

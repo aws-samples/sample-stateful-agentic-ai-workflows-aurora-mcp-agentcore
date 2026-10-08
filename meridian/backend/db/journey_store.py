@@ -140,7 +140,7 @@ async def bind_thread(db: Any, journey_id: str, thread_id: str) -> None:
     Args:
         db: Data API client.
         journey_id: The owning journey.
-        thread_id: The LangGraph thread id.
+        thread_id: The workflow thread id.
     """
     await db.execute(BIND_THREAD_SQL, (thread_id, journey_id))
     if await journey_for_thread(db, thread_id) != journey_id:
@@ -156,7 +156,7 @@ async def journey_for_thread(db: Any, thread_id: str) -> Optional[str]:
 
     Args:
         db: Data API client, inside a traveler-scoped session.
-        thread_id: The LangGraph thread id.
+        thread_id: The workflow thread id.
 
     Returns:
         The journey id, or None when the thread is not bound.
@@ -173,7 +173,7 @@ async def ensure_journey(
     Args:
         db: Data API client, inside a traveler-scoped session.
         traveler_id: The owner.
-        thread_id: The LangGraph thread id.
+        thread_id: The workflow thread id.
         checkpoint_backend: The backend serving this journey.
 
     Returns:

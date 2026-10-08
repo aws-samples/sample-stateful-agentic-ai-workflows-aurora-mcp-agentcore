@@ -14,7 +14,7 @@ async def workflow_memory_recall(
     conversation_id: str,
 ) -> tuple[List[Product], List[ActivityEntry]]:
     """
-    LangGraph memory_recall branch — Aurora reads without a Strands loop.
+    Workflow memory_recall branch: Aurora reads without a Strands loop.
 
     Reuses the same MemoryStore tables as Phase 4 @tools so the graph node
     story stays consistent: Phase 4 = Strands-driven recall; Phase 5 = explicit

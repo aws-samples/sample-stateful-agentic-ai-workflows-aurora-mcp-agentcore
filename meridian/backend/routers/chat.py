@@ -1100,7 +1100,7 @@ async def _polish_phase_reply(
                 lines.append(f"- {key}: {val}")
 
     # Surface a couple of distinctive trace spans so the polish can mention
-    # what the agent actually did (rerank, RLS scope, LangGraph node, etc.).
+    # what the agent actually did (rerank, RLS scope, workflow step, etc.).
     # Filter to *successful* spans only — we never want the concierge to
     # narrate degraded paths ("our reranker was unavailable") at the user.
     # If a step failed, fall back silently and let the model talk about
@@ -1258,7 +1258,7 @@ _PHASE4_WORKFLOW_TRANSITION_MESSAGE = (
 
 
 def _needs_checkpointed_workflow(query: str) -> bool:
-    """Detect Phase 4 prompts that should bridge to the LangGraph workflow.
+    """Detect Phase 4 prompts that should bridge to the durable workflow.
 
     Production mode can recall memory, search, and persist a turn, but a prompt
     that asks for multiple dependent travel-planning steps should not be framed

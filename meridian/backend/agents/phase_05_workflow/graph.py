@@ -308,8 +308,7 @@ class ReviewGate(HookProvider):
 
     - A fresh run stops with ``REVIEW_INTERRUPT`` once ``search`` has completed
       when ``routing.pauses_after_search`` says so: the traveler asked for
-      review, or the request is the canonical recovery. This matches LangGraph's
-      ``interrupt_after=["search"]``; a route without search never stops there.
+      review, or the request is the canonical recovery. A route without search never stops there.
     - A fresh run stops with ``CONFIRM_INTERRUPT`` before ``prepare_hold`` on
       every route, so nothing reaches the hold without the traveler's answer.
     - The traveler's resume is the answer and confirms the hold, so a resumed
