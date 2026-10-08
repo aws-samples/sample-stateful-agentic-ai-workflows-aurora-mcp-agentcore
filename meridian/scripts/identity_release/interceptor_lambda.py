@@ -18,6 +18,7 @@ import io
 import json
 import os
 import time
+import urllib.parse
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -35,6 +36,8 @@ HANDLER = "lambda_function.lambda_handler"
 RUNTIME = "python3.13"
 TIMEOUT_SECONDS = 5
 MEMORY_MB = 128
+ARCHITECTURES = ["x86_64"]
+LOG_GROUP_PREFIX = "/aws/lambda/"
 DESCRIPTION = "Meridian Gateway request interceptor: pins travelerId to the signed-in traveler"
 TAGS = {
     "project": "meridian",
@@ -64,6 +67,7 @@ class Desired:
     role_policy: dict[str, Any]
     environment: dict[str, str]
     code_sha256: str
+    code: bytes
 
 
 def package() -> bytes:
@@ -71,6 +75,7 @@ def package() -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         info = zipfile.ZipInfo("lambda_function.py", date_time=(2026, 1, 1, 0, 0, 0))
+        info.compress_type = zipfile.ZIP_DEFLATED
         info.external_attr = 0o644 << 16
         archive.writestr(info, SOURCE.read_bytes())
     return buffer.getvalue()
@@ -99,13 +104,14 @@ def desired(account: str, region: str, cognito: settings.CognitoSettings) -> Des
              "Resource": f"{group}:*"},
         ],
     }
-    digest = base64.b64encode(hashlib.sha256(package()).digest()).decode()
+    code = package()
+    digest = base64.b64encode(hashlib.sha256(code).digest()).decode()
     return Desired(
         function_name=name, function_arn=settings.interceptor_arn(account, region),
         role_name=name, role_arn=f"arn:aws:iam::{account}:role/{name}",
         trust_policy=json.dumps(trust), role_policy=policy,
         environment={"EXPECTED_CLIENT_ID": cognito.client_id, "EXPECTED_ISSUER": cognito.issuer},
-        code_sha256=digest,
+        code_sha256=digest, code=code,
     )
 
 
@@ -127,7 +133,10 @@ def teardown_plan(name: str = settings.INTERCEPTOR_FUNCTION) -> list[str]:
     return [
         f"Lambda function {name}: deleted if it carries {_tag_text()}",
         f"IAM role {name}: its inline policy and the role deleted if it carries the same tags",
-        "Anything without those tags is never touched; the log group is left in place",
+        "Anything without those tags is never touched",
+        f"The log group {LOG_GROUP_PREFIX}{name} is left in place (it is the audit trail of "
+        "refusals); to remove it by hand: "
+        f"aws logs delete-log-group --log-group-name {LOG_GROUP_PREFIX}{name}",
     ]
 
 
@@ -169,21 +178,46 @@ def _find_role(iam: Any, name: str) -> dict[str, Any] | None:
         raise
 
 
-def _ensure_role(iam: Any, wanted: Desired) -> list[str]:
+def _recheck_ours(iam: Any, name: str) -> None:
+    """Re-read the role's tags right before a write; refuse if it vanished or is not ours."""
+    if not _still_ours(iam, name):
+        raise DeployError(f"IAM role {name} disappeared during the run; nothing more was written")
+
+
+def _put_policy_after_create(iam: Any, wanted: Desired, sleep: Callable[[float], None]) -> None:
+    """Write the inline policy; IAM may take a moment to show a role it just created."""
+    for attempt in range(ASSUME_ATTEMPTS):
+        try:
+            iam.put_role_policy(RoleName=wanted.role_name, PolicyName=POLICY_NAME,
+                                PolicyDocument=json.dumps(wanted.role_policy))
+            return
+        except ClientError as error:
+            if not _missing(error, "NoSuchEntity"):
+                raise
+            if attempt == ASSUME_ATTEMPTS - 1:
+                raise DeployError(
+                    f"IAM role {wanted.role_name} was created but is not visible yet; "
+                    "wait a minute and run again") from error
+            sleep(ASSUME_WAIT_SECONDS)
+
+
+def _ensure_role(iam: Any, wanted: Desired, sleep: Callable[[float], None]) -> list[str]:
     role = _find_role(iam, wanted.role_name)
     if role is None:
         iam.create_role(
             RoleName=wanted.role_name, AssumeRolePolicyDocument=wanted.trust_policy,
             Description=DESCRIPTION, Tags=[{"Key": k, "Value": v} for k, v in TAGS.items()])
-        note = f"IAM role {wanted.role_name}: created"
-    else:
-        _require_ours(_role_tags(role), f"IAM role {wanted.role_name}")
-        iam.update_assume_role_policy(
-            RoleName=wanted.role_name, PolicyDocument=wanted.trust_policy)
-        note = f"IAM role {wanted.role_name}: trust policy rewritten"
+        _put_policy_after_create(iam, wanted, sleep)
+        return [f"IAM role {wanted.role_name}: created",
+                f"IAM role {wanted.role_name}: policy {POLICY_NAME} written"]
+    _require_ours(_role_tags(role), f"IAM role {wanted.role_name}")
+    _recheck_ours(iam, wanted.role_name)
+    iam.update_assume_role_policy(RoleName=wanted.role_name, PolicyDocument=wanted.trust_policy)
+    _recheck_ours(iam, wanted.role_name)
     iam.put_role_policy(RoleName=wanted.role_name, PolicyName=POLICY_NAME,
                         PolicyDocument=json.dumps(wanted.role_policy))
-    return [note, f"IAM role {wanted.role_name}: policy {POLICY_NAME} written"]
+    return [f"IAM role {wanted.role_name}: trust policy rewritten",
+            f"IAM role {wanted.role_name}: policy {POLICY_NAME} written"]
 
 
 def _wait(lam: Any, waiter: str, name: str) -> None:
@@ -199,8 +233,9 @@ def _wait(lam: Any, waiter: str, name: str) -> None:
 def _create_function(lam: Any, wanted: Desired, sleep: Callable[[float], None]) -> None:
     request = {
         "FunctionName": wanted.function_name, "Runtime": RUNTIME, "Role": wanted.role_arn,
-        "Handler": HANDLER, "Code": {"ZipFile": package()}, "Timeout": TIMEOUT_SECONDS,
-        "MemorySize": MEMORY_MB, "Description": DESCRIPTION, "Tags": dict(TAGS),
+        "Handler": HANDLER, "Code": {"ZipFile": wanted.code}, "Timeout": TIMEOUT_SECONDS,
+        "MemorySize": MEMORY_MB, "Architectures": ARCHITECTURES,
+        "Description": DESCRIPTION, "Tags": dict(TAGS),
         "Environment": {"Variables": wanted.environment},
     }
     for attempt in range(ASSUME_ATTEMPTS):
@@ -217,23 +252,57 @@ def _create_function(lam: Any, wanted: Desired, sleep: Callable[[float], None]) 
             sleep(ASSUME_WAIT_SECONDS)
 
 
+def _no_vpc(configuration: dict[str, Any]) -> bool:
+    vpc = configuration.get("VpcConfig") or {}
+    return not (vpc.get("VpcId") or vpc.get("SubnetIds") or vpc.get("SecurityGroupIds"))
+
+
 def _settings_differ(configuration: dict[str, Any], wanted: Desired) -> bool:
-    return (configuration.get("Handler"), configuration.get("Runtime"), configuration.get("Role"),
-            configuration.get("Timeout"), configuration.get("MemorySize"),
-            (configuration.get("Environment") or {}).get("Variables")) != (
-        HANDLER, RUNTIME, wanted.role_arn, TIMEOUT_SECONDS, MEMORY_MB, wanted.environment)
+    seen = (configuration.get("Handler"), configuration.get("Runtime"),
+            configuration.get("Role"), configuration.get("Timeout"),
+            configuration.get("MemorySize"),
+            (configuration.get("Environment") or {}).get("Variables"),
+            configuration.get("Layers") or [], _no_vpc(configuration))
+    return seen != (HANDLER, RUNTIME, wanted.role_arn, TIMEOUT_SECONDS, MEMORY_MB,
+                    wanted.environment, [], True)
 
 
-def _update_function(lam: Any, configuration: dict[str, Any], wanted: Desired) -> list[str]:
+def _architectures(configuration: dict[str, Any]) -> list[str]:
+    return configuration.get("Architectures") or ARCHITECTURES
+
+
+def _settle(lam: Any, found: dict[str, Any], name: str) -> dict[str, Any]:
+    """Wait out an update or creation still in flight, then re-read the function."""
+    configuration = found["Configuration"]
+    waited = False
+    if configuration.get("State") == "Pending":
+        _wait(lam, "function_active_v2", name)
+        waited = True
+    if configuration.get("LastUpdateStatus") == "InProgress":
+        _wait(lam, "function_updated_v2", name)
+        waited = True
+    if not waited:
+        return found
+    fresh = lam.get_function(FunctionName=name)
+    _require_ours(fresh.get("Tags"), f"Lambda {name}")
+    return fresh
+
+
+def _update_function(lam: Any, found: dict[str, Any], wanted: Desired) -> list[str]:
+    found = _settle(lam, found, wanted.function_name)
+    configuration = found["Configuration"]
     notes = []
-    if configuration.get("CodeSha256") != wanted.code_sha256:
-        lam.update_function_code(FunctionName=wanted.function_name, ZipFile=package())
+    if (configuration.get("CodeSha256") != wanted.code_sha256
+            or _architectures(configuration) != ARCHITECTURES):
+        lam.update_function_code(FunctionName=wanted.function_name, ZipFile=wanted.code,
+                                 Architectures=ARCHITECTURES)
         _wait(lam, "function_updated_v2", wanted.function_name)
         notes.append(f"Lambda {wanted.function_name}: code uploaded")
     if _settings_differ(configuration, wanted):
         lam.update_function_configuration(
             FunctionName=wanted.function_name, Role=wanted.role_arn, Handler=HANDLER,
-            Runtime=RUNTIME, Timeout=TIMEOUT_SECONDS, MemorySize=MEMORY_MB,
+            Runtime=RUNTIME, Timeout=TIMEOUT_SECONDS, MemorySize=MEMORY_MB, Layers=[],
+            VpcConfig={"SubnetIds": [], "SecurityGroupIds": []},
             Environment={"Variables": wanted.environment})
         _wait(lam, "function_updated_v2", wanted.function_name)
         notes.append(f"Lambda {wanted.function_name}: settings updated")
@@ -248,7 +317,7 @@ def apply(iam: Any, lam: Any, wanted: Desired, *,
         DeployError: When a role or function exists without this tool's tags, a new role stays
             unassumable for about a minute, or a function does not settle in time.
     """
-    notes = _ensure_role(iam, wanted)
+    notes = _ensure_role(iam, wanted, sleep)
     try:
         found = lam.get_function(FunctionName=wanted.function_name)
     except ClientError as error:
@@ -258,10 +327,20 @@ def apply(iam: Any, lam: Any, wanted: Desired, *,
         _wait(lam, "function_active_v2", wanted.function_name)
         return notes + [f"Lambda {wanted.function_name}: created"]
     _require_ours(found.get("Tags"), f"Lambda {wanted.function_name}")
-    return notes + _update_function(lam, found["Configuration"], wanted)
+    return notes + _update_function(lam, found, wanted)
 
 
 # ------------------------------------------------------------------- read back
+
+
+def _normalize_policy(document: Any) -> Any:
+    """A policy document as parsed JSON, whether IAM returned it decoded or URL-encoded."""
+    if isinstance(document, str):
+        try:
+            return json.loads(urllib.parse.unquote(document))
+        except ValueError:
+            return None
+    return document
 
 
 def _role_findings(iam: Any, wanted: Desired) -> list[str]:
@@ -275,6 +354,8 @@ def _role_findings(iam: Any, wanted: Desired) -> list[str]:
     inline = iam.list_role_policies(RoleName=wanted.role_name)["PolicyNames"]
     if inline != [POLICY_NAME]:
         found.append(f"{subject}: inline policies are {inline}, expected only {POLICY_NAME}")
+    if _normalize_policy(role.get("AssumeRolePolicyDocument")) != json.loads(wanted.trust_policy):
+        found.append(f"{subject}: the trust policy differs from the wanted one")
     document = iam.get_role_policy(RoleName=wanted.role_name, PolicyName=POLICY_NAME)
     if document["PolicyDocument"] != wanted.role_policy:
         found.append(f"{subject}: the {POLICY_NAME} policy differs from the log-only policy")
@@ -299,6 +380,11 @@ def _function_findings(lam: Any, wanted: Desired) -> list[str]:
         ("Runtime", configuration.get("Runtime"), RUNTIME),
         ("role", configuration.get("Role"), wanted.role_arn),
         ("Timeout", configuration.get("Timeout"), TIMEOUT_SECONDS),
+        ("MemorySize", configuration.get("MemorySize"), MEMORY_MB),
+        ("Layers", configuration.get("Layers") or [], []),
+        ("Architectures", _architectures(configuration), ARCHITECTURES),
+        ("VpcConfig (must be outside any VPC)", _no_vpc(configuration), True),
+        ("reserved concurrency (must be unset)", described.get("Concurrency"), None),
         ("environment", (configuration.get("Environment") or {}).get("Variables"),
          wanted.environment),
     )

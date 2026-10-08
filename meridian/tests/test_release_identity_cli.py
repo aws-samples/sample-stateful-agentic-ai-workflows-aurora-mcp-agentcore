@@ -218,7 +218,9 @@ def interceptor_world(exists=False):
     pairs = [{"Key": k, "Value": v} for k, v in TAGS.items()]
     world = World("jwt")
     world.iam = Recorder({
-        "get_role": {"Role": {"Arn": wanted.role_arn, "Tags": pairs}},
+        "get_role": {"Role": {
+            "Arn": wanted.role_arn, "Tags": pairs,
+            "AssumeRolePolicyDocument": json.loads(wanted.trust_policy)}},
         "list_role_policies": {"PolicyNames": [interceptor_lambda.POLICY_NAME]},
         "get_role_policy": {"PolicyDocument": wanted.role_policy},
         "list_attached_role_policies": {"AttachedPolicies": []}})

@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import stat
+import urllib.parse
 import zipfile
 
 import pytest
@@ -57,7 +58,8 @@ def function(tags=None, **changes):
 
 def role_answer(tags=None):
     pairs = [{"Key": k, "Value": v} for k, v in (OURS if tags is None else tags).items()]
-    return {"Role": {"Arn": ROLE_ARN, "Tags": pairs}}
+    return {"Role": {"Arn": ROLE_ARN, "Tags": pairs,
+                     "AssumeRolePolicyDocument": json.loads(desired().trust_policy)}}
 
 
 def iam_with(role=True, policy=None, tags=None):
@@ -87,6 +89,9 @@ def test_the_package_is_the_production_interceptor_alone_and_is_reproducible():
         shipped = archive.read("lambda_function.py")
     assert shipped == deploy.SOURCE.read_bytes()
     assert deploy.package() == PACKAGE
+    with zipfile.ZipFile(io.BytesIO(PACKAGE)) as archive:
+        assert archive.infolist()[0].compress_type == zipfile.ZIP_DEFLATED
+    assert desired().code == PACKAGE
 
 
 # --------------------------------------------------------------------- desired
@@ -258,6 +263,97 @@ def test_a_wait_that_never_ends_is_a_deploy_error_not_a_traceback():
         deploy.apply(iam_with(), lam, desired(), sleep=lambda s: None)
 
 
+def test_an_update_still_in_flight_is_waited_out_before_new_code_is_uploaded():
+    lam = lambda_with(existing=function(CodeSha256="old", LastUpdateStatus="InProgress"))
+
+    deploy.apply(iam_with(), lam, desired(), sleep=lambda s: None)
+
+    assert lam.waited[0][0] == "function_updated_v2"
+    assert lam.names().index("get_function") < lam.names().index("update_function_code")
+    assert lam.names().count("get_function") == 2
+
+
+def test_a_pending_function_is_waited_until_active_before_any_update():
+    lam = lambda_with(existing=function(CodeSha256="old", State="Pending"))
+
+    deploy.apply(iam_with(), lam, desired(), sleep=lambda s: None)
+
+    assert lam.waited[0][0] == "function_active_v2"
+    assert lam.names().index("update_function_code") > 0
+
+
+@pytest.mark.parametrize("change", [
+    {"Layers": [{"Arn": "arn:aws:lambda:us-east-1:123456789012:layer:x:1"}]},
+    {"VpcConfig": {"VpcId": "vpc-0abc", "SubnetIds": ["subnet-1"],
+                   "SecurityGroupIds": ["sg-1"]}},
+    {"MemorySize": 512},
+])
+def test_drifted_layers_vpc_and_memory_are_put_back(change):
+    lam = lambda_with(existing=function(**change))
+
+    deploy.apply(iam_with(), lam, desired(), sleep=lambda s: None)
+
+    config = lam.args("update_function_configuration")[0]
+    assert config["Layers"] == [] and config["MemorySize"] == 128
+    assert config["VpcConfig"] == {"SubnetIds": [], "SecurityGroupIds": []}
+    assert violations("lambda", lam.calls) == []
+
+
+def test_drifted_architectures_are_put_back_with_the_code_upload():
+    lam = lambda_with(existing=function(Architectures=["arm64"]))
+
+    deploy.apply(iam_with(), lam, desired(), sleep=lambda s: None)
+
+    assert lam.args("update_function_code")[0]["Architectures"] == ["x86_64"]
+    assert violations("lambda", lam.calls) == []
+
+
+def test_a_new_role_that_iam_does_not_show_yet_is_retried_for_the_policy():
+    iam = iam_with(role=False)
+    iam.failures["put_role_policy"] = [client_error("NoSuchEntity")]
+    slept = []
+
+    deploy.apply(iam, lambda_with(existing=None), desired(), sleep=slept.append)
+
+    assert iam.names().count("put_role_policy") == 2 and slept == [5]
+
+
+def test_a_new_role_that_never_shows_up_stops_with_the_reason():
+    iam = iam_with(role=False)
+    iam.failures["put_role_policy"] = [client_error("NoSuchEntity")] * 20
+
+    with pytest.raises(deploy.DeployError, match="not visible yet"):
+        deploy.apply(iam, lambda_with(existing=None), desired(), sleep=lambda s: None)
+
+
+def test_a_policy_write_to_an_existing_role_does_not_retry_no_such_entity():
+    iam = iam_with()
+    iam.failures["put_role_policy"] = [client_error("NoSuchEntity")]
+
+    with pytest.raises(Exception, match="NoSuchEntity"):
+        deploy.apply(iam, lambda_with(existing=function()), desired(), sleep=lambda s: None)
+    assert iam.names().count("put_role_policy") == 1
+
+
+def test_the_role_tags_are_reread_before_each_write_and_a_change_stops_the_writes():
+    iam = iam_with()
+    answers = iter([role_answer(), role_answer(), role_answer(OTHER)])
+    iam.answers["get_role"] = lambda **kwargs: next(answers)
+
+    with pytest.raises(deploy.DeployError, match="not tagged"):
+        deploy.apply(iam, lambda_with(existing=function()), desired(), sleep=lambda s: None)
+    assert iam.names().count("update_assume_role_policy") == 1
+    assert "put_role_policy" not in iam.names()
+
+
+def test_the_teardown_plan_names_the_log_group_and_the_manual_delete_command():
+    text = "\n".join(deploy.teardown_plan())
+
+    name = f"/aws/lambda/{settings.INTERCEPTOR_FUNCTION}"
+    assert "left in place" in text
+    assert f"aws logs delete-log-group --log-group-name {name}" in text
+
+
 # ------------------------------------------------------------------- read back
 
 
@@ -275,11 +371,38 @@ def test_a_deployed_function_that_matches_has_no_findings():
     ({"Environment": {"Variables": {**desired().environment, "PINNED_TOOLS": "echo"}}},
      "environment"),
     ({"Timeout": 60}, "Timeout"),
+    ({"MemorySize": 3008}, "MemorySize"),
+    ({"Layers": [{"Arn": "arn:aws:lambda:us-east-1:123456789012:layer:x:1"}]}, "Layers"),
+    ({"Architectures": ["arm64"]}, "Architectures"),
+    ({"VpcConfig": {"VpcId": "vpc-0abc", "SubnetIds": ["subnet-1"]}}, "VpcConfig"),
 ])
 def test_each_deviation_of_the_function_is_one_finding(change, word):
     found = deploy.read_back(iam_with(), lambda_with(existing=function(**change)), desired())
 
     assert len(found) == 1 and word in found[0], found
+
+
+def test_reserved_concurrency_is_a_finding():
+    described = function()
+    described["Concurrency"] = {"ReservedConcurrentExecutions": 0}
+
+    found = deploy.read_back(iam_with(), lambda_with(existing=described), desired())
+
+    assert len(found) == 1 and "reserved concurrency" in found[0]
+
+
+def test_a_trust_policy_that_differs_is_a_finding_even_when_url_encoded():
+    wider = json.loads(desired().trust_policy)
+    wider["Statement"][0]["Principal"] = {"Service": "ec2.amazonaws.com"}
+    iam = iam_with()
+    iam.answers["get_role"]["Role"]["AssumeRolePolicyDocument"] = wider
+
+    found = deploy.read_back(iam, lambda_with(existing=function()), desired())
+    assert len(found) == 1 and "trust policy" in found[0]
+
+    iam.answers["get_role"]["Role"]["AssumeRolePolicyDocument"] = urllib.parse.quote(
+        desired().trust_policy)
+    assert deploy.read_back(iam, lambda_with(existing=function()), desired()) == []
 
 
 def test_a_missing_function_is_a_finding():
