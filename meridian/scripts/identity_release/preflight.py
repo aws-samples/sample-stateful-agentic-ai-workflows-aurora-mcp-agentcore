@@ -150,6 +150,11 @@ def _authorizer_findings(subject: str, authorizer: Mapping[str, Any], target: Ta
     return found
 
 
+def check_authorizer(subject: str, authorizer: Mapping[str, Any], target: Target) -> list[str]:
+    """Findings for a JWT authorizer block (API shape) against the target's pool."""
+    return _authorizer_findings(subject, authorizer, target)
+
+
 def _interceptor_findings(gateway: Mapping[str, Any], target: Target,
                           expect_interceptor: bool = True) -> list[str]:
     raw = gateway.get("interceptorConfigurations")
@@ -193,12 +198,14 @@ def _name_findings(gateway: Mapping[str, Any], target: Target) -> list[str]:
             "--write once it has finished)"]
 
 
-def check_gateway(gateway: Any, target: Target, *, expect_interceptor: bool = True) -> list[str]:
+def check_gateway(gateway: Any, target: Target, *, expect_interceptor: bool = True,
+                  expect_engine: bool = True) -> list[str]:
     """Findings for the Gateway's name, status, authorizer, interceptor and policy engine mode.
 
     ``expect_interceptor=False`` is for a release that is still being built: the interceptor
     is attached after the last deploy, so its absence is not yet a finding. One that is attached
-    is checked either way.
+    is checked either way. ``expect_engine=False`` is the same for the policy engine, which the
+    third build stage attaches.
     """
     if not isinstance(gateway, Mapping):
         return _unreadable("Gateway", gateway)
@@ -215,7 +222,8 @@ def check_gateway(gateway: Any, target: Target, *, expect_interceptor: bool = Tr
         found.append("Gateway: iam mode still has a leftover authorizerConfiguration "
                      "(a JWT authorizer block)")
     found += _interceptor_findings(gateway, target, expect_interceptor)
-    if _as_dict(gateway.get("policyEngineConfiguration")).get("mode") != "ENFORCE":
+    engine = _as_dict(gateway.get("policyEngineConfiguration"))
+    if (expect_engine or engine) and engine.get("mode") != "ENFORCE":
         found.append("Gateway: the policy engine is not attached in ENFORCE mode")
     return found
 

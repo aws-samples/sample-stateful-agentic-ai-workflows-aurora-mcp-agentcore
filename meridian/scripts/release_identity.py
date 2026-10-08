@@ -10,7 +10,7 @@ Every command that changes AWS is a dry run unless it gets both ``--apply`` and
     python scripts/release_identity.py lambdas [--expect master|gateway|tightened] [--restart-holds]
     python scripts/release_identity.py semantic-lambda [--to gateway|master] [--remove-grant]
         [--apply --i-understand-this-changes-aws]
-    python scripts/release_identity.py gateway [--to iam|jwt] [--only grant|move]
+    python scripts/release_identity.py gateway [--to iam|jwt] [--only grant|attach|revoke]
         [--apply --i-understand-this-changes-aws]
     python scripts/release_identity.py deploy [--to iam|jwt]
         [--apply --i-understand-this-changes-aws]
@@ -18,15 +18,17 @@ Every command that changes AWS is a dry run unless it gets both ``--apply`` and
     python scripts/release_identity.py rollback [--snapshot FILE]
         [--apply --i-understand-this-changes-aws]
 
-``check`` compares the Gateway, both Runtimes, the Cedar rules, the identity stack, the backend
-login proof, the interceptor Lambda's environment and the App Runner environment against the mode
-in ``meridian/.env`` (or ``--expect``); in ``iam`` mode it also reads both Runtime roles for the
-``bedrock-agentcore:InvokeGateway`` grant that the jwt deploy removes. The service must be named:
-``--service-arn`` reads it, ``--skip-service`` leaves it out on purpose. ``interceptor`` deploys
-the Gateway request interceptor Lambda and its log-only role (dry run by default) and then reads
-it back. Both resources carry the release tags; one that exists without them is never modified.
-``interceptor-delete`` removes only resources that carry those tags, re-reading the tags before
-each delete.
+``check`` finds the Gateway of the mode in ``meridian/.env`` (or ``--expect``) by its name, then
+compares it, both Runtimes (which must name that Gateway, its id and its policy engine), the Cedar
+rules, the identity stack, the backend login proof, the interceptor Lambda's environment and the
+App Runner environment with the mode; the Gateway id in ``AGENTCORE_GATEWAY_URL`` is only checked
+against the one found, because a deploy that replaces the Gateway leaves it stale. In ``iam`` mode
+it also reads both Runtime roles for the ``bedrock-agentcore:InvokeGateway`` grant. The service
+must be named: ``--service-arn`` reads it, ``--skip-service`` leaves it out on purpose.
+``interceptor`` deploys the Gateway request interceptor Lambda and its log-only role (dry run by
+default) and then reads it back. Both resources carry the release tags; one that exists without
+them is never modified. ``interceptor-delete`` removes only resources that carry those tags,
+re-reading the tags before each delete.
 ``lambdas`` checks that the SSM parameter, the semantic-search Lambda and both roles are at a stage
 of the move to the meridian_gateway login (read-only); with ``--restart-holds`` (a dry run unless
 both flags) it forces the holds Lambda to re-read its configuration.
@@ -34,15 +36,19 @@ both flags) it forces the holds Lambda to re-read its configuration.
 secret and then points the Lambda at it (dry run by default; the whole environment is read,
 changed in one value and sent back, then both changes are read back); ``--to master`` is the way
 back, and ``--remove-grant`` also deletes the policy the tool added.
-``gateway`` moves the live Gateway to the mode (dry run by default: before and after of the
-authorizer, allowed clients and interceptor, and every precondition); an apply writes the invoke
-grant, sends the complete update and reads it back; ``--to iam`` is the rollback of the move.
-``deploy`` is the only safe way to run ``agentcore deploy -y`` in a release: CloudFormation cannot
-change an existing Gateway's authorizer type, and the interceptor cannot be declared in the
-template. A dry run reads the rendered ``agentcore.json`` and the live Gateway and refuses
-(exit 2) unless the Gateway already reports the mode's authorizer, allowed clients and
-interceptor, equal to the render. An apply then runs ``/opt/homebrew/bin/agentcore deploy -y``,
-reads the Gateway back and, when the deploy changed it, re-applies the ``gateway`` update.
+``gateway`` works on the interceptor of the mode's Gateway, found by name (dry run by default:
+before and after of the interceptor, and every precondition). It never changes the authorizer:
+neither CloudFormation nor ``UpdateGateway`` can, so the jwt Gateway is a new Gateway that
+``deploy`` builds. On a finished jwt Gateway an apply writes the invoke grant, sends one complete
+update that adds the interceptor and reads it back; ``--only revoke`` (and ``--to iam``) detach it
+and remove the grant, which is also how the Gateway that is about to be replaced is cleaned.
+``deploy`` is the only safe way to run ``agentcore deploy -y`` in a release. It deploys one build
+stage of the mode's Gateway (gateway, targets, governance, complete; see ``stages.py``): a dry run
+reads the render, the CLI's deployed state and the live Gateway and refuses (exit 2) unless they
+agree on the stage and, for the first stage, everything the irreversible replacement of the other
+mode's Gateway needs is in place. An apply then reads the plan with ``agentcore deploy --diff
+--json`` and refuses one that is not the stage's plan, runs ``/opt/homebrew/bin/agentcore deploy
+-y`` and reads the Gateway back by name; it never changes the Gateway itself.
 ``snapshot`` (read-only) saves the replaced configuration of every hop to ``.local/release-b2/``
 before the window, with no secret value (exit 1 and nothing saved when a hop already reports a
 finding, unless ``--accept-baseline``). ``rollback`` restores it in the reverse of the release
@@ -175,11 +181,11 @@ def build_parser() -> argparse.ArgumentParser:
     semantic_lambda.add_arguments(semantic)
     move_gateway = commands.add_parser(
         "gateway", allow_abbrev=False,
-        help="move the live Gateway's authorizer and interceptor (dry run by default)")
+        help="attach or detach the interceptor on the mode's Gateway (dry run by default)")
     gateway_release.add_arguments(move_gateway)
     ship = commands.add_parser(
         "deploy", allow_abbrev=False,
-        help="deploy the AgentCore stack after the Gateway moved, then read the Gateway back")
+        help="deploy one build stage of the mode's Gateway, then read the Gateway back")
     deploy_order.add_arguments(ship)
     save = commands.add_parser("snapshot", allow_abbrev=False,
                                help="save the configuration the release replaces (read-only)")
@@ -234,6 +240,25 @@ def identity_stack_findings(session: Any, deps: Dependencies,
         deps.proof_path, target, deps.head_sha(), deps.now())
 
 
+def gateway_findings_by_name(control: Any, target: preflight.Target,
+                             env: Mapping[str, str | None]) -> tuple[str | None, list[str]]:
+    """The id of the mode's Gateway, found by name, and the findings about finding it.
+
+    The id in ``AGENTCORE_GATEWAY_URL`` is not trusted: a deploy that replaces the Gateway
+    leaves it stale, which is one finding, not a reason to read the wrong Gateway.
+    """
+    gateway_id = preflight.find_gateway_id(control, target.gateway_name)
+    if gateway_id is None:
+        return None, [f"Gateway: no Gateway named {target.gateway_name} exists; `deploy` builds "
+                      f"the {target.mode} release's Gateway"]
+    url_id, _ = preflight.hop_ids(env)
+    if url_id != gateway_id:
+        return gateway_id, [
+            "Settings: AGENTCORE_GATEWAY_URL names another Gateway than the one called "
+            f"{target.gateway_name}; run scripts/sync_agentcore_env.py --write"]
+    return gateway_id, []
+
+
 def run_check(args: argparse.Namespace, deps: Dependencies) -> int:
     """Read every hop and print the drift."""
     env = deps.env
@@ -242,23 +267,33 @@ def run_check(args: argparse.Namespace, deps: Dependencies) -> int:
     target = preflight.target_for(mode, env, account, region)
     session = deps.session(region)
     require_account(session.client("sts"), env["AURORA_CLUSTER_ARN"])
-    gateway_id, runtime_ids = preflight.hop_ids(env)
-    state = preflight.read_state(
-        session.client("bedrock-agentcore-control"), gateway_id, runtime_ids)
-    findings = preflight.check_hop_locations(env, target)
-    findings += preflight.hop_findings(state, target)
-    if mode == JWT:
-        findings += identity_stack_findings(session, deps, target)
-    else:
-        arn = runtime_roles.gateway_arn(account, region, gateway_id)
-        findings += runtime_roles.findings(session.client("iam"), state.runtimes, arn)
+    control = session.client("bedrock-agentcore-control")
+    gateway_id, findings = gateway_findings_by_name(control, target, env)
+    findings += preflight.check_hop_locations(env, target)
+    if gateway_id is not None:
+        findings += hop_state_findings(session, deps, control, gateway_id, target)
     if target.interceptor_arn:
         findings += interceptor_findings(session, target)
+    if mode == JWT:
+        findings += identity_stack_findings(session, deps, target)
     if args.service_arn:
         findings += service_findings(session, args.service_arn, target)
     for line in findings:
         print(f"DRIFT  {line}")
     return verdict(findings, mode, args)
+
+
+def hop_state_findings(session: Any, deps: Dependencies, control: Any, gateway_id: str,
+                       target: preflight.Target) -> list[str]:
+    """Findings for the Gateway, both Runtimes, the rules and (iam) the Runtime roles."""
+    env = deps.env
+    _, runtime_ids = preflight.hop_ids(env)
+    state = preflight.read_state(control, gateway_id, runtime_ids)
+    found = preflight.hop_findings(state, target)
+    if target.mode != JWT:
+        arn = runtime_roles.gateway_arn(target.account, target.region, gateway_id)
+        found += runtime_roles.findings(session.client("iam"), state.runtimes, arn)
+    return found
 
 
 def verdict(findings: list[str], mode: str, args: argparse.Namespace) -> int:

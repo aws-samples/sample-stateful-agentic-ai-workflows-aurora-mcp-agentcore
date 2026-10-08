@@ -1013,3 +1013,32 @@ def test_the_hop_findings_include_the_binding_findings():
     found = preflight.hop_findings(state, rs.target("jwt"))
 
     assert len(found) == 1 and "MERIDIAN_GATEWAY_ID" in found[0]
+
+
+# ------------------------------------------- a Gateway built before its engine exists
+
+
+def test_a_gateway_without_its_engine_is_fine_before_the_governance_stage():
+    bare = rs.mutated(rs.gateway("jwt"), "policyEngineConfiguration", None)
+
+    assert preflight.check_gateway(
+        bare, rs.target("jwt"), expect_interceptor=False, expect_engine=False) == []
+    assert any("policy engine" in line for line in gateway_findings(bare))
+
+
+def test_an_engine_that_is_attached_is_still_checked_when_it_is_not_required_yet():
+    loose = rs.mutated(rs.gateway("jwt"), "policyEngineConfiguration.mode", "LOG_ONLY")
+
+    found = preflight.check_gateway(
+        loose, rs.target("jwt"), expect_interceptor=False, expect_engine=False)
+
+    assert len(found) == 1 and "ENFORCE" in found[0]
+
+
+def test_the_authorizer_check_is_public_and_judges_a_block_against_the_pool():
+    good = {"discoveryUrl": rs.jwt_authorizer()["customJWTAuthorizer"]["discoveryUrl"],
+            "allowedClients": [rs.CLIENT]}
+
+    assert preflight.check_authorizer("X", good, rs.target("jwt")) == []
+    assert preflight.check_authorizer("X", {**good, "allowedClients": []}, rs.target("jwt")) == [
+        "X: allowedClients is not exactly the web app client"]

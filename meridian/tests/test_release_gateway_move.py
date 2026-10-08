@@ -1,4 +1,10 @@
-"""The Gateway moves between iam and jwt in one complete update, with the grants and a read-back."""
+"""The Gateway command attaches and detaches the interceptor; it never moves the authorizer.
+
+CloudFormation and the UpdateGateway API both refuse to change an existing Gateway's authorizer
+type, so a jwt Gateway is a new Gateway that the deploy creates. This command finds it by name,
+writes the invoke grant, attaches the interceptor in one complete update and reads it back; the
+revoke direction detaches it and removes the grant.
+"""
 
 from __future__ import annotations
 
@@ -13,48 +19,91 @@ from scripts.identity_release import settings
 from tests import release_support as rs
 from tests.aws_recorders import client_error, violations
 from tests.gateway_release_support import (
-    ROLE_NAME, Control, clients, current, fast, iam_client, lambda_client,
+    ROLE_NAME, Control, bare, clients, current, fast, iam_client, lambda_client, listing,
 )
 
 CONTROL = "bedrock-agentcore-control"
+INTERCEPTORS = [{
+    "interceptor": {"lambda": {"arn": rs.INTERCEPTOR_ARN}},
+    "interceptionPoints": ["REQUEST"], "inputConfiguration": {"passRequestHeaders": True}}]
 
 
 def target(mode="jwt", design=settings.BOTH):
     return rs.target(mode, design)
 
 
-def snapshot(mode="iam", design=settings.BOTH, **extra):
-    return gw.Snapshot(rs.GATEWAY_ID, current(mode, design, **extra))
+def snapshot(mode="jwt", design=settings.BOTH, **extra):
+    return gw.Snapshot(rs.GATEWAY_ID, bare(mode, design, **extra))
 
 
-def move(control, iam=None, lam=None, mode="jwt", design=settings.BOTH, before=None, **keywords):
+def act(control, action, iam=None, lam=None, mode="jwt", design=settings.BOTH, before=None):
     wanted = target(mode, design)
     before = before or gw.Snapshot(rs.GATEWAY_ID, control.before)
-    return gw.apply(clients(control, iam, lam), wanted, before, **fast(), **keywords)
+    return gw.apply(clients(control, iam, lam), wanted, before, action, **fast())
+
+
+# ------------------------------------------------------------ what each flag means
+
+
+@pytest.mark.parametrize(("mode", "only", "design", "action"), [
+    ("jwt", None, settings.BOTH, gw.FULL),
+    ("jwt", None, settings.INTERCEPTOR, gw.FULL),
+    ("jwt", "grant", settings.BOTH, gw.GRANT),
+    ("jwt", "attach", settings.BOTH, gw.ATTACH),
+    ("jwt", "revoke", settings.BOTH, gw.REVOKE),
+    ("jwt", None, settings.CEDAR, gw.NONE),
+    ("jwt", "revoke", settings.CEDAR, gw.REVOKE),
+    ("iam", None, settings.BOTH, gw.REVOKE),
+    ("iam", "revoke", settings.BOTH, gw.REVOKE),
+])
+def test_the_flags_and_the_mode_choose_one_action(mode, only, design, action):
+    assert gw.resolve_action(mode, only, design) == action
+
+
+@pytest.mark.parametrize(("mode", "only", "design"), [
+    ("iam", "grant", settings.BOTH), ("iam", "attach", settings.BOTH),
+    ("jwt", "grant", settings.CEDAR), ("jwt", "attach", settings.CEDAR),
+])
+def test_grant_and_attach_need_a_jwt_release_with_an_interceptor(mode, only, design):
+    with pytest.raises(settings.ReleaseConfigError, match="--only"):
+        gw.resolve_action(mode, only, design)
 
 
 # ------------------------------------------------------------- the request
 
 
-def test_the_jwt_update_resends_everything_it_replaces_and_changes_two_things():
-    described = current("iam")
+def test_the_attach_update_resends_everything_and_adds_only_the_interceptor():
+    described = bare("jwt")
 
-    arguments = gw.update_arguments(described, target("jwt"))
+    arguments = gw.update_arguments(described, rs.INTERCEPTOR_ARN)
 
     expected = {key: described[key] for key in gw.KEPT_FIELDS if key in described}
     for key, value in expected.items():
         assert arguments[key] == value
-    assert arguments["gatewayIdentifier"] == rs.GATEWAY_ID
-    assert set(arguments) == {"gatewayIdentifier", "authorizerType", "authorizerConfiguration",
-                              "interceptorConfigurations", *expected}
     assert arguments["authorizerType"] == "CUSTOM_JWT"
     assert arguments["authorizerConfiguration"] == rs.jwt_authorizer()
-    assert arguments["interceptorConfigurations"] == [{
-        "interceptor": {"lambda": {"arn": rs.INTERCEPTOR_ARN}},
-        "interceptionPoints": ["REQUEST"], "inputConfiguration": {"passRequestHeaders": True}}]
+    assert arguments["gatewayIdentifier"] == rs.GATEWAY_ID
+    assert set(arguments) == {"gatewayIdentifier", "interceptorConfigurations", *expected}
+    assert arguments["interceptorConfigurations"] == INTERCEPTORS
 
 
-def test_the_update_preserves_every_kept_field_the_service_model_allows():
+def test_the_detach_update_resends_the_authorizer_and_omits_the_interceptor():
+    arguments = gw.update_arguments(current("jwt"), None)
+
+    assert arguments["authorizerType"] == "CUSTOM_JWT"
+    assert arguments["authorizerConfiguration"] == rs.jwt_authorizer()
+    assert "interceptorConfigurations" not in arguments
+
+
+def test_an_iam_gateway_is_resent_as_iam_without_an_authorizer_block():
+    arguments = gw.update_arguments(current("iam"), None)
+
+    assert arguments["authorizerType"] == "AWS_IAM"
+    assert "authorizerConfiguration" not in arguments
+    assert arguments["roleArn"] == rs.GATEWAY_ROLE
+
+
+def test_the_update_preserves_every_field_the_service_model_allows():
     from botocore.session import get_session
 
     members = get_session().get_service_model(gw.CONTROL_SERVICE).operation_model(
@@ -64,52 +113,39 @@ def test_the_update_preserves_every_kept_field_the_service_model_allows():
     assert set(members) == resent
 
 
-def test_the_update_is_a_valid_call_for_the_installed_service_model():
-    arguments = gw.update_arguments(current("iam"), target("jwt"))
+def test_the_updates_are_valid_calls_for_the_installed_service_model():
+    attach = gw.update_arguments(bare("jwt"), rs.INTERCEPTOR_ARN)
 
-    assert violations(CONTROL, [("update_gateway", arguments)]) == []
-    assert gw.request_problems(arguments) == []
+    assert violations(CONTROL, [("update_gateway", attach)]) == []
+    assert gw.request_problems(attach) == []
     assert violations(CONTROL, [("update_gateway", gw.update_arguments(
-        current("jwt"), target("iam")))]) == []
+        current("iam"), None))]) == []
 
 
 def test_a_request_the_service_model_rejects_is_reported():
-    arguments = gw.update_arguments(current("iam"), target("jwt"))
+    arguments = gw.update_arguments(bare("jwt"), rs.INTERCEPTOR_ARN)
     arguments["roleArn"] = 7
 
     assert gw.request_problems(arguments)
 
 
 def test_the_update_does_not_alias_the_description_it_was_built_from():
-    described = current("iam")
-    arguments = gw.update_arguments(described, target("jwt"))
+    described = bare("jwt")
+    arguments = gw.update_arguments(described, rs.INTERCEPTOR_ARN)
     arguments["protocolConfiguration"]["mcp"]["searchType"] = "changed"
+    arguments["authorizerConfiguration"]["customJWTAuthorizer"]["allowedClients"].append("x")
 
     assert described["protocolConfiguration"]["mcp"]["searchType"] == "SEMANTIC"
-
-
-def test_the_cedar_only_design_attaches_no_interceptor():
-    arguments = gw.update_arguments(current("iam"), target("jwt", settings.CEDAR))
-
-    assert arguments["authorizerType"] == "CUSTOM_JWT"
-    assert "interceptorConfigurations" not in arguments
-
-
-def test_the_iam_update_goes_back_to_the_iam_authorizer_and_omits_the_interceptor():
-    arguments = gw.update_arguments(current("jwt"), target("iam"))
-
-    assert arguments["authorizerType"] == "AWS_IAM"
-    assert "authorizerConfiguration" not in arguments
-    assert "interceptorConfigurations" not in arguments
-    assert arguments["roleArn"] == rs.GATEWAY_ROLE
+    assert described["authorizerConfiguration"]["customJWTAuthorizer"]["allowedClients"] == [
+        rs.CLIENT]
 
 
 def test_optional_fields_the_gateway_does_not_have_are_not_sent():
-    described = current("iam")
+    described = bare("jwt")
     del described["description"]
     del described["exceptionLevel"]
 
-    arguments = gw.update_arguments(described, target("jwt"))
+    arguments = gw.update_arguments(described, rs.INTERCEPTOR_ARN)
 
     assert "description" not in arguments and "exceptionLevel" not in arguments
 
@@ -124,6 +160,29 @@ def test_the_summary_shows_the_authorizer_clients_interceptor_and_headers():
     assert gw.summarize(current("iam"))["interceptors"] == []
 
 
+# ----------------------------------------------------------- finding the Gateway
+
+
+def test_the_gateway_is_found_by_its_modes_name_not_by_an_id_in_the_settings():
+    control = Control(bare("jwt"))
+
+    found = gw.locate(control, target("jwt"))
+
+    assert found.gateway_id == rs.GATEWAY_ID
+    assert control.args("get_gateway") == [{"gatewayIdentifier": rs.GATEWAY_ID}]
+
+
+def test_a_missing_gateway_says_which_name_and_what_builds_it():
+    control = Control(bare("jwt"))
+    control.list_gateways = lambda **kwargs: listing(("someone-else", "gw-x"))
+
+    with pytest.raises(gw.GatewayError) as refused:
+        gw.locate(control, target("jwt"))
+
+    text = str(refused.value)
+    assert "meridianv2-meridian-aurora-jwt" in text and "release_identity.py deploy" in text
+
+
 # ----------------------------------------------------------- the snapshot
 
 
@@ -133,7 +192,7 @@ def test_a_gateway_that_reads_in_full_is_snapshotted_as_a_copy():
     taken = gw.read_snapshot(control, rs.GATEWAY_ID, target("jwt"))
     taken.described["name"] = "changed"
 
-    assert control.before["name"] == "meridian-aurora"
+    assert control.before["name"] == "meridianv2-meridian-aurora"
 
 
 @pytest.mark.parametrize("described,fragment", [
@@ -159,17 +218,6 @@ def test_the_response_metadata_boto3_adds_does_not_block_the_snapshot():
     metadata = {"RequestId": "r", "HTTPStatusCode": 200, "RetryAttempts": 0}
 
     gw.read_snapshot(Control(current(ResponseMetadata=metadata)), rs.GATEWAY_ID, target("jwt"))
-
-
-def test_an_update_that_would_not_reach_the_wanted_state_is_a_plan_problem():
-    engine = {"arn": rs.ENGINE_ARN, "mode": "LOG_ONLY"}
-    engine_off = current("iam", policyEngineConfiguration=engine)
-
-    problems = gw.plan_problems(gw.Snapshot(rs.GATEWAY_ID, engine_off), target("jwt"))
-
-    assert problems == ["the update would leave: Gateway: the policy engine is not attached in "
-                        "ENFORCE mode"]
-    assert gw.plan_problems(snapshot("iam"), target("jwt")) == []
 
 
 # ----------------------------------------------------------------- the grants
@@ -230,12 +278,10 @@ def test_the_grant_findings_name_a_missing_or_widened_role_policy():
 
 
 class Deps:
-    def __init__(self, tmp_path, with_proof=True, **env):
+    def __init__(self, tmp_path, **env):
         from tests.test_release_identity_cli import NOW, env as base_env
         self.env = base_env(**env)
         self.proof_path = tmp_path / "proof.json"
-        if with_proof:
-            self.proof_path.write_text(json.dumps(rs.receipt(NOW)))
         self.now = lambda: NOW
         self.head_sha = lambda: rs.SHA
 
@@ -247,24 +293,51 @@ def ready_clients(control, **keywords):
     return clients(control, cfn=cfn, **keywords)
 
 
-def test_a_release_that_meets_every_precondition_has_no_blockers(tmp_path):
-    control = Control(current("iam"))
+def found_for(tmp_path, control, action=gw.FULL, mode="jwt", design=settings.BOTH, **keywords):
+    return gw.preconditions(ready_clients(control, **keywords), Deps(tmp_path),
+                            target(mode, design), snapshot(mode, design), action)
 
-    found = gw.preconditions(ready_clients(control), Deps(tmp_path), target(), snapshot())
 
-    assert found == []
+def test_a_built_jwt_gateway_meets_every_precondition(tmp_path):
+    assert found_for(tmp_path, Control(bare("jwt"))) == []
+
+
+def test_a_gateway_that_already_carries_the_interceptor_still_meets_them(tmp_path):
+    assert found_for(tmp_path, Control(current("jwt"))) == []
+
+
+def test_the_backend_proof_is_not_this_commands_business_any_more(tmp_path):
+    deps = Deps(tmp_path)
+
+    assert not deps.proof_path.exists()
+    assert gw.preconditions(ready_clients(Control(bare("jwt"))), deps, target(),
+                            snapshot(), gw.FULL) == []
+
+
+@pytest.mark.parametrize(("change", "fragment"), [
+    ({"authorizerType": "AWS_IAM", "authorizerConfiguration": None}, "expected CUSTOM_JWT"),
+    ({"status": "CREATING"}, "not READY"),
+    ({"policyEngineConfiguration": None}, "policy engine"),
+    ({"policyEngineConfiguration": {"arn": rs.ENGINE_ARN, "mode": "LOG_ONLY"}}, "ENFORCE"),
+])
+def test_a_gateway_that_is_not_a_finished_jwt_gateway_is_refused(tmp_path, change, fragment):
+    described = bare("jwt", **change)
+    gateway_snapshot = gw.Snapshot(rs.GATEWAY_ID, described)
+
+    found = gw.preconditions(ready_clients(Control(described)), Deps(tmp_path), target(),
+                             gateway_snapshot, gw.FULL)
+
+    assert any(fragment in line for line in found), found
 
 
 def test_each_missing_precondition_is_named(tmp_path):
-    control = Control(current("iam"))
-    both = ready_clients(control, lam=lambda_client(tags={"project": "other"}))
+    both = ready_clients(Control(bare("jwt")), lam=lambda_client(tags={"project": "other"}))
     both.cfn.describe_stacks.return_value = {"Stacks": [{"Outputs": []}]}
 
-    found = gw.preconditions(both, Deps(tmp_path, with_proof=False), target(), snapshot())
+    found = gw.preconditions(both, Deps(tmp_path), target(), snapshot(), gw.FULL)
 
     text = "\n".join(found)
     assert "Identity stack: has no output" in text
-    assert "Backend login proof: none recorded" in text
     assert "exists without the release tags" in text
 
 
@@ -272,170 +345,169 @@ def raise_not_found(**kwargs):
     raise client_error("ResourceNotFoundException")
 
 
-def test_an_interceptor_that_is_not_deployed_blocks_the_move(tmp_path):
+def test_an_interceptor_that_is_not_deployed_blocks_the_attach(tmp_path):
     lam = lambda_client()
     lam.get_function = raise_not_found
 
-    found = gw.preconditions(ready_clients(Control(current()), lam=lam), Deps(tmp_path),
-                             target(), snapshot())
+    found = found_for(tmp_path, Control(bare("jwt")), lam=lam)
 
     assert any("not deployed" in line for line in found)
 
 
-def test_the_iam_move_needs_no_pool_proof_or_function(tmp_path):
+def test_revoking_needs_no_pool_function_or_stack(tmp_path):
     control = Control(current("jwt"))
+    lam = lambda_client(tags={})
 
-    found = gw.preconditions(clients(control), Deps(tmp_path, with_proof=False),
-                             target("iam"), snapshot("jwt"))
+    found = gw.preconditions(clients(control, lam=lam), Deps(tmp_path), target("iam"),
+                             snapshot("iam"), gw.REVOKE)
 
-    assert found == []
+    assert found == [] and lam.calls == []
 
 
 def test_the_cedar_only_design_does_not_ask_for_the_function(tmp_path):
     lam = lambda_client(tags={})
 
-    found = gw.preconditions(ready_clients(Control(current()), lam=lam), Deps(tmp_path),
-                             target("jwt", settings.CEDAR), snapshot("iam", settings.CEDAR))
+    found = found_for(tmp_path, Control(bare("jwt", settings.CEDAR)), gw.NONE, "jwt",
+                      settings.CEDAR, lam=lam)
 
-    assert found == []
-    assert "get_function" not in lam.names()
+    assert found == [] and "get_function" not in lam.names()
 
 
 # --------------------------------------------------------------- applying
 
 
-def test_moving_to_jwt_grants_first_then_updates_then_reads_back():
+def test_attaching_grants_first_then_updates_then_reads_back():
     order: list[str] = []
-    control = Control(current("iam"), current("jwt", status="UPDATING"), current("jwt"),
+    control = Control(bare("jwt"), current("jwt", status="UPDATING"), current("jwt"),
                       events=order)
     iam = iam_client(installed=False, events=order)
     lam = lambda_client()
 
-    result = move(control, iam, lam)
+    result = act(control, gw.FULL, iam, lam)
 
     assert order == ["grant", "update"]
-    assert iam.args("put_role_policy")[0]["RoleName"] == ROLE_NAME
-    assert iam.args("put_role_policy")[0]["PolicyName"] == gw.INVOKE_POLICY_NAME
-    assert json.loads(iam.args("put_role_policy")[0]["PolicyDocument"]) == gw.invoke_policy(
-        rs.INTERCEPTOR_ARN)
+    put = iam.args("put_role_policy")[0]
+    assert put["RoleName"] == ROLE_NAME and put["PolicyName"] == gw.INVOKE_POLICY_NAME
+    assert json.loads(put["PolicyDocument"]) == gw.invoke_policy(rs.INTERCEPTOR_ARN)
     assert lam.calls == []
-    assert "Gateway: updated to jwt" in result.notes
-    assert result.findings == [] and result.after["authorizerType"] == "CUSTOM_JWT"
-    assert result.before.described == current("iam")
+    assert "Gateway: interceptor attached" in result.notes
+    assert result.findings == [] and result.after["interceptorConfigurations"] == INTERCEPTORS
     assert violations("iam", iam.calls) == []
-    sent = control.args("update_gateway")[0]
-    assert violations(CONTROL, [("update_gateway", sent)]) == []
 
 
 def test_the_update_sent_equals_the_planned_request_so_unchanged_fields_are_exact():
-    control = Control(current("iam"), current("jwt"))
+    control = Control(bare("jwt"), current("jwt"))
 
-    move(control, iam_client(), lambda_client())
+    act(control, gw.FULL, iam_client(), lambda_client())
 
-    assert control.args("update_gateway") == [gw.update_arguments(current("iam"), target("jwt"))]
+    assert control.args("update_gateway") == [
+        gw.update_arguments(bare("jwt"), rs.INTERCEPTOR_ARN)]
 
 
-def test_a_gateway_that_already_matches_is_not_updated_again_and_keeps_its_grants():
+def test_a_gateway_that_already_has_the_interceptor_is_not_updated_again():
     control = Control(current("jwt"))
 
-    result = move(control, iam_client(), lambda_client())
+    result = act(control, gw.FULL, iam_client(), lambda_client())
 
     assert "update_gateway" not in control.names()
-    assert "Gateway: unchanged, already jwt" in result.notes
+    assert "Gateway: interceptor already attached" in result.notes
 
 
 def test_the_apply_refuses_when_the_gateway_changed_after_it_was_read():
-    control = Control(current("iam", description="someone edited this"))
+    control = Control(bare("jwt", description="someone edited this"))
 
     with pytest.raises(gw.GatewayError, match="changed after it was read"):
-        move(control, before=snapshot("iam"))
+        act(control, gw.FULL, before=snapshot("jwt"))
 
     assert "update_gateway" not in control.names()
 
 
-def test_a_move_whose_grants_are_missing_is_refused_before_the_update():
-    control = Control(current("iam"), current("jwt"))
+def test_an_attach_whose_grant_is_missing_is_refused_before_the_update():
+    control = Control(bare("jwt"), current("jwt"))
 
     with pytest.raises(gw.GatewayError, match="cannot invoke the interceptor yet"):
-        move(control, iam_client(installed=False), lambda_client(), only="move")
+        act(control, gw.ATTACH, iam_client(installed=False), lambda_client())
 
     assert "update_gateway" not in control.names()
 
 
-def test_only_grant_writes_the_grants_and_does_not_touch_the_gateway():
-    control = Control(current("iam"))
+def test_grant_alone_writes_the_grant_and_does_not_touch_the_gateway():
+    control = Control(bare("jwt"))
     iam, lam = iam_client(installed=False), lambda_client()
 
-    result = move(control, iam, lam, only="grant")
+    result = act(control, gw.GRANT, iam, lam)
 
     assert "update_gateway" not in control.names() and result.after is None
     assert iam.names().count("put_role_policy") == 1 and lam.calls == []
 
 
-def test_only_move_does_not_write_the_grants():
-    control = Control(current("iam"), current("jwt"))
+def test_attach_alone_does_not_write_the_grant():
+    control = Control(bare("jwt"), current("jwt"))
     iam, lam = iam_client(), lambda_client()
 
-    move(control, iam, lam, only="move")
+    act(control, gw.ATTACH, iam, lam)
 
     assert "put_role_policy" not in iam.names() and lam.calls == []
     assert "update_gateway" in control.names()
 
 
 def test_waiting_for_the_update_stops_on_a_failure_and_says_why():
-    control = Control(current("iam"), current("iam", status="UPDATE_UNSUCCESSFUL",
-                                              statusReasons=[f"role {rs.ACCOUNT} lacks access"]))
+    control = Control(bare("jwt"), current("jwt", status="UPDATE_UNSUCCESSFUL",
+                                           statusReasons=[f"role {rs.ACCOUNT} lacks access"]))
 
     with pytest.raises(gw.GatewayError) as failed:
-        move(control, iam_client(), lambda_client())
+        act(control, gw.FULL, iam_client(), lambda_client())
 
     assert "UPDATE_UNSUCCESSFUL" in str(failed.value) and rs.ACCOUNT not in str(failed.value)
 
 
 def test_waiting_for_the_update_gives_up_after_the_timeout():
-    control = Control(current("iam"), current("iam", status="UPDATING"))
+    control = Control(bare("jwt"), current("jwt", status="UPDATING"))
 
     with pytest.raises(gw.GatewayError, match="still UPDATING"):
-        move(control, iam_client(), lambda_client())
+        act(control, gw.FULL, iam_client(), lambda_client())
 
 
 def test_an_update_the_read_back_does_not_see_is_reported_not_raised():
-    control = Control(current("iam"), current("iam"))
+    control = Control(bare("jwt"), bare("jwt"))
 
-    result = move(control, iam_client(), lambda_client())
+    result = act(control, gw.FULL, iam_client(), lambda_client())
 
-    assert any("expected CUSTOM_JWT" in line for line in result.findings)
-    assert "Gateway: update sent for jwt" in result.notes
+    assert any("no request interceptor" in line for line in result.findings)
+    assert "Gateway: update sent" in result.notes
 
 
 def test_a_read_back_that_is_ready_before_it_is_updating_is_waited_out():
-    control = Control(current("iam"), current("iam"), current("iam", status="UPDATING"),
+    control = Control(bare("jwt"), bare("jwt"), current("jwt", status="UPDATING"),
                       current("jwt"))
 
-    result = move(control, iam_client(), lambda_client())
+    result = act(control, gw.FULL, iam_client(), lambda_client())
 
     assert result.findings == []
 
 
-def test_the_cedar_only_design_grants_nothing_and_revokes_leftovers():
-    control = Control(current("iam"), current("jwt", settings.CEDAR))
+def test_the_cedar_only_design_attaches_nothing_and_says_so():
+    control = Control(bare("jwt", settings.CEDAR))
     iam, lam = iam_client(), lambda_client()
 
-    result = move(control, iam, lam, design=settings.CEDAR)
+    result = act(control, gw.NONE, iam, lam, design=settings.CEDAR)
 
-    assert "put_role_policy" not in iam.names() and lam.calls == []
-    assert result.findings == []
-    assert "delete_role_policy" in iam.names() and lam.calls == []
+    assert iam.calls == [] and lam.calls == [] and "update_gateway" not in control.names()
+    assert result.findings == [] and any("no interceptor" in note for note in result.notes)
 
 
-def test_moving_back_to_iam_updates_then_removes_both_grants():
+def test_revoking_detaches_first_then_removes_the_grant():
     order: list[str] = []
-    control = Control(current("jwt"), current("iam"), events=order)
+    control = Control(current("jwt"), bare("jwt"), events=order)
     iam, lam = iam_client(events=order), lambda_client()
 
-    result = move(control, iam, lam, mode="iam")
+    result = act(control, gw.REVOKE, iam, lam)
 
     assert order == ["update", "revoke"]
+    sent = control.args("update_gateway")[0]
+    assert "interceptorConfigurations" not in sent
+    assert sent["authorizerType"] == "CUSTOM_JWT"
+    assert sent["authorizerConfiguration"] == rs.jwt_authorizer()
     assert iam.args("delete_role_policy") == [
         {"RoleName": ROLE_NAME, "PolicyName": gw.INVOKE_POLICY_NAME}]
     assert lam.calls == []
@@ -443,33 +515,63 @@ def test_moving_back_to_iam_updates_then_removes_both_grants():
     assert violations("iam", iam.calls) == []
 
 
-def test_a_grant_that_is_already_gone_is_not_an_error_on_rollback():
-    control = Control(current("jwt"), current("iam"))
+def test_revoking_an_iam_gateway_only_removes_the_leftover_grant():
+    order: list[str] = []
+    control = Control(current("iam"), events=order)
+    iam = iam_client(events=order)
 
-    result = move(control, iam_client(installed=False), lambda_client(), mode="iam")
+    result = act(control, gw.REVOKE, iam, mode="iam")
+
+    assert order == ["revoke"] and "update_gateway" not in control.names()
+    assert result.findings == []
+
+
+def test_a_grant_that_is_already_gone_is_not_an_error_on_revoke():
+    control = Control(current("iam"))
+
+    result = act(control, gw.REVOKE, iam_client(installed=False), mode="iam")
 
     assert result.findings == []
 
 
-def test_a_rollback_whose_interceptor_stays_attached_keeps_the_grants():
-    control = Control(current("jwt"), current("iam", interceptorConfigurations=[{"x": 1}]))
-    iam, lam = iam_client(), lambda_client()
+def test_a_revoke_whose_interceptor_stays_attached_keeps_the_grant():
+    control = Control(current("jwt"), current("jwt"))
+    iam = iam_client()
 
-    result = move(control, iam, lam, mode="iam")
+    result = act(control, gw.REVOKE, iam, lambda_client())
 
     assert any("interceptor" in line for line in result.findings)
-    assert iam.args("delete_role_policy") == [] and lam.calls == []
+    assert iam.args("delete_role_policy") == []
 
 
 def test_the_record_is_private_and_holds_masked_summaries_only(tmp_path):
-    control = Control(current("iam"), current("jwt"))
-    result = move(control, iam_client(), lambda_client())
+    control = Control(bare("jwt"), current("jwt"))
+    result = act(control, gw.FULL, iam_client(), lambda_client())
     at = datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
 
-    path = gw.record(tmp_path / "out", result, target(), at)
+    path = gw.record(tmp_path / "out", result, target(), gw.FULL, at)
 
+    assert path.name == "gateway-interceptor.json"
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
     text = path.read_text()
     assert rs.ACCOUNT not in text and "<acct>" in text
-    assert json.loads(text)["after"]["authorizerType"] == "CUSTOM_JWT"
+    document = json.loads(text)
+    assert document["after"]["interceptors"][0]["arn"].endswith(settings.INTERCEPTOR_FUNCTION)
+    assert document["action"] == "full"
+
+
+def test_a_grant_is_present_whatever_it_says_and_absent_when_there_is_none():
+    assert gw.grant_present(iam_client(installed=True), rs.GATEWAY_ROLE) is True
+    assert gw.grant_present(iam_client(installed=False), rs.GATEWAY_ROLE) is False
+
+
+def test_any_other_error_reading_the_grant_is_not_swallowed():
+    iam = iam_client()
+
+    def denied(**kwargs):
+        raise client_error("AccessDenied")
+    iam.get_role_policy = denied
+
+    with pytest.raises(Exception, match="AccessDenied"):
+        gw.grant_present(iam, rs.GATEWAY_ROLE)

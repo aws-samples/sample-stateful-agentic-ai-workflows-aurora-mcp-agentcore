@@ -22,7 +22,7 @@ def current(mode="iam", design=settings.BOTH, **extra):
         "gatewayUrl": f"https://{rs.GATEWAY_ID}.gateway.bedrock-agentcore.{rs.REGION}"
                       ".amazonaws.com/mcp",
         "createdAt": "2026-10-02T09:00:00Z", "updatedAt": "2026-10-07T09:00:00Z",
-        "description": "Gateway for meridian-aurora", "exceptionLevel": "DEBUG",
+        "description": f"Gateway for {rs.gateway(mode)['name']}", "exceptionLevel": "DEBUG",
         "protocolConfiguration": {"mcp": {"supportedVersions": ["2025-03-26"],
                                           "searchType": "SEMANTIC"}},
         "workloadIdentityDetails": {"workloadIdentityArn": "arn:aws:bedrock-agentcore:x"},
@@ -39,6 +39,11 @@ class Control(Recorder):
         self.before, self.after = before, list(after)
         self.updated = False
         self.events = events if events is not None else []
+
+    def list_gateways(self, **kwargs):
+        self.calls.append(("list_gateways", kwargs))
+        gateway = self.before
+        return listing((gateway["name"], gateway["gatewayId"]))
 
     def get_gateway(self, **kwargs):
         self.calls.append(("get_gateway", kwargs))
@@ -106,6 +111,16 @@ class FakeLambda(Recorder):
 
 def lambda_client(**keywords):
     return FakeLambda(**keywords)
+
+
+def bare(mode="jwt", design=settings.BOTH, **extra):
+    """A Gateway as the deploy leaves it: no interceptor attached yet."""
+    return current(mode, design, interceptorConfigurations=None, **extra)
+
+
+def listing(*named):
+    """``list_gateways`` pages for (name, id) pairs."""
+    return {"items": [{"gatewayId": gid, "name": name} for name, gid in named]}
 
 
 def clients(control, iam=None, lam=None, cfn=None):

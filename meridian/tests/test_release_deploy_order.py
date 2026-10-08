@@ -1,461 +1,660 @@
-"""`release_identity.py deploy`: the Gateway moves first, the stack deploys, the pin is read back.
+"""`release_identity.py deploy`: one build stage at a time, checked against the live Gateway.
 
-CloudFormation cannot change a Gateway's authorizer type ("Authorizer type cannot be updated for
-an existing gateway"), and the template cannot declare the interceptor. So the order is: the
-UpdateGateway API moves the authorizer and attaches the interceptor, the deploy runs against a
-template that already matches, and the Gateway is read back and re-attached if the deploy changed
-it. The command refuses to deploy in any other order.
-
-The rendered template keeps the Gateway on ``AWS_IAM`` in both modes (the deployed stack's value),
-because CloudFormation compares the template with the stack template: the live Gateway is expected
-to be CUSTOM_JWT in ``jwt`` mode while the template says AWS_IAM, and the deploy diff must plan no
-Gateway authorizer change.
+CloudFormation cannot change a Gateway's authorizer type and the AgentCore CDK constructs cannot
+hold two Gateways with the same target names, so a mode switch replaces the Gateway in four
+passes (see ``scripts/identity_release/stages.py``). Each ``deploy`` runs one pass, after
+checking that the render, the CLI's deployed state and the live Gateway agree on which pass it
+is, that the plan is the one that pass should have, and, for the first pass, that everything the
+irreversible replacement needs is in place.
 """
 
 from __future__ import annotations
 
 import json
-
 import pytest
 
 from scripts import release_identity
-from scripts.identity_release import deploy_order, settings
+from scripts.identity_release import deploy_order, snapshot, stages, settings
 from tests import release_support as rs
-from tests.gateway_release_support import current
-from tests.test_release_gateway_cli import GatewayWorld
+from tests.aws_recorders import Recorder, client_error
+from tests.gateway_release_support import bare, current
 from tests.test_release_identity_cli import NOW, env
 
 FLAG = settings.CONFIRM_FLAG
 DEPLOY_ARGV = ["/opt/homebrew/bin/agentcore", "deploy", "-y"]
 DIFF_ARGV = ["/opt/homebrew/bin/agentcore", "deploy", "--diff", "--json"]
-RUNTIME_ONLY_PLAN = json.dumps({"resources": {"MeridianConcierge": {
-    "type": "AWS::BedrockAgentCore::Runtime",
-    "properties": {"AuthorizerConfiguration": {"old": None, "new": {"CustomJWTAuthorizer": {}}}}}}})
-GATEWAY_PLAN = json.dumps({"resources": {"Gateway": {
-    "type": "AWS::BedrockAgentCore::Gateway",
-    "properties": {"AuthorizerType": {"old": "AWS_IAM", "new": "CUSTOM_JWT"}}}}})
+GATEWAY_TYPE = "AWS::BedrockAgentCore::Gateway"
+STATUS = '{"success":true,"targetName":"default"}'
+NEW_JWT = f"[+] {GATEWAY_TYPE} Mcp/GatewayMeridianAuroraJwt/Resource McpGatewayMeridianAuroraJwt1"
+OLD_IAM = f"[-] {GATEWAY_TYPE} Mcp/GatewayMeridianAurora/Resource McpGatewayMeridianAuroraAB"
+NEW_IAM = f"[+] {GATEWAY_TYPE} Mcp/GatewayMeridianAurora/Resource McpGatewayMeridianAuroraAB"
+OLD_JWT = f"[-] {GATEWAY_TYPE} Mcp/GatewayMeridianAuroraJwt/Resource McpGatewayMeridianAuroraJwt1"
+RUNTIME_PLAN = ("[~] AWS::BedrockAgentCore::Runtime App/MeridianConcierge/Resource Mer1\n"
+                " └─ [~] AuthorizerConfiguration\n")
+JWT_REPLACES_IAM = f"Resources\n{NEW_JWT}\n{OLD_IAM}\n{RUNTIME_PLAN}{STATUS}"
+IAM_REPLACES_JWT = f"Resources\n{NEW_IAM}\n{OLD_JWT}\n{RUNTIME_PLAN}{STATUS}"
+QUIET_PLAN = f"Resources\n{RUNTIME_PLAN}{STATUS}"
+OTHER = {"jwt": "iam", "iam": "jwt"}
 
 
-def render(project, authorizer="AWS_IAM", clients=None, discovery=None):
-    """Write the rendered ``agentcore.json`` the deploy would read.
-
-    The default is what the render writes in both modes: the Gateway on the stack's ``AWS_IAM``.
-    ``CUSTOM_JWT`` writes the old render that moved the Gateway authorizer.
-    """
-    pool = settings.cognito_settings(rs.COGNITO_ENV)
-    gateway = {"name": "meridian-aurora", "authorizerType": authorizer}
-    if authorizer == "CUSTOM_JWT":
-        gateway["authorizerConfiguration"] = {"customJwtAuthorizer": {
-            "discoveryUrl": discovery or pool.discovery_url,
-            "allowedClients": clients if clients is not None else [rs.CLIENT]}}
-    folder = project / "agentcore"
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / "agentcore.json").write_text(json.dumps({"agentCoreGateways": [gateway]}))
-    return project
+def gateway_of(mode, **extra):
+    """The mode's Gateway as the control plane describes it, with its own id and role."""
+    return bare(mode, gatewayId=f"gw-{mode}",
+                roleArn=f"arn:aws:iam::{rs.ACCOUNT}:role/role-{mode}", **extra)
 
 
-class Deploy:
-    """A stand-in for the agentcore CLI: records argv and cwd, optionally changes the Gateway.
+class Cloud:
+    """The control plane's Gateways, by id, changed by the stand-in deploy."""
 
-    The diff run (``deploy --diff --json``) answers with ``diff_output`` and ``diff_code`` and is
-    recorded in ``diffs``; ``calls`` holds only the real deploy.
-    """
+    def __init__(self, *modes, **extras):
+        self.gateways = {f"gw-{mode}": gateway_of(mode, **extras.get(mode, {})) for mode in modes}
+        self.calls = []
 
-    def __init__(self, world, code=0, output="deployed", reset=None, error=None,
-                 diff_output=RUNTIME_ONLY_PLAN, diff_code=0):
-        self.world, self.code, self.output = world, code, output
-        self.reset, self.error = reset, error
-        self.diff_output, self.diff_code = diff_output, diff_code
-        self.calls, self.diffs = [], []
+    def list_gateways(self, **kwargs):
+        self.calls.append("list_gateways")
+        return {"items": [{"gatewayId": gid, "name": g["name"]}
+                          for gid, g in self.gateways.items()]}
+
+    def get_gateway(self, gatewayIdentifier):
+        self.calls.append("get_gateway")
+        return dict(self.gateways[gatewayIdentifier])
+
+    def update_gateway(self, **kwargs):
+        raise AssertionError("deploy must never update a Gateway itself")
+
+
+class Roles:
+    """Inline policies by role name, like IAM answers get_role_policy."""
+
+    def __init__(self, **policies):
+        self.policies = policies
+        self.calls = []
+
+    def get_role_policy(self, RoleName, PolicyName):
+        self.calls.append(RoleName)
+        if PolicyName not in self.policies.get(RoleName, ()):
+            raise client_error("NoSuchEntity")
+        return {"PolicyDocument": {}}
+
+
+class World:
+    def __init__(self, mode="jwt", *live, account=rs.ACCOUNT, roles=None, lam=None, **extras):
+        from unittest.mock import Mock
+        self.mode = mode
+        self.sts = Mock()
+        self.sts.get_caller_identity.return_value = {"Account": account}
+        self.cloud = Cloud(*live, **extras)
+        self.iam = Roles(**(roles or {}))
+        self.cfn = Mock()
+        self.cfn.describe_stacks.return_value = {"Stacks": [{"Outputs": rs.identity_outputs()}]}
+        self.lam = lam or _interceptor_lambda()
+        self.built = []
+
+    def session(self, region):
+        from unittest.mock import Mock
+        clients = {"sts": self.sts, "bedrock-agentcore-control": self.cloud, "iam": self.iam,
+                   "cloudformation": self.cfn, "lambda": self.lam}
+
+        def client(name, **kwargs):
+            self.built.append(name)
+            return clients[name]
+        return Mock(client=client)
+
+
+def _interceptor_lambda():
+    from tests.gateway_release_support import lambda_client
+    return lambda_client()
+
+
+class Cli(Recorder):
+    """A stand-in for the agentcore CLI: answers the diff, and a deploy creates the Gateway."""
+
+    def __init__(self, world, plan=QUIET_PLAN, diff_code=0, code=0, output="deployed",
+                 creates=None, removes=None, error=None):
+        super().__init__()
+        self.world, self.plan, self.diff_code = world, plan, diff_code
+        self.code, self.output, self.creates, self.removes = code, output, creates, removes
+        self.error = error
+        self.diffs, self.deploys, self.events = [], [], []
 
     def __call__(self, argv, cwd):
         if "--diff" in argv:
             self.diffs.append((list(argv), cwd))
-            self.world.control.events.append("diff")
-            return self.diff_code, self.diff_output
-        self.calls.append((list(argv), cwd))
-        self.world.control.events.append("deploy")
+            self.events.append("diff")
+            return self.diff_code, self.plan
+        self.deploys.append((list(argv), cwd))
+        self.events.append("deploy")
         if self.error:
             raise self.error
-        if self.reset is not None:
-            self.world.control.before = self.reset
+        if self.code == 0:
+            if self.removes:
+                self.world.cloud.gateways.pop(f"gw-{self.removes}", None)
+            if self.creates:
+                self.world.cloud.gateways[f"gw-{self.creates}"] = gateway_of(self.creates)
         return self.code, self.output
 
 
-def run(argv, world, tmp_path, runner, authorizer="AWS_IAM", environment=None, **render_args):
-    project = render(tmp_path / "project", authorizer, **render_args)
-    proof = tmp_path / "proof.json"
-    proof.write_text(json.dumps(rs.receipt(NOW)))
+def spec(mode="jwt", stage=stages.COMPLETE, **changes):
+    gateway = {
+        "name": settings.gateway_logical_name(mode),
+        "authorizerType": "CUSTOM_JWT" if mode == "jwt" else "AWS_IAM",
+        "targets": [{"name": "SemanticTripSearchLambda"}]
+        + ([{"name": settings.HOLDS_TARGET}] if stages.renders_holds(stage) else [])}
+    if mode == "jwt":
+        pool = settings.cognito_settings(rs.COGNITO_ENV)
+        gateway["authorizerConfiguration"] = {"customJwtAuthorizer": {
+            "discoveryUrl": pool.discovery_url, "allowedClients": [rs.CLIENT]}}
+    gateway.update(changes)
+    variables = [{"name": "MERIDIAN_POLICY_MODE", "value": "ENFORCE"}]
+    if stages.renders_engine_id(stage):
+        variables.append({"name": "MERIDIAN_POLICY_ENGINE_ID", "value": "e"})
+    return {"agentCoreGateways": [gateway],
+            "policyEngines": [{"name": "MeridianGovernance", "policies": []}]
+            if stages.renders_engine(stage) else [],
+            "runtimes": [{"name": "MeridianConcierge", "envVars": variables}]}
+
+
+def state(mode="jwt", stage=stages.COMPLETE):
+    gateway: dict = {}
+    if stage != stages.GATEWAY:
+        gateway = {"gatewayId": f"gw-{mode}", "targets": {"SemanticTripSearchLambda": {
+            "targetId": "t1"}}}
+        if stage in (stages.GOVERNANCE, stages.COMPLETE):
+            gateway["targets"][settings.HOLDS_TARGET] = {"targetId": "t2"}
+    resources: dict = {"mcp": {"gateways": {settings.gateway_logical_name(mode): gateway}
+                               if gateway else {}}}
+    if stage == stages.COMPLETE:
+        resources["policyEngines"] = {"MeridianGovernance": {"policyEngineId": "e"}}
+    return {"targets": {"default": {"resources": resources}}}
+
+
+def write_snapshot(release_dir, mode):
+    document = {
+        "schema": snapshot.SCHEMA, "takenAt": "2026-10-08T11:00:00+00:00", "commit": rs.SHA,
+        "account": rs.ACCOUNT, "region": rs.REGION, "mode": mode, "gateway": {},
+        "runtimes": {}, "service": {"ServiceArn": rs.SERVICE_ARN}, "site": {}, "roles": {},
+        "lambdas": {}, "policies": {}, "baselineFindings": [], "redacted": [], "complete": True}
+    snapshot.write(document, release_dir, NOW)
+
+
+def project(tmp_path, rendered=None, deployed=None, targets=True):
+    folder = tmp_path / "project" / "agentcore"
+    (folder / ".cli").mkdir(parents=True, exist_ok=True)
+    if rendered is not None:
+        (folder / "agentcore.json").write_text(
+            rendered if isinstance(rendered, str) else json.dumps(rendered))
+    if deployed not in (None, False):
+        (folder / ".cli" / "deployed-state.json").write_text(
+            deployed if isinstance(deployed, str) else json.dumps(deployed))
+    if targets:
+        (folder / "aws-targets.json").write_text(json.dumps([{"name": "default"}]))
+    return tmp_path / "project"
+
+
+def run(argv, world, tmp_path, runner, rendered=None, deployed=None, snap="auto",
+        proof=True, environment=None, mode=None, stage=stages.COMPLETE):
+    mode = mode or world.mode
+    root = project(tmp_path, spec(mode, stage) if rendered is None else rendered,
+                   state(mode, stage) if deployed is None else deployed)
+    release = tmp_path / "release"
+    if snap == "auto":
+        snap = OTHER[mode]
+    if snap:
+        write_snapshot(release, snap)
+    receipt = tmp_path / "proof.json"
+    if proof:
+        receipt.write_text(json.dumps(rs.receipt(NOW)))
     deps = release_identity.Dependencies(
-        env=environment or env(), session=world.session, now=lambda: NOW,
-        head_sha=lambda: rs.SHA, proof_path=proof, release_dir=tmp_path / "release",
-        sleep=lambda seconds: None, agentcore_dir=project, run_command=runner)
+        env=environment or env(MERIDIAN_AGENTCORE_AUTH=mode), session=world.session,
+        now=lambda: NOW, head_sha=lambda: rs.SHA, proof_path=receipt, release_dir=release,
+        sleep=lambda seconds: None, agentcore_dir=root, run_command=runner)
     return release_identity.main(argv, deps)
 
 
-def moved_world(**kwargs):
-    """A Gateway already moved: Cognito authorizer, interceptor attached, grant written."""
-    world = GatewayWorld("jwt", current("jwt"), installed=True, **kwargs)
-    return world
+def replacement(mode="jwt", **kwargs):
+    """A world at the first stage: the other mode's Gateway is live, this mode's is not."""
+    return World(mode, OTHER[mode], **kwargs)
 
 
-def test_the_dry_run_lists_the_order_and_deploys_nothing(tmp_path, capsys):
-    world = moved_world()
-    runner = Deploy(world)
+# ------------------------------------------------------------------ dry runs
 
-    assert run(["deploy"], world, tmp_path, runner) == 0
+
+def test_the_dry_run_lists_the_preflight_and_deploys_nothing(tmp_path, capsys):
+    world = replacement()
+    runner = Cli(world)
+
+    code = run(["deploy"], world, tmp_path, runner, stage=stages.GATEWAY)
 
     out = capsys.readouterr().out
-    assert "DRY RUN" in out and runner.calls == []
-    assert "/opt/homebrew/bin/agentcore deploy -y" in out
-    assert "re-attach" in out and FLAG in out and rs.ACCOUNT not in out
-    assert "deploy --diff --json" in out and "AWS_IAM on purpose" in out
-    assert runner.diffs == []
-    assert "update_gateway" not in world.control.names()
-
-
-def test_a_gateway_still_on_iam_blocks_the_deploy_and_names_the_gateway_command(tmp_path, capsys):
-    world = GatewayWorld("iam")
-    runner = Deploy(world)
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 2
-
-    err = capsys.readouterr().err
-    assert runner.calls == []
-    assert "CloudFormation" in err and "Authorizer type cannot be updated" in err
-    assert "release_identity.py gateway --to jwt --apply" in err
-    assert "authorizer is AWS_IAM, expected CUSTOM_JWT" in err
-    assert runner.diffs == []
-    assert "update_gateway" not in world.control.names()
+    assert code == 0 and "DRY RUN" in out and runner.deploys == [] and runner.diffs == []
+    assert "stage gateway (1 of 4)" in out
+    assert "/opt/homebrew/bin/agentcore deploy -y" in out and "deploy --diff --json" in out
+    assert FLAG in out and rs.ACCOUNT not in out
+    assert "BLOCKED" not in out
 
 
 def test_the_dry_run_with_a_blocker_exits_two_and_says_blocked(tmp_path, capsys):
-    world = GatewayWorld("iam")
+    world = replacement()
 
-    assert run(["deploy"], world, tmp_path, Deploy(world)) == 2
+    assert run(["deploy"], world, tmp_path, Cli(world), stage=stages.GATEWAY, proof=False) == 2
 
-    assert "BLOCKED" in capsys.readouterr().out
-
-
-def test_a_gateway_without_the_interceptor_blocks_the_deploy(tmp_path, capsys):
-    world = GatewayWorld("jwt", current("jwt"), installed=True)
-    world.control.before = current("jwt", settings.CEDAR)
-    runner = Deploy(world)
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 2
-
-    assert runner.calls == []
-    assert "no request interceptor is attached" in capsys.readouterr().err
-
-
-def test_a_render_that_moves_the_gateway_authorizer_blocks_the_deploy(tmp_path, capsys):
-    world = moved_world()
-    runner = Deploy(world)
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner, authorizer="CUSTOM_JWT") == 2
-
-    err = capsys.readouterr().err
-    assert runner.calls == [] and runner.diffs == []
-    assert "Rendered config" in err and "render_agentcore_config.py" in err
-
-
-def test_a_jwt_deploy_goes_ahead_when_the_live_gateway_is_jwt_and_the_template_says_iam(
-        tmp_path, capsys):
-    """The documented divergence: live CUSTOM_JWT, rendered AWS_IAM is the EXPECTED state."""
-    world = moved_world()
-    runner = Deploy(world)
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 0
-
-    assert len(runner.calls) == 1 and "update_gateway" not in world.control.names()
-
-
-def test_a_live_gateway_pool_that_is_not_this_pools_blocks_the_deploy(tmp_path, capsys):
-    other = current("jwt")
-    other["authorizerConfiguration"]["customJWTAuthorizer"]["allowedClients"] = ["someone-else"]
-    world = moved_world()
-    world.control.before = other
-    runner = Deploy(world)
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 2
-
-    assert runner.calls == [] and "allowedClients" in capsys.readouterr().err
-
-
-def test_a_missing_render_is_reported_with_the_command_that_writes_it(tmp_path, capsys):
-    world = moved_world()
-    runner = Deploy(world)
-    deps = release_identity.Dependencies(
-        env=env(), session=world.session, now=lambda: NOW, head_sha=lambda: rs.SHA,
-        proof_path=tmp_path / "none.json", release_dir=tmp_path / "release",
-        agentcore_dir=tmp_path / "nowhere", run_command=runner)
-
-    assert release_identity.main(["deploy", "--apply", FLAG], deps) == 2
-
-    assert "render_agentcore_config.py" in capsys.readouterr().err
-    assert runner.calls == []
+    assert "BLOCKED  Backend login proof: none recorded" in capsys.readouterr().out
 
 
 def test_apply_without_the_confirmation_exits_three_before_any_client(tmp_path, capsys):
-    world = moved_world()
-    runner = Deploy(world)
+    world = replacement()
 
-    assert run(["deploy", "--apply"], world, tmp_path, runner) == 3
+    assert run(["deploy", "--apply"], world, tmp_path, Cli(world), stage=stages.GATEWAY) == 3
 
-    assert world.built == [] and runner.calls == [] and FLAG in capsys.readouterr().out
-
-
-def test_a_deploy_that_leaves_the_gateway_alone_is_read_back_and_not_updated(tmp_path, capsys):
-    world = moved_world()
-    runner = Deploy(world)
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 0
-
-    out = capsys.readouterr().out
-    assert runner.calls == [(DEPLOY_ARGV, tmp_path / "project")]
-    assert runner.diffs == [(DIFF_ARGV, tmp_path / "project")]
-    assert world.control.events == ["diff", "deploy"]
-    assert "update_gateway" not in world.control.names()
-    assert "left the Gateway as the release wants" in out
+    assert world.built == [] and FLAG in capsys.readouterr().out
 
 
-def test_a_deploy_that_detaches_the_interceptor_is_followed_by_the_reattach(tmp_path, capsys):
-    world = moved_world()
-    runner = Deploy(world, reset=current("jwt", settings.CEDAR))
+def test_credentials_for_another_account_stop_before_any_read(tmp_path, capsys):
+    world = replacement(account="999999999999")
+    runner = Cli(world)
 
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 0
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY) == 2
 
-    out = capsys.readouterr().out
-    assert world.control.events == ["diff", "deploy", "update"]
-    sent = [kwargs for name, kwargs in world.control.calls if name == "update_gateway"]
-    assert len(sent) == 1 and sent[0]["authorizerType"] == "CUSTOM_JWT"
-    assert sent[0]["interceptorConfigurations"][0]["interceptor"]["lambda"]["arn"] \
-        == rs.INTERCEPTOR_ARN
-    assert "the deploy changed the Gateway" in out and "OK  the Gateway reports jwt" in out
+    captured = capsys.readouterr()
+    assert world.built == ["sts"] and "999999999999" not in captured.err
+    assert runner.deploys == []
 
 
-def test_a_deploy_that_reverts_the_authorizer_is_reported_and_restored(tmp_path, capsys):
-    world = moved_world()
-    runner = Deploy(world, reset=current("iam"))
+# --------------------------------------------------------- the first stage
 
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 0
+
+def test_the_first_stage_replaces_the_iam_gateway_with_the_jwt_one(tmp_path, capsys):
+    world = replacement()
+    runner = Cli(world, JWT_REPLACES_IAM, creates="jwt", removes="iam")
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY)
 
     out = capsys.readouterr().out
-    assert "authorizer is AWS_IAM, expected CUSTOM_JWT" in out
-    assert world.control.events == ["diff", "deploy", "update"]
+    assert code == 0
+    assert runner.events == ["diff", "deploy"]
+    assert runner.diffs[0][0] == DIFF_ARGV and runner.deploys[0][0] == DEPLOY_ARGV
+    assert runner.deploys[0][1] == tmp_path / "project"
+    assert "Stage gateway deployed (1 of 4)" in out
+    assert "python scripts/render_agentcore_config.py" in out
+    assert "python scripts/sync_agentcore_env.py --write" in out
+    assert f"python scripts/release_identity.py deploy --to jwt --apply {FLAG}" in out
 
 
-def test_a_failed_deploy_stops_without_touching_the_gateway_and_masks_the_output(
+def test_the_first_stage_back_to_iam_replaces_the_jwt_gateway(tmp_path, capsys):
+    world = replacement("iam")
+    runner = Cli(world, IAM_REPLACES_JWT, creates="iam", removes="jwt")
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY)
+
+    assert code == 0 and runner.events == ["diff", "deploy"]
+
+
+def test_the_iam_first_stage_needs_no_pool_proof_or_interceptor(tmp_path):
+    world = replacement("iam", lam=None)
+    runner = Cli(world, IAM_REPLACES_JWT, creates="iam", removes="jwt")
+    environment = {k: v for k, v in env(MERIDIAN_AGENTCORE_AUTH="iam").items()
+                   if not k.startswith("MERIDIAN_COGNITO")}
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY,
+               proof=False, environment=environment) == 0
+
+
+@pytest.mark.parametrize(("kwargs", "fragment"), [
+    ({"proof": False}, "Backend login proof: none recorded"),
+    ({"snap": None}, "no complete snapshot"),
+    ({"snap": "jwt"}, "snapshot is of the jwt release"),
+])
+def test_each_missing_first_stage_precondition_is_named_and_nothing_runs(
+        tmp_path, capsys, kwargs, fragment):
+    world = replacement()
+    runner = Cli(world, JWT_REPLACES_IAM)
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY,
+               **kwargs) == 2
+
+    assert fragment in capsys.readouterr().err
+    assert runner.diffs == [] and runner.deploys == []
+
+
+def test_an_identity_stack_without_outputs_blocks_the_first_stage(tmp_path, capsys):
+    world = replacement()
+    world.cfn.describe_stacks.return_value = {"Stacks": [{"Outputs": []}]}
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, Cli(world),
+               stage=stages.GATEWAY) == 2
+
+    assert "Identity stack: has no output" in capsys.readouterr().err
+
+
+def test_an_interceptor_that_is_not_deployed_blocks_the_first_stage(tmp_path, capsys):
+    world = replacement()
+
+    def missing(**kwargs):
+        raise client_error("ResourceNotFoundException")
+    world.lam.get_function = missing
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, Cli(world),
+               stage=stages.GATEWAY) == 2
+
+    assert "Interceptor Lambda: not deployed" in capsys.readouterr().err
+
+
+def test_the_cedar_only_design_does_not_ask_for_the_interceptor(tmp_path):
+    world = replacement()
+    world.lam.get_function = lambda **kwargs: (_ for _ in ()).throw(AssertionError("called"))
+    runner = Cli(world, JWT_REPLACES_IAM, creates="jwt", removes="iam")
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY,
+               environment=env(MERIDIAN_GATEWAY_ENFORCEMENT="cedar")) == 0
+
+
+def test_a_grant_left_on_the_replaced_gateways_role_blocks_it_with_the_command(tmp_path, capsys):
+    from scripts.identity_release.gateway_release import INVOKE_POLICY_NAME
+    world = replacement(roles={"role-iam": [INVOKE_POLICY_NAME]})
+    runner = Cli(world, JWT_REPLACES_IAM)
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY) == 2
+
+    err = capsys.readouterr().err
+    assert "MeridianTravelerPinInvoke" in err
+    assert f"python scripts/release_identity.py gateway --to iam --apply {FLAG}" in err
+    assert runner.deploys == []
+
+
+def test_an_interceptor_still_attached_to_the_replaced_jwt_gateway_names_the_revoke(
         tmp_path, capsys):
-    world = moved_world()
-    runner = Deploy(world, code=1, output=f"stack in {rs.ACCOUNT} rolled back")
+    world = replacement("iam")
+    world.cloud.gateways["gw-jwt"] = current(
+        "jwt", gatewayId="gw-jwt", roleArn=gateway_of("jwt")["roleArn"])
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, Cli(world),
+               stage=stages.GATEWAY) == 2
+
+    err = capsys.readouterr().err
+    assert "interceptor attached" in err
+    assert f"gateway --to jwt --only revoke --apply {FLAG}" in err
+
+
+def test_a_first_ever_build_has_nothing_to_replace_and_needs_no_snapshot(tmp_path):
+    world = World("iam")
+    runner = Cli(world, f"Resources\n{NEW_IAM}\n{STATUS}", creates="iam")
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY,
+               snap=None, environment=env(MERIDIAN_AGENTCORE_AUTH="iam")) == 0
+
+
+# --------------------------------------------------- the render and the state
+
+
+@pytest.mark.parametrize(("changes", "fragment"), [
+    ({"name": "meridian-aurora"}, "named 'meridian-aurora', expected 'meridian-aurora-jwt'"),
+    ({"authorizerType": "AWS_IAM"}, "authorizer is AWS_IAM, expected CUSTOM_JWT"),
+    ({"authorizerConfiguration": {"customJwtAuthorizer": {
+        "discoveryUrl": "https://x/.well-known/o", "allowedClients": [rs.CLIENT]}}},
+     "discoveryUrl"),
+    ({"authorizerConfiguration": {"customJwtAuthorizer": {
+        "discoveryUrl": settings.cognito_settings(rs.COGNITO_ENV).discovery_url,
+        "allowedClients": ["other"]}}}, "allowedClients"),
+])
+def test_a_rendered_gateway_that_is_not_the_modes_blocks_the_deploy(
+        tmp_path, capsys, changes, fragment):
+    world = World("jwt", "jwt")
+    runner = Cli(world)
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, runner,
+               rendered=spec("jwt", **changes))
+
+    err = capsys.readouterr().err
+    assert code == 2 and fragment in err and "Rendered config" in err
+    assert "render_agentcore_config.py" in err
+    assert runner.diffs == [] and runner.deploys == []
+
+
+def test_an_iam_render_with_a_token_authorizer_block_blocks_the_deploy(tmp_path, capsys):
+    world = World("iam", "iam")
+    rendered = spec("iam", authorizerConfiguration={"customJwtAuthorizer": {}})
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, Cli(world), rendered=rendered,
+               environment=env(MERIDIAN_AGENTCORE_AUTH="iam")) == 2
+
+    assert "authorizerConfiguration" in capsys.readouterr().err
+
+
+def test_a_render_and_a_state_at_different_stages_block_the_deploy(tmp_path, capsys):
+    world = World("jwt", "jwt")
+    runner = Cli(world)
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, runner,
+               rendered=spec("jwt", stages.TARGETS), deployed=state("jwt", stages.COMPLETE))
+
+    err = capsys.readouterr().err
+    assert code == 2 and "the render is stage targets" in err and "stage complete" in err
+    assert "run python scripts/render_agentcore_config.py again" in err
+    assert runner.deploys == []
+
+
+def test_a_stale_state_that_reads_as_the_first_stage_while_the_gateway_lives_is_refused(
+        tmp_path, capsys):
+    world = World("jwt", "jwt")
+    runner = Cli(world)
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY)
+
+    err = capsys.readouterr().err
+    assert code == 2 and "already exists" in err and "would delete" in err
+    assert runner.deploys == []
+
+
+@pytest.mark.parametrize("stage", [stages.TARGETS, stages.GOVERNANCE, stages.COMPLETE])
+def test_a_later_stage_needs_the_gateway_to_exist(tmp_path, capsys, stage):
+    world = World("jwt")
+    runner = Cli(world)
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stage)
+
+    err = capsys.readouterr().err
+    assert code == 2 and "no Gateway named meridianv2-meridian-aurora-jwt" in err
+    assert runner.deploys == []
+
+
+def test_an_unreadable_render_or_state_says_what_to_run(tmp_path, capsys):
+    world = World("jwt", "jwt")
+
+    assert run(["deploy"], world, tmp_path, Cli(world), rendered="not json", snap=None) == 2
+    assert "render_agentcore_config.py" in capsys.readouterr().err
+    assert run(["deploy"], world, tmp_path, Cli(world), deployed="{broken", snap=None) == 2
+    assert "deployed-state.json" in capsys.readouterr().err
+
+
+def test_a_render_with_two_gateways_is_refused(tmp_path, capsys):
+    world = World("jwt", "jwt")
+    both = spec("jwt")
+    both["agentCoreGateways"].append(both["agentCoreGateways"][0])
+
+    assert run(["deploy"], world, tmp_path, Cli(world), rendered=both) == 2
+
+    assert "exactly one Gateway" in capsys.readouterr().err
+
+
+def test_a_missing_state_file_is_the_first_stage(tmp_path, capsys):
+    world = replacement()
+    runner = Cli(world, JWT_REPLACES_IAM, creates="jwt", removes="iam")
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, runner,
+               rendered=spec("jwt", stages.GATEWAY), deployed=False)
+
+    assert code == 0 and runner.events == ["diff", "deploy"]
+
+
+# ----------------------------------------------------------------- the plan gate
+
+
+def test_a_plan_that_does_not_replace_the_gateway_blocks_the_first_stage(tmp_path, capsys):
+    world = replacement()
+    runner = Cli(world, QUIET_PLAN)
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.GATEWAY)
+
+    err = capsys.readouterr().err
+    assert code == 2 and "deploy plan is not safe to apply" in err
+    assert "add exactly one Gateway" in err
+    assert runner.diffs and runner.deploys == []
+
+
+def test_a_plan_that_changes_the_authorizer_in_place_blocks_every_stage(tmp_path, capsys):
+    world = World("jwt", "jwt")
+    plan = (f"Resources\n[~] {GATEWAY_TYPE} Mcp/GatewayMeridianAuroraJwt/Resource G1\n"
+            " ├─ [~] AuthorizerType\n")
+    runner = Cli(world, plan)
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 2
+
+    assert "authorizer type in place" in capsys.readouterr().err
+    assert runner.deploys == []
+
+
+def test_a_diff_that_failed_blocks_the_deploy(tmp_path, capsys):
+    world = World("jwt", "jwt")
+    runner = Cli(world, "boom", diff_code=1)
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 2
+
+    assert "exited 1" in capsys.readouterr().err and runner.deploys == []
+
+
+def test_a_later_stage_whose_plan_deletes_the_holds_lambda_is_refused(tmp_path, capsys):
+    world = World("jwt", "jwt")
+    plan = "Resources\n[-] AWS::Lambda::Function Mcp/Holds/Function F1\n" + STATUS
+    runner = Cli(world, plan)
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 2
+
+    assert "deletes AWS::Lambda::Function" in capsys.readouterr().err
+    assert runner.deploys == []
+
+
+# ------------------------------------------------------- deploying, reading back
+
+
+def test_a_later_stage_deploys_once_after_the_plan_and_reads_the_gateway_back(tmp_path, capsys):
+    world = World("jwt", "jwt")
+    runner = Cli(world)
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, runner, stage=stages.COMPLETE)
+
+    out = capsys.readouterr().out
+    assert code == 0 and runner.events == ["diff", "deploy"]
+    assert "Stage complete deployed (4 of 4)" in out
+    assert f"python scripts/release_identity.py gateway --to jwt --apply {FLAG}" in out
+    assert "python scripts/sync_agentcore_env.py --write" in out
+    assert "release_identity.py check --skip-service" in out
+
+
+def test_the_complete_stage_for_iam_has_no_interceptor_to_attach(tmp_path, capsys):
+    world = World("iam", "iam")
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, Cli(world),
+               environment=env(MERIDIAN_AGENTCORE_AUTH="iam"))
+
+    out = capsys.readouterr().out
+    assert code == 0 and "gateway --to jwt" not in out and "sync_agentcore_env.py" in out
+
+
+def test_a_middle_stage_points_at_the_next_render(tmp_path, capsys):
+    world = World("jwt", "jwt")
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, Cli(world),
+               stage=stages.TARGETS) == 0
+
+    out = capsys.readouterr().out
+    assert "Stage targets deployed (2 of 4)" in out and "render_agentcore_config.py" in out
+
+
+def test_the_read_back_reports_a_gateway_that_is_not_ready_as_drift_and_exits_one(
+        tmp_path, capsys):
+    world = World("jwt", "jwt")
+    runner = Cli(world)
+    original = runner.__call__
+
+    def deploy_then_break(argv, cwd):
+        result = original(argv, cwd)
+        if "--diff" not in argv:
+            world.cloud.gateways["gw-jwt"]["policyEngineConfiguration"] = {
+                "arn": rs.ENGINE_ARN, "mode": "LOG_ONLY"}
+        return result
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, deploy_then_break,
+               stage=stages.GOVERNANCE)
+
+    assert code == 1 and "DRIFT  Gateway: the policy engine is not attached in ENFORCE" in (
+        capsys.readouterr().out)
+
+
+def test_before_the_governance_stage_a_missing_engine_is_not_drift(tmp_path, capsys):
+    world = World("jwt", "jwt")
+    world.cloud.gateways["gw-jwt"].pop("policyEngineConfiguration")
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, Cli(world),
+               stage=stages.TARGETS) == 0
+
+
+def test_a_missing_interceptor_after_the_deploy_is_not_drift_and_is_never_reattached(
+        tmp_path, capsys):
+    world = World("jwt", "jwt")
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, Cli(world)) == 0
+
+    assert "DRIFT" not in capsys.readouterr().out
+
+
+def test_a_failed_deploy_says_the_stack_rolled_back_and_what_to_run(tmp_path, capsys):
+    world = World("jwt", "jwt")
+    runner = Cli(world, code=1, output="boom: it failed")
+
+    code = run(["deploy", "--apply", FLAG], world, tmp_path, runner)
+
+    err = capsys.readouterr().err
+    assert code == 2 and "deploy failed (exit 1)" in err and "rolls the stack back" in err
+    assert "release_identity.py check --skip-service" in err
+
+
+def test_the_authorizer_error_from_the_cli_points_at_the_render(tmp_path, capsys):
+    world = World("jwt", "jwt")
+    runner = Cli(world, code=1, output=deploy_order.CLI_ERROR)
+
+    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 2
+
+    err = capsys.readouterr().err
+    assert "render did not rename the Gateway" in err and "render_agentcore_config.py" in err
+
+
+def test_a_cli_that_cannot_be_run_is_an_error_not_a_traceback(tmp_path, capsys):
+    world = World("jwt", "jwt")
+    runner = Cli(world, error=deploy_order.DeployOrderError("could not run x: not found"))
 
     assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 2
 
     captured = capsys.readouterr()
-    assert "update_gateway" not in world.control.names()
-    assert rs.ACCOUNT not in captured.out + captured.err and "<acct>" in captured.out
-    assert "rolls the stack back" in captured.err
-    assert "check --skip-service" in captured.err
+    assert "not found" in captured.err and "Traceback" not in captured.err
 
 
-def test_a_missing_cli_is_a_clear_error_not_a_traceback(tmp_path, capsys, monkeypatch):
+def test_the_default_runner_reports_a_missing_program_and_a_timeout(tmp_path, monkeypatch):
+    import subprocess
+
     def missing(*args, **kwargs):
-        raise FileNotFoundError("no such file")
+        raise FileNotFoundError()
+    monkeypatch.setattr(subprocess, "run", missing)
+    with pytest.raises(deploy_order.DeployOrderError, match="not found"):
+        deploy_order.run_command(["/nope"], tmp_path)
 
-    monkeypatch.setattr(deploy_order.subprocess, "run", missing)
-    world = moved_world()
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, deploy_order.run_command) == 2
-
-    err = capsys.readouterr().err
-    assert "/opt/homebrew/bin/agentcore" in err and "Traceback" not in err
-    assert "update_gateway" not in world.control.names()
-
-
-def test_a_deploy_that_outlives_its_timeout_says_the_stack_may_still_be_updating(
-        tmp_path, capsys, monkeypatch):
     def slow(*args, **kwargs):
-        raise deploy_order.subprocess.TimeoutExpired(cmd="agentcore", timeout=1)
-
-    monkeypatch.setattr(deploy_order.subprocess, "run", slow)
-
-    assert run(["deploy", "--apply", FLAG], moved_world(), tmp_path,
-               deploy_order.run_command) == 2
-
-    assert "may still be updating" in capsys.readouterr().err
+        raise subprocess.TimeoutExpired("x", 1)
+    monkeypatch.setattr(subprocess, "run", slow)
+    with pytest.raises(deploy_order.DeployOrderError, match="did not finish"):
+        deploy_order.run_command(["/slow"], tmp_path)
 
 
-def test_the_real_runner_passes_the_argv_and_cwd_through_and_joins_both_streams(
-        tmp_path, monkeypatch):
-    seen = {}
-
-    def fake(argv, **kwargs):
-        seen.update(argv=argv, **kwargs)
-        return deploy_order.subprocess.CompletedProcess(argv, 3, stdout="out\n", stderr="err\n")
-
-    monkeypatch.setattr(deploy_order.subprocess, "run", fake)
-
-    assert deploy_order.run_command(DEPLOY_ARGV, tmp_path) == (3, "out\nerr\n")
-    assert seen["argv"] == DEPLOY_ARGV and seen["cwd"] == tmp_path
-    assert seen["capture_output"] is True and seen["timeout"] > 60
-
-
-def test_the_iam_direction_needs_the_iam_gateway_first(tmp_path, capsys):
-    world = GatewayWorld("jwt", current("iam"), installed=True)
-    runner = Deploy(world)
-
-    code = run(["deploy", "--to", "iam", "--apply", FLAG], world, tmp_path, runner,
-               authorizer="AWS_IAM")
-
-    assert code == 2 and runner.calls == []
-    assert "release_identity.py gateway --to iam --apply" in capsys.readouterr().err
-
-
-def test_the_iam_direction_deploys_once_the_gateway_is_back_on_iam(tmp_path, capsys):
-    world = GatewayWorld("iam", current("iam"))
-    runner = Deploy(world)
-
-    code = run(["deploy", "--to", "iam", "--apply", FLAG], world, tmp_path, runner,
-               authorizer="AWS_IAM")
-
-    assert code == 0 and len(runner.calls) == 1
-    assert "left the Gateway as the release wants" in capsys.readouterr().out
-
-
-def test_the_order_findings_are_pure_and_name_each_reason():
-    rendered = {"authorizerType": "AWS_IAM"}
-
-    found = deploy_order.ordering_findings(rendered, current("iam"), rs.target("jwt"))
-
-    assert any("authorizer is AWS_IAM, expected CUSTOM_JWT" in line for line in found)
-    assert any("release_identity.py gateway --to jwt --apply" in line for line in found)
-    assert deploy_order.ordering_findings(rendered, current("jwt"), rs.target("jwt")) == []
-    assert deploy_order.ordering_findings(rendered, current("iam"), rs.target("iam")) == []
-
-
-@pytest.mark.parametrize("rendered", [
-    {"authorizerType": "CUSTOM_JWT"},
-    {"authorizerType": "AWS_IAM", "authorizerConfiguration": {"customJwtAuthorizer": {}}}])
-def test_a_rendered_gateway_that_is_not_the_stacks_iam_gateway_is_a_finding(rendered):
-    found = deploy_order.ordering_findings(rendered, current("jwt"), rs.target("jwt"))
-
-    assert len(found) == 1 and "Rendered config" in found[0]
-
-
-# ----------------------------------------------------------- the deploy diff gate
-
-
-def test_a_plan_that_changes_the_gateway_authorizer_stops_before_the_deploy(tmp_path, capsys):
-    world = moved_world()
-    runner = Deploy(world, diff_output=GATEWAY_PLAN)
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 2
-
-    err = capsys.readouterr().err
-    assert runner.calls == [] and len(runner.diffs) == 1
-    assert "changes the Gateway authorizer" in err and "release_identity.py gateway" in err
-    assert "update_gateway" not in world.control.names()
-
-
-def test_a_plan_that_changes_only_the_runtime_authorizers_goes_ahead(tmp_path):
-    world = moved_world()
-    runner = Deploy(world, diff_output=RUNTIME_ONLY_PLAN)
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 0
-    assert len(runner.calls) == 1
-
-
-def test_a_plan_in_text_form_that_names_the_gateway_authorizer_stops_the_deploy(
-        tmp_path, capsys):
-    text = ("[~] AWS::BedrockAgentCore::Gateway Gateway\n"
-            " └─ [~] AuthorizerType\n     ├─ [-] AWS_IAM\n     └─ [+] CUSTOM_JWT\n")
-    world = moved_world()
-    runner = Deploy(world, diff_output=text)
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 2
-
-    assert runner.calls == [] and "AuthorizerType" in capsys.readouterr().err
-
-
-def test_a_text_plan_that_changes_only_a_runtime_goes_ahead(tmp_path):
-    text = ("[~] AWS::BedrockAgentCore::Runtime Concierge\n"
-            " └─ [~] AuthorizerConfiguration\n")
-    world = moved_world()
-    runner = Deploy(world, diff_output=text)
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 0
-
-
-def test_a_gateway_authorizer_configuration_change_alone_stops_the_deploy(tmp_path):
-    plan = json.dumps({"resources": {"Gateway": {
-        "type": "AWS::BedrockAgentCore::Gateway",
-        "properties": {"AuthorizerConfiguration": {"old": None, "new": {}}}}}})
-    world = moved_world()
-    runner = Deploy(world, diff_output=plan)
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 2
-    assert runner.calls == []
-
-
-def test_a_diff_that_fails_cannot_clear_the_deploy(tmp_path, capsys):
-    world = moved_world()
-    runner = Deploy(world, diff_output=f"synth failed in {rs.ACCOUNT}", diff_code=1)
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 2
-
-    captured = capsys.readouterr()
-    assert runner.calls == [] and "cannot be checked" in captured.err
-    assert rs.ACCOUNT not in captured.out + captured.err
-
-
-def test_the_dry_run_accepts_a_live_jwt_gateway_under_an_iam_template(tmp_path, capsys):
-    """Live CUSTOM_JWT against a template that says AWS_IAM is the expected state."""
-    world = moved_world()
-    project = render(tmp_path / "project")
-    assert json.loads((project / "agentcore" / "agentcore.json").read_text())[
-        "agentCoreGateways"][0]["authorizerType"] == "AWS_IAM"
-
-    code = run(["deploy"], world, tmp_path, Deploy(world))
-
-    assert code == 0 and "BLOCKED" not in capsys.readouterr().out
-
-
-def test_one_update_call_carries_the_authorizer_the_clients_and_the_interceptor(tmp_path):
-    world = GatewayWorld("iam", current("jwt"))
-
-    assert run(["gateway", "--apply", FLAG], world, tmp_path, Deploy(world)) == 0
-
-    sent = [kwargs for name, kwargs in world.control.calls if name == "update_gateway"]
-    assert len(sent) == 1
-    pool = sent[0]["authorizerConfiguration"]["customJWTAuthorizer"]
-    assert sent[0]["authorizerType"] == "CUSTOM_JWT"
-    assert pool == {"discoveryUrl": rs.target().cognito.discovery_url,
-                    "allowedClients": [rs.CLIENT]}
-    assert [i["interceptor"]["lambda"]["arn"] for i in sent[0]["interceptorConfigurations"]] \
-        == [rs.INTERCEPTOR_ARN]
-    assert world.control.events == ["update"]
-
-
-def test_a_failed_deploy_says_the_site_stays_down_until_a_retry_or_the_rollback(
-        tmp_path, capsys):
-    world = moved_world()
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, Deploy(world, code=1)) == 2
-
-    err = capsys.readouterr().err
-    assert "still expect IAM while the Gateway expects the token" in err
-    assert "release_identity.py rollback" in err
-
-
-def test_the_authorizer_refusal_after_the_gateway_matched_is_named_as_the_wrong_assumption(
-        tmp_path, capsys):
-    world = moved_world()
-    runner = Deploy(world, code=1, output=f"CREATE_FAILED: {deploy_order.CLI_ERROR}")
-
-    assert run(["deploy", "--apply", FLAG], world, tmp_path, runner) == 2
-
-    err = capsys.readouterr().err
-    assert "even though the live Gateway already matched the render" in err
-    assert "compares the template with its own previous state" in err
-    assert "Do not retry" in err and "owner decision" in err
+def test_the_stage_numbers_cover_the_four_stages():
+    assert [deploy_order.stage_label(s) for s in stages.STAGES] == [
+        "stage gateway (1 of 4)", "stage targets (2 of 4)", "stage governance (3 of 4)",
+        "stage complete (4 of 4)"]

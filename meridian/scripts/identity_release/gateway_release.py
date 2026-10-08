@@ -1,23 +1,27 @@
-"""Move the live Gateway between the IAM and the Cognito authorizer, with or without the pin.
+"""Attach and detach the request interceptor on the live jwt Gateway, with its invoke grant.
 
-``update_gateway`` replaces what it is given, so every update resends the fields the Gateway
-already has and changes only the authorizer and the interceptor. The API refuses an empty
-interceptor list, so a Gateway that should have none gets the field left out; the read-back
-proves the omission detached it. A later ``agentcore deploy`` can reset the interceptor, so the
-same read-back (``preflight.check_gateway``) is the drift check.
+The Gateway's authorizer is not this module's business any more. CloudFormation and the
+``UpdateGateway`` API both refuse to change an existing Gateway's authorizer type, so the jwt
+Gateway is a different Gateway, created by ``release_identity.py deploy`` under its own name. This
+module finds the Gateway of the release mode by that name (the id in ``meridian/.env`` goes stale
+when a deploy replaces it), checks that it is a finished token Gateway, and then does the one thing
+the template cannot: ``update_gateway`` replaces what it is given, so the update resends every
+field the Gateway already has, authorizer included, and adds only ``interceptorConfigurations``.
+The API refuses an empty interceptor list, so a detach leaves the field out; the read-back proves
+the omission detached it. A later ``agentcore deploy`` that updates the Gateway can reset the
+interceptor, so the read-back (``preflight.check_gateway``) is also the drift check.
 
 The Gateway may invoke the interceptor only after one grant, written before the interceptor is
-attached, removed after it is detached, and separable from the move (``--only grant``): an inline
+attached, removed after it is detached, and separable from the attach (``--only grant``): an inline
 policy on the Gateway's role (``MeridianTravelerPinInvoke``) that allows ``lambda:InvokeFunction``
 on the interceptor and nothing else, as the throwaway-Gateway harness validated. The AWS
 documentation asks for nothing more in the same account: no statement on the function's resource
-policy, so none is written, read or removed here.
+policy, so none is written, read or removed here. An inline policy written outside CloudFormation
+can stop CloudFormation from deleting the role of a Gateway it replaces, so the old Gateway is
+cleaned with ``revoke`` before the deploy that replaces it.
 
-Changing the authorizer in place cuts off every SigV4 caller at once. Nothing here runs without
-``--apply`` and the confirmation flag; the dry run reads and prints the before and after.
-
-``read_snapshot`` returns the Gateway exactly as read; ``apply`` takes that object and hands it
-back in its result, so the rollback task can save it before any write.
+Nothing here runs without ``--apply`` and the confirmation flag; the dry run reads and prints the
+before and after.
 """
 
 from __future__ import annotations
@@ -49,8 +53,9 @@ CONTROL_SERVICE = "bedrock-agentcore-control"
 KEPT_FIELDS = (
     "name", "roleArn", "description", "protocolType", "protocolConfiguration", "exceptionLevel",
     "kmsKeyArn", "policyEngineConfiguration", "customTransformConfiguration", "wafConfiguration",
+    "authorizerType", "authorizerConfiguration",
 )
-CHANGED_FIELDS = ("authorizerType", "authorizerConfiguration", "interceptorConfigurations")
+CHANGED_FIELDS = ("interceptorConfigurations",)
 READ_ONLY_FIELDS = (
     "gatewayId", "gatewayArn", "gatewayUrl", "status", "statusReasons", "createdAt", "updatedAt",
     "webAclArn", "workloadIdentityDetails", "ResponseMetadata",
@@ -61,9 +66,11 @@ FAILED = ("FAILED", "UPDATE_UNSUCCESSFUL", "CREATE_FAILED")
 UPDATE_TIMEOUT_SECONDS = 300
 SETTLE_ATTEMPTS = 12
 POLL_SECONDS = 5
-OUTPUT_NAME = "gateway-move.json"
+OUTPUT_NAME = "gateway-interceptor.json"
 ACCOUNT_ID = re.compile(r"(?<!\d)\d{12}(?!\d)")
-ONLY_CHOICES = ("grant", "move")
+GRANT, ATTACH, REVOKE = "grant", "attach", "revoke"
+FULL, NONE = "full", "none"
+ONLY_CHOICES = (GRANT, ATTACH, REVOKE)
 OK, DRIFT, COULD_NOT_RUN = 0, 1, 2
 
 
@@ -116,27 +123,26 @@ def _gateway_arn(wanted: preflight.Target, gateway_id: str) -> str:
     return f"arn:aws:bedrock-agentcore:{wanted.region}:{wanted.account}:gateway/{gateway_id}"
 
 
-def update_arguments(current: Mapping[str, Any], wanted: preflight.Target) -> dict[str, Any]:
-    """The ``update_gateway`` arguments that bring ``current`` to ``wanted``.
+def interceptor_entries(interceptor_arn: str) -> list[dict[str, Any]]:
+    """The one request interceptor the release attaches: at REQUEST, with the headers."""
+    return [{
+        "interceptor": {"lambda": {"arn": interceptor_arn}},
+        "interceptionPoints": ["REQUEST"],
+        "inputConfiguration": {"passRequestHeaders": True},
+    }]
 
-    Everything the Gateway already has is sent again, copied so the request never aliases
-    ``current``; only the authorizer and the interceptor change.
+
+def update_arguments(current: Mapping[str, Any], interceptor_arn: str | None) -> dict[str, Any]:
+    """The ``update_gateway`` arguments that attach the interceptor, or detach it when ``None``.
+
+    Everything the Gateway already has is sent again, the authorizer included and copied so the
+    request never aliases ``current``; only ``interceptorConfigurations`` differs.
     """
     arguments: dict[str, Any] = {"gatewayIdentifier": current["gatewayId"]}
     arguments.update({key: deepcopy(current[key]) for key in KEPT_FIELDS
                       if current.get(key) is not None})
-    if wanted.mode != JWT:
-        arguments["authorizerType"] = "AWS_IAM"
-        return arguments
-    arguments["authorizerType"] = "CUSTOM_JWT"
-    arguments["authorizerConfiguration"] = {"customJWTAuthorizer": {
-        "discoveryUrl": wanted.cognito.discovery_url, "allowedClients": [wanted.cognito.client_id]}}
-    if settings.uses_interceptor(wanted.design):
-        arguments["interceptorConfigurations"] = [{
-            "interceptor": {"lambda": {"arn": wanted.interceptor_arn}},
-            "interceptionPoints": ["REQUEST"],
-            "inputConfiguration": {"passRequestHeaders": True},
-        }]
+    if interceptor_arn:
+        arguments["interceptorConfigurations"] = interceptor_entries(interceptor_arn)
     return arguments
 
 
@@ -189,6 +195,43 @@ def summary_lines(label: str, summary: Mapping[str, Any]) -> list[str]:
     return lines
 
 
+def resolve_action(mode: str, only: str | None, design: str) -> str:
+    """What the flags and the mode ask for: ``full``, ``grant``, ``attach``, ``revoke`` or ``none``.
+
+    ``iam`` can only revoke (the iam Gateway has no interceptor, and a leftover grant is removed
+    before a deploy replaces it). ``jwt`` attaches, unless the design uses no interceptor.
+
+    Raises:
+        ReleaseConfigError: When ``--only grant`` or ``--only attach`` is asked for a mode or
+            design that attaches no interceptor.
+    """
+    if only == REVOKE or mode != JWT:
+        if only in (GRANT, ATTACH):
+            raise settings.ReleaseConfigError(
+                f"--only {only} needs the jwt mode with a design that attaches the interceptor")
+        return REVOKE
+    if not settings.uses_interceptor(design):
+        if only:
+            raise settings.ReleaseConfigError(
+                f"--only {only} needs the jwt mode with a design that attaches the interceptor")
+        return NONE
+    return {None: FULL, GRANT: GRANT, ATTACH: ATTACH}[only]
+
+
+def locate(control: Any, wanted: preflight.Target) -> Snapshot:
+    """Read the Gateway the mode's name designates, in full.
+
+    Raises:
+        GatewayError: When no Gateway carries the name, or it cannot be read in full.
+    """
+    gateway_id = preflight.find_gateway_id(control, wanted.gateway_name)
+    if gateway_id is None:
+        raise GatewayError(
+            f"no Gateway named {wanted.gateway_name} exists; the {wanted.mode} release's Gateway "
+            "is created by `python scripts/release_identity.py deploy`, not by this command")
+    return read_snapshot(control, gateway_id, wanted)
+
+
 # ------------------------------------------------------------------- the snapshot
 
 
@@ -231,16 +274,6 @@ def read_snapshot(control: Any, gateway_id: str, wanted: preflight.Target) -> Sn
     return Snapshot(gateway_id, deepcopy(dict(described)))
 
 
-def plan_problems(snapshot: Snapshot, wanted: preflight.Target) -> list[str]:
-    """Findings that would remain if the update were sent: it would not reach ``wanted``."""
-    arguments = update_arguments(snapshot.described, wanted)
-    found = request_problems(arguments)
-    if found:
-        return [f"update_gateway request is invalid: {line}" for line in found]
-    return [f"the update would leave: {line}"
-            for line in preflight.check_gateway(predicted(snapshot.described, arguments), wanted)]
-
-
 # ------------------------------------------------------------------ the grants
 
 
@@ -272,6 +305,17 @@ def _same_policy(found: Any, function_arn: str) -> bool:
     expected = dict(wanted["Statement"][0])
     expected["Resource"] = sorted(expected["Resource"])
     return statement == expected and found.get("Version") == wanted["Version"]
+
+
+def grant_present(iam: Any, role_arn: str) -> bool:
+    """Whether the Gateway's role carries the invoke policy, whatever it says."""
+    try:
+        iam.get_role_policy(RoleName=role_name(role_arn), PolicyName=INVOKE_POLICY_NAME)
+    except ClientError as error:
+        if _code(error) == "NoSuchEntity":
+            return False
+        raise
+    return True
 
 
 def role_grant_findings(iam: Any, role_arn: str, function_arn: str) -> list[str]:
@@ -339,19 +383,24 @@ def lambda_problems(lam: Any, wanted: preflight.Target) -> list[str]:
     return preflight.interceptor_environment_findings(found.get("Configuration"), wanted)
 
 
-def preconditions(clients: Clients, deps: Any, wanted: preflight.Target,
-                  snapshot: Snapshot) -> list[str]:
-    """Every reason the move must not be applied now; empty when it may proceed."""
+def preconditions(clients: Clients, deps: Any, wanted: preflight.Target, snapshot: Snapshot,
+                  action: str) -> list[str]:
+    """Every reason the command must not be applied now; empty when it may proceed.
+
+    A revoke asks nothing of the pool. Anything else needs a finished token Gateway (judged
+    without its interceptor, so a wrong one can be replaced), the identity stack and, under a
+    design with an interceptor, the deployed function.
+    """
     found = preflight.check_hop_locations(deps.env, wanted)
-    found += plan_problems(snapshot, wanted)
-    if wanted.mode != JWT:
+    if action == REVOKE:
         return found
+    bare = {key: value for key, value in snapshot.described.items()
+            if key not in CHANGED_FIELDS}
+    found += preflight.check_gateway(bare, wanted, expect_interceptor=False)
     domain = (deps.env.get("VITE_COGNITO_DOMAIN") or "").strip()
     outputs = stack_outputs(clients.cfn, IDENTITY_STACK)
     found += preflight.identity_findings(outputs, wanted.cognito, domain)
-    found += preflight.check_backend_login_proof(
-        deps.proof_path, wanted, deps.head_sha(), deps.now())
-    if settings.uses_interceptor(wanted.design):
+    if action != NONE:
         found += lambda_problems(clients.lam, wanted)
     return found
 
@@ -360,7 +409,12 @@ def preconditions(clients: Clients, deps: Any, wanted: preflight.Target,
 
 
 def wait_ready(control: Any, gateway_id: str, sleep: Callable[[float], None],
-                clock: Callable[[], float]) -> dict[str, Any]:
+               clock: Callable[[], float]) -> dict[str, Any]:
+    """Poll until the Gateway is READY.
+
+    Raises:
+        GatewayError: When it ends in a failed state or is not READY within the timeout.
+    """
     deadline = clock() + UPDATE_TIMEOUT_SECONDS
     while True:
         described = control.get_gateway(gatewayIdentifier=gateway_id)
@@ -375,13 +429,13 @@ def wait_ready(control: Any, gateway_id: str, sleep: Callable[[float], None],
         sleep(POLL_SECONDS)
 
 
-def _read_back(control: Any, gateway_id: str, wanted: preflight.Target,
+def _read_back(control: Any, gateway_id: str, judge: Callable[[Mapping[str, Any]], list[str]],
                sleep: Callable[[float], None],
                clock: Callable[[], float]) -> tuple[dict[str, Any], list[str]]:
-    """READY, then the check; repeat for a while, since READY can come before UPDATING."""
+    """READY, then ``judge``; repeat for a while, since READY can come before UPDATING."""
     for attempt in range(SETTLE_ATTEMPTS):
         described = wait_ready(control, gateway_id, sleep, clock)
-        findings = preflight.check_gateway(described, wanted)
+        findings = judge(described)
         if not findings:
             break
         if attempt < SETTLE_ATTEMPTS - 1:
@@ -389,59 +443,99 @@ def _read_back(control: Any, gateway_id: str, wanted: preflight.Target,
     return described, findings
 
 
+def _view(described: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: described.get(key) for key in (*KEPT_FIELDS, *CHANGED_FIELDS)}
+
+
 def _unchanged_since(control: Any, before: Snapshot, wanted: preflight.Target) -> None:
     fresh = read_snapshot(control, before.gateway_id, wanted)
-    if update_arguments(fresh.described, wanted) != update_arguments(before.described, wanted):
+    if _view(fresh.described) != _view(before.described):
         raise GatewayError("refusing: the Gateway changed after it was read; run the dry run "
                            "again to see the current difference")
 
 
-def apply(clients: Clients, wanted: preflight.Target, before: Snapshot, *, only: str | None = None,
+def _attached(described: Mapping[str, Any], wanted: preflight.Target) -> bool:
+    return (described.get("interceptorConfigurations") or []) == interceptor_entries(
+        wanted.interceptor_arn or "")
+
+
+def _detached_findings(described: Mapping[str, Any]) -> list[str]:
+    if described.get("interceptorConfigurations"):
+        return ["Gateway: an interceptor is still attached after the update"]
+    return []
+
+
+def _attach(clients: Clients, wanted: preflight.Target, before: Snapshot, result: ApplyResult,
+            wait: Callable[..., Any]) -> None:
+    control, gateway_id = clients.control, before.gateway_id
+    if _attached(before.described, wanted):
+        result.after = before.described
+        result.notes.append("Gateway: interceptor already attached")
+        return
+    control.update_gateway(**update_arguments(before.described, wanted.interceptor_arn))
+    result.after, result.findings = _read_back(
+        control, gateway_id, lambda described: preflight.check_gateway(described, wanted),
+        *wait)
+    result.notes.append("Gateway: update sent" if result.findings
+                        else "Gateway: interceptor attached")
+
+
+def _detach(clients: Clients, before: Snapshot, result: ApplyResult,
+            wait: Callable[..., Any]) -> None:
+    control = clients.control
+    if not before.described.get("interceptorConfigurations"):
+        result.after = before.described
+        result.notes.append("Gateway: no interceptor attached")
+        return
+    control.update_gateway(**update_arguments(before.described, None))
+    result.after, result.findings = _read_back(
+        control, before.gateway_id, _detached_findings, *wait)
+    result.notes.append("Gateway: interceptor detached" if not result.findings
+                        else "Gateway: update sent")
+
+
+def apply(clients: Clients, wanted: preflight.Target, before: Snapshot, action: str, *,
           sleep: Callable[[float], None] = time.sleep,
           clock: Callable[[], float] = time.monotonic) -> ApplyResult:
-    """Bring the Gateway to ``wanted`` (idempotent), read it back and return what was done.
+    """Do ``action`` (idempotent), read the Gateway back and return what was done.
 
-    The caller read ``before`` with ``read_snapshot`` and may save it first. The grant is
-    written before an interceptor is attached and removed only after the read-back shows the
-    Gateway without one. ``only="grant"`` writes the grant and stops; ``only="move"`` requires
-    it to be in place already.
+    The caller read ``before`` with ``locate`` and may save it first. The grant is written before
+    an interceptor is attached and removed only after the read-back shows the Gateway without one.
 
     Raises:
-        GatewayError: When the Gateway changed since ``before``, a move would attach the
-            interceptor without its grant, or the update fails or times out.
+        GatewayError: When the Gateway changed since ``before``, an attach would run without its
+            grant, or the update fails or times out.
     """
-    control, gateway_id = clients.control, before.gateway_id
     role_arn = before.described["roleArn"]
-    attach = wanted.mode == JWT and settings.uses_interceptor(wanted.design)
     result = ApplyResult(before=before, after=None)
-    _unchanged_since(control, before, wanted)
-    if attach and only != "move":
-        result.notes += grant(clients, role_arn, wanted)
-    if only == "grant":
+    wait = (sleep, clock)
+    _unchanged_since(clients.control, before, wanted)
+    if action == NONE:
+        result.notes.append("Gateway: this design attaches no interceptor, nothing to do")
         return result
-    if attach:
+    if action in (FULL, GRANT):
+        result.notes += grant(clients, role_arn, wanted)
+    if action == GRANT:
+        return result
+    if action in (FULL, ATTACH):
         missing = grant_findings(clients, role_arn, wanted)
         if missing:
             raise GatewayError("refusing: the Gateway cannot invoke the interceptor yet:\n  "
                                + "\n  ".join(missing))
-    if preflight.check_gateway(before.described, wanted):
-        control.update_gateway(**update_arguments(before.described, wanted))
-        result.after, result.findings = _read_back(control, gateway_id, wanted, sleep, clock)
-        result.notes.append(f"Gateway: updated to {wanted.mode}" if not result.findings
-                            else f"Gateway: update sent for {wanted.mode}")
-    else:
-        result.after = before.described
-        result.notes.append(f"Gateway: unchanged, already {wanted.mode}")
-    if not attach and not result.findings and only != "move":
+        _attach(clients, wanted, before, result, wait)
+        return result
+    _detach(clients, before, result, wait)
+    if not result.findings:
         result.notes += revoke(clients, role_arn)
     return result
 
 
-def record(directory: Path, result: ApplyResult, wanted: preflight.Target, at: datetime) -> Path:
+def record(directory: Path, result: ApplyResult, wanted: preflight.Target, action: str,
+           at: datetime) -> Path:
     """Write what changed (masked summaries, not a rollback snapshot) as a private file (0600)."""
     payload = {
         "applied_at": at.isoformat(), "mode": wanted.mode, "design": wanted.design,
-        "before": summarize(result.before.described),
+        "action": action, "before": summarize(result.before.described),
         "after": summarize(result.after or {}), "findings": result.findings,
     }
     path = directory / OUTPUT_NAME
@@ -455,10 +549,12 @@ def record(directory: Path, result: ApplyResult, wanted: preflight.Target, at: d
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     """The ``gateway`` command's flags."""
     parser.add_argument("--to", choices=(IAM, JWT),
-                        help="the mode to move to instead of MERIDIAN_AGENTCORE_AUTH")
+                        help="the Gateway to work on: the mode's instead of "
+                             "MERIDIAN_AGENTCORE_AUTH's; iam only revokes")
     parser.add_argument("--only", choices=ONLY_CHOICES,
-                        help="grant: write only the invoke grant; move: change only the "
-                             "Gateway (the grant must exist)")
+                        help="grant: write only the invoke grant; attach: attach the interceptor "
+                             "(the grant must exist); revoke: detach the interceptor and remove "
+                             "the grant")
     parser.add_argument("--apply", action="store_true", help="make the change (live)")
     parser.add_argument(settings.CONFIRM_FLAG, action="store_true", dest="confirmed",
                         help="required with --apply: it changes AWS")
@@ -469,27 +565,48 @@ def _blocked(found: list[str], say: Callable[[str], None]) -> None:
         say(f"BLOCKED  {line}")
 
 
-def _move_plan(wanted: preflight.Target, snapshot: Snapshot, say: Callable[[str], None]) -> None:
+def _planned_arguments(wanted: preflight.Target, snapshot: Snapshot,
+                       action: str) -> dict[str, Any] | None:
+    if action in (FULL, ATTACH):
+        return update_arguments(snapshot.described, wanted.interceptor_arn)
+    if action == REVOKE and snapshot.described.get("interceptorConfigurations"):
+        return update_arguments(snapshot.described, None)
+    return None
+
+
+def _plan(wanted: preflight.Target, snapshot: Snapshot, action: str,
+          say: Callable[[str], None]) -> None:
     described = snapshot.described
-    arguments = update_arguments(described, wanted)
+    arguments = _planned_arguments(wanted, snapshot, action)
+    if arguments is None:
+        say("  the Gateway itself is not updated")
+        return
     for line in summary_lines("before", summarize(described)):
         say(line)
     for line in summary_lines("after ", summarize(predicted(described, arguments))):
         say(line)
     say("  resent unchanged: " + ", ".join(k for k in KEPT_FIELDS if k in arguments))
-    changes = preflight.check_gateway(described, wanted)
-    for line in changes or ["the Gateway already matches"]:
-        say(f"  {'would change: ' if changes else ''}{line}")
+
+
+def _grant_lines(wanted: preflight.Target, snapshot: Snapshot, action: str,
+                 say: Callable[[str], None]) -> None:
+    role_arn = snapshot.described["roleArn"]
+    if action in (FULL, GRANT):
+        for line in grant_plan(role_arn, wanted):
+            say(f"  would ensure: {line}")
+    if action == REVOKE:
+        say(f"  would remove: Gateway role {role_name(role_arn)}: inline policy "
+            f"{INVOKE_POLICY_NAME} (if present)")
 
 
 def _dry_run(wanted: preflight.Target, snapshot: Snapshot, found: list[str],
-             only: str | None, say: Callable[[str], None]) -> int:
+             action: str, only: str | None, say: Callable[[str], None]) -> int:
     say("DRY RUN. Nothing is changed.")
-    if only != "grant":
-        _move_plan(wanted, snapshot, say)
-    if only != "move" and wanted.mode == JWT and settings.uses_interceptor(wanted.design):
-        for line in grant_plan(snapshot.described["roleArn"], wanted):
-            say(f"  would ensure: {line}")
+    if action == NONE:
+        say("  this design attaches no interceptor, so there is nothing to do")
+    else:
+        _plan(wanted, snapshot, action, say)
+        _grant_lines(wanted, snapshot, action, say)
     _blocked(found, say)
     only_flag = f" --only {only}" if only else ""
     say("Apply (ASK FIRST): python scripts/release_identity.py gateway "
@@ -498,15 +615,16 @@ def _dry_run(wanted: preflight.Target, snapshot: Snapshot, found: list[str],
 
 
 def run(args: argparse.Namespace, deps: Any, *, say: Callable[[str], None]) -> int:
-    """Plan, or apply and read back, the Gateway's move to a mode.
+    """Plan, or apply and read back, the interceptor on the mode's Gateway.
 
-    ``deps`` provides ``env``, ``session``, ``now``, ``head_sha``, ``proof_path``,
-    ``release_dir`` and ``sleep`` (the release CLI's ``Dependencies``).
+    ``deps`` provides ``env``, ``session``, ``now``, ``head_sha``, ``release_dir`` and ``sleep``
+    (the release CLI's ``Dependencies``).
 
     Raises:
-        GatewayError: When a precondition fails or the update does not complete.
-        ReleaseConfigError: When a setting is missing or malformed, or ``--only grant`` is
-            asked for a design that attaches no interceptor.
+        GatewayError: When no Gateway has the mode's name, a precondition fails or the update
+            does not complete.
+        ReleaseConfigError: When a setting is missing or malformed, or ``--only grant`` or
+            ``--only attach`` is asked for a mode or design that attaches no interceptor.
     """
     env = deps.env
     mode = args.to or settings.release_mode(env)
@@ -515,49 +633,53 @@ def run(args: argparse.Namespace, deps: Any, *, say: Callable[[str], None]) -> i
     if args.apply and not args.confirmed:
         say(f"REFUSED: --apply also needs {settings.CONFIRM_FLAG}; it changes AWS.")
         return 3
-    if args.only == "grant" and not (mode == JWT and settings.uses_interceptor(wanted.design)):
-        raise settings.ReleaseConfigError("--only grant needs the jwt mode with a design that "
-                                          "attaches the interceptor")
+    action = resolve_action(mode, args.only, wanted.design)
     if not settings.REGION.fullmatch(region):
         raise settings.ReleaseConfigError(
             "the Region in AURORA_CLUSTER_ARN is not a Region name; check meridian/.env")
     session = deps.session(region)
     require_account(session.client("sts"), env["AURORA_CLUSTER_ARN"])
-    gateway_id, _ = preflight.hop_ids(env)
+    needs_stack = mode == JWT and action != REVOKE
     clients = Clients(session.client(CONTROL_SERVICE), session.client("iam"),
                       session.client("lambda"),
-                      session.client("cloudformation") if mode == JWT else None)
-    snapshot = read_snapshot(clients.control, gateway_id, wanted)
-    found = preconditions(clients, deps, wanted, snapshot)
+                      session.client("cloudformation") if needs_stack else None)
+    snapshot = locate(clients.control, wanted)
+    found = preconditions(clients, deps, wanted, snapshot, action)
     if not args.apply:
-        return _dry_run(wanted, snapshot, found, args.only, say)
+        return _dry_run(wanted, snapshot, found, action, args.only, say)
     if found:
         raise GatewayError("refusing: " + str(len(found)) + " precondition(s) not met:\n  "
                            + "\n  ".join(found))
-    return _apply_and_report(clients, deps, wanted, snapshot, args.only, say)
+    return _apply_and_report(clients, deps, wanted, snapshot, action, say)
 
 
 def _apply_and_report(clients: Clients, deps: Any, wanted: preflight.Target, snapshot: Snapshot,
-                      only: str | None, say: Callable[[str], None]) -> int:
-    result = apply(clients, wanted, snapshot, only=only, sleep=deps.sleep)
+                      action: str, say: Callable[[str], None]) -> int:
+    result = apply(clients, wanted, snapshot, action, sleep=deps.sleep)
     for note in result.notes:
         say(note)
-    if wanted.mode == JWT and settings.uses_interceptor(wanted.design):
+    if action in (FULL, ATTACH, GRANT):
         result.findings += grant_findings(clients, snapshot.described["roleArn"], wanted)
     for line in result.findings:
         say(f"DRIFT  {line}")
     if not result.findings:
-        say("OK  the grant is in place" if only == "grant"
-            else f"OK  the Gateway reports {wanted.mode}")
-    if only != "grant":
-        _record_or_warn(deps, result, wanted, say)
+        say(_ok_line(action, wanted))
+    if action not in (GRANT, NONE):
+        _record_or_warn(deps, result, wanted, action, say)
     return DRIFT if result.findings else OK
 
 
-def _record_or_warn(deps: Any, result: ApplyResult, wanted: preflight.Target,
+def _ok_line(action: str, wanted: preflight.Target) -> str:
+    return {GRANT: "OK  the grant is in place",
+            REVOKE: "OK  the Gateway has no interceptor and its role no grant",
+            NONE: f"OK  the {wanted.mode} Gateway needs no interceptor"}.get(
+                action, "OK  the Gateway has the interceptor and its role the grant")
+
+
+def _record_or_warn(deps: Any, result: ApplyResult, wanted: preflight.Target, action: str,
                     say: Callable[[str], None]) -> None:
     try:
-        record(deps.release_dir, result, wanted, deps.now())
+        record(deps.release_dir, result, wanted, action, deps.now())
     except OSError as error:
         say(f"WARNING  the change record was not written ({type(error).__name__}: "
             f"{scrub(str(error))}); the Gateway was changed as reported above")

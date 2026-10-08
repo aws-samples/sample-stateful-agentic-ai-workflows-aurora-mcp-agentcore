@@ -57,6 +57,8 @@ class World:
         self.sts.get_caller_identity.return_value = {"Account": account}
         self.control = Mock()
         self.control.get_gateway.return_value = rs.gateway(mode)
+        self.control.list_gateways.return_value = {"items": [
+            {"gatewayId": rs.GATEWAY_ID, "name": rs.gateway(mode)["name"]}]}
         runtimes = {rs.RUNTIME_IDS[n]: rs.runtime(n, mode) for n in rs.RUNTIME_IDS}
         self.control.get_agent_runtime.side_effect = lambda agentRuntimeId: runtimes[agentRuntimeId]
         names = rs.BASE_POLICIES + ([rs.BINDING_POLICY] if mode == "jwt" else [])
@@ -103,8 +105,8 @@ def test_a_release_that_matches_its_mode_reports_ok_and_exits_zero(tmp_path, cap
 
 def test_check_compares_the_live_gateway_with_the_mode_and_never_reads_the_template(
         tmp_path, capsys):
-    """jwt: the live Gateway is CUSTOM_JWT while the rendered template keeps AWS_IAM (on purpose),
-    and a missing or unreadable template changes nothing."""
+    """The live Gateway is judged against the mode in `.env`; an unreadable rendered file
+    changes nothing."""
     folder = tmp_path / "project" / "agentcore"
     folder.mkdir(parents=True)
     (folder / "agentcore.json").write_text("not json at all")
@@ -119,10 +121,60 @@ def test_check_compares_the_live_gateway_with_the_mode_and_never_reads_the_templ
     assert "OK" in capsys.readouterr().out
 
 
-def test_every_drifted_hop_is_printed_and_the_exit_is_one(tmp_path, capsys):
-    assert run(["check", SKIP], World("iam"), tmp_path) == 1
+def test_the_gateway_is_read_by_the_modes_name(tmp_path, capsys):
+    world = World("jwt")
+
+    assert run(["check", SKIP], world, tmp_path) == 0
+
+    assert world.control.list_gateways.called
+    world.control.get_gateway.assert_called_with(gatewayIdentifier=rs.GATEWAY_ID)
+
+
+def test_a_replaced_gateway_leaves_the_env_url_stale_and_check_says_how_to_refresh(
+        tmp_path, capsys):
+    world = World("jwt")
+    world.control.list_gateways.return_value = {"items": [
+        {"gatewayId": "meridianv2-meridian-aurora-jwt-new0000000",
+         "name": settings.gateway_physical_name("jwt")}]}
+
+    assert run(["check", SKIP], world, tmp_path) == 1
 
     out = capsys.readouterr().out
+    assert ("DRIFT  Settings: AGENTCORE_GATEWAY_URL names another Gateway than the one called "
+            "meridianv2-meridian-aurora-jwt; run scripts/sync_agentcore_env.py --write") in out
+    world.control.get_gateway.assert_called_with(
+        gatewayIdentifier="meridianv2-meridian-aurora-jwt-new0000000")
+
+
+def test_a_mode_with_no_gateway_of_its_name_is_one_finding_and_not_a_crash(tmp_path, capsys):
+    world = World("jwt")
+    world.control.list_gateways.return_value = {"items": [
+        {"gatewayId": rs.GATEWAY_ID, "name": settings.gateway_physical_name("iam")}]}
+
+    assert run(["check", SKIP], world, tmp_path) == 1
+
+    out = capsys.readouterr().out
+    assert "DRIFT  Gateway: no Gateway named meridianv2-meridian-aurora-jwt exists" in out
+    world.control.get_gateway.assert_not_called()
+
+
+def test_check_in_iam_mode_reads_the_runtime_roles_for_the_found_gateway(tmp_path, capsys):
+    world = World("iam")
+
+    assert run(["check", "--expect", "iam", SKIP], world, tmp_path, with_proof=False) == 0
+
+    assert world.iam.names()
+
+
+def test_every_drifted_hop_is_printed_and_the_exit_is_one(tmp_path, capsys):
+    world = World("iam")
+    world.control.list_gateways.return_value = {"items": [
+        {"gatewayId": rs.GATEWAY_ID, "name": settings.gateway_physical_name("jwt")}]}
+
+    assert run(["check", SKIP], world, tmp_path) == 1
+
+    out = capsys.readouterr().out
+    assert "DRIFT  Gateway: name is 'meridianv2-meridian-aurora', expected" in out
     assert "DRIFT  Gateway: authorizer is AWS_IAM, expected CUSTOM_JWT" in out
     assert "DRIFT  Runtime MeridianConcierge: has no JWT authorizer" in out
     assert "DRIFT  Runtime MeridianWorkflow: " in out
@@ -346,8 +398,8 @@ def test_check_makes_only_read_calls(tmp_path):
 
     called = {c[0] for mock in (world.control, world.cfn, world.apprunner, world.sts)
               for c in mock.method_calls} | set(world.lam.names())
-    assert called <= {"get_gateway", "get_agent_runtime", "list_policies", "describe_stacks",
-                      "describe_service", "get_caller_identity",
+    assert called <= {"get_gateway", "list_gateways", "get_agent_runtime", "list_policies",
+                      "describe_stacks", "describe_service", "get_caller_identity",
                       # lambda:GetFunctionConfiguration reads the interceptor's environment
                       "get_function_configuration"}
     assert "get_function_configuration" in called
