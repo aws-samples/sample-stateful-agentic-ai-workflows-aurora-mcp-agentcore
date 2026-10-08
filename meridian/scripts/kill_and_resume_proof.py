@@ -37,6 +37,7 @@ import signal
 import sys
 import uuid
 from collections.abc import Mapping
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -69,6 +70,13 @@ QUERY = (
     "My flight was cancelled, rework the trip and show duration availability."
 )
 
+BOOKING_AGENT = "booking_agent"
+PINNED_TABLES = ("booking_lines", "bookings")
+UNPINNED_TABLES = (
+    ("hold_requests", "journey_id"), ("journeys", "journey_id"),
+    ("journey_executions", "thread_id"), ("journey_threads", "thread_id"),
+    ("workflow_snapshots", "session_id"), ("workflow_session_stops", "journey_id"),
+)
 WORKFLOW_LOGIN = "meridian_workflow"
 CONFLICT_EXIT = 76
 STDERR_TAIL_LINES = 20
@@ -263,32 +271,96 @@ async def _holds_for(client, journey_id: str) -> list[dict]:
     )
 
 
-async def _purge(client, journey_id: str, thread_id: str) -> None:
-    for row in await _holds_for(client, journey_id):
-        for table in ("hold_requests", "booking_lines", "bookings"):
-            await client.execute(
-                f"DELETE FROM {table} WHERE booking_id = %s", (row["booking_id"],)
-            )
+@asynccontextmanager
+async def pinned_to_traveler(client, traveler_id: str):
+    """A Data API transaction pinned to one traveler and the booking agent.
+
+    ``bookings`` and ``booking_lines`` force row level security on these two settings, so a
+    statement outside such a transaction can match zero rows without any error. Commits when
+    the block ends, rolls back when it raises.
+    """
+    transaction = client.begin_transaction()
+    try:
+        await client.execute(
+            "SELECT set_config('app.current_traveler_id', %s, true), "
+            "set_config('app.agent_type', %s, true)",
+            (traveler_id, BOOKING_AGENT), transaction_id=transaction)
+        yield transaction
+    except BaseException:
+        client.rollback_transaction(transaction)
+        raise
+    client.commit_transaction(transaction)
+
+
+async def _booking_ids(client, journey_id: str) -> list[str]:
+    rows = await client.execute(
+        "SELECT booking_id FROM hold_requests WHERE journey_id = %s", (journey_id,))
+    return [row["booking_id"] for row in rows if row.get("booking_id")]
+
+
+async def _count(client, table: str, column: str, value: str, transaction=None) -> int:
+    rows = await client.execute(
+        f"SELECT COUNT(*) AS n FROM {table} WHERE {column} = %s", (value,),
+        transaction_id=transaction)
+    return int(rows[0]["n"])
+
+
+async def _invisible_bookings(client, bookings: list[str], traveler_id: str) -> int:
+    """How many of the run's bookings the pinned scope cannot see; their deletion is unprovable."""
+    async with pinned_to_traveler(client, traveler_id) as transaction:
+        seen = sum([await _count(client, "bookings", "booking_id", booking, transaction)
+                    for booking in bookings])
+    return len(bookings) - seen
+
+
+async def _remaining(client, keys: Mapping[str, str], bookings: list[str],
+                     traveler_id: str) -> dict[str, int]:
+    """Rows of the run still in Aurora, per table; the booking tables are read pinned."""
+    left = {}
+    for table, column in UNPINNED_TABLES:
+        left[table] = await _count(client, table, column, keys[column])
+    async with pinned_to_traveler(client, traveler_id) as transaction:
+        for table in PINNED_TABLES:
+            left[table] = sum([await _count(client, table, "booking_id", booking, transaction)
+                               for booking in bookings])
+    return left
+
+
+async def _purge(client, journey_id: str, thread_id: str, traveler_id: str = TRAVELER) -> None:
+    """Delete one run's rows, then count them again and raise if any table still has some.
+
+    The booking ids are read before ``hold_requests`` goes, because that table is the only link
+    to them. The booking tables are deleted and counted in a transaction pinned to the traveler.
+
+    Raises:
+        RuntimeError: When any table still holds a row of the run after the deletes.
+    """
+    bookings = await _booking_ids(client, journey_id)
+    invisible = await _invisible_bookings(client, bookings, traveler_id)
+    for booking in bookings:
+        await client.execute("DELETE FROM hold_requests WHERE booking_id = %s", (booking,))
+    async with pinned_to_traveler(client, traveler_id) as transaction:
+        for booking in bookings:
+            for table in PINNED_TABLES:
+                await client.execute(f"DELETE FROM {table} WHERE booking_id = %s", (booking,),
+                                     transaction_id=transaction)
+    await client.execute("DELETE FROM workflow_session_stops WHERE journey_id = %s", (journey_id,))
+    await client.execute("DELETE FROM workflow_snapshots WHERE session_id = %s", (thread_id,))
+    await client.execute("DELETE FROM journey_executions WHERE thread_id = %s", (thread_id,))
     await client.execute(
-        "DELETE FROM workflow_session_stops WHERE journey_id = %s", (journey_id,)
-    )
-    await client.execute(
-        "DELETE FROM workflow_snapshots WHERE session_id = %s", (thread_id,)
-    )
-    await client.execute(
-        "DELETE FROM journey_executions WHERE thread_id = %s", (thread_id,)
-    )
-    await client.execute(
-        "UPDATE journeys SET active_thread_id = NULL WHERE journey_id = %s",
-        (journey_id,),
-    )
-    await client.execute(
-        "DELETE FROM journey_threads WHERE thread_id = %s", (thread_id,)
-    )
-    await client.execute(
-        "DELETE FROM hold_requests WHERE journey_id = %s", (journey_id,)
-    )
+        "UPDATE journeys SET active_thread_id = NULL WHERE journey_id = %s", (journey_id,))
+    await client.execute("DELETE FROM journey_threads WHERE thread_id = %s", (thread_id,))
+    await client.execute("DELETE FROM hold_requests WHERE journey_id = %s", (journey_id,))
     await client.execute("DELETE FROM journeys WHERE journey_id = %s", (journey_id,))
+    left = await _remaining(
+        client, {"journey_id": journey_id, "thread_id": thread_id, "session_id": thread_id},
+        bookings, traveler_id)
+    survivors = {table: count for table, count in left.items() if count}
+    if invisible:
+        survivors["bookings not visible as the traveler"] = invisible
+    if survivors:
+        raise RuntimeError(f"the purge of journey {journey_id} left rows behind: "
+                           + ", ".join(f"{table}={count}" for table, count in survivors.items()))
 
 
 async def _wait_for_pause(child, expect_login: bool = False) -> str:

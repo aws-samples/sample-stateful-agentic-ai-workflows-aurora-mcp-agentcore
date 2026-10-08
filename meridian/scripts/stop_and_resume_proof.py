@@ -46,6 +46,7 @@ from backend.agents.phase_05_workflow.graph import (  # noqa: E402
 from backend.db.rds_data_client import get_rds_data_client  # noqa: E402
 from scripts.agentcore_caller import bearer_headers, user_for_traveler  # noqa: E402
 from scripts.kill_and_resume_proof import (  # noqa: E402
+    _count,
     _holds_for,
     _purge,
     read_newest_snapshot,
@@ -327,9 +328,14 @@ def _print_evidence(document: dict, holds: list[dict], expected: Optional[str], 
 
 
 async def _purge_by_thread(client, thread: str) -> None:
-    for table, column in (("workflow_snapshots", "session_id"),
-                          ("journey_executions", "thread_id")):
+    """Delete a thread's rows when it has no journey, then raise if any survive."""
+    tables = (("workflow_snapshots", "session_id"), ("journey_executions", "thread_id"))
+    for table, column in tables:
         await client.execute(f"DELETE FROM {table} WHERE {column} = %s", (thread,))
+    left = {table: await _count(client, table, column, thread) for table, column in tables}
+    if any(left.values()):
+        raise RuntimeError(f"the purge of thread {thread} left rows behind: "
+                           + ", ".join(f"{t}={n}" for t, n in left.items() if n))
 
 
 async def _check_owned(client, journey: str, thread: str) -> None:
@@ -352,11 +358,8 @@ async def _purge_run(client, thread: str) -> None:
         return
     journey = rows[0]["journey_id"]
     await _check_owned(client, journey, thread)
-    await _purge(client, journey, thread)
-    left = await client.execute(
-        "SELECT COUNT(*) AS n FROM workflow_snapshots WHERE session_id = %s", (thread,))
-    print(f"cleanup: purged {journey}; holds left={len(await _holds_for(client, journey))} "
-          f"snapshots left={left[0]['n']}")
+    await _purge(client, journey, thread, TRAVELER)
+    print(f"cleanup: purged {journey} and counted every table of the run at zero")
 
 
 async def _cleanup(client, thread: str) -> None:
