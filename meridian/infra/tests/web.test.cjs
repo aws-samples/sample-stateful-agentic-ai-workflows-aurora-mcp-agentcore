@@ -92,3 +92,89 @@ test('the distribution sends the policy that allows the Cognito host on every ro
   assert.equal(connectSrc(csp.ContentSecurityPolicy), `connect-src 'self' https://${COGNITO_HOST}`);
   assert.equal(csp.Override, true);
 });
+
+const FUNCTIONS = path.join(__dirname, '..', 'functions');
+const ALL_VIEWER_EXCEPT_HOST_HEADER = 'b689b0a8-53d0-40ab-baf2-68738e2966ac';
+
+function loadHandler(file) {
+  const source = fs.readFileSync(path.join(FUNCTIONS, file), 'utf8').replace(
+    /^import cf from 'cloudfront';$/m,
+    "const cf = { kvs: () => ({ get: async () => { throw new Error('no store'); } }) };",
+  );
+  return new Function(`${source}\nreturn handler;`)();
+}
+
+function request(uri, authorization) {
+  const headers = authorization ? { authorization: { value: authorization } } : {};
+  return { request: { uri, headers } };
+}
+
+const jwtViewer = loadHandler('viewer-request-jwt.js');
+
+for (const uri of ['/api/chat/stream', '/api/me', '/api/health', '/health']) {
+  test(`the jwt viewer function hands ${uri} to the backend with the browser's own token`, async () => {
+    const result = await jwtViewer(request(uri, 'Bearer browser-token'));
+    assert.equal(result.statusCode, undefined);
+    assert.equal(result.headers.authorization.value, 'Bearer browser-token');
+    assert.equal(result.uri, uri);
+  });
+}
+
+test('the jwt viewer function never asks for a Basic credential or reads the access store', async () => {
+  const result = await jwtViewer(request('/showcase'));
+  assert.equal(result.statusCode, undefined);
+  assert.equal(result.headers['www-authenticate'], undefined);
+  const source = fs.readFileSync(path.join(FUNCTIONS, 'viewer-request-jwt.js'), 'utf8');
+  assert.ok(!source.includes('kvs') && !source.includes('Basic'));
+});
+
+test('the jwt viewer function keeps the token away from S3 and rewrites client routes', async () => {
+  const cases = [['/', '/index.html'], ['/showcase', '/index.html'], ['/assets/app.js', '/assets/app.js']];
+  for (const [uri, rewritten] of cases) {
+    const result = await jwtViewer(request(uri, 'Bearer browser-token'));
+    assert.equal(result.headers.authorization, undefined, uri);
+    assert.equal(result.uri, rewritten);
+  }
+});
+
+function webTemplate(mode, t) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'meridian-site-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(directory, 'index.html'), '<!doctype html><title>Meridian</title>');
+  const sourceAsset = s3deploy.Source.asset;
+  t.mock.method(s3deploy.Source, 'asset', () => sourceAsset(directory));
+  return Template.fromStack(new MeridianWebStack(new App(), `Web${mode}`, {
+    env: { account: '123456789012', region: 'us-east-1' },
+    backendHost: 'test.us-east-1.awsapprunner.com',
+    ...(mode ? { identityMode: mode } : {}),
+  }));
+}
+
+function viewerCode(mode, t) {
+  const [viewer] = Object.values(webTemplate(mode, t).findResources('AWS::CloudFront::Function'));
+  return viewer.Properties.FunctionCode;
+}
+
+for (const mode of [undefined, 'iam']) {
+  test(`the ${mode ?? 'default'} release deploys the established viewer function byte for byte`, (t) => {
+    assert.equal(viewerCode(mode, t), fs.readFileSync(path.join(FUNCTIONS, 'viewer-request.js'), 'utf8'));
+  });
+}
+
+test('the jwt release deploys the viewer function without Basic or the shared token', (t) => {
+  const code = viewerCode('jwt', t);
+  assert.equal(code, fs.readFileSync(path.join(FUNCTIONS, 'viewer-request-jwt.js'), 'utf8'));
+  assert.ok(!code.includes("kvs.get('basic')") && !code.includes("kvs.get('token')"));
+});
+
+for (const mode of ['iam', 'jwt']) {
+  test(`the ${mode} release forwards the viewer Authorization header to the API origin`, (t) => {
+    const [distribution] = Object.values(webTemplate(mode, t).findResources('AWS::CloudFront::Distribution'));
+    const { CacheBehaviors: behaviors } = distribution.Properties.DistributionConfig;
+    assert.deepEqual(behaviors.map((b) => b.PathPattern).sort(), ['/api/*', '/health']);
+    for (const behavior of behaviors) {
+      assert.equal(behavior.OriginRequestPolicyId, ALL_VIEWER_EXCEPT_HOST_HEADER);
+      assert.equal(behavior.FunctionAssociations.length, 1);
+    }
+  });
+}

@@ -193,13 +193,18 @@ export interface MeridianWebStackProps extends StackProps {
   backendHost: string;
   /** The Cognito hosted UI domain a signed-in build calls; omit for a build without sign-in. */
   cognitoHost?: string;
+  /**
+   * `iam` (default) deploys the established viewer function: Basic at the edge and the shared token
+   * swapped into API calls. `jwt` deploys the one that passes the browser's own token through.
+   */
+  identityMode?: IdentityMode;
 }
 
 /** The site: the Vite build in S3, CloudFront with the viewer function, and the KeyValueStore. */
 export class MeridianWebStack extends Stack {
   constructor(scope: Construct, id: string, props: MeridianWebStackProps) {
     super(scope, id, props);
-    const { backendHost: apiHost, cognitoHost } = props;
+    const { backendHost: apiHost, cognitoHost, identityMode: mode = 'iam' } = props;
 
     const site = new s3.Bucket(this, 'Site', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -213,12 +218,19 @@ export class MeridianWebStack extends Stack {
       keyValueStoreName: 'meridian-web-access',
       comment: 'Established presenter access and backend origin token',
     });
+    const jwt = mode === 'jwt';
     const viewer = new cloudfront.Function(this, 'Viewer', {
       functionName: 'meridian-web-viewer',
-      comment: 'Meridian edge auth, bearer injection for the API, and SPA route rewrite',
+      comment: jwt
+        ? 'Meridian edge: the browser token reaches the API, SPA route rewrite'
+        : 'Meridian edge auth, bearer injection for the API, and SPA route rewrite',
       runtime: cloudfront.FunctionRuntime.JS_2_0,
       keyValueStore: access,
-      code: cloudfront.FunctionCode.fromFile({ filePath: path.join(__dirname, '..', '..', 'functions', 'viewer-request.js') }),
+      code: cloudfront.FunctionCode.fromFile({
+        filePath: path.join(
+          __dirname, '..', '..', 'functions', jwt ? 'viewer-request-jwt.js' : 'viewer-request.js',
+        ),
+      }),
     });
 
     const responseHeaders = new cloudfront.ResponseHeadersPolicy(this, 'ResponseHeaders', {
