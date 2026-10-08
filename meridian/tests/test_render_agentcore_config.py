@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from scripts import render_agentcore_config as render_config
+from scripts.identity_release import settings, stages
 
 ACCOUNT = "123456789012"
 CLUSTER_ARN = f"arn:aws:rds:us-west-2:{ACCOUNT}:cluster:meridian"
@@ -99,7 +100,10 @@ def test_first_deployment_renders_without_policies_that_name_the_gateway() -> No
     assert "MERIDIAN_GATEWAY_ID" not in runtime_env(spec)
     assert "MERIDIAN_POLICY_ENGINE_ID" not in runtime_env(spec)
     assert runtime_env(spec)["MERIDIAN_POLICY_MODE"] == "ENFORCE"
-    assert len(notes) == 3
+    assert len(notes) == 4
+    assert [t["name"] for t in spec["agentCoreGateways"][0]["targets"]] == [
+        "SemanticTripSearchLambda"]
+    assert any("MeridianHolds" in note for note in notes)
 
 
 def test_second_deployment_adds_policies_before_the_engine_id_exists() -> None:
@@ -199,7 +203,8 @@ def test_a_bad_gateway_secret_names_the_setting_to_fix(gateway_arn: str, message
 
 
 def test_the_holds_policy_reads_both_the_master_and_the_gateway_secret() -> None:
-    spec, _, _ = render_config.render(*templates(), base_values())
+    spec, _, _ = render_config.render(
+        *templates(), {**base_values(), "GATEWAY_ID": GATEWAY_ID})
     holds = next(t for t in spec["agentCoreGateways"][0]["targets"] if t["name"] == "MeridianHolds")
     secrets = [s for s in holds["compute"]["iamPolicy"]["Statement"]
                if s["Action"] == ["secretsmanager:GetSecretValue"]]
@@ -237,35 +242,40 @@ def test_a_required_placeholder_without_a_value_is_refused() -> None:
         render_config.render(*templates(), values)
 
 
+def state_document(gateway: str, **ids: str) -> dict:
+    gateway_entry: dict = {"gatewayId": ids.get("gateway_id", GATEWAY_ID)}
+    if "holds" in ids:
+        gateway_entry["targets"] = {"MeridianHolds": {"targetId": ids["holds"]}}
+    resources: dict = {"mcp": {"gateways": {gateway: gateway_entry}}}
+    if "engine" in ids:
+        resources["policyEngines"] = {"MeridianGovernance": {"policyEngineId": ids["engine"]}}
+    return {"targets": {"default": {"resources": resources}}}
+
+
 def test_deployed_ids_come_from_the_cli_deployment_state(tmp_path: Path) -> None:
     state = tmp_path / "deployed-state.json"
-    assert render_config.deployed_ids(state, "default") == {}
+    none = stages.DeployedIds(None, None, None)
+    assert render_config.deployed_ids(state, "default", "meridian-aurora") == none
     state.write_text(
-        json.dumps(
-            {
-                "targets": {
-                    "default": {
-                        "resources": {
-                            "mcp": {"gateways": {"meridian-aurora": {"gatewayId": GATEWAY_ID}}},
-                            "policyEngines": {
-                                "MeridianGovernance": {"policyEngineId": POLICY_ENGINE_ID}
-                            },
-                        }
-                    }
-                }
-            }
-        ),
+        json.dumps(state_document("meridian-aurora", holds="t-1", engine=POLICY_ENGINE_ID)),
         encoding="utf-8",
     )
 
-    assert render_config.deployed_ids(state, "default") == {
-        "GATEWAY_ID": GATEWAY_ID,
-        "POLICY_ENGINE_ID": POLICY_ENGINE_ID,
-    }
-    assert render_config.deployed_ids(state, "other") == {}
+    assert render_config.deployed_ids(state, "default", "meridian-aurora") == (
+        stages.DeployedIds(GATEWAY_ID, "t-1", POLICY_ENGINE_ID))
+    assert render_config.deployed_ids(state, "other", "meridian-aurora") == none
     state.write_text("{", encoding="utf-8")
     with pytest.raises(render_config.ConfigError, match="not valid JSON"):
-        render_config.deployed_ids(state, "default")
+        render_config.deployed_ids(state, "default", "meridian-aurora")
+
+
+def test_deployed_ids_read_only_the_named_gateway(tmp_path: Path) -> None:
+    state = tmp_path / "deployed-state.json"
+    state.write_text(json.dumps(state_document("meridian-aurora", holds="t-1")), encoding="utf-8")
+
+    found = render_config.deployed_ids(state, "default", "meridian-aurora-jwt")
+
+    assert found == stages.DeployedIds(None, None, None)
 
 
 @pytest.mark.parametrize(
@@ -300,7 +310,7 @@ def test_unexpected_deployed_state_names_the_file_and_key(
     path.write_text(json.dumps(state), encoding="utf-8")
 
     with pytest.raises(render_config.ConfigError) as raised:
-        render_config.deployed_ids(path, "default")
+        render_config.deployed_ids(path, "default", "meridian-aurora")
 
     assert str(path) in str(raised.value)
     assert message in str(raised.value)
@@ -334,12 +344,14 @@ def write_state(config_dir: Path, state: object) -> None:
     path.write_text(json.dumps(state), encoding="utf-8")
 
 
-def deployed(gateway_id: str) -> dict:
-    resources = {
-        "mcp": {"gateways": {"meridian-aurora": {"gatewayId": gateway_id}}},
-        "policyEngines": {"MeridianGovernance": {"policyEngineId": POLICY_ENGINE_ID}},
-    }
-    return {"targets": {"default": {"resources": resources}}}
+def deployed(gateway_id: str, gateway: str = "meridian-aurora", *, holds: bool = True,
+             engine: bool = True) -> dict:
+    ids: dict = {"gateway_id": gateway_id}
+    if holds:
+        ids["holds"] = "target-1"
+    if engine:
+        ids["engine"] = POLICY_ENGINE_ID
+    return state_document(gateway, **ids)
 
 
 def written(config_dir: Path) -> tuple[dict, list]:
@@ -359,7 +371,10 @@ def test_main_writes_the_first_pass_before_any_deploy(
     assert "MERIDIAN_POLICY_ENGINE_ID" not in runtime_env(spec)
     out = capsys.readouterr().out
     assert f"account {ACCOUNT}, region us-west-2" in out
-    assert "Deploy with `agentcore deploy -y`, then run this script again." in out
+    assert "Build stage: gateway (1 of 4)" in out
+    assert "python scripts/release_identity.py deploy" in out
+    assert "then run this script again" in out
+    assert "Configuration complete." not in out
 
 
 def test_main_stages_the_workflow_bundle_and_reports_its_modules(
@@ -506,23 +521,34 @@ def test_jwt_mode_gives_both_runtimes_the_authorizer_and_the_header_allowlist() 
         assert runtime["requestHeaderAllowlist"] == ["Authorization"]
 
 
-def test_jwt_mode_keeps_the_gateway_authorizer_the_deployed_stack_has() -> None:
-    """CloudFormation cannot change a Gateway authorizer type and compares the template with the
-    deployed stack template, so the release command (UpdateGateway) owns the live authorizer."""
+def test_jwt_mode_renders_a_new_gateway_with_the_token_authorizer() -> None:
+    """CloudFormation cannot change a Gateway authorizer type, so the jwt Gateway is a new
+    resource under a new name; the CDK builds its logical id and URL variable from the name."""
     gateway = jwt_spec()["agentCoreGateways"][0]
 
-    assert gateway["authorizerType"] == "AWS_IAM"
-    assert "authorizerConfiguration" not in gateway
-    assert "CUSTOM_JWT" not in json.dumps(gateway)
+    assert gateway["name"] == settings.gateway_logical_name("jwt") == "meridian-aurora-jwt"
+    assert gateway["authorizerType"] == "CUSTOM_JWT"
+    assert gateway["authorizerConfiguration"] == {
+        "customJwtAuthorizer": {"discoveryUrl": DISCOVERY_URL, "allowedClients": [CLIENT_ID]}}
+    assert "audience" not in json.dumps(gateway).lower()
 
 
-def test_the_jwt_gateway_block_equals_the_iam_gateway_block() -> None:
-    """The deliberate divergence: nothing about the Gateway resource differs between modes, so a
-    jwt deploy plans no Gateway change and the IAM render after a rollback matches the stack."""
+def test_the_jwt_gateway_differs_from_the_iam_gateway_only_in_name_and_authorizer() -> None:
     ids = {"GATEWAY_ID": GATEWAY_ID, "POLICY_ENGINE_ID": POLICY_ENGINE_ID}
     iam, _, _ = render_config.render(*templates(), {**base_values(), **ids})
+    jwt = jwt_spec()["agentCoreGateways"][0]
+    plain = dict(iam["agentCoreGateways"][0])
 
-    assert jwt_spec()["agentCoreGateways"] == iam["agentCoreGateways"]
+    for key in ("name", "description", "authorizerType", "authorizerConfiguration"):
+        jwt.pop(key, None)
+        plain.pop(key, None)
+    assert jwt == plain
+
+
+def test_the_iam_render_names_the_iam_gateway() -> None:
+    spec, _, _ = render_config.render(*templates(), base_values())
+
+    assert spec["agentCoreGateways"][0]["name"] == settings.gateway_logical_name("iam")
 
 
 def test_the_authorizers_check_the_client_id_claim_and_never_an_audience() -> None:
@@ -625,7 +651,7 @@ def test_main_reports_the_mode_and_the_enforcement_design(
 
 
 def jwt_main(project: Path, monkeypatch: pytest.MonkeyPatch, **env: str) -> None:
-    write_state(project, deployed("gw-1"))
+    write_state(project, deployed("gw-1", "meridian-aurora-jwt"))
     monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
     for name, value in {**COGNITO_ENV, **env}.items():
         monkeypatch.setenv(name, value)
@@ -683,7 +709,7 @@ def test_the_cdk_fixture_is_the_jwt_render_with_the_cdk_test_values() -> None:
     }
     values = {
         **render_config.account_values(env),
-        "GATEWAY_ID": "meridianv2-meridian-aurora-abcde12345",
+        "GATEWAY_ID": "meridianv2-meridian-aurora-jwt-abcde12345",
         "POLICY_ENGINE_ID": "meridianv2_MeridianGovernance-abcde12345",
     }
     spec = render_config.render(*templates(), values)[0]
@@ -692,6 +718,133 @@ def test_the_cdk_fixture_is_the_jwt_render_with_the_cdk_test_values() -> None:
         JWT_FIXTURE.parent.mkdir(parents=True, exist_ok=True)
         JWT_FIXTURE.write_text(json.dumps(spec, indent=2) + "\n", encoding="utf-8")
     assert json.loads(JWT_FIXTURE.read_text(encoding="utf-8")) == spec
+
+
+# ---------------------------------------------------------------- build stages
+
+STAGE_MODES = ("iam", "jwt")
+
+
+def stage_values(mode: str, stage: str) -> dict:
+    env = env_for(**({"MERIDIAN_AGENTCORE_AUTH": "jwt", **COGNITO_ENV} if mode == "jwt" else {}))
+    values = render_config.account_values(env)
+    if stages.renders_gateway_id(stage):
+        values["GATEWAY_ID"] = GATEWAY_ID
+    if stages.renders_engine_id(stage):
+        values["POLICY_ENGINE_ID"] = POLICY_ENGINE_ID
+    return values
+
+
+def render_stage(mode: str, stage: str, **kwargs) -> tuple[dict, list, list]:
+    return render_config.render(*templates(), stage_values(mode, stage), stage=stage, **kwargs)
+
+
+@pytest.mark.parametrize("mode", STAGE_MODES)
+@pytest.mark.parametrize("stage", stages.STAGES)
+def test_each_stage_renders_a_spec_that_reads_back_as_that_stage(mode: str, stage: str) -> None:
+    spec, _, _ = render_stage(mode, stage)
+
+    assert stages.stage_of_render(spec) == stage
+    names = [t["name"] for t in spec["agentCoreGateways"][0]["targets"]]
+    assert ("MeridianHolds" in names) is stages.renders_holds(stage)
+    assert bool(spec["policyEngines"]) is stages.renders_engine(stage)
+    assert ("policyEngineConfiguration" in spec["agentCoreGateways"][0]) is (
+        stages.renders_engine(stage))
+    variables = runtime_env(spec)
+    assert ("MERIDIAN_GATEWAY_ID" in variables) is stages.renders_gateway_id(stage)
+    assert ("MERIDIAN_POLICY_ENGINE_ID" in variables) is stages.renders_engine_id(stage)
+    assert "{{" not in json.dumps(spec)
+
+
+@pytest.mark.parametrize("stage", stages.STAGES)
+def test_a_stale_engine_id_never_reaches_a_stage_that_does_not_render_the_engine(
+    stage: str,
+) -> None:
+    values = {**stage_values("iam", stage), "GATEWAY_ID": GATEWAY_ID,
+              "POLICY_ENGINE_ID": POLICY_ENGINE_ID}
+
+    spec, _, _ = render_config.render(*templates(), values, stage=stage)
+
+    assert ("MERIDIAN_POLICY_ENGINE_ID" in runtime_env(spec)) is stages.renders_engine_id(stage)
+
+
+def test_without_an_explicit_stage_the_values_decide_it() -> None:
+    first, _, _ = render_config.render(*templates(), base_values())
+    second, _, _ = render_config.render(*templates(), {**base_values(), "GATEWAY_ID": GATEWAY_ID})
+    last, _, _ = render_config.render(
+        *templates(), {**base_values(), "GATEWAY_ID": GATEWAY_ID,
+                       "POLICY_ENGINE_ID": POLICY_ENGINE_ID})
+
+    assert [stages.stage_of_render(x) for x in (first, second, last)] == [
+        stages.GATEWAY, stages.GOVERNANCE, stages.COMPLETE]
+
+
+@pytest.mark.parametrize("stage", stages.STAGES)
+def test_tightening_works_at_every_stage(stage: str) -> None:
+    """The holds policy is rewritten before the stage prunes, so a stage without the holds target
+    does not make the flag fail; the stages that render it carry the tightened statement."""
+    spec, _, _ = render_stage("iam", stage, tighten=True)
+
+    if stages.renders_holds(stage):
+        assert holds_secret_resources(spec) == [GATEWAY_SECRET_ARN]
+
+
+def test_main_picks_the_stage_from_the_state_of_the_modes_own_gateway(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The state still lists the replaced IAM Gateway and its engine: the jwt render starts over."""
+    monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
+    for name, value in COGNITO_ENV.items():
+        monkeypatch.setenv(name, value)
+    write_state(project, deployed("old-gw"))
+
+    assert render_config.main([]) == 0
+
+    spec, _ = written(project)
+    assert stages.stage_of_render(spec) == stages.GATEWAY
+    out = capsys.readouterr().out
+    assert "Build stage: gateway (1 of 4)" in out
+    assert "Configuration complete." not in out
+
+
+@pytest.mark.parametrize(("holds", "engine", "stage", "number"), [
+    (False, False, stages.TARGETS, 2),
+    (True, False, stages.GOVERNANCE, 3),
+    (True, True, stages.COMPLETE, 4),
+])
+def test_main_walks_the_stages_as_the_state_fills_in(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    holds: bool, engine: bool, stage: str, number: int,
+) -> None:
+    monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
+    for name, value in COGNITO_ENV.items():
+        monkeypatch.setenv(name, value)
+    write_state(project, deployed("gw-1", "meridian-aurora-jwt", holds=holds, engine=engine))
+
+    assert render_config.main([]) == 0
+
+    spec, _ = written(project)
+    assert stages.stage_of_render(spec) == stage
+    out = capsys.readouterr().out
+    assert f"Build stage: {stage} ({number} of 4)" in out
+    assert out.endswith("Configuration complete.\n") is (stage == stages.COMPLETE)
+
+
+def test_a_gateway_id_given_by_hand_means_its_holds_target_exists(project: Path) -> None:
+    """The legacy first-deployment flow: ``--gateway-id`` with no state renders the rules."""
+    assert render_config.main(["--gateway-id", GATEWAY_ID]) == 0
+
+    spec, _ = written(project)
+    assert stages.stage_of_render(spec) == stages.GOVERNANCE
+    assert runtime_env(spec)["MERIDIAN_GATEWAY_ID"] == GATEWAY_ID
+
+
+def test_main_tightens_at_the_first_stage_too(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert render_config.main(["--tighten"]) == 0
+
+    assert "Tightened" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------- --tighten
@@ -704,21 +857,26 @@ def holds_secret_resources(spec: dict) -> list:
     return statement["Resource"]
 
 
+def held_values() -> dict[str, str]:
+    """Values for a stage that renders the holds target (the Gateway and its targets exist)."""
+    return {**base_values(), "GATEWAY_ID": GATEWAY_ID}
+
+
 def test_tightening_leaves_the_holds_lambda_only_the_gateway_logins_secret() -> None:
-    spec, _, _ = render_config.render(*templates(), base_values(), tighten=True)
+    spec, _, _ = render_config.render(*templates(), held_values(), tighten=True)
 
     assert holds_secret_resources(spec) == [GATEWAY_SECRET_ARN]
 
 
 def test_without_tightening_the_holds_lambda_still_reads_both_secrets() -> None:
-    spec, _, _ = render_config.render(*templates(), base_values())
+    spec, _, _ = render_config.render(*templates(), held_values())
 
     assert holds_secret_resources(spec) == [SECRET_ARN, GATEWAY_SECRET_ARN]
 
 
 def test_tightening_changes_nothing_but_that_one_statement() -> None:
-    plain, _, _ = render_config.render(*templates(), base_values())
-    tight, _, _ = render_config.render(*templates(), base_values(), tighten=True)
+    plain, _, _ = render_config.render(*templates(), held_values())
+    tight, _, _ = render_config.render(*templates(), held_values(), tighten=True)
     holds_secret_resources(tight).clear()
     holds_secret_resources(plain).clear()
 
@@ -730,36 +888,38 @@ def holds_target(spec: dict) -> dict:
 
 
 def test_tightening_refuses_when_the_statement_has_another_shape() -> None:
-    spec, _, _ = render_config.render(*templates(), base_values())
+    spec, _, _ = render_config.render(*templates(), held_values())
     for statement in holds_target(spec)["compute"]["iamPolicy"]["Statement"]:
         if statement["Action"] == ["secretsmanager:GetSecretValue"]:
             statement["Action"] = "secretsmanager:GetSecretValue"
 
     with pytest.raises(render_config.ConfigError, match="exactly one"):
-        render_config.tighten_holds_policy(spec, base_values())
+        render_config.tighten_holds_policy(spec, held_values())
 
 
 def test_tightening_refuses_when_there_is_no_holds_target() -> None:
-    spec, _, _ = render_config.render(*templates(), base_values())
+    spec, _, _ = render_config.render(*templates(), held_values())
     spec["agentCoreGateways"][0]["targets"] = []
 
     with pytest.raises(render_config.ConfigError, match="MeridianHolds"):
-        render_config.tighten_holds_policy(spec, base_values())
+        render_config.tighten_holds_policy(spec, held_values())
 
 
 def test_tightening_refuses_two_matching_statements() -> None:
-    spec, _, _ = render_config.render(*templates(), base_values())
+    spec, _, _ = render_config.render(*templates(), held_values())
     statements = holds_target(spec)["compute"]["iamPolicy"]["Statement"]
     secret = next(s for s in statements if s["Action"] == ["secretsmanager:GetSecretValue"])
     statements.append(dict(secret))
 
     with pytest.raises(render_config.ConfigError, match="exactly one"):
-        render_config.tighten_holds_policy(spec, base_values())
+        render_config.tighten_holds_policy(spec, held_values())
 
 
 def test_main_tighten_writes_the_tightened_policy_and_says_so(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    write_state(project, deployed(GATEWAY_ID))
+
     assert render_config.main(["--tighten"]) == 0
 
     spec, _ = written(project)

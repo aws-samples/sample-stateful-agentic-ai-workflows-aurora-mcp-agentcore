@@ -28,11 +28,12 @@ Placeholder sources:
     {{MERIDIAN_AGENTCORE_AUTH}}
                             MERIDIAN_AGENTCORE_AUTH: ``iam`` (default) or ``jwt``. In ``jwt`` both
                             Runtimes get a Cognito JWT authorizer (from the MERIDIAN_COGNITO_*
-                            settings) and the Gateway resource deliberately keeps ``AWS_IAM`` (the
-                            live Gateway is moved by ``release_identity.py gateway``, because
-                            CloudFormation cannot change its authorizer type); both Runtimes
-                            allowlist the ``Authorization`` header, and the Cedar
-                            traveler-binding policy is included unless
+                            settings), and the Gateway becomes a NEW resource,
+                            ``meridian-aurora-jwt``, with the same authorizer: CloudFormation
+                            cannot change an existing Gateway's authorizer type, so the stack
+                            replaces the Gateway (and its URL). Both Runtimes allowlist the
+                            ``Authorization`` header, and the
+                            Cedar traveler-binding policy is included unless
                             MERIDIAN_GATEWAY_ENFORCEMENT=interceptor; in ``iam`` none of that is
                             rendered, so the config is the one deployed today
     {{MERIDIAN_GATEWAY_ENFORCEMENT}}
@@ -45,12 +46,21 @@ Placeholder sources:
 Environment variables take precedence over ``meridian/.env``.
 
 The Cedar policies name the deployed gateway, so a first deployment cannot
-include them. Without a gateway ID the script renders that first pass: no
-policy engine and no gateway ID variable. Without a policy engine ID it leaves
-out only the runtime's policy engine variable. A policy engine ID without a
-gateway ID is refused, because the engine it names could not be rendered. Run
-it again after each ``agentcore deploy`` until it reports a complete
-configuration.
+include them, and the holds target's Lambda has a fixed physical name that a
+replaced Gateway still holds until the stack deletes it. The render is therefore
+state-driven and builds the Gateway in four stages, read from the CLI's deployed
+state for the mode's own Gateway (scripts/identity_release/stages.py):
+
+    gateway      the Gateway and the semantic-search target; no holds target, no policy
+                 engine, no gateway or engine variable on the Runtimes
+    targets      adds the holds target
+    governance   adds the policy engine, the Cedar rules and the Gateway's association
+    complete     adds the engine's id to the Runtimes
+
+A policy engine ID without a gateway ID is refused, because the engine it names
+could not be rendered. ``--gateway-id`` says the Gateway and its holds target
+exist. Deploy with ``scripts/release_identity.py deploy`` after each render, then
+render again until it reports a complete configuration.
 
 ``--tighten`` renders the MeridianHolds Lambda's policy with only the meridian_gateway login's
 secret. Use it after the Lambda reads that secret (see scripts/release_identity.py lambdas), or it
@@ -81,7 +91,7 @@ sys.path.insert(0, str(MERIDIAN_DIR))
 
 from backend.agentcore.auth_mode import AUTH_MODE_ENV, IAM, JWT, MODES  # noqa: E402
 from scripts import stage_workflow_runtime  # noqa: E402
-from scripts.identity_release import settings  # noqa: E402
+from scripts.identity_release import settings, stages  # noqa: E402
 
 CONFIG_DIR = MERIDIAN_DIR / "meridian_agentcore" / "agentcore"
 SPEC_TEMPLATE = "agentcore.template.json"
@@ -90,10 +100,7 @@ SPEC_OUTPUT = "agentcore.json"
 TARGETS_OUTPUT = "aws-targets.json"
 DEPLOYED_STATE = Path(".cli") / "deployed-state.json"
 
-GATEWAY_NAME = "meridian-aurora"
-POLICY_ENGINE_NAME = "MeridianGovernance"
-GATEWAY_ID_KEYS = ("mcp", "gateways", GATEWAY_NAME, "gatewayId")
-POLICY_ENGINE_ID_KEYS = ("policyEngines", POLICY_ENGINE_NAME, "policyEngineId")
+ASSUMED_DEPLOYED = "assumed-by-flag"
 STATE_REMEDY = "re-run agentcore deploy, or pass --gateway-id and --policy-engine-id"
 JSON_TYPES = {
     dict: "an object",
@@ -302,21 +309,23 @@ def state_value(state: Any, keys: tuple[str, ...], state_path: Path) -> str | No
     return node
 
 
-def deployed_ids(state_path: Path, target: str) -> dict[str, str]:
-    """Read the gateway and policy engine IDs the AgentCore CLI recorded after a deploy.
+def deployed_ids(state_path: Path, target: str, gateway: str) -> stages.DeployedIds:
+    """Read the ids the AgentCore CLI recorded after a deploy for one Gateway and the engine.
 
     Args:
         state_path: Path to ``agentcore/.cli/deployed-state.json``.
         target: Deployment target name from ``aws-targets.json``.
+        gateway: The mode's Gateway name in ``agentcore.json`` (``settings.gateway_logical_name``).
 
     Returns:
-        GATEWAY_ID and POLICY_ENGINE_ID when the state records them; empty before a deploy.
+        The Gateway's id, its holds target's id and the engine's id; each ``None`` before a deploy.
 
     Raises:
         ConfigError: When the file is not JSON or does not have the shape the CLI writes.
     """
+    none = stages.DeployedIds(None, None, None)
     if not state_path.is_file():
-        return {}
+        return none
     try:
         state = json.loads(state_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -324,11 +333,11 @@ def deployed_ids(state_path: Path, target: str) -> dict[str, str]:
             f"{state_path} is not valid JSON ({exc}); re-run agentcore deploy"
         ) from exc
     resources = ("targets", target, "resources")
-    found = {
-        "GATEWAY_ID": state_value(state, (*resources, *GATEWAY_ID_KEYS), state_path),
-        "POLICY_ENGINE_ID": state_value(state, (*resources, *POLICY_ENGINE_ID_KEYS), state_path),
-    }
-    return {key: value for key, value in found.items() if value}
+    return stages.DeployedIds(
+        state_value(state, (*resources, *stages.gateway_keys(gateway), "gatewayId"), state_path),
+        state_value(state, (*resources, *stages.holds_keys(gateway)), state_path),
+        state_value(state, (*resources, *stages.ENGINE_KEYS), state_path),
+    )
 
 
 def substitute(node: Any, values: dict[str, str]) -> Any:
@@ -386,21 +395,27 @@ def jwt_authorizer(discovery_url: str, client_id: str) -> dict[str, Any]:
 
 
 def apply_jwt_authorizers(spec: dict[str, Any], values: dict[str, str]) -> None:
-    """Move both Runtimes to the Cognito authorizer; the Gateway resource is left alone.
+    """Move both Runtimes and the Gateway to the Cognito authorizer.
 
     A Runtime accepts IAM or JWT callers, never both. The Runtimes also allowlist
     ``Authorization`` so their code can read the caller's token and forward it to the Gateway.
 
-    The Gateway resource keeps the authorizer the deployed stack has (``AWS_IAM``, no JWT block) on
-    purpose: CloudFormation cannot change a Gateway's authorizer type and compares the template
-    with the deployed stack template, not with the live Gateway. The authorizer and the interceptor
-    of the live Gateway belong to ``release_identity.py gateway`` (the ``UpdateGateway`` API).
+    CloudFormation cannot change an existing Gateway's authorizer type, so the token Gateway is a
+    new resource under its own name: the stack creates it, repoints the Runtimes' URL variable and
+    deletes the IAM Gateway. The interceptor is attached afterwards by ``release_identity.py
+    gateway``, never rendered.
     """
     url, client = values["COGNITO_DISCOVERY_URL"], values["COGNITO_APP_CLIENT_ID"]
     for runtime in spec.get("runtimes", []):
         runtime["authorizerType"] = "CUSTOM_JWT"
         runtime["authorizerConfiguration"] = jwt_authorizer(url, client)
         runtime["requestHeaderAllowlist"] = [AUTHORIZATION_HEADER]
+    name = settings.gateway_logical_name(JWT)
+    for gateway in spec.get("agentCoreGateways", []):
+        gateway["name"] = name
+        gateway["description"] = f"Gateway for {name}"
+        gateway["authorizerType"] = "CUSTOM_JWT"
+        gateway["authorizerConfiguration"] = jwt_authorizer(url, client)
 
 
 def tighten_holds_policy(spec: dict[str, Any], values: dict[str, str]) -> None:
@@ -427,28 +442,44 @@ def tighten_holds_policy(spec: dict[str, Any], values: dict[str, str]) -> None:
             "iamPolicy in the gateway targets template")
 
 
-def drop_pending_deployment_values(spec: dict[str, Any]) -> list[str]:
-    """Remove the parts of the spec that name resources a deploy has not created yet.
+def apply_stage(spec: dict[str, Any], stage: str) -> list[str]:
+    """Leave out what the build stage has not created yet.
 
     Returns:
         One note per removal, for the operator.
     """
     notes: list[str] = []
+    for gateway in spec.get("agentCoreGateways", []):
+        if not stages.renders_holds(stage):
+            gateway["targets"] = [
+                t for t in gateway["targets"] if t["name"] != settings.HOLDS_TARGET]
+            notes.append(
+                f"left out the {settings.HOLDS_TARGET} target: its Lambda has a fixed name that "
+                "the replaced Gateway holds until the stack deletes it")
+        if not stages.renders_engine(stage):
+            gateway.pop("policyEngineConfiguration", None)
+    if not stages.renders_engine(stage) and spec.get("policyEngines"):
+        spec["policyEngines"] = []
+        notes.append(
+            "left out the Cedar policy engine: its policies name the gateway and its tools, "
+            "which are not all deployed yet"
+        )
+    unwanted = [name for name, kept in (
+        ("MERIDIAN_GATEWAY_ID", stages.renders_gateway_id(stage)),
+        (stages.ENGINE_VARIABLE, stages.renders_engine_id(stage))) if not kept]
     for runtime in spec.get("runtimes", []):
-        for env_var in [var for var in runtime.get("envVars", []) if unresolved(var)]:
+        for env_var in [v for v in runtime.get("envVars", []) if v["name"] in unwanted]:
             runtime["envVars"].remove(env_var)
             notes.append(
-                f"runtime {runtime['name']}: left out {env_var['name']} (not deployed yet)"
-            )
-    if unresolved(spec.get("policyEngines", [])):
-        spec["policyEngines"] = []
-        for gateway in spec.get("agentCoreGateways", []):
-            gateway.pop("policyEngineConfiguration", None)
-        notes.append(
-            "left out the Cedar policy engine: its policies name the gateway, "
-            "which is not deployed yet"
-        )
+                f"runtime {runtime['name']}: left out {env_var['name']} (not deployed yet)")
     return notes
+
+
+def stage_from_values(values: dict[str, str]) -> str:
+    """The stage the ids in ``values`` imply: a Gateway id means its targets exist too."""
+    ids = stages.DeployedIds(
+        values.get("GATEWAY_ID"), values.get("GATEWAY_ID"), values.get("POLICY_ENGINE_ID"))
+    return stages.stage_for(ids)
 
 
 def render(
@@ -457,10 +488,13 @@ def render(
     values: dict[str, str],
     *,
     tighten: bool = False,
+    stage: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
-    """Fill both templates and prune what the current deployment pass cannot supply.
+    """Fill both templates and prune what the current build stage cannot supply.
 
-    ``tighten`` leaves the holds Lambda only the meridian_gateway login's secret.
+    ``tighten`` leaves the holds Lambda only the meridian_gateway login's secret (applied before
+    the stage prunes, so it works at every stage). ``stage`` defaults to the one ``values``
+    imply.
 
     Raises:
         ConfigError: When a required placeholder has no value, or a policy engine ID
@@ -472,6 +506,7 @@ def render(
             "a policy engine ID needs the gateway ID too, because the engine's Cedar "
             "policies name the gateway; pass --gateway-id with --policy-engine-id"
         )
+    stage = stage or stage_from_values(values)
     spec = substitute(spec_template, values)
     targets = substitute(targets_template, values)
     mode = values.get(AUTH_MODE_ENV, IAM)
@@ -480,7 +515,11 @@ def render(
         apply_jwt_authorizers(spec, values)
     if tighten:
         tighten_holds_policy(spec, values)
-    notes = drop_pending_deployment_values(spec)
+    deferred = {"GATEWAY_ID", "POLICY_ENGINE_ID"}
+    missing = (unresolved(spec) - deferred) | unresolved(targets)
+    if missing:
+        raise ConfigError(f"no value for placeholder(s): {', '.join(sorted(missing))}")
+    notes = apply_stage(spec, stage)
     missing = unresolved(spec) | unresolved(targets)
     if missing:
         raise ConfigError(f"no value for placeholder(s): {', '.join(sorted(missing))}")
@@ -522,11 +561,14 @@ def main(argv: list[str] | None = None) -> int:
     targets_template = json.loads((CONFIG_DIR / TARGETS_TEMPLATE).read_text(encoding="utf-8"))
     try:
         values = account_values(env)
-        values.update(deployed_ids(CONFIG_DIR / DEPLOYED_STATE, targets_template[0]["name"]))
-        overrides = {"GATEWAY_ID": args.gateway_id, "POLICY_ENGINE_ID": args.policy_engine_id}
-        values.update({key: value for key, value in overrides.items() if value})
+        ids = deployed_ids(
+            CONFIG_DIR / DEPLOYED_STATE, targets_template[0]["name"],
+            settings.gateway_logical_name(values[AUTH_MODE_ENV]))
+        ids = apply_overrides(ids, args)
+        stage = stages.stage_for(ids)
+        values.update(stage_ids(ids, args, stage))
         spec, targets, notes = render(
-            spec_template, targets_template, values, tighten=args.tighten)
+            spec_template, targets_template, values, tighten=args.tighten, stage=stage)
     except ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -534,27 +576,54 @@ def main(argv: list[str] | None = None) -> int:
     write_json(CONFIG_DIR / SPEC_OUTPUT, spec)
     write_json(CONFIG_DIR / TARGETS_OUTPUT, targets)
     staged = json.loads(stage_workflow_runtime.stage().read_text(encoding="utf-8"))
+    print_summary(values, stage, spec, notes, tighten=args.tighten, staged=len(staged))
+    return 0
+
+
+def apply_overrides(ids: stages.DeployedIds, args: argparse.Namespace) -> stages.DeployedIds:
+    """Let ``--gateway-id`` and ``--policy-engine-id`` replace what the state lists.
+
+    A Gateway id given by hand means the Gateway and its holds target exist.
+    """
+    gateway_id = args.gateway_id or ids.gateway_id
+    holds = ids.holds_target_id or (ASSUMED_DEPLOYED if args.gateway_id else None)
+    return stages.DeployedIds(gateway_id, holds, args.policy_engine_id or ids.policy_engine_id)
+
+
+def stage_ids(ids: stages.DeployedIds, args: argparse.Namespace, stage: str) -> dict[str, str]:
+    """The id placeholders to fill: a state's engine id counts only once the stage is complete."""
+    found: dict[str, str] = {}
+    if ids.gateway_id:
+        found["GATEWAY_ID"] = ids.gateway_id
+    if ids.policy_engine_id and (args.policy_engine_id or stage == stages.COMPLETE):
+        found["POLICY_ENGINE_ID"] = ids.policy_engine_id
+    return found
+
+
+def print_summary(values: dict[str, str], stage: str, spec: dict[str, Any], notes: list[str],
+                  *, tighten: bool, staged: int) -> None:
+    """Say what was written, which build stage it is and what comes next."""
     print(f"Wrote {CONFIG_DIR / SPEC_OUTPUT} and {CONFIG_DIR / TARGETS_OUTPUT}")
     print(f"  account {values['AWS_ACCOUNT_ID']}, region {values['AWS_REGION']}")
     print(f"  AgentCore identity mode: {values[AUTH_MODE_ENV]}")
     if values[AUTH_MODE_ENV] == JWT:
         print(f"  Gateway enforcement: {values[settings.ENFORCEMENT_ENV]}")
-        print("  Gateway authorizer: left as AWS_IAM on purpose; the live Gateway moves with "
-              "release_identity.py gateway,")
-        print("  and the stack deploys only through release_identity.py deploy")
+        print(f"  Gateway: {spec['agentCoreGateways'][0]['name']} (new resource, CUSTOM_JWT "
+              "authorizer; the interceptor is attached by release_identity.py gateway)")
         print("  Cedar rule: " + (
             "included (meridian_traveler_binding)" if binding_rule_included(spec)
             else "omitted for this deploy"))
-    if args.tighten:
+    print(f"  Build stage: {stage} ({stages.STAGES.index(stage) + 1} of {len(stages.STAGES)})")
+    if tighten:
         print("  Tightened: MeridianHolds may read only the meridian_gateway secret")
-    print(f"  staged {len(staged)} workflow modules into the MeridianWorkflow bundle")
+    print(f"  staged {staged} workflow modules into the MeridianWorkflow bundle")
     for note in notes:
         print(f"  {note}")
-    if notes:
-        print("Deploy with `agentcore deploy -y`, then run this script again.")
-    else:
+    if stage == stages.COMPLETE:
         print("Configuration complete.")
-    return 0
+    else:
+        print("Deploy with `python scripts/release_identity.py deploy` (a dry run first), "
+              "then run this script again.")
 
 
 if __name__ == "__main__":

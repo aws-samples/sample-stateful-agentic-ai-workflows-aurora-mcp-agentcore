@@ -110,28 +110,47 @@ test('AgentCoreStack synthesizes the Meridian specification template', () => {
 });
 
 type Resource = { Type: string; Properties: Record<string, any> };
+type Spec = Record<string, any>;
 
-test('AgentCoreStack synthesizes the Cognito JWT specification', () => {
-  const spec = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'jwt-spec.json'), 'utf8'));
-  const jwtProjectRoot = mkdtempSync(join(tmpdir(), 'meridian-agentcore-jwt-'));
-  mkdirSync(join(jwtProjectRoot, 'agentcore'));
-  writeFileSync(join(jwtProjectRoot, 'agentcore', 'agentcore.json'), JSON.stringify(spec));
-  symlinkSync(join(PROJECT_ROOT, 'app'), join(jwtProjectRoot, 'app'));
-  symlinkSync(join(PROJECT_ROOT, 'agentcore', 'gateway_targets'), join(jwtProjectRoot, 'agentcore', 'gateway_targets'));
-  process.env.INIT_CWD = jwtProjectRoot;
-  let stack: AgentCoreStack;
+const synthesized = new Map<string, Record<string, any>>();
+
+// Synthesize a spec once per key, from a temporary project like the one the first test builds.
+function synthesize(key: string, spec: Spec): Record<string, any> {
+  const cached = synthesized.get(key);
+  if (cached) return cached;
+  const projectRoot = mkdtempSync(join(tmpdir(), `meridian-agentcore-${key}-`));
+  mkdirSync(join(projectRoot, 'agentcore'));
+  writeFileSync(join(projectRoot, 'agentcore', 'agentcore.json'), JSON.stringify(spec));
+  symlinkSync(join(PROJECT_ROOT, 'app'), join(projectRoot, 'app'));
+  symlinkSync(join(PROJECT_ROOT, 'agentcore', 'gateway_targets'), join(projectRoot, 'agentcore', 'gateway_targets'));
+  process.env.INIT_CWD = projectRoot;
   try {
-    stack = new AgentCoreStack(new cdk.App(), 'JwtStack', { spec: spec as never, mcpSpec: spec as never });
+    const stack = new AgentCoreStack(new cdk.App(), `Stack${key}`, { spec: spec as never, mcpSpec: spec as never });
+    const json = Template.fromStack(stack).toJSON();
+    synthesized.set(key, json);
+    return json;
   } finally {
     process.env.INIT_CWD = testProjectRoot;
-    rmSync(jwtProjectRoot, { recursive: true, force: true });
+    rmSync(projectRoot, { recursive: true, force: true });
   }
-  const resources = Object.values(Template.fromStack(stack).toJSON().Resources ?? {}) as Resource[];
-  const ofType = (type: string) => resources.filter(r => r.Type === type);
+}
+
+const ofType = (template: Record<string, any>, type: string): Resource[] =>
+  (Object.values(template.Resources ?? {}) as Resource[]).filter(r => r.Type === type);
+const idsOfType = (template: Record<string, any>, type: string): string[] =>
+  Object.entries(template.Resources ?? {})
+    .filter(([, r]) => (r as Resource).Type === type)
+    .map(([id]) => id);
+
+const jwtSpec = (): Spec => JSON.parse(readFileSync(join(__dirname, 'fixtures', 'jwt-spec.json'), 'utf8'));
+const HOLDS_FUNCTION = 'meridianv2-MeridianHolds';
+
+test('AgentCoreStack synthesizes the Cognito JWT specification', () => {
+  const template = synthesize('jwt', jwtSpec());
   const discoveryUrl =
     'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AbCdEfGhI/.well-known/openid-configuration';
 
-  const runtimes = ofType('AWS::BedrockAgentCore::Runtime');
+  const runtimes = ofType(template, 'AWS::BedrockAgentCore::Runtime');
   expect(runtimes).toHaveLength(2);
   for (const runtime of runtimes) {
     const authorizer = runtime.Properties.AuthorizerConfiguration.CustomJWTAuthorizer;
@@ -141,15 +160,83 @@ test('AgentCoreStack synthesizes the Cognito JWT specification', () => {
     expect(runtime.Properties.RequestHeaderConfiguration.RequestHeaderAllowlist).toEqual(['Authorization']);
     const environment = runtime.Properties.EnvironmentVariables;
     expect(environment.MERIDIAN_AGENTCORE_AUTH).toBe('jwt');
+    // The CDK names the URL variable after the Gateway, so the token Gateway has its own.
+    expect(Object.keys(environment)).toContain('AGENTCORE_GATEWAY_MERIDIAN_AURORA_JWT_URL');
+    expect(Object.keys(environment)).not.toContain('AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL');
   }
 
-  const [gateway] = ofType('AWS::BedrockAgentCore::Gateway');
-  // The Gateway keeps the deployed stack's authorizer: CloudFormation cannot change the type, and
-  // release_identity.py gateway (UpdateGateway) owns the live authorizer and interceptor.
-  expect(gateway.Properties.AuthorizerType).toBe('AWS_IAM');
-  expect(gateway.Properties.AuthorizerConfiguration).toBeUndefined();
+  // CloudFormation cannot change an existing Gateway's authorizer type, so the token Gateway is a
+  // new resource under a new name.
+  const [gateway] = ofType(template, 'AWS::BedrockAgentCore::Gateway');
+  expect(ofType(template, 'AWS::BedrockAgentCore::Gateway')).toHaveLength(1);
+  expect(gateway.Properties.AuthorizerType).toBe('CUSTOM_JWT');
+  expect(gateway.Properties.Name).toBe('meridianv2-meridian-aurora-jwt');
+  const gatewayAuthorizer = gateway.Properties.AuthorizerConfiguration.CustomJWTAuthorizer;
+  expect(gatewayAuthorizer.DiscoveryUrl).toBe(discoveryUrl);
+  expect(gatewayAuthorizer.AllowedClients).toEqual(['exampleclientid123']);
+  expect(gatewayAuthorizer.AllowedAudience).toBeUndefined();
 
-  const policyNames = ofType('AWS::BedrockAgentCore::Policy').map(p => p.Properties.Name);
+  // The CDK grants InvokeGateway only for an AWS_IAM Gateway; the token Gateway needs none.
+  expect(JSON.stringify(template.Resources)).not.toContain('bedrock-agentcore:InvokeGateway');
+
+  const policyNames = ofType(template, 'AWS::BedrockAgentCore::Policy').map(p => p.Properties.Name);
   expect(policyNames).toContain('meridian_traveler_binding');
   expect(policyNames).toHaveLength(4);
+});
+
+test('the IAM Gateway is granted InvokeGateway and the token Gateway replaces it under another id', () => {
+  const iam = synthesize('iam', renderTemplate());
+  const jwt = synthesize('jwt', jwtSpec());
+
+  expect(JSON.stringify(iam.Resources)).toContain('bedrock-agentcore:InvokeGateway');
+  for (const runtime of ofType(iam, 'AWS::BedrockAgentCore::Runtime')) {
+    expect(Object.keys(runtime.Properties.EnvironmentVariables)).toContain('AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL');
+  }
+  // A different logical id is what makes CloudFormation create the new Gateway and delete the old
+  // one; the same id would be an in-place update of the authorizer type, which it refuses.
+  const iamIds = idsOfType(iam, 'AWS::BedrockAgentCore::Gateway');
+  const jwtIds = idsOfType(jwt, 'AWS::BedrockAgentCore::Gateway');
+  expect(iamIds).toHaveLength(1);
+  expect(jwtIds).toHaveLength(1);
+  expect(jwtIds[0]).not.toBe(iamIds[0]);
+});
+
+test('the holds Lambda has the same physical name under either Gateway, so the new Gateway is built in stages', () => {
+  const names = ['iam', 'jwt'].map(key => {
+    const template = synthesize(key, key === 'iam' ? renderTemplate() : jwtSpec());
+    return ofType(template, 'AWS::Lambda::Function').map(f => f.Properties.FunctionName);
+  });
+
+  expect(names[0]).toEqual([HOLDS_FUNCTION]);
+  expect(names[1]).toEqual([HOLDS_FUNCTION]);
+  // Both templates would create it in one update (the new Gateway's before the old one's deletion
+  // at cleanup), and a function name must be unique.
+  const iamLambda = idsOfType(synthesize('iam', renderTemplate()), 'AWS::Lambda::Function');
+  const jwtLambda = idsOfType(synthesize('jwt', jwtSpec()), 'AWS::Lambda::Function');
+  expect(jwtLambda[0]).not.toBe(iamLambda[0]);
+});
+
+test('the stack cannot hold the IAM Gateway and the token Gateway at once', () => {
+  const both = renderTemplate();
+  both.agentCoreGateways.push(jwtSpec().agentCoreGateways[0]);
+
+  // Every target adds outputs under one construct id per target name, so two Gateways with the
+  // same target names collide when the stack is built.
+  expect(() => synthesize('both', both)).toThrow(/already a Construct|already exists/i);
+});
+
+test('the first stage synthesizes the Gateway and one target without the holds Lambda or the engine', () => {
+  const spec = jwtSpec();
+  const gateway = spec.agentCoreGateways[0];
+  gateway.targets = gateway.targets.filter((t: { name: string }) => t.name !== 'MeridianHolds');
+  delete gateway.policyEngineConfiguration;
+  spec.policyEngines = [];
+
+  const template = synthesize('stage1', spec);
+
+  expect(ofType(template, 'AWS::BedrockAgentCore::Gateway')).toHaveLength(1);
+  expect(ofType(template, 'AWS::BedrockAgentCore::GatewayTarget')).toHaveLength(1);
+  expect(ofType(template, 'AWS::Lambda::Function')).toHaveLength(0);
+  expect(ofType(template, 'AWS::BedrockAgentCore::PolicyEngine')).toHaveLength(0);
+  expect(ofType(template, 'AWS::BedrockAgentCore::Policy')).toHaveLength(0);
 });

@@ -29,7 +29,7 @@ from strands import Agent
 from strands.tools.mcp import MCPClient
 
 from caller_identity import CallerRefused, auth_mode, caller_from_request
-from gateway_auth import gateway_client_arguments
+from gateway_auth import gateway_client_arguments, gateway_url
 from hold_execution import execute_confirmed_booking, execute_confirmed_hold
 from model.load import DEFAULT_MODEL_ID, load_model
 from prompts import narration_prompt, system_prompt, turn_prompt
@@ -38,7 +38,7 @@ from turn_trace import TraceHooks, TurnContext, activity
 app = BedrockAgentCoreApp()
 REGION = os.getenv("AWS_REGION", "us-east-1")
 SESSION = boto3.Session(region_name=REGION)
-GATEWAY_URL = os.environ["AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL"]
+GATEWAY_URL = gateway_url(os.environ)
 MEMORY_ID = os.environ["MEMORY_MERIDIAN_SESSION_ID"]
 MODEL_ID = os.getenv("BEDROCK_MODEL_ID", DEFAULT_MODEL_ID)
 GATEWAY_ID = os.getenv("MERIDIAN_GATEWAY_ID", GATEWAY_URL.split("//")[-1].split(".")[0])

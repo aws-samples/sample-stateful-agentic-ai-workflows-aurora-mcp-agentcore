@@ -13,6 +13,8 @@ import httpx
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 
+JWT_URL_VARIABLE = "AGENTCORE_GATEWAY_MERIDIAN_AURORA_JWT_URL"
+IAM_URL_VARIABLE = "AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL"
 SIGNED_HEADERS = ("content-type", "accept", "mcp-session-id", "mcp-protocol-version")
 COPIED_HEADERS = ("Authorization", "X-Amz-Date", "X-Amz-Security-Token", "X-Amz-Content-SHA256")
 
@@ -59,3 +61,22 @@ def gateway_client_arguments(mode: str, session, region: str, token: str | None)
     if not token:
         raise ValueError("jwt mode needs the caller's access token to call the gateway.")
     return {"headers": {"Authorization": f"Bearer {token}"}}
+
+
+def gateway_url(environ) -> str:
+    """The Gateway URL the CDK wired into this Runtime.
+
+    The CDK names the variable after the Gateway: the IAM Gateway's and the token Gateway's (a
+    different resource, because an existing Gateway's authorizer type cannot change) differ. A
+    deployed stack holds one Gateway, so exactly one is set; the token one is read first.
+
+    Raises:
+        RuntimeError: When neither variable holds a URL.
+    """
+    for name in (JWT_URL_VARIABLE, IAM_URL_VARIABLE):
+        value = (environ.get(name) or "").strip()
+        if value:
+            return value
+    raise RuntimeError(
+        f"neither {JWT_URL_VARIABLE} nor {IAM_URL_VARIABLE} is set; the stack wires one of them "
+        "into the Runtime when it deploys the Gateway")
