@@ -18,6 +18,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from botocore.exceptions import ClientError
+
 from backend.agentcore.auth_mode import IAM, JWT, MODES
 from scripts.identity_release import settings
 
@@ -422,6 +424,25 @@ def interceptor_environment_findings(configuration: Any, target: Target) -> list
             found.append(f"Interceptor Lambda: {name} is not the pool's; run "
                          "scripts/release_identity.py interceptor to redeploy it")
     return found
+
+
+def interceptor_lambda_findings(lambda_client: Any, target: Target) -> list[str]:
+    """Findings for the deployed interceptor, read with ``GetFunctionConfiguration``.
+
+    Empty when the design uses no interceptor. A function that does not exist is a finding;
+    any other AWS error propagates.
+    """
+    if not target.interceptor_arn:
+        return []
+    try:
+        configuration = lambda_client.get_function_configuration(
+            FunctionName=target.interceptor_arn)
+    except ClientError as error:
+        if error.response.get("Error", {}).get("Code") != "ResourceNotFoundException":
+            raise
+        return ["Interceptor Lambda: not deployed; run scripts/release_identity.py interceptor "
+                f"--apply {settings.CONFIRM_FLAG}"]
+    return interceptor_environment_findings(configuration, target)
 
 
 def _receipt_problems(proof: Any, target: Target, git_sha: str, now: datetime) -> list[str]:

@@ -255,12 +255,12 @@ def planned_service(service: dict, service_environment: dict, secret_arn: str,
     return config["RuntimeEnvironmentVariables"], config["RuntimeEnvironmentSecrets"]
 
 
-def release_findings(control, release: Release, service: dict) -> list[str]:
+def release_findings(control, release: Release, service: dict, lambda_client) -> list[str]:
     """Everything that must already be true before this release's service and site go out.
 
     The hops are read back from the control plane (the publish is the last step of the window),
     the service environment is the one this publish would apply, and the jwt release also
-    needs the backend login proof.
+    needs the backend login proof and, when the design uses the interceptor, its environment.
     """
     target = preflight.target_for(release.mode, release.dotenv, release.account, release.region)
     gateway_id, runtime_ids = preflight.hop_ids(release.service_environment)
@@ -271,6 +271,7 @@ def release_findings(control, release: Release, service: dict) -> list[str]:
     findings += preflight.hop_findings(state, target)
     findings += preflight.check_service_environment(variables, secrets, target)
     if release.mode == JWT:
+        findings += preflight.interceptor_lambda_findings(lambda_client, target)
         findings += preflight.check_backend_login_proof(PROOF_PATH, target, settings.git_head())
     return findings
 
@@ -394,7 +395,8 @@ def publish(args) -> None:
         return
     release = Release(mode, dotenv, args.account, args.region, service_environment, secret["ARN"])
     print(enforcement_line(mode, dotenv))
-    preflight.refuse_if_any(release_findings(control, release, service), mode)
+    lambda_client = session.client("lambda", config=CONFIG)
+    preflight.refuse_if_any(release_findings(control, release, service, lambda_client), mode)
     # Template-only diff is read-only: it does not create a change set or publish assets.
     run(["npx", "cdk", "diff", "--no-change-set"], INFRA, env)
     if not args.apply:

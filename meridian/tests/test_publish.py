@@ -194,8 +194,24 @@ class Commands(list):
         return next(env for ran, env in self.envs if ran == command)
 
 
+GOOD_INTERCEPTOR = {"EXPECTED_CLIENT_ID": "exampleclientid123",
+                    "EXPECTED_ISSUER": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AbCdEfGhI"}
+
+
+def lambda_returning(variables):
+    """A Lambda client whose interceptor has ``variables``; ``None`` means it is not deployed."""
+    client = Mock()
+    if variables is None:
+        client.get_function_configuration.side_effect = ClientError(
+            {"Error": {"Code": "ResourceNotFoundException", "Message": "none"}},
+            "GetFunctionConfiguration")
+    else:
+        client.get_function_configuration.return_value = {"Environment": {"Variables": variables}}
+    return client
+
+
 def planned_publish(monkeypatch, tmp_path, control, dotenv=None, outputs=None,
-                    service_environment=None, proof=False):
+                    service_environment=None, proof=False, interceptor=GOOD_INTERCEPTOR):
     """Prepare the mocks and files for publish(); return the list that records the commands.
 
     This does not run publish(). The caller does, and the list fills as it runs. ``dotenv`` is
@@ -215,7 +231,8 @@ def planned_publish(monkeypatch, tmp_path, control, dotenv=None, outputs=None,
     (cdk_out / "MeridianWebBackend.template.json").write_text(json.dumps(template))
     session = Mock()
     clients = {"sts": Mock(), "apprunner": Mock(), "cloudformation": Mock(),
-               "secretsmanager": Mock(), "bedrock-agentcore-control": control}
+               "secretsmanager": Mock(), "bedrock-agentcore-control": control,
+               "lambda": lambda_returning(interceptor)}
     clients["sts"].get_caller_identity.return_value = {"Account": "123456789012"}
     clients["apprunner"].describe_service.return_value = {"Service": {
         **existing(), "ServiceUrl": "x.example.com"}}
@@ -228,6 +245,7 @@ def planned_publish(monkeypatch, tmp_path, control, dotenv=None, outputs=None,
     session.client.side_effect = lambda name, **kwargs: clients[name]
     monkeypatch.setattr(publish.boto3, "Session", lambda **kwargs: session)
     monkeypatch.setattr(publish, "container_engine", lambda: "finch")
+    commands.lambda_client = clients["lambda"]
     monkeypatch.setattr(publish, "run", lambda command, cwd, env=None: (
         commands.append(command), commands.envs.append((tuple(command), env or {}))))
     monkeypatch.setattr(publish, "INFRA", tmp_path / "infra")
@@ -275,12 +293,13 @@ def jwt_service_environment(**overrides):
 
 
 def jwt_publish(monkeypatch, tmp_path, *, control=None, proof=True, service_environment=None,
-                **overrides):
+                interceptor=GOOD_INTERCEPTOR, **overrides):
     """A publish whose hops, planned service and proof are all ready for the jwt release."""
     return planned_publish(
         monkeypatch, tmp_path, control or control_returning("READY", "jwt"),
         dotenv={**JWT_DOTENV, **overrides}, outputs=IDENTITY_OUTPUTS, proof=proof,
-        service_environment=service_environment or jwt_service_environment())
+        service_environment=service_environment or jwt_service_environment(),
+        interceptor=interceptor)
 
 
 def service_with_shared_token():
@@ -480,6 +499,50 @@ def test_a_jwt_plan_refuses_when_only_the_gateway_has_not_moved(monkeypatch, tmp
     lines = str(refused.value).splitlines()
     assert any(line.startswith("  Gateway: ") for line in lines)
     assert not any("Runtime" in line for line in lines)
+
+
+@pytest.mark.parametrize("variables,expected", [
+    ({**GOOD_INTERCEPTOR, "PINNED_TOOLS": "a,b"}, "PINNED_TOOLS is set"),
+    ({"EXPECTED_ISSUER": GOOD_INTERCEPTOR["EXPECTED_ISSUER"]}, "EXPECTED_CLIENT_ID is not set"),
+    ({"EXPECTED_CLIENT_ID": GOOD_INTERCEPTOR["EXPECTED_CLIENT_ID"]},
+     "EXPECTED_ISSUER is not set"),
+    ({**GOOD_INTERCEPTOR, "EXPECTED_CLIENT_ID": "someoneelse"},
+     "EXPECTED_CLIENT_ID is not the pool's"),
+    ({**GOOD_INTERCEPTOR, "EXPECTED_ISSUER": "https://elsewhere.example"},
+     "EXPECTED_ISSUER is not the pool's"),
+    (None, "Interceptor Lambda: not deployed"),
+])
+def test_a_jwt_plan_refuses_a_misconfigured_or_missing_interceptor(
+        monkeypatch, tmp_path, variables, expected):
+    commands = jwt_publish(monkeypatch, tmp_path, interceptor=variables)
+
+    with pytest.raises(SystemExit) as refused:
+        publish.publish(ARGS)
+
+    assert expected in str(refused.value)
+    assert ["npx", "cdk", "diff", "--no-change-set"] not in commands
+    commands.lambda_client.get_function_configuration.assert_called_once_with(
+        FunctionName=f"arn:aws:lambda:us-east-1:123456789012:function:{settings.INTERCEPTOR_FUNCTION}")
+
+
+def test_a_jwt_plan_with_a_cedar_only_design_reads_no_interceptor(monkeypatch, tmp_path):
+    commands = jwt_publish(monkeypatch, tmp_path, interceptor=None,
+                           MERIDIAN_GATEWAY_ENFORCEMENT="cedar")
+
+    with pytest.raises(SystemExit) as refused:
+        publish.publish(ARGS)
+
+    commands.lambda_client.get_function_configuration.assert_not_called()
+    assert "Interceptor Lambda" not in str(refused.value)
+
+
+def test_an_iam_plan_never_reads_the_interceptor(monkeypatch, tmp_path):
+    commands = planned_publish(monkeypatch, tmp_path, control_returning("READY"),
+                               interceptor=None)
+
+    publish.publish(ARGS)
+
+    commands.lambda_client.get_function_configuration.assert_not_called()
 
 
 def test_an_iam_plan_refuses_while_the_hops_are_still_jwt(monkeypatch, tmp_path):

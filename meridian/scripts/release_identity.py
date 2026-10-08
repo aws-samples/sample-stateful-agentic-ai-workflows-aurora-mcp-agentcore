@@ -194,15 +194,7 @@ def service_findings(session: Any, service_arn: str, target: preflight.Target) -
 
 def interceptor_findings(session: Any, target: preflight.Target) -> list[str]:
     """Findings for the interceptor's environment; reads it with ``GetFunctionConfiguration``."""
-    try:
-        configuration = session.client("lambda").get_function_configuration(
-            FunctionName=target.interceptor_arn)
-    except ClientError as error:
-        if error.response.get("Error", {}).get("Code") != "ResourceNotFoundException":
-            raise
-        return ["Interceptor Lambda: not deployed; run scripts/release_identity.py interceptor "
-                f"--apply {settings.CONFIRM_FLAG}"]
-    return preflight.interceptor_environment_findings(configuration, target)
+    return preflight.interceptor_lambda_findings(session.client("lambda"), target)
 
 
 def identity_stack_findings(session: Any, deps: Dependencies,
