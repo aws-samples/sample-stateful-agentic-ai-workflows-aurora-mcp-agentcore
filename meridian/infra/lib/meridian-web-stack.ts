@@ -16,20 +16,44 @@ import { Construct } from 'constructs';
 /** The existing origin token secret referenced by the established publisher. */
 export const API_TOKEN_SECRET_NAME = 'meridian/web/api-token';
 
-// The production bundle serves its scripts and fonts from the same origin.
-// React and Motion set inline styles; catalog photography may use HTTPS URLs.
-export const CONTENT_SECURITY_POLICY = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: https:",
-  "font-src 'self'",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "frame-ancestors 'none'",
-  "form-action 'self'",
-].join('; ');
+const COGNITO_HOSTED_UI_DOMAIN =
+  /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.auth\.[a-z0-9-]+\.amazoncognito\.com$/;
+
+/**
+ * The production bundle serves its scripts and fonts from the same origin.
+ * React and Motion set inline styles; catalog photography may use HTTPS URLs.
+ *
+ * A signed-in build also calls the Cognito hosted UI domain from the browser (the token exchange,
+ * the refresh and the revoke), so that one host joins `connect-src`. It must be a bare hosted UI
+ * domain: a path, a scheme, a wildcard or anything after the host would widen the policy.
+ */
+export function contentSecurityPolicy(cognitoHost?: string): string {
+  const connect = ["'self'"];
+  if (cognitoHost) {
+    if (!COGNITO_HOSTED_UI_DOMAIN.test(cognitoHost)) {
+      throw new Error(
+        `cognitoHost must be a bare Cognito hosted UI domain such as ` +
+          `meridian-x.auth.us-east-1.amazoncognito.com, not ${JSON.stringify(cognitoHost)}`,
+      );
+    }
+    connect.push(`https://${cognitoHost}`);
+  }
+  return [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: https:",
+    "font-src 'self'",
+    `connect-src ${connect.join(' ')}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+  ].join('; ');
+}
+
+/** The policy a build without sign-in ships. */
+export const CONTENT_SECURITY_POLICY = contentSecurityPolicy();
 
 /** Non-secret settings copied from meridian/.env into the App Runner service. */
 const ENV_PASSTHROUGH = [
@@ -116,13 +140,15 @@ export function backendHost(): string {
 export interface MeridianWebStackProps extends StackProps {
   /** The App Runner service host from backendHost(). */
   backendHost: string;
+  /** The Cognito hosted UI domain a signed-in build calls; omit for a build without sign-in. */
+  cognitoHost?: string;
 }
 
 /** The site: the Vite build in S3, CloudFront with the viewer function, and the KeyValueStore. */
 export class MeridianWebStack extends Stack {
   constructor(scope: Construct, id: string, props: MeridianWebStackProps) {
     super(scope, id, props);
-    const { backendHost: apiHost } = props;
+    const { backendHost: apiHost, cognitoHost } = props;
 
     const site = new s3.Bucket(this, 'Site', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
@@ -146,7 +172,10 @@ export class MeridianWebStack extends Stack {
 
     const responseHeaders = new cloudfront.ResponseHeadersPolicy(this, 'ResponseHeaders', {
       securityHeadersBehavior: {
-        contentSecurityPolicy: { contentSecurityPolicy: CONTENT_SECURITY_POLICY, override: true },
+        contentSecurityPolicy: {
+          contentSecurityPolicy: contentSecurityPolicy(cognitoHost),
+          override: true,
+        },
         contentTypeOptions: { override: true },
         frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
         referrerPolicy: { referrerPolicy: cloudfront.HeadersReferrerPolicy.NO_REFERRER, override: true },

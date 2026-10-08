@@ -33,6 +33,7 @@ if (process.env.MERIDIAN_BACKEND_HOST) {
   new MeridianWebStack(app, 'MeridianWeb', {
     env,
     backendHost: backendHost(),
+    cognitoHost: process.env.MERIDIAN_COGNITO_HOSTED_UI_DOMAIN || undefined,
     description: 'Meridian travel concierge: Vite build on S3 behind CloudFront, routing the API to App Runner',
   });
 }
