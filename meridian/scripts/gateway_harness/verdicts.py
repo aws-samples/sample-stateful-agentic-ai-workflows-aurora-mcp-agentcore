@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 DENIAL = re.compile(r"^(?:AuthorizeActionException\s*-\s*)?Tool Execution Denied:", re.I)
@@ -20,13 +20,30 @@ PASS, FAIL, INFO, UNKNOWN = "PASS", "FAIL", "INFO", "UNKNOWN"
 KEYS = ("Q1", "Q2", "Q3", "Q4", "Q5", "C1", "C2", "C3", "C4", "C5")
 # Q5 only chooses between fallback designs after Q4 or C5 has already failed the run (plan
 # decision table, cases C to E), so an inconclusive Q5 must not fail an otherwise passing run.
-MAY_BE_UNKNOWN = ("Q5",)
+# Q2 may also stay UNKNOWN: Cedar denies a retyped or removed travelerId after the interceptor,
+# which masks whether the Gateway itself re-validates the rewritten arguments, and the design
+# does not depend on that answer (plan decision table).
+MAY_BE_UNKNOWN = ("Q2", "Q5")
+NOT_PROBED = "not probed"
+MAX_NOTE_CHARS = 300
+BEARER_TEXT = re.compile(r"Bearer\s+\S+", re.IGNORECASE)
+NOTE_KINDS = ("denied", "refused", "error", "http_error")
+# The probes behind each row, so a row can show the raw refusal text of the ones that failed.
+ROW_PROBES = {
+    "Q1": ("decoy_names_jordan",),
+    "Q2": ("omitted_required", "bad_type", "drop_required"),
+    "Q3": ("jordan_names_jordan",),
+    "Q4": ("decoy_names_jordan",),
+    "Q5": ("cedar_alone", "cedar_alone_control"),
+    "C1": ("jordan_names_jordan",),
+    "C2": ("forced_refusal",),
+}
 
 
 def scrub(text: str) -> str:
     """Mask account ids and token-shaped strings, and collapse whitespace to single spaces."""
     text = JWT_SHAPE.sub("<token>", text)
-    text = ACCOUNT_ID.sub("<acct>", text)
+    text = ACCOUNT_ID.sub("<acct>", BEARER_TEXT.sub("Bearer <token>", text))
     return " ".join(text.split())
 
 
@@ -99,6 +116,7 @@ class Verdict:
     question: str
     finding: str
     status: str
+    notes: str = ""
 
 
 def _traveler(outcome: Outcome | None) -> str | None:
@@ -117,7 +135,7 @@ def _ordering(obs: Observations) -> Verdict:
     outcome = obs.get("decoy_names_jordan")
     question = "Does the interceptor run before Cedar?"
     if outcome is None:
-        return Verdict("Q1", question, "not probed", UNKNOWN)
+        return Verdict("Q1", question, NOT_PROBED, UNKNOWN)
     if outcome.kind == "ok" and _traveler(outcome) == DECOY:
         return Verdict("Q1", question, "Yes. Cedar saw the rewritten id, so the deny rule "
                        "passed and the target ran with the decoy's id.", INFO)
@@ -146,7 +164,7 @@ def _revalidation(obs: Observations) -> Verdict:
     omitted, typed, dropped = (
         obs.get("omitted_required"), obs.get("bad_type"), obs.get("drop_required"))
     if omitted is None or typed is None or dropped is None:
-        return Verdict("Q2", question, "not probed", UNKNOWN)
+        return Verdict("Q2", question, NOT_PROBED, UNKNOWN)
     traveler = (_rewritten_event(typed) or {}).get("travelerId")
     wrong_type_arrived = isinstance(traveler, int) and not isinstance(traveler, bool)
     arrived = _rewritten_event(dropped)
@@ -166,6 +184,12 @@ def _revalidation(obs: Observations) -> Verdict:
         "answers whether re-validation happens at all."
     )
     inconclusive = any("inconclusive" in half for half in halves)
+    if inconclusive:
+        finding += (
+            " Not measured: where Cedar denied a probe it ran after the interceptor and masks "
+            "whether the Gateway itself re-validates the rewritten arguments. A later probe "
+            "needs a policy engine with only permit_all, so nothing denies the call."
+        )
     return Verdict("Q2", question, finding, UNKNOWN if inconclusive else INFO)
 
 
@@ -191,7 +215,7 @@ def _decoy(obs: Observations) -> Verdict:
     question = "Is a decoy token naming Jordan's travelerId kept from Jordan's records?"
     outcome = obs.get("decoy_names_jordan")
     if outcome is None:
-        return Verdict("Q4", question, "not probed", FAIL)
+        return Verdict("Q4", question, NOT_PROBED, FAIL)
     if outcome.kind == "denied":
         return Verdict("Q4", question, "Yes. Cedar denied it.", PASS)
     if outcome.kind == "ok" and _traveler(outcome) == DECOY:
@@ -205,7 +229,7 @@ def _cedar_alone(obs: Observations) -> Verdict:
     question = "Does Cedar alone keep the decoy out when the interceptor changes nothing?"
     outcome, control = obs.get("cedar_alone"), obs.get("cedar_alone_control")
     if outcome is None:
-        return Verdict("Q5", question, "not probed", UNKNOWN)
+        return Verdict("Q5", question, NOT_PROBED, UNKNOWN)
     if outcome.kind == "ok" and _traveler(outcome) == JORDAN:
         return Verdict("Q5", question, "No. Cedar did not stop the decoy's call naming Jordan's "
                        "id; the target received it. Cedar alone is not enough.", INFO)
@@ -257,7 +281,7 @@ def _detached(obs: Observations) -> Verdict:
     if obs.detach_error is not None:
         return Verdict("C5", question, f"No. The detach step failed: {obs.detach_error}", FAIL)
     if remaining is None:
-        return Verdict("C5", question, "not probed", UNKNOWN)
+        return Verdict("C5", question, NOT_PROBED, UNKNOWN)
     if remaining == 0:
         return Verdict("C5", question, "Yes. An update without interceptorConfigurations left "
                        "none attached, so one update_gateway call is the rollback.", PASS)
@@ -265,8 +289,26 @@ def _detached(obs: Observations) -> Verdict:
                    "after an update that omitted them; the rollback cannot detach it.", FAIL)
 
 
+def _notes(obs: Observations, key: str) -> str:
+    """The masked, truncated message of each non-ok probe behind row ``key``."""
+    parts = []
+    for name in ROW_PROBES.get(key, ()):
+        outcome = obs.get(name)
+        if outcome is not None and outcome.kind in NOTE_KINDS:
+            message = scrub(outcome.message)[:MAX_NOTE_CHARS]
+            parts.append(f"{name}: {outcome.kind} {outcome.status}: {message}")
+    return " | ".join(parts)
+
+
 def derive_verdicts(obs: Observations) -> list[Verdict]:
-    """The five open questions (Q1 to Q5), then the five controls (C1 to C5) behind them."""
+    """The five open questions (Q1 to Q5), then the five controls (C1 to C5) behind them.
+
+    Each row carries ``notes``: the masked raw message of the probes that were denied or failed.
+    """
+    return [replace(row, notes=_notes(obs, row.key)) for row in _rows(obs)]
+
+
+def _rows(obs: Observations) -> list[Verdict]:
     return [
         _ordering(obs), _revalidation(obs), _target_view(obs), _decoy(obs), _cedar_alone(obs),
         _control(obs), _refusal_shape(obs), _policy_accepted(obs), _pass_through(obs),
@@ -277,11 +319,17 @@ def derive_verdicts(obs: Observations) -> list[Verdict]:
 def passed(verdicts: list[Verdict]) -> bool:
     """True when all ten rows are present and each is PASS or INFO.
 
-    FAIL and UNKNOWN fail the run, except an UNKNOWN row named in ``MAY_BE_UNKNOWN`` (Q5).
+    FAIL and UNKNOWN fail the run, except an UNKNOWN row named in ``MAY_BE_UNKNOWN`` (Q2, Q5).
     """
     return {v.key for v in verdicts} >= set(KEYS) and all(
-        v.status in (PASS, INFO) or (v.status == UNKNOWN and v.key in MAY_BE_UNKNOWN)
-        for v in verdicts)
+        v.status in (PASS, INFO) or _tolerated_unknown(v) for v in verdicts)
+
+
+def _tolerated_unknown(verdict: Verdict) -> bool:
+    """An inconclusive Q2 or Q5; a Q2 probe that never ran is a harness defect and fails."""
+    if verdict.status != UNKNOWN or verdict.key not in MAY_BE_UNKNOWN:
+        return False
+    return verdict.key != "Q2" or verdict.finding != NOT_PROBED
 
 
 def format_table(verdicts: list[Verdict]) -> str:
@@ -290,6 +338,8 @@ def format_table(verdicts: list[Verdict]) -> str:
     for verdict in verdicts:
         lines.append(f"{verdict.key:<3} {verdict.status:<6} {scrub(verdict.question)}")
         lines.append(f"{'':<10}{scrub(verdict.finding)}")
+        if verdict.notes:
+            lines.append(f"{'':<10}notes: {scrub(verdict.notes)}")
     lines.append("-" * 78)
     lines.append("RESULT: " + ("PASS" if passed(verdicts) else "FAIL"))
     return "\n".join(lines)

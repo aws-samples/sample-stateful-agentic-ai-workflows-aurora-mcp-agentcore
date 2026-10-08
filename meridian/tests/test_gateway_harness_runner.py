@@ -568,3 +568,13 @@ def test_a_transport_url_error_fails_the_run_and_tears_down(tmp_path, capsys):
     assert runner.run_live(ENV, TEMPLATE, tmp_path, deps) == runner.EXIT_FAIL
     assert world.control.names().count("delete_gateway") == 1
     assert "Traceback" not in capsys.readouterr().out
+
+
+def test_verdicts_json_and_the_table_keep_a_masked_message_for_denied_probes(tmp_path, capsys):
+    runner.run_live(ENV, TEMPLATE, tmp_path, World().deps())
+    out = capsys.readouterr().out
+    rows = {row["key"]: row for row in json.loads(
+        (tmp_path / NAME / "verdicts.json").read_text())}
+    assert "cedar_alone: denied 200" in rows["Q5"]["notes"]
+    assert "notes: cedar_alone: denied 200" in out
+    assert all(len(row["notes"]) < 1000 for row in rows.values())

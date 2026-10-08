@@ -303,3 +303,76 @@ def test_the_table_has_a_row_per_verdict_and_a_result_line():
         assert f"\n{key} " in text
     assert text.endswith("RESULT: PASS")
     assert v.format_table(v.derive_verdicts(v.Observations())).endswith("RESULT: FAIL")
+
+
+def masked_denial(text):
+    return v.Outcome("denied", 200, text)
+
+
+def test_q2_unknown_never_fails_an_otherwise_passing_run():
+    masked = observations(bad_type=DENIED, drop_required=DENIED)
+    rows = v.derive_verdicts(masked)
+    assert {row.key: row.status for row in rows}["Q2"] == v.UNKNOWN
+    assert v.passed(rows)
+
+
+def test_a_q2_fail_row_still_fails_the_run():
+    rows = [
+        v.Verdict(row.key, row.question, row.finding, v.FAIL if row.key == "Q2" else row.status)
+        for row in v.derive_verdicts(observations())
+    ]
+    assert not v.passed(rows)
+
+
+def test_other_unknown_rows_still_fail_the_run():
+    for key in ("Q1", "C5"):
+        rows = [
+            v.Verdict(r.key, r.question, r.finding, v.UNKNOWN if r.key == key else r.status)
+            for r in v.derive_verdicts(observations())
+        ]
+        assert not v.passed(rows), key
+
+
+def test_q5_unknown_still_does_not_fail_the_run():
+    rows = v.derive_verdicts(observations(cedar_alone=v.Outcome("error", 200, "boom")))
+    assert {row.key: row.status for row in rows}["Q5"] == v.UNKNOWN and v.passed(rows)
+
+
+def test_q2_says_what_it_could_not_measure_when_cedar_masks_the_probes():
+    finding = table(observations(bad_type=DENIED, drop_required=DENIED))["Q2"].finding
+    assert "Not measured" in finding
+    assert "Cedar denied" in finding and "re-validates" in finding
+    assert "permit_all" in finding
+
+
+def test_a_denied_probe_keeps_a_masked_truncated_message_note_on_its_row():
+    jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ4In0.c2ln"
+    text = f"Tool Execution Denied: acct 123456789012 token {jwt} " + "x" * 400
+    row = table(observations(cedar_alone=masked_denial(text)))["Q5"]
+    assert jwt not in row.notes and "123456789012" not in row.notes
+    assert "<token>" in row.notes and "<acct>" in row.notes
+    assert row.notes.startswith("cedar_alone: denied 200: Tool Execution Denied")
+    assert len(row.notes.split(": ", 2)[2]) <= 300
+
+
+def test_a_bearer_text_or_account_id_in_a_refusal_is_masked_in_notes_and_table():
+    refused = v.Outcome("refused", 200, "Identity Check Failed: Bearer abc.def 210987654321")
+    rows = v.derive_verdicts(observations(forced_refusal=refused))
+    text = v.format_table(rows)
+    assert "210987654321" not in text and "abc.def" not in text
+    assert "forced_refusal: refused 200" in text
+
+
+def test_ok_probes_add_no_notes_and_notes_name_each_non_ok_probe_of_q2():
+    assert table(observations())["Q1"].notes == ""
+    notes = table(observations(bad_type=DENIED, drop_required=DENIED))["Q2"].notes
+    assert "bad_type: denied 200" in notes and "drop_required: denied 200" in notes
+    assert "omitted_required" not in notes
+
+
+def test_a_q2_probe_that_never_ran_still_fails_the_run():
+    obs = observations()
+    del obs.outcomes["bad_type"]
+    rows = v.derive_verdicts(obs)
+    assert {row.key: row.finding for row in rows}["Q2"] == "not probed"
+    assert not v.passed(rows)
