@@ -23,7 +23,7 @@ from pathlib import Path
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from botocore.paginate import Paginator
 from dotenv import dotenv_values
 
@@ -102,8 +102,23 @@ def check_workflow_runtime(control, arn: str) -> None:
 
 
 def release_environment() -> dict:
-    """meridian/.env under the process environment, the way the other release scripts read it."""
-    return {**dotenv_values(MERIDIAN / ".env"), **os.environ}
+    """meridian/.env under the process environment, the way the other release scripts read it.
+
+    The Gateway enforcement design is a setting of record: it comes from meridian/.env alone, so
+    a variable exported in the operator's shell can neither downgrade nor change what the hops
+    are checked against.
+    """
+    from_file = dotenv_values(MERIDIAN / ".env")
+    merged = {**from_file, **os.environ}
+    merged[settings.ENFORCEMENT_ENV] = from_file.get(settings.ENFORCEMENT_ENV)
+    return merged
+
+
+def enforcement_line(mode: str, dotenv: dict) -> str:
+    """The effective Gateway enforcement design, for the plan and for any refusal."""
+    if mode != JWT:
+        return "Gateway enforcement design: not applicable (iam release)"
+    return f"Gateway enforcement design: {settings.enforcement(dotenv)} (from meridian/.env)"
 
 
 def identity_outputs(cfn) -> dict:
@@ -227,6 +242,7 @@ class Release:
     account: str
     region: str
     service_environment: dict
+    secret_arn: str
 
 
 def planned_service(service: dict, service_environment: dict, secret_arn: str,
@@ -239,7 +255,7 @@ def planned_service(service: dict, service_environment: dict, secret_arn: str,
     return config["RuntimeEnvironmentVariables"], config["RuntimeEnvironmentSecrets"]
 
 
-def release_findings(control, release: Release, service: dict, secret_arn: str) -> list[str]:
+def release_findings(control, release: Release, service: dict) -> list[str]:
     """Everything that must already be true before this release's service and site go out.
 
     The hops are read back from the control plane (the publish is the last step of the window),
@@ -250,7 +266,7 @@ def release_findings(control, release: Release, service: dict, secret_arn: str) 
     gateway_id, runtime_ids = preflight.hop_ids(release.service_environment)
     state = preflight.read_state(control, gateway_id, runtime_ids)
     variables, secrets = planned_service(
-        service, release.service_environment, secret_arn, release.mode)
+        service, release.service_environment, release.secret_arn, release.mode)
     findings = preflight.hop_findings(state, target)
     findings += preflight.check_service_environment(variables, secrets, target)
     if release.mode == JWT:
@@ -259,13 +275,18 @@ def release_findings(control, release: Release, service: dict, secret_arn: str) 
 
 
 def cdk_environment(base: dict, mode: str, outputs: dict | None, tighten: bool) -> dict:
-    """What `cdk synth` and `cdk deploy` need to know about the release."""
-    env = {**base, "MERIDIAN_AGENTCORE_AUTH": mode}
-    if mode == JWT:
-        env["MERIDIAN_COGNITO_HOSTED_UI_DOMAIN"] = outputs["HostedUiDomain"]
-        if tighten:
-            env["MERIDIAN_TIGHTEN_ROLE"] = "1"
-    return env
+    """What `cdk synth` and `cdk deploy` need to know about the release.
+
+    Every release-mode variable the infra reads is set, empty when unused (the infra treats empty
+    as unset), because `run` merges the process environment under these: a value exported in the
+    operator's shell must not widen an iam release's CSP or tighten a jwt release.
+    """
+    jwt = mode == JWT
+    return {
+        **base, "MERIDIAN_AGENTCORE_AUTH": mode,
+        "MERIDIAN_COGNITO_HOSTED_UI_DOMAIN": outputs["HostedUiDomain"] if jwt else "",
+        "MERIDIAN_TIGHTEN_ROLE": "1" if jwt and tighten else "",
+    }
 
 
 def inspect_target(session, args) -> tuple:
@@ -292,8 +313,25 @@ def inspect_target(session, args) -> tuple:
     return client, service, cfn, secret
 
 
-def deploy_release(client, args, env: dict, service: dict, secret_arn: str, mode: str) -> None:
+def check_final_definition(definition: dict, release: Release) -> None:
+    """Refuse a service definition whose environment the preflight did not see.
+
+    The preflight checks the environment synthesized for the plan; the apply builds the definition
+    from the environment the backend stack actually deployed. Both must pass the same check.
+
+    Raises:
+        SystemExit: When the final definition has findings.
+    """
+    config = definition["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"]
+    target = preflight.target_for(release.mode, release.dotenv, release.account, release.region)
+    preflight.refuse_if_any(preflight.check_service_environment(
+        config["RuntimeEnvironmentVariables"], config["RuntimeEnvironmentSecrets"], target),
+        release.mode)
+
+
+def deploy_release(client, args, env: dict, service: dict, release: Release) -> None:
     """Deploy the roles, the image, the service and the site in order, with a release receipt."""
+    mode = release.mode
     LOCAL.mkdir(mode=0o700, exist_ok=True)
     receipt_path = LOCAL / "hosted-release.json"
     receipt = {"startedAt": datetime.now(timezone.utc).isoformat(), "account": args.account,
@@ -309,7 +347,9 @@ def deploy_release(client, args, env: dict, service: dict, secret_arn: str, mode
     time.sleep(30)
     latest = client.describe_service(ServiceArn=args.service_arn)["Service"]
     definition = service_definition(
-        latest, backend["ImageUri"], json.loads(backend["ServiceEnvironment"]), roles, secret_arn, mode)
+        latest, backend["ImageUri"], json.loads(backend["ServiceEnvironment"]), roles,
+        release.secret_arn, mode)
+    check_final_definition(definition, release)
     update_service(client, latest, definition)
     site = cdk_deploy(STACKS[2], env)
     receipt.update({"status": "deployed_pending_verification", "image": backend["ImageUri"], "site": site,
@@ -351,14 +391,15 @@ def publish(args) -> None:
         print(f"Staged the image {backend['ImageUri']} and built the site. The roles, the service "
               "and the site are unchanged.")
         return
-    release = Release(mode, dotenv, args.account, args.region, service_environment)
-    preflight.refuse_if_any(release_findings(control, release, service, secret["ARN"]), mode)
+    release = Release(mode, dotenv, args.account, args.region, service_environment, secret["ARN"])
+    print(enforcement_line(mode, dotenv))
+    preflight.refuse_if_any(release_findings(control, release, service), mode)
     # Template-only diff is read-only: it does not create a change set or publish assets.
     run(["npx", "cdk", "diff", "--no-change-set"], INFRA, env)
     if not args.apply:
         print("Plan complete. No hosted resources changed. Repeat with --apply to execute.")
         return
-    deploy_release(client, args, env, service, secret["ARN"], mode)
+    deploy_release(client, args, env, service, release)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -383,6 +424,9 @@ def main() -> int:
     except ClientError as exc:
         # AWS diagnostics can include request values: expose only the stable error code.
         print(f"AWS operation failed: {exc.response['Error']['Code']}", file=sys.stderr)
+        return 1
+    except BotoCoreError as exc:
+        print(f"AWS connection failed: {type(exc).__name__}", file=sys.stderr)
         return 1
     except (ValueError, RuntimeError, TimeoutError, subprocess.SubprocessError) as exc:
         print(f"Publish stopped: {exc}", file=sys.stderr)

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from scripts import publish
 from tests import release_support as rs
@@ -283,6 +283,15 @@ def jwt_publish(monkeypatch, tmp_path, *, control=None, proof=True, service_envi
         service_environment=service_environment or jwt_service_environment())
 
 
+def service_with_shared_token():
+    """The live iam service: a shared-token secret reference and the loopback switch."""
+    service = existing()
+    config = service["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"]
+    config["RuntimeEnvironmentSecrets"]["MERIDIAN_API_TOKEN"] = "old-reference"
+    config["RuntimeEnvironmentVariables"]["MERIDIAN_ALLOW_INSECURE_LOCALHOST"] = "1"
+    return service
+
+
 def test_the_jwt_service_has_no_shared_token_secret_or_loopback_switch():
     service = existing()
     service["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"][
@@ -366,7 +375,7 @@ def test_a_jwt_plan_builds_the_signed_in_site_and_tells_cdk_the_mode_and_the_hos
     synth = commands.env_of("npx", "cdk", "synth", "--quiet")
     assert synth["MERIDIAN_AGENTCORE_AUTH"] == "jwt"
     assert synth["MERIDIAN_COGNITO_HOSTED_UI_DOMAIN"] == IDENTITY_OUTPUTS["HostedUiDomain"]
-    assert "MERIDIAN_TIGHTEN_ROLE" not in synth
+    assert synth["MERIDIAN_TIGHTEN_ROLE"] == ""
 
 
 def test_an_iam_plan_builds_without_sign_in_and_passes_no_pool(monkeypatch, tmp_path):
@@ -377,7 +386,7 @@ def test_an_iam_plan_builds_without_sign_in_and_passes_no_pool(monkeypatch, tmp_
     assert commands.env_of("npm", "run", "build")["VITE_REQUIRE_SIGN_IN"] == ""
     synth = commands.env_of("npx", "cdk", "synth", "--quiet")
     assert synth["MERIDIAN_AGENTCORE_AUTH"] == "iam"
-    assert "MERIDIAN_COGNITO_HOSTED_UI_DOMAIN" not in synth
+    assert synth["MERIDIAN_COGNITO_HOSTED_UI_DOMAIN"] == ""
 
 
 def test_tighten_sets_the_role_switch_only_in_jwt_mode(monkeypatch, tmp_path):
@@ -413,6 +422,9 @@ def test_stage_builds_and_pushes_the_image_and_changes_nothing_else(monkeypatch,
     deploys = [c for c in commands if c[:3] == ["npx", "cdk", "deploy"]]
     assert [c[3] for c in deploys] == ["MeridianWebBackend"]
     assert ["npx", "cdk", "diff", "--no-change-set"] not in commands
+    apprunner = publish.boto3.Session().client("apprunner")
+    apprunner.update_service.assert_not_called()
+    assert not (tmp_path / ".local" / "hosted-release.json").exists()
 
 
 def test_stage_and_apply_cannot_be_combined():
@@ -504,8 +516,9 @@ def test_a_jwt_plan_refuses_a_service_environment_without_the_pool(monkeypatch, 
 
 
 def test_the_planned_service_never_keeps_the_shared_token_in_the_jwt_release():
+    service = service_with_shared_token()
     variables, secrets = publish.planned_service(
-        existing(), jwt_service_environment(), "token-reference", "jwt")
+        service, jwt_service_environment(), "token-reference", "jwt")
 
     assert "MERIDIAN_API_TOKEN" not in variables and "MERIDIAN_API_TOKEN" not in secrets
     assert variables["MERIDIAN_AGENTCORE_AUTH"] == "jwt"
@@ -540,3 +553,158 @@ def test_the_identity_output_check_reports_every_mismatch_in_one_error():
         publish.check_outputs_match_settings(wrong, cognito)
 
     assert "UserPoolId" in str(raised.value) and "AppClientId" in str(raised.value)
+
+
+# ------------------------------------------------ the shell never changes the release
+
+
+def test_an_iam_plan_and_a_jwt_plan_without_tighten_blank_the_hosted_ui_and_tighten_variables(
+        monkeypatch):
+    monkeypatch.setenv("MERIDIAN_COGNITO_HOSTED_UI_DOMAIN", "evil.auth.us-east-1.amazoncognito.com")
+    monkeypatch.setenv("MERIDIAN_TIGHTEN_ROLE", "1")
+    base = {"CDK_DOCKER": "finch"}
+
+    iam = publish.cdk_environment(base, "iam", None, False)
+    jwt = publish.cdk_environment(base, "jwt", IDENTITY_OUTPUTS, False)
+    tightened = publish.cdk_environment(base, "jwt", IDENTITY_OUTPUTS, True)
+
+    assert iam["MERIDIAN_COGNITO_HOSTED_UI_DOMAIN"] == "" and iam["MERIDIAN_TIGHTEN_ROLE"] == ""
+    assert jwt["MERIDIAN_COGNITO_HOSTED_UI_DOMAIN"] == IDENTITY_OUTPUTS["HostedUiDomain"]
+    assert jwt["MERIDIAN_TIGHTEN_ROLE"] == ""
+    assert tightened["MERIDIAN_TIGHTEN_ROLE"] == "1"
+    assert iam["MERIDIAN_AGENTCORE_AUTH"] == "iam" and jwt["MERIDIAN_AGENTCORE_AUTH"] == "jwt"
+
+
+def test_the_gateway_enforcement_design_is_read_from_the_env_file_not_the_shell(
+        monkeypatch, tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("MERIDIAN_GATEWAY_ENFORCEMENT=interceptor\nOTHER=kept\n")
+    monkeypatch.setattr(publish, "MERIDIAN", tmp_path)
+    monkeypatch.setenv("MERIDIAN_GATEWAY_ENFORCEMENT", "cedar")
+    monkeypatch.setenv("MERIDIAN_AGENTCORE_AUTH", "jwt")
+
+    assert publish.release_environment()["MERIDIAN_GATEWAY_ENFORCEMENT"] == "interceptor"
+    assert publish.release_environment()["MERIDIAN_AGENTCORE_AUTH"] == "jwt"
+
+    env_file.write_text("OTHER=kept\n")
+    assert not publish.release_environment().get("MERIDIAN_GATEWAY_ENFORCEMENT")
+
+
+def test_a_jwt_plan_prints_the_enforcement_design_and_so_does_its_refusal(
+        monkeypatch, tmp_path, capsys):
+    jwt_publish(monkeypatch, tmp_path)
+    publish.publish(ARGS)
+    assert "Gateway enforcement design: both" in capsys.readouterr().out
+
+    jwt_publish(monkeypatch, tmp_path / "again", control=control_returning("READY", "iam"),
+                MERIDIAN_GATEWAY_ENFORCEMENT="cedar")
+    with pytest.raises(SystemExit):
+        publish.publish(ARGS)
+    assert "Gateway enforcement design: cedar" in capsys.readouterr().out
+
+
+def test_an_iam_plan_says_the_enforcement_design_does_not_apply(monkeypatch, tmp_path, capsys):
+    planned_publish(monkeypatch, tmp_path, control_returning("READY"))
+    publish.publish(ARGS)
+    assert "Gateway enforcement design: not applicable" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------------ apply
+
+
+def apply_publish(monkeypatch, tmp_path, deployed_environment=None):
+    """A jwt publish ready to --apply with every AWS call faked; returns (order, client)."""
+    jwt_publish(monkeypatch, tmp_path)
+    order = []
+    deployed = {
+        "MeridianWebRoles": {"AccessRoleArn": "pull", "InstanceRoleArn": "task"},
+        "MeridianWebBackend": {
+            "ImageUri": "ecr/image:tag",
+            "ServiceEnvironment": json.dumps(deployed_environment or jwt_service_environment())},
+        "MeridianWeb": {"DistributionId": "EXAMPLE"},
+    }
+    monkeypatch.setattr(publish, "cdk_deploy", lambda stack, env: (order.append(stack),
+                                                                    deployed[stack])[1])
+    monkeypatch.setattr(publish.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(publish, "wait_for_operation", lambda *args, **kwargs: None)
+    monkeypatch.setattr(publish, "LOCAL", tmp_path / ".local")
+    client = publish.boto3.Session().client("apprunner")
+    live = client.describe_service.return_value["Service"]
+    live["SourceConfiguration"] = service_with_shared_token()["SourceConfiguration"]
+
+    def accept(ServiceArn, **definition):
+        client.describe_service.return_value = {"Service": {**live, **definition}}
+        return {"OperationId": "op"}
+
+    client.update_service.side_effect = accept
+    return order, client
+
+
+def test_apply_deploys_roles_then_backend_then_the_jwt_service_then_the_site(
+        monkeypatch, tmp_path):
+    order, client = apply_publish(monkeypatch, tmp_path)
+
+    publish.publish(SimpleNamespace(**{**vars(ARGS), "apply": True}))
+
+    assert order == ["MeridianWebRoles", "MeridianWebBackend", "MeridianWeb"]
+    sent = client.update_service.call_args.kwargs
+    config = sent["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"]
+    assert "MERIDIAN_API_TOKEN" not in config["RuntimeEnvironmentVariables"]
+    assert "MERIDIAN_API_TOKEN" not in config["RuntimeEnvironmentSecrets"]
+    assert "MERIDIAN_ALLOW_INSECURE_LOCALHOST" not in config["RuntimeEnvironmentVariables"]
+    assert config["RuntimeEnvironmentVariables"]["MERIDIAN_AGENTCORE_AUTH"] == "jwt"
+    receipt = json.loads((tmp_path / ".local" / "hosted-release.json").read_text())
+    assert receipt["identityMode"] == "jwt"
+    assert receipt["status"] == "deployed_pending_verification"
+
+
+def test_apply_refuses_a_deployed_service_environment_the_plan_did_not_check(
+        monkeypatch, tmp_path):
+    master = jwt_service_environment()["AURORA_SECRET_ARN"]
+    drifted = jwt_service_environment(AURORA_BACKEND_SECRET_ARN=master + "-other")
+    order, client = apply_publish(monkeypatch, tmp_path, deployed_environment=drifted)
+
+    with pytest.raises(SystemExit, match="would not run as the meridian_backend login"):
+        publish.publish(SimpleNamespace(**{**vars(ARGS), "apply": True}))
+
+    client.update_service.assert_not_called()
+    assert "MeridianWeb" not in order
+
+
+# ------------------------------------------------------------ AWS failures
+
+
+def run_main(monkeypatch, capsys):
+    monkeypatch.setattr(publish.sys, "argv", [
+        "publish.py", "--account", "123456789012", "--service-arn", SERVICE_ARN])
+    code = publish.main()
+    return code, capsys.readouterr()
+
+
+def test_a_client_error_reading_the_gateway_refuses_the_publish(monkeypatch, tmp_path, capsys):
+    control = control_returning("READY", "jwt")
+    control.get_gateway.side_effect = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "secret detail"}}, "GetGateway")
+    commands = jwt_publish(monkeypatch, tmp_path, control=control)
+
+    code, output = run_main(monkeypatch, capsys)
+
+    assert code == 1
+    assert "AWS operation failed: AccessDeniedException" in output.err
+    assert "secret detail" not in output.err + output.out
+    assert ["npx", "cdk", "diff", "--no-change-set"] not in commands
+
+
+def test_a_connection_failure_refuses_the_publish_with_a_masked_message(
+        monkeypatch, tmp_path, capsys):
+    control = control_returning("READY", "jwt")
+    control.get_gateway.side_effect = EndpointConnectionError(
+        endpoint_url="https://private-host.example")
+    commands = jwt_publish(monkeypatch, tmp_path, control=control)
+
+    code, output = run_main(monkeypatch, capsys)
+
+    assert code == 1
+    assert "AWS connection failed: EndpointConnectionError" in output.err
+    assert "private-host.example" not in output.err + output.out
+    assert ["npx", "cdk", "diff", "--no-change-set"] not in commands
