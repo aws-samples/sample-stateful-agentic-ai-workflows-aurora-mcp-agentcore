@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CODE, authorizeRedirect, cognitoDomain, hostedOrigin, installSession, isAuthorize, isToken,
-  tokenResponse,
+  readTokenPipe, tokenFdFromArgs, tokenResponse,
 } from './session_routes.mjs';
 
 const HOST = 'https://meridian-travelers-test.auth.us-east-1.amazoncognito.com';
@@ -100,4 +100,46 @@ test('the Cognito domain comes from the frontend settings and must be a hosted-U
   assert.equal(cognitoDomain(env), 'x.auth.us-east-1.amazoncognito.com');
   assert.throws(() => cognitoDomain('VITE_COGNITO_DOMAIN=evil.example.com'), /hosted-UI/);
   assert.throws(() => cognitoDomain('VITE_X=1'), /VITE_COGNITO_DOMAIN/);
+});
+
+test('the token descriptor is a number of 3 or higher taken from --token-fd', () => {
+  assert.deepEqual(tokenFdFromArgs(['--token-fd', '7', 'a', 'b']), { fd: 7, rest: ['a', 'b'] });
+  assert.deepEqual(tokenFdFromArgs(['a', '--token-fd=9', 'b']), { fd: 9, rest: ['a', 'b'] });
+  assert.throws(() => tokenFdFromArgs(['a']), /--token-fd/);
+  for (const bad of ['0', '1', '2', 'x', '-1', '3.5']) {
+    assert.throws(() => tokenFdFromArgs(['--token-fd', bad]), /--token-fd/);
+  }
+});
+
+const fakeFs = (stat, data) => ({
+  fstatSync: () => stat,
+  readFileSync: () => data,
+});
+const FIFO = { isFIFO: () => true };
+
+test('tokens are read from a pipe descriptor and parsed', () => {
+  const tokens = readTokenPipe(7, fakeFs(FIFO, '{"jordan":{"access":"a","id":"i"}}'));
+  assert.equal(tokens.jordan.access, 'a');
+});
+
+test('anything but a pipe is refused without reading', () => {
+  const noRead = { fstatSync: () => ({ isFIFO: () => false }), readFileSync: () => {
+    throw new Error('read');
+  } };
+  assert.throws(() => readTokenPipe(7, noRead), /not a pipe/);
+  assert.throws(() => readTokenPipe(7, { fstatSync: () => { throw new Error('EBADF'); } }),
+    /not open/);
+});
+
+test('a bad message never echoes its content or the token', () => {
+  const secret = 'SENTINEL-TOKEN-NOT-A-REAL-JWT';
+  for (const body of [`{"jordan": "${secret}`, `{"jordan":{"access":"${secret}"}}`, '']) {
+    try {
+      readTokenPipe(7, fakeFs(FIFO, body));
+      assert.fail('expected a refusal');
+    } catch (error) {
+      assert.equal(error.message.includes(secret), false);
+      assert.match(error.message, /token message|jordan/);
+    }
+  }
 });

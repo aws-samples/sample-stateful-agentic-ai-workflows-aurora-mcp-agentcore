@@ -76,3 +76,39 @@ export function cognitoDomain(envText) {
   }
   return domain;
 }
+
+// The tokens arrive only on an inherited pipe: capture_session.py creates it and passes its read
+// end here as --token-fd N. They are never read from standard input, argv or the environment.
+export function tokenFdFromArgs(argv) {
+  const rest = [];
+  let text = null;
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === '--token-fd') { text = argv[i + 1]; i += 1; }
+    else if (argv[i].startsWith('--token-fd=')) text = argv[i].slice('--token-fd='.length);
+    else rest.push(argv[i]);
+  }
+  if (text === null || !/^\d+$/.test(text) || Number(text) < 3) {
+    throw new Error('--token-fd N (3 or higher) is required; run capture_session.py');
+  }
+  return { fd: Number(text), rest };
+}
+
+export function readTokenPipe(fd, fsApi) {
+  let isPipe;
+  try {
+    isPipe = fsApi.fstatSync(fd).isFIFO();
+  } catch {
+    throw new Error(`descriptor ${fd} is not open`);
+  }
+  if (!isPipe) throw new Error(`descriptor ${fd} is not a pipe`);
+  let tokens;
+  try {
+    tokens = JSON.parse(fsApi.readFileSync(fd, 'utf8'));
+  } catch {
+    throw new Error('the token message is not the JSON that mint_session.py writes');
+  }
+  if (!tokens?.jordan?.access || !tokens?.jordan?.id) {
+    throw new Error('the token message has no tokens for jordan');
+  }
+  return tokens;
+}

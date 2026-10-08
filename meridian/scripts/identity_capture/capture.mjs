@@ -1,28 +1,41 @@
 // Captures the sign-in, the signed-in traveler, the RLS probe and the identity receipt.
-//   venv/bin/python scripts/identity_capture/mint_session.py \
-//     | node scripts/identity_capture/capture.mjs <base-url> <out-dir> <summary-html>
-// The tokens arrive on standard input and stay in memory. No password is typed or read.
+//   venv/bin/python scripts/identity_capture/capture_session.py <base-url> <out-dir> <summary-html>
+// capture_session.py creates a pipe, hands the write end to mint_session.py and the read end to
+// this script as --token-fd N. The tokens never touch standard input or output, argv, the
+// environment or a file, and stay in memory. No password is typed or read. Do not run this by hand.
 // Conventions are those of RIV/_deck-kit/tools/capture_storyboard.mjs: system Chrome, 1920 by 1080
 // at device scale 2 (3840 by 2160 pixels), dark theme, presentation mode, a problems log.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from '../../frontend/node_modules/playwright-core/index.mjs';
-import { cognitoDomain, hostedOrigin, installSession } from './session_routes.mjs';
+import {
+  cognitoDomain, hostedOrigin, installSession, readTokenPipe, tokenFdFromArgs,
+} from './session_routes.mjs';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PHASE_4_PROMPT =
   'Recall my Tokyo plan and saved preferences: home airport, food needs, and budget.';
 const MERIDIAN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const [base, outDir, summaryHtml] = process.argv.slice(2);
 
 function refuse(message) {
   console.error(message);
   process.exit(3);
 }
 
+let tokenFd;
+let positional;
+try {
+  const parsed = tokenFdFromArgs(process.argv.slice(2));
+  tokenFd = parsed.fd;
+  positional = parsed.rest;
+} catch (error) {
+  refuse(error.message);
+}
+const [base, outDir, summaryHtml] = positional;
+
 if (!base || !outDir || !summaryHtml) {
-  refuse('usage: mint_session.py | node capture.mjs <base-url> <out-dir> <summary-html>');
+  refuse('usage: capture_session.py <base-url> <out-dir> <summary-html>');
 }
 let pin;
 try {
@@ -37,17 +50,11 @@ try {
 } catch (error) {
   refuse(`cannot validate the hosted site settings: ${error.message}`);
 }
-if (process.stdin.isTTY) {
-  refuse('standard input is a terminal; pipe mint_session.py into this script');
-}
 let tokens;
 try {
-  tokens = JSON.parse(fs.readFileSync(0, 'utf8'));
-} catch {
-  refuse('standard input is not the JSON that mint_session.py writes');
-}
-if (!tokens.jordan?.access || !tokens.jordan?.id) {
-  refuse('no tokens for jordan on standard input; pipe mint_session.py into this script');
+  tokens = readTokenPipe(tokenFd, fs);
+} catch (error) {
+  refuse(error.message);
 }
 fs.mkdirSync(outDir, { recursive: true });
 
