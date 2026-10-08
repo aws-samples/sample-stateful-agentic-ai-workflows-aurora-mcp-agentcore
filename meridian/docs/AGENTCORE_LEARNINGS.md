@@ -69,8 +69,8 @@ separate Gateway that it created and deleted, before anything was released. The 
 The design that shipped is `both`: the interceptor replaces `travelerId` with the token's traveler and Cedar denies a
 mismatch, with `MERIDIAN_GATEWAY_ENFORCEMENT` unset. Cedar alone (`cedar`) is a valid fallback because of Q5. The
 Cedar denial text was not stored by the run; it is known only as `Tool Execution Denied` in an `isError` result, so
-the identity proof attributes a Gateway refusal by the change in `traveler_access_audit` deny rows and records
-`not_attributed` when the text matches no layer. The identity proof records, in every receipt, which part of the
+the identity proof attributes a Gateway refusal by the change in `traveler_access_audit` deny rows or by a
+recognised refusal text or code, and counts nothing else as a refusal. The identity proof records, in every receipt, which part of the
 Gateway refused the decoy.
 
 ## Why two directories

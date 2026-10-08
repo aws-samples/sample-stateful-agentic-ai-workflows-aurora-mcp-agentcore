@@ -12,6 +12,7 @@ DOCS = MERIDIAN / "docs"
 OPERATIONS = (DOCS / "OPERATIONS.md").read_text()
 ARCHITECTURE = (DOCS / "STATEFUL_ARCHITECTURE.md").read_text()
 LEARNINGS = (DOCS / "AGENTCORE_LEARNINGS.md").read_text()
+WALKTHROUGH = (DOCS / "CODE_WALKTHROUGH.md").read_text()
 RUN_OF_SHOW = (DOCS / "TALK_RUN_OF_SHOW.md").read_text()
 README = (MERIDIAN / "README.md").read_text()
 SCRIPTS = (MERIDIAN / "scripts" / "README.md").read_text()
@@ -77,6 +78,7 @@ STALE = {
                            "over MCP with SigV4")),
     "OPERATIONS.md": (OPERATIONS, ("shared principal", "shared sample principal")),
     "STATEFUL_ARCHITECTURE.md": (ARCHITECTURE, ("shared principal", "shared sample principal")),
+    "CODE_WALKTHROUGH.md": (WALKTHROUGH, ("shared principal", "shared sample principal")),
 }
 
 

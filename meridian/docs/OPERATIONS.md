@@ -824,8 +824,11 @@ python scripts/identity_proof.py --render .local/identity-proof/latest.json   # 
 ```
 
 `--base-url` names the hosted site (the default comes from the release record) and `--output-dir` names a folder
-inside `.local/`. The probes, in the order they run. Each row has an expectation: a probe that aims the decoy at
-Jordan's data must end `refused`, and every other probe must end `allowed`.
+inside `.local/`. The plan has 17 probes, in the order they run. Each row has an expectation: a probe that aims the
+decoy at Jordan's data must end `refused`, and every other probe must end `allowed`. Two probes are decoy controls
+(`runtime.decoy_pings_workflow` and `gateway.decoy_reads_package`): they send the decoy's own valid token with no
+traveler named, so the decoy must be let in. They show that a refusal at the same layer came from the traveler check
+and not from a layer that turns the decoy away for any request.
 
 | Probe | Layer | Who | What it sends |
 | --- | --- | --- | --- |
@@ -838,10 +841,12 @@ Jordan's data must end `refused`, and every other probe must end `allowed`.
 | `database.jordan_sees_own_rows` | AWS Aurora | Jordan | The same transaction with Jordan pinned |
 | `runtime.decoy_tampers_workflow` | Runtimes | decoy | `MeridianWorkflow` start with Jordan's traveler in the payload |
 | `runtime.decoy_tampers_concierge` | Runtimes | decoy | `MeridianConcierge` turn with Jordan's traveler in the payload |
+| `runtime.decoy_pings_workflow` | Runtimes | decoy | `MeridianWorkflow` ping with the decoy's token, allowed |
 | `runtime.jordan_pings_workflow` | Runtimes | Jordan | `MeridianWorkflow` ping |
 | `runtime.jordan_runs_workflow` | Runtimes | Jordan | A review-only `MeridianWorkflow` start, purged afterwards |
 | `runtime.jordan_opens_concierge` | Runtimes | Jordan | A `MeridianConcierge` turn, first event only |
 | `gateway.jordan_reads_package` | Gateway | Jordan | `get_package_details` for one package |
+| `gateway.decoy_reads_package` | Gateway | decoy | `get_package_details` for one package with the decoy's token, allowed |
 | `gateway.decoy_holds_for_jordan` | Gateway | decoy | `create_courtesy_hold` with `travelerId` set to Jordan |
 | `gateway.jordan_places_hold` | Gateway | Jordan | `create_courtesy_hold`, released afterwards |
 
@@ -865,25 +870,46 @@ traveler and Cedar denies a mismatch), `cedar` or `interceptor`. `refused_by` is
 | `backend_identity_check` | The API compared the request's traveler with the token's and refused with 403 |
 | `workload_grant` | The API reached the database grant check, which has no binding for the decoy |
 | `runtime_traveler_check` | The Runtime read the traveler from the token and the payload named another |
-| `runtime_token_check` | The Runtime refused the token itself |
 | `gateway_cedar` | Cedar denied a traveler argument that differed from the token's |
 | `gateway_interceptor` | The interceptor refused the call |
 | `gateway_workload_grant` | The interceptor replaced the traveler, the Holds Lambda ran, and its grant check refused the decoy (a new `traveler_access_audit` deny row) |
 | `database_rls` | The decoy's scope saw none of Jordan's rows |
-| `not_attributed` | The Gateway refused and the text matched no layer; the refusal still counts |
 
-The Gateway row is attributed by the change in the decoy's deny rows in `traveler_access_audit` around the call: a new
-row means the Lambda was reached. Exit codes:
+The summary has one row per layer with the decoy's result, Jordan's result and the refuser. A decoy refusal counts
+only beside a passing Jordan control at the same layer, because a layer that refuses everyone proves nothing about the
+decoy. Without one the decoy shows `unproven` and no refuser is named, and the receipt fails.
+
+The Gateway rules are strict. A refusal counts only with evidence of its layer: a new deny row for the decoy in
+`traveler_access_audit` (the Lambda was reached and its grant check refused), the interceptor's
+`Identity Check Failed: ` text, or Cedar's `Tool Execution Denied` text or JSON-RPC code `-32002`. A 401 or 403, a 5xx, a
+timeout, a validation error, a failure with none of that evidence, a refusal from a layer the shipped `design` does not
+have, and evidence that contradicts itself (layer text together with a new deny row) are all `error`. There is no
+fallback label for a refusal that names no layer. Exit codes:
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Every probe met its expectation, every layer has a decoy refusal and a Jordan control, nothing was left behind |
+| 0 | Every probe met its expectation, every layer has a decoy refusal beside a passing Jordan control, nothing was left behind |
 | 1 | A probe failed or errored, a layer has no probe, a leftover remains, or the run crashed or was interrupted |
 | 3 | Refused to start: a guard, a usage error, a missing flag or an output folder outside `.local/` |
 
 The guards are the mode (`jwt`), the Cognito settings, a clean `meridian/` tree, the AWS account and Region of the
-deployment, and an `https` site address (or `http` on localhost). Jordan's controls write a review-only Workflow run and
-one courtesy hold; both are removed by id and a leftover fails the receipt. Audit rows are append-only and stay.
+deployment, and an `https` site address (or `http` on localhost).
+
+Before the first probe, a preflight reads the tables the proof counts without a traveler scope
+(`traveler_access_audit`, `journey_threads`, `hold_requests`, `workflow_snapshots` and `journey_executions`). It stops
+the run unless the Aurora role sees their rows: a table with forced row-level security, or one the role neither owns nor
+bypasses, would answer with zero rows and no error, and the deny-row attribution and the leftover check would pass for
+the wrong reason. It must pass on the live cluster before the proof counts for anything.
+
+Jordan's controls write a review-only Workflow run and one courtesy hold. Cleanup releases bookings by exact id, and only
+a booking that the call's own answer or its journey reference ties to this run. Any other booking that appears while a
+probe runs is reported and never deleted, and it fails the receipt, as does any booking a decoy probe makes. Threads
+are purged after the bookings are released, and every step runs even if an earlier one failed. A leftover or a cleanup
+problem fails the receipt.
+
+Some residue stays on purpose and is listed under `notes` in the receipt. Audit rows (`traveler_access_audit` and the
+agent audit log) are append-only. The Concierge probes write AgentCore Memory events for Jordan's traveler, under the
+session ids the receipt names, and this command does not delete them; they age out under the memory's event expiry.
 
 The proof, the captures that use it and the deck slide that shows it all run after the release, in the window the
 owner approves. Nothing here has been run against the deployed system yet.
@@ -976,7 +1002,10 @@ explains why App Runner needs this.
 | The API returns 401 with code `sign_in_required` | In `jwt` mode a request reached an AgentCore client with no caller token. Send the Cognito access token in `Authorization: Bearer`. |
 | `stop-session` returns 409 | The journey has no paused or running workflow session, or its session was already stopped. Read the journey before trying again. |
 | `identity_proof.py` reports a decoy probe `allowed` where it expected `refused` | A layer let the decoy through. Stop and treat it as a security finding. The `Detail` column says which layer. Do not change the probe. |
-| `identity_proof.py` reports `Refused, layer not attributed` for the Gateway | The refusal text matched no layer and no deny row was added. The refusal still counts. Read `design` in the receipt and compare the refusal text with the layers listed under Read the receipt. |
+| `identity_proof.py` reports a Gateway probe as `error` with "a failure with no refusal evidence" | The call failed without the interceptor's text, Cedar's text or code, or a new deny row, so it does not show that identity was the reason. Read `shape` and the detail in the receipt. A 401, a 5xx or a timeout is a Gateway or network fault to fix first. |
+| `identity_proof.py` shows `unproven` for a layer | The decoy was refused but the Jordan control at that layer did not pass, so the refusal proves nothing. Fix the control and run again. |
+| `identity_proof.py` stops with an unscoped read that could return zero rows | The preflight found a table the proof reads without a scope that the Aurora role cannot see. Fix the role or the policy before running. |
+| `identity_proof.py` reports a booking that appeared and cannot be tied to the run | Something else wrote a booking during a probe. It was not deleted. Check it by id and remove it yourself if it is a test row. |
 | `identity_proof.py` reports an access-denied error on a Runtime row for Jordan | The Runtime's authorizer rejected a valid token. Check that the Cognito app client is in the Runtime's allowed clients and that `Authorization` is in its request header allowlist. |
 | `identity_proof.py` prints `CLEANUP:` lines or leftovers above 0 | Something the run made remains. List threads that start with `phase5-proof-idp` and holds the run placed, then purge and release them by id. |
 
