@@ -30,7 +30,7 @@ RUNTIME_NAMES = {"AGENTCORE_RUNTIME_ARN": "MeridianConcierge",
 PROOF_MAX_AGE = timedelta(days=7)
 PROOF_FUTURE_SKEW = timedelta(minutes=5)
 PROOF_LOGIN = "meridian_backend"
-PROOF_COMMAND = "python scripts/prove_backend_login.py --apply"
+PROOF_COMMAND = f"python scripts/prove_backend_login.py --apply {settings.CONFIRM_FLAG}"
 SIGN_IN_VARIABLES = (
     "MERIDIAN_COGNITO_REGION", "MERIDIAN_COGNITO_USER_POOL_ID", "MERIDIAN_COGNITO_APP_CLIENT_ID",
 )

@@ -14,6 +14,7 @@ from scripts import warm_demo
 from scripts.identity_release import preflight, settings
 
 NOW = datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
+SHA = "0123456789abcdef0123456789abcdef01234567"
 BACKEND_SECRET = "arn:aws:secretsmanager:us-east-1:123456789012:secret:backend-login-AbC123"
 MASTER_SECRET = "arn:aws:secretsmanager:us-east-1:123456789012:secret:master-AbC123"
 ENV = {
@@ -78,7 +79,7 @@ class Harness:
 
         return proof.Dependencies(
             env=ENV, caller=caller, identity=identity, start_backend=start, wait_healthy=wait,
-            run_step=run_step, now=lambda: NOW, commit=lambda: "abc1234", receipt_path=self.path)
+            run_step=run_step, now=lambda: NOW, git_sha=lambda: SHA, receipt_path=self.path)
 
 
 def run(harness, *flags):
@@ -114,17 +115,74 @@ def test_a_passing_run_checks_the_login_first_starts_the_backend_and_records_the
         "step warm", "step recovery"]
     assert harness.backend.stopped
     receipt = json.loads(harness.path.read_text())
-    assert receipt["ok"] is True and receipt["login"] == "meridian_backend"
-    assert receipt["commit"] == "abc1234" and receipt["at"] == NOW.isoformat()
-    assert [s["name"] for s in receipt["steps"]] == ["warm", "recovery"]
+    assert receipt == {
+        "ok": True, "at": NOW.isoformat(), "account": "123456789012", "region": "us-east-1",
+        "user_pool_id": "us-east-1_AbCdEfGhI", "git_sha": SHA, "login": "meridian_backend",
+        "checks": {"warm": True, "recovery": True}}
+    assert set(receipt) == set(settings.PROOF_FIELDS)
     assert stat.S_IMODE(harness.path.stat().st_mode) == 0o600
+
+
+def target():
+    return preflight.target_for("jwt", ENV, "123456789012", "us-east-1")
 
 
 def test_the_recorded_proof_satisfies_the_publish_preflight(tmp_path):
     harness = Harness(tmp_path)
     run(harness)
 
-    assert preflight.check_backend_login_proof(harness.path, NOW) == []
+    assert preflight.check_backend_login_proof(harness.path, target(), SHA, NOW) == []
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("ok", False), ("ok", "true"), ("at", "2026-10-08T12:00:00"),
+    ("at", "2026-09-01T00:00:00+00:00"), ("account", "210987654321"), ("region", "eu-west-1"),
+    ("user_pool_id", "us-east-1_Other"),
+    ("git_sha", "f" * 40), ("login", "meridian_admin"), ("checks", {}),
+    ("checks", {"warm": False}),
+])
+def test_each_tampered_field_of_the_receipt_is_refused(tmp_path, field, value):
+    harness = Harness(tmp_path)
+    run(harness)
+    receipt = json.loads(harness.path.read_text())
+    receipt[field] = value
+    harness.path.write_text(json.dumps(receipt))
+
+    found = preflight.check_backend_login_proof(harness.path, target(), SHA, NOW)
+
+    assert found and all(line.startswith("Backend login proof:") for line in found)
+
+
+@pytest.mark.parametrize("harness_args", [{"failing": "recovery"}, {"healthy": False},
+                                          {"crash": RuntimeError("boom")}])
+def test_a_failed_or_crashed_run_writes_a_receipt_the_preflight_refuses(tmp_path, harness_args):
+    harness = Harness(tmp_path, **harness_args)
+    run(harness)
+
+    found = preflight.check_backend_login_proof(harness.path, target(), SHA, NOW)
+
+    assert len(found) == 1 and "the last run did not pass" in found[0]
+
+
+def test_a_missing_pool_or_unreadable_head_is_refused_before_anything_starts(tmp_path, capsys):
+    harness = Harness(tmp_path)
+    deps = harness.deps()
+    deps.env = {k: v for k, v in ENV.items() if k != "MERIDIAN_COGNITO_USER_POOL_ID"}
+
+    assert proof.main(["--apply", settings.CONFIRM_FLAG], deps) == 3
+
+    assert harness.events == [] and not harness.path.exists()
+    assert "MERIDIAN_COGNITO_USER_POOL_ID" in capsys.readouterr().out
+
+
+def test_the_hint_command_parses_with_the_proof_scripts_own_parser():
+    words = preflight.PROOF_COMMAND.split()
+    assert words[:2] == ["python", "scripts/prove_backend_login.py"]
+    assert settings.CONFIRM_FLAG in words
+
+    args = proof.build_parser().parse_args(words[2:])
+
+    assert args.apply and args.confirmed
 
 
 def test_the_backend_runs_as_the_login_with_no_shared_token_or_pool_and_loopback_on(tmp_path):
@@ -159,7 +217,7 @@ def test_a_failing_step_stops_the_run_records_a_failure_and_still_stops_the_back
 
     assert "step recovery" not in harness.events and harness.backend.stopped
     receipt = json.loads(harness.path.read_text())
-    assert receipt["ok"] is False and [s["ok"] for s in receipt["steps"]] == [False]
+    assert receipt["ok"] is False and receipt["checks"] == {"warm": False}
 
 
 def test_a_failure_cannot_leave_an_old_passing_proof_in_place(tmp_path):
@@ -291,12 +349,8 @@ def test_the_receipt_holds_no_secret_no_output_and_stays_private_when_it_is_repl
 
     text = harness.path.read_text()
     assert stat.S_IMODE(harness.path.stat().st_mode) == 0o600
-    for forbidden in (BACKEND_SECRET, MASTER_SECRET, "123456789012", "tail of the output"):
+    for forbidden in (BACKEND_SECRET, MASTER_SECRET, "secretsmanager", "tail of the output"):
         assert forbidden not in text
-    receipt = json.loads(text)
-    scripts = [c["script"] for c in receipt["commands"]]
-    assert scripts == ["warm_demo.py", "stop_and_resume_proof.py"]
-    assert set(receipt["steps"][0]) == {"name", "ok", "seconds"}
 
 
 def test_the_masking_hides_account_ids_and_bearer_tokens():

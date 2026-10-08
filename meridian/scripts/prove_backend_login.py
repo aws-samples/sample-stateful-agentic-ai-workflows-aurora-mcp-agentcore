@@ -32,7 +32,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -95,7 +95,7 @@ class Dependencies:
     wait_healthy: Callable[[str], bool]
     run_step: Callable[[Step], StepResult]
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
-    commit: Callable[[], str] = field(default=lambda: "unknown")
+    git_sha: Callable[[], str] = settings.git_head
     receipt_path: Path = settings.PROOF_PATH
 
 
@@ -126,14 +126,35 @@ def plan_steps(env: Mapping[str, str | None], port: int) -> list[Step]:
     ]
 
 
-def write_receipt(path: Path, ok: bool, results: list[StepResult], deps: Dependencies) -> None:
-    """Record the run so the publish preflight can read it. The file is private to the owner."""
-    commands = [{"script": Path(step.argv[1]).name, "args": step.argv[2:]}
-                for step in plan_steps({}, PORT)]
-    payload = {"ok": ok, "login": BACKEND_LOGIN, "at": deps.now().isoformat(),
-               "commit": deps.commit(), "commands": commands,
-               "steps": [{"name": r.name, "ok": r.ok, "seconds": round(r.seconds, 1)}
-                         for r in results]}
+@dataclass(frozen=True)
+class Binding:
+    """What the receipt is bound to: the deployment, its pool and the commit of this checkout."""
+
+    account: str
+    region: str
+    user_pool_id: str
+    git_sha: str
+
+
+def bind(deps: Dependencies) -> Binding:
+    """The deployment and commit a receipt names, read before anything is started.
+
+    Raises:
+        settings.ReleaseConfigError: When the cluster ARN, the pool settings or the git HEAD
+            are missing or malformed.
+    """
+    account, region = settings.deployment_target(deps.env)
+    pool_id = settings.cognito_settings(deps.env).pool_id
+    return Binding(account, region, pool_id, deps.git_sha())
+
+
+def write_receipt(path: Path, ok: bool, results: list[StepResult], binding: Binding,
+                  deps: Dependencies) -> None:
+    """Record the run in the schema ``settings.PROOF_FIELDS`` documents, private to the owner."""
+    payload = {"ok": ok, "at": deps.now().isoformat(), "account": binding.account,
+               "region": binding.region, "user_pool_id": binding.user_pool_id,
+               "git_sha": binding.git_sha, "login": BACKEND_LOGIN,
+               "checks": {r.name: r.ok for r in results}}
     path.parent.mkdir(parents=True, exist_ok=True)
     scratch = path.with_name(path.name + ".tmp")
     try:
@@ -159,7 +180,7 @@ def run_steps(steps: list[Step], deps: Dependencies) -> list[StepResult]:
     return results
 
 
-def prove(secret_arn: str, deps: Dependencies) -> int:
+def prove(secret_arn: str, binding: Binding, deps: Dependencies) -> int:
     """Start the backend as the login, run the steps, always stop the backend, record the result.
 
     A crash is recorded as a failed run before it is raised, so an older passing receipt cannot
@@ -181,7 +202,7 @@ def prove(secret_arn: str, deps: Dependencies) -> int:
         if backend is not None:
             backend.stop()
     ok = crash is None and len(results) == len(steps) and all(r.ok for r in results)
-    write_receipt(deps.receipt_path, ok, results, deps)
+    write_receipt(deps.receipt_path, ok, results, binding, deps)
     if crash is not None:
         raise crash
     say(f"RESULT: {'PASS' if ok else 'FAIL'}")
@@ -232,6 +253,7 @@ def run(args: argparse.Namespace, deps: Dependencies) -> int:
         return refuse(f"--apply also needs {settings.CONFIRM_FLAG}; it calls AWS and places "
                       "a test hold")
     try:
+        binding = bind(deps)
         _account, region = guard_deployment(deps)
     except settings.ReleaseConfigError as exc:
         return refuse(str(exc))
@@ -239,16 +261,22 @@ def run(args: argparse.Namespace, deps: Dependencies) -> int:
     if who.get("login") != BACKEND_LOGIN or who.get("bypass_rls"):
         return refuse(f"the secret connects as {who.get('login')!r} (bypass RLS: "
                       f"{who.get('bypass_rls')}), not as {BACKEND_LOGIN} without BYPASSRLS")
-    return prove(secret_arn, replace(deps, env={**deps.env, "AWS_DEFAULT_REGION": region}))
+    with_region = replace(deps, env={**deps.env, "AWS_DEFAULT_REGION": region})
+    return prove(secret_arn, binding, with_region)
 
 
-def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int:
-    """Print the plan, or with both flags run the proof. Never prints a traceback."""
+def build_parser() -> argparse.ArgumentParser:
+    """The command line."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], allow_abbrev=False)
     parser.add_argument("--apply", action="store_true", help="run the proof (live)")
     parser.add_argument(settings.CONFIRM_FLAG, action="store_true", dest="confirmed",
                         help="required with --apply: it calls AWS and places a test hold")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None, deps: Dependencies | None = None) -> int:
+    """Print the plan, or with both flags run the proof. Never prints a traceback."""
+    args = build_parser().parse_args(argv)
     try:
         return run(args, deps or default_dependencies())
     except KeyboardInterrupt:
@@ -335,19 +363,12 @@ def _identity(secret_arn: str, env: Mapping[str, str | None]) -> dict[str, Any]:
     return {"login": rows[0]["login"], "bypass_rls": bool(rows[0]["bypass_rls"])}
 
 
-def _commit() -> str:
-    done = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=MERIDIAN_DIR,
-                          capture_output=True, text=True, check=False)
-    return done.stdout.strip() or "unknown"
-
-
 def default_dependencies() -> Dependencies:
     """The real environment, subprocesses and Data API."""
     env = {**dotenv_values(MERIDIAN_DIR / ".env"), **os.environ}
     return Dependencies(
         env=env, caller=_caller, identity=lambda arn: _identity(arn, env),
-        start_backend=_start_backend, wait_healthy=_wait_healthy, run_step=_run_step,
-        commit=_commit)
+        start_backend=_start_backend, wait_healthy=_wait_healthy, run_step=_run_step)
 
 
 if __name__ == "__main__":

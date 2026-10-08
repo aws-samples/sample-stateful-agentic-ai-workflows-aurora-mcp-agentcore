@@ -336,7 +336,8 @@ def test_a_naive_timestamp_is_a_finding_not_a_type_error(tmp_path):
 
     assert proof_findings(path) == [
         "Backend login proof: its timestamp has no time zone; run "
-        "`python scripts/prove_backend_login.py --apply` before the release"]
+        f"`python scripts/prove_backend_login.py --apply {settings.CONFIRM_FLAG}` before the "
+        "release"]
 
 
 def test_a_missing_or_unreadable_proof_is_a_finding_that_names_the_command(tmp_path):
