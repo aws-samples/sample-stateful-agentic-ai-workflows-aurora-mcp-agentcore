@@ -80,6 +80,7 @@ class Observations:
     outcomes: dict[str, Outcome] = field(default_factory=dict)
     binding_policy_accepted: bool = False
     listed_tools: list[str] = field(default_factory=list)
+    interceptors_after_detach: int | None = None
 
     def get(self, name: str) -> Outcome | None:
         """The outcome recorded for probe ``name``, or ``None`` if it was never run."""
@@ -242,11 +243,24 @@ def _pass_through(obs: Observations) -> Verdict:
                    "No: tools/list did not return the echo tool.", PASS if ok else FAIL)
 
 
+def _detached(obs: Observations) -> Verdict:
+    question = "Does updating the Gateway without an interceptor remove it (the rollback)?"
+    remaining = obs.interceptors_after_detach
+    if remaining is None:
+        return Verdict("C5", question, "not probed", INFO)
+    if remaining == 0:
+        return Verdict("C5", question, "Yes. An update without interceptorConfigurations left "
+                       "none attached, so one update_gateway call is the rollback.", PASS)
+    return Verdict("C5", question, f"No. The Gateway still reports {remaining} interceptor(s) "
+                   "after an update that omitted them; the rollback cannot detach it.", FAIL)
+
+
 def derive_verdicts(obs: Observations) -> list[Verdict]:
     """The four open questions, then the controls that make the answers trustworthy."""
     return [
         _ordering(obs), _revalidation(obs), _target_view(obs), _decoy(obs), _cedar_alone(obs),
         _control(obs), _refusal_shape(obs), _policy_accepted(obs), _pass_through(obs),
+        _detached(obs),
     ]
 
 

@@ -255,6 +255,27 @@ def test_every_valid_interceptor_mode_is_accepted(mode):
         "HARNESS_MODE"] == mode
 
 
+def test_detaching_updates_the_gateway_without_interceptors_and_reports_none_left():
+    harness, clients, _ = build()
+    harness.create()
+    assert harness.detach_interceptor() == 0
+    updates = clients.control.args("update_gateway")
+    assert len(updates) == 2 and "interceptorConfigurations" in updates[0]
+    detach = updates[-1]
+    assert "interceptorConfigurations" not in detach
+    assert detach["authorizerType"] == "CUSTOM_JWT" and detach["roleArn"] == updates[0]["roleArn"]
+    assert detach["policyEngineConfiguration"] == updates[0]["policyEngineConfiguration"]
+    assert clients.control.names()[-3:] == ["update_gateway", "get_gateway", "get_gateway"]
+
+
+def test_detaching_reports_the_interceptors_the_gateway_still_has():
+    harness, clients, _ = build()
+    harness.create()
+    still = {"status": "READY", "interceptorConfigurations": [{"interceptionPoints": ["REQUEST"]}]}
+    clients.control.get_gateway = lambda **kwargs: still
+    assert harness.detach_interceptor() == 1
+
+
 @pytest.mark.parametrize("mode", ["extra_argument", "", "PIN", "pin; refuse"])
 def test_an_unknown_interceptor_mode_is_refused_before_any_call(mode):
     harness, clients, _ = build()

@@ -530,6 +530,23 @@ class ThrowawayGateway:
         wait_for(lambda: _status(control.get_gateway(gatewayIdentifier=self.live.gateway_id)),
                  "READY", what="gateway update", sleep=self._sleep, clock=self._clock)
 
+    def detach_interceptor(self) -> int:
+        """Update the Gateway without its interceptor and report how many it still has.
+
+        This is the rollback the real release would use: ``update_gateway`` replaces what it is
+        given, and the API refuses an empty list, so the only way to detach is to leave the
+        field out. The read-back is what proves it worked.
+        """
+        control = self.aws.control
+        request = self._update_request(
+            self.live.gateway_id, self._role_arn, self.live.engine_arn)
+        del request["interceptorConfigurations"]
+        control.update_gateway(**request)
+        wait_for(lambda: _status(control.get_gateway(gatewayIdentifier=self.live.gateway_id)),
+                 "READY", what="gateway detach", sleep=self._sleep, clock=self._clock)
+        after = control.get_gateway(gatewayIdentifier=self.live.gateway_id)
+        return len(after.get("interceptorConfigurations") or [])
+
     # ----------------------------------------------------------------- switch
 
     def set_interceptor_mode(self, mode: str) -> None:

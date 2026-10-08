@@ -113,9 +113,10 @@ class McpHttp:
 
 def run_probes(gateway: ThrowawayGateway, http: McpHttp, tokens: dict[str, str], *,
                sleep: Callable[[float], None] = time.sleep) -> Observations:
-    """Run every probe, switching the interceptor mode between groups.
+    """Run every probe, switching the interceptor mode between groups, then detach it.
 
-    The first probe is retried while the Gateway, its roles and the policy engine settle.
+    The first probe is retried while the Gateway, its roles and the policy engine settle. The
+    detach comes last because it removes the interceptor the other probes need.
     """
     observations = Observations(binding_policy_accepted=gateway.live.binding_policy_accepted)
     current = "pin"
@@ -132,6 +133,7 @@ def run_probes(gateway: ThrowawayGateway, http: McpHttp, tokens: dict[str, str],
         observations.outcomes[probe.name] = outcome
         if probe is PROBES[0]:
             observations.listed_tools = http.list_tools(tokens["jordan"])
+    observations.interceptors_after_detach = gateway.detach_interceptor()
     return observations
 
 

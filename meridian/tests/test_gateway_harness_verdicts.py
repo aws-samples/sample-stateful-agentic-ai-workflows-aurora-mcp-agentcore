@@ -129,6 +129,25 @@ def test_cedar_alone_reports_an_unexpected_outcome_without_deciding():
     assert table(missing)["Q5"].finding == "not probed"
 
 
+def test_detaching_must_leave_no_interceptor_or_the_run_fails():
+    gone = v.Observations(observations().outcomes, binding_policy_accepted=True,
+                          listed_tools=["EchoTarget___echo"], interceptors_after_detach=0)
+    row = table(gone)["C5"]
+    assert row.status == v.PASS and row.finding.startswith("Yes. An update without")
+    assert v.passed(v.derive_verdicts(gone))
+    stuck = v.Observations(observations().outcomes, binding_policy_accepted=True,
+                           listed_tools=["EchoTarget___echo"], interceptors_after_detach=1)
+    row = table(stuck)["C5"]
+    assert row.status == v.FAIL and "still reports 1 interceptor" in row.finding
+    assert not v.passed(v.derive_verdicts(stuck))
+
+
+def test_an_unprobed_detach_is_information_so_older_observations_still_pass():
+    row = table(observations())["C5"]
+    assert row.finding == "not probed" and row.status == v.INFO
+    assert v.passed(v.derive_verdicts(observations()))
+
+
 def test_the_target_view_lists_event_keys_and_context_keys():
     finding = table(observations())["Q3"].finding
     assert "keys: note, travelerId" in finding
@@ -179,7 +198,8 @@ def test_a_skipped_probe_cannot_pass_the_table():
 def test_the_result_needs_all_eight_rows():
     assert v.passed([]) is False
     assert v.format_table([]).endswith("RESULT: FAIL")
-    assert v.passed(v.derive_verdicts(observations())[:-1]) is False
+    without_c4 = [row for row in v.derive_verdicts(observations()) if row.key != "C4"]
+    assert v.passed(without_c4) is False
 
 
 def test_an_account_id_in_server_text_is_masked():
@@ -218,7 +238,7 @@ def test_malformed_shapes_become_errors_not_crashes():
 
 def test_the_table_has_a_row_per_verdict_and_a_result_line():
     text = v.format_table(v.derive_verdicts(observations()))
-    for key in ("Q1", "Q2", "Q3", "Q4", "Q5", "C1", "C2", "C3", "C4"):
+    for key in ("Q1", "Q2", "Q3", "Q4", "Q5", "C1", "C2", "C3", "C4", "C5"):
         assert f"\n{key} " in text
     assert text.endswith("RESULT: PASS")
     assert v.format_table(v.derive_verdicts(v.Observations())).endswith("RESULT: FAIL")

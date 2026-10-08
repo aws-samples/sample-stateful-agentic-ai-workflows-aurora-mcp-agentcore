@@ -179,6 +179,8 @@ def test_a_live_run_prints_the_table_saves_events_and_deletes_everything(tmp_pat
     rows = json.loads((tmp_path / NAME / "verdicts.json").read_text())
     assert {row["key"]: row["status"] for row in rows}["Q4"] == "PASS"
     assert {row["key"]: row["finding"] for row in rows}["Q5"].startswith("Yes. Cedar denied")
+    assert {row["key"]: row["status"] for row in rows}["C5"] == "PASS"
+    assert len(world.control.args("update_gateway")) == 2
     assert len(world.requests) == 9
     assert world.minted == ["jordan", "decoy"]
 

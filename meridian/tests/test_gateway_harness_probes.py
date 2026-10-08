@@ -59,12 +59,18 @@ def test_a_transport_failure_is_an_http_error_that_names_no_url_or_token():
 
 
 class FakeGateway:
-    def __init__(self):
+    def __init__(self, remaining=0):
         self.modes = []
+        self.detached = 0
+        self.remaining = remaining
         self.live = type("Live", (), {"binding_policy_accepted": True})()
 
     def set_interceptor_mode(self, mode):
         self.modes.append(mode)
+
+    def detach_interceptor(self):
+        self.detached += 1
+        return self.remaining
 
 
 def test_the_probes_are_the_q2_redesign_and_none_uses_additional_properties():
@@ -100,6 +106,16 @@ def test_probes_run_in_mode_groups_with_each_users_token():
     assert obs.listed_tools == ["EchoTarget___echo"]
     assert set(obs.outcomes) == {p.name for p in probes.PROBES}
     assert obs.binding_policy_accepted is True
+    assert gateway.detached == 1 and obs.interceptors_after_detach == 0
+
+
+def test_the_detach_check_runs_last_and_records_what_the_gateway_still_has():
+    gateway = FakeGateway(remaining=2)
+    obs = probes.run_probes(
+        gateway, mcp(lambda request: httpx.Response(200, json=echo_reply(DECOY))),
+        {"jordan": "J", "decoy": "D"}, sleep=lambda s: None)
+    assert gateway.modes[-1] == "off" and gateway.detached == 1
+    assert obs.interceptors_after_detach == 2
 
 
 def test_the_control_probe_is_retried_while_the_gateway_settles():
