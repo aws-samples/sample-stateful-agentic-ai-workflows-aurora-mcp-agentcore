@@ -665,18 +665,38 @@ python scripts/render_agentcore_config.py
 ```
 
 The release then changes, in one window and with a read-back after each step: the Gateway
-(authorizer, allowed clients and interceptor), then both Runtimes and the Cedar rule through the
-stack deploy, then the holds Lambda, and last the backend and the hosted service with
+(authorizer, allowed clients and interceptor, through the API), then both Runtimes and the Cedar
+rule through the stack deploy, then the holds Lambda, and last the backend and the hosted service with
 `MERIDIAN_AGENTCORE_AUTH=jwt`. Setting `jwt` on the backend alone, or on one Runtime alone, makes
 that hop send or expect a credential the next hop refuses.
 
 ### The window order
 
 CloudFormation cannot change an existing Gateway's authorizer type: `agentcore deploy -y` fails with
-"Authorizer type cannot be updated for an existing gateway" and the stack rolls back. The template
-cannot declare the interceptor either, and an update that leaves `interceptorConfigurations` out
-detaches it. So the Gateway moves first through the `UpdateGateway` API, the deploy runs against a
-template that already equals the live Gateway, and the Gateway is read back afterwards. Every
+"Authorizer type cannot be updated for an existing gateway" and the stack rolls back. It also
+compares the template with the deployed stack template, not with the live Gateway, so moving the
+live Gateway does not make a `CUSTOM_JWT` template acceptable (the second window's read-only diff
+planned `AWS_IAM` to `CUSTOM_JWT`, and that entry stays after the move). The template cannot
+declare the interceptor either, and an update that leaves `interceptorConfigurations` out
+detaches it.
+
+**Deliberate divergence.** In `jwt` mode the render keeps the Gateway resource exactly as the
+deployed stack has it: `AWS_IAM`, no JWT authorizer block. The Gateway resource is identical in both
+modes. The `UpdateGateway` API (`release_identity.py gateway`) owns the live Gateway's authorizer,
+allowed clients and interceptor, so after the move the live Gateway reads `CUSTOM_JWT` while the
+template says `AWS_IAM`. That is expected, not drift: `check` and `deploy` compare the live Gateway
+with the mode in `.env` (the `jwt` expectation from the settings), never with the template. Both
+Runtimes' authorizers and allowlists, the Cedar rule, the role statements and the holds role's
+secret read are still rendered and deployed by the stack. Two rules follow:
+
+- A future change to the Gateway's authorizer goes through the release command
+  (`release_identity.py gateway`), never through the template or CloudFormation.
+- Never run `agentcore deploy` bare in `jwt` mode. Use `release_identity.py deploy`, which refuses
+  if the rendered Gateway is not the stack's, if the live Gateway does not report the mode, or if
+  the plan from `agentcore deploy --diff --json` changes the Gateway authorizer.
+
+So the Gateway moves first through the `UpdateGateway` API, the deploy runs, and the Gateway is
+read back afterwards. Every
 command below is a dry run until it gets `--apply --i-understand-this-changes-aws`; read the plan,
 then ask. Use `check --skip-service` for every read until the service moves (step 9).
 
@@ -704,8 +724,11 @@ then ask. Use `check --skip-service` for every read until the service moves (ste
    ```
 
    The ordering preflight refuses (exit 2, nothing deployed) unless the rendered `agentcore.json`
-   is for the mode, and the live Gateway already reports that authorizer, the same discovery URL
-   and allowed client, and the interceptor. The apply runs `/opt/homebrew/bin/agentcore deploy -y`
+   holds the stack's Gateway (`AWS_IAM`, no JWT block: the live Gateway is `CUSTOM_JWT` and that
+   is expected), and the live Gateway already reports the mode's authorizer, the same discovery
+   URL and allowed client, and the interceptor. The apply first runs `/opt/homebrew/bin/agentcore
+   deploy --diff --json` (read-only) and refuses if the plan changes the Gateway authorizer or
+   the plan cannot be read. Then it runs `/opt/homebrew/bin/agentcore deploy -y`
    from `meridian_agentcore/`, waits for the Gateway to be READY, and reads it back. If the deploy
    changed the authorizer or detached the interceptor, it prints what changed and sends the
    `gateway` update again, then reads back again. This deploy removes the `InvokeGateway`
@@ -738,7 +761,8 @@ What is verified and what is assumed:
 | The AgentCore CDK construct used here (`@aws/agentcore-cdk` 0.1.0-alpha.47) never sets `InterceptorConfigurations`, so the template cannot declare the interceptor | Verified in the installed code |
 | An update that omits `interceptorConfigurations` detaches the interceptor | Measured on the throwaway Gateway (check C5) |
 | CloudFormation refuses to change the authorizer type of an existing Gateway | Observed in the first window |
-| CloudFormation accepts a template whose authorizer already equals the live Gateway's | Assumed, not verified. If its handler compares the template with its own previous state instead, the deploy fails with the same message; `deploy` then names this and stops, and the answer is `rollback --apply` and an owner decision |
+| CloudFormation compares the template with the deployed stack template, not with the live Gateway | Inferred from the first window's failure and the second window's diff, which plans `AWS_IAM` to `CUSTOM_JWT` against the stack template. Not yet confirmed by a deploy. The render therefore keeps the stack's Gateway authorizer and the deploy plan must show no Gateway authorizer change |
+| A deploy that plans no Gateway change leaves the live authorizer and interceptor alone | Assumed, not verified, so it is never relied on: the Gateway is read back after every deploy |
 | A deploy that does update the Gateway sends the template's properties, so it can detach the interceptor or revert a field | Assumed possible, so it is never relied on: the Gateway is read back after every deploy (authorizer, allowed clients, interceptor and policy engine) and re-applied when it differs |
 | The deploy leaves the other Gateway fields (description, protocol configuration, exception level) alone | Not read back by `deploy`; the rollback dry run compares them with the snapshot |
 
@@ -875,8 +899,10 @@ Restore order, which is the true reverse of the release:
 5. the secret parameter, then the holds Lambda (restarted) and the semantic Lambda
 
 The Gateway comes first among the AgentCore hops because CloudFormation cannot change an authorizer
-type back either: an IAM render deployed while the Gateway still reads `CUSTOM_JWT` fails the same
-way the forward deploy did. Step 4 is skipped, and says so, when the Gateway step failed.
+type either, and no stack step may run while the live Gateway still reads the token authorizer.
+The Gateway resource in the IAM render is the same one the `jwt` render holds (`AWS_IAM`), so the
+IAM render matches the deployed stack's Gateway. Step 4 is skipped, and says so, when the Gateway
+step failed.
 
 The jwt deploy removes the `InvokeGateway` statement from both Runtime roles, and restoring a
 Runtime with `UpdateAgentRuntime` does not bring it back, so an IAM Runtime could not reach its

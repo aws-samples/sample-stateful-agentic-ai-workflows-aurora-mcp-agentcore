@@ -349,8 +349,15 @@ Moving the Gateway and both Runtimes to the Cognito authorizer is a release, not
 CloudFormation cannot change an existing Gateway's authorizer type: `agentcore deploy -y` fails
 with "Authorizer type cannot be updated for an existing gateway" and the stack rolls back. The
 template cannot declare the Gateway's request interceptor either, and an update that omits
-`interceptorConfigurations` detaches it. So the order is fixed, and `release_identity.py deploy`
-enforces it:
+`interceptorConfigurations` detaches it. CloudFormation also compares the template with the
+deployed stack template, not with the live Gateway.
+
+The divergence is deliberate: in `jwt` mode the render keeps the Gateway resource as the deployed
+stack has it (`AWS_IAM`, no JWT block), while the live Gateway is `CUSTOM_JWT` after
+`release_identity.py gateway`. `check` and `deploy` compare the live Gateway with the mode, not
+with the template. Change the Gateway's authorizer only through the release command, and never
+run `agentcore deploy` bare in `jwt` mode: use `release_identity.py deploy`. So the order is fixed,
+and that command enforces it:
 
 1. Render the `jwt` configuration (`MERIDIAN_AGENTCORE_AUTH=jwt`, Cedar rule left out for the first
    deploy) and validate it.
@@ -358,9 +365,10 @@ enforces it:
    --i-understand-this-changes-aws`. One `UpdateGateway` call sets the `CUSTOM_JWT` authorizer,
    its discovery URL and allowed client, and the interceptor.
 3. Deploy through the tool: `release_identity.py deploy --apply
-   --i-understand-this-changes-aws`. It refuses unless the render and the live Gateway agree on
-   the authorizer and the Gateway reports the interceptor; it runs
-   `/opt/homebrew/bin/agentcore deploy -y`; it reads the Gateway back and sends the `gateway`
+   --i-understand-this-changes-aws`. It refuses unless the rendered Gateway is the stack's
+   (`AWS_IAM`) and the live Gateway reports the `jwt` authorizer and the interceptor; it runs
+   `/opt/homebrew/bin/agentcore deploy --diff --json` and refuses if the plan changes the Gateway
+   authorizer; it then runs `/opt/homebrew/bin/agentcore deploy -y`; it reads the Gateway back and sends the `gateway`
    update again if the deploy changed it.
 4. Only now, point the holds Lambda's SSM parameter at the gateway login
    (`publish_gateway_parameters.py --gateway-login --apply

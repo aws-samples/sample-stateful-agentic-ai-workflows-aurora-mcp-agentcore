@@ -414,8 +414,8 @@ def stack_remedy(ctx: Context) -> list[str]:
         *checkout_lines(ctx),
         f"  precondition: run this only after the gateway step above restored the Gateway to "
         f"{authorizer} through the UpdateGateway API. CloudFormation cannot change the authorizer "
-        f"type back, so deploying this render while the Gateway reads the other type fails and "
-        "rolls the stack back",
+        f"type back, and the render keeps the Gateway resource on AWS_IAM in both modes, so no "
+        "stack step may run while the live Gateway still reads the token authorizer",
         f"  MERIDIAN_AGENTCORE_AUTH={mode} python scripts/render_agentcore_config.py",
         "  cd ../meridian_agentcore && /opt/homebrew/bin/agentcore deploy -y   (this restores "
         "the Runtime roles' InvokeGateway statement and the Cedar rules, and never deletes a rule)",

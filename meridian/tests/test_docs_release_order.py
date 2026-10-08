@@ -55,3 +55,32 @@ def test_the_runbook_and_the_scripts_readme_point_at_the_tool():
     assert "release_identity.py deploy" in RUNBOOK and "#the-window-order" in RUNBOOK
     assert "Authorizer type cannot be updated for an existing gateway" in RUNBOOK
     assert "`deploy` runs `/opt/homebrew/bin/agentcore deploy -y`" in README
+
+
+LEARNINGS = (DOCS / "AGENTCORE_LEARNINGS.md").read_text(encoding="utf-8")
+AGENTCORE_README = (Path(__file__).resolve().parents[1] / "meridian_agentcore"
+                    / "README.md").read_text(encoding="utf-8")
+
+
+def flat(text: str) -> str:
+    return " ".join(text.split())
+
+
+def test_the_window_documents_the_deliberate_gateway_divergence():
+    text = flat(window())
+
+    assert "Deliberate divergence" in text
+    assert "`AWS_IAM`, no JWT authorizer block" in text
+    assert "never with the template" in text
+    assert "Never run `agentcore deploy` bare in `jwt` mode" in text
+    assert "release_identity.py gateway" in text
+    assert "agentcore deploy --diff --json" in text
+
+
+def test_every_release_document_says_the_live_gateway_and_the_template_differ_on_purpose():
+    assert "keeps the Gateway resource as the deployed stack has it" in flat(RUNBOOK)
+    assert "never run `agentcore deploy` bare in `jwt` mode" in flat(RUNBOOK)
+    assert "never run `agentcore deploy` bare in `jwt` mode" in flat(README)
+    assert "`AWS_IAM` in `jwt` mode" in flat(README)
+    assert "compares the template with the deployed stack template" in flat(LEARNINGS)
+    assert "deliberately stays `AWS_IAM`" in flat(AGENTCORE_README)

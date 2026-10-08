@@ -101,6 +101,24 @@ def test_a_release_that_matches_its_mode_reports_ok_and_exits_zero(tmp_path, cap
     assert "OK" in capsys.readouterr().out
 
 
+def test_check_compares_the_live_gateway_with_the_mode_and_never_reads_the_template(
+        tmp_path, capsys):
+    """jwt: the live Gateway is CUSTOM_JWT while the rendered template keeps AWS_IAM (on purpose),
+    and a missing or unreadable template changes nothing."""
+    folder = tmp_path / "project" / "agentcore"
+    folder.mkdir(parents=True)
+    (folder / "agentcore.json").write_text("not json at all")
+    world = World("jwt")
+    deps = release_identity.Dependencies(
+        env=env(), session=world.session, now=lambda: NOW, head_sha=lambda: rs.SHA,
+        proof_path=proof(tmp_path), release_dir=tmp_path / "release",
+        agentcore_dir=tmp_path / "project")
+
+    assert release_identity.main(["check", SKIP], deps) == 0
+
+    assert "OK" in capsys.readouterr().out
+
+
 def test_every_drifted_hop_is_printed_and_the_exit_is_one(tmp_path, capsys):
     assert run(["check", SKIP], World("iam"), tmp_path) == 1
 

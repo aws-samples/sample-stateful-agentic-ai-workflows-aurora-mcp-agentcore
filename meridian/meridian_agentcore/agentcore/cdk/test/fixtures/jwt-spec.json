@@ -370,20 +370,12 @@
           }
         }
       ],
-      "authorizerType": "CUSTOM_JWT",
+      "authorizerType": "AWS_IAM",
       "enableSemanticSearch": true,
       "exceptionLevel": "NONE",
       "policyEngineConfiguration": {
         "policyEngineName": "MeridianGovernance",
         "mode": "ENFORCE"
-      },
-      "authorizerConfiguration": {
-        "customJwtAuthorizer": {
-          "discoveryUrl": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AbCdEfGhI/.well-known/openid-configuration",
-          "allowedClients": [
-            "exampleclientid123"
-          ]
-        }
       }
     }
   ],

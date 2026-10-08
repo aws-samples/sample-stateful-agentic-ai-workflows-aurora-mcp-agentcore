@@ -26,12 +26,15 @@ Placeholder sources:
                             the MeridianHolds policy may read it from the release
                             that moves the gateway Lambdas to that login
     {{MERIDIAN_AGENTCORE_AUTH}}
-                            MERIDIAN_AGENTCORE_AUTH: ``iam`` (default) or ``jwt``. In ``jwt`` the
-                            Gateway and both Runtimes get a Cognito JWT authorizer (from the
-                            MERIDIAN_COGNITO_* settings), both Runtimes allowlist the
-                            ``Authorization`` header, and the Cedar traveler-binding policy is
-                            included unless MERIDIAN_GATEWAY_ENFORCEMENT=interceptor; in ``iam``
-                            none of that is rendered, so the config is the one deployed today
+                            MERIDIAN_AGENTCORE_AUTH: ``iam`` (default) or ``jwt``. In ``jwt`` both
+                            Runtimes get a Cognito JWT authorizer (from the MERIDIAN_COGNITO_*
+                            settings) and the Gateway resource deliberately keeps ``AWS_IAM`` (the
+                            live Gateway is moved by ``release_identity.py gateway``, because
+                            CloudFormation cannot change its authorizer type); both Runtimes
+                            allowlist the ``Authorization`` header, and the Cedar
+                            traveler-binding policy is included unless
+                            MERIDIAN_GATEWAY_ENFORCEMENT=interceptor; in ``iam`` none of that is
+                            rendered, so the config is the one deployed today
     {{MERIDIAN_GATEWAY_ENFORCEMENT}}
                             ``jwt`` only: ``both`` (default, the interceptor plus the Cedar
                             rule), ``cedar`` (the Cedar rule alone) or ``interceptor`` (no Cedar
@@ -383,20 +386,21 @@ def jwt_authorizer(discovery_url: str, client_id: str) -> dict[str, Any]:
 
 
 def apply_jwt_authorizers(spec: dict[str, Any], values: dict[str, str]) -> None:
-    """Move the Gateway and both Runtimes to the Cognito authorizer.
+    """Move both Runtimes to the Cognito authorizer; the Gateway resource is left alone.
 
-    A Runtime accepts IAM or JWT callers, never both, and the Gateway has one authorizer type, so
-    this changes every hop in one render. The Runtimes also allowlist ``Authorization`` so their
-    code can read the caller's token and forward it to the Gateway.
+    A Runtime accepts IAM or JWT callers, never both. The Runtimes also allowlist
+    ``Authorization`` so their code can read the caller's token and forward it to the Gateway.
+
+    The Gateway resource keeps the authorizer the deployed stack has (``AWS_IAM``, no JWT block) on
+    purpose: CloudFormation cannot change a Gateway's authorizer type and compares the template
+    with the deployed stack template, not with the live Gateway. The authorizer and the interceptor
+    of the live Gateway belong to ``release_identity.py gateway`` (the ``UpdateGateway`` API).
     """
     url, client = values["COGNITO_DISCOVERY_URL"], values["COGNITO_APP_CLIENT_ID"]
     for runtime in spec.get("runtimes", []):
         runtime["authorizerType"] = "CUSTOM_JWT"
         runtime["authorizerConfiguration"] = jwt_authorizer(url, client)
         runtime["requestHeaderAllowlist"] = [AUTHORIZATION_HEADER]
-    for gateway in spec.get("agentCoreGateways", []):
-        gateway["authorizerType"] = "CUSTOM_JWT"
-        gateway["authorizerConfiguration"] = jwt_authorizer(url, client)
 
 
 def tighten_holds_policy(spec: dict[str, Any], values: dict[str, str]) -> None:
@@ -535,6 +539,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  AgentCore identity mode: {values[AUTH_MODE_ENV]}")
     if values[AUTH_MODE_ENV] == JWT:
         print(f"  Gateway enforcement: {values[settings.ENFORCEMENT_ENV]}")
+        print("  Gateway authorizer: left as AWS_IAM on purpose; the live Gateway moves with "
+              "release_identity.py gateway,")
+        print("  and the stack deploys only through release_identity.py deploy")
         print("  Cedar rule: " + (
             "included (meridian_traveler_binding)" if binding_rule_included(spec)
             else "omitted for this deploy"))

@@ -506,19 +506,28 @@ def test_jwt_mode_gives_both_runtimes_the_authorizer_and_the_header_allowlist() 
         assert runtime["requestHeaderAllowlist"] == ["Authorization"]
 
 
-def test_jwt_mode_gives_the_gateway_the_same_authorizer() -> None:
+def test_jwt_mode_keeps_the_gateway_authorizer_the_deployed_stack_has() -> None:
+    """CloudFormation cannot change a Gateway authorizer type and compares the template with the
+    deployed stack template, so the release command (UpdateGateway) owns the live authorizer."""
     gateway = jwt_spec()["agentCoreGateways"][0]
 
-    assert gateway["authorizerType"] == "CUSTOM_JWT"
-    assert gateway["authorizerConfiguration"] == {
-        "customJwtAuthorizer": {"discoveryUrl": DISCOVERY_URL, "allowedClients": [CLIENT_ID]}
-    }
+    assert gateway["authorizerType"] == "AWS_IAM"
+    assert "authorizerConfiguration" not in gateway
+    assert "CUSTOM_JWT" not in json.dumps(gateway)
+
+
+def test_the_jwt_gateway_block_equals_the_iam_gateway_block() -> None:
+    """The deliberate divergence: nothing about the Gateway resource differs between modes, so a
+    jwt deploy plans no Gateway change and the IAM render after a rollback matches the stack."""
+    ids = {"GATEWAY_ID": GATEWAY_ID, "POLICY_ENGINE_ID": POLICY_ENGINE_ID}
+    iam, _, _ = render_config.render(*templates(), {**base_values(), **ids})
+
+    assert jwt_spec()["agentCoreGateways"] == iam["agentCoreGateways"]
 
 
 def test_the_authorizers_check_the_client_id_claim_and_never_an_audience() -> None:
     spec = jwt_spec()
     blocks = [r["authorizerConfiguration"] for r in spec["runtimes"]]
-    blocks.append(spec["agentCoreGateways"][0]["authorizerConfiguration"])
 
     for block in blocks:
         assert set(block["customJwtAuthorizer"]) == {"discoveryUrl", "allowedClients"}

@@ -144,9 +144,10 @@ test('AgentCoreStack synthesizes the Cognito JWT specification', () => {
   }
 
   const [gateway] = ofType('AWS::BedrockAgentCore::Gateway');
-  expect(gateway.Properties.AuthorizerType).toBe('CUSTOM_JWT');
-  expect(gateway.Properties.AuthorizerConfiguration.CustomJWTAuthorizer.DiscoveryUrl).toBe(discoveryUrl);
-  expect(gateway.Properties.AuthorizerConfiguration.CustomJWTAuthorizer.AllowedClients).toEqual(['exampleclientid123']);
+  // The Gateway keeps the deployed stack's authorizer: CloudFormation cannot change the type, and
+  // release_identity.py gateway (UpdateGateway) owns the live authorizer and interceptor.
+  expect(gateway.Properties.AuthorizerType).toBe('AWS_IAM');
+  expect(gateway.Properties.AuthorizerConfiguration).toBeUndefined();
 
   const policyNames = ofType('AWS::BedrockAgentCore::Policy').map(p => p.Properties.Name);
   expect(policyNames).toContain('meridian_traveler_binding');

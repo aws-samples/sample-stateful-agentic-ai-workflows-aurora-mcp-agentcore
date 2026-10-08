@@ -1,16 +1,22 @@
 """Deploy the AgentCore stack in the one order that works: Gateway first, stack, read back.
 
 CloudFormation cannot change an existing Gateway's authorizer type: ``agentcore deploy`` fails with
-"Authorizer type cannot be updated for an existing gateway" and the stack rolls back. The
-interceptor cannot be declared in the template either, and an update that omits
-``interceptorConfigurations`` detaches it. So the order is:
+"Authorizer type cannot be updated for an existing gateway" and the stack rolls back. It also
+compares the template with the deployed stack template, not with the live Gateway. So the rendered
+template keeps the Gateway resource on the stack's ``AWS_IAM`` in both modes, and the live
+Gateway's authorizer and interceptor belong to ``release_identity.py gateway`` (``UpdateGateway``).
+In ``jwt`` mode the live Gateway is CUSTOM_JWT while the template says AWS_IAM: that divergence is
+deliberate and expected. The order is:
 
 1. ``release_identity.py gateway`` moves the live Gateway with ``UpdateGateway`` (authorizer,
-   allowed clients and interceptor in one call), so the rendered template already equals it.
-2. ``deploy`` refuses unless the rendered ``agentcore.json`` and the live Gateway agree on the
-   authorizer and the live Gateway already reports everything the release wants.
-3. ``agentcore deploy -y`` runs (``/opt/homebrew/bin/agentcore`` only).
-4. The Gateway is read back. Whether the deploy leaves the authorizer and the interceptor alone is
+   allowed clients and interceptor in one call).
+2. ``deploy`` refuses unless the rendered Gateway is the stack's (``AWS_IAM``, no JWT block) and the
+   live Gateway already reports everything the mode wants, the interceptor included. The live
+   Gateway is compared with the mode, never with the template.
+3. ``agentcore deploy --diff --json`` runs; the command refuses if the plan changes the Gateway
+   authorizer (see ``deploy_diff``).
+4. ``agentcore deploy -y`` runs (``/opt/homebrew/bin/agentcore`` only).
+5. The Gateway is read back. Whether the deploy leaves the authorizer and the interceptor alone is
    not documented offline, so it is never assumed: any difference is re-applied with the same
    update the ``gateway`` command sends, then read back again.
 
@@ -29,15 +35,17 @@ from pathlib import Path
 from typing import Any
 
 from backend.agentcore.auth_mode import IAM, JWT
-from scripts.identity_release import gateway_release, preflight, settings
+from scripts.identity_release import deploy_diff, gateway_release, preflight, settings
 from scripts.provision_service_logins import require_account
 
 RENDERED = Path("agentcore") / "agentcore.json"
 DEPLOY_ARGV = (settings.AGENTCORE_BIN, "deploy", "-y")
+DIFF_ARGV = (settings.AGENTCORE_BIN, "deploy", "--diff", "--json")
 DEPLOY_TIMEOUT_SECONDS = 3600
 TAIL_LINES = 30
 OK, COULD_NOT_RUN, EXIT_REFUSED = 0, 2, 3
 AUTHORIZER_FOR_MODE = {IAM: "AWS_IAM", JWT: "CUSTOM_JWT"}
+STACK_AUTHORIZER = "AWS_IAM"
 CLI_ERROR = "Authorizer type cannot be updated for an existing gateway"
 
 
@@ -86,56 +94,38 @@ def rendered_gateway(project_dir: Path) -> dict[str, Any]:
     return gateways[0]
 
 
-def _rendered_pool(rendered: Mapping[str, Any]) -> tuple[Any, Any]:
-    block = rendered.get("authorizerConfiguration")
-    jwt = block.get("customJwtAuthorizer") if isinstance(block, Mapping) else None
-    jwt = jwt if isinstance(jwt, Mapping) else {}
-    return jwt.get("discoveryUrl"), jwt.get("allowedClients")
+def render_findings(rendered: Mapping[str, Any]) -> list[str]:
+    """Where the rendered Gateway is not the deployed stack's: ``AWS_IAM`` and no JWT block.
 
-
-def _live_pool(live: Mapping[str, Any]) -> tuple[Any, Any]:
-    block = live.get("authorizerConfiguration")
-    jwt = block.get("customJWTAuthorizer") if isinstance(block, Mapping) else None
-    jwt = jwt if isinstance(jwt, Mapping) else {}
-    return jwt.get("discoveryUrl"), jwt.get("allowedClients")
-
-
-def render_findings(rendered: Mapping[str, Any], wanted: preflight.Target) -> list[str]:
-    """Where the rendered Gateway is not the one the release mode needs."""
-    kind = AUTHORIZER_FOR_MODE[wanted.mode]
-    if rendered.get("authorizerType") != kind:
-        return [f"Rendered config: the Gateway authorizer is {rendered.get('authorizerType')}, "
-                f"not {kind}; run python scripts/render_agentcore_config.py with "
-                f"MERIDIAN_AGENTCORE_AUTH={wanted.mode}"]
-    if wanted.mode != JWT:
+    The render keeps that in both modes; the live Gateway's authorizer is not the template's job.
+    """
+    if (rendered.get("authorizerType") == STACK_AUTHORIZER
+            and "authorizerConfiguration" not in rendered):
         return []
-    discovery, clients = _rendered_pool(rendered)
-    if discovery != wanted.cognito.discovery_url or clients != [wanted.cognito.client_id]:
-        return ["Rendered config: the Gateway's discoveryUrl or allowedClients is not this "
-                "pool's; run python scripts/render_agentcore_config.py"]
-    return []
+    return [f"Rendered config: the Gateway is {rendered.get('authorizerType')}"
+            + (" with an authorizerConfiguration" if "authorizerConfiguration" in rendered else "")
+            + f", but the deployed stack has {STACK_AUTHORIZER} and CloudFormation cannot change "
+            "the type; run python scripts/render_agentcore_config.py (it leaves the Gateway "
+            "authorizer alone)"]
 
 
 def ordering_findings(rendered: Mapping[str, Any], live: Mapping[str, Any],
                       wanted: preflight.Target) -> list[str]:
     """Every reason ``agentcore deploy`` must not run now; empty when the order is right.
 
-    The live Gateway must already equal the template's authorizer (CloudFormation refuses to
-    change the type) and report everything the release wants, the interceptor included.
+    The rendered Gateway must be the stack's. The live Gateway is compared with the mode, not with
+    the template (in ``jwt`` it is CUSTOM_JWT while the template says AWS_IAM, on purpose), and
+    must already report everything the release wants, the interceptor included.
     """
-    found = render_findings(rendered, wanted)
-    command = (f"python scripts/release_identity.py gateway --to {wanted.mode} --apply "
-               f"{settings.CONFIRM_FLAG}")
-    live_type, rendered_type = live.get("authorizerType"), rendered.get("authorizerType")
-    if live_type != rendered_type:
+    found = render_findings(rendered)
+    live_type, kind = live.get("authorizerType"), AUTHORIZER_FOR_MODE[wanted.mode]
+    if live_type != kind:
+        command = (f"python scripts/release_identity.py gateway --to {wanted.mode} --apply "
+                   f"{settings.CONFIRM_FLAG}")
         found.append(
-            f"the deploy would change the Gateway authorizer type from {live_type} to "
-            f"{rendered_type}, and CloudFormation refuses that ('{CLI_ERROR}'); move the live "
-            f"Gateway first with the UpdateGateway API: {command}")
-    elif live_type == AUTHORIZER_FOR_MODE[JWT] and _live_pool(live) != _rendered_pool(rendered):
-        found.append(
-            "the deploy would change the Gateway's discoveryUrl or allowedClients; move the "
-            f"live Gateway first: {command}")
+            f"the live Gateway authorizer is {live_type}, not {kind}; CloudFormation would refuse "
+            f"to change it ('{CLI_ERROR}'), so move the live Gateway first with the "
+            f"UpdateGateway API: {command}")
     return found + preflight.check_gateway(live, wanted)
 
 
@@ -145,11 +135,13 @@ def _steps(wanted: preflight.Target) -> list[str]:
         "1. before the deploy (checked now): the live Gateway already reports the "
         f"{AUTHORIZER_FOR_MODE[wanted.mode]} authorizer"
         + (" and the interceptor" if wanted.interceptor_arn else "")
-        + ", equal to the rendered template",
-        f"2. deploy: {' '.join(DEPLOY_ARGV)}   (run in meridian_agentcore)",
-        "3. after the deploy: read the Gateway back; if the deploy changed the authorizer or "
+        + f"; the rendered template keeps {STACK_AUTHORIZER} on purpose (the stack's value)",
+        f"2. plan, refused if it changes the Gateway authorizer: {' '.join(DIFF_ARGV)}   "
+        "(run in meridian_agentcore)",
+        f"3. deploy: {' '.join(DEPLOY_ARGV)}   (run in meridian_agentcore)",
+        "4. after the deploy: read the Gateway back; if the deploy changed the authorizer or "
         f"detached the interceptor, {reattach} with the gateway update and read it back again",
-        "4. read every hop: python scripts/release_identity.py check --skip-service",
+        "5. read every hop: python scripts/release_identity.py check --skip-service",
     ]
 
 
@@ -165,6 +157,16 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 def _tail(output: str) -> list[str]:
     return [line for line in output.splitlines() if line.strip()][-TAIL_LINES:]
+
+
+def _check_plan(deps: Any, say: Callable[[str], None]) -> None:
+    """Run the read-only plan and refuse when it changes the Gateway authorizer."""
+    say(f"Reading the plan: {' '.join(DIFF_ARGV)} in meridian_agentcore.")
+    code, output = deps.run_command(list(DIFF_ARGV), deps.agentcore_dir)
+    found = deploy_diff.plan_findings(code, output, DIFF_ARGV)
+    if found:
+        raise DeployOrderError("refusing: the deploy plan is not safe to apply:\n  "
+                               + "\n  ".join(found))
 
 
 def _deploy(deps: Any, say: Callable[[str], None]) -> None:
@@ -237,6 +239,7 @@ def run(args: argparse.Namespace, deps: Any, say: Callable[[str], None]) -> int:
     if found:
         raise DeployOrderError("refusing: " + str(len(found)) + " ordering problem(s):\n  "
                                + "\n  ".join(found))
+    _check_plan(deps, say)
     _deploy(deps, say)
     return _read_back(control, gateway_id, wanted, deps, say)
 

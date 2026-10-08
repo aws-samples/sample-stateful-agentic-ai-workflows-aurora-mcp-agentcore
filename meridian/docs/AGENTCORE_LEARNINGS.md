@@ -58,9 +58,14 @@ deployment steps. Each note names the code or step it explains.
 - **The interceptor is outside the template.** The installed `@aws/agentcore-cdk` never sets
   `InterceptorConfigurations`, and an update that omits it detaches the interceptor (harness check C5). The
   deploy command reads the Gateway back and re-applies the update when the deploy changed it.
-- **Unverified: what the handler compares.** Whether the handler accepts a template whose authorizer already
-  equals the live Gateway, or compares the template with its own previous state and refuses again, was not
-  known when the order was changed. `deploy` names that case and stops.
+- **CloudFormation compares the template with the deployed stack template, not with the live Gateway.**
+  The second window's read-only diff planned `AWS_IAM` to `CUSTOM_JWT` against the stack template, which
+  means moving the live Gateway through the API cannot make a `CUSTOM_JWT` template deployable (inferred, not
+  yet confirmed by a deploy). The
+  render therefore keeps the Gateway resource as the stack has it (`AWS_IAM`, no JWT block) in `jwt` mode, and
+  `release_identity.py gateway` alone owns the live authorizer and interceptor. The live `CUSTOM_JWT`
+  Gateway under an `AWS_IAM` template is the expected state. `deploy` refuses when its plan changes the
+  Gateway authorizer.
 - **The jwt deploy takes `InvokeGateway` off the Runtime roles**, and `UpdateAgentRuntime` does not put it
   back, so a rollback to IAM needs the IAM render deployed. `check --expect iam` reads both roles.
 - **The holds role reads the gateway secret only after the first jwt deploy**, so the SSM parameter moves
