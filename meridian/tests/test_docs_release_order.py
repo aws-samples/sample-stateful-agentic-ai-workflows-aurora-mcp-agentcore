@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import shlex
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,3 +86,81 @@ def test_every_release_document_says_the_jwt_gateway_is_a_new_resource():
     assert "cannot change an authorizer type" in flat(README)
     assert "four staged deploys" in flat(AGENTCORE_README)
     assert "construct id" in flat(LEARNINGS) and "four deploys" in flat(LEARNINGS)
+
+
+# --------------------------------------------------- accuracy checks against the code
+
+
+COMMAND = re.compile(r"release_identity\.py\s+((?:check|interceptor-delete|interceptor|lambdas|"
+                     r"semantic-lambda|gateway|deploy|snapshot|rollback)\b[^`\n]*)")
+
+
+def documented_commands() -> list[list[str]]:
+    """Every `release_identity.py ...` command in the release documents that has no placeholder
+    prose in it, split like a shell would."""
+    found = []
+    for text in (OPERATIONS, RUNBOOK, README):
+        for match in COMMAND.finditer(text):
+            line = match[1].split("   ")[0].rstrip(" .,:;)")
+            if any(mark in line for mark in "[(<…") or "..." in line or "|" in line:
+                continue
+            found.append(shlex.split(line))
+    return found
+
+
+def test_every_documented_release_command_parses_with_the_real_parser():
+    from scripts import release_identity
+
+    commands = documented_commands()
+
+    assert len(commands) >= 15
+    for tokens in commands:
+        try:
+            release_identity.build_parser().parse_args(tokens)
+        except SystemExit as stopped:
+            raise AssertionError(f"documented command does not parse: {tokens}") from stopped
+
+
+def plan_gate_section() -> str:
+    start = OPERATIONS.index("**What the plan gate accepts.**")
+    return flat(OPERATIONS[start:OPERATIONS.index("After stage 4 the interceptor is attached")])
+
+
+def test_the_plan_gate_table_names_what_the_code_expects_of_each_stage():
+    from scripts.identity_release import deploy_diff, stages
+
+    text = plan_gate_section()
+
+    for stage, (_kind, wanted) in deploy_diff.EXPECTED.items():
+        row = text[text.index(f"{stages.STAGES.index(stage) + 1} `{stage}`"):]
+        row = row[:row.index("|", row.index("|", row.index("|") + 1) + 1)]
+        for resource in wanted:
+            assert resource.rsplit("::", 1)[-1] in row, (stage, resource)
+    for mode in ("iam", "jwt"):
+        assert deploy_diff.construct_id(mode) in text
+    assert stages.ENGINE_NAME in text and "no parsed resource line" in text
+
+
+def test_the_docs_say_the_first_live_plan_is_read_by_eye_and_no_real_plan_is_committed():
+    text = flat(OPERATIONS)
+
+    assert "No live `agentcore deploy --diff --json` has been captured" in text
+    assert "Read the first live plan by eye" in text or "read the first live plan by eye" in text
+
+
+def test_the_rollback_documentation_names_the_snapshot_choice_and_the_file_flag():
+    start = OPERATIONS.index("### Save the configuration, then roll back")
+    text = flat(OPERATIONS[start:OPERATIONS.index("## Prove the decoy is refused")])
+
+    for phrase in ("of the release that is not live", "never chosen on its own",
+                   "Every rollback command it prints passes `--snapshot FILE`",
+                   "does not choose it"):
+        assert phrase in text, phrase
+    assert "MERIDIAN_AGENTCORE_AUTH`, which the `snapshot` command does not read" in text
+
+
+def test_the_failed_deploy_advice_names_the_stack_status_and_the_stuck_rollback():
+    text = flat(window())
+
+    assert "stack status in CloudFormation first" in text
+    assert "UPDATE_ROLLBACK_FAILED" in text and "continue-update-rollback" in text

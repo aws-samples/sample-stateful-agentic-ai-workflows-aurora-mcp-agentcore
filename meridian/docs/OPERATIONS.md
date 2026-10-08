@@ -712,9 +712,11 @@ repository pins the reasons in the CDK tests (`meridian_agentcore/agentcore/cdk/
 
 So the replacement is built in stages (the first deployment's order), and the old Gateway is deleted by the
 first of them. There is no `retire-old-gateway` command because there is nothing left to retire after that
-deploy. The protection moves in front of it: the first stage refuses to run without a complete snapshot of
-the `iam` release, a passing backend login proof at the current commit, the interceptor Lambda, a stage that
-agrees with the live Gateway, and a plan that replaces exactly one Gateway.
+deploy. The protection moves in front of it: the first stage refuses to run on a working tree with uncommitted
+changes, without a complete snapshot of the `iam` release that was taken of the Gateway about to be deleted (the
+same Gateway id, account and Region), without a passing backend login proof at the current commit or the
+interceptor Lambda, when the stage disagrees with the live Gateway, or when the plan is not one that adds the
+new Gateway and removes the old one.
 
 **The four stages.** `render_agentcore_config.py` reads the CLI's deployed state and renders the first stage
 the state does not yet list. `release_identity.py deploy` checks that the rendered stage, the state's stage
@@ -726,6 +728,24 @@ and the live Gateway agree, reads the plan, deploys once and reads the Gateway b
 | 2 `targets` | Adds `MeridianHolds` and the Gateway id on the Runtimes | Creates the holds Lambda and role and the target | Cedar validates a rule against the tools that exist, so the tool comes before the rule |
 | 3 `governance` | Adds the Cedar engine, the rules and the association | Creates the engine and rules and attaches the engine in `ENFORCE` mode | The rules name the Gateway, whose id is known only after stage 1 |
 | 4 `complete` | Adds the engine id on the Runtimes | Updates both Runtimes | The engine id is known only after stage 3 |
+
+**What the plan gate accepts.** `release_identity.py deploy` runs `agentcore deploy --diff --json` and reads the
+resource lines (`[+]`, `[~]`, `[-]`, a type, a path and a logical id). It refuses a plan with no parsed
+resource line at all, in every stage, and shows the tail of the output with pool ids, client ids and the
+hosted-UI host masked. Each stage must also show its own change:
+
+| Stage | The plan must | Removals |
+| --- | --- | --- |
+| 1 `gateway` | add exactly one Gateway, the mode's, and, when the other mode's Gateway is live, remove exactly one Gateway, that one | Only resources whose path or logical id carries the replaced Gateway's construct id (`GatewayMeridianAurora` or `GatewayMeridianAuroraJwt`; the first is a prefix of the second and is told apart) and the `MeridianGovernance` engine with its rules. Any other removal, a Runtime or the Memory included, refuses the deploy |
+| 2 `targets` | add a `GatewayTarget` and a `Lambda::Function` | None allowed |
+| 3 `governance` | add a `PolicyEngine` and a `Policy` | None allowed |
+| 4 `complete` | update a `Runtime` | None allowed |
+
+No live `agentcore deploy --diff --json` has been captured, so the repository holds no sample of a real plan. The
+test fixtures use the resource types, construct paths and logical ids of the template the CDK app synthesizes,
+with the line layout the CLI is documented to print; they show the gate's logic, not the live format. Read the
+first live plan by eye (with the owner's approval, since `agentcore deploy --diff` calls AWS) and expect the gate
+to refuse it with the masked output tail if the layout differs.
 
 After stage 4 the interceptor is attached with `release_identity.py gateway`. The template cannot declare it,
 and a deploy that updates the Gateway can detach it, so `check` is the drift read after any later deploy.
@@ -790,12 +810,19 @@ ask. Use `check --skip-service` for every read until the service moves (step 14)
    ```
 
    The preflight refuses (exit 2, nothing deployed) unless the rendered Gateway is the mode's, the render,
-   the deployed state and the live Gateway agree on the stage, the old Gateway's role is clear, a complete
-   snapshot of the `iam` release exists, the proof receipt is at this commit, the interceptor Lambda is
-   deployed, and the plan from `agentcore deploy --diff --json` adds one Gateway and removes one. It then runs
-   `/opt/homebrew/bin/agentcore deploy -y`, waits for the new Gateway, and reads it back by name.
+   the deployed state and the live Gateway agree on the stage (the live Gateway's targets and policy engine are
+   read too), the working tree is clean, the old Gateway's role is clear, a complete snapshot of the `iam`
+   release exists that was taken of the old Gateway (the dry run prints its commit and age), the proof receipt is
+   at this commit, the interceptor Lambda is deployed, and the plan from `agentcore deploy --diff --json` adds
+   the new Gateway and removes the old one and what belongs to it. It then runs
+   `/opt/homebrew/bin/agentcore deploy -y`, waits for the new Gateway, reads it back by name and reports the old
+   Gateway as `DRIFT` if it still exists, with the manual steps. The next steps are printed whatever the
+   read-back found, because the deployed state has moved on. A failed deploy sends you to the stack status in
+   CloudFormation first; a stack in `UPDATE_ROLLBACK_FAILED` needs `aws cloudformation
+   continue-update-rollback` before anything else.
 7. Stage 2: `venv/bin/python scripts/render_agentcore_config.py`, then `release_identity.py deploy` and
-   `deploy --apply ...` as in step 6. The preflight refuses if the plan removes anything.
+   `deploy --apply ...` as in step 6. The preflight refuses if the plan removes anything or does not add the
+   holds target and Lambda.
 8. Bind the new holds role: `venv/bin/python scripts/bind_gateway_workload.py`.
 9. Move the holds Lambda and its parameter to the gateway login. The write refuses until the new holds
    role can read that secret, which stage 2 grants.
@@ -824,7 +851,7 @@ What is verified and what is assumed:
 | Two Gateways with the same target names cannot be synthesized; the holds Lambda name is the same in both modes | Verified by the CDK tests, against `@aws/agentcore-cdk` 0.1.0-alpha.47 |
 | The CDK wires `AGENTCORE_GATEWAY_<NAME>_URL` on every Runtime and adds `InvokeGateway` only for `AWS_IAM` | Verified in the installed construct code |
 | The CLI rebuilds `deployed-state.json` from the stack outputs, so the replaced Gateway's entry disappears | Read in the installed CLI source; not yet seen after a real deploy. The render ignores a stale engine id before the last stage, but read the file after stage 1 |
-| `agentcore deploy --diff --json` prints CDK diff lines (`[+] AWS::BedrockAgentCore::Gateway ...`) before the JSON status | Read in the installed CLI source; not yet seen live. The plan gate fails closed and prints the output tail, so read the first live plan by eye |
+| `agentcore deploy --diff --json` prints CDK diff lines (`[+] AWS::BedrockAgentCore::Gateway ...`) before the JSON status | Read in the installed CLI source; not yet seen live, and no real plan is committed. The plan gate fails closed in every stage and prints the masked output tail, so read the first live plan by eye |
 | A Cedar rule is validated against the tools that exist, so the tool precedes the rule | Documented in the runbook from the first deployment (two deploys for a tool and its rule) |
 | CloudFormation can fail to delete a role that carries an inline policy it did not create | Assumed, not observed; the pre-clean costs one idempotent command |
 | The new Gateway can be created with `CUSTOM_JWT` through the stack, and the engine attaches in `ENFORCE` mode in stage 3 | Assumed: the CDK synthesizes it, no deploy has done it |
@@ -944,9 +971,12 @@ release under way, or drift); `--accept-baseline` saves that state on purpose.
 
 `python scripts/release_identity.py rollback` is a dry run: it prints, for every hop, each
 difference from the snapshot with both values in full. `rollback --apply
---i-understand-this-changes-aws` restores them. It uses the newest intact snapshot (`--snapshot
-FILE` pins one) and prints the time and commit of the one it uses, loudly when a newer file was
-skipped. Each write is read back, up to 60 checks 5 seconds apart, until the hop equals the
+--i-understand-this-changes-aws` restores them. Without `--snapshot FILE` it uses the newest intact snapshot
+of the release that is not live (the live release is the mode of the Gateway found by name; a snapshot of the
+live mode is never chosen on its own, and with none left, or when both modes' Gateways exist, it refuses and
+asks for `--snapshot FILE`). It prints the time and commit of the one it uses, loudly when a newer file was
+skipped. Every rollback command it prints passes `--snapshot FILE`, so a repeat run restores the same file
+whichever mode is live by then. Each write is read back, up to 60 checks 5 seconds apart, until the hop equals the
 snapshot. A hop whose saved copy was redacted anywhere is refused, not restored, and a failed hop
 skips only the steps that need it: the Runtimes are skipped when the Gateway step failed, and the
 Lambdas when the secret parameter step failed. Running it again is safe; a hop that already matches
@@ -985,8 +1015,16 @@ rollback prints is, from a checkout of the snapshot's commit:
    `rollback` again; it exits 1 until every hop matches.
 
 The `iam` Gateway that comes back has a new id and URL, a new role and a new policy engine. The stage 1
-deploy of a rollback needs a complete snapshot of the `jwt` release first (`snapshot --accept-baseline`
-if hops report findings), for the same reason the release needs one of `iam`: the deletion is not reversible.
+deploy of a rollback needs a complete snapshot of the `jwt` release first, taken of the live `jwt` Gateway
+(`snapshot --service-arn "$SERVICE_ARN"`, with `--accept-baseline` if hops report findings), for the same
+reason the release needs one of `iam`: the deletion is not reversible. That snapshot is newer than the `iam`
+one, but it is a snapshot of the live release, so `rollback` does not choose it and restores the `iam` snapshot
+taken before the release (or the one you name). Taking a `jwt` snapshot reads the Gateway that
+`AGENTCORE_GATEWAY_URL` names, so run `sync_agentcore_env.py --write` first if `.env` is stale, and it needs the
+`MERIDIAN_COGNITO_*` settings and `MERIDIAN_GATEWAY_ENFORCEMENT` from `.env` (they stay set in `iam` mode). The
+mode of a snapshot comes from the Gateway, not from `MERIDIAN_AGENTCORE_AUTH`, which the `snapshot` command does
+not read. After the rebuild the `iam` release is live, so a repeat `rollback` needs `--snapshot FILE`, which every
+printed command carries.
 
 The jwt release removes the `InvokeGateway` statement from both Runtime roles, and the IAM render
 puts it back for the new IAM Gateway. `check --expect iam` reads both roles. `snapshot` in `iam`
