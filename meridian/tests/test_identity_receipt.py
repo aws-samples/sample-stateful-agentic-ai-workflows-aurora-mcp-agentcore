@@ -87,6 +87,13 @@ def test_a_leftover_fails_the_receipt():
     assert built.ok is False
 
 
+def test_a_cleanup_problem_fails_the_receipt_even_with_no_leftover():
+    built = complete()
+    built.cleanup = {"leftovers": 0, "problems": ["release: RuntimeError: gone"]}
+
+    assert built.ok is False
+
+
 def test_one_failed_probe_fails_the_receipt():
     built = complete()
     built.outcomes[0] = outcome(result=ALLOWED, refused_by=None)

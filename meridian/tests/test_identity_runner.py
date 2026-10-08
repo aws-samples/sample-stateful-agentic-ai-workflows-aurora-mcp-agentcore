@@ -81,3 +81,53 @@ def test_tidy_purges_each_thread_once():
     notes = tidy(cleanup, ctx)
 
     assert notes["threads_purged"] == 1 and len(cleanup.purged) == 1
+
+
+class InterruptedOnce(FakeCleanup):
+    """A cleanup whose named step is hit by a Ctrl-C on its first call."""
+
+    def __init__(self, step):
+        super().__init__()
+        self.step, self.hit = step, False
+
+    def _maybe(self, step):
+        if step == self.step and not self.hit:
+            self.hit = True
+            raise KeyboardInterrupt
+
+    def purge_thread(self, thread):
+        self._maybe("purge")
+        super().purge_thread(thread)
+
+    def release_bookings(self, booking_ids):
+        self._maybe("release")
+        return super().release_bookings(booking_ids)
+
+    def leftovers(self, prefix, booking_ids):
+        self._maybe("check")
+        return super().leftovers(prefix, booking_ids)
+
+
+@pytest.mark.parametrize("step", ["purge", "release", "check"])
+def test_a_second_interrupt_during_cleanup_is_reported_and_the_rest_still_runs(step):
+    ports, _ = good_world()
+    cleanup = InterruptedOnce(step)
+
+    receipt = run_proof(ports, cleanup, Context(run_id="abc12345", design="both"), HEADER)
+
+    assert receipt.ok is False and cleanup.hit
+    assert any("interrupted" in p for p in receipt.cleanup["problems"])
+    assert (receipt.cleanup["leftovers"] >= 1) is (step == "check")
+    assert cleanup.released == (["HLD-TEST0001"] if step != "release" else [])
+
+
+def test_a_second_interrupt_after_a_first_still_leaves_notes_on_the_error():
+    ports, _ = good_world()
+    broken = ports.__class__(**{**ports.__dict__, "http": lambda *a: (_ for _ in ()).throw(
+        KeyboardInterrupt())})
+    cleanup = InterruptedOnce("purge")
+
+    with pytest.raises(KeyboardInterrupt) as caught:
+        run_proof(broken, cleanup, Context(run_id="abc12345", design="both"), HEADER)
+
+    assert any("cleanup" in note for note in caught.value.__notes__)

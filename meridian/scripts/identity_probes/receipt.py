@@ -116,9 +116,13 @@ class Receipt:
 
     @property
     def ok(self) -> bool:
-        """True when every probe passed, every layer is covered and nothing was left behind."""
+        """True when every probe passed, every layer is covered and cleanup was complete.
+
+        A leftover fails the receipt, and so does any cleanup problem: a step that could not run
+        leaves a state nobody has checked.
+        """
         return (not self.coverage_gaps() and all(o.passed for o in self.outcomes)
-                and not self.cleanup.get("leftovers"))
+                and not self.cleanup.get("leftovers") and not self.cleanup.get("problems"))
 
     def to_dict(self) -> dict[str, Any]:
         """The receipt as plain data, ready for JSON."""

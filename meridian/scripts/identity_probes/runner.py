@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -35,37 +36,50 @@ class Header:
     mode: str = FULL
 
 
-def _problem(what: str, exc: Exception) -> str:
-    return scrub(f"{what}: {type(exc).__name__}: {exc}")
+def _problem(what: str, exc: BaseException) -> str:
+    kind = "interrupted" if isinstance(exc, KeyboardInterrupt) else type(exc).__name__
+    return scrub(f"{what}: {kind}: {exc}" if str(exc) else f"{what}: {kind}")
+
+
+def _attempt(problems: list[str], what: str, step: Callable[[], Any], default: Any) -> Any:
+    """``step()``'s value, or ``default`` after noting a failure or a Ctrl-C as a problem.
+
+    A second interrupt during cleanup must not abandon the steps after it, so it is recorded
+    here and the caller carries on.
+    """
+    try:
+        return step()
+    except (Exception, KeyboardInterrupt) as exc:  # noqa: BLE001 - reported in the receipt
+        problems.append(_problem(what, exc))
+        return default
 
 
 def tidy(cleanup: Cleanup, ctx: Context) -> dict[str, Any]:
     """Purge the run's threads, release its bookings and count what remains.
 
-    A step that cannot run is reported as a problem. A check that cannot run counts as one
-    leftover, because an unknown state is not a clean one.
+    Every step runs even when an earlier one failed or was interrupted. A step that cannot run
+    is reported as a problem. A check that cannot run counts as one leftover, because an
+    unknown state is not a clean one.
     """
     problems: list[str] = []
     purged = 0
     for thread in dict.fromkeys(ctx.threads):
-        try:
-            cleanup.purge_thread(thread)
-            purged += 1
-        except Exception as exc:  # noqa: BLE001 - reported in the receipt
-            problems.append(_problem(thread, exc))
+        purged += _attempt(problems, thread, lambda t=thread: _purge(cleanup, t), 0)
     ids = sorted(ctx.created_bookings)
-    released = 0
-    try:
-        released = cleanup.release_bookings(ids) if ids else 0
-    except Exception as exc:  # noqa: BLE001 - reported in the receipt
-        problems.append(_problem("release", exc))
-    try:
-        leftovers = cleanup.leftovers(THREAD_PREFIX + ctx.run_id, ids)
-    except Exception as exc:  # noqa: BLE001 - reported in the receipt
-        problems.append(_problem("leftover check", exc))
+    released = _attempt(
+        problems, "release", lambda: cleanup.release_bookings(ids) if ids else 0, 0)
+    leftovers = _attempt(
+        problems, "leftover check", lambda: cleanup.leftovers(THREAD_PREFIX + ctx.run_id, ids),
+        None)
+    if leftovers is None:
         leftovers = 1
     return {"threads_purged": purged, "bookings_released": released, "leftovers": leftovers,
             "problems": problems}
+
+
+def _purge(cleanup: Cleanup, thread: str) -> int:
+    cleanup.purge_thread(thread)
+    return 1
 
 
 def run_proof(
@@ -73,8 +87,8 @@ def run_proof(
 ) -> Receipt:
     """Run the probes in order, then always clean up, and return the receipt.
 
-    An interrupt stops the plan, runs the cleanup and then propagates, so no receipt is written
-    for an interrupted run.
+    An interrupt or crash stops the plan, runs the cleanup and then propagates with a note that
+    says what the cleanup found, so no receipt is returned for a run that did not finish.
     """
     receipt = Receipt(
         at=header.at, git_sha=header.git_sha, region=header.region,
@@ -84,6 +98,15 @@ def run_proof(
     try:
         for spec in select(jordan_only):
             receipt.outcomes.append(run_probe(spec, ports, ctx))
-    finally:
-        receipt.cleanup = tidy(cleanup, ctx)
+    except BaseException as exc:
+        exc.add_note(describe_cleanup(tidy(cleanup, ctx)))
+        raise
+    receipt.cleanup = tidy(cleanup, ctx)
     return receipt
+
+
+def describe_cleanup(notes: dict[str, Any]) -> str:
+    """One line saying what the cleanup removed and what it could not account for."""
+    problems = "; ".join(notes["problems"]) or "none"
+    return (f"cleanup: {notes['threads_purged']} thread(s) purged, {notes['bookings_released']} "
+            f"booking(s) released, {notes['leftovers']} leftover(s), problems: {problems}")
