@@ -91,7 +91,6 @@ class Target:
     """What the guards established about the deployment and the checkout."""
 
     region: str
-    pool_suffix: str
     design: str
     url: str
     sha: str
@@ -156,7 +155,7 @@ def offline_target(deps: Dependencies, base_url: str | None) -> Target:
         raise settings.ReleaseConfigError(
             "MERIDIAN_AGENTCORE_AUTH is not jwt; the proof signs in as the seeded users, so run "
             "it only against the released system")
-    pool_id = settings.cognito_settings(env).pool_id
+    settings.cognito_settings(env)
     design = settings.enforcement(env)
     _account, region = settings.deployment_target(env)
     changes = deps.changes()
@@ -166,7 +165,7 @@ def offline_target(deps: Dependencies, base_url: str | None) -> Target:
             f"meridian/ has {len(changes)} uncommitted change(s) ({shown}); the receipt names the "
             "commit, so commit or stash them and run again")
     url = checked_url(base_url or deps.site_url())
-    return Target(region, pool_id[-4:], design, url, deps.git_sha())
+    return Target(region, design, url, deps.git_sha())
 
 
 def check_account(deps: Dependencies) -> None:
@@ -248,7 +247,7 @@ def unfinished(header: Header, reason: str) -> Receipt:
     """A receipt that cannot pass: no probe ran to the end and the cleanup state is unknown."""
     return Receipt(
         at=header.at, git_sha=header.git_sha, region=header.region,
-        pool_suffix=header.pool_suffix, design=header.design, site_host=header.site_host,
+        design=header.design, site_host=header.site_host,
         mode=header.mode, cleanup={"leftovers": "unknown", "problems": [scrub(reason)]})
 
 
@@ -283,7 +282,7 @@ def prove(args: argparse.Namespace, deps: Dependencies, target: Target, folder: 
     stamp = started.strftime(STAMP)
     header = Header(
         at=started.isoformat(timespec="seconds"), git_sha=target.sha, region=target.region,
-        pool_suffix=target.pool_suffix, design=target.design,
+        design=target.design,
         site_host=urlparse(target.url).hostname or "",
         mode=JORDAN_ONLY if args.jordan_only else FULL)
     save_json(unfinished(header, "the run started and has not finished"), folder, stamp)

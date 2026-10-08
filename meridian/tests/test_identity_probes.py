@@ -103,6 +103,57 @@ def test_a_gateway_that_accepts_the_decoy_and_books_for_jordan_is_an_error_and_i
     assert ctx.created_bookings == {"HLD-LEAK0001"}
 
 
+@pytest.mark.parametrize("probe", ["runtime.decoy_tampers_workflow",
+                                   "runtime.decoy_tampers_concierge"])
+@pytest.mark.parametrize("message", [
+    "The forwarded access token was refused: traveler.",
+    "No signed-in caller: no bearer token was forwarded.",
+])
+def test_a_runtime_that_refuses_the_token_does_not_pass_a_tamper_probe(probe, message):
+    ports, _ = good_world()
+    token_trouble = ports.__class__(**{**ports.__dict__, "runtime": lambda *a: [
+        {"type": "error", "code": "authorization", "message": message}]})
+
+    _, outcomes = run_all(token_trouble, only={probe})
+
+    assert outcomes[probe].result == ERROR and not outcomes[probe].passed
+
+
+@pytest.mark.parametrize("probe", ["backend.decoy_reads_jordan_memory",
+                                   "backend.decoy_orders_for_jordan"])
+@pytest.mark.parametrize(("status", "body"), [
+    (401, {"detail": "Invalid Bearer token"}), (500, "boom"),
+    (403, {"error": "Forbidden by something else"}),
+])
+def test_a_backend_failure_that_is_not_the_identity_check_does_not_pass(probe, status, body):
+    ports, _ = good_world()
+    failing = ports.__class__(**{**ports.__dict__, "http": lambda *a: (status, body)})
+
+    _, outcomes = run_all(failing, only={probe})
+
+    assert outcomes[probe].result == ERROR and not outcomes[probe].passed
+
+
+@pytest.mark.parametrize("raw", [
+    {"error": {"http_status": 401, "message": "Invalid Bearer token"}},
+    {"error": {"http_status": 500, "message": "boom"}},
+    text_result({"error": "validation: bad arg"}),
+])
+def test_a_gateway_failure_without_refusal_evidence_does_not_pass_the_decoy_probe(raw):
+    ports, _ = good_world()
+
+    def failing(user, tool, arguments):
+        return text_result({"package": PACKAGE}) if tool.endswith("details") else raw
+
+    broken = ports.__class__(**{**ports.__dict__, "gateway": failing})
+
+    _, outcomes = run_all(broken, only={"gateway.jordan_reads_package",
+                                         "gateway.decoy_holds_for_jordan"})
+
+    assert outcomes["gateway.decoy_holds_for_jordan"].result == ERROR
+    assert not outcomes["gateway.decoy_holds_for_jordan"].passed
+
+
 def test_a_probe_that_raises_becomes_an_error_outcome_and_hides_no_other():
     ports, _ = good_world()
 

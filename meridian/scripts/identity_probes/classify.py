@@ -6,12 +6,19 @@ import json
 import re
 from typing import Any, NamedTuple
 
-from scripts.identity_probes.receipt import ALLOWED, ERROR, NOT_ATTRIBUTED, REFUSED, scrub
+from scripts.identity_probes.receipt import ALLOWED, ERROR, REFUSED, scrub
 
 IDENTITY_CHECK = "not authorized for that traveler"
-GRANT_CHECK = "is not authorized for traveler"
+GRANT_CHECKS = ("is not authorized for traveler", "not authorized for the current workload")
 DIFFERENT_TRAVELER = "different traveler"
-POLICY_WORDS = re.compile(r"cedar|polic", re.IGNORECASE)
+INTERCEPTOR_PREFIX = "Identity Check Failed: "
+CEDAR_PREFIX = re.compile(r"^(?:AuthorizeActionException - )?Tool Execution Denied")
+CEDAR_CODE = -32002
+DESIGN_REFUSERS = {
+    "both": {"gateway_cedar", "gateway_interceptor", "gateway_workload_grant"},
+    "cedar": {"gateway_cedar", "gateway_workload_grant"},
+    "interceptor": {"gateway_interceptor", "gateway_workload_grant"},
+}
 
 
 class Verdict(NamedTuple):
@@ -30,38 +37,46 @@ class Verdict(NamedTuple):
 
 def _detail_text(body: Any) -> str:
     if isinstance(body, dict):
-        detail = body.get("detail", body.get("message", ""))
+        detail = body.get("detail", body.get("error", body.get("message", "")))
         return detail if isinstance(detail, str) else json.dumps(detail)
     return str(body)
 
 
 def classify_backend(status: int, body: Any) -> Verdict:
-    """Classify the backend's HTTP answer: a 2xx is allowed, a 403 names its check."""
+    """Classify the backend's HTTP answer: a 2xx is allowed, a 403 must name its check.
+
+    A 403 whose text names neither the token traveler check nor the workload grant is an error:
+    it is not evidence of which layer refused.
+    """
     text = scrub(_detail_text(body))
     if 200 <= status < 300:
         return Verdict(ALLOWED, None, f"HTTP {status}")
     if status == 403 and IDENTITY_CHECK in text:
         return Verdict(REFUSED, "backend_identity_check", f"HTTP 403 {text}")
-    if status == 403 and GRANT_CHECK in text:
+    if status == 403 and any(marker in text for marker in GRANT_CHECKS):
         return Verdict(REFUSED, "workload_grant", f"HTTP 403 {text}")
     if status == 403:
-        return Verdict(REFUSED, NOT_ATTRIBUTED, f"HTTP 403 {text}")
+        return Verdict(ERROR, None, f"HTTP 403 from an unrecognised check: {text}")
     return Verdict(ERROR, None, f"HTTP {status} {text}")
 
 
 def classify_runtime(events: list[dict]) -> Verdict:
-    """Classify a Runtime's event stream: a coded authorization error is a refusal."""
+    """Classify a Runtime's event stream.
+
+    Only the claim check's own message (the request names a different traveler than the token)
+    is a refusal. Any other error, including every other ``authorization`` message (a malformed
+    token, a missing traveler claim, no bearer), is an error: it says the token is bad, not that
+    the traveler was refused. A stream is allowed only when it ends in a ``result``.
+    """
     errors = [event for event in events if event.get("type") == "error"]
     if errors:
         code = errors[0].get("code")
         message = scrub(errors[0].get("message", ""))
         if code == "authorization" and DIFFERENT_TRAVELER in message:
             return Verdict(REFUSED, "runtime_traveler_check", f"{code}: {message}")
-        if code == "authorization":
-            return Verdict(REFUSED, "runtime_token_check", f"{code}: {message}")
         return Verdict(ERROR, None, f"{code}: {message}")
-    if any(event.get("type") in ("result", "activity") for event in events):
-        return Verdict(ALLOWED, None, "no error event")
+    if any(event.get("type") == "result" for event in events):
+        return Verdict(ALLOWED, None, "result event, no error event")
     return Verdict(ERROR, None, "the Runtime sent no result and no error")
 
 
@@ -104,29 +119,57 @@ def gateway_shape(raw: Any) -> str:
     return "success"
 
 
-def _gateway_refused(raw: Any) -> bool:
-    return gateway_shape(raw) != "success"
+def _is_http_failure(raw: Any) -> bool:
+    error = raw.get("error") if isinstance(raw, dict) else None
+    return isinstance(error, dict) and "http_status" in error
+
+
+def _evidence_refuser(raw: dict, shape: str, text: str) -> str | None:
+    """The layer a refusal's own wording or code names, or None when it names none."""
+    if shape == "result.isError" and text.startswith(INTERCEPTOR_PREFIX):
+        return "gateway_interceptor"
+    if shape == "result.isError" and CEDAR_PREFIX.match(text):
+        return "gateway_cedar"
+    error = raw.get("error")
+    if shape == "error" and isinstance(error, dict) and error.get("code") == CEDAR_CODE:
+        return "gateway_cedar"
+    return None
 
 
 def classify_gateway(raw: Any, *, deny_rows: int, design: str) -> Verdict:
     """Classify a Gateway tool call and attribute a refusal to the layer that made it.
 
+    A refusal counts only with evidence of its layer: an HTTP 200 tool error that carries the
+    interceptor's ``Identity Check Failed: `` text or Cedar's ``Tool Execution Denied`` text or
+    JSON-RPC code -32002, or a new deny row in ``traveler_access_audit`` (the Holds Lambda's
+    workload grant). An HTTP 4xx or 5xx, a timeout, a validation error or any other failure is an
+    error, because it does not show that identity was the reason.
+
     Args:
-        raw: What ``call_tool`` returned, or an ``{"error": ...}`` stand-in for an HTTP refusal.
+        raw: What ``call_tool`` returned, or an ``{"error": {"http_status": ...}}`` stand-in.
         deny_rows: New ``traveler_access_audit`` deny rows for the caller's traveler since before
             the call. A new row means the Holds Lambda ran and refused.
-        design: ``both``, ``cedar`` or ``interceptor``, the Gateway enforcement that shipped.
+        design: ``both``, ``cedar`` or ``interceptor``, the Gateway enforcement that shipped; a
+            refusal from a layer the design does not have is an error.
     """
+    shape = gateway_shape(raw)
     text = _gateway_text(raw)
-    if not _gateway_refused(raw):
+    if shape == "success":
         return Verdict(ALLOWED, None, text or "tool call accepted")
-    if deny_rows > 0:
-        return Verdict(REFUSED, "gateway_workload_grant", f"{deny_rows} new deny row; {text}")
-    if design == "cedar" or (design == "both" and POLICY_WORDS.search(text)):
-        return Verdict(REFUSED, "gateway_cedar", text)
-    if design == "interceptor":
-        return Verdict(REFUSED, "gateway_interceptor", text)
-    return Verdict(REFUSED, NOT_ATTRIBUTED, text)
+    if shape == "not_a_dict" or _is_http_failure(raw):
+        return Verdict(ERROR, None, f"not a tool refusal ({shape}): {text}")
+    evidence = _evidence_refuser(raw, shape, text)
+    if evidence and deny_rows > 0:
+        return Verdict(ERROR, None, f"contradictory evidence: {evidence} text with "
+                       f"{deny_rows} new deny row; {text}")
+    refuser = evidence or ("gateway_workload_grant" if deny_rows > 0 else None)
+    if refuser is None:
+        return Verdict(ERROR, None, f"a failure with no refusal evidence ({shape}): {text}")
+    if refuser not in DESIGN_REFUSERS.get(design, set()):
+        return Verdict(ERROR, None, f"{refuser} refused but design {design!r} has no such "
+                       f"layer; {text}")
+    prefix = f"{deny_rows} new deny row; " if refuser == "gateway_workload_grant" else ""
+    return Verdict(REFUSED, refuser, f"{prefix}{text}")
 
 
 def classify_database_decoy(visible: int, baseline: int) -> Verdict:

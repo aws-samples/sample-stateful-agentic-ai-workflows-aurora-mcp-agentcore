@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -17,19 +17,17 @@ SCHEMA = 1
 LAYERS = ("backend", "runtime", "gateway", "database")
 DECOY, JORDAN = "decoy", "jordan"
 REFUSED, ALLOWED, ERROR = "refused", "allowed", "error"
-NOT_ATTRIBUTED = "not_attributed"
 FULL, JORDAN_ONLY = "full", "jordan-only"
+UNPROVEN = "unproven"
 DETAIL_LIMIT = 160
 REFUSER_LABELS = {
     "backend_identity_check": "Backend: token traveler check",
     "workload_grant": "Workload grant on the traveler",
     "runtime_traveler_check": "Runtime: token claim check",
-    "runtime_token_check": "Runtime: token check",
     "gateway_cedar": "Gateway: Cedar policy",
     "gateway_interceptor": "Gateway: interceptor",
     "gateway_workload_grant": "Holds Lambda: workload grant",
     "database_rls": "AWS Aurora: row-level security",
-    NOT_ATTRIBUTED: "Refused, layer not attributed",
 }
 LEAK_PATTERNS = {
     "token": TOKEN,
@@ -81,10 +79,13 @@ class Outcome:
 
     @property
     def passed(self) -> bool:
-        """True when the result is the expectation and a refusal names its refuser."""
+        """True when the result is the expectation and a refusal names a known refuser.
+
+        A refusal that cannot be attributed does not pass: it is not evidence of any layer.
+        """
         if self.result != self.expected:
             return False
-        return self.expected != REFUSED or bool(self.refused_by)
+        return self.expected != REFUSED or self.refused_by in REFUSER_LABELS
 
 
 @dataclass
@@ -94,13 +95,34 @@ class Receipt:
     at: str
     git_sha: str
     region: str
-    pool_suffix: str
     design: str
     site_host: str
     mode: str = FULL
     outcomes: list[Outcome] = field(default_factory=list)
     cleanup: dict[str, Any] = field(default_factory=dict)
+    notes: list[str] = field(default_factory=list)
     account: str = "<acct>"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Receipt:
+        """Rebuild a receipt from its JSON form; every verdict is recomputed from the outcomes.
+
+        Raises:
+            KeyError: When a required field is missing.
+            TypeError: When a field has the wrong type.
+            ValueError: When the schema or mode is not one this code wrote.
+        """
+        if data["schema"] != SCHEMA:
+            raise ValueError(f"receipt schema {data['schema']!r} is not {SCHEMA}")
+        if data["mode"] not in (FULL, JORDAN_ONLY):
+            raise ValueError(f"receipt mode {data['mode']!r} is not known")
+        names = {f.name for f in fields(Outcome)}
+        outcomes = [Outcome(**{k: v for k, v in raw.items() if k in names})
+                    for raw in data["outcomes"]]
+        return cls(
+            at=data["at"], git_sha=data["git_sha"], region=data["region"], design=data["design"],
+            site_host=data["site_host"], mode=data["mode"], outcomes=outcomes,
+            cleanup=dict(data["cleanup"]), notes=list(data.get("notes", [])))
 
     def coverage_gaps(self) -> list[str]:
         """Layers that lack a decoy refusal probe (full mode) or a Jordan control."""
@@ -128,11 +150,11 @@ class Receipt:
         """The receipt as plain data, ready for JSON."""
         return {
             "schema": SCHEMA, "at": self.at, "git_sha": self.git_sha, "region": self.region,
-            "account": self.account, "pool_suffix": self.pool_suffix, "design": self.design,
+            "account": self.account, "design": self.design,
             "site_host": self.site_host, "mode": self.mode, "ok": self.ok,
             "coverage_gaps": self.coverage_gaps(),
             "outcomes": [{**asdict(o), "passed": o.passed} for o in self.outcomes],
-            "summary": summary_rows(self), "cleanup": self.cleanup,
+            "summary": summary_rows(self), "cleanup": self.cleanup, "notes": self.notes,
         }
 
 
@@ -144,16 +166,24 @@ def _verdict(outcomes: list[Outcome], wanted: str) -> str:
 
 
 def summary_rows(receipt: Receipt) -> list[dict[str, str]]:
-    """One row per layer: how the decoy fared, how Jordan fared and who refused the decoy."""
+    """One row per layer: how the decoy fared, how Jordan fared and who refused the decoy.
+
+    A decoy refusal counts only beside a passing Jordan control at the same layer, because a
+    layer that refuses everyone proves nothing about the decoy. Without one the decoy shows
+    ``unproven`` and no refuser is named.
+    """
     rows = []
     for layer in LAYERS:
         mine = [o for o in receipt.outcomes if o.layer == layer]
         decoy = [o for o in mine if o.actor == DECOY]
-        jordan = [o for o in mine if o.actor == JORDAN]
+        jordan = _verdict([o for o in mine if o.actor == JORDAN], ALLOWED)
+        decoy_verdict = _verdict(decoy, REFUSED)
+        if decoy_verdict == REFUSED and jordan != ALLOWED:
+            decoy_verdict = UNPROVEN
         refusers = sorted({REFUSER_LABELS.get(o.refused_by or "", "") for o in decoy
-                           if o.refused_by})
+                           if o.refused_by}) if decoy_verdict == REFUSED else []
         rows.append({
-            "layer": layer, "decoy": _verdict(decoy, REFUSED), "jordan": _verdict(jordan, ALLOWED),
+            "layer": layer, "decoy": decoy_verdict, "jordan": jordan,
             "refused_by": "; ".join(refusers),
         })
     return rows

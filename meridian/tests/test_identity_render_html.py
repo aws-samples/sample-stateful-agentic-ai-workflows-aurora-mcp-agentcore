@@ -8,7 +8,7 @@ from scripts.identity_probes.runner import Header, run_proof
 from tests.identity_proof_support import FakeCleanup, good_world
 
 HEADER = Header(at="2026-10-08T12:00:00+00:00", git_sha="abcdef0123456789" * 2 + "abcdef01",
-                region="us-east-1", pool_suffix="aaZV", design="both", site_host="site.example.net")
+                region="us-east-1", design="both", site_host="site.example.net")
 BANNED = ("\u00b7", "\u2014", "\u2013", "demo", "Amazon Aurora")
 
 

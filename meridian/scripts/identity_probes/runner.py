@@ -30,7 +30,6 @@ class Header:
     at: str
     git_sha: str
     region: str
-    pool_suffix: str
     design: str
     site_host: str
     mode: str = FULL
@@ -92,7 +91,7 @@ def run_proof(
     """
     receipt = Receipt(
         at=header.at, git_sha=header.git_sha, region=header.region,
-        pool_suffix=header.pool_suffix, design=header.design, site_host=header.site_host,
+        design=header.design, site_host=header.site_host,
         mode=header.mode,
     )
     try:

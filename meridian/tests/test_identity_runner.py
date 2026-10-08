@@ -8,7 +8,7 @@ from scripts.identity_probes.runner import Header, run_proof, tidy
 from tests.identity_proof_support import FakeCleanup, good_world
 
 HEADER = Header(at="2026-10-08T12:00:00+00:00", git_sha="a" * 40, region="us-east-1",
-                pool_suffix="aaZV", design="both", site_host="site.example.net")
+                design="both", site_host="site.example.net")
 
 
 def test_a_correct_system_gives_a_passing_receipt_and_a_clean_cleanup():

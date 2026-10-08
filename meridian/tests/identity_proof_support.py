@@ -105,7 +105,8 @@ def fake_runtime(user, runtime_name, payload, limit):
     if user == DECOY and payload.get("traveler_id") == JORDAN_TRAVELER:
         return [{"type": "error", "code": "authorization", "message": DIFFERENT_TRAVELER}]
     if runtime_name == CONCIERGE:
-        return [{"type": "activity", "name": "AgentCore Runtime: turn started"}]
+        return [{"type": "activity", "name": "AgentCore Runtime: turn started"},
+                {"type": "result", "message": "Hello."}]
     return [{"type": "heartbeat"}, {"type": "result", "state": {"workflow_status": "paused"}}]
 
 
