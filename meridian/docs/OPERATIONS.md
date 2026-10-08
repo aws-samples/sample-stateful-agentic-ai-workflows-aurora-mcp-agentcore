@@ -1106,7 +1106,7 @@ and not from a layer that turns the decoy away for any request.
 | Probe | Layer | Who | What it sends |
 | --- | --- | --- | --- |
 | `backend.decoy_reads_jordan_memory` | Backend | decoy | `GET /api/memory/<Jordan's traveler id>` |
-| `backend.decoy_orders_for_jordan` | Backend | decoy | `POST /api/order` naming Jordan's traveler id |
+| `backend.decoy_orders_for_jordan` | Backend | decoy | `POST /api/chat/order` naming Jordan's traveler id |
 | `backend.decoy_me_is_decoy` | Backend | decoy | `GET /api/me`: the decoy's own identity, allowed |
 | `backend.jordan_me_is_jordan` | Backend | Jordan | `GET /api/me` |
 | `backend.jordan_reads_own_memory` | Backend | Jordan | `GET /api/memory/me` |

@@ -244,7 +244,7 @@ def _decoy_reads_jordan_memory(ports: Ports, ctx: Context):
 def _decoy_orders_for_jordan(ports: Ports, ctx: Context):
     order = {"product_id": PACKAGE_ID, "quantity": 1, "phase": 4, "traveler_id": JORDAN_TRAVELER}
     with watch_bookings(ports, ctx, None) as window:
-        status, body = ports.http(DECOY, "POST", "/api/order", order)
+        status, body = ports.http(DECOY, "POST", "/api/chat/order", order)
         window.payload_ids = _order_booking_ids(body)
     verdict = _appeared_error(window) if window.appeared else classify_backend(status, body)
     return verdict, {"http_status": status, "bookings_appeared": len(window.appeared)}
@@ -350,7 +350,7 @@ PLAN: tuple[ProbeSpec, ...] = (
               "GET /api/memory/<Jordan's traveler id> with the decoy's token",
               _decoy_reads_jordan_memory),
     ProbeSpec("backend.decoy_orders_for_jordan", "backend", DECOY, REFUSED,
-              "POST /api/order naming Jordan's traveler id with the decoy's token",
+              "POST /api/chat/order naming Jordan's traveler id with the decoy's token",
               _decoy_orders_for_jordan),
     ProbeSpec("backend.decoy_me_is_decoy", "backend", DECOY, ALLOWED,
               "GET /api/me with the decoy's token: the decoy's own identity", _me(DECOY)),
