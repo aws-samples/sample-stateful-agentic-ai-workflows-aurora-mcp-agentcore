@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from scripts.identity_release import settings
@@ -91,3 +93,9 @@ def test_pool_id_region_must_match_cognito_region():
 def test_a_malformed_pool_setting_is_refused_without_echoing_other_values(key, value):
     with pytest.raises(settings.ReleaseConfigError, match=key):
         settings.cognito_settings({**COGNITO, key: value})
+
+
+def test_the_git_head_is_a_full_sha_for_a_repository(tmp_path):
+    assert re.fullmatch(r"[0-9a-f]{40}", settings.git_head())
+    with pytest.raises(settings.ReleaseConfigError, match="git HEAD"):
+        settings.git_head(tmp_path)

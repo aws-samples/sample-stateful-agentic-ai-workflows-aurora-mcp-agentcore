@@ -7,6 +7,7 @@ from ``os.environ`` directly, so a tool can be tested and can report what it wou
 from __future__ import annotations
 
 import re
+import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +28,18 @@ INTERCEPTOR_FUNCTION = "meridian-gateway-traveler-pin"
 MERIDIAN_DIR = Path(__file__).resolve().parents[2]
 RELEASE_DIR = MERIDIAN_DIR / ".local" / "release-b2"
 PROOF_PATH = RELEASE_DIR / "backend-login-proof.json"
+PROOF_FIELDS = {
+    "ok": "true (the boolean) only when every check passed",
+    "at": "ISO 8601 time of the run with a UTC offset; more than 5 minutes ahead of now, or "
+          "older than 7 days, is refused",
+    "account": "the 12-digit AWS account the run used; must equal the cluster's account",
+    "region": "the AWS Region the run used; must equal the cluster's Region",
+    "user_pool_id": "the Cognito user pool the run used; must equal MERIDIAN_COGNITO_USER_POOL_ID",
+    "git_sha": "the full commit sha of the repository HEAD when the run started; must equal "
+               "the HEAD of the release",
+    "login": "the database login the backend ran as; must be meridian_backend",
+    "checks": "object of check name to true; non-empty and every value true",
+}
 
 REGION = re.compile(r"^[a-z]{2}(-[a-z]+)+-\d+$")
 POOL_ID = re.compile(r"^[a-z]{2}(-[a-z]+)+-\d+_[A-Za-z0-9]+$")
@@ -152,3 +165,20 @@ def cognito_settings(env: Mapping[str, str | None]) -> CognitoSettings:
             "starts with its Region, so the discovery URL would not resolve"
         )
     return CognitoSettings(*(values[key] for key in COGNITO_KEYS))
+
+
+def git_head(repo: Path = MERIDIAN_DIR) -> str:
+    """The full sha of the repository's HEAD commit, which a proof receipt must name.
+
+    Raises:
+        ReleaseConfigError: When ``repo`` is not a git work tree or git is not installed.
+    """
+    try:
+        done = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ReleaseConfigError(
+            f"cannot read the git HEAD of {repo} ({type(exc).__name__}); the backend login "
+            "proof is bound to a commit") from exc
+    return done.stdout.strip()

@@ -16,18 +16,16 @@ from tests.aws_recorders import Recorder, Waiters, client_error
 FAKE_TOKEN = "e" + "yJ" + "abc.def.ghi"
 NOW = datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
 CLUSTER = f"arn:aws:rds:{rs.REGION}:{rs.ACCOUNT}:cluster:meridian"
-SERVICE_ARN = f"arn:aws:apprunner:{rs.REGION}:{rs.ACCOUNT}:service/meridian-web/abc123"
-IDENTITY_OUTPUTS = [
-    {"OutputKey": "UserPoolId", "OutputValue": rs.POOL},
-    {"OutputKey": "AppClientId", "OutputValue": rs.CLIENT},
-    {"OutputKey": "HostedUiDomain", "OutputValue": "d.auth.us-east-1.amazoncognito.com"},
-    {"OutputKey": "Issuer", "OutputValue": settings.cognito_settings(rs.COGNITO_ENV).issuer},
-]
+SERVICE_ARN = rs.SERVICE_ARN
+IDENTITY_OUTPUTS = rs.identity_outputs()
+SKIP = "--skip-service"
 
 
 def env(**extra):
     return {
         "AURORA_CLUSTER_ARN": CLUSTER, "MERIDIAN_AGENTCORE_AUTH": "jwt", **rs.COGNITO_ENV,
+        "AURORA_SECRET_ARN": rs.MASTER_SECRET, "AURORA_BACKEND_SECRET_ARN": rs.BACKEND_SECRET,
+        "VITE_COGNITO_DOMAIN": rs.HOSTED_UI_DOMAIN,
         "AGENTCORE_GATEWAY_URL": f"https://{rs.GATEWAY_ID}.gateway.bedrock-agentcore."
                                  f"{rs.REGION}.amazonaws.com/mcp",
         "AGENTCORE_RUNTIME_ARN": f"arn:aws:bedrock-agentcore:{rs.REGION}:{rs.ACCOUNT}:runtime/"
@@ -70,28 +68,29 @@ class World:
         return Mock(client=lambda name, **kwargs: clients[name])
 
 
-def proof(tmp_path, ok=True):
+def proof(tmp_path, **fields):
     path = tmp_path / "backend-login-proof.json"
-    path.write_text(json.dumps({"ok": ok, "login": "meridian_backend", "at": NOW.isoformat()}))
+    path.write_text(json.dumps(rs.receipt(NOW, **fields)))
     return path
 
 
-def run(argv, world, tmp_path, environment=None, with_proof=True):
+def run(argv, world, tmp_path, environment=None, with_proof=True, sha=rs.SHA, **fields):
     deps = release_identity.Dependencies(
         env=environment or env(), session=world.session, now=lambda: NOW,
-        proof_path=proof(tmp_path) if with_proof else tmp_path / "none.json",
+        head_sha=lambda: sha,
+        proof_path=proof(tmp_path, **fields) if with_proof else tmp_path / "none.json",
         release_dir=tmp_path / "release", sleep=lambda seconds: None)
     return release_identity.main(argv, deps)
 
 
 def test_a_release_that_matches_its_mode_reports_ok_and_exits_zero(tmp_path, capsys):
-    assert run(["check"], World("jwt"), tmp_path) == 0
+    assert run(["check", SKIP], World("jwt"), tmp_path) == 0
 
     assert "OK" in capsys.readouterr().out
 
 
 def test_every_drifted_hop_is_printed_and_the_exit_is_one(tmp_path, capsys):
-    assert run(["check"], World("iam"), tmp_path) == 1
+    assert run(["check", SKIP], World("iam"), tmp_path) == 1
 
     out = capsys.readouterr().out
     assert "DRIFT  Gateway: authorizer is AWS_IAM, expected CUSTOM_JWT" in out
@@ -101,7 +100,7 @@ def test_every_drifted_hop_is_printed_and_the_exit_is_one(tmp_path, capsys):
 
 
 def test_expect_iam_reads_the_baseline_even_when_the_env_says_jwt(tmp_path, capsys):
-    assert run(["check", "--expect", "iam"], World("iam"), tmp_path, with_proof=False) == 0
+    assert run(["check", "--expect", "iam", SKIP], World("iam"), tmp_path, with_proof=False) == 0
 
     assert "every hop reports iam" in capsys.readouterr().out
 
@@ -110,20 +109,21 @@ def test_the_jwt_check_also_wants_the_identity_stack_and_the_backend_login_proof
     world = World("jwt")
     world.cfn.describe_stacks.return_value = {"Stacks": [{"Outputs": []}]}
 
-    assert run(["check"], world, tmp_path, with_proof=False) == 1
+    assert run(["check", SKIP], world, tmp_path, with_proof=False) == 1
 
     out = capsys.readouterr().out
     assert "Identity stack: has no output" in out
     assert "Backend login proof: none recorded" in out
 
 
-def test_credentials_for_another_account_stop_before_any_read(tmp_path):
+def test_credentials_for_another_account_stop_before_any_read_with_exit_two(tmp_path, capsys):
     world = World("jwt", account="999999999999")
 
-    with pytest.raises(SystemExit) as stopped:
-        run(["check"], world, tmp_path)
+    assert run(["check", SKIP], world, tmp_path) == 2
 
-    assert "<acct>" in str(stopped.value) and "999999999999" not in str(stopped.value)
+    captured = capsys.readouterr()
+    assert "<acct>" in captured.err and "999999999999" not in captured.err
+    assert "Traceback" not in captured.err and captured.out == ""
     world.control.get_gateway.assert_not_called()
 
 
@@ -131,20 +131,19 @@ def test_a_missing_setting_exits_two_and_says_which(tmp_path, capsys):
     environment = env()
     del environment["AGENTCORE_WORKFLOW_RUNTIME_ARN"]
 
-    assert run(["check"], World("jwt"), tmp_path, environment) == 2
+    assert run(["check", SKIP], World("jwt"), tmp_path, environment) == 2
 
     assert "AGENTCORE_WORKFLOW_RUNTIME_ARN" in capsys.readouterr().err
 
 
 def test_a_bad_mode_exits_two(tmp_path, capsys):
-    assert run(["check"], World("jwt"), tmp_path, env(MERIDIAN_AGENTCORE_AUTH="true")) == 2
+    assert run(["check", SKIP], World("jwt"), tmp_path, env(MERIDIAN_AGENTCORE_AUTH="true")) == 2
 
     assert "MERIDIAN_AGENTCORE_AUTH" in capsys.readouterr().err
 
 
 def live_service(variables, secrets=None):
-    return {"SourceConfiguration": {"ImageRepository": {"ImageConfiguration": {
-        "RuntimeEnvironmentVariables": variables, "RuntimeEnvironmentSecrets": secrets or {}}}}}
+    return rs.app_runner_service(variables, secrets)
 
 
 def test_the_live_service_environment_is_checked_when_the_service_is_named(tmp_path, capsys):
@@ -158,18 +157,139 @@ def test_the_live_service_environment_is_checked_when_the_service_is_named(tmp_p
     assert "Service: MERIDIAN_API_TOKEN is still a secret reference" in capsys.readouterr().out
 
 
-def test_without_a_service_arn_the_service_is_reported_as_not_checked(tmp_path, capsys):
-    assert run(["check"], World("jwt"), tmp_path) == 0
+def test_a_service_running_the_master_login_is_drift(tmp_path, capsys):
+    variables = {**rs.jwt_service_variables(), "AURORA_SECRET_ARN": rs.MASTER_SECRET,
+                 "AURORA_BACKEND_SECRET_ARN": rs.MASTER_SECRET}
+    world = World("jwt", service=live_service(variables))
 
-    assert "not checked" in capsys.readouterr().out
+    assert run(["check", "--service-arn", SERVICE_ARN], world, tmp_path) == 1
+
+    assert "master" in capsys.readouterr().out
+
+
+def test_without_a_service_arn_or_skip_the_service_is_not_checked_and_the_exit_is_four(
+        tmp_path, capsys):
+    assert run(["check"], World("jwt"), tmp_path) == 4
+
+    out = capsys.readouterr().out
+    assert "NOT CHECKED  App Runner service" in out and "--skip-service" in out
+    assert "OK" not in out
+
+
+def test_skipping_the_service_on_purpose_is_the_only_way_to_a_zero_without_it(tmp_path, capsys):
+    assert run(["check", SKIP], World("jwt"), tmp_path) == 0
+
+    assert "App Runner service skipped" in capsys.readouterr().out
+
+
+def test_drift_wins_over_the_not_checked_exit(tmp_path, capsys):
+    assert run(["check"], World("iam"), tmp_path) == 1
+
+    out = capsys.readouterr().out
+    assert "DRIFT" in out and "NOT CHECKED" in out
+
+
+def test_a_service_arn_and_skip_service_together_are_refused(tmp_path, capsys):
+    with pytest.raises(SystemExit) as stopped:
+        run(["check", "--service-arn", SERVICE_ARN, SKIP], World("jwt"), tmp_path)
+
+    assert stopped.value.code == 2
+
+
+@pytest.mark.parametrize("arn", [
+    SERVICE_ARN.replace(rs.ACCOUNT, "999999999999"),
+    SERVICE_ARN.replace(rs.REGION, "eu-west-1"),
+    "arn:aws:apprunner:us-east-1:123456789012:service/other/abc123",
+])
+def test_a_service_arn_for_another_account_or_region_is_drift_and_is_not_read(
+        tmp_path, capsys, arn):
+    world = World("jwt", service=live_service(rs.jwt_service_variables()))
+
+    assert run(["check", "--service-arn", arn], world, tmp_path) == 1
+
+    out = capsys.readouterr().out
+    assert "--service-arn" in out and "999999999999" not in out
+    world.apprunner.describe_service.assert_not_called()
+
+
+def test_a_code_based_service_is_a_finding_not_a_crash(tmp_path, capsys):
+    world = World("jwt", service={"SourceConfiguration": {
+        "CodeRepository": {"RepositoryUrl": "https://example.com/repo"}}})
+
+    assert run(["check", "--service-arn", SERVICE_ARN], world, tmp_path) == 1
+
+    captured = capsys.readouterr()
+    assert "DRIFT  Service: not an image-based source" in captured.out
+    assert "Traceback" not in captured.err
+
+
+def test_a_hop_setting_for_another_region_is_drift(tmp_path, capsys):
+    other = (f"arn:aws:bedrock-agentcore:eu-west-1:{rs.ACCOUNT}:runtime/"
+             + rs.RUNTIME_IDS["MeridianConcierge"])
+
+    assert run(["check", SKIP], World("jwt"), tmp_path, env(AGENTCORE_RUNTIME_ARN=other)) == 1
+
+    assert "DRIFT  Settings: AGENTCORE_RUNTIME_ARN names another Region" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("fields", "sha", "word"), [
+    ({"account": "999999999999"}, rs.SHA, "account"),
+    ({}, "f" * 40, "git_sha"),
+    ({"ok": "no"}, rs.SHA, "did not pass"),
+    ({"at": "2026-10-08T11:00:00"}, rs.SHA, "time zone"),
+])
+def test_a_receipt_for_another_release_is_drift(tmp_path, capsys, fields, sha, word):
+    assert run(["check", SKIP], World("jwt"), tmp_path, sha=sha, **fields) == 1
+
+    out = capsys.readouterr().out
+    assert "DRIFT  Backend login proof: " in out and word in out and "999999999999" not in out
+
+
+def test_an_identity_stack_that_disagrees_with_the_site_setting_is_drift(tmp_path, capsys):
+    environment = env(VITE_COGNITO_DOMAIN="other.auth.example.com")
+
+    assert run(["check", SKIP], World("jwt"), tmp_path, environment) == 1
+
+    assert "HostedUiDomain" in capsys.readouterr().out
+
+
+def test_an_issuer_output_that_is_not_the_pools_is_drift(tmp_path, capsys):
+    world = World("jwt")
+    outputs = [dict(o) for o in IDENTITY_OUTPUTS]
+    outputs[3]["OutputValue"] = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_Other"
+    world.cfn.describe_stacks.return_value = {"Stacks": [{"Outputs": outputs}]}
+
+    assert run(["check", SKIP], world, tmp_path) == 1
+
+    assert "output Issuer differs" in capsys.readouterr().out
+
+
+def test_an_unexpected_error_exits_two_naming_only_its_type(tmp_path, capsys):
+    world = World("jwt")
+    world.control.get_gateway.side_effect = RuntimeError(f"boom for {rs.ACCOUNT} eyJabc")
+
+    assert run(["check", SKIP], world, tmp_path) == 2
+
+    captured = capsys.readouterr()
+    assert captured.err.strip() == "error: unexpected (RuntimeError)"
+    assert "Traceback" not in captured.err and rs.ACCOUNT not in captured.err
+
+
+def test_garbage_from_the_control_plane_is_drift_not_a_crash(tmp_path, capsys):
+    world = World("jwt")
+    world.control.get_gateway.return_value = None
+
+    assert run(["check", SKIP], world, tmp_path) == 1
+
+    assert "DRIFT  Gateway: " in capsys.readouterr().out
 
 
 def test_the_cedar_only_design_expects_no_interceptor(tmp_path, capsys):
     world = World("jwt")
     world.control.get_gateway.return_value = rs.gateway("jwt", settings.CEDAR)
 
-    assert run(["check"], world, tmp_path, env(MERIDIAN_GATEWAY_ENFORCEMENT="cedar")) == 0
-    assert run(["check"], world, tmp_path, env()) == 1
+    assert run(["check", SKIP], world, tmp_path, env(MERIDIAN_GATEWAY_ENFORCEMENT="cedar")) == 0
+    assert run(["check", SKIP], world, tmp_path, env()) == 1
     assert "no request interceptor" in capsys.readouterr().out
 
 
@@ -183,7 +303,7 @@ def test_an_aws_read_failure_exits_two_without_a_traceback_or_an_account_id(tmp_
         "GetGateway")
     world.control.get_gateway.side_effect = denied
 
-    assert run(["check"], world, tmp_path) == 2
+    assert run(["check", SKIP], world, tmp_path) == 2
 
     err = capsys.readouterr().err
     assert "AccessDeniedException" in err and "Traceback" not in err and rs.ACCOUNT not in err
@@ -192,7 +312,7 @@ def test_an_aws_read_failure_exits_two_without_a_traceback_or_an_account_id(tmp_
 def test_check_makes_only_read_calls(tmp_path):
     world = World("jwt")
 
-    run(["check"], world, tmp_path)
+    run(["check", "--service-arn", SERVICE_ARN], world, tmp_path)
 
     called = {c[0] for mock in (world.control, world.cfn, world.apprunner, world.sts)
               for c in mock.method_calls}
@@ -288,12 +408,14 @@ def test_the_interceptor_command_refuses_the_cedar_only_design(tmp_path, capsys)
     assert "cedar" in capsys.readouterr().err and world.lam.calls == []
 
 
-def test_credentials_for_another_account_stop_the_interceptor_command(tmp_path):
+def test_credentials_for_another_account_stop_the_interceptor_command_with_exit_two(
+        tmp_path, capsys):
     world = interceptor_world()
     world.sts.get_caller_identity.return_value = {"Account": "999999999999"}
 
-    with pytest.raises(SystemExit):
-        run(["interceptor", "--apply", settings.CONFIRM_FLAG], world, tmp_path)
+    assert run(["interceptor", "--apply", settings.CONFIRM_FLAG], world, tmp_path) == 2
+
+    assert "999999999999" not in capsys.readouterr().err
     assert world.lam.calls == [] and world.iam.calls == []
 
 

@@ -9,6 +9,7 @@ from unittest.mock import Mock
 import pytest
 
 from scripts.identity_release import preflight, settings
+from scripts.identity_release.preflight import Target
 from tests import release_support as rs
 
 NOW = datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc)
@@ -142,16 +143,27 @@ def test_an_iam_runtime_must_not_carry_an_authorizer_or_the_allowlist():
     ("jwt", settings.INTERCEPTOR, False), ("iam", settings.BOTH, False)])
 def test_the_binding_rule_is_present_only_when_the_design_uses_it(mode, design, wanted):
     names = rs.BASE_POLICIES + ([rs.BINDING_POLICY] if wanted else [])
-    assert preflight.check_policies(names, rs.target(mode, design)) == []
+    assert preflight.check_policies(rs.policy_modes(names), rs.target(mode, design)) == []
     flipped = rs.BASE_POLICIES + ([] if wanted else [rs.BINDING_POLICY])
-    found = preflight.check_policies(flipped, rs.target(mode, design))
+    found = preflight.check_policies(rs.policy_modes(flipped), rs.target(mode, design))
     assert len(found) == 1 and rs.BINDING_POLICY in found[0]
 
 
 def test_a_missing_base_policy_is_a_finding_in_every_mode():
-    found = preflight.check_policies([rs.BINDING_POLICY], rs.target("jwt"))
+    found = preflight.check_policies(rs.policy_modes([rs.BINDING_POLICY]), rs.target("jwt"))
 
     assert any("meridian_hold_governance" in line for line in found)
+
+
+@pytest.mark.parametrize("name", [*rs.BASE_POLICIES, rs.BINDING_POLICY])
+@pytest.mark.parametrize("mode", ["LOG_ONLY", None, "SHADOW"])
+def test_a_required_rule_that_is_not_enforcing_is_a_finding(name, mode):
+    states = rs.policy_modes(rs.BASE_POLICIES + [rs.BINDING_POLICY])
+    states[name] = mode
+
+    found = preflight.check_policies(states, rs.target("jwt"))
+
+    assert len(found) == 1 and name in found[0] and "ACTIVE" in found[0], found
 
 
 # ------------------------------------------------------------ service environment
@@ -200,10 +212,34 @@ def test_an_iam_service_environment_must_carry_no_sign_in_setting():
 # -------------------------------------------------------------- identity stack
 
 
+def identity_outputs(**changes):
+    outputs = {o["OutputKey"]: o["OutputValue"] for o in rs.identity_outputs()}
+    outputs.update(changes)
+    return outputs
+
+
+def test_the_issuer_output_must_be_the_configured_pools_issuer():
+    pool = settings.cognito_settings(rs.COGNITO_ENV)
+
+    found = preflight.identity_findings(identity_outputs(Issuer="https://other/issuer"), pool)
+
+    assert len(found) == 1 and "Issuer" in found[0] and "differs" in found[0]
+
+
+def test_the_hosted_ui_domain_must_match_the_sites_setting_when_one_is_given():
+    pool = settings.cognito_settings(rs.COGNITO_ENV)
+    outputs = identity_outputs()
+
+    assert preflight.identity_findings(outputs, pool, rs.HOSTED_UI_DOMAIN) == []
+    assert preflight.identity_findings(outputs, pool) == []
+    for wrong in ("other.auth.example.com", ""):
+        found = preflight.identity_findings(outputs, pool, wrong)
+        assert len(found) == 1 and "HostedUiDomain" in found[0] and "VITE_COGNITO" in found[0]
+
+
 def test_identity_outputs_must_exist_and_name_the_configured_pool_and_client():
     pool = settings.cognito_settings(rs.COGNITO_ENV)
-    outputs = {"UserPoolId": rs.POOL, "AppClientId": rs.CLIENT, "HostedUiDomain": "d.auth.x",
-               "Issuer": pool.issuer}
+    outputs = identity_outputs()
     assert preflight.identity_findings(outputs, pool) == []
     found = preflight.identity_findings({"UserPoolId": "other", "AppClientId": rs.CLIENT}, pool)
     assert any("HostedUiDomain" in line and "Issuer" in line for line in found)
@@ -215,33 +251,110 @@ def test_identity_outputs_must_exist_and_name_the_configured_pool_and_client():
 
 def write_proof(tmp_path, **fields):
     path = tmp_path / "backend-login-proof.json"
-    path.write_text(json.dumps({
-        "ok": True, "login": "meridian_backend", "at": NOW.isoformat(), **fields}))
+    path.write_text(json.dumps(rs.receipt(NOW, **fields)))
     return path
 
 
-def test_a_recent_passing_backend_login_proof_has_no_findings(tmp_path):
-    assert preflight.check_backend_login_proof(write_proof(tmp_path), NOW) == []
+def proof_findings(path, now=NOW, sha=rs.SHA, mode="jwt"):
+    return preflight.check_backend_login_proof(path, rs.target(mode), sha, now)
+
+
+def test_a_recent_passing_receipt_bound_to_this_release_has_no_findings(tmp_path):
+    assert proof_findings(write_proof(tmp_path)) == []
+
+
+def test_the_receipt_schema_is_the_documented_one():
+    assert tuple(settings.PROOF_FIELDS) == (
+        "ok", "at", "account", "region", "user_pool_id", "git_sha", "login", "checks")
+    assert set(rs.receipt(NOW)) == set(settings.PROOF_FIELDS)
 
 
 @pytest.mark.parametrize(("fields", "word"), [
     ({"ok": False}, "did not pass"),
+    ({"ok": "no"}, "did not pass"),
+    ({"ok": 1}, "did not pass"),
+    ({"ok": None}, "did not pass"),
     ({"login": "meridian_admin"}, "meridian_backend"),
     ({"at": (NOW - timedelta(days=8)).isoformat()}, "older than"),
     ({"at": "yesterday"}, "unreadable"),
+    ({"at": 12345}, "unreadable"),
+    ({"at": "2026-10-08T12:00:00"}, "time zone"),
+    ({"at": (NOW + timedelta(days=1)).isoformat()}, "in the future"),
+    ({"at": (NOW + timedelta(minutes=6)).isoformat()}, "in the future"),
+    ({"account": "999999999999"}, "account"),
+    ({"region": "eu-west-1"}, "region"),
+    ({"user_pool_id": "us-east-1_Other"}, "user_pool_id"),
+    ({"git_sha": "f" * 40}, "git_sha"),
+    ({"checks": {}}, "checks"),
+    ({"checks": {"warm": True, "recovery": False}}, "recovery"),
+    ({"checks": {"warm": "yes"}}, "warm"),
+    ({"checks": ["warm"]}, "checks"),
 ])
-def test_a_proof_that_failed_names_the_wrong_login_or_is_old_is_a_finding(tmp_path, fields, word):
-    found = preflight.check_backend_login_proof(write_proof(tmp_path, **fields), NOW)
+def test_a_receipt_that_is_bad_or_for_another_release_is_one_finding(tmp_path, fields, word):
+    found = proof_findings(write_proof(tmp_path, **fields))
 
     assert len(found) == 1 and word in found[0], found
+    assert "prove_backend_login.py" in found[0]
+
+
+@pytest.mark.parametrize("field", ["account", "region", "user_pool_id", "git_sha", "checks",
+                                   "at", "ok", "login"])
+def test_a_receipt_missing_a_field_is_a_finding(tmp_path, field):
+    receipt = rs.receipt(NOW)
+    del receipt[field]
+    path = tmp_path / "backend-login-proof.json"
+    path.write_text(json.dumps(receipt))
+
+    found = proof_findings(path)
+
+    assert found and all(isinstance(line, str) for line in found)
+    assert any(field in line or "did not pass" in line or "unreadable" in line for line in found)
+
+
+def test_a_few_minutes_of_clock_skew_is_tolerated(tmp_path):
+    ahead = write_proof(tmp_path, at=(NOW + timedelta(minutes=4)).isoformat())
+
+    assert proof_findings(ahead) == []
+
+
+def test_the_receipt_is_compared_with_the_head_it_is_given(tmp_path):
+    path = write_proof(tmp_path)
+
+    assert any("git_sha" in line for line in proof_findings(path, sha="1" * 40))
+
+
+def test_a_receipt_wrong_in_several_ways_reports_each(tmp_path):
+    path = write_proof(tmp_path, account="999999999999", region="eu-west-1")
+
+    found = proof_findings(path)
+
+    assert len(found) == 2
+
+
+def test_a_naive_timestamp_is_a_finding_not_a_type_error(tmp_path):
+    path = write_proof(tmp_path, at="2026-10-08T11:59:00")
+
+    assert proof_findings(path) == [
+        "Backend login proof: its timestamp has no time zone; run "
+        "`python scripts/prove_backend_login.py --apply` before the release"]
 
 
 def test_a_missing_or_unreadable_proof_is_a_finding_that_names_the_command(tmp_path):
-    missing = preflight.check_backend_login_proof(tmp_path / "none.json", NOW)
+    missing = proof_findings(tmp_path / "none.json")
     assert len(missing) == 1 and "prove_backend_login.py" in missing[0]
     broken = tmp_path / "broken.json"
     broken.write_text("{")
-    assert "unreadable" in preflight.check_backend_login_proof(broken, NOW)[0]
+    assert "unreadable" in proof_findings(broken)[0]
+    listed = tmp_path / "listed.json"
+    listed.write_text("[1]")
+    assert "did not pass" in proof_findings(listed)[0]
+
+
+def test_the_proof_is_only_defined_for_a_target_with_a_pool(tmp_path):
+    found = preflight.check_backend_login_proof(
+        write_proof(tmp_path), rs.target("iam"), rs.SHA, NOW)
+
+    assert len(found) == 1 and "pool" in found[0]
 
 
 # ------------------------------------------------------------- reading the hops
@@ -265,7 +378,7 @@ def test_the_state_is_read_from_the_gateway_both_runtimes_and_every_policy_page(
 
     assert state.gateway["gatewayId"] == rs.GATEWAY_ID
     assert set(state.runtimes) == {"MeridianConcierge", "MeridianWorkflow"}
-    assert state.policy_names == rs.BASE_POLICIES + [rs.BINDING_POLICY]
+    assert state.policies == rs.policy_modes(rs.BASE_POLICIES + [rs.BINDING_POLICY])
     control.list_policies.assert_any_call(policyEngineId="meridianv2_Engine-abc")
 
 
@@ -274,7 +387,7 @@ def test_a_policy_that_is_not_active_does_not_count():
 
     state = preflight.read_state(fake_control(pages=pages), rs.GATEWAY_ID, rs.RUNTIME_IDS)
 
-    assert state.policy_names == []
+    assert state.policies == {}
 
 
 def test_a_gateway_with_no_policy_engine_has_no_policies():
@@ -282,7 +395,7 @@ def test_a_gateway_with_no_policy_engine_has_no_policies():
 
     state = preflight.read_state(control, rs.GATEWAY_ID, rs.RUNTIME_IDS)
 
-    assert state.policy_names == []
+    assert state.policies == {}
     control.list_policies.assert_not_called()
 
 
@@ -333,9 +446,12 @@ def test_refusing_prints_one_line_per_finding_and_exits_nonzero(capsys):
         preflight.refuse_if_any(["Gateway: a", "Runtime X: b"], "jwt")
 
     text = str(stopped.value)
-    assert "refusing: 2 hops do not report jwt" in text
+    assert "refusing: 2 findings against the jwt release:" in text
     assert "  Gateway: a" in text and "  Runtime X: b" in text
     preflight.refuse_if_any([], "jwt")
+    with pytest.raises(SystemExit) as one:
+        preflight.refuse_if_any(["Gateway: a"], "jwt")
+    assert "refusing: 1 finding against the jwt release:" in str(one.value)
 
 
 # ------------------------------------------------------------ the target and settings
@@ -381,10 +497,10 @@ def _unknown_members(shape, value, path):
     return []
 
 
-def _output_shape(operation):
+def _output_shape(operation, service="bedrock-agentcore-control"):
     import botocore.session
 
-    model = botocore.session.get_session().get_service_model("bedrock-agentcore-control")
+    model = botocore.session.get_session().get_service_model(service)
     return model.operation_model(operation).output_shape
 
 
@@ -403,3 +519,312 @@ def test_the_runtime_and_policy_fixtures_use_only_declared_members():
     for name in rs.RUNTIME_IDS:
         assert _unknown_members(runtime, rs.runtime(name, "jwt"), name) == []
     assert _unknown_members(listing, {"policies": rs.policies(["a"])}, "policies") == []
+
+
+def test_the_policy_modes_are_the_ones_the_service_model_declares():
+    summary = _output_shape("ListPolicies").members["policies"].member
+    modes = summary.members["enforcementMode"].enum
+
+    assert "ACTIVE" in modes and "LOG_ONLY" in modes
+    assert rs.policies(["a"])[0]["enforcementMode"] in modes
+
+
+def test_the_app_runner_and_identity_stack_fixtures_use_only_declared_members():
+    described = _output_shape("DescribeService", "apprunner")
+    stacks = _output_shape("DescribeStacks", "cloudformation")
+    service = rs.app_runner_service({"A": "b"}, {"C": "arn:d"})
+
+    assert _unknown_members(described, {"Service": service}, "service") == []
+    assert _unknown_members(
+        stacks, {"Stacks": [{"Outputs": rs.identity_outputs()}]}, "stacks") == []
+
+
+def test_the_scope_and_claim_members_exist_on_both_authorizers():
+    gateway = _output_shape("GetGateway").members["authorizerConfiguration"]
+    runtime = _output_shape("GetAgentRuntime").members["authorizerConfiguration"]
+
+    for shape in (gateway, runtime):
+        members = shape.members["customJWTAuthorizer"].members
+        assert "allowedScopes" in members and "customClaims" in members
+
+
+# --------------------------------------------------------- more deviations and guards
+
+
+@pytest.mark.parametrize("member", ["allowedScopes", "customClaims"])
+def test_scopes_and_claims_on_the_gateway_or_a_runtime_are_findings(member):
+    path = f"authorizerConfiguration.customJWTAuthorizer.{member}"
+    extra = [{"inboundTokenClaimName": "x"}] if member == "customClaims" else ["openid"]
+
+    gateway = gateway_findings(rs.mutated(rs.gateway("jwt"), path, extra))
+    runtime = runtime_findings(rs.mutated(rs.runtime("MeridianConcierge", "jwt"), path, extra))
+
+    assert len(gateway) == 1 and member in gateway[0] and gateway[0].startswith("Gateway: ")
+    assert len(runtime) == 1 and member in runtime[0]
+    empty = rs.mutated(rs.gateway("jwt"), path, [])
+    assert gateway_findings(empty) == []
+
+
+@pytest.mark.parametrize("value", ["jwt", "JWT", "true", "", "cognito"])
+def test_an_iam_service_environment_must_not_declare_the_jwt_mode(value):
+    found = preflight.check_service_environment(
+        {"MERIDIAN_AGENTCORE_AUTH": value}, {}, rs.target("iam"))
+
+    assert len(found) == 1 and "MERIDIAN_AGENTCORE_AUTH" in found[0]
+
+
+@pytest.mark.parametrize("value", [None, "iam"])
+def test_an_iam_service_environment_may_leave_the_mode_unset_or_iam(value):
+    variables = {} if value is None else {"MERIDIAN_AGENTCORE_AUTH": value}
+
+    assert preflight.check_service_environment(variables, {}, rs.target("iam")) == []
+
+
+def test_the_backend_login_must_not_be_the_master_secret_even_when_both_settings_agree():
+    variables = {**rs.jwt_service_variables(), "AURORA_SECRET_ARN": rs.MASTER_SECRET,
+                 "AURORA_BACKEND_SECRET_ARN": rs.MASTER_SECRET}
+
+    found = preflight.check_service_environment(variables, {}, rs.target())
+
+    assert len(found) == 1 and "master" in found[0], found
+
+
+def test_the_backend_login_must_be_the_backend_secret_the_release_expects():
+    other = rs.BACKEND_SECRET.replace("backend-AbC123", "backend-Other9")
+    variables = {**rs.jwt_service_variables(), "AURORA_SECRET_ARN": other,
+                 "AURORA_BACKEND_SECRET_ARN": other}
+
+    found = preflight.check_service_environment(variables, {}, rs.target())
+
+    assert len(found) == 1 and "expected" in found[0], found
+
+
+def test_without_a_known_master_or_backend_secret_only_the_two_settings_are_compared():
+    bare = Target(mode="jwt", design=settings.BOTH, cognito=rs.target().cognito,
+                  interceptor_arn=rs.INTERCEPTOR_ARN)
+
+    assert preflight.check_service_environment(rs.jwt_service_variables(), {}, bare) == []
+
+
+# ------------------------------------------------------------------ the target
+
+
+def test_a_jwt_target_without_a_pool_cannot_be_built():
+    with pytest.raises(settings.ReleaseConfigError, match="pool"):
+        Target(mode="jwt", design=settings.BOTH)
+
+
+def test_a_target_with_an_unknown_mode_cannot_be_built():
+    with pytest.raises(settings.ReleaseConfigError, match="mode"):
+        Target(mode="maybe", design=settings.BOTH)
+
+
+def test_the_target_carries_the_account_region_and_secrets_from_the_settings():
+    env = {**rs.COGNITO_ENV, "AURORA_SECRET_ARN": rs.MASTER_SECRET,
+           "AURORA_BACKEND_SECRET_ARN": rs.BACKEND_SECRET}
+
+    target = preflight.target_for("jwt", env, rs.ACCOUNT, rs.REGION)
+
+    assert (target.account, target.region) == (rs.ACCOUNT, rs.REGION)
+    assert target.master_secret_arn == rs.MASTER_SECRET
+    assert target.backend_secret_arn == rs.BACKEND_SECRET
+
+
+# --------------------------------------------- garbage in, findings out, never a raise
+
+GARBAGE = [None, 7, "text", [], ["x"], {}, {"x": 1}, [None]]
+NESTED_GATEWAY = [
+    ("authorizerConfiguration", [None, [], "x", {"customJWTAuthorizer": []},
+                                 {"customJWTAuthorizer": "x"}, {"customJWTAuthorizer": None}]),
+    ("interceptorConfigurations", [{}, ["x"], "x", [None], [{"interceptor": []}],
+                                   [{"interceptor": {"lambda": "x"}}],
+                                   [{"interceptionPoints": "REQUEST"}], 5]),
+    ("policyEngineConfiguration", ["x", [], 5]),
+    ("status", [[], {}, 5]),
+]
+NESTED_RUNTIME = [
+    ("authorizerConfiguration", [None, [], "x", {"customJWTAuthorizer": "x"}]),
+    ("requestHeaderConfiguration", ["x", [], {"requestHeaderAllowlist": "Authorization"},
+                                    {"requestHeaderAllowlist": 5}]),
+    ("environmentVariables", ["x", [], 5, {"MERIDIAN_AGENTCORE_AUTH": []}]),
+]
+
+
+def assert_findings(found):
+    assert isinstance(found, list) and found and all(isinstance(x, str) for x in found), found
+
+
+@pytest.mark.parametrize("garbage", GARBAGE)
+@pytest.mark.parametrize("mode", ["iam", "jwt"])
+def test_check_gateway_turns_garbage_into_findings(garbage, mode):
+    assert_findings(preflight.check_gateway(garbage, rs.target(mode)))
+
+
+@pytest.mark.parametrize(("key", "values"), NESTED_GATEWAY)
+@pytest.mark.parametrize("mode", ["iam", "jwt"])
+def test_check_gateway_turns_nested_garbage_into_findings(key, values, mode):
+    for value in values:
+        found = preflight.check_gateway({**rs.gateway(mode), key: value}, rs.target(mode))
+        assert isinstance(found, list) and all(isinstance(line, str) for line in found)
+        if mode == "jwt":
+            assert_findings(found)
+
+
+@pytest.mark.parametrize("garbage", GARBAGE)
+@pytest.mark.parametrize("mode", ["iam", "jwt"])
+def test_check_runtime_turns_garbage_into_findings(garbage, mode):
+    assert_findings(preflight.check_runtime("MeridianWorkflow", garbage, rs.target(mode)))
+
+
+@pytest.mark.parametrize(("key", "values"), NESTED_RUNTIME)
+def test_check_runtime_turns_nested_garbage_into_findings(key, values):
+    for value in values:
+        broken = {**rs.runtime("MeridianConcierge", "jwt"), key: value}
+        assert_findings(preflight.check_runtime("MeridianConcierge", broken, rs.target("jwt")))
+
+
+@pytest.mark.parametrize("garbage", [None, 7, "text", ["meridian_read_tools"], {"x": 1},
+                                     {"meridian_read_tools": []}])
+def test_check_policies_turns_garbage_into_findings(garbage):
+    assert_findings(preflight.check_policies(garbage, rs.target("jwt")))
+
+
+@pytest.mark.parametrize("garbage", [None, 7, "text", [], ["x"]])
+@pytest.mark.parametrize("mode", ["iam", "jwt"])
+def test_check_service_environment_turns_garbage_into_findings(garbage, mode):
+    good = rs.jwt_service_variables() if mode == "jwt" else {}
+
+    assert_findings(preflight.check_service_environment(garbage, {}, rs.target(mode)))
+    assert_findings(preflight.check_service_environment(good, garbage, rs.target(mode)))
+
+
+@pytest.mark.parametrize("garbage", [None, 7, "text", [], ["x"], {}, {"UserPoolId": []}])
+def test_identity_findings_turns_garbage_into_findings(garbage):
+    pool = settings.cognito_settings(rs.COGNITO_ENV)
+
+    assert_findings(preflight.identity_findings(garbage, pool))
+    assert_findings(preflight.identity_findings(identity_outputs(), None))
+
+
+@pytest.mark.parametrize("garbage", ["null", "7", '"text"', "[]", "[1]", "{}", '{"ok": true}',
+                                     '{"ok": true, "at": []}', '{"ok": true, "checks": 5}'])
+def test_the_proof_check_turns_garbage_into_findings(tmp_path, garbage):
+    path = tmp_path / "backend-login-proof.json"
+    path.write_text(garbage)
+
+    assert_findings(proof_findings(path))
+
+
+def test_the_proof_check_survives_a_path_that_is_a_directory(tmp_path):
+    assert_findings(proof_findings(tmp_path))
+
+
+def test_the_hop_checks_survive_a_state_of_garbage():
+    state = preflight.HopState(gateway=None, runtimes={"MeridianConcierge": None}, policies=None)
+
+    assert_findings(preflight.hop_findings(state, rs.target()))
+
+
+# ------------------------------------------------------- reading the policy pages
+
+
+def test_a_policy_summary_without_a_name_is_skipped_not_fatal():
+    pages = [{"policies": [{"status": "ACTIVE", "enforcementMode": "ACTIVE"}, "x", None,
+                           *rs.policies(rs.BASE_POLICIES)]}]
+
+    state = preflight.read_state(fake_control(pages=pages), rs.GATEWAY_ID, rs.RUNTIME_IDS)
+
+    assert state.policies == rs.policy_modes(rs.BASE_POLICIES)
+
+
+def test_a_log_only_rule_is_carried_with_its_mode_and_reported():
+    pages = [{"policies": rs.policies(rs.BASE_POLICIES[:2]) + rs.policies(
+        [rs.BASE_POLICIES[2], rs.BINDING_POLICY], "LOG_ONLY")}]
+
+    state = preflight.read_state(fake_control(pages=pages), rs.GATEWAY_ID, rs.RUNTIME_IDS)
+    found = preflight.hop_findings(state, rs.target())
+
+    assert state.policies[rs.BINDING_POLICY] == "LOG_ONLY"
+    assert len(found) == 2 and all("LOG_ONLY" in line for line in found)
+
+
+def test_a_page_token_that_repeats_stops_the_read_instead_of_looping():
+    control = Mock()
+    control.get_gateway.return_value = rs.gateway("jwt")
+    control.get_agent_runtime.side_effect = lambda agentRuntimeId: rs.runtime("MeridianWorkflow")
+    control.list_policies.return_value = {"policies": [], "nextToken": "same"}
+
+    with pytest.raises(settings.ReleaseConfigError, match="nextToken"):
+        preflight.read_state(control, rs.GATEWAY_ID, rs.RUNTIME_IDS)
+
+    assert control.list_policies.call_count == 2
+
+
+# --------------------------------------------------- where the hops say they are
+
+HOP_ENV = {
+    "AGENTCORE_GATEWAY_URL": f"https://{rs.GATEWAY_ID}.gateway.bedrock-agentcore."
+                             f"{rs.REGION}.amazonaws.com/mcp",
+    "AGENTCORE_RUNTIME_ARN": f"arn:aws:bedrock-agentcore:{rs.REGION}:{rs.ACCOUNT}:runtime/c",
+    "AGENTCORE_WORKFLOW_RUNTIME_ARN": f"arn:aws:bedrock-agentcore:{rs.REGION}:{rs.ACCOUNT}:"
+                                      "runtime/w",
+}
+
+
+def test_hop_settings_in_the_targets_account_and_region_have_no_findings():
+    assert preflight.check_hop_locations(HOP_ENV, rs.target()) == []
+
+
+@pytest.mark.parametrize(("key", "value", "word"), [
+    ("AGENTCORE_RUNTIME_ARN", "arn:aws:bedrock-agentcore:us-east-1:999999999999:runtime/c",
+     "account"),
+    ("AGENTCORE_WORKFLOW_RUNTIME_ARN", "arn:aws:bedrock-agentcore:eu-west-1:123456789012:runtime/w",
+     "Region"),
+    ("AGENTCORE_RUNTIME_ARN", "not-an-arn", "ARN"),
+    ("AGENTCORE_GATEWAY_URL", "https://g.gateway.bedrock-agentcore.eu-west-1.amazonaws.com/mcp",
+     "Region"),
+    ("AGENTCORE_GATEWAY_URL", "https://example.com/mcp", "Gateway URL"),
+])
+def test_a_hop_setting_for_another_account_or_region_is_a_finding(key, value, word):
+    found = preflight.check_hop_locations({**HOP_ENV, key: value}, rs.target())
+
+    assert len(found) == 1 and key in found[0] and word in found[0], found
+    assert "999999999999" not in found[0]
+
+
+def test_unset_hop_settings_are_left_to_hop_ids():
+    assert preflight.check_hop_locations({}, rs.target()) == []
+
+
+def test_the_service_arn_must_name_meridian_web_in_the_targets_account_and_region():
+    assert preflight.check_service_arn(rs.SERVICE_ARN, rs.target()) == []
+    for wrong in (rs.SERVICE_ARN.replace(rs.ACCOUNT, "999999999999"),
+                  rs.SERVICE_ARN.replace(rs.REGION, "eu-west-1"),
+                  "arn:aws:apprunner:us-east-1:123456789012:service/other/abc", "x", None):
+        found = preflight.check_service_arn(wrong, rs.target())
+        assert len(found) == 1 and "--service-arn" in found[0], wrong
+        assert "999999999999" not in found[0]
+
+
+# ------------------------------------------------------- the App Runner description
+
+
+def test_an_image_based_service_yields_its_plain_and_secret_environment():
+    service = rs.app_runner_service({"A": "b"}, {"C": "arn:d"})
+
+    assert preflight.image_environment(service) == ({"A": "b"}, {"C": "arn:d"})
+
+
+@pytest.mark.parametrize("service", [
+    {"SourceConfiguration": {"CodeRepository": {"RepositoryUrl": "https://x"}}},
+    {"SourceConfiguration": {}}, {}, None, "x", [],
+    {"SourceConfiguration": {"ImageRepository": "x"}},
+])
+def test_a_service_that_is_not_image_based_has_no_image_environment(service):
+    assert preflight.image_environment(service) is None
+
+
+def test_an_image_service_with_no_environment_has_empty_ones():
+    service = {"SourceConfiguration": {"ImageRepository": {"ImageIdentifier": "x"}}}
+
+    assert preflight.image_environment(service) == ({}, {})

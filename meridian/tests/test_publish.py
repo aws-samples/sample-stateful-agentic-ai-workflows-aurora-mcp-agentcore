@@ -9,6 +9,7 @@ import pytest
 from botocore.exceptions import ClientError, EndpointConnectionError
 
 from scripts import publish
+from scripts.identity_release import settings
 from tests import release_support as rs
 
 
@@ -208,10 +209,9 @@ def planned_publish(monkeypatch, tmp_path, control, dotenv=None, outputs=None,
     monkeypatch.setattr(publish, "release_environment", lambda: dict(dotenv or {}))
     proof_path = tmp_path / "backend-login-proof.json"
     if proof:
-        proof_path.write_text(json.dumps({
-            "ok": True, "login": "meridian_backend",
-            "at": datetime.now(timezone.utc).isoformat()}))
+        proof_path.write_text(json.dumps(rs.receipt(datetime.now(timezone.utc))))
     monkeypatch.setattr(publish, "PROOF_PATH", proof_path)
+    monkeypatch.setattr(settings, "git_head", lambda: rs.SHA)
     (cdk_out / "MeridianWebBackend.template.json").write_text(json.dumps(template))
     session = Mock()
     clients = {"sts": Mock(), "apprunner": Mock(), "cloudformation": Mock(),
@@ -462,7 +462,7 @@ def test_a_jwt_plan_refuses_while_the_hops_are_still_iam_and_says_which(monkeypa
         publish.publish(ARGS)
 
     text = str(refused.value)
-    assert "refusing:" in text and "do not report jwt" in text
+    assert "refusing:" in text and "against the jwt release" in text
     assert "Gateway: authorizer is AWS_IAM, expected CUSTOM_JWT" in text
     assert "Runtime MeridianConcierge: has no JWT authorizer" in text
     assert "Runtime MeridianWorkflow: has no JWT authorizer" in text
@@ -493,6 +493,14 @@ def test_a_jwt_plan_refuses_without_the_backend_login_proof(monkeypatch, tmp_pat
     jwt_publish(monkeypatch, tmp_path, proof=False)
 
     with pytest.raises(SystemExit, match="Backend login proof: none recorded"):
+        publish.publish(ARGS)
+
+
+def test_a_jwt_plan_refuses_a_proof_taken_at_another_commit(monkeypatch, tmp_path):
+    jwt_publish(monkeypatch, tmp_path)
+    monkeypatch.setattr(settings, "git_head", lambda: "f" * 40)
+
+    with pytest.raises(SystemExit, match="Backend login proof: its git_sha is not"):
         publish.publish(ARGS)
 
 

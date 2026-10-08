@@ -267,10 +267,11 @@ def release_findings(control, release: Release, service: dict) -> list[str]:
     state = preflight.read_state(control, gateway_id, runtime_ids)
     variables, secrets = planned_service(
         service, release.service_environment, release.secret_arn, release.mode)
-    findings = preflight.hop_findings(state, target)
+    findings = preflight.check_hop_locations(release.service_environment, target)
+    findings += preflight.hop_findings(state, target)
     findings += preflight.check_service_environment(variables, secrets, target)
     if release.mode == JWT:
-        findings += preflight.check_backend_login_proof(PROOF_PATH)
+        findings += preflight.check_backend_login_proof(PROOF_PATH, target, settings.git_head())
     return findings
 
 
