@@ -3,7 +3,8 @@
 The Cognito binding makes a person their traveler. A workload binding would make the App Runner
 role, the Lambdas or the Runtimes act for the decoy. Leaving it out keeps the decoy refused on its
 own records at the workload grant as well as at RLS (docs/OPERATIONS.md, Sign-in and who is
-calling). The static test pins the scripts; the database test pins the cluster.
+calling). The static test pins the scripts, tests/test_bind_refuses_the_decoy.py pins the
+shared guard they all go through, and the database test pins the cluster.
 """
 
 from __future__ import annotations
@@ -18,7 +19,11 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 DECOY = "trv_demo_decoy"
 
 
-@pytest.mark.parametrize("script", sorted(SCRIPTS.glob("bind_*.py")), ids=lambda p: p.name)
+GUARD = "bind_current_identity.py"  # names the decoy only to refuse it; behavior is tested
+SCRIPTS_TO_GREP = sorted(p for p in SCRIPTS.glob("bind_*.py") if p.name != GUARD)
+
+
+@pytest.mark.parametrize("script", SCRIPTS_TO_GREP, ids=lambda p: p.name)
 def test_no_script_binds_a_workload_to_the_decoy(script):
     assert DECOY not in script.read_text(encoding="utf-8")
 

@@ -23,7 +23,18 @@ CLUSTER_ARN = os.getenv("AURORA_CLUSTER_ARN")
 SECRET_ARN = os.getenv("AURORA_SECRET_ARN")
 DATABASE = os.getenv("AURORA_DATABASE", "meridian")
 TRAVELER_ID = os.getenv("MERIDIAN_DEMO_TRAVELER_ID", "trv_meridian_demo")
+DECOY_TRAVELER_ID = "trv_demo_decoy"
 MIGRATION = Path(__file__).resolve().parent / "migrations" / "005_bind_identity_to_traveler.sql"
+
+
+def refuse_decoy() -> None:
+    """The decoy gets no workload binding, so the workload grant refuses it as RLS does."""
+    if TRAVELER_ID == DECOY_TRAVELER_ID:
+        raise SystemExit(
+            f"Refusing to bind a workload to {DECOY_TRAVELER_ID}: the decoy has no aws_iam "
+            "binding by design (docs/OPERATIONS.md, Sign-in and who is calling). Unset "
+            "MERIDIAN_DEMO_TRAVELER_ID or set it to trv_meridian_demo."
+        )
 
 
 def execute(client, sql: str, parameters: list[dict] | None = None) -> None:
@@ -45,6 +56,7 @@ def bind(
     subject_id: str,
     principal: str,
 ) -> None:
+    refuse_decoy()
     digest = hashlib.sha256(
         f"{provider}:{subject_id}:{TRAVELER_ID}".encode()
     ).hexdigest()[:16]
@@ -77,6 +89,7 @@ def bind(
 
 
 def main() -> None:
+    refuse_decoy()
     if not CLUSTER_ARN or not SECRET_ARN:
         raise SystemExit("AURORA_CLUSTER_ARN and AURORA_SECRET_ARN are required")
 
