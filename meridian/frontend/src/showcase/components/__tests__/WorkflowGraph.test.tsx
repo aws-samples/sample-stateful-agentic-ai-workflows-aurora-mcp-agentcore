@@ -1,0 +1,138 @@
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import type { MeridianShowcaseState } from '../../hooks/useMeridianShowcase';
+import type { ShowcaseTraceSpan } from '../../lib/showcaseAdapters';
+import { WorkflowGraph } from '../WorkflowGraph';
+
+function span(overrides: Partial<ShowcaseTraceSpan>): ShowcaseTraceSpan {
+  return {
+    id: overrides.id ?? 'span',
+    name: overrides.name ?? 'Workflow node: classify',
+    category: overrides.category ?? 'orchestration',
+    type: overrides.type ?? 'reasoning',
+    status: overrides.status ?? 'ok',
+    latencyMs: overrides.latencyMs ?? 25,
+    fields: overrides.fields ?? [],
+    ...overrides,
+  };
+}
+
+function state(traceSpans: ShowcaseTraceSpan[], overrides: Partial<MeridianShowcaseState> = {}) {
+  return {
+    traceSpans,
+    isReplaying: false,
+    replayIndex: -1,
+    ...overrides,
+  } as unknown as MeridianShowcaseState;
+}
+
+describe('WorkflowGraph', () => {
+  it('keeps the hold intent and governed write visible before recovery resumes', () => {
+    render(<WorkflowGraph state={state([
+      span({ id: 'classify', fields: [
+        { label: 'node', value: 'classify' },
+        { label: 'intent', value: 'plan' },
+        { label: 'recovery', value: 'true' },
+      ] }),
+      span({ id: 'search', name: 'Workflow node: search' }),
+    ])} />);
+
+    expect(screen.getByText('6 steps')).toBeInTheDocument();
+    expect(screen.getByText('Prepare hold intent')).toBeInTheDocument();
+    expect(screen.getByText('Request governed hold')).toBeInTheDocument();
+  });
+
+  it('renders the routed Strands Graph path with branch labels and checkpoint badges', () => {
+    render(
+      <WorkflowGraph
+        state={state([
+          span({
+            id: 'classify',
+            name: 'Workflow node: classify → plan',
+            fields: [
+              { label: 'node', value: 'classify' },
+              { label: 'intent', value: 'plan' },
+              { label: 'checkpointer', value: 'PostgresSaver' },
+            ],
+          }),
+          span({
+            id: 'search',
+            name: 'Workflow node: search',
+            fields: [
+              { label: 'node', value: 'search' },
+              { label: 'packages', value: '5' },
+            ],
+          }),
+          span({
+            id: 'checkpoint-search',
+            name: 'Checkpoint · PostgresSaver.put',
+            fields: [{ label: 'checkpointer', value: 'PostgresSaver' }],
+          }),
+          span({
+            id: 'availability',
+            name: 'Workflow node: availability',
+            fields: [
+              { label: 'node', value: 'availability' },
+              { label: 'rows', value: '3' },
+              { label: 'step', value: '2 of 2' },
+            ],
+          }),
+          span({
+            id: 'synthesize',
+            name: 'Workflow node: synthesize',
+            fields: [
+              { label: 'node', value: 'synthesize' },
+              { label: 'packages', value: '5' },
+            ],
+          }),
+        ])}
+      />,
+    );
+
+    expect(screen.getByText('START')).toBeInTheDocument();
+    expect(screen.getByText('END')).toBeInTheDocument();
+    expect(screen.getByText('4 steps')).toBeInTheDocument();
+    expect(screen.getByText('intent: plan')).toBeInTheDocument();
+    expect(screen.getAllByText('packages=5')).toHaveLength(2);
+    expect(screen.getByText('rows=3, 2 of 2')).toBeInTheDocument();
+    expect(screen.getByText('saved')).toBeInTheDocument();
+    expect(screen.getByText('Saved step, PostgresSaver')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Strands Graph workflow path' })).toBeInTheDocument();
+    expect(screen.getByText('Strands Graph route')).toBeInTheDocument();
+  });
+
+  it('marks the current node during trace replay', () => {
+    const { container } = render(
+      <WorkflowGraph
+        state={state(
+          [
+            span({ id: 'classify', fields: [{ label: 'node', value: 'classify' }, { label: 'intent', value: 'search' }] }),
+            span({ id: 'search', name: 'Workflow node: search', fields: [{ label: 'node', value: 'search' }] }),
+          ],
+          { isReplaying: true, replayIndex: 1 },
+        )}
+      />,
+    );
+
+    expect(container.querySelector('.mds-wfgraph-route-node.is-current')).toBeTruthy();
+  });
+});
+
+describe.each([
+  ['Snapshot saved: AuroraSnapshotStorage.write'],
+  ['Workflow paused at a saved step'],
+  ['Workflow resumed from a saved step'],
+  ['Checkpoint · AuroraSnapshotStorage.write'],
+  ['Workflow paused at checkpoint'],
+  ['Workflow resumed from checkpoint'],
+])('saved-step span "%s"', (title) => {
+  it('badges the last lit node and shows where it was saved', () => {
+    render(<WorkflowGraph state={state([
+      span({ id: 'classify', fields: [{ label: 'node', value: 'classify' }, { label: 'intent', value: 'plan' }] }),
+      span({ id: 'saved', name: title, fields: [{ label: 'checkpointer', value: 'Aurora workflow_snapshots' }] }),
+    ])} />);
+
+    expect(screen.getByText('saved')).toBeInTheDocument();
+    expect(screen.getByText('Saved step, Aurora workflow_snapshots')).toBeInTheDocument();
+  });
+});

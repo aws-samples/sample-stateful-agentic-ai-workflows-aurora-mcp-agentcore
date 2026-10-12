@@ -1,0 +1,428 @@
+# Deploy the AgentCore resources
+
+This runbook deploys the Amazon Bedrock AgentCore resources that Meridian's
+Production phase, the Concierge chat, and every hold and booking confirmation
+use. Every command block starts in the repository root and leaves you there;
+commands that need another directory run in a subshell, `( cd ... )`.
+
+## What gets deployed
+
+| Resource | Name | Purpose |
+| --- | --- | --- |
+| Runtime | `MeridianConcierge` | Strands agent that plans with the gateway tools, keeps its session in Memory and streams its trace to the backend |
+| Runtime | `MeridianWorkflow` | Runs the Phase 5 workflow as the `meridian_workflow` database login; a stopped session resumes from saved snapshots on a new microVM |
+| Memory | `meridian_session` | Runtime session store, `SEMANTIC` strategy over `/users/{actorId}/sessions/{sessionId}` |
+| Gateway | `meridian-aurora` (`meridian-aurora-jwt` in `jwt` mode) | MCP endpoint with AWS_IAM inbound auth (Cognito JWT in `jwt` mode) and the Cedar policy engine attached in `ENFORCE` mode |
+| Gateway target | `SemanticTripSearchLambda` | `semantic_trip_search(query, limit)` over Aurora pgvector, served by the Lambda function you create in step 2 |
+| Gateway target | `MeridianHolds` | Lambda built by the CDK app: `get_package_details`, `create_courtesy_hold` and `confirm_booking` |
+| Policy engine | `MeridianGovernance` | `meridian_read_tools` permits the reads; `meridian_hold_governance` permits a hold only when confirmed, at most 12 hours, at most 6 travelers and within budget; `meridian_booking_governance` permits a confirmation only when confirmed and within budget. In `jwt` mode the render adds a fourth rule, `meridian_traveler_binding`, unless `MERIDIAN_GATEWAY_ENFORCEMENT=interceptor` |
+
+The resources are declared in
+[`meridian_agentcore/agentcore/agentcore.template.json`](../meridian_agentcore/agentcore/agentcore.template.json).
+The AgentCore CLI deploys them as one CloudFormation stack,
+`AgentCore-meridianv2-default`.
+
+## Prerequisites
+
+- The Aurora database is prepared (schema, migrations and seed data) as in the
+  [repository README](../../README.md#1-configure-and-prepare-the-database), and
+  `meridian/.env` sets `AWS_DEFAULT_REGION`, `AURORA_CLUSTER_ARN`,
+  `AURORA_SECRET_ARN` (the full ARN, with its six-character suffix) and
+  `AURORA_DATABASE`.
+- Migration 018 (`scripts/migrations/018_service_logins.sql`) is applied, and
+  the `meridian_gateway` login is provisioned, so `meridian/.env` also sets
+  `AURORA_GATEWAY_SECRET_ARN`. Do both before the first render in section 1,
+  because the provisioning script needs the role that migration creates and the
+  render needs the secret ARN the script writes (list the pending
+  migrations with `apply_migrations.py --pending` first, as in the
+  [workflow Runtime steps](#workflow-runtime-steps), then apply 018 and run):
+
+  ```bash
+  python meridian/scripts/provision_service_logins.py --login gateway --apply --write-env
+  ```
+
+  The render refuses to run without it. The `MeridianHolds` policy it writes may
+  read that secret. The Lambdas keep running as the master login until
+  `scripts/release_identity.py lambdas` and its deploy steps move them (see
+  [OPERATIONS.md](OPERATIONS.md#move-the-lambdas-to-the-gateway-login)).
+- AWS credentials for the account that owns the cluster. Sign in with
+  `aws login` or `aws sso login`, then confirm with
+  `aws sts get-caller-identity`.
+- The AgentCore CLI, Node.js 22.12 or later (the repository prerequisite), and
+  [uv](https://docs.astral.sh/uv/getting-started/installation/), which the CLI
+  uses to package the Python runtime:
+
+  ```bash
+  npm install -g @aws/agentcore
+  agentcore --version
+  ```
+
+- Deploy AgentCore in the Aurora cluster's Region. The defaults assume
+  `us-east-1`: the rerank model is the bare `cohere.rerank-v3-5:0` (there is no
+  `us.cohere.rerank-v3-5:0` inference profile) and the Concierge model is
+  `us.openai.gpt-6-sol`. In another Region, set `RERANK_MODEL` in `meridian/.env`
+  and change the managed runtime's `BEDROCK_MODEL_ID` in
+  `meridian_agentcore/agentcore/agentcore.template.json`. `BEDROCK_MODEL_ID` in
+  `meridian/.env` configures only the local Strands agents, not the managed
+  runtime.
+
+From the repository root, activate the backend's virtual environment and set
+these shell variables for the commands below:
+
+```bash
+source meridian/venv/bin/activate
+export REGION=us-east-1                                      # the cluster's Region
+export ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+export CLUSTER_ARN=<AURORA_CLUSTER_ARN from meridian/.env>
+export SECRET_ARN=<AURORA_SECRET_ARN from meridian/.env>
+```
+
+## 1. Render the configuration
+
+The AgentCore CLI reads `agentcore/agentcore.json` and
+`agentcore/aws-targets.json` in `meridian/meridian_agentcore/`, which are
+generated from the committed templates for your account:
+
+```bash
+python meridian/scripts/render_agentcore_config.py
+```
+
+The render needs `AURORA_GATEWAY_SECRET_ARN`, which
+`provision_service_logins.py --login gateway --apply --write-env` sets and which
+requires migration 018 applied first (see Prerequisites).
+
+On a new account the script reports that it left out the gateway ID variables
+and the Cedar policy engine: the policies name the gateway, which does not
+exist yet. The [AgentCore project README](../meridian_agentcore/README.md)
+describes each placeholder.
+
+## 2. Create the semantic search Lambda
+
+The `SemanticTripSearchLambda` target points at an existing function named
+`meridian-semantic-trip-search`. Create it once, with an execution role that
+can call Bedrock, the Data API and the database secret:
+
+```bash
+TARGET=meridian/meridian_agentcore/agentcore/gateway_targets/semantic_trip_search
+
+aws iam create-role --role-name meridian-semantic-trip-search \
+  --assume-role-policy-document "file://${TARGET}/trust-policy.json"
+aws iam attach-role-policy --role-name meridian-semantic-trip-search \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+aws iam put-role-policy --role-name meridian-semantic-trip-search \
+  --policy-name meridian-semantic-trip-search --policy-document "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [
+      {\"Effect\": \"Allow\", \"Action\": \"bedrock:InvokeModel\",
+       \"Resource\": \"arn:aws:bedrock:${REGION}::foundation-model/cohere.embed-v4:0\"},
+      {\"Effect\": \"Allow\", \"Action\": \"rds-data:ExecuteStatement\", \"Resource\": \"${CLUSTER_ARN}\"},
+      {\"Effect\": \"Allow\", \"Action\": \"secretsmanager:GetSecretValue\", \"Resource\": \"${SECRET_ARN}\"}
+    ]}"
+
+zip -j semantic-trip-search.zip "${TARGET}/lambda_function.py"
+aws lambda create-function --region "$REGION" \
+  --function-name meridian-semantic-trip-search \
+  --runtime python3.13 --handler lambda_function.lambda_handler \
+  --role "arn:aws:iam::${ACCOUNT_ID}:role/meridian-semantic-trip-search" \
+  --zip-file fileb://semantic-trip-search.zip --timeout 30 --memory-size 512 \
+  --environment "{\"Variables\": {\"AURORA_CLUSTER_ARN\": \"${CLUSTER_ARN}\",
+    \"AURORA_SECRET_ARN\": \"${SECRET_ARN}\", \"AURORA_DATABASE\": \"meridian\"}}"
+rm semantic-trip-search.zip
+```
+
+Set `AURORA_DATABASE` to your database name if it is not `meridian`. If
+`create-function` reports that the role cannot be assumed, wait a few seconds
+for the new role to propagate and run it again, from the `zip` line on. To
+deploy a code change later, run the `TARGET=` and `zip -j` lines again, then
+`aws lambda update-function-code --region "$REGION" --function-name meridian-semantic-trip-search --zip-file fileb://semantic-trip-search.zip`.
+The CDK app grants the gateway role permission to invoke the function.
+
+## 3. Publish the holds Lambda's settings
+
+The CDK-built `MeridianHolds` Lambda has no environment variables. It reads the
+cluster ARN, secret ARN and database name from SSM Parameter Store under
+`/meridian/aurora/`, and its IAM policy in the template is scoped to those
+parameters, the cluster and the secret:
+
+```bash
+python meridian/scripts/publish_gateway_parameters.py
+python meridian/scripts/publish_gateway_parameters.py --apply --i-understand-this-changes-aws
+```
+
+The first command is a dry run that prints the three parameter names. The second checks that the
+credentials belong to the account and Region of `AURORA_CLUSTER_ARN`, writes the parameters and
+reads them back.
+
+## 4. Bootstrap CDK
+
+Once per account and Region:
+
+```bash
+(
+  cd meridian/meridian_agentcore/agentcore/cdk
+  npm ci
+  npm run cdk -- bootstrap "aws://${ACCOUNT_ID}/${REGION}"
+)
+```
+
+## 5. Deploy
+
+A new account needs three passes, because each one creates an ID the next
+render needs. Run each pass from the repository root:
+
+```bash
+python meridian/scripts/render_agentcore_config.py
+(cd meridian/meridian_agentcore && agentcore validate --json && agentcore deploy -y)
+```
+
+In `jwt` mode the deploy runs through `release_identity.py deploy` instead (see
+[Deploy the identity release](#deploy-the-identity-release-jwt)).
+
+Every render needs `AURORA_GATEWAY_SECRET_ARN` in `meridian/.env` (set by
+`provision_service_logins.py --login gateway --apply --write-env`, after migration
+018; see Prerequisites).
+
+1. **First pass.** Creates the runtime, memory, gateway and both targets,
+   without policies. Expect about 5 to 8 minutes.
+2. **Second pass.** The render now finds the gateway ID in
+   `meridian/meridian_agentcore/agentcore/.cli/deployed-state.json` and adds
+   the policy engine, its three Cedar policies (four in `jwt` mode, with
+   `meridian_traveler_binding`) and the gateway association.
+3. **Third pass.** The render adds the policy engine ID to the runtime's
+   environment and prints `Configuration complete.` The deploy updates the
+   runtime so its trace names the engine.
+
+`agentcore deploy` writes the deployed ARNs and IDs to
+`meridian/meridian_agentcore/agentcore/.cli/deployed-state.json`. If that file
+is missing, for example on another machine, pass the IDs to
+`render_agentcore_config.py` with `--gateway-id` and `--policy-engine-id`. A
+policy engine ID needs the gateway ID with it, because the engine's policies
+name the gateway.
+
+## 6. Grant the holds Lambda access to the sample traveler
+
+The `MeridianHolds` Lambda is a workload: before it sets a traveler scope it
+needs its own row in `traveler_identity_bindings`.
+
+```bash
+python meridian/scripts/bind_gateway_workload.py
+```
+
+## 7. Point the backend at the deployment
+
+```bash
+python meridian/scripts/sync_agentcore_env.py --write
+```
+
+This writes `AGENTCORE_RUNTIME_ARN`, `AGENTCORE_GATEWAY_URL`,
+`AGENTCORE_MEMORY_ID`, `AGENTCORE_REGION` and the related names into
+`meridian/.env`. Restart the backend; the next Phase 4 turn calls the deployed
+runtime. The backend also reads the deployment state directly through
+[`backend/agentcore/cli_config.py`](../backend/agentcore/cli_config.py);
+variables in `.env` take precedence.
+
+## Workflow Runtime steps
+
+The `MeridianWorkflow` Runtime runs Phase 5 and connects to Amazon Aurora as the
+`meridian_workflow` login, which is not the admin role. Its password lives only
+in a Secrets Manager secret. Run these steps from the repository root, in this
+order. Steps 1, 2, 4, 5 and 7 change the live account or call the deployed
+Runtime, so confirm each before you run it.
+
+1. Apply the migrations that create the login and the stop record. 015, 016 and
+   017 are the pending set for this release, and 018 joins them on a cluster
+   that has not applied it. Migration 016 adds the columns the stop record
+   needs, 017 lets `stopped_during` accept `finished`, and 018 creates the
+   service logins (see [Service logins](OPERATIONS.md#service-logins)).
+   `apply_migrations.py` applies every pending migration, so list the pending
+   ones first. `--pending` only reads and prints names:
+
+   ```bash
+   python meridian/scripts/apply_migrations.py --pending
+   ```
+
+   Apply only when the list is exactly the migrations you expect (015, 016, 017
+   and, where not yet applied, 018); if anything else is listed, stop. Never run
+   `apply_migrations.py` without `--pending` first:
+
+   ```bash
+   python meridian/scripts/apply_migrations.py
+   ```
+
+2. Give the login its password and its access policy. Without `--apply` the
+   script only reports what it would do. `--write-env` writes
+   `AURORA_WORKFLOW_SECRET_ARN` into `meridian/.env`:
+
+   ```bash
+   python meridian/scripts/provision_workflow_login.py --apply --write-env
+   ```
+
+   The script creates the managed policy `MeridianWorkflowAuroraAccess`, which
+   the Runtime's role references, so run it before the deploy.
+
+3. Render the configuration. The render also stages the backend modules the
+   workflow imports into `meridian/meridian_agentcore/app/MeridianWorkflow/backend/`:
+
+   ```bash
+   python meridian/scripts/render_agentcore_config.py
+   ```
+
+   The render needs `AURORA_GATEWAY_SECRET_ARN` (set by
+   `provision_service_logins.py --login gateway --apply --write-env`, which
+   requires migration 018 applied first).
+
+4. Deploy:
+
+   ```bash
+   (cd meridian/meridian_agentcore && agentcore deploy -y)
+   ```
+
+   In `jwt` mode do not run `agentcore deploy` bare; use
+   `release_identity.py deploy` ([Deploy the identity release](#deploy-the-identity-release-jwt)).
+
+5. Bind the Runtime's execution role to the sample traveler. Run it after the
+   deploy, because the role comes from the deployed state:
+
+   ```bash
+   python meridian/scripts/bind_workflow_runtime.py --apply
+   python meridian/scripts/bind_workflow_runtime.py --traveler trv_demo_decoy --apply
+   ```
+
+6. Write `AGENTCORE_WORKFLOW_RUNTIME_ARN` into `meridian/.env`, then restart the
+   backend:
+
+   ```bash
+   python meridian/scripts/sync_agentcore_env.py --write
+   ```
+
+7. Ping the Runtime. This touches no journey and no Aurora row:
+
+   ```bash
+   python meridian/scripts/smoke_workflow_runtime.py
+   ```
+
+8. Check every AgentCore resource, the workflow Runtime included:
+
+   ```bash
+   python meridian/scripts/verify_agentcore.py
+   ```
+
+To rotate the login's password, run step 2 again. Between the database change
+and the secret update, anything that holds the old secret fails, and a second
+run repairs a half-finished rotation.
+
+To prove that a stopped session resumes on a new microVM, start the backend and
+run `scripts/stop_and_resume_proof.py` from `meridian/`. `--during waiting`, the
+default, stops the session while it waits for review. `--during running` stops it
+while the hold step is running. Each run removes the rows it creates.
+
+## Verify
+
+From the repository root:
+
+```bash
+python meridian/scripts/verify_agentcore.py        # runtime, gateway, memory, policy engine ACTIVE and ENFORCE, four tools
+python meridian/scripts/smoke_gateway_tools.py CTY-002   # tools/list and get_package_details, signed with your credentials
+python meridian/scripts/smoke_production_turn.py   # search, unconfirmed hold denied, confirmed hold placed, over-budget hold denied
+```
+
+`smoke_production_turn.py` places one real 12-hour hold on a Tokyo package for
+the sample traveler and saves every event under `meridian/.local/verification/`.
+Holds expire on their own.
+
+In the showcase trace for a Production turn, expect:
+
+- `Workload identity: AWS STS` and `Workload traveler grant allowed`. `AgentCore Identity resolved`
+  appears instead only when `AGENTCORE_WORKLOAD_IDENTITY` is set
+- `AgentCore Runtime: turn started`, then `AgentCore Gateway: tools/list` with four tools
+- `AgentCore Memory: session restored` with the event count
+- `AgentCore Gateway: tools/call → semantic_trip_search` and its result
+- For a hold: `AgentCore Gateway: tools/call → create_courtesy_hold`, its result with the Lambda's workload subject and `traveler_grant: allow`, and the hold receipt
+- For a confirmation: `AgentCore Gateway: tools/call → confirm_booking` under `meridian_booking_governance`, and a **Confirmed booking** receipt with the same booking ID
+- For a hold the policy refuses: `Hold refused by Cedar policy`, with the status label **Denied by policy**
+- `AgentCore Runtime: turn complete` with the trace ID and a CloudWatch link
+
+Spans for a trace ID are in the runtime log group
+`/aws/bedrock-agentcore/runtimes/<runtime-id>-DEFAULT`, stream `spans`, and the
+application logs carry the same trace ID in the `runtime-logs-*` streams.
+Trace indexing can take about ten minutes to start after the first deploy.
+
+Tail the runtime while you use the app:
+
+```bash
+(cd meridian/meridian_agentcore && agentcore logs --runtime MeridianConcierge --follow)
+```
+
+## Deploy the identity release (jwt)
+
+Moving the Gateway and both Runtimes to the Cognito authorizer is a release, not a plain deploy.
+CloudFormation cannot change an existing Gateway's authorizer type: `agentcore deploy -y` fails
+with "Authorizer type cannot be updated for an existing gateway" and the stack rolls back, and the
+`UpdateGateway` API refuses it with the same words. Only a new Gateway can be `CUSTOM_JWT`, so in `jwt`
+mode the render names the Gateway `meridian-aurora-jwt` (a new CloudFormation resource, new id and URL)
+and the stack deletes `meridian-aurora`. The stack cannot hold both Gateways (their targets share names,
+and the holds Lambda has a fixed name), so the new one is built in four deploys that replay the first
+deployment: the Gateway, the holds target, the Cedar engine and rules, the engine id on the Runtimes.
+The interceptor cannot be declared in the template, so `release_identity.py gateway` attaches it last.
+Never run `agentcore deploy` bare in `jwt` mode: use `release_identity.py deploy`, which runs one stage
+and refuses unless the render, the deployed state and the live Gateway agree and the plan matches the stage.
+
+The order, enforced by the tools:
+
+1. Snapshot and prove the `iam` release; set `jwt` in `.env`; clear the old Gateway's role with
+   `release_identity.py gateway --to iam --apply --i-understand-this-changes-aws`.
+2. Stage 1: `render_agentcore_config.py`, then `release_identity.py deploy --apply
+   --i-understand-this-changes-aws`, then `sync_agentcore_env.py --write`. The old Gateway is deleted here.
+   The old holds Lambda goes with it, but its log group `/aws/lambda/meridianv2-MeridianHolds` is kept and
+   stage 2 would create it again, which CloudFormation refuses. Delete it before stage 2 (no export):
+   `release_identity.py holds-logs --apply --i-understand-this-changes-aws`. Stage 2 refuses while it exists.
+3. Stages 2, 3 and 4: render and deploy again each time, until the render prints `Configuration complete.`
+4. After stage 2, `bind_gateway_workload.py`, then point the holds Lambda's SSM parameter at the gateway
+   login (`publish_gateway_parameters.py --gateway-login --apply --i-understand-this-changes-aws`, then
+   `release_identity.py lambdas --restart-holds`).
+5. `release_identity.py gateway --to jwt --apply --i-understand-this-changes-aws` attaches the interceptor,
+   then `check`, then `publish.py`.
+
+The full window, with every command, the consumers of the new Gateway, the outage and the rollback, is in
+[Operations](OPERATIONS.md#the-window-order). Rolling back is the same four stages with
+`MERIDIAN_AGENTCORE_AUTH=iam` (including `holds-logs` between its first two deploys), and creates a
+new `iam` Gateway with a new URL.
+
+## Change the deployment
+
+Edit `meridian/meridian_agentcore/agentcore/agentcore.template.json`, then
+render, validate and deploy as in step 5. A resource's `name` becomes its
+CloudFormation logical ID, so renaming a resource replaces it; renaming
+`meridian_session` replaces the memory and discards its history.
+Changes to other fields update resources in place.
+
+Adding a gateway tool together with a policy that names it takes two deploys:
+the tool first, then the policy, because a policy is validated against the
+gateway's tool schema.
+
+Publishing the web app checks that MeridianWorkflow is READY and that its ARN is
+set, and refuses otherwise.
+
+## Tear down
+
+Resources incur charges while they exist. Delete the AgentCore stack, then the
+resources you created by hand:
+
+```bash
+aws cloudformation delete-stack --region "$REGION" --stack-name AgentCore-meridianv2-default
+aws cloudformation wait stack-delete-complete --region "$REGION" --stack-name AgentCore-meridianv2-default
+
+aws lambda delete-function --region "$REGION" --function-name meridian-semantic-trip-search
+aws iam delete-role-policy --role-name meridian-semantic-trip-search --policy-name meridian-semantic-trip-search
+aws iam detach-role-policy --role-name meridian-semantic-trip-search \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+aws iam delete-role --role-name meridian-semantic-trip-search
+aws ssm delete-parameters --region "$REGION" \
+  --names /meridian/aurora/cluster_arn /meridian/aurora/secret_arn /meridian/aurora/database
+```
+
+The stack name is recorded as `stackName` in
+`meridian/meridian_agentcore/agentcore/.cli/deployed-state.json`. The runtime and Lambda
+log groups may remain after deletion; delete them in CloudWatch Logs if you do
+not need them. The `traveler_identity_bindings` rows for deleted roles stay in
+Aurora until you remove them or delete the database.

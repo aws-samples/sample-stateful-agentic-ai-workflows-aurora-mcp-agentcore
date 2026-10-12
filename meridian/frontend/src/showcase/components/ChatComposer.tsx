@@ -1,0 +1,573 @@
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import type { FormEvent, ReactNode } from 'react';
+import {
+  ArrowRight,
+  CalendarDays,
+  Check,
+  Navigation2,
+  RefreshCw,
+  Send,
+  Square,
+  Leaf,
+  Plane,
+  ConciergeBell,
+  UsersRound,
+  X,
+} from 'lucide-react';
+import type { ChatFilters } from '../hooks/useMeridianShowcase';
+import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import { ladderStarters } from '../lib/ladderStarters';
+import { PHASE_QUERY_BOUNDARIES, SHOWCASE_PHASES, showcasePromptLabel } from '../lib/showcaseAdapters';
+
+type ChipKey = 'travelers' | 'dates' | 'spa' | 'flights';
+
+export function ChatComposer({
+  state,
+  compact = false,
+  proofMode = false,
+  recoveryMode = false,
+  conciergeMode = false,
+  hideStarters = false,
+}: {
+  state: MeridianShowcaseState;
+  compact?: boolean;
+  proofMode?: boolean;
+  recoveryMode?: boolean;
+  conciergeMode?: boolean;
+  hideStarters?: boolean;
+}) {
+  const [openChip, setOpenChip] = useState<ChipKey | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const keyboardHintId = useId();
+  const contextConnecting = state.memoryLoading && (conciergeMode || state.selectedPhase === 4);
+  const requestBusy = state.isLoading || contextConnecting;
+
+  // Sending disables the ladder textarea, which drops keyboard focus. Return
+  // it when the request ends, unless the user has moved focus elsewhere.
+  const sentFromInput = useRef(false);
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    if (requestBusy || !state.currentPrompt.trim()) return;
+    sentFromInput.current = document.activeElement === inputRef.current;
+    void state.submitPrompt(undefined, conciergeMode ? 4 : undefined);
+  };
+  useEffect(() => {
+    if (requestBusy || !sentFromInput.current) return;
+    sentFromInput.current = false;
+    if (document.activeElement === document.body) inputRef.current?.focus({ preventScroll: true });
+  }, [requestBusy]);
+
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    const resize = () => {
+      input.style.height = 'auto';
+      input.style.height = `${input.scrollHeight}px`;
+    };
+    resize();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
+    observer?.observe(input);
+    return () => observer?.disconnect();
+  }, [state.currentPrompt]);
+
+  // Experience stays quiet with two known-good prompts. System proof keeps the
+  // third stretch prompt because exposing each phase's limit is the teaching
+  // mechanism for the five-rung ladder.
+  //
+  // Once a turn has run, the starters give their fixed footer space back to the
+  // transcript - the reply and the trip cards are what the room needs to read.
+  //
+  // The stretch prompt is the exception. Each rung's third example is the one
+  // this phase cannot answer, and the beat is: ask the ordinary question, watch
+  // it work, then ask the one that breaks and motivates the next rung. Clearing
+  // it along with the rest meant the breaking prompt vanished at exactly the
+  // moment the presenter needs it, leaving them to type it by hand.
+  const conversationStarted = state.messages.length > 0;
+  const stretchPrompt = state.phaseExamples[2];
+  const stretchStillUnasked =
+    Boolean(stretchPrompt) && state.lastPrompt !== stretchPrompt;
+
+  const nextPhase = SHOWCASE_PHASES.find(phase => phase.phase === state.selectedPhase + 1);
+  const boundaryReached = proofMode && nextPhase && stretchPrompt && state.lastPrompt?.startsWith(stretchPrompt) && !state.isLoading;
+  const queryStarters = compact || recoveryMode || hideStarters
+    ? []
+    : conversationStarted
+      ? proofMode && stretchStillUnasked
+        ? [stretchPrompt]
+        : []
+      : proofMode
+        ? ladderStarters(state).map(starter => starter.prompt)
+        : conciergeMode
+          ? ['A quiet wine country escape for two', 'Help me plan a culture trip to Tokyo']
+          : state.phaseExamples.slice(0, 2);
+
+  const updateFilters = (patch: Partial<ChatFilters>) => {
+    state.setChatFilters({ ...state.chatFilters, ...patch });
+  };
+
+  const closePopover = () => setOpenChip(null);
+  const toggleChip = (key: ChipKey) => setOpenChip((prev) => (prev === key ? null : key));
+
+  return (
+    <div className={`mds-chat-composer-wrap${compact ? ' is-compact' : ''}${proofMode ? ' is-proof' : ''}${recoveryMode ? ' is-recovery' : ''}`}>
+      {queryStarters.length > 0 && (
+        <div
+          className={`mds-chat-query-starters has-${queryStarters.length}`}
+          aria-label="Query starters for this phase"
+        >
+          <span className="mds-chat-starter-label">{conciergeMode ? 'Start with an idea' : 'Try a query'}</span>
+          {queryStarters.map((prompt) => {
+            const isStretch =
+              proofMode &&
+              state.phaseLabel !== 'Workflow' &&
+              prompt === state.phaseExamples[2];
+            const promptLabel = showcasePromptLabel(prompt);
+            const accessibleLabel = promptLabel === prompt
+              ? prompt
+              : `${promptLabel}: ${prompt}`;
+            return (
+              <button
+                key={prompt}
+                type="button"
+                className={`mds-chat-starter-chip${isStretch ? ' is-stretch' : proofMode ? ' is-works' : ''}`}
+                disabled={requestBusy}
+                onClick={() => void state.applyPhaseExample(prompt, true, conciergeMode ? 4 : undefined)}
+                aria-label={accessibleLabel}
+                title={
+                  isStretch
+                    ? `${PHASE_QUERY_BOUNDARIES[state.selectedPhase]} ${prompt}`
+                    : prompt
+                }
+              >
+                {proofMode && <small>
+                  {isStretch ? <ArrowRight size={14} aria-hidden="true" /> : <Check size={14} strokeWidth={2.4} aria-hidden="true" />}
+                  {isStretch ? `Needs ${nextPhase?.label}` : state.selectedPhase === 4 ? 'Uses traveler context' : 'Works here'}
+                </small>}
+                <span>{promptLabel}</span>
+              </button>
+            );
+          })}
+          {!proofMode && !conciergeMode && state.selectedPhase === 4 && (
+            <span className="mds-chat-phase-framing" role="note">
+              <span>Trace beat</span>
+              <b>AgentCore carries context across turns; Workflow externalizes the dependent plan into saved steps in Aurora.</b>
+            </span>
+          )}
+        </div>
+      )}
+      {proofMode && !compact && !recoveryMode && (
+        <div className="mc-query-boundary">
+          <p>{PHASE_QUERY_BOUNDARIES[state.selectedPhase]}</p>
+          {boundaryReached && <button type="button" onClick={() => {
+            state.setSelectedPhase(nextPhase.phase);
+            void state.applyPhaseExample(stretchPrompt, false, nextPhase.phase);
+            if (nextPhase.phase === 4) void state.setMemoryEnabled(true);
+          }}>Continue in {nextPhase.label}<Navigation2 size={15} aria-hidden="true" /></button>}
+        </div>
+      )}
+      {contextConnecting && <p role="status">Connecting traveler context. Wait for authorization before sending.</p>}
+      <form className={`mds-chat-composer${compact ? ' is-compact' : ''}`} onSubmit={onSubmit}>
+        {conciergeMode && <span className="mc-composer-icon" aria-hidden="true"><ConciergeBell size={21} strokeWidth={1.6} /></span>}
+        <textarea
+          ref={inputRef}
+          rows={1}
+          value={state.currentPrompt}
+          onChange={(event) => state.setCurrentPrompt(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+          placeholder={
+            recoveryMode
+              ? 'Describe the trip you need to recover…'
+              : conciergeMode ? 'Tell me what you have in mind…' : 'Ask about a destination, budget, or duration…'
+          }
+          disabled={conciergeMode ? contextConnecting : requestBusy}
+          aria-label="Ask Meridian anything"
+          aria-describedby={keyboardHintId}
+        />
+        <button
+          type={conciergeMode && state.isLoading ? 'button' : 'submit'}
+          className="mds-chat-send"
+          disabled={conciergeMode && state.isLoading ? false : requestBusy || !state.currentPrompt.trim()}
+          aria-label={conciergeMode && state.isLoading ? 'Stop waiting' : 'Send message'}
+          title={conciergeMode && state.isLoading ? 'Stop waiting for this response. Saved actions may still finish.' : undefined}
+          onClick={conciergeMode && state.isLoading ? state.stopWaiting : undefined}
+        >
+          {conciergeMode && state.isLoading ? <Square size={16} fill="currentColor" aria-hidden="true" /> : state.isLoading ? (
+            <span className="mds-chat-send-spinner" aria-hidden="true" />
+          ) : (
+            <Send size={19} strokeWidth={2.1} aria-hidden="true" />
+          )}
+        </button>
+      </form>
+      <p className="mc-composer-hint" id={keyboardHintId}>Enter to send. Shift + Enter for a new line</p>
+      {!compact && !proofMode && (
+        <div className="mds-chat-quick-actions" aria-label="Quick concierge actions">
+          <TravelersChip
+            filters={state.chatFilters}
+            isOpen={openChip === 'travelers'}
+            disabled={state.isLoading}
+            onToggle={() => toggleChip('travelers')}
+            onClose={closePopover}
+            onChange={(travelers) => updateFilters({ travelers })}
+          />
+          <DatesChip
+            filters={state.chatFilters}
+            isOpen={openChip === 'dates'}
+            disabled={state.isLoading}
+            onToggle={() => toggleChip('dates')}
+            onClose={closePopover}
+            onChange={(startDate, endDate) => updateFilters({ startDate, endDate })}
+          />
+          <ToggleChip
+            label="Spa & wellness"
+            activeLabel="Spa included"
+            active={state.chatFilters.spa}
+            disabled={state.isLoading}
+            onToggle={() => updateFilters({ spa: !state.chatFilters.spa })}
+            icon={<Leaf size={16} />}
+          />
+          <ToggleChip
+            label="Direct flights"
+            activeLabel="Direct flights"
+            active={state.chatFilters.directFlights}
+            disabled={state.isLoading}
+            onToggle={() => updateFilters({ directFlights: !state.chatFilters.directFlights })}
+            icon={conciergeMode ? <Plane size={16} /> : <Navigation2 size={16} />}
+          />
+          {recoveryMode && (
+            <ToggleChip
+              label="Rebook nonstop"
+              activeLabel="Rebook nonstop"
+              active={Boolean(state.chatFilters.rebookNonstop)}
+              disabled={state.isLoading}
+              onToggle={() =>
+                updateFilters({
+                  rebookNonstop: !state.chatFilters.rebookNonstop,
+                })
+              }
+              icon={<RefreshCw size={16} />}
+            />
+          )}
+          {hasAnyFilter(state.chatFilters) && (
+            <button
+              type="button"
+              className="mds-chat-action-chip is-clear"
+              onClick={() => state.resetChatFilters()}
+              title="Clear all filters"
+            >
+              <span className="mds-chat-action-chip-icon" aria-hidden="true">
+                <X size={16} />
+              </span>
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function hasAnyFilter(f: ChatFilters): boolean {
+  return (
+    f.travelers > 0 ||
+    !!f.startDate ||
+    !!f.endDate ||
+    f.spa ||
+    f.directFlights ||
+    Boolean(f.rebookNonstop)
+  );
+}
+
+// ----------------------------- Travelers chip -----------------------------
+
+function TravelersChip({
+  filters,
+  isOpen,
+  disabled,
+  onToggle,
+  onClose,
+  onChange,
+}: {
+  filters: ChatFilters;
+  isOpen: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  onChange: (count: number) => void;
+}) {
+  const active = filters.travelers > 0;
+  const label = active
+    ? `${filters.travelers} ${filters.travelers === 1 ? 'traveler' : 'travelers'}`
+    : 'Add travelers';
+
+  const adjust = (delta: number) => {
+    const next = Math.max(0, Math.min(8, filters.travelers + delta));
+    onChange(next);
+  };
+
+  return (
+    <ChipPopoverShell
+      isOpen={isOpen}
+      onClose={onClose}
+      trigger={
+        <ActionChipButton
+          label={label}
+          active={active}
+          disabled={disabled}
+          onClick={onToggle}
+          icon={<UsersRound size={16} />}
+        />
+      }
+    >
+      <div className="mds-popover-title">How many travelers?</div>
+      <div className="mds-popover-stepper">
+        <button
+          type="button"
+          className="mds-popover-step-btn"
+          onClick={() => adjust(-1)}
+          disabled={filters.travelers <= 0}
+          aria-label="Decrease travelers"
+        >
+          −
+        </button>
+        <span className="mds-popover-step-value">
+          <b>{filters.travelers || 0}</b>
+          <em>{filters.travelers === 1 ? 'traveler' : 'travelers'}</em>
+        </span>
+        <button
+          type="button"
+          className="mds-popover-step-btn"
+          onClick={() => adjust(1)}
+          disabled={filters.travelers >= 8}
+          aria-label="Increase travelers"
+        >
+          +
+        </button>
+      </div>
+      <div className="mds-popover-row">
+        <button
+          type="button"
+          className="mds-popover-link"
+          onClick={() => {
+            onChange(0);
+            onClose();
+          }}
+          disabled={!active}
+        >
+          Clear
+        </button>
+        <button type="button" className="mds-popover-primary" onClick={onClose}>
+          Done
+        </button>
+      </div>
+    </ChipPopoverShell>
+  );
+}
+
+// ----------------------------- Dates chip -----------------------------
+
+function DatesChip({
+  filters,
+  isOpen,
+  disabled,
+  onToggle,
+  onClose,
+  onChange,
+}: {
+  filters: ChatFilters;
+  isOpen: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  onChange: (startDate: string | null, endDate: string | null) => void;
+}) {
+  const hasStart = !!filters.startDate;
+  const hasEnd = !!filters.endDate;
+  const label = hasStart && hasEnd
+    ? `${formatShort(filters.startDate!)} - ${formatShort(filters.endDate!)}`
+    : hasStart
+      ? `From ${formatShort(filters.startDate!)}`
+      : 'Change dates';
+  const active = hasStart || hasEnd;
+
+  return (
+    <ChipPopoverShell
+      isOpen={isOpen}
+      onClose={onClose}
+      trigger={
+        <ActionChipButton
+          label={label}
+          active={active}
+          disabled={disabled}
+          onClick={onToggle}
+          icon={<CalendarDays size={16} />}
+        />
+      }
+    >
+      <div className="mds-popover-title">When are you going?</div>
+      <div className="mds-popover-dates">
+        <label>
+          <span>From</span>
+          <input
+            type="date"
+            value={filters.startDate ?? ''}
+            min={todayISO()}
+            onChange={(e) => {
+              const v = e.target.value || null;
+              const fixedEnd =
+                v && filters.endDate && filters.endDate < v ? null : filters.endDate;
+              onChange(v, fixedEnd);
+            }}
+          />
+        </label>
+        <label>
+          <span>To</span>
+          <input
+            type="date"
+            value={filters.endDate ?? ''}
+            min={filters.startDate ?? todayISO()}
+            onChange={(e) => onChange(filters.startDate, e.target.value || null)}
+          />
+        </label>
+      </div>
+      <div className="mds-popover-row">
+        <button
+          type="button"
+          className="mds-popover-link"
+          onClick={() => {
+            onChange(null, null);
+            onClose();
+          }}
+          disabled={!active}
+        >
+          Clear
+        </button>
+        <button type="button" className="mds-popover-primary" onClick={onClose}>
+          Done
+        </button>
+      </div>
+    </ChipPopoverShell>
+  );
+}
+
+// ----------------------------- Toggle chip -----------------------------
+
+function ToggleChip({
+  label,
+  activeLabel,
+  active,
+  disabled,
+  onToggle,
+  icon,
+}: {
+  label: string;
+  activeLabel: string;
+  active: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+  icon: ReactNode;
+}) {
+  return (
+    <ActionChipButton
+      label={active ? activeLabel : label}
+      active={active}
+      disabled={disabled}
+      onClick={onToggle}
+      icon={icon}
+      aria-pressed={active}
+    />
+  );
+}
+
+// ----------------------------- Chip primitives -----------------------------
+
+function ActionChipButton({
+  label,
+  active,
+  disabled,
+  onClick,
+  icon,
+  ...rest
+}: {
+  label: string;
+  active: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  icon: ReactNode;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const className = `mds-chat-action-chip${active ? ' is-active' : ''}`;
+  return (
+    <button
+      type="button"
+      className={className}
+      disabled={disabled}
+      onClick={onClick}
+      title={label}
+      {...rest}
+    >
+      <span className="mds-chat-action-chip-icon" aria-hidden="true">
+        {icon}
+      </span>
+      {label}
+      {active && <span className="mds-chat-action-chip-dot" aria-hidden="true" />}
+    </button>
+  );
+}
+
+function ChipPopoverShell({
+  trigger,
+  isOpen,
+  onClose,
+  children,
+}: {
+  trigger: ReactNode;
+  isOpen: boolean;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const wrapRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isOpen, onClose]);
+
+  return (
+    <span ref={wrapRef} className={`mds-chip-pop-wrap${isOpen ? ' is-open' : ''}`}>
+      {trigger}
+      {isOpen && (
+        <div className="mds-chip-pop" role="dialog" aria-modal="false">
+          {children}
+        </div>
+      )}
+    </span>
+  );
+}
+
+// ----------------------------- Helpers -----------------------------
+
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatShort(iso: string): string {
+  const [, m, d] = iso.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthIdx = Math.max(0, Math.min(11, Number(m) - 1));
+  return `${months[monthIdx]} ${Number(d)}`;
+}

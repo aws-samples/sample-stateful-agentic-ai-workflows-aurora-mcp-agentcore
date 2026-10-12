@@ -1,0 +1,257 @@
+/**
+ * TypeScript types for Meridian frontend
+ */
+
+export interface Product {
+  product_id: string;
+  name: string;
+  brand: string;
+  price: number;
+  description: string;
+  image_url: string;
+  category: string;
+  destination?: string;
+  region?: string;
+  available_sizes?: string[] | null;
+  availability?: Record<string, number> | null;
+  highlights?: string[] | null;
+  similarity?: number;
+  // Phase 3 rerank-visualization metadata (Retrieval path only).
+  pre_rerank_position?: number | null;
+  pre_rerank_similarity?: number | null;
+  rank_delta?: number | null;
+}
+
+export interface ProductListResponse {
+  products: Product[];
+  total: number;
+}
+
+export interface TripPackage {
+  package_id: string;
+  name: string;
+  trip_type: string;
+  destination: string;
+  region: string;
+  price_per_person: number;
+  operator: string;
+  description: string;
+  image_url: string;
+  durations?: string[] | null;
+  availability?: Record<string, unknown> | null;
+  highlights?: string[] | null;
+  similarity?: number;
+}
+
+export interface PackageListResponse {
+  packages: TripPackage[];
+  total: number;
+}
+
+export type ActivityType = 'search' | 'embedding' | 'tool_call' | 'database' | 'error' | 'inventory' | 'order' | 'delegation' | 'mcp' | 'reasoning' | 'result' | 'security' | 'availability';
+
+export type TraceSpanCategory =
+  | 'runtime'
+  | 'memory_short'
+  | 'memory_long'
+  | 'orchestration'
+  | 'model'
+  | 'tool'
+  | 'data'
+  | 'synthesis'
+  | 'security';
+
+export type TraceSpanStatus =
+  | 'ok'
+  | 'cache_hit'
+  | 'streaming'
+  | 'held'
+  | 'delegated'
+  | 'preview'
+  | 'denied'
+  | 'error';
+
+export interface TraceTelemetryField {
+  label: string;
+  value: string;
+  mono?: boolean;
+}
+
+export interface LongTermMemoryFact {
+  key: string;
+  value: string;
+  source?: string;
+  confidence?: number;
+}
+
+export interface TraceMemorySnapshot {
+  shortTerm?: { label: string; items: string[] };
+  longTerm?: { label: string; facts: LongTermMemoryFact[] };
+}
+
+export interface TraceTelemetry {
+  category: TraceSpanCategory;
+  component: string;
+  status?: TraceSpanStatus;
+  fields?: TraceTelemetryField[];
+  memory?: TraceMemorySnapshot;
+  tokens?: { input?: number; output?: number };
+}
+
+export interface ActivityEntry {
+  id: string;
+  timestamp: string;
+  activity_type: ActivityType;
+  title: string;
+  details?: string;
+  sql_query?: string;
+  execution_time_ms?: number;
+  agent_name?: string;
+  agent_file?: string;
+  telemetry?: TraceTelemetry;
+  // Aliases for camelCase access
+  type?: ActivityType;
+  agentName?: string;
+  executionTimeMs?: number;
+  sqlQuery?: string;
+  agentFile?: string;
+}
+
+export interface OrderItem {
+  product_id: string;
+  name: string;
+  size?: string;
+  quantity: number;
+  unit_price: number;
+}
+
+export interface Order {
+  order_id: string;
+  items: OrderItem[];
+  subtotal: number;
+  tax: number;
+  shipping: number;
+  total: number;
+  status: string;
+  estimated_delivery?: string;
+  hold_expires_at?: string;
+  /** When Aurora created the hold; with the expiry it names the hold window. */
+  hold_created_at?: string;
+  /** Set once Aurora has confirmed the booking. Catalog inventory only; no payment. */
+  confirmed_at?: string;
+  departure_date?: string;
+  payment_required?: boolean;
+}
+
+export type Phase = 1 | 2 | 3 | 4 | 5;
+
+export interface ChatRequest {
+  message: string;
+  phase: Phase;
+  customer_id?: string;
+  conversation_id?: string;
+  resume?: boolean;
+  travelers_count?: number;
+  memory_enabled?: boolean;
+  experience?: 'capability' | 'concierge';
+  review_only?: boolean;
+}
+
+export interface ChatResponse {
+  message: string;
+  products?: Product[];
+  order?: Order;
+  activities: ActivityEntry[];
+  follow_ups?: string[];
+  conversation_id?: string;
+  memory_facts?: LongTermMemoryFact[];
+  workflow_status?: 'paused' | 'resumed' | 'complete';
+  workflow_resumed_after_restart?: boolean;
+  recovery_request?: string | null;
+  /** The Bedrock model that actually wrote `message` (may be a fallback).
+   *  Absent when the reply is a pure tool result with no model involved. */
+  model_label?: string | null;
+}
+
+export interface LoyaltyProgram {
+  program: string;
+  member_id?: string;
+  tier: string;
+  points_balance?: number;
+}
+
+export interface TravelerProfile {
+  full_name?: string;
+  home_airport?: string;
+  party_size?: number;
+  budget_min?: number;
+  budget_max?: number;
+  seat_preference?: string;
+  dietary_notes?: string;
+  trip_goal?: string;
+  loyalty_programs?: Record<string, LoyaltyProgram | string>;
+}
+
+export interface MemoryProfileResponse {
+  traveler_id: string;
+  facts: LongTermMemoryFact[];
+  profile?: TravelerProfile;
+  /** The saved per-traveler cap the gateway policy multiplies by the party size. */
+  budget_ceiling_per_traveler_cents?: number | null;
+}
+
+export interface Message {
+  /** Provisional Runtime text; completion replaces it with the persisted reply. */
+  streaming?: boolean;
+  incomplete?: boolean;
+  role: 'user' | 'bot';
+  type?: 'text' | 'products' | 'order';
+  text: string;
+  products?: Product[];
+  order?: Order;
+  follow_ups?: string[];
+  /** The model that wrote this bot reply. Undefined on user messages and on
+   *  bot replies that are a pure tool result - never shown as a badge then. */
+  modelLabel?: string;
+}
+
+// Alias for backward compatibility
+export type ChatMessage = Message;
+
+export interface PhaseInfo {
+  id: Phase;
+  name: string;
+  description: string;
+  color: string;
+}
+
+export interface OrderRequest {
+  product_id: string;
+  size?: string;
+  quantity?: number;
+  phase: Phase;
+  traveler_id?: string;
+  action?: 'hold';
+  /** Phase 4 holds run inside the conversation's AgentCore Memory session. */
+  conversation_id?: string;
+}
+
+export interface OrderResponse {
+  message: string;
+  order?: Order;
+  activities: ActivityEntry[];
+}
+
+export interface BookingRequest {
+  booking_id: string;
+  phase: 4;
+  traveler_id?: string;
+  /** The confirmation runs inside the conversation's AgentCore Memory session. */
+  conversation_id?: string;
+}
+
+export interface BookingResponse {
+  message: string;
+  order?: Order;
+  activities: ActivityEntry[];
+}

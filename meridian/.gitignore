@@ -1,0 +1,80 @@
+# Environment & secrets (never commit real values)
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+.aws/
+credentials
+*credentials*.json
+secrets.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.hypothesis/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node.js / frontend
+node_modules/
+frontend/dist/
+.npm
+*.log
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints
+
+# Local databases & logs
+*.db
+*.sqlite
+*.sqlite3
+logs/
+
+# Local decks and temporary Office files
+*.pptx
+*.pdf
+~$*
+
+# Local verification output and dev-server logs
+.local/
+
+# CloudFront/App Runner CDK app build output
+infra/node_modules/
+infra/dist/
+infra/cdk.out/

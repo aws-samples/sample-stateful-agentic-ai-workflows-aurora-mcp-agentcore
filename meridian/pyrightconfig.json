@@ -1,0 +1,6 @@
+{
+  "include": ["backend", "scripts"],
+  "exclude": ["**/node_modules", "**/venv", "venv", "frontend"],
+  "reportMissingTypeStubs": false,
+  "pythonVersion": "3.13"
+}

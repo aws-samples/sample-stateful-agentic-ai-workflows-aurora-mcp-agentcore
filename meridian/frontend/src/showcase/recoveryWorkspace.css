@@ -1,0 +1,3198 @@
+/* Meridian recovery workspace.
+   Scoped to the finale so the opening capability ladder keeps its
+   projector-oriented geometry. */
+
+/* The showcase is the presenter surface. Type sizes come from the ramp in
+   tokens.css; projector readability raises --mds-type-scale there. */
+.mds-desktop-app.is-projector {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.mds-desktop-app.is-projector.is-proof .mds-empty-sub {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Ladder navigation
+
+   The five rungs are the top level, because the ladder is the argument. The
+   product entry sits before them, un-numbered and visually separated, so it
+   reads as the thing the ladder builds toward rather than a peer step.
+
+   Rungs below the current one keep a lit index: each phase adds to the stack
+   rather than replacing it, and the nav should make that visible.
+--------------------------------------------------------------------------- */
+.mds-ladder-nav {
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 46px;
+}
+
+.mds-ladder-nav-rungs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mds-ladder-nav-rungs::-webkit-scrollbar {
+  display: none;
+}
+
+.mds-ladder-nav-rung {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-label-2);
+  background: transparent;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+  white-space: nowrap;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.mds-ladder-nav-rung:hover {
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
+}
+
+.mds-ladder-nav-index {
+  width: 23px;
+  height: 23px;
+  flex: 0 0 23px;
+  display: grid;
+  place-items: center;
+  /* Inverted chips: ink on the theme's ground, so the numerals read from the
+     back of a room without a glow. */
+  border: 0;
+  border-radius: 50%;
+  color: var(--mds-ground);
+  background: var(--mds-label);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.mds-ladder-nav-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  text-align: left;
+}
+
+.mds-ladder-nav-copy strong,
+.mds-ladder-nav-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mds-ladder-nav-copy strong {
+  color: inherit;
+  font-size: inherit;
+  font-weight: var(--mds-weight-bold);
+  line-height: 1.1;
+}
+
+.mds-ladder-nav-copy small {
+  color: var(--mds-label-3);
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-semibold);
+  line-height: 1.1;
+}
+
+/* Already climbed: the capability is still running underneath. */
+.mds-ladder-nav-rung.is-carried .mds-ladder-nav-index {
+  color: var(--mds-label);
+  background: var(--mds-blue-fill);
+}
+
+.mds-ladder-nav-rung.is-active {
+  color: var(--mds-label);
+  background: var(--mds-blue-fill);
+}
+
+.mds-ladder-nav-rung.is-active .mds-ladder-nav-index {
+  color: var(--mds-on-action);
+  background: var(--mds-blue);
+}
+
+.mds-ladder-nav-rung.is-active .mds-ladder-nav-copy small {
+  color: var(--mds-blue);
+}
+
+@media (max-width: 1180px) {
+  .mds-ladder-nav-copy small {
+    display: none;
+  }
+}
+
+/* The capability ladder is presented to a room, not used at laptop distance.
+   Keep its essential copy above the projector legibility floor while leaving
+   dense implementation details subordinate in the proof rail. */
+.mds-desktop-app.is-projector.is-proof .mds-nav-item {
+  min-height: 46px;
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-medium);
+}
+
+.mds-desktop-app.is-projector.is-proof .mds-message-role {
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-desktop-app.is-projector.is-proof .mds-message-bubble {
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-regular);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-desktop-app.is-projector.is-proof
+  :is(.mds-msg-meta-tag, .mds-msg-result-chip, .mds-followup-chip) {
+  font: var(--mds-type-body);
+}
+
+.mds-desktop-app.is-projector.is-proof .mds-followup-chip {
+  font-weight: var(--mds-weight-medium);
+}
+
+.mds-desktop-app.is-projector.is-proof
+  :is(.mds-trip-result-destination, .mds-trip-result-match) {
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1;
+}
+
+.mds-desktop-app.is-projector.is-proof .mds-trip-result-description {
+  font: var(--mds-type-body);
+}
+
+.mds-desktop-app.is-projector.is-proof .mds-trip-result-signals > span {
+  min-height: 30px;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-desktop-app.is-projector.is-proof
+  :is(.mds-trip-result-fact > b, .mds-trip-result-price span) {
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  line-height: 1;
+}
+
+.mds-desktop-app.is-projector.is-proof
+  .mds-trip-result-fact.is-availability
+  > em {
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1.1;
+}
+
+.mds-desktop-app.is-projector.is-proof .mds-trip-result-actions button {
+  min-height: 42px;
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1;
+}
+
+/* Both steps share the finale's shell geometry, so switching views never moves
+   the sidebar, main stage, or proof rail. */
+.mds-desktop-app {
+  /* Narrower chrome so the transcript and result cards get the width. */
+  grid-template-columns: 212px minmax(0, 1fr) 384px;
+  transition: grid-template-columns 220ms cubic-bezier(0.2, 0.72, 0.2, 1);
+}
+
+/* The proof rail is present on every rung, recovery included, so the finale
+   keeps the same three-column shape as the rest of the ladder. */
+.mds-desktop-app.is-finale {
+  grid-template-columns: 212px minmax(0, 1fr) 384px;
+}
+
+/* The evidence rail's width is a token so the drawer can collapse it. These
+   used to hardcode 384px, which silently won over --mds-right-rail and left
+   the folded drawer sitting in a 384px track with 340px of dead space beside
+   it. Keep 384 as this layout's value, but let the token carry it. */
+.mds-desktop-app.is-sidebar-collapsed {
+  --mds-right-rail: 384px;
+  grid-template-columns: 76px minmax(0, 1fr) var(--mds-right-rail);
+}
+
+.mds-desktop-app.is-finale.is-sidebar-collapsed {
+  --mds-right-rail: 384px;
+  grid-template-columns: 76px minmax(0, 1fr) var(--mds-right-rail);
+}
+
+/* Shared sidebar typography, using the finale's treatment so the chrome does not
+   change weight or family when the demo advances. Sizing and family only — the
+   finale keeps its own spacing and colors in the .is-experience rules below. */
+.mds-desktop-app .mds-brand {
+  font: var(--mds-type-title-1);
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-desktop-app .mds-nav-item {
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-medium);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-desktop-app .mds-account-copy strong {
+  font: var(--mds-type-body);
+}
+
+.mds-desktop-app .mds-account-copy .mds-account-loyalty {
+  font: var(--mds-type-footnote);
+  line-height: 1.25;
+}
+
+/* The ladder and finale share one product chrome. Geometry remains step-specific,
+   but these palette tokens come from the Stateful Recovery finale in both themes. */
+.mds-desktop-app .mds-desktop-sidebar {
+  border-right-color: var(--mds-separator);
+  background: var(--mds-surface);
+}
+
+.mds-desktop-app .mds-brand {
+  color: var(--mds-label);
+}
+
+.mds-desktop-app .mds-nav-item {
+  border: 0;
+  color: var(--mds-label-2);
+  background: transparent;
+}
+
+.mds-desktop-app .mds-nav-item:hover {
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
+}
+
+.mds-desktop-app .mds-nav-item.is-active {
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
+}
+
+.mds-desktop-app .mds-nav-item.is-active::before {
+  background: var(--mds-blue);
+}
+
+.mds-desktop-app .mds-account-mini {
+  border-top-color: var(--mds-separator);
+}
+
+.mds-desktop-app .mds-account-mini:hover strong {
+  color: var(--mds-blue);
+}
+
+.mds-desktop-app .mds-account-copy strong {
+  color: var(--mds-label);
+}
+
+.mds-desktop-app .mds-account-copy .mds-account-loyalty {
+  color: var(--mds-label-3);
+}
+
+.mds-desktop-app .mds-desktop-main {
+  background: var(--mds-ground);
+}
+
+.mds-desktop-app .mds-status-pill {
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
+  box-shadow: none;
+}
+
+.mds-desktop-app .mds-theme-toggle {
+  color: var(--mds-label-2);
+  border-color: var(--mds-control-line);
+  background: var(--mds-surface);
+}
+
+.mds-desktop-app .mds-desktop-right {
+  border-left-color: var(--mds-separator);
+  background: var(--mds-ground);
+}
+
+.mds-desktop-app .mds-desktop-sidebar {
+  padding: 30px 20px 24px;
+  transition:
+    padding 220ms cubic-bezier(0.2, 0.72, 0.2, 1),
+    background-color 220ms ease,
+    border-color 220ms ease;
+}
+
+.mds-desktop-app .mds-sidebar-head {
+  position: relative;
+  display: block;
+  padding-top: 44px;
+  margin-bottom: 25px;
+}
+
+.mds-desktop-app .mds-brand {
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+}
+
+.mds-desktop-app .mds-brand-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mds-desktop-app .mds-sidebar-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-s);
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
+  box-shadow: none;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
+}
+
+.mds-desktop-app .mds-sidebar-toggle:hover {
+  color: var(--mds-label);
+  border-color: var(--mds-control-line);
+  background: var(--mds-surface-2);
+  transform: translateY(-1px);
+}
+
+.mds-desktop-app .mds-sidebar-toggle:focus-visible {
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 2px;
+}
+
+.mds-desktop-app .mds-brand-mark {
+  width: 44px;
+  height: 44px;
+  display: block;
+  border-radius: var(--mds-radius-s);
+  background: transparent;
+}
+
+.mds-desktop-app .mds-nav-items {
+  gap: 8px;
+}
+
+.mds-desktop-app .mds-nav-item {
+  min-height: 48px;
+  gap: 13px;
+  padding: 0 14px 0 17px;
+  border-radius: var(--mds-radius-m);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-medium);
+  letter-spacing: var(--mds-tracking-title);
+  transition: color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.mds-desktop-app .mds-nav-item.is-active::before {
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  background: var(--mds-blue);
+}
+
+.mds-desktop-app .mds-nav-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.mds-desktop-app .mds-nav-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.mds-desktop-app .mds-account-mini {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 17px 4px 0;
+  border: 0;
+  border-top: 1px solid var(--mds-separator);
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+
+.mds-desktop-app .mds-account-mini:hover strong {
+  color: var(--mds-blue);
+}
+
+.mds-desktop-app .mds-account-mini .mds-avatar {
+  width: 44px;
+  height: 44px;
+}
+
+.mds-desktop-app .mds-account-copy strong {
+  font: var(--mds-type-body);
+}
+
+.mds-account-chevron {
+  color: var(--mds-label-2);
+  font: var(--mds-type-title-1);
+  font-weight: var(--mds-weight-regular);
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-desktop-app.is-sidebar-collapsed .mds-desktop-sidebar {
+  padding-inline: 15px;
+}
+
+.mds-desktop-app.is-sidebar-collapsed .mds-sidebar-head {
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: 12px;
+  padding-top: 0;
+}
+
+.mds-desktop-app.is-sidebar-collapsed .mds-sidebar-toggle {
+  position: static;
+}
+
+.mds-desktop-app.is-sidebar-collapsed .mds-brand {
+  justify-content: center;
+}
+
+.mds-desktop-app.is-sidebar-collapsed .mds-brand-name,
+.mds-desktop-app.is-sidebar-collapsed .mds-nav-label {
+  display: none;
+}
+
+.mds-desktop-app.is-sidebar-collapsed .mds-nav-item {
+  justify-content: center;
+  gap: 0;
+  padding-inline: 0;
+}
+
+.mds-desktop-app.is-sidebar-collapsed .mds-nav-item b {
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  min-width: 15px;
+  height: 15px;
+  margin: 0;
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-desktop-app.is-sidebar-collapsed .mds-account-mini {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: 0;
+  padding-inline: 0;
+}
+
+.mds-desktop-app.is-sidebar-collapsed .mds-account-copy,
+.mds-desktop-app.is-sidebar-collapsed .mds-account-chevron {
+  display: none;
+}
+
+.mds-desktop-app.is-experience .mds-desktop-main {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.mds-desktop-app.is-experience .mds-desktop-scroll {
+  min-height: 0;
+  height: auto;
+}
+
+.mds-desktop-app.is-experience .mds-desktop-dock {
+  z-index: 20;
+  gap: 8px;
+  padding: 10px 30px 15px;
+  border-top-color: var(--mds-separator);
+  background: var(--mds-surface);
+}
+
+.mds-desktop-app:is(.is-proof, .is-experience) .mds-desktop-scroll {
+  gap: 14px;
+  padding: 27px 30px 22px;
+}
+
+.mds-desktop-app.is-experience .mds-status-pill {
+  min-height: 32px;
+  padding: 0 12px;
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-medium);
+}
+
+.mds-desktop-app.is-experience .mds-surface-switch {
+  min-height: 38px;
+  padding: 3px;
+  border-radius: var(--mds-radius-m);
+  border-color: var(--mds-control-line);
+  background: var(--mds-surface-2);
+}
+
+.mds-recovery-workspace {
+  display: grid;
+  gap: 15px;
+  padding-bottom: 4px;
+}
+
+.mds-recovery-layout-review {
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 6px 8px 6px 14px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface);
+}
+
+.mds-recovery-layout-review > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mds-recovery-layout-review strong {
+  color: var(--mds-label);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-layout-review small {
+  overflow: hidden;
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mds-recovery-layout-review > div {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+}
+
+.mds-recovery-layout-review button {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--mds-radius-s);
+  color: var(--mds-label-3);
+  background: transparent;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-layout-review button.is-active {
+  color: var(--mds-label);
+  background: var(--mds-blue-fill);
+  border-color: var(--mds-control-line);
+}
+
+.mds-recovery-workspace.is-running .mds-recovery-overview {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px 18px;
+  padding-block: 2px;
+}
+
+.mds-recovery-workspace.is-running .mds-recovery-overview-title {
+  grid-row: 1 / span 2;
+}
+
+.mds-recovery-workspace.is-running .mds-recovery-overview h1 {
+  font: var(--mds-type-title-1);
+  line-height: 1.05;
+}
+
+.mds-recovery-workspace.is-running .mds-recovery-overview-meta {
+  justify-self: end;
+}
+
+.mds-recovery-overview {
+  display: grid;
+  gap: 8px;
+  padding: 7px 2px 4px;
+}
+
+.mds-recovery-overview-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.mds-recovery-overview h1 {
+  margin: 0;
+  color: var(--mds-label);
+  font: var(--mds-type-large-title);
+  line-height: 1.05;
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-recovery-cancelled-badge {
+  min-height: 31px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-red);
+  background: var(--mds-red-fill);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-overview-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--mds-label-2);
+  font: var(--mds-type-body);
+}
+
+.mds-recovery-overview-meta i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--mds-label-3);
+}
+
+.mds-recovery-overview-meta strong {
+  color: var(--mds-yellow);
+  font-weight: var(--mds-weight-bold);
+}
+
+/* Stacked, the separator dot would dangle at the end of the first line. */
+@media (max-width: 560px) {
+  .mds-recovery-overview-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .mds-recovery-overview-meta i {
+    display: none;
+  }
+}
+
+.mds-recovery-overview.is-running .mds-recovery-overview-meta strong {
+  color: var(--mds-blue);
+}
+
+.mds-recovery-overview.is-checkpointed .mds-recovery-overview-meta strong {
+  color: var(--mds-cyan);
+}
+
+.mds-recovery-overview.is-ready .mds-recovery-overview-meta strong {
+  color: var(--mds-green);
+}
+
+.mds-recovery-briefing {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface);
+}
+
+.mds-recovery-briefing-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--mds-label);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-briefing-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.mds-recovery-briefing-head svg {
+  color: var(--mds-label-2);
+}
+
+.mds-recovery-briefing-head button {
+  min-width: 32px;
+  min-height: 32px;
+  border: 0;
+  color: var(--mds-label-2);
+  background: transparent;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-brief {
+  display: grid;
+  gap: 11px;
+}
+
+.mds-recovery-request {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--mds-radius-s);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
+}
+
+.mds-recovery-request > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 1px;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-request p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-medium);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.mds-recovery-brief-running {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 54px;
+  padding: 9px 12px;
+  color: var(--mds-label);
+}
+
+.mds-recovery-brief-running > svg {
+  flex: 0 0 auto;
+  color: var(--mds-label-2);
+  animation: mds-recovery-spin 1.1s linear infinite;
+}
+
+.mds-recovery-brief-running > span {
+  display: grid;
+  gap: 2px;
+}
+
+.mds-recovery-brief-running strong {
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-brief-running small {
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+}
+
+@keyframes mds-recovery-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.mds-recovery-outcome {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--mds-separator);
+  border-bottom: 1px solid var(--mds-separator);
+}
+
+.mds-recovery-outcome-title {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+}
+
+.mds-recovery-outcome-title > svg {
+  color: var(--mds-green);
+}
+
+.mds-recovery-outcome-title > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mds-recovery-outcome-title small,
+.mds-recovery-outcome-facts dt {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-recovery-outcome-title strong {
+  overflow-wrap: anywhere;
+  color: var(--mds-label);
+  font: var(--mds-type-title-2);
+  font-weight: var(--mds-weight-semibold);
+  line-height: 1.15;
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-recovery-outcome-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.mds-recovery-outcome-facts > div {
+  min-width: 0;
+  padding: 0 12px;
+  border-left: 1px solid var(--mds-separator);
+}
+
+.mds-recovery-outcome-facts > div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.mds-recovery-outcome-facts dt,
+.mds-recovery-outcome-facts dd {
+  margin: 0;
+}
+
+.mds-recovery-outcome-facts dd {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  color: var(--mds-label);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-outcome > p {
+  margin: 0;
+  color: var(--mds-label-2);
+  font: var(--mds-type-body);
+}
+
+.mds-recovery-full-response {
+  border-bottom: 1px solid var(--mds-separator);
+}
+
+.mds-recovery-full-response summary {
+  min-height: 39px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--mds-label-2);
+  cursor: pointer;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+  list-style: none;
+}
+
+.mds-recovery-full-response summary::-webkit-details-marker {
+  display: none;
+}
+
+.mds-recovery-full-response summary svg {
+  flex: 0 0 auto;
+  color: var(--mds-label-3);
+  transition: transform 160ms ease;
+}
+
+.mds-recovery-full-response[open] summary svg {
+  transform: rotate(180deg);
+}
+
+.mds-recovery-full-response .mds-md {
+  max-height: min(38vh, 340px);
+  margin: 0 0 12px;
+  padding: 1px 10px 2px 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+}
+
+.mds-recovery-brief-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mds-recovery-brief-actions button {
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid var(--mds-blue);
+  border-radius: var(--mds-radius-s);
+  color: var(--mds-label);
+  background: var(--mds-blue-fill);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-brief-actions button:hover {
+  border-color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+}
+
+.mds-desktop-app.is-experience .mds-chat-composer-wrap.is-recovery {
+  gap: 10px;
+  margin: 0;
+}
+
+.mds-desktop-app.is-experience .mds-chat-composer-wrap.is-recovery .mds-chat-quick-actions {
+  gap: 9px;
+}
+
+.mds-desktop-app.is-experience .mds-chat-composer-wrap.is-recovery .mds-chat-action-chip {
+  min-height: 40px;
+  padding: 0 16px 0 13px;
+  border-color: var(--mds-control-line);
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
+  font: var(--mds-type-body);
+}
+
+.mds-desktop-app.is-experience .mds-chat-composer-wrap.is-recovery .mds-chat-action-chip-icon {
+  color: var(--mds-label-2);
+}
+
+.mds-desktop-app.is-experience .mds-chat-composer-wrap.is-recovery .mds-chat-action-chip.is-active {
+  border-color: var(--mds-blue);
+  color: var(--mds-label);
+  background: var(--mds-blue-fill);
+}
+
+.mds-desktop-app .mds-desktop-right {
+  gap: 0;
+  padding: 20px 16px;
+  border-left-color: var(--mds-separator);
+  background: var(--mds-ground);
+}
+
+/* Laptop and tablet layouts retain every workflow control. */
+@media (max-width: 1500px) {
+  .mds-desktop-app {
+    grid-template-columns: 196px minmax(0, 1fr) 320px;
+  }
+
+  .mds-desktop-app .mds-brand {
+    gap: 10px;
+    font: var(--mds-type-title-1);
+    letter-spacing: var(--mds-tracking-display);
+  }
+
+  .mds-desktop-app.is-finale {
+    grid-template-columns: 218px minmax(0, 1fr);
+  }
+
+  .mds-desktop-app.is-sidebar-collapsed {
+    grid-template-columns: 76px minmax(0, 1fr) 384px;
+  }
+
+  .mds-desktop-app.is-finale.is-sidebar-collapsed {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+
+  .mds-desktop-app:is(.is-proof, .is-experience) .mds-desktop-scroll {
+    padding: 24px 22px 20px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .mds-desktop-app {
+    grid-template-columns: 218px minmax(0, 1fr);
+    overflow: auto;
+  }
+
+  .mds-desktop-app.is-finale {
+    grid-template-columns: 218px minmax(0, 1fr);
+  }
+
+  .mds-desktop-app.is-sidebar-collapsed,
+  .mds-desktop-app.is-finale.is-sidebar-collapsed {
+    grid-template-columns: 82px minmax(0, 1fr);
+  }
+
+  .mds-desktop-app .mds-desktop-sidebar {
+    grid-row: 1 / span 2;
+  }
+
+  .mds-desktop-app.is-sidebar-collapsed .mds-desktop-sidebar {
+    padding-inline: 12px;
+  }
+
+  .mds-desktop-app.is-sidebar-collapsed .mds-brand {
+    justify-content: center;
+  }
+
+  .mds-desktop-app.is-sidebar-collapsed .mds-nav-item {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .mds-desktop-app.is-sidebar-collapsed .mds-account-mini {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .mds-desktop-app.is-sidebar-collapsed .mds-account-copy,
+  .mds-desktop-app.is-sidebar-collapsed .mds-account-chevron {
+    display: none;
+  }
+
+  .mds-desktop-app .mds-desktop-main {
+    grid-column: 2;
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .mds-desktop-app .mds-desktop-right {
+    grid-column: 2;
+    height: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .mds-desktop-app .mds-sidebar-head {
+    display: block;
+    padding-top: 0;
+    margin: 0;
+  }
+
+  .mds-desktop-app .mds-sidebar-toggle {
+    display: none;
+  }
+
+  .mds-desktop-app:is(.is-discovery, .is-proof, .is-experience) .mds-nav-item {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+
+  .mds-desktop-app:is(.is-discovery, .is-proof, .is-experience) .mds-nav-label {
+    display: none;
+  }
+
+  .mds-desktop-app.is-proof {
+    display: block;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .mds-desktop-app.is-proof .mds-desktop-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--mds-separator);
+    overflow: visible;
+  }
+
+  .mds-desktop-app.is-proof .mds-brand {
+    justify-content: flex-start;
+    margin: 0;
+    font: var(--mds-type-title-1);
+    letter-spacing: var(--mds-tracking-display);
+  }
+
+  .mds-desktop-app.is-proof .mds-brand-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .mds-desktop-app.is-proof .mds-nav-items {
+    flex-direction: row;
+    justify-content: flex-end;
+    overflow: visible;
+  }
+
+  .mds-desktop-app.is-proof .mds-nav-item {
+    width: 44px;
+    min-height: 44px;
+    display: none;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .mds-desktop-app.is-proof .mds-nav-item:first-child,
+  .mds-desktop-app.is-proof .mds-nav-item:nth-child(2),
+  .mds-desktop-app.is-proof .mds-nav-item:nth-child(5) {
+    display: flex;
+  }
+
+  .mds-desktop-app.is-proof .mds-sidebar-spacer,
+  .mds-desktop-app.is-proof .mds-account-mini {
+    display: none;
+  }
+
+  .mds-desktop-app.is-proof .mds-desktop-main {
+    height: auto;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .mds-desktop-app.is-proof .mds-desktop-scroll {
+    overflow: visible;
+    padding: 17px 14px 20px;
+  }
+
+  .mds-desktop-app.is-proof .mds-desktop-dock {
+    position: sticky;
+    bottom: 0;
+    z-index: 15;
+    padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
+  }
+
+  .mds-desktop-app.is-proof .mds-desktop-right {
+    height: auto;
+    min-height: 0;
+    padding: 0 14px 24px;
+  }
+
+  .mds-desktop-app.is-experience {
+    display: block;
+    min-height: 100dvh;
+  }
+
+  .mds-desktop-app.is-experience .mds-desktop-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--mds-separator);
+  }
+
+  .mds-desktop-app.is-experience .mds-brand {
+    justify-content: flex-start;
+    margin: 0;
+    font: var(--mds-type-title-1);
+    letter-spacing: var(--mds-tracking-display);
+  }
+
+  .mds-desktop-app.is-experience .mds-brand-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .mds-desktop-app.is-experience .mds-nav-items {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+
+  .mds-desktop-app.is-experience .mds-nav-item {
+    width: 44px;
+    min-height: 44px;
+    display: none;
+  }
+
+  .mds-desktop-app.is-experience .mds-nav-item:first-child,
+  .mds-desktop-app.is-experience .mds-nav-item:nth-child(2),
+  .mds-desktop-app.is-experience .mds-nav-item:nth-child(5) {
+    display: flex;
+  }
+
+  .mds-desktop-app.is-experience .mds-sidebar-spacer,
+  .mds-desktop-app.is-experience .mds-account-mini {
+    display: none;
+  }
+
+  .mds-desktop-app.is-experience .mds-desktop-main {
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .mds-desktop-app.is-experience .mds-desktop-scroll {
+    height: auto;
+    overflow: visible;
+    padding: 17px 14px 20px;
+  }
+
+  .mds-desktop-app.is-experience .mds-status-unit,
+  .mds-desktop-app.is-experience .mds-status-sep {
+    display: none;
+  }
+
+  .mds-desktop-app.is-experience .mds-status-pill {
+    padding-inline: 9px;
+    font: var(--mds-type-caption);
+    font-weight: var(--mds-weight-medium);
+  }
+
+  .mds-recovery-overview {
+    padding-inline: 0;
+  }
+
+  .mds-recovery-overview h1 {
+    font: var(--mds-type-large-title);
+    letter-spacing: var(--mds-tracking-display);
+  }
+
+  .mds-desktop-app.is-experience .mds-desktop-right {
+    height: auto;
+    padding: 0 14px 24px;
+  }
+
+}
+
+/* Recovery decision system -------------------------------------------------
+   The finale is an airline-recovery decision surface, not a destination
+   gallery. These cards rely on route geometry, live facts, observed proof,
+   and explicit traveler actions instead of large catalog photography. */
+
+.mds-recovery-decision-system {
+  display: grid;
+  gap: 14px;
+}
+
+.mds-recovery-active-console {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+  scroll-margin-top: 10px;
+}
+
+.mds-recovery-launch-system {
+  display: grid;
+  align-items: start;
+}
+
+.mds-recovery-launch-system > .mds-recovery-launch-card {
+  width: 100%;
+  min-height: 0;
+  align-content: start;
+}
+
+.mds-recovery-launch-card {
+  position: relative;
+  min-height: 510px;
+  display: grid;
+  grid-template-rows: auto auto auto;
+  gap: 0;
+  padding: 0 27px 14px;
+  background: var(--mds-surface);
+}
+
+.mds-recovery-launch-card.is-compact {
+  min-height: 0;
+  grid-template-rows: auto auto;
+  padding: 0 18px 8px;
+  background: var(--mds-surface);
+}
+
+.mds-recovery-launch-card.is-compact::after {
+  display: none;
+}
+
+.mds-recovery-launch-card.is-compact .mds-recovery-timeline-heading {
+  padding: 11px 2px 7px;
+  border-top: 0;
+}
+
+.mds-recovery-launch-card.is-compact .mds-recovery-timeline-heading > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-launch-card.is-compact .mds-recovery-timeline-heading > span::before {
+  width: 8px;
+  height: 8px;
+  content: "";
+  border-radius: 50%;
+  background: var(--mds-label-2);
+}
+
+.mds-recovery-launch-card.is-compact .mds-recovery-launch-steps {
+  padding: 5px 0 9px;
+}
+
+.mds-recovery-launch-card.is-compact .mds-recovery-launch-steps li {
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  justify-items: stretch;
+  gap: 8px;
+  padding-inline: 7px;
+  text-align: left;
+}
+
+.mds-recovery-launch-card.is-compact .mds-recovery-launch-steps li::before {
+  top: 15px;
+}
+
+.mds-recovery-launch-card.is-compact .mds-recovery-launch-steps li > span {
+  width: 30px;
+  height: 30px;
+}
+
+.mds-recovery-launch-card.is-compact .mds-recovery-launch-steps li > div {
+  gap: 1px;
+}
+
+.mds-recovery-launch-card.is-compact .mds-recovery-launch-steps strong {
+  font: var(--mds-type-footnote);
+}
+
+.mds-recovery-launch-card.is-compact .mds-recovery-launch-steps small {
+  display: -webkit-box;
+  overflow: hidden;
+  font: var(--mds-type-footnote);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* Once steps are confirmed, each shows its service and measured time instead of
+   the plan's description, which keeps the decision cards higher on the stage. */
+.mds-recovery-launch-card.is-compact:is(.is-checkpointed, .is-ready)
+  .mds-recovery-launch-steps small {
+  display: none;
+}
+
+.mds-recovery-launch-card::after {
+  position: absolute;
+  right: -52px;
+  bottom: 72px;
+  width: 270px;
+  height: 150px;
+  content: "";
+  border-top: 1px dashed var(--mds-separator);
+  border-radius: 50%;
+  transform: rotate(-12deg);
+  pointer-events: none;
+}
+
+.mds-recovery-launch-system .mds-recovery-launch-card::after {
+  display: none;
+}
+
+.mds-recovery-launch-card.is-running .mds-mobile-disruption-topline > em svg,
+.mds-recovery-launch-card.is-running .mds-recovery-launch-steps li.is-running svg,
+.mds-recovery-launch-card.is-running .mds-mobile-disruption-primary svg {
+  animation: mds-recovery-spin 1s linear infinite;
+}
+
+.mds-mobile-disruption-card {
+  z-index: 1;
+  display: grid;
+  align-content: start;
+  padding: 18px 0 15px;
+}
+
+.mds-mobile-disruption-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.mds-mobile-disruption-topline > span,
+.mds-mobile-disruption-topline > em {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mds-mobile-disruption-topline > span {
+  color: var(--mds-label);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-mobile-disruption-topline > span svg {
+  color: var(--mds-label-2);
+}
+
+.mds-mobile-disruption-topline > em {
+  min-height: 29px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-red);
+  background: var(--mds-red-fill);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  font-style: normal;
+}
+
+.mds-recovery-launch-card.is-running .mds-mobile-disruption-topline > em {
+  color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+}
+
+.mds-recovery-launch-card.has-error .mds-mobile-disruption-topline > em {
+  color: var(--mds-red);
+  background: var(--mds-red-fill);
+}
+
+.mds-mobile-disruption-hero {
+  min-width: 0;
+  display: grid;
+  grid-template-columns:
+    minmax(420px, 1.1fr)
+    minmax(340px, 0.72fr)
+    minmax(320px, 0.62fr);
+  align-items: stretch;
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.mds-mobile-disruption-message {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  align-items: start;
+  align-content: center;
+  column-gap: 14px;
+  row-gap: 4px;
+  padding: 18px;
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  background: var(--mds-surface-2);
+}
+
+.mds-mobile-disruption-message > span {
+  grid-column: 1;
+  grid-row: 2;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
+}
+
+.mds-mobile-disruption-message > div {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+}
+
+.mds-mobile-disruption-message > small {
+  grid-column: 2;
+  grid-row: 1;
+  display: block;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-mobile-disruption-message h2 {
+  margin: 0;
+  color: var(--mds-label);
+  /* Sits below the page title in the hierarchy. At the full content scale this
+     card headline was the largest thing on screen, outranking the H1. */
+  font: var(--mds-type-title-1);
+  line-height: 1.02;
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-mobile-disruption-message p {
+  max-width: 620px;
+  margin: 8px 0 0;
+  color: var(--mds-label-2);
+  font: var(--mds-type-body);
+}
+
+.mds-mobile-disruption-primary {
+  grid-column: 2;
+  grid-row: 3;
+  width: fit-content;
+  min-width: 210px;
+  min-height: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  justify-self: start;
+  margin-top: 16px;
+  padding-inline: 22px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-root .mds-mobile-disruption-primary {
+  font: var(--mds-type-title-3);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-mobile-disruption-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+.mds-recovery-launch-card.is-running .mds-mobile-disruption-primary {
+  color: var(--mds-on-action);
+  background: var(--mds-action);
+}
+
+.mds-recovery-launch-card.is-running .mds-mobile-disruption-primary:disabled {
+  opacity: 1;
+}
+
+.mds-mobile-disruption-media {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+  margin: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+}
+
+.mds-mobile-disruption-media img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center 48%;
+}
+
+.mds-mobile-disruption-flight {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 14px;
+  padding-left: 18px;
+  border-left: 1px solid var(--mds-separator);
+}
+
+.mds-mobile-disruption-route {
+  display: grid;
+  grid-template-columns: auto minmax(110px, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  margin-top: 0;
+  padding: 0 0 14px;
+  border-top: 0;
+  border-bottom: 1px solid var(--mds-separator);
+}
+
+.mds-mobile-disruption-route > span:first-child,
+.mds-mobile-disruption-route > span:last-child {
+  display: grid;
+  gap: 1px;
+}
+
+.mds-mobile-disruption-route > span:last-child {
+  text-align: right;
+}
+
+.mds-mobile-disruption-route small {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-mobile-disruption-route strong {
+  color: var(--mds-label);
+  font: var(--mds-type-large-title);
+  line-height: 1;
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-mobile-disruption-route em {
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+  font-style: normal;
+}
+
+.mds-mobile-disruption-route-line {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(20px, 1fr) auto minmax(20px, 1fr);
+  align-items: center;
+  gap: 7px;
+  color: var(--mds-label-3);
+}
+
+.mds-mobile-disruption-route-line i {
+  height: 1px;
+  background: var(--mds-separator);
+}
+
+.mds-mobile-disruption-route-line i:nth-of-type(2) {
+  background: var(--mds-label-3);
+}
+
+.mds-mobile-disruption-route-line b {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 50%;
+  color: var(--mds-label-2);
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.mds-mobile-disruption-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 0;
+}
+
+.mds-mobile-disruption-status strong {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-red);
+  background: var(--mds-red-fill);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-mobile-disruption-status > span {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-recovery-launch-error {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-red);
+  background: var(--mds-red-fill);
+}
+
+.mds-recovery-launch-error > svg {
+  margin-top: 2px;
+}
+
+.mds-recovery-launch-error > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.mds-recovery-launch-error strong {
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-launch-error small {
+  overflow-wrap: anywhere;
+  color: var(--mds-red);
+  font: var(--mds-type-footnote);
+}
+
+.mds-recovery-launch-card > .mds-decision-route {
+  margin: 0;
+  padding: 12px 0 18px;
+  border-top: 1px solid var(--mds-separator);
+  border-bottom: 0;
+}
+
+.mds-recovery-launch-card > .mds-decision-route em {
+  color: var(--mds-yellow);
+}
+
+.mds-recovery-timeline-heading {
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 2px 0;
+  border-top: 1px solid var(--mds-separator);
+}
+
+.mds-recovery-timeline-heading > span {
+  color: var(--mds-label);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-timeline-heading > small {
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-recovery-launch-steps {
+  z-index: 1;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-content: center;
+  gap: 0;
+  margin: 0;
+  padding: 11px 0 8px;
+  list-style: none;
+}
+
+.mds-recovery-launch-steps li {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  /* Rows keep their content height, so a step whose description wraps does
+     not lift its title above its neighbours'. */
+  align-content: start;
+  justify-items: center;
+  gap: 8px;
+  padding: 0 7px;
+  text-align: center;
+}
+
+.mds-recovery-launch-steps li::before {
+  position: absolute;
+  top: 16px;
+  right: 50%;
+  left: -50%;
+  height: 2px;
+  content: "";
+  background: var(--mds-separator);
+}
+
+.mds-recovery-launch-steps li:first-child::before {
+  display: none;
+}
+
+.mds-recovery-launch-steps li.is-visited::before,
+.mds-recovery-launch-steps li.is-current::before {
+  background: var(--mds-green);
+}
+
+.mds-recovery-launch-steps li.is-failed::before {
+  background: var(--mds-red);
+}
+
+.mds-recovery-launch-steps li > span {
+  position: relative;
+  z-index: 1;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--mds-label-3);
+  background: var(--mds-surface);
+}
+
+.mds-recovery-launch-steps li.is-ready > span {
+  color: var(--mds-yellow);
+  background: var(--mds-yellow-fill);
+}
+
+.mds-recovery-launch-steps li.is-visited > span {
+  color: var(--mds-green);
+  background: var(--mds-green-fill);
+}
+
+.mds-recovery-launch-steps li.is-current > span {
+  color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+}
+
+.mds-recovery-step-icon {
+  display: grid;
+  place-items: center;
+}
+
+/* The one emphasis: a ring leaves the Aurora mark once, when a watched run's
+   response confirms the checkpoint. It is only rendered for that change. */
+.mds-aurora-glow {
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--mds-green);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* Working indicators, removed with the state that shows them: a ring on the
+   step in progress, and the live dot while a fresh run has no step to name. */
+@media (prefers-reduced-motion: no-preference) {
+  .mds-recovery-launch-steps li.is-current > span::after {
+    position: absolute;
+    inset: -3px;
+    content: "";
+    border: 2px solid var(--mds-blue);
+    border-radius: 50%;
+    animation: mds-pulse 1.4s ease-in-out infinite;
+  }
+
+  .mds-recovery-launch-card.is-compact.is-running .mds-recovery-timeline-heading > span::before {
+    background: var(--mds-blue);
+    animation: mds-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mds-recovery-brief-running > svg,
+  .mds-recovery-launch-card.is-running .mds-mobile-disruption-topline > em svg,
+  .mds-recovery-launch-card.is-running .mds-mobile-disruption-primary svg,
+  .mds-decision-status.is-running svg,
+  .mds-agent-proof-card li.is-running > span svg {
+    animation: none;
+  }
+}
+
+.mds-recovery-launch-steps li.is-failed > span {
+  color: var(--mds-red);
+  background: var(--mds-red-fill);
+}
+
+.mds-recovery-launch-steps li > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.mds-recovery-launch-steps strong {
+  color: var(--mds-label);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-launch-steps small {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+/* Pending steps are the plan the room is about to watch, so they stay at the
+   secondary label: the tertiary one fell under 5:1 on the step row's fill. */
+.mds-recovery-launch-steps li.is-pending strong,
+.mds-recovery-launch-steps li.is-pending small {
+  color: var(--mds-label-2);
+}
+
+.mds-recovery-launch-steps li.is-current strong {
+  color: var(--mds-blue);
+}
+
+.mds-recovery-launch-steps li.is-failed strong {
+  color: var(--mds-red);
+}
+
+.mds-recovery-launch-actions {
+  z-index: 1;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 2px;
+}
+
+.mds-recovery-launch-system .mds-recovery-launch-steps small {
+  display: none;
+}
+
+.mds-recovery-launch-actions button {
+  min-width: 196px;
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid var(--mds-action);
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-launch-card.is-running .mds-recovery-launch-actions button {
+  border-color: var(--mds-action);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
+}
+
+.mds-recovery-launch-actions > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-recovery-decision-primary,
+.mds-recovery-decision-support {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.mds-recovery-decision-support {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mds-decision-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  color: var(--mds-label);
+  font-family: var(--mds-font);
+  background: var(--mds-surface);
+}
+
+.mds-decision-card button {
+  font-family: var(--mds-font);
+}
+
+/* A button waiting on the workflow keeps its colors at a modest fade, so it never
+   reads as a different, paler style. */
+.mds-decision-card button:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
+
+.mds-decision-card-head {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 18px 0;
+}
+
+.mds-decision-card-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--mds-label);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-decision-card-kicker > svg {
+  color: var(--mds-label-2);
+}
+
+.mds-recommended-plan-card .mds-decision-card-kicker {
+  color: var(--mds-label);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-decision-status {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-decision-status.is-running {
+  color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+}
+
+.mds-decision-status.is-running svg {
+  animation: mds-recovery-spin 1s linear infinite;
+}
+
+.mds-decision-status.is-checkpointed {
+  color: var(--mds-cyan);
+  background: var(--mds-cyan-fill);
+}
+
+.mds-decision-status.is-ready {
+  color: var(--mds-green);
+  background: var(--mds-green-fill);
+}
+
+.mds-recommended-plan-card {
+  position: relative;
+}
+
+.mds-recommended-plan-media {
+  position: relative;
+  height: 168px;
+  overflow: hidden;
+  margin: 8px 18px 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+}
+
+.mds-recommended-plan-media .mds-trip-visual {
+  width: 100%;
+  height: 100%;
+}
+
+.mds-recommended-plan-media > em {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  min-height: 27px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+  font-style: normal;
+}
+
+.mds-recommended-plan-title {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 22px;
+  padding: 16px 24px 16px;
+}
+
+.mds-recommended-plan-title > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.mds-recommended-plan-title small {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recommended-plan-title strong {
+  overflow-wrap: anywhere;
+  color: var(--mds-label);
+  font: var(--mds-type-title-1);
+  line-height: 1.12;
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-recommended-plan-title p {
+  display: -webkit-box;
+  max-width: 720px;
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--mds-label-2);
+  font: var(--mds-type-body);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.mds-recommended-plan-price {
+  min-width: 90px;
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+  color: var(--mds-label-2);
+}
+
+.mds-recommended-plan-price small,
+.mds-recommended-plan-price span {
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-recommended-plan-price b {
+  color: var(--mds-label);
+  font: var(--mds-type-title-1);
+  letter-spacing: var(--mds-tracking-display);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Catalog-grounded destination and duration summary. */
+.mds-decision-route {
+  display: grid;
+  grid-template-columns: auto minmax(100px, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  margin: 0 24px;
+  padding: 2px 0 12px;
+  border-bottom: 1px solid var(--mds-separator);
+}
+
+.mds-decision-route > span:first-child,
+.mds-decision-route > span:nth-child(3) {
+  display: grid;
+  gap: 2px;
+}
+
+.mds-decision-route > span:nth-child(3) {
+  text-align: right;
+}
+
+.mds-decision-route b {
+  overflow-wrap: break-word;
+  color: var(--mds-label);
+  font: var(--mds-type-title-1);
+  line-height: 1;
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-decision-route small {
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+}
+
+.mds-decision-route em {
+  padding-left: 14px;
+  border-left: 1px solid var(--mds-separator);
+  color: var(--mds-label-2);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+  font-style: normal;
+}
+
+.mds-decision-route-line {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(12px, 1fr) auto minmax(12px, 1fr);
+  align-items: center;
+  gap: 6px;
+  color: var(--mds-label-3);
+}
+
+.mds-decision-route-line i {
+  height: 1px;
+  background: var(--mds-separator);
+}
+
+.mds-decision-route-line i:last-child {
+  background: var(--mds-label-3);
+}
+
+/* Pill chips, like the reference's "$0 change fee / seats held" row. */
+.mds-recommended-plan-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 24px 6px;
+}
+
+.mds-recommended-plan-signals > span {
+  min-width: 0;
+  min-height: 31px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 13px 5px 11px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-recommended-plan-signals > span svg {
+  flex: 0 0 auto;
+  color: var(--mds-label-3);
+}
+
+.mds-recommended-plan-signals > span.is-verified {
+  color: var(--mds-label);
+  background: var(--mds-green-fill);
+}
+
+.mds-recommended-plan-signals > span.is-verified svg {
+  color: var(--mds-green);
+}
+
+.mds-recommended-plan-empty {
+  min-height: 130px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 20px;
+  color: var(--mds-label-3);
+}
+
+.mds-recommended-plan-empty > svg {
+  flex: 0 0 auto;
+}
+
+.mds-recommended-plan-empty > span {
+  display: grid;
+  gap: 4px;
+}
+
+.mds-recommended-plan-empty strong {
+  color: var(--mds-label);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-recommended-plan-empty small {
+  max-width: 410px;
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+}
+
+.mds-decision-preference-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  margin: 0 24px;
+  padding: 13px 0;
+  border-top: 1px solid var(--mds-separator);
+}
+
+.mds-decision-preference-row > small {
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-decision-preference-row > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.mds-decision-preference-row > div > span {
+  min-height: 29px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-decision-preference-row > div > span.is-pending {
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+}
+
+.mds-recovery-context-reasons {
+  display: grid;
+  gap: 10px;
+  margin: 0 24px;
+  padding: 12px 0 14px;
+  border-top: 1px solid var(--mds-separator);
+}
+
+.mds-recovery-context-reasons > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mds-recovery-context-reasons > header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--mds-label);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-recovery-context-reasons > header svg {
+  color: var(--mds-label-3);
+}
+
+.mds-recovery-context-reasons > header em {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+  font-style: normal;
+}
+
+.mds-recovery-context-reasons ul {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mds-recovery-context-reasons li {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 7px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+}
+
+.mds-recovery-context-reasons li > svg {
+  margin-top: 1px;
+  color: var(--mds-label-3);
+}
+
+.mds-recovery-context-reasons li span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mds-recovery-context-reasons li strong {
+  color: var(--mds-label);
+  font: var(--mds-type-footnote);
+}
+
+.mds-recovery-context-reasons li small {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-decision-card-actions {
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px 20px;
+}
+
+.mds-decision-card-actions button {
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 18px;
+  border-radius: var(--mds-radius-l);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-decision-card-actions .is-primary {
+  min-width: 188px;
+  border: 0;
+  color: var(--mds-on-action);
+  background: var(--mds-action);
+}
+
+.mds-decision-card-actions .is-secondary {
+  border: 0;
+  color: var(--mds-blue);
+  background: transparent;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-decision-card-actions .is-secondary:hover:not(:disabled) {
+  border-color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+}
+
+.mds-recovery-alternatives {
+  display: grid;
+  gap: 9px;
+}
+
+.mds-recovery-alternatives-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px;
+}
+
+.mds-recovery-alternatives-head > span {
+  display: grid;
+  gap: 2px;
+}
+
+.mds-recovery-alternatives-head b {
+  color: var(--mds-label);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-recovery-alternatives-head small,
+.mds-recovery-alternatives-head em {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-style: normal;
+}
+
+.mds-recovery-alternative-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mds-flight-option-card {
+  min-height: 390px;
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+}
+
+.mds-flight-option-card > header {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 13px 14px 0;
+}
+
+/* Ranked badge reads as a pill. */
+.mds-flight-option-card > header > span {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-flight-option-card > header > small {
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+}
+
+.mds-flight-option-card-media {
+  position: relative;
+  min-height: 118px;
+  aspect-ratio: 16 / 7;
+  overflow: hidden;
+  border-top: 1px solid var(--mds-separator);
+  border-bottom: 1px solid var(--mds-separator);
+  background: var(--mds-surface-2);
+}
+
+.mds-flight-option-card-media .mds-trip-visual {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.mds-flight-option-card:hover .mds-flight-option-card-media .mds-trip-photo {
+  transform: scale(1.035);
+}
+
+.mds-flight-option-card-title {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 14px 14px 9px;
+}
+
+.mds-flight-option-card-title strong {
+  display: -webkit-box;
+  min-height: 36px;
+  overflow: hidden;
+  color: var(--mds-label);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  letter-spacing: var(--mds-tracking-title);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.mds-flight-option-card-title span {
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+}
+
+.mds-decision-route.is-compact {
+  grid-template-columns: auto minmax(24px, 1fr) auto;
+  gap: 6px;
+  margin: 0 14px;
+  padding: 2px 0 10px;
+}
+
+.mds-decision-route.is-compact b {
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1;
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-decision-route.is-compact > span:nth-child(3) b {
+  white-space: nowrap;
+}
+
+.mds-decision-route.is-compact em {
+  grid-column: 1 / -1;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--mds-separator);
+  border-left: 0;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  color: var(--mds-label-2);
+  text-align: center;
+}
+
+.mds-flight-option-card dl {
+  display: grid;
+  grid-template-columns: 0.65fr 1.35fr;
+  margin: 0;
+  padding: 11px 14px;
+}
+
+.mds-flight-option-card dl > div {
+  min-width: 0;
+}
+
+.mds-flight-option-card dt,
+.mds-flight-option-card dd {
+  margin: 0;
+}
+
+.mds-flight-option-card dt {
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+}
+
+.mds-flight-option-card dd {
+  margin-top: 4px;
+  overflow-wrap: break-word;
+  color: var(--mds-label);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.mds-flight-option-card-empty {
+  grid-row: 2 / 6;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 6px;
+  padding: 18px;
+  color: var(--mds-label-3);
+  text-align: center;
+}
+
+.mds-flight-option-card-empty strong {
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-flight-option-card-empty span {
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+}
+
+.mds-flight-option-card > footer {
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--mds-separator);
+}
+
+.mds-flight-option-card > footer button {
+  min-height: 40px;
+  border-radius: var(--mds-radius-m);
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.mds-flight-option-card > footer .is-primary {
+  border: 1px solid var(--mds-control-line);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-flight-option-card > footer .is-primary:hover:not(:disabled) {
+  border-color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+}
+
+.mds-flight-option-card > footer .is-icon {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--mds-control-line);
+  color: var(--mds-label-2);
+  background: transparent;
+}
+
+.mds-concierge-assistance-card,
+.mds-agent-proof-card {
+  min-height: 238px;
+}
+
+.mds-concierge-assistance-card {
+  min-height: 264px;
+}
+
+.mds-concierge-assistance-card > p {
+  margin: 0;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-concierge-assistance-card > p {
+  padding: 8px 14px;
+}
+
+.mds-concierge-assistance-card
+  > .mds-decision-card-head
+  > svg {
+  color: var(--mds-label-2);
+}
+
+.mds-concierge-hotel-media {
+  position: relative;
+  min-height: 134px;
+  overflow: hidden;
+  margin: 8px 14px 0;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+}
+
+.mds-concierge-hotel-media > img,
+.mds-concierge-hotel-media-shade {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.mds-concierge-hotel-media > img {
+  object-fit: cover;
+  object-position: center 58%;
+}
+
+.mds-concierge-hotel-media-shade {
+  background:
+    var(--mds-image-scrim);
+}
+
+.mds-concierge-hotel-media > em {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+  font-style: normal;
+}
+
+.mds-concierge-hotel-media > div {
+  position: absolute;
+  right: 13px;
+  bottom: 12px;
+  left: 13px;
+  display: grid;
+  gap: 3px;
+}
+
+.mds-concierge-hotel-media > div small {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-concierge-hotel-media > div strong {
+  color: var(--mds-label);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1.12;
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-concierge-hotel-media > div span {
+  overflow: hidden;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mds-concierge-context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 16px 0;
+}
+
+.mds-concierge-context-chips > span {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-concierge-assistance-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 10px 16px 16px;
+}
+
+.mds-concierge-assistance-actions button {
+  min-height: 42px;
+  border: 1px solid var(--mds-blue);
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-label);
+  background: var(--mds-blue-fill);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-concierge-assistance-actions button.is-primary {
+  border-color: var(--mds-action);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
+}
+
+.mds-agent-proof-card > .mds-decision-card-head > small {
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+}
+
+.mds-agent-proof-card ul {
+  display: grid;
+  margin: 0;
+  padding: 8px 14px 3px;
+  list-style: none;
+}
+
+.mds-agent-proof-card li {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  border-top: 1px solid var(--mds-separator);
+}
+
+.mds-agent-proof-card li:first-child {
+  border-top: 0;
+}
+
+.mds-agent-proof-card li > span {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--mds-label-3);
+  background: var(--mds-surface-2);
+}
+
+.mds-agent-proof-card li.is-running > span {
+  color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+}
+
+.mds-agent-proof-card li.is-running > span svg {
+  animation: mds-recovery-spin 1s linear infinite;
+}
+
+.mds-agent-proof-card li.is-done > span {
+  color: var(--mds-green);
+  background: var(--mds-green-fill);
+}
+
+.mds-agent-proof-card li > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mds-agent-proof-card li strong {
+  color: var(--mds-label);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-agent-proof-card li small {
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+}
+
+/* Quiet text link, like the reference's "View system proof >". */
+.mds-agent-proof-card > button {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  margin: 2px 6px 8px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-blue);
+  background: transparent;
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-agent-proof-card > button:hover:not(:disabled) {
+  background: var(--mds-blue-fill);
+}
+
+@media (min-width: 1101px) {
+  .mds-recovery-decision-system {
+    grid-template-columns: minmax(0, 1.75fr) minmax(350px, 0.72fr);
+    align-items: start;
+  }
+
+  .mds-recovery-decision-support {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The command layout otherwise leaves the alternatives grid squeezed into
+     the primary column's 1.75fr share, which breaks words mid-word between
+     1280 and 1440px. Give the alternatives their own full-width row instead,
+     matching the journey and audience layouts. The audience-layout exclusion
+     is required: below a 1100px container the projector preset keeps a
+     one-column grid, and these areas would otherwise collapse it. */
+  .mds-root:not([data-audience-layout='true']) .mds-recovery-workspace.is-layout-command
+    .mds-recovery-decision-system {
+    grid-template-areas: "plan support" "alternatives alternatives";
+  }
+  .mds-root:not([data-audience-layout='true']) .mds-recovery-workspace.is-layout-command
+    .mds-recovery-decision-primary { display: contents; }
+  .mds-root:not([data-audience-layout='true']) .mds-recovery-workspace.is-layout-command
+    .mds-recommended-plan-card { grid-area: plan; }
+  .mds-root:not([data-audience-layout='true']) .mds-recovery-workspace.is-layout-command
+    .mds-recovery-decision-support { grid-area: support; }
+  .mds-root:not([data-audience-layout='true']) .mds-recovery-workspace.is-layout-command
+    .mds-recovery-alternatives { grid-area: alternatives; }
+
+  .mds-recovery-workspace.is-layout-focus .mds-recovery-decision-system {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mds-recovery-workspace.is-layout-focus .mds-recovery-decision-support {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .mds-recovery-workspace.is-layout-focus
+    :is(
+      .mds-concierge-assistance-card,
+      .mds-agent-proof-card,
+      .mds-checkpointed-plan-card
+    ) {
+    min-height: 232px;
+  }
+
+  .mds-recovery-workspace.is-layout-journey .mds-recovery-decision-system {
+    grid-template-columns: minmax(0, 1.55fr) minmax(340px, 0.65fr);
+    grid-template-areas:
+      "plan concierge"
+      "alternatives alternatives"
+      "proof checkpoint";
+    align-items: stretch;
+  }
+
+  .mds-recovery-workspace.is-layout-journey
+    :is(.mds-recovery-decision-primary, .mds-recovery-decision-support) {
+    display: contents;
+  }
+
+  .mds-recovery-workspace.is-layout-journey .mds-recommended-plan-card {
+    grid-area: plan;
+  }
+
+  .mds-recovery-workspace.is-layout-journey .mds-recovery-alternatives {
+    grid-area: alternatives;
+  }
+
+  .mds-recovery-workspace.is-layout-journey .mds-concierge-assistance-card {
+    grid-area: concierge;
+  }
+
+  .mds-recovery-workspace.is-layout-journey .mds-agent-proof-card {
+    grid-area: proof;
+  }
+}
+
+@media (max-width: 1100px) {
+  .mds-recovery-launch-system {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mds-recovery-decision-support {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1500px) {
+  .mds-mobile-disruption-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+  }
+
+  .mds-mobile-disruption-flight {
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(300px, 1fr) minmax(250px, 0.7fr) auto;
+    align-items: center;
+    padding: 14px 0 0;
+    border-top: 1px solid var(--mds-separator);
+    border-left: 0;
+  }
+
+  .mds-mobile-disruption-flight .mds-mobile-disruption-route {
+    padding: 0 14px 0 0;
+    border-right: 1px solid var(--mds-separator);
+    border-bottom: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .mds-mobile-disruption-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mds-mobile-disruption-media {
+    min-height: 160px;
+    max-height: 260px;
+    aspect-ratio: 16 / 7;
+  }
+
+  .mds-mobile-disruption-flight {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px 0 0;
+    border-top: 1px solid var(--mds-separator);
+    border-left: 0;
+  }
+
+  .mds-mobile-disruption-flight .mds-mobile-disruption-route {
+    padding: 0 0 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--mds-separator);
+  }
+
+  .mds-recovery-launch-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mds-recovery-alternative-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mds-recovery-decision-support {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .mds-recovery-launch-card {
+    min-height: 0;
+    padding-inline: 18px;
+  }
+
+  .mds-mobile-disruption-message {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .mds-mobile-disruption-message > span {
+    width: 40px;
+    height: 40px;
+  }
+
+  .mds-mobile-disruption-route {
+    gap: 10px;
+  }
+
+  .mds-mobile-disruption-route strong {
+    font: var(--mds-type-title-1);
+    line-height: 1;
+    letter-spacing: var(--mds-tracking-display);
+  }
+
+  .mds-mobile-disruption-status {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mds-mobile-disruption-primary {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .mds-recovery-launch-steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mds-recovery-launch-actions {
+    align-items: stretch;
+    flex-direction: column;
+    padding-block: 15px;
+  }
+
+  .mds-recovery-launch-actions button {
+    min-width: 0;
+  }
+
+  .mds-recommended-plan-title {
+    grid-template-columns: minmax(0, 1fr);
+    padding-inline: 17px;
+  }
+
+  .mds-recommended-plan-price {
+    justify-items: start;
+  }
+
+  .mds-decision-route {
+    grid-template-columns: auto minmax(40px, 1fr) auto;
+  }
+
+  .mds-recommended-plan-card > .mds-decision-route,
+  .mds-decision-preference-row {
+    margin-inline: 17px;
+  }
+
+  .mds-recommended-plan-signals {
+    padding-inline: 17px;
+  }
+
+  .mds-decision-card-actions {
+    padding-inline: 17px;
+  }
+
+  .mds-decision-route > em {
+    grid-column: 1 / -1;
+    padding: 9px 0 0;
+    border-top: 1px solid var(--mds-separator);
+    border-left: 0;
+    text-align: center;
+  }
+
+  .mds-recommended-plan-signals,
+  .mds-recovery-alternative-grid,
+  .mds-recovery-decision-support {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mds-decision-preference-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mds-decision-card-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mds-decision-card-actions .is-primary {
+    min-width: 0;
+  }
+}
+
+/* Bring it home: the held package goes back to the concierge for the traveler's confirmation. */
+.mds-recovery-handoff { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 18px; padding:16px 18px; border:0; border-radius:var(--mds-radius-m); background:var(--mds-surface); }
+.mds-recovery-handoff > div { display:grid; gap:4px; min-width:0; flex:1 1 320px; }
+.mds-recovery-handoff strong { font: var(--mds-type-title-3); font-weight: var(--mds-weight-bold); letter-spacing: var(--mds-tracking-title); color:var(--mds-label); }
+.mds-recovery-handoff span { color:var(--mds-label-2); font: var(--mds-type-body); }

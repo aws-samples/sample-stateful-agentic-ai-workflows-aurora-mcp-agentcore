@@ -1,0 +1,966 @@
+{
+  "availability_by_id": {
+    "activities": [
+      {
+        "activity_type": "reasoning",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Supervisor routing availability request to specialist agent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Delegating to PackageAgent"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Loading ranked package PKG-TYO-1",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Finding package"
+      },
+      {
+        "activity_type": "availability",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Package: Tokyo Executive Stopover",
+        "sql_query": "SELECT availability, durations FROM trip_packages WHERE package_id = ?",
+        "telemetry": null,
+        "title": "PackageAgent: Checking duration inventory"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Total: 3 package places across available durations",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Duration inventory verified"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Availability check complete for Tokyo Executive Stopover",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent returned to Supervisor"
+      }
+    ],
+    "calls": [
+      {
+        "params": [
+          "PKG-TYO-1"
+        ],
+        "sql": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, availability, highlights FROM trip_packages WHERE package_id = %s LIMIT 1"
+      }
+    ],
+    "message": "**Tokyo Executive Stopover** has 3 package places across these trip lengths: 2 nights, 4 nights.",
+    "products": [
+      {
+        "availability": {
+          "2 nights": 3,
+          "4 nights": 0
+        },
+        "available_sizes": [
+          "2 nights",
+          "4 nights"
+        ],
+        "brand": "JAL Premium",
+        "category": "city",
+        "description": "Marunouchi business hotel",
+        "destination": "Tokyo",
+        "highlights": [
+          "Haneda lounge"
+        ],
+        "image_url": "https://example.test/tokyo.jpg",
+        "name": "Tokyo Executive Stopover",
+        "pre_rerank_position": null,
+        "pre_rerank_similarity": null,
+        "price": 1949.0,
+        "product_id": "PKG-TYO-1",
+        "rank_delta": null,
+        "region": "Asia",
+        "similarity": 0.91
+      }
+    ]
+  },
+  "availability_by_name": {
+    "activities": [
+      {
+        "activity_type": "reasoning",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Supervisor routing availability request to specialist agent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Delegating to PackageAgent"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Searching for mentioned trip package",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Finding package"
+      },
+      {
+        "activity_type": "availability",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Package: Tokyo Executive Stopover",
+        "sql_query": "SELECT availability, durations FROM trip_packages WHERE package_id = ?",
+        "telemetry": null,
+        "title": "PackageAgent: Checking duration inventory"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Total: 3 package places across available durations",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Duration inventory verified"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Availability check complete for Tokyo Executive Stopover",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent returned to Supervisor"
+      }
+    ],
+    "calls": [
+      {
+        "params": [
+          "%tokyo%",
+          "%tokyo%",
+          "%executive%",
+          "%executive%",
+          "%stopover%",
+          "%stopover%"
+        ],
+        "sql": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, availability, highlights FROM trip_packages WHERE (LOWER(name) LIKE %s OR LOWER(operator) LIKE %s) OR (LOWER(name) LIKE %s OR LOWER(operator) LIKE %s) OR (LOWER(name) LIKE %s OR LOWER(operator) LIKE %s)"
+      }
+    ],
+    "message": "**Tokyo Executive Stopover** has 3 package places across these trip lengths: 2 nights, 4 nights.",
+    "products": [
+      {
+        "availability": {
+          "2 nights": 3,
+          "4 nights": 0
+        },
+        "available_sizes": [
+          "2 nights",
+          "4 nights"
+        ],
+        "brand": "JAL Premium",
+        "category": "city",
+        "description": "Marunouchi business hotel",
+        "destination": "Tokyo",
+        "highlights": [
+          "Haneda lounge"
+        ],
+        "image_url": "https://example.test/tokyo.jpg",
+        "name": "Tokyo Executive Stopover",
+        "pre_rerank_position": null,
+        "pre_rerank_similarity": null,
+        "price": 1949.0,
+        "product_id": "PKG-TYO-1",
+        "rank_delta": null,
+        "region": "Asia",
+        "similarity": 0.91
+      }
+    ]
+  },
+  "availability_no_durations": {
+    "activities": [
+      {
+        "activity_type": "reasoning",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Supervisor routing availability request to specialist agent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Delegating to PackageAgent"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Loading ranked package PKG-TYO-1",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Finding package"
+      },
+      {
+        "activity_type": "availability",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Package: Tokyo Executive Stopover",
+        "sql_query": "SELECT availability, durations FROM trip_packages WHERE package_id = ?",
+        "telemetry": null,
+        "title": "PackageAgent: Checking duration inventory"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Total: 3 package places across available durations",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Duration inventory verified"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Availability check complete for Tokyo Executive Stopover",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent returned to Supervisor"
+      }
+    ],
+    "calls": [
+      {
+        "params": [
+          "PKG-TYO-1"
+        ],
+        "sql": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, availability, highlights FROM trip_packages WHERE package_id = %s LIMIT 1"
+      }
+    ],
+    "message": "**Tokyo Executive Stopover** has 3 package places available.",
+    "products": [
+      {
+        "availability": {
+          "2 nights": 3,
+          "4 nights": 0
+        },
+        "available_sizes": [],
+        "brand": "JAL Premium",
+        "category": "city",
+        "description": "Marunouchi business hotel",
+        "destination": "Tokyo",
+        "highlights": [
+          "Haneda lounge"
+        ],
+        "image_url": "https://example.test/tokyo.jpg",
+        "name": "Tokyo Executive Stopover",
+        "pre_rerank_position": null,
+        "pre_rerank_similarity": null,
+        "price": 1949.0,
+        "product_id": "PKG-TYO-1",
+        "rank_delta": null,
+        "region": "Asia",
+        "similarity": 0.91
+      }
+    ]
+  },
+  "availability_no_terms": {
+    "activities": [
+      {
+        "activity_type": "reasoning",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Supervisor routing availability request to specialist agent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Delegating to PackageAgent"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Searching for mentioned trip package",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Finding package"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": null,
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Package not found"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "No matching package found",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent returned to Supervisor"
+      }
+    ],
+    "calls": [],
+    "message": "I couldn't find that trip package. Try searching by destination, operator, or trip type.",
+    "products": []
+  },
+  "availability_not_found_by_id": {
+    "activities": [
+      {
+        "activity_type": "reasoning",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Supervisor routing availability request to specialist agent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Delegating to PackageAgent"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Loading ranked package MISSING",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Finding package"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": null,
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Package not found"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "No matching package found",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent returned to Supervisor"
+      }
+    ],
+    "calls": [
+      {
+        "params": [
+          "MISSING"
+        ],
+        "sql": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, availability, highlights FROM trip_packages WHERE package_id = %s LIMIT 1"
+      }
+    ],
+    "message": "I couldn't find that trip package. Try searching by destination, operator, or trip type.",
+    "products": []
+  },
+  "availability_not_found_by_name": {
+    "activities": [
+      {
+        "activity_type": "reasoning",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Supervisor routing availability request to specialist agent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Delegating to PackageAgent"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Searching for mentioned trip package",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Finding package"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": null,
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Package not found"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "No matching package found",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent returned to Supervisor"
+      }
+    ],
+    "calls": [
+      {
+        "params": [
+          "%atlantis%",
+          "%atlantis%",
+          "%deluxe%",
+          "%deluxe%"
+        ],
+        "sql": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, availability, highlights FROM trip_packages WHERE (LOWER(name) LIKE %s OR LOWER(operator) LIKE %s) OR (LOWER(name) LIKE %s OR LOWER(operator) LIKE %s)"
+      }
+    ],
+    "message": "I couldn't find that trip package. Try searching by destination, operator, or trip type.",
+    "products": []
+  },
+  "availability_quantity": {
+    "activities": [
+      {
+        "activity_type": "reasoning",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Supervisor routing availability request to specialist agent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Delegating to PackageAgent"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Loading ranked package PKG-TYO-1",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Finding package"
+      },
+      {
+        "activity_type": "availability",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Package: Tokyo Executive Stopover",
+        "sql_query": "SELECT availability, durations FROM trip_packages WHERE package_id = ?",
+        "telemetry": null,
+        "title": "PackageAgent: Checking duration inventory"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Total: 7 package places across available durations",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Duration inventory verified"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Availability check complete for Tokyo Executive Stopover",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent returned to Supervisor"
+      }
+    ],
+    "calls": [
+      {
+        "params": [
+          "PKG-TYO-1"
+        ],
+        "sql": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, availability, highlights FROM trip_packages WHERE package_id = %s LIMIT 1"
+      }
+    ],
+    "message": "**Tokyo Executive Stopover** has 7 package places available.",
+    "products": [
+      {
+        "availability": {
+          "quantity": 7
+        },
+        "available_sizes": [],
+        "brand": "JAL Premium",
+        "category": "city",
+        "description": "Marunouchi business hotel",
+        "destination": "Tokyo",
+        "highlights": [
+          "Haneda lounge"
+        ],
+        "image_url": "https://example.test/tokyo.jpg",
+        "name": "Tokyo Executive Stopover",
+        "pre_rerank_position": null,
+        "pre_rerank_similarity": null,
+        "price": 1949.0,
+        "product_id": "PKG-TYO-1",
+        "rank_delta": null,
+        "region": "Asia",
+        "similarity": 0.91
+      }
+    ]
+  },
+  "availability_sold_out": {
+    "activities": [
+      {
+        "activity_type": "reasoning",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Supervisor routing availability request to specialist agent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Delegating to PackageAgent"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Loading ranked package PKG-TYO-1",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Finding package"
+      },
+      {
+        "activity_type": "availability",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Package: Tokyo Executive Stopover",
+        "sql_query": "SELECT availability, durations FROM trip_packages WHERE package_id = ?",
+        "telemetry": null,
+        "title": "PackageAgent: Checking duration inventory"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/package_agent.py",
+        "agent_name": "PackageAgent",
+        "details": "Total: 0 package places across available durations",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent: Duration inventory verified"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Availability check complete for Tokyo Executive Stopover",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "PackageAgent returned to Supervisor"
+      }
+    ],
+    "calls": [
+      {
+        "params": [
+          "PKG-TYO-1"
+        ],
+        "sql": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, availability, highlights FROM trip_packages WHERE package_id = %s LIMIT 1"
+      }
+    ],
+    "message": "**Tokyo Executive Stopover** is currently sold out. Would you like similar alternatives?",
+    "products": [
+      {
+        "availability": {
+          "2 nights": 0,
+          "4 nights": 0
+        },
+        "available_sizes": [
+          "2 nights",
+          "4 nights"
+        ],
+        "brand": "JAL Premium",
+        "category": "city",
+        "description": "Marunouchi business hotel",
+        "destination": "Tokyo",
+        "highlights": [
+          "Haneda lounge"
+        ],
+        "image_url": "https://example.test/tokyo.jpg",
+        "name": "Tokyo Executive Stopover",
+        "pre_rerank_position": null,
+        "pre_rerank_similarity": null,
+        "price": 1949.0,
+        "product_id": "PKG-TYO-1",
+        "rank_delta": null,
+        "region": "Asia",
+        "similarity": 0.91
+      }
+    ]
+  },
+  "hybrid_price_filter": {
+    "activities": [
+      {
+        "activity_type": "reasoning",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Supervisor routing search request to specialized agent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Delegating to SearchAgent"
+      },
+      {
+        "activity_type": "embedding",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": "Cohere Embed v4 Embeddings (1024d)",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Generating query embedding"
+      },
+      {
+        "activity_type": "embedding",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": null,
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Embedding generated"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": "pgvector cosine + tsvector/ts_rank",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Hybrid candidate retrieval"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": "1 unique candidates (semantic=0, lexical=1)",
+        "sql_query": "SELECT * FROM semantic_trip_search(query_vector, candidate_limit); SELECT ... ts_rank(search_vector, websearch_to_tsquery(...)) ...",
+        "telemetry": null,
+        "title": "Hybrid candidates fetched"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": "Reranked to top 1 trips",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Cohere rerank applied"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Returning ranked trips to RetrievalAgent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "SearchAgent returned 1 results"
+      }
+    ],
+    "calls": [
+      {
+        "params": [
+          "[0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25]",
+          25
+        ],
+        "sql": "SELECT * FROM semantic_trip_search(%s::vector, %s::integer)"
+      },
+      {
+        "params": [
+          "Tokyo city trips under $1900",
+          1900.0,
+          25
+        ],
+        "sql": "WITH q AS ( SELECT replace( websearch_to_tsquery('english', %s)::text, '&', '|' )::tsquery AS tsq ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq AND price_per_person <= %s ORDER BY lexical_score DESC LIMIT %s"
+      }
+    ],
+    "message": null,
+    "products": [
+      {
+        "availability": {
+          "2 nights": 3,
+          "4 nights": 0
+        },
+        "available_sizes": [
+          "2 nights",
+          "4 nights"
+        ],
+        "brand": "JAL Premium",
+        "category": "city",
+        "description": "Marunouchi business hotel",
+        "destination": "Tokyo",
+        "highlights": [
+          "Haneda lounge"
+        ],
+        "image_url": "https://example.test/tokyo.jpg",
+        "name": "Kyoto Rail Extension",
+        "pre_rerank_position": null,
+        "pre_rerank_similarity": null,
+        "price": 1949.0,
+        "product_id": "PKG-TYO-2",
+        "rank_delta": null,
+        "region": "Asia",
+        "similarity": 0.84
+      }
+    ]
+  },
+  "hybrid_ranked": {
+    "activities": [
+      {
+        "activity_type": "reasoning",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Supervisor routing search request to specialized agent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Delegating to SearchAgent"
+      },
+      {
+        "activity_type": "embedding",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": "Cohere Embed v4 Embeddings (1024d)",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Generating query embedding"
+      },
+      {
+        "activity_type": "embedding",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": null,
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Embedding generated"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": "pgvector cosine + tsvector/ts_rank",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Hybrid candidate retrieval"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": "2 unique candidates (semantic=2, lexical=1)",
+        "sql_query": "SELECT * FROM semantic_trip_search(query_vector, candidate_limit); SELECT ... ts_rank(search_vector, websearch_to_tsquery(...)) ...",
+        "telemetry": null,
+        "title": "Hybrid candidates fetched"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": "Reranked to top 2 trips",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Cohere rerank applied"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Returning ranked trips to RetrievalAgent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "SearchAgent returned 2 results"
+      }
+    ],
+    "calls": [
+      {
+        "params": [
+          "[0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25]",
+          25
+        ],
+        "sql": "SELECT * FROM semantic_trip_search(%s::vector, %s::integer)"
+      },
+      {
+        "params": [
+          "Tokyo city trips under $2000",
+          2000.0,
+          25
+        ],
+        "sql": "WITH q AS ( SELECT replace( websearch_to_tsquery('english', %s)::text, '&', '|' )::tsquery AS tsq ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq AND price_per_person <= %s ORDER BY lexical_score DESC LIMIT %s"
+      }
+    ],
+    "message": null,
+    "products": [
+      {
+        "availability": {
+          "2 nights": 3,
+          "4 nights": 0
+        },
+        "available_sizes": [
+          "2 nights",
+          "4 nights"
+        ],
+        "brand": "JAL Premium",
+        "category": "city",
+        "description": "Marunouchi business hotel",
+        "destination": "Tokyo",
+        "highlights": [
+          "Haneda lounge"
+        ],
+        "image_url": "https://example.test/tokyo.jpg",
+        "name": "Kyoto Rail Extension",
+        "pre_rerank_position": null,
+        "pre_rerank_similarity": null,
+        "price": 1949.0,
+        "product_id": "PKG-TYO-2",
+        "rank_delta": null,
+        "region": "Asia",
+        "similarity": 0.84
+      },
+      {
+        "availability": {
+          "2 nights": 3,
+          "4 nights": 0
+        },
+        "available_sizes": [
+          "2 nights",
+          "4 nights"
+        ],
+        "brand": "JAL Premium",
+        "category": "city",
+        "description": "Marunouchi business hotel",
+        "destination": "Tokyo",
+        "highlights": [
+          "Haneda lounge"
+        ],
+        "image_url": "https://example.test/tokyo.jpg",
+        "name": "Tokyo Executive Stopover",
+        "pre_rerank_position": null,
+        "pre_rerank_similarity": null,
+        "price": 1949.0,
+        "product_id": "PKG-TYO-1",
+        "rank_delta": null,
+        "region": "Asia",
+        "similarity": 0.91
+      }
+    ]
+  },
+  "hybrid_rerank_down": {
+    "activities": [
+      {
+        "activity_type": "reasoning",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Supervisor routing search request to specialized agent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Delegating to SearchAgent"
+      },
+      {
+        "activity_type": "embedding",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": "Cohere Embed v4 Embeddings (1024d)",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Generating query embedding"
+      },
+      {
+        "activity_type": "embedding",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": null,
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Embedding generated"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": "pgvector cosine + tsvector/ts_rank",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Hybrid candidate retrieval"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": "2 unique candidates (semantic=2, lexical=1)",
+        "sql_query": "SELECT * FROM semantic_trip_search(query_vector, candidate_limit); SELECT ... ts_rank(search_vector, websearch_to_tsquery(...)) ...",
+        "telemetry": null,
+        "title": "Hybrid candidates fetched"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "agents/phase_03_retrieval/search_agent.py",
+        "agent_name": "SearchAgent",
+        "details": "Falling back to semantic rank order",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Cohere rerank unavailable"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "agents/phase_03_retrieval/supervisor.py",
+        "agent_name": "RetrievalAgent",
+        "details": "Returning ranked trips to RetrievalAgent",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "SearchAgent returned 2 results"
+      }
+    ],
+    "calls": [
+      {
+        "params": [
+          "[0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25]",
+          25
+        ],
+        "sql": "SELECT * FROM semantic_trip_search(%s::vector, %s::integer)"
+      },
+      {
+        "params": [
+          "Kyoto rail",
+          25
+        ],
+        "sql": "WITH q AS ( SELECT replace( websearch_to_tsquery('english', %s)::text, '&', '|' )::tsquery AS tsq ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq ORDER BY lexical_score DESC LIMIT %s"
+      }
+    ],
+    "message": null,
+    "products": [
+      {
+        "availability": {
+          "2 nights": 3,
+          "4 nights": 0
+        },
+        "available_sizes": [
+          "2 nights",
+          "4 nights"
+        ],
+        "brand": "JAL Premium",
+        "category": "city",
+        "description": "Marunouchi business hotel",
+        "destination": "Tokyo",
+        "highlights": [
+          "Haneda lounge"
+        ],
+        "image_url": "https://example.test/tokyo.jpg",
+        "name": "Tokyo Executive Stopover",
+        "pre_rerank_position": null,
+        "pre_rerank_similarity": null,
+        "price": 1949.0,
+        "product_id": "PKG-TYO-1",
+        "rank_delta": null,
+        "region": "Asia",
+        "similarity": 0.91
+      },
+      {
+        "availability": {
+          "2 nights": 3,
+          "4 nights": 0
+        },
+        "available_sizes": [
+          "2 nights",
+          "4 nights"
+        ],
+        "brand": "JAL Premium",
+        "category": "city",
+        "description": "Marunouchi business hotel",
+        "destination": "Tokyo",
+        "highlights": [
+          "Haneda lounge"
+        ],
+        "image_url": "https://example.test/tokyo.jpg",
+        "name": "Kyoto Rail Extension",
+        "pre_rerank_position": null,
+        "pre_rerank_similarity": null,
+        "price": 1949.0,
+        "product_id": "PKG-TYO-2",
+        "rank_delta": null,
+        "region": "Asia",
+        "similarity": 0.84
+      }
+    ]
+  }
+}

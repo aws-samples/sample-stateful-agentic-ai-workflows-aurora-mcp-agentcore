@@ -1,0 +1,160 @@
+@import './preflight.css';
+@import './showcase/tokens.css';
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+/* Document ground and default ink. The showcase mirrors its theme onto
+   <html data-theme>, so these flip with the app instead of leaving a dark
+   page behind a light UI. */
+html {
+  background: var(--mds-ground);
+}
+
+body {
+  margin: 0;
+  background: var(--mds-ground);
+  color: var(--mds-label);
+  font-family: var(--mds-font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  color: var(--mds-ground);
+  background: var(--mds-blue);
+}
+
+.route-skeleton {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  color: var(--mds-label);
+  background: var(--mds-ground);
+}
+
+.route-skeleton-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 22px 18px;
+  border-right: 1px solid var(--mds-separator);
+  background: var(--mds-ground);
+}
+
+.route-skeleton i,
+.route-skeleton-toolbar,
+.route-skeleton-copy i {
+  display: block;
+  overflow: hidden;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-skeleton);
+}
+
+.route-skeleton-sidebar > i {
+  width: 72%;
+  height: 38px;
+}
+
+.route-skeleton-sidebar > .route-skeleton-brand {
+  width: 86%;
+  height: 48px;
+  margin-bottom: 16px;
+}
+
+.route-skeleton-main {
+  padding: 24px clamp(20px, 4vw, 64px);
+}
+
+.route-skeleton-toolbar {
+  width: 148px;
+  height: 32px;
+  margin-left: auto;
+}
+
+.route-skeleton-copy {
+  display: grid;
+  gap: 12px;
+  margin: 72px 0 28px;
+}
+
+.route-skeleton-copy i:first-child {
+  width: min(560px, 72%);
+  height: 36px;
+}
+
+.route-skeleton-copy i:last-child {
+  width: min(390px, 58%);
+  height: 16px;
+}
+
+.route-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.route-skeleton-grid i {
+  min-height: 260px;
+  border: 0;
+}
+
+.route-skeleton-grid .is-featured {
+  grid-column: 1 / -1;
+  min-height: 330px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .route-skeleton i,
+  .route-skeleton-toolbar,
+  .route-skeleton-copy i {
+    background: var(--mds-skeleton-sweep);
+    background-size: 220% 100%;
+    animation: route-skeleton-shimmer 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes route-skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -120% 0; }
+}
+
+@media (max-width: 720px) {
+  .route-skeleton {
+    grid-template-columns: 1fr;
+  }
+
+  .route-skeleton-sidebar {
+    display: none;
+  }
+
+  .route-skeleton-main {
+    padding: 18px 16px;
+  }
+
+  .route-skeleton-copy {
+    margin-top: 52px;
+  }
+
+  .route-skeleton-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .route-skeleton-grid .is-featured {
+    grid-column: auto;
+  }
+}

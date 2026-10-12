@@ -1,0 +1,657 @@
+import type { ReactNode } from 'react';
+import { Component, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
+import {
+  ArrowRight,
+  BedDouble,
+  BusFront,
+  ChevronDown,
+  Headphones,
+  List,
+  Loader2,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { Message, Product } from '../../types';
+import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import { rehypeMemoryHighlight } from '../lib/memoryHighlight';
+import { useStreamingText } from '../hooks/useStreamingText';
+import { RankDeltaBadge } from './RankDeltaBadge';
+import { TripResultCardContent } from './TripResultCardContent';
+import { resultRankLabel } from '../lib/resultRankLabel';
+import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
+import { ConciergeBell } from '../icons/TravelIcons';
+
+// Keep a malformed markdown response from taking down the transcript.
+class MarkdownBoundary extends Component<
+  { children: ReactNode; fallback: ReactNode },
+  { error: boolean }
+> {
+  state = { error: false };
+  static getDerivedStateFromError() {
+    return { error: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.warn('[ChatTranscript] markdown render failed', error);
+  }
+  render() {
+    return this.state.error ? this.props.fallback : this.props.children;
+  }
+}
+
+// Keep rendering bounded during long stage walkthroughs.
+const VISIBLE_TURN_LIMIT = 24;
+
+function findScrollParent(node: HTMLElement | null): HTMLElement | null {
+  let cur: HTMLElement | null = node?.parentElement ?? null;
+  while (cur) {
+    const style = window.getComputedStyle(cur);
+    const oy = style.overflowY;
+    if (oy === 'auto' || oy === 'scroll') {
+      return cur;
+    }
+    cur = cur.parentElement;
+  }
+  return null;
+}
+
+export function ChatTranscript({
+  state,
+  compact = false,
+  proofMode = false,
+}: {
+  state: MeridianShowcaseState;
+  compact?: boolean;
+  proofMode?: boolean;
+}) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const visibleMessages = compact
+    ? state.messages.slice(-3)
+    : state.messages.slice(-VISIBLE_TURN_LIMIT);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLElement | null>(null);
+  const followLatestRef = useRef(true);
+
+  // Record the reader's intent before a streamed reply or result cards grow.
+  // Measuring only after growth mistakes a pinned reader for someone in history.
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const scroller = findScrollParent(container);
+    scrollerRef.current = scroller;
+    if (!scroller) return;
+    let frame = 0;
+    const trackPosition = () => {
+      followLatestRef.current = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 96;
+    };
+    const followGrowth = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (followLatestRef.current) scroller.scrollTop = scroller.scrollHeight;
+      });
+    };
+    scroller.addEventListener('scroll', trackPosition, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(followGrowth);
+    observer?.observe(container);
+    followGrowth();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      scroller.removeEventListener('scroll', trackPosition);
+    };
+  }, []);
+
+  const latestMessage = visibleMessages[visibleMessages.length - 1];
+  useLayoutEffect(() => {
+    if (latestMessage?.role !== 'user') return;
+    followLatestRef.current = true;
+    const scroller = scrollerRef.current;
+    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+  }, [latestMessage]);
+
+  return (
+    <div ref={containerRef} className={`mds-chat-transcript${compact ? ' is-compact' : ''}`} aria-live="polite">
+      {visibleMessages.length === 0 && !state.isLoading ? (
+        <div className="mds-empty-state">
+          <div className="mds-empty-title">Ask me about your next trip.</div>
+          <div className="mds-empty-sub">
+            {proofMode
+              ? 'Run a phase prompt below to generate live system evidence.'
+              : 'I’ll search live availability and use your saved travel preferences.'}
+          </div>
+        </div>
+      ) : (
+        visibleMessages.map((message, index) => (
+          <ChatMessage
+            key={`${message.role}-${index}`}
+            message={message}
+            state={state}
+            isLatestBot={
+              message.role === 'bot' &&
+              index === visibleMessages.length - 1 &&
+              !state.isLoading
+            }
+          />
+        ))
+      )}
+      <AnimatePresence>
+        {state.isLoading && !latestMessage?.streaming && (
+          <motion.div
+            className="mds-message bot"
+            // Entry stays with the shared mds-msg-in CSS; Motion only owns the
+            // exit so the bubble cross-fades into the arriving reply.
+            initial={false}
+            exit={{
+              opacity: 0,
+              transform: 'translateY(-6px)',
+              transition: prefersReducedMotion
+                ? { duration: 0 }
+                : { duration: 0.18, ease: 'easeOut' },
+            }}
+          >
+            <div className="mds-message-role"><ConciergeBell size={16} aria-hidden="true" />Meridian</div>
+            <div className="mds-message-bubble is-thinking">
+              <Loader2 className="mds-activity-spinner" size={16} aria-hidden="true" />
+              <span role="status">{state.chatProgress || `Running your ${state.phaseLabel.toLowerCase()} request…`}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ChatMessage({
+  message,
+  isLatestBot,
+  state,
+}: {
+  message: Message;
+  isLatestBot: boolean;
+  state: MeridianShowcaseState;
+}) {
+  // Always call the hook; decide below whether to show streamed or static text.
+  const text = message.text ?? '';
+  // Latest bot turns stream; older turns render immediately for fast history review.
+  const useTypewriter = isLatestBot && !state.latestStreamComplete && text.length > 0;
+  const streamed = useStreamingText(text, useTypewriter || Boolean(message.streaming), message.incomplete);
+  const visible = message.role === 'bot' ? streamed : text;
+  // Avoid showing an empty streaming bubble before the first characters arrive.
+  const isEmptyStream = useTypewriter && visible.length === 0;
+
+  // Reveal product cards only after the latest bot text has finished streaming.
+  const { markLatestStreamComplete } = state;
+  useEffect(() => {
+    if (!isLatestBot) return;
+    if (message.role !== 'bot') return;
+    if (!useTypewriter) {
+      markLatestStreamComplete();
+      return;
+    }
+    if (visible.length >= text.length && text.length > 0) {
+      markLatestStreamComplete();
+    }
+  }, [
+    isLatestBot,
+    message.role,
+    useTypewriter,
+    visible.length,
+    text.length,
+    markLatestStreamComplete,
+  ]);
+  const hasInlineProducts = message.role === 'bot' && (message.products?.length ?? 0) > 0;
+  // Follow-up chips only belong on the latest bot turn: they act on the
+  // conversation's current state (e.g. resuming a paused workflow), so
+  // surfacing them on scrolled-back history would let a click act on stale
+  // context. Gate on productsRevealed below so they land after the reveal.
+  const followUps =
+    isLatestBot && message.role === 'bot' ? message.follow_ups ?? [] : [];
+  // Each bot turn owns its product-card expansion state.
+  const [expanded, setExpanded] = useState<boolean>(isLatestBot);
+  // Collapse older results so history stays scannable.
+  useEffect(() => {
+    if (!isLatestBot) setExpanded(false);
+  }, [isLatestBot]);
+
+  // Older turns can show products immediately; the latest waits for text reveal.
+  const productsRevealed = !isLatestBot || state.latestStreamComplete;
+
+  const bubbleClass = `mds-message-bubble${hasInlineProducts ? ' has-products' : ''}`;
+  const wrapperClass = `mds-message ${message.role}${hasInlineProducts ? ' has-products' : ''}`;
+
+  return (
+    <div className={wrapperClass}>
+      <div className="mds-message-role">{message.role === 'user' ? 'You' : <>
+        <ConciergeBell size={16} aria-hidden="true" />Meridian
+        {message.modelLabel && <span className="mds-message-model">{message.modelLabel}</span>}
+      </>}</div>
+      {!isEmptyStream && (
+        <div className={bubbleClass}>
+          {message.role === 'bot' ? (
+            <ShowcaseMarkdown source={visible || ' '} highlightMemory={state.selectedPhase >= 4} />
+          ) : (
+            <span className="mds-message-text">{visible || ' '}</span>
+          )}
+          {hasInlineProducts && message.products && productsRevealed && (
+            <>
+              <ProductSummaryChip
+                products={message.products}
+                state={state}
+                expanded={expanded}
+                onToggle={() => setExpanded((prev) => !prev)}
+              />
+              {expanded && (
+                <InlineProductGrid
+                  products={message.products}
+                  state={state}
+                  isLatestBot={isLatestBot}
+                />
+              )}
+            </>
+          )}
+          {followUps.length > 0 && productsRevealed && (
+            <FollowUpChips prompts={followUps} state={state} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Clickable suggestions the backend returns with a turn. The Phase 5 workflow
+// emits "Resume workflow from the saved step" here when a run pauses, so this chip
+// row is what makes the disruption -> Stateful Recovery finale a single click instead
+// of the presenter typing an exact phrase on stage.
+function FollowUpChips({
+  prompts,
+  state,
+}: {
+  prompts: string[];
+  state: MeridianShowcaseState;
+}) {
+  return (
+    <div className="mds-followups" aria-label="Suggested next steps">
+      {prompts.map((prompt) => (
+        <button
+          key={prompt}
+          type="button"
+          className="mds-followup-chip"
+          disabled={state.isLoading}
+          onClick={() => {
+            if (prompt === 'Run this in Workflow' && state.lastPrompt) {
+              state.setSelectedPhase(5);
+              void state.applyPhaseExample(state.lastPrompt, true, 5);
+              return;
+            }
+            void state.submitPrompt(prompt);
+          }}
+        >
+          <ArrowRight size={13} strokeWidth={2.2} aria-hidden="true" />
+          {prompt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Render safe markdown while enforcing the no-emoji presentation contract.
+// When highlightMemory is set (Production+), recalled preferences are marked
+// so the audience can see what came from Aurora vs the prompt.
+export function ShowcaseMarkdown({
+  source,
+  highlightMemory = false,
+}: {
+  source: string;
+  highlightMemory?: boolean;
+}) {
+  const cleaned = stripEmojis(source);
+  return (
+    <div className="mds-message-text mds-md">
+      <MarkdownBoundary
+        fallback={<p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{cleaned}</p>}
+      >
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={highlightMemory ? [rehypeMemoryHighlight] : []}
+          // Make raw-HTML rejection explicit at the renderer boundary.
+          skipHtml
+        >
+          {cleaned}
+        </ReactMarkdown>
+      </MarkdownBoundary>
+    </div>
+  );
+}
+
+// Strip pictographs without removing ordinary markdown punctuation.
+function stripEmojis(source: string): string {
+  try {
+    return source
+      .replace(/[\p{Extended_Pictographic}\p{Emoji_Presentation}]/gu, '')
+      .replace(/\u200D/g, '') // zero-width joiner
+      .replace(/\uFE0F/g, '') // variation selector-16
+      .replace(/  +/g, ' ');
+  } catch {
+    // Older runtimes without Unicode property escapes should not crash rendering.
+    return source;
+  }
+}
+
+function money(price: number): string {
+  return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+}
+
+// Compact summary chip keeps result cards attached to the turn that produced them.
+function ProductSummaryChip({
+  products,
+  state,
+  expanded,
+  onToggle,
+}: {
+  products: Product[];
+  state: MeridianShowcaseState;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const prices = products.map((p) => p.price).filter((n) => Number.isFinite(n));
+  const minPrice = prices.length ? Math.min(...prices) : null;
+  const maxPrice = prices.length ? Math.max(...prices) : null;
+  const priceRange =
+    minPrice != null && maxPrice != null
+      ? minPrice === maxPrice
+        ? money(minPrice)
+        : `${money(minPrice)} - ${money(maxPrice)}`
+      : null;
+
+  return (
+    <button
+      type="button"
+      className={`mds-msg-result-chip${expanded ? ' is-active' : ''}`}
+      onClick={() => {
+        // Pin the first product on expand so the right-rail trip
+        // detail drawer reflects this turn's results, then toggle.
+        if (!expanded && products[0]) state.setSelectedTrip(products[0]);
+        onToggle();
+      }}
+      title={expanded ? 'Hide these trips' : 'Show these trips'}
+      aria-expanded={expanded}
+    >
+      <span className="mds-msg-result-chip-icon" aria-hidden="true">
+        <List size={14} strokeWidth={2.2} />
+      </span>
+      <span className="mds-msg-result-chip-text">
+        <b>{products.length} {products.length === 1 ? 'trip' : 'trips'}</b>
+        {priceRange && <span>, {priceRange}</span>}
+      </span>
+      <span className="mds-msg-result-chip-caret" aria-hidden="true">
+        <ChevronDown size={14} strokeWidth={2.4} />
+      </span>
+    </button>
+  );
+}
+
+// Inline product grid that slides out below the summary chip when the
+// user expands the bubble. Renders the per-turn products attached to
+// THIS bot message - independent of state.recommendations - so older
+// turns retain their cards even after later turns swap the active set.
+function InlineProductGrid({
+  products,
+  state,
+  isLatestBot,
+}: {
+  products: Product[];
+  state: MeridianShowcaseState;
+  isLatestBot: boolean;
+}) {
+  // Phase 3 "watch the reranker reorder": the backend ships each card's
+  // pre-rerank (hybrid pgvector+tsvector) position plus the delta the Cohere
+  // reranker applied. When that data is present we first render the cards in
+  // their PRE-rerank order, then animate them into the reranked order so the
+  // audience literally sees the cross-encoder change the ranking.
+  const rerankArmed =
+    state.selectedPhase === 3 &&
+    products.length > 1 &&
+    products.every((p) => p.rank_delta != null) &&
+    products.some((p) => (p.rank_delta ?? 0) !== 0);
+
+  const [reranked, setReranked] = useState(!rerankArmed);
+  const [showAll, setShowAll] = useState(false);
+  const autoPlayed = useRef(false);
+  const productKey = products.map((product) => product.product_id).join('|');
+
+  useEffect(() => {
+    setShowAll(false);
+  }, [productKey]);
+
+  // Auto-play once after the reply finishes streaming, on the latest turn
+  // only. Older turns keep whatever state they settled into.
+  useEffect(() => {
+    if (!rerankArmed || !isLatestBot || autoPlayed.current) return;
+    if (!state.latestStreamComplete) return;
+    const t = setTimeout(() => {
+      autoPlayed.current = true;
+      setReranked(true);
+    }, 320);
+    return () => clearTimeout(t);
+  }, [rerankArmed, isLatestBot, state.latestStreamComplete]);
+
+  // Order shown: pre-rerank (by pre_rerank_position asc) until the reorder
+  // plays, then the natural array order (which is already post-rerank, sorted
+  // by reranker score desc on the backend).
+  const ordered = useMemo(() => {
+    if (!rerankArmed || reranked) return products;
+    return [...products].sort(
+      (a, b) => (a.pre_rerank_position ?? 0) - (b.pre_rerank_position ?? 0),
+    );
+  }, [products, rerankArmed, reranked]);
+  const visibleProducts = showAll ? ordered : ordered.slice(0, 3);
+
+  return (
+    <>
+      {rerankArmed && (
+        <div className="mds-rerank-controls">
+          <span className="mds-rerank-caption">
+            {reranked ? 'Cohere Rerank 3.5, final order' : 'Hybrid candidates, before rerank'}
+          </span>
+          <button
+            type="button"
+            className="mds-rerank-replay"
+            onClick={() => {
+              // Snap back to pre-rerank, then replay the reorder.
+              setReranked(false);
+              window.setTimeout(() => setReranked(true), 480);
+            }}
+          >
+            {reranked ? 'Replay rerank' : 'Show rerank'}
+          </button>
+        </div>
+      )}
+      <LayoutGroup>
+        <div className="mds-msg-grid" role="region" aria-label="Trips for this turn">
+          {visibleProducts.map((product, index) => (
+            <InlineProductCard
+              key={product.product_id}
+              product={product}
+              state={state}
+              index={index}
+              rerankArmed={rerankArmed}
+              reranked={reranked}
+            />
+          ))}
+        </div>
+      </LayoutGroup>
+      {ordered.length > 3 && (
+        <div className="mds-result-disclosure">
+          <span>
+            {showAll
+              ? `Showing all ${ordered.length} trips`
+              : `Showing top 3 of ${ordered.length} trips`}
+          </span>
+          <button
+            type="button"
+            aria-expanded={showAll}
+            onClick={() => setShowAll((expanded) => !expanded)}
+          >
+            {showAll ? 'Show top 3' : `Show all ${ordered.length}`}
+          </button>
+        </div>
+      )}
+      <InlineConciergeCard products={products} state={state} />
+    </>
+  );
+}
+
+function InlineConciergeCard({
+  products,
+  state,
+}: {
+  products: Product[];
+  state: MeridianShowcaseState;
+}) {
+  const hasTokyoResult = products.some((product) =>
+    /tokyo|haneda|japan/i.test(
+      `${product.name} ${product.destination ?? ''} ${product.description}`,
+    ),
+  );
+  if (state.selectedPhase < 4 || !hasTokyoResult) return null;
+
+  const travelerContextObserved =
+    state.memoryEnabled &&
+    (state.memoryFacts.length > 0 || Boolean(state.travelerProfile));
+  const runWorkflowPrompt = (prompt: string) => {
+    state.setSelectedPhase(5);
+    void state.applyPhaseExample(prompt, true, 5);
+  };
+
+  return (
+    <aside className="mds-inline-concierge" aria-label="Concierge assistance">
+      <div className="mds-inline-concierge-media" aria-hidden="true">
+        <img
+          src="/travel/haneda-hotel.jpg"
+          alt=""
+          width="1600"
+          height="900"
+          loading="lazy"
+        />
+        <span>Haneda, Tokyo</span>
+      </div>
+      <div className="mds-inline-concierge-copy">
+        <header>
+          <span>
+            <Headphones size={16} aria-hidden="true" />
+            Concierge assistance
+          </span>
+          <em>Search ready</em>
+        </header>
+        <h3>Continue with a hotel near Haneda</h3>
+        <p>
+          Meridian can search an airport-area stay after you choose the travel
+          plan. No room or service is booked without confirmation.
+        </p>
+        <div className="mds-inline-concierge-signals">
+          {travelerContextObserved && (
+            <span>
+              <Sparkles size={12} aria-hidden="true" />
+              Saved preferences
+            </span>
+          )}
+          {travelerContextObserved && (
+            <span>
+              <ShieldCheck size={12} aria-hidden="true" />
+              Review loyalty benefits
+            </span>
+          )}
+          <span>
+            <BedDouble size={12} aria-hidden="true" />
+            Check lounge options
+          </span>
+          <span>
+            <BusFront size={12} aria-hidden="true" />
+            Check transfer options
+          </span>
+        </div>
+        <footer>
+          <button
+            type="button"
+            className="is-primary"
+            onClick={() =>
+              runWorkflowPrompt(
+                'Find a well-rated hotel near Haneda for tonight with lounge access and an easy airport transfer.',
+              )
+            }
+          >
+            Find hotel options
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              runWorkflowPrompt(
+                'Review my trip protection and change-fee options before rebooking the canceled Tokyo flight.',
+              )
+            }
+          >
+            Review protection
+          </button>
+        </footer>
+      </div>
+    </aside>
+  );
+}
+
+function InlineProductCard({
+  product,
+  state,
+  index,
+  rerankArmed,
+  reranked,
+}: {
+  product: Product;
+  state: MeridianShowcaseState;
+  index: number;
+  rerankArmed: boolean;
+  reranked: boolean;
+}) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const preRerank = rerankArmed && !reranked;
+  const matchLabel = resultRankLabel(state.selectedPhase, index, {
+    preRerank,
+  });
+  const selected = state.selectedTrip?.product_id === product.product_id;
+  const showDelta = rerankArmed && reranked && product.rank_delta != null;
+  return (
+    <motion.article
+      layout={rerankArmed && !prefersReducedMotion ? 'position' : false}
+      transition={
+        prefersReducedMotion
+          ? { duration: 0 }
+          : { type: 'spring', stiffness: 420, damping: 34 }
+      }
+      className={`mds-trip-result-card${selected ? ' is-selected' : ''}${index === 0 ? ' is-priority' : ''}`}
+      aria-label={product.name}
+    >
+      <TripResultCardContent
+        product={product}
+        state={state}
+        matchPct={null}
+        matchLabel={matchLabel}
+        featured={index === 0}
+        matchExtra={
+          <AnimatePresence>
+            {showDelta && (
+              <motion.span
+                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.6 }}
+                animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, transition: { duration: 0.12 } }}
+                transition={prefersReducedMotion ? { duration: 0 } : { delay: 0.25 }}
+              >
+                <RankDeltaBadge delta={product.rank_delta ?? 0} />
+              </motion.span>
+            )}
+          </AnimatePresence>
+        }
+      />
+    </motion.article>
+  );
+}

@@ -1,0 +1,352 @@
+/**
+ * Presenter proof renders evidence, and says so when there is none.
+ *
+ * The surface exists to make a claim checkable, so the one thing it must never
+ * do is present a plausible value it did not read. Absent evidence has to look
+ * absent.
+ */
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import { PresenterProof } from '../PresenterProof';
+import type { JourneyDocument } from '../../journey/types';
+import { signedInAs } from '../../../test/signedIn';
+
+const unavailable = (reason: string) => ({ status: 'unavailable' as const, reason });
+
+function makeDocument(overrides: Partial<JourneyDocument> = {}): JourneyDocument {
+  return {
+    journey_id: 'jrn_test',
+    traveler_id: 'trv_meridian_demo',
+    status: 'active',
+    checkpoint_backend: { kind: 'AuroraDataApiSaver', durable: true },
+    active_thread_id: 'thread_test',
+    executions: {
+      status: 'observed',
+      source: 'journey_executions',
+      items: [
+        {
+          execution_id: 'exe_01',
+          attempt: 1,
+          worker_id: 'worker_01',
+          status: 'abandoned',
+          started_at: null,
+          ended_at: null,
+          lease_expires_at: null,
+        },
+        {
+          execution_id: 'exe_02',
+          attempt: 2,
+          worker_id: 'worker_02',
+          status: 'running',
+          started_at: null,
+          ended_at: null,
+          lease_expires_at: null,
+        },
+      ],
+    },
+    checkpoint: {
+      status: 'committed',
+      source: 'checkpoints',
+      thread_id: 'thread_test',
+      checkpoint_id: 'cp_01',
+      parent_checkpoint_id: null,
+      checkpoint_ns: '',
+      committed_at: '2026-09-06T02:13:41+00:00',
+    },
+    selected_plan: {
+      status: 'observed',
+      source: 'checkpoint:x#y',
+      package_id: 'TKY-003',
+    },
+    recommendations: unavailable('none'),
+    pending_decision: unavailable('none'),
+    conversation: unavailable('none'),
+    hold: {
+      status: 'held',
+      source: 'hold_requests + bookings',
+      label: 'one hold for this request',
+      hold_request_id: 'hrq_01',
+      booking_id: 'BKG-1',
+      created_by_execution_id: 'exe_02',
+      hold_expires_at: null,
+      package_id: 'TKY-003',
+      duration: '3 nights',
+      travelers_count: 2,
+      hold_records: 1,
+    },
+    authorization: unavailable('none'),
+    rls: unavailable('none'),
+    ...overrides,
+  } as JourneyDocument;
+}
+
+const noop = () => {};
+
+describe('Presenter proof', () => {
+  it('offers recovery when none is selected without claiming a read is running', () => {
+    const open = vi.fn();
+    render(<PresenterProof document={null} loading={false} error={null}
+      onRefresh={noop} onOpenRecovery={open} />);
+    expect(screen.getByRole('heading', { name: 'No recovery selected' })).toBeInTheDocument();
+    expect(screen.queryByText('Reading the journey from Aurora…')).toBeNull();
+    expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'Open recovery desk' }));
+    expect(open).toHaveBeenCalledOnce();
+  });
+
+  it('labels the retained observation when a refresh fails', () => {
+    render(<PresenterProof document={makeDocument()} loading={false}
+      error="Connection interrupted" onRefresh={noop} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Showing the last successful observation');
+    expect(screen.getByRole('alert')).toHaveTextContent('Connection interrupted');
+  });
+
+  it('marks both empty states with a large official Aurora tile', () => {
+    const { container, rerender } = render(
+      <PresenterProof document={null} loading error={null} onRefresh={noop} />,
+    );
+    const mark = () => container.querySelector('.mds-proof-empty .mds-service-mark-aurora');
+    expect(mark()).toHaveAttribute('src', '/brand/aws-2026-07-31/aurora.svg');
+    expect(mark()).toHaveAttribute('width', '56');
+    rerender(<PresenterProof document={null} loading={false} error="Unavailable" onRefresh={noop} />);
+    expect(mark()).toHaveAttribute('width', '56');
+  });
+
+  it('reads the headline off whether a worker was actually replaced', () => {
+    render(
+      <PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
+    );
+    expect(screen.getByText('The saved step remains.')).toBeInTheDocument();
+  });
+
+  it('names both the stopped worker and the one holding the lease', () => {
+    render(
+      <PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
+    );
+    expect(screen.getByText('worker_01')).toBeInTheDocument();
+    expect(screen.getByText('worker_02')).toBeInTheDocument();
+    expect(screen.getByText(/attempt 1, abandoned/)).toBeInTheDocument();
+    expect(screen.getByText(/attempt 2, running/)).toBeInTheDocument();
+  });
+
+  it('distinguishes a hold created after replacement from a surviving hold', () => {
+    render(
+      <PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Business result' }));
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByText('Replacement execution')).toBeInTheDocument();
+    expect(within(panel).getByText(/does not yet prove an existing hold survived/)).toBeInTheDocument();
+    expect(within(panel).getByText('1')).toBeInTheDocument();
+  });
+
+  it('does not call a same-worker resume a replacement', () => {
+    const doc = makeDocument();
+    if (doc.executions.status !== 'observed') throw new Error('Missing fixture executions');
+    doc.executions.items[1].worker_id = doc.executions.items[0].worker_id;
+    render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Business result' }));
+    expect(within(screen.getByRole('tabpanel')).getByText('Resumed execution')).toBeInTheDocument();
+    expect(screen.queryByText('Replacement execution')).not.toBeInTheDocument();
+  });
+
+  it('reports the record count without treating distinct requests as duplicate holds', () => {
+    const doc = makeDocument();
+    render(
+      <PresenterProof
+        document={
+          { ...doc, hold: { ...(doc.hold as object), hold_records: 2 } } as JourneyDocument
+        }
+        loading={false}
+        error={null}
+        onRefresh={noop}
+      />,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: 'Business result' }));
+    expect(within(screen.getByRole('tabpanel')).getByText('2')).toBeInTheDocument();
+  });
+
+  it('shows who owns the journey beside who the API confirmed is signed in', () => {
+    render(<PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
+      { wrapper: signedInAs('trv_demo_decoy', 'Jordan Lee', 'trv_demo_decoy') });
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByText('trv_meridian_demo')).toBeInTheDocument();
+    expect(within(panel).getByText('Signed in as')).toBeInTheDocument();
+    expect(within(panel).getByText('Jordan Lee (trv_demo_decoy)')).toBeInTheDocument();
+  });
+
+  it('calls the sign-in claim a claim until the API has confirmed it', () => {
+    render(<PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
+      { wrapper: signedInAs('trv_demo_decoy', 'Jordan Lee') });
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByText('From your sign-in')).toBeInTheDocument();
+    expect(within(panel).queryByText('Signed in as')).not.toBeInTheDocument();
+    expect(within(panel).getByText('Jordan Lee (trv_demo_decoy)')).toBeInTheDocument();
+  });
+
+  it('shows the id /api/me returned when it differs from the claim, and names the claim', () => {
+    render(<PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
+      { wrapper: signedInAs('trv_claimed', 'Alex Lee', 'trv_from_api') });
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getByText('Alex Lee (trv_from_api), the sign-in says trv_claimed'))
+      .toBeInTheDocument();
+  });
+
+  it('shows the traveler id alone when the sign-in carries no name', () => {
+    render(<PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />,
+      { wrapper: signedInAs('trv_meridian_demo', null, 'trv_meridian_demo') });
+    expect(within(screen.getByRole('tabpanel')).getAllByText('trv_meridian_demo')).toHaveLength(2);
+  });
+
+  it('does not claim a sign-in it cannot confirm', () => {
+    render(<PresenterProof document={makeDocument()} loading={false} error={null} onRefresh={noop} />);
+    expect(within(screen.getByRole('tabpanel')).getByText('Not confirmed')).toBeInTheDocument();
+  });
+
+  it('shows a dash where the database holds no evidence', () => {
+    render(
+      <PresenterProof
+        document={makeDocument({ checkpoint: unavailable('no checkpoint yet') })}
+        loading={false}
+        error={null}
+        onRefresh={noop}
+      />,
+    );
+    const panel = screen.getByRole('tabpanel');
+    expect(within(panel).getAllByText('Not recorded').length).toBeGreaterThan(0);
+    expect(screen.getByText('Awaiting saved step')).toBeInTheDocument();
+  });
+
+  describe('Runtime session cards', () => {
+    const runtimeDocument = (secondVm: string, stops?: JourneyDocument['session_stops']) => {
+      const doc = makeDocument({ session_stops: stops });
+      if (doc.executions.status !== 'observed') throw new Error('Missing fixture executions');
+      const [one, two] = doc.executions.items;
+      Object.assign(one, { runtime_session_id: 'rt-wf-aaa', microvm_id: 'vm-111111111111' });
+      Object.assign(two, { runtime_session_id: 'rt-wf-aaa', microvm_id: secondVm });
+      return doc;
+    };
+    const renderDoc = (doc: JourneyDocument) =>
+      render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+    const stop = (stopped_during: 'waiting' | 'running' | 'finished', last_step: string | null) => ({
+      status: 'observed' as const,
+      source: 'workflow_session_stops',
+      items: [{
+        runtime_session_id: 'rt-wf-aaa', outcome: 'stopped' as const,
+        stopped_at: '2026-10-07T01:00:00+00:00', stopped_during, last_step,
+      }],
+    });
+
+    it('shows the session id, microVM id, attempt and status on each card', () => {
+      renderDoc(runtimeDocument('vm-222222222222'));
+      expect(screen.getAllByText('rt-wf-aaa')).toHaveLength(2);
+      expect(screen.getByText('vm-111111111111')).toBeInTheDocument();
+      expect(screen.getByText('vm-222222222222')).toBeInTheDocument();
+      expect(screen.getByText(/attempt 2, running/)).toBeInTheDocument();
+    });
+
+    it('says the session changed when the microVM ids differ', () => {
+      renderDoc(runtimeDocument('vm-222222222222'));
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('The session changed.');
+    });
+
+    it('does not say the session changed when the same microVM resumed', () => {
+      renderDoc(runtimeDocument('vm-111111111111'));
+      expect(screen.getByRole('heading', { level: 1 })).not.toHaveTextContent('session changed');
+    });
+
+    it('falls back to worker ids when the microVM ids are null', () => {
+      renderDoc(makeDocument());
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('The session changed.');
+    });
+
+    it('shows the snapshot count, latest status and next node on the Aurora card', () => {
+      const doc = makeDocument();
+      Object.assign(doc.checkpoint, { snapshot_count: 4, status: 'committed' });
+      doc.workflow = {
+        status: 'observed', source: 'workflow_snapshots', workflow_status: 'paused',
+        next_nodes: ['availability'],
+      } as unknown as JourneyDocument['workflow'];
+      renderDoc(doc);
+      const card = screen.getByText('Snapshots').closest('div') as HTMLElement;
+      expect(card).toHaveTextContent('4');
+      expect(screen.getByText('Latest snapshot')).toBeInTheDocument();
+      expect(screen.getByText(/committed, next availability/)).toBeInTheDocument();
+    });
+
+    it.each([
+      ['waiting', 'review', 'Stopped while waiting, last step review'],
+      ['running', 'search', 'Stopped mid-run, last step search'],
+      ['finished', 'hold', 'Stopped after the run finished, last step hold'],
+    ] as const)('names a stop that landed while %s', (during, step, text) => {
+      renderDoc(runtimeDocument('vm-222222222222', stop(during, step)));
+      expect(screen.getByText(text)).toBeInTheDocument();
+    });
+
+    it('omits the stop line when session_stops is missing', () => {
+      renderDoc(runtimeDocument('vm-222222222222'));
+      expect(screen.queryByText(/^Stopped /)).toBeNull();
+    });
+  });
+
+  it('explains itself when there is no journey at all', () => {
+    const onRefresh = vi.fn();
+    render(
+      <PresenterProof
+        document={null}
+        loading={false}
+        error="No journey has been recorded yet."
+        onRefresh={onRefresh}
+      />,
+    );
+    expect(screen.getByText('Journey evidence is unavailable.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Check again/ }));
+    expect(onRefresh).toHaveBeenCalledOnce();
+  });
+});
+
+
+it('does not call an expired worker live or a second attempt a successful resume', () => {
+  const doc = makeDocument();
+  render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+  expect(screen.queryByText('Holding the lease')).not.toBeInTheDocument();
+  expect(screen.getByText('Lease not verified')).toBeInTheDocument();
+  expect(screen.getByText('Successful resume not verified')).toBeInTheDocument();
+});
+
+it('calls a paused recovery not resumed yet instead of unverified', () => {
+  const doc = makeDocument({
+    status: 'paused',
+    workflow: {
+      status: 'observed', source: 'checkpoint:thread_test/cp_01', conversation_id: 'thread_test',
+      query: 'Rework the trip', message: 'Paused.', workflow_status: 'paused',
+      next_nodes: ['availability'], activities: [], travelers_count: 2,
+      resumed_after_restart: false,
+    },
+  });
+  render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+  expect(screen.getByText('Not resumed yet')).toBeInTheDocument();
+  expect(screen.queryByText('Successful resume not verified')).not.toBeInTheDocument();
+});
+
+it('says a checkpointed hold is no longer in Aurora instead of claiming none was created', () => {
+  const doc = makeDocument({
+    hold: {
+      status: 'unavailable',
+      reason: 'the snapshot names hold HLD-gone, but Aurora has no booking for it',
+      checkpoint_hold_id: 'HLD-gone',
+    },
+  });
+  render(<PresenterProof document={doc} loading={false} error={null} onRefresh={noop} />);
+  expect(screen.getByText('No longer in Aurora')).toBeInTheDocument();
+  expect(screen.getByText(/Hold no longer in Aurora\./)).toBeInTheDocument();
+  expect(screen.queryByText('Not created yet')).not.toBeInTheDocument();
+  expect(screen.queryByText(/No hold recorded/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('tab', { name: 'Business result' }));
+  const panel = screen.getByRole('tabpanel');
+  expect(within(panel).getByText('Hold no longer in Aurora.')).toBeInTheDocument();
+  expect(within(panel).getByText(/names hold HLD-gone/)).toBeInTheDocument();
+  expect(within(panel).queryByText('No package hold recorded.')).not.toBeInTheDocument();
+});
+

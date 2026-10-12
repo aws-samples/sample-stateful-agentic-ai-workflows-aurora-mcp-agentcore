@@ -1,0 +1,8 @@
+[
+  {
+    "name": "default",
+    "description": "Meridian deployment target",
+    "account": "{{AWS_ACCOUNT_ID}}",
+    "region": "{{AWS_REGION}}"
+  }
+]

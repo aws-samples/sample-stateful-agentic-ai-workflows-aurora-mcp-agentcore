@@ -1,0 +1,129 @@
+.mds-desktop-app.is-discovery {
+  /* How far the text chrome sits in from the stage edge. The trip grid ignores
+     it on purpose - that is what makes the hero full-bleed. */
+  --mds-discovery-inset: 22px;
+  /* The strip of navy the trip grid stops short of at the bottom, so the
+     picture terminates on the shell instead of running off the screen. */
+  --mds-discovery-baseline: 16px;
+  grid-template-columns: 244px minmax(0, 1fr);
+}
+
+.mds-desktop-app.is-discovery.is-sidebar-collapsed {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
+/* The product view is a picture surface first. The trip grid runs to the left
+   and right edges of the stage and only the text chrome above it keeps an
+   inset, so the hero gets the width a frame would otherwise spend on margin.
+   The bottom keeps a strip of the navy shell: run the photograph off that edge
+   too and it reads as an image overflowing its container rather than a
+   deliberate full-bleed, and the cards' rounded corners lose something to
+   land against. */
+.mds-desktop-app.is-discovery .mds-desktop-scroll {
+  height: 100dvh;
+  gap: 10px;
+  padding: 16px 0 var(--mds-discovery-baseline);
+}
+
+@media (max-width: 1500px) {
+  .mds-desktop-app.is-discovery {
+    grid-template-columns: 218px minmax(0, 1fr);
+  }
+
+  .mds-desktop-app.is-discovery.is-sidebar-collapsed {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1180px) {
+  .mds-desktop-app.is-discovery,
+  .mds-desktop-app.is-discovery.is-sidebar-collapsed {
+    grid-template-columns: 82px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .mds-desktop-app.is-discovery,
+  .mds-desktop-app.is-discovery.is-sidebar-collapsed {
+    display: block;
+    min-height: 100dvh;
+  }
+
+  .mds-desktop-app.is-discovery .mds-desktop-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--mds-separator);
+  }
+
+  .mds-desktop-app.is-discovery .mds-brand {
+    justify-content: flex-start;
+    margin: 0;
+    font: var(--mds-type-title-2);
+    letter-spacing: var(--mds-tracking-title);
+  }
+
+  .mds-desktop-app.is-discovery .mds-brand-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .mds-desktop-app.is-discovery .mds-nav-items {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+
+  .mds-desktop-app.is-discovery .mds-nav-item {
+    width: 44px;
+    min-height: 44px;
+    display: none;
+  }
+
+  .mds-desktop-app.is-discovery .mds-nav-item:first-child,
+  .mds-desktop-app.is-discovery .mds-nav-item:nth-child(2),
+  .mds-desktop-app.is-discovery .mds-nav-item:nth-child(5) {
+    display: flex;
+  }
+
+  .mds-desktop-app.is-discovery .mds-sidebar-spacer,
+  .mds-desktop-app.is-discovery .mds-account-mini {
+    display: none;
+  }
+
+  .mds-desktop-app.is-discovery .mds-desktop-main {
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .mds-desktop-app.is-discovery .mds-desktop-scroll {
+    height: auto;
+    overflow: visible;
+    padding: 16px 14px 72px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Concierge rail
+   ---------------------------------------------------------------------------
+   Sits in the same column as the ladder's evidence rail and reads as its calm
+   sibling: the traveler's conversation and what it produced, with none of the
+   trace vocabulary. The composer is in the shared dock below the stage, not in
+   here, so both surfaces put their input in the same place.
+------------------------------------------------------------------------------ */
+
+.mds-desktop-right.is-concierge {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 16px 16px 16px 0;
+}
+
+

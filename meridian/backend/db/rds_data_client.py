@@ -1,0 +1,575 @@
+"""
+RDS Data API Client for Meridian.
+
+Provides database access through AWS RDS Data API for Aurora Serverless v2.
+This is used when the cluster is in a private VPC and not directly accessible.
+
+AWS docs:
+  - RDS Data API overview:
+    https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.html
+  - ExecuteStatement (boto3):
+    https://docs.aws.amazon.com/rdsdataservice/latest/APIReference/API_ExecuteStatement.html
+  - BeginTransaction (RLS-scoped sessions in Phase 4):
+    https://docs.aws.amazon.com/rdsdataservice/latest/APIReference/API_BeginTransaction.html
+  - Storing Aurora credentials in Secrets Manager:
+    https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/rds-secrets-manager.html
+"""
+
+import os
+import asyncio
+import json
+import logging
+import re
+import uuid
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from typing import Optional, List, Any, Dict
+from decimal import Decimal
+
+logger = logging.getLogger(__name__)
+
+import boto3
+
+from backend.authorization import (
+    AuthorizationContext,
+    AuthorizationDecision,
+    TravelerAuthorizationError,
+)
+from backend.timing import clock, elapsed_ms
+
+
+@dataclass
+class ScopeTimings:
+    """What one scoped session's setup took, each part measured around its own calls.
+
+    A part that did not run keeps ``None``.
+
+    Attributes:
+        grant_ms: The traveler grant check: the binding lookup and its audit row.
+        rls_ms: The RLS setup: the ``set_config`` round trip and ``SET LOCAL ROLE``.
+    """
+
+    grant_ms: Optional[int] = None
+    rls_ms: Optional[int] = None
+
+
+def _encode_boolean(value: Any) -> Dict[str, Any]:
+    """Encode a bool as an RDS Data API boolean parameter payload."""
+    return {"value": {"booleanValue": value}}
+
+
+def _encode_long(value: Any) -> Dict[str, Any]:
+    """Encode an int as an RDS Data API long parameter payload."""
+    return {"value": {"longValue": value}}
+
+
+def _encode_double(value: Any) -> Dict[str, Any]:
+    """Encode a float as an RDS Data API double parameter payload."""
+    return {"value": {"doubleValue": value}}
+
+
+def _encode_decimal(value: Any) -> Dict[str, Any]:
+    """Encode a Decimal as a string parameter payload with a DECIMAL type hint."""
+    return {"value": {"stringValue": str(value)}, "typeHint": "DECIMAL"}
+
+
+def _encode_blob(value: Any) -> Dict[str, Any]:
+    """Encode bytes-like data as an RDS Data API blob parameter payload.
+
+    boto3 base64-transcodes blobValue in both directions, so the raw bytes go
+    on the wire. Encoding here would double-encode.
+    """
+    return {"value": {"blobValue": bytes(value)}}
+
+
+def _encode_json(value: Any) -> Dict[str, Any]:
+    """Encode a list or dict as a JSON string parameter payload."""
+    return {"value": {"stringValue": json.dumps(value)}}
+
+
+def _encode_fallback(value: Any) -> Dict[str, Any]:
+    """Encode any other value via its string representation."""
+    return {"value": {"stringValue": str(value)}}
+
+
+# Ordered (type(s), encoder) table used by _format_parameters. Order matters:
+# bool must precede int because bool is a subclass of int and would otherwise
+# be encoded as a longValue. None is matched separately, by identity, since
+# there is no type to key it on here.
+_PARAM_ENCODERS = [
+    (bool, _encode_boolean),
+    (int, _encode_long),
+    (float, _encode_double),
+    (Decimal, _encode_decimal),
+    ((bytes, bytearray, memoryview), _encode_blob),
+    ((list, dict), _encode_json),
+]
+
+
+class RDSDataClient:
+    """
+    RDS Data API client for Aurora PostgreSQL.
+    
+    Uses the RDS Data API to execute SQL statements against Aurora Serverless v2
+    clusters that are not directly accessible (e.g., in private VPCs).
+    """
+    
+    def __init__(
+        self,
+        cluster_arn: Optional[str] = None,
+        secret_arn: Optional[str] = None,
+        database: Optional[str] = None,
+        region: Optional[str] = None
+    ):
+        """
+        Initialize RDS Data API client.
+        
+        Args:
+            cluster_arn: Aurora cluster ARN (defaults to AURORA_CLUSTER_ARN env var)
+            secret_arn: Secrets Manager ARN (defaults to AURORA_SECRET_ARN env var)
+            database: Database name (defaults to AURORA_DATABASE env var)
+            region: AWS region (defaults to AWS_DEFAULT_REGION env var)
+        """
+        self.cluster_arn = cluster_arn or os.getenv("AURORA_CLUSTER_ARN")
+        self.secret_arn = secret_arn or os.getenv("AURORA_SECRET_ARN")
+        self.database = database or os.getenv("AURORA_DATABASE", "meridian")
+        self.region = region or os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+        
+        self.client = boto3.client('rds-data', region_name=self.region)
+    
+    def _format_parameters(self, params: Optional[tuple]) -> List[Dict]:
+        """Convert tuple parameters to RDS Data API format.
+
+        Each value is dispatched to a table-driven encoder (see
+        `_PARAM_ENCODERS`) that returns the complete parameter payload,
+        including an optional `typeHint`.
+        """
+        if not params:
+            return []
+
+        formatted = []
+        for i, value in enumerate(params):
+            if value is None:
+                payload = {"value": {"isNull": True}}
+            else:
+                encoder = next(
+                    (enc for types, enc in _PARAM_ENCODERS if isinstance(value, types)),
+                    _encode_fallback,
+                )
+                payload = encoder(value)
+
+            formatted.append({"name": f"p{i}", **payload})
+
+        return formatted
+    
+    def _convert_sql_placeholders(self, sql: str, param_count: int) -> str:
+        """Convert %s placeholders to :pN named parameters."""
+        result = sql
+        for i in range(param_count):
+            result = result.replace("%s", f":p{i}", 1)
+        return result
+    
+    def _parse_value(self, field: Dict) -> Any:
+        """Parse a single field value from RDS Data API response."""
+        if "isNull" in field and field["isNull"]:
+            return None
+        if "stringValue" in field:
+            return field["stringValue"]
+        if "longValue" in field:
+            return field["longValue"]
+        if "doubleValue" in field:
+            return field["doubleValue"]
+        if "booleanValue" in field:
+            return field["booleanValue"]
+        if "blobValue" in field:
+            return bytes(field["blobValue"])
+        if "arrayValue" in field:
+            return self._parse_array(field["arrayValue"])
+        return None
+    
+    def _parse_array(self, array_value: Dict) -> List:
+        """Parse array value from RDS Data API response."""
+        if "stringValues" in array_value:
+            return array_value["stringValues"]
+        if "longValues" in array_value:
+            return array_value["longValues"]
+        if "doubleValues" in array_value:
+            return array_value["doubleValues"]
+        if "booleanValues" in array_value:
+            return array_value["booleanValues"]
+        if "arrayValues" in array_value:
+            return [self._parse_array(v) for v in array_value["arrayValues"]]
+        return []
+    
+    def _parse_response(self, response: Dict, column_names: List[str]) -> List[Dict]:
+        """Parse RDS Data API response into list of dictionaries."""
+        records = response.get("records", [])
+        results = []
+        
+        for record in records:
+            row = {}
+            for i, field in enumerate(record):
+                if i < len(column_names):
+                    value = self._parse_value(field)
+                    # Try to parse JSON strings for JSONB columns
+                    if isinstance(value, str) and column_names[i] in [
+                        'durations', 'availability', 'highlights',
+                        'loyalty_programs', 'packages_shown',
+                    ]:
+                        try:
+                            value = json.loads(value)
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                    row[column_names[i]] = value
+            results.append(row)
+        
+        return results
+    
+    async def execute(
+        self,
+        query: str,
+        params: Optional[tuple] = None,
+        transaction_id: Optional[str] = None,
+    ) -> List[Dict]:
+        """
+        Execute a query and return results.
+
+        Args:
+            query: SQL query string with %s placeholders
+            params: Optional query parameters
+            transaction_id: Optional RDS Data API transaction id.  When set, the
+                statement runs inside an existing transaction so transaction-
+                local settings (e.g. ``SET LOCAL`` / ``set_config(..., true)``)
+                stay in scope across calls.
+
+        Returns:
+            List of result rows as dictionaries
+        """
+        # Convert placeholders
+        param_count = query.count("%s")
+        sql = self._convert_sql_placeholders(query, param_count)
+        parameters = self._format_parameters(params)
+
+        kwargs: Dict[str, Any] = dict(
+            resourceArn=self.cluster_arn,
+            secretArn=self.secret_arn,
+            database=self.database,
+            sql=sql,
+            parameters=parameters,
+            includeResultMetadata=True,
+        )
+        if transaction_id:
+            kwargs["transactionId"] = transaction_id
+        # Let lease heartbeats and other HTTP requests run during Data API I/O.
+        # Cancelling to_thread does not stop its underlying request: drain it
+        # before the caller rolls back the transaction or releases its lease.
+        operation = asyncio.create_task(
+            asyncio.to_thread(self.client.execute_statement, **kwargs)
+        )
+        try:
+            response = await asyncio.shield(operation)
+        except asyncio.CancelledError:
+            # Shutdown can cancel a task more than once. Keep shielding the
+            # SDK request until it finishes even if another cancellation arrives.
+            while not operation.done():
+                try:
+                    await asyncio.shield(operation)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            if not operation.cancelled():
+                operation.exception()  # Retrieve any SDK error; cancellation wins.
+            raise
+        
+        # Extract column names from metadata
+        column_metadata = response.get("columnMetadata", [])
+        column_names = [col.get("name", f"col{i}") for i, col in enumerate(column_metadata)]
+        
+        return self._parse_response(response, column_names)
+    
+    async def execute_one(
+        self,
+        query: str,
+        params: Optional[tuple] = None,
+        transaction_id: Optional[str] = None,
+    ) -> Optional[Dict]:
+        """Execute a query and return a single result row, or ``None``."""
+        results = await self.execute(query, params, transaction_id=transaction_id)
+        return results[0] if results else None
+
+    def begin_transaction(self) -> str:
+        """Open an RDS Data API transaction and return its id."""
+        response = self.client.begin_transaction(
+            resourceArn=self.cluster_arn,
+            secretArn=self.secret_arn,
+            database=self.database,
+        )
+        return response["transactionId"]
+
+    def commit_transaction(self, transaction_id: str) -> None:
+        self.client.commit_transaction(
+            resourceArn=self.cluster_arn,
+            secretArn=self.secret_arn,
+            transactionId=transaction_id,
+        )
+
+    def rollback_transaction(self, transaction_id: str) -> None:
+        try:
+            self.client.rollback_transaction(
+                resourceArn=self.cluster_arn,
+                secretArn=self.secret_arn,
+                transactionId=transaction_id,
+            )
+        except Exception:
+            logger.exception("Rolling back transaction %s failed", transaction_id)
+
+    async def check_traveler_authorization(
+        self,
+        traveler_id: str,
+        authorization: AuthorizationContext,
+        *,
+        transaction_id: Optional[str] = None,
+        write_audit: bool = True,
+    ) -> AuthorizationDecision:
+        """Authorize a workload subject before accepting its traveler claim."""
+        binding = await self.execute_one(
+            """
+            SELECT binding_id
+            FROM traveler_identity_bindings
+            WHERE identity_provider = %s
+              AND subject_id = %s
+              AND traveler_id = %s
+              AND status = 'active'
+              AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+            LIMIT 1
+            """,
+            (authorization.provider, authorization.subject_id, traveler_id),
+            transaction_id=transaction_id,
+        )
+        allowed = binding is not None
+        audit_id = f"authz_{uuid.uuid4().hex[:12]}" if write_audit else None
+        reason = "active identity binding" if allowed else "no active identity binding"
+
+        if audit_id:
+            await self.execute(
+                """
+                INSERT INTO traveler_access_audit (
+                    audit_id, identity_provider, subject_id, principal,
+                    requested_traveler_id, decision, reason
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    audit_id,
+                    authorization.provider,
+                    authorization.subject_id,
+                    authorization.principal,
+                    traveler_id,
+                    "allow" if allowed else "deny",
+                    reason,
+                ),
+                transaction_id=transaction_id,
+            )
+
+        return AuthorizationDecision(
+            allowed=allowed,
+            decision="allow" if allowed else "deny",
+            traveler_id=traveler_id,
+            provider=authorization.provider,
+            subject_id=authorization.subject_id,
+            principal=authorization.principal,
+            binding_id=binding.get("binding_id") if binding else None,
+            audit_id=audit_id,
+            reason=reason,
+        )
+
+    @asynccontextmanager
+    async def scoped_session(
+        self,
+        traveler_id: Optional[str] = None,
+        agent_type: Optional[str] = None,
+        authorization: Optional[AuthorizationContext] = None,
+        timings: Optional[ScopeTimings] = None,
+    ):
+        """
+        Open a transaction with RLS session variables set.
+
+        Uses RDS Data API ``BeginTransaction`` so ``SET LOCAL`` / ``set_config``
+        GUCs stay scoped to this transaction — see ``examples/rls_for_agents.sql``.
+
+        AWS docs:
+          - BeginTransaction:
+            https://docs.aws.amazon.com/rdsdataservice/latest/APIReference/API_BeginTransaction.html
+          - CommitTransaction:
+            https://docs.aws.amazon.com/rdsdataservice/latest/APIReference/API_CommitTransaction.html
+
+        Usage::
+
+            async with client.scoped_session(
+                traveler_id="trv_x", authorization=caller
+            ) as tx:
+                rows = await client.execute("SELECT ...", transaction_id=tx)
+
+        Before setting scope, the authenticated subject must have an active
+        ``traveler_identity_bindings`` grant for ``traveler_id``. Inside the
+        block, ``app.current_traveler_id`` (and optionally ``app.agent_type``)
+        are pinned for the lifetime of the transaction.
+        Aurora RLS policies on ``traveler_preferences`` and friends will
+        filter rows accordingly.
+
+        After pinning the settings the session steps down to the least-privilege
+        app role; ``_assume_app_role`` says why that is required.
+
+        When ``timings`` is given, the grant check and the RLS setup are each
+        timed around their own Data API calls and recorded on it.
+        """
+        app_role = os.getenv("RLS_APP_ROLE", "meridian_app").strip()
+        allow_unscoped = os.getenv("RLS_ALLOW_UNSCOPED_FALLBACK", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        if (
+            allow_unscoped
+            and os.getenv("ENVIRONMENT", "development").strip().lower()
+            != "development"
+        ):
+            raise RuntimeError(
+                "RLS_ALLOW_UNSCOPED_FALLBACK is permitted only when "
+                "ENVIRONMENT=development."
+            )
+        timings = timings or ScopeTimings()
+        tx = self.begin_transaction()
+        transaction_finished = False
+        try:
+            if traveler_id is not None:
+                if authorization is None:
+                    raise RuntimeError(
+                        "Traveler-scoped access requires an authenticated "
+                        "AuthorizationContext."
+                    )
+                started = clock()
+                decision = await self.check_traveler_authorization(
+                    traveler_id,
+                    authorization,
+                    transaction_id=tx,
+                    write_audit=True,
+                )
+                timings.grant_ms = elapsed_ms(started)
+                if not decision.allowed:
+                    # Preserve the DENY evidence. Rolling the transaction back
+                    # would erase the audit row together with the rejected
+                    # request, so commit this audit-only transaction first.
+                    self.commit_transaction(tx)
+                    transaction_finished = True
+                    raise TravelerAuthorizationError(decision)
+
+            started = clock()
+            await self._pin_rls_settings(tx, traveler_id, agent_type, authorization)
+            await self._assume_app_role(tx, app_role, allow_unscoped)
+            timings.rls_ms = elapsed_ms(started)
+            yield tx
+            self.commit_transaction(tx)
+            transaction_finished = True
+        except BaseException:
+            # Cancellation must release RLS/lease row locks too. CancelledError
+            # is a BaseException; otherwise Data API waits for its idle timeout.
+            if not transaction_finished:
+                try:
+                    self.rollback_transaction(tx)
+                except Exception:
+                    logger.exception("Failed to roll back interrupted traveler transaction")
+            raise
+
+    async def _pin_rls_settings(
+        self,
+        tx: str,
+        traveler_id: Optional[str],
+        agent_type: Optional[str],
+        authorization: Optional[AuthorizationContext],
+    ) -> None:
+        """Pin every transaction-local RLS setting in one Data API round trip.
+
+        On a high-latency connection, separate calls for each setting can
+        exhaust the browser's read timeout before any data is read.
+        """
+        settings = [("row_security", "on")]
+        if traveler_id is not None:
+            settings.append(("app.current_traveler_id", traveler_id))
+        if agent_type is not None:
+            settings.append(("app.agent_type", agent_type))
+        if authorization is not None:
+            settings.extend([
+                ("app.authorization_provider", authorization.provider),
+                ("app.authorization_subject", authorization.subject_id),
+            ])
+        await self.execute(
+            "SELECT " + ", ".join(
+                f"set_config('{name}', %s, true)" for name, _ in settings
+            ),
+            tuple(value for _, value in settings),
+            transaction_id=tx,
+        )
+
+    async def _assume_app_role(self, tx: str, app_role: str, allow_unscoped: bool) -> None:
+        """Step off the privileged master role for the rest of the transaction.
+
+        The least-privilege app role IS subject to RLS. ``SET LOCAL ROLE`` is
+        transaction-scoped and reverts on commit or rollback.
+
+        IMPORTANT — why we SET LOCAL ROLE: the RDS Data API connects as the
+        DB user its secret maps to. Ours is the cluster master user
+        (meridian_admin), and on this Aurora cluster the master role is NOT
+        subject to RLS — row_security_active() returns false for it — even
+        though the tables are ENABLE + FORCE'd and the role is neither
+        superuser nor BYPASSRLS. (We don't assert the exact Aurora internal;
+        the observable fact is what matters: master sees 22 rows, a
+        non-privileged role sees 17, same GUC and policy.) We therefore step
+        down into the least-privilege ``meridian_app`` role for the lifetime of
+        this transaction — AFTER setting the GUCs — so the policies engage for
+        the queries that run inside the block. See examples/rls_app_role.sql.
+
+        The role switch is required by default. If ``meridian_app`` is not
+        present (e.g. the migration hasn't been applied), scoped reads/writes
+        fail closed instead of continuing on the master connection. For one-off
+        local admin diagnostics only, set ``RLS_ALLOW_UNSCOPED_FALLBACK=1``.
+        """
+        if not app_role:
+            msg = (
+                "RLS_APP_ROLE is empty; refusing to run scoped_session "
+                "without a least-privilege role."
+            )
+            if not allow_unscoped:
+                raise RuntimeError(
+                    f"{msg} Set RLS_APP_ROLE=meridian_app or apply "
+                    "examples/rls_app_role.sql."
+                )
+            logger.warning("%s RLS will NOT filter.", msg)
+            return
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", app_role):
+            raise RuntimeError(
+                f"Invalid RLS_APP_ROLE {app_role!r}; expected an unquoted "
+                "PostgreSQL identifier such as meridian_app."
+            )
+        try:
+            await self.execute(f"SET LOCAL ROLE {app_role}", transaction_id=tx)
+        except Exception as exc:  # role missing / not granted
+            msg = (
+                f"scoped_session: could not SET LOCAL ROLE {app_role} "
+                f"({str(exc)[:120]}). Apply examples/rls_app_role.sql."
+            )
+            if not allow_unscoped:
+                raise RuntimeError(msg) from exc
+            logger.warning("%s Continuing on master connection; RLS will NOT filter.", msg)
+
+
+# Global client instance
+_client: Optional[RDSDataClient] = None
+
+
+def get_rds_data_client() -> RDSDataClient:
+    """Get or create the global RDS Data API client instance."""
+    global _client
+    if _client is None:
+        _client = RDSDataClient()
+    return _client

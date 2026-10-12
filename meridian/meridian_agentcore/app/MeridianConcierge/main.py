@@ -1,0 +1,323 @@
+"""Meridian concierge runtime.
+
+A Strands agent plans with tools served by AgentCore Gateway over MCP, keeps its
+conversation in AgentCore Memory, and streams activity spans back to the backend.
+Every tool call is authenticated to the gateway and checked by its Cedar policies before any
+Lambda runs: signed with the runtime's execution role (``MERIDIAN_AGENTCORE_AUTH=iam``, the
+default) or carrying the signed-in caller's access token (``jwt``).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import time
+from functools import lru_cache
+
+import boto3
+from bedrock_agentcore.memory.integrations.strands.config import (
+    AgentCoreMemoryConfig,
+    RetrievalConfig,
+)
+from bedrock_agentcore.memory.integrations.strands.session_manager import (
+    AgentCoreMemorySessionManager,
+)
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
+from opentelemetry import trace
+from strands import Agent
+from strands.tools.mcp import MCPClient
+
+from caller_identity import CallerRefused, auth_mode, caller_from_request
+from gateway_auth import gateway_client_arguments, gateway_url
+from hold_execution import execute_confirmed_booking, execute_confirmed_hold
+from model.load import DEFAULT_MODEL_ID, load_model
+from prompts import narration_prompt, system_prompt, turn_prompt
+from turn_trace import TraceHooks, TurnContext, activity
+
+app = BedrockAgentCoreApp()
+REGION = os.getenv("AWS_REGION", "us-east-1")
+SESSION = boto3.Session(region_name=REGION)
+GATEWAY_URL = gateway_url(os.environ)
+MEMORY_ID = os.environ["MEMORY_MERIDIAN_SESSION_ID"]
+MODEL_ID = os.getenv("BEDROCK_MODEL_ID", DEFAULT_MODEL_ID)
+GATEWAY_ID = os.getenv("MERIDIAN_GATEWAY_ID", GATEWAY_URL.split("//")[-1].split(".")[0])
+POLICY_ENGINE_ID = os.getenv("MERIDIAN_POLICY_ENGINE_ID", "")
+POLICY_MODE = os.getenv("MERIDIAN_POLICY_MODE", "ENFORCE")
+SESSION_NAMESPACE = "/users/{actorId}/sessions/{sessionId}"
+GATEWAY_AUTH_LABELS = {"iam": "SigV4", "jwt": "Cognito access token"}
+FOLLOW_UPS = [
+    "Compare the top options",
+    "Check duration availability",
+    "Explain the preference match",
+]
+
+
+@lru_cache(maxsize=1)
+def concierge_model():
+    """Reuse the stateless model client within the isolated Runtime session."""
+    return load_model(MODEL_ID, REGION)
+
+
+def trace_id() -> str | None:
+    context = trace.get_current_span().get_span_context()
+    return format(context.trace_id, "032x") if context.is_valid else None
+
+
+async def drive(agent, prompt, queue):
+    try:
+        async for part in agent.stream_async(prompt):
+            await queue.put(("part", part))
+    except Exception as error:  # noqa: BLE001 - surfaced to the backend as an error event
+        await queue.put(("error", error))
+    finally:
+        await queue.put(("end", None))
+
+
+def memory_manager(traveler_id: str, conversation_id: str) -> AgentCoreMemorySessionManager:
+    config = AgentCoreMemoryConfig(
+        memory_id=MEMORY_ID,
+        session_id=conversation_id,
+        actor_id=traveler_id,
+        retrieval_config={SESSION_NAMESPACE: RetrievalConfig(top_k=5, relevance_score=0.3)},
+    )
+    return AgentCoreMemorySessionManager(agentcore_memory_config=config, region_name=REGION)
+
+
+def elapsed_ms(started: float) -> int:
+    """Whole milliseconds since ``started``, a ``time.perf_counter()`` reading."""
+    return round((time.perf_counter() - started) * 1000)
+
+
+def memory_span(traveler_id: str, conversation_id: str) -> dict:
+    """The Memory span, timed around its one ``list_events`` call and nothing else."""
+    client = SESSION.client("bedrock-agentcore")
+    started = time.perf_counter()
+    events = client.list_events(
+        memoryId=MEMORY_ID, actorId=traveler_id, sessionId=conversation_id, maxResults=50
+    )
+    took = elapsed_ms(started)
+    count = len(events.get("events", []))
+    return activity(
+        "reasoning",
+        "AgentCore Memory: session restored",
+        f"{count} prior events for this conversation loaded by the session manager",
+        {
+            "category": "memory_short",
+            "component": "Bedrock AgentCore Memory",
+            "status": "ok",
+            "fields": [
+                {"label": "memory_id", "value": MEMORY_ID, "mono": True},
+                {"label": "actor_id", "value": traveler_id, "mono": True},
+                {"label": "session_id", "value": conversation_id, "mono": True},
+                {"label": "events", "value": str(count)},
+                {"label": "namespace", "value": SESSION_NAMESPACE, "mono": True},
+            ],
+        },
+        took,
+    )
+
+
+def turn_context(
+    payload: dict, traveler_id: str | None = None, gateway_auth: str = "SigV4"
+) -> tuple[TurnContext, dict | None, dict | None]:
+    """The authorized turn plus the hold or booking terms the traveler confirmed, if any.
+
+    ``traveler_id`` is the traveler proved by the caller's token; without it the payload's is used.
+    """
+    hold_target = payload.get("hold_target") or None
+    booking_target = payload.get("booking_target") or None
+    turn = TurnContext(
+        traveler_id=str(traveler_id or payload.get("traveler_id") or "trv_meridian_demo"),
+        conversation_id=str(payload.get("conversation_id") or "conv-unknown"),
+        hold_confirmed=bool(payload.get("hold_confirmed")) and hold_target is not None,
+        budget_ceiling_cents=int(payload.get("budget_ceiling_cents") or 0),
+        gateway_id=GATEWAY_ID,
+        policy_engine_id=POLICY_ENGINE_ID,
+        policy_mode=POLICY_MODE,
+        booking_confirmed=bool(payload.get("booking_confirmed")) and booking_target is not None,
+        gateway_auth=gateway_auth,
+    )
+    return turn, hold_target, booking_target
+
+
+def start_span(turn: TurnContext) -> dict:
+    return activity(
+        "runtime",
+        "AgentCore Runtime: turn started",
+        f"microVM session for {turn.conversation_id}",
+        {
+            "category": "runtime",
+            "component": "Bedrock AgentCore Runtime, MeridianConcierge",
+            "status": "ok",
+            "fields": [
+                {"label": "trace_id", "value": trace_id() or "pending", "mono": True},
+                {"label": "model", "value": MODEL_ID, "mono": True},
+                {"label": "hold_confirmed", "value": str(turn.hold_confirmed).lower()},
+                {"label": "booking_confirmed", "value": str(turn.booking_confirmed).lower()},
+            ],
+        },
+    )
+
+
+def tools_span(tools: list, took: int, mode: str = "iam") -> dict:
+    """The tools/list span, carrying the time measured around ``list_tools_sync``."""
+    how = "bearer-token" if mode == "jwt" else "IAM-signed"
+    return activity(
+        "tool_call",
+        "AgentCore Gateway: tools/list",
+        f"{len(tools)} MCP tools discovered with {how} requests",
+        {
+            "category": "gateway",
+            "component": "Bedrock AgentCore Gateway",
+            "status": "ok",
+            "fields": [
+                {"label": "endpoint", "value": GATEWAY_URL, "mono": True},
+                {"label": "tools", "value": ", ".join(t.tool_name for t in tools)},
+                {"label": "policy_engine", "value": POLICY_ENGINE_ID or "none", "mono": True},
+            ],
+        },
+        took,
+    )
+
+
+def drain(queue):
+    """Yield the events the hooks queued during a platform-executed tool call."""
+    while not queue.empty():
+        kind, item = queue.get_nowait()
+        if kind == "activity":
+            yield {"type": "activity", **item}
+        elif kind in ("hold", "booking"):
+            yield {"type": kind, **item}
+        elif kind == "packages":
+            yield {"type": "packages", "packages": item}
+
+
+async def pump(queue, task):
+    """Yield runtime events until the agent finishes; return the answer and usage."""
+    answer, usage = "", {}
+    while True:
+        kind, item = await queue.get()
+        if kind == "activity":
+            yield {"type": "activity", **item}
+        elif kind == "packages":
+            yield {"type": "packages", "packages": item}
+        elif kind in ("hold", "booking"):
+            yield {"type": kind, **item}
+        elif kind == "part":
+            data = item.get("data")
+            if data:
+                answer += data
+                yield {"type": "token", "text": data}
+            elif "result" in item:
+                usage = dict(item["result"].metrics.accumulated_usage)
+        elif kind == "error":
+            await task
+            raise item
+        elif kind == "end":
+            break
+    await task
+    yield {"type": "answer", "text": answer, "usage": usage}
+
+
+def confirmed_action(hooks, gateway, turn: TurnContext, hold_target, booking_target):
+    """Place the write the traveler confirmed, if any; return (summary, action, terms).
+
+    The click is the confirmation: the platform places the governed call with the
+    exact confirmed terms, and the model narrates what the gateway decided.
+    """
+
+    def call_tool(tool_use_id, name, args):
+        return gateway.call_tool_sync(tool_use_id=tool_use_id, name=name, arguments=args)
+
+    if turn.booking_confirmed and booking_target:
+        outcome = execute_confirmed_booking(hooks, call_tool, booking_target)
+        return outcome, "booking", booking_target
+    if turn.hold_confirmed and hold_target:
+        return execute_confirmed_hold(hooks, call_tool, hold_target), "hold", hold_target
+    return None, "hold", hold_target
+
+
+async def run(payload: dict, headers: dict | None = None):
+    started = time.monotonic()
+    mode = auth_mode()
+    proven_traveler, token = caller_from_request(payload, headers, mode)
+    turn, hold_target, booking_target = turn_context(
+        payload, proven_traveler, GATEWAY_AUTH_LABELS[mode]
+    )
+    queue: asyncio.Queue = asyncio.Queue()
+    hooks = TraceHooks(queue, turn)
+    gateway = MCPClient(
+        url=GATEWAY_URL, **gateway_client_arguments(mode, SESSION, REGION, token)
+    )
+    yield {"type": "activity", **start_span(turn)}
+    with gateway:
+        listed = time.perf_counter()
+        tools = gateway.list_tools_sync()
+        yield {"type": "activity", **tools_span(tools, elapsed_ms(listed), mode)}
+        yield {"type": "activity", **memory_span(turn.traveler_id, turn.conversation_id)}
+        outcome, action, target = confirmed_action(
+            hooks, gateway, turn, hold_target, booking_target
+        )
+        for event in drain(queue):
+            yield event
+        agent = Agent(
+            model=concierge_model(),
+            system_prompt=system_prompt(
+                turn.hold_confirmed, hold_target, turn.booking_confirmed, booking_target
+            ),
+            tools=[] if outcome is not None else tools,
+            hooks=[hooks],
+            session_manager=memory_manager(turn.traveler_id, turn.conversation_id),
+            callback_handler=None,
+        )
+        if outcome is not None:
+            prompt = narration_prompt(outcome, target, turn.budget_ceiling_cents, action)
+        else:
+            prompt = turn_prompt(
+                str(payload.get("prompt", "")),
+                str(payload.get("memory_context", "")),
+                hold_target,
+                turn.hold_confirmed,
+            )
+        task = asyncio.create_task(drive(agent, prompt, queue))
+        answer, usage = "", {}
+        async for event in pump(queue, task):
+            if event["type"] == "answer":
+                answer, usage = event["text"], event["usage"]
+            else:
+                yield event
+    if not answer.strip():
+        answer = "I could not produce a grounded recommendation from the live options."
+    yield {
+        "type": "result",
+        "message": answer.strip(),
+        "recommended_package_ids": [
+            p.get("package_id") for p in hooks.packages if p.get("package_id")
+        ],
+        "follow_ups": FOLLOW_UPS,
+        "hold": hooks.hold,
+        "booking": hooks.booking,
+        "trace_id": trace_id(),
+        "usage": usage,
+        "elapsed_ms": round((time.monotonic() - started) * 1000),
+    }
+
+
+@app.entrypoint
+async def invoke(payload, context=None):
+    if payload.get("event") != "concierge_turn":
+        yield json.dumps({"type": "error", "message": "Unsupported Meridian Runtime event."})
+        return
+    headers = getattr(context, "request_headers", None)
+    try:
+        async for item in run(payload, headers):
+            yield json.dumps(item, ensure_ascii=False)
+    except CallerRefused as refused:
+        yield json.dumps({"type": "error", "code": refused.code, "message": str(refused)})
+    except Exception as error:  # noqa: BLE001 - the backend renders the failure as a span
+        yield json.dumps({"type": "error", "message": str(error)[:600]})
+
+
+if __name__ == "__main__":
+    app.run()

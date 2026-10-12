@@ -1,0 +1,443 @@
+/* ---------------------------------------------------------------------------
+   Presenter proof
+   ---------------------------------------------------------------------------
+   A projector surface. Read from the back of a room: large type, high
+   contrast, and a fixed three-part spine (worker → store → worker) that does
+   not move as the demo advances, so the only thing the eye tracks is which
+   values changed.
+
+   Every value here is served by the journey document. Where Aurora holds no
+   evidence the surface prints an em dash rather than a plausible number.
+------------------------------------------------------------------------------ */
+
+.mds-proof-surface {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(18px, 2.4vw, 30px);
+  padding: clamp(22px, 3vw, 40px);
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  color: var(--mds-label);
+  background: var(--mds-ground);
+}
+
+.mc-run-evidence { width: 100%; max-width: 1100px; margin-inline: auto; }
+.mc-run-evidence .mds-trace-panel { width: 100%; min-width: 0; }
+.mc-run-evidence-actions { display: flex; flex-wrap: wrap; gap: 12px 24px; }
+
+/* ------------------------------------------------------------------ header */
+
+.mds-proof-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.mds-proof-head h1 {
+  margin: 0;
+  font: var(--mds-type-large-title);
+  line-height: 1.06;
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-proof-head h1 span {
+  display: block;
+  color: var(--mds-label-2);
+}
+
+.mds-proof-head-meta {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  color: var(--mds-label-2);
+  font: var(--mds-type-body);
+}
+
+.mds-proof-head-meta p {
+  margin: 0;
+}
+
+.mds-proof-refresh {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.mds-proof-refresh:hover {
+  border-color: var(--mds-tint);
+  background: var(--mds-surface-2);
+}
+
+/* -------------------------------------------------------------------- flow */
+
+.mds-proof-flow {
+  display: grid;
+  grid-template-columns: 1fr auto 1.15fr auto 1fr;
+  align-items: stretch;
+  gap: clamp(10px, 1.4vw, 18px);
+}
+
+.mds-proof-arrow {
+  align-self: center;
+  color: var(--mds-label-2);
+  font: var(--mds-type-title-2);
+  font-weight: var(--mds-weight-regular);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-proof-worker {
+  display: grid;
+  gap: 5px;
+  align-content: start;
+  padding: clamp(16px, 1.7vw, 22px);
+  border: 0;
+  border-radius: var(--mds-radius-l);
+}
+
+.mds-proof-worker-glyph {
+  color: var(--mds-label-2);
+}
+
+.mds-proof-worker.is-stopped .mds-proof-worker-glyph {
+  color: var(--mds-red);
+}
+
+.mds-proof-worker-role {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-proof-worker-id {
+  font: var(--mds-type-title-1);
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-proof-worker-note,
+.mds-proof-worker-state,
+.mds-proof-worker-vm,
+.mds-proof-store-table,
+.mds-proof-stop {
+  overflow-wrap: anywhere;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-proof-worker.is-stopped .mds-proof-worker-state {
+  color: var(--mds-red);
+}
+
+.mds-proof-worker.is-running .mds-proof-worker-state {
+  color: var(--mds-tint);
+}
+
+/* The store is the centre of the claim, so it is the only filled panel. */
+.mds-proof-store {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: clamp(16px, 1.7vw, 22px);
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  background: var(--mds-surface);
+}
+
+.mds-proof-store-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--mds-label);
+  font: var(--mds-type-title-3);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-proof-store-rows {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.mds-proof-store-rows > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.mds-proof-store-rows dt {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-proof-store-rows dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font: var(--mds-type-footnote);
+  font-family: var(--mds-font-mono);
+  text-align: right;
+}
+
+.mds-proof-store-foot {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--mds-separator);
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-proof-store-foot.is-good {
+  color: var(--mds-green);
+}
+
+/* -------------------------------------------------------------------- tabs */
+
+.mds-proof-tabs {
+  display: flex;
+  gap: 22px;
+  border-bottom: 1px solid var(--mds-separator);
+}
+
+.mds-proof-tab {
+  position: relative;
+  min-height: 40px;
+  padding: 0 2px 10px;
+  border: 0;
+  color: var(--mds-label-2);
+  background: none;
+  font: var(--mds-type-headline);
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.mds-proof-tab:hover {
+  color: var(--mds-label);
+}
+
+.mds-proof-tab.is-active {
+  color: var(--mds-label);
+}
+
+.mds-proof-tab.is-active::after {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: var(--mds-radius-s);
+  background: var(--mds-tint);
+}
+
+.mds-proof-panel {
+  min-height: 92px;
+}
+
+/* ------------------------------------------------------------------- facts */
+
+.mds-proof-facts {
+  /* One row of four. auto-fit wrapped the last fact onto its own line, which
+     orphaned the value the room is actually there to read. */
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(14px, 2vw, 26px);
+}
+
+@media (min-width: 1000px) {
+  .mds-proof-facts {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .mds-proof-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mds-proof-fact {
+  display: grid;
+  gap: 7px;
+  padding-left: 18px;
+  border-left: 1px solid var(--mds-separator);
+}
+
+/* Only the first fact in each row loses its rule, so a wrapped grid does not
+   grow a stray vertical line down its left edge. */
+.mds-proof-fact:first-child,
+.mds-proof-fact:nth-child(odd) {
+  padding-left: 0;
+  border-left: 0;
+}
+
+@media (min-width: 1000px) {
+  .mds-proof-fact:nth-child(odd) {
+    padding-left: 18px;
+    border-left: 1px solid var(--mds-separator);
+  }
+
+  .mds-proof-fact:first-child {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .mds-proof-fact {
+    padding-left: 0;
+    border-left: 0;
+  }
+}
+
+.mds-proof-fact-label {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-proof-fact-value {
+  /* Only identifiers may break inside a word. Breaking "trv_meridian_demo"
+     across lines mid-token makes a value that is meant to be read aloud from
+     the back of a room unreadable. */
+  overflow-wrap: break-word;
+  font: var(--mds-type-title-3);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-proof-fact-value.is-mono {
+  overflow-wrap: anywhere;
+  font: var(--mds-type-body);
+  font-family: var(--mds-font-mono);
+}
+
+.mds-proof-fact-value.is-good {
+  color: var(--mds-green);
+}
+
+.mds-proof-fact-value.is-muted {
+  color: var(--mds-label-2);
+}
+
+.mds-proof-auth {
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+  color: var(--mds-label);
+}
+
+.mds-proof-auth svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--mds-green);
+}
+
+.mds-proof-auth strong {
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-proof-auth p {
+  margin: 5px 0 0;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-proof-subject {
+  overflow-wrap: anywhere;
+  font: var(--mds-type-footnote);
+  font-family: var(--mds-font-mono);
+}
+
+/* ------------------------------------------------------- empty and footer */
+
+.mds-proof-empty {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: clamp(40px, 7vw, 90px) 20px;
+  text-align: center;
+  color: var(--mds-label-2);
+}
+
+/* At this size the tile's 3px default radius reads as a hard square. */
+.mds-proof-empty .mds-service-mark {
+  border-radius: var(--mds-radius-l);
+}
+
+.mds-proof-empty h2 {
+  margin: 0;
+  color: var(--mds-label);
+  font: var(--mds-type-title-1);
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-proof-empty p {
+  max-width: 52ch;
+  margin: 0;
+  font: var(--mds-type-body);
+}
+
+.mds-proof-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  padding-top: 14px;
+  border-top: 1px solid var(--mds-separator);
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-proof-read-error {
+  padding: 12px 16px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+}
+
+/* --------------------------------------------------------------- narrow */
+
+@media (max-width: 900px) {
+  .mds-proof-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .mds-proof-arrow {
+    justify-self: center;
+    rotate: 90deg;
+  }
+
+  .mds-proof-head-meta {
+    justify-items: start;
+  }
+
+  .mds-proof-fact {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .mds-proof-tabs {
+    gap: 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .mds-proof-tabs::-webkit-scrollbar {
+    display: none;
+  }
+}

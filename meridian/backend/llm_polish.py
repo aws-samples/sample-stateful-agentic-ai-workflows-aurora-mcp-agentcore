@@ -1,0 +1,260 @@
+"""
+Concierge-tone polish over deterministic tool outputs.
+
+The MCP path produces precise but dry readouts ("FX via meridian-concierge
+MCP: 2500 USD ≈ 2300 EUR"). The app wants longer, narrative replies
+that read like a real travel concierge. This module wraps a Bedrock
+Converse call (Claude Sonnet 5 by default, with fallback to Haiku 4.5
+and Opus 5) around the deterministic facts so the user sees a richer
+answer without the agent hallucinating numbers - all factual content
+comes from the tool result that we feed verbatim into the system prompt.
+
+Returns a `PolishResult` carrying both the text AND metadata about which
+model responded (or which error blocked the polish), so the caller can
+log the model id into the trace and surface failures to the user instead
+of silently falling back to the dry deterministic output.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from dataclasses import dataclass
+from typing import List, Optional
+
+import boto3
+from botocore.config import Config
+
+from backend.config import config
+from backend.timing import clock, elapsed_ms
+
+logger = logging.getLogger(__name__)
+
+
+_CONCIERGE_SYSTEM = (
+    "You are Meridian, a high-end travel concierge speaking directly to the "
+    "traveler. Your job RIGHT NOW is to turn raw tool output from our internal "
+    "agent into a warm, helpful, well-structured reply.\n\n"
+    "Hard rules:\n"
+    "- Use ONLY the facts in the TOOL OUTPUT. Do not invent prices, dates, "
+    "destinations, points balances, rates, similarity scores, or "
+    "preferences. If a number or product name is in the output, reuse it "
+    "verbatim. If something is unknown, say so honestly.\n"
+    "- The traveler's request describes wishes, not verified package facts. "
+    "Do not turn 'villa stay' into a private or exclusive villa. If a requested "
+    "attribute is absent from the catalog, explicitly say it is unverified. "
+    "Food experiences do not establish dietary suitability, and loyalty status "
+    "does not establish a partner benefit. A search result is not a hold or "
+    "booking; offer to review an option, not to lock in unverified terms.\n"
+    "- Keep the response between 3 and 5 sentences (about 60-140 words).\n"
+    "- Open with the direct answer to the traveler's question, not preamble.\n"
+    "- When the TOOL OUTPUT lists ranked search results, the first product is "
+    "the best match. Lead with it and do not promote a lower-ranked trip above "
+    "it. For an explicit side-by-side comparison, however, the listed rows are "
+    "comparison subjects rather than a preference ranking: summarize their "
+    "tradeoffs and do not call one the leader unless the tool output explicitly "
+    "does so. For ranked results, briefly "
+    "explain the top pick's fit using the structured fields (price, trip_type, "
+    "description, durations, and highlights), then end with a focused follow-up "
+    "question. Reranker and vector scores are internal ordering signals, not "
+    "calibrated confidence: never quote them as percentages or call them a "
+    "'match percentage'. Use the ranked order instead.\n"
+    "- An `availability` field represents trip-package inventory by "
+    "duration. It is not airline seat inventory. Never claim that flights, "
+    "seats, routes, or nonstop service were checked unless those exact facts "
+    "appear in the tool output. Ask about choosing or holding a duration, not "
+    "checking seats.\n"
+    "- When the TOOL OUTPUT lists 'Traveler preferences applied to this turn', "
+    "weave 3-5 of them naturally into the reply, prioritizing whichever "
+    "preferences actually shape THIS recommendation. Examples: 'your "
+    "no_red_eye rule out of JFK', 'within the boutique-over-chain lodging "
+    "style you favor', 'I noted your shellfish allergy on dining picks', "
+    "'we'll apply your Hotel Platinum / Airline Premier benefits where useful', "
+    "'kept the Tokyo Oct 12-19 thread alive', 'sized for a 2-traveler party'. "
+    "Vary which facts you cite turn-to-turn so the relationship feels "
+    "lived-in - never repeat the same 1-2 facts every time. If the "
+    "traveler is explicitly asking about prior turns or what was discussed, "
+    "you may also briefly cite recent recalled trips. Do NOT enumerate "
+    "the full list as bullets - integrate the facts into the prose.\n"
+    "- When the TOOL OUTPUT mentions LangGraph nodes / classify / "
+    "memory_recall / availability, you can briefly note that the workflow "
+    "routed to that path - in plain language, not jargon.\n"
+    "- Use markdown formatting: bullet lists only when the traveler explicitly "
+    "asked for a comparison, **bold** for key numbers and product names, and "
+    "a final 1-line follow-up suggestion when natural. When product cards are "
+    "present, do not repeat every field from every card in prose.\n"
+    "- DO NOT use emojis or pictographs of any kind. No flags, weather "
+    "symbols, food, transportation, or decorative icons. The product is "
+    "premium and minimalist; emojis read as unprofessional.\n"
+    "- Never mention 'tool output', 'system prompt', 'MCP', 'phase', or "
+    "internal mode names explicitly - speak as the concierge, not the engine.\n"
+)
+
+
+# Model fallback chain. The primary is config.bedrock.model_id (GPT-6 Sol by
+# default, overridable in .env) and _candidate_models() always tries it first.
+# This chain is the BACKUP order if the primary errors: stay fast with Sonnet 5,
+# then Haiku 4.5, and keep Opus 5 last so a transient error never silently
+# falls back to the slowest model. First success wins.
+_DEFAULT_FALLBACK_CHAIN: List[str] = [
+    "global.anthropic.claude-sonnet-5",
+    "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    "global.anthropic.claude-opus-5",
+]
+
+
+def _candidate_models() -> List[str]:
+    primary = config.bedrock.model_id
+    chain: List[str] = [primary]
+    for m in _DEFAULT_FALLBACK_CHAIN:
+        if m not in chain:
+            chain.append(m)
+    return chain
+
+
+@dataclass
+class PolishResult:
+    """Outcome of a polish attempt.
+
+    `text` always carries something the caller can show the user - the
+    polished reply on success, or the original `tool_output` (with a
+    `note` describing why polishing failed) when every model in the
+    fallback chain errored out.
+    """
+
+    text: str
+    model_id: Optional[str]  # which model actually answered
+    note: Optional[str]  # error string if polish failed entirely
+    # How long the Converse call of the model that answered took. Earlier
+    # failed attempts in the chain are not part of it.
+    elapsed_ms: Optional[int] = None
+
+
+_bedrock_client = None
+
+
+def _client():
+    global _bedrock_client
+    if _bedrock_client is None:
+        _bedrock_client = boto3.client(
+            "bedrock-runtime",
+            region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
+            config=Config(
+                read_timeout=25,
+                connect_timeout=5,
+                retries={"max_attempts": 1, "mode": "standard"},
+            ),
+        )
+    return _bedrock_client
+
+
+def _polish_sync(user_query: str, tool_output: str) -> PolishResult:
+    """Synchronous Bedrock Converse call with model fallback chain.
+
+    Tries each model in `_candidate_models()` until one succeeds. Returns
+    a PolishResult that always has usable `text` (polished or raw) and
+    metadata describing what happened.
+    """
+    if not tool_output:
+        return PolishResult(text=tool_output, model_id=None, note="empty tool output")
+
+    last_error: Optional[str] = None
+    for model_id in _candidate_models():
+        try:
+            converse_kwargs = {
+                "modelId": model_id,
+                "system": [{"text": _CONCIERGE_SYSTEM}],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "text": (
+                                    f"Traveler asked: {user_query}\n\n"
+                                    f"TOOL OUTPUT (facts to use verbatim):\n"
+                                    f"{tool_output}\n\nReply now."
+                                )
+                            }
+                        ],
+                    }
+                ],
+                "inferenceConfig": {
+                    # Just maxTokens. Opus 5 deprecates `temperature`
+                    # ("temperature is deprecated for this model"), and
+                    # Haiku 4.5 rejects `temperature + topP` together.
+                    # Letting the model pick its own sampling defaults
+                    # is the only setting compatible across the entire
+                    # Opus / Sonnet / Haiku fallback chain.
+                    "maxTokens": 1200,
+                },
+            }
+            if model_id.lower().endswith(
+                ("anthropic.claude-sonnet-5", "anthropic.claude-opus-5")
+            ):
+                # Opus 5 / Sonnet 5 think by default; this is a single-call,
+                # non-tool reply-polishing route (never used with tools), so
+                # disable thinking to keep the prior latency/cost/behavior
+                # instead of spending the 1200-token budget on reasoning.
+                converse_kwargs["additionalModelRequestFields"] = {
+                    "thinking": {"type": "disabled"}
+                }
+            started = clock()
+            resp = _client().converse(**converse_kwargs)
+            call_ms = elapsed_ms(started)
+            stop_reason = str(resp.get("stopReason", "")).lower()
+            blocks = resp.get("output", {}).get("message", {}).get("content", [])
+            saw_text = False
+            for b in blocks:
+                text = b.get("text")
+                if text:
+                    saw_text = True
+                    polished = text.strip()
+                    visible_ending = polished.rstrip("*_` ").rstrip()
+                    if stop_reason in {"max_tokens", "length"}:
+                        last_error = (
+                            f"{model_id} stopped before completing the reply "
+                            f"({stop_reason})"
+                        )
+                        logger.warning(last_error)
+                        continue
+                    if not visible_ending or visible_ending[-1] not in ".!?":
+                        last_error = (
+                            f"{model_id} returned an incomplete-looking reply"
+                        )
+                        logger.warning("%s: %r", last_error, polished[-120:])
+                        continue
+                    logger.info(
+                        "[polish] %s ok len=%d preview=%r",
+                        model_id,
+                        len(polished),
+                        polished[:200],
+                    )
+                    return PolishResult(
+                        text=polished,
+                        model_id=model_id,
+                        note=None,
+                        elapsed_ms=call_ms,
+                    )
+            if not saw_text:
+                last_error = f"{model_id} returned an empty response"
+        except Exception as exc:
+            last_error = f"{model_id}: {exc.__class__.__name__}: {exc}"
+            logger.warning("polish failed on %s: %s", model_id, exc)
+
+    return PolishResult(
+        text=tool_output,
+        model_id=None,
+        note=last_error or "every model in the fallback chain failed",
+    )
+
+
+async def polish_concierge_reply(user_query: str, tool_output: str) -> PolishResult:
+    """Async wrapper around the Bedrock Converse call.
+
+    Always returns a non-empty PolishResult: polished text on success,
+    raw tool_output on failure with a `note` explaining why.
+    """
+    if not tool_output:
+        return PolishResult(text=tool_output, model_id=None, note="empty tool output")
+    return await asyncio.to_thread(_polish_sync, user_query, tool_output)

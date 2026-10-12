@@ -1,0 +1,151 @@
+import { describe, expect, it } from 'vitest';
+import {
+  SHOWCASE_EXAMPLE_PROMPTS,
+  activityToShowcaseTraceSpan,
+  chatResponseToMessages,
+  genericizeLoyaltyText,
+  healthResponseToStatus,
+  showcasePromptLabel,
+} from '../showcaseAdapters';
+
+describe('chatResponseToMessages model badge', () => {
+  it('carries the model that wrote the reply onto the bot message', () => {
+    const messages = chatResponseToMessages(
+      [],
+      'Find a quiet retreat',
+      { message: 'Here are some trips.', activities: [], model_label: 'Claude Haiku 4.5' },
+    );
+    const bot = messages.find((m) => m.role === 'bot');
+    expect(bot?.modelLabel).toBe('Claude Haiku 4.5');
+  });
+
+  it('leaves the model badge unset for a pure tool result', () => {
+    const messages = chatResponseToMessages(
+      [],
+      'What is the price range for Tokyo trips?',
+      { message: 'Price range for Tokyo: low $1,199 · average $1,950 · high $3,299.', activities: [] },
+    );
+    const bot = messages.find((m) => m.role === 'bot');
+    expect(bot?.modelLabel).toBeUndefined();
+  });
+});
+
+it('leaves missing trace timing unrecorded while preserving measured zero', () => {
+  const activity = { id: 'a', timestamp: '', activity_type: 'tool_call' as const, title: 'Search' };
+  expect(activityToShowcaseTraceSpan(activity, 8, 'Tokyo').latencyMs).toBeNull();
+  expect(activityToShowcaseTraceSpan({ ...activity, execution_time_ms: 0 }, 8, 'Tokyo').latencyMs).toBe(0);
+});
+
+it('keeps a Cedar denial span as denied in the security category', () => {
+  const span = activityToShowcaseTraceSpan(
+    {
+      id: 'deny',
+      timestamp: '',
+      activity_type: 'security' as const,
+      title: 'Hold refused by Cedar policy',
+      telemetry: { category: 'security', component: 'Bedrock AgentCore Policy', status: 'denied', fields: [] },
+    },
+    0,
+    'hold it',
+  );
+  expect(span.status).toBe('denied');
+  expect(span.category).toBe('security');
+  expect(span.component).toBe('Bedrock AgentCore Policy');
+});
+
+describe('SHOWCASE_EXAMPLE_PROMPTS phase ladder', () => {
+  it('uses the SQL failure to tee up custom MCP tools', () => {
+    const sqlBreak = SHOWCASE_EXAMPLE_PROMPTS[1][2].toLowerCase();
+    expect(sqlBreak).toContain('compare');
+    expect(sqlBreak).toContain('euros');
+    expect(SHOWCASE_EXAMPLE_PROMPTS[2][0]).toBe(SHOWCASE_EXAMPLE_PROMPTS[1][2]);
+  });
+
+  it('uses the MCP failure to tee up retrieval intent matching', () => {
+    const mcpBreak = SHOWCASE_EXAMPLE_PROMPTS[2][2].toLowerCase();
+    expect(mcpBreak).toContain('romantic');
+    expect(mcpBreak).toContain('wine');
+    expect(mcpBreak).not.toContain('wellness');
+    expect(SHOWCASE_EXAMPLE_PROMPTS[3][0]).toBe(SHOWCASE_EXAMPLE_PROMPTS[2][2]);
+  });
+
+  it('uses the retrieval failure to tee up production memory', () => {
+    const retrievalBreak = SHOWCASE_EXAMPLE_PROMPTS[3][2].toLowerCase();
+    expect(retrievalBreak).toContain('recall');
+    expect(retrievalBreak).toContain('saved preferences');
+    expect(SHOWCASE_EXAMPLE_PROMPTS[4][1]).toBe(SHOWCASE_EXAMPLE_PROMPTS[3][2]);
+  });
+
+  it('uses the Production failure unchanged as the Workflow plan success', () => {
+    expect(SHOWCASE_EXAMPLE_PROMPTS[5][2]).toBe(SHOWCASE_EXAMPLE_PROMPTS[4][2]);
+  });
+
+  it('ends with distinct workflow branches that demonstrate durable orchestration', () => {
+    expect(SHOWCASE_EXAMPLE_PROMPTS[5][0].toLowerCase()).toContain('trip lengths');
+    expect(SHOWCASE_EXAMPLE_PROMPTS[5][1].toLowerCase()).toContain('recall');
+    // The plan branch is the flight-disruption replan: a re-search step plus a
+    // departure-availability step, the two dependent operations Phase 5 owns.
+    const planBreak = SHOWCASE_EXAMPLE_PROMPTS[5][2].toLowerCase();
+    expect(planBreak).toContain('canceled');
+    expect(planBreak).toContain('duration availability');
+    expect(planBreak).toContain('best three');
+  });
+
+  it('uses plain traveler language and explicit units', () => {
+    expect(SHOWCASE_EXAMPLE_PROMPTS[1][0]).toContain('$2,000 per traveler');
+    expect(SHOWCASE_EXAMPLE_PROMPTS[1][0].toLowerCase()).not.toContain('city break');
+    // The catalog holds no per-month or per-season prices, so the prompt
+    // asks only what the data can actually answer - a plain price range,
+    // never an invented seasonal figure.
+    expect(SHOWCASE_EXAMPLE_PROMPTS[2][1].toLowerCase()).toContain('price range');
+    expect(SHOWCASE_EXAMPLE_PROMPTS[2][1].toLowerCase()).not.toContain('off-season');
+    expect(SHOWCASE_EXAMPLE_PROMPTS[2][1].toLowerCase()).not.toContain('november');
+  });
+
+  it('uses concise projector labels without changing submitted prompts', () => {
+    expect(showcasePromptLabel(SHOWCASE_EXAMPLE_PROMPTS[4][1])).toBe(
+      'Recall my plan & preferences',
+    );
+    expect(showcasePromptLabel(SHOWCASE_EXAMPLE_PROMPTS[5][2])).toBe(
+      'Canceled flight replan',
+    );
+  });
+});
+
+describe('healthResponseToStatus', () => {
+  it.each(['unhealthy', 'not ok', 'broken', undefined])('rejects an unready status: %s', (status) => {
+    expect(healthResponseToStatus({
+      status, bedrock_model_id: 'model', embedding_model_id: 'embedding', checkpoint_backend: 'AuroraDataApiSaver',
+    })).toBe('offline');
+  });
+  it('only accepts the Meridian backend health contract', () => {
+    expect(
+      healthResponseToStatus({
+        status: 'healthy',
+        bedrock_model_id: 'global.anthropic.claude-sonnet-5',
+        embedding_model_id: 'cohere.embed-v4:0',
+        checkpoint_backend: 'postgres',
+      }),
+    ).toBe('online');
+
+    expect(
+      healthResponseToStatus({
+        status: 'ok',
+        service: 'another-local-service',
+      }),
+    ).toBe('offline');
+  });
+});
+
+describe('generic loyalty labels', () => {
+  it('removes real loyalty brands from showcase-facing text', () => {
+    expect(
+      genericizeLoyaltyText(
+        'Marriott Bonvoy Platinum Elite; United MileagePlus Premier 1K',
+      ),
+    ).toBe('Hotel Platinum; Airline Premier');
+    expect(genericizeLoyaltyText('United MileagePlus account')).toBe(
+      'airline loyalty account',
+    );
+  });
+});

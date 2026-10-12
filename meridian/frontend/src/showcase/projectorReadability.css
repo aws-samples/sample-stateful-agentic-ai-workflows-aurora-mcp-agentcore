@@ -1,0 +1,32 @@
+/* Room preset. Load after the individual surfaces so audience settings also
+   cover briefing diagrams, recorded SQL and recovery evidence. Laptop styling
+   stays independent; the theme toggle still supports a fully dimmed room. */
+
+.mds-root[data-projector-readability='true'] .mds-theme-toggle {
+  width: 44px;
+  height: 44px;
+}
+
+/* Leave room for all five surface names on common 720p projectors. */
+@media (min-width: 861px) and (max-width: 1440px) {
+  .mds-root[data-audience-layout='true'] .mc-audience-brand > span { display: none; }
+  .mds-root[data-audience-layout='true'] .mds-shell-header { gap: 18px; }
+}
+
+/* Type scales through --mds-type-scale (tokens.css). This block only wraps long
+   code and thickens diagram strokes for the room; at 200% zoom the narrow
+   layouts take over. */
+@media (min-width: 861px) {
+  .mds-root[data-projector-readability='true'] :is(
+    .mds-trace-inspector pre, .mds-activity-event-detail pre,
+    .mds-brief-policy pre
+  ) {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    tab-size: 2;
+  }
+  .mds-root[data-projector-readability='true'] .mds-brief-arch-edges { stroke-width: 2.5; }
+  .mds-root[data-projector-readability='true'] .mds-brief-arch-node rect {
+    stroke-width: 2;
+  }
+}

@@ -1,0 +1,318 @@
+"""Production turns must not hold RLS transactions across the runtime call."""
+
+import asyncio
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+
+import pytest
+
+from backend.agentcore.runtime import RuntimeDecision
+from backend.agents.phase_04_production import concierge as concierge_mod
+from backend.agents.phase_04_production.concierge import ProductionAgent
+
+
+class FakeDB:
+    def __init__(self, events):
+        self.events = events
+        self.active_tx = None
+        self.tx_count = 0
+
+    @asynccontextmanager
+    async def scoped_session(self, **_kwargs):
+        self.tx_count += 1
+        tx = f"tx-{self.tx_count}"
+        assert self.active_tx is None
+        self.active_tx = tx
+        self.events.append(f"{tx}:open")
+        try:
+            yield tx
+            self.events.append(f"{tx}:commit")
+        finally:
+            self.active_tx = None
+
+    async def execute(self, _sql, params=(), **_kwargs):
+        assert self.active_tx is None
+        self.events.append("aurora:hydrate")
+        return [
+            {"package_id": package_id, "name": "Tokyo Replan", "price_per_person": 2500.0,
+             "durations": ["7 nights"], "availability": {"7 nights": 4}}
+            for package_id in params
+        ]
+
+
+class FakeStore:
+    def __init__(self, db, events):
+        self.db = db
+        self.events = events
+
+    def prepare_embedding_vector(self, _text, *, input_type):
+        assert self.db.active_tx is None
+        self.events.append(f"embed:{input_type}")
+        return "[0.1,0.2]"
+
+    async def get_or_create_conversation(
+        self, _traveler_id, _conversation_id, *, transaction_id
+    ):
+        assert transaction_id == self.db.active_tx
+        self.events.append("aurora:conversation")
+        return "conv-test"
+
+    async def recall_profile(self, _traveler_id, *, transaction_id):
+        assert transaction_id == self.db.active_tx
+        self.events.append("aurora:profile")
+        return {"home_airport": "JFK"}
+
+    async def recall_shown_packages(self, _conversation_id, *, transaction_id):
+        assert transaction_id == self.db.active_tx
+        self.events.append("aurora:shortlist")
+        return [{"package_id": "TKY-001", "name": "Tokyo Indie Walk"}]
+
+    async def recall_preferences(self, _traveler_id, limit=8, transaction_id=None):
+        assert transaction_id == self.db.active_tx
+        assert limit >= 20, "the budget ceiling must see every fact, not the top eight"
+        self.events.append("aurora:budget-facts")
+        return [
+            {"key": "home_airport", "value": "JFK", "source": "profile", "confidence": 1.0},
+            {"key": "budget_cap", "value": "$3,200", "source": "search_analytics", "confidence": 0.88},
+        ]
+
+    @staticmethod
+    def format_memory_context(*_args):
+        return "Jordan flies from JFK"
+
+    async def write_audit(self, *, transaction_id, **kwargs):
+        assert transaction_id == self.db.active_tx
+        self.events.append(f"aurora:audit:{kwargs.get('operation')}")
+
+
+class FakeMemoryAgent:
+    def __init__(self, db, events):
+        self.db = db
+        self.events = events
+        self.activity_callback = lambda _entry: None
+        self._transaction_id = None
+        self._prepared_query_vector = None
+        self._query_vector_prepared = False
+        self._prepared_turn_vectors = None
+
+    def _assert_scoped(self):
+        assert self._transaction_id == self.db.active_tx
+        assert self._transaction_id is not None
+
+    async def recall_session_context(self, _conversation_id):
+        self._assert_scoped()
+        self.events.append("aurora:session")
+        return {"turns": []}
+
+    async def recall_traveler_preferences(self, _traveler_id):
+        self._assert_scoped()
+        self.events.append("aurora:preferences")
+        return {
+            "facts": [
+                {"key": "home_airport", "value": "JFK", "source": "profile", "confidence": 1.0},
+                {"key": "budget", "value": "Prefers $2k-3.5k per person", "source": "profile",
+                 "confidence": 0.9},
+            ]
+        }
+
+    async def recall_similar_interactions(self, _traveler_id, _message):
+        self._assert_scoped()
+        assert self._query_vector_prepared
+        self.events.append("aurora:semantic-recall")
+        return {"interactions": []}
+
+    async def persist_turn(self, *_args):
+        self._assert_scoped()
+        assert self._prepared_turn_vectors
+        self.events.append("aurora:persist")
+
+
+def build_agent(events, decision, calls):
+    db = FakeDB(events)
+    agent = ProductionAgent.__new__(ProductionAgent)
+    agent.activity_callback = lambda _entry: None
+    agent.store = FakeStore(db, events)
+    agent.db = db
+    agent.traveler_memory = FakeMemoryAgent(db, events)
+    agent.identity = SimpleNamespace(
+        scope_for_turn=lambda: SimpleNamespace(
+            iam_identity="arn:aws:sts::123:assumed-role/demo/session",
+            workload_identity="workload/demo",
+            resource_provider="meridian",
+            token_status="live",
+            authorization=SimpleNamespace(provider="agentcore_workload", subject_id="workload/demo"),
+        )
+    )
+
+    def invoke_turn(*args, **kwargs):
+        assert db.active_tx is None
+        events.append("external:runtime")
+        calls.append((args, kwargs))
+        return decision
+
+    agent.agentcore_runtime = SimpleNamespace(invoke_turn=invoke_turn)
+    return agent
+
+
+def runtime_decision(**overrides):
+    base = dict(
+        runtime_arn="arn:aws:bedrock-agentcore:us-east-1:1:runtime/rt-1",
+        runtime_session_id="runtime-session-id",
+        qualifier="DEFAULT",
+        message="Tokyo options grounded in traveler context.",
+        recommended_package_ids=["pkg-1"],
+        follow_ups=[],
+        activities=[{"id": "rt-1", "timestamp": "t", "activity_type": "search",
+                     "title": "AgentCore Gateway: tools/call → semantic_trip_search"}],
+        packages=[{"package_id": "pkg-1", "name": "Tokyo Replan", "similarity": 0.9}],
+        trace_id="abc123",
+        usage={"inputTokens": 10, "outputTokens": 5},
+        elapsed_ms=1200,
+    )
+    base.update(overrides)
+    return RuntimeDecision(**base)
+
+
+def test_production_turn_releases_transactions_before_the_runtime_call(monkeypatch):
+    events, calls = [], []
+    agent = build_agent(events, runtime_decision(), calls)
+    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+
+    result = asyncio.run(
+        agent.process_turn("Rework my Tokyo trip", "trv_meridian_demo", None, 5, travelers_count=2)
+    )
+
+    packages, activities, message, conv_id, facts = result
+    assert conv_id == "conv-test"
+    assert message == "Tokyo options grounded in traveler context."
+    assert packages[0].package_id == "pkg-1"
+    assert packages[0].similarity == 0.9
+    assert packages[0].availability == {"7 nights": 4}
+    assert facts[1]["key"] == "budget"
+    assert agent.db.tx_count == 2
+    read_commit = events.index("tx-1:commit")
+    write_open = events.index("tx-2:open")
+    runtime_call = events.index("external:runtime")
+    assert read_commit < runtime_call < write_open
+    assert events.index("aurora:hydrate") < write_open
+    assert "aurora:audit:production_turn" in events
+    args, kwargs = calls[0]
+    assert kwargs["budget_ceiling_cents"] == 640000
+    assert kwargs["travelers_count"] == 2
+    assert "Saved budget cap: $3,200.00 per traveler." in args[3]
+    assert "Whole-party policy ceiling: $6,400.00." in args[3]
+    assert events.index("aurora:budget-facts") < events.index("tx-1:commit")
+    assert "hold_confirmed" not in kwargs
+    titles = [entry.title for entry in activities]
+    assert "AgentCore Gateway: tools/call → semantic_trip_search" in titles
+    assert "AgentCore Runtime: turn complete" in titles
+    runtime_span = next(a for a in activities if a.title == "AgentCore Runtime: turn complete")
+    labels = {f["label"]: f["value"] for f in runtime_span.telemetry["fields"]}
+    assert labels["trace_id"] == "abc123"
+    assert labels["trace_console"].endswith("rt-1-DEFAULT")
+
+
+def test_trip_cards_and_persisted_context_follow_the_reply_not_search_order(monkeypatch):
+    events, calls = [], []
+    decision = runtime_decision(
+        message="Start with Tokyo Indie Walk (TKY-001), then Tokyo Autumn (TKY-005).",
+        packages=[{"package_id": "CTY-002", "name": "Tokyo Cuisine"},
+                  {"package_id": "TKY-005", "name": "Tokyo Autumn"},
+                  {"package_id": "TKY-001", "name": "Tokyo Indie Walk"}],
+        recommended_package_ids=["CTY-002", "TKY-005", "TKY-001"],
+    )
+    agent = build_agent(events, decision, calls)
+    saved = []
+    async def capture_write(_read, _traveler, _message, _reply, shown, _operation):
+        saved.extend(shown)
+    agent._write_unit = capture_write
+    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+
+    packages, *_ = asyncio.run(agent.process_turn("Plan Tokyo", "trv_meridian_demo", None, 5))
+
+    assert [p.package_id for p in packages] == ["TKY-001", "TKY-005"]
+    assert [p["package_id"] for p in saved] == ["TKY-001", "TKY-005"]
+
+
+@pytest.mark.parametrize(("message", "ids", "expected"), [
+    ("Consider Tokyo Autumn before Tokyo Cuisine.", [], ["TKY-005", "CTY-002"]),
+    ("No details yet for CTY-0020 or FAKE-001.", ["FAKE-001", "TKY-005", "TKY-005"], ["TKY-005"]),
+    ("Compare these options.", [], ["CTY-002", "TKY-005"]),
+])
+def test_response_cards_use_only_observed_packages(message, ids, expected):
+    decision = runtime_decision(message=message, recommended_package_ids=ids, packages=[
+        {"package_id": "CTY-002", "name": "Tokyo Cuisine"},
+        {"package_id": "TKY-005", "name": "Tokyo Autumn"},
+    ])
+    assert [p["package_id"] for p in concierge_mod.response_packages(decision)] == expected
+
+
+def test_followup_refreshes_remembered_trips_and_persists_the_same_cards(monkeypatch):
+    events, calls = [], []
+    agent = build_agent(events, runtime_decision(
+        message="Tokyo Indie Walk fits your saved boutique preference.",
+        packages=[], recommended_package_ids=[], activities=[],
+    ), calls)
+    saved = []
+    async def capture_write(_read, _traveler, _message, _reply, shown, _operation):
+        saved.extend(shown)
+    agent._write_unit = capture_write
+    monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
+    packages, *_ = asyncio.run(agent.process_turn("Which of those fits?", "trv_meridian_demo", "conv-test", 5))
+    assert [p.package_id for p in packages] == ["TKY-001"]
+    assert [p["package_id"] for p in saved] == ["TKY-001"]
+    assert events.index("aurora:shortlist") < events.index("tx-1:commit") < events.index("aurora:hydrate")
+    assert "Previously shown trips" in calls[0][0][3]
+
+
+@pytest.mark.parametrize(("message", "activities"), [
+    ("No new matches for Tokyo Indie Walk.", [{"title": "AgentCore Gateway: tools/call → semantic_trip_search"}]),
+    ("What else would you like to plan?", []),
+])
+def test_recalled_cards_do_not_fill_an_empty_search_or_unrelated_reply(message, activities):
+    decision = runtime_decision(message=message, packages=[], recommended_package_ids=[], activities=activities)
+    assert concierge_mod.response_packages(decision, [{"package_id": "TKY-001", "name": "Tokyo Indie Walk"}]) == []
+
+
+def test_removed_catalog_trip_is_not_recreated_from_memory():
+    agent = build_agent([], runtime_decision(), [])
+    async def no_longer_listed(*_args, **_kwargs):
+        return []
+    agent.db.execute = no_longer_listed
+    assert asyncio.run(agent._hydrate([{"package_id": "TKY-001", "name": "Old trip"}])) == []
+
+
+@pytest.mark.parametrize(
+    ("facts", "travelers", "saved_basis", "ceiling"),
+    [
+        ([{"key": "budget_cap", "value": "$3,200"}], 1, "$3,200.00 per traveler", 320000),
+        ([{"key": "budget_cap", "value": "$3,200"}], 3, "$3,200.00 per traveler", 960000),
+        ([], 3, "No saved per-traveler budget", 400000),
+    ],
+)
+def test_runtime_budget_narration_matches_enforced_ceiling(
+    monkeypatch, facts, travelers, saved_basis, ceiling
+):
+    """A fresh party size and the unsaved fallback must reach prose and policy together."""
+    monkeypatch.delenv("MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS", raising=False)
+    calls = []
+    agent = build_agent([], runtime_decision(), calls)
+    read = concierge_mod.AuthorizedRead(
+        scope=None,
+        conv_id="conv-test",
+        memory_context="Earlier trip context. " * 400,
+        memory_facts=[],
+        budget_facts=facts,
+    )
+
+    asyncio.run(agent._runtime_turn(read, "Find trips", "trv_meridian_demo", travelers))
+
+    args, kwargs = calls[0]
+    context = args[3][:6000]  # The Runtime adapter's context limit.
+    assert saved_basis in context
+    assert f"Party size: {travelers} traveler(s)." in context
+    assert f"Whole-party policy ceiling: ${ceiling / 100:,.2f}." in context
+    assert "for the entire listed package duration" in context
+    assert "never multiply by nights" in context
+    assert kwargs["budget_ceiling_cents"] == ceiling
+    assert kwargs["travelers_count"] == travelers

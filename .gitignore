@@ -1,0 +1,76 @@
+# Environment & secrets (never commit real values)
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+.aws/
+credentials
+*credentials*.json
+secrets.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+.hypothesis/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node.js / frontend
+node_modules/
+dist/
+.npm
+*.log
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Local databases & logs
+*.db
+*.sqlite
+*.sqlite3
+logs/
+
+# Generated deployment artifacts
+.cache/
+cdk.out*/
+.cli/
+meridian/meridian_agentcore/agentcore/gateway_targets/**/*.zip
+
+# AgentCore config rendered for one account by scripts/render_agentcore_config.py.
+# Edit the *.template.json files beside them instead.
+meridian/meridian_agentcore/agentcore/agentcore.json
+meridian/meridian_agentcore/agentcore/aws-targets.json
+
+# Local agent and editor tooling, verification output and worktrees
+.kiro/
+.claude/
+.cursor/
+.impeccable/
+.superpowers/
+.local/
+
+# Browser verification artifacts
+playwright-report/
+test-results/

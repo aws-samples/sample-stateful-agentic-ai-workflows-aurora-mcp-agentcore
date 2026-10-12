@@ -1,0 +1,4543 @@
+.mds-root {
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+}
+
+/* Headings and dialogs take focus from code so a screen reader announces them.
+   They are not controls, so they draw no ring for a mouse or clicker user.
+   Interactive controls keep their :focus-visible rings. */
+.mds-root :is(h1, h2, h3, h4, h5, h6, [role='dialog'])[tabindex='-1']:focus {
+  outline: none;
+}
+
+/* Animated theme flip — a ~220ms cross-fade on the properties that change
+   between light and dark, so the swap reads as a smooth transition rather
+   than an instant pop. Scoped to the common skinnable surfaces (not "*",
+   which would jank on a large tree) and disabled under reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .mds-root,
+  .mds-root .mds-panel,
+  .mds-root .mds-desktop-sidebar,
+  .mds-root .mds-desktop-dock,
+  .mds-root .mds-thinking,
+  .mds-root .mds-chat-composer textarea,
+  .mds-root .mds-chat-send,
+  .mds-root .mds-status-pill,
+  .mds-root .mds-msg-result-chip,
+  .mds-root .mds-nav-item,
+  .mds-root .mds-message-bubble {
+    transition: background-color 220ms ease, color 220ms ease,
+      border-color 220ms ease, box-shadow 220ms ease;
+  }
+}
+
+/* Theme toggle — fixed top-right, token-driven so it reads in both themes. */
+.mds-theme-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 60;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  border: 1px solid var(--mds-control-line);
+  transition: color 150ms, background 150ms, transform 150ms;
+}
+.mds-theme-toggle:hover {
+  color: var(--mds-label);
+  transform: translateY(-1px);
+}
+
+/* Page-level error boundary fallback. Shown when a render crash would
+   otherwise blank the showcase. */
+.mds-error-screen {
+  min-height: 100dvh;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: var(--mds-ground);
+  color: var(--mds-label);
+  font-family: var(--mds-font);
+}
+
+.mds-error-card {
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 28px 30px;
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  background: var(--mds-surface);
+}
+
+.mds-error-card h2 {
+  margin: 0;
+  color: var(--mds-label);
+  font: var(--mds-type-title-1);
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-error-card p {
+  margin: 0;
+  color: var(--mds-label-2);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-regular);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-error-card pre {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+  color: var(--mds-label);
+  font: var(--mds-type-footnote);
+  font-family: var(--mds-font-mono);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.mds-error-card button {
+  align-self: flex-start;
+  min-height: 38px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+  cursor: pointer;
+}
+
+.mds-fullbleed-route {
+  min-height: 100dvh;
+  width: 100%;
+  overflow: hidden;
+  background: var(--mds-ground);
+}
+
+.mds-root *,
+.mds-root *::before,
+.mds-root *::after {
+  box-sizing: border-box;
+}
+
+.mds-root button,
+.mds-root input {
+  font: inherit;
+}
+
+.mds-root button {
+  cursor: pointer;
+}
+
+.mds-root button:disabled,
+.mds-root input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.mds-desktop-app {
+  --mds-right-rail: clamp(360px, 24vw, 420px);
+  /* How wide the ladder's content runs, and how wide a paragraph inside it
+     may get. The stage measure is generous on purpose; only prose is held to
+     a reading width. */
+  --mds-stage-measure: 1560px;
+
+  position: relative;
+  min-height: 100dvh;
+  width: 100%;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) var(--mds-right-rail);
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  /* One ground across the capability ladder and recovery workspace. */
+  background: var(--mds-ground);
+  box-shadow: none;
+}
+
+/* Keep the canvas free of color washes in both themes. */
+.mds-desktop-app::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: none;
+  mix-blend-mode: normal;
+}
+
+/* Make sure the column children render above the ::before overlay. */
+.mds-desktop-app > * {
+  position: relative;
+  z-index: 1;
+}
+
+.mds-fullbleed-route .mds-desktop-app {
+  min-height: 100dvh;
+}
+
+.mds-desktop-sidebar,
+.mds-desktop-right {
+  min-width: 0;
+  background: transparent;
+}
+
+/* The evidence rail is a drawer. Shut, it leaves a 42px edge tab carrying its
+   name, so the proof surface stays visible as a thing you can open rather than
+   disappearing and needing to be remembered. Open, it takes its full track and
+   the tab becomes the close control. */
+/* Several other rules assign --mds-right-rail: two media queries here (400px
+   above 1600px, 340px below 1450px) and the sidebar-collapsed layouts in
+   recoveryWorkspace.css. The compound selectors below outrank all of them on
+   specificity, so the folded width wins whatever the viewport matches and
+   whichever stylesheet loaded last. */
+.mds-desktop-app.is-rail-collapsed,
+.mds-desktop-app.is-sidebar-collapsed.is-rail-collapsed,
+.mds-desktop-app.is-finale.is-sidebar-collapsed.is-rail-collapsed {
+  --mds-right-rail: 44px;
+}
+
+.mds-desktop-app {
+  transition: grid-template-columns 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mds-desktop-right.is-collapsed {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* The handle reads bottom-to-top along the edge, which is the convention for
+   a right-hand tab and the only way a full label fits in 42px. */
+.mds-rail-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  padding: 14px 0;
+  border: 0;
+  color: var(--mds-label-2);
+  background: transparent;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.mds-rail-handle:hover,
+.mds-rail-handle:focus-visible {
+  color: var(--mds-label);
+}
+
+/* Lifted so the panel directly below cannot paint over the bottom of the ring. */
+.mds-rail-handle:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 2px;
+}
+
+/* Shut, the handle is a tab at the top of the edge, not a label adrift in the
+   middle of an empty column. writing-mode does the turning, so the chevron is
+   the only thing that needs rotating back to point at the content it opens. */
+/* Open, the handle is just the close chevron above the panels - the label
+   would repeat the strip's own "Aurora evidence" heading directly below it. */
+.mds-desktop-right:not(.is-collapsed) .mds-rail-handle {
+  width: auto;
+  min-width: 32px;
+  min-height: 32px;
+  align-self: flex-end;
+  padding: 0;
+  gap: 0;
+}
+
+.mds-desktop-right:not(.is-collapsed) .mds-rail-handle svg {
+  transform: rotate(180deg);
+}
+
+.mds-desktop-right.is-collapsed .mds-rail-handle {
+  height: 100%;
+  align-self: stretch;
+  justify-content: center;
+  padding: 16px 0;
+  writing-mode: vertical-rl;
+  border-left: 1px solid transparent;
+}
+
+.mds-desktop-right.is-collapsed .mds-rail-handle:hover,
+.mds-desktop-right.is-collapsed .mds-rail-handle:focus-visible {
+  background: var(--mds-surface-2);
+}
+
+/* Shut, the handle fills a column that clips overflow, so the ring sits inside it. */
+.mds-desktop-right.is-collapsed .mds-rail-handle:focus-visible {
+  outline-offset: -2px;
+}
+
+.mds-desktop-right.is-collapsed .mds-rail-handle svg {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mds-desktop-app {
+    transition: none;
+  }
+}
+
+.mds-desktop-sidebar {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 18px;
+  border-right: 1px solid var(--mds-separator);
+  background: var(--mds-surface);
+  overflow: hidden;
+}
+
+.mds-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 14px;
+  color: var(--mds-label);
+  font: var(--mds-type-title-1);
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-brand-mark {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  display: block;
+  object-fit: cover;
+  border: 0;
+  border-radius: var(--mds-radius-s);
+  filter: saturate(1.08) contrast(1.04);
+}
+
+.mds-nav-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mds-nav-item {
+  position: relative;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 0 13px 0 16px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-label-2);
+  background: transparent;
+  font: var(--mds-type-body);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.mds-nav-item.is-active,
+.mds-nav-item:hover {
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
+}
+
+.mds-nav-item.is-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 0 var(--mds-radius-s) var(--mds-radius-s) 0;
+  background: var(--mds-blue);
+}
+
+.mds-nav-item b {
+  min-width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  margin-left: auto;
+  border-radius: var(--mds-radius-full);
+  background: var(--mds-label-2);
+  color: var(--mds-ground);
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-nav-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.92;
+}
+
+.mds-nav-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.mds-sidebar-spacer {
+  flex: 1;
+}
+
+.mds-account-mini {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding-top: 14px;
+  border-top: 1px solid var(--mds-separator);
+}
+
+.mds-account-copy {
+  min-width: 0;
+}
+
+.mds-avatar {
+  width: 34px;
+  height: 34px;
+  display: inline-block;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 50%;
+  background:
+    var(--mds-surface-2);
+}
+
+.mds-avatar.is-photo {
+  overflow: hidden;
+  background: var(--mds-surface-2);
+}
+
+.mds-avatar.is-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.mds-account-copy strong,
+.mds-profile-line strong {
+  display: block;
+  color: var(--mds-label);
+  font: var(--mds-type-headline);
+}
+
+.mds-account-copy span,
+.mds-profile-line small {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mds-account-copy .mds-account-loyalty {
+  display: grid;
+  gap: 1px;
+  overflow: visible;
+  line-height: 1.25;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.mds-account-copy .mds-account-loyalty > span {
+  margin: 0;
+  overflow: visible;
+  font-size: inherit;
+  line-height: inherit;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.mds-desktop-main {
+  /* Two-row layout: scrollable history above, sticky composer dock below.
+     The main column is exactly viewport-tall so the dock can stay pinned
+     to its bottom while everything else flows. */
+  position: relative;
+  min-width: 0;
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.mds-desktop-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 34px 34px 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+.mds-desktop-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.mds-desktop-scroll::-webkit-scrollbar-thumb {
+  border-radius: var(--mds-radius-full);
+  background: var(--mds-surface-2);
+}
+
+.mds-desktop-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--mds-surface-2);
+}
+
+.mds-desktop-dock {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 34px 22px;
+  background: var(--mds-surface);
+  /* Subtle hairline so the dock visually separates from scrolling content
+     without feeling boxed-in. */
+  border-top: 1px solid var(--mds-separator);
+}
+
+.mds-desktop-app.is-proof .mds-desktop-scroll {
+  gap: 12px;
+  padding-top: 26px;
+}
+
+/* The composer, the example pills and the result grid take the stage measure,
+   which is deliberately generous - this is a room-facing surface and it should
+   feel wide. Only the reply paragraph is capped tighter, by
+   --mds-prose-measure, because a line of text is the one thing here that gets
+   harder to read as it gets wider. Sharing one measure and one centre line
+   keeps the phase nav, the transcript and the composer on the same edges. */
+.mds-desktop-app.is-proof .mds-desktop-scroll > *,
+.mds-desktop-app.is-proof .mds-desktop-dock > * {
+  width: 100%;
+  max-width: var(--mds-stage-measure);
+  margin-inline: auto;
+}
+
+/* Less gutter on the ladder: the composer is the thing the room watches being
+   typed into, so it earns the width the padding was holding. */
+.mds-desktop-app.is-proof .mds-desktop-dock {
+  padding-inline: 22px;
+}
+
+.mds-desktop-app.is-proof .mds-desktop-scroll {
+  padding-inline: 22px;
+}
+
+.mds-desktop-app.is-proof .mds-desktop-dock {
+  padding-top: 11px;
+  padding-bottom: 16px;
+}
+
+/* Live status pill (right). The dot holds still while connected and pulses
+   only while a connection check is in progress. */
+.mds-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: var(--mds-radius-full);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-medium);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  border: 0;
+}
+.mds-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mds-green);
+}
+.mds-status-pill.is-off .mds-status-dot {
+  background: var(--mds-red);
+}
+.mds-status-pill.is-checking .mds-status-dot {
+  background: var(--mds-yellow);
+  animation: mds-status-pulse 1.4s ease-in-out infinite;
+}
+.mds-status-sep {
+  flex: none;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--mds-label-3);
+}
+.mds-status-unit {
+  color: var(--mds-label-3);
+  font-variant-numeric: tabular-nums;
+}
+@keyframes mds-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mds-status-pill.is-checking .mds-status-dot { animation: none; }
+}
+
+.mds-trace-tabs button:active:not(:disabled),
+.mds-memory-switch:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.mds-error-banner {
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-red);
+  background: var(--mds-red-fill);
+  font: var(--mds-type-body);
+  text-align: left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mds-followup-chip,
+  .mds-followup-chip svg {
+    transition: none;
+  }
+
+  .mds-followup-chip:hover,
+  .mds-followup-chip:hover svg {
+    transform: none;
+  }
+}
+
+.mds-chat-transcript {
+  /* Unified scroll: the chat transcript no longer owns its own scrollbar.
+     The whole main column scrolls as one surface, so chat history and the
+     recommendation grid below flow together (Claude / ChatGPT pattern).
+     Older turns simply scroll up off-screen as new turns arrive. */
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.mds-message {
+  display: grid;
+  /* User chips stay capped so right-aligned questions read like a
+     concise prompt rather than a banner. Bot turns widen below — see
+     `.mds-message.bot` — so reply text and any inline product grid
+     share the same left/right edge. */
+  max-width: min(680px, 72%);
+  gap: 4px;
+  /* Slide + fade in for every new bubble — gives the abrupt "snap" of a
+     React re-render the natural feel of a streaming chat. */
+  animation: mds-msg-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Bot turns always take the full transcript width — text-only and
+   product turns share the same edge so the conversation column never
+   appears half-width on plain replies and full-width on product replies.
+   Inside the bubble, react-markdown content keeps its own padding/line
+   length so paragraphs still read at conversational measure. */
+.mds-message.bot {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+/* Prose keeps a readable measure; recommendations use the whole conversation. */
+.mds-message.bot .mds-message-text {
+  max-width: 75ch;
+}
+
+@keyframes mds-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mds-message.user {
+  align-self: flex-end;
+}
+
+.mds-message-role {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-message.user .mds-message-role {
+  text-align: right;
+}
+
+.mds-message-model {
+  margin-left: 4px;
+  font-weight: var(--mds-weight-regular);
+}
+
+.mds-message-bubble {
+  padding: 13px 16px;
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-medium);
+  letter-spacing: var(--mds-tracking-title);
+  /* Transition so live-typing edits don't pop. */
+  transition: box-shadow 220ms ease, background 220ms ease;
+}
+
+/* Jordan's turn: a blue-tinted bubble, weighted up a notch so it reads on a
+   projector. */
+.mds-message.user .mds-message-bubble {
+  border-radius: var(--mds-radius-l) var(--mds-radius-l) var(--mds-radius-s) var(--mds-radius-l);
+  background: var(--mds-blue-fill);
+  color: var(--mds-label);
+  font-weight: var(--mds-weight-medium);
+}
+
+.mds-message.bot .mds-message-bubble {
+  border-radius: var(--mds-radius-l) var(--mds-radius-l) var(--mds-radius-l) var(--mds-radius-s);
+  background: var(--mds-surface);
+  color: var(--mds-label);
+}
+
+/* Thinking uses the same open response surface as the completed reply. */
+.mds-root .mds-message.bot .mds-message-bubble.is-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--mds-radius-l) var(--mds-radius-l) var(--mds-radius-l) var(--mds-radius-s);
+  background: var(--mds-surface);
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-regular);
+  letter-spacing: normal;
+}
+
+.mds-message-bubble.is-thinking > svg {
+  flex: none;
+}
+
+/* Stack the result summary and full-width travel cards below the reply. */
+.mds-message.bot.has-products .mds-message-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px 16px 11px;
+}
+
+.mds-message-text {
+  display: block;
+}
+
+/* Recalled-from-memory phrases inside a Production+ reply. The <mark> is
+   injected on hast by rehypeMemoryHighlight, so it survives skipHtml and
+   reapplies as the typewriter reveals each phrase. */
+.mds-md mark.mds-memory-highlight {
+  color: inherit;
+  background: var(--mds-memory-fill);
+  border-bottom: 2px solid var(--mds-memory);
+  border-radius: var(--mds-radius-s) var(--mds-radius-s) 0 0;
+  padding: 1px 5px;
+  font-weight: var(--mds-weight-semibold);
+  /* Keep multi-word phrases from breaking their tint across a line wrap. */
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* react-markdown output for bot replies. Tight vertical rhythm, neutral
+   bullet markers, bold emphasis - matches the rest of the showcase
+   typography. */
+.mds-md > * {
+  margin: 0;
+}
+
+.mds-md > * + * {
+  margin-top: 10px;
+}
+
+.mds-md p {
+  line-height: 1.55;
+}
+
+.mds-md ul,
+.mds-md ol {
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Custom-styled bullets: small neutral dot via ::marker so they stay
+   aligned with the line-height even on multi-line list items. */
+.mds-md ul {
+  list-style: none;
+}
+
+.mds-md ul > li {
+  position: relative;
+  padding-left: 4px;
+  line-height: 1.55;
+}
+
+.mds-md ul > li::before {
+  content: "";
+  position: absolute;
+  left: -14px;
+  top: 0.65em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--mds-label-3);
+}
+
+.mds-md ol {
+  list-style-position: outside;
+}
+
+.mds-md ol > li {
+  line-height: 1.55;
+}
+
+.mds-md ol > li::marker {
+  color: var(--mds-label-2);
+  font-weight: var(--mds-weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.mds-md strong {
+  color: var(--mds-label);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-md em {
+  color: var(--mds-label-2);
+  font-style: italic;
+}
+
+/* Tool and column names inside a reply: a neutral keycap, readable from the
+   back row and free of the colours that carry meaning elsewhere (blue acts,
+   green works, yellow needs the next phase). */
+.mds-md code {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--mds-radius-s);
+  background: var(--mds-surface-2);
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+  font-family: var(--mds-font-mono);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-md pre {
+  padding: 12px 14px;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+  overflow-x: auto;
+}
+
+.mds-md pre code {
+  padding: 0;
+  background: transparent;
+  color: var(--mds-label);
+  line-height: 1.5;
+}
+
+.mds-md a {
+  color: var(--mds-blue);
+  text-decoration: underline;
+  text-decoration-color: var(--mds-blue);
+  text-underline-offset: 3px;
+}
+
+.mds-md a:hover {
+  text-decoration-color: var(--mds-blue);
+}
+
+.mds-md blockquote {
+  margin: 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--mds-label-3);
+  background: var(--mds-surface-2);
+  color: var(--mds-label-2);
+  border-radius: 0 var(--mds-radius-m) var(--mds-radius-m) 0;
+}
+
+.mds-md table {
+  width: 100%;
+  border-collapse: collapse;
+  font: var(--mds-type-body);
+}
+
+.mds-md th,
+.mds-md td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--mds-separator);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.mds-md th {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-md hr {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--mds-separator);
+}
+
+/* Compact result chip baked into bot bubbles that returned products.
+   Acts like Claude Desktop's "tool result" badge - one tappable line that
+   summarizes count + price range so prior-turn results stay attached to
+   their chat message without painting full thumbnails. */
+.mds-msg-result-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 6px 12px 6px 10px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-medium);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.mds-msg-result-chip:hover,
+.mds-msg-result-chip:focus-visible {
+  border-color: var(--mds-blue);
+  background: var(--mds-surface-2);
+  transform: translateY(-1px);
+}
+
+.mds-msg-result-chip:focus-visible {
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 2px;
+}
+
+.mds-msg-result-chip.is-active {
+  border-color: var(--mds-blue);
+  color: var(--mds-label);
+  background: var(--mds-blue-fill);
+}
+
+.mds-msg-result-chip-icon {
+  display: inline-flex;
+  color: var(--mds-blue);
+}
+
+.mds-msg-result-chip.is-active .mds-msg-result-chip-icon {
+  color: var(--mds-blue);
+}
+
+.mds-msg-result-chip-text b {
+  font-weight: var(--mds-weight-bold);
+  color: var(--mds-label);
+}
+
+.mds-msg-result-chip.is-active .mds-msg-result-chip-text b {
+  color: var(--mds-label);
+}
+
+.mds-msg-result-chip-text span {
+  color: var(--mds-label-2);
+}
+
+/* Follow-up chips: the backend's suggested next steps for a turn. The Phase 5
+   "Resume workflow from the saved step" suggestion lands here, so these read as
+   clear call-to-action affordances rather than passive result summaries. */
+.mds-followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mds-followup-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px 7px 11px;
+  border: 1px solid var(--mds-blue);
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label);
+  background: var(--mds-blue-fill);
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-medium);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.mds-followup-chip svg {
+  color: var(--mds-blue);
+  transition: transform 180ms ease;
+}
+
+.mds-followup-chip:hover,
+.mds-followup-chip:focus-visible {
+  border-color: var(--mds-blue);
+  transform: translateY(-1px);
+}
+
+.mds-followup-chip:focus-visible {
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 2px;
+}
+
+.mds-followup-chip:hover svg {
+  transform: translateX(3px);
+}
+
+.mds-msg-result-chip.is-active .mds-msg-result-chip-text span {
+  color: var(--mds-label-2);
+}
+
+.mds-msg-result-chip-caret {
+  display: inline-flex;
+  margin-left: 2px;
+  color: var(--mds-label-2);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mds-msg-result-chip.is-active .mds-msg-result-chip-caret {
+  transform: rotate(180deg);
+  color: var(--mds-label);
+}
+
+/* Inline product grid revealed when the per-turn chip is expanded.
+   Slides out below the chip with a stagger so the cards feel like
+   they're flowing out of the chip itself. */
+.mds-msg-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin-top: 4px;
+  animation: mds-msg-grid-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mds-result-disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px 0 2px;
+  border-top: 1px solid var(--mds-separator);
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-result-disclosure button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--mds-blue);
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+  font: inherit;
+  font-weight: var(--mds-weight-bold);
+  cursor: pointer;
+}
+
+.mds-result-disclosure button:hover {
+  background: var(--mds-blue-fill);
+}
+
+.mds-result-disclosure button:active {
+  transform: translateY(1px);
+}
+
+@keyframes mds-msg-grid-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Shared, catalog-grounded result card used in Experience and System proof.
+   Cinematic treatment: photo-led media, pill chips, and a kv stat rail
+   (trip length | from-price | availability + CTA) split by hairlines. */
+.mds-trip-result-card {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  width: 100%;
+  height: 344px;
+  min-height: 344px;
+  border: 1px solid transparent;
+  border-radius: var(--mds-radius-l);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
+  background-clip: padding-box;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.mds-trip-result-card.is-priority {
+  grid-column: 1 / -1;
+  height: 390px;
+  min-height: 390px;
+}
+
+.mds-trip-result-card:hover,
+.mds-trip-result-card:focus-within {
+  transform: translateY(-3px);
+  border-color: var(--mds-tint);
+  outline: none;
+}
+
+.mds-trip-result-card.is-selected {
+  border-color: var(--mds-tint);
+}
+
+.mds-trip-result-card:hover .mds-trip-photo,
+.mds-trip-result-card:focus-within .mds-trip-photo,
+.mds-trip-result-card.is-selected .mds-trip-photo {
+  transform: scale(1.045);
+}
+
+.mds-trip-result-media {
+  grid-area: 1 / 1;
+  position: relative;
+  z-index: 0;
+  min-height: 100%;
+  overflow: hidden;
+  background: var(--mds-surface-2);
+}
+
+.mds-trip-result-media .mds-trip-visual {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.mds-trip-result-destination,
+.mds-trip-result-match {
+  position: absolute;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1;
+}
+
+.mds-trip-result-destination {
+  left: 14px;
+  top: 14px;
+}
+
+.mds-trip-result-match {
+  top: 14px;
+  right: 14px;
+  gap: 7px;
+  border: 0;
+  padding: 7px 12px;
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-trip-result-match > i {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--mds-green);
+}
+
+.mds-trip-result-body {
+  grid-area: 1 / 1;
+  z-index: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-self: end;
+  gap: 14px;
+  padding: 48px 20px 18px;
+  background: var(--mds-image-scrim);
+}
+
+.mds-trip-result-card.is-priority .mds-trip-result-body {
+  grid-template-columns: minmax(0, 1fr) minmax(350px, 0.82fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: end;
+  gap: 22px;
+  padding: 48px 24px 20px;
+}
+
+.mds-trip-result-summary {
+  min-width: 0;
+  display: grid;
+  align-self: end;
+  align-content: start;
+  gap: 7px;
+}
+
+.mds-trip-result-heading {
+  min-width: 0;
+  display: block;
+}
+
+.mds-trip-result-heading > span {
+  display: none;
+}
+
+.mds-trip-result-heading > strong {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--mds-label);
+  font: var(--mds-type-title-2);
+  line-height: 1.1;
+  letter-spacing: var(--mds-tracking-title);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.mds-trip-result-heading > small {
+  display: none;
+}
+
+.mds-trip-result-card.is-priority .mds-trip-result-heading > strong {
+  font: var(--mds-type-large-title);
+  line-height: 1.1;
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-trip-result-description {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.mds-trip-result-card.is-priority .mds-trip-result-description {
+  font: var(--mds-type-body);
+  -webkit-line-clamp: 2;
+}
+
+/* kv rail: trip length | from-price | availability + CTA, split by hairlines. */
+.mds-trip-result-commerce {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 11px 0;
+}
+
+.mds-trip-result-card.is-priority .mds-trip-result-commerce {
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 11px 0;
+}
+
+.mds-trip-result-commerce > * + * {
+  padding-left: 15px;
+  border-left: 1px solid var(--mds-separator);
+}
+
+.mds-trip-result-commerce > *:first-child,
+.mds-trip-result-card.is-priority .mds-trip-result-commerce > *:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.mds-trip-result-fact {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.mds-trip-result-fact > b {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  line-height: 1;
+}
+
+/* Values here can be long ("4 nights or 6 nights") while the grid track is
+   narrow. `nowrap` made the text lay out at intrinsic width and paint over the
+   price column beside it, so let it wrap - the availability variant below has
+   always done this. */
+.mds-trip-result-fact > em {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  color: var(--mds-label);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1.1;
+  letter-spacing: var(--mds-tracking-title);
+  font-style: normal;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.mds-trip-result-card.is-priority .mds-trip-result-fact > em {
+  font: var(--mds-type-title-2);
+  line-height: 1.1;
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-trip-result-fact.is-availability > em {
+  color: var(--mds-green);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1.1;
+  white-space: normal;
+}
+
+.mds-trip-result-fact.is-availability {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  column-gap: 12px;
+  padding-top: 10px;
+  padding-left: 0;
+  border-top: 1px solid var(--mds-separator);
+  border-left: 0;
+}
+
+.mds-trip-result-fact.is-availability > b,
+.mds-trip-result-fact.is-availability > em {
+  grid-column: 1;
+}
+
+.mds-trip-result-card.is-priority .mds-trip-result-fact.is-availability > em {
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1.1;
+}
+
+.mds-trip-result-fact.is-availability > em svg {
+  flex: 0 0 auto;
+}
+
+.mds-trip-result-fact.is-availability.is-low > em {
+  color: var(--mds-yellow);
+}
+
+.mds-trip-result-signals {
+  min-height: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.mds-trip-result-signals > span {
+  overflow: hidden;
+  max-width: 100%;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px 0 9px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mds-trip-result-signals > span svg {
+  flex: 0 0 auto;
+}
+
+.mds-trip-result-signals > span.is-checkpoint {
+  color: var(--mds-cyan);
+  background: var(--mds-cyan-fill);
+}
+
+.mds-trip-result-price {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.mds-trip-result-price span {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  line-height: 1;
+}
+
+.mds-trip-result-price small {
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  line-height: 1;
+}
+
+.mds-trip-result-price b {
+  color: var(--mds-label);
+  font: var(--mds-type-title-2);
+  letter-spacing: var(--mds-tracking-title);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.mds-trip-result-card.is-priority .mds-trip-result-price b {
+  font: var(--mds-type-title-1);
+  letter-spacing: var(--mds-tracking-display);
+}
+
+.mds-trip-result-actions {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  align-self: end;
+  justify-self: end;
+  gap: 7px;
+  margin-top: 0;
+}
+
+.mds-trip-result-actions button {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-l);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1;
+  white-space: nowrap;
+  transition: border-color 140ms ease, filter 140ms ease, color 140ms ease;
+}
+
+.mds-trip-result-actions button svg {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.mds-trip-result-actions button.is-details {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 15px;
+  color: var(--mds-on-action);
+  border: 0;
+  background: var(--mds-action);
+}
+
+.mds-trip-result-actions button.is-icon {
+  width: 40px;
+  flex: 0 0 40px;
+  padding: 0;
+}
+
+.mds-trip-result-actions button:hover:not(:disabled) {
+  border-color: var(--mds-tint);
+}
+
+.mds-trip-result-actions button.is-details:hover:not(:disabled) {
+  background: var(--mds-action-hover);
+}
+
+.mds-inline-concierge {
+  min-width: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(190px, 0.72fr) minmax(0, 1.28fr);
+  min-height: 178px;
+  margin-top: 14px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface);
+}
+
+.mds-inline-concierge-media {
+  position: relative;
+  min-height: 178px;
+  overflow: hidden;
+}
+
+.mds-inline-concierge-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 58%;
+}
+
+.mds-inline-concierge-media > span {
+  position: absolute;
+  z-index: 1;
+  left: 12px;
+  bottom: 11px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--mds-radius-s);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-inline-concierge-copy {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  padding: 15px 16px 14px;
+}
+
+.mds-inline-concierge-copy > header,
+.mds-inline-concierge-copy > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mds-inline-concierge-copy > header > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--mds-label);
+  font: var(--mds-type-headline);
+}
+
+.mds-inline-concierge-copy > header > span svg {
+  color: var(--mds-label-2);
+}
+
+.mds-inline-concierge-copy > header > em {
+  color: var(--mds-yellow);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  font-style: normal;
+}
+
+.mds-inline-concierge-copy h3,
+.mds-inline-concierge-copy p {
+  margin: 0;
+}
+
+.mds-inline-concierge-copy h3 {
+  color: var(--mds-label);
+  font: var(--mds-type-title-2);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-inline-concierge-copy p {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-inline-concierge-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.mds-inline-concierge-signals > span {
+  min-height: 25px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--mds-radius-s);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-inline-concierge-copy > footer {
+  justify-content: flex-start;
+  margin-top: 1px;
+}
+
+.mds-inline-concierge-copy > footer button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-s);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-inline-concierge-copy > footer button.is-primary {
+  border-color: var(--mds-action);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
+}
+
+@media (max-width: 720px) {
+  .mds-msg-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mds-trip-result-card {
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+    max-width: 420px;
+    height: 360px;
+    min-height: 360px;
+  }
+
+  .mds-trip-result-card.is-priority {
+    grid-column: auto;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+    height: 405px;
+    min-height: 405px;
+  }
+
+  .mds-trip-result-body {
+    padding: 48px 17px 16px;
+  }
+
+  .mds-trip-result-card.is-priority .mds-trip-result-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 12px;
+    padding: 48px 17px 17px;
+  }
+
+  .mds-trip-result-commerce,
+  .mds-trip-result-card.is-priority .mds-trip-result-commerce {
+    grid-template-columns: minmax(0, 0.72fr) minmax(0, 0.85fr);
+    align-items: end;
+    gap: 8px 0;
+  }
+
+  .mds-trip-result-commerce > * + * {
+    padding-left: 9px;
+  }
+
+  .mds-trip-result-fact.is-availability {
+    column-gap: 8px;
+    padding-left: 0;
+  }
+
+  .mds-trip-result-card.is-priority .mds-trip-result-commerce > *:first-child {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .mds-trip-result-actions {
+    gap: 5px;
+  }
+
+  .mds-trip-result-actions button.is-details {
+    padding-inline: 10px;
+  }
+
+  .mds-inline-concierge {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mds-inline-concierge-media {
+    min-height: 150px;
+  }
+}
+
+.mds-running-dot {
+  width: 7px;
+  height: 7px;
+  display: inline-block;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--mds-label-2);
+  animation: mds-pulse 1.15s ease-in-out infinite;
+}
+
+.mds-trip-visual {
+  position: relative;
+  overflow: hidden;
+  min-height: 160px;
+  background: var(--mds-surface-2);
+}
+
+.mds-trip-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Cinematic colour grade — a touch more saturation + contrast and a hair
+     of warmth so the travel photography reads like a film still, not a stock
+     thumbnail. */
+  filter: saturate(1.12) contrast(1.06) brightness(1.02);
+  /* Ever-so-slightly overscaled so the Ken Burns zoom has room to move
+     without exposing card edges. */
+  transform: scale(1.04);
+  transition: transform 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mds-trip-photo { transition: none; transform: none; }
+}
+
+.mds-trip-sun,
+.mds-trip-ridge,
+.mds-trip-field {
+  display: none;
+}
+
+.mds-trip-visual::before,
+.mds-trip-field,
+.mds-trip-ridge,
+.mds-trip-sun {
+  content: "";
+  position: absolute;
+}
+
+.mds-trip-sun {
+  top: 18%;
+  right: 15%;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
+.mds-trip-ridge.one {
+  left: -10%;
+  right: 20%;
+  bottom: 18%;
+  height: 44%;
+  border-radius: 50% 50% 0 0;
+  transform: rotate(-5deg);
+}
+
+.mds-trip-ridge.two {
+  left: 28%;
+  right: -12%;
+  bottom: 8%;
+  height: 54%;
+  border-radius: 50% 50% 0 0;
+}
+
+.mds-trip-field {
+  left: -8%;
+  right: -8%;
+  bottom: -6%;
+  height: 44%;
+  transform: rotate(-2deg);
+}
+
+.mds-trace-actions button {
+  min-height: 30px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-footnote);
+}
+
+/* Larger trace-action buttons (Replay trace / Rerun query) so they read
+   from across the room on stage screens. */
+.mds-trace-actions button {
+  min-height: 38px;
+  padding: 0 14px;
+  border-color: var(--mds-control-line);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-headline);
+}
+
+.mds-main-actions {
+  display: flex;
+  gap: 14px;
+}
+
+.mds-main-actions button {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--mds-label-2);
+  background: transparent;
+  font: var(--mds-type-headline);
+  text-decoration: underline;
+  text-decoration-color: var(--mds-label-3);
+  text-underline-offset: 3px;
+}
+
+.mds-trace-actions button:hover {
+  border-color: var(--mds-blue);
+}
+
+.mds-main-actions button:hover {
+  color: var(--mds-label);
+  border-color: transparent;
+}
+
+.mds-chat-composer {
+  /* The send button lives INSIDE the input pill (mockup parity): the input
+     fills the full width with right-padding reserved, and the button is
+     absolutely positioned against the right edge. */
+  position: relative;
+}
+
+.mds-chat-composer-wrap {
+  display: grid;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.mds-chat-composer-wrap.is-proof {
+  gap: 8px;
+}
+
+.mds-chat-composer-wrap.is-proof .mds-chat-query-starters {
+  display: grid;
+  align-items: stretch;
+  gap: 9px 12px;
+}
+
+.mds-chat-composer-wrap.is-proof .mds-chat-query-starters.has-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mds-chat-composer-wrap.is-proof .mds-chat-query-starters.has-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mds-chat-composer-wrap.is-proof .mds-chat-starter-label {
+  grid-column: 1 / -1;
+  align-self: center;
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+}
+
+/* Keep all three proof prompts in a stable two-line row. The full prompt remains
+   available through the button title, while the visible label cannot spill into
+   the composer below. */
+.mds-chat-composer-wrap.is-proof .mds-chat-starter-chip {
+  min-width: 0;
+  height: 72px;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+  padding: 11px 20px;
+  border-radius: var(--mds-radius-l);
+  font: var(--mds-type-title-3);
+  letter-spacing: var(--mds-tracking-title);
+  text-align: left;
+  white-space: normal;
+}
+
+.mds-chat-composer-wrap.is-proof .mds-chat-starter-chip > span {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.mds-chat-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Query starters above the composer - phase-specific seed prompts that
+   replace the composer text in one tap. The "Try" label gives them a
+   light hint role so they read as suggestions, not actions. */
+.mds-chat-query-starters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mds-chat-starter-label {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-chat-starter-chip {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-medium);
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.mds-chat-starter-chip:hover,
+.mds-chat-starter-chip:focus-visible {
+  border-style: solid;
+  border-color: var(--mds-blue);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
+  transform: translateY(-1px);
+}
+
+.mds-chat-starter-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.mds-chat-starter-chip:focus-visible,
+.mds-chat-starter-chip.is-works:focus-visible,
+.mds-chat-starter-chip.is-stretch:focus-visible {
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 2px;
+}
+
+.mds-chat-phase-framing {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-chat-phase-framing span {
+  flex: 0 0 auto;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-chat-phase-framing b {
+  min-width: 0;
+  font-weight: var(--mds-weight-semibold);
+}
+
+/* Action chips below the composer - each one has a leading icon and
+   appends its prompt fragment when tapped. */
+.mds-chat-action-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 16px 0 12px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-headline);
+  text-align: center;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.mds-chat-action-chip:hover,
+.mds-chat-action-chip:focus-visible {
+  border-color: var(--mds-blue);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
+  transform: translateY(-1px);
+}
+
+.mds-chat-action-chip:focus-visible {
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 2px;
+}
+
+.mds-chat-action-chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.mds-chat-action-chip-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mds-blue);
+}
+
+.mds-chat-action-chip:hover .mds-chat-action-chip-icon,
+.mds-chat-action-chip:focus-visible .mds-chat-action-chip-icon {
+  color: var(--mds-blue);
+}
+
+.mds-chat-action-chip-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Active state - chip tints blue when its filter is set. */
+.mds-chat-action-chip.is-active {
+  border-color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+  color: var(--mds-label);
+}
+
+.mds-chat-action-chip.is-active .mds-chat-action-chip-icon {
+  color: var(--mds-blue);
+}
+
+.mds-chat-action-chip-dot {
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: var(--mds-blue);
+}
+
+/* Clear-all chip - dimmer than the others, with an X icon. */
+.mds-chat-action-chip.is-clear {
+  border-style: dashed;
+  border-color: var(--mds-control-line);
+  color: var(--mds-label-2);
+  background: transparent;
+}
+
+.mds-chat-action-chip.is-clear:hover {
+  border-color: var(--mds-red);
+  color: var(--mds-red);
+}
+
+.mds-chat-action-chip.is-clear .mds-chat-action-chip-icon {
+  color: var(--mds-label-3);
+}
+
+.mds-chat-action-chip.is-clear:hover .mds-chat-action-chip-icon {
+  color: var(--mds-red);
+}
+
+/* Popover shell - anchored above the chip. */
+.mds-chip-pop-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.mds-chip-pop {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 50;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 14px 12px;
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  background: var(--mds-surface);
+  box-shadow: var(--mds-shadow-float);
+  animation: mds-msg-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Tail anchor pointing down at the chip. */
+.mds-chip-pop::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 24px;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  border-right: 1px solid var(--mds-separator);
+  border-bottom: 1px solid var(--mds-separator);
+  background: var(--mds-surface);
+  transform: rotate(45deg);
+}
+
+.mds-popover-title {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+/* Stepper for travelers count. */
+.mds-popover-stepper {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  align-items: center;
+  gap: 12px;
+}
+
+.mds-popover-step-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: 50%;
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-semibold);
+  line-height: 1;
+  letter-spacing: var(--mds-tracking-title);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.mds-popover-step-btn:hover:not(:disabled) {
+  border-color: var(--mds-blue);
+  background: var(--mds-surface-2);
+}
+
+.mds-popover-step-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.mds-popover-step-value {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.mds-popover-step-value b {
+  color: var(--mds-label);
+  font: var(--mds-type-title-2);
+  line-height: 1.1;
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-popover-step-value em {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  font-style: normal;
+}
+
+/* Date pickers. */
+.mds-popover-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.mds-popover-dates label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mds-popover-dates label span {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-popover-dates input[type="date"] {
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-medium);
+  outline: none;
+}
+
+.mds-popover-dates input[type="date"]:focus {
+  border-color: var(--mds-blue);
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 2px;
+}
+
+/* Popover footer (link + primary). */
+.mds-popover-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.mds-popover-link {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-medium);
+  text-decoration: underline;
+  text-decoration-color: var(--mds-label-3);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.mds-popover-link:hover:not(:disabled) {
+  color: var(--mds-red);
+}
+
+.mds-popover-link:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.mds-popover-primary {
+  min-height: 32px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.mds-popover-primary:hover {
+  transform: translateY(-1px);
+}
+
+.mds-chat-composer textarea {
+  width: 100%;
+  min-width: 0;
+  height: 56px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-l);
+  color: var(--mds-label);
+  background: var(--mds-surface);
+  /* Right padding reserves room for the inset send button (40px + insets). */
+  padding: 0 60px 0 16px;
+  outline: none;
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-regular);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-chat-composer textarea:focus {
+  border-color: var(--mds-blue);
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 2px;
+}
+
+/* Send button: a rounded-square primary icon button (paper plane) instead of a wide
+   "Send" text pill. */
+.mds-chat-send {
+  /* Inset against the right edge of the input pill, vertically centered. */
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
+  transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease, background 150ms ease;
+}
+.mds-chat-send > svg {
+  transform: translate(1px, -1px);
+}
+.mds-chat-send:hover:not(:disabled) {
+  /* Keep the -50% vertical centering; nudge up a hair on top of it. */
+  transform: translateY(calc(-50% - 1px));
+  background: var(--mds-action-hover);
+}
+.mds-chat-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+/* Loading spinner that replaces the arrow while a turn is in flight. */
+.mds-chat-send-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  animation: mds-send-spin 0.7s linear infinite;
+}
+@keyframes mds-send-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mds-chat-send-spinner { animation: none; }
+  /* Preserve vertical centering even with motion disabled. */
+  .mds-chat-send:hover:not(:disabled) { transform: translateY(-50%); }
+}
+
+.mds-desktop-right {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 34px 26px;
+  border-left: 1px solid var(--mds-separator);
+  background: var(--mds-ground);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.mds-desktop-right::-webkit-scrollbar {
+  width: 8px;
+}
+
+.mds-desktop-right::-webkit-scrollbar-thumb {
+  border-radius: var(--mds-radius-full);
+  background: var(--mds-surface-2);
+}
+
+.mds-desktop-right::-webkit-scrollbar-thumb:hover {
+  background: var(--mds-surface-2);
+}
+
+.mds-panel {
+  min-width: 0;
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  background: var(--mds-surface);
+}
+
+.mds-traveler-panel {
+  flex: 0 1 auto;
+  max-height: calc(100dvh - 302px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+/* Collapsed panels render as compact header strips. */
+.mds-traveler-panel.is-collapsed {
+  padding: 12px 16px;
+  flex: 0 0 auto;
+}
+
+.mds-traveler-panel.is-collapsed .mds-panel-head {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+/* Header toggle: title plus chevron, one click target. */
+.mds-collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mds-collapse-toggle:hover .mds-collapse-chevron,
+.mds-collapse-toggle:focus-visible .mds-collapse-chevron {
+  color: var(--mds-label);
+}
+
+.mds-collapse-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--mds-radius-s);
+  color: var(--mds-label-3);
+  background: var(--mds-surface-2);
+  /* Rotate the inner SVG only; the wrapper keeps layout stable. */
+  transition: color 180ms ease, background 180ms ease;
+}
+
+/* Isolate chevron rotation from layout. */
+.mds-collapse-chevron-inner {
+  display: inline-flex;
+  transform-origin: 50% 50%;
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mds-traveler-panel.is-collapsed .mds-collapse-chevron-inner {
+  transform: rotate(-90deg);
+}
+
+.mds-collapse-hint {
+  margin-left: 4px;
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-medium);
+}
+
+.mds-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--mds-separator);
+}
+
+/* Keep the memory action visible while the writeback badge comes and goes. */
+.mds-traveler-panel .mds-panel-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+}
+
+.mds-traveler-panel .mds-collapse-toggle {
+  min-width: 0;
+  text-align: left;
+}
+
+.mds-traveler-panel .mds-panel-head > button:last-child {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+}
+
+.mds-panel-head strong {
+  color: var(--mds-label);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-panel-head span,
+.mds-panel-head button {
+  border: 0;
+  color: var(--mds-label-2);
+  background: transparent;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+/* A presenter clicks these from across the stage: at least 32px tall. */
+.mds-panel-head button {
+  min-height: 32px;
+}
+
+/* Unavailable, the label stays readable in the tertiary color instead of fading. */
+.mds-root .mds-panel-head button:disabled {
+  color: var(--mds-label-3);
+  opacity: 1;
+}
+
+.mds-profile-line {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.mds-memory-control {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 0 13px;
+  border-bottom: 1px solid var(--mds-separator);
+}
+
+/* The service mark stands on its own, the way the official icons are meant to
+   be shown: no tile, no border, just a slightly larger mark. */
+.mds-memory-control-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+}
+
+.mds-memory-control-copy {
+  min-width: 0;
+}
+
+.mds-memory-control-copy strong,
+.mds-memory-control-copy small {
+  display: block;
+}
+
+.mds-memory-control-copy strong {
+  color: var(--mds-label);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+  white-space: normal;
+}
+
+.mds-memory-control-copy small {
+  margin-top: 2px;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-memory-switch {
+  min-width: 76px;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 38px auto;
+  gap: 6px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  color: var(--mds-label-2);
+  background: transparent;
+}
+
+.mds-memory-switch-track {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  display: block;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-full);
+  background: var(--mds-surface-2);
+  transition: border-color 180ms ease, background 180ms ease;
+}
+
+.mds-memory-switch-track i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--mds-label-2);
+  transition: transform 180ms ease, background 180ms ease;
+}
+
+.mds-memory-switch[aria-checked="true"] > .mds-memory-switch-track {
+  border-color: var(--mds-green);
+  background: var(--mds-green-fill);
+}
+
+.mds-memory-switch[aria-checked="true"] > .mds-memory-switch-track i {
+  transform: translateX(16px);
+  background: var(--mds-green);
+}
+
+.mds-memory-switch b {
+  color: inherit;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+  text-align: left;
+}
+
+/* Disabled, the switch still states its value: the words keep full contrast
+   and only the track dims. */
+.mds-root .mds-memory-switch:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.mds-memory-switch:disabled .mds-memory-switch-track {
+  opacity: 0.55;
+}
+
+.mds-memory-gate {
+  min-height: 130px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  align-content: center;
+  align-items: start;
+  padding: 20px 4px;
+  color: var(--mds-label-2);
+}
+
+.mds-memory-gate > svg {
+  color: var(--mds-label-2);
+}
+
+.mds-memory-gate.is-loading > svg {
+  animation: mds-send-spin 0.9s linear infinite;
+}
+
+.mds-memory-gate strong,
+.mds-memory-gate span {
+  display: block;
+}
+
+.mds-memory-gate strong {
+  color: var(--mds-label);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-memory-gate span {
+  margin-top: 4px;
+  font: var(--mds-type-body);
+}
+
+.mds-memory-enabled-content {
+  padding-top: 11px;
+}
+
+.mds-memory-authorized {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--mds-green);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-memory-provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -3px 0 9px;
+}
+
+.mds-memory-provenance span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  border: 0;
+  border-radius: var(--mds-radius-s);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-memory-provenance svg {
+  color: var(--mds-label-2);
+}
+
+.mds-memory-fact-group {
+  padding: 7px 0;
+  border-top: 1px solid var(--mds-separator);
+}
+
+.mds-memory-fact-group > header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-fact-list,
+.mds-memory-mini {
+  display: grid;
+  gap: 6px;
+}
+
+.mds-fact-row,
+.mds-memory-mini div {
+  display: grid;
+  grid-template-columns: 40% minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+}
+
+.mds-fact-row span,
+.mds-memory-mini span {
+  min-width: 0;
+  overflow: hidden;
+  /* Brighter "label" colour so even the secondary column reads at a glance
+     on big stage displays. */
+  color: var(--mds-label-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mds-fact-row b,
+.mds-memory-mini b {
+  min-width: 0;
+  color: var(--mds-label);
+  font-weight: var(--mds-weight-semibold);
+  /* Let multi-value facts (loyalty_programs, recent_trips, tokyo_culture)
+     wrap onto a second line instead of truncating with an ellipsis. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.mds-memory-toggle-error {
+  margin-top: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--mds-separator);
+  color: var(--mds-red);
+  font: var(--mds-type-footnote);
+}
+
+.mds-trace-panel {
+  flex: 1;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+}
+
+.mds-trace-panel > .mds-panel-head,
+.mds-trace-actions {
+  flex: 0 0 auto;
+}
+
+.mds-trace-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
+  margin-right: -4px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--mds-surface-2) transparent;
+}
+
+.mds-trace-scroll::-webkit-scrollbar {
+  width: 7px;
+}
+
+.mds-trace-scroll::-webkit-scrollbar-thumb {
+  border-radius: var(--mds-radius-full);
+  background: var(--mds-surface-2);
+}
+
+.mds-trace-panel.is-collapsed {
+  flex: 0 0 auto;
+  padding: 12px 16px;
+}
+
+.mds-trace-panel.is-collapsed .mds-panel-head {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.mds-trace-panel.is-collapsed .mds-collapse-chevron-inner {
+  transform: rotate(-90deg);
+}
+
+/* Each recorded activity owns its status; no partial connector implies progress. */
+.mds-thinking { margin: 4px 0 18px; }
+.mds-thinking-list { list-style: none; display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; }
+.mds-thinking-item { min-width: 0; color: var(--mds-label); border-bottom: 1px solid var(--mds-separator); }
+.mds-thinking-marker { display: grid; place-items: center; margin-top: 2px; color: var(--mds-label-3); }
+.mds-thinking-item.is-done .mds-thinking-marker { color: var(--mds-green); }
+.mds-thinking-item.is-active .mds-thinking-marker { color: var(--mds-label); }
+.mds-thinking-item:is(.is-error, .is-denied) .mds-thinking-marker { color: var(--mds-red); }
+.mds-thinking-copy { display: grid; gap: 5px; min-width: 0; font: var(--mds-type-title-3); font-weight: var(--mds-weight-medium); letter-spacing: var(--mds-tracking-title); overflow-wrap: anywhere; }
+.mds-thinking-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--mds-label-2); font: var(--mds-type-footnote); }
+.mds-thinking-service { display: inline-flex; align-items: center; gap: 5px; }
+.mds-thinking-service img, .mds-thinking-service svg { flex-shrink: 0; }
+.mds-thinking-caption { margin: 0 0 6px; font: var(--mds-type-footnote); color: var(--mds-label-2); }
+.mds-thinking-wait { display: flex; align-items: flex-start; gap: 10px; color: var(--mds-label-2); font: var(--mds-type-footnote); }
+.mds-thinking-wait > svg { flex-shrink: 0; margin-top: 2px; color: var(--mds-label-2); }
+.mds-thinking-wait strong { color: var(--mds-label); font-weight: var(--mds-weight-medium); }
+.mds-thinking-wait p { margin: 5px 0 0; }
+@keyframes mds-activity-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: no-preference) {
+  .mds-activity-spinner { animation: mds-activity-spin 1s linear infinite; transform-origin: center; }
+}
+
+/* One disclosure per responsibility. Event payloads stay inside their step. */
+.mds-activity-group > summary { display: grid; grid-template-columns: 20px minmax(0, 1fr) 15px; align-items: start; gap: 10px; min-height: 44px; padding: 14px 0; cursor: pointer; list-style: none; }
+.mds-activity-group > summary::-webkit-details-marker,
+.mds-activity-event > summary::-webkit-details-marker,
+.mds-trace-inspector > summary::-webkit-details-marker { display: none; }
+.mds-activity-chevron { margin-top: 3px; color: var(--mds-label-2); }
+.mds-activity-group[open] > summary > .mds-activity-chevron,
+.mds-activity-event[open] > summary > svg,
+.mds-trace-inspector[open] > summary > svg { transform: rotate(180deg); }
+.mds-activity-events { margin: 0 0 14px 10px; padding-left: 19px; border-left: 1px solid var(--mds-separator); }
+.mds-activity-event > summary { display: grid; grid-template-columns: 18px minmax(0, 1fr) 13px; gap: 7px; align-items: start; padding: 9px 0; min-height: 36px; list-style: none; cursor: pointer; font: var(--mds-type-body); color: var(--mds-label); overflow-wrap: anywhere; }
+.mds-activity-event-index {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  padding-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+.mds-activity-event > summary > svg { margin-top: 3px; color: var(--mds-label-2); }
+.mds-activity-event.is-active > summary { color: var(--mds-tint); }
+.mds-activity-event:is(.is-failed, .is-denied) > summary { color: var(--mds-red); }
+.mds-activity-event-detail { min-width: 0; padding: 0 0 10px 25px; color: var(--mds-label-2); font: var(--mds-type-footnote); overflow-wrap: anywhere; }
+.mds-activity-event-detail p { margin: 0 0 8px; }
+.mds-activity-event-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: inherit; }
+.mds-activity-event-detail a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  color: var(--mds-tint);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.mds-activity-event-source { font-family: var(--mds-font-mono); }
+/* The service that did a step's work and the time measured around it. Never
+   smaller than the footnote step; tabular figures so times line up. */
+.mds-activity-event-title { display: grid; gap: 2px; min-width: 0; }
+.mds-root .mds-step-source {
+  display: block;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.mds-evidence-probe { color: var(--mds-label-2); font: var(--mds-type-footnote); }
+.mds-evidence-probe p { margin: 0 0 12px; }
+.mds-evidence-probe button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--mds-control-line); border-radius: var(--mds-radius-s); background: var(--mds-surface-2); color: var(--mds-tint); font: inherit; cursor: pointer; }
+.mds-evidence-probe button:focus-visible { outline: 2px solid var(--mds-tint); outline-offset: 2px; }
+.mds-trace-inspector .mds-trace-tabs { display: flex; flex-wrap: wrap; gap: 5px; }
+.mds-trace-inspector .mds-trace-tabs button { flex: 1 1 auto; font: var(--mds-type-body); font-weight: var(--mds-weight-semibold); }
+.mds-trace-inspector .mds-sql-list small { color: var(--mds-label-2); font: var(--mds-type-footnote); font-weight: var(--mds-weight-semibold); }
+.mds-trace-inspector .mds-sql-list pre { margin: 6px 0 14px; background: var(--mds-surface-2); color: var(--mds-label); }
+.mds-evidence-heading { margin: 0 0 10px; color: var(--mds-label); font: var(--mds-type-body); }
+.mds-trace-inspector > summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; list-style: none; color: var(--mds-label-2); font: var(--mds-type-footnote); }
+.mds-activity-group > summary:focus-visible,
+.mds-activity-event > summary:focus-visible,
+.mds-trace-inspector > summary:focus-visible { outline: 2px solid var(--mds-tint); outline-offset: 2px; border-radius: var(--mds-radius-s); }
+
+.mds-contract-panel,
+.mds-workflow-state {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 11px;
+  padding: 11px;
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  background: var(--mds-surface-2);
+}
+
+.mds-contract-head,
+.mds-workflow-state-head {
+  display: grid;
+  gap: 9px;
+  align-items: center;
+}
+
+.mds-contract-head {
+  grid-template-columns: 28px minmax(0, 1fr);
+}
+
+.mds-workflow-state-head {
+  grid-template-columns: 16px 28px minmax(0, 1fr);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+
+.mds-workflow-state-head {
+  cursor: pointer;
+}
+
+.mds-workflow-state-chevron {
+  color: var(--mds-blue);
+  transition: transform 180ms ease;
+}
+
+.mds-workflow-state.is-collapsed {
+  gap: 0;
+  margin-bottom: 8px;
+  padding: 10px 11px;
+}
+
+.mds-workflow-state.is-collapsed .mds-workflow-state-chevron {
+  transform: rotate(-90deg);
+}
+
+.mds-contract-icon,
+.mds-workflow-state-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
+}
+
+.mds-contract-head strong,
+.mds-workflow-state-head strong {
+  display: block;
+  color: var(--mds-label);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-contract-head small,
+.mds-workflow-state-head small {
+  display: block;
+  margin-top: 2px;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-contract-list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One line per tool: status, tool name + server, Aurora operation. The full
+   request/result pair stays in the row title and for screen readers, so
+   condensing the rail costs no information. */
+/* Status icon, then everything else stacked beneath it. This used to put the
+   Aurora note in a third `auto` track, which sized to its own sentence and
+   squeezed the tool-name column to about one character - long ids like
+   awslabs.postgres-mcp-server then broke at every letter and ran down the
+   rail. Two content columns never fit here; one does. */
+.mds-contract-row {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr);
+  gap: 4px 8px;
+  align-items: baseline;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+}
+
+.mds-contract-row.is-observed {
+  background: var(--mds-green-fill);
+}
+
+.mds-contract-status {
+  color: var(--mds-green);
+  transform: translateY(2px);
+}
+
+.mds-contract-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 7px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.mds-contract-names b {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--mds-label);
+  font: var(--mds-type-headline);
+  font-weight: var(--mds-weight-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mds-contract-names code {
+  color: var(--mds-label);
+  font: var(--mds-type-footnote);
+  font-family: var(--mds-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.mds-contract-aurora {
+  grid-column: 2;
+  justify-self: start;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.mds-workflow-state.is-checkpointed {
+  background: var(--mds-cyan-fill);
+}
+
+/* Three even tiles that wrap their values, rather than three that truncate
+   mid-word ("awaiti…", "not ob…") or two-plus-an-orphan. */
+.mds-workflow-kv {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  align-items: start;
+}
+
+.mds-workflow-kv div {
+  min-width: 0;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+}
+
+.mds-workflow-kv span {
+  display: block;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-workflow-kv b {
+  display: block;
+  margin-top: 4px;
+  color: var(--mds-label);
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
+  overflow-wrap: anywhere;
+}
+
+.mds-workflow-path,
+.mds-workflow-checkpoint {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-workflow-path span {
+  padding: 3px 7px;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-caption);
+  font-family: var(--mds-font-mono);
+}
+
+.mds-workflow-path span.is-visited {
+  color: var(--mds-green);
+  background: var(--mds-green-fill);
+}
+
+.mds-workflow-checkpoint svg,
+.mds-workflow-path svg {
+  flex: 0 0 auto;
+  color: var(--mds-label-2);
+}
+
+.mds-live-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--mds-label);
+  font: var(--mds-type-headline);
+}
+
+.mds-live-state::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mds-green);
+}
+
+.mds-live-state.is-live::before {
+  animation: mds-pulse 1s ease-in-out infinite;
+}
+
+.mds-live-state.is-offline::before {
+  background: var(--mds-red);
+}
+
+.mds-trace-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  margin-bottom: 11px;
+}
+
+.mds-trace-tabs button {
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-label-2);
+  background: transparent;
+}
+
+.mds-trace-tabs button.is-active {
+  color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+}
+
+.mds-sql-list pre {
+  display: block;
+  overflow: auto;
+  padding: 10px;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-body);
+  font-family: var(--mds-font-mono);
+  white-space: pre-wrap;
+}
+
+.mds-sql-list small {
+  color: var(--mds-label-2);
+  font: var(--mds-type-headline);
+}
+
+@media (min-width: 1600px) {
+  .mds-desktop-app {
+    --mds-right-rail: 400px;
+  }
+
+  .mds-trace-panel {
+    padding: 18px;
+  }
+}
+
+.mds-trace-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.mds-trace-actions button {
+  width: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.mds-sql-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mds-empty {
+  padding: 16px;
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-trip-confirm {
+  padding: 9px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+}
+
+.mds-trip-confirm span {
+  display: block;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+}
+
+.mds-trip-confirm b {
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-trip-confirm {
+  display: grid;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.mds-trip-confirm code {
+  color: var(--mds-label);
+  font: var(--mds-type-footnote);
+  font-family: var(--mds-font-mono);
+}
+
+.mds-trip-confirm button {
+  min-height: 30px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-on-action);
+  background: var(--mds-action);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--mds-scrim);
+}
+
+.mds-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 61;
+  width: min(440px, 92%);
+  height: 100%;
+  padding: 20px;
+  overflow-y: auto;
+  border-left: 1px solid var(--mds-separator);
+  background: var(--mds-surface);
+}
+
+.mds-drawer-backdrop[data-state="open"] {
+  animation: mds-sheet-fade 160ms ease-out;
+}
+
+.mds-drawer[data-state="open"] {
+  animation: mds-sheet-enter 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mds-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.mds-tooltip {
+  z-index: 90;
+  max-width: 240px;
+  padding: 7px 9px;
+  border: 1px solid var(--mds-separator);
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
+  box-shadow: var(--mds-shadow-float);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  animation: mds-tooltip-enter 120ms ease-out;
+}
+
+.mds-tooltip-arrow {
+  fill: var(--mds-surface-2);
+}
+
+@keyframes mds-sheet-fade {
+  from { opacity: 0; }
+}
+
+@keyframes mds-sheet-enter {
+  from {
+    opacity: 0.86;
+    transform: translateX(24px);
+  }
+}
+
+@keyframes mds-tooltip-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mds-drawer-backdrop[data-state="open"],
+  .mds-drawer[data-state="open"],
+  .mds-tooltip {
+    animation: none;
+  }
+}
+
+.mds-drawer header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.mds-drawer header span {
+  display: block;
+  color: var(--mds-label-2);
+  font: var(--mds-type-caption);
+}
+
+.mds-drawer header strong {
+  color: var(--mds-label);
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  letter-spacing: var(--mds-tracking-title);
+}
+
+.mds-drawer header button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  align-self: flex-start;
+  padding: 0;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-label);
+  background: var(--mds-surface-2);
+}
+
+.mds-drawer header button > svg {
+  display: block;
+}
+
+.mds-drawer-list {
+  display: grid;
+  gap: 10px;
+}
+
+.mds-drawer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 12px;
+  border: 0;
+  border-radius: var(--mds-radius-l);
+  background: var(--mds-surface-2);
+}
+
+.mds-drawer-row span,
+.mds-drawer-row small {
+  display: block;
+  color: var(--mds-label-2);
+  font: var(--mds-type-caption);
+}
+
+.mds-drawer-row b {
+  display: block;
+  margin: 3px 0;
+  color: var(--mds-label);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+
+.mds-drawer-row div:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mds-drawer-row button {
+  min-height: 26px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-s);
+  color: var(--mds-label-2);
+  background: var(--mds-surface-2);
+  font: var(--mds-type-caption);
+}
+
+@keyframes mds-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.96);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+@media (max-width: 1240px) {
+  .mds-fullbleed-route .mds-desktop-app {
+    min-height: 100dvh;
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+
+  .mds-fullbleed-route .mds-desktop-right {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    border-top: 1px solid var(--mds-separator);
+    border-left: 0;
+  }
+
+  /* Stacked under the stage, the open rail is not a drawer; its edge tab
+     would take a grid cell of its own. A rail shut at a wider size keeps it. */
+  .mds-fullbleed-route .mds-desktop-right:not(.is-collapsed) .mds-rail-handle {
+    display: none;
+  }
+
+  /* Side by side, the two evidence panels need a gutter, not the top margin
+     that separates them when they are stacked in the rail. */
+  .mds-fullbleed-route .is-ladder .mds-desktop-right {
+    gap: 16px;
+  }
+
+  .mds-root[data-theme] .is-ladder .mds-desktop-right .mds-panel + .mds-panel {
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .mds-fullbleed-route .mds-desktop-app {
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    grid-template-columns: 1fr;
+  }
+
+  .mds-fullbleed-route .mds-desktop-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: block;
+    padding: 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--mds-separator);
+  }
+
+  .mds-brand {
+    margin: 0 0 12px;
+  }
+
+  .mds-nav-items {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .mds-nav-items::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mds-nav-items .mds-nav-item {
+    min-width: max-content;
+    flex: 0 0 auto;
+    padding: 0 12px;
+  }
+
+  .mds-sidebar-spacer,
+  .mds-account-mini,
+  .mds-desktop-sidebar > .mds-nav-item {
+    display: none;
+  }
+
+  .mds-fullbleed-route .mds-desktop-main,
+  .mds-fullbleed-route .mds-desktop-right {
+    padding: 18px;
+  }
+
+  .mds-fullbleed-route .mds-desktop-right {
+    grid-template-columns: 1fr;
+  }
+
+  .mds-workflow-kv {
+    grid-template-columns: 1fr;
+  }
+
+  .mds-message {
+    max-width: 92%;
+  }
+
+  .mds-trip-visual {
+    min-height: 182px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mds-root *,
+  .mds-root *::before,
+  .mds-root *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ============================================================
+   Nav panel drawer (Trips / Discover / Profile / Messages)
+   Reuses .mds-drawer chrome; these are the panel-specific bits.
+   ============================================================ */
+.mds-navpanel-section { margin-bottom: 16px; }
+.mds-navpanel-section:last-child { margin-bottom: 0; }
+
+.mds-navpanel-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+.mds-navpanel-section-head em {
+  font-style: normal;
+  color: var(--mds-label-3);
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-medium);
+}
+
+.mds-navpanel-hint {
+  margin-bottom: 12px;
+  color: var(--mds-label-3);
+  font: var(--mds-type-footnote);
+}
+
+.mds-navpanel-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 28px 4px;
+  text-align: center;
+}
+.mds-navpanel-empty b { color: var(--mds-label); font: var(--mds-type-body); font-weight: var(--mds-weight-bold); }
+.mds-navpanel-empty span { color: var(--mds-label-3); font: var(--mds-type-footnote); }
+
+/* Trip rows */
+.mds-navpanel-trip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.mds-navpanel-trip:hover {
+  border-color: var(--mds-control-line);
+  background: var(--mds-surface-2);
+}
+.mds-navpanel-trip-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mds-navpanel-trip-main strong { color: var(--mds-label); font: var(--mds-type-footnote); font-weight: var(--mds-weight-bold); }
+.mds-navpanel-trip-main small { color: var(--mds-label-3); font: var(--mds-type-caption); }
+.mds-navpanel-trip-meta { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.mds-navpanel-trip-meta b { color: var(--mds-label); font: var(--mds-type-footnote); font-weight: var(--mds-weight-bold); }
+.mds-navpanel-trip-meta span { color: var(--mds-label-2); font: var(--mds-type-caption); }
+.mds-navpanel-saved-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--mds-blue);
+}
+
+/* Discover prompts */
+.mds-navpanel-prompt {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--mds-control-line);
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+  color: var(--mds-label);
+  font: var(--mds-type-footnote);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.mds-navpanel-prompt:hover {
+  border-color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+}
+
+/* Profile */
+.mds-navpanel-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--mds-separator);
+}
+.mds-navpanel-profile-head strong { display: block; color: var(--mds-label); font: var(--mds-type-body); font-weight: var(--mds-weight-bold); }
+.mds-navpanel-profile-head small { color: var(--mds-label-3); font: var(--mds-type-caption); }
+
+.mds-navpanel-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.mds-navpanel-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+  text-align: center;
+}
+.mds-navpanel-stats b { color: var(--mds-label); font: var(--mds-type-body); font-weight: var(--mds-weight-bold); }
+.mds-navpanel-stats span {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-navpanel-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--mds-separator);
+}
+.mds-navpanel-fact:last-child { border-bottom: 0; }
+.mds-navpanel-fact span { color: var(--mds-label-3); font: var(--mds-type-caption); }
+.mds-navpanel-fact b { color: var(--mds-label); font: var(--mds-type-footnote); font-weight: var(--mds-weight-bold); text-align: right; }
+
+/* Messages transcript */
+.mds-navpanel-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  margin-bottom: 6px;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+}
+.mds-navpanel-msg.is-user { background: var(--mds-blue-fill); }
+.mds-navpanel-msg-role {
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+.mds-navpanel-msg-text {
+  color: var(--mds-label);
+  font: var(--mds-type-footnote);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Production shell: stable laptop/mobile geometry and product dialogs. */
+.mds-surface-switch { display:flex; gap:3px; align-self:flex-start; padding:3px; border:1px solid var(--mds-control-line); border-radius:var(--mds-radius-m); background:var(--mds-surface-2); }
+.mds-surface-switch button { min-height:32px; padding:0 13px; border:0; border-radius:var(--mds-radius-s); color:var(--mds-label-2); background:transparent; font-weight:var(--mds-weight-bold); }
+.mds-surface-switch button.is-active { color:var(--mds-label); background:var(--mds-surface); }
+.mds-toast { position:fixed; left:50%; bottom:24px; z-index:100; transform:translateX(-50%); padding:11px 16px; border:0; border-radius:var(--mds-radius-m); color:var(--mds-label); background:var(--mds-surface-2); box-shadow:var(--mds-shadow-float); }
+.mds-modal-backdrop { position:fixed; inset:0; z-index:90; display:grid; place-items:center; padding:24px; background:var(--mds-scrim); }
+.mds-trip-modal,.mds-compare-modal { position:relative; width:min(1040px,100%); max-height:min(860px,calc(100dvh - 48px)); overflow:auto; border:0; border-radius:var(--mds-radius-m); color:var(--mds-label); background:var(--mds-surface); }
+.mds-trip-modal { display:grid; grid-template-columns:minmax(300px,.9fr) minmax(420px,1.1fr); }
+.mds-trip-modal-visual { position:relative; min-height:620px; }
+.mds-trip-modal-visual .mds-trip-visual { height:100%; }
+.mds-trip-modal-visual>span { position:absolute; left:0; right:0; bottom:0; padding:48px 20px 20px; color:var(--mds-label); font-weight:var(--mds-weight-bold); background:var(--mds-image-scrim); }
+.mds-trip-modal-body { display:grid; align-content:start; gap:18px; padding:34px; }
+.mds-trip-modal-body h2,.mds-compare-modal h2 { margin:5px 0 8px; font: var(--mds-type-title-1); letter-spacing: var(--mds-tracking-display); color:var(--mds-label); }
+.mds-trip-modal-body p,.mds-trip-section { color:var(--mds-label-2); line-height:1.55; }
+.mds-modal-close { position:absolute; top:14px; right:14px; z-index:2; width:36px; height:36px; display:grid; place-items:center; border:1px solid var(--mds-control-line); border-radius:50%; color:var(--mds-label); background:var(--mds-surface); }
+.mds-trip-facts { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--mds-separator); }
+.mds-trip-facts div { padding:12px; background:var(--mds-surface); }
+.mds-trip-facts span,.mds-trip-facts b { display:block; margin:0; }
+.mds-trip-facts span { color:var(--mds-label-2); font: var(--mds-type-footnote); }
+.mds-trip-section ul,.mds-compare-copy ul { display:grid; gap:8px; margin-top:10px; padding-left:18px; }
+.mds-availability-list { display:flex; flex-wrap:wrap; gap:8px; }.mds-availability-list span { padding:9px; border:0; border-radius:var(--mds-radius-s); }.mds-availability-list b { display:block; }
+.mds-trip-disclosure,.mds-hold-receipt { display:flex; gap:9px; padding:12px; border:0; border-radius:var(--mds-radius-s); background:var(--mds-surface-2); }
+.mds-hold-receipt { flex-direction:column; }
+.mds-trip-modal-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.mds-trip-modal-actions button,.mds-compare-copy button { min-height:40px; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:0 14px; border:1px solid var(--mds-control-line); border-radius:var(--mds-radius-s); color:var(--mds-label); background:var(--mds-surface); font-weight:var(--mds-weight-bold); }
+.mds-trip-modal-actions .is-primary,.mds-compare-copy .is-primary { color:var(--mds-on-action); background:var(--mds-action); margin-left:auto; }
+.mds-trip-modal-actions .mds-trip-stop { margin-left:auto; }
+.mds-trip-modal-actions .mds-trip-stop + .is-primary { margin-left:0; }
+.mds-compare-modal { padding:26px; }.mds-compare-modal>header { display:flex; justify-content:space-between; }.mds-compare-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }.mds-compare-grid article { position:relative; overflow:hidden; border:0; border-radius:var(--mds-radius-m); background:var(--mds-surface-2); }.mds-compare-copy { display:grid; gap:12px; padding:16px; }.mds-compare-copy dl { display:grid; gap:6px; }.mds-compare-copy dl div { display:flex; justify-content:space-between; }.mds-compare-remove { position:absolute; top:8px; right:8px; z-index:2; width:30px; height:30px; border:0; border-radius:50%; }
+
+/* Enter-only, mirroring the Radix drawers (mds-sheet-*): close stays instant
+   because these modals unmount conditionally with no exit phase to hook. */
+.mds-modal-backdrop { animation: mds-sheet-fade 160ms ease-out; }
+.mds-trip-modal,
+.mds-compare-modal { animation: mds-modal-enter 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes mds-modal-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mds-modal-backdrop,
+  .mds-trip-modal,
+  .mds-compare-modal {
+    animation: none;
+  }
+}
+
+.mds-drawer-row input { width:100%; margin:5px 0; padding:8px; border:1px solid var(--mds-control-line); border-radius:var(--mds-radius-s); color:var(--mds-label); background:var(--mds-surface); }
+.mds-memory-disclosure { margin:0 0 16px; color:var(--mds-label-2); font: var(--mds-type-footnote); }
+
+@media (max-width:1450px) {
+  .mds-desktop-app { --mds-right-rail:340px; grid-template-columns:210px minmax(0,1fr) var(--mds-right-rail); }
+  .mds-desktop-scroll { padding:26px 24px 20px; }
+  .mds-desktop-dock { padding:12px 24px 18px; }
+}
+@media (max-width:1100px) {
+  .mds-desktop-app { grid-template-columns:82px minmax(0,1fr); overflow:auto; }
+  .mds-desktop-sidebar { grid-row:1 / span 2; }
+  .mds-brand { justify-content:center; }
+  .mds-nav-item { padding:0; justify-content:center; }
+  .mds-nav-icon { width:20px; height:20px; }
+  .mds-account-copy { display:none; }
+  .mds-desktop-right { grid-column:2; height:auto; min-height:0; }
+}
+@media (max-width:760px) {
+  .mds-desktop-app { display:block; min-height:100dvh; overflow:visible; }
+  .mds-fullbleed-route .mds-desktop-sidebar { position:relative; height:auto; min-height:0; overflow:visible; }
+  .mds-brand { justify-content:flex-start; font: var(--mds-type-title-2); letter-spacing: var(--mds-tracking-title); }
+  .mds-nav-item { gap:6px; justify-content:flex-start; font: var(--mds-type-caption); }
+  .mds-fullbleed-route .mds-desktop-main { height:auto; min-height:100dvh; display:flex; flex-direction:column; padding:0; overflow:visible; }
+  .mds-desktop-scroll { overflow:visible; padding:24px 18px; }
+  .mds-desktop-dock { position:sticky; bottom:0; z-index:15; padding:12px 18px calc(14px + env(safe-area-inset-bottom)); }
+  .mds-fullbleed-route .mds-desktop-right { height:auto; min-height:0; padding:18px; display:block; }
+  .mds-status-pill { max-width:none; gap:6px; padding-inline:9px; white-space:nowrap; }
+  .mds-status-sep,.mds-status-unit { display:none; }
+  .mds-trip-modal { display:block; }.mds-trip-modal-visual { min-height:260px; }.mds-trip-modal-body { padding:22px 18px; }.mds-trip-facts { grid-template-columns:1fr; }
+  .mds-compare-grid { grid-template-columns:1fr; }.mds-modal-backdrop { padding:10px; }
+}
+
+/* ============================================================
+   Graceful error banner with retry
+   ============================================================ */
+.mds-error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.mds-error-banner-copy { flex: 1 1 auto; }
+.mds-error-banner-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.mds-error-retry,
+.mds-error-dismiss {
+  padding: 5px 12px;
+  border-radius: var(--mds-radius-m);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  cursor: pointer;
+  border: 1px solid var(--mds-red);
+  background: transparent;
+  color: var(--mds-red);
+  transition: background 160ms ease;
+}
+.mds-error-retry {
+  border-color: var(--mds-red);
+  background: var(--mds-red-fill);
+}
+.mds-error-retry:hover:not(:disabled) { background: var(--mds-red-fill); }
+.mds-error-dismiss:hover { background: var(--mds-surface-2); }
+.mds-error-retry:disabled { opacity: 0.5; cursor: default; }
+
+/* ============================================================
+   Warmer empty state
+   ============================================================ */
+.mds-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 2px;
+}
+
+.mds-empty-title {
+  color: var(--mds-label);
+  font: var(--mds-type-title-3);
+  letter-spacing: var(--mds-tracking-title);
+}
+.mds-empty-sub {
+  color: var(--mds-label-3);
+  font: var(--mds-type-body);
+}
+.mds-empty-sub b { color: var(--mds-label); font-weight: var(--mds-weight-semibold); }
+
+/* ============================================================================
+   FEATURE 4 — Phase 4 "writeback you can watch"
+   A transient badge on the For-you panel header that pulses when the
+   concierge persists a turn to Aurora (persist_turn span). Token-driven so
+   it reads in both themes. Its own row keeps the title and Memory action
+   stable as the badge appears and disappears.
+   ========================================================================== */
+/* Scoped under .mds-panel-head to beat `.mds-panel-head span` (0-2-0),
+   which would otherwise force the badge's text color and a transparent fill. */
+.mds-panel-head .mds-writeback-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-self: start;
+  max-width: 100%;
+  margin: 0;
+  padding: 3px 9px;
+  border-radius: var(--mds-radius-full);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  white-space: normal;
+  color: var(--mds-green);
+  background: var(--mds-surface-2);
+  border: 0;
+}
+.mds-panel-head .mds-writeback-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--mds-radius-full);
+  background: var(--mds-green);
+  animation: mds-pulse 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mds-writeback-dot {
+    animation: none;
+  }
+}
+
+/* ============================================================================
+   FEATURE 1 — Phase 3 reranker reorder
+   Controls above the trip grid (caption + replay button) and the per-card
+   rank-delta badge. The badge sits inside the match pill over the photo.
+   ========================================================================== */
+.mds-rerank-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 2px 0 8px;
+}
+.mds-rerank-caption {
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  color: var(--mds-label-2);
+}
+.mds-rerank-replay {
+  flex: none;
+  padding: 4px 11px;
+  border-radius: var(--mds-radius-full);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+  border: 1px solid var(--mds-blue);
+  cursor: pointer;
+  transition: background 150ms ease, transform 150ms ease;
+}
+.mds-rerank-replay:hover {
+  transform: translateY(-1px);
+  background: var(--mds-blue-fill);
+}
+
+/* Rank-delta pill inside the match badge: green=promoted, yellow=demoted,
+   grey=unchanged. */
+.mds-rerank-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: 5px;
+  padding-left: 5px;
+  border-left: 1px solid var(--mds-separator);
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1;
+}
+.mds-rerank-badge.is-up {
+  color: var(--mds-green);
+}
+.mds-rerank-badge.is-down {
+  color: var(--mds-yellow);
+}
+.mds-rerank-badge.is-flat {
+  color: var(--mds-label-3);
+}
+
+/* ============================================================================
+   FEATURE 3 — Phase 5 Strands Graph diagram
+   Compact execution route for the narrow trace panel. It favors presenter-scale
+   labels over dense graph geometry while still lighting real trace spans.
+   ========================================================================== */
+.mds-wfgraph {
+  isolation: isolate;
+  overflow: hidden;
+  margin: 8px 0 10px;
+  padding: 10px;
+  border-radius: var(--mds-radius-m);
+  background:
+    var(--mds-surface-2);
+  border: 0;
+}
+.mds-wfgraph.is-unmatched {
+  background: var(--mds-yellow-fill);
+}
+.mds-wfgraph-empty {
+  margin: 2px 0 0;
+  font: var(--mds-type-footnote);
+  color: var(--mds-label-2);
+}
+.mds-wfgraph-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+.mds-wfgraph-title .mds-service-mark {
+  margin-right: 6px;
+  vertical-align: -4px;
+}
+.mds-wfgraph-title {
+  min-width: 0;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  color: var(--mds-label-2);
+}
+.mds-wfgraph-intent {
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+  font-family: var(--mds-font-mono);
+  padding: 3px 8px;
+  border-radius: var(--mds-radius-full);
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
+  border: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mds-wfgraph-branches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 7px;
+}
+.mds-wfgraph-branches span {
+  margin-right: 2px;
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
+  color: var(--mds-label-3);
+}
+.mds-wfgraph-branches b {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border-radius: var(--mds-radius-full);
+  border: 0;
+  background: var(--mds-surface-2);
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  line-height: 1;
+  text-align: center;
+}
+.mds-wfgraph-branches b {
+  transition: opacity 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+/* Once a branch is taken, fade the paths not taken so the routed branch is
+   unmistakable from the room. Only dims when a sibling is active. */
+.mds-wfgraph-branches:has(b.is-active) b:not(.is-active) {
+  opacity: 0.45;
+}
+.mds-wfgraph-branches b.is-active {
+  background: var(--mds-blue-fill);
+  color: var(--mds-blue);
+}
+.mds-wfgraph-route-summary {
+  display: grid;
+  grid-template-columns: auto minmax(16px, 1fr) auto minmax(16px, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+.mds-wfgraph-route-summary i {
+  content: "";
+  height: 1px;
+  background: var(--mds-label-2);
+}
+.mds-wfgraph-route-summary span,
+.mds-wfgraph-route-summary b {
+  padding: 3px 6px;
+  border-radius: var(--mds-radius-full);
+  border: 0;
+  background: var(--mds-surface-2);
+  color: var(--mds-label-2);
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
+  font-family: var(--mds-font-mono);
+  line-height: 1;
+}
+.mds-wfgraph-route-summary span.is-lit {
+  background: var(--mds-green-fill);
+  color: var(--mds-green);
+}
+.mds-wfgraph-route {
+  position: relative;
+  display: grid;
+  gap: 5px;
+}
+.mds-wfgraph-route::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 18px;
+  bottom: 18px;
+  left: 21px;
+  width: 2px;
+  border-radius: var(--mds-radius-full);
+  background: var(--mds-separator);
+}
+.mds-wfgraph-route-row {
+  display: block;
+}
+.mds-wfgraph-route-node {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 39px;
+  padding: 6px 8px;
+  border-radius: var(--mds-radius-m);
+  border: 1px solid transparent;
+  background: var(--mds-surface-2);
+  color: var(--mds-label-3);
+  transition: border-color 280ms ease, color 280ms ease, box-shadow 280ms ease;
+}
+/* The pop plays when a node settles into "visited" - including the moment
+   is-current moves on, since dropping that class re-resolves `animation`
+   to this rule and restarts it. That is the per-node arrival cue. */
+.mds-wfgraph-route-node.is-visited {
+  border-color: var(--mds-separator);
+  background:
+    var(--mds-surface-2);
+  color: var(--mds-label);
+  animation: mds-wfgraph-arrive 340ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes mds-wfgraph-arrive {
+  from {
+    opacity: 0.55;
+    transform: scale(0.965);
+  }
+}
+.mds-wfgraph-route-node.is-current {
+  border-color: var(--mds-tint);
+  animation: none;
+}
+.mds-wfgraph-route-node.is-next {
+  border-color: var(--mds-yellow);
+  border-style: dashed;
+}
+.mds-wfgraph-route-step {
+  position: relative;
+  z-index: 1;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--mds-radius-full);
+  background: var(--mds-surface);
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+  font-family: var(--mds-font-mono);
+  line-height: 1;
+}
+.mds-wfgraph-route-node.is-visited .mds-wfgraph-route-step {
+  background: var(--mds-green);
+  color: var(--mds-ground);
+}
+.mds-wfgraph-route-step {
+  transition: background-color 280ms ease, color 280ms ease;
+}
+.mds-wfgraph-route-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.mds-wfgraph-route-copy b {
+  overflow: hidden;
+  color: currentColor;
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-bold);
+  line-height: 1.08;
+  letter-spacing: var(--mds-tracking-title);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mds-wfgraph-route-meta {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  line-height: 1.1;
+}
+.mds-wfgraph-route-meta em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+  font-family: var(--mds-font-mono);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mds-wfgraph-route-ckpt {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: var(--mds-radius-full);
+  border: 0;
+  background: var(--mds-cyan-fill);
+  color: var(--mds-cyan);
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
+  font-family: var(--mds-font-mono);
+  line-height: 1;
+  animation: mds-pulse 1.6s ease-in-out infinite;
+}
+
+.mds-wfgraph-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--mds-separator);
+  color: var(--mds-label-2);
+  font: var(--mds-type-caption);
+  font-weight: var(--mds-weight-bold);
+  font-family: var(--mds-font-mono);
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mds-wfgraph-ckpt-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--mds-radius-full);
+  background: var(--mds-cyan);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mds-wfgraph-route-ckpt,
+  .mds-wfgraph-route-node.is-current,
+  .mds-wfgraph-route-node.is-visited {
+    animation: none;
+  }
+  .mds-wfgraph-route-node,
+  .mds-wfgraph-route-step {
+    transition: none;
+  }
+}
+
+/* ============================================================================
+   FEATURE 2 — Phase 4 "prove RLS is live" probe panel
+   Scoped vs unscoped row counts as an animated bar (the green scoped bar
+   shrinks from the full unscoped width), plus the real CREATE POLICY USING
+   clause. Token-driven for both themes.
+   ========================================================================== */
+.mds-rls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mds-rls-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mds-rls-title {
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  color: var(--mds-label-2);
+}
+.mds-rls-run {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: var(--mds-radius-m);
+  color: var(--mds-blue);
+  background: var(--mds-blue-fill);
+  border: 1px solid var(--mds-blue);
+  cursor: pointer;
+}
+.mds-rls-run:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.mds-rls-run:disabled svg {
+  animation: mds-send-spin 900ms linear infinite;
+}
+
+@media (max-width: 720px) {
+  .mds-chat-composer-wrap.is-proof .mds-chat-query-starters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mds-chat-composer-wrap.is-proof .mds-chat-starter-label {
+    display: none;
+  }
+}
+
+.mds-authz-chain {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.mds-authz-step {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 7px;
+  padding: 10px;
+  border: 0;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+}
+.mds-authz-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--mds-radius-s);
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
+}
+.mds-authz-step.is-allow .mds-authz-icon {
+  color: var(--mds-green);
+  background: var(--mds-green-fill);
+}
+.mds-authz-step.is-deny .mds-authz-icon {
+  color: var(--mds-red);
+  background: var(--mds-red-fill);
+}
+.mds-authz-step.is-neutral .mds-authz-icon {
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
+}
+.mds-authz-step small,
+.mds-authz-step strong,
+.mds-authz-step code {
+  display: block;
+  min-width: 0;
+}
+.mds-authz-step small {
+  margin-bottom: 3px;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+.mds-authz-step strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--mds-label);
+  font: var(--mds-type-body);
+  font-weight: var(--mds-weight-bold);
+}
+.mds-authz-decision {
+  flex: none;
+  padding: 2px 9px;
+  border-radius: var(--mds-radius-s);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-bold);
+}
+.mds-authz-decision.is-allow {
+  color: var(--mds-ground);
+  background: var(--mds-green);
+}
+.mds-authz-decision.is-deny {
+  color: var(--mds-ground);
+  background: var(--mds-red);
+}
+.mds-authz-decision.is-neutral {
+  color: var(--mds-label-2);
+  background: var(--mds-surface);
+}
+.mds-authz-step code {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-family: var(--mds-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mds-rls-layer-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 2px;
+  color: var(--mds-label-2);
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+}
+
+.mds-rls-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.mds-rls-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.mds-rls-row-head code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font: var(--mds-type-footnote);
+  font-family: var(--mds-font-mono);
+  color: var(--mds-label);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mds-rls-counts {
+  display: inline-flex;
+  flex: none;
+  align-items: baseline;
+  gap: 6px;
+  font: var(--mds-type-footnote);
+  color: var(--mds-label-2);
+}
+.mds-rls-count-scoped {
+  font: var(--mds-type-title-1);
+  line-height: 1;
+  letter-spacing: var(--mds-tracking-display);
+  color: var(--mds-green);
+  font-variant-numeric: tabular-nums;
+}
+.mds-rls-count-arrow {
+  font: var(--mds-type-body);
+  color: var(--mds-label-3);
+}
+.mds-rls-count-unscoped {
+  font: var(--mds-type-title-3);
+  font-weight: var(--mds-weight-regular);
+  letter-spacing: var(--mds-tracking-title);
+  color: var(--mds-label-3);
+  text-decoration-thickness: 1.5px;
+  font-variant-numeric: tabular-nums;
+}
+.mds-rls-count-unit {
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  color: var(--mds-label-2);
+}
+.mds-rls-err {
+  font: var(--mds-type-footnote);
+  color: var(--mds-red);
+}
+
+/* The full track = unscoped (all rows). The red ghost fills the whole track as
+   the "before" state; the green bar animates down over it to the scoped count,
+   so the audience literally watches the red (RLS-hidden) rows get revealed.
+   The green bar stays full-width and slides left via transform (compositor
+   thread, no layout) while the track's overflow clips it to the scoped span. */
+.mds-rls-bar {
+  position: relative;
+  height: 14px;
+  border-radius: var(--mds-radius-full);
+  background: var(--mds-surface-2);
+  overflow: hidden;
+}
+.mds-rls-bar-ghost {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--mds-radius-full);
+  background: var(--mds-red-fill);
+}
+.mds-rls-bar-scoped {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--mds-radius-full);
+  background: var(--mds-green);
+}
+.mds-rls-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font: var(--mds-type-footnote);
+  color: var(--mds-label-2);
+}
+.mds-rls-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.mds-rls-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--mds-radius-full);
+}
+.mds-rls-dot.is-scoped {
+  background: var(--mds-green);
+}
+.mds-rls-dot.is-hidden {
+  background: var(--mds-red);
+}
+
+.mds-rls-policies {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--mds-separator);
+}
+.mds-rls-policies-title {
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  color: var(--mds-label-2);
+}
+.mds-rls-policy small {
+  display: block;
+  font: var(--mds-type-footnote);
+  font-weight: var(--mds-weight-semibold);
+  color: var(--mds-label-2);
+  margin-bottom: 2px;
+}
+.mds-rls-policy pre {
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  border-radius: var(--mds-radius-m);
+  background: var(--mds-surface-2);
+  border: 0;
+  font: var(--mds-type-footnote);
+  font-family: var(--mds-font-mono);
+  color: var(--mds-label-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ============================================================================
+   Thinking ticker — phase-aware reasoning phrases that cycle while a turn is
+   in flight (replaces the static "Running tools and composing…"). A short
+   fade-in on each phrase swap so the text changes gently.
+   ========================================================================== */
+.mds-thinking-ticker {
+  display: inline-block;
+  color: var(--mds-label-2);
+  animation: mds-ticker-fade 320ms ease;
+}
+@keyframes mds-ticker-fade {
+  from { opacity: 0.35; }
+  to   { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mds-thinking-ticker { animation: none; }
+}
+
+/* Official AWS service tiles. They ship as a coloured square with a white
+   glyph, so a small radius stops them reading as a hard sticker against the
+   panel, and the baseline nudge lines them up with the text they sit beside. */
+.mds-service-mark {
+  flex: none;
+  border-radius: var(--mds-radius-s);
+  vertical-align: -2px;
+}
+
+/* AgentCore marks ship as black-stroke art for light backgrounds and
+   white-stroke art for dark ones, so dark mode swaps the file, not the color. */
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore {
+  content: url('/brand/agentcore-purple/agentcore-dark.svg');
+}
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore-runtime {
+  content: url('/brand/agentcore-purple/runtime-dark.svg');
+}
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore-gateway {
+  content: url('/brand/agentcore-purple/gateway-dark.svg');
+}
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore-memory {
+  content: url('/brand/agentcore-purple/memory-dark.svg');
+}
+.mds-root[data-theme='dark'] .mds-service-mark-agentcore-policy {
+  content: url('/brand/agentcore-purple/policy-dark.svg');
+}
+
+/* The MCP mark is stroke art on currentColor, so it needs no tile treatment -
+   just optical alignment with the text beside it. */
+.mds-mcp-mark {
+  flex: none;
+  vertical-align: -2px;
+}
+
+/* Booking confirmation inside the trip drawer: the traveler's decision, restated in full. */
+.mds-trip-confirm { display:grid; gap:14px; padding:18px; border:0; border-radius:var(--mds-radius-m); background:var(--mds-surface-2); }
+.mds-trip-confirm header { display:flex; align-items:center; gap:10px; color:var(--mds-label); }
+.mds-trip-confirm h3 { margin:0; font: var(--mds-type-title-3); letter-spacing: var(--mds-tracking-title); color:var(--mds-label); }
+.mds-trip-confirm dl { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px 16px; margin:0; }
+.mds-trip-confirm dt { color:var(--mds-label-2); font: var(--mds-type-footnote); }
+.mds-trip-confirm dd { margin:2px 0 0; color:var(--mds-label); font-weight:var(--mds-weight-semibold); overflow-wrap:anywhere; }
+.mds-trip-confirm p { margin:0; color:var(--mds-label-2); line-height:1.5; }
+.mds-trip-confirm .mds-trip-modal-actions { justify-content:flex-end; }
+@media (max-width:600px) { .mds-trip-confirm dl { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+.mds-trip-confirm .mc-budget-basis { display:block; margin-top:3px; color:var(--mds-label-2); font:var(--mds-type-footnote); font-weight:var(--mds-weight-medium); }

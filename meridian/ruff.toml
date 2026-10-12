@@ -1,0 +1,19 @@
+# Ruff configuration for the Meridian backend.
+#
+# Scoped to rules that catch defects rather than restyle the tree: pyflakes
+# (undefined names, unused imports and variables), syntax errors, and the
+# bugbear subset. Import sorting and typing modernisation are deliberately
+# left out so the guardrail can be enforced without a repo-wide reformat.
+
+line-length = 100
+target-version = "py311"
+exclude = ["venv", ".venv", "frontend", "node_modules", "**/__pycache__"]
+
+[lint]
+select = ["F", "E9", "B"]
+
+[lint.per-file-ignores]
+# FastAPI's dependency-injection idiom is a function call in a default
+# argument; that is the framework's documented pattern, not a bug.
+"backend/routers/*.py" = ["B008"]
+"backend/mcp/*.py" = ["B008"]

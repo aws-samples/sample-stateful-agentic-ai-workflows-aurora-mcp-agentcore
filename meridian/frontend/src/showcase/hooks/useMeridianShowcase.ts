@@ -1,0 +1,1408 @@
+import { isObserved, type JourneyDocument, type JourneyHold } from '../journey/types';
+import { parseDatabaseTime } from '../journey/evidence';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  confirmBooking,
+  deleteMemoryFact,
+  fetchHealth,
+  fetchMemoryProfile,
+  fetchProducts,
+  processOrder,
+  readHold,
+  readBooking,
+  sendChatMessage,
+  updateMemoryFact,
+} from '../../api/client';
+import type { ChatStreamEvent } from '../../api/chatStream';
+import { CURRENT_TRAVELER } from '../../api/currentTraveler';
+import { runWithDeadline } from '../../api/request';
+import { useSession } from '../../auth/SessionContext';
+import { firstNameOf, travelerIdentity, type TravelerIdentity } from '../lib/travelerIdentity';
+import { holdIntentKey, loadBookingRecovery, saveBookingRecovery, type SavedHoldIntent } from '../lib/bookingRecovery';
+import type {
+  ChatResponse,
+  LongTermMemoryFact,
+  Message,
+  OrderResponse,
+  Phase,
+  Product,
+  TravelerProfile,
+} from '../../types';
+import type { BackendHealth } from '../../lib/runConfig';
+import {
+  SHOWCASE_EXAMPLE_PROMPTS,
+  SHOWCASE_PHASES,
+  chatResponseToMessages,
+  chatResponseToTraceSpans,
+  genericizeLoyaltyText,
+  healthResponseToStatus,
+  memoryResponseToFacts,
+  phaseLabelFor,
+  productsFromChatResponse,
+  type BackendStatus,
+  type ShowcaseTraceSpan,
+  type ShowcaseTraceTab,
+} from '../lib/showcaseAdapters';
+import { SHOWCASE_INITIAL_PROMPT } from '../lib/showcaseFallbackData';
+import {
+  EMPTY_TRIP_WORKSPACE,
+  loadTripWorkspace,
+  saveTripWorkspace,
+  type TripWorkspace,
+  toggleComparedTrip,
+  toggleSavedTrip,
+} from '../lib/tripWorkspace';
+
+export interface ActionDrawerState {
+  kind: 'hold' | 'book' | 'plan' | 'compare' | 'save';
+  product: Product;
+  message: string;
+  order?: OrderResponse['order'];
+  live: boolean;
+}
+
+export interface TripHold {
+  productId: string;
+  order: NonNullable<OrderResponse['order']>;
+}
+
+/** A hold placed elsewhere (the recovery workflow) that the concierge can adopt. */
+export type AdoptableHold = Pick<
+  JourneyHold,
+  'booking_id' | 'package_id' | 'duration' | 'travelers_count' | 'unit_price' | 'total_amount' | 'hold_expires_at' | 'hold_created_at' | 'confirmed_at'
+> & { status: string };
+
+// Refinement filters captured by the action-chip popovers below the
+// composer. They get appended to whatever prompt the presenter types
+// when submitPrompt fires, so the agent sees the full traveler intent
+// without the composer text getting noisy.
+export interface ChatFilters {
+  travelers: number; // 0 = unset
+  startDate: string | null; // YYYY-MM-DD
+  endDate: string | null;
+  spa: boolean;
+  directFlights: boolean;
+  rebookNonstop?: boolean;
+}
+
+export const EMPTY_FILTERS: ChatFilters = {
+  travelers: 0,
+  startDate: null,
+  endDate: null,
+  spa: false,
+  directFlights: false,
+  rebookNonstop: false,
+};
+
+export interface MeridianShowcaseState {
+  selectedPhase: Phase;
+  phaseLabel: string;
+  /** Transient "what this rung adds" callout, set when the presenter
+   *  advances to a higher phase. Null when dismissed or on a backward
+   *  switch. Drives the phase-diff banner. */
+  phaseHint: { label: string; adds: string; tech?: string } | null;
+  dismissPhaseHint: () => void;
+  /** Who is signed in: their name and photo come from their sign-in or their Aurora profile. */
+  traveler: TravelerIdentity;
+  messages: Message[];
+  lastRequestPhase: Phase | null;
+  recoveryRequest: string | null;
+  inspectCurrentRun: () => void;
+  currentPrompt: string;
+  recommendations: Product[];
+  streamingRecommendations: Product[];
+  catalog: Product[];
+  selectedTrip: Product | null;
+  tripDetailsOpen: boolean;
+  savedTrips: Product[];
+  savedTripIds: Set<string>;
+  comparedTrips: Product[];
+  comparisonOpen: boolean;
+  memoryFacts: LongTermMemoryFact[];
+  travelerProfile: TravelerProfile | null;
+  /** Traveler context for the opening product view only. Refreshed so
+   *  the talk can open on real personalization; never gates chat requests and
+   *  never populates the memory drawers. */
+  previewFacts: LongTermMemoryFact[];
+  previewProfile: TravelerProfile | null;
+  /** The saved per-traveler cap the gateway policy multiplies by the party size. */
+  budgetCeilingPerTravelerCents: number | null;
+  memoryEnabled: boolean;
+  memoryLoading: boolean;
+  memoryToggleError: string | null;
+  memoryMutationError: string | null;
+  workspaceNotice: string | null;
+  traceSpans: ShowcaseTraceSpan[];
+  traceTab: ShowcaseTraceTab;
+  expandedSpanId: string | null;
+  replayIndex: number;
+  isReplaying: boolean;
+  isLoading: boolean;
+  /** The governed write in flight from the trip dialog; chat turns are not writes. */
+  pendingWrite: 'hold' | 'confirm' | null;
+  chatProgress?: string;
+  requestStartedAt: number | null;
+  stopWaiting: () => void;
+  error: string | null;
+  backendStatus: BackendStatus;
+  backendHealth: BackendHealth | null;
+  connectionIssue: string | null;
+  connectionRefreshing: boolean;
+  refreshConnection: () => Promise<void>;
+  isFallbackMode: boolean;
+  conversationId: string | null;
+  workflowStatus: ChatResponse['workflow_status'] | null;
+  workflowResumedAfterRestart: boolean;
+  lastPrompt: string | null;
+  actionDrawer: ActionDrawerState | null;
+  /** Confirmed direct holds stay visible when drawers close or the ladder changes. */
+  tripHolds: TripHold[];
+  /** The held trip waiting for the traveler's confirmation in the trip drawer. */
+  bookingPrompt: TripHold | null;
+  totalLatencyMs: number;
+  phaseExamples: string[];
+  travelersCount: number;
+  chatFilters: ChatFilters;
+  setChatFilters: (next: ChatFilters) => void;
+  resetChatFilters: () => void;
+  setCurrentPrompt: (value: string) => void;
+  setTraceTab: (tab: ShowcaseTraceTab) => void;
+  setExpandedSpanId: (id: string | null) => void;
+  setSelectedTrip: (product: Product | null) => void;
+  setSelectedPhase: (phase: Phase) => void;
+  setMemoryEnabled: (enabled: boolean) => Promise<void>;
+  submitPrompt: (prompt?: string, phaseOverride?: Phase, options?: { reviewOnly?: boolean }) => Promise<void>;
+  applyPhaseExample: (
+    prompt: string,
+    runImmediately?: boolean,
+    phaseOverride?: Phase,
+  ) => Promise<void>;
+  replayLastPrompt: () => Promise<void>;
+  replayTrace: () => void;
+  selectTrip: (product: Product) => void;
+  openTripDetails: (product: Product) => void;
+  closeTripDetails: () => void;
+  holdTrip: (product: Product) => Promise<void>;
+  requestBookingConfirmation: (product: Product) => void;
+  dismissBookingConfirmation: () => void;
+  /** Confirm the held trip. The click is the traveler's confirmation; the platform carries it. */
+  confirmTrip: (product: Product) => Promise<void>;
+  /** Bring a hold the recovery workflow placed into the concierge as a held trip. */
+  adoptJourneyHold: (hold: AdoptableHold) => boolean;
+  planTrip: (product: Product) => void;
+  saveTrip: (product: Product) => void;
+  compareTrip: (product: Product) => void;
+  removeComparedTrip: (productId: string) => void;
+  openComparison: () => void;
+  closeComparison: () => void;
+  updateMemoryPreference: (key: string, value: string) => Promise<boolean>;
+  deleteMemoryPreference: (key: string) => Promise<boolean>;
+  clearMemoryMutationError: () => void;
+  closeActionDrawer: () => void;
+  clearError: () => void;
+  clearChat: () => void;
+  restoreJourney: (document: JourneyDocument) => void;
+  // True only when the latest bot reply's typewriter has finished
+  // revealing. While false, downstream surfaces (recommendation grid)
+  // wait so they don't appear before the message reads as complete.
+  latestStreamComplete: boolean;
+  markLatestStreamComplete: () => void;
+}
+
+// Clean slate by design - the chat transcript stays empty until the
+// presenter types a real prompt and Aurora streams the first turn back.
+const INITIAL_MESSAGES: Message[] = [];
+
+function formatDateLabel(iso: string): string {
+  // ISO YYYY-MM-DD into "Sep 14" - readable inside the prompt text.
+  const [, m, d] = iso.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthIdx = Math.max(0, Math.min(11, Number(m) - 1));
+  return `${months[monthIdx]} ${Number(d)}`;
+}
+
+export function decoratePromptWithFilters(prompt: string, filters: ChatFilters): string {
+  const fragments: string[] = [];
+  if (filters.travelers > 0) {
+    fragments.push(filters.travelers === 1 ? 'for 1 traveler' : `for ${filters.travelers} travelers`);
+  }
+  if (filters.startDate && filters.endDate) {
+    fragments.push(`between ${formatDateLabel(filters.startDate)} and ${formatDateLabel(filters.endDate)}`);
+  } else if (filters.startDate) {
+    fragments.push(`starting ${formatDateLabel(filters.startDate)}`);
+  }
+  if (filters.spa) fragments.push('with spa access included');
+  if (filters.directFlights) fragments.push('with direct flights only');
+  if (filters.rebookNonstop) {
+    fragments.push('and prioritize a nonstop rebooking if disruption recovery is needed');
+  }
+
+  if (fragments.length === 0) return prompt;
+  // Use commas + Oxford-style "and" for the final fragment so the
+  // composed sentence reads naturally for the agent.
+  const tail =
+    fragments.length === 1
+      ? fragments[0]
+      : `${fragments.slice(0, -1).join(', ')}, ${fragments[fragments.length - 1]}`;
+  return `${prompt} (${tail})`;
+}
+
+function clearWorkflowAddress() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('journey');
+  url.searchParams.delete('thread');
+  window.history.replaceState(null, '', url);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
+const PHASE_DELAYS: Record<Phase, number> = { 1: 420, 2: 360, 3: 300, 4: 280, 5: 260 };
+
+/**
+ * Saved and compared trips for whoever is using the page. They are read and kept under that
+ * traveler's id; when the id changes the trips change with it, and the previous traveler's trips
+ * are never written under the new id. With nobody identified they stay in memory only.
+ */
+function useTripWorkspace(travelerId: string | null) {
+  const [stored, setStored] = useState<{ owner: string | null; workspace: TripWorkspace }>(
+    () => ({ owner: travelerId, workspace: loadTripWorkspace(travelerId) }),
+  );
+  if (stored.owner !== travelerId) {
+    setStored({ owner: travelerId, workspace: loadTripWorkspace(travelerId) });
+  }
+  const workspace = stored.owner === travelerId ? stored.workspace : EMPTY_TRIP_WORKSPACE;
+  useEffect(() => {
+    if (stored.owner === travelerId) saveTripWorkspace(stored.owner, stored.workspace);
+  }, [stored, travelerId]);
+  const setWorkspace = useCallback(
+    (update: (prior: TripWorkspace) => TripWorkspace) => setStored(prior => ({
+      owner: prior.owner, workspace: update(prior.workspace),
+    })),
+    [],
+  );
+  return { workspace, setWorkspace };
+}
+
+export function useMeridianShowcase(): MeridianShowcaseState {
+  const { traveler: signedIn, verifiedTravelerId } = useSession();
+  // Requests say CURRENT_TRAVELER and the API resolves it from the verified credential. The id the
+  // page knows is only a key for this browser's own saved state, so two people never share it.
+  const travelerKey = useRef(CURRENT_TRAVELER);
+  travelerKey.current = verifiedTravelerId ?? signedIn?.travelerId ?? CURRENT_TRAVELER;
+  // Start the showcase at Phase 1 (SQL) so a stage walk-through can begin
+  // with the simplest data path - direct SQL filters over Aurora - and
+  // progressively introduce MCP, Retrieval, Production, and Workflow.
+  const requestGeneration = useRef(0);
+  const chatController = useRef<AbortController | null>(null);
+  const invalidateChatRequest = useCallback(() => {
+    requestGeneration.current += 1;
+    chatController.current?.abort();
+    chatController.current = null;
+  }, []);
+  useEffect(() => invalidateChatRequest, [invalidateChatRequest]);
+  const unresolvedWorkflow = useRef<string | null>(null);
+  const conversationPhaseRef = useRef<Phase | null>(null);
+  const [selectedPhase, setSelectedPhaseState] = useState<Phase>(1);
+  const [phaseHint, setPhaseHint] = useState<MeridianShowcaseState['phaseHint']>(null);
+  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [currentPrompt, setCurrentPrompt] = useState(SHOWCASE_INITIAL_PROMPT);
+  const [recommendations, setRecommendations] = useState<Product[]>([]);
+  const [candidateIds, setCandidateIds] = useState<string[]>([]);
+  // Live catalog for the product view's rotating hero. Aurora rows, not a
+  // bundled preview list.
+  const [catalog, setCatalog] = useState<Product[]>([]);
+  const [selectedTrip, setSelectedTrip] = useState<Product | null>(null);
+  const [tripDetailsOpen, setTripDetailsOpen] = useState(false);
+  const [tripHolds, setTripHolds] = useState<TripHold[]>([]);
+  const holdPending = useRef(false);
+  // Keep an unacknowledged hold's identity across retries and phase resets.
+  // The Gateway derives its replay key from this conversation and the terms.
+  const writeController = useRef<AbortController | null>(null);
+  const [bookingPrompt, setBookingPrompt] = useState<TripHold | null>(null);
+  const bookingPending = useRef(false);
+  const [comparisonOpen, setComparisonOpen] = useState(false);
+  const [memoryFacts, setMemoryFacts] = useState<LongTermMemoryFact[]>([]);
+  const [travelerProfile, setTravelerProfile] = useState<TravelerProfile | null>(null);
+  // "What good looks like" for the opening product view. The talk opens on real
+  // personalization, then resets and builds back up to it. Kept separate from
+  // memoryFacts/travelerProfile on purpose: those stay empty until Phase 4
+  // authorizes the workload, so the ladder still earns its reveal.
+  const [previewFacts, setPreviewFacts] = useState<LongTermMemoryFact[]>([]);
+  const [previewProfile, setPreviewProfile] = useState<TravelerProfile | null>(null);
+  const traveler = useMemo(
+    () => travelerIdentity(signedIn, (travelerProfile ?? previewProfile)?.full_name, verifiedTravelerId),
+    [signedIn, travelerProfile, previewProfile, verifiedTravelerId],
+  );
+  const { workspace, setWorkspace } = useTripWorkspace(traveler.id);
+  const firstName = firstNameOf(traveler);
+  // Read from the same saved fact the gateway policy reads, so the budget on
+  // screen is the basis Cedar judged rather than a second, unrelated number.
+  const [budgetCeilingPerTravelerCents, setBudgetCeiling] = useState<number | null>(null);
+  const [memoryEnabled, setMemoryEnabledState] = useState(false);
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const memoryReadGeneration = useRef(0);
+  const memoryReadController = useRef<AbortController | null>(null);
+  const invalidateMemoryRead = useCallback(() => {
+    memoryReadGeneration.current += 1;
+    memoryReadController.current?.abort();
+    memoryReadController.current = null;
+  }, []);
+  useEffect(() => invalidateMemoryRead, [invalidateMemoryRead]);
+  const [memoryToggleError, setMemoryToggleError] = useState<string | null>(null);
+  const [memoryMutationError, setMemoryMutationError] = useState<string | null>(null);
+  const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
+  const [traceSpans, setTraceSpans] = useState<ShowcaseTraceSpan[]>([]);
+  const [traceTab, setTraceTab] = useState<ShowcaseTraceTab>(null);
+  const [expandedSpanId, setExpandedSpanId] = useState<string | null>(null);
+  const [replayIndex, setReplayIndex] = useState(-1);
+  const [isReplaying, setIsReplaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [chatProgress, setChatProgress] = useState('');
+  const [pendingWrite, setPendingWrite] = useState<MeridianShowcaseState['pendingWrite']>(null);
+  const [requestStartedAt, setRequestStartedAt] = useState<number | null>(null);
+  const stopWaiting = useCallback(() => {
+    chatController.current?.abort(new DOMException('Stopped waiting.', 'AbortError'));
+    writeController.current?.abort(new DOMException('Stopped waiting.', 'AbortError'));
+  }, []);
+  useEffect(() => () => writeController.current?.abort(), []);
+  // True once the latest bot reply's typewriter has finished revealing.
+  // Reset to false at the moment a new chat request fires; flipped back
+  // to true by ChatMessage when its typewriter reaches the end of the
+  // text. Initially true so the empty state isn't held back.
+  const [latestStreamComplete, setLatestStreamComplete] = useState(true);
+  const [lastRequestPhase, setLastRequestPhase] = useState<Phase | null>(null);
+  const [recoveryRequest, setRecoveryRequest] = useState<string | null>(null);
+  const lastPromptPhaseOverride = useRef<Phase>();
+  const lastPromptOptions = useRef<{ reviewOnly?: boolean }>();
+  const [error, setError] = useState<string | null>(null);
+  const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
+  const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
+  const [connectionIssue, setConnectionIssue] = useState<string | null>(null);
+  const [connectionRefreshing, setConnectionRefreshing] = useState(false);
+  const connectionController = useRef<AbortController | null>(null);
+  const connectionGeneration = useRef(0);
+  // No fallback mode - /showcase is live-Aurora-only. The flag remains in
+  // state so existing consumers that read it still type-check, but it stays
+  // false for the lifetime of the session.
+  const [isFallbackMode] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [workflowStatus, setWorkflowStatus] =
+    useState<ChatResponse['workflow_status'] | null>(null);
+  const [workflowResumedAfterRestart, setWorkflowResumedAfterRestart] =
+    useState(false);
+  const [lastPrompt, setLastPrompt] = useState<string | null>(null);
+  const [actionDrawer, setActionDrawer] = useState<ActionDrawerState | null>(null);
+  const [chatFilters, setChatFiltersState] = useState<ChatFilters>(EMPTY_FILTERS);
+  const [conversationTravelers, setConversationTravelers] = useState<number | null>(null);
+  const travelersCount = chatFilters.travelers || conversationTravelers || travelerProfile?.party_size || previewProfile?.party_size || 1;
+  const replayTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const mounted = useRef(true);
+
+  const savedTripIds = useMemo(
+    () => new Set(workspace.savedTrips.map((product) => product.product_id)),
+    [workspace.savedTrips],
+  );
+
+  useEffect(() => {
+    if (!workspaceNotice) return undefined;
+    const timer = window.setTimeout(() => setWorkspaceNotice(null), 3200);
+    return () => window.clearTimeout(timer);
+  }, [workspaceNotice]);
+
+  // Safety net: force-mark the latest reply as complete if it has been
+  // streaming for too long. Without this, a typewriter that fails to
+  // notify completion (component unmount mid-stream, regex crash in the
+  // markdown source, etc.) leaves the UI permanently hiding the
+  // recommendation grid and any other gated surface.
+  //
+  // The window starts when isLoading flips false (chat response arrived)
+  // and lasts 6 seconds - longer than any typewriter run (max ~1.7s).
+  useEffect(() => {
+    if (latestStreamComplete) return;
+    if (isLoading) return; // still waiting on the backend; don't time out yet
+    const id = window.setTimeout(() => {
+      setLatestStreamComplete(true);
+    }, 6000);
+    return () => window.clearTimeout(id);
+  }, [latestStreamComplete, isLoading]);
+
+  const clearReplayTimers = useCallback(() => {
+    replayTimers.current.forEach((timer) => clearTimeout(timer));
+    replayTimers.current = [];
+  }, []);
+
+  useEffect(() => {
+    // React 18 StrictMode runs the effect+cleanup pair twice in dev. We must
+    // re-arm `mounted` at the start of every mount, otherwise the first
+    // cleanup permanently flips it to false and async catch handlers bail
+    // out before they can set fallback state on the surviving instance.
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      clearReplayTimers();
+    };
+  }, [clearReplayTimers]);
+
+  // Process health alone cannot prove Aurora access. Re-read the catalog and
+  // opening traveler context together, including after an AWS session expires.
+  // This never enables memory for the first three ladder phases.
+  const refreshConnection = useCallback(async () => {
+    const generation = ++connectionGeneration.current;
+    connectionController.current?.abort();
+    const controller = new AbortController();
+    connectionController.current = controller;
+    setConnectionRefreshing(true);
+    // Scoped profile reads need several service round trips. Keep a deadline,
+    // but allow slower presentation networks to complete a valid read.
+    const timeout = window.setTimeout(() => controller.abort(), 45000);
+    try {
+      const [health, trips, profile] = await Promise.allSettled([
+        fetchHealth<BackendHealth>(controller.signal),
+        fetchProducts(undefined, 50, false, controller.signal),
+        fetchMemoryProfile(CURRENT_TRAVELER, controller.signal),
+      ]);
+      if (!mounted.current || generation !== connectionGeneration.current) return;
+      const serverReady = health.status === 'fulfilled' && healthResponseToStatus(health.value) === 'online';
+      const tripsReady = trips.status === 'fulfilled';
+      const profileReady = profile.status === 'fulfilled';
+      if (health.status === 'fulfilled') setBackendHealth(health.value);
+      if (tripsReady) setCatalog(trips.value);
+      if (profileReady) {
+        setPreviewFacts(memoryResponseToFacts(profile.value));
+        setPreviewProfile(profile.value.profile ?? null);
+        setBudgetCeiling(profile.value.budget_ceiling_per_traveler_cents ?? null);
+      }
+      setBackendStatus(serverReady && tripsReady && profileReady ? 'online' : 'offline');
+      setConnectionIssue(
+        !serverReady ? 'Meridian could not connect to its service.'
+          : !tripsReady && !profileReady ? 'Live trips and traveler details are unavailable.'
+            : !tripsReady ? 'Live trip data is unavailable.'
+              : !profileReady ? 'Traveler details are unavailable.' : null,
+      );
+    } finally {
+      window.clearTimeout(timeout);
+      if (mounted.current && generation === connectionGeneration.current) {
+        connectionController.current = null;
+        setConnectionRefreshing(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshConnection();
+    const interval = window.setInterval(() => {
+      if (!document.hidden && !connectionController.current) void refreshConnection();
+    }, 30000);
+    return () => {
+      window.clearInterval(interval);
+      connectionGeneration.current += 1;
+      connectionController.current?.abort();
+    };
+  }, [refreshConnection]);
+
+  // The showcase starts with traveler context disconnected. Production makes
+  // memory an explicit capability: enabling it performs the real Aurora read,
+  // then subsequent chat requests carry memory_enabled=true.
+  const setMemoryEnabled = useCallback(async (enabled: boolean) => {
+    invalidateMemoryRead();
+    const generation = memoryReadGeneration.current;
+    const isCurrent = () => mounted.current && generation === memoryReadGeneration.current;
+    setMemoryToggleError(null);
+    if (!enabled) {
+      setMemoryLoading(false);
+      setMemoryEnabledState(false);
+      setMemoryFacts([]);
+      setTravelerProfile(null);
+      return;
+    }
+
+    setMemoryLoading(true);
+    const controller = new AbortController();
+    memoryReadController.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 45000);
+    try {
+      const profile = await fetchMemoryProfile(CURRENT_TRAVELER, controller.signal);
+      if (!isCurrent()) return;
+      setMemoryFacts(memoryResponseToFacts(profile));
+      setTravelerProfile(profile.profile ?? null);
+      setBudgetCeiling(profile.budget_ceiling_per_traveler_cents ?? null);
+      setMemoryEnabledState(true);
+    } catch {
+      if (!isCurrent()) return;
+      setMemoryEnabledState(false);
+      setMemoryFacts([]);
+      setTravelerProfile(null);
+      setMemoryToggleError(
+        'Traveler context could not be authorized. Confirm Aurora is available and try again.',
+      );
+    } finally {
+      window.clearTimeout(timeout);
+      if (isCurrent()) {
+        memoryReadController.current = null;
+        setMemoryLoading(false);
+      }
+    }
+  }, [invalidateMemoryRead]);
+
+  const replayTrace = useCallback(() => {
+    clearReplayTimers();
+    if (!traceSpans.length) {
+      setReplayIndex(-1);
+      setIsReplaying(false);
+      return;
+    }
+    setIsReplaying(true);
+    setReplayIndex(-1);
+    traceSpans.forEach((_, index) => {
+      const timer = setTimeout(() => {
+        setReplayIndex(index);
+        if (index === traceSpans.length - 1) {
+          const finish = setTimeout(() => setIsReplaying(false), 520);
+          replayTimers.current.push(finish);
+        }
+      }, index * 320);
+      replayTimers.current.push(timer);
+    });
+  }, [clearReplayTimers, traceSpans]);
+
+  const applyChatResponse = useCallback((prompt: string, response: ChatResponse) => {
+    setRecoveryRequest(response.recovery_request ?? null);
+    // The user-side bubble was already appended optimistically when they
+    // hit Send (see submitPrompt). Drop any pre-existing user bubble for
+    // THIS prompt before re-applying the full pair so we don't get a
+    // double-render. chatResponseToMessages always appends [user, bot];
+    // we trim the trailing optimistic user bubble first to keep history
+    // clean.
+    setMessages((messages) => {
+      const prior = messages[messages.length - 1]?.streaming ? messages.slice(0, -1) : messages;
+      const trimmed =
+        prior.length > 0 &&
+        prior[prior.length - 1].role === 'user' &&
+        prior[prior.length - 1].text === prompt
+          ? prior.slice(0, -1)
+          : prior;
+      return chatResponseToMessages(trimmed, prompt, response);
+    });
+    const nextTrace = chatResponseToTraceSpans(response, prompt);
+    setTraceSpans(nextTrace);
+    setExpandedSpanId(nextTrace[0]?.id ?? null);
+    setTraceTab(null);
+    if (response.conversation_id) setConversationId(response.conversation_id);
+    setWorkflowStatus(response.workflow_status ?? null);
+    setWorkflowResumedAfterRestart(
+      response.workflow_resumed_after_restart === true,
+    );
+    if (response.memory_facts?.length) {
+      setMemoryFacts(
+        response.memory_facts.map((fact) => ({
+          ...fact,
+          value: genericizeLoyaltyText(fact.value),
+        })),
+      );
+    }
+    const products = productsFromChatResponse(response);
+    // Always sync the recommendation grid to THIS turn's products. If the
+    // turn returned 0 (a zero-result query, like SQL keyword search
+    // failing on an intent prompt), clear the grid so the previous turn's
+    // cards don't appear to be the latest result.
+    setRecommendations(products);
+    setSelectedTrip(products.length ? products[0] : null);
+  }, []);
+
+  const restoreJourney = useCallback((document: JourneyDocument) => {
+    const known = travelerKey.current !== CURRENT_TRAVELER;
+    if (isLoading || (known && document.traveler_id !== travelerKey.current) || !isObserved(document.workflow)) return;
+    const saved = document.workflow;
+    unresolvedWorkflow.current = null;
+    if (!saved.conversation_id || saved.conversation_id !== document.active_thread_id) return;
+    setError(null);
+    setMessages([]);
+    setSelectedPhaseState(5);
+    setLastRequestPhase(5);
+    lastPromptPhaseOverride.current = undefined;
+    lastPromptOptions.current = undefined;
+    conversationPhaseRef.current = 5;
+    setLastPrompt(saved.query);
+    setCurrentPrompt('');
+    setConversationTravelers(saved.travelers_count);
+    applyChatResponse(saved.query, {
+      message: saved.message,
+      conversation_id: saved.conversation_id,
+      workflow_status: saved.workflow_status,
+      workflow_resumed_after_restart: saved.resumed_after_restart,
+      activities: saved.activities,
+      products: isObserved(document.recommendations) ? document.recommendations.items as Product[] : [],
+    });
+    setLatestStreamComplete(true);
+  }, [applyChatResponse, isLoading]);
+
+  const submitPrompt = useCallback(
+    async (overridePrompt?: string, phaseOverride?: Phase, options?: { reviewOnly?: boolean }) => {
+      if ((phaseOverride ?? selectedPhase) === 4 && memoryLoading) {
+        setError('Wait for traveler context to finish connecting before sending this request.');
+        return;
+      }
+      if ((phaseOverride ?? selectedPhase) === 5 && unresolvedWorkflow.current) {
+        setError('Re-read this recovery before retrying. Its last response was not received, so the current outcome must be checked first.');
+        return;
+      }
+      const baseRaw = (overridePrompt ?? currentPrompt).trim();
+      if (!baseRaw || isLoading || chatController.current || writeController.current) return;
+      const generation = ++requestGeneration.current;
+      const controller = new AbortController();
+      chatController.current = controller;
+      const isCurrent = () => mounted.current && generation === requestGeneration.current;
+      const requestPhase = phaseOverride ?? selectedPhase;
+      const startsNewPhase = conversationPhaseRef.current !== null && conversationPhaseRef.current !== requestPhase;
+      if (startsNewPhase) {
+        setMessages([]);
+        setRecommendations([]);
+        setSelectedTrip(null);
+        setConversationId(null);
+        setWorkflowStatus(null);
+        setWorkflowResumedAfterRestart(false);
+        if (requestPhase !== 5) clearWorkflowAddress();
+      }
+      setLastRequestPhase(requestPhase);
+      lastPromptPhaseOverride.current = phaseOverride;
+      lastPromptOptions.current = options;
+      setRecoveryRequest(null);
+
+      // Decorate the user's prompt with the active action-chip filters so
+      // the backend agent sees the full traveler intent. The decorated
+      // string is what we send to /api/chat AND what we record as the
+      // turn's user-facing message - that way the chat transcript shows
+      // exactly what was searched.
+      const decorated = decoratePromptWithFilters(baseRaw, chatFilters);
+
+      clearReplayTimers();
+      setReplayIndex(-1);
+      setIsReplaying(false);
+      setIsLoading(true);
+      setCandidateIds([]);
+      setChatProgress('Connecting to your concierge…');
+      setRequestStartedAt(Date.now());
+      // Completion remains separate from provisional text and catalog matches.
+      setLatestStreamComplete(false);
+      setError(null);
+      setTraceSpans([]);
+      setLastPrompt(decorated);
+      setCurrentPrompt('');
+
+      const resumeRequested = requestPhase === 5 && /^(resume|continue)( workflow)?( from (the saved step|checkpoint))?$/i.test(baseRaw);
+      const workflowThread = requestPhase === 5
+        ? (resumeRequested ? (conversationPhaseRef.current === 5 ? conversationId : null) : `phase5-${crypto.randomUUID()}`)
+        : null;
+      if (requestPhase === 5) {
+        if (!workflowThread) {
+          setIsLoading(false);
+          chatController.current = null;
+          setError('Open the saved recovery before resuming.');
+          return;
+        }
+        // Save the address before dispatch, including when the response never arrives.
+        const url = new URL(window.location.href);
+        url.searchParams.set('thread', workflowThread);
+        url.searchParams.delete('journey');
+        window.history.replaceState(null, '', url);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        setSelectedPhaseState(5);
+        setConversationId(workflowThread);
+        conversationPhaseRef.current = 5;
+        if (!resumeRequested) {
+          setMessages([]);
+          setRecommendations([]);
+          setTraceSpans([]);
+          setWorkflowStatus(null);
+          setWorkflowResumedAfterRestart(false);
+        }
+      }
+
+      // Echo the user's prompt into the transcript IMMEDIATELY so the
+      // question doesn't disappear into a 5-12s dark hole while the
+      // backend works. The "Running tools and composing..." bubble
+      // (rendered by ChatTranscript when isLoading is true) sits below
+      // it, giving the user a visible pulse from prompt → response.
+      // applyChatResponse trims this optimistic bubble before re-applying
+      // the full pair so we don't double-render.
+      setMessages((prior) => [...prior, { role: 'user', text: decorated }]);
+
+      const onStreamEvent = (event: ChatStreamEvent) => {
+        if (!isCurrent() || controller.signal.aborted) return;
+        if (event.type === 'conversation') {
+          setConversationId(event.conversation_id);
+          conversationPhaseRef.current = requestPhase;
+        } else if (event.type === 'status') {
+          setChatProgress(event.text);
+        } else if (event.type === 'candidates') {
+          setCandidateIds(event.package_ids);
+        } else if (event.text) {
+          setChatProgress('Writing your reply…');
+          setMessages(prior => {
+            const last = prior[prior.length - 1];
+            return last?.streaming
+              ? [...prior.slice(0, -1), { ...last, text: last.text + event.text }]
+              : [...prior, { role: 'bot', text: event.text, streaming: true }];
+          });
+        }
+      };
+      try {
+        const response = await runWithDeadline(signal => sendChatMessage({
+          message: decorated,
+          phase: requestPhase,
+          ...(phaseOverride === 4 ? { experience: 'concierge' as const } : {}),
+          ...(options?.reviewOnly ? { review_only: true } : {}),
+          ...(requestPhase >= 4
+            ? {
+                customer_id: CURRENT_TRAVELER,
+                travelers_count: travelersCount,
+                // Concierge uses Production without advancing the teaching ladder.
+                // Authorize recall on the server for every product turn, even
+                // when the opening profile read is still loading. The ladder's
+                // teaching toggle does not disable the finished product.
+                memory_enabled: memoryEnabled || phaseOverride === 4,
+                conversation_id: workflowThread ?? (
+                  conversationPhaseRef.current === requestPhase
+                    ? conversationId ?? undefined
+                    : undefined),
+              }
+            : {}),
+          ...(requestPhase === 5
+            ? { resume: resumeRequested || undefined }
+            : {}),
+        }, signal, ...(phaseOverride === 4 ? [onStreamEvent] : [])), controller.signal, phaseOverride === 4 ? 120_000 : undefined);
+        if (!isCurrent()) return;
+        // One successful chat does not verify the catalog and traveler reads.
+        // Only the readiness check may mark all of Meridian's live data ready.
+        if (backendStatus === 'offline' && !connectionController.current) void refreshConnection();
+        conversationPhaseRef.current = requestPhase;
+        applyChatResponse(decorated, response);
+        if (phaseOverride === 4) setLatestStreamComplete(true);
+        setConversationTravelers(travelersCount);
+        // Filters are per-turn - clear them after a successful submit so
+        // the next prompt starts clean (matches the intuition of every
+        // major chat product).
+        setChatFiltersState(EMPTY_FILTERS);
+      } catch (err) {
+        if (!isCurrent()) return;
+        setMessages(prior => prior.map(message => message.streaming ? { ...message, streaming: false, incomplete: true } : message));
+        if (requestPhase === 5) unresolvedWorkflow.current = workflowThread;
+        setError(requestPhase === 5
+          ? 'The recovery response was not received. The worker may still be running. Re-read this saved recovery before resuming; its address is preserved on refresh.'
+          : controller.signal.aborted || (err instanceof DOMException && err.name === 'TimeoutError')
+            ? 'Stopped waiting for the response. The service may still be completing this request. Check the connection before trying again.'
+            : err instanceof Error ? err.message : 'The response was not received. Check the connection and try again.');
+      } finally {
+        if (isCurrent()) {
+          chatController.current = null;
+          setIsLoading(false);
+          setChatProgress('');
+          setRequestStartedAt(null);
+        }
+      }
+    },
+    [applyChatResponse, backendStatus, chatFilters, clearReplayTimers, conversationId, currentPrompt, isLoading, memoryEnabled, memoryLoading, refreshConnection, selectedPhase, travelersCount, ],
+  );
+
+  const applyPhaseExample = useCallback(
+    async (
+      prompt: string,
+      runImmediately = false,
+      phaseOverride?: Phase,
+    ) => {
+      setCurrentPrompt(prompt);
+      if (runImmediately) {
+        await submitPrompt(prompt, phaseOverride);
+      }
+    },
+    [submitPrompt],
+  );
+
+  const replayLastPrompt = useCallback(async () => {
+    if (lastPrompt) await submitPrompt(lastPrompt, lastPromptPhaseOverride.current, lastPromptOptions.current);
+  }, [lastPrompt, submitPrompt]);
+
+  const setSelectedPhase = useCallback((phase: Phase) => {
+    // Compute the transition from the CURRENT phase directly - never from a
+    // side-effect written inside a setState updater. The updater can run
+    // asynchronously (and twice under StrictMode), so reading a flag it sets
+    // is a race: the clear below sometimes fired and sometimes didn't. This
+    // is deterministic.
+    const prev = selectedPhase;
+    const phaseChanged = phase !== prev || (lastRequestPhase !== null && phase !== lastRequestPhase);
+    if (!phaseChanged) {
+      // Re-clicking the active pill is a no-op - don't wipe an in-progress
+      // conversation or re-trigger the hint.
+      return;
+    }
+
+    invalidateChatRequest();
+    clearWorkflowAddress();
+    unresolvedWorkflow.current = null;
+    setIsLoading(false);
+    setPendingWrite(null);
+    setChatProgress('');
+    setRequestStartedAt(null);
+    setSelectedPhaseState(phase);
+    setLastRequestPhase(null);
+    setRecoveryRequest(null);
+
+    // Surface the "what this rung adds" callout only when advancing to a
+    // higher phase - that's the narrative beat (each mode composes onto the
+    // last). Backward switches stay quiet so re-demoing an earlier mode
+    // doesn't spam the banner. Sticky: stays until the presenter clicks Close.
+    const meta = SHOWCASE_PHASES.find((p) => p.phase === phase);
+    if (phase > prev && meta?.adds) {
+      setPhaseHint({ label: meta.label, adds: meta.adds, tech: meta.tech });
+    } else {
+      setPhaseHint(null);
+    }
+
+    // Switching to a different phase auto-clears the conversation so each
+    // mode starts from a clean slate - the presenter doesn't want Phase 2's
+    // transcript bleeding into the Retrieval demo. Phase choice and
+    // Aurora-backed memory facts are preserved.
+    clearReplayTimers();
+    setMessages([]);
+    setCurrentPrompt('');
+    setLastPrompt(null);
+    setRecommendations([]);
+    setSelectedTrip(null);
+    setTraceSpans([]);
+    setExpandedSpanId(null);
+    setTraceTab(null);
+    setReplayIndex(-1);
+    setIsReplaying(false);
+    setConversationId(null);
+    setConversationTravelers(null);
+    setWorkflowStatus(null);
+    setWorkflowResumedAfterRestart(false);
+    setActionDrawer(null);
+    setTripDetailsOpen(false);
+    setComparisonOpen(false);
+    setError(null);
+    setChatFiltersState(EMPTY_FILTERS);
+    setLatestStreamComplete(true);
+    if (phase < 4) {
+      invalidateMemoryRead();
+      setMemoryLoading(false);
+      setMemoryEnabledState(false);
+      setMemoryFacts([]);
+      setTravelerProfile(null);
+      setMemoryToggleError(null);
+    }
+    // No auto-prompt: leave the composer empty so the presenter types
+    // intent freshly for each phase walkthrough.
+  }, [selectedPhase, lastRequestPhase, clearReplayTimers, invalidateChatRequest, invalidateMemoryRead]);
+
+  const dismissPhaseHint = useCallback(() => {
+    setPhaseHint(null);
+  }, []);
+
+  const selectTrip = useCallback((product: Product) => {
+    setSelectedTrip(product);
+    setTripDetailsOpen(true);
+  }, []);
+
+  const openTripDetails = useCallback((product: Product) => {
+    setSelectedTrip(product);
+    setTripDetailsOpen(true);
+    setActionDrawer(null);
+  }, []);
+
+  const rememberOrder = useCallback((productId: string, order: TripHold['order']) => {
+    // Display the returned receipt even if storage becomes unavailable later.
+    setTripHolds(prior => [...prior.filter(hold => hold.productId !== productId), { productId, order }]);
+    try {
+      const saved = loadBookingRecovery(travelerKey.current);
+      saved.bookings[productId] = order.order_id;
+      saveBookingRecovery(travelerKey.current, saved);
+    } catch {
+      setError('The receipt was returned, but its reference could not be saved on this device. Keep the booking ID before reloading.');
+    }
+  }, []);
+
+  // Rehydrate receipts from Aurora; browser storage is an address book, never proof.
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    const restore = async () => {
+      try {
+        const saved = loadBookingRecovery(travelerKey.current);
+        const intents = Object.values(saved.intents);
+        const productsWithIntent = new Set(intents.map(intent => intent.productId));
+        const reads = [
+          ...intents.map(async intent => ({ productId: intent.productId, response: await readHold(intent, controller.signal) })),
+          ...Object.entries(saved.bookings).filter(([id]) => !productsWithIntent.has(id))
+            .map(async ([productId, id]) => ({ productId, response: await readBooking(id, controller.signal) })),
+        ];
+        const results = await runWithDeadline(() => Promise.allSettled(reads), controller.signal);
+        if (cancelled) return;
+        let unresolved = false;
+        for (const result of results) {
+          if (result.status === 'fulfilled' && result.value.response.order) {
+            rememberOrder(result.value.productId, result.value.response.order);
+          } else unresolved = true;
+        }
+        if (unresolved) setError('A saved booking request still needs reconciliation. Open its trip and retry the same hold to check Aurora before sending it again.');
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Saved bookings could not be read.');
+      }
+    };
+    void restore();
+    return () => { cancelled = true; controller.abort(); };
+  }, [rememberOrder]);
+
+  const holdTrip = useCallback(
+    async (product: Product) => {
+      if (isLoading || holdPending.current || writeController.current || chatController.current) return;
+      const existing = tripHolds.find(hold => hold.productId === product.product_id);
+      if (existing?.order.status === 'confirmed'
+        || (existing?.order.status === 'held' && parseDatabaseTime(existing.order.hold_expires_at) > Date.now())) {
+        openTripDetails(product);
+        return;
+      }
+      const duration = product.available_sizes?.[0];
+      if (!duration) { setError('Load the published trip durations before requesting a hold.'); return; }
+      const intentKey = holdIntentKey(product.product_id, duration, travelersCount);
+      holdPending.current = true;
+      const controller = new AbortController();
+      writeController.current = controller;
+      const generation = requestGeneration.current;
+      setSelectedTrip(product);
+      setTripDetailsOpen(true);
+      setIsLoading(true);
+      setPendingWrite('hold');
+      setRequestStartedAt(Date.now());
+      setLatestStreamComplete(false);
+      setError(null);
+      const prompt = `Request a 12-hour courtesy hold: ${product.name}`;
+      try {
+        const response = await runWithDeadline(async signal => {
+          const saved = loadBookingRecovery(travelerKey.current);
+          let intent: SavedHoldIntent | undefined = saved.intents[intentKey];
+          if (intent) {
+            // Read before every retry, including after refresh. A failed read
+            // is not permission to create a replacement intent.
+            const recorded = await readHold(intent, signal);
+            signal.throwIfAborted();
+            if (recorded.order) {
+              rememberOrder(product.product_id, recorded.order);
+              if (recorded.order.status !== 'expired') return recorded;
+              // This click can request a replacement only if the user already
+              // saw that this exact old receipt had expired.
+              if (!existing || existing.order.order_id !== recorded.order.order_id
+                || parseDatabaseTime(existing.order.hold_expires_at) > Date.now()) return recorded;
+              intent = undefined;
+            }
+          }
+          if (!intent) {
+            intent = {
+              conversationId: `conv_hold_${crypto.randomUUID()}`,
+              productId: product.product_id, duration, quantity: travelersCount,
+              replacesBookingId: existing?.order.order_id,
+            };
+            saved.intents[intentKey] = intent;
+            try { saveBookingRecovery(travelerKey.current, saved); }
+            catch { throw new Error('This device cannot save the hold request identity. Enable browser storage before requesting a hold.'); }
+          }
+          return processOrder({
+            product_id: intent.productId, size: intent.duration, quantity: intent.quantity,
+            phase: selectedPhase, traveler_id: CURRENT_TRAVELER, action: 'hold',
+            conversation_id: intent.conversationId,
+          }, signal);
+        }, controller.signal);
+        if (!mounted.current) return;
+        if (response.order) rememberOrder(product.product_id, response.order);
+        if (generation !== requestGeneration.current) return;
+        setMessages(prior => [...prior, { role: 'bot', type: response.order ? 'order' : 'text', text: response.message, order: response.order }]);
+        const nextTrace = chatResponseToTraceSpans(
+          { message: response.message, activities: response.activities, order: response.order }, prompt,
+        );
+        setTraceSpans(prior => selectedPhase === 5 ? [...prior, ...nextTrace] : nextTrace);
+        setExpandedSpanId(nextTrace[0]?.id ?? null);
+        setActionDrawer({ kind: 'hold', product, message: response.message, order: response.order, live: true });
+        setWorkspaceNotice(response.order?.status === 'held' ? `Courtesy hold recorded for ${product.name}.` : response.message);
+      } catch (err) {
+        if (!mounted.current || generation !== requestGeneration.current) return;
+        setError(`The hold response for ${product.name} was not received. It may have been saved. Retry this hold to check the same request. ${err instanceof Error ? err.message : ''}`);
+      } finally {
+        holdPending.current = false;
+        if (writeController.current === controller) writeController.current = null;
+        if (mounted.current && generation === requestGeneration.current) {
+          setIsLoading(false);
+          setPendingWrite(null);
+          setRequestStartedAt(null);
+        }
+      }
+    },
+    [isLoading, selectedPhase, travelersCount, tripHolds, openTripDetails, rememberOrder],
+  );
+
+  const requestBookingConfirmation = useCallback((product: Product) => {
+    const hold = tripHolds.find(item => item.productId === product.product_id);
+    if (!hold || hold.order.status !== 'held') return;
+    setSelectedTrip(product);
+    setTripDetailsOpen(true);
+    setBookingPrompt(hold);
+  }, [tripHolds]);
+
+  const dismissBookingConfirmation = useCallback(() => setBookingPrompt(null), []);
+
+  const confirmTrip = useCallback(
+    async (product: Product) => {
+      const hold = tripHolds.find(item => item.productId === product.product_id);
+      if (!hold || isLoading || bookingPending.current || writeController.current) return;
+      bookingPending.current = true;
+      const controller = new AbortController();
+      writeController.current = controller;
+      const generation = requestGeneration.current;
+      setBookingPrompt(null);
+      setIsLoading(true);
+      setPendingWrite('confirm');
+      setLatestStreamComplete(false);
+      setError(null);
+      setRequestStartedAt(Date.now());
+      const prompt = `Confirm the held trip: ${product.name}`;
+      try {
+        const response = await runWithDeadline(async signal => {
+          const recorded = await readBooking(hold.order.order_id, signal);
+          signal.throwIfAborted();
+          if (!recorded.order) throw new Error('No booking receipt was returned.');
+          rememberOrder(product.product_id, recorded.order);
+          if (recorded.order.status !== 'held') return recorded;
+          return confirmBooking({
+          booking_id: hold.order.order_id,
+          phase: 4,
+          traveler_id: CURRENT_TRAVELER,
+          conversation_id: conversationId ?? undefined,
+        }, signal);
+        }, controller.signal);
+        if (!mounted.current) return;
+        if (response.order) {
+          rememberOrder(product.product_id, response.order);
+        }
+        // Keep the confirmed receipt, but do not insert a late reply into a new phase.
+        if (generation !== requestGeneration.current) return;
+        setMessages((prior) => [
+          ...prior,
+          { role: 'bot', type: response.order ? 'order' : 'text', text: response.message, order: response.order },
+        ]);
+        const nextTrace = chatResponseToTraceSpans(
+          { message: response.message, activities: response.activities, order: response.order },
+          prompt,
+        );
+        setTraceSpans(prior => selectedPhase === 5 ? [...prior, ...nextTrace] : nextTrace);
+        setExpandedSpanId(nextTrace[0]?.id ?? null);
+        setActionDrawer({
+          kind: 'book',
+          product,
+          message: response.message,
+          order: response.order,
+          live: true,
+        });
+        setWorkspaceNotice(response.order?.status === 'confirmed' ? `${product.name} is confirmed${firstName ? ` for ${firstName}` : ''}.` : response.message);
+      } catch {
+        if (!mounted.current || generation !== requestGeneration.current) return;
+        setError(
+          `The confirmation response for ${product.name} was not received. The booking may already be confirmed. Retry confirmation to check the same booking.`,
+        );
+      } finally {
+        bookingPending.current = false;
+        if (writeController.current === controller) writeController.current = null;
+        if (mounted.current && generation === requestGeneration.current) {
+          setIsLoading(false);
+          setPendingWrite(null);
+          setRequestStartedAt(null);
+        }
+      }
+    },
+    [conversationId, isLoading, selectedPhase, tripHolds, rememberOrder, firstName],
+  );
+
+  const adoptJourneyHold = useCallback((hold: AdoptableHold) => {
+    const product = recommendations.find(item => item.product_id === hold.package_id)
+      ?? catalog.find(item => item.product_id === hold.package_id);
+    const quantity = hold.travelers_count;
+    if (!product || !hold.duration || quantity == null || !Number.isInteger(quantity) || quantity <= 0
+      || !hold.unit_price?.trim() || !hold.total_amount?.trim()) return false;
+    const unitPrice = Number(hold.unit_price);
+    const total = Number(hold.total_amount);
+    if (!Number.isFinite(unitPrice) || !Number.isFinite(total) || unitPrice < 0 || total < 0
+      || Math.round(unitPrice * 100) * quantity !== Math.round(total * 100)) return false;
+    const order: TripHold['order'] = {
+      order_id: hold.booking_id,
+      items: [{ product_id: product.product_id, name: product.name, size: hold.duration, quantity, unit_price: unitPrice }],
+      subtotal: total,
+      tax: 0,
+      shipping: 0,
+      total,
+      status: hold.status,
+      hold_expires_at: hold.hold_expires_at ?? undefined,
+      hold_created_at: hold.hold_created_at ?? undefined,
+      confirmed_at: hold.confirmed_at ?? undefined,
+      payment_required: false,
+    };
+    rememberOrder(product.product_id, order);
+    setSelectedTrip(product);
+    setTripDetailsOpen(true);
+    setActionDrawer(null);
+    setBookingPrompt(null);
+    return true;
+  }, [catalog, recommendations, rememberOrder]);
+
+  const planTrip = useCallback((product: Product) => {
+    openTripDetails(product);
+  }, [openTripDetails]);
+
+  const saveTrip = useCallback((product: Product) => {
+    setWorkspace((prior) => {
+      const alreadySaved = prior.savedTrips.some(
+        (item) => item.product_id === product.product_id,
+      );
+      setWorkspaceNotice(
+        alreadySaved
+          ? `${product.name} removed from saved trips.`
+          : `${product.name} saved on this device.`,
+      );
+      return {
+        ...prior,
+        savedTrips: toggleSavedTrip(prior.savedTrips, product),
+      };
+    });
+  }, [setWorkspace]);
+
+  const compareTrip = useCallback((product: Product) => {
+    setSelectedTrip(product);
+    setWorkspace((prior) => {
+      const next = toggleComparedTrip(prior.compareTrips, product);
+      const added = next.some((item) => item.product_id === product.product_id);
+      setWorkspaceNotice(
+        added
+          ? `${product.name} added to comparison.`
+          : `${product.name} removed from comparison.`,
+      );
+      return { ...prior, compareTrips: next };
+    });
+    setComparisonOpen(true);
+  }, [setWorkspace]);
+
+  const removeComparedTrip = useCallback((productId: string) => {
+    setWorkspace((prior) => ({
+      ...prior,
+      compareTrips: prior.compareTrips.filter(
+        (product) => product.product_id !== productId,
+      ),
+    }));
+  }, [setWorkspace]);
+
+  const updateMemoryPreference = useCallback(async (key: string, value: string) => {
+    const previous = memoryFacts;
+    const generation = memoryReadGeneration.current;
+    setMemoryMutationError(null);
+    setMemoryFacts((facts) => facts.map((fact) => (
+      fact.key === key ? { ...fact, value, source: 'traveler_edit', confidence: 1 } : fact
+    )));
+    try {
+      const updated = await updateMemoryFact(CURRENT_TRAVELER, key, value);
+      if (!mounted.current) return false;
+      if (generation === memoryReadGeneration.current) {
+        setMemoryFacts((facts) => facts.map((fact) => (
+          fact.key === key ? updated : fact
+        )));
+      }
+      await refreshConnection();
+      return true;
+    } catch {
+      if (!mounted.current) return false;
+      if (generation === memoryReadGeneration.current) setMemoryFacts(previous);
+      setMemoryMutationError('That preference could not be updated. Try again.');
+      return false;
+    }
+  }, [memoryFacts, refreshConnection]);
+
+  const deleteMemoryPreference = useCallback(async (key: string) => {
+    const previous = memoryFacts;
+    const generation = memoryReadGeneration.current;
+    setMemoryMutationError(null);
+    setMemoryFacts((facts) => facts.filter((fact) => fact.key !== key));
+    try {
+      await deleteMemoryFact(CURRENT_TRAVELER, key);
+      if (!mounted.current) return false;
+      await refreshConnection();
+      return true;
+    } catch {
+      if (!mounted.current) return false;
+      if (generation === memoryReadGeneration.current) setMemoryFacts(previous);
+      setMemoryMutationError('That preference could not be removed. Try again.');
+      return false;
+    }
+  }, [memoryFacts, refreshConnection]);
+
+  const clearChat = useCallback(() => {
+    // Reset every per-conversation surface back to its empty state. The
+    // Phase selector, traveler memory facts (those come from Aurora), and
+    // saved trip set are intentionally preserved - the presenter usually
+    // wants to keep their phase choice + remembered preferences when
+    // wiping the visible conversation.
+    invalidateChatRequest();
+    clearWorkflowAddress();
+    unresolvedWorkflow.current = null;
+    setIsLoading(false);
+    setPendingWrite(null);
+    setChatProgress('');
+    setRequestStartedAt(null);
+    clearReplayTimers();
+    setMessages([]);
+    setCurrentPrompt('');
+    setLastPrompt(null);
+    setLastRequestPhase(null);
+    setRecoveryRequest(null);
+    setRecommendations([]);
+    setSelectedTrip(null);
+    setTraceSpans([]);
+    setExpandedSpanId(null);
+    setTraceTab(null);
+    setReplayIndex(-1);
+    setIsReplaying(false);
+    setConversationId(null);
+    setConversationTravelers(null);
+    setWorkflowStatus(null);
+    setWorkflowResumedAfterRestart(false);
+    setActionDrawer(null);
+    setTripDetailsOpen(false);
+    setError(null);
+    setChatFiltersState(EMPTY_FILTERS);
+    setLatestStreamComplete(true);
+  }, [clearReplayTimers, invalidateChatRequest]);
+
+  // Lifted by ChatMessage when its typewriter reaches the end of the
+  // text (or whenever a non-streaming render path completes).
+  const markLatestStreamComplete = useCallback(() => {
+    setLatestStreamComplete(true);
+  }, []);
+
+  // Inspecting an existing run changes its teaching view, never its data or
+  // authorization. Explicit phase changes still start a new demonstration.
+  const inspectCurrentRun = useCallback(() => {
+    if (lastRequestPhase) setSelectedPhaseState(lastRequestPhase);
+  }, [lastRequestPhase]);
+
+  const totalLatencyMs = useMemo(
+    () => traceSpans.reduce((total, span) => total + (span.latencyMs ?? 0), 0),
+    [traceSpans],
+  );
+
+  return {
+    selectedPhase,
+    phaseLabel: phaseLabelFor(selectedPhase),
+    phaseHint,
+    dismissPhaseHint,
+    traveler,
+    messages,
+    lastRequestPhase,
+    recoveryRequest,
+    inspectCurrentRun,
+    currentPrompt,
+    recommendations,
+    streamingRecommendations: isLoading ? candidateIds.flatMap(id => {
+      const product = catalog.find(item => item.product_id === id);
+      return product ? [product] : [];
+    }) : [],
+    catalog,
+    selectedTrip,
+    tripDetailsOpen,
+    savedTrips: workspace.savedTrips,
+    savedTripIds,
+    comparedTrips: workspace.compareTrips,
+    comparisonOpen,
+    memoryFacts,
+    travelerProfile,
+    previewFacts,
+    previewProfile,
+    budgetCeilingPerTravelerCents,
+    memoryEnabled,
+    memoryLoading,
+    memoryToggleError,
+    memoryMutationError,
+    workspaceNotice,
+    traceSpans,
+    traceTab,
+    expandedSpanId,
+    replayIndex,
+    isReplaying,
+    isLoading,
+    pendingWrite,
+    chatProgress,
+    requestStartedAt,
+    stopWaiting,
+    error,
+    backendStatus,
+    backendHealth,
+    connectionIssue,
+    connectionRefreshing,
+    refreshConnection,
+    isFallbackMode,
+    conversationId,
+    workflowStatus,
+    workflowResumedAfterRestart,
+    lastPrompt,
+    actionDrawer,
+    // A scoped receipt may contain only the package ID. Use the public
+    // catalog for its display name while preserving every recorded amount.
+    tripHolds: tripHolds.map(hold => ({
+      ...hold,
+      order: { ...hold.order, items: hold.order.items.map(item => ({
+        ...item,
+        name: item.name === item.product_id
+          ? catalog.find(product => product.product_id === item.product_id)?.name ?? item.name
+          : item.name,
+      })) },
+    })),
+    bookingPrompt,
+    totalLatencyMs,
+    phaseExamples: SHOWCASE_EXAMPLE_PROMPTS[selectedPhase] ?? [],
+    chatFilters,
+    travelersCount,
+    setChatFilters: setChatFiltersState,
+    resetChatFilters: () => setChatFiltersState(EMPTY_FILTERS),
+    setCurrentPrompt,
+    setTraceTab,
+    setExpandedSpanId,
+    setSelectedTrip,
+    setSelectedPhase,
+    setMemoryEnabled,
+    submitPrompt,
+    applyPhaseExample,
+    replayLastPrompt,
+    replayTrace,
+    selectTrip,
+    openTripDetails,
+    closeTripDetails: () => {
+      setTripDetailsOpen(false);
+      setActionDrawer(null);
+      setBookingPrompt(null);
+    },
+    holdTrip,
+    requestBookingConfirmation,
+    dismissBookingConfirmation,
+    confirmTrip,
+    adoptJourneyHold,
+    planTrip,
+    saveTrip,
+    compareTrip,
+    removeComparedTrip,
+    openComparison: () => setComparisonOpen(true),
+    closeComparison: () => setComparisonOpen(false),
+    updateMemoryPreference,
+    deleteMemoryPreference,
+    clearMemoryMutationError: () => setMemoryMutationError(null),
+    closeActionDrawer: () => setActionDrawer(null),
+    clearError: () => setError(null),
+    clearChat,
+    restoreJourney,
+    latestStreamComplete,
+    markLatestStreamComplete,
+  };
+}
+
+export { SHOWCASE_PHASES, PHASE_DELAYS };

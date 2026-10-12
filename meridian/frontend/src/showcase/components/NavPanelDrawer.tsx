@@ -1,0 +1,199 @@
+import { MapPin, ArrowRight } from 'lucide-react';
+import { tripVisualPhoto } from '../lib/tripVisualPhoto';
+import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import type { Product } from '../../types';
+import { SHOWCASE_EXAMPLE_PROMPTS, SHOWCASE_PHASES } from '../lib/showcaseAdapters';
+import { resultRankLabel } from '../lib/resultRankLabel';
+import { ShowcaseSheet } from './ShowcaseSheet';
+import { firstNameOf } from '../lib/travelerIdentity';
+
+// Lightweight-but-complete side panels for the sidebar nav. Each panel
+// renders REAL session / Aurora state - no fixtures - so a visitor can
+// click any nav item and land on something coherent instead of a dead
+// button. All three share the existing drawer chrome (.mds-drawer) so
+// they match the Memory drawer visually.
+
+export type NavPanelId = 'trips' | 'discover' | 'messages';
+
+const PANEL_TITLE: Record<NavPanelId, string> = {
+  trips: 'Your trips',
+  discover: 'Discover',
+  messages: 'Messages',
+};
+
+function money(n: number): string {
+  return `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+}
+
+export function NavPanelDrawer({
+  state,
+  panel,
+  onClose,
+  travelerMode = false,
+}: {
+  state: MeridianShowcaseState;
+  panel: NavPanelId | null;
+  travelerMode?: boolean;
+  onClose: () => void;
+}) {
+  if (!panel) return null;
+
+  return (
+    <ShowcaseSheet
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+      title={PANEL_TITLE[panel]}
+      subtitle={state.traveler.name}
+      description={`${PANEL_TITLE[panel]} workspace for ${state.traveler.name}`}
+      closeLabel={`Close ${PANEL_TITLE[panel]}`}
+    >
+      {panel === 'trips' && <TripsPanel state={state} onClose={onClose} />}
+      {panel === 'discover' && (travelerMode ? <TravelDiscoverPanel state={state} onClose={onClose} /> : <DiscoverPanel state={state} onClose={onClose} />)}
+      {panel === 'messages' && <MessagesPanel state={state} />}
+    </ShowcaseSheet>
+  );
+}
+
+// --- Trips: saved trips + this turn's recommendations -------------------
+function TripsPanel({ state, onClose }: { state: MeridianShowcaseState; onClose: () => void }) {
+  const saved = state.savedTrips;
+  const browsing = state.recommendations.filter((p) => !state.savedTripIds.has(p.product_id));
+
+  if (saved.length === 0 && browsing.length === 0) {
+    return (
+      <div className="mds-navpanel-empty">
+        <b>No trips yet</b>
+        <span>Ask the concierge for a destination, then Save the ones you like - they'll collect here.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mds-drawer-list">
+      {saved.length > 0 && (
+        <div className="mds-navpanel-section">
+          <div className="mds-navpanel-section-head">Saved: {saved.length}</div>
+          {saved.map((p, index) => (
+            <TripRow key={p.product_id} product={p} state={state} index={index} onClose={onClose} saved />
+          ))}
+        </div>
+      )}
+      {browsing.length > 0 && <div className="mds-navpanel-section">
+        <div className="mds-navpanel-section-head">
+          {saved.length > 0 ? 'This turn' : `Results: ${browsing.length}`}
+        </div>
+        {browsing.map((p, index) => (
+          <TripRow key={p.product_id} product={p} state={state} index={index} onClose={onClose} />
+        ))}
+      </div>}
+    </div>
+  );
+}
+
+function TripRow({
+  product,
+  state,
+  index,
+  onClose,
+  saved = false,
+}: {
+  product: Product;
+  state: MeridianShowcaseState;
+  index: number;
+  onClose: () => void;
+  saved?: boolean;
+}) {
+  const rankLabel = resultRankLabel(state.selectedPhase, index, { saved });
+  return (
+    <button
+      type="button"
+      className="mds-navpanel-trip"
+      onClick={() => {
+        state.openTripDetails(product);
+        onClose();
+      }}
+    >
+      <div className="mds-navpanel-trip-main">
+        <strong>{product.name}</strong>
+        <small>{product.brand}</small>
+      </div>
+      <div className="mds-navpanel-trip-meta">
+        <b>{money(product.price)}</b>
+        <span>{rankLabel}</span>
+        {saved && <span className="mds-navpanel-saved-dot" aria-label="Saved" />}
+      </div>
+    </button>
+  );
+}
+
+function TravelDiscoverPanel({ state, onClose }: { state: MeridianShowcaseState; onClose: () => void }) {
+  return <div className="mc-discover-panel"><p>Find your next change of scenery. Explore the collection, or give your concierge a direction.</p>
+    <div className="mc-discover-prompts">{['A coastal escape for two', 'A long weekend in a new city', 'A quiet wine country stay'].map(prompt => <button type="button" key={prompt} onClick={() => { state.setCurrentPrompt(prompt); onClose(); }}>{prompt}<ArrowRight size={15} aria-hidden="true" /></button>)}</div>
+    <div className="mc-discover-list">{state.catalog.map(product => <button type="button" key={product.product_id} onClick={() => { onClose(); state.openTripDetails(product); }}>
+      <img src={tripVisualPhoto(product).src ?? ''} alt="" width="100" height="80" loading="lazy" /><span><small><MapPin size={12} aria-hidden="true" />{product.destination ?? product.category}</small><strong>{product.name}</strong><em>From {money(product.price)} / traveler</em></span><ArrowRight size={16} aria-hidden="true" /></button>)}</div>
+  </div>;
+}
+
+// --- Discover: curated starter prompts across all five modes ------------
+function DiscoverPanel({ state, onClose }: { state: MeridianShowcaseState; onClose: () => void }) {
+  return (
+    <div className="mds-drawer-list">
+      <div className="mds-navpanel-hint">
+        Tap a prompt to load it into the composer and switch to that mode.
+      </div>
+      {SHOWCASE_PHASES.map((phase) => {
+        const prompts = SHOWCASE_EXAMPLE_PROMPTS[phase.phase] ?? [];
+        if (prompts.length === 0) return null;
+        return (
+          <div className="mds-navpanel-section" key={phase.phase}>
+            <div className="mds-navpanel-section-head">
+              {phase.label}
+              <em>{phase.description}</em>
+            </div>
+            {prompts.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                className="mds-navpanel-prompt"
+                onClick={() => {
+                  state.setSelectedPhase(phase.phase);
+                  state.setCurrentPrompt(prompt);
+                  onClose();
+                }}
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// --- Messages: the session transcript as a scannable list ---------------
+function MessagesPanel({ state }: { state: MeridianShowcaseState }) {
+  if (state.messages.length === 0) {
+    return (
+      <div className="mds-navpanel-empty">
+        <b>No messages yet</b>
+        <span>Your conversation with the concierge will appear here as you chat.</span>
+      </div>
+    );
+  }
+  return (
+    <div className="mds-drawer-list">
+      {state.messages.map((message, idx) => (
+        <div
+          key={`${message.role}-${idx}`}
+          className={`mds-navpanel-msg is-${message.role}`}
+        >
+          <span className="mds-navpanel-msg-role">{message.role === 'user' ? (firstNameOf(state.traveler) ?? 'You') : 'Meridian'}</span>
+          <span className="mds-navpanel-msg-text">{message.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -1,0 +1,191 @@
+import { AuroraIcon } from './ServiceMark';
+/**
+ * RlsProbeCard - Phase 4 workload authorization and RLS proof panel.
+ *
+ * Calls POST /api/diagnostics/rls-probe, which runs the SAME COUNT(*) twice
+ * per table - once through the fail-closed app role and once through the
+ * backend_admin_count definer function. The bar animates from the all-traveler
+ * baseline down to the scoped count, so the audience
+ * watches the row set collapse to just this traveler's data. Below each table
+ * we show the real CREATE POLICY USING clause from pg_policies.
+ *
+ * Self-contained: owns its own fetch/loading/error state (not threaded through
+ * the showcase hook).
+ */
+import { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
+import { BadgeCheck, Fingerprint, RefreshCw, ShieldX, UserCheck } from 'lucide-react';
+import { fetchRlsProbe, type RlsProbeResponse } from '../../api/client';
+import { useSession } from '../../auth/SessionContext';
+import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
+
+function decisionToneClass(decision: string): string {
+  const normalized = decision.toLowerCase();
+  if (normalized === 'allow') return 'is-allow';
+  if (normalized === 'not_applicable') return 'is-neutral';
+  return 'is-deny';
+}
+
+export function RlsProbeCard({ travelerId, travelerName = 'the signed-in traveler' }: {
+  /** Omit to probe the signed-in traveler; the API resolves who that is. */
+  travelerId?: string;
+  travelerName?: string;
+}) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const { source, traveler: signedIn, verifiedTravelerId } = useSession();
+  const personId = verifiedTravelerId ?? signedIn?.travelerId ?? null;
+  const [data, setData] = useState<RlsProbeResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = () => {
+    setLoading(true);
+    setError(null);
+    fetchRlsProbe(travelerId)
+      .then((d) => setData(d))
+      .catch((e) => setError(e?.message ?? 'Probe failed'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [travelerId]);
+
+  return (
+    <div className="mds-rls">
+      <div className="mds-rls-head">
+        <span className="mds-rls-title">Access check + RLS: live</span>
+        <button
+          type="button"
+          className="mds-rls-run"
+          onClick={run}
+          disabled={loading}
+          aria-label={loading ? 'Running governance probe' : 'Re-run governance probe'}
+          title={loading ? 'Running governance probe' : 'Re-run governance probe'}
+        >
+          <RefreshCw size={15} aria-hidden="true" />
+        </button>
+      </div>
+
+      {error && <div className="mds-empty">Governance probe unavailable: {error}</div>}
+
+      {!error && !data && loading && (
+        <div className="mds-empty">Running scoped vs unscoped counts…</div>
+      )}
+
+      {!error && data && (
+        <>
+          <div className="mds-authz-chain" aria-label="Identity and authorization proof">
+            {source === 'cognito' && personId && (
+              <div className="mds-authz-step is-allow">
+                <span className="mds-authz-icon"><UserCheck size={16} aria-hidden="true" /></span>
+                <div>
+                  <small>Signed-in person</small>
+                  <strong>{signedIn?.displayName ?? personId}</strong>
+                  <code>{verifiedTravelerId ? personId : `${personId}, from the sign-in`}</code>
+                </div>
+              </div>
+            )}
+            <div className="mds-authz-step">
+              <span className="mds-authz-icon"><Fingerprint size={16} aria-hidden="true" /></span>
+              <div>
+                <small>1. Verified caller</small>
+                <strong>{data.authorization.provider}</strong>
+                <code>{data.authorization.subject_id}</code>
+              </div>
+            </div>
+            <div className="mds-authz-step is-allow">
+              <span className="mds-authz-icon"><BadgeCheck size={16} aria-hidden="true" /></span>
+              <div>
+                <small>2. Traveler grant</small>
+                <strong>
+                  <span className="mds-authz-decision is-allow">ALLOW</span>
+                  {travelerName}
+                </strong>
+                <code>{data.authorization.binding_id ?? 'traveler_identity_bindings'}</code>
+              </div>
+            </div>
+            <div className={`mds-authz-step ${decisionToneClass(data.negative_control.decision)}`}>
+              <span className="mds-authz-icon"><ShieldX size={16} aria-hidden="true" /></span>
+              <div>
+                <small>Negative control</small>
+                <strong>
+                  <span
+                    className={`mds-authz-decision ${decisionToneClass(data.negative_control.decision)}`}
+                  >
+                    {data.negative_control.decision.toUpperCase().replace(/_/g, ' ')}
+                  </span>
+                  {data.negative_control.display_name ?? 'the decoy traveler'}
+                </strong>
+                <code>{data.negative_control.reason ?? 'no active identity binding'}</code>
+              </div>
+            </div>
+          </div>
+
+          <div className="mds-rls-layer-label">
+            <AuroraIcon size={14} aria-hidden="true" />
+            <span>3. Aurora RLS filters the authorized traveler scope</span>
+          </div>
+
+          {data.tables.map((t) => {
+            const denom = Math.max(t.unscoped_count, 1);
+            const scopedPct = Math.round((t.scoped_count / denom) * 100);
+            const hidden = Math.max(t.unscoped_count - t.scoped_count, 0);
+            return (
+              <div className="mds-rls-row" key={t.table}>
+                <div className="mds-rls-row-head">
+                  <code>{t.table}</code>
+                  {t.error ? (
+                    <span className="mds-rls-err">{t.error}</span>
+                  ) : (
+                    <span className="mds-rls-counts">
+                      <b className="mds-rls-count-scoped">{t.scoped_count}</b>
+                      <span className="mds-rls-count-arrow" aria-hidden="true">←</span>
+                      <s className="mds-rls-count-unscoped">{t.unscoped_count}</s>
+                      <span className="mds-rls-count-unit">rows</span>
+                    </span>
+                  )}
+                </div>
+                {!t.error && (
+                  <div className="mds-rls-bar" role="img"
+                    aria-label={`Privileged baseline ${t.unscoped_count} rows, application RLS ${t.scoped_count} rows`}>
+                    <div className="mds-rls-bar-ghost" aria-hidden="true" />
+                    <motion.div
+                      className="mds-rls-bar-scoped"
+                      initial={{
+                        transform: prefersReducedMotion
+                          ? `translateX(-${100 - scopedPct}%)`
+                          : 'translateX(0%)',
+                      }}
+                      animate={{ transform: `translateX(-${100 - scopedPct}%)` }}
+                      transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.7, ease: 'easeOut' }}
+                    />
+                  </div>
+                )}
+                {!t.error && (
+                  <div className="mds-rls-legend">
+                    <span><i className="mds-rls-dot is-scoped" />App role: {t.scoped_count}</span>
+                    <span><i className="mds-rls-dot is-hidden" />Hidden by policy: {hidden}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {data.policies.length > 0 && (
+            <div className="mds-rls-policies">
+              <div className="mds-rls-policies-title">CREATE POLICY ... USING</div>
+              {data.policies.map((p) => (
+                <div className="mds-rls-policy" key={`${p.table}-${p.policy}`}>
+                  <small>{p.policy}</small>
+                  <pre>{p.using_clause ?? '(no USING expression)'}</pre>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}

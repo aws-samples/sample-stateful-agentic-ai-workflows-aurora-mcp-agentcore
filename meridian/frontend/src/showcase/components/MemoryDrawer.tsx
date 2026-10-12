@@ -1,0 +1,50 @@
+import { Check, Pencil, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
+import { ShowcaseSheet } from './ShowcaseSheet';
+import { preferenceLabel, preferenceValue } from '../lib/travelPreferences';
+
+export function MemoryDrawer({ state, open, onClose, product = false }: { state: MeridianShowcaseState; open: boolean; onClose: () => void; product?: boolean }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const facts = product ? state.previewFacts : state.memoryFacts;
+
+  return (
+    <ShowcaseSheet
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+      title={product ? 'Your preferences' : 'Traveler memory'}
+      subtitle={state.traveler.name}
+      description={product ? 'Review the details Meridian uses to plan your trips' : 'Review and update Aurora-backed traveler preferences'}
+      closeLabel="Close memory drawer"
+    >
+      <p className="mds-memory-disclosure">{product ? 'These saved preferences help shape your trips. You can edit or remove them.' : 'Preferences are scoped to this traveler in Aurora and used only for personalized planning.'}</p>
+      {state.memoryMutationError && <div className="mds-error-banner" role="alert">{state.memoryMutationError}</div>}
+      <div className="mds-drawer-list">
+        {facts.length === 0 && <div className="mds-navpanel-empty"><b>No saved preferences</b><span>{product ? 'Your saved travel preferences will appear here.' : 'Preferences recalled in a Production turn appear here.'}</span></div>}
+        {facts.map((fact) => (
+          <div className="mds-drawer-row" key={fact.key}>
+            <div>
+              <span>{product ? preferenceLabel(fact.key) : fact.key.replace(/_/g, ' ')}</span>
+              {editing === fact.key ? (
+                <input value={value} disabled={busy !== null} onChange={(e) => setValue(e.target.value)} aria-label={`Edit ${fact.key}`} autoFocus />
+              ) : <b>{product ? preferenceValue(fact.key, fact.value) : fact.value}</b>}
+              {!product && <small>{fact.source ?? 'memory'}, confidence {fact.confidence?.toFixed(2) ?? 'n/a'}</small>}
+            </div>
+            <div>
+              {editing === fact.key ? (
+                <button type="button" disabled={!value.trim() || busy !== null} onClick={async () => { setBusy(fact.key); if (await state.updateMemoryPreference(fact.key, value.trim())) setEditing(null); setBusy(null); }} aria-label={`Save ${fact.key}`}><Check size={15} /></button>
+              ) : (
+                <button type="button" disabled={busy !== null} onClick={() => { setEditing(fact.key); setValue(fact.value); }} aria-label={`Edit ${fact.key}`}><Pencil size={15} /></button>
+              )}
+              <button type="button" disabled={busy !== null} onClick={async () => { setBusy(fact.key); await state.deleteMemoryPreference(fact.key); setBusy(null); }} aria-label={`Forget ${fact.key}`}><Trash2 size={15} /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </ShowcaseSheet>
+  );
+}
