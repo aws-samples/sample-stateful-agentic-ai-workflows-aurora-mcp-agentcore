@@ -18,7 +18,7 @@ The data is sample travel packages and one fictional traveler, Jordan Morgan.
 Holds and confirmations change rows in Meridian's own database only. There is
 no supplier, airline or payment integration.
 
-![Meridian Concierge with destination photography, sample trip prices, and the traveler's saved preferences and budget](meridian/docs/meridian-showcase.jpg)
+![Meridian Concierge, signed in as the sample traveler: destination photography, sample trip prices and the traveler's saved context](meridian/docs/meridian-showcase.jpg)
 
 ## What it demonstrates
 

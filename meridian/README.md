@@ -105,7 +105,7 @@ A Data API transaction keeps the RLS role and traveler scope together for one
 unit of work; it is not long-lived workflow state. See
 [docs/STATEFUL_ARCHITECTURE.md](docs/STATEFUL_ARCHITECTURE.md).
 
-![Recovery desk paused at a saved step: the shortlist saved to Aurora and the journey continuity panel](docs/meridian-recovery.jpg)
+![Recovery desk after a stopped and resumed recovery: each step saved in Aurora, the hold allowed by Cedar, and the journey continuity panel](docs/meridian-recovery.jpg)
 
 ## Recovery behavior
 
