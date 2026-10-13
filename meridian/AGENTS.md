@@ -152,6 +152,8 @@ These apply to user-facing text, docs, test names and test strings.
 - Plain, professional voice. No inflated or promotional phrasing, no filler.
 - Enforced by `frontend/src/showcase/lib/__tests__/copyGuard.test.ts` (frontend sources) and
   `tests/test_docs_copy.py` (tracked Markdown, including this file). Fix the text, not the guard.
+- Model replies get the same punctuation in `backend/concierge_voice.py` (`direct_reply` and its
+  stream), before they are shown or saved; `tests/test_concierge_voice.py` covers every split.
 
 ## 6. Working conventions
 
