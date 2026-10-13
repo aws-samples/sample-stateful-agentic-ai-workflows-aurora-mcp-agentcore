@@ -66,6 +66,14 @@ def _assert_stream_matches(raw, expected):
     ("Great \u2014 Tokyo fits.", "Tokyo fits."),
     ("A plain hyphen - and well-known terms stay.", "A plain hyphen - and well-known terms stay."),
     ("The plan holds \u2014", "The plan holds"),
+    # Ranges whose second value starts with a currency sign or ends in a unit stay ranges.
+    ("Prices run $1,599\u2013$1,899 per traveler.", "Prices run $1,599-$1,899 per traveler."),
+    ("Converted: \u20ac3,587 \u2013 \u20ac3,955.", "Converted: \u20ac3,587-\u20ac3,955."),
+    ("Budgets of $1.5k\u2013$2k fit.", "Budgets of $1.5k-$2k fit."),
+    ("A 10%\u201320% deposit.", "A 10%-20% deposit."),
+    ("Check-in 10 am \u2013 2 pm.", "Check-in 10 am-2 pm."),
+    # A price after a clause is not a range.
+    ("The walk \u2014 $1,599 per traveler.", "The walk, $1,599 per traveler."),
 ])
 def test_dashes_and_middle_dots_become_plain_punctuation_at_every_token_boundary(raw, expected):
     _assert_stream_matches(raw, expected)

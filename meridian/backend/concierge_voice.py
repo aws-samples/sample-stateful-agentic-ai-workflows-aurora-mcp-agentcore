@@ -27,9 +27,12 @@ _START = re.compile(_BOUNDARY)
 
 # The copy rules allow no em dash, en dash or middle dot, so replies use plain punctuation.
 _MARK = "[\u2013\u2014\u00b7]"
+_CURRENCY = "[$\u20ac\u00a3\u00a5]"
+# The first value of a range ends in a digit or a unit: 19, 10%, $1.5k, 10am, 10 am.
+_RANGE_START = r"(?:(?<=\d)|(?<=\d[%kKmM])|(?<=\d[ap]m)|(?<=\d [ap]m))"
 _PUNCTUATION = (
-    # A number range keeps a hyphen: Oct 12-19.
-    (re.compile(r"(?<=\d)[ \t]*[\u2013\u2014][ \t]*(?=\d)"), "-"),
+    # A range keeps a hyphen: Oct 12-19, $1,599-$1,899, 10%-20%.
+    (re.compile(rf"{_RANGE_START}[ \t]*[\u2013\u2014][ \t]*(?={_CURRENCY}?\d)"), "-"),
     # An en dash joining two words is a hyphen: Sydney-Melbourne.
     (re.compile(r"(?<=\w)\u2013(?=\w)"), "-"),
     # A mark that opens a line is a list marker.
@@ -41,9 +44,11 @@ _PUNCTUATION = (
     # Anywhere else it joins two clauses.
     (re.compile(rf"[ \t]*{_MARK}[ \t]*(?=\S)"), ", "),
 )
-_TRAILING_MARK = re.compile(rf"[ \t]*{_MARK}[ \t]*$")
-# What a stream holds back: trailing spaces and a mark whose meaning the next text decides.
-_PENDING = re.compile(rf"[ \t]*{_MARK}?[ \t]*$")
+_TRAILING_MARK = re.compile(rf"[ \t]*{_MARK}[ \t]*\Z")
+# What a stream holds back: trailing spaces, and a mark (with a currency sign after it) whose
+# meaning the next text decides. \Z, not $: $ also matches before a final line break.
+_PENDING = re.compile(rf"[ \t]*(?:{_MARK}[ \t]*{_CURRENCY}?)?\Z")
+_TRAILING_SPACE = re.compile(r"[ \t]*\Z")
 
 
 def _without_openers(text: str) -> str:
@@ -75,13 +80,16 @@ class DirectReplyStream:
 
     def feed(self, text: str, *, final: bool = False) -> str:
         self.raw += text
-        clean = _plain_punctuation(_without_openers(self.raw), final=final)
+        body = _without_openers(self.raw)
+        if not final:
+            body = body[:_PENDING.search(body).start()]
+        clean = _plain_punctuation(body, final=final)
         if not final:
             start = list(_START.finditer(clean))[-1].end()
             tail = clean[start:].strip().strip("*_").casefold()
             if (tail and any(word.startswith(tail) for word in _OPENERS)) or clean[start:].strip() in {"*", "**", "_", "__"}:
                 clean = clean[:start]
-            clean = clean[:_PENDING.search(clean).start()]
+            clean = clean[:_TRAILING_SPACE.search(clean).start()]
         delta = clean[len(self.visible):]
         self.visible = clean
         return delta
