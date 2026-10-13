@@ -24,6 +24,26 @@ describe('HeaderAccount', () => {
     expect(signOut).toHaveBeenCalledTimes(1);
   });
 
+  it('opens the travel brief from the traveler only when the surface offers it', () => {
+    const openBrief = vi.fn();
+    const session = { traveler: null, source: 'cognito' as const, signOut: vi.fn() };
+    const { rerender } = render(
+      <SessionContext.Provider value={session}>
+        <HeaderAccount traveler={traveler} onOpenTravelBrief={openBrief} />
+      </SessionContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open Alex Rivera travel brief' }));
+    expect(openBrief).toHaveBeenCalledTimes(1);
+    rerender(
+      <SessionContext.Provider value={session}>
+        <HeaderAccount traveler={traveler} />
+      </SessionContext.Provider>,
+    );
+    expect(screen.queryByRole('button', { name: 'Open Alex Rivera travel brief' }))
+      .not.toBeInTheDocument();
+    expect(screen.getByText('Alex Rivera')).toBeInTheDocument();
+  });
+
   it('is absent when the build has no sign-in of its own', () => {
     render(<HeaderAccount traveler={traveler} />);
     expect(screen.queryByRole('button')).not.toBeInTheDocument();

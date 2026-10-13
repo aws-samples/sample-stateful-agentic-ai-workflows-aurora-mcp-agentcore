@@ -12,6 +12,28 @@
   white-space: nowrap;
 }
 
+.mds-header-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--mds-radius-full);
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+
+button.mds-header-identity {
+  cursor: pointer;
+}
+
+.mds-root button.mds-header-identity:focus-visible {
+  outline: 2px solid var(--mds-tint);
+  outline-offset: 2px;
+}
+
 .mds-header-avatar {
   display: inline-flex;
   align-items: center;
@@ -78,6 +100,13 @@
 
 @media (max-width: 860px) {
   .mds-header-name { display: none; }
+}
+
+/* One avatar per header. While the pill shows, it stands in for the Concierge profile button,
+   which returns wherever the pill does not: builds without sign-in, and fullscreen. */
+@media not all and (display-mode: fullscreen) {
+  :root:not(:fullscreen) .mds-root:not([data-fullscreen='true'])
+    .mds-shell-status:has(.mds-header-account) .mc-profile-toggle { display: none; }
 }
 
 /* Presenter chrome: gone in fullscreen, as soon as the browser reports it. */

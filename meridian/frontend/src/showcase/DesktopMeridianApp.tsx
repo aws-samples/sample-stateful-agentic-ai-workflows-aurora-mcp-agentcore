@@ -418,7 +418,10 @@ export function DesktopMeridianApp({
                 : <Moon size={17} aria-hidden="true" />}
             </button>
           </IconTooltip>
-          <HeaderAccount traveler={state.traveler} />
+          <HeaderAccount
+            traveler={state.traveler}
+            onOpenTravelBrief={isProduct ? () => openNavItem('profile') : undefined}
+          />
         </div>
       </header>
 
