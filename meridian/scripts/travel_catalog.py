@@ -257,8 +257,8 @@ TRAVELER_PROFILES = [
         "budget_max": 3200.0,
         "preferred_cabin": "economy_plus",
         "seat_preference": "Window on short-haul, aisle on long-haul",
-        "dietary_notes": "Shellfish allergy — exclude seafood dining",
-        "trip_goal": "Tokyo culture trip — target Oct 12–19",
+        "dietary_notes": "Shellfish allergy: exclude seafood dining",
+        "trip_goal": "Tokyo culture trip, target Oct 12-19",
         "loyalty_programs": {
             "united_mileageplus": {
                 "program": "United MileagePlus",
@@ -353,21 +353,21 @@ DEMO_CONVERSATIONS = [
         "conversation_id": "conv_iceland_winter",
         "started_at": "2026-04-12 10:08:00",
         "last_message_at": "2026-04-12 10:21:00",
-        "summary": "Iceland ring road in winter — aurora viewing, Reykjavik base, "
+        "summary": "Iceland ring road in winter: aurora viewing, Reykjavik base, "
                    "concerned about red-eye connections.",
     },
     {
         "conversation_id": "conv_tokyo_october",
         "started_at": "2026-05-02 09:14:00",
         "last_message_at": "2026-05-02 09:33:00",
-        "summary": "Tokyo culture trip in October — Shibuya base, vegetarian dining, "
+        "summary": "Tokyo culture trip in October: Shibuya base, vegetarian dining, "
                    "Hakone day trip, prefers boutique over chain.",
     },
     {
         "conversation_id": "conv_tuscany_anniversary",
         "started_at": "2026-02-19 18:42:00",
         "last_message_at": "2026-02-19 19:01:00",
-        "summary": "Tuscany wine + wellness anniversary trip — Chianti base, "
+        "summary": "Tuscany wine + wellness anniversary trip: Chianti base, "
                    "slow-pace boutique stay, capped at $3.5k per person.",
     },
 ]
@@ -388,10 +388,10 @@ def _msg(conv_id: str, role: str, content: str, offset_minutes: int) -> dict:
 DEMO_CONVERSATION_MESSAGES = [
     # ---- Iceland winter thread ----
     _msg("conv_iceland_winter", "user",
-         "We are thinking about Iceland in late January — mainly to chase the aurora. "
+         "We are thinking about Iceland in late January, mainly to chase the aurora. "
          "Anything that avoids long overnight connections from New York?", 0),
     _msg("conv_iceland_winter", "assistant",
-         "Iceland in late January is excellent for aurora — clear nights, lower crowds. "
+         "Iceland in late January is excellent for aurora: clear nights, lower crowds. "
          "I would anchor on Reykjavik for the first three nights with a Golden Circle day, "
          "then a Vik south-coast night, and a final night near Thingvellir for darker skies. "
          "From JFK, Icelandair offers nonstop service; I will avoid itineraries that add "
@@ -408,7 +408,7 @@ DEMO_CONVERSATION_MESSAGES = [
          "Help me plan a Tokyo culture trip in October. Just for me. "
          "Vegetarian-friendly dining and somewhere walkable.", 0),
     _msg("conv_tokyo_october", "assistant",
-         "October is one of the best windows for Tokyo — clear skies, autumn leaves "
+         "October is one of the best windows for Tokyo: clear skies, autumn leaves "
          "starting in Hakone. I will base you in Shibuya at a boutique ryokan-style "
          "stay (matching your boutique-over-chain preference), book a vegetarian "
          "kaiseki experience in Yanaka, and add a Hakone day trip with the rail pass. "
@@ -422,13 +422,13 @@ DEMO_CONVERSATION_MESSAGES = [
 
     # ---- Tuscany anniversary thread ----
     _msg("conv_tuscany_anniversary", "user",
-         "Anniversary trip — slow week in Tuscany. Wine country, "
+         "Anniversary trip: slow week in Tuscany. Wine country, "
          "good food, no rushing. Cap around $3.5k each.", 0),
     _msg("conv_tuscany_anniversary", "assistant",
          "Tuscany in late spring is exactly your slow-pace, wine-country style. "
          "I have a Chianti boutique villa with cellar tastings, a private cooking "
          "afternoon in Greve, and a wellness half-day at a thermal spa near Bagno "
-         "Vignoni. Comes in at $3,699 per person for the 7-night version — slightly "
+         "Vignoni. Comes in at $3,699 per person for the 7-night version, slightly "
          "above your cap, but I can move to the 5-night format at $2,899 if "
          "preferred.", 6),
     _msg("conv_tuscany_anniversary", "user",
@@ -474,7 +474,7 @@ DEMO_TRIP_INTERACTIONS = [
         "interaction_id": "int_tuscany_anniversary",
         "conversation_id": "conv_tuscany_anniversary",
         "query_text": "Slow anniversary week in Tuscany wine country under $3.5k.",
-        "response_summary": "Suggested Tuscany Wine & Wellness (WEL-005) — 5-night "
+        "response_summary": "Suggested Tuscany Wine & Wellness (WEL-005): 5-night "
                             "Chianti format at $2,899 to stay under cap. Held for "
                             "14 days under Marriott Bonvoy account.",
         "packages_shown": [
@@ -485,8 +485,8 @@ DEMO_TRIP_INTERACTIONS = [
         "interaction_id": "int_kyoto_browse",
         "conversation_id": None,
         "query_text": "Kyoto ryokan onsen experience, slow pace, autumn leaves.",
-        "response_summary": "Browsed Kyoto Ryokan & Onsen (WEL-004). No booking yet — "
-                            "saved to wishlist for later.",
+        "response_summary": "Browsed Kyoto Ryokan & Onsen (WEL-004). No booking yet. "
+                            "Saved to wishlist for later.",
         "packages_shown": [
             {"package_id": "WEL-004", "name": "Kyoto Ryokan & Onsen", "was_selected": False},
         ],

@@ -1,8 +1,8 @@
-"""Guard: the seeded traveler text the app shows carries no middle dot."""
+"""Guard: the seeded traveler text the app shows carries no middle dot, em dash or en dash."""
 
 from scripts import travel_catalog
 
-MIDDLE_DOT = "·"
+BANNED = {"·": "middle dot", "—": "em dash", "–": "en dash"}
 
 
 def _strings(value):
@@ -16,17 +16,18 @@ def _strings(value):
             yield from _strings(item)
 
 
-def test_seed_catalog_values_have_no_middle_dot():
+def test_seed_catalog_values_have_no_middle_dot_or_dash():
     catalog = {
         name: value
         for name, value in vars(travel_catalog).items()
         if name.isupper() and isinstance(value, (list, dict))
     }
-    assert "TRAVELER_PROFILES" in catalog and "TRAVELER_PREFERENCES" in catalog
+    assert "TRAVELER_PROFILES" in catalog and "DEMO_CONVERSATION_MESSAGES" in catalog
     offences = [
-        f"{name}: {text[:60]}"
+        f"{name} ({label}): {text[:60]}"
         for name, value in catalog.items()
         for text in _strings(value)
-        if MIDDLE_DOT in text
+        for mark, label in BANNED.items()
+        if mark in text
     ]
     assert offences == []

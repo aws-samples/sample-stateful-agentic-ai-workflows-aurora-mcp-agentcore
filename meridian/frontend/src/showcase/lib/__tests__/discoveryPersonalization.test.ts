@@ -27,7 +27,7 @@ const PROFILE: TravelerProfile = {
   party_size: 2,
   budget_min: '2000.00' as unknown as number,
   budget_max: '3500.00' as unknown as number,
-  dietary_notes: 'Shellfish allergy — exclude seafood dining',
+  dietary_notes: 'Shellfish allergy: exclude seafood dining',
 };
 
 function trip(overrides: Partial<Product> = {}): Product {
