@@ -240,7 +240,7 @@ function travelerContextReasons(
 
 function stageBadge(stage: RecoveryStage): string {
   if (stage === 'ready') return 'Ready for review';
-  if (stage === 'checkpointed') return 'Shortlist checkpointed';
+  if (stage === 'checkpointed') return 'Shortlist saved';
   if (stage === 'running') return 'Ranking live options';
   return 'Awaiting recovery';
 }

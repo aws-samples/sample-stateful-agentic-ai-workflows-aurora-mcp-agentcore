@@ -44,6 +44,19 @@ const AUTH_CLAIMS = [
   /Authenticated workload/i, /Workload authorization/i,
 ];
 
+// Phase 5 wording is "saved step" or "snapshot". One-word lowercase literals are state ids.
+const LITERALS = /'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`([^`]*)`|>([^<>{}]+)</g;
+
+function checkpointOffences(files: Record<string, string>, paths: string[]): string[] {
+  return paths.flatMap(path => files[path].split('\n')
+    .map((line, index) => ({ line, at: `${shortName(path)}:${index + 1}` }))
+    .filter(({ line }) => !isComment(line) && [...line.matchAll(LITERALS)].some((match) => {
+      const text = match.slice(1).find(part => part !== undefined)!.replace(/\$\{[^}]*\}/g, '');
+      return /checkpoint/i.test(text) && (/\s/.test(text.trim()) || /Checkpoint/.test(text));
+    }))
+    .map(({ line, at }) => `${at} ${line.trim().slice(0, 100)}`));
+}
+
 function namedTravelerOffences(files: Record<string, string>, paths: string[]): string[] {
   return paths.flatMap(path => files[path].split('\n')
     .map((line, index) => ({ line, at: `${shortName(path)}:${index + 1}` }))
@@ -98,6 +111,25 @@ describe('showcase copy', () => {
       .filter(({ line }) => !isComment(line) && AUTH_CLAIMS.some(pattern => pattern.test(line)))
       .map(({ line, at }) => `${at} ${line.trim().slice(0, 100)}`));
     expect(offences).toEqual([]);
+  });
+
+  it('says saved step or snapshot, never checkpoint, in the words people read', () => {
+    const files = Object.keys(sources).filter(path => isPageCode(path) && path !== LEGACY_TABLE);
+    expect(files.length).toBeGreaterThan(50);
+    expect(checkpointOffences(sources, files)).toEqual([]);
+  });
+
+  it('flags checkpoint in planted copy, and ignores state ids, expressions and comments', () => {
+    const planted: Record<string, string> = {
+      '../../components/Badge.tsx': "export const badge = 'Shortlist checkpointed';\n",
+      '../../components/Title.tsx': "export const t = 'Checkpoint';\n",
+      '../../components/Jsx.tsx': 'export const j = <p>Saved at a checkpoint</p>;\n',
+      '../../components/Ids.tsx': "export const s = stage === 'checkpointed' ? 'Saved' : 'x';\n",
+      '../../components/Count.tsx': 'export const c = `${w.checkpointCount} durable writes`;\n',
+      '../../components/Quiet.tsx': '// A checkpoint used to live here.\n',
+    };
+    expect(checkpointOffences(planted, Object.keys(planted)).map(entry => entry.split(' ')[0]))
+      .toEqual(['components/Badge.tsx:1', 'components/Title.tsx:1', 'components/Jsx.tsx:1']);
   });
 
   it('flags a planted first name in page code, and ignores tests and comments', () => {
