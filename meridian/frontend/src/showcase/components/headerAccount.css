@@ -102,11 +102,14 @@ button.mds-header-identity {
   .mds-header-name { display: none; }
 }
 
-/* One avatar per header. While the pill shows, it stands in for the Concierge profile button,
-   which returns wherever the pill does not: builds without sign-in, and fullscreen. */
+/* The traveler appears once in the app's chrome. While the pill shows, it stands in for the
+   Concierge profile button and the sidebar's traveler card (the sidebar's Profile item still opens
+   the brief). Both return wherever the pill does not: builds without sign-in, and fullscreen. */
 @media not all and (display-mode: fullscreen) {
   :root:not(:fullscreen) .mds-root:not([data-fullscreen='true'])
-    .mds-shell-status:has(.mds-header-account) .mc-profile-toggle { display: none; }
+    .mds-desktop-app:has(.mds-header-account) :is(.mc-profile-toggle, .mds-account-mini) {
+    display: none;
+  }
 }
 
 /* Presenter chrome: gone in fullscreen, as soon as the browser reports it. */

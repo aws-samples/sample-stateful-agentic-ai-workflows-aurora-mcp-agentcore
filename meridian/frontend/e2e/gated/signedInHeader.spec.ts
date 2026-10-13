@@ -43,8 +43,10 @@ async function signIn(page: Page) {
   await expect(page.getByRole('group', { name: 'Account' })).toBeVisible();
 }
 
-const headerAvatars = (page: Page) =>
-  page.locator('.mds-shell-header .mds-traveler-initials:visible');
+// The header and the sidebar are the app's chrome; the traveler appears there once.
+const headerAvatars = (page: Page) => page.locator(
+  ':is(.mds-shell-header, .mds-desktop-sidebar) .mds-traveler-initials:visible',
+);
 const BRIEF_BUTTON = { name: 'Open Alex Rivera travel brief', exact: true };
 
 test('the signed-in Concierge header shows the traveler once; the name opens the brief', async ({
@@ -71,15 +73,17 @@ test('in fullscreen the pill steps aside and the profile button carries the trav
   await expect(page.getByRole('button', BRIEF_BUTTON)).toBeVisible();
 });
 
-test('every other surface shows the traveler once, in the account pill', async ({ page }) => {
+test('every other surface shows the traveler once, in the pill, sidebar or not', async ({ page }) => {
   await signIn(page);
   const surfaces = page.getByRole('navigation', {
     name: 'Meridian capability ladder', exact: true,
   });
   const account = page.getByRole('group', { name: 'Account' });
+  const sidebar = page.locator('.mds-desktop-sidebar');
   const others = ['Capability ladder', 'Recovery desk', 'System evidence', 'Solution briefing'];
   for (const surface of others) {
     await surfaces.getByRole('button', { name: new RegExp(`^${surface}`) }).click();
+    if (surface === 'Recovery desk') await expect(sidebar).toBeVisible();
     await expect(headerAvatars(page)).toHaveCount(1);
     await expect(account.getByText('Alex Rivera', { exact: true })).toBeVisible();
   }
