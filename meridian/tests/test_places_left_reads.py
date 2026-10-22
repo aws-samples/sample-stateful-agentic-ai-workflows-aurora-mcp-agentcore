@@ -95,7 +95,8 @@ SOURCES = [
 # A model prompt that lists the schema is prose, not a select list.
 MAX_COLUMN_LIST_WORDS = 40
 COLUMN_LIST = re.compile(r"\bdurations\s*,\s*availability\b(?!\s*\()")
-RAW_AVAILABILITY = re.compile(r"(?<!\bAS )(?<![\w.>])\bavailability\b(?!\s*\()", re.I)
+RAW_AVAILABILITY = re.compile(r"(?<!\bAS )(?<![\w>])\bavailability\b(?!\s*\()", re.I)
+CATALOG_FROM = re.compile(r"\bfrom\s+(?:\w+\.)?trip_packages\b")
 
 
 def _sql_strings(path: Path):
@@ -113,16 +114,41 @@ def _sql_strings(path: Path):
 
 def _selects_raw_availability(lower: str) -> bool:
     """A catalog SELECT, or a catalog column list built for one, naming the raw column."""
-    if "from trip_packages" in lower:
-        columns = lower.split("from trip_packages")[0]
+    found = CATALOG_FROM.search(lower)
+    if found:
+        columns = lower[:found.start()]
         if "select" not in columns:
             return False
-    elif len(lower.split()) <= MAX_COLUMN_LIST_WORDS and COLUMN_LIST.search(lower):
+    elif (
+        "insert into" not in lower
+        and len(lower.split()) <= MAX_COLUMN_LIST_WORDS
+        and COLUMN_LIST.search(lower)
+    ):
         columns = lower
     else:
         return False
     columns = columns.replace("package_places_left(package_id) as availability", "")
     return bool(RAW_AVAILABILITY.search(columns))
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT package_id, availability FROM trip_packages",
+    "select p.availability from trip_packages p",
+    "SELECT package_id,\n       availability\nFROM\n  trip_packages",
+    "SELECT availability FROM public.trip_packages",
+    "durations, availability, highlights",
+])
+def test_the_scan_recognizes_raw_capacity_reads(sql):
+    assert _selects_raw_availability(sql.lower())
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT package_id, package_places_left(package_id) AS availability FROM trip_packages",
+    "SELECT * FROM trip_packages",
+    "INSERT INTO trip_packages (durations, availability) VALUES (%s, %s)",
+])
+def test_the_scan_accepts_places_left_reads_and_writes(sql):
+    assert not _selects_raw_availability(sql.lower())
 
 
 def test_no_catalog_read_selects_raw_capacity_as_availability():

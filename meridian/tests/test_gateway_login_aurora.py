@@ -86,12 +86,17 @@ def _hold_args(package_id, duration, cents, traveler, journey_ref):
 
 
 async def _remove(booking_id, journey_ref):
+    """Remove the test's rows, including any booking the journey holds whatever the reply said."""
     master = get_rds_data_client()
     journey = await master.execute(
         "SELECT journey_id FROM journey_threads WHERE thread_id = %s", (journey_ref,))
-    await master.execute("DELETE FROM hold_requests WHERE booking_id = %s", (booking_id,))
-    await master.execute("DELETE FROM booking_lines WHERE booking_id = %s", (booking_id,))
-    await master.execute("DELETE FROM bookings WHERE booking_id = %s", (booking_id,))
+    held = await master.execute(
+        "SELECT hr.booking_id FROM hold_requests hr JOIN journey_threads jt "
+        "ON jt.journey_id = hr.journey_id WHERE jt.thread_id = %s", (journey_ref,))
+    for booked in {booking_id, *(row["booking_id"] for row in held)} - {""}:
+        await master.execute("DELETE FROM hold_requests WHERE booking_id = %s", (booked,))
+        await master.execute("DELETE FROM booking_lines WHERE booking_id = %s", (booked,))
+        await master.execute("DELETE FROM bookings WHERE booking_id = %s", (booked,))
     await master.execute("UPDATE journeys SET active_thread_id = NULL WHERE active_thread_id = %s",
                          (journey_ref,))
     await master.execute("DELETE FROM journey_threads WHERE thread_id = %s", (journey_ref,))
