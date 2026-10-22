@@ -66,6 +66,14 @@ describe('RecoveryChecks evidence boundaries', () => {
     expect(screen.getByText('Cedar allowed')).toBeVisible();
     expect(screen.getByText('Receipt unavailable')).toBeVisible();
   });
+  it('names the package the recorded hold is for', () => {
+    const document = journey();
+    document.hold = { ...document.hold, package_id: 'CTY-002' } as JourneyDocument['hold'];
+    render(<RecoveryChecks state={state()} journeyDocument={document} onOpenProof={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Verify the receipt/ }));
+    expect(screen.getByText('Package')).toBeVisible();
+    expect(screen.getByText('CTY-002')).toBeVisible();
+  });
   it('uses matching journey records and discards a previous thread or phase', () => {
     const { rerender } = render(<RecoveryChecks state={state()} journeyDocument={journey()} onOpenProof={vi.fn()} />);
     expect(screen.getByText('Saved outside the worker')).toBeVisible();

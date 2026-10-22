@@ -70,7 +70,10 @@ that answer, and saves it in the run's inputs before any step runs, so every lat
 snapshot carries it and a resume after a crash holds the same package. Without a
 choice, the hold is for the top-ranked package. `prepare_hold` takes the first
 duration of that package with places for the whole party; when no duration has
-enough, it prepares no hold and says why.
+enough, it prepares no hold and says why. The run's result names the package it holds
+or will hold as `plan_package_id`, apart from the ranking in `packages`, and the journey
+document's `selected_plan` gives the same package after a refresh, so the Recovery desk
+reviews the plan the traveler chose rather than the first-ranked one.
 
 ### Snapshots
 

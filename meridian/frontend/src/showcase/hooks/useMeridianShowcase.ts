@@ -159,6 +159,8 @@ export interface MeridianShowcaseState {
   conversationId: string | null;
   workflowStatus: ChatResponse['workflow_status'] | null;
   workflowResumedAfterRestart: boolean;
+  /** The package the recovery holds or will hold, which may not be the top-ranked one. */
+  workflowPlanPackageId: string | null;
   lastPrompt: string | null;
   actionDrawer: ActionDrawerState | null;
   /** Confirmed direct holds stay visible when drawers close or the ladder changes. */
@@ -395,6 +397,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     useState<ChatResponse['workflow_status'] | null>(null);
   const [workflowResumedAfterRestart, setWorkflowResumedAfterRestart] =
     useState(false);
+  const [workflowPlanPackageId, setWorkflowPlanPackageId] = useState<string | null>(null);
   const [lastPrompt, setLastPrompt] = useState<string | null>(null);
   const [actionDrawer, setActionDrawer] = useState<ActionDrawerState | null>(null);
   const [chatFilters, setChatFiltersState] = useState<ChatFilters>(EMPTY_FILTERS);
@@ -597,6 +600,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setWorkflowResumedAfterRestart(
       response.workflow_resumed_after_restart === true,
     );
+    setWorkflowPlanPackageId(response.workflow_plan_package_id ?? null);
     if (response.memory_facts?.length) {
       setMemoryFacts(
         response.memory_facts.map((fact) => ({
@@ -611,7 +615,10 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     // failing on an intent prompt), clear the grid so the previous turn's
     // cards don't appear to be the latest result.
     setRecommendations(products);
-    setSelectedTrip(products.length ? products[0] : null);
+    const plan = products.find(
+      (product) => product.product_id === response.workflow_plan_package_id,
+    );
+    setSelectedTrip(plan ?? (products.length ? products[0] : null));
   }, []);
 
   const restoreJourney = useCallback((document: JourneyDocument) => {
@@ -635,6 +642,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
       conversation_id: saved.conversation_id,
       workflow_status: saved.workflow_status,
       workflow_resumed_after_restart: saved.resumed_after_restart,
+      workflow_plan_package_id: isObserved(document.selected_plan)
+        ? document.selected_plan.package_id
+        : null,
       activities: saved.activities,
       products: isObserved(document.recommendations) ? document.recommendations.items as Product[] : [],
     });
@@ -666,6 +676,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         setConversationId(null);
         setWorkflowStatus(null);
         setWorkflowResumedAfterRestart(false);
+        setWorkflowPlanPackageId(null);
         if (requestPhase !== 5) clearWorkflowAddress();
       }
       setLastRequestPhase(requestPhase);
@@ -720,6 +731,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           setTraceSpans([]);
           setWorkflowStatus(null);
           setWorkflowResumedAfterRestart(false);
+          setWorkflowPlanPackageId(null);
         }
       }
 
@@ -883,6 +895,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setConversationTravelers(null);
     setWorkflowStatus(null);
     setWorkflowResumedAfterRestart(false);
+    setWorkflowPlanPackageId(null);
     setActionDrawer(null);
     setTripDetailsOpen(false);
     setComparisonOpen(false);
@@ -1275,6 +1288,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     setConversationTravelers(null);
     setWorkflowStatus(null);
     setWorkflowResumedAfterRestart(false);
+    setWorkflowPlanPackageId(null);
     setActionDrawer(null);
     setTripDetailsOpen(false);
     setError(null);
@@ -1352,6 +1366,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
     conversationId,
     workflowStatus,
     workflowResumedAfterRestart,
+    workflowPlanPackageId,
     lastPrompt,
     actionDrawer,
     // A scoped receipt may contain only the package ID. Use the public

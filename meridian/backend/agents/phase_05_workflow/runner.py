@@ -148,6 +148,17 @@ def _owner(prior: Optional[Dict[str, Any]]) -> str:
     return str(_saved_inputs(prior).get("traveler_id") or "")
 
 
+def _plan_package(state: Dict[str, Any]) -> Optional[str]:
+    """The package this run holds or is set to hold, kept apart from the ranking.
+
+    The held package first, then the traveler's choice, then the saved intent. None while
+    the run waits for the traveler and nothing is chosen.
+    """
+    intent = state.get("hold_intent") or {}
+    package = state.get("hold_package") or state.get("selected_package") or intent.get("package_id")
+    return str(package) if package else None
+
+
 def _choice_to_record(prior: Optional[Dict[str, Any]], command: WorkflowCommand) -> Optional[str]:
     """The package choice this resume adds to the saved task, or None when nothing changes.
 
@@ -528,6 +539,7 @@ class WorkflowRunner:
             "conversation_id": thread_id,
             "execution_id": claim.execution_id,
             "worker_instance_id": self._worker_id,
+            "plan_package_id": _plan_package(state),
         }
         finished = "synthesize" in {node.node_id for node in graph.state.completed_nodes}
         if not finished:

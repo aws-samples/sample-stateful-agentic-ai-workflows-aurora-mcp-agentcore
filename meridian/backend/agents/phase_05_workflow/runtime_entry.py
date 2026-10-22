@@ -42,6 +42,7 @@ MAX_PACKAGE_ID = 50
 RESULT_KEYS = (
     "activities", "packages", "response", "conversation_id", "workflow_status",
     "resumed_after_restart", "resumed_from_checkpoint", "execution_id", "worker_instance_id",
+    "plan_package_id",
 )
 ERROR_CODES: Tuple[Tuple[type, str], ...] = (
     (CallerTokenExpired, "token_expired"),

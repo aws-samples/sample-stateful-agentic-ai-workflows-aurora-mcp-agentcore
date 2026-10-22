@@ -300,6 +300,45 @@ it.each(['Resume workflow from the saved step', 'Resume workflow from checkpoint
   expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ resume: true, conversation_id: 'saved-thread', travelers_count: 3 }), expect.any(AbortSignal));
 });
 
+it('keeps the ranking and opens the package the recovery holds, not the top-ranked one', async () => {
+  vi.mocked(sendChatMessage).mockResolvedValueOnce({
+    message: 'Held.', activities: [], conversation_id: 'phase5-thread', workflow_status: 'resumed',
+    workflow_plan_package_id: 'KYO-001', products: [
+    { product_id: 'TKY-003', name: 'Tokyo Culture Week', price: 1949 },
+    { product_id: 'KYO-001', name: 'Kyoto Rail Extension', price: 2100 },
+    { product_id: 'OSA-002', name: 'Osaka Food Weekend', price: 1500 },
+  ],
+  } as unknown as Awaited<ReturnType<typeof sendChatMessage>>);
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+  await act(async () => { await result.current.submitPrompt('My flight was canceled. Rework my Tokyo trip.', 5); });
+  expect(sendChatMessage).toHaveBeenCalledTimes(1);
+  expect(result.current.recommendations.map(p => p.product_id)).toEqual(['TKY-003', 'KYO-001', 'OSA-002']);
+  expect(result.current.workflowPlanPackageId).toBe('KYO-001');
+  expect(result.current.selectedTrip?.product_id).toBe('KYO-001');
+});
+
+it('restores the held package of a saved recovery after a refresh', async () => {
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.previewProfile).not.toBeNull());
+  const document = {
+    traveler_id: 'trv_meridian_demo', active_thread_id: 'saved-thread',
+    workflow: { status: 'observed', source: 'checkpoint', conversation_id: 'saved-thread',
+      query: 'My Tokyo flight was canceled. Rework the trip.', message: 'Held.',
+      workflow_status: 'resumed', next_nodes: [], activities: [], travelers_count: 2 },
+    recommendations: { status: 'observed', source: 'checkpoint', items: [
+    { product_id: 'TKY-003', name: 'Tokyo Culture Week', price: 1949 },
+    { product_id: 'KYO-001', name: 'Kyoto Rail Extension', price: 2100 },
+    { product_id: 'OSA-002', name: 'Osaka Food Weekend', price: 1500 },
+  ] },
+    selected_plan: { status: 'observed', source: 'snapshot:saved-thread#channel:hold_package', package_id: 'OSA-002' },
+  } as unknown as JourneyDocument;
+  act(() => result.current.restoreJourney(document));
+  expect(result.current.workflowPlanPackageId).toBe('OSA-002');
+  expect(result.current.selectedTrip?.product_id).toBe('OSA-002');
+  expect(result.current.recommendations[0].product_id).toBe('TKY-003');
+});
+
 it.each(['phase', 'clear'])('ignores late responses after %s and leaves newer loading state alone', async (action) => {
   const { result } = renderHook(() => useMeridianShowcase());
   await waitFor(() => expect(result.current.previewProfile).not.toBeNull());

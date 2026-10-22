@@ -38,6 +38,8 @@ interface DecisionCardAction {
 
 interface RecommendedRecoveryPlanCardProps {
   product: Product | null;
+  /** The plan's place in the ranking; above 1 when the traveler chose an alternative. */
+  planRank?: number;
   stage: RecoveryStage;
   evidence: RecoveryEvidence;
   memoryFacts: LongTermMemoryFact[];
@@ -545,6 +547,7 @@ export function RecoveryLaunchCard({
 
 export function RecommendedRecoveryPlanCard({
   product,
+  planRank = 1,
   stage,
   evidence,
   memoryFacts,
@@ -571,7 +574,7 @@ export function RecommendedRecoveryPlanCard({
       <header className="mds-decision-card-head">
         <span className="mds-decision-card-kicker">
           <Sparkles size={17} aria-hidden="true" />
-          Recommended trip plan
+          {planRank === 1 ? 'Recommended trip plan' : 'Your chosen trip plan'}
         </span>
         <span className={`mds-decision-status is-${stage}`}>
           {stage === 'running' && <Loader2 size={13} aria-hidden="true" />}
@@ -586,7 +589,7 @@ export function RecommendedRecoveryPlanCard({
           <div className="mds-recommended-plan-media">
             <TripVisual product={product} />
             <span aria-hidden="true" />
-            <em>Top catalog match</em>
+            <em>{planRank === 1 ? 'Top catalog match' : `Ranked option ${planRank}`}</em>
           </div>
           <div className="mds-recommended-plan-title">
             <div>

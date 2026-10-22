@@ -97,7 +97,12 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
           ? 'The workflow is paused at its saved step, so there is no booking receipt yet. '
             + 'This check runs after you resume.'
           : 'A completed workflow or permitted call does not prove a hold. Check the active journey for its booking receipt.',
-      facts: hold ? [['Booking', hold.booking_id], ['Hold records', String(hold.hold_records)], ['Source', hold.source]] : [],
+      facts: hold ? [
+        ['Booking', hold.booking_id],
+        ...(hold.package_id ? [['Package', hold.package_id] as [string, string]] : []),
+        ['Hold records', String(hold.hold_records)],
+        ['Source', hold.source],
+      ] : [],
     },
   ];
   const active = checks.find(check => check.id === selected);

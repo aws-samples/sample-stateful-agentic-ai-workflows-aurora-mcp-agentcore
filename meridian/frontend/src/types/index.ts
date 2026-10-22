@@ -169,6 +169,8 @@ export interface ChatResponse {
   memory_facts?: LongTermMemoryFact[];
   workflow_status?: 'paused' | 'resumed' | 'complete';
   workflow_resumed_after_restart?: boolean;
+  /** The package the recovery holds or will hold. `products` stay in rank order. */
+  workflow_plan_package_id?: string | null;
   recovery_request?: string | null;
   /** The Bedrock model that actually wrote `message` (may be a fallback).
    *  Absent when the reply is a pure tool result with no model involved. */

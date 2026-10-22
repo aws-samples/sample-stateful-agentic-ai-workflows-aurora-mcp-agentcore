@@ -41,7 +41,8 @@ def test_concierge_offers_recovery_without_teaching_instructions_or_starting_wor
 
 def test_concierge_review_request_reaches_the_workflow_without_resuming(monkeypatch):
     from unittest.mock import AsyncMock
-    workflow = AsyncMock(return_value=([], [], "Shortlist ready for review.", "recovery-thread", "paused", False))
+    workflow = AsyncMock(return_value=(
+        [], [], "Shortlist ready for review.", "recovery-thread", "paused", False, None))
     monkeypatch.setattr("backend.routers.chat.orchestration_workflow", workflow)
     response = asyncio.run(chat(ChatRequest(
         message="Rework my trip and check availability", phase=5, review_only=True,
@@ -69,17 +70,19 @@ def test_review_only_cannot_resume_into_an_inventory_action(monkeypatch):
 
 def test_a_resume_passes_the_chosen_package_to_the_workflow(monkeypatch):
     from unittest.mock import AsyncMock
-    workflow = AsyncMock(return_value=([], [], "Held.", "recovery-thread", "resumed", False))
+    workflow = AsyncMock(return_value=(
+        [], [], "Held.", "recovery-thread", "resumed", False, "pkg_kyoto"))
     monkeypatch.setattr("backend.routers.chat.orchestration_workflow", workflow)
     monkeypatch.setattr(
         "backend.routers.chat._load_workflow_memory_facts", AsyncMock(return_value=[])
     )
-    asyncio.run(chat(ChatRequest(
+    response = asyncio.run(chat(ChatRequest(
         message="Resume workflow from the saved step", phase=5, resume=True,
         conversation_id="recovery-thread", selected_package_id="pkg_kyoto",
     ), PRINCIPAL))
     assert workflow.call_args.kwargs["selected_package_id"] == "pkg_kyoto"
     assert workflow.call_args.kwargs["resume"] is True
+    assert response.workflow_plan_package_id == "pkg_kyoto"
 
 
 def test_a_package_choice_on_a_fresh_request_is_refused(monkeypatch):
@@ -292,7 +295,7 @@ def test_workflow_receipt_is_not_rewritten_by_a_prose_model(monkeypatch):
     from unittest.mock import AsyncMock
     saved = "Aurora recorded courtesy hold hold-one. Flight seats have not been reserved."
     monkeypatch.setattr("backend.routers.chat.orchestration_workflow", AsyncMock(
-        return_value=([], [], saved, "saved-thread", "resumed", True)))
+        return_value=([], [], saved, "saved-thread", "resumed", True, None)))
     monkeypatch.setattr("backend.routers.chat._load_workflow_memory_facts", AsyncMock(return_value=[]))
     polish = AsyncMock(side_effect=AssertionError("A receipt must not be rewritten"))
     monkeypatch.setattr("backend.routers.chat._polish_and_record", polish)

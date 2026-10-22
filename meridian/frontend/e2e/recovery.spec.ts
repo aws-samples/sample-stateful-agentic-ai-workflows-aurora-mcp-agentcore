@@ -109,7 +109,15 @@ for (const width of [1440, 390]) {
     await page.route(url => url.pathname === '/api/chat', route => {
       const body = route.request().postDataJSON();
       sent.push(body);
-      return route.fulfill({ json: pausedRecovery(products, body.conversation_id) });
+      if (!body.selected_package_id) {
+        return route.fulfill({ json: pausedRecovery(products, body.conversation_id) });
+      }
+      // The resumed run keeps the ranking and names the package it held.
+      return route.fulfill({ json: {
+        message: 'Held the chosen package.', products, activities: [],
+        conversation_id: body.conversation_id, workflow_status: 'resumed',
+        workflow_plan_package_id: body.selected_package_id,
+      } });
     });
     await page.setViewportSize({ width, height: 1000 });
     await page.goto('/showcase?view=recovery');
@@ -131,6 +139,14 @@ for (const width of [1440, 390]) {
       phase: 5, resume: true, selected_package_id: 'FAM-002',
       conversation_id: sent[0].conversation_id,
     });
+    const plan = page.getByRole('article', { name: 'Recommended recovery plan' });
+    await expect(plan.getByText('Your chosen trip plan')).toBeVisible();
+    await expect(plan.locator('.mds-recommended-plan-title strong'))
+      .toHaveText('Yellowstone Wildlife Safari');
+    await expect(page.getByRole('article', { name: 'Recovery option 1' })).toBeVisible();
+    await plan.getByRole('button', { name: 'Review this plan' }).click();
+    await expect(page.getByRole('dialog').getByRole('heading', { level: 2 }))
+      .toHaveText('Yellowstone Wildlife Safari');
   });
 }
 

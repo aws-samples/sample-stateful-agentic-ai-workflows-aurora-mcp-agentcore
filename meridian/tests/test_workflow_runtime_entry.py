@@ -60,6 +60,10 @@ async def test_a_resume_sets_resume():
     assert runner.commands[0].resume is True
 
 
+def test_the_result_carries_the_plan_package():
+    assert "plan_package_id" in entry.RESULT_KEYS
+
+
 async def test_a_resume_carries_the_chosen_package():
     runner = Runner(result={})
     await events({**START, "mode": "resume", "selected_package_id": "pkg_kyoto"}, runner)

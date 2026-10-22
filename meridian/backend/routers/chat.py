@@ -142,6 +142,9 @@ class ChatResponse(BaseModel):
     memory_facts: Optional[List[MemoryFact]] = None
     workflow_status: Optional[str] = None
     workflow_resumed_after_restart: Optional[bool] = None
+    # The package the recovery holds or will hold: the traveler's choice, or the top-ranked
+    # one. Kept apart from `products`, which stay in rank order.
+    workflow_plan_package_id: Optional[str] = None
     recovery_request: Optional[str] = None
     # The Bedrock model that actually wrote `message` (may be a fallback,
     # not the configured primary). None when the reply is a pure tool
@@ -1552,7 +1555,7 @@ async def orchestration_workflow(
     travelers_count: int = 1,
     review_only: bool = False,
     selected_package_id: Optional[str] = None,
-) -> tuple[List[Product], List[ActivityEntry], str, str, str, bool]:
+) -> tuple[List[Product], List[ActivityEntry], str, str, str, bool, Optional[str]]:
     """Phase 5: the MeridianWorkflow AgentCore Runtime runs a Strands Graph.
 
     The graph saves each step in Aurora.
@@ -1619,6 +1622,7 @@ async def orchestration_workflow(
         conv_id,
         workflow_status,
         resumed_after_restart,
+        final_state.get("plan_package_id") or None,
     )
 
 
@@ -2080,6 +2084,7 @@ async def chat(
                 conv_id,
                 workflow_status,
                 resumed_after_restart,
+                plan_package_id,
             ) = await orchestration_workflow(
                 request.message,
                 traveler_id=request.customer_id or DEMO_TRAVELER_ID,
@@ -2134,6 +2139,7 @@ async def chat(
                 memory_facts=workflow_memory_facts or None,
                 workflow_status=workflow_status,
                 workflow_resumed_after_restart=resumed_after_restart,
+                workflow_plan_package_id=plan_package_id,
             ),
                 request.phase,
                 turn_started,

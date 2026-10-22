@@ -72,6 +72,7 @@ function makeState(overrides: Partial<MeridianShowcaseState> = {}): MeridianShow
     conversationId: null,
     workflowStatus: null,
     workflowResumedAfterRestart: false,
+    workflowPlanPackageId: null,
     lastPrompt: 'Show me city trips under $2,000 per traveler.',
     actionDrawer: null,
     totalLatencyMs: 42,

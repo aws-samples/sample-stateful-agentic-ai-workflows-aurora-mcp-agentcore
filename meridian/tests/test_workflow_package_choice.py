@@ -81,6 +81,8 @@ async def test_resuming_with_a_chosen_alternative_holds_that_package_not_the_top
     assert (call["packageId"], call["duration"], call["travelers"]) == ("pkg_kyoto", "5 nights", 2)
     assert call["unitPriceCents"] == 12000
     assert result["hold_package"] == "pkg_kyoto"
+    assert result["plan_package_id"] == "pkg_kyoto", "the plan is the held choice, not rank one"
+    assert [p["product_id"] for p in result["packages"]][:2] == ["pkg_tokyo", "pkg_kyoto"]
     assert (await world.saved_task())["selected_package"] == "pkg_kyoto"
 
 
@@ -98,8 +100,10 @@ async def test_a_choice_at_the_review_after_search_is_checked_and_held():
 
 async def test_resuming_without_a_choice_holds_the_top_ranked_package():
     world = World()
-    await world.run()
-    await world.run(resume=True)
+    paused = await world.run()
+    assert paused["plan_package_id"] is None, "nothing is chosen or held while waiting"
+    result = await world.run(resume=True)
+    assert result["plan_package_id"] == "pkg_tokyo"
     assert [call["packageId"] for call in world.gateway.calls] == ["pkg_tokyo"]
     assert "selected_package" not in await world.saved_task()
 

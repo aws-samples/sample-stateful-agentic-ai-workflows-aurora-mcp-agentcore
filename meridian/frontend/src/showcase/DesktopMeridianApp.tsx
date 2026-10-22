@@ -113,6 +113,7 @@ export function DesktopMeridianApp({
     ...state, messages: [], recommendations: [], streamingRecommendations: [],
     traceSpans: [], memoryFacts: [], lastPrompt: null, error: null,
     conversationId: null, workflowStatus: null, workflowResumedAfterRestart: false,
+    workflowPlanPackageId: null,
   };
   // While a recovery runs on the desk, its journey is re-read as Aurora records each step.
   const watchingRecovery = isRecoveryView && runPhase === 5 && state.isLoading

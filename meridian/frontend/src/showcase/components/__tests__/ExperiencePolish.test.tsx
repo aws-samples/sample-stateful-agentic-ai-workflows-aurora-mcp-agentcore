@@ -55,6 +55,7 @@ function makeState(
     lastPrompt: null,
     workflowStatus: null,
     workflowResumedAfterRestart: false,
+    workflowPlanPackageId: null,
     latestStreamComplete: true,
     markLatestStreamComplete: vi.fn(),
     selectedTrip: null,
@@ -1707,6 +1708,36 @@ describe('Recovery package choice', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Resume and request hold' }));
     expect(state.submitPrompt).toHaveBeenCalledExactlyOnceWith(
       'Resume workflow from the saved step', 5,
+    );
+  });
+
+  it.each([
+    ['option 2', 'TKY-001', 2, ['Recovery option 1', 'Recovery option 3', 'Recovery option 4']],
+    ['option 3', 'CTY-002', 3, ['Recovery option 1', 'Recovery option 2', 'Recovery option 4']],
+  ])('after holding %s, the plan and its review show that package', (_, id, rank, others) => {
+    const state = waiting({ workflowStatus: 'resumed', workflowPlanPackageId: id });
+    render(<RecoveryWorkspace state={state} />);
+    const plan = screen.getByRole('article', { name: 'Recommended recovery plan' });
+    expect(within(plan).getByText('Your chosen trip plan')).toBeVisible();
+    expect(within(plan).getByText(`Ranked option ${rank}`, { selector: 'em' })).toBeVisible();
+    fireEvent.click(within(plan).getByRole('button', { name: 'Review this plan' }));
+    expect(state.openTripDetails).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ product_id: id }),
+    );
+    others.forEach((label) =>
+      expect(screen.getByRole('article', { name: label })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('article', { name: `Recovery option ${rank}` })).not.toBeInTheDocument();
+  });
+
+  it('keeps the top-ranked package as the plan until something else is chosen or held', () => {
+    const state = waiting({ workflowStatus: 'resumed', workflowPlanPackageId: null });
+    render(<RecoveryWorkspace state={state} />);
+    const plan = screen.getByRole('article', { name: 'Recommended recovery plan' });
+    expect(within(plan).getByText('Recommended trip plan')).toBeVisible();
+    fireEvent.click(within(plan).getByRole('button', { name: 'Review this plan' }));
+    expect(state.openTripDetails).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ product_id: 'TKY-003' }),
     );
   });
 

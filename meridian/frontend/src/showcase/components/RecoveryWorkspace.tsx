@@ -148,7 +148,8 @@ function useRecoveryDeskFocus(isLoading: boolean, prefersReducedMotion: boolean)
 function recoveryDeskState(sourceState: MeridianShowcaseState): MeridianShowcaseState {
   return sourceState.selectedPhase === 5 ? sourceState : {
     ...sourceState, messages: [], recommendations: [], traceSpans: [],
-    workflowStatus: null, workflowResumedAfterRestart: false, lastPrompt: null,
+    workflowStatus: null, workflowResumedAfterRestart: false, workflowPlanPackageId: null,
+    lastPrompt: null,
     conversationId: null, error: null,
   };
 }
@@ -319,30 +320,44 @@ function optionBadgeFor(state: MeridianShowcaseState) {
   const lowestPrice = pricedRecommendations.length
     ? Math.min(...pricedRecommendations.map((product) => product.price))
     : null;
-  return (product: Product | null, index: number) => {
-    if (!product) return `Option ${index + 2}`;
+  return (product: Product | null, rank: number) => {
+    if (!product) return `Option ${rank}`;
     if (lowestPrice !== null && product.price === lowestPrice) {
       return 'Lowest package price';
     }
     if ((product.available_sizes?.length ?? 0) > 1) {
       return 'Flexible duration';
     }
-    return `Ranked option ${index + 2}`;
+    return `Ranked option ${rank}`;
   };
 }
 
-// The workflow offers the top-ranked package and the next two; it checks availability for
-// the same three and accepts a choice only among them.
-const CHOOSABLE_ALTERNATIVES = 2;
+// The workflow offers the three top-ranked packages; it checks availability for the same
+// three and accepts a choice only among them.
+const REVIEW_SHORTLIST = 3;
+const ALTERNATIVE_SLOTS = 3;
 
-function RecoveryAlternatives({ state, evidence, onChoose }: {
+/** The package the recovery holds or will hold, and its place in the ranking. */
+function recoveryPlan(state: MeridianShowcaseState): { plan: Product | null; rank: number } {
+  const ranked = state.recommendations ?? [];
+  const plan = ranked.find((product) => product.product_id === state.workflowPlanPackageId)
+    ?? ranked[0] ?? null;
+  return { plan, rank: plan ? ranked.indexOf(plan) + 1 : 1 };
+}
+
+function RecoveryAlternatives({ state, evidence, plan, onChoose }: {
   state: MeridianShowcaseState;
   evidence: RecoveryEvidence;
+  plan: Product | null;
   onChoose?: (product: Product) => void;
 }) {
-  const alternativeProducts = Array.from({ length: 3 }, (_, index) =>
-    state.recommendations?.[index + 1] ?? null,
+  const ranked = state.recommendations ?? [];
+  const others = ranked.filter((product) => product !== plan);
+  const alternativeProducts = Array.from(
+    { length: ALTERNATIVE_SLOTS }, (_, index) => others[index] ?? null,
   );
+  const rankOf = (product: Product | null, index: number) =>
+    product ? ranked.indexOf(product) + 1 : index + 2;
   const optionBadge = optionBadgeFor(state);
   return (
     <div className="mds-recovery-alternatives">
@@ -362,10 +377,10 @@ function RecoveryAlternatives({ state, evidence, onChoose }: {
           <PackageOptionCard
             key={product?.product_id ?? `pending-${index}`}
             product={product}
-            rank={index + 2}
-            badge={optionBadge(product, index)}
+            rank={rankOf(product, index)}
+            badge={optionBadge(product, rankOf(product, index))}
             availabilityObserved={
-              evidence.availabilityObserved && index < 2
+              evidence.availabilityObserved && rankOf(product, index) <= REVIEW_SHORTLIST
             }
             disabled={state.isLoading}
             onView={() => {
@@ -375,7 +390,7 @@ function RecoveryAlternatives({ state, evidence, onChoose }: {
               if (product) state.compareTrip(product);
             }}
             onChoose={
-              onChoose && product && index < CHOOSABLE_ALTERNATIVES
+              onChoose && product && rankOf(product, index) <= REVIEW_SHORTLIST
                 ? () => onChoose(product)
                 : undefined
             }
@@ -398,7 +413,8 @@ function RecoveryDecisionDashboard({
   onOpenProof: () => void;
 }) {
   const prefersReducedMotion = usePrefersReducedMotion();
-  const topRecoveryOption = state.recommendations?.[0] ?? null;
+  // The plan is what the recovery holds or will hold; the cards keep the ranking.
+  const { plan: planOption, rank: planRank } = recoveryPlan(state);
   const hasConversation =
     state.messages.length > 0 || state.isLoading || Boolean(state.error);
   const resumeRecovery = (chosen?: Product) => {
@@ -427,7 +443,7 @@ function RecoveryDecisionDashboard({
     if (stage === 'checkpointed') {
       resumeRecovery();
     } else if (stage === 'ready') {
-      if (topRecoveryOption) state.openTripDetails(topRecoveryOption);
+      if (planOption) state.openTripDetails(planOption);
     } else {
       onStart();
     }
@@ -450,7 +466,8 @@ function RecoveryDecisionDashboard({
     >
       <div className="mds-recovery-decision-primary">
         <RecommendedRecoveryPlanCard
-          product={topRecoveryOption}
+          product={planOption}
+          planRank={planRank}
           stage={stage}
           evidence={evidence}
           memoryFacts={state.memoryFacts}
@@ -461,7 +478,7 @@ function RecoveryDecisionDashboard({
             disabled: state.isLoading,
           }}
           secondaryAction={{
-            label: topRecoveryOption ? 'Why this option?' : 'How recovery works',
+            label: planOption ? 'Why this option?' : 'How recovery works',
             onClick: reviewRecoveryPlan,
             disabled: !hasConversation,
           }}
@@ -470,6 +487,7 @@ function RecoveryDecisionDashboard({
         <RecoveryAlternatives
           state={state}
           evidence={evidence}
+          plan={planOption}
           onChoose={waitingForReview ? resumeRecovery : undefined}
         />
       </div>
@@ -478,7 +496,7 @@ function RecoveryDecisionDashboard({
         <ConciergeAssistanceCard
           stage={stage}
           evidence={evidence}
-          product={topRecoveryOption}
+          product={planOption}
           disabled={state.isLoading}
           onHotel={() => runWorkflowPrompt(STAY_PROMPT)}
           onProtection={() => runWorkflowPrompt(PROTECTION_PROMPT)}
