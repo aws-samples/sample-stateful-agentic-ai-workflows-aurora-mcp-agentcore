@@ -9,7 +9,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.agents.phase_05_workflow.nodes import WorkflowNodes
+from backend.agents.phase_05_workflow.nodes import (
+    COMMITTED_HOLD_SQL,
+    JOURNEY_LOCK_SQL,
+    WorkflowNodes,
+)
 from backend.db.journey_document import _hold, _pending_decision, _recommendations, _selected_plan
 
 
@@ -69,6 +73,7 @@ def test_recommendation_evidence_cites_its_actual_checkpoint_channel(channel):
 def test_hold_reports_the_gateway_receipt_even_when_it_is_old(monkeypatch, replayed):
     """The node asks the gateway for the hold and reports the receipt it returns."""
     gateway_calls = []
+    reads = []
     receipt = {
         "status": "held",
         "createdAt": "2026-09-06 12:00:00+00",
@@ -83,6 +88,9 @@ def test_hold_reports_the_gateway_receipt_even_when_it_is_old(monkeypatch, repla
 
     async def execute(sql, params, **kwargs):
         assert "create_courtesy_hold" not in sql, "the node must not write the hold itself"
+        if sql in (JOURNEY_LOCK_SQL, COMMITTED_HOLD_SQL):
+            reads.append(params)
+            return []
         assert "journey_executions" in sql and params == ("exe-test",)
         return [{"execution_id": "exe-test"}]
 
@@ -112,6 +120,9 @@ def test_hold_reports_the_gateway_receipt_even_when_it_is_old(monkeypatch, repla
         "packages": [{"product_id": "PKG-1", "price": 100, "available_sizes": ["2 nights"]}],
         "hold_intent": {"package_id": "PKG-1", "duration": "2 nights", "quantity": 2, "unit_price": 100, "hold_request_id": "request-test", "booking_id": "HLD-TEST", "fingerprint": "test"},
     }, {"configurable": {"execution_id": "exe-test", "traveler_confirmed": True}}))
+    assert reads == [("thread-test",), ("journey-test", "request-test")], (
+        "the step looks for a committed hold under the journey lock before the call"
+    )
     name, arguments = gateway_calls[0]
     assert name == "MeridianHolds___create_courtesy_hold"
     assert arguments["holdRequestId"] == "request-test"
@@ -147,7 +158,10 @@ def test_a_policy_denial_leaves_the_plan_unheld(monkeypatch):
             "type": "text", "text": "Tool Execution Denied: [No policy applies (denied by default).]",
         }]}}
 
-    monkeypatch.setattr("backend.db.rds_data_client.get_rds_data_client", lambda: SimpleNamespace(scoped_session=scoped_session))
+    async def execute(sql, params, **kwargs):
+        return []
+
+    monkeypatch.setattr("backend.db.rds_data_client.get_rds_data_client", lambda: SimpleNamespace(scoped_session=scoped_session, execute=execute))
     monkeypatch.setattr("backend.agentcore.identity.get_agentcore_identity", lambda: SimpleNamespace(authorization_context=lambda: {}))
     monkeypatch.setattr("backend.memory.store.get_memory_store", lambda: SimpleNamespace(recall_preferences=recall_preferences))
     monkeypatch.setattr("backend.agentcore.gateway.get_agentcore_gateway", lambda: SimpleNamespace(call_tool=call_tool))
