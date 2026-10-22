@@ -11,6 +11,7 @@ import boto3
 import pytest
 
 from backend.agentcore.identity import get_agentcore_identity
+from backend.agents.budget import budget_ceiling_per_traveler_cents
 from backend.db.rds_data_client import RDSDataClient, get_rds_data_client
 
 pytestmark = pytest.mark.database
@@ -49,15 +50,31 @@ def holds(monkeypatch):
     return module
 
 
-async def _package_with_room() -> tuple[str, str, int]:
+async def _saved_cap_cents(traveler: str) -> int:
+    """The traveler's saved per-person cap, read the way the backend derives it."""
+    facts = await get_rds_data_client().execute(
+        "SELECT preference_key AS key, preference_value AS value FROM traveler_preferences "
+        "WHERE traveler_id = %s ORDER BY confidence DESC, last_seen_at DESC LIMIT 50", (traveler,))
+    cap = budget_ceiling_per_traveler_cents(facts)
+    if cap is None:
+        pytest.skip(f"{traveler} has no saved budget fact")
+    return cap
+
+
+async def _package_with_room(*, within_cents=None, above_cents=None) -> tuple[str, str, int]:
     rows = await get_rds_data_client().execute(
-        "SELECT package_id, ROUND(price_per_person * 100)::BIGINT AS cents, availability "
-        "FROM trip_packages ORDER BY package_id")
+        "SELECT package_id, ROUND(price_per_person * 100)::BIGINT AS cents, "
+        "package_places_left(package_id) AS availability FROM trip_packages ORDER BY package_id")
     for row in rows:
+        cents = int(row["cents"])
+        if (within_cents is not None and cents > within_cents) or (
+            above_cents is not None and cents <= above_cents
+        ):
+            continue
         for duration, seats in (row["availability"] or {}).items():
             if int(seats) >= 2:
-                return row["package_id"], duration, int(row["cents"])
-    pytest.skip("no package in the catalog has two places on any duration")
+                return row["package_id"], duration, cents
+    pytest.skip("no catalog package with two places left fits the price bound")
 
 
 def _hold_args(package_id, duration, cents, traveler, journey_ref):
@@ -83,7 +100,9 @@ async def _remove(booking_id, journey_ref):
 
 
 async def test_the_holds_lambda_places_and_confirms_a_hold_as_the_least_privilege_login(holds):
-    package_id, duration, cents = await _package_with_room()
+    package_id, duration, cents = await _package_with_room(
+        within_cents=await _saved_cap_cents(JORDAN)
+    )
     details = holds.get_package_details({"packageId": package_id})
     assert details["package"]["package_id"] == package_id
     journey_ref = f"gwlogin-{uuid.uuid4().hex[:10]}"
@@ -102,6 +121,26 @@ async def test_the_holds_lambda_places_and_confirms_a_hold_as_the_least_privileg
         assert Decimal(confirmed["booking"]["totalAmount"]) == Decimal(cents) / 100
     finally:
         await _remove(booking_id, journey_ref)
+
+
+async def test_a_hold_above_the_saved_budget_is_refused_whatever_ceiling_the_caller_sends(holds):
+    """The direct-caller case: truthful price and total, an inflated budgetCeilingCents."""
+    package_id, duration, cents = await _package_with_room(
+        above_cents=await _saved_cap_cents(JORDAN)
+    )
+    journey_ref = f"gwlogin-{uuid.uuid4().hex[:10]}"
+    args = {**_hold_args(package_id, duration, cents, JORDAN, journey_ref),
+            "budgetCeilingCents": cents * 100}
+    result = {}
+    try:
+        result = holds.create_courtesy_hold(args)
+        assert result == {"error": "budget_ceiling_exceeded"}
+        held = await get_rds_data_client().execute(
+            "SELECT COUNT(*) AS n FROM hold_requests hr JOIN journey_threads jt "
+            "ON jt.journey_id = hr.journey_id WHERE jt.thread_id = %s", (journey_ref,))
+        assert held == [{"n": 0}]
+    finally:
+        await _remove((result.get("hold") or {}).get("bookingId", ""), journey_ref)
 
 
 async def test_a_traveler_the_role_is_not_bound_to_is_refused_and_recorded(holds):

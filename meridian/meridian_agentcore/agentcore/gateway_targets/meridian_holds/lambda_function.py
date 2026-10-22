@@ -9,12 +9,21 @@ create_courtesy_hold from migration 008, so a retried tool call replays the
 same booking instead of taking a second one. Confirmation is confirm_booking
 from migration 010: it books catalog inventory in this database, takes no
 payment, and a retry reports the original confirmation.
+
+Cedar compares the total with the ``budgetCeilingCents`` the caller sent, which a
+caller holding a valid token can set to anything. So a new hold or a confirmation is
+also checked here against the ceiling derived from the traveler's saved preferences,
+read under the traveler's own row-level security scope. A retry of a request that
+already committed is reconciled first and replays without new price or budget checks,
+because it reserves nothing new.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -44,7 +53,26 @@ HOLD_REQUEST_SQL = (
     "FROM hold_requests hr JOIN bookings b ON b.booking_id = hr.booking_id "
     "WHERE hr.journey_id = :journey AND hr.hold_request_id = :request_id"
 )
+REQUEST_FINGERPRINT_SQL = (
+    "SELECT fingerprint FROM hold_requests "
+    "WHERE journey_id = :journey AND hold_request_id = :request_id"
+)
+PREFERENCES_SQL = (
+    "SELECT preference_key, preference_value FROM traveler_preferences "
+    "WHERE traveler_id = :traveler ORDER BY confidence DESC, last_seen_at DESC LIMIT 50"
+)
+BOOKED_PARTY_SQL = (
+    "SELECT bl.travelers_count, b.status FROM booking_lines bl "
+    "JOIN bookings b ON b.booking_id = bl.booking_id "
+    "WHERE bl.booking_id = :b AND b.traveler_id = :t"
+)
 MAX_REQUEST_CHAIN = 50
+# The ceiling derivation in backend/agents/budget.py, repeated here because this
+# function deploys alone. tests/test_holds_lambda.py keeps the two in step.
+BUDGET_KEYS = ("budget_cap", "budget", "budget_ceiling", "budget_range", "per_person_range")
+AMOUNT = re.compile(r"\$?\s*(\d+(?:\.\d+)?)\s*(k)?", re.I)
+DEFAULT_BUDGET_ENV = "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS"
+DEFAULT_BUDGET_CENTS = 400000
 BINDING_SQL = (
     "SELECT binding_id FROM traveler_identity_bindings WHERE identity_provider = :provider "
     "AND subject_id = :subject AND traveler_id = :traveler AND status = 'active' "
@@ -89,6 +117,7 @@ BUSINESS_ERRORS = (
     "hold_expired",
     "hold_price_mismatch",
     "hold_total_mismatch",
+    "budget_ceiling_exceeded",
 )
 
 
@@ -278,21 +307,69 @@ def _hold_terms(args: dict) -> dict:
     }
 
 
-def _verify_catalog_terms(args: dict, tx: str) -> None:
+def _catalog_unit_price_cents(args: dict, tx: str) -> int | None:
+    """The catalog price, read before the step-down to meridian_app, which has no catalog grant."""
+    rows = query(PRICE_SQL, {"package_id": str(args["packageId"]).strip()}, tx)
+    return int(rows[0]["unit_price_cents"]) if rows else None
+
+
+def _verify_catalog_terms(args: dict, catalog_cents: int | None) -> None:
     """Refuse a hold whose price is not the catalog price or whose total is not price x travelers.
 
     Cedar bounds ``totalCents`` by the budget ceiling but cannot know the catalog, so a direct
-    gateway caller could otherwise book at any price. The catalog is read before the step-down
-    to meridian_app, which holds no grant on trip_packages.
+    gateway caller could otherwise book at any price.
     """
-    rows = query(PRICE_SQL, {"package_id": str(args["packageId"]).strip()}, tx)
-    if not rows:
+    if catalog_cents is None:
         raise RuntimeError("invalid_package_inventory")
     unit_price_cents = int(args["unitPriceCents"])
-    if unit_price_cents != int(rows[0]["unit_price_cents"]):
+    if unit_price_cents != catalog_cents:
         raise RuntimeError("hold_price_mismatch")
     if int(args["totalCents"]) != unit_price_cents * int(args["travelers"]):
         raise RuntimeError("hold_total_mismatch")
+
+
+def _dollars(text: str) -> list[float]:
+    values = []
+    for number, thousands in AMOUNT.findall(text.replace(",", "")):
+        value = float(number) * (1000 if thousands else 1)
+        if value >= 100:
+            values.append(value)
+    return values
+
+
+def saved_ceiling_cents(facts: list[dict], travelers: int) -> int:
+    """The whole-party ceiling the traveler's saved budget allows, in cents.
+
+    Args:
+        facts: Preference facts as ``{"key": ..., "value": ...}``, highest confidence first.
+        travelers: Party size; the saved budget is per person.
+
+    Returns:
+        The largest dollar figure in the first budget fact present, times the party. Without
+        a budget fact, ``MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS`` for the whole trip.
+    """
+    by_key = {str(fact.get("key", "")).lower(): str(fact.get("value", "")) for fact in facts}
+    for key in BUDGET_KEYS:
+        amounts = _dollars(by_key.get(key, ""))
+        if amounts:
+            return int(round(max(amounts) * 100)) * max(1, int(travelers))
+    return int(os.getenv(DEFAULT_BUDGET_ENV, str(DEFAULT_BUDGET_CENTS)))
+
+
+def _within_saved_budget(traveler_id: str, total_cents: int, travelers: int, tx: str) -> None:
+    """Refuse a total above the traveler's saved budget, whatever ceiling the caller sent."""
+    rows = query(PREFERENCES_SQL, {"traveler": traveler_id}, tx)
+    facts = [{"key": row["preference_key"], "value": row["preference_value"]} for row in rows]
+    if total_cents > saved_ceiling_cents(facts, travelers):
+        raise RuntimeError("budget_ceiling_exceeded")
+
+
+def _is_replay(journey_id: str, hold: dict, tx: str) -> bool:
+    """This journey already committed a request with this id and these exact terms."""
+    rows = query(
+        REQUEST_FINGERPRINT_SQL, {"journey": journey_id, "request_id": hold["request_id"]}, tx
+    )
+    return bool(rows) and rows[0]["fingerprint"] == hold["fingerprint"]
 
 
 def _claim_execution(execution_id: str, tx: str) -> None:
@@ -369,6 +446,28 @@ def _hold_row(args: dict, hold: dict, journey_id: str, expires_at: datetime, tx:
     return rows[0]
 
 
+def _held_row(args: dict, hold: dict, expires_at: datetime, tx: str) -> tuple[str, dict, dict]:
+    """Inside the authorized transaction: reconcile a committed request, or check and hold.
+
+    Returns the journey id, the hold row and the persisted receipt.
+    """
+    traveler_id = str(args["travelerId"])
+    catalog_cents = _catalog_unit_price_cents(args, tx)
+    _scope(traveler_id, tx)
+    journey_ref = str(args["journeyRef"])
+    query("SELECT set_config('app.thread_id', :t, true)", {"t": journey_ref}, tx)
+    if args.get("executionId"):
+        _claim_execution(str(args["executionId"]), tx)
+    journey_id = _journey(traveler_id, journey_ref, tx)
+    if not args.get("holdRequestId"):
+        hold["request_id"] = _live_request_id(hold["request_id"], journey_id, tx)
+    if not _is_replay(journey_id, hold, tx):
+        _verify_catalog_terms(args, catalog_cents)
+        _within_saved_budget(traveler_id, int(args["totalCents"]), int(args["travelers"]), tx)
+    row = _hold_row(args, hold, journey_id, expires_at, tx)
+    return journey_id, row, _receipt(str(row["booking_id"]), traveler_id, tx)
+
+
 def create_courtesy_hold(args: dict) -> dict:
     traveler_id = str(args["travelerId"])
     hold = _hold_terms(args)
@@ -382,17 +481,7 @@ def create_courtesy_hold(args: dict) -> dict:
             _transaction("rollback", tx)
             _record_denied_audit(governance, traveler_id)
             return {"error": "traveler_not_authorized", "governance": governance}
-        _verify_catalog_terms(args, tx)
-        _scope(traveler_id, tx)
-        journey_ref = str(args["journeyRef"])
-        query("SELECT set_config('app.thread_id', :t, true)", {"t": journey_ref}, tx)
-        if args.get("executionId"):
-            _claim_execution(str(args["executionId"]), tx)
-        journey_id = _journey(traveler_id, journey_ref, tx)
-        if not args.get("holdRequestId"):
-            hold["request_id"] = _live_request_id(hold["request_id"], journey_id, tx)
-        row = _hold_row(args, hold, journey_id, expires_at, tx)
-        receipt = _receipt(str(row["booking_id"]), traveler_id, tx)
+        journey_id, row, receipt = _held_row(args, hold, expires_at, tx)
         _transaction("commit", tx)
     except Exception as error:  # noqa: BLE001 - the SQL function raises named business errors
         _transaction("rollback", tx)
@@ -433,6 +522,22 @@ def _booking_receipt(booking_id: str, traveler_id: str, tx: str) -> dict:
     return rows[0]
 
 
+def _confirmation_within_saved_budget(
+    args: dict, traveler_id: str, booking_id: str, tx: str
+) -> None:
+    """Check a first confirmation against the saved budget for the party the hold booked.
+
+    An already confirmed booking replays unchecked: confirming again commits nothing new.
+    """
+    rows = query(BOOKED_PARTY_SQL, {"b": booking_id, "t": traveler_id}, tx)
+    if not rows:
+        raise RuntimeError("booking_not_found")
+    if rows[0]["status"] != "confirmed":
+        _within_saved_budget(
+            traveler_id, int(args["totalCents"]), int(rows[0]["travelers_count"]), tx
+        )
+
+
 def confirm_booking(args: dict) -> dict:
     """Confirm the held booking the traveler approved. Cedar decided on the arguments already."""
     traveler_id = str(args["travelerId"])
@@ -451,6 +556,7 @@ def confirm_booking(args: dict) -> dict:
         query(
             "SELECT set_config('app.thread_id', :t, true)", {"t": str(args["journeyRef"])}, tx
         )
+        _confirmation_within_saved_budget(args, traveler_id, booking_id, tx)
         row = query(
             CONFIRM_SQL, {"booking_id": booking_id, "traveler": traveler_id, "total": total}, tx
         )[0]

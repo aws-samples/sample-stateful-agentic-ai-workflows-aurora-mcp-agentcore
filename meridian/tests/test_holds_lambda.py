@@ -123,6 +123,12 @@ def test_hold_refuses_when_the_workload_has_no_grant(config, monkeypatch):
 
 
 CATALOG_PRICE = {"FROM trip_packages": [{"unit_price_cents": 250000}]}
+# Jordan-like saved facts: a $3,500 per-person cap allows $7,000 for the party of two.
+SAVED_BUDGET = {"FROM traveler_preferences": [
+    {"preference_key": "budget_cap", "preference_value": "Max $3,500 per person"},
+]}
+# The held booking a confirmation checks the saved budget against.
+BOOKED_PARTY = {"FROM booking_lines bl": [{"travelers_count": 2, "status": "held"}]}
 
 RECEIPT = [{
     "status": "held",
@@ -135,6 +141,7 @@ RECEIPT = [{
 def test_hold_sets_scope_steps_down_and_returns_the_row(config, monkeypatch):
     api = FakeDataApi({
         **CATALOG_PRICE,
+        **SAVED_BUDGET,
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
         "FROM journey_threads": [{"journey_id": "jrn_1"}],
         "FROM create_courtesy_hold": [{
@@ -173,6 +180,7 @@ def test_hold_sets_scope_steps_down_and_returns_the_row(config, monkeypatch):
 def test_a_workflow_caller_replays_its_checkpointed_identity_under_its_lease(config, monkeypatch):
     api = FakeDataApi({
         **CATALOG_PRICE,
+        **SAVED_BUDGET,
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
         "FROM journey_threads": [{"journey_id": "jrn_1"}],
         "FROM journey_executions": [{"execution_id": "exe_1"}],
@@ -200,6 +208,7 @@ def test_a_workflow_caller_replays_its_checkpointed_identity_under_its_lease(con
 def test_a_lost_lease_refuses_the_hold_before_any_write(config, monkeypatch):
     api = FakeDataApi({
         **CATALOG_PRICE,
+        **SAVED_BUDGET,
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
         "FROM journey_threads": [{"journey_id": "jrn_1"}],
         "FROM journey_executions": [],
@@ -215,6 +224,7 @@ def test_a_lost_lease_refuses_the_hold_before_any_write(config, monkeypatch):
 def test_new_journey_is_created_for_an_unknown_reference(config, monkeypatch):
     api = FakeDataApi({
         **CATALOG_PRICE,
+        **SAVED_BUDGET,
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
         "FROM create_courtesy_hold": [{
             "booking_id": "HLD-2", "status": "held", "replayed": False,
@@ -238,6 +248,7 @@ def test_hold_reports_inventory_errors_by_name(config, monkeypatch):
 
     api = Failing({
         **CATALOG_PRICE,
+        **SAVED_BUDGET,
         "FROM traveler_identity_bindings": [{"binding_id": "b"}],
         "FROM journey_threads": [{"journey_id": "jrn_1"}],
     })
@@ -295,6 +306,8 @@ BOOKING_RECEIPT = [{
 def test_confirm_booking_sets_scope_steps_down_and_returns_the_confirmed_row(config, monkeypatch):
     api = FakeDataApi({
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        **BOOKED_PARTY,
+        **SAVED_BUDGET,
         "FROM confirm_booking": [{
             "booking_id": "HLD-1", "status": "confirmed", "replayed": False,
             "confirmed_at": "2026-09-10 13:00:00+00",
@@ -326,6 +339,8 @@ def test_confirm_booking_sets_scope_steps_down_and_returns_the_confirmed_row(con
 def test_confirm_booking_replays_an_already_confirmed_booking(config, monkeypatch):
     api = FakeDataApi({
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        **BOOKED_PARTY,
+        **SAVED_BUDGET,
         "FROM confirm_booking": [{
             "booking_id": "HLD-1", "status": "confirmed", "replayed": True,
             "confirmed_at": "2026-09-10 13:00:00+00",
@@ -346,7 +361,9 @@ def test_confirm_booking_reports_business_errors_by_name(config, monkeypatch):
                 raise RuntimeError("ERROR: hold_expired")
             return super().execute_statement(**kwargs)
 
-    api = Failing({"FROM traveler_identity_bindings": [{"binding_id": "b"}]})
+    api = Failing({
+        "FROM traveler_identity_bindings": [{"binding_id": "b"}], **BOOKED_PARTY, **SAVED_BUDGET,
+    })
     monkeypatch.setattr(holds, "RDS", api)
     result = holds.lambda_handler(_booking_args(), _context("MeridianHolds___confirm_booking"))
     assert result == {"error": "hold_expired"}
@@ -370,7 +387,7 @@ class RequestLedgerApi(FakeDataApi):
         self.ledger = ledger
 
     def execute_statement(self, **kwargs):
-        if "FROM hold_requests" in kwargs["sql"]:
+        if "FROM hold_requests hr" in kwargs["sql"]:
             self.statements.append(kwargs["sql"])
             params = {p["name"]: next(iter(p["value"].values())) for p in kwargs["parameters"]}
             self.parameters.append(params)
@@ -400,6 +417,7 @@ def _next_id(previous, booking_id):
 def _ledger_api(ledger):
     return RequestLedgerApi(ledger, {
         **CATALOG_PRICE,
+        **SAVED_BUDGET,
         "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
         "FROM journey_threads": [{"journey_id": "jrn_1"}],
         **HOLD_ROW,
@@ -470,7 +488,7 @@ def test_an_explicit_request_id_is_never_advanced(config, monkeypatch):
     args = {**_hold_args(), "holdRequestId": "hrq_mine", "bookingId": "HLD-1"}
     _hold(api, monkeypatch, args)
     assert _requested_id(api) == "hrq_mine"
-    assert not any("FROM hold_requests" in s for s in api.statements)
+    assert not any(s == holds.HOLD_REQUEST_SQL for s in api.statements), "no chain walk"
 
 
 def test_the_request_lookup_runs_under_the_journey_lock_and_the_traveler_scope(
@@ -551,7 +569,7 @@ def _authorized_api(**extra):
     ],
 )
 def test_hold_refuses_terms_that_do_not_match_the_catalog(config, monkeypatch, overrides, error):
-    api = _authorized_api(**CATALOG_PRICE)
+    api = _authorized_api(**CATALOG_PRICE, **SAVED_BUDGET)
     monkeypatch.setattr(holds, "RDS", api)
     args = {**_hold_args(), **overrides}
     result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
@@ -563,7 +581,7 @@ def test_hold_refuses_terms_that_do_not_match_the_catalog(config, monkeypatch, o
 def test_hold_reads_the_catalog_price_before_stepping_down_from_the_workload_role(
     config, monkeypatch
 ):
-    api = _authorized_api(**CATALOG_PRICE)
+    api = _authorized_api(**CATALOG_PRICE, **SAVED_BUDGET)
     monkeypatch.setattr(holds, "RDS", api)
     holds.lambda_handler(_hold_args(), _context("MeridianHolds___create_courtesy_hold"))
     joined = "\n".join(api.statements)
@@ -588,3 +606,190 @@ def test_a_price_mismatch_is_not_revealed_to_an_unauthorized_caller(config, monk
     result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
     assert result["error"] == "traveler_not_authorized"
     assert not any("FROM trip_packages" in s for s in api.statements)
+
+
+# -------------------------------------------------- saved budget, enforced at the target
+
+
+def _saved_cap(value):
+    return {"FROM traveler_preferences": [
+        {"preference_key": "budget_cap", "preference_value": value},
+    ]}
+
+
+@pytest.mark.parametrize("claimed_ceiling", [500000, 9_999_999_00])
+def test_a_hold_above_the_saved_budget_is_refused_whatever_ceiling_the_caller_sends(
+    config, monkeypatch, claimed_ceiling
+):
+    api = _authorized_api(**CATALOG_PRICE, **_saved_cap("Max $2,000 per person"), **HOLD_ROW)
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_hold_args(), "budgetCeilingCents": claimed_ceiling}
+    result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+    assert result == {"error": "budget_ceiling_exceeded"}
+    assert api.tx == ["begin", "rollback"]
+    assert not any("FROM create_courtesy_hold" in s for s in api.statements)
+    joined = "\n".join(api.statements)
+    assert joined.index("SET LOCAL ROLE meridian_app") < joined.index("FROM traveler_preferences")
+    assert api.parameters[api.statements.index(holds.PREFERENCES_SQL)] == {
+        "traveler": "trv_meridian_demo"
+    }
+
+
+def test_a_hold_within_the_saved_budget_for_the_party_runs(config, monkeypatch):
+    api = _authorized_api(**CATALOG_PRICE, **_saved_cap("$2.5k per person"), **HOLD_ROW)
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(_hold_args(), _context("MeridianHolds___create_courtesy_hold"))
+    assert result["hold"]["bookingId"] == "HLD-NEW"
+
+
+def test_without_a_saved_budget_the_whole_trip_default_applies(config, monkeypatch):
+    api = _authorized_api(**CATALOG_PRICE, **HOLD_ROW)
+    monkeypatch.setattr(holds, "RDS", api)
+    monkeypatch.delenv(holds.DEFAULT_BUDGET_ENV, raising=False)
+    refused = holds.lambda_handler(_hold_args(), _context("MeridianHolds___create_courtesy_hold"))
+    assert refused == {"error": "budget_ceiling_exceeded"}, "$5,000 is over the $4,000 default"
+    monkeypatch.setenv(holds.DEFAULT_BUDGET_ENV, "500000")
+    held = holds.lambda_handler(_hold_args(), _context("MeridianHolds___create_courtesy_hold"))
+    assert held["hold"]["bookingId"] == "HLD-NEW"
+
+
+def test_a_confirmation_above_the_saved_budget_for_the_booked_party_is_refused(
+    config, monkeypatch
+):
+    api = FakeDataApi({
+        "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        **BOOKED_PARTY, **_saved_cap("$2,000 per person"),
+    })
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_booking_args(), "budgetCeilingCents": 9_999_999_00}
+    result = holds.lambda_handler(args, _context("MeridianHolds___confirm_booking"))
+    assert result == {"error": "budget_ceiling_exceeded"}
+    assert not any("FROM confirm_booking" in s for s in api.statements)
+    assert api.parameters[api.statements.index(holds.BOOKED_PARTY_SQL)] == {
+        "b": "HLD-1", "t": "trv_meridian_demo"
+    }
+
+
+def test_an_already_confirmed_booking_replays_even_after_the_budget_was_lowered(
+    config, monkeypatch
+):
+    api = FakeDataApi({
+        "FROM traveler_identity_bindings": [{"binding_id": "bind_1"}],
+        "FROM booking_lines bl": [{"travelers_count": 2, "status": "confirmed"}],
+        **_saved_cap("$100 per person"),
+        "FROM confirm_booking": [{
+            "booking_id": "HLD-1", "status": "confirmed", "replayed": True,
+            "confirmed_at": "2026-09-10 13:00:00+00",
+            "hold_expires_at": "2026-09-11 00:00:00+00", "total_amount": "5000.00",
+        }],
+        "FROM bookings b": BOOKING_RECEIPT,
+    })
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(_booking_args(), _context("MeridianHolds___confirm_booking"))
+    assert result["booking"]["replayed"] is True
+    assert not any("FROM traveler_preferences" in s for s in api.statements)
+
+
+def test_confirming_a_booking_this_traveler_does_not_hold_is_refused_by_name(config, monkeypatch):
+    api = FakeDataApi({"FROM traveler_identity_bindings": [{"binding_id": "bind_1"}]})
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(_booking_args(), _context("MeridianHolds___confirm_booking"))
+    assert result == {"error": "booking_not_found"}
+    assert not any("FROM confirm_booking" in s for s in api.statements)
+
+
+FACT_SETS = [
+    [],
+    [{"key": "budget_cap", "value": "$3,200"}],
+    [{"key": "per_person_range", "value": "Prefers $2k-3.5k per person"},
+     {"key": "budget_cap", "value": "$3,200"}],
+    [{"key": "per_person_range", "value": "Prefers $2k-3.5k per person"}],
+    [{"key": "Budget", "value": "around 1.5k"}],
+    [{"key": "budget_range", "value": "$90 to $2,750.50"}],
+    [{"key": "budget_cap", "value": "no limit"}, {"key": "budget", "value": "$4,000"}],
+    [{"key": "budget_cap", "value": "$3,000"}, {"key": "budget_cap", "value": "$1,000"}],
+    [{"key": "home_airport", "value": "JFK"}],
+]
+
+
+@pytest.mark.parametrize("facts", FACT_SETS)
+@pytest.mark.parametrize("travelers", [1, 2, 5])
+def test_the_target_derives_the_ceiling_exactly_as_the_backend_does(
+    monkeypatch, facts, travelers
+):
+    from backend.agents.budget import budget_ceiling_from_facts
+
+    monkeypatch.delenv(holds.DEFAULT_BUDGET_ENV, raising=False)
+    assert holds.saved_ceiling_cents(facts, travelers) == budget_ceiling_from_facts(
+        facts, travelers
+    )
+    monkeypatch.setenv(holds.DEFAULT_BUDGET_ENV, "123400")
+    assert holds.saved_ceiling_cents(facts, travelers) == budget_ceiling_from_facts(
+        facts, travelers
+    )
+
+
+# ------------------------------------- reconcile a committed request before price checks
+
+
+def _saved_request(price_cents=250000, quantity=2):
+    terms = holds.normalize_terms("CTY-002", "7 nights", quantity, Decimal(price_cents) / 100)
+    return {"SELECT fingerprint FROM hold_requests": [{"fingerprint": holds.fingerprint(terms)}]}
+
+
+REPLAY_ROW = {
+    "FROM create_courtesy_hold": [{
+        "booking_id": "HLD-SAVED", "status": "held", "replayed": True,
+        "seats_available": None, "seats_reserved": None, "seats_remaining": None,
+    }],
+    "FROM bookings": RECEIPT,
+}
+
+
+def test_a_retry_of_a_committed_hold_replays_after_the_catalog_price_changed(
+    config, monkeypatch
+):
+    """The response to the first call was lost; the price moved before the retry."""
+    api = _authorized_api(
+        **{"FROM trip_packages": [{"unit_price_cents": 260000}]},
+        **_saved_cap("$100 per person"),
+        **_saved_request(),
+        **REPLAY_ROW,
+    )
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_hold_args(), "holdRequestId": "hrq_saved", "bookingId": "HLD-SAVED"}
+    result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+    assert result["hold"]["replayed"] is True
+    assert result["hold"]["bookingId"] == "HLD-SAVED"
+    assert result["hold"]["holdRequestId"] == "hrq_saved"
+    assert result["hold"]["expiresAt"] == RECEIPT[0]["hold_expires_at"], "the original expiry"
+    assert api.tx == ["begin", "commit"]
+    lookup = api.parameters[api.statements.index(holds.REQUEST_FINGERPRINT_SQL)]
+    assert lookup == {"journey": "jrn_1", "request_id": "hrq_saved"}
+    assert not any("FROM traveler_preferences" in s for s in api.statements)
+
+
+def test_altered_terms_under_a_saved_request_id_are_still_checked_and_refused(
+    config, monkeypatch
+):
+    api = _authorized_api(
+        **{"FROM trip_packages": [{"unit_price_cents": 260000}]},
+        **SAVED_BUDGET,
+        **_saved_request(quantity=1),
+        **REPLAY_ROW,
+    )
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_hold_args(), "holdRequestId": "hrq_saved", "bookingId": "HLD-SAVED"}
+    result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+    assert result == {"error": "hold_price_mismatch"}
+    assert not any("FROM create_courtesy_hold" in s for s in api.statements)
+
+
+def test_a_new_request_at_a_stale_price_is_still_refused(config, monkeypatch):
+    api = _authorized_api(
+        **{"FROM trip_packages": [{"unit_price_cents": 260000}]}, **SAVED_BUDGET, **HOLD_ROW
+    )
+    monkeypatch.setattr(holds, "RDS", api)
+    args = {**_hold_args(), "holdRequestId": "hrq_fresh", "bookingId": "HLD-FRESH"}
+    result = holds.lambda_handler(args, _context("MeridianHolds___create_courtesy_hold"))
+    assert result == {"error": "hold_price_mismatch"}
