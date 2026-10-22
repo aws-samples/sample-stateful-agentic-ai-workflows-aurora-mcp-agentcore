@@ -4,10 +4,15 @@ Application Python dependencies are hash-locked in `requirements.txt`, generated
 from `requirements.in`. Node projects keep their own `package-lock.json`; there
 is no Node package at `meridian/` itself.
 
-## Audit status - October 1, 2026
+## Audit status - October 22, 2026
+
+- Frontend: `npm audit --audit-level=high` reports 0 vulnerabilities after moving `vite` 7.3.6 to 7.3.7 and `vitest` 4.1.11 to 4.1.12, which moves `@vitest/mocker` and the other `@vitest/*` packages to 4.1.12. Lint, typecheck, unit tests, build and the accessibility suite pass.
+- Backend: `python -m pip_audit -r requirements.txt` reports no known vulnerabilities. Earlier today it reported 34 advisories in four packages. `certifi` moved from 2026.7.22 to 2026.10.19 and `mcp` from 1.29.0 to 1.30.0 (the 1.x line, within the `<2` pin). `strands-agents-tools` was removed from `requirements.in`: the application never imported `strands_tools`, and its `pillow<13.0.0` bound blocked the Pillow fix. `aiohttp` and the other packages only it required left the lock with it. `pillow` is now a direct requirement at 13.0.0, because `scripts/install_catalog_images.py` uses it. `examples/langgraph/requirements.txt` audits clean. Backend lint, the `-m "not database"` tests and `pip check` pass.
+
+Earlier status, October 1, 2026:
 
 - Frontend: clean after updating transitive `brace-expansion` to 1.1.21 and 5.0.12.
-- Backend: clean after updating `urllib3` to 2.8.0 and `PyJWT` to 2.15.1. Recompiled hashes and reran backend tests.
+- Backend: clean after updating `urllib3` to 2.8.0 and `PyJWT` to 2.15.1.
 - Web and AgentCore CDK projects: **open upstream finding**. `aws-cdk-lib` bundles `brace-expansion` 5.0.9, affected by recursion and expansion denial-of-service advisories. Even the inspected 2.272.0 release retains the affected bundle, so the established CDK version is retained. This dependency runs in infrastructure tooling, not the shipped browser or backend image. No hand-edited vendored patch is applied. In the `agentcore-cdk` and `web-infra` CI jobs, `.github/scripts/npm-audit-high.mjs` replaces `npm audit --audit-level=high` and allows exactly one exception: these three advisories on `node_modules/aws-cdk-lib/node_modules/brace-expansion`. It fails on any other high or critical finding, and it fails when the advisories no longer appear, which is the signal to delete the exception. The frontend job keeps a plain `npm audit --audit-level=high`.
 
 Track [GHSA-qhr7-859c-m2p7](https://github.com/advisories/GHSA-qhr7-859c-m2p7),

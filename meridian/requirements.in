@@ -1,6 +1,5 @@
 # Application and agent runtime
 strands-agents==1.57.2  # the release both AgentCore runtimes pin
-strands-agents-tools>=0.2.19
 boto3>=1.43.51
 botocore>=1.43.51
 mcp>=1.26.0,<2
@@ -17,6 +16,7 @@ pyjwt[crypto]>=2.15.1  # Cognito access token verification (backend/cognito_auth
 
 # Data and configuration
 numpy>=2.4.3
+pillow>=13.0.0  # catalog image preparation (scripts/install_catalog_images.py)
 python-dotenv>=1.2.2
 pydantic>=2.13.4
 pydantic-settings>=2.13.1
