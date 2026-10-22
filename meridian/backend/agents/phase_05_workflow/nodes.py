@@ -15,6 +15,8 @@ from backend.agents.budget import budget_ceiling_from_facts
 from backend.agents.phase_05_workflow.governed_hold import (
     HOLD_TOOL,
     LEASE_LOST_ERRORS,
+    REFUSED_BY_IDENTITY,
+    REFUSED_BY_POLICY,
     GovernedHold,
     HoldOutcomeUnknown,
     hold_arguments,
@@ -433,9 +435,11 @@ class WorkflowNodes:
         outcome = await self._place_hold(arguments)
 
         if not outcome.placed:
-            reason, denied = self._refusal_reason(outcome)
+            reason = self._refusal_reason(outcome)
             logger.warning("courtesy hold not placed: %s", outcome.raw_error or reason)
-            activities.append(self._hold_not_placed(reason, denied=denied, raw=outcome.raw_error))
+            activities.append(
+                self._hold_not_placed(reason, refused_by=outcome.refused_by, raw=outcome.raw_error)
+            )
             activities.append(self._snapshot_activity("hold"))
             return {"activities": activities}
 
@@ -557,16 +561,15 @@ class WorkflowNodes:
         )
 
     @staticmethod
-    def _refusal_reason(outcome: GovernedHold) -> tuple[str, bool]:
-        """Why the Gateway refused the hold, and whether Cedar policy denied it."""
-        denied = outcome.policy_decision == "deny"
-        if denied:
-            reason = "Cedar policy refused the hold"
-        elif outcome.error == "insufficient_inventory":
-            reason = "inventory changed"
-        else:
-            reason = outcome.error or "the gateway returned no hold"
-        return reason, denied
+    def _refusal_reason(outcome: GovernedHold) -> str:
+        """Why the Gateway returned no hold, attributed to what actually refused it."""
+        if outcome.refused_by == REFUSED_BY_POLICY:
+            return "Cedar policy refused the hold"
+        if outcome.refused_by == REFUSED_BY_IDENTITY:
+            return "the Gateway's identity check refused the call, so nothing reached the target"
+        if outcome.error == "insufficient_inventory":
+            return "inventory changed"
+        return outcome.error or "the gateway returned no hold"
 
     @staticmethod
     def _hold_terms(state: Dict[str, Any], target: Dict[str, Any]) -> Dict[str, Any]:
@@ -622,7 +625,7 @@ class WorkflowNodes:
             # replacement worker owns the hold; checkpointing past it here
             # would make that worker skip the hold.
             raise ExecutionLeaseLostError(f"Hold refused: {outcome.error}")
-        if not outcome.placed and (
+        if not outcome.placed and outcome.refused_by is None and (
             outcome.policy_decision is None
             or (outcome.policy_decision == "allow" and not outcome.error)
         ):
@@ -677,23 +680,35 @@ class WorkflowNodes:
         return str(journey_id), budget_ceiling_from_facts(facts, quantity)
 
     @staticmethod
-    def _hold_not_placed(reason: str, *, denied: bool, raw: Optional[str]) -> Dict[str, Any]:
+    def _hold_not_placed(
+        reason: str, *, refused_by: Optional[str], raw: Optional[str]
+    ) -> Dict[str, Any]:
+        refused = refused_by is not None
+        component = {
+            REFUSED_BY_POLICY: "Bedrock AgentCore Policy",
+            REFUSED_BY_IDENTITY: "AgentCore Gateway request interceptor",
+        }.get(refused_by or "", "Bedrock AgentCore Gateway")
+        fields = [
+            {"label": "gateway_tool", "value": HOLD_TOOL, "mono": True},
+            {"label": "gateway_error", "value": raw or "", "mono": True},
+        ]
+        if refused_by == REFUSED_BY_POLICY:
+            fields += [
+                {"label": "cedar_decision", "value": "deny"},
+                {"label": "cedar_policy", "value": "meridian_hold_governance", "mono": True},
+                {"label": "policy_mode", "value": "ENFORCE"},
+            ]
+        elif refused_by == REFUSED_BY_IDENTITY:
+            fields.append({"label": "refused_by", "value": REFUSED_BY_IDENTITY})
         return activity(
-            "security" if denied else "error",
+            "security" if refused else "error",
             "Workflow node: hold not placed",
             details=f"No package inventory was held ({reason}). The plan continues unheld.",
             telemetry={
-                "category": "security" if denied else "tool",
-                "component": "Bedrock AgentCore Policy" if denied else "Bedrock AgentCore Gateway",
-                "status": "denied" if denied else "error",
-                "fields": [
-                    {"label": "gateway_tool", "value": HOLD_TOOL, "mono": True},
-                    {"label": "gateway_error", "value": raw or "", "mono": True},
-                ] + ([
-                    {"label": "cedar_decision", "value": "deny"},
-                    {"label": "cedar_policy", "value": "meridian_hold_governance", "mono": True},
-                    {"label": "policy_mode", "value": "ENFORCE"},
-                ] if denied else []),
+                "category": "security" if refused else "tool",
+                "component": component,
+                "status": "denied" if refused else "error",
+                "fields": fields,
             },
         )
 

@@ -199,6 +199,21 @@ async def test_hold_cedar_denial_is_a_refusal_span_not_an_exception(nodes):
     assert span["telemetry"]["status"] == "denied"
 
 
+async def test_an_identity_refusal_is_reported_as_the_identity_check_not_cedar(nodes):
+    nodes._gateway_call = lambda *_: _envelope(
+        text="Identity Check Failed: the request carries no bearer token.", is_error=True
+    )
+    out = await nodes.hold(_hold_state(), HOLD_CONFIG)
+    assert "hold_id" not in out
+    span = _refusal_span(out)
+    fields = _fields(span)
+    assert "cedar_decision" not in fields and "cedar_policy" not in fields
+    assert fields["refused_by"] == "identity_check"
+    assert span["telemetry"]["component"] == "AgentCore Gateway request interceptor"
+    assert "Cedar" not in span["details"]
+    assert "identity check" in span["details"]
+
+
 async def test_hold_named_business_error_is_a_refusal_span(nodes):
     nodes._gateway_call = lambda *_: _envelope({"error": "insufficient_inventory"})
     out = await nodes.hold(_hold_state(), HOLD_CONFIG)

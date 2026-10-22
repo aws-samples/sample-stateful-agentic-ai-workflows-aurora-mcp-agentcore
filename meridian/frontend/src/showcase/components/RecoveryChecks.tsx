@@ -35,6 +35,7 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
   const decision = field(policySpan, 'cedar_decision');
   const allowed = decision === 'allow' && policySpan?.status === 'ok';
   const denied = decision === 'deny' && policySpan?.status === 'denied';
+  const identityRefused = field(policySpan, 'refused_by') === 'identity_check';
   const paused = current && state.workflowStatus === 'paused';
   const policyWaiting = paused && !policySpan;
   const receiptWaiting = paused && !hold;
@@ -63,18 +64,24 @@ export function RecoveryChecks({ state, journeyDocument, onOpenProof }: {
     {
       id: 'policy', title: 'Check the hold',
       status: allowed ? 'Cedar allowed' : denied ? 'Cedar denied'
-        : policyWaiting ? RUNS_AFTER_RESUME : 'Decision unavailable',
-      tone: allowed ? 'observed' : denied ? 'denied' : 'pending',
+        : identityRefused ? 'Identity check refused'
+          : policyWaiting ? RUNS_AFTER_RESUME : 'Decision unavailable',
+      tone: allowed ? 'observed' : denied || identityRefused ? 'denied' : 'pending',
       description: allowed
         ? 'The gateway permitted this hold call. Inspect the booking record separately to verify the write.'
         : denied ? 'The gateway refused this hold call before the target ran. Review the reason before changing the request.'
+          : identityRefused
+            ? 'The Gateway could not confirm who is signed in, so it refused this hold call before '
+              + 'Cedar or the hold target ran. Sign in again, then resume.'
           : policyWaiting
             ? 'The workflow is paused at its saved step, so no hold has been requested. '
               + 'This check runs after you resume.'
             : 'Cedar checks confirmation, party size, hold duration and saved budget. No decision is reported for the latest hold attempt.',
       facts: policySpan ? [
-        ['Policy', field(policySpan, 'cedar_policy') || 'Not returned'],
-        ['Mode', field(policySpan, 'policy_mode') || 'Not returned'],
+        ...(identityRefused ? [['Refused by', 'Gateway identity check'] as [string, string]] : [
+          ['Policy', field(policySpan, 'cedar_policy') || 'Not returned'],
+          ['Mode', field(policySpan, 'policy_mode') || 'Not returned'],
+        ] as [string, string][]),
         ['Source', 'Current recovery gateway trace'],
         ...(field(policySpan, 'gateway_error') ? [['Returned reason', field(policySpan, 'gateway_error')!] as [string, string]] : []),
       ] : [],

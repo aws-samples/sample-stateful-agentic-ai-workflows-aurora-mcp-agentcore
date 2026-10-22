@@ -138,7 +138,8 @@ def test_an_interceptor_refusal_is_a_refusal_not_an_unknown_outcome():
         {"type": "text", "text": "Identity Check Failed: the access token carries no single "
                                  "traveler for this system."}]}}
     outcome = place_governed_hold(lambda *_: refusal, {"packageId": "TKY-003"})
-    assert not outcome.placed and outcome.policy_decision == "deny"
+    assert not outcome.placed and outcome.refused_by == "identity_check"
+    assert outcome.policy_decision is None, "the interceptor refused; Cedar never decided"
     assert outcome.error.startswith("Identity Check Failed:")
 
 

@@ -22,6 +22,8 @@ DENIAL = re.compile(r"^(?:AuthorizeActionException\s*-\s*)?Tool Execution Denied
 # The Gateway's request interceptor answers a call whose caller has no usable traveler with a tool
 # error behind this prefix. Nothing ran, so it is a refusal, not an unknown outcome.
 IDENTITY_REFUSAL = re.compile(r"^Identity Check Failed:")
+REFUSED_BY_POLICY = "policy"
+REFUSED_BY_IDENTITY = "identity_check"
 
 
 # Lambda errors proving the calling worker no longer owns the run.
@@ -34,13 +36,20 @@ class HoldOutcomeUnknown(RuntimeError):
 
 @dataclass(frozen=True)
 class GovernedHold:
-    """The gateway's answer to one hold call."""
+    """The gateway's answer to one hold call.
+
+    Attributes:
+        refused_by: ``"policy"`` when Cedar denied the call, ``"identity_check"`` when the
+            request interceptor refused it before Cedar ran, None otherwise. Either
+            refusal means nothing reached the target.
+    """
 
     hold: Optional[Dict[str, Any]]
     governance: Dict[str, Any]
     error: Optional[str]
     policy_decision: Optional[str]
     raw_error: Optional[str]
+    refused_by: Optional[str] = None
 
     @property
     def placed(self) -> bool:
@@ -88,6 +97,14 @@ def _text(response: Dict[str, Any]) -> str:
     )
 
 
+def _refused_by(message: str) -> Optional[str]:
+    if DENIAL.match(message):
+        return REFUSED_BY_POLICY
+    if IDENTITY_REFUSAL.match(message):
+        return REFUSED_BY_IDENTITY
+    return None
+
+
 def place_governed_hold(call_tool: Callable[[str, Dict[str, Any]], Dict[str, Any]],
                         arguments: Dict[str, Any]) -> GovernedHold:
     """Call the gateway hold tool and normalise what came back.
@@ -99,7 +116,8 @@ def place_governed_hold(call_tool: Callable[[str, Dict[str, Any]], Dict[str, Any
     Returns:
         A GovernedHold. ``error`` is the Lambda's named business error, the Cedar
         denial text, or the transport error; ``policy_decision`` is ``"deny"`` when
-        the gateway refused the call and ``"allow"`` when the Lambda ran.
+        Cedar refused the call and ``"allow"`` when the Lambda ran. An identity
+        refusal carries no policy decision, because Cedar never saw the call.
     """
     response = call_tool(HOLD_TOOL, arguments)
     rpc_error = response.get("error")
@@ -115,9 +133,9 @@ def place_governed_hold(call_tool: Callable[[str, Dict[str, Any]], Dict[str, Any
         policy_envelope = bool(result.get("isError")) or (
             isinstance(rpc_error, dict) and rpc_error.get("code") == -32002
         )
-        refusal = DENIAL.match(message.strip()) or IDENTITY_REFUSAL.match(message.strip())
-        denied = bool(policy_envelope and refusal)
-        return GovernedHold(None, {}, message, "deny" if denied else None, message)
+        refused_by = _refused_by(message.strip()) if policy_envelope else None
+        decision = "deny" if refused_by == REFUSED_BY_POLICY else None
+        return GovernedHold(None, {}, message, decision, message, refused_by)
     try:
         payload = json.loads(text) if text else {}
     except ValueError:

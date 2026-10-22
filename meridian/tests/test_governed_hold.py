@@ -144,3 +144,27 @@ def test_jsonrpc_denial_requires_both_the_gateway_code_and_message(code, message
     )
     assert outcome.policy_decision == expected
     assert not outcome.placed
+
+
+def test_a_cedar_denial_is_attributed_to_the_policy():
+    outcome = place_governed_hold(
+        lambda *_: _response(text="Tool Execution Denied: [denied by default]", is_error=True), {}
+    )
+    assert (outcome.policy_decision, outcome.refused_by) == ("deny", "policy")
+
+
+def test_an_identity_refusal_is_not_a_policy_decision():
+    outcome = place_governed_hold(
+        lambda *_: _response(
+            text="Identity Check Failed: the request carries no bearer token.", is_error=True
+        ), {}
+    )
+    assert (outcome.policy_decision, outcome.refused_by) == (None, "identity_check")
+    assert not outcome.placed
+
+
+def test_an_identity_prefix_outside_the_gateway_envelope_is_not_a_refusal():
+    outcome = place_governed_hold(
+        lambda *_: _response(error={"code": -32000, "message": "Identity Check Failed: proxy"}), {}
+    )
+    assert (outcome.policy_decision, outcome.refused_by) == (None, None)

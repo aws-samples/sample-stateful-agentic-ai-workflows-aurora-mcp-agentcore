@@ -40,6 +40,22 @@ describe('RecoveryChecks evidence boundaries', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open System evidence' }));
     expect(onOpenProof).toHaveBeenCalledOnce();
   });
+  it('reports an identity-check refusal as such, never as a Cedar decision', () => {
+    const refused: ShowcaseTraceSpan = {
+      id: 'identity', name: 'Workflow node: hold not placed', type: 'security', category: 'security',
+      status: 'denied', latencyMs: null, component: 'AgentCore Gateway request interceptor', fields: [
+        { label: 'gateway_tool', value: 'MeridianHolds___create_courtesy_hold' },
+        { label: 'gateway_error', value: 'Identity Check Failed: the request carries no bearer token.' },
+        { label: 'refused_by', value: 'identity_check' },
+      ],
+    };
+    render(<RecoveryChecks state={state({ traceSpans: [refused] })} onOpenProof={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Check the hold/ }));
+    expect(screen.getByText('Identity check refused')).toBeVisible();
+    expect(screen.queryByText('Cedar denied')).not.toBeInTheDocument();
+    expect(screen.getByText(/before Cedar or the hold target ran/)).toBeVisible();
+    expect(screen.queryByText('meridian_hold_governance')).not.toBeInTheDocument();
+  });
   it('does not reuse a prior allow when the latest attempt has no decision', () => {
     render(<RecoveryChecks state={state({ traceSpans: [span('allow', 'ok'), span('', 'error')] })} onOpenProof={vi.fn()} />);
     expect(screen.getByText('Decision unavailable')).toBeVisible();

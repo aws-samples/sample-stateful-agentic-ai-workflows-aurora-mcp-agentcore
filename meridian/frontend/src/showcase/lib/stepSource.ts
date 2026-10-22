@@ -18,6 +18,9 @@ type ServiceRule = { service: string; matches: (span: ShowcaseTraceSpan) => bool
 
 const component = (span: ShowcaseTraceSpan) => span.component ?? '';
 const named = (span: ShowcaseTraceSpan) => `${span.name} ${component(span)}`;
+// The Gateway's request interceptor refused the call before Cedar ever saw it.
+const identityRefused = (span: ShowcaseTraceSpan) =>
+  span.fields.some(field => field.label === 'refused_by' && field.value === 'identity_check');
 
 const STRANDS_SUPERVISOR = /^(Supervisor (processing|completed)|RetrievalAgent invoked)/i;
 const BEDROCK_CALL = /^Bedrock|concierge polish|embedding|^Cohere rerank/i;
@@ -27,6 +30,7 @@ const AURORA_QUERY = new RegExp('^(Semantic search|Hybrid candidate|Catalog card
 // First match wins. Routing and in-memory steps fall through to the app itself.
 const SERVICE_RULES: ServiceRule[] = [
   { service: 'Meridian app', matches: span => /^Processing with/i.test(span.name) },
+  { service: 'AgentCore Gateway', matches: identityRefused },
   {
     service: 'Cedar',
     matches: span => span.status === 'denied' || /AgentCore Policy/i.test(component(span)),
@@ -67,6 +71,7 @@ const MODEL_STEP = new RegExp(`concierge polish|${RUNTIME_TURN_COMPLETE.source}`
 function stepDetail(span: ShowcaseTraceSpan, service: string, replyModel?: string): string | null {
   const decision = span.fields.find(field => field.label === 'cedar_decision')?.value;
   if (service === 'Cedar') return decision ?? 'deny';
+  if (identityRefused(span)) return 'identity check refused';
   if (service === 'AgentCore Gateway' && decision) return `Cedar ${decision}`;
   if (service === 'MCP') return span.name.match(/postgres-mcp|meridian-concierge/i)?.[0] ?? null;
   return MODEL_STEP.test(span.name) && replyModel ? replyModel : null;

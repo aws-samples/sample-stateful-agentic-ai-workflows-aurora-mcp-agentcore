@@ -95,6 +95,11 @@ describe('stepSourceLabel', () => {
       fields: [{ label: 'cedar_decision', value: 'deny' }],
     })).toBe(nb('Cedar, deny, 210 ms'));
     expect(label({
+      name: 'Workflow node: hold not placed', category: 'security', status: 'denied',
+      component: 'AgentCore Gateway request interceptor', latencyMs: 95,
+      fields: [{ label: 'refused_by', value: 'identity_check' }],
+    })).toBe(nb('AgentCore Gateway, identity check refused, 95 ms'));
+    expect(label({
       name: 'AgentCore Gateway: tools/call → semantic_trip_search', category: 'gateway',
       component: 'Bedrock AgentCore Gateway',
     })).toBe('AgentCore Gateway');
