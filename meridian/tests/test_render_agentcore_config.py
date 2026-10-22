@@ -80,7 +80,7 @@ def test_complete_render_fills_every_account_and_deployment_value() -> None:
     assert resources == [
         f"arn:aws:ssm:us-west-2:{ACCOUNT}:parameter/meridian/aurora/*",
         CLUSTER_ARN,
-        [SECRET_ARN, GATEWAY_SECRET_ARN],
+        [GATEWAY_SECRET_ARN],
     ]
     policies = spec["policyEngines"][0]["policies"]
     assert [p["name"] for p in policies] == [
@@ -202,13 +202,13 @@ def test_a_bad_gateway_secret_names_the_setting_to_fix(gateway_arn: str, message
         render_config.account_values(env)
 
 
-def test_the_holds_policy_reads_both_the_master_and_the_gateway_secret() -> None:
+def test_the_holds_policy_reads_only_the_gateway_secret() -> None:
     spec, _, _ = render_config.render(
         *templates(), {**base_values(), "GATEWAY_ID": GATEWAY_ID})
     holds = next(t for t in spec["agentCoreGateways"][0]["targets"] if t["name"] == "MeridianHolds")
     secrets = [s for s in holds["compute"]["iamPolicy"]["Statement"]
                if s["Action"] == ["secretsmanager:GetSecretValue"]]
-    assert secrets[0]["Resource"] == [SECRET_ARN, GATEWAY_SECRET_ARN]
+    assert secrets[0]["Resource"] == [GATEWAY_SECRET_ARN]
 
 
 def test_the_workflow_runtime_gets_its_own_login_and_policy() -> None:
@@ -236,9 +236,9 @@ def test_a_policy_engine_id_without_a_gateway_id_is_refused() -> None:
 
 def test_a_required_placeholder_without_a_value_is_refused() -> None:
     values = base_values()
-    del values["AURORA_SECRET_ARN"]
+    del values["AURORA_WORKFLOW_SECRET_ARN"]
 
-    with pytest.raises(render_config.ConfigError, match="AURORA_SECRET_ARN"):
+    with pytest.raises(render_config.ConfigError, match="AURORA_WORKFLOW_SECRET_ARN"):
         render_config.render(*templates(), values)
 
 
@@ -868,10 +868,10 @@ def test_tightening_leaves_the_holds_lambda_only_the_gateway_logins_secret() -> 
     assert holds_secret_resources(spec) == [GATEWAY_SECRET_ARN]
 
 
-def test_without_tightening_the_holds_lambda_still_reads_both_secrets() -> None:
+def test_plain_render_never_restores_the_master_secret_grant() -> None:
     spec, _, _ = render_config.render(*templates(), held_values())
 
-    assert holds_secret_resources(spec) == [SECRET_ARN, GATEWAY_SECRET_ARN]
+    assert holds_secret_resources(spec) == [GATEWAY_SECRET_ARN]
 
 
 def test_tightening_changes_nothing_but_that_one_statement() -> None:
@@ -926,3 +926,17 @@ def test_main_tighten_writes_the_tightened_policy_and_says_so(
     assert holds_secret_resources(spec) == [GATEWAY_SECRET_ARN]
     assert "Tightened: MeridianHolds may read only the meridian_gateway secret" in (
         capsys.readouterr().out)
+
+
+@pytest.mark.parametrize("ceiling", ["123400", "400000"])
+def test_render_carries_the_configured_budget_to_both_runtimes(ceiling):
+    values = render_config.account_values({
+        "AURORA_CLUSTER_ARN": CLUSTER_ARN,
+        "AURORA_SECRET_ARN": SECRET_ARN,
+        "AURORA_WORKFLOW_SECRET_ARN": WORKFLOW_SECRET_ARN,
+        "AURORA_GATEWAY_SECRET_ARN": GATEWAY_SECRET_ARN,
+        "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS": ceiling,
+    })
+    spec, _, _ = render_config.render(*templates(), values)
+    for name in ("MeridianConcierge", "MeridianWorkflow"):
+        assert runtime_env(spec, name)["MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS"] == ceiling

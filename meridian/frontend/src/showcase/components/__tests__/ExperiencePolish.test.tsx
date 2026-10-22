@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -96,6 +96,60 @@ function makeState(
     ...overrides,
   } as unknown as MeridianShowcaseState;
 }
+
+it('keeps following streamed replies when a resize clamps the reader to the new bottom', () => {
+  const observers: { targets: Element[]; resize: () => void }[] = [];
+  vi.stubGlobal('ResizeObserver', class {
+    targets: Element[] = [];
+    constructor(callback: () => void) { observers.push({ targets: this.targets, resize: callback }); }
+    observe(target: Element) { this.targets.push(target); }
+    unobserve() {}
+    disconnect() {}
+  });
+  const frames: FrameRequestCallback[] = [];
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+  const { unmount } = render(<ConciergeConversation state={makeState()}
+    onSaved={vi.fn()} onRecovery={vi.fn()} />);
+  try {
+    const pane = screen.getByRole('region', { name: 'Concierge responses' });
+    let height = 1000;
+    let viewport = 400;
+    let position = 0;
+    Object.defineProperties(pane, {
+      scrollHeight: { get: () => height },
+      clientHeight: { get: () => viewport },
+      scrollTop: {
+        get: () => position,
+        set: (value: number) => { position = Math.min(value, height - viewport); },
+      },
+    });
+    pane.scrollTop = 600;
+    fireEvent.scroll(pane);
+    // A taller viewport clamps scrollTop without the reader scrolling up.
+    viewport = 600;
+    pane.scrollTop = 400;
+    fireEvent.scroll(pane);
+    height = 1400;
+    act(() => {
+      observers.find(observer => observer.targets.includes(pane))!.resize();
+      frames.splice(0).forEach(callback => callback(0));
+    });
+    expect(pane.scrollTop).toBe(800);
+    // An actual upward scroll still preserves the reader's place during growth.
+    pane.scrollTop = 200;
+    fireEvent.scroll(pane);
+    height = 1600;
+    act(() => {
+      observers.find(observer => observer.targets.includes(pane))!.resize();
+      frames.splice(0).forEach(callback => callback(0));
+    });
+    expect(pane.scrollTop).toBe(200);
+  } finally {
+    unmount();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  }
+});
 
 it('hands the original disruption request to Phase 5 from the follow-up chip', () => {
   const state = makeState({

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Mapping
 
 DEFAULT_ENV = "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS"
 DEFAULT_CENTS = 400000
@@ -19,6 +20,17 @@ DEFAULT_CENTS = 400000
 # ("Prefers $2k-3.5k per person"). The cap wins when both are present.
 BUDGET_KEYS = ("budget_cap", "budget", "budget_ceiling", "budget_range", "per_person_range")
 AMOUNT = re.compile(r"\$?\s*(\d+(?:\.\d+)?)\s*(k)?", re.I)
+
+
+def default_budget_cents(env: Mapping[str, str | None] | None = None) -> int:
+    """Validate the whole-trip default shared by release configuration and callers."""
+    value = (os.environ if env is None else env).get(DEFAULT_ENV, str(DEFAULT_CENTS))
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]+", value):
+        raise ValueError(f"{DEFAULT_ENV} must be a positive integer number of cents")
+    ceiling = int(value)
+    if not 0 < ceiling <= 2**53 - 1:
+        raise ValueError(f"{DEFAULT_ENV} must be between 1 and {2**53 - 1} cents")
+    return ceiling
 
 
 def _dollars(text: str) -> list[float]:
@@ -67,4 +79,4 @@ def budget_ceiling_from_facts(facts: list[dict], travelers: int) -> int:
     per_traveler = budget_ceiling_per_traveler_cents(facts)
     if per_traveler is not None:
         return per_traveler * max(1, int(travelers))
-    return int(os.getenv(DEFAULT_ENV, str(DEFAULT_CENTS)))
+    return default_budget_cents()

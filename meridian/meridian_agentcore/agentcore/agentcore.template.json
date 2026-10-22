@@ -60,6 +60,10 @@
         {
           "name": "MERIDIAN_POLICY_MODE",
           "value": "ENFORCE"
+        },
+        {
+          "name": "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS",
+          "value": "{{MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS}}"
         }
       ]
     },
@@ -123,6 +127,10 @@
         {
           "name": "RLS_APP_ROLE",
           "value": "meridian_app"
+        },
+        {
+          "name": "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS",
+          "value": "{{MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS}}"
         }
       ]
     }
@@ -337,7 +345,6 @@
                     "secretsmanager:GetSecretValue"
                   ],
                   "Resource": [
-                    "{{AURORA_SECRET_ARN}}",
                     "{{AURORA_GATEWAY_SECRET_ARN}}"
                   ]
                 }

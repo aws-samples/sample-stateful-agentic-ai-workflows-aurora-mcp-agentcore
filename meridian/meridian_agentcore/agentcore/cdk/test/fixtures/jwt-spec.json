@@ -60,6 +60,10 @@
         {
           "name": "MERIDIAN_POLICY_MODE",
           "value": "ENFORCE"
+        },
+        {
+          "name": "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS",
+          "value": "400000"
         }
       ],
       "authorizerType": "CUSTOM_JWT",
@@ -135,6 +139,10 @@
         {
           "name": "RLS_APP_ROLE",
           "value": "meridian_app"
+        },
+        {
+          "name": "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS",
+          "value": "400000"
         }
       ],
       "authorizerType": "CUSTOM_JWT",
@@ -361,7 +369,6 @@
                     "secretsmanager:GetSecretValue"
                   ],
                   "Resource": [
-                    "arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian-AbC123",
                     "arn:aws:secretsmanager:us-east-1:123456789012:secret:meridian/aurora/gateway-login-GwY456"
                   ]
                 }

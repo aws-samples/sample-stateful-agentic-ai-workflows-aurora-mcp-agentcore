@@ -7,6 +7,7 @@ import {
 import { CfnOutput, Stack, type StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { correctPolicyPermissions } from './policy-compatibility';
+import { bindHoldBudget } from './hold-budget';
 
 export interface AgentCoreStackProps extends StackProps {
   /**
@@ -55,6 +56,7 @@ export class AgentCoreStack extends Stack {
     }
 
     correctPolicyPermissions(this);
+    bindHoldBudget(this, spec);
 
     // Stack-level output
     new CfnOutput(this, 'StackNameOutput', {

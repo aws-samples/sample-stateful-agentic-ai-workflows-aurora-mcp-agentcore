@@ -34,7 +34,8 @@ MERIDIAN = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MERIDIAN))
 
 from backend.agentcore.auth_mode import JWT  # noqa: E402
-from scripts.identity_release import preflight, settings  # noqa: E402
+from backend.agents.budget import DEFAULT_ENV  # noqa: E402
+from scripts.identity_release import budget, preflight, settings  # noqa: E402
 from scripts.identity_release.usage import UsageParser  # noqa: E402
 
 INFRA = MERIDIAN / "infra"
@@ -174,6 +175,8 @@ def service_definition(service: dict, image_uri: str, environment: dict, roles: 
     image = current["ImageRepository"]
     config = dict(image.get("ImageConfiguration", {}))
     variables = {**config.get("RuntimeEnvironmentVariables", {}), **environment}
+    if DEFAULT_ENV not in environment:
+        variables.pop(DEFAULT_ENV, None)
     secrets = dict(config.get("RuntimeEnvironmentSecrets", {}))
     variables.pop("MERIDIAN_API_TOKEN", None)
     if mode == JWT:
@@ -274,6 +277,10 @@ def release_findings(control, release: Release, service: dict, lambda_client) ->
     findings = preflight.check_hop_locations(release.service_environment, target)
     findings += preflight.hop_findings(state, target)
     findings += preflight.check_service_environment(variables, secrets, target)
+    findings += budget.release_findings(
+        control, lambda_client, gateway_id, state.runtimes, variables)
+    if DEFAULT_ENV in secrets:
+        findings.append("Hosted backend: the fallback budget must be a plain environment setting")
     if release.mode == JWT:
         findings += preflight.interceptor_lambda_findings(lambda_client, target)
         findings += preflight.check_backend_login_proof(PROOF_PATH, target, settings.git_head())

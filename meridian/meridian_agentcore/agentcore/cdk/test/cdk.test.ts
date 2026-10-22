@@ -18,6 +18,7 @@ const TEST_VALUES: Record<string, string> = {
   GATEWAY_ID: 'meridianv2-meridian-aurora-abcde12345',
   POLICY_ENGINE_ID: 'meridianv2_MeridianGovernance-abcde12345',
   MERIDIAN_AGENTCORE_AUTH: 'iam',
+  MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS: '400000',
 };
 const PROJECT_ROOT = resolve(__dirname, '../../..');
 const originalInitCwd = process.env.INIT_CWD;
@@ -105,7 +106,7 @@ test('AgentCoreStack synthesizes the Meridian specification template', () => {
   const secretStatement = holds.compute.iamPolicy.Statement.find((s: { Action: string[] }) =>
     s.Action.includes('secretsmanager:GetSecretValue')
   );
-  expect(secretStatement.Resource).toEqual([TEST_VALUES.AURORA_SECRET_ARN, TEST_VALUES.AURORA_GATEWAY_SECRET_ARN]);
+  expect(secretStatement.Resource).toEqual([TEST_VALUES.AURORA_GATEWAY_SECRET_ARN]);
   expect(Object.keys(resources).length).toBeGreaterThan(0);
 });
 
@@ -239,4 +240,19 @@ test('the first stage synthesizes the Gateway and one target without the holds L
   expect(ofType(template, 'AWS::Lambda::Function')).toHaveLength(0);
   expect(ofType(template, 'AWS::BedrockAgentCore::PolicyEngine')).toHaveLength(0);
   expect(ofType(template, 'AWS::BedrockAgentCore::Policy')).toHaveLength(0);
+});
+
+test('the holds Lambda uses the same configured fallback budget as the workflow', () => {
+  const spec = renderTemplate();
+  const key = 'MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS';
+  for (const runtime of spec.runtimes) {
+    runtime.envVars = runtime.envVars.filter((v: { name: string }) => v.name !== key);
+    runtime.envVars.push({ name: key, value: '123400' });
+  }
+  const template = synthesize('custom-budget', spec);
+  const [holds] = ofType(template, 'AWS::Lambda::Function');
+  expect(holds.Properties.Environment.Variables[key]).toBe('123400');
+  for (const runtime of ofType(template, 'AWS::BedrockAgentCore::Runtime')) {
+    expect(runtime.Properties.EnvironmentVariables[key]).toBe('123400');
+  }
 });

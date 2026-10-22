@@ -155,6 +155,12 @@ def control_returning(status, mode="iam", *, gateway_mode=None):
     control.get_gateway.return_value = rs.gateway(gateway_mode or mode)
     names = rs.BASE_POLICIES + ([rs.BINDING_POLICY] if mode == "jwt" else [])
     control.list_policies.return_value = {"policies": rs.policies(names)}
+    control.list_gateway_targets.return_value = {
+        "items": [{"name": "MeridianHolds", "targetId": "holds-target"}],
+    }
+    control.get_gateway_target.return_value = {
+        "targetConfiguration": {"mcp": {"lambda": {"lambdaArn": HOLDS_ARN}}},
+    }
     return control
 
 
@@ -193,6 +199,8 @@ class Commands(list):
     def env_of(self, *command):
         return next(env for ran, env in self.envs if ran == command)
 
+
+HOLDS_ARN = "arn:aws:lambda:us-east-1:123456789012:function:meridianv2-MeridianHolds"
 
 GOOD_INTERCEPTOR = {"EXPECTED_CLIENT_ID": "exampleclientid123",
                     "EXPECTED_ISSUER": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AbCdEfGhI"}
@@ -246,6 +254,18 @@ def planned_publish(monkeypatch, tmp_path, control, dotenv=None, outputs=None,
     monkeypatch.setattr(publish.boto3, "Session", lambda **kwargs: session)
     monkeypatch.setattr(publish, "container_engine", lambda: "finch")
     commands.lambda_client = clients["lambda"]
+    interceptor_read = commands.lambda_client.get_function_configuration
+    interceptor_effect = interceptor_read.side_effect
+    interceptor_value = interceptor_read.return_value
+
+    def configuration(FunctionName):
+        if FunctionName == HOLDS_ARN:
+            return {"Environment": {"Variables": {}}}
+        if interceptor_effect:
+            raise interceptor_effect
+        return interceptor_value
+
+    interceptor_read.side_effect = configuration
     monkeypatch.setattr(publish, "run", lambda command, cwd, env=None: (
         commands.append(command), commands.envs.append((tuple(command), env or {}))))
     monkeypatch.setattr(publish, "INFRA", tmp_path / "infra")
@@ -521,7 +541,7 @@ def test_a_jwt_plan_refuses_a_misconfigured_or_missing_interceptor(
 
     assert expected in str(refused.value)
     assert ["npx", "cdk", "diff", "--no-change-set"] not in commands
-    commands.lambda_client.get_function_configuration.assert_called_once_with(
+    commands.lambda_client.get_function_configuration.assert_any_call(
         FunctionName=f"arn:aws:lambda:us-east-1:123456789012:function:{settings.INTERCEPTOR_FUNCTION}")
 
 
@@ -532,7 +552,7 @@ def test_a_jwt_plan_with_a_cedar_only_design_reads_no_interceptor(monkeypatch, t
     with pytest.raises(SystemExit) as refused:
         publish.publish(ARGS)
 
-    commands.lambda_client.get_function_configuration.assert_not_called()
+    commands.lambda_client.get_function_configuration.assert_called_once_with(FunctionName=HOLDS_ARN)
     assert "Interceptor Lambda" not in str(refused.value)
 
 
@@ -542,7 +562,7 @@ def test_an_iam_plan_never_reads_the_interceptor(monkeypatch, tmp_path):
 
     publish.publish(ARGS)
 
-    commands.lambda_client.get_function_configuration.assert_not_called()
+    commands.lambda_client.get_function_configuration.assert_called_once_with(FunctionName=HOLDS_ARN)
 
 
 def test_an_iam_plan_refuses_while_the_hops_are_still_jwt(monkeypatch, tmp_path):
@@ -778,4 +798,38 @@ def test_a_connection_failure_refuses_the_publish_with_a_masked_message(
     assert code == 1
     assert "AWS connection failed: EndpointConnectionError" in output.err
     assert "private-host.example" not in output.err + output.out
+    assert ["npx", "cdk", "diff", "--no-change-set"] not in commands
+
+
+def test_publish_refuses_a_backend_budget_that_differs_from_the_deployed_hops(
+        monkeypatch, tmp_path):
+    control = control_returning("READY")
+    commands = planned_publish(monkeypatch, tmp_path, control, service_environment={
+        **hosted_environment(), "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS": "123400",
+    })
+    with pytest.raises(SystemExit, match="budget"):
+        publish.publish(ARGS)
+    assert ["npx", "cdk", "diff", "--no-change-set"] not in commands
+
+
+def test_unsetting_the_budget_removes_a_previous_hosted_override():
+    service = existing()
+    old = service["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"]
+    old["RuntimeEnvironmentVariables"]["MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS"] = "123400"
+    definition = publish.service_definition(
+        service, "new", {}, {"AccessRoleArn": "pull", "InstanceRoleArn": "task"}, "token-reference")
+    variables = definition["SourceConfiguration"]["ImageRepository"]["ImageConfiguration"][
+        "RuntimeEnvironmentVariables"]
+    assert "MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS" not in variables
+
+
+def test_publish_reads_the_holds_lambda_and_refuses_its_different_budget(monkeypatch, tmp_path):
+    commands = planned_publish(monkeypatch, tmp_path, control_returning("READY"))
+    commands.lambda_client.get_function_configuration.side_effect = None
+    commands.lambda_client.get_function_configuration.return_value = {
+        "Environment": {"Variables": {"MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS": "123400"}},
+    }
+    with pytest.raises(SystemExit, match="budget mismatch"):
+        publish.publish(ARGS)
+    commands.lambda_client.get_function_configuration.assert_called_once_with(FunctionName=HOLDS_ARN)
     assert ["npx", "cdk", "diff", "--no-change-set"] not in commands

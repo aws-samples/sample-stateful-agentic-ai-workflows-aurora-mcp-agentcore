@@ -290,6 +290,18 @@ not done:
 
 Rolling back from `jwt` to `iam` has not been tested.
 
+The AgentCore template grants the holds Lambda only the `meridian_gateway` secret.
+A plain render preserves that restriction; `--tighten` is retained for older local
+templates. A deployment still using the master login must complete the gateway
+login migration before deploying this template.
+
+Set `MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS` once in the release environment, or
+leave it unset for the whole-trip default of 400000 cents. Rendering carries it
+to both Runtimes, and CDK gives the holds Lambda the same value. Publish compares
+the intended backend setting with the actual Runtime and Lambda settings and
+refuses a mismatch. After changing it, render and deploy AgentCore before
+publishing the backend. Removing the setting also removes any old hosted override.
+
 ### Create the logins
 
 1. List what is pending. The list must be exactly `018_service_logins.sql`.

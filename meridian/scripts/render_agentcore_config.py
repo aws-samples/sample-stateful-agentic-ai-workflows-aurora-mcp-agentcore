@@ -62,9 +62,10 @@ could not be rendered. ``--gateway-id`` says the Gateway and its holds target
 exist. Deploy with ``scripts/release_identity.py deploy`` after each render, then
 render again until it reports a complete configuration.
 
-``--tighten`` renders the MeridianHolds Lambda's policy with only the meridian_gateway login's
-secret. Use it after the Lambda reads that secret (see scripts/release_identity.py lambdas), or it
-stops being able to read the master one while it still uses it.
+The MeridianHolds template grants access only to the meridian_gateway login's secret.
+``--tighten`` remains compatible with older local templates that still include the master grant.
+MERIDIAN_DEFAULT_BUDGET_CEILING_CENTS supplies both Runtimes and, through the CDK stack, the
+holds Lambda. The publisher checks these against the hosted backend before releasing it.
 
 After it writes both files it stages the MeridianWorkflow Runtime's backend
 bundle (scripts/stage_workflow_runtime.py), so a deploy never ships a stale copy.
@@ -90,6 +91,7 @@ MERIDIAN_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MERIDIAN_DIR))
 
 from backend.agentcore.auth_mode import AUTH_MODE_ENV, IAM, JWT, MODES  # noqa: E402
+from backend.agents.budget import DEFAULT_ENV, default_budget_cents  # noqa: E402
 from scripts import stage_workflow_runtime  # noqa: E402
 from scripts.identity_release import settings, stages  # noqa: E402
 
@@ -262,6 +264,10 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
     )
     if not REGION.match(region):
         raise ConfigError(f"'{region}' is not an AWS Region name such as us-east-1")
+    try:
+        ceiling = default_budget_cents(env)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
     values = {
         "AWS_ACCOUNT_ID": cluster["account"],
         "AWS_REGION": region,
@@ -270,6 +276,7 @@ def account_values(env: dict[str, str | None]) -> dict[str, str]:
         "AURORA_WORKFLOW_SECRET_ARN": workflow_secret_arn,
         "AURORA_GATEWAY_SECRET_ARN": gateway_secret_arn,
         AUTH_MODE_ENV: identity_mode(env),
+        DEFAULT_ENV: str(ceiling),
     }
     if values[AUTH_MODE_ENV] == JWT:
         values.update(jwt_values(env))

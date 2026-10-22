@@ -79,8 +79,10 @@ export function ConciergeConversation({ state, onSaved, onRecovery, onReviewReco
     const below = measureScrollPosition();
     // A queued scroll event can arrive after the next text chunk grew. Only
     // an actual upward movement means the reader left the live edge.
-    if (pane.scrollTop < scrollTopRef.current - 1) followingRef.current = false;
-    else if (!below) followingRef.current = true;
+    // A taller pane can clamp scrollTop downward while leaving the reader at
+    // the bottom. That resize must not stop following the next streamed chunk.
+    if (!below) followingRef.current = true;
+    else if (pane.scrollTop < scrollTopRef.current - 1) followingRef.current = false;
     scrollTopRef.current = pane.scrollTop;
   }, [measureScrollPosition]);
 
