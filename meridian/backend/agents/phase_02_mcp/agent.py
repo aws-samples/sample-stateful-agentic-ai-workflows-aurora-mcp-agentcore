@@ -133,6 +133,7 @@ You have access to read-only database tools through MCP (Model Context Protocol)
 
 The database schema includes:
 - trip_packages: package_id, name, operator, price_per_person, description, image_url, trip_type, destination, durations, availability, embedding
+- availability is capacity; package_places_left(package_id) returns the places left
 - travelers: traveler_id, full_name, email, home_airport
 - traveler_profiles: party_size, budget_min, budget_max, trip_goal, dietary_notes
 - bookings: booking_id, traveler_id, status, total_amount

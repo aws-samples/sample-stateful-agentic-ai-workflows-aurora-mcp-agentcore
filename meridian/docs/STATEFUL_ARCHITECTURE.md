@@ -131,6 +131,13 @@ transaction. A snapshot and a business write are separate transactions. The
 design makes the write idempotent and the run resumable; it does not claim
 exactly-once execution.
 
+`trip_packages.availability` is each duration's capacity. `create_courtesy_hold`
+counts confirmed bookings and unexpired holds against it and never changes the
+column, so every read that tells a traveler how many places are left calls
+`package_places_left(package_id)` (migration 020) instead of reading the column.
+The function runs as its owner, because bookings are scoped per traveler, and it
+returns counts only.
+
 ### Resume gaps closed in the code
 
 Two Strands 1.57.2 behaviors would otherwise break a resume:

@@ -102,7 +102,8 @@ def response_packages(
 PACKAGE_DETAIL_SQL = """
     SELECT package_id, name, operator, price_per_person,
            description, image_url, trip_type, destination,
-           region, durations, availability, highlights
+           region, durations, package_places_left(package_id) AS availability,
+           highlights
     FROM trip_packages
     WHERE package_id IN ({placeholders})
 """
@@ -540,8 +541,8 @@ class ProductionAgent:
                 "Refreshed discussed trips from the live catalog",
                 details=f"{len(detail_rows)} live catalog rows joined to the response's trip order",
                 sql_query=(
-                    "SELECT package_id, durations, availability, highlights "
-                    "FROM trip_packages WHERE package_id IN (...)"
+                    "SELECT package_id, durations, package_places_left(package_id) "
+                    "AS availability, highlights FROM trip_packages WHERE package_id IN (...)"
                 ),
                 execution_time_ms=query_ms,
                 telemetry={

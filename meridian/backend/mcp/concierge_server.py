@@ -182,7 +182,7 @@ async def region_inventory(
         trip_type: optional category filter ('City Breaks', 'Wellness & Luxury' ...).
     """
     sql = """
-        SELECT package_id, name, trip_type, availability
+        SELECT package_id, name, trip_type, package_places_left(package_id) AS availability
         FROM trip_packages
         WHERE region ILIKE %s
     """

@@ -87,7 +87,7 @@ async def _resolve_named_package(
         f"""
         SELECT package_id, name, operator, price_per_person, description,
                image_url, trip_type, destination, region, durations,
-               availability, highlights
+               package_places_left(package_id) AS availability, highlights
         FROM trip_packages
         WHERE {clause}
         """,
@@ -144,7 +144,11 @@ def _not_found(activities: List[ActivityEntry]) -> tuple[list, List[ActivityEntr
 def _availability_reply(
     row: Dict[str, Any], activities: List[ActivityEntry]
 ) -> tuple[List[Product], List[ActivityEntry], str]:
-    """Total the package's stock and build the spans, product and message."""
+    """Total the package's places left and build the spans, product and message.
+
+    ``availability`` is what ``package_places_left`` returned: each duration's capacity
+    less every traveler's confirmed bookings and unexpired holds.
+    """
     product = row
     availability = product.get('availability', {})
 
@@ -152,7 +156,10 @@ def _availability_reply(
         activity_type="availability",
         title="PackageAgent: Checking duration inventory",
         details=f"Package: {product['name']}",
-        sql_query="SELECT availability, durations FROM trip_packages WHERE package_id = ?",
+        sql_query=(
+            "SELECT package_places_left(package_id) AS availability, durations "
+            "FROM trip_packages WHERE package_id = ?"
+        ),
         agent_name="PackageAgent",
         agent_file="agents/phase_03_retrieval/package_agent.py"
     ))
@@ -170,7 +177,7 @@ def _availability_reply(
     activities.append(create_activity(
         activity_type="result",
         title="PackageAgent: Duration inventory verified",
-        details=f"Total: {total_stock} package places across available durations",
+        details=f"Total: {total_stock} places left across durations",
         agent_name="PackageAgent",
         agent_file="agents/phase_03_retrieval/package_agent.py"
     ))
@@ -188,12 +195,12 @@ def _availability_reply(
         if durations:
             durations_str = ', '.join(durations[:5])
             message = (
-                f"**{product['name']}** has {total_stock} package places "
+                f"**{product['name']}** has {total_stock} places left "
                 f"across these trip lengths: {durations_str}."
             )
         else:
             message = (
-                f"**{product['name']}** has {total_stock} package places available."
+                f"**{product['name']}** has {total_stock} places left."
             )
     else:
         message = (
@@ -211,9 +218,10 @@ async def retrieval_availability_search(
     query: str,
     package_id: Optional[str] = None,
 ) -> tuple[List[Product], List[ActivityEntry], str]:
-    """
-    Phase 3: PackageAgent handles duration-inventory queries.
-    Supervisor delegates availability questions to the specialist agent.
+    """Report a package's places left per duration.
+
+    Called directly by the Phase 3 availability route and the Phase 5 availability
+    step; no model routes the call.
 
     Returns: (products, activities, message)
     """
@@ -234,7 +242,7 @@ async def retrieval_availability_search(
     exact_sql = """
         SELECT package_id, name, operator, price_per_person, description,
                image_url, trip_type, destination, region, durations,
-               availability, highlights
+               package_places_left(package_id) AS availability, highlights
         FROM trip_packages
         WHERE package_id = %s
         LIMIT 1

@@ -2430,7 +2430,7 @@ class OrderResponse(BaseModel):
 
 HOLD_PACKAGE_SQL = """
     SELECT package_id, name, operator, price_per_person, description,
-           image_url, trip_type, durations, availability
+           image_url, trip_type, durations, package_places_left(package_id) AS availability
     FROM trip_packages
     WHERE package_id = %s
 """

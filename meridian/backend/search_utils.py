@@ -10,7 +10,7 @@ from backend.config import config
 
 PACKAGE_COLUMNS = """package_id, name, trip_type, destination, region,
                      price_per_person, operator, description, image_url,
-                     durations, availability, highlights"""
+                     durations, package_places_left(package_id) AS availability, highlights"""
 
 # "under $2,500.00", "below $3.5k", "less than 1200", "< $800". The whole part is either
 # comma-grouped thousands or plain digits; "k" multiplies by a thousand.

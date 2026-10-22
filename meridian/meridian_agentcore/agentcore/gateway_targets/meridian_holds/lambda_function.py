@@ -32,7 +32,8 @@ AGENT_TYPE = "concierge_agent"
 HOLD_BACKEND = "gateway"
 PACKAGE_SQL = (
     "SELECT package_id, name, operator, destination, region, price_per_person, "
-    "durations, availability, highlights FROM trip_packages WHERE package_id = :package_id"
+    "durations, package_places_left(package_id) AS availability, highlights FROM trip_packages "
+    "WHERE package_id = :package_id"
 )
 PRICE_SQL = (
     "SELECT ROUND(price_per_person * 100)::BIGINT AS unit_price_cents "
@@ -191,7 +192,7 @@ def get_package_details(args: dict) -> dict:
         return {"error": f"Unknown package {package_id}"}
     package = rows[0]
     availability = package.get("availability") or {}
-    open_slots = ", ".join(f"{k}: {v} places" for k, v in availability.items())
+    open_slots = ", ".join(f"{k}: {v} places left" for k, v in availability.items())
     return {
         "package": package,
         "summary": f"{package.get('name')}, {open_slots or 'no published durations'}",

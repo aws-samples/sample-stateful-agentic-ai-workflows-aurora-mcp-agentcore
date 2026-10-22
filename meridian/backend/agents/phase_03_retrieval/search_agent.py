@@ -293,7 +293,7 @@ When searching:
                 destination,
                 region,
                 durations,
-                availability,
+                package_places_left(package_id) AS availability,
                 highlights,
                 ts_rank(search_vector, q.tsq) AS lexical_score
             FROM trip_packages, q
@@ -330,7 +330,8 @@ When searching:
                 f"""
                     SELECT package_id, name, operator, price_per_person,
                            description, image_url, trip_type, destination,
-                           region, durations, availability, highlights
+                           region, durations, package_places_left(package_id) AS availability,
+                           highlights
                     FROM trip_packages
                     WHERE package_id IN ({placeholders})
                 """,
@@ -361,7 +362,8 @@ When searching:
                 ),
                 sql_query=(
                     "SELECT package_id, destination, region, durations, "
-                    "availability, highlights FROM trip_packages "
+                    "package_places_left(package_id) AS availability, highlights "
+                    "FROM trip_packages "
                     "WHERE package_id IN (...)"
                 ),
                 execution_time_ms=hydrate_ms,

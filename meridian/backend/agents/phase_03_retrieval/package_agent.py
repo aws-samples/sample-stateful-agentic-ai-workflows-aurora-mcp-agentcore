@@ -103,7 +103,8 @@ When helping travelers:
 
         query = """
             SELECT package_id, name, operator, price_per_person, description,
-                   image_url, trip_type, destination, durations, availability, highlights
+                   image_url, trip_type, destination, durations,
+                   package_places_left(package_id) AS availability, highlights
             FROM trip_packages
             WHERE package_id = %s
         """
@@ -131,7 +132,7 @@ When helping travelers:
         start_time = datetime.now(timezone.utc)
 
         query = """
-            SELECT package_id, name, durations, availability
+            SELECT package_id, name, durations, package_places_left(package_id) AS availability
             FROM trip_packages
             WHERE package_id = %s
         """

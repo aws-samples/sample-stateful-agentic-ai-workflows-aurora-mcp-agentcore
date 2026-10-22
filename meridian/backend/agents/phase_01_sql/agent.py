@@ -145,7 +145,8 @@ Trip types in the catalog:
 
         query = """
             SELECT package_id, name, operator, price_per_person, description,
-                   image_url, trip_type, destination, durations, availability
+                   image_url, trip_type, destination, durations,
+                   package_places_left(package_id) AS availability
             FROM trip_packages
             WHERE package_id = %s
         """
@@ -234,7 +235,7 @@ Trip types in the catalog:
         start_time = datetime.now(timezone.utc)
 
         query = """
-            SELECT package_id, name, durations, availability
+            SELECT package_id, name, durations, package_places_left(package_id) AS availability
             FROM trip_packages
             WHERE package_id = %s
         """

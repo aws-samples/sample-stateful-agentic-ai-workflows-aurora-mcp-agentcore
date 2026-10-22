@@ -63,7 +63,8 @@ async def _list_packages(
 ) -> PackageListResponse:
     db = get_rds_data_client()
     cols = """package_id, name, trip_type, destination, region, price_per_person,
-              operator, description, image_url, durations, availability, highlights"""
+              operator, description, image_url, durations,
+              package_places_left(package_id) AS availability, highlights"""
 
     if featured:
         query = f"""
@@ -112,7 +113,8 @@ async def _get_package(package_id: str) -> TripPackage:
     row = await db.execute_one(
         """
         SELECT package_id, name, trip_type, destination, region, price_per_person,
-               operator, description, image_url, durations, availability, highlights
+               operator, description, image_url, durations,
+               package_places_left(package_id) AS availability, highlights
         FROM trip_packages WHERE package_id = %s
         """,
         (package_id,),
