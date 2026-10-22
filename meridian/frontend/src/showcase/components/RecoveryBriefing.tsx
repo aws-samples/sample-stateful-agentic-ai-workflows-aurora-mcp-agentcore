@@ -53,7 +53,11 @@ export function RecoveryBriefing({
     botMessage?.products?.length
       ? botMessage.products
       : current ? state.recommendations ?? [] : [];
-  const topProduct = products[0] ?? null;
+  // The package the recovery holds or will hold; the list keeps the ranking.
+  const planProduct = products.find(
+    (product) => product.product_id === state.workflowPlanPackageId,
+  ) ?? products[0] ?? null;
+  const planIsChoice = Boolean(planProduct && products[0] && planProduct !== products[0]);
   const followUps = botMessage?.follow_ups ?? [];
   const recoveryStage = deriveRecoveryStage(state);
   const evidence = deriveRecoveryEvidence(state);
@@ -93,7 +97,7 @@ export function RecoveryBriefing({
 
       {!state.isLoading && botMessage && (
         <>
-          {topProduct && (
+          {planProduct && (
             <div className="mds-recovery-outcome">
               <div className="mds-recovery-outcome-title">
                 <CheckCircle2 size={20} aria-hidden="true" />
@@ -105,17 +109,17 @@ export function RecoveryBriefing({
                         ? 'Recovery resumed'
                         : 'Best current match'}
                   </small>
-                  <strong>{topProduct.name}</strong>
+                  <strong>{planProduct.name}</strong>
                 </span>
               </div>
               <dl className="mds-recovery-outcome-facts">
                 <div>
                   <dt>From</dt>
-                  <dd>{money(topProduct.price)} / traveler</dd>
+                  <dd>{money(planProduct.price)} / traveler</dd>
                 </div>
                 <div>
                   <dt>Duration</dt>
-                  <dd>{durationLabel(topProduct)}</dd>
+                  <dd>{durationLabel(planProduct)}</dd>
                 </div>
                 <div>
                   <dt>Options ranked</dt>
@@ -125,6 +129,8 @@ export function RecoveryBriefing({
               <p>
                 {checkpointReady
                   ? 'The shortlist is saved. Resume to verify duration inventory for the leading options.'
+                  : planIsChoice
+                    ? 'The option you chose from the shortlist. Open the response for trade-offs and details.'
                   : evidence.availabilityObserved
                     ? 'Duration inventory is verified for the leading options. Open the response for trade-offs and details.'
                     : 'Ranked first from the live recovery search. Open the response for trade-offs and availability details.'}

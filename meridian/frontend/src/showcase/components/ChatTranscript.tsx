@@ -370,9 +370,12 @@ function ProductSummaryChip({
       type="button"
       className={`mds-msg-result-chip${expanded ? ' is-active' : ''}`}
       onClick={() => {
-        // Pin the first product on expand so the right-rail trip
-        // detail drawer reflects this turn's results, then toggle.
-        if (!expanded && products[0]) state.setSelectedTrip(products[0]);
+        // Pin this turn's plan on expand (the package a recovery holds, else the
+        // first result) so the trip detail drawer reflects it, then toggle.
+        const pinned = products.find(
+          (product) => product.product_id === state.workflowPlanPackageId,
+        ) ?? products[0];
+        if (!expanded && pinned) state.setSelectedTrip(pinned);
         onToggle();
       }}
       title={expanded ? 'Hide these trips' : 'Show these trips'}

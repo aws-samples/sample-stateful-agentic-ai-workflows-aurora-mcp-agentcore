@@ -1730,6 +1730,29 @@ describe('Recovery package choice', () => {
     expect(screen.queryByRole('article', { name: `Recovery option ${rank}` })).not.toBeInTheDocument();
   });
 
+  it('names the chosen package in the briefing outcome, not the top-ranked one', () => {
+    render(<RecoveryWorkspace state={waiting({ workflowStatus: 'resumed', workflowPlanPackageId: 'CTY-002' })} />);
+    const outcome = screen.getByText('Recovery resumed').closest('span')!;
+    expect(within(outcome as HTMLElement).getByText('Ranked option 3')).toBeVisible();
+    expect(screen.getByText('The option you chose from the shortlist. Open the response for trade-offs and details.'))
+      .toBeVisible();
+  });
+
+  it('pins the chosen package when the transcript results are expanded', () => {
+    const setSelectedTrip = vi.fn();
+    const state = waiting({
+      workflowStatus: 'resumed', workflowPlanPackageId: 'CTY-002', setSelectedTrip,
+    });
+    const { container } = render(<ChatTranscript state={state} />);
+    const chip = container.querySelector<HTMLButtonElement>('.mds-msg-result-chip')!;
+    // The latest turn's results may open expanded; collapse first, then expand.
+    if (chip.getAttribute('aria-expanded') === 'true') fireEvent.click(chip);
+    fireEvent.click(chip);
+    expect(setSelectedTrip).toHaveBeenLastCalledWith(
+      expect.objectContaining({ product_id: 'CTY-002' }),
+    );
+  });
+
   it('keeps the top-ranked package as the plan until something else is chosen or held', () => {
     const state = waiting({ workflowStatus: 'resumed', workflowPlanPackageId: null });
     render(<RecoveryWorkspace state={state} />);
