@@ -12,6 +12,36 @@ PACKAGE_COLUMNS = """package_id, name, trip_type, destination, region,
                      price_per_person, operator, description, image_url,
                      durations, availability, highlights"""
 
+# "under $2,500.00", "below $3.5k", "less than 1200", "< $800". The whole part is either
+# comma-grouped thousands or plain digits; "k" multiplies by a thousand.
+PRICE_CEILING = re.compile(
+    r"(?:under|below|less than|<)\s*(\$)?\s*(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?(?:\s*(k)\b)?",
+    re.IGNORECASE,
+)
+# Without "$" or "k", a small number is a count ("under 3 nights"), not a budget.
+MIN_PLAIN_PRICE = 100
+
+
+def parse_price_ceiling(query: str) -> Optional[float]:
+    """Return the budget ceiling a prompt names, in dollars, or None.
+
+    Args:
+        query: The traveler's words.
+
+    Returns:
+        The first amount after "under", "below", "less than" or "<" that reads as
+        money: one with "$" or a "k" suffix, or a plain number of at least
+        ``MIN_PLAIN_PRICE``. None when the prompt names no such amount.
+    """
+    for match in PRICE_CEILING.finditer(query):
+        dollar, whole, fraction, thousands = match.groups()
+        value = float(whole.replace(",", "") + (fraction or ""))
+        if thousands:
+            return value * 1000
+        if dollar or value >= MIN_PLAIN_PRICE:
+            return value
+    return None
+
 
 @dataclass
 class SearchParams:
@@ -24,13 +54,7 @@ class SearchParams:
 
 def parse_search_query(query: str) -> SearchParams:
     query_lower = query.lower()
-    price_filter = None
-    price_match = re.search(
-        r"(?:under|below|less than|<)\s*\$?(\d[\d,]*(?:\.\d{2})?)",
-        query_lower,
-    )
-    if price_match:
-        price_filter = float(price_match.group(1).replace(",", ""))
+    price_filter = parse_price_ceiling(query)
 
     matched_trip_type = None
     for keyword, trip_type in config.search.category_keywords.items():

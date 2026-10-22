@@ -1,7 +1,6 @@
 """Hybrid trip search: vector and lexical candidates, fused, then reranked."""
 
 import asyncio
-import re
 from typing import Any, List
 
 from backend.activity import ActivityEntry, Product, create_activity
@@ -9,17 +8,8 @@ from backend.catalog_compat import row_to_api_product
 from backend.config import config
 from backend.db.embedding_service import get_embedding_service
 from backend.db.rds_data_client import get_rds_data_client
+from backend.search_utils import parse_price_ceiling
 from backend.timing import clock, elapsed_ms
-
-
-def _price_filter(query: str) -> float | None:
-    """Parse the optional budget ceiling from the query, if it names one."""
-    # Optional budget filter parsed from natural language.
-    price_filter = None
-    price_match = re.search(r'(?:under|below|less than|<)\s*\$?(\d+(?:\.\d{2})?)', query.lower())
-    if price_match:
-        price_filter = float(price_match.group(1))
-    return price_filter
 
 
 def _intent_spans() -> List[ActivityEntry]:
@@ -229,7 +219,7 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     """
     db = get_rds_data_client()
 
-    price_filter = _price_filter(query)
+    price_filter = parse_price_ceiling(query)
     activities = _intent_spans()
 
     embedding_str, embedding_span = await _embed(query)
