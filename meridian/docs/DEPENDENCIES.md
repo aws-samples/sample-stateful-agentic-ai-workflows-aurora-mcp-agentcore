@@ -11,11 +11,16 @@ is no Node package at `meridian/` itself.
 
 Both AgentCore Runtime manifests are audited separately by
 `python scripts/audit_runtime_dependencies.py`, also run in Application CI.
-Their earlier pins retained `mcp` 2.1.1 and `certifi` 2026.7.22 after the backend
-lock was fixed. Both now use `mcp` 1.30.0 and `certifi` 2026.10.19. The pinned
-Strands release requires `mcp<2.2`, so the patched 1.x release is used, matching
-the backend. The unused 2.x-only `mcp-types`, `httpx2` and `httpcore2` constraints
-are removed. See [CVE-2026-59951](https://github.com/advisories/GHSA-84m7-p3x7-pcfv).
+Both use `mcp` 2.3.0 and `certifi` 2026.10.19. On the 2.x line, `mcp` below 2.2.0
+is affected by [CVE-2026-59951](https://github.com/advisories/GHSA-84m7-p3x7-pcfv)
+and by three advisories in client code that the Strands `MCPClient` runs
+(GHSA-5h93-6whr-6q8j, GHSA-rwrf-2pqf-9j8j and GHSA-qx49-fqc8-xw99), all fixed in 2.2.0.
+Every `strands-agents` release through 1.62.0 declares `mcp<2.2`, so each manifest
+overrides that bound with `[tool.uv] override-dependencies`, which
+`uv pip install -r pyproject.toml` honors. With Strands 1.57.2 and `mcp` 2.3.0, listing
+tools, calling a tool and the agent's tool stream were checked against a Streamable
+HTTP server with bearer-token and SigV4 authentication. Remove the override once a
+Strands release allows `mcp` 2.3 (strands-agents/harness-sdk#5264).
 
 Earlier status, October 1, 2026:
 

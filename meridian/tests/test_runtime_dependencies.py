@@ -1,8 +1,9 @@
 """The runtime's dependencies resolve to the same versions on every deploy.
 
 The AgentCore CLI packages a CodeZip runtime with ``uv pip install -r pyproject.toml``. That
-command ignores ``uv.lock`` but honors ``[tool.uv] constraint-dependencies``, so direct
-dependencies are pinned with ``==`` and every transitive package is pinned as a constraint.
+command ignores ``uv.lock`` but honors ``[tool.uv] constraint-dependencies`` and
+``override-dependencies``, so direct dependencies are pinned with ``==``, every transitive package
+is pinned as a constraint, and an override replaces a bound a dependency declares.
 """
 
 from __future__ import annotations
@@ -73,5 +74,16 @@ def test_runtime_pins_include_the_mcp_and_certificate_security_fixes(pyproject):
     pins = {_name(requirement): requirement.split("==")[1] for requirement in requirements}
     mcp = Version(pins["mcp"])
     assert mcp >= Version("1.30.0"), "CVE-2026-59951"
-    assert not Version("2.0.0") <= mcp < Version("2.2.0"), "CVE-2026-59951"
+    assert not Version("2.0.0") <= mcp < Version("2.2.0"), "CVE-2026-59951, GHSA-5h93-6whr-6q8j"
     assert Version(pins["certifi"]) >= Version("2026.10.19"), "PYSEC-2026-4320"
+
+
+@runtimes
+def test_an_override_installs_the_version_the_manifest_pins(pyproject):
+    project = _project(pyproject)
+    requirements = project["project"]["dependencies"] + project["tool"]["uv"][
+        "constraint-dependencies"]
+    pins = {_name(requirement): requirement for requirement in requirements}
+    for override in project["tool"]["uv"].get("override-dependencies", []):
+        assert EXACT.match(override), override
+        assert pins.get(_name(override)) == override, override
