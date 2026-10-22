@@ -94,7 +94,11 @@ Each snapshot read and write opens its own transaction and pins
 
 The login has `SELECT` on the journey tables and the catalog, `SELECT` and
 `INSERT` on `workflow_snapshots`, and an insert policy on
-`traveler_access_audit` for the grant check.
+`traveler_access_audit` for the grant check. Migration 019 adds `UPDATE` on the
+single column `journey_executions.lease_expires_at`, because PostgreSQL locks a row
+for a role only when it can update a column of the table. The grant lets the
+login change that one column on its own traveler's executions, which it could
+already do through `SET ROLE meridian_app`; the workflow code never does.
 
 ### The lease and fenced writes
 
@@ -104,10 +108,16 @@ Graph starts, renews it every 10 seconds against a 60-second lease, and releases
 it when the run ends. A dead worker cannot release, so its lease expires and the
 next claimant marks the execution abandoned.
 
-Snapshot writes are fenced on that row. The insert statement runs only while the
-writing execution is still the thread's running one. A worker that stalled past
-its lease writes nothing, and the storage raises `ExecutionLeaseLostError`
-instead of appending an older state after another worker took the thread.
+Snapshot writes are fenced on that row. The insert statement reads the execution
+`FOR SHARE` and inserts only while it is still the thread's running one and its
+lease has not lapsed. The lock is held until the write commits, so a takeover, a
+stop or a release either finishes first, and the write then finds the changed row
+and inserts nothing, or waits for the write. A claim skips a locked row, so a
+takeover never abandons an execution whose write is in flight. A worker that
+stalled past its lease writes nothing, and the storage raises
+`ExecutionLeaseLostError` instead of appending an older state after another worker
+took the thread. `tests/test_snapshot_storage_aurora.py` drives both orders on the
+live cluster.
 
 ### The hold
 

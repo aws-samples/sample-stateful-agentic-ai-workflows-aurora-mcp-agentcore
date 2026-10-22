@@ -91,10 +91,15 @@ class WorkflowNodes:
             "Snapshot saved: AuroraSnapshotStorage.write",
             details=f"Workflow snapshot appended after the {node} node",
             sql_query=(
+                "WITH fence AS (\n"
+                "  SELECT execution_id FROM journey_executions\n"
+                "   WHERE execution_id = $1 AND thread_id = $2\n"
+                "     AND status = 'running' AND lease_expires_at > clock_timestamp()\n"
+                "     FOR SHARE)\n"
                 "INSERT INTO workflow_snapshots\n"
                 "  (storage_key, session_id, traveler_id,\n"
                 "   execution_id, worker_id, snapshot)\n"
-                "VALUES ($1, $2, $3, $4, $5, $6::jsonb);"
+                "SELECT $3, $2, $4, fence.execution_id, $5, $6::jsonb FROM fence;"
             ),
             telemetry={
                 "category": "memory_short",

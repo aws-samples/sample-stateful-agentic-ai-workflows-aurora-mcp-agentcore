@@ -1,5 +1,6 @@
 """AuroraSnapshotStorage against the live cluster: append-only rows, newest wins, RLS on read."""
 
+import asyncio
 import json
 import uuid
 
@@ -10,7 +11,9 @@ from strands.types.exceptions import StorageError
 
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agents.phase_05_workflow.snapshot_storage import (
+    INSERT_SQL,
     MAX_SNAPSHOT_BYTES,
+    READ_SQL,
     AuroraSnapshotStorage,
 )
 from backend.db.journey_store import (
@@ -19,6 +22,7 @@ from backend.db.journey_store import (
     bind_thread,
     claim_execution,
     create_journey,
+    release_execution,
 )
 from backend.db.rds_data_client import get_rds_data_client
 
@@ -258,6 +262,126 @@ async def test_a_stalled_worker_cannot_append_after_another_worker_took_the_thre
         "SELECT execution_id FROM workflow_snapshots WHERE session_id = %s", (thread_id,)
     )
     assert [r["execution_id"] for r in rows] == [taker.execution_id]
+
+
+async def test_a_worker_whose_lease_expired_cannot_append_even_before_a_takeover(threads):
+    client, made = threads
+    thread_id = await bound_thread(client, made, TRAVELER)
+    expired = await claim_execution(
+        client, made[-1][1], thread_id, "worker-expired", lease_seconds=ALREADY_EXPIRED
+    )
+    assert expired.claimed
+    storage = AuroraSnapshotStorage(
+        client, session_id=thread_id, traveler_id=TRAVELER,
+        execution_id=expired.execution_id, worker_id="worker-expired",
+    )
+    with pytest.raises(ExecutionLeaseLostError, match=expired.execution_id):
+        await storage.write(key(thread_id), EXECUTING)
+    assert await rows_for(client, thread_id) == []
+    status = await client.execute(
+        "SELECT status FROM journey_executions WHERE execution_id = %s", (expired.execution_id,)
+    )
+    assert status == [{"status": "running"}], "nobody took the thread over; only the lease lapsed"
+
+
+WAIT_FOR_LOCK_SECONDS = 3
+
+
+async def test_a_write_that_overlaps_a_takeover_waits_for_it_and_is_then_refused(threads):
+    """The takeover locks the execution row first; the stale write must queue behind it."""
+    client, made = threads
+    thread_id, stale_id, stale = await writer(client, made)
+    journey_id = made[-1][1]
+
+    takeover = client.begin_transaction()
+    try:
+        scoped = ScopedDb(client, takeover)
+        await release_execution(scoped, stale_id, "abandoned")
+        late_write = asyncio.create_task(stale.write(key(thread_id), b'{"step": "before-hold"}'))
+        await asyncio.sleep(WAIT_FOR_LOCK_SECONDS)
+        assert not late_write.done(), "the stale write must wait for the takeover to finish"
+        replacement = await claim_execution(scoped, journey_id, thread_id, "worker-taker")
+        assert replacement.claimed
+    except BaseException:
+        client.rollback_transaction(takeover)
+        raise
+    client.commit_transaction(takeover)
+
+    with pytest.raises(ExecutionLeaseLostError, match=stale_id):
+        await late_write
+    current = AuroraSnapshotStorage(
+        client, session_id=thread_id, traveler_id=TRAVELER,
+        execution_id=replacement.execution_id, worker_id="worker-taker",
+    )
+    await current.write(key(thread_id), b'{"step": "completed"}')
+    rows = await rows_for(client, thread_id)
+    assert [r["execution_id"] for r in rows] == [replacement.execution_id]
+    assert json.loads(await current.read(key(thread_id))) == {"step": "completed"}
+
+
+class HeldOpenAfterInsert:
+    """The real client, except that a snapshot write's transaction stays open after its INSERT.
+
+    It holds the write between its statement and its commit, the window in which another
+    worker can try to take the thread over.
+    """
+
+    def __init__(self, client):
+        self._client = client
+        self.inserted = asyncio.Event()
+        self.release = asyncio.Event()
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+    async def execute(self, sql, params=None, transaction_id=None):
+        rows = await self._client.execute(sql, params, transaction_id=transaction_id)
+        if sql == INSERT_SQL:
+            self.inserted.set()
+            await self.release.wait()
+        return rows
+
+
+async def test_a_takeover_cannot_supersede_a_write_that_is_still_in_flight(threads):
+    """The reviewed race: a write passes its check, its lease lapses, another worker claims.
+
+    The write holds the execution row until it commits, so the takeover finds the
+    execution still running and declines. Once the write commits, a retry takes the
+    thread over and the replacement's snapshot is the one a resume restores.
+    """
+    client, made = threads
+    thread_id = await bound_thread(client, made, TRAVELER)
+    journey_id = made[-1][1]
+    stale = await claim_execution(client, journey_id, thread_id, "worker-stale", lease_seconds=2)
+    assert stale.claimed
+    held = HeldOpenAfterInsert(client)
+    stale_storage = AuroraSnapshotStorage(
+        held, session_id=thread_id, traveler_id=TRAVELER,
+        execution_id=stale.execution_id, worker_id="worker-stale",
+    )
+
+    in_flight = asyncio.create_task(stale_storage.write(key(thread_id), b'{"step": "before-hold"}'))
+    try:
+        await asyncio.wait_for(held.inserted.wait(), timeout=30)
+        await asyncio.sleep(3)
+        refused = await claim_execution(client, journey_id, thread_id, "worker-taker")
+        assert not refused.claimed, "a takeover must not supersede a write that is in flight"
+        assert refused.conflict["execution_id"] == stale.execution_id
+    finally:
+        held.release.set()
+        await in_flight
+
+    replacement = await claim_execution(client, journey_id, thread_id, "worker-taker")
+    assert replacement.claimed
+    current = AuroraSnapshotStorage(
+        client, session_id=thread_id, traveler_id=TRAVELER,
+        execution_id=replacement.execution_id, worker_id="worker-taker",
+    )
+    await current.write(key(thread_id), b'{"step": "completed"}')
+    rows = await rows_for(client, thread_id)
+    assert [r["execution_id"] for r in rows] == [stale.execution_id, replacement.execution_id]
+    newest = await client.execute(READ_SQL, (key(thread_id),))
+    assert json.loads(newest[0]["snapshot"]) == {"step": "completed"}
 
 
 async def test_a_snapshot_larger_than_64_kb_reads_back(threads):

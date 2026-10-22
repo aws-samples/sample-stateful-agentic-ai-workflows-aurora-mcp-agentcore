@@ -7,9 +7,11 @@ Rows are stamped with the traveler, execution and worker that trusted code
 supplies after the lease claim, never with values read from the snapshot.
 Each read and write pins that traveler in its own transaction, so the row-level
 security policies decide what the Runtime's login sees and appends.
-A write lands only while its execution is still the thread's running one, so a
-worker that stalled past its lease cannot append an older state after another
-worker took the thread over.
+A write lands only while its execution is still the thread's running one and its
+lease has not lapsed. The write locks that execution row until it commits, so a
+takeover either finishes first and the write is refused, or waits for the write
+and finds the execution still running. A worker that stalled past its lease
+therefore cannot append an older state after another worker took the thread over.
 """
 
 import time
@@ -27,14 +29,19 @@ MAX_SNAPSHOT_BYTES = 900_000
 
 PIN_TRAVELER_SQL = "SELECT set_config('app.current_traveler_id', %s, true)"
 
+# FOR SHARE conflicts with the UPDATE a takeover, a stop or a release makes, and
+# in Read Committed a row that changed while the lock waited is checked again in
+# its new version. A plain EXISTS reads a snapshot and serializes with nothing.
 INSERT_SQL = """
+WITH fence AS (
+    SELECT execution_id FROM journey_executions
+     WHERE execution_id = %s AND thread_id = %s AND status = 'running'
+       AND lease_expires_at > clock_timestamp()
+       FOR SHARE
+)
 INSERT INTO workflow_snapshots
     (storage_key, session_id, traveler_id, execution_id, worker_id, snapshot)
-SELECT %s, %s, %s, %s, %s, %s::jsonb
- WHERE EXISTS (
-     SELECT 1 FROM journey_executions
-      WHERE execution_id = %s AND thread_id = %s AND status = 'running'
- )
+SELECT %s, %s, %s, fence.execution_id, %s, %s::jsonb FROM fence
 RETURNING snapshot_seq
 """
 READ_SQL = """
@@ -97,7 +104,8 @@ class AuroraSnapshotStorage:
         Raises:
             StorageError: The storage has no execution, the key is outside the session,
                 the snapshot is over ``MAX_SNAPSHOT_BYTES``, or Aurora refused the write.
-            ExecutionLeaseLostError: The execution no longer runs the thread; nothing was written.
+            ExecutionLeaseLostError: The execution no longer runs the thread or its lease
+                lapsed; nothing was written.
         """
         if self._execution_id is None:
             raise StorageError(
@@ -115,14 +123,14 @@ class AuroraSnapshotStorage:
         try:
             async with self._pinned() as tx:
                 rows = await self._client.execute(INSERT_SQL, (
-                    owned, self._session_id, self._traveler_id,
-                    self._execution_id, self._worker_id, data.decode("utf-8"),
                     self._execution_id, self._session_id,
+                    owned, self._session_id, self._traveler_id,
+                    self._worker_id, data.decode("utf-8"),
                 ), transaction_id=tx)
                 if not rows:
                     raise ExecutionLeaseLostError(
                         f"Execution {self._execution_id} no longer runs thread "
-                        f"{self._session_id}; its snapshot was not saved. "
+                        f"{self._session_id}, or its lease lapsed; its snapshot was not saved. "
                         "Re-read the saved journey."
                     )
         except ClientError as exc:
