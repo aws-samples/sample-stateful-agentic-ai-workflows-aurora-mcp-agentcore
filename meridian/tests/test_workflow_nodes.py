@@ -152,6 +152,17 @@ async def test_hold_without_a_package_or_traveler_returns_only_activities(nodes,
     assert gateway.calls == []
 
 
+async def test_no_hold_is_requested_when_no_duration_seats_the_party(nodes, gateway):
+    state = {**_hold_state(), "packages": [{**PACKAGE, "availability": {"3 nights": 1}}]}
+    prepared = await nodes.prepare_hold(state)
+    assert "hold_intent" not in prepared
+    assert "places left for 2 travelers" in prepared["activities"][-1]["details"]
+    out = await nodes.hold({**state, **prepared}, HOLD_CONFIG)
+    assert out["activities"][-2]["title"] == "Workflow node: hold skipped"
+    assert "places left for 2 travelers" in out["activities"][-2]["details"]
+    assert gateway.calls == []
+
+
 async def test_a_placed_hold_returns_the_receipt_and_the_span_the_ui_and_journey_read(
     nodes, gateway
 ):
@@ -249,6 +260,15 @@ async def test_hold_gateway_exception_raises_outcome_unknown_chained(nodes):
 def _synth_state(**extra):
     return {"query": PLAN, "intent": "plan", "packages": [{"product_id": "p"}],
             "availability_checks": 1, "traveler_id": "trv_x", "activities": [], **extra}
+
+
+async def test_synthesize_tells_the_traveler_why_no_hold_was_requested(nodes):
+    out = await nodes.synthesize({
+        "query": PLAN, "intent": "plan", "packages": [{"product_id": "p"}],
+        "availability_checks": 1, "traveler_id": "trv_x", "activities": [],
+        "hold_unavailable": "No duration of p has places left for 2 travelers.",
+    })
+    assert "No courtesy hold was requested: No duration of p has places left" in out["response"]
 
 
 async def test_synthesize_without_a_hold_id_never_reads_aurora(nodes):

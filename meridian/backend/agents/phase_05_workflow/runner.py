@@ -23,6 +23,7 @@ from backend.agents.phase_05_workflow.graph import (
     ResumableStorage,
     RunContext,
     build_graph,
+    fold_snapshot,
     fold_state,
     next_nodes,
     node_spans,
@@ -32,6 +33,7 @@ from backend.agents.phase_05_workflow.graph import (
     snapshot_key,
 )
 from backend.agents.phase_05_workflow.nodes import WorkflowNodes
+from backend.agents.phase_05_workflow.packages import review_shortlist
 from backend.agents.phase_05_workflow.state import (
     SNAPSHOT_STORE,
     WorkflowAuthorizationError,
@@ -71,6 +73,9 @@ class WorkflowCommand:
         resume: The traveler resumed the saved plan; this confirms the hold.
         travelers_count: Party size for a fresh run; a resume keeps the saved one.
         review_only: Pause after search for review.
+        selected_package_id: The reviewed alternative the traveler chose, sent with the
+            resume that answers the review. None keeps the saved choice, or the
+            top-ranked package when nothing was chosen.
     """
 
     query: str
@@ -79,6 +84,7 @@ class WorkflowCommand:
     resume: bool = False
     travelers_count: int = 1
     review_only: bool = False
+    selected_package_id: Optional[str] = None
 
 
 class LeaseStore(Protocol):
@@ -119,18 +125,59 @@ def _validate(command: WorkflowCommand) -> None:
             f"thread_id {command.thread_id!r} cannot be used: it must be a single path segment, "
             "not blank, '.', '..' or containing '/'"
         )
+    if command.selected_package_id is not None and not command.resume:
+        raise WorkflowRequestError(
+            "A package is chosen when resuming a reviewed recovery, not when starting one."
+        )
+
+
+def _saved_inputs(prior: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The run's inputs as the saved task records them; an unreadable task records none."""
+    task = prior["data"]["state"].get("current_task") if prior else None
+    if not isinstance(task, str):
+        return {}
+    try:
+        parsed = json.loads(task)
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _owner(prior: Optional[Dict[str, Any]]) -> str:
     """The traveler the saved task names; an unreadable task names no one."""
-    task = prior["data"]["state"].get("current_task") if prior else None
-    if not isinstance(task, str):
-        return ""
-    try:
-        parsed = json.loads(task)
-    except ValueError:
-        return ""
-    return str(parsed.get("traveler_id") or "") if isinstance(parsed, dict) else ""
+    return str(_saved_inputs(prior).get("traveler_id") or "")
+
+
+def _choice_to_record(prior: Optional[Dict[str, Any]], command: WorkflowCommand) -> Optional[str]:
+    """The package choice this resume adds to the saved task, or None when nothing changes.
+
+    A choice answers the review, so it is accepted only while the run waits for the
+    traveler, and only for a package of the reviewed shortlist. Once the run went past
+    the review, the saved choice stands.
+
+    Raises:
+        WorkflowRequestError: The package is not one of the reviewed alternatives.
+        WorkflowConflictError: The run is not waiting for a review and saved another choice.
+    """
+    chosen = command.selected_package_id
+    if chosen is None or prior is None:
+        return None
+    saved = _saved_inputs(prior).get("selected_package")
+    waiting = any(item.get("name") in CONSENT_INTERRUPTS for item in pending_interrupts(prior))
+    if not waiting:
+        if chosen == saved:
+            return None
+        settled = saved or "its top-ranked package"
+        raise WorkflowConflictError(
+            f"This recovery is not waiting for a review, so its package cannot change now; it "
+            f"continues with {settled}. Start a new recovery to choose again."
+        )
+    shortlist = review_shortlist(fold_snapshot(prior).get("packages"))
+    if chosen not in shortlist:
+        raise WorkflowRequestError(
+            f"Choose one of the reviewed packages: {', '.join(shortlist)}."
+        )
+    return None if chosen == saved else chosen
 
 
 def _authorize(prior: Optional[Dict[str, Any]], command: WorkflowCommand) -> None:
@@ -288,6 +335,7 @@ class WorkflowRunner:
         prior = await self._read_snapshot(command)
         _authorize(prior, command)
         _check_against(prior, command)
+        _choice_to_record(prior, command)
         try:
             journey_id = await self._lease.ensure_journey(command.traveler_id, command.thread_id)
         except PermissionError as exc:
@@ -374,6 +422,7 @@ class WorkflowRunner:
                 write_ms.append,
             )
         )
+        prior = await self._record_choice(storage, command, prior)
         session = SnapshotSessionManager(
             command.thread_id, storage=storage, multi_agent_save_latest_on="node"
         )
@@ -413,6 +462,25 @@ class WorkflowRunner:
         if after_pause is not None and result["workflow_status"] == "paused":
             await after_pause(result, claim)
         return result
+
+    @staticmethod
+    async def _record_choice(
+        storage: Any, command: WorkflowCommand, prior: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """Save the traveler's choice in the run's inputs before any step runs.
+
+        The choice becomes part of the saved task, which every later snapshot carries,
+        so a resume after a crash holds the package the traveler chose. The write is
+        fenced by this execution's lease like every other snapshot write.
+        """
+        chosen = _choice_to_record(prior, command)
+        if chosen is None:
+            return prior
+        inputs = {**_saved_inputs(prior), "selected_package": chosen}
+        state = {**prior["data"]["state"], "current_task": run_task(**inputs)}
+        recorded = {**prior, "data": {**prior["data"], "state": state}}
+        await storage.write(snapshot_key(command.thread_id), json.dumps(recorded).encode("utf-8"))
+        return recorded
 
     @staticmethod
     def _task(command: WorkflowCommand, journey_id: str, prior: Optional[Dict[str, Any]]) -> Any:

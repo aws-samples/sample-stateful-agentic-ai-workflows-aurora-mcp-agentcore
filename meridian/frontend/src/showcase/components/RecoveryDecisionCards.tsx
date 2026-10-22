@@ -10,6 +10,7 @@ AlertTriangle,
   Circle,
   Clock3,
   FileCheck2,
+  Eye,
   GitCompareArrows,
   Headphones,
   Loader2,
@@ -53,6 +54,8 @@ interface PackageOptionCardProps {
   disabled?: boolean;
   onView: () => void;
   onCompare: () => void;
+  /** Present while the recovery waits for review and this option is on the shortlist. */
+  onChoose?: () => void;
 }
 
 interface ConciergeAssistanceCardProps {
@@ -729,6 +732,7 @@ export function PackageOptionCard({
   disabled = false,
   onView,
   onCompare,
+  onChoose,
 }: PackageOptionCardProps) {
   return (
     <article
@@ -772,15 +776,38 @@ export function PackageOptionCard({
           <span>Appears after the live recovery search.</span>
         </div>
       )}
-      <footer>
-        <button
-          type="button"
-          className="is-primary"
-          onClick={onView}
-          disabled={disabled || !product}
-        >
-          View option
-        </button>
+      <footer className={onChoose ? 'is-choosable' : undefined}>
+        {onChoose ? (
+          <>
+            <button
+              type="button"
+              className="is-primary"
+              onClick={onChoose}
+              disabled={disabled || !product}
+            >
+              Hold this option
+            </button>
+            <button
+              type="button"
+              className="is-icon"
+              onClick={onView}
+              disabled={disabled || !product}
+              aria-label={`View option ${rank}`}
+              title="View option"
+            >
+              <Eye size={16} aria-hidden="true" />
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="is-primary"
+            onClick={onView}
+            disabled={disabled || !product}
+          >
+            View option
+          </button>
+        )}
         <button
           type="button"
           className="is-icon"

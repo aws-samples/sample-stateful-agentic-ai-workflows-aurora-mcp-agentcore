@@ -14,7 +14,9 @@ from decimal import Decimal
 from typing import Any, Dict, Optional
 
 from backend.agents.phase_05_workflow.packages import (
-    first_available_duration,
+    duration_for_party,
+    find_ranked_package,
+    ranked_package_id,
     top_ranked_package,
 )
 
@@ -102,38 +104,22 @@ def build_hold_intent(
     )
 
 
-def _terms_from_state(state: dict) -> Optional[tuple]:
-    """Read the hold's terms from workflow state.
+def _hold_target(state: dict) -> Optional[Dict[str, Any]]:
+    """The ranked package the hold is for.
 
-    An explicitly selected package wins. Otherwise the terms come from the
-    ranked list exactly as the hold node reads it, so the fingerprinted hold
-    and the executed hold are the same hold.
-
-    Returns:
-        A ``(package_id, duration, quantity, unit_price)`` tuple, or None when
-        the ranking is empty and there is nothing to hold.
+    The package the traveler chose at review (``selected_package``) wins; it is
+    validated against the reviewed shortlist before the run resumes. Otherwise the
+    top-ranked package, read exactly as the hold node reads it, so the
+    fingerprinted hold and the executed hold are the same hold.
     """
-    quantity = int(state.get("travelers_count") or DEFAULT_QUANTITY)
+    chosen = state.get("selected_package")
+    if chosen:
+        return find_ranked_package(state.get("packages"), str(chosen))
+    return top_ranked_package(state.get("packages"))
 
-    selected = state.get("selected_package")
-    if selected:
-        return (
-            str(selected),
-            str(state.get("duration") or ""),
-            quantity,
-            Decimal(str(state.get("unit_price") or 0)),
-        )
 
-    target = top_ranked_package(state.get("packages"))
-    if not target:
-        return None
-
-    return (
-        str(target.get("product_id") or target.get("package_id")),
-        first_available_duration(target),
-        quantity,
-        Decimal(str(target.get("price") or 0)),
-    )
+def _travelers(quantity: int) -> str:
+    return f"{quantity} traveler" if quantity == 1 else f"{quantity} travelers"
 
 
 def prepare_hold_node(state: dict) -> Dict[str, Any]:
@@ -142,17 +128,33 @@ def prepare_hold_node(state: dict) -> Dict[str, Any]:
     Returns the existing intent unchanged when the state already carries one,
     so a resumed graph replays with the identity it checkpointed rather than
     allocating a second one. Returns nothing when there is no ranked option,
-    matching the hold node, which skips rather than fails in that case.
+    matching the hold node, which skips rather than fails in that case. When the
+    package counts its places and no duration seats the whole party, returns
+    ``hold_unavailable`` with the reason instead of an intent the write would refuse.
     """
     existing = state.get("hold_intent")
     if existing:
         return {"hold_intent": existing}
 
-    terms = _terms_from_state(state)
-    if terms is None:
-        return {}
+    target = _hold_target(state)
+    if not target:
+        chosen = state.get("selected_package")
+        return {"hold_unavailable": (
+            f"The chosen package {chosen} is not among the ranked options."
+        )} if chosen else {}
 
-    intent = build_hold_intent(*terms)
+    package_id = ranked_package_id(target)
+    quantity = int(state.get("travelers_count") or DEFAULT_QUANTITY)
+    duration = duration_for_party(target, quantity)
+    if duration is None:
+        return {
+            "hold_unavailable": (
+                f"No duration of {package_id} has places left for {_travelers(quantity)}."
+            )
+        }
+
+    unit_price = Decimal(str(target.get("price") or 0))
+    intent = build_hold_intent(package_id, duration, quantity, unit_price)
     return {
         "hold_intent": {
             "hold_request_id": intent.hold_request_id,

@@ -331,9 +331,14 @@ function optionBadgeFor(state: MeridianShowcaseState) {
   };
 }
 
-function RecoveryAlternatives({ state, evidence }: {
+// The workflow offers the top-ranked package and the next two; it checks availability for
+// the same three and accepts a choice only among them.
+const CHOOSABLE_ALTERNATIVES = 2;
+
+function RecoveryAlternatives({ state, evidence, onChoose }: {
   state: MeridianShowcaseState;
   evidence: RecoveryEvidence;
+  onChoose?: (product: Product) => void;
 }) {
   const alternativeProducts = Array.from({ length: 3 }, (_, index) =>
     state.recommendations?.[index + 1] ?? null,
@@ -369,6 +374,11 @@ function RecoveryAlternatives({ state, evidence }: {
             onCompare={() => {
               if (product) state.compareTrip(product);
             }}
+            onChoose={
+              onChoose && product && index < CHOOSABLE_ALTERNATIVES
+                ? () => onChoose(product)
+                : undefined
+            }
           />
         ))}
       </div>
@@ -391,10 +401,17 @@ function RecoveryDecisionDashboard({
   const topRecoveryOption = state.recommendations?.[0] ?? null;
   const hasConversation =
     state.messages.length > 0 || state.isLoading || Boolean(state.error);
-  const resumeRecovery = () => {
+  const resumeRecovery = (chosen?: Product) => {
     state.setSelectedPhase(5);
-    void state.submitPrompt('Resume workflow from the saved step', 5);
+    if (chosen) {
+      void state.submitPrompt(
+        'Resume workflow from the saved step', 5, { selectedPackageId: chosen.product_id },
+      );
+    } else {
+      void state.submitPrompt('Resume workflow from the saved step', 5);
+    }
   };
+  const waitingForReview = stage === 'checkpointed' && state.workflowStatus === 'paused';
   const reviewRecoveryPlan = () => {
     const briefing = briefingRef.current;
     if (!briefing) return;
@@ -450,7 +467,11 @@ function RecoveryDecisionDashboard({
           }}
         />
 
-        <RecoveryAlternatives state={state} evidence={evidence} />
+        <RecoveryAlternatives
+          state={state}
+          evidence={evidence}
+          onChoose={waitingForReview ? resumeRecovery : undefined}
+        />
       </div>
 
       <div className="mds-recovery-decision-support">

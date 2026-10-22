@@ -94,6 +94,12 @@ export const EMPTY_FILTERS: ChatFilters = {
   rebookNonstop: false,
 };
 
+/** How a prompt is sent: as a review-only start, or as the resume that holds a chosen package. */
+export interface PromptOptions {
+  reviewOnly?: boolean;
+  selectedPackageId?: string;
+}
+
 export interface MeridianShowcaseState {
   selectedPhase: Phase;
   phaseLabel: string;
@@ -171,7 +177,7 @@ export interface MeridianShowcaseState {
   setSelectedTrip: (product: Product | null) => void;
   setSelectedPhase: (phase: Phase) => void;
   setMemoryEnabled: (enabled: boolean) => Promise<void>;
-  submitPrompt: (prompt?: string, phaseOverride?: Phase, options?: { reviewOnly?: boolean }) => Promise<void>;
+  submitPrompt: (prompt?: string, phaseOverride?: Phase, options?: PromptOptions) => Promise<void>;
   applyPhaseExample: (
     prompt: string,
     runImmediately?: boolean,
@@ -372,7 +378,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   const [lastRequestPhase, setLastRequestPhase] = useState<Phase | null>(null);
   const [recoveryRequest, setRecoveryRequest] = useState<string | null>(null);
   const lastPromptPhaseOverride = useRef<Phase>();
-  const lastPromptOptions = useRef<{ reviewOnly?: boolean }>();
+  const lastPromptOptions = useRef<PromptOptions>();
   const [error, setError] = useState<string | null>(null);
   const [backendStatus, setBackendStatus] = useState<BackendStatus>('checking');
   const [backendHealth, setBackendHealth] = useState<BackendHealth | null>(null);
@@ -636,7 +642,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
   }, [applyChatResponse, isLoading]);
 
   const submitPrompt = useCallback(
-    async (overridePrompt?: string, phaseOverride?: Phase, options?: { reviewOnly?: boolean }) => {
+    async (overridePrompt?: string, phaseOverride?: Phase, options?: PromptOptions) => {
       if ((phaseOverride ?? selectedPhase) === 4 && memoryLoading) {
         setError('Wait for traveler context to finish connecting before sending this request.');
         return;
@@ -751,6 +757,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           phase: requestPhase,
           ...(phaseOverride === 4 ? { experience: 'concierge' as const } : {}),
           ...(options?.reviewOnly ? { review_only: true } : {}),
+          ...(options?.selectedPackageId ? { selected_package_id: options.selectedPackageId } : {}),
           ...(requestPhase >= 4
             ? {
                 customer_id: CURRENT_TRAVELER,

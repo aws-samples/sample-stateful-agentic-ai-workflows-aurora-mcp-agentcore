@@ -125,8 +125,12 @@ class WorkflowRuntimeClient:
 
     @staticmethod
     def payload(command: WorkflowCommand) -> bytes:
-        """The Runtime payload: the command's typed fields and nothing else."""
-        return json.dumps({
+        """The Runtime payload: the command's typed fields and nothing else.
+
+        ``selected_package_id`` is sent only with a choice, so a turn without one
+        reads the same to a Runtime deployed before the field existed.
+        """
+        body = {
             "event": WORKFLOW_EVENT,
             "mode": "resume" if command.resume else "start",
             "thread_id": command.thread_id,
@@ -134,7 +138,10 @@ class WorkflowRuntimeClient:
             "query": command.query,
             "travelers_count": command.travelers_count,
             "review_only": command.review_only,
-        }).encode("utf-8")
+        }
+        if command.selected_package_id is not None:
+            body["selected_package_id"] = command.selected_package_id
+        return json.dumps(body).encode("utf-8")
 
     def _send(self, session_id: str, payload: bytes) -> Any:
         """One invocation: IAM-signed by default, with the caller's bearer token in jwt mode."""

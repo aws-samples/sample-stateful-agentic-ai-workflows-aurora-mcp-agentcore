@@ -92,6 +92,8 @@ class ChatRequest(BaseModel):
     memory_enabled: bool = True
     experience: Literal["capability", "concierge"] = "capability"
     review_only: bool = False
+    # The reviewed alternative the traveler chose; sent only with the resume that answers it.
+    selected_package_id: Optional[str] = Field(default=None, min_length=1, max_length=50)
 
 
 class OrderItem(BaseModel):
@@ -1526,6 +1528,21 @@ def _append_recovery_memory_receipt(
     )
 
 
+def _refuse_unusable_workflow_request(request: ChatRequest, resume: bool) -> None:
+    """A review starts a plan and a package choice answers one; neither fits the other's turn."""
+    if request.review_only and resume:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "A review starts a new plan. Read the saved recovery before choosing to resume it."
+            ),
+        )
+    if request.selected_package_id and not resume:
+        raise HTTPException(
+            status_code=422, detail="A package is chosen when resuming a reviewed recovery."
+        )
+
+
 async def orchestration_workflow(
     query: str,
     traveler_id: str,
@@ -1534,6 +1551,7 @@ async def orchestration_workflow(
     resume: bool = False,
     travelers_count: int = 1,
     review_only: bool = False,
+    selected_package_id: Optional[str] = None,
 ) -> tuple[List[Product], List[ActivityEntry], str, str, str, bool]:
     """Phase 5: the MeridianWorkflow AgentCore Runtime runs a Strands Graph.
 
@@ -1559,6 +1577,7 @@ async def orchestration_workflow(
         resume=resume,
         travelers_count=travelers_count,
         review_only=review_only,
+        selected_package_id=selected_package_id,
     )
     try:
         final_state = await get_workflow_runtime().run(command)
@@ -2053,8 +2072,7 @@ async def chat(
             resume_workflow = request.resume or _is_workflow_resume_query(
                 request.message
             )
-            if request.review_only and resume_workflow:
-                raise HTTPException(status_code=422, detail="A review starts a new plan. Read the saved recovery before choosing to resume it.")
+            _refuse_unusable_workflow_request(request, resume_workflow)
             (
                 workflow_packages,
                 workflow_activities,
@@ -2069,6 +2087,10 @@ async def chat(
                 resume=resume_workflow,
                 travelers_count=request.travelers_count,
                 **({"review_only": True} if request.review_only else {}),
+                **(
+                    {"selected_package_id": request.selected_package_id}
+                    if request.selected_package_id else {}
+                ),
             )
             activities.extend(workflow_activities)
             workflow_memory_facts: List[MemoryFact] = []

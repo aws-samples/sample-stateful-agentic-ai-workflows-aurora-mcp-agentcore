@@ -155,6 +155,8 @@ export interface ChatRequest {
   memory_enabled?: boolean;
   experience?: 'capability' | 'concierge';
   review_only?: boolean;
+  /** The reviewed alternative the traveler chose; sent only with the resume that answers it. */
+  selected_package_id?: string;
 }
 
 export interface ChatResponse {

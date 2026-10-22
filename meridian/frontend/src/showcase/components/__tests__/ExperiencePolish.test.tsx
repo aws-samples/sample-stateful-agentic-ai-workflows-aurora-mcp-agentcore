@@ -1652,3 +1652,70 @@ describe('copy names only the signed-in traveler', () => {
     expect(container.textContent).not.toContain('Jordan');
   });
 });
+
+describe('Recovery package choice', () => {
+  const ranked = ['TKY-003', 'TKY-001', 'CTY-002', 'TKY-002'].map((id, index) => ({
+    product_id: id,
+    name: `Ranked option ${index + 1}`,
+    brand: 'ANA Holidays',
+    price: 2000 + index * 100,
+    description: 'A ranked Tokyo recovery option.',
+    image_url: `/travel/catalog/${id}.jpg`,
+    category: 'city',
+    destination: 'Tokyo',
+    available_sizes: ['3 nights', '5 nights'],
+    availability: { '3 nights': 4, '5 nights': 2 },
+  }));
+  const waiting = (overrides: Partial<MeridianShowcaseState> = {}) => makeState({
+    selectedPhase: 5,
+    phaseLabel: 'Workflow',
+    lastPrompt: SHOWCASE_FINALE_PROMPT,
+    workflowStatus: 'paused',
+    conversationId: 'phase5-thread',
+    recommendations: ranked,
+    messages: [
+      { role: 'user', text: SHOWCASE_FINALE_PROMPT },
+      { role: 'bot', text: 'Paused for review.', products: ranked },
+    ],
+    ...overrides,
+  });
+
+  it('offers to hold either shortlisted alternative while the recovery waits for review', () => {
+    const state = waiting();
+    render(<RecoveryWorkspace state={state} />);
+    const third = screen.getByRole('article', { name: 'Recovery option 3' });
+    fireEvent.click(within(third).getByRole('button', { name: 'Hold this option' }));
+    expect(state.submitPrompt).toHaveBeenCalledExactlyOnceWith(
+      'Resume workflow from the saved step', 5, { selectedPackageId: 'CTY-002' },
+    );
+    expect(
+      within(screen.getByRole('article', { name: 'Recovery option 2' }))
+        .getByRole('button', { name: 'Hold this option' }),
+    ).toBeEnabled();
+    expect(
+      within(screen.getByRole('article', { name: 'Recovery option 4' }))
+        .queryByRole('button', { name: 'Hold this option' }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(third).getByRole('button', { name: 'View option 3' }),
+    ).toBeInTheDocument();
+  });
+
+  it('resumes the top-ranked plan without naming a package', () => {
+    const state = waiting();
+    render(<RecoveryWorkspace state={state} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Resume and request hold' }));
+    expect(state.submitPrompt).toHaveBeenCalledExactlyOnceWith(
+      'Resume workflow from the saved step', 5,
+    );
+  });
+
+  it('offers no choice once the recovery has continued', () => {
+    render(<RecoveryWorkspace state={waiting({ workflowStatus: 'resumed' })} />);
+    expect(screen.queryByRole('button', { name: 'Hold this option' })).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole('article', { name: 'Recovery option 2' }))
+        .getByRole('button', { name: 'View option' }),
+    ).toBeInTheDocument();
+  });
+});

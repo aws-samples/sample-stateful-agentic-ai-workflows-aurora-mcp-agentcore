@@ -150,6 +150,21 @@ describe('Concierge request context', () => {
     expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 5, review_only: true, resume: undefined }), expect.any(AbortSignal));
   });
 
+  it('sends the chosen package with the resume of a paused recovery', async () => {
+    vi.mocked(sendChatMessage).mockResolvedValueOnce({
+      message: 'Paused for review.', activities: [], conversation_id: 'phase5-thread',
+      workflow_status: 'paused',
+    });
+    const { result } = renderHook(() => useMeridianShowcase());
+    await act(async () => { await result.current.submitPrompt('My flight was canceled. Rework my Tokyo trip.', 5); });
+    await act(async () => {
+      await result.current.submitPrompt('Resume workflow from the saved step', 5, { selectedPackageId: 'CTY-002' });
+    });
+    expect(sendChatMessage).toHaveBeenLastCalledWith(expect.objectContaining({
+      phase: 5, resume: true, selected_package_id: 'CTY-002', conversation_id: 'phase5-thread',
+    }), expect.any(AbortSignal));
+  });
+
   it('inspects the phase that produced a concierge reply without losing the run', async () => {
     const { result } = renderHook(() => useMeridianShowcase());
     await waitFor(() => expect(result.current.previewProfile).not.toBeNull());

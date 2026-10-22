@@ -36,7 +36,9 @@ HEARTBEAT_SECONDS = 10
 MODES = ("ping", "resume", "start")
 TURN_KEYS = frozenset({
     "event", "mode", "thread_id", "traveler_id", "query", "travelers_count", "review_only",
+    "selected_package_id",
 })
+MAX_PACKAGE_ID = 50
 RESULT_KEYS = (
     "activities", "packages", "response", "conversation_id", "workflow_status",
     "resumed_after_restart", "resumed_from_checkpoint", "execution_id", "worker_instance_id",
@@ -140,6 +142,13 @@ def parse_turn(
     review_only = payload.get("review_only", False)
     if not isinstance(review_only, bool):
         raise WorkflowRequestError("review_only must be true or false")
+    chosen = payload.get("selected_package_id")
+    if chosen is not None and not (
+        isinstance(chosen, str) and chosen.strip() and len(chosen) <= MAX_PACKAGE_ID
+    ):
+        raise WorkflowRequestError(
+            f"selected_package_id must be a package id of at most {MAX_PACKAGE_ID} characters"
+        )
     return WorkflowCommand(
         query=_text(payload, "query"),
         traveler_id=resolve_traveler(payload, session_id, headers).traveler_id,
@@ -147,6 +156,7 @@ def parse_turn(
         resume=mode == "resume",
         travelers_count=payload.get("travelers_count", 1),
         review_only=review_only,
+        selected_package_id=chosen,
     )
 
 

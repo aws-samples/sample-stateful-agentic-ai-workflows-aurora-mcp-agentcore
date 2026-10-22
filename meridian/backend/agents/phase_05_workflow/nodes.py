@@ -23,11 +23,7 @@ from backend.agents.phase_05_workflow.governed_hold import (
     place_governed_hold,
 )
 from backend.agents.phase_05_workflow.hold_intent import prepare_hold_node
-from backend.agents.phase_05_workflow.packages import (
-    first_available_duration,
-    package_to_dict,
-    top_ranked_package,
-)
+from backend.agents.phase_05_workflow.packages import package_to_dict
 from backend.agents.phase_05_workflow.routing import classify_intent, is_recovery_request
 from backend.agents.phase_05_workflow.state import (
     HOLD_MINUTES,
@@ -365,14 +361,27 @@ class WorkflowNodes:
         activities = list(state.get("activities", []))
         activities.append(activity(
             "reasoning", "Workflow node: prepare_hold",
-            details="Stable hold intent prepared; the graph saves it before the hold node."
-                if prepared.get("hold_intent") else "No eligible package; no hold intent prepared.",
+            details=self._prepared_details(state, prepared),
             telemetry={
                 "category": "orchestration", "component": "Strands Graph", "status": "ok",
                 "fields": [{"label": "node", "value": "prepare_hold"}],
             },
         ))
         return {**prepared, "activities": activities}
+
+    @staticmethod
+    def _prepared_details(state: Dict[str, Any], prepared: Dict[str, Any]) -> str:
+        intent = prepared.get("hold_intent")
+        if not intent:
+            return prepared.get("hold_unavailable") or (
+                "No eligible package; no hold intent prepared."
+            )
+        chosen = state.get("selected_package")
+        source = "the traveler's choice" if chosen else "the top-ranked option"
+        return (
+            f"Stable hold intent prepared for {intent['package_id']} ({intent['duration']}), "
+            f"{source}, {intent['quantity']} traveler(s); the graph saves it before the hold node."
+        )
 
     async def hold(
         self, state: Dict[str, Any], config: Optional[Dict[str, Any]] = None
@@ -396,22 +405,25 @@ class WorkflowNodes:
         """
         start = utc_now()
         activities = list(state.get("activities", []))
-        packages = state.get("packages", []) or []
         traveler_id = state.get("traveler_id") or ""
 
-        target = top_ranked_package(packages)
-        if not target or not traveler_id:
+        # Terms come from the saved intent, so the hold that runs is the hold that was
+        # fingerprinted. Preparing one here keeps a direct call to this node working.
+        prepared = {} if state.get("hold_intent") else prepare_hold_node(state)
+        intent = state.get("hold_intent") or prepared.get("hold_intent")
+        if not intent or not traveler_id:
+            reason = state.get("hold_unavailable") or prepared.get("hold_unavailable")
             activities.append(
                 activity(
                     "reasoning",
                     "Workflow node: hold skipped",
-                    details="No ranked option to hold for this traveler.",
+                    details=reason or "No ranked option to hold for this traveler.",
                 )
             )
             activities.append(self._snapshot_activity("hold"))
             return {"activities": activities}
 
-        terms = self._hold_terms(state, target)
+        terms = self._hold_terms(state, intent)
         hold_id = terms["booking_id"]
         package_id = terms["package_id"]
         quantity = terms["quantity"]
@@ -572,33 +584,20 @@ class WorkflowNodes:
         return outcome.error or "the gateway returned no hold"
 
     @staticmethod
-    def _hold_terms(state: Dict[str, Any], target: Dict[str, Any]) -> Dict[str, Any]:
-        # Terms come from the checkpointed intent, so the hold that runs is the
-        # hold that was fingerprinted. Falling back to deriving them again
-        # keeps a direct call to this node working.
-        intent = state.get("hold_intent") or prepare_hold_node(state).get(
-            "hold_intent", {}
-        )
-        package_id = str(
-            intent.get("package_id")
-            or target.get("product_id")
-            or target.get("package_id")
-        )
-        duration = str(intent.get("duration") or first_available_duration(target))
-        quantity = int(intent.get("quantity") or state.get("travelers_count") or 1)
-        unit_price = float(intent.get("unit_price") or target.get("price") or 0)
-        # New business intents own a booking ID. Older checkpoints retain the
-        # original thread/package key so their replay still finds the same row.
+    def _hold_terms(state: Dict[str, Any], intent: Dict[str, Any]) -> Dict[str, Any]:
+        package_id = str(intent["package_id"])
+        duration = str(intent["duration"])
+        # New business intents own a booking ID. Older snapshots retain the original
+        # thread/package key so their replay still finds the same row.
         hold_id = str(intent.get("booking_id") or hold_key(
             state.get("conversation_id") or "", package_id, duration
         ))
-        hold_request_id = str(intent.get("hold_request_id") or hold_id)
         return {
             "package_id": package_id,
             "duration": duration,
-            "quantity": quantity,
-            "unit_price": unit_price,
-            "hold_request_id": hold_request_id,
+            "quantity": int(intent.get("quantity") or state.get("travelers_count") or 1),
+            "unit_price": float(intent.get("unit_price") or 0),
+            "hold_request_id": str(intent.get("hold_request_id") or hold_id),
             "booking_id": hold_id,
         }
 
@@ -842,27 +841,7 @@ class WorkflowNodes:
         else:
             response = "No matches yet — try broadening the destination or dates."
 
-        # Action status is application data. A prose model must not turn an
-        # existing hold into an offer to place another one, or imply a flight
-        # was reserved just because the traveler prefers a nonstop route.
-        if state.get("hold_id") and hold_status == "released":
-            response += (
-                f"\n\nCourtesy hold {state['hold_id']} was released after a step failed, "
-                "so those seats are no longer held. Place a new hold to reserve them again."
-            )
-        elif state.get("hold_id"):
-            response += (
-                f"\n\nAurora recorded courtesy hold {state['hold_id']} for "
-                f"{state.get('hold_package')}, {state.get('hold_duration')}. "
-                f"Recorded status: {hold_status or 'held'}. "
-                f"Expires at {state.get('hold_expires_at')}. "
-                "Read the current receipt before confirming the trip."
-            )
-        elif is_recovery_request(state.get("query", "")):
-            response += (
-                "\n\nNo courtesy hold was recorded by this workflow. "
-                "Review the hold decision before continuing."
-            )
+        response += self._hold_paragraph(state, hold_status)
         response += (
             "\n\nAvailability refers to trip-package inventory. "
             "Flight seats and routes have not been checked or reserved."
@@ -890,6 +869,38 @@ class WorkflowNodes:
             )
         )
         return {"response": response, "activities": activities}
+
+    @staticmethod
+    def _hold_paragraph(state: Dict[str, Any], hold_status: Optional[str]) -> str:
+        """The hold's outcome, from application data.
+
+        A prose model must not turn an existing hold into an offer to place another
+        one, or imply a flight was reserved because the traveler prefers a nonstop route.
+        """
+        if state.get("hold_id") and hold_status == "released":
+            return (
+                f"\n\nCourtesy hold {state['hold_id']} was released after a step failed, "
+                "so those seats are no longer held. Place a new hold to reserve them again."
+            )
+        if state.get("hold_id"):
+            return (
+                f"\n\nAurora recorded courtesy hold {state['hold_id']} for "
+                f"{state.get('hold_package')}, {state.get('hold_duration')}. "
+                f"Recorded status: {hold_status or 'held'}. "
+                f"Expires at {state.get('hold_expires_at')}. "
+                "Read the current receipt before confirming the trip."
+            )
+        if state.get("hold_unavailable"):
+            return (
+                f"\n\nNo courtesy hold was requested: {state['hold_unavailable']} "
+                "Choose another option or a smaller party."
+            )
+        if is_recovery_request(state.get("query", "")):
+            return (
+                "\n\nNo courtesy hold was recorded by this workflow. "
+                "Review the hold decision before continuing."
+            )
+        return ""
 
     async def _current_hold_status(self, state: Dict[str, Any]) -> Optional[str]:
         """The hold's status now: the Aurora booking row, else the status the hold step saved.

@@ -63,6 +63,15 @@ review, and before `prepare_hold` on every route. A resume is the answer, and
 the runner counts it as consent only when the saved snapshot shows a pending or answered review or
 confirmation, or a run that already got past `prepare_hold`.
 
+The answer can name the package to hold. `selected_package_id` on the resume must
+be one of the first three ranked packages, the shortlist the traveler reviewed and
+the availability step checks. The runner accepts it only while the run waits for
+that answer, and saves it in the run's inputs before any step runs, so every later
+snapshot carries it and a resume after a crash holds the same package. Without a
+choice, the hold is for the top-ranked package. `prepare_hold` takes the first
+duration of that package with places for the whole party; when no duration has
+enough, it prepares no hold and says why.
+
 ### Snapshots
 
 `SnapshotSessionManager` saves the Graph state after every node.

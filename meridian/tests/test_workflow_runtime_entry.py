@@ -60,7 +60,22 @@ async def test_a_resume_sets_resume():
     assert runner.commands[0].resume is True
 
 
+async def test_a_resume_carries_the_chosen_package():
+    runner = Runner(result={})
+    await events({**START, "mode": "resume", "selected_package_id": "pkg_kyoto"}, runner)
+    assert runner.commands[0].selected_package_id == "pkg_kyoto"
+
+
+async def test_a_turn_without_a_choice_carries_none():
+    runner = Runner(result={})
+    await events(START, runner)
+    assert runner.commands[0].selected_package_id is None
+
+
 @pytest.mark.parametrize("payload", [
+    {**START, "mode": "resume", "selected_package_id": 7},
+    {**START, "mode": "resume", "selected_package_id": "  "},
+    {**START, "mode": "resume", "selected_package_id": "x" * 51},
     {**START, "event": "concierge_turn"},
     {**START, "pause_after": "hold"},
     {**START, "mode": "stop"},

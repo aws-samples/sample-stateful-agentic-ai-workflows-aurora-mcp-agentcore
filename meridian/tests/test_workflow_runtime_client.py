@@ -1,5 +1,6 @@
 """The backend's client for MeridianWorkflow: typed payload, coded errors, safe retries."""
 
+import dataclasses
 import json
 import logging
 from unittest.mock import MagicMock
@@ -53,6 +54,15 @@ async def test_the_payload_carries_only_the_typed_fields():
     assert kwargs["runtimeSessionId"] == wr.workflow_session_id("trv_meridian_demo", "phase5-0123456789ab")
     assert kwargs["accept"] == "text/event-stream"
     assert state == {"workflow_status": "resumed"}
+
+
+async def test_a_chosen_package_rides_in_the_payload_only_when_set():
+    client = client_with(frames({"type": "result", "state": {"workflow_status": "resumed"}}))
+    chosen = dataclasses.replace(COMMAND, selected_package_id="pkg_kyoto")
+    await wr.WorkflowRuntimeClient(ARN, client=client).run(chosen)
+    payload = json.loads(client.invoke_agent_runtime.call_args.kwargs["payload"])
+    assert payload["selected_package_id"] == "pkg_kyoto"
+    assert "selected_package_id" not in json.loads(wr.WorkflowRuntimeClient.payload(COMMAND))
 
 
 def test_session_ids_are_stable_long_enough_and_distinct_from_the_concierge():

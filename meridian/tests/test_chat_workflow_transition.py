@@ -67,6 +67,35 @@ def test_review_only_cannot_resume_into_an_inventory_action(monkeypatch):
     workflow.assert_not_called()
 
 
+def test_a_resume_passes_the_chosen_package_to_the_workflow(monkeypatch):
+    from unittest.mock import AsyncMock
+    workflow = AsyncMock(return_value=([], [], "Held.", "recovery-thread", "resumed", False))
+    monkeypatch.setattr("backend.routers.chat.orchestration_workflow", workflow)
+    monkeypatch.setattr(
+        "backend.routers.chat._load_workflow_memory_facts", AsyncMock(return_value=[])
+    )
+    asyncio.run(chat(ChatRequest(
+        message="Resume workflow from the saved step", phase=5, resume=True,
+        conversation_id="recovery-thread", selected_package_id="pkg_kyoto",
+    ), PRINCIPAL))
+    assert workflow.call_args.kwargs["selected_package_id"] == "pkg_kyoto"
+    assert workflow.call_args.kwargs["resume"] is True
+
+
+def test_a_package_choice_on_a_fresh_request_is_refused(monkeypatch):
+    from fastapi import HTTPException
+    from unittest.mock import AsyncMock
+    workflow = AsyncMock()
+    monkeypatch.setattr("backend.routers.chat.orchestration_workflow", workflow)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(chat(ChatRequest(
+            message="Rework my trip and check availability", phase=5,
+            conversation_id="recovery-thread", selected_package_id="pkg_kyoto",
+        ), PRINCIPAL))
+    assert error.value.status_code == 422
+    workflow.assert_not_called()
+
+
 def test_disruption_replan_bridges_to_workflow() -> None:
     query = (
         "My JFK-to-Tokyo flight was cancelled. Rework the trip, then check "

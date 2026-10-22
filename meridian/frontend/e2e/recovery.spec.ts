@@ -103,6 +103,37 @@ for (const motion of ['no-preference', 'reduce'] as const) {
   });
 }
 
+for (const width of [1440, 390]) {
+  test(`a shortlisted alternative can be held instead of the top plan at ${width}`, async ({ page }) => {
+    const sent: Record<string, unknown>[] = [];
+    await page.route(url => url.pathname === '/api/chat', route => {
+      const body = route.request().postDataJSON();
+      sent.push(body);
+      return route.fulfill({ json: pausedRecovery(products, body.conversation_id) });
+    });
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto('/showcase?view=recovery');
+    await page.getByRole('button', { name: 'Start recovery' }).click();
+    const third = page.getByRole('article', { name: 'Recovery option 3' });
+    const hold = third.getByRole('button', { name: 'Hold this option' });
+    await expect(hold).toBeVisible();
+    await expect(page.getByRole('article', { name: 'Recovery option 4' })
+      .getByRole('button', { name: 'Hold this option' })).toHaveCount(0);
+    for (const button of await third.locator('footer button').all()) {
+      const fits = await button.evaluate(el => el.scrollWidth <= el.clientWidth + 1
+        && el.getBoundingClientRect().right <= el.closest('footer')!.getBoundingClientRect().right + 1);
+      expect(fits, `${await button.getAttribute('aria-label') ?? await button.textContent()} overflows`)
+        .toBe(true);
+    }
+    await hold.click();
+    await expect.poll(() => sent.length).toBe(2);
+    expect(sent[1]).toMatchObject({
+      phase: 5, resume: true, selected_package_id: 'FAM-002',
+      conversation_id: sent[0].conversation_id,
+    });
+  });
+}
+
 /** Routes the journey list, document and stop endpoints for one recovery thread. */
 async function routeJourney(
   page: import('@playwright/test').Page,

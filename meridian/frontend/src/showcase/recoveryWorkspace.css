@@ -2682,6 +2682,10 @@
   border-top: 1px solid var(--mds-separator);
 }
 
+.mds-flight-option-card > footer.is-choosable {
+  grid-template-columns: minmax(0, 1fr) 40px 40px;
+}
+
 .mds-flight-option-card > footer button {
   min-height: 40px;
   border-radius: var(--mds-radius-m);
