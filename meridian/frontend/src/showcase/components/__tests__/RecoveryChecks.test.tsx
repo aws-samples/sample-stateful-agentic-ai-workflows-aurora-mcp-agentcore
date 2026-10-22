@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { MeridianShowcaseState } from '../../hooks/useMeridianShowcase';
 import type { JourneyDocument } from '../../journey/types';
@@ -55,6 +55,26 @@ describe('RecoveryChecks evidence boundaries', () => {
     expect(screen.queryByText('Cedar denied')).not.toBeInTheDocument();
     expect(screen.getByText(/before Cedar or the hold target ran/)).toBeVisible();
     expect(screen.queryByText('meridian_hold_governance')).not.toBeInTheDocument();
+  });
+  it('says a resumed step found its earlier hold instead of reporting a missing decision', () => {
+    const found: ShowcaseTraceSpan = {
+      id: 'found', name: 'Workflow node: hold', type: 'database', category: 'database',
+      status: 'ok', latencyMs: null, component: 'Aurora hold_requests', fields: [
+        { label: 'hold_id', value: 'booking-1' },
+        { label: 'replayed', value: 'yes' },
+        { label: 'reconciled_from', value: 'Aurora hold_requests' },
+      ],
+    };
+    render(<RecoveryChecks state={state({ workflowStatus: 'resumed', traceSpans: [found] })}
+      journeyDocument={journey()} onOpenProof={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /Check the hold/ }));
+    expect(screen.getByText('Already placed')).toBeVisible();
+    expect(screen.queryByText('Decision unavailable')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cedar allowed')).not.toBeInTheDocument();
+    expect(screen.getByText(/did not call the Gateway again/)).toBeVisible();
+    expect(screen.getByText('Aurora hold_requests')).toBeVisible();
+    expect(within(document.getElementById('recovery-check-policy')!).getByText('booking-1')).toBeVisible();
+    expect(screen.getByText('Hold recorded')).toBeVisible();
   });
   it('does not reuse a prior allow when the latest attempt has no decision', () => {
     render(<RecoveryChecks state={state({ traceSpans: [span('allow', 'ok'), span('', 'error')] })} onOpenProof={vi.fn()} />);
