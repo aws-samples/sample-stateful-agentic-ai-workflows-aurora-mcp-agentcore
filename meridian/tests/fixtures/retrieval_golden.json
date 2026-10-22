@@ -3,12 +3,12 @@
     "activities": [
       {
         "activity_type": "reasoning",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Supervisor routing availability request to specialist agent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
+        "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Delegating to PackageAgent"
+        "title": "Availability check called directly"
       },
       {
         "activity_type": "search",
@@ -39,12 +39,12 @@
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent returned to Supervisor"
+        "title": "PackageAgent: availability check complete"
       }
     ],
     "calls": [
@@ -89,12 +89,12 @@
     "activities": [
       {
         "activity_type": "reasoning",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Supervisor routing availability request to specialist agent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
+        "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Delegating to PackageAgent"
+        "title": "Availability check called directly"
       },
       {
         "activity_type": "search",
@@ -125,12 +125,12 @@
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent returned to Supervisor"
+        "title": "PackageAgent: availability check complete"
       }
     ],
     "calls": [
@@ -180,12 +180,12 @@
     "activities": [
       {
         "activity_type": "reasoning",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Supervisor routing availability request to specialist agent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
+        "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Delegating to PackageAgent"
+        "title": "Availability check called directly"
       },
       {
         "activity_type": "search",
@@ -216,12 +216,12 @@
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent returned to Supervisor"
+        "title": "PackageAgent: availability check complete"
       }
     ],
     "calls": [
@@ -263,12 +263,12 @@
     "activities": [
       {
         "activity_type": "reasoning",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Supervisor routing availability request to specialist agent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
+        "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Delegating to PackageAgent"
+        "title": "Availability check called directly"
       },
       {
         "activity_type": "search",
@@ -290,12 +290,12 @@
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
         "details": "No matching package found",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent returned to Supervisor"
+        "title": "PackageAgent: availability check complete"
       }
     ],
     "calls": [],
@@ -306,12 +306,12 @@
     "activities": [
       {
         "activity_type": "reasoning",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Supervisor routing availability request to specialist agent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
+        "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Delegating to PackageAgent"
+        "title": "Availability check called directly"
       },
       {
         "activity_type": "search",
@@ -333,12 +333,12 @@
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
         "details": "No matching package found",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent returned to Supervisor"
+        "title": "PackageAgent: availability check complete"
       }
     ],
     "calls": [
@@ -356,12 +356,12 @@
     "activities": [
       {
         "activity_type": "reasoning",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Supervisor routing availability request to specialist agent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
+        "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Delegating to PackageAgent"
+        "title": "Availability check called directly"
       },
       {
         "activity_type": "search",
@@ -383,12 +383,12 @@
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
         "details": "No matching package found",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent returned to Supervisor"
+        "title": "PackageAgent: availability check complete"
       }
     ],
     "calls": [
@@ -409,12 +409,12 @@
     "activities": [
       {
         "activity_type": "reasoning",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Supervisor routing availability request to specialist agent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
+        "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Delegating to PackageAgent"
+        "title": "Availability check called directly"
       },
       {
         "activity_type": "search",
@@ -445,12 +445,12 @@
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent returned to Supervisor"
+        "title": "PackageAgent: availability check complete"
       }
     ],
     "calls": [
@@ -491,12 +491,12 @@
     "activities": [
       {
         "activity_type": "reasoning",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Supervisor routing availability request to specialist agent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
+        "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Delegating to PackageAgent"
+        "title": "Availability check called directly"
       },
       {
         "activity_type": "search",
@@ -527,12 +527,12 @@
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
+        "agent_file": "retrieval/availability.py",
+        "agent_name": "PackageAgent",
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
-        "title": "PackageAgent returned to Supervisor"
+        "title": "PackageAgent: availability check complete"
       }
     ],
     "calls": [
@@ -577,12 +577,12 @@
     "activities": [
       {
         "activity_type": "reasoning",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Supervisor routing search request to specialized agent",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "SearchAgent",
+        "details": "Code calls hybrid retrieval: embed the query, fetch pgvector and full-text candidates, rerank with Cohere. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Delegating to SearchAgent"
+        "title": "Hybrid retrieval called directly"
       },
       {
         "activity_type": "embedding",
@@ -631,9 +631,9 @@
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Returning ranked trips to RetrievalAgent",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "SearchAgent",
+        "details": "Ranked trips returned to the calling step",
         "sql_query": null,
         "telemetry": null,
         "title": "SearchAgent returned 1 results"
@@ -690,12 +690,12 @@
     "activities": [
       {
         "activity_type": "reasoning",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Supervisor routing search request to specialized agent",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "SearchAgent",
+        "details": "Code calls hybrid retrieval: embed the query, fetch pgvector and full-text candidates, rerank with Cohere. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Delegating to SearchAgent"
+        "title": "Hybrid retrieval called directly"
       },
       {
         "activity_type": "embedding",
@@ -744,9 +744,9 @@
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Returning ranked trips to RetrievalAgent",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "SearchAgent",
+        "details": "Ranked trips returned to the calling step",
         "sql_query": null,
         "telemetry": null,
         "title": "SearchAgent returned 2 results"
@@ -829,12 +829,12 @@
     "activities": [
       {
         "activity_type": "reasoning",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Supervisor routing search request to specialized agent",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "SearchAgent",
+        "details": "Code calls hybrid retrieval: embed the query, fetch pgvector and full-text candidates, rerank with Cohere. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Delegating to SearchAgent"
+        "title": "Hybrid retrieval called directly"
       },
       {
         "activity_type": "embedding",
@@ -883,9 +883,9 @@
       },
       {
         "activity_type": "result",
-        "agent_file": "agents/phase_03_retrieval/supervisor.py",
-        "agent_name": "RetrievalAgent",
-        "details": "Returning ranked trips to RetrievalAgent",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "SearchAgent",
+        "details": "Ranked trips returned to the calling step",
         "sql_query": null,
         "telemetry": null,
         "title": "SearchAgent returned 2 results"

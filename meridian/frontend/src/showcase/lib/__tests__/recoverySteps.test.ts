@@ -19,7 +19,7 @@ const checkpointed = { resumeMode: false, failed: false };
 const paused: ShowcaseTraceSpan[] = [
   span('Workflow node: classify → plan', { component: 'Strands Graph', latencyMs: 0 }),
   span('Workflow node: search', { component: 'Strands Graph → SearchAgent', latencyMs: 956 }),
-  span('Delegating to SearchAgent', { agent: 'RetrievalAgent' }),
+  span('Hybrid retrieval called directly', { agent: 'SearchAgent' }),
   span('Embedding generated', { agent: 'SearchAgent', latencyMs: 221 }),
   span('Hybrid candidates fetched', { agent: 'SearchAgent', latencyMs: 338, sql: 'SELECT 1' }),
   span('Cohere rerank applied', { agent: 'SearchAgent', latencyMs: 396 }),

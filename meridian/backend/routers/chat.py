@@ -1847,10 +1847,10 @@ async def chat(
     ):
         activities.append(create_activity(
             activity_type="reasoning",
-            title="Processing with Multi-Agent Orchestration",
+            title="Processing with the package availability check",
             details=f"Query: {request.message[:80]}{'...' if len(request.message) > 80 else ''}",
-            agent_name="RetrievalAgent",
-            agent_file="agents/phase_03_retrieval/supervisor.py"
+            agent_name="PackageAgent",
+            agent_file="retrieval/availability.py"
         ))
 
         try:
@@ -2248,12 +2248,11 @@ async def chat(
             and not _is_memory_recall_query(request.message)
             and _is_availability_query(request.message)
         ):
-            # Supervised multi-agent: an availability question routes to the
-            # PackageAgent specialist (departure slots on a named package),
-            # not a fresh hybrid search. Different specialist, different tool,
-            # different trace — this is where "supervised multi-agent search"
-            # becomes visible. Memory-recall is checked first so it keeps
-            # precedence (its honest-failure path handles those prompts).
+            # An availability question goes to the package availability check
+            # (places left on a named package), not a fresh hybrid search. The
+            # router picks it by keyword; no model routes the call. Memory-recall
+            # is checked first so it keeps precedence (its honest-failure path
+            # handles those prompts).
             products, search_activities, domain_text = await retrieval_availability_search(
                 request.message
             )

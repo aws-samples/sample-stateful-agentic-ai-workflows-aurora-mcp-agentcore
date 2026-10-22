@@ -13,15 +13,22 @@ from backend.timing import clock, elapsed_ms
 
 
 def _intent_spans() -> List[ActivityEntry]:
-    """Build the two reasoning spans that open a retrieval search."""
+    """Build the two spans that open a retrieval search.
+
+    The caller runs this function in code. No supervisor or other model routes the
+    call; the models involved are Cohere's embedding and rerank models on Bedrock.
+    """
     activities = []
 
     activities.append(create_activity(
         activity_type="reasoning",
-        title="Delegating to SearchAgent",
-        details="Supervisor routing search request to specialized agent",
-        agent_name="RetrievalAgent",
-        agent_file="agents/phase_03_retrieval/supervisor.py"
+        title="Hybrid retrieval called directly",
+        details=(
+            "Code calls hybrid retrieval: embed the query, fetch pgvector and full-text "
+            "candidates, rerank with Cohere. No model routes this call."
+        ),
+        agent_name="SearchAgent",
+        agent_file="retrieval/hybrid.py"
     ))
 
     activities.append(create_activity(
@@ -236,9 +243,9 @@ async def retrieval_search(query: str, limit: int = 5) -> tuple[List[Product], L
     activities.append(create_activity(
         activity_type="result",
         title=f"SearchAgent returned {len(ranked_rows[:limit])} results",
-        details="Returning ranked trips to RetrievalAgent",
-        agent_name="RetrievalAgent",
-        agent_file="agents/phase_03_retrieval/supervisor.py"
+        details="Ranked trips returned to the calling step",
+        agent_name="SearchAgent",
+        agent_file="retrieval/hybrid.py"
     ))
 
     products = [Product(**row_to_api_product(row)) for row in ranked_rows[:limit]]

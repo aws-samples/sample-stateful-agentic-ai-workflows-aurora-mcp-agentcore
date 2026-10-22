@@ -127,10 +127,10 @@ def _not_found(activities: List[ActivityEntry]) -> tuple[list, List[ActivityEntr
 
     activities.append(create_activity(
         activity_type="result",
-        title="PackageAgent returned to Supervisor",
+        title="PackageAgent: availability check complete",
         details="No matching package found",
-        agent_name="RetrievalAgent",
-        agent_file="agents/phase_03_retrieval/supervisor.py"
+        agent_name="PackageAgent",
+        agent_file="retrieval/availability.py"
     ))
 
     return (
@@ -177,10 +177,10 @@ def _availability_reply(
 
     activities.append(create_activity(
         activity_type="result",
-        title="PackageAgent returned to Supervisor",
+        title="PackageAgent: availability check complete",
         details=f"Availability check complete for {product['name']}",
-        agent_name="RetrievalAgent",
-        agent_file="agents/phase_03_retrieval/supervisor.py"
+        agent_name="PackageAgent",
+        agent_file="retrieval/availability.py"
     ))
 
     durations = product.get('durations', [])
@@ -223,10 +223,10 @@ async def retrieval_availability_search(
 
     activities.append(create_activity(
         activity_type="reasoning",
-        title="Delegating to PackageAgent",
-        details="Supervisor routing availability request to specialist agent",
-        agent_name="RetrievalAgent",
-        agent_file="agents/phase_03_retrieval/supervisor.py"
+        title="Availability check called directly",
+        details="Code calls the package availability check. No model routes this call.",
+        agent_name="PackageAgent",
+        agent_file="retrieval/availability.py"
     ))
 
     query_lower = query.lower()
