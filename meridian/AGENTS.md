@@ -39,6 +39,7 @@ ruff check backend scripts tests examples meridian_agentcore/app meridian_agentc
 python -m pytest -m "not database" tests examples/langgraph/tests
 python -m pip_audit -r requirements.txt
 python -m pip_audit -r examples/langgraph/requirements.txt
+python scripts/audit_runtime_dependencies.py
 # in frontend
 npm ci
 npm run lint

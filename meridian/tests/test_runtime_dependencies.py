@@ -61,3 +61,17 @@ def test_both_runtimes_pin_the_same_strands_and_agentcore_sdk():
             for p in PYPROJECTS]
     for package in ("strands-agents", "bedrock-agentcore"):
         assert pins[0][package] == pins[1][package]
+
+
+@runtimes
+def test_runtime_pins_include_the_mcp_and_certificate_security_fixes(pyproject):
+    from packaging.version import Version
+
+    project = _project(pyproject)
+    requirements = project["project"]["dependencies"] + project["tool"]["uv"][
+        "constraint-dependencies"]
+    pins = {_name(requirement): requirement.split("==")[1] for requirement in requirements}
+    mcp = Version(pins["mcp"])
+    assert mcp >= Version("1.30.0"), "CVE-2026-59951"
+    assert not Version("2.0.0") <= mcp < Version("2.2.0"), "CVE-2026-59951"
+    assert Version(pins["certifi"]) >= Version("2026.10.19"), "PYSEC-2026-4320"

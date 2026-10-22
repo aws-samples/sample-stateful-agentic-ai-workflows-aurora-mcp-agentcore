@@ -9,6 +9,14 @@ is no Node package at `meridian/` itself.
 - Frontend: `npm audit --audit-level=high` reports 0 vulnerabilities after moving `vite` 7.3.6 to 7.3.7 and `vitest` 4.1.11 to 4.1.12, which moves `@vitest/mocker` and the other `@vitest/*` packages to 4.1.12. Lint, typecheck, unit tests, build and the accessibility suite pass.
 - Backend: `python -m pip_audit -r requirements.txt` reports no known vulnerabilities. On October 22, 2026, before these changes, it reported 34 advisories in four packages. `certifi` moved from 2026.7.22 to 2026.10.19 and `mcp` from 1.29.0 to 1.30.0 (the 1.x line, within the `<2` pin). `strands-agents-tools` was removed from `requirements.in`: the application never imported `strands_tools`, and its `pillow<13.0.0` bound blocked the Pillow fix. `aiohttp` and the other packages only it required left the lock with it. `pillow` is now a direct requirement at 13.0.0, because `scripts/install_catalog_images.py` uses it. `examples/langgraph/requirements.txt` audits clean. Backend lint, the `-m "not database"` tests and `pip check` pass.
 
+Both AgentCore Runtime manifests are audited separately by
+`python scripts/audit_runtime_dependencies.py`, also run in Application CI.
+Their earlier pins retained `mcp` 2.1.1 and `certifi` 2026.7.22 after the backend
+lock was fixed. Both now use `mcp` 1.30.0 and `certifi` 2026.10.19. The pinned
+Strands release requires `mcp<2.2`, so the patched 1.x release is used, matching
+the backend. The unused 2.x-only `mcp-types`, `httpx2` and `httpcore2` constraints
+are removed. See [CVE-2026-59951](https://github.com/advisories/GHSA-84m7-p3x7-pcfv).
+
 Earlier status, October 1, 2026:
 
 - Frontend: clean after updating transitive `brace-expansion` to 1.1.21 and 5.0.12.
