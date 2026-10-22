@@ -134,9 +134,15 @@ The `prepare_hold` node fixes the hold's request ID and booking ID before the
 `hold` node runs. The request ID is `hrq_` plus a random UUID fragment, generated
 once, and the booking ID is `hold_` plus the same fragment. Both are saved in the
 snapshot, so every replay presents the same key because it was saved, not
-derived, and the primary key on `bookings` rejects a duplicate. The `hold` node calls the Gateway tool, so Cedar decides it
-and the `MeridianHolds` Lambda checks the worker's lease inside the write
-transaction. A snapshot and a business write are separate transactions. The
+derived, and the primary key on `bookings` rejects a duplicate. Before it calls the
+Gateway, the `hold` node reads `hold_requests` under the traveler's scope for a booking
+its saved request already placed. It first takes the journey lock the Lambda holds for
+its whole transaction, so a hold still in flight from an attempt whose reply was lost
+finishes before the read. A found booking is reported with its original expiry and
+nothing new is reserved: after a budget change, the policy would refuse the same call,
+and that refusal says nothing about the earlier attempt. Otherwise the `hold` node calls
+the Gateway tool, so Cedar decides it and the `MeridianHolds` Lambda checks the worker's
+lease inside the write transaction. A snapshot and a business write are separate transactions. The
 design makes the write idempotent and the run resumable; it does not claim
 exactly-once execution.
 

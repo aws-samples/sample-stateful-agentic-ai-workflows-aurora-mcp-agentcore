@@ -52,6 +52,7 @@ class Harness:
         """A new graph; ``storage`` overrides the runner's ``ResumableStorage`` wrapping."""
         nodes = nodes or WorkflowNodes(fake_search, fake_availability, gateway_call=self.gateway)
         nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_test", 400000))
+        nodes._committed_hold = self.gateway.committed_hold
         nodes._booking_status = AsyncMock(return_value=None)
         run = RunContext(
             thread_id=thread,
@@ -197,8 +198,8 @@ async def test_a_lost_hold_reply_replays_the_same_intent_in_a_new_graph():
     replay = harness.graph("t1", confirmed=True)
     result = await replay.invoke_async(after_loss["data"]["state"]["current_task"])
     assert "synthesize" in {node.node_id for node in result.execution_order}
-    request_ids = {call["holdRequestId"] for call in harness.gateway.calls}
-    assert len(harness.gateway.calls) == 2 and len(request_ids) == 1
+    # The replay finds the committed hold in Aurora and does not call the Gateway again.
+    assert len(harness.gateway.calls) == 1 and len(harness.gateway.receipts) == 1
     assert fold_state(replay.state)["hold_id"] == harness.gateway.calls[0]["bookingId"]
 
 
@@ -328,8 +329,9 @@ async def test_a_worker_killed_inside_hold_after_the_answer_resumes_the_hold():
 
     order = [node.node_id for node in result.execution_order]
     assert order.count("hold") == 1 and "synthesize" in order
-    assert len(harness.gateway.calls) == 2
-    assert len({call["holdRequestId"] for call in harness.gateway.calls}) == 1
+    # The kill came after the write committed: the replay reads that hold back from Aurora.
+    assert len(harness.gateway.calls) == 1 and len(harness.gateway.receipts) == 1
+    assert fold_state(replay.state)["hold_id"] == harness.gateway.calls[0]["bookingId"]
 
 
 async def test_a_worker_killed_inside_prepare_hold_after_the_review_resumes_it():

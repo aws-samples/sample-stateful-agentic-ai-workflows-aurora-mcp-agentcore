@@ -28,6 +28,7 @@ async def main(thread_id: str, mode: str) -> None:
         pause_after="hold" if mode == "hold" else None,
     )
     runner._nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_live", 400000))
+    runner._nodes._committed_hold = AsyncMock(return_value=None)
     runner._nodes._booking_status = AsyncMock(return_value=None)
 
     async def hold_forever(result, claim):

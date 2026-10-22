@@ -93,10 +93,11 @@ class World:
 
     def runner(
         self, worker_id="worker-a", *, gateway=None, release=None, synthesize=None,
-        pause_after=None,
+        pause_after=None, ceiling=400000,
     ):
         nodes = WorkflowNodes(fake_search, fake_availability, gateway_call=gateway or self.gateway)
-        nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_test", 400000))
+        nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_test", ceiling))
+        nodes._committed_hold = self.gateway.committed_hold
         nodes._booking_status = AsyncMock(return_value=None)
         if release is not None:
             nodes.release_hold = release
@@ -217,6 +218,46 @@ async def test_a_lost_hold_reply_resumes_the_same_request_on_a_new_worker():
     assert len({call["holdRequestId"] for call in world.gateway.calls}) == 1
     assert result["hold_id"] == world.gateway.calls[0]["bookingId"]
     assert [e["status"] for e in world.lease.executions] == ["paused", "failed", "succeeded"]
+
+
+async def test_a_lost_hold_reply_is_reconciled_after_the_budget_was_lowered():
+    """A refusal of the retry is no proof that the first attempt did not commit.
+
+    The first attempt commits a $200 hold for two and loses its reply. The traveler then
+    lowers the saved budget to $100 for the party, so Cedar would refuse the same call now.
+    The resume must find the committed hold, not report that none exists.
+    """
+    world = World()
+    await world.runner("worker-a").run(command(RECOVERY))
+
+    def lose(name, arguments):
+        world.gateway(name, arguments)
+        raise TimeoutError("reply lost after the business write")
+
+    with pytest.raises(HoldOutcomeUnknown):
+        await world.runner("worker-a", gateway=lose).run(command(RECOVERY, resume=True))
+    [committed] = world.gateway.receipts.values()
+    assert world.gateway.calls[0]["totalCents"] == 20000
+
+    result = await world.runner("worker-b", ceiling=10000).run(command(RECOVERY, resume=True))
+    assert result["workflow_status"] == "resumed"
+    assert result["hold_id"] == committed["bookingId"]
+    assert result["hold_expires_at"] == committed["expiresAt"]
+    assert len(world.gateway.receipts) == 1, "no second reservation"
+    assert world.gateway.denied == [], "the retry was reconciled, never refused"
+    assert "No courtesy hold was recorded" not in result["response"]
+    assert f"Aurora recorded courtesy hold {committed['bookingId']}" in result["response"]
+
+
+async def test_a_new_hold_above_a_lowered_budget_is_still_refused():
+    world = World()
+    await world.runner("worker-a").run(command(RECOVERY))
+    result = await world.runner("worker-a", ceiling=10000).run(command(RECOVERY, resume=True))
+    assert "hold_id" not in result or not result.get("hold_id")
+    assert len(world.gateway.denied) == 1 and world.gateway.receipts == {}
+    assert "Cedar policy refused the hold" in "".join(
+        span.get("details") or "" for span in result["activities"]
+    )
 
 
 async def test_a_resume_after_a_crash_before_review_does_not_hold():

@@ -21,6 +21,7 @@ def expired(name, arguments):
 async def test_the_hold_node_lets_an_expired_token_through_instead_of_calling_it_unknown():
     nodes = WorkflowNodes(fake_search, fake_availability, gateway_call=expired)
     nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_test", 400000))
+    nodes._committed_hold = AsyncMock(return_value=None)
     nodes._booking_status = AsyncMock(return_value=None)
     with pytest.raises(CallerTokenExpired) as raised:
         await nodes.hold(_hold_state(), HOLD_CONFIG)
@@ -47,6 +48,7 @@ async def test_a_token_refused_before_any_send_is_a_clean_failure_not_an_unknown
 
     nodes = WorkflowNodes(fake_search, fake_availability, gateway_call=refuse)
     nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_test", 400000))
+    nodes._committed_hold = AsyncMock(return_value=None)
     nodes._booking_status = AsyncMock(return_value=None)
     with pytest.raises(type(error)) as raised:
         await nodes.hold(_hold_state(), HOLD_CONFIG)

@@ -22,6 +22,7 @@ def gateway():
 def nodes(gateway):
     built = WorkflowNodes(fake_search, fake_availability, gateway_call=gateway)
     built._prepare_governed_hold = AsyncMock(return_value=("jrn_test", 400000))
+    built._committed_hold = gateway.committed_hold
     built._booking_status = AsyncMock(return_value=None)
     return built
 
@@ -196,6 +197,27 @@ async def test_a_placed_hold_returns_the_receipt_and_the_span_the_ui_and_journey
     )
     assert (fields["seats_remaining"], fields["replayed"]) == ("9", "no")
     assert out["activities"][-1]["title"].startswith("Snapshot saved: ")
+
+
+async def test_a_hold_its_request_already_placed_is_reported_from_aurora_without_a_call(
+    nodes, gateway
+):
+    nodes._committed_hold = AsyncMock(return_value={
+        "booking_id": "hold_first", "status": "held", "expires_at": "2026-10-22 05:00:00+00",
+        "created_at": "2026-10-22 04:45:00+00", "observed_at": "2026-10-22 05:01:00+00",
+        "lapsed": True,
+    })
+    config = {"configurable": {**HOLD_CONFIG["configurable"], "traveler_confirmed": True}}
+    out = await nodes.hold(_hold_state(), config)
+    assert gateway.calls == []
+    assert (out["hold_id"], out["hold_status"]) == ("hold_first", "expired")
+    assert out["hold_expires_at"] == "2026-10-22 05:00:00+00"
+    [span] = [s for s in out["activities"] if s["title"] == "Workflow node: hold"]
+    fields = _fields(span)
+    assert fields["reconciled_from"] == "Aurora hold_requests"
+    assert fields["replayed"] == "yes"
+    assert "cedar_decision" not in fields and "gateway_tool" not in fields
+    assert "Nothing new was reserved" in span["details"]
 
 
 async def test_hold_cedar_denial_is_a_refusal_span_not_an_exception(nodes):

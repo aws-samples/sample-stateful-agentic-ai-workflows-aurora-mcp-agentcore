@@ -78,6 +78,7 @@ async def test_a_killed_worker_is_replaced_and_the_hold_runs_once(thread):
         gateway_call=GatewayFake(), lease_seconds=15, heartbeat_seconds=3,
     )
     runner._nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_live", 400000))
+    runner._nodes._committed_hold = AsyncMock(return_value=None)
     runner._nodes._booking_status = AsyncMock(return_value=None)
     command = WorkflowCommand(
         query="Resume workflow", traveler_id=TRAVELER, thread_id=thread_id, resume=True,

@@ -21,6 +21,7 @@ from backend.agents.phase_05_workflow.hold_intent import (
     fingerprint_terms,
     normalize_hold_terms,
 )
+from backend.agents.phase_05_workflow.nodes import WorkflowNodes
 from backend.db.journey_store import ScopedDb, ensure_journey
 from backend.db.rds_data_client import get_rds_data_client
 
@@ -199,6 +200,49 @@ async def test_a_journey_the_caller_does_not_own_is_refused() -> None:
                 )
     finally:
         await _cleanup(client, booking_id, "", "")
+
+
+async def test_the_workflow_hold_step_reads_back_the_hold_its_request_placed() -> None:
+    """The read a resume uses before the Gateway, under the traveler's RLS scope."""
+    client = get_rds_data_client()
+    booking_id = f"HLD-ITEST{uuid.uuid4().hex[:6].upper()}"
+    thread_id = f"itest-hold-{uuid.uuid4().hex[:8]}"
+    journey_id = ""
+    try:
+        package_id, duration, price = await _a_package_with_room(client)
+        fingerprint = fingerprint_terms(normalize_hold_terms(package_id, duration, 1, price))
+        request_id = f"hrq_{booking_id}"
+        expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        async with client.scoped_session(
+            traveler_id=TRAVELER,
+            agent_type="booking_agent",
+            authorization=get_agentcore_identity().authorization_context(),
+        ) as tx:
+            journey_id = await ensure_journey(
+                ScopedDb(client, tx), TRAVELER, thread_id, "Aurora workflow_snapshots"
+            )
+            await client.execute(HOLD_SQL, (
+                booking_id, TRAVELER, journey_id, request_id, fingerprint,
+                package_id, duration, 1, price, price, expires,
+            ), transaction_id=tx)
+
+        def no_call(*_):
+            raise AssertionError("the read must not call the Gateway")
+
+        nodes = WorkflowNodes(None, None, gateway_call=no_call)
+        intent = {"hold_request_id": request_id, "fingerprint": fingerprint}
+        found = await nodes._committed_hold(TRAVELER, thread_id, journey_id, intent)
+        assert found["booking_id"] == booking_id
+        assert (found["status"], found["lapsed"]) == ("held", False)
+        assert found["expires_at"]
+        assert await nodes._committed_hold(
+            TRAVELER, thread_id, journey_id, {**intent, "fingerprint": "other terms"}
+        ) is None
+        assert await nodes._committed_hold(
+            TRAVELER, thread_id, journey_id, {**intent, "hold_request_id": "hrq_never_sent"}
+        ) is None
+    finally:
+        await _cleanup(client, booking_id, thread_id, journey_id)
 
 
 async def _cleanup(client, booking_id: str, thread_id: str, journey_id: str) -> None:

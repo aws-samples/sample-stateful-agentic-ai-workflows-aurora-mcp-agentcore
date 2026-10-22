@@ -33,6 +33,7 @@ async def main(thread_id: str, mode: str) -> None:
         gateway_call=GatewayFake(), lease_seconds=15, heartbeat_seconds=3,
     )
     runner._nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_live", 400000))
+    runner._nodes._committed_hold = AsyncMock(return_value=None)
     runner._nodes._booking_status = AsyncMock(return_value=None)
     command = WorkflowCommand(
         query=QUERY, traveler_id="trv_meridian_demo", thread_id=thread_id,

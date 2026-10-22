@@ -54,6 +54,7 @@ class World:
     def runner(self, worker_id="worker-a"):
         nodes = WorkflowNodes(ranked_search, ranked_availability, gateway_call=self.gateway)
         nodes._prepare_governed_hold = AsyncMock(return_value=("jrn_test", 900000))
+        nodes._committed_hold = self.gateway.committed_hold
         nodes._booking_status = AsyncMock(return_value=None)
         return WorkflowRunner(
             nodes, storage_for=lambda *args: self.storage, lease=self.lease,

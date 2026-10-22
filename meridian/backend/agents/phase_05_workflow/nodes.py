@@ -40,6 +40,18 @@ logger = logging.getLogger(__name__)
 StepFn = Callable[..., Awaitable[Any]]
 GatewayCall = Callable[[str, Dict[str, Any]], Dict[str, Any]]
 BOOKING_STATUS_SQL = "SELECT status FROM bookings WHERE booking_id = %s"
+# The holds Lambda takes this lock for its whole transaction, so a read that takes it first
+# waits for any hold still in flight on the journey, then sees it committed or gone.
+JOURNEY_LOCK_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
+COMMITTED_HOLD_SQL = """
+SELECT hr.booking_id, hr.fingerprint, b.status,
+       b.hold_expires_at::TEXT AS expires_at,
+       b.created_at::TIMESTAMPTZ::TEXT AS created_at,
+       CURRENT_TIMESTAMP::TEXT AS observed_at,
+       (b.hold_expires_at <= CURRENT_TIMESTAMP) AS lapsed
+  FROM hold_requests hr JOIN bookings b ON b.booking_id = hr.booking_id
+ WHERE hr.journey_id = %s AND hr.hold_request_id = %s
+"""
 
 
 class WorkflowNodes:
@@ -399,9 +411,10 @@ class WorkflowNodes:
         governs the Phase 4 agent decides this hold too, and the ``MeridianHolds``
         Lambda runs ``create_courtesy_hold`` under its own traveler grant. The
         worker verifies its lease here and passes its execution id so the Lambda
-        verifies it again inside the write transaction; the checkpointed request
-        and booking ids make a replacement worker replay the same booking with
-        the original expiry.
+        verifies it again inside the write transaction. Before the call, the step
+        reads Aurora for a booking its saved request already placed: a replacement
+        worker reports that booking with its original expiry instead of asking the
+        policy again, which may now refuse the same call after a budget change.
         """
         start = utc_now()
         activities = list(state.get("activities", []))
@@ -425,7 +438,6 @@ class WorkflowNodes:
 
         terms = self._hold_terms(state, intent)
         hold_id = terms["booking_id"]
-        package_id = terms["package_id"]
         quantity = terms["quantity"]
         thread_id = str(state.get("conversation_id") or "")
         configurable = (config or {}).get("configurable", {})
@@ -435,6 +447,15 @@ class WorkflowNodes:
         journey_id, ceiling = await self._prepare_governed_hold(
             traveler_id, thread_id, execution_id, quantity, state
         )
+        # A retry may follow an attempt that committed and lost its reply. Read Aurora first:
+        # the policy can refuse the same call now, after a budget change, so a refusal of the
+        # retry would say nothing about the hold the first attempt placed.
+        committed = await self._committed_hold(traveler_id, thread_id, journey_id, intent)
+        if committed:
+            receipt = self._committed_receipt(committed, journey_id)
+            activities.append(self._reconciled_span(terms, receipt))
+            activities.append(self._snapshot_activity("hold"))
+            return self._held_state(activities, terms, receipt)
         arguments = hold_arguments(
             terms,
             traveler_id=traveler_id,
@@ -459,6 +480,13 @@ class WorkflowNodes:
         elapsed = int((utc_now() - start).total_seconds() * 1000)
         activities.append(self._hold_span(outcome, terms, receipt, elapsed))
         activities.append(self._snapshot_activity("hold"))
+        return self._held_state(activities, terms, receipt)
+
+    @staticmethod
+    def _held_state(
+        activities: List[Dict[str, Any]], terms: Dict[str, Any], receipt: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """The state keys a hold step saves once a hold exists for its request."""
         return {
             "activities": activities,
             "journey_id": receipt["journey_id"],
@@ -467,11 +495,61 @@ class WorkflowNodes:
             "hold_created_at": receipt["created_at"],
             "hold_observed_at": receipt["observed_at"],
             "hold_status": receipt["status"],
-            "hold_package": package_id,
+            "hold_package": terms["package_id"],
             # Part of the idempotency key, so compensation can recompute it.
             "hold_duration": terms["duration"],
             "hold_seats_remaining": receipt["seats_remaining"],
         }
+
+    @staticmethod
+    def _committed_receipt(committed: Dict[str, Any], journey_id: str) -> Dict[str, Any]:
+        """A receipt from the booking Aurora holds for the request, reported as the Lambda would."""
+        status = str(committed["status"])
+        if status == "held" and committed.get("lapsed"):
+            status = "expired"
+        return {
+            "hold_id": str(committed["booking_id"]),
+            "journey_id": journey_id,
+            "replayed": True,
+            "seats_remaining": None,
+            "expires_at": str(committed["expires_at"]),
+            "created_at": str(committed["created_at"]),
+            "observed_at": str(committed["observed_at"]),
+            "status": status,
+        }
+
+    @staticmethod
+    def _reconciled_span(terms: Dict[str, Any], receipt: Dict[str, Any]) -> Dict[str, Any]:
+        """The hold step found the hold its request already placed; nothing new was reserved."""
+        return activity(
+            "database",
+            "Workflow node: hold",
+            details=(
+                f"Found the hold this request already placed: {receipt['hold_id']} on "
+                f"{terms['package_id']} ({terms['duration']}), {receipt['status']}, expires "
+                f"{receipt['expires_at']}. Nothing new was reserved."
+            ),
+            sql_query=" ".join(COMMITTED_HOLD_SQL.split()),
+            telemetry={
+                "category": "database",
+                "component": "Aurora hold_requests",
+                "status": "ok",
+                "fields": [
+                    {"label": "hold_id", "value": receipt["hold_id"], "mono": True},
+                    {"label": "hold_request_id", "value": terms["hold_request_id"], "mono": True},
+                    {"label": "journey_id", "value": receipt["journey_id"], "mono": True},
+                    {"label": "replayed", "value": "yes"},
+                    {"label": "reconciled_from", "value": "Aurora hold_requests"},
+                    {"label": "package", "value": terms["package_id"]},
+                    {"label": "duration", "value": terms["duration"]},
+                    {"label": "seats_held", "value": str(terms["quantity"])},
+                    {"label": "expires_at", "value": receipt["expires_at"]},
+                    {"label": "hold_created_at", "value": receipt["created_at"]},
+                    {"label": "hold_observed_at", "value": receipt["observed_at"]},
+                    {"label": "hold_status", "value": receipt["status"]},
+                ],
+            },
+        )
 
     @staticmethod
     def _receipt(outcome: GovernedHold, hold_id: str, journey_id: str) -> Dict[str, Any]:
@@ -677,6 +755,40 @@ class WorkflowNodes:
                 traveler_id, limit=50, transaction_id=transaction_id
             )
         return str(journey_id), budget_ceiling_from_facts(facts, quantity)
+
+    async def _committed_hold(
+        self, traveler_id: str, thread_id: str, journey_id: str, intent: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """The booking this hold request already placed, read from Aurora, or None.
+
+        Runs in the traveler's booking-agent scope. It first takes the journey lock the
+        holds Lambda holds for its whole transaction, so a hold still in flight from an
+        attempt whose reply was lost is committed or rolled back before the read.
+
+        Returns:
+            The booking row when the journey holds this request id with the intent's
+            fingerprint; None when it holds no such request, or when the intent carries no
+            fingerprint to match.
+        """
+        fingerprint = intent.get("fingerprint")
+        if not fingerprint:
+            return None
+        from backend.agentcore.identity import get_agentcore_identity
+        from backend.db.rds_data_client import get_rds_data_client
+
+        db = get_rds_data_client()
+        async with db.scoped_session(
+            traveler_id=traveler_id, agent_type="booking_agent",
+            authorization=get_agentcore_identity().authorization_context(),
+        ) as tx:
+            await db.execute(JOURNEY_LOCK_SQL, (thread_id,), transaction_id=tx)
+            rows = await db.execute(
+                COMMITTED_HOLD_SQL, (journey_id, str(intent["hold_request_id"])),
+                transaction_id=tx,
+            )
+        if not rows or rows[0]["fingerprint"] != fingerprint:
+            return None
+        return rows[0]
 
     @staticmethod
     def _hold_not_placed(

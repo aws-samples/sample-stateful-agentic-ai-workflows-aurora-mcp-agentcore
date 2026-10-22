@@ -33,8 +33,11 @@ class GatewayFake:
     """The Gateway's ``tools/call``: records arguments, answers like the holds Lambda.
 
     Like the Cedar policy in front of the real Gateway, it refuses a hold unless the
-    arguments carry ``travelerConfirmed: true``. The refusal is the Gateway's tool-result
-    denial envelope; it is recorded in ``calls`` and ``denied`` and creates no receipt.
+    arguments carry ``travelerConfirmed: true`` and a ``totalCents`` within
+    ``budgetCeilingCents``. The refusal is the Gateway's tool-result denial envelope; it is
+    recorded in ``calls`` and ``denied`` and creates no receipt. ``receipts`` stands for the
+    holds Aurora committed, and ``committed_hold`` reads them the way the hold step reads
+    ``hold_requests``.
     """
 
     calls: List[Dict[str, Any]] = field(default_factory=list)
@@ -43,7 +46,8 @@ class GatewayFake:
 
     def __call__(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         self.calls.append({"tool": name, **arguments})
-        if arguments.get("travelerConfirmed") is not True:
+        within_budget = arguments.get("totalCents", 0) <= arguments.get("budgetCeilingCents", 0)
+        if arguments.get("travelerConfirmed") is not True or not within_budget:
             self.denied.append({"tool": name, **arguments})
             return {"result": {"isError": True, "content": [
                 {"type": "text", "text": CEDAR_DENIAL},
@@ -56,6 +60,19 @@ class GatewayFake:
         })
         hold = {**receipt, "replayed": replayed, "seatsRemaining": None if replayed else 9}
         return {"result": {"content": [{"type": "text", "text": json.dumps({"hold": hold})}]}}
+
+    async def committed_hold(
+        self, traveler_id: str, thread_id: str, journey_id: str, intent: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """The hold this request committed, shaped like the hold step's Aurora read."""
+        receipt = self.receipts.get(str(intent.get("hold_request_id")))
+        if receipt is None:
+            return None
+        return {
+            "booking_id": receipt["bookingId"], "status": receipt["status"],
+            "expires_at": receipt["expiresAt"], "created_at": receipt["createdAt"],
+            "observed_at": receipt["observedAt"], "lapsed": False,
+        }
 
 
 @dataclass
