@@ -40,7 +40,7 @@ def test_reference_agent_builds_the_client_with_a_transport_factory(monkeypatch)
     monkeypatch.setenv("AURORA_SECRET_ARN", "arn:aws:secretsmanager:us-east-1:000000000000:secret:y")
     monkeypatch.setenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/test-role")
     monkeypatch.setenv("MERIDIAN_API_TOKEN", "unrelated-test-token")
-    monkeypatch.setattr(mcp_agent, "BedrockModel", lambda **kwargs: None)
+    monkeypatch.setattr(mcp_agent, "bedrock_model", lambda: None)
     monkeypatch.setattr(mcp_agent, "Agent", lambda **kwargs: SimpleNamespace(**kwargs))
     monkeypatch.setattr(mcp_agent, "MCPClient", _FakeClient)
     captured: dict = {}

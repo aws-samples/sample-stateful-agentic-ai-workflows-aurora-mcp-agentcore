@@ -33,7 +33,8 @@ from gateway_auth import gateway_client_arguments, gateway_url
 from hold_execution import execute_confirmed_booking, execute_confirmed_hold
 from model.load import DEFAULT_MODEL_ID, load_model
 from prompts import narration_prompt, system_prompt, turn_prompt
-from turn_trace import TraceHooks, TurnContext, activity
+from tool_errors import StopOnToolSetupError
+from turn_trace import SPANS, TraceHooks, TurnContext, activity, short
 
 app = BedrockAgentCoreApp()
 REGION = os.getenv("AWS_REGION", "us-east-1")
@@ -160,9 +161,26 @@ def start_span(turn: TurnContext) -> dict:
     )
 
 
+def governed_tools(tools: list) -> tuple[list, list[str]]:
+    """Split the listed tools into the ones the model may call and the names withheld from it.
+
+    TraceHooks records a call only for a tool in ``SPANS``, and each of those has a Cedar policy
+    in ``POLICY_FOR``. The Gateway can list more, such as the search tool it provisions itself
+    when semantic search is on. A call to one of those would leave no span and no entry in the
+    audit row, so the model never receives it.
+    """
+    callable_tools = [tool for tool in tools if short(tool.tool_name) in SPANS]
+    withheld = [tool.tool_name for tool in tools if short(tool.tool_name) not in SPANS]
+    return callable_tools, withheld
+
+
 def tools_span(tools: list, took: int, mode: str = "iam") -> dict:
-    """The tools/list span, carrying the time measured around ``list_tools_sync``."""
+    """The tools/list span, carrying the time measured around ``list_tools_sync``.
+
+    It names every tool the Gateway listed and, separately, the ones withheld from the model.
+    """
     how = "bearer-token" if mode == "jwt" else "IAM-signed"
+    _, withheld = governed_tools(tools)
     return activity(
         "tool_call",
         "AgentCore Gateway: tools/list",
@@ -174,6 +192,7 @@ def tools_span(tools: list, took: int, mode: str = "iam") -> dict:
             "fields": [
                 {"label": "endpoint", "value": GATEWAY_URL, "mono": True},
                 {"label": "tools", "value": ", ".join(t.tool_name for t in tools)},
+                {"label": "withheld_from_model", "value": ", ".join(withheld) or "none"},
                 {"label": "policy_engine", "value": POLICY_ENGINE_ID or "none", "mono": True},
             ],
         },
@@ -255,19 +274,24 @@ async def run(payload: dict, headers: dict | None = None):
         listed = time.perf_counter()
         tools = gateway.list_tools_sync()
         yield {"type": "activity", **tools_span(tools, elapsed_ms(listed), mode)}
+        callable_tools, _ = governed_tools(tools)
         yield {"type": "activity", **memory_span(turn.traveler_id, turn.conversation_id)}
-        outcome, action, target = confirmed_action(
-            hooks, gateway, turn, hold_target, booking_target
-        )
-        for event in drain(queue):
-            yield event
+        try:
+            outcome, action, target = confirmed_action(
+                hooks, gateway, turn, hold_target, booking_target
+            )
+        finally:
+            # A platform call that raised still sends the spans of the call it started.
+            for event in drain(queue):
+                yield event
+        stop = StopOnToolSetupError()
         agent = Agent(
             model=concierge_model(),
             system_prompt=system_prompt(
                 turn.hold_confirmed, hold_target, turn.booking_confirmed, booking_target
             ),
-            tools=[] if outcome is not None else tools,
-            hooks=[hooks],
+            tools=[] if outcome is not None else callable_tools,
+            hooks=[stop, hooks],
             session_manager=memory_manager(turn.traveler_id, turn.conversation_id),
             callback_handler=None,
         )
@@ -287,6 +311,7 @@ async def run(payload: dict, headers: dict | None = None):
                 answer, usage = event["text"], event["usage"]
             else:
                 yield event
+        stop.raise_if_stopped()
     if not answer.strip():
         answer = "I could not produce a grounded recommendation from the live options."
     yield {
@@ -314,9 +339,11 @@ async def invoke(payload, context=None):
         async for item in run(payload, headers):
             yield json.dumps(item, ensure_ascii=False)
     except CallerRefused as refused:
-        yield json.dumps({"type": "error", "code": refused.code, "message": str(refused)})
+        yield json.dumps({"type": "error", "code": refused.code,
+                          "error_type": type(refused).__name__, "message": str(refused)})
     except Exception as error:  # noqa: BLE001 - the backend renders the failure as a span
-        yield json.dumps({"type": "error", "message": str(error)[:600]})
+        yield json.dumps({"type": "error", "error_type": type(error).__name__,
+                          "message": str(error)[:600]})
 
 
 if __name__ == "__main__":

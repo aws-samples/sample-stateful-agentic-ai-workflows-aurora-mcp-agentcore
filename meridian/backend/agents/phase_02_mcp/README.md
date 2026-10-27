@@ -8,9 +8,9 @@ Expose a reusable, named tool contract.
 
 | Source | Role |
 | --- | --- |
-| [`routers/chat.py`](../../routers/chat.py): `mcp_search`, `_call_domain_tool` | Live routing to the PostgreSQL and Meridian Concierge MCP servers. |
+| [`routers/chat.py`](../../routers/chat.py): `mcp_search`, `_call_domain_tool` | Live routing to the typed tools of the Meridian Concierge MCP server: `search_trips` for a filter, then comparison, price range, inventory, currency and loyalty. |
 | [`mcp/`](../../mcp/) | Server contracts, clients, argument validation and result handling. |
-| [`agent.py`](agent.py) | Reference Strands MCP agent. The live ladder executes the MCP steps directly. |
+| [`agent.py`](agent.py) | Reference Strands MCP agent over the generic PostgreSQL MCP server. The live ladder does not run it. |
 
 ## Live checkpoint
 

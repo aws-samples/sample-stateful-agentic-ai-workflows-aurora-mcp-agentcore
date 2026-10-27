@@ -67,11 +67,7 @@ class _ScopedDb(RDSDataClient):
 
 
 def test_assumed_role_session_uses_stable_iam_subject() -> None:
-    adapter = AgentCoreIdentityAdapter(
-        workload_identity=None,
-        resource_provider=None,
-        region="us-east-1",
-    )
+    adapter = AgentCoreIdentityAdapter()
     adapter._sts = MagicMock()
     adapter._sts.get_caller_identity.return_value = {
         "Arn": "arn:aws:sts::123456789012:assumed-role/Meridian/session-a",
@@ -88,11 +84,7 @@ def test_assumed_role_session_uses_stable_iam_subject() -> None:
 
 
 def test_a_transient_sts_failure_is_not_cached_for_the_process_lifetime() -> None:
-    adapter = AgentCoreIdentityAdapter(
-        workload_identity=None,
-        resource_provider=None,
-        region="us-east-1",
-    )
+    adapter = AgentCoreIdentityAdapter()
     adapter._sts = MagicMock()
     adapter._sts.get_caller_identity.side_effect = [
         RuntimeError("sts throttled"),
@@ -107,27 +99,6 @@ def test_a_transient_sts_failure_is_not_cached_for_the_process_lifetime() -> Non
 
     assert recovered.subject_id == "AROATESTROLE"
     assert recovered.principal.endswith("assumed-role/Meridian/session-a")
-
-
-def test_live_agentcore_identity_becomes_authorization_subject() -> None:
-    adapter = AgentCoreIdentityAdapter(
-        workload_identity="arn:aws:bedrock-agentcore:us-east-1:123:workload-identity/jordan",
-        resource_provider="meridian-aurora",
-        region="us-east-1",
-    )
-    adapter._sts = MagicMock()
-    adapter._sts.get_caller_identity.return_value = {
-        "Arn": "arn:aws:sts::123:assumed-role/Meridian/session-a",
-        "UserId": "AROATESTROLE:session-a",
-    }
-    adapter._runtime = MagicMock()
-    adapter._runtime.get_resource_api_key.return_value = {"apiKey": "not-retained"}
-
-    scope = adapter.scope_for_turn()
-
-    assert scope.token_status == "live"
-    assert scope.authorization.provider == "agentcore_workload"
-    assert scope.authorization.subject_id == adapter.workload_identity
 
 
 def test_scoped_session_rejects_missing_authenticated_subject() -> None:

@@ -19,16 +19,15 @@ AWS docs:
 
 """
 
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Callable, Any, Optional, List
 
 from strands import Agent, tool
-from strands.models import BedrockModel
 from pydantic import BaseModel
 
-from backend.config import config
+from backend.agents.strands_hooks import StopOnToolSetupError
+from backend.bedrock_model import bedrock_model
 
 
 class ActivityEntry(BaseModel):
@@ -85,11 +84,9 @@ class RetrievalAgent:
         self.last_search_packages: List[dict] = []
         self.last_search_query: Optional[str] = None
 
-        # Initialize Bedrock model - Sonnet 5 by default (cross-region inference)
-        self.model = BedrockModel(
-            model_id=config.bedrock.model_id,
-            region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-        )
+        self.model = bedrock_model()
+        # Ends the turn when a tool could not be set up; process_* then raise ToolSetupError.
+        self.setup_stop = StopOnToolSetupError()
 
         # Delegation @tools — Bedrock sees three tools, each routing to a specialist.
         self.agent = Agent(
@@ -99,7 +96,8 @@ class RetrievalAgent:
                 self._delegate_to_package,
                 self._delegate_to_booking,
             ],
-            system_prompt=self._get_system_prompt()
+            system_prompt=self._get_system_prompt(),
+            hooks=[self.setup_stop],
         )
     
     def _get_system_prompt(self) -> str:
@@ -294,6 +292,7 @@ Guidelines:
             "Use the Search Agent to find matching trip packages, then briefly summarize the top results."
         )
         result = await self.agent.invoke_async(prompt)
+        self.setup_stop.raise_if_stopped()
         execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
         self._log_activity(
@@ -339,6 +338,7 @@ Guidelines:
             "Choose the right specialist (search / package / booking) and synthesize a reply."
         )
         result = await self.agent.invoke_async(prompt)
+        self.setup_stop.raise_if_stopped()
 
         execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 

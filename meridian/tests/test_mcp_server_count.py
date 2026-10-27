@@ -1,15 +1,13 @@
 """The Phase 2 turn summary counts only MCP servers that actually answered.
 
-Phase 2's argument is that the agent reached Aurora through two MCP servers,
-so the closing "MCP turn complete - N servers" span is proof, not decoration.
-It counted the custom meridian-concierge server whenever a domain intent was
-detected. When that call raised, or came back empty, the trace still claimed
-the server had been used - the reply said the tool failed while the proof
-underneath said it succeeded.
+The Phase 2 turn summary counts the meridian-concierge server only when it answered.
+The closing "MCP turn complete: N servers" span is proof, not decoration. It used to
+count the server whenever a domain intent was detected, so a call that raised or came
+back empty still appeared as a server the turn had used.
 
 The domain call is the boundary to a spawned MCP subprocess, so it is replaced
-here. Pure-domain prompts are used throughout: they never open the generic
-postgres-mcp session, so the custom server is the only one that can count.
+here. Pure-domain prompts are used throughout: they run no filter search, so a domain call
+is the only thing that can make the server count.
 """
 
 from __future__ import annotations

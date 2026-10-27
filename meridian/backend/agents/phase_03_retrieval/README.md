@@ -9,7 +9,7 @@ Find candidates by meaning and keywords.
 | Source | Role |
 | --- | --- |
 | [`supervisor.py`](supervisor.py) | The running Strands supervisor delegates to read-only specialists. |
-| [`search_agent.py`](search_agent.py): `hybrid_search` | Vector and full-text candidates, deduplication and reranking. |
+| [`search_agent.py`](search_agent.py): `hybrid_search` | Calls the one hybrid search, [`retrieval/hybrid.py`](../../retrieval/hybrid.py): vector and full-text candidates, a price and places-left gate, and reranking. |
 | [`package_agent.py`](package_agent.py), [`booking_agent.py`](booking_agent.py) | Availability and price estimates. Despite its historical class name, BookingAgent does not create bookings. |
 
 ## Live checkpoint

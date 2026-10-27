@@ -26,5 +26,8 @@
     "@aws/agentcore-cdk": "0.1.0-alpha.47",
     "aws-cdk-lib": "~2.265.0",
     "constructs": "~10.7.0"
+  },
+  "overrides": {
+    "zod": "^4.6.6"
   }
 }

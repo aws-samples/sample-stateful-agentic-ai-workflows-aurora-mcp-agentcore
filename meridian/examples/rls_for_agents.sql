@@ -393,7 +393,55 @@ CREATE TABLE IF NOT EXISTS agent_audit_log (
 ALTER TABLE agent_audit_log
     ADD COLUMN IF NOT EXISTS authorization_provider VARCHAR(50),
     ADD COLUMN IF NOT EXISTS authorization_subject VARCHAR(255),
-    ADD COLUMN IF NOT EXISTS authorization_decision VARCHAR(10);
+    ADD COLUMN IF NOT EXISTS authorization_decision VARCHAR(10),
+    -- Every tool call of the turn; see scripts/migrations/021_audit_outcome.sql.
+    ADD COLUMN IF NOT EXISTS tool_calls JSONB
+        CONSTRAINT agent_audit_log_tool_calls_array
+            CHECK (jsonb_typeof(tool_calls) = 'array')
+        CONSTRAINT agent_audit_log_tool_calls_object
+            CHECK (NOT jsonb_path_exists(tool_calls,
+                '$[*].type() ? (@ != "object")'))
+        CONSTRAINT agent_audit_log_tool_calls_result
+            CHECK (NOT jsonb_path_exists(tool_calls,
+                '$[*] ? (!(@.result.type() == "string" && '
+                '(@.result == "allowed" || @.result == "refused" || @.result == "error")))'))
+        CONSTRAINT agent_audit_log_tool_calls_refused_by
+            CHECK (NOT jsonb_path_exists(tool_calls,
+                '$[*] ? (!((@.result == "refused" && @.refused_by.type() == "string" && '
+                '(@.refused_by == "identity_check" || @.refused_by == "policy" || '
+                '@.refused_by == "workload_grant" || @.refused_by == "database_guard" || '
+                '@.refused_by == "business_rule" || @.refused_by == "runtime_guard")) || '
+                '(@.result != "refused" && '
+                '(!exists(@.refused_by) || @.refused_by.type() == "null"))))'))
+        CONSTRAINT agent_audit_log_tool_calls_tool
+            CHECK (NOT jsonb_path_exists(tool_calls,
+                '$[*] ? (!(@.tool.type() == "string" && @.tool != ""))'))
+        CONSTRAINT agent_audit_log_tool_calls_refusal_code
+            CHECK (NOT jsonb_path_exists(tool_calls,
+                '$[*] ? (exists(@.refusal_code) && !((@.refusal_code.type() == "string" && '
+                '@.refusal_code != "") || @.refusal_code.type() == "null"))'))
+        CONSTRAINT agent_audit_log_tool_calls_access_audit_id
+            CHECK (NOT jsonb_path_exists(tool_calls,
+                '$[*] ? (!((@.refused_by == "workload_grant" && '
+                '@.access_audit_id.type() == "string" && @.access_audit_id != "") || '
+                '(!(@.refused_by == "workload_grant") && '
+                '(!exists(@.access_audit_id) || @.access_audit_id.type() == "null"))))'))
+        CONSTRAINT agent_audit_log_tool_calls_decision
+            CHECK (tool_calls IS NULL OR authorization_decision IS NOT DISTINCT FROM (CASE
+                WHEN jsonb_path_exists(tool_calls,
+                    '$[*] ? (@.refused_by == "identity_check" || @.refused_by == "policy" || '
+                    '@.refused_by == "workload_grant" || @.refused_by == "database_guard")')
+                    THEN 'deny'
+                WHEN jsonb_path_exists(tool_calls, '$[*] ? (@.result == "error")')
+                    OR turn_error IS NOT NULL THEN 'error'
+                ELSE 'allow' END)),
+    -- How a failed turn failed, as scripts/migrations/021_audit_outcome.sql describes.
+    ADD COLUMN IF NOT EXISTS turn_error TEXT
+        CONSTRAINT agent_audit_log_turn_error_text
+            CHECK (turn_error IS NULL OR
+                (turn_error <> '' AND char_length(turn_error) <= 400))
+        CONSTRAINT agent_audit_log_turn_error_decision
+            CHECK (turn_error IS NULL OR authorization_decision IS DISTINCT FROM 'allow');
 CREATE INDEX IF NOT EXISTS idx_audit_traveler ON agent_audit_log(traveler_id, ran_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_agent ON agent_audit_log(agent_name, ran_at DESC);
 DROP VIEW IF EXISTS agent_iam_audit;
@@ -409,7 +457,9 @@ SELECT audit_id,
     rls_traveler,
     rls_agent_type,
     iam_identity,
-    rows_returned
+    rows_returned,
+    tool_calls,
+    turn_error
 FROM agent_audit_log
 ORDER BY ran_at DESC;
 COMMENT ON VIEW agent_iam_audit IS 'Per-turn record linking workload identity, traveler authorization, and RLS session scope.';

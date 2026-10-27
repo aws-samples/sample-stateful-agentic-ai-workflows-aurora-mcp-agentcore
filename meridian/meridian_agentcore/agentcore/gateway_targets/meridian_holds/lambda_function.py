@@ -479,8 +479,7 @@ def create_courtesy_hold(args: dict) -> dict:
         governance = _authorize(traveler_id, tx)
         if not governance["allowed"]:
             _transaction("rollback", tx)
-            _record_denied_audit(governance, traveler_id)
-            return {"error": "traveler_not_authorized", "governance": governance}
+            return _grant_refusal(governance, traveler_id)
         journey_id, row, receipt = _held_row(args, hold, expires_at, tx)
         _transaction("commit", tx)
     except Exception as error:  # noqa: BLE001 - the SQL function raises named business errors
@@ -550,8 +549,7 @@ def confirm_booking(args: dict) -> dict:
         governance = _authorize(traveler_id, tx)
         if not governance["allowed"]:
             _transaction("rollback", tx)
-            _record_denied_audit(governance, traveler_id)
-            return {"error": "traveler_not_authorized", "governance": governance}
+            return _grant_refusal(governance, traveler_id)
         _scope(traveler_id, tx)
         query(
             "SELECT set_config('app.thread_id', :t, true)", {"t": str(args["journeyRef"])}, tx
@@ -590,11 +588,16 @@ def confirm_booking(args: dict) -> dict:
     }
 
 
-def _record_denied_audit(governance: dict, traveler_id: str) -> None:
-    """A DENY is evidence: keep the audit row even though the hold transaction rolled back."""
+def _record_denied_audit(traveler_id: str) -> str:
+    """A DENY is evidence: keep the audit row even though the hold transaction rolled back.
+
+    Returns:
+        The kept row's ``audit_id``.
+    """
     provider, subject_id, principal = SUBJECT
+    audit_id = f"authz_{uuid.uuid4().hex[:12]}"
     query(AUDIT_SQL, {
-        "audit_id": f"authz_{uuid.uuid4().hex[:12]}",
+        "audit_id": audit_id,
         "provider": provider,
         "subject": subject_id,
         "principal": principal,
@@ -602,6 +605,19 @@ def _record_denied_audit(governance: dict, traveler_id: str) -> None:
         "decision": "deny",
         "reason": "no active identity binding",
     })
+    return audit_id
+
+
+def _grant_refusal(governance: dict, traveler_id: str) -> dict:
+    """The answer to a call this workload may not make for the traveler.
+
+    It names the kept deny row, so a caller can prove the grant refused rather than infer it.
+    """
+    access_audit_id = _record_denied_audit(traveler_id)
+    return {
+        "error": "traveler_not_authorized",
+        "governance": {**governance, "access_audit_id": access_audit_id},
+    }
 
 
 def _named_error(error: Exception) -> str:

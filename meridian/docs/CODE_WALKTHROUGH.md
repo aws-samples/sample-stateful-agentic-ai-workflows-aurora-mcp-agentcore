@@ -6,8 +6,8 @@ rather than line numbers, which change.
 
 The entry point for every chat turn is `backend/routers/chat.py`. The Strands
 classes in `backend/agents/phase_01_sql/` and `backend/agents/phase_02_mcp/` are reference
-implementations; the first two phases run the same steps directly in
-`chat.py`.
+implementations; the first two phases run in code in `chat.py`, without a model
+loop.
 
 ## Three kinds of state
 
@@ -25,10 +25,11 @@ is not durable state.
 Prompt: `Show me city trips under $2,000 per traveler.`
 
 Open `sql_search` in `backend/routers/chat.py` and follow `parse_search_query`
-and `execute_keyword_search`. The trace shows the parsed filter, the
-parameterized values, the returned rows and the elapsed time. This path filters
-through the RDS Data API directly; it does not run the reference Strands SQL
-agent.
+into `search_trips` in `backend/tools/catalog_tools.py`. Every value is bound as a
+Data API parameter and the statement text never contains one. The trace shows the
+parsed filter, the statement with `$1` placeholders, the bound values, the number
+of trips found and the elapsed time. This path filters through the RDS Data API directly; it
+does not run the reference Strands SQL agent.
 
 ## 02 - MCP
 
@@ -36,9 +37,10 @@ Prompt: `Compare three trip types and convert each price to euros.`
 
 Open `mcp_search` and `_call_domain_tool` in `backend/routers/chat.py`, then
 `compare_packages` and `currency_convert` in `backend/mcp/concierge_server.py`.
-This prompt uses only the `meridian-concierge` server. Other catalog prompts
-also call the PostgreSQL MCP server through `mcp_session` in
-`backend/mcp/mcp_client.py`; the trace lists the servers that answered.
+Every Phase 2 prompt uses the `meridian-concierge` server. Filter prompts such as
+`Show me city trips under $2,000 per traveler.` call its typed `search_trips`
+tool, which binds every value as a database parameter. The PostgreSQL MCP
+server is used only by the reference agent in `backend/agents/phase_02_mcp/`.
 Currency conversion uses indicative rates.
 
 ## 03 - Retrieval
@@ -46,9 +48,11 @@ Currency conversion uses indicative rates.
 Prompt: `Find a quiet, romantic wine-country retreat with a private villa.`
 
 Open `retrieval_supervisor_search` in `backend/routers/chat.py`, then
-`SearchAgent.hybrid_search` in `backend/agents/phase_03_retrieval/search_agent.py`:
-query embedding, semantic and lexical candidates, deduplication by package ID,
-and `rerank_documents`. The Bedrock adapters are in
+`SearchAgent.hybrid_search` in `backend/agents/phase_03_retrieval/search_agent.py`,
+which calls `retrieval_rows` in `backend/retrieval/hybrid.py`: query embedding,
+semantic and lexical candidates, deduplication by package ID, a price and
+places-left gate, and `rerank_documents`. The supervisor's model is Claude
+Sonnet 5.5, built by `bedrock_model()` in `backend/bedrock_model.py`. The Bedrock adapters are in
 `backend/db/embedding_service.py`. A relevant result does not establish
 facts the catalog does not record, such as private occupancy.
 
@@ -63,7 +67,7 @@ With context off, the turn returns without calling the runtime; the guard is in
 | --- | --- |
 | `backend/http_auth.py`, `require_http_principal` | Binds the HTTP request to its permitted traveler. With `MERIDIAN_AGENTCORE_AUTH` unset the mode is `iam`; in `jwt` mode, which the hosted site uses, the signed-in person's Cognito token is verified at each hop. |
 | `backend/db/rds_data_client.py`, `scoped_session` | Checks the workload grant, sets a transaction-local scope and switches to the restricted RLS role |
-| `backend/agents/phase_04_production/concierge.py`, `process_turn` | Short authorization and read, and write and audit, units around the external runtime call |
+| `backend/agents/phase_04_production/concierge.py`, `process_turn` | Three short units around the external runtime call: authorization and read, audit, and memory. Every turn that reaches the Runtime has one `agent_audit_log` row written for it, failed turns included, unless that write itself fails |
 | `meridian_agentcore/app/MeridianConcierge/main.py` | The Strands loop on AgentCore Runtime: Gateway tools, the Memory session manager and the streamed events |
 | `meridian_agentcore/app/MeridianConcierge/turn_trace.py`, `TraceHooks._pin_arguments` | Overwrites the traveler, the confirmation flag, the budget ceiling and the journey reference with values from the authorized request before the Cedar policy evaluates a hold or confirmation. Party size is not pinned: it comes from the tool arguments, and the hold policy caps it at 6 travelers. |
 | `meridian_agentcore/agentcore/agentcore.template.json`, `MeridianGovernance` | The Cedar read, hold and confirmation policies, in `ENFORCE` mode |

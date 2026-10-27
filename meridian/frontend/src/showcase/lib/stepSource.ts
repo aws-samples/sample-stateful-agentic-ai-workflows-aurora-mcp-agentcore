@@ -1,5 +1,7 @@
 import type { ShowcaseTraceSpan } from './showcaseAdapters';
-import { isLegacyGraphComponent, isSnapshotTitle, RUNTIME_TURN_COMPLETE } from './spanTitles';
+import {
+  isLegacyGraphComponent, isSnapshotTitle, isSqlStep, RUNTIME_TURN_COMPLETE,
+} from './spanTitles';
 
 // Joins a value to its unit so a narrow stage never wraps "601" away from "ms".
 const NO_BREAK = '\u00a0';
@@ -55,7 +57,7 @@ const SERVICE_RULES: ServiceRule[] = [
   },
   {
     service: 'Aurora Data API',
-    matches: span => Boolean(span.sql) || span.agent === 'SQLAgent' || span.type === 'database'
+    matches: span => Boolean(span.sql) || isSqlStep(span.agent) || span.type === 'database'
       || AURORA_QUERY.test(span.name),
   },
 ];

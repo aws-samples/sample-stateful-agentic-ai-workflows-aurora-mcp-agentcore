@@ -35,7 +35,7 @@ async def test_a_policy_path_failure_never_falls_back_to_sql(monkeypatch):
     assert failure.value.status_code == 503
 
 
-async def test_traveler_mismatch_never_reaches_the_writer(monkeypatch):
+async def test_traveler_mismatch_never_reaches_the_writer(monkeypatch, access_writer):
     governed = AsyncMock()
     monkeypatch.setattr(chat, "production_hold", governed)
     with pytest.raises(HTTPException) as failure:

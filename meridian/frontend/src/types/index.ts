@@ -69,6 +69,7 @@ export type TraceSpanStatus =
   | 'delegated'
   | 'preview'
   | 'denied'
+  | 'refused'
   | 'error';
 
 export interface TraceTelemetryField {

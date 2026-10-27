@@ -95,8 +95,6 @@ def env_lines(cfg) -> dict[str, str]:
         "AGENTCORE_GATEWAY_SEARCH_TOOL": cfg.gateway_search_tool,
         "AGENTCORE_MEMORY_ID": cfg.memory_id,
         "AGENTCORE_MEMORY_NAME": cfg.memory_name,
-        "AGENTCORE_WORKLOAD_IDENTITY": cfg.workload_identity,
-        "AGENTCORE_RESOURCE_PROVIDER": cfg.resource_provider,
     }
     return {key: value for key, value in candidates.items() if value}
 

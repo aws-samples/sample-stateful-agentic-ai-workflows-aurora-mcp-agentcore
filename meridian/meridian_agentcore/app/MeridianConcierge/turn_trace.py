@@ -39,9 +39,13 @@ POLICY_FOR = {
     "create_courtesy_hold": "meridian_hold_governance",
     "confirm_booking": "meridian_booking_governance",
 }
-# The governed writes, named by the outcome each one settles. A turn decides
+# The governed writes, named by the outcome each one settles. A turn attempts
 # each of them at most once.
 GOVERNED = {"create_courtesy_hold": "hold", "confirm_booking": "booking"}
+# How the audit row names a governed write the Runtime declined to send twice on one turn;
+# backend/audit_vocabulary.py holds the same words.
+RUNTIME_GUARD = "runtime_guard"
+WRITE_ALREADY_ATTEMPTED = "write_already_attempted"
 SPANS = {
     "semantic_trip_search": (
         "search",
@@ -171,6 +175,27 @@ def _error_text(result: dict, payload: dict | None) -> str:
     )[:600]
 
 
+def _call_id(tool_use: dict) -> dict:
+    """The field that ties every span of one tool call together.
+
+    Calls the model makes in parallel report their results in completion order, so the
+    backend pairs each result with its call by this id, the Strands ``toolUseId``.
+    """
+    return {"label": "call_id", "value": str(tool_use["toolUseId"]), "mono": True}
+
+
+def _grant_fields(governance) -> list[dict]:
+    """The holds Lambda's own grant refusal: its decision and the deny row it kept."""
+    if not isinstance(governance, dict) or governance.get("decision") != "deny":
+        return []
+    fields = [{"label": "traveler_grant", "value": "deny"}]
+    if governance.get("access_audit_id"):
+        fields.append(
+            {"label": "access_audit_id", "value": str(governance["access_audit_id"]), "mono": True}
+        )
+    return fields
+
+
 class TraceHooks(HookProvider):
     """Emit spans for every tool call and pin the governed-write arguments to the turn."""
 
@@ -206,12 +231,14 @@ class TraceHooks(HookProvider):
         kind = GOVERNED.get(name)
         if kind:
             if self._is_settled(kind):
-                # The gateway already decided this write on this turn. Retrying with
-                # the same pinned arguments cannot change a Cedar decision.
+                # The first attempt may have been decided, or may have failed before the
+                # gateway answered. Either way a second call could place the write twice or
+                # retry a Cedar decision with the same pinned arguments.
                 event.cancel_tool = (
-                    f"The gateway already decided this {kind} on this turn. Do not call "
+                    f"This {kind} was already attempted on this turn. Do not call "
                     f"{name} again; explain the outcome to the traveler."
                 )
+                self._guarded(kind, event.tool_use)
                 return
             self._pin_arguments(kind, args)
         span_kind, title, summary = SPANS[name]
@@ -221,6 +248,7 @@ class TraceHooks(HookProvider):
             "status": "ok",
             "fields": [
                 {"label": "tool", "value": event.tool_use["name"], "mono": True},
+                _call_id(event.tool_use),
                 {"label": "arguments", "value": json.dumps(args, ensure_ascii=False), "mono": True},
                 {"label": "auth", "value": self.turn.gateway_auth},
                 {"label": "gateway", "value": self.turn.gateway_id, "mono": True},
@@ -237,6 +265,31 @@ class TraceHooks(HookProvider):
         args["budgetCeilingCents"] = self.turn.budget_ceiling_cents
         args["journeyRef"] = f"concierge:{self.turn.conversation_id}"
 
+    def _guarded(self, kind: str, tool_use: dict) -> None:
+        """Record a governed write the Runtime declined because this turn already attempted it."""
+        self.emit("activity", activity(
+            "order",
+            f"Second {kind} not sent: already attempted on this turn",
+            f"This {kind} was already attempted on this turn, so the Runtime did not "
+            "send the call again.",
+            {
+                "category": "runtime",
+                "component": "Bedrock AgentCore Runtime, MeridianConcierge",
+                "status": "error",
+                "fields": [
+                    {"label": "tool", "value": tool_use["name"], "mono": True},
+                    _call_id(tool_use),
+                    {
+                        "label": "arguments",
+                        "value": json.dumps(tool_use.get("input") or {}, ensure_ascii=False),
+                        "mono": True,
+                    },
+                    {"label": "refused_by", "value": RUNTIME_GUARD},
+                    {"label": "refusal_code", "value": WRITE_ALREADY_ATTEMPTED},
+                ],
+            },
+        ))
+
     def after(self, event) -> None:
         name = short(event.tool_use["name"])
         if name not in SPANS:
@@ -248,16 +301,19 @@ class TraceHooks(HookProvider):
         result = event.result or {}
         payload = parse_result(result) if result.get("status") == "success" else None
         if payload is not None and "error" not in payload:
-            self._success(name, payload, elapsed)
+            self._success(name, payload, elapsed, event.tool_use)
             return
         text = _error_text(result, payload)
         denied = payload is None and bool(DENIAL_PATTERN.match(text.strip()))
-        summary = self._failure(name, text, denied, elapsed, event.tool_use)
+        summary = self._failure(
+            name, text, denied, elapsed, event.tool_use,
+            governance=(payload or {}).get("governance"),
+        )
         # Hand the model the explained decision so its reply names the real reason;
         # the raw gateway text stays in the span for the trace viewer.
         event.result = {**result, "status": "error", "content": [{"text": summary}]}
 
-    def _success(self, name: str, payload: dict, elapsed: int) -> None:
+    def _success(self, name: str, payload: dict, elapsed: int, tool_use: dict) -> None:
         if name == "semantic_trip_search":
             self.packages = payload.get("packages") or []
             self.emit("packages", self.packages)
@@ -267,6 +323,7 @@ class TraceHooks(HookProvider):
             self.emit(kind, {kind: payload.get(kind), "policyDecision": "allow"})
         summary = payload.get("summary") or f"{name} returned"
         fields = [
+            _call_id(tool_use),
             {"label": "result", "value": summary},
             {"label": "cedar_decision", "value": "allow"},
             {"label": "cedar_policy", "value": POLICY_FOR[name], "mono": True},
@@ -291,8 +348,12 @@ class TraceHooks(HookProvider):
             elapsed,
         ))
 
-    def _failure(self, name, text, denied, elapsed, tool_use) -> str:
-        """Emit the failed span and the governed outcome; return the explained summary."""
+    def _failure(self, name, text, denied, elapsed, tool_use, *, governance=None) -> str:
+        """Emit the failed span and the governed outcome; return the explained summary.
+
+        A refusal by the holds Lambda's traveler grant carries the Lambda's decision and the
+        deny row it kept, so the backend can name that layer from its own evidence.
+        """
         args = tool_use.get("input") or {}
         kind = GOVERNED.get(name)
         if denied:
@@ -311,6 +372,7 @@ class TraceHooks(HookProvider):
             "status": "denied" if denied else "error",
             "fields": [
                 {"label": "tool", "value": tool_use["name"], "mono": True},
+                _call_id(tool_use),
                 {
                     "label": "arguments",
                     "value": json.dumps(tool_use.get("input") or {}, ensure_ascii=False),
@@ -321,7 +383,7 @@ class TraceHooks(HookProvider):
                 {"label": "cedar_decision", "value": "deny"},
                 {"label": "cedar_policy", "value": POLICY_FOR[name], "mono": True},
                 {"label": "policy_mode", "value": self.turn.policy_mode},
-            ] if denied else []),
+            ] if denied else []) + _grant_fields(governance),
         }, elapsed))
         if kind:
             self._settle(kind, None)

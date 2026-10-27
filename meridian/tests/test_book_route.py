@@ -46,7 +46,7 @@ def wired(monkeypatch):
         return {}, dict(PACKAGE)
 
     def agent_factory(outcome):
-        async def process_booking(traveler_id, conversation_id, target):
+        async def process_booking(traveler_id, conversation_id, target, **_kw):
             seen["target"] = target
             seen["conversation_id"] = conversation_id
             return outcome
@@ -104,7 +104,7 @@ def test_an_unknown_booking_is_a_404(monkeypatch):
 
 
 def test_a_platform_failure_is_a_503(wired, monkeypatch):
-    async def broken(traveler_id, conversation_id, target):
+    async def broken(traveler_id, conversation_id, target, **_kw):
         raise RuntimeError("runtime unreachable")
 
     monkeypatch.setattr(

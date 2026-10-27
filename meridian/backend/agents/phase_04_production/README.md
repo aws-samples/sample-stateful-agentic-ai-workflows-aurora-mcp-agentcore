@@ -8,7 +8,7 @@ Run a governed concierge for an authorized traveler.
 
 | Source | Role |
 | --- | --- |
-| [`concierge.py`](concierge.py): `process_turn` | Checks the workload grant, reads traveler context under RLS, calls the runtime, then persists the turn. |
+| [`concierge.py`](concierge.py): `process_turn` | Checks the workload grant, reads traveler context under RLS, calls the runtime, writes the turn's audit row, then persists the turn. |
 | [`agentcore/runtime.py`](../../agentcore/runtime.py) | The managed Runtime adapter forwards real text deltas; the main Concierge exposes them through `/api/chat/stream`. |
 | [`MeridianConcierge/main.py`](../../../meridian_agentcore/app/MeridianConcierge/main.py) | The deployed Strands loop, Gateway tools and AgentCore Memory. |
 | [`agentcore.template.json`](../../../meridian_agentcore/agentcore/agentcore.template.json) | Gateway targets and enforced Cedar policies. |

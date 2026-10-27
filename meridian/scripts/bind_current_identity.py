@@ -136,21 +136,6 @@ def main() -> None:
         principal=principal,
     )
 
-    try:
-        from backend.agentcore.cli_config import resolve_agentcore_config
-
-        workload_identity = resolve_agentcore_config().workload_identity
-    except Exception:
-        workload_identity = os.getenv("AGENTCORE_WORKLOAD_IDENTITY")
-    if workload_identity:
-        bind(
-            db,
-            traveler_id=TRAVELER_ID,
-            provider="agentcore_workload",
-            subject_id=workload_identity,
-            principal=principal,
-        )
-
 
 if __name__ == "__main__":
     main()

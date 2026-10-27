@@ -4,18 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import importlib.util
 import json
 import sys
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 
 import pytest
 
 from backend.agentcore import caller_claims
 from backend.agentcore.errors import CallerTokenExpired
 from tests.jwt_support import access_token
-from tests.test_runtime_span_timings import SDK_MODULES, FakeApp, FakeClock, FakeSession
+from tests.runtime_support import load_runtime_main
+from tests.test_runtime_span_timings import FakeClock, FakeSession
 
 RUNTIME = Path(__file__).resolve().parents[1] / "meridian_agentcore" / "app" / "MeridianConcierge"
 sys.path.insert(0, str(RUNTIME))
@@ -202,18 +202,7 @@ def test_the_mode_reads_the_environment_and_refuses_typos(monkeypatch):
 @pytest.fixture
 def runtime(monkeypatch):
     clock = FakeClock()
-    for name in SDK_MODULES:
-        monkeypatch.setitem(sys.modules, name, ModuleType(name))
-    config = sys.modules["bedrock_agentcore.memory.integrations.strands.config"]
-    config.AgentCoreMemoryConfig = config.RetrievalConfig = object
-    manager = sys.modules["bedrock_agentcore.memory.integrations.strands.session_manager"]
-    manager.AgentCoreMemorySessionManager = object
-    sys.modules["bedrock_agentcore.runtime"].BedrockAgentCoreApp = FakeApp
-    monkeypatch.setenv("AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL", "https://gw-1.gateway.example/mcp")
-    monkeypatch.setenv("MEMORY_MERIDIAN_SESSION_ID", "mem-1")
-    spec = importlib.util.spec_from_file_location("meridian_runtime_identity", RUNTIME / "main.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = load_runtime_main(monkeypatch, "meridian_runtime_identity")
     module.SESSION = FakeSession(clock)
     module.created = []
     module.memory_calls = []

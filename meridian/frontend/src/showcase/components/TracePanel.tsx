@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Check, ChevronDown, Circle, Copy, Loader2, RefreshCw, RotateCcw, ShieldX, Workflow, X } from 'lucide-react';
+import { Ban, Check, ChevronDown, Circle, Copy, Loader2, RefreshCw, RotateCcw, ShieldX, Workflow, X } from 'lucide-react';
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { type ShowcaseTraceSpan, type ShowcaseTraceTab } from '../lib/showcaseAdapters';
 import { WorkflowGraph } from './WorkflowGraph';
@@ -12,6 +12,7 @@ import { IconTooltip } from './ShowcaseTooltip';
 import { ServiceMark, type ServiceMarkName } from './ServiceMark';
 import { deriveMcpContracts, deriveWorkflowState } from '../lib/showcaseProof';
 import { formatLatency, stepSourceLabel } from '../lib/stepSource';
+import { isRetrievalStep } from '../lib/spanTitles';
 import { usePrefersReducedMotion } from '../lib/prefersReducedMotion';
 import { STEP_ENTER } from '../hooks/useLiveCues';
 
@@ -301,8 +302,8 @@ function CopyTraceButton({ state }: { state: MeridianShowcaseState }) {
 
 const ACTIVITY_SERVICES: { name: ServiceMarkName; label: string; matches: (span: ShowcaseTraceSpan) => boolean }[] = [
   { name: 'agentcore', label: 'AgentCore', matches: span => /agentcore/i.test(`${span.name} ${span.component ?? ''}`) },
-  { name: 'aurora', label: 'Aurora', matches: span => Boolean(span.sql) || /aurora|postgres|pgvector/i.test(`${span.name} ${span.component ?? ''}`) || (span.agent === 'SearchAgent' && /semantic search|catalog card details hydrated|lexical candidates merged/i.test(span.name)) },
-  { name: 'bedrock', label: 'Bedrock', matches: span => /claude|cohere|bedrock(?!\s+agentcore)/i.test(`${span.name} ${span.component ?? ''}`) || (span.agent === 'SearchAgent' && /^(Generating text embedding|Text embedding generated)$/i.test(span.name)) },
+  { name: 'aurora', label: 'Aurora', matches: span => Boolean(span.sql) || /aurora|postgres|pgvector/i.test(`${span.name} ${span.component ?? ''}`) || (isRetrievalStep(span.agent) && /semantic search|catalog card details hydrated|lexical candidates merged|hybrid candidates fetched/i.test(span.name)) },
+  { name: 'bedrock', label: 'Bedrock', matches: span => /claude|cohere|bedrock(?!\s+agentcore)/i.test(`${span.name} ${span.component ?? ''}`) || (isRetrievalStep(span.agent) && /^(Generating text embedding|Text embedding generated|Generating query embedding|Embedding generated)$/i.test(span.name)) },
   { name: 'lambda', label: 'Lambda', matches: span => /lambda/i.test(`${span.name} ${span.component ?? ''}`) },
 ];
 
@@ -324,7 +325,7 @@ function ActivityTrace({ state, arriving }: { state: MeridianShowcaseState; arri
   const reached = state.isReplaying ? spans.slice(0, Math.max(0, state.replayIndex + 1)) : spans;
   const currentSpan = spans[state.replayIndex];
   const currentGroup = state.isReplaying && currentSpan ? activityGroup(currentSpan) : undefined;
-  const statusLabels = { done: 'Complete', active: 'Replaying', pending: 'Upcoming', unconfirmed: 'Unconfirmed', error: 'Failed', denied: 'Blocked' };
+  const statusLabels = { done: 'Complete', active: 'Replaying', pending: 'Upcoming', unconfirmed: 'Unconfirmed', error: 'Failed', denied: 'Blocked', refused: 'Refused' };
 
   return (
     <div className="mds-thinking">
@@ -334,12 +335,14 @@ function ActivityTrace({ state, arriving }: { state: MeridianShowcaseState; arri
           const recorded = reached.filter(span => activityGroup(span) === group.id);
           const status = recorded.some(span => span.status === 'denied') ? 'denied'
             : recorded.some(span => span.status === 'error') ? 'error'
+              : recorded.some(span => span.status === 'refused') ? 'refused'
               : currentGroup === group.id ? 'active'
                 : !recorded.length ? 'pending'
                   : recorded.every(span => ['ok', 'delegated'].includes(span.status)) ? 'done' : 'unconfirmed';
           const services = ACTIVITY_SERVICES.filter(service => recorded.some(span => !/^Processing with/i.test(span.name) && service.matches(span)));
           const StatusIcon = status === 'done' ? Check : status === 'error' ? X
-            : status === 'denied' ? ShieldX : status === 'active' ? Loader2 : Circle;
+            : status === 'denied' ? ShieldX : status === 'refused' ? Ban
+              : status === 'active' ? Loader2 : Circle;
           return (
             <motion.li key={group.id} className={`mds-thinking-item is-${status}`}
               aria-current={status === 'active' ? 'step' : undefined}
@@ -375,15 +378,23 @@ function ActivityTrace({ state, arriving }: { state: MeridianShowcaseState; arri
   );
 }
 
+/** A refusal by a layer other than Cedar, named from the layer the backend recorded on the span. */
+function refusedLabel(span: ShowcaseTraceSpan): string {
+  const layer = span.fields.find(field => field.label === 'refused_by')?.value;
+  return layer ? `Refused: ${layer.replace(/_/g, ' ')}` : 'Refused';
+}
+
 function TraceSpanRow({ span, index, active, replyModel }: {
   span: ShowcaseTraceSpan; index: number; active: boolean; replyModel?: string;
 }) {
   const denied = span.status === 'denied';
+  const refused = span.status === 'refused';
   const failed = span.status === 'error';
-  const statusLabel = denied ? 'Denied by policy' : failed ? 'Failed' : span.status;
+  const statusLabel = denied ? 'Denied by policy' : refused ? refusedLabel(span) : failed ? 'Failed' : span.status;
   const latency = formatLatency(span.latencyMs);
+  const tone = denied ? ' is-denied' : refused ? ' is-refused' : failed ? ' is-failed' : '';
   return (
-    <details className={`mds-activity-event${active ? ' is-active' : ''}${denied ? ' is-denied' : ''}${failed ? ' is-failed' : ''}`}>
+    <details className={`mds-activity-event${active ? ' is-active' : ''}${tone}`}>
       <summary>
         <span className="mds-activity-event-index">{index + 1}</span>
         <span className="mds-activity-event-title">

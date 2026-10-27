@@ -7,12 +7,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.mcp import concierge_mcp_client, mcp_client, memory_mcp_client
+from backend.mcp import concierge_mcp_client, memory_mcp_client
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("module,client_type", [
-    (mcp_client, mcp_client.MCPPostgresClient),
     (concierge_mcp_client, concierge_mcp_client.MeridianConciergeMCPClient),
     (memory_mcp_client, memory_mcp_client.MeridianMemoryMCPClient),
 ])
@@ -59,44 +58,6 @@ async def test_transport_unwinds_in_owner_task(monkeypatch, module, client_type,
         "transport enter", "session enter", "session exit", "transport exit",
     )]
     assert client.session is None
-
-
-@pytest.mark.asyncio
-async def test_separate_requests_own_separate_sessions(monkeypatch):
-    opened, closed = [], []
-
-    async def connect(client):
-        opened.append(client)
-
-    async def disconnect(client):
-        closed.append(client)
-
-    monkeypatch.setattr(mcp_client.MCPPostgresClient, "connect", connect)
-    monkeypatch.setattr(mcp_client.MCPPostgresClient, "connect_to_database", AsyncMock())
-    monkeypatch.setattr(mcp_client.MCPPostgresClient, "disconnect", disconnect)
-    async with mcp_client.mcp_session() as first:
-        pass
-    async with mcp_client.mcp_session() as second:
-        pass
-    assert first is not second
-    assert opened == closed == [first, second]
-
-
-def test_missing_connection_fails_before_starting_subprocess():
-    client = mcp_client.MCPPostgresClient(mcp_client.MCPConnectionConfig())
-    with pytest.raises(ValueError, match="AURORA_CLUSTER_ARN and AURORA_SECRET_ARN"):
-        client._get_server_params()
-
-
-@pytest.mark.asyncio
-async def test_query_failure_is_not_reported_as_empty_results():
-    client = mcp_client.MCPPostgresClient()
-    client._connected = True
-    client.session = SimpleNamespace(call_tool=AsyncMock(
-        return_value=SimpleNamespace(isError=True, content=[]),
-    ))
-    with pytest.raises(RuntimeError, match="PostgreSQL MCP query failed"):
-        await client.run_query("SELECT 1")
 
 
 @pytest.mark.asyncio

@@ -324,6 +324,47 @@ class RDSDataClient:
         except Exception:
             logger.exception("Rolling back transaction %s failed", transaction_id)
 
+    async def record_traveler_access(
+        self,
+        *,
+        provider: str,
+        subject_id: str,
+        principal: Optional[str],
+        traveler_id: str,
+        decision: str,
+        reason: str,
+        transaction_id: Optional[str] = None,
+    ) -> str:
+        """Write one ``traveler_access_audit`` row: who asked for which traveler, and the answer.
+
+        The one writer of that table in the backend. Outside a transaction the row commits at
+        once, which is what keeps a refusal as evidence.
+
+        Args:
+            provider: The caller's identity provider, such as ``aws_iam`` or ``cognito``.
+            subject_id: The caller's subject under that provider.
+            principal: The caller's principal, such as an IAM ARN, or None.
+            traveler_id: The traveler the caller asked for.
+            decision: ``allow`` or ``deny``.
+            reason: Why, in a short phrase.
+            transaction_id: The Data API transaction to write in, if any.
+
+        Returns:
+            The new row's ``audit_id``.
+        """
+        audit_id = f"authz_{uuid.uuid4().hex[:12]}"
+        await self.execute(
+            """
+            INSERT INTO traveler_access_audit (
+                audit_id, identity_provider, subject_id, principal,
+                requested_traveler_id, decision, reason
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (audit_id, provider, subject_id, principal, traveler_id, decision, reason),
+            transaction_id=transaction_id,
+        )
+        return audit_id
+
     async def check_traveler_authorization(
         self,
         traveler_id: str,
@@ -348,26 +389,16 @@ class RDSDataClient:
             transaction_id=transaction_id,
         )
         allowed = binding is not None
-        audit_id = f"authz_{uuid.uuid4().hex[:12]}" if write_audit else None
         reason = "active identity binding" if allowed else "no active identity binding"
-
-        if audit_id:
-            await self.execute(
-                """
-                INSERT INTO traveler_access_audit (
-                    audit_id, identity_provider, subject_id, principal,
-                    requested_traveler_id, decision, reason
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    audit_id,
-                    authorization.provider,
-                    authorization.subject_id,
-                    authorization.principal,
-                    traveler_id,
-                    "allow" if allowed else "deny",
-                    reason,
-                ),
+        audit_id = None
+        if write_audit:
+            audit_id = await self.record_traveler_access(
+                provider=authorization.provider,
+                subject_id=authorization.subject_id,
+                principal=authorization.principal,
+                traveler_id=traveler_id,
+                decision="allow" if allowed else "deny",
+                reason=reason,
                 transaction_id=transaction_id,
             )
 

@@ -427,6 +427,111 @@ describe('TracePanel collapse behavior', () => {
     expect(link).toHaveAttribute('href', 'https://us-east-1.console.aws.amazon.com/cloudwatch/home');
     expect(link).toHaveAttribute('target', '_blank');
   });
+
+  /** The status line under one recorded event, as the reader sees it. */
+  function eventMeta(name: string) {
+    return screen.getByText(name).closest('details')!.querySelector('.mds-activity-event-meta');
+  }
+
+  const refusedCall: ShowcaseTraceSpan = {
+    id: 'span-refused',
+    name: 'Hold call answered',
+    category: 'tool',
+    type: 'error',
+    status: 'refused',
+    latencyMs: 180,
+    agent: 'ProductionAgent',
+    file: 'meridian_agentcore/app/MeridianConcierge/main.py',
+    details: 'insufficient_inventory',
+    fields: [
+      { label: 'tool', value: 'MeridianHolds___create_courtesy_hold', mono: true },
+      { label: 'gateway_error', value: 'insufficient_inventory', mono: true },
+      { label: 'refused_by', value: 'business_rule' },
+    ],
+  };
+
+  it('renders a refusal by a layer other than Cedar as refused, naming the layer', () => {
+    render(<TracePanel state={makeState({ selectedPhase: 4, traceSpans: [refusedCall] })} />);
+
+    const step = screen.getByText('Querying live travel data').closest('li')!;
+    expect(step).toHaveClass('is-refused');
+    expect(within(step).getByText('Refused')).toBeInTheDocument();
+    expect(step.querySelector('.lucide-ban')).not.toBeNull();
+    fireEvent.click(screen.getByText('Querying live travel data'));
+    fireEvent.click(screen.getByText('Hold call answered'));
+    expect(eventMeta('Hold call answered')).toHaveTextContent(/^tool, Refused: business rule, 180 ms$/);
+    expect(screen.getByText('Hold call answered').closest('details')).toHaveClass('is-refused');
+  });
+
+  it.each([
+    ['identity_check', 'Refused: identity check'],
+    ['workload_grant', 'Refused: workload grant'],
+    ['database_guard', 'Refused: database guard'],
+    ['runtime_guard', 'Refused: runtime guard'],
+    [null, 'Refused'],
+  ])('labels a refusal by %s as "%s"', (layer, label) => {
+    const fields = refusedCall.fields.filter(field => field.label !== 'refused_by');
+    const span = { ...refusedCall, fields: layer ? [...fields, { label: 'refused_by', value: layer }] : fields };
+    render(<TracePanel state={makeState({ selectedPhase: 4, traceSpans: [span] })} />);
+    fireEvent.click(screen.getByText('Querying live travel data'));
+    fireEvent.click(screen.getByText('Hold call answered'));
+    expect(eventMeta('Hold call answered')).toHaveTextContent(new RegExp(`^tool, ${label}, 180 ms$`));
+  });
+
+  const holdOutcome: ShowcaseTraceSpan = {
+    id: 'span-outcome',
+    name: 'Courtesy hold not placed: refused by business rule',
+    category: 'synthesis',
+    type: 'result',
+    status: 'refused',
+    latencyMs: null,
+    agent: 'ProductionAgent',
+    details: 'insufficient_inventory',
+    fields: [{ label: 'refused_by', value: 'business_rule' }],
+  };
+
+  it('shows a sold-out hold as refused in its call and its outcome, never as failed', () => {
+    const { container } = render(<TracePanel state={makeState({ selectedPhase: 4,
+      traceSpans: [{ ...refusedCall, name: 'Hold refused: business rule' }, holdOutcome] })} />);
+
+    expect(screen.getByText('Querying live travel data').closest('li')).toHaveClass('is-refused');
+    expect(screen.getByText('Preparing response').closest('li')).toHaveClass('is-refused');
+    expect(container.querySelector('.is-error, .is-failed')).toBeNull();
+    expect(container.textContent).not.toMatch(/failed/i);
+    fireEvent.click(screen.getByText('Preparing response'));
+    fireEvent.click(screen.getByText('Courtesy hold not placed: refused by business rule'));
+    expect(eventMeta('Courtesy hold not placed: refused by business rule'))
+      .toHaveTextContent(/^synthesis, Refused: business rule$/);
+    fireEvent.click(screen.getByText('Querying live travel data'));
+    expect(eventMeta('Hold refused: business rule')).toHaveTextContent(/^tool, Refused: business rule, 180 ms$/);
+  });
+
+  it('keeps a failed hold call and its outcome reading failed', () => {
+    const failedCall = { ...refusedCall, name: 'Tool call failed', status: 'error',
+      fields: refusedCall.fields.filter(field => field.label !== 'refused_by') };
+    const failedOutcome = { ...holdOutcome, name: 'Courtesy hold not placed', status: 'error', fields: [] };
+    render(<TracePanel state={makeState({ selectedPhase: 4, traceSpans: [failedCall, failedOutcome] })} />);
+
+    expect(screen.getByText('Querying live travel data').closest('li')).toHaveClass('is-error');
+    expect(screen.getByText('Preparing response').closest('li')).toHaveClass('is-error');
+    fireEvent.click(screen.getByText('Preparing response'));
+    fireEvent.click(screen.getByText('Courtesy hold not placed'));
+    expect(eventMeta('Courtesy hold not placed')).toHaveTextContent(/^synthesis, Failed$/);
+  });
+
+  it('keeps a failed call failed beside a refusal, and the failure leads its step', () => {
+    const failedCall = { ...refusedCall, id: 'span-error', name: 'Details call answered', status: 'error',
+      fields: refusedCall.fields.filter(field => field.label !== 'refused_by') };
+    render(<TracePanel state={makeState({ selectedPhase: 4, traceSpans: [refusedCall, failedCall] })} />);
+
+    const step = screen.getByText('Querying live travel data').closest('li')!;
+    expect(step).toHaveClass('is-error');
+    expect(step.querySelector('.lucide-x')).not.toBeNull();
+    fireEvent.click(screen.getByText('Querying live travel data'));
+    fireEvent.click(screen.getByText('Details call answered'));
+    expect(eventMeta('Details call answered')).toHaveTextContent(/^tool, Failed, 180 ms$/);
+    expect(screen.getByText('Details call answered').closest('details')).toHaveClass('is-failed');
+  });
   it('groups every Phase 3 event once, with searches and reranking under their actual responsibilities', () => {
     const events = [
       ['Processing with Hybrid (pgvector + tsvector) + Cohere Rerank via Strands Supervisor', 'model', 'RetrievalAgent'],

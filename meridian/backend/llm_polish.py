@@ -4,15 +4,17 @@ Concierge-tone polish over deterministic tool outputs.
 The MCP path produces precise but dry readouts ("FX via meridian-concierge
 MCP: 2500 USD ≈ 2300 EUR"). The app wants longer, narrative replies
 that read like a real travel concierge. This module wraps a Bedrock
-Converse call (Claude Sonnet 5 by default, with fallback to Haiku 4.5
-and Opus 5) around the deterministic facts so the user sees a richer
-answer without the agent hallucinating numbers - all factual content
-comes from the tool result that we feed verbatim into the system prompt.
+Converse call (Claude Sonnet 5.5 by default) around the deterministic facts so the user
+sees a richer answer without the agent hallucinating numbers - all factual content comes
+from the tool result that we feed verbatim into the system prompt.
+
+One model answers: the configured one. Transient errors are retried by botocore with
+adaptive retries. A persistent failure is reported with the model id and what to check,
+and the raw facts are returned unpolished. A different model never answers in its place.
 
 Returns a `PolishResult` carrying both the text AND metadata about which
 model responded (or which error blocked the polish), so the caller can
-log the model id into the trace and surface failures to the user instead
-of silently falling back to the dry deterministic output.
+log the model id into the trace and surface failures to the user.
 """
 
 from __future__ import annotations
@@ -21,12 +23,15 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError, ConnectTimeoutError, ReadTimeoutError
 
+from backend.bedrock_model import request_fields
 from backend.config import config
+from backend.security.redaction import mask_account_ids
 from backend.timing import clock, elapsed_ms
 
 logger = logging.getLogger(__name__)
@@ -92,43 +97,31 @@ _CONCIERGE_SYSTEM = (
 )
 
 
-# Model fallback chain. The primary is config.bedrock.model_id (GPT-6 Sol by
-# default, overridable in .env) and _candidate_models() always tries it first.
-# This chain is the BACKUP order if the primary errors: stay fast with Sonnet 5,
-# then Haiku 4.5, and keep Opus 5 last so a transient error never silently
-# falls back to the slowest model. First success wins.
-_DEFAULT_FALLBACK_CHAIN: List[str] = [
-    "global.anthropic.claude-sonnet-5",
-    "global.anthropic.claude-haiku-4-5-20251001-v1:0",
-    "global.anthropic.claude-opus-5",
-]
+READ_TIMEOUT_SECONDS = 25
+CONNECT_TIMEOUT_SECONDS = 5
+MAX_ATTEMPTS = 3
 
-
-def _candidate_models() -> List[str]:
-    primary = config.bedrock.model_id
-    chain: List[str] = [primary]
-    for m in _DEFAULT_FALLBACK_CHAIN:
-        if m not in chain:
-            chain.append(m)
-    return chain
+# The output budget is the factory default: Sonnet 5.5 thinks adaptively when no thinking
+# field is sent, and thinking tokens count against it.
+POLISH_MAX_TOKENS = 16000
 
 
 @dataclass
 class PolishResult:
     """Outcome of a polish attempt.
 
-    `text` always carries something the caller can show the user - the
-    polished reply on success, or the original `tool_output` (with a
-    `note` describing why polishing failed) when every model in the
-    fallback chain errored out.
+    `text` always carries something the caller can show the user: the polished reply on
+    success, or the original `tool_output` when the configured model could not answer,
+    with a `note` saying why.
     """
 
     text: str
-    model_id: Optional[str]  # which model actually answered
-    note: Optional[str]  # error string if polish failed entirely
-    # How long the Converse call of the model that answered took. Earlier
-    # failed attempts in the chain are not part of it.
+    model_id: Optional[str]  # the model that answered; None when polish failed
+    note: Optional[str]  # why polish failed
+    # How long the Converse call took.
     elapsed_ms: Optional[int] = None
+    # True when no model was called, so nothing failed: there was nothing to polish.
+    skipped: bool = False
 
 
 _bedrock_client = None
@@ -141,112 +134,168 @@ def _client():
             "bedrock-runtime",
             region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
             config=Config(
-                read_timeout=25,
-                connect_timeout=5,
-                retries={"max_attempts": 1, "mode": "standard"},
+                read_timeout=READ_TIMEOUT_SECONDS,
+                connect_timeout=CONNECT_TIMEOUT_SECONDS,
+                retries={"total_max_attempts": MAX_ATTEMPTS, "mode": "adaptive"},
             ),
         )
     return _bedrock_client
 
 
-def _polish_sync(user_query: str, tool_output: str) -> PolishResult:
-    """Synchronous Bedrock Converse call with model fallback chain.
-
-    Tries each model in `_candidate_models()` until one succeeds. Returns
-    a PolishResult that always has usable `text` (polished or raw) and
-    metadata describing what happened.
-    """
-    if not tool_output:
-        return PolishResult(text=tool_output, model_id=None, note="empty tool output")
-
-    last_error: Optional[str] = None
-    for model_id in _candidate_models():
-        try:
-            converse_kwargs = {
-                "modelId": model_id,
-                "system": [{"text": _CONCIERGE_SYSTEM}],
-                "messages": [
+def _request(user_query: str, tool_output: str, model_id: str) -> dict:
+    """The Converse request. No temperature: Sonnet 5.5 rejects one."""
+    request = {
+        "modelId": model_id,
+        "system": [{"text": _CONCIERGE_SYSTEM}],
+        "messages": [
+            {
+                "role": "user",
+                "content": [
                     {
-                        "role": "user",
-                        "content": [
-                            {
-                                "text": (
-                                    f"Traveler asked: {user_query}\n\n"
-                                    f"TOOL OUTPUT (facts to use verbatim):\n"
-                                    f"{tool_output}\n\nReply now."
-                                )
-                            }
-                        ],
+                        "text": (
+                            f"Traveler asked: {user_query}\n\n"
+                            f"TOOL OUTPUT (facts to use verbatim):\n"
+                            f"{tool_output}\n\nReply now."
+                        )
                     }
                 ],
-                "inferenceConfig": {
-                    # Just maxTokens. Opus 5 deprecates `temperature`
-                    # ("temperature is deprecated for this model"), and
-                    # Haiku 4.5 rejects `temperature + topP` together.
-                    # Letting the model pick its own sampling defaults
-                    # is the only setting compatible across the entire
-                    # Opus / Sonnet / Haiku fallback chain.
-                    "maxTokens": 1200,
-                },
             }
-            if model_id.lower().endswith(
-                ("anthropic.claude-sonnet-5", "anthropic.claude-opus-5")
-            ):
-                # Opus 5 / Sonnet 5 think by default; this is a single-call,
-                # non-tool reply-polishing route (never used with tools), so
-                # disable thinking to keep the prior latency/cost/behavior
-                # instead of spending the 1200-token budget on reasoning.
-                converse_kwargs["additionalModelRequestFields"] = {
-                    "thinking": {"type": "disabled"}
-                }
-            started = clock()
-            resp = _client().converse(**converse_kwargs)
-            call_ms = elapsed_ms(started)
-            stop_reason = str(resp.get("stopReason", "")).lower()
-            blocks = resp.get("output", {}).get("message", {}).get("content", [])
-            saw_text = False
-            for b in blocks:
-                text = b.get("text")
-                if text:
-                    saw_text = True
-                    polished = text.strip()
-                    visible_ending = polished.rstrip("*_` ").rstrip()
-                    if stop_reason in {"max_tokens", "length"}:
-                        last_error = (
-                            f"{model_id} stopped before completing the reply "
-                            f"({stop_reason})"
-                        )
-                        logger.warning(last_error)
-                        continue
-                    if not visible_ending or visible_ending[-1] not in ".!?":
-                        last_error = (
-                            f"{model_id} returned an incomplete-looking reply"
-                        )
-                        logger.warning("%s: %r", last_error, polished[-120:])
-                        continue
-                    logger.info(
-                        "[polish] %s ok len=%d preview=%r",
-                        model_id,
-                        len(polished),
-                        polished[:200],
-                    )
-                    return PolishResult(
-                        text=polished,
-                        model_id=model_id,
-                        note=None,
-                        elapsed_ms=call_ms,
-                    )
-            if not saw_text:
-                last_error = f"{model_id} returned an empty response"
-        except Exception as exc:
-            last_error = f"{model_id}: {exc.__class__.__name__}: {exc}"
-            logger.warning("polish failed on %s: %s", model_id, exc)
+        ],
+        "inferenceConfig": {"maxTokens": POLISH_MAX_TOKENS},
+    }
+    fields = request_fields()
+    if fields:
+        request["additionalModelRequestFields"] = fields
+    return request
 
-    return PolishResult(
-        text=tool_output,
-        model_id=None,
-        note=last_error or "every model in the fallback chain failed",
+
+_BUDGET_ADVICE = (
+    f"Check the output budget, POLISH_MAX_TOKENS ({POLISH_MAX_TOKENS} tokens): output tokens, "
+    "including any thinking, count against it."
+)
+_GUARDRAIL_ADVICE = "A content filter or guardrail stopped it."
+_CONTEXT_ADVICE = "It reached the model's context window; retrying the same input will not help."
+_ACCESS_ADVICE = (
+    "Check that this account has access to the model and that the role allows "
+    "bedrock:InvokeModel on the model or its inference profile."
+)
+_THROTTLE_ADVICE = "Try again shortly."
+# Advice only where the stop reason or error code settles the cause; every other case states
+# the facts and nothing more.
+_STOP_ADVICE = {
+    "max_tokens": _BUDGET_ADVICE,
+    "content_filtered": _GUARDRAIL_ADVICE,
+    "guardrail_intervened": _GUARDRAIL_ADVICE,
+    "model_context_window_exceeded": _CONTEXT_ADVICE,
+}
+_CODE_ADVICE = {
+    "AccessDeniedException": _ACCESS_ADVICE,
+    "ThrottlingException": _THROTTLE_ADVICE,
+}
+_MESSAGE_LIMIT = 200
+
+
+def _unavailable(tool_output: str, statement: str, advice: str = "") -> PolishResult:
+    """Fail closed: the raw facts, a note of what happened, and advice only when certain."""
+    advice_part = f" {advice}" if advice else ""
+    stop = "" if statement.endswith("...") else "."
+    note = f"The polish was not applied. {statement}{stop}{advice_part} No other model was tried."
+    logger.warning(note)
+    return PolishResult(text=tool_output, model_id=None, note=note)
+
+
+def _first_text(response: dict) -> Optional[str]:
+    blocks = response.get("output", {}).get("message", {}).get("content", [])
+    for block in blocks:
+        if block.get("text"):
+            return block["text"].strip()
+    return None
+
+
+def _short(message: str) -> str:
+    """The masked AWS message: cut at a word boundary with "..." when long, else without a
+    trailing period, question mark, exclamation mark or colon."""
+    message = mask_account_ids(message).strip()
+    if len(message) > _MESSAGE_LIMIT:
+        words = message[:_MESSAGE_LIMIT].rsplit(" ", 1)[0]
+        return words.rstrip(" .,;:?!") + "..."
+    return message.rstrip(" .?!:")
+
+
+def _labelled(label: str, message: str) -> str:
+    """The label and the short AWS message; no colon for an empty message."""
+    message = _short(message)
+    return f"{label}: {message}" if message else label
+
+
+def _timeout_advice(seconds: int) -> str:
+    return (
+        f"The last attempt timed out after {seconds} seconds; the client makes up to "
+        f"{MAX_ATTEMPTS} attempts in all. Try again."
     )
+
+
+def _call_failure(exc: Exception) -> tuple[str, str]:
+    """What happened and the advice (often empty) for an exception from the model call."""
+    name = exc.__class__.__name__
+    if isinstance(exc, ClientError):
+        error = exc.response.get("Error", {})
+        code = error.get("Code", "")
+        return _labelled(code or name, str(error.get("Message", ""))), _CODE_ADVICE.get(code, "")
+    what = _labelled(name, str(exc))
+    if isinstance(exc, ReadTimeoutError):
+        return what, _timeout_advice(READ_TIMEOUT_SECONDS)
+    if isinstance(exc, ConnectTimeoutError):
+        return what, _timeout_advice(CONNECT_TIMEOUT_SECONDS)
+    return what, ""
+
+
+def _unusable(response: dict, polished: Optional[str]) -> Optional[tuple[str, str]]:
+    """What happened and the advice when the response is not a finished reply, else None.
+
+    The stop reason is judged first and reported exactly as returned, even when the response
+    carries no text.
+    """
+    stop_reason = str(response.get("stopReason") or "")
+    if not stop_reason:
+        return "it returned no stop reason", ""
+    if stop_reason != "end_turn":
+        return f"it stopped with stop reason {stop_reason}", _STOP_ADVICE.get(stop_reason, "")
+    if polished is None:
+        return "it returned no text", ""
+    visible_ending = polished.rstrip("*_` ").rstrip()
+    if not visible_ending or visible_ending[-1] not in ".!?":
+        return "its reply looked cut off", ""
+    return None
+
+
+def _polish_sync(user_query: str, tool_output: str) -> PolishResult:
+    """Synchronous Bedrock Converse call to the configured model.
+
+    Returns a PolishResult that always has usable `text` (polished or raw) and metadata
+    describing what happened.
+    """
+    if not tool_output:
+        return PolishResult(
+            text=tool_output, model_id=None, note="empty tool output", skipped=True
+        )
+
+    model_id = config.bedrock.model_id
+    started = clock()
+    try:
+        response = _client().converse(**_request(user_query, tool_output, model_id))
+    except Exception as exc:
+        what, advice = _call_failure(exc)
+        return _unavailable(tool_output, f"{model_id} could not be called: {what}", advice)
+    call_ms = elapsed_ms(started)
+
+    polished = _first_text(response)
+    problem = _unusable(response, polished)
+    if problem:
+        what, advice = problem
+        return _unavailable(tool_output, f"{model_id} replied, but {what}", advice)
+    logger.info("[polish] %s ok len=%d preview=%r", model_id, len(polished), polished[:200])
+    return PolishResult(text=polished, model_id=model_id, note=None, elapsed_ms=call_ms)
 
 
 async def polish_concierge_reply(user_query: str, tool_output: str) -> PolishResult:
@@ -256,5 +305,7 @@ async def polish_concierge_reply(user_query: str, tool_output: str) -> PolishRes
     raw tool_output on failure with a `note` explaining why.
     """
     if not tool_output:
-        return PolishResult(text=tool_output, model_id=None, note="empty tool output")
+        return PolishResult(
+            text=tool_output, model_id=None, note="empty tool output", skipped=True
+        )
     return await asyncio.to_thread(_polish_sync, user_query, tool_output)

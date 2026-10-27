@@ -166,11 +166,11 @@ function contractFromSpan(span: ShowcaseTraceSpan): McpContract | null {
 function defaultMcpContracts(): McpContract[] {
   return [
     {
-      server: 'awslabs.postgres-mcp-server',
-      tool: 'run_query',
-      request: '{ sql: "SELECT ... FROM trip_packages" }',
-      auroraOperation: 'RDS Data API executes SQL against Aurora PostgreSQL.',
-      result: 'Trip rows return as MCP content blocks.',
+      server: 'meridian-concierge',
+      tool: 'search_trips',
+      request: '{ trip_type, max_price_per_person, limit }',
+      auroraOperation: 'RDS Data API runs one parameterized statement against Aurora PostgreSQL.',
+      result: 'Trip rows return as typed MCP content.',
       observed: false,
     },
     {
@@ -185,6 +185,7 @@ function defaultMcpContracts(): McpContract[] {
 }
 
 function domainOperation(tool: string): string {
+  if (/search_trips/i.test(tool)) return 'Search trip_packages with every filter bound as a parameter.';
   if (/compare/i.test(tool)) return 'Read package rows and compare price, region, and fit.';
   if (/currency|fx/i.test(tool)) return 'Convert Aurora-backed package prices into the requested currency.';
   if (/price_range|price range/i.test(tool)) return 'Aggregate the real price range for a destination from the catalog.';

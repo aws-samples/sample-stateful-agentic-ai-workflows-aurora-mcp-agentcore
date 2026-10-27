@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional, Tuple
 from backend.agentcore.identity import get_agentcore_identity
 from backend.agents.phase_05_workflow.graph import fold_snapshot, next_nodes, snapshot_key
 from backend.agents.phase_05_workflow.state import SNAPSHOT_STORE
+from backend.security.redaction import mask_payload
 
 JOURNEY_SQL = """
 SELECT journey_id, traveler_id, checkpoint_backend, active_thread_id, status,
@@ -75,13 +76,17 @@ SELECT message_id, role, content, created_at
 """
 
 # Every scoped read, this one included, writes an allow row, so the latest row is
-# always a recent read. The evidence is the last decision made up to the moment
-# the run was admitted (see _authorization_bound).
+# always a recent read. The evidence is the last allow up to the moment the run was
+# admitted (see _authorization_bound): only an allow admits a run. A deny in that
+# window admitted nothing, and may be another caller's refused request for this
+# traveler (a backend 403 or the holds Lambda's grant check), so it is never shown
+# as the run's evidence.
+ADMITTING_DECISION = "allow"
 AUDIT_SQL = """
 SELECT audit_id, identity_provider, subject_id, principal, decision, reason,
        decided_at
   FROM traveler_access_audit
- WHERE requested_traveler_id = %s AND decided_at <= %s::timestamptz
+ WHERE requested_traveler_id = %s AND decided_at <= %s::timestamptz AND decision = %s
  ORDER BY decided_at DESC LIMIT 1
 """
 
@@ -463,14 +468,14 @@ def _authorization_bound(journey: Dict[str, Any], executions: Dict[str, Any]) ->
 
 
 async def _authorization(q, traveler_id: str, admitted_at: Optional[str]) -> Dict[str, Any]:
-    rows = await q(AUDIT_SQL, (traveler_id, admitted_at))
+    rows = await q(AUDIT_SQL, (traveler_id, admitted_at, ADMITTING_DECISION))
     if not rows:
         return {
-            **_unavailable("no authorization decision recorded for this traveler"),
+            **_unavailable("no allow decision recorded for this traveler before the run"),
             "source": "traveler_access_audit",
         }
     row = rows[0]
-    return {
+    return mask_payload({
         "status": "observed",
         "source": "traveler_access_audit",
         "audit_id": row["audit_id"],
@@ -479,4 +484,4 @@ async def _authorization(q, traveler_id: str, admitted_at: Optional[str]) -> Dic
         "decision": row["decision"],
         "reason": row["reason"],
         "observed_at": _iso(row["decided_at"]),
-    }
+    })

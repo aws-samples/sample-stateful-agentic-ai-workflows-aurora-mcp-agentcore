@@ -274,3 +274,97 @@ test('MERIDIAN_TIGHTEN_ROLE=1 tightens in jwt mode and is ignored in iam mode', 
   assert.equal(rolesStackWiring(jwtDotenv, 'iam', tighten).tighten, false);
   assert.equal(rolesStackWiring(jwtDotenv, 'jwt', { MERIDIAN_TIGHTEN_ROLE: '0' }).tighten, false);
 });
+
+// The Amazon Bedrock grants follow the inventory in lib/bedrock-model-access.ts and the policy in
+// https://docs.aws.amazon.com/bedrock/latest/userguide/global-cross-region-inference.html
+const ACTIONS = ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'];
+const REGION = 'us-east-1';
+const PSEUDO = { 'AWS::Partition': 'aws', 'AWS::Region': REGION, 'AWS::AccountId': '123456789012' };
+const REFUSED_MODEL = /BEDROCK_MODEL_ID.*global\./;
+
+// CDK builds ARNs from the partition token; render them as the strings IAM evaluates.
+function render(value) {
+  if (Array.isArray(value)) return value.map(render);
+  if (value === null || typeof value !== 'object') return value;
+  if ('Fn::Join' in value) return value['Fn::Join'][1].map(render).join(value['Fn::Join'][0]);
+  if ('Ref' in value && value.Ref in PSEUDO) return PSEUDO[value.Ref];
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, render(item)]));
+}
+
+function statementsOf(rolesStack) {
+  return Object.values(Template.fromStack(rolesStack).findResources('AWS::IAM::Policy'))
+    .flatMap((policy) => policy.Properties.PolicyDocument.Statement)
+    .map(render);
+}
+
+function bedrockStatements(extra = {}) {
+  const isBedrock = (s) => [s.Action].flat().some((action) => action.startsWith('bedrock:'));
+  return statementsOf(stack(extra)).filter(isBedrock);
+}
+
+function globalProfileStatements(model) {
+  const profile = `arn:aws:bedrock:${REGION}:123456789012:inference-profile/global.${model}`;
+  const viaProfile = { 'bedrock:InferenceProfileArn': profile };
+  const allow = (Resource, StringEquals) => ({
+    Action: ACTIONS, Effect: 'Allow', Resource, Condition: { StringEquals },
+  });
+  return [
+    allow(profile, { 'aws:RequestedRegion': REGION }),
+    allow(`arn:aws:bedrock:${REGION}::foundation-model/${model}`,
+      { 'aws:RequestedRegion': REGION, ...viaProfile }),
+    allow(`arn:aws:bedrock:::foundation-model/${model}`,
+      { 'aws:RequestedRegion': 'unspecified', ...viaProfile }),
+  ];
+}
+
+const inRegion = (...models) =>
+  models.map((m) => `arn:aws:bedrock:${REGION}::foundation-model/${m}`);
+const naming = (statements, text) =>
+  statements.filter((s) => JSON.stringify(s.Resource).includes(text));
+
+test('the backend reaches the global Sonnet 5.5 model only through its inference profile', () => {
+  const sonnet = naming(bedrockStatements(), 'claude-sonnet-5-5');
+  assert.deepEqual(sonnet, globalProfileStatements('anthropic.claude-sonnet-5-5'));
+});
+
+test('the backend embeds and reranks only with the in-Region models it calls', () => {
+  assert.deepEqual(naming(bedrockStatements(), 'cohere.'), [{
+    Action: 'bedrock:InvokeModel',
+    Effect: 'Allow',
+    Resource: inRegion('cohere.embed-v4:0', 'cohere.rerank-v3-5:0'),
+  }]);
+});
+
+test('no Bedrock grant on the backend role ends in a wildcard or names another model', () => {
+  const statements = statementsOf(stack());
+  const bedrockResources = statements
+    .flatMap((s) => [s.Resource].flat())
+    .filter((r) => typeof r === 'string' && r.includes(':bedrock:'));
+  assert.deepEqual(bedrockResources.filter((r) => r.endsWith('*')), []);
+  assert.equal(bedrockStatements().length, 4);
+  assert.ok(!JSON.stringify(statements).includes('bedrock:CountTokens'));
+});
+
+test('each configured model gets its own grant', () => {
+  const statements = bedrockStatements({
+    BEDROCK_MODEL_ID: 'global.anthropic.claude-test-1',
+    EMBEDDING_MODEL: 'cohere.embed-test:0',
+    RERANK_MODEL: 'cohere.rerank-test:0',
+  });
+  const testModel = globalProfileStatements('anthropic.claude-test-1');
+  assert.deepEqual(naming(statements, 'claude-test-1'), testModel);
+  const cohere = inRegion('cohere.embed-test:0', 'cohere.rerank-test:0');
+  assert.deepEqual(naming(statements, 'cohere.')[0].Resource, cohere);
+  assert.equal(statements.length, 4);
+});
+
+test('a chat model that is not a global inference profile is refused', () => {
+  assert.throws(() => stack({ BEDROCK_MODEL_ID: 'us.openai.gpt-6-sol' }), REFUSED_MODEL);
+  assert.throws(() => stack({ BEDROCK_MODEL_ID: 'anthropic.claude-sonnet-5-5' }), REFUSED_MODEL);
+});
+
+test('a Bedrock Region other than the stack Region is refused', () => {
+  const otherRegion = /BEDROCK_REGION 'us-west-2'.*us-east-1/;
+  assert.throws(() => stack({ BEDROCK_REGION: 'us-west-2' }), otherRegion);
+  assert.doesNotThrow(() => stack({ BEDROCK_REGION: REGION }));
+});

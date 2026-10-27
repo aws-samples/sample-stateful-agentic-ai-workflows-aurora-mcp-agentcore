@@ -47,6 +47,15 @@ describe('formatLatency', () => {
 });
 
 describe('stepSourceLabel', () => {
+  it('routes SQL work by the code name, and still by the name saved journeys carry', () => {
+    expect(label({
+      name: 'Found 5 trips', agent: 'SQL search (code)', type: 'result', latencyMs: 323,
+    }))
+      .toBe(nb('Aurora Data API, 323 ms'));
+    expect(label({ name: 'Found 5 trips', agent: 'SQLAgent', type: 'result', latencyMs: 323 }))
+      .toBe(nb('Aurora Data API, 323 ms'));
+  });
+
   it('names the Aurora Data API and the measured time for SQL work', () => {
     expect(label({ name: 'Found 5 trips', agent: 'SQLAgent', type: 'result', latencyMs: 323 }))
       .toBe(nb('Aurora Data API, 323 ms'));

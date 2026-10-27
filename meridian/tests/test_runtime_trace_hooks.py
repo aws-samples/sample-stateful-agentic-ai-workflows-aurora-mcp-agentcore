@@ -8,11 +8,30 @@ import sys
 import pytest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 RUNTIME = Path(__file__).resolve().parents[1] / "meridian_agentcore" / "app" / "MeridianConcierge"
 sys.path.insert(0, str(RUNTIME))
 
-from turn_trace import TraceHooks, TurnContext, friendly_denial, short  # noqa: E402
+from turn_trace import (  # noqa: E402
+    POLICY_FOR,
+    RUNTIME_GUARD,
+    SPANS,
+    WRITE_ALREADY_ATTEMPTED,
+    TraceHooks,
+    TurnContext,
+    friendly_denial,
+    short,
+)
+
+from backend import audit_vocabulary  # noqa: E402
+from backend.agentcore.runtime import AgentCoreRuntimeAdapter  # noqa: E402
+from backend.agents.phase_04_production.audit_outcome import (  # noqa: E402
+    audit_from_decision,
+    read_turn,
+)
+from backend.audit_vocabulary import ToolCall  # noqa: E402
+from tests.runtime_support import load_runtime_main  # noqa: E402
 
 
 @pytest.mark.parametrize("message", [
@@ -264,11 +283,245 @@ def test_a_second_hold_attempt_after_a_decision_is_cancelled_not_retried():
     assert hooks.hold_settled is True
     retry = _event("MeridianHolds___create_courtesy_hold", {"packageId": "CTY-002"}, "t2")
     hooks.before(retry)
-    assert "already decided" in retry.cancel_tool
+    assert "already attempted" in retry.cancel_tool
     assert "t2" not in hooks.started
     spans_before = len(_drain(queue))
     hooks.after(retry)
     assert len(_drain(queue)) == 0 and spans_before >= 2
+
+
+def _labels(span):
+    return {field["label"]: field["value"] for field in span["telemetry"]["fields"]}
+
+
+def _call_spans(name, inputs, result, tool_use_id="call-7", **turn):
+    queue = asyncio.Queue()
+    hooks = TraceHooks(queue, _turn(**turn))
+    event = _event(name, inputs, tool_use_id)
+    hooks.before(event)
+    event.result = result
+    hooks.after(event)
+    return [span for kind, span in _drain(queue) if kind == "activity"]
+
+
+@pytest.mark.parametrize("result", [
+    {"status": "success", "content": [{"text": json.dumps({"package": {}, "summary": "ok"})}]},
+    {"status": "success", "content": [{"text": json.dumps({"error": "Unknown package X"})}]},
+    {"status": "error", "content": [{"text": "Tool Execution Denied: no policy applies"}]},
+    {"status": "error", "content": [{"text": "Identity Check Failed: the request carries no "
+                                             "bearer token."}]},
+])
+def test_every_span_of_one_call_carries_the_call_id(result):
+    """Parallel calls report results in completion order; the call id pairs each with its call."""
+    spans = _call_spans("MeridianHolds___get_package_details", {"packageId": "X"}, result)
+    assert len(spans) == 2
+    assert [_labels(span)["call_id"] for span in spans] == ["call-7", "call-7"]
+
+
+def test_a_grant_refusal_span_carries_the_lambdas_decision_and_deny_row():
+    payload = {"error": "traveler_not_authorized",
+               "governance": {"decision": "deny", "subject": "AROA1",
+                              "access_audit_id": "authz_0123456789ab"}}
+    spans = _call_spans("MeridianHolds___create_courtesy_hold", {"packageId": "CTY-002"},
+                        {"status": "success", "content": [{"text": json.dumps(payload)}]},
+                        hold_confirmed=True)
+    labels = _labels(spans[-1])
+    assert spans[-1]["telemetry"]["status"] == "error"
+    assert labels["gateway_error"] == "traveler_not_authorized"
+    assert labels["traveler_grant"] == "deny"
+    assert labels["access_audit_id"] == "authz_0123456789ab"
+
+
+def test_a_business_refusal_span_carries_no_grant_fields():
+    spans = _call_spans(
+        "MeridianHolds___create_courtesy_hold", {"packageId": "CTY-002"},
+        {"status": "success", "content": [{"text": json.dumps({"error": "hold_expired"})}]})
+    assert not {"traveler_grant", "access_audit_id"} & set(_labels(spans[-1]))
+
+
+def test_a_cancelled_second_hold_is_a_span_naming_the_runtime_guard():
+    queue = asyncio.Queue()
+    hooks = TraceHooks(queue, _turn())
+    first = _event("MeridianHolds___create_courtesy_hold", {"packageId": "CTY-002"}, "t1")
+    hooks.before(first)
+    first.result = {"status": "success",
+                    "content": [{"text": json.dumps({"error": "insufficient_inventory"})}]}
+    hooks.after(first)
+    _drain(queue)
+
+    retry = _event("MeridianHolds___create_courtesy_hold", {"packageId": "TKY-003"}, "t2")
+    hooks.before(retry)
+
+    (kind, span), = _drain(queue)
+    labels = _labels(span)
+    assert kind == "activity" and retry.cancel_tool
+    assert labels["call_id"] == "t2"
+    assert labels["tool"] == "MeridianHolds___create_courtesy_hold"
+    assert (labels["refused_by"], labels["refusal_code"]) == (
+        "runtime_guard", "write_already_attempted")
+    assert span["telemetry"]["category"] == "runtime"
+
+
+def test_after_a_transport_failure_the_guard_says_attempted_not_decided():
+    """A failed first call settles the write, but the Gateway may have decided nothing."""
+    queue = asyncio.Queue()
+    hooks = TraceHooks(queue, _turn())
+    first = _event("MeridianHolds___create_courtesy_hold", {"packageId": "CTY-002"}, "t1")
+    hooks.before(first)
+    first.result = {"status": "error",
+                    "content": [{"text": "ConnectionResetError: the connection was reset"}]}
+    hooks.after(first)
+    _drain(queue)
+
+    retry = _event("MeridianHolds___create_courtesy_hold", {"packageId": "CTY-002"}, "t2")
+    hooks.before(retry)
+
+    (_, span), = _drain(queue)
+    assert span["title"] == "Second hold not sent: already attempted on this turn"
+    assert span["details"] == (
+        "This hold was already attempted on this turn, so the Runtime did not send the call again.")
+    assert retry.cancel_tool.startswith("This hold was already attempted on this turn.")
+    assert "decided" not in " ".join([span["title"], span["details"], retry.cancel_tool])
+
+
+def test_the_guard_uses_the_audit_vocabularys_words():
+    assert (RUNTIME_GUARD, WRITE_ALREADY_ATTEMPTED) == (
+        audit_vocabulary.RUNTIME_GUARD, audit_vocabulary.WRITE_ALREADY_ATTEMPTED)
+
+
+# ------------------------------------- the Runtime's real spans, read by the backend's reader
+# The two sides share field labels (call_id, traveler_grant, access_audit_id, refused_by,
+# refusal_code, gateway_error) but no code. These turns run the real TraceHooks, the Runtime's
+# own event shaping and the backend adapter's stream reader, so a label renamed on one side
+# fails here even when that side's own tests were renamed with it.
+
+SEARCH_TOOL = "SemanticTripSearchLambda___semantic_trip_search"
+DETAILS_TOOL = "MeridianHolds___get_package_details"
+HOLD_TOOL = "MeridianHolds___create_courtesy_hold"
+DEFAULT_DENY = ("Tool execution failed: Tool Execution Denied: Tool call not allowed due to "
+                "policy enforcement [No policy applies to the request (denied by default).]")
+GRANT_DENY = {"error": "traveler_not_authorized",
+              "governance": {"decision": "deny", "subject": "AROA1",
+                             "access_audit_id": "authz_0123456789ab"}}
+
+
+def _answer(payload):
+    return {"status": "success", "content": [{"text": json.dumps(payload)}]}
+
+
+CONTRACT_TURNS = {
+    "allowed, error, sold out, then the guard": (
+        [(SEARCH_TOOL, _answer({"packages": [{"package_id": "CTY-002"}], "summary": "1 trip"})),
+         (DETAILS_TOOL, _answer({"error": "Unknown package TKY-999"})),
+         (HOLD_TOOL, _answer({"error": "insufficient_inventory"})),
+         (HOLD_TOOL, None)],
+        [ToolCall("semantic_trip_search", "allowed"),
+         ToolCall("get_package_details", "error"),
+         ToolCall("create_courtesy_hold", "refused", "business_rule", "insufficient_inventory"),
+         ToolCall("create_courtesy_hold", "refused", "runtime_guard", "write_already_attempted")],
+    ),
+    "cedar denial": (
+        [(HOLD_TOOL, {"status": "error", "content": [{"text": DEFAULT_DENY}]})],
+        [ToolCall("create_courtesy_hold", "refused", "policy")],
+    ),
+    "workload grant": (
+        [(HOLD_TOOL, _answer(GRANT_DENY))],
+        [ToolCall("create_courtesy_hold", "refused", "workload_grant", "traveler_not_authorized",
+                  "authz_0123456789ab")],
+    ),
+}
+
+
+def _sse(events):
+    """Each event as the AgentCore app frames a string the Runtime yields: JSON inside JSON."""
+    return "".join(f"data: {json.dumps(json.dumps(event))}\n\n" for event in events).encode()
+
+
+def _backend_decision(runtime_events):
+    """The decision the backend adapter reads from the Runtime's stream."""
+    result = {"type": "result", "message": "Done.", "recommended_package_ids": [],
+              "follow_ups": [], "hold": None, "trace_id": None, "usage": {}, "elapsed_ms": 1}
+    body = MagicMock()
+    body.read.side_effect = [_sse([*runtime_events, result]), b""]
+    adapter = AgentCoreRuntimeAdapter(
+        runtime_arn="arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/x",
+        region="us-east-1")
+    adapter._client = MagicMock()
+    adapter._client.invoke_agent_runtime.return_value = {
+        "response": body, "ResponseMetadata": {"RequestId": "r"}}
+    return adapter.invoke_turn("conv-1", "trv_meridian_demo", "Hold it", "",
+                               budget_ceiling_cents=400000, travelers_count=2)
+
+
+def _traced_turn(monkeypatch, calls):
+    """Run the calls through the real hooks and Runtime events; return the backend's decision."""
+    runtime = load_runtime_main(monkeypatch, "meridian_runtime_contract")
+    queue = asyncio.Queue()
+    hooks = TraceHooks(queue, _turn())
+    for number, (name, result) in enumerate(calls, start=1):
+        event = _event(name, {"packageId": "CTY-002"}, f"tooluse-{number}")
+        hooks.before(event)
+        event.result = result or {"status": "error", "content": [{"text": event.cancel_tool}]}
+        hooks.after(event)
+    return _backend_decision(list(runtime.drain(queue)))
+
+
+@pytest.mark.parametrize(("calls", "expected"), CONTRACT_TURNS.values(), ids=CONTRACT_TURNS)
+def test_the_backend_reads_each_call_the_runtime_traced(monkeypatch, calls, expected):
+    audit = audit_from_decision(_traced_turn(monkeypatch, calls))
+
+    assert audit.tool_calls == expected
+
+
+# How the trace titles and marks the span that settled each call, read as the row reads it.
+TRACED_TITLES = {
+    "allowed, error, sold out, then the guard": [
+        ("semantic_trip_search: result", "ok"), ("Tool call failed", "error"),
+        ("Hold refused: business rule", "refused"), ("Hold refused: runtime guard", "refused")],
+    "cedar denial": [("Hold refused by Cedar policy", "denied")],
+    "workload grant": [("Hold refused: workload grant", "refused")],
+}
+
+
+@pytest.mark.parametrize(("calls", "expected"),
+                         [(CONTRACT_TURNS[turn][0], TRACED_TITLES[turn]) for turn in TRACED_TITLES],
+                         ids=TRACED_TITLES)
+def test_the_trace_titles_each_call_from_the_rows_reading(monkeypatch, calls, expected):
+    decision = _traced_turn(monkeypatch, calls)
+
+    traced = read_turn(decision).spans
+
+    assert [(span["title"], span["telemetry"]["status"]) for span in traced
+            if not span["title"].startswith("AgentCore Gateway: tools/call")] == expected
+
+
+AGENTCORE = RUNTIME.parents[1] / "agentcore"
+
+
+def gateway_tools() -> set[str]:
+    """Every tool the Gateway serves the Runtime, from the tracked config and its tool schemas."""
+    config = json.loads((AGENTCORE / "agentcore.template.json").read_text())
+    tools = set()
+    for gateway in config["agentCoreGateways"]:
+        for target in gateway["targets"]:
+            tools |= {tool["name"] for tool in target.get("toolDefinitions", [])}
+            schema = (target.get("lambdaFunctionArn") or {}).get("toolSchemaFile")
+            if schema:
+                path = (AGENTCORE.parent / schema).resolve()
+                tools |= {tool["name"] for tool in json.loads(path.read_text())}
+    return tools
+
+
+def test_the_config_names_the_gateway_tools():
+    assert {"semantic_trip_search", "get_package_details", "create_courtesy_hold",
+            "confirm_booking"} <= gateway_tools()
+
+
+@pytest.mark.parametrize("tool", sorted(gateway_tools()))
+def test_every_gateway_tool_has_a_span_and_a_policy(tool):
+    """A tool without a span would run unseen: missing from tool_calls, a denial read as allowed."""
+    assert tool in SPANS, f"{tool} has no SPANS entry in turn_trace.py"
+    assert tool in POLICY_FOR, f"{tool} has no POLICY_FOR entry in turn_trace.py"
 
 
 def test_friendly_denial_names_the_policy_or_the_default_deny():
@@ -352,4 +605,4 @@ def test_default_deny_names_the_booking_conditions_the_arguments_failed():
     assert refused["policyDecision"] == "deny" and refused["booking"] is None
     retry = _event("MeridianHolds___confirm_booking", {"bookingId": "HLD-1"}, "t2")
     hooks.before(retry)
-    assert "already decided this booking" in retry.cancel_tool
+    assert "booking was already attempted" in retry.cancel_tool

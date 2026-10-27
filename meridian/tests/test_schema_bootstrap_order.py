@@ -117,3 +117,50 @@ def creates_target(sql: str) -> set[str]:
 def test_grant_classification(statement: str, expected: bool):
     """Role grants and object grants land in different phases."""
     assert _grants_on_objects(statement) is expected
+
+
+MIGRATION_021 = RLS_PATH.parents[1] / "scripts" / "migrations" / "021_audit_outcome.sql"
+
+
+def _columns_added_by_migration_021() -> set[str]:
+    return set(re.findall(r"ADD COLUMN IF NOT EXISTS (\w+)", MIGRATION_021.read_text()))
+
+
+def _audit_log_columns(sql: str) -> set[str]:
+    """Columns from the CREATE TABLE body plus every ALTER ... ADD COLUMN IF NOT EXISTS."""
+    body = re.search(r"CREATE TABLE IF NOT EXISTS agent_audit_log \((.*?)\n\);", sql, re.DOTALL)
+    assert body, "examples/rls_for_agents.sql has no CREATE TABLE agent_audit_log"
+    declared = set(re.findall(r"^\s*([a-z_]\w*)\s+[A-Z]", body.group(1), re.MULTILINE))
+    return declared | set(re.findall(r"ADD COLUMN IF NOT EXISTS (\w+)", sql))
+
+
+def _audit_view_columns(sql: str) -> set[str]:
+    view = re.search(
+        r"CREATE VIEW agent_iam_audit AS\s+SELECT(.*?)FROM agent_audit_log", sql, re.DOTALL
+    )
+    assert view, "examples/rls_for_agents.sql has no CREATE VIEW agent_iam_audit"
+    return {column.strip() for column in view.group(1).split(",") if column.strip()}
+
+
+def test_base_bootstrap_mirrors_every_column_migration_021_adds():
+    """A fresh bootstrap skips migrations 001-021, so the base file must carry their columns."""
+    base = RLS_PATH.read_text()
+    added = _columns_added_by_migration_021()
+    assert added == {"tool_calls", "turn_error"}, "migration 021 changed shape"
+    assert not added - _audit_log_columns(base), "agent_audit_log is missing migration 021 columns"
+    assert not added - _audit_view_columns(base), "agent_iam_audit is missing migration 021 columns"
+
+
+def _audit_columns_definition(sql: str) -> str:
+    """The tool_calls and turn_error columns with their CHECKs, whitespace collapsed."""
+    found = re.search(r"ADD COLUMN IF NOT EXISTS (tool_calls .*?);", sql, re.DOTALL)
+    assert found, "no ADD COLUMN IF NOT EXISTS tool_calls"
+    code = "\n".join(line for line in found.group(1).splitlines()
+                     if not line.lstrip().startswith("--"))
+    return " ".join(code.split())
+
+
+def test_base_bootstrap_checks_the_audit_columns_exactly_as_migration_021_does():
+    base = _audit_columns_definition(RLS_PATH.read_text())
+    assert "ADD COLUMN IF NOT EXISTS turn_error TEXT" in base
+    assert base == _audit_columns_definition(MIGRATION_021.read_text())

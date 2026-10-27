@@ -59,6 +59,17 @@ def isolated_unit_environment(request, monkeypatch):
     assert not attempted, "Unit test attempted an unmocked network connection"
 
 
+@pytest.fixture
+def access_writer(monkeypatch):
+    """The traveler_access_audit writer a cross-traveler 403 calls, recording rows offline."""
+    from backend import http_auth
+    from tests.access_audit_support import FakeAccessWriter
+
+    writer = FakeAccessWriter()
+    monkeypatch.setattr(http_auth, "get_rds_data_client", lambda: writer)
+    return writer
+
+
 @pytest.fixture(autouse=True)
 def isolated_caller_token():
     """A token bound outside a request or scope must not leak into the next test."""

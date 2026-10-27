@@ -15,7 +15,7 @@ import {
 } from '../../api/client';
 import type { ChatStreamEvent } from '../../api/chatStream';
 import { CURRENT_TRAVELER } from '../../api/currentTraveler';
-import { runWithDeadline } from '../../api/request';
+import { ApiError, NotSentError, runWithDeadline } from '../../api/request';
 import { useSession } from '../../auth/SessionContext';
 import { firstNameOf, travelerIdentity, type TravelerIdentity } from '../lib/travelerIdentity';
 import { holdIntentKey, loadBookingRecovery, saveBookingRecovery, type SavedHoldIntent } from '../lib/bookingRecovery';
@@ -288,6 +288,17 @@ function useTripWorkspace(travelerId: string | null) {
     [],
   );
   return { workspace, setWorkspace };
+}
+
+/**
+ * What a failed hold or booking request says. Only two things are shown as written: a well-formed
+ * server error reply, and a failure raised here before anything was sent. Every other failure
+ * (a proxy page, a network error, a body that is not JSON, JSON of another shape) leaves the
+ * outcome of the write unknown, so the message says only that.
+ */
+function writeFailureMessage(err: unknown, done: 'hold was placed' | 'booking was confirmed'): string {
+  if (err instanceof NotSentError || (err instanceof ApiError && err.worded)) return err.message;
+  return `We could not confirm whether the ${done}. Check your trips before trying again.`;
 }
 
 export function useMeridianShowcase(): MeridianShowcaseState {
@@ -1023,7 +1034,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
             };
             saved.intents[intentKey] = intent;
             try { saveBookingRecovery(travelerKey.current, saved); }
-            catch { throw new Error('This device cannot save the hold request identity. Enable browser storage before requesting a hold.'); }
+            catch { throw new NotSentError('This device cannot save the hold request identity. Enable browser storage before requesting a hold.'); }
           }
           return processOrder({
             product_id: intent.productId, size: intent.duration, quantity: intent.quantity,
@@ -1044,7 +1055,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         setWorkspaceNotice(response.order?.status === 'held' ? `Courtesy hold recorded for ${product.name}.` : response.message);
       } catch (err) {
         if (!mounted.current || generation !== requestGeneration.current) return;
-        setError(`The hold response for ${product.name} was not received. It may have been saved. Retry this hold to check the same request. ${err instanceof Error ? err.message : ''}`);
+        setError(writeFailureMessage(err, 'hold was placed'));
       } finally {
         holdPending.current = false;
         if (writeController.current === controller) writeController.current = null;
@@ -1087,7 +1098,7 @@ export function useMeridianShowcase(): MeridianShowcaseState {
         const response = await runWithDeadline(async signal => {
           const recorded = await readBooking(hold.order.order_id, signal);
           signal.throwIfAborted();
-          if (!recorded.order) throw new Error('No booking receipt was returned.');
+          if (!recorded.order) throw new NotSentError('No booking receipt was returned.');
           rememberOrder(product.product_id, recorded.order);
           if (recorded.order.status !== 'held') return recorded;
           return confirmBooking({
@@ -1121,11 +1132,9 @@ export function useMeridianShowcase(): MeridianShowcaseState {
           live: true,
         });
         setWorkspaceNotice(response.order?.status === 'confirmed' ? `${product.name} is confirmed${firstName ? ` for ${firstName}` : ''}.` : response.message);
-      } catch {
+      } catch (err) {
         if (!mounted.current || generation !== requestGeneration.current) return;
-        setError(
-          `The confirmation response for ${product.name} was not received. The booking may already be confirmed. Retry confirmation to check the same booking.`,
-        );
+        setError(writeFailureMessage(err, 'booking was confirmed'));
       } finally {
         bookingPending.current = false;
         if (writeController.current === controller) writeController.current = null;

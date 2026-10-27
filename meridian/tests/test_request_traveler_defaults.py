@@ -41,7 +41,7 @@ async def test_a_booking_without_a_traveler_is_confirmed_for_the_signed_in_trave
     assert governed.call_args.args[0].traveler_id == principal.traveler_id
 
 
-async def test_the_decoy_naming_jordan_is_refused_and_nothing_runs(monkeypatch):
+async def test_the_decoy_naming_jordan_is_refused_and_nothing_runs(monkeypatch, access_writer):
     governed = AsyncMock()
     monkeypatch.setattr(chat, "production_hold", governed)
     monkeypatch.setattr(chat, "production_booking", governed)

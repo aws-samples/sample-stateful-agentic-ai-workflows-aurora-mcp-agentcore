@@ -2790,7 +2790,7 @@
 .mds-thinking-marker { display: grid; place-items: center; margin-top: 2px; color: var(--mds-label-3); }
 .mds-thinking-item.is-done .mds-thinking-marker { color: var(--mds-green); }
 .mds-thinking-item.is-active .mds-thinking-marker { color: var(--mds-label); }
-.mds-thinking-item:is(.is-error, .is-denied) .mds-thinking-marker { color: var(--mds-red); }
+.mds-thinking-item:is(.is-error, .is-denied, .is-refused) .mds-thinking-marker { color: var(--mds-red); }
 .mds-thinking-copy { display: grid; gap: 5px; min-width: 0; font: var(--mds-type-title-3); font-weight: var(--mds-weight-medium); letter-spacing: var(--mds-tracking-title); overflow-wrap: anywhere; }
 .mds-thinking-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; color: var(--mds-label-2); font: var(--mds-type-footnote); }
 .mds-thinking-service { display: inline-flex; align-items: center; gap: 5px; }
@@ -2824,7 +2824,7 @@
 }
 .mds-activity-event > summary > svg { margin-top: 3px; color: var(--mds-label-2); }
 .mds-activity-event.is-active > summary { color: var(--mds-tint); }
-.mds-activity-event:is(.is-failed, .is-denied) > summary { color: var(--mds-red); }
+.mds-activity-event:is(.is-failed, .is-denied, .is-refused) > summary { color: var(--mds-red); }
 .mds-activity-event-detail { min-width: 0; padding: 0 0 10px 25px; color: var(--mds-label-2); font: var(--mds-type-footnote); overflow-wrap: anywhere; }
 .mds-activity-event-detail p { margin: 0 0 8px; }
 .mds-activity-event-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: inherit; }

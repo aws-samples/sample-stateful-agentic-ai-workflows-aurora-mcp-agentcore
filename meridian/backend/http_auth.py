@@ -1,7 +1,7 @@
 """HTTP caller authentication for traveler-scoped Meridian APIs.
 
-The AgentCore identity used by the backend authenticates the AWS workload. It
-does not authenticate the browser or API caller. This module supplies that
+The backend's IAM identity (``backend/agentcore/identity.py``) authenticates the AWS
+workload. It does not authenticate the browser or API caller. This module supplies that
 separate boundary and makes the authenticated principal's traveler binding
 authoritative for every traveler-scoped request.
 
@@ -37,6 +37,7 @@ from backend.cognito_auth import (
     InvalidCognitoToken,
     get_cognito_verifier,
 )
+from backend.db.rds_data_client import get_rds_data_client
 from backend.memory.store import DEMO_TRAVELER_ID
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,10 @@ logger = logging.getLogger(__name__)
 # What a browser sends when it means "the traveler I am signed in as". The server resolves it
 # from the verified principal, so the client never needs to know or choose a traveler id.
 CURRENT_TRAVELER = "me"
+CROSS_TRAVELER_REASON = "requested traveler is not the signed-in traveler"
+# traveler_access_audit.requested_traveler_id is VARCHAR(50). The requested id is the caller's
+# text, so a longer one is stored cut to the column and the reason says so.
+REQUESTED_TRAVELER_LIMIT = 50
 
 
 @dataclass(frozen=True)
@@ -188,18 +193,55 @@ async def require_http_principal(
     )
 
 
-def authorize_traveler(
+async def _record_cross_traveler_refusal(principal: HttpPrincipal, requested: str) -> None:
+    """Keep the refusal as a deny row in traveler_access_audit.
+
+    The 403 stands whatever happens here: a failed write is logged at error level, never
+    swallowed, and never turns the refusal into a 500.
+    """
+    stored = requested[:REQUESTED_TRAVELER_LIMIT]
+    reason = CROSS_TRAVELER_REASON
+    if len(requested) > REQUESTED_TRAVELER_LIMIT:
+        reason += (
+            f"; requested id truncated to {REQUESTED_TRAVELER_LIMIT} of {len(requested)} "
+            "characters"
+        )
+    try:
+        await get_rds_data_client().record_traveler_access(
+            provider=principal.authentication,
+            subject_id=principal.subject_id,
+            principal=f"traveler:{principal.traveler_id}",
+            traveler_id=stored,
+            decision="deny",
+            reason=reason,
+        )
+    except Exception as exc:  # noqa: BLE001 - the 403 must stand; the failure is logged
+        logger.error(
+            "Recording a cross-traveler refusal in traveler_access_audit failed for requested "
+            "traveler %r: %s: %s",
+            stored, type(exc).__name__, exc,
+        )
+
+
+async def authorize_traveler(
     principal: HttpPrincipal,
     requested_traveler_id: str | None,
 ) -> str:
     """Return the authenticated traveler or reject a caller-controlled mismatch.
 
     No id, an empty id and ``CURRENT_TRAVELER`` all mean the principal's own traveler.
-    Any other id must equal the principal's, whatever the caller claims.
+    Any other id must equal the principal's, whatever the caller claims. A mismatch is
+    recorded as a deny row in ``traveler_access_audit`` before the 403: the caller's
+    provider (``principal.authentication``), subject, the traveler it is signed in as, and
+    the requested id.
+
+    Raises:
+        HTTPException: 403 for any other traveler, whether or not the deny row was written.
     """
     if requested_traveler_id in (None, "", CURRENT_TRAVELER):
         return principal.traveler_id
     if requested_traveler_id != principal.traveler_id:
+        await _record_cross_traveler_refusal(principal, requested_traveler_id)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The authenticated caller is not authorized for that traveler.",

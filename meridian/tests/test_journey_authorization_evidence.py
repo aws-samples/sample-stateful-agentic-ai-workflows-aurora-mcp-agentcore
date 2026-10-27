@@ -41,7 +41,41 @@ async def test_the_decision_is_read_for_this_traveler_up_to_the_bound():
 
     await _authorization(q, "trv_1", "2026-10-02T14:00:00+00:00")
 
-    assert seen == [("trv_1", "2026-10-02T14:00:00+00:00")]
+    assert seen == [("trv_1", "2026-10-02T14:00:00+00:00", "allow")]
+
+
+def audit_table(rows):
+    """traveler_access_audit as the evidence query reads it, with the parameters it binds."""
+    async def q(sql, params):
+        traveler, bound, decision = params
+        found = [row for row in rows if row["requested_traveler_id"] == traveler
+                 and row["decided_at"] <= bound and row["decision"] == decision]
+        return sorted(found, key=lambda row: row["decided_at"], reverse=True)[:1]
+
+    return q
+
+
+@pytest.mark.asyncio
+async def test_a_cross_traveler_refusal_inside_the_window_is_not_the_runs_evidence():
+    """Only an allow admits a run; another caller's 403 for this traveler admitted nothing."""
+    admitted = {
+        "audit_id": "authz_admitted", "requested_traveler_id": "trv_1",
+        "identity_provider": "aws_iam", "subject_id": "AROA",
+        "principal": "arn:aws:sts::1:assumed-role/Meridian/s", "decision": "allow",
+        "reason": "active identity binding", "decided_at": "2026-10-02T13:59:00+00:00",
+    }
+    refused = {
+        "audit_id": "authz_refused", "requested_traveler_id": "trv_1",
+        "identity_provider": "cognito", "subject_id": "sub-decoy",
+        "principal": "traveler:trv_demo_decoy", "decision": "deny",
+        "reason": "requested traveler is not the signed-in traveler",
+        "decided_at": "2026-10-02T13:59:30+00:00",
+    }
+
+    evidence = await _authorization(audit_table([admitted, refused]), "trv_1",
+                                    "2026-10-02T14:00:00+00:00")
+
+    assert evidence["audit_id"] == "authz_admitted" and evidence["decision"] == "allow"
 
 
 @pytest.mark.asyncio

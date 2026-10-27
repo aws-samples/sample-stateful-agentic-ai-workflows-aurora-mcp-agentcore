@@ -41,6 +41,43 @@ export interface UnauthorizedHandler {
 
 export const SESSION_ENDED_MESSAGE = 'Your session ended. Sign in again.';
 
+/** The body code of a 5xx the route itself worded (a hold or booking outcome). */
+export const GOVERNED_WRITE_CODE = 'governed_write';
+
+/**
+ * The API answered with an error status. `worded` is true only for a well-formed server error
+ * reply: a JSON object with a string `error` (and a string `code` when it has one), carrying a
+ * 4xx status or, for a 5xx, the `governed_write` code. A proxy page, an empty body, JSON of any
+ * other shape and a 5xx without that code leave it false; the message is then only a status.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly worded: boolean;
+
+  constructor(message: string, status: number, worded = true) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.worded = worded;
+  }
+}
+
+/** A failure raised here before any request was sent, so its text is true as written. */
+export class NotSentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NotSentError';
+  }
+}
+
+function isServerReply(body: unknown, status: number): boolean {
+  if (typeof body !== 'object' || body === null) return false;
+  const { error, code } = body as { error?: unknown; code?: unknown };
+  if (typeof error !== 'string') return false;
+  if (code !== undefined && typeof code !== 'string') return false;
+  return status < 500 || code === GOVERNED_WRITE_CODE;
+}
+
 let unauthorized: UnauthorizedHandler | null = null;
 let refreshing: Promise<boolean> | null = null;
 let signedOut = false;
@@ -117,11 +154,11 @@ export async function authorizedFetch(url: string, init: RequestInit = {}): Prom
   const signInRequired = await saysSignInRequired(response);
   const refreshed = await refreshOnce(handler, sent);
   if (signInRequired) endSession(handler);
-  if (signInRequired || !refreshed) throw new Error(SESSION_ENDED_MESSAGE);
+  if (signInRequired || !refreshed) throw new NotSentError(SESSION_ENDED_MESSAGE);
   const retry = await send().promise;
   if (retry.status === 401) {
     endSession(handler);
-    throw new Error(SESSION_ENDED_MESSAGE);
+    throw new NotSentError(SESSION_ENDED_MESSAGE);
   }
   return retry;
 }
@@ -131,12 +168,14 @@ export async function requestJson<T>(url: string, init: RequestInit = {}): Promi
     const response = await authorizedFetch(url, { cache: 'no-store', ...init, signal });
     if (!response.ok) {
       let detail = `Request failed (${response.status}).`;
+      let worded = false;
       try {
         const body = await response.json();
         if (typeof body.error === 'string') detail = body.error;
         else if (typeof body.detail === 'string') detail = body.detail;
+        worded = isServerReply(body, response.status);
       } catch { /* Non-JSON proxy failures still have a useful HTTP status. */ }
-      throw new Error(detail);
+      throw new ApiError(detail, response.status, worded);
     }
     // DELETE endpoints legitimately return no JSON body.
     if (response.status === 204) return undefined as T;

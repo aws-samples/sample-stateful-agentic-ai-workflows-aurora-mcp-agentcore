@@ -39,15 +39,11 @@
         },
         {
           "name": "BEDROCK_MODEL_ID",
-          "value": "us.openai.gpt-6-sol"
+          "value": "global.anthropic.claude-sonnet-5-5"
         },
         {
           "name": "BEDROCK_MAX_TOKENS",
-          "value": "2048"
-        },
-        {
-          "name": "BEDROCK_REASONING_EFFORT",
-          "value": "low"
+          "value": "16000"
         },
         {
           "name": "MERIDIAN_GATEWAY_ID",

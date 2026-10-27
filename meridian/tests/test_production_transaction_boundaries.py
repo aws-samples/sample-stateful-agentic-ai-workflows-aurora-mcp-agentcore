@@ -9,6 +9,8 @@ import pytest
 from backend.agentcore.runtime import RuntimeDecision
 from backend.agents.phase_04_production import concierge as concierge_mod
 from backend.agents.phase_04_production.concierge import ProductionAgent
+from backend.agents.phase_04_production.memory_agent import ActivityEntry as MemoryActivity
+from backend.trace_names import MEMORY_CODE
 
 
 class FakeDB:
@@ -86,6 +88,9 @@ class FakeStore:
 
 
 class FakeMemoryAgent:
+    # The trace entry persist_turn emits, as the real specialist reports its write.
+    PERSIST_ENTRY = "Memory specialist: turn persisted"
+
     def __init__(self, db, events):
         self.db = db
         self.events = events
@@ -94,6 +99,8 @@ class FakeMemoryAgent:
         self._prepared_query_vector = None
         self._query_vector_prepared = False
         self._prepared_turn_vectors = None
+        # Each turn persist_turn wrote, with the transaction it wrote in.
+        self.turns = []
 
     def _assert_scoped(self):
         assert self._transaction_id == self.db.active_tx
@@ -121,10 +128,21 @@ class FakeMemoryAgent:
         self.events.append("aurora:semantic-recall")
         return {"interactions": []}
 
-    async def persist_turn(self, *_args):
+    async def persist_turn(self, _traveler_id, _conversation_id, message, reply, shown):
         self._assert_scoped()
         assert self._prepared_turn_vectors
         self.events.append("aurora:persist")
+        self.turns.append((self._transaction_id, {"message": message, "reply": reply,
+                                                  "shown": shown}))
+        self.activity_callback(MemoryActivity(
+            id="memory-persist", timestamp="t", activity_type="tool_call",
+            title=self.PERSIST_ENTRY, agent_name=MEMORY_CODE))
+
+
+def remembered(agent):
+    """The turns whose memory transaction committed; Amazon Aurora keeps no rolled back turn."""
+    return [turn for tx, turn in agent.traveler_memory.turns
+            if f"{tx}:commit" in agent.db.events]
 
 
 def build_agent(events, decision, calls):
@@ -137,10 +155,7 @@ def build_agent(events, decision, calls):
     agent.identity = SimpleNamespace(
         scope_for_turn=lambda: SimpleNamespace(
             iam_identity="arn:aws:sts::123:assumed-role/demo/session",
-            workload_identity="workload/demo",
-            resource_provider="meridian",
-            token_status="live",
-            authorization=SimpleNamespace(provider="agentcore_workload", subject_id="workload/demo"),
+            authorization=SimpleNamespace(provider="aws_iam", subject_id="workload/demo"),
         )
     )
 
@@ -189,7 +204,8 @@ def test_production_turn_releases_transactions_before_the_runtime_call(monkeypat
     assert packages[0].similarity == 0.9
     assert packages[0].availability == {"7 nights": 4}
     assert facts[1]["key"] == "budget"
-    assert agent.db.tx_count == 2
+    # The read unit, the audit unit and the memory unit.
+    assert agent.db.tx_count == 3
     read_commit = events.index("tx-1:commit")
     write_open = events.index("tx-2:open")
     runtime_call = events.index("external:runtime")
@@ -222,16 +238,13 @@ def test_trip_cards_and_persisted_context_follow_the_reply_not_search_order(monk
         recommended_package_ids=["CTY-002", "TKY-005", "TKY-001"],
     )
     agent = build_agent(events, decision, calls)
-    saved = []
-    async def capture_write(_read, _traveler, _message, _reply, shown, _operation):
-        saved.extend(shown)
-    agent._write_unit = capture_write
     monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
 
     packages, *_ = asyncio.run(agent.process_turn("Plan Tokyo", "trv_meridian_demo", None, 5))
 
     assert [p.package_id for p in packages] == ["TKY-001", "TKY-005"]
-    assert [p["package_id"] for p in saved] == ["TKY-001", "TKY-005"]
+    (saved,) = remembered(agent)
+    assert [p["package_id"] for p in saved["shown"]] == ["TKY-001", "TKY-005"]
 
 
 @pytest.mark.parametrize(("message", "ids", "expected"), [
@@ -253,14 +266,11 @@ def test_followup_refreshes_remembered_trips_and_persists_the_same_cards(monkeyp
         message="Tokyo Indie Walk fits your saved boutique preference.",
         packages=[], recommended_package_ids=[], activities=[],
     ), calls)
-    saved = []
-    async def capture_write(_read, _traveler, _message, _reply, shown, _operation):
-        saved.extend(shown)
-    agent._write_unit = capture_write
     monkeypatch.setattr(concierge_mod, "require_agentcore_platform", lambda **_kw: None)
     packages, *_ = asyncio.run(agent.process_turn("Which of those fits?", "trv_meridian_demo", "conv-test", 5))
     assert [p.package_id for p in packages] == ["TKY-001"]
-    assert [p["package_id"] for p in saved] == ["TKY-001"]
+    (saved,) = remembered(agent)
+    assert [p["package_id"] for p in saved["shown"]] == ["TKY-001"]
     assert events.index("aurora:shortlist") < events.index("tx-1:commit") < events.index("aurora:hydrate")
     assert "Previously shown trips" in calls[0][0][3]
 
@@ -305,7 +315,8 @@ def test_runtime_budget_narration_matches_enforced_ceiling(
         budget_facts=facts,
     )
 
-    asyncio.run(agent._runtime_turn(read, "Find trips", "trv_meridian_demo", travelers))
+    asyncio.run(agent._runtime_turn(read, "Find trips", "trv_meridian_demo", travelers,
+                                    operation="production_turn"))
 
     args, kwargs = calls[0]
     context = args[3][:6000]  # The Runtime adapter's context limit.

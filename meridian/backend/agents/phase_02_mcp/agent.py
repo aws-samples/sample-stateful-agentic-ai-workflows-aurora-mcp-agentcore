@@ -7,8 +7,9 @@ This module shows MCP as a *transport* layer:
   • `MCPClient` discovers tools from awslabs.postgres-mcp-server at runtime
   • Same Aurora schema as Phase 1 — different wire protocol (MCP vs inline SQL)
 
-In the app, `chat.py` → `mcp_search()` uses `backend/mcp/mcp_client.py`.
-This file shows the Strands-native MCP integration.
+The app does not run this agent: `chat.py` → `mcp_search()` calls typed tools on the
+custom `meridian-concierge` server in code. This file shows the Strands-native MCP
+integration with the generic PostgreSQL server.
 
 AWS docs:
   - RDS Data API (postgres-mcp-server ``rdsapi`` mode):
@@ -29,11 +30,10 @@ from typing import Callable, Any, Optional
 
 from mcp import StdioServerParameters, stdio_client
 from strands import Agent
-from strands.models import BedrockModel
 from strands.tools.mcp import MCPClient
 from pydantic import BaseModel
 
-from backend.config import config
+from backend.bedrock_model import bedrock_model
 from backend.mcp.subprocess_env import aws_subprocess_env
 
 
@@ -66,16 +66,11 @@ class MCPAgent:
         """
         self.activity_callback = activity_callback or (lambda x: None)
         
-        # Initialize Bedrock model - Sonnet 5 by default (cross-region inference)
-        self.model = BedrockModel(
-            model_id=config.bedrock.model_id,
-            region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-        )
+        self.model = bedrock_model()
         
         # Strands MCPClient takes a transport factory. The stdio transport
-        # spawns awslabs.postgres-mcp-server with the same start-up flags the
-        # live Phase 2 client uses (backend/mcp/mcp_client.py), so the server
-        # already knows the cluster and no connect_to_database call is needed.
+        # spawns awslabs.postgres-mcp-server with the cluster, secret and database
+        # as start-up flags, so no connect_to_database call is needed.
         # Pinned to @1.0.9: @latest drifted to auto-discovering the Secrets
         # Manager secret, which fails for a Serverless v2 secret whose name
         # carries a random suffix; the pin avoids that failure.

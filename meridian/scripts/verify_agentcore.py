@@ -243,14 +243,6 @@ def main() -> int:
             code = exc.response.get("Error", {}).get("Code", "Error")
             table.add_row("Memory", cfg.memory_id, f"[red]✗ {code}[/red]")
 
-    # --- Identity (soft): degrades to IAM principal, never blocks Phase 4. ----
-    identity_note = (
-        cfg.workload_identity
-        if cfg.workload_identity
-        else "(none — Phase 4 uses the IAM principal above)"
-    )
-    table.add_row("Identity", identity_note, "[green]✓ ok[/green]")
-
     all_ok &= governance_rows(control, cfg, table)
 
     console.print(table)

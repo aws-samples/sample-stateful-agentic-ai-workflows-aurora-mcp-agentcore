@@ -14,6 +14,8 @@ from __future__ import annotations
 import uuid
 from types import SimpleNamespace
 
+from tool_errors import ToolSetupError, is_setup_error, setup_error_message
+
 HOLD_TOOL = "MeridianHolds___create_courtesy_hold"
 BOOKING_TOOL = "MeridianHolds___confirm_booking"
 HOLD_MINUTES = 720
@@ -42,7 +44,13 @@ def confirmed_booking_arguments(booking_target: dict) -> dict:
 
 
 def _platform_call(hooks, call_tool, tool_name: str, arguments: dict, prefix: str):
-    """Run one governed tool call through the hooks; return the event and any cancellation."""
+    """Run one governed tool call through the hooks; return the event and any cancellation.
+
+    A call that raises after it started is reported as failed, with the error's text as the
+    Strands tool executor words it, before the error propagates. A setup error propagates as a
+    ``ToolSetupError`` worded as the stop hook words it, so the log names the tool and the
+    class; any other error propagates unchanged.
+    """
     event = SimpleNamespace(
         tool_use={
             "name": tool_name,
@@ -55,7 +63,14 @@ def _platform_call(hooks, call_tool, tool_name: str, arguments: dict, prefix: st
     hooks.before(event)
     if event.cancel_tool:
         return event, str(event.cancel_tool)
-    event.result = call_tool(event.tool_use["toolUseId"], tool_name, event.tool_use["input"])
+    try:
+        event.result = call_tool(event.tool_use["toolUseId"], tool_name, event.tool_use["input"])
+    except Exception as error:
+        event.result = {"status": "error", "content": [{"text": f"Error: {error}"}]}
+        hooks.after(event)
+        if is_setup_error(error):
+            raise ToolSetupError(setup_error_message(tool_name, error)) from error
+        raise
     hooks.after(event)
     return event, None
 

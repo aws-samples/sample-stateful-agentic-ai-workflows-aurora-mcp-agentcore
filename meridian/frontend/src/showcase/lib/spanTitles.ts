@@ -50,3 +50,15 @@ export const isSavedStepTitle = (name: string) =>
 /** The field that says a snapshot reached Aurora. */
 export const isDurableField = (label: string) =>
   label === DURABLE_FIELD || label === LEGACY_TITLES.durableField;
+
+/** Trace steps that run as code carry these agent names. A journey saved earlier replays the
+ *  names it was stored with, so the old ones still route. */
+export const CODE_AGENTS = {
+  sql: 'SQL search (code)',
+  retrieval: 'Hybrid retrieval (code)',
+} as const;
+
+export const isSqlStep = (agent?: string) => agent === CODE_AGENTS.sql || agent === 'SQLAgent';
+
+export const isRetrievalStep = (agent?: string) =>
+  agent === CODE_AGENTS.retrieval || agent === 'SearchAgent';

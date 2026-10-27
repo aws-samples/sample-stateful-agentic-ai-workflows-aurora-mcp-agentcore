@@ -60,11 +60,20 @@ The AgentCore CLI deploys them as one CloudFormation stack,
 - Deploy AgentCore in the Aurora cluster's Region. The defaults assume
   `us-east-1`: the rerank model is the bare `cohere.rerank-v3-5:0` (there is no
   `us.cohere.rerank-v3-5:0` inference profile) and the Concierge model is
-  `us.openai.gpt-6-sol`. In another Region, set `RERANK_MODEL` in `meridian/.env`
-  and change the managed runtime's `BEDROCK_MODEL_ID` in
-  `meridian_agentcore/agentcore/agentcore.template.json`. `BEDROCK_MODEL_ID` in
-  `meridian/.env` configures only the local Strands agents, not the managed
-  runtime.
+  `global.anthropic.claude-sonnet-5-5`, Claude Sonnet 5.5 through its global
+  cross-Region inference profile. In another Region, set `RERANK_MODEL` in
+  `meridian/.env` and confirm that the Region offers the global profile. The managed
+  runtime's `BEDROCK_MODEL_ID` is in
+  `meridian_agentcore/agentcore/agentcore.template.json`; `BEDROCK_MODEL_ID` in
+  `meridian/.env` configures only the backend, not the managed runtime.
+  The CDK app (`cdk/lib/model-access.ts`) grants each Runtime execution role exactly
+  the models its Runtime calls. The `MeridianConcierge` role gets `bedrock:InvokeModel`
+  and `bedrock:InvokeModelWithResponseStream` on Sonnet 5.5 only through its global
+  profile, with the three-part policy in
+  [IAM policy requirements for global cross-Region inference](https://docs.aws.amazon.com/bedrock/latest/userguide/global-cross-region-inference.html).
+  The `MeridianWorkflow` role gets `bedrock:InvokeModel` on the embedding and rerank
+  models in the stack's Region. The app refuses a Concierge `BEDROCK_MODEL_ID` that is
+  not a global inference profile id.
 
 From the repository root, activate the backend's virtual environment and set
 these shell variables for the commands below:
@@ -332,8 +341,7 @@ Holds expire on their own.
 
 In the showcase trace for a Production turn, expect:
 
-- `Workload identity: AWS STS` and `Workload traveler grant allowed`. `AgentCore Identity resolved`
-  appears instead only when `AGENTCORE_WORKLOAD_IDENTITY` is set
+- `Workload identity: AWS STS` and `Workload traveler grant allowed`
 - `AgentCore Runtime: turn started`, then `AgentCore Gateway: tools/list` with four tools
 - `AgentCore Memory: session restored` with the event count
 - `AgentCore Gateway: tools/call → semantic_trip_search` and its result

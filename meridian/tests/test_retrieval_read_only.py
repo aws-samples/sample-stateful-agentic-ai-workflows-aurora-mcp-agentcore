@@ -12,7 +12,7 @@ from backend.agents.phase_01_sql import agent as sql_agent
 
 def _without_model_or_database(monkeypatch, module, db):
     monkeypatch.setattr(module, "get_rds_data_client", lambda: db)
-    monkeypatch.setattr(module, "BedrockModel", lambda **kwargs: None)
+    monkeypatch.setattr(module, "bedrock_model", lambda: None)
     monkeypatch.setattr(
         module, "Agent", lambda **kwargs: SimpleNamespace(**kwargs)
     )

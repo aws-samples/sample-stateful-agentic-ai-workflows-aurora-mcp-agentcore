@@ -254,7 +254,7 @@ async def http_exception_handler(request, exc: HTTPException):
     """Handle HTTP exceptions with consistent error format."""
     from fastapi.responses import JSONResponse
     content = {"error": exc.detail}
-    code = error_code(exc)
+    code = error_code(exc) or getattr(exc, "code", None)
     if code:
         content["code"] = code
     return JSONResponse(status_code=exc.status_code, content=content, headers=exc.headers)

@@ -56,10 +56,10 @@ you open them. This keeps the projector focused on the topic being discussed.
 
 | Phase | Capability | What the trace shows |
 | --- | --- | --- |
-| 1. SQL | Query | Rows from Aurora through parameterized RDS Data API filters |
-| 2. MCP | Tools | Aurora access through the PostgreSQL MCP server, plus custom tools for package comparison, currency conversion, destination price range, loyalty and availability |
-| 3. Retrieval | Intent | Hybrid pgvector and full-text candidates reranked by Cohere Rerank 3.5, with a Strands supervisor routing to specialists |
-| 4. Production | Trust | AgentCore Runtime with four Gateway tools, a Cedar decision for each call, traveler grants and RLS scoping the data, and hold and booking receipts |
+| 1. SQL | Query | Rows from Aurora through one parameterized `search_trips` statement over the RDS Data API; code, not a model, picks the filter |
+| 2. MCP | Tools | Typed tools on the custom `meridian-concierge` MCP server: `search_trips`, package comparison, currency conversion, destination price range, region inventory and loyalty. Every value a tool sends to Aurora is a bound parameter, and the `search_trips` trace shows the statement with its values |
+| 3. Retrieval | Intent | Hybrid pgvector and full-text candidates, trimmed to trips within the prompt's price and with places left, reranked by Cohere Rerank 3.5, with a Claude Sonnet 5.5 Strands supervisor routing to specialists |
+| 4. Production | Trust | AgentCore Runtime (Claude Sonnet 5.5) with four Gateway tools, a Cedar decision for each call, traveler grants and RLS scoping the data, hold and booking receipts, and one audit row for each turn that reaches the Runtime, naming the signed-in person, every tool call and how it ended |
 | 5. Workflow | Durability | A Strands Graph in its own AgentCore Runtime, Aurora snapshots, a worker lease, same-session resume on a new microVM, and a hold that keeps its request ID, booking ID and expiry |
 
 ### Prompts
@@ -193,7 +193,7 @@ Every route except `/health` requires the HTTP principal described under
 | Variable | Purpose |
 | --- | --- |
 | `AWS_DEFAULT_REGION`, `BEDROCK_REGION` | AWS SDK and Bedrock Region |
-| `BEDROCK_MODEL_ID` | Model for the local Strands agents (the managed concierge is configured separately). Default: `us.openai.gpt-6-sol` |
+| `BEDROCK_MODEL_ID` | Model for the backend's Strands agents and the reply polish (the managed concierge is configured separately, in the AgentCore template). Default: `global.anthropic.claude-sonnet-5-5`. The hosted web app's roles stack accepts only a global inference profile id (`global.<model>`), because its IAM grant is written for one |
 | `EMBEDDING_MODEL`, `EMBEDDING_DIMENSION` | Default `cohere.embed-v4:0` at 1024 dimensions, matching the pgvector columns |
 | `AURORA_CLUSTER_ARN`, `AURORA_SECRET_ARN`, `AURORA_DATABASE` | RDS Data API connection |
 | `RLS_APP_ROLE` | Restricted role for scoped sessions. Default `meridian_app` |
@@ -211,9 +211,9 @@ Every route except `/health` requires the HTTP principal described under
 | `CORS_ORIGINS` | Allowed origins for any non-loopback deployment |
 
 `requirements.in` lists the direct Python dependencies and `requirements.txt`
-is the hash-pinned lock, including PostgreSQL MCP server 1.0.9. Both Phase 2
-clients start that installed module with the active interpreter, so no package
-is downloaded during a request. To regenerate the lock with `uv`:
+is the hash-pinned lock, including PostgreSQL MCP server 1.0.9. The reference
+MCP agent starts that installed module with the active interpreter, so no
+package is downloaded when it runs. To regenerate the lock with `uv`:
 
 ```bash
 uv pip compile --generate-hashes --output-file requirements.txt requirements.in
@@ -230,9 +230,32 @@ uv pip compile --generate-hashes --output-file requirements.txt requirements.in
 - `bookings`, `booking_lines`, `agent_traces`: bookings and agent observability
 
 `examples/rls_for_agents.sql` adds the RLS policies and the Phase 4 audit trail: the
-`agent_audit_log` table (identity, RLS scope and rows returned) and the `agent_iam_audit`
-view over it. Migration `005_bind_identity_to_traveler.sql` adds the authorization
-columns to that table and recreates the view.
+`agent_audit_log` table and the `agent_iam_audit` view over it. Migration
+`005_bind_identity_to_traveler.sql` adds the authorization columns, and migration
+`021_audit_outcome.sql` adds `tool_calls` and `turn_error` and recreates the view. Each row
+names who asked (the verified Amazon Cognito subject of a signed-in person, otherwise the
+workload), the RLS scope, the workload's IAM identity and the rows returned, and:
+
+- `tool_calls`: one ordered JSONB array with every tool call of the turn, in the order the
+  calls started. Each call has its `result` (`allowed`, `refused` or `error`), `refused_by`
+  (the layer that refused it), `refusal_code` and `access_audit_id` (the
+  `traveler_access_audit` row of a workload grant refusal). NULL when the calls are not known.
+- `turn_error`: the error that ended the turn before its row was written. NULL when the turn
+  completed, or when it failed only after its row was committed (the memory step and the
+  trace entries that follow it).
+- `authorization_decision`: derived from the calls and `turn_error`. It is `deny` when a call
+  was refused by the identity check, Cedar, the workload grant or a database guard;
+  otherwise `error` when a call ended in an error or `turn_error` is set; otherwise `allow`.
+  With the calls unknown it is `deny` when the Runtime reported a Cedar denial and otherwise
+  `error`.
+
+Every Phase 4 turn that reaches the agent Runtime has one row written for it, failed turns
+included. If the row's own write fails, there is no row: the request fails with that error,
+or, when the turn had already failed or was cancelled, the backend logs the lost row with the
+turn's ids. A hold or booking that was placed still says so in its reply. Three Phase 4 replies do not reach the Runtime and write no row: the offer to
+review a recovery, a turn with traveler context off, and the handoff to the workflow. A
+request for another traveler is refused with 403 before any agent runs, and the backend
+records that refusal as a deny row in `traveler_access_audit`.
 
 The migrations in `scripts/migrations/` add the journey, execution, hold
 request, snapshot and session-stop tables (`journeys`, `journey_executions`,
@@ -274,7 +297,7 @@ mode. Set `CORS_ORIGINS` before exposing the API to a network.
 
 Traveler-scoped operations and gateway actions pass these controls:
 
-1. AWS STS authenticates the workload (the App Runner instance role or a Lambda role). Meridian does not use the AgentCore Identity service.
+1. AWS STS authenticates the workload (the App Runner instance role or a Lambda role). The workload grant is checked for that IAM principal. AgentCore Identity is used only inbound: in `jwt` mode its JWT authorizer verifies the signed-in person's token at both Runtimes and the Gateway (see [Who the traveler is](#who-the-traveler-is)).
 2. `traveler_identity_bindings` in Aurora authorizes that workload for the requested traveler. A missing grant fails before any RLS scope is set.
 3. Aurora row-level security filters rows to that traveler under the restricted `meridian_app` role.
 4. AgentCore Gateway serves the tools over MCP (signed with AWS credentials in `iam` mode, with the caller's Amazon Cognito access token in `jwt` mode), and its Cedar policy engine (`MeridianGovernance`, `ENFORCE` mode) decides each tool call on its arguments before a Lambda runs. Reads are permitted. A courtesy hold is permitted only when the traveler confirmed it, for at most 12 hours and 6 travelers, within the traveler's saved budget ceiling. A confirmation is permitted only when the traveler confirmed it and the total is within that ceiling. Any other call is denied by default.
@@ -285,8 +308,10 @@ the journey reference on every hold and confirmation call from the request the
 backend authorized, so the model cannot confirm for the traveler or change the
 ceiling. The ceiling is the traveler's saved per-person budget multiplied by
 the party size, the same figure the travel brief and confirmation dialog show.
-Allow and deny decisions are written to `traveler_access_audit`, and completed
-turns link the authorization subject to the RLS scope in `agent_iam_audit`.
+Workload grant decisions, allow and deny, and the backend's 403 for another traveler are
+written to `traveler_access_audit`. Each Phase 4 turn that reaches the Runtime links the
+authorization subject to the RLS scope and its tool calls in `agent_iam_audit` (see
+[Aurora schema](#aurora-schema)).
 
 Missing AgentCore configuration fails closed. IAM and target failures are
 reported where they happen, not as Cedar denials.
@@ -296,6 +321,20 @@ the user's Cognito `sub` into the access token, and every layer checks that
 token (see Who the traveler is, below).
 
 ### Who the traveler is
+
+Identity in Meridian means inbound JWT authorization: in `jwt` mode the backend, both Runtimes
+and the Gateway each verify the signed-in person's Amazon Cognito access token. The backend
+verifies it itself (`backend/cognito_auth.py`). Both Runtimes and the Gateway use the inbound
+JWT authorizer of AgentCore Identity: `scripts/render_agentcore_config.py` gives each one a
+`CUSTOM_JWT` authorizer with the user pool's discovery URL and the app client, and AgentCore
+Identity validates the token against the pool's public keys and its `client_id` claim before
+it lets the request in
+([Configure inbound JWT authorizer](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/inbound-jwt-authorizer.html)).
+In `iam` mode they accept AWS SigV4 (IAM) callers instead. Meridian does not use the outbound
+side of AgentCore Identity: the token vault, OAuth credential providers and on-behalf-of token
+exchange. The AgentCore template declares no credential provider, and no Meridian code calls
+those APIs: the backend's own workload identity is its IAM principal from AWS STS
+(`backend/agentcore/identity.py`).
 
 In `jwt` mode, a signed-in person is the only source of the traveler. The hosted
 backend, both Runtimes and the Gateway each verify the person's Amazon Cognito
@@ -328,8 +367,8 @@ package before a hold. It is not enabled.
 | Workflow | Strands 1.57.2 Graph on its own AgentCore Runtime, `MeridianWorkflow`, with Aurora snapshots and worker leases. The LangGraph version is in `examples/langgraph/` |
 | Governance | AgentCore Policy (Cedar, `ENFORCE`), workload grants in Aurora, row-level security |
 | Database | Aurora PostgreSQL, RDS Data API, pgvector HNSW |
-| Models | Managed concierge and local agents: GPT-6 Sol (`us.openai.gpt-6-sol`), each configurable through `BEDROCK_MODEL_ID`. Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`cohere.rerank-v3-5:0`) on Amazon Bedrock |
-| MCP | `awslabs.postgres-mcp-server` and the custom `meridian-concierge` and `meridian-memory` servers |
+| Models | Claude Sonnet 5.5 (`global.anthropic.claude-sonnet-5-5`, global cross-Region inference) for the managed concierge, the Phase 3 supervisor and the reply polish, each configurable through `BEDROCK_MODEL_ID`. The Strands agents build it with one factory, `backend/bedrock_model.py` (repeated in the Runtime's `model/load.py`), with a 16,000-token output cap; the reply polish has the same cap and reads the same request fields. No call sends a temperature, a forced tool choice or disabled thinking. Cohere Embed v4 (`cohere.embed-v4:0`) and Cohere Rerank 3.5 (`cohere.rerank-v3-5:0`) on Amazon Bedrock |
+| MCP | The custom `meridian-concierge` server (typed `search_trips` and domain tools) for Phase 2, and the custom `meridian-memory` server for external MCP hosts (the app reads memory directly); `awslabs.postgres-mcp-server` serves only the reference MCP agent |
 | Observability | AWS Distro for OpenTelemetry on the runtime; spans and logs in the runtime's CloudWatch log group, with the trace ID shown in the UI |
 
 ## Documentation

@@ -71,22 +71,24 @@ def test_a_verified_token_binds_the_traveler_from_its_claim(key, cognito):
     assert principal == HttpPrincipal("sub-decoy", "trv_demo_decoy", "cognito")
 
 
-def test_a_signed_in_decoy_cannot_name_jordan(key, cognito):
+def test_a_signed_in_decoy_cannot_name_jordan(key, cognito, access_writer):
     principal = authenticate("203.0.113.8", f"Bearer {token_for(key, DECOY)}")
     with pytest.raises(HTTPException) as refused:
-        authorize_traveler(principal, "trv_meridian_demo")
+        asyncio.run(authorize_traveler(principal, "trv_meridian_demo"))
     assert refused.value.status_code == 403
+    assert [(row["provider"], row["subject_id"]) for row in access_writer.rows] == [
+        ("cognito", "sub-decoy")]
 
 
 def test_jordans_own_token_works_for_jordan(key, cognito):
     principal = authenticate("203.0.113.8", f"Bearer {token_for(key, JORDAN)}")
-    assert authorize_traveler(principal, "trv_meridian_demo") == "trv_meridian_demo"
+    assert asyncio.run(authorize_traveler(principal, "trv_meridian_demo")) == "trv_meridian_demo"
 
 
 @pytest.mark.parametrize("requested", [None, "", CURRENT_TRAVELER])
 def test_no_id_and_the_current_traveler_alias_both_mean_the_principal(requested):
     decoy = HttpPrincipal("sub-decoy", "trv_demo_decoy", "cognito")
-    assert authorize_traveler(decoy, requested) == "trv_demo_decoy"
+    assert asyncio.run(authorize_traveler(decoy, requested)) == "trv_demo_decoy"
 
 
 def test_a_token_that_fails_verification_is_a_401_with_a_challenge(key, cognito):
@@ -171,7 +173,9 @@ def test_me_ignores_a_traveler_the_caller_supplies(key, cognito):
     assert body["traveler_id"] == "trv_demo_decoy"
 
 
-def test_a_signed_in_decoy_is_refused_jordans_memory_before_any_database_read(key, cognito):
+def test_a_signed_in_decoy_is_refused_jordans_memory_before_any_database_read(
+    key, cognito, access_writer
+):
     client = TestClient(app)
     headers = {"Authorization": f"Bearer {token_for(key, DECOY)}"}
     response = client.get("/api/memory/trv_meridian_demo", headers=headers)
@@ -180,7 +184,7 @@ def test_a_signed_in_decoy_is_refused_jordans_memory_before_any_database_read(ke
         "error": "The authenticated caller is not authorized for that traveler."}
 
 
-def test_the_chat_route_refuses_jordans_id_from_the_decoy(key, cognito):
+def test_the_chat_route_refuses_jordans_id_from_the_decoy(key, cognito, access_writer):
     client = TestClient(app)
     headers = {"Authorization": f"Bearer {token_for(key, DECOY)}"}
     response = client.post(
@@ -338,7 +342,9 @@ def test_the_memory_route_resolves_me_to_the_decoys_traveler(key, cognito, memor
     assert memory_store.read_for == ["trv_demo_decoy"]
 
 
-def test_the_memory_route_still_refuses_an_explicit_other_traveler(key, cognito, memory_store):
+def test_the_memory_route_still_refuses_an_explicit_other_traveler(
+    key, cognito, memory_store, access_writer
+):
     headers = {"Authorization": f"Bearer {token_for(key, DECOY)}"}
     assert TestClient(app).get("/api/memory/trv_meridian_demo", headers=headers).status_code == 403
     assert memory_store.read_for == []

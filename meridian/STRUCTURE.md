@@ -23,19 +23,20 @@ The five views are Concierge, Capability ladder, Recovery desk, System evidence
 and Solution briefing. The ladder exposes the five phases. Concierge has its
 own conversation, which uses the Phase 4 runtime.
 
-The SQL and MCP phases run `sql_search` and `mcp_search` in `chat.py`; the
-Strands agents in `backend/agents/phase_01_sql/` and `backend/agents/phase_02_mcp/` are
-reference implementations of the same steps. Retrieval, Production and Workflow
-import their agent modules at runtime:
+The SQL and MCP phases run `sql_search` and `mcp_search` in `chat.py`, in code
+and without a model loop: `search_trips` directly, then over the `meridian-concierge`
+MCP server. The Strands agents in `backend/agents/phase_01_sql/` and
+`backend/agents/phase_02_mcp/` are reference implementations of those patterns.
+Retrieval, Production and Workflow import their agent modules at runtime:
 
 - `backend/agents/phase_03_retrieval/`: the Strands supervisor delegates catalog search, availability and read-only price estimates
-- `backend/agents/phase_04_production/concierge.py`: identity, traveler grant, and RLS read and write around the managed runtime; `process_hold()` for a hold from the UI
+- `backend/agents/phase_04_production/concierge.py`: identity, traveler grant, the RLS read, the turn's audit row and the memory write around the managed runtime; `process_hold()` and `process_booking()` for a hold or confirmation from the UI
 - `backend/agents/phase_04_production/memory_agent.py`: `@tool` recall and persist methods
 - `backend/agents/budget.py`: the budget ceiling Cedar compares against, shared by Phases 4 and 5
 - `backend/agents/phase_05_workflow/`: `graph.py` builds the Strands graph, `nodes.py` holds its steps, `runner.py` claims the lease and runs or resumes it, `snapshot_storage.py` saves snapshots to Aurora `workflow_snapshots`, and `runtime_entry.py` is the one event the `MeridianWorkflow` Runtime handles
-- `backend/agentcore/runtime.py`, `backend/agentcore/workflow_runtime.py`, `backend/agentcore/identity.py`: AgentCore adapters (streaming Concierge client, workflow Runtime client with session stop, identity envelope)
+- `backend/agentcore/runtime.py`, `backend/agentcore/workflow_runtime.py`, `backend/agentcore/identity.py`: AgentCore adapters (streaming Concierge client, workflow Runtime client with session stop) and the backend's IAM identity from AWS STS
 - `backend/agentcore/auth_mode.py`, `caller_credential.py`, `caller_claims.py`, `runtime_https.py`: the `MERIDIAN_AGENTCORE_AUTH` switch, the per-request caller token, the traveler read from a forwarded token, and the bearer-token Runtime invocation
-- `meridian_agentcore/app/MeridianConcierge/`: the Phase 4 agent on AgentCore Runtime: `main.py` (tool loop, memory session, streamed events), `turn_trace.py` (spans and the pinned hold and booking arguments), `hold_execution.py` (confirmed holds and confirmations run by the platform), `prompts.py`, `gateway_auth.py`, `caller_identity.py`
+- `meridian_agentcore/app/MeridianConcierge/`: the Phase 4 agent on AgentCore Runtime: `main.py` (tool loop, memory session, streamed events), `turn_trace.py` (spans and the pinned hold and booking arguments), `hold_execution.py` (confirmed holds and confirmations run by the platform), `tool_errors.py` (ends the turn on a tool setup error), `model/load.py` (the Claude Sonnet 5.5 model), `prompts.py`, `gateway_auth.py`, `caller_identity.py`
 - `meridian_agentcore/app/MeridianWorkflow/`: the Phase 5 Runtime; its `backend/` directory is a generated copy of the backend modules the workflow imports
 - `meridian_agentcore/agentcore/gateway_targets/meridian_holds/`: the `MeridianHolds` gateway Lambda (`get_package_details`, `create_courtesy_hold`, `confirm_booking`)
 - `meridian_agentcore/agentcore/gateway_targets/semantic_trip_search/`: the `semantic_trip_search` Lambda and its tool schema
@@ -45,10 +46,9 @@ import their agent modules at runtime:
 None of the catalog agents can write a booking; every hold and confirmation
 uses the governed Gateway path.
 
-> `chat.py` carries the hybrid lexical and semantic candidate query a second
-> time for the direct Phase 3 and Phase 5 paths. Keep it in step with
-> `SearchAgent.hybrid_search`; `tests/test_hybrid_lexical_arm.py` guards the
-> agent copy.
+> The hybrid search lives once, in `backend/retrieval/hybrid.py`. Phase 3's
+> `SearchAgent.hybrid_search` and Phase 5's search step both call it;
+> `tests/test_hybrid_retrieval.py` and `tests/test_hybrid_lexical_arm.py` guard it.
 
 ## Directory map
 
@@ -61,9 +61,13 @@ uses the governed Gateway path.
 | `backend/agents/phase_03_retrieval/` | Retrieval supervisor and read-only specialists |
 | `backend/agents/phase_04_production/` | Concierge and traveler memory agents |
 | `backend/agents/phase_05_workflow/` | Strands Graph workflow: snapshots, worker leases, hold intent and governed hold |
-| `backend/agentcore/` | AgentCore Runtime client, Gateway checks, Identity, and the CLI config loader |
+| `backend/agentcore/` | AgentCore Runtime client, Gateway checks, the backend's IAM identity, and the CLI config loader |
 | `backend/db/` | RDS Data API client with grant and RLS-scoped sessions, embeddings, journey store, `schema.sql` |
-| `backend/mcp/` | Phase 2 client for `awslabs.postgres-mcp-server`, and the custom `meridian-concierge` and `meridian-memory` MCP servers with their clients |
+| `backend/mcp/` | The custom `meridian-concierge` server (typed `search_trips` and domain tools) that Phase 2 calls, the stand-alone `meridian-memory` server for external MCP hosts, and their clients. The reference MCP agent starts `awslabs.postgres-mcp-server` itself |
+| `backend/tools/` | Typed catalog tools: `search_trips`, run in process by Phase 1 and over MCP by Phase 2 |
+| `backend/retrieval/` | The one hybrid search (`hybrid.py`) and the availability check |
+| `backend/security/` | Read-time masking of 12-digit account ids |
+| `backend/bedrock_model.py` | The one factory for the Claude Sonnet 5.5 Strands model: the 16,000-token output cap and `REQUEST_FIELDS` |
 | `backend/memory/` | Aurora traveler memory store and audit writer |
 | `backend/authorization.py` | Workload-to-traveler authorization types |
 | `backend/http_auth.py` | HTTP principal and traveler binding |
@@ -97,7 +101,7 @@ uses the governed Gateway path.
 | --- | --- |
 | `scripts/init_aurora_schema.py`, `scripts/apply_migrations.py`, `scripts/migrations/` | Create the schema on a new database and apply tracked migrations |
 | `scripts/travel_catalog.py`, `scripts/seed_data.py` | Seed data, and the loader that embeds it and grants the current workload access to Jordan |
-| `scripts/bind_current_identity.py` | Grant the current IAM or AgentCore workload access to Jordan on an existing database |
+| `scripts/bind_current_identity.py` | Grant the current IAM identity access to Jordan on an existing database |
 | `scripts/render_agentcore_config.py` | Render the AgentCore configuration templates for your account and deployed IDs |
 | `scripts/sync_agentcore_env.py` | Copy deployed AgentCore IDs from the CLI state into `.env` |
 | `scripts/publish_gateway_parameters.py` | Publish the Aurora settings the holds Lambda reads from SSM |

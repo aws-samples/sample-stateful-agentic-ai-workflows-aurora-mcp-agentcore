@@ -117,3 +117,34 @@ def test_pure_tool_result_reply_carries_no_model_badge():
     )
 
     assert response.model_label is None
+
+
+def test_a_skipped_polish_is_not_titled_as_a_bedrock_failure():
+    raw_message = ""
+    activities: list = []
+
+    message, model_label = asyncio.run(
+        _polish_and_record(
+            phase=3, mode_label="Retrieval", agent_name="RetrievalAgent",
+            user_query="Find a quiet retreat", raw_message=raw_message, products=[],
+            activities=activities,
+        )
+    )
+
+    assert (message, model_label) == (raw_message, None)
+    assert activities[-1].title == "Bedrock polish skipped"
+    assert activities[-1].details == "No model was called: no content to polish"
+
+
+def test_a_failed_polish_keeps_the_unavailable_title(monkeypatch):
+    monkeypatch.setattr(chat_router, "polish_concierge_reply", _fake_polish_failed)
+    activities: list = []
+
+    asyncio.run(
+        _polish_and_record(
+            phase=3, mode_label="Retrieval", agent_name="RetrievalAgent",
+            user_query="q", raw_message="Here are 2 trips.", products=[], activities=activities,
+        )
+    )
+
+    assert activities[-1].title == "Bedrock polish unavailable"

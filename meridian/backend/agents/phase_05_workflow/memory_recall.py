@@ -5,6 +5,7 @@ from typing import List
 from backend.activity import ActivityEntry, Product, create_activity
 from backend.agentcore.identity import get_agentcore_identity
 from backend.retrieval.hybrid import retrieval_search
+from backend.trace_names import MEMORY_CODE
 
 
 async def workflow_memory_recall(
@@ -16,9 +17,9 @@ async def workflow_memory_recall(
     """
     Workflow memory_recall branch: Aurora reads without a Strands loop.
 
-    Reuses the same MemoryStore tables as Phase 4 @tools so the graph node
-    story stays consistent: Phase 4 = Strands-driven recall; Phase 5 = explicit
-    workflow node calling the same data plane.
+    Reads the same MemoryStore tables Phase 4 reads. Phase 4's ProductionAgent calls
+    the MemoryAgent recall methods directly in code before the Runtime turn; no model
+    chooses the recall in either phase. Phase 5 does it in an explicit graph node.
     """
     from backend.memory.store import get_memory_store, DEMO_TRAVELER_ID
 
@@ -37,7 +38,7 @@ async def workflow_memory_recall(
             activity_type="tool_call",
             title="Aurora recall: traveler_preferences",
             details=f"{len(prefs)} durable preference facts",
-            agent_name="MemoryAgent",
+            agent_name=MEMORY_CODE,
             agent_file="agents/phase_04_production/memory_agent.py",
         ))
 
@@ -49,7 +50,7 @@ async def workflow_memory_recall(
                 activity_type="tool_call",
                 title="Aurora recall: conversation_messages",
                 details=f"{len(session)} recent session turns",
-                agent_name="MemoryAgent",
+                agent_name=MEMORY_CODE,
                 agent_file="agents/phase_04_production/memory_agent.py",
             ))
 
@@ -60,7 +61,7 @@ async def workflow_memory_recall(
             activity_type="tool_call",
             title="Aurora recall: trip_interactions (pgvector)",
             details=f"{len(similar)} semantically similar past interactions",
-            agent_name="MemoryAgent",
+            agent_name=MEMORY_CODE,
             agent_file="agents/phase_04_production/memory_agent.py",
         ))
 

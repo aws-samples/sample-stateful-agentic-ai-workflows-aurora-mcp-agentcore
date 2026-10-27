@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useMeridianShowcase } from '../useMeridianShowcase';
 import { confirmBooking, fetchHealth, fetchMemoryProfile, fetchProducts, processOrder, readHold, readBooking, sendChatMessage } from '../../../api/client';
+import { ApiError } from '../../../api/request';
 
 vi.mock('../../../api/client', () => ({
   fetchHealth: vi.fn(), fetchMemoryProfile: vi.fn(), fetchProducts: vi.fn(), sendChatMessage: vi.fn(),
@@ -31,17 +32,25 @@ beforeEach(() => {
   vi.mocked(sendChatMessage).mockResolvedValue({ message: 'Options.', conversation_id: 'conv-1', products: [], activities: [] });
 });
 
+const UNKNOWN_HOLD = 'We could not confirm whether the hold was placed. Check your trips before trying again.';
+const UNKNOWN_BOOKING = 'We could not confirm whether the booking was confirmed. Check your trips before trying again.';
+const PROXY_PAGE = new ApiError('Request failed (504).', 504, false);
+const NETWORK_FAILURE = new TypeError('Failed to fetch');
+const PROXY_JSON = new ApiError('Bad gateway', 502, false);
+const NON_JSON_200 = new SyntaxError('Unexpected token < in JSON at position 0');
+const PLAIN_ERROR = new Error('boom after the send');
+
 describe('Booking confirmation', () => {
   it('retries an unacknowledged direct hold with the same identity, even after clearing chat', async () => {
     vi.mocked(processOrder)
-      .mockRejectedValueOnce(new Error('Response lost after commit'))
+      .mockRejectedValueOnce(new TypeError('Response lost after commit'))
       .mockResolvedValueOnce({ message: 'Replayed.', order: held, activities: [] });
     const { result } = renderHook(() => useMeridianShowcase());
     await waitFor(() => expect(result.current.travelersCount).toBe(2));
     await act(async () => { await result.current.holdTrip(tokyo); });
     const first = vi.mocked(processOrder).mock.calls[0][0];
     expect(first.conversation_id).toEqual(expect.any(String));
-    expect(result.current.error).toMatch(/may have been saved/i);
+    expect(result.current.error).toBe(UNKNOWN_HOLD);
     act(() => result.current.clearChat());
     await act(async () => { await result.current.holdTrip(tokyo); });
     expect(vi.mocked(processOrder).mock.calls[1][0].conversation_id).toBe(first.conversation_id);
@@ -169,7 +178,7 @@ it('stops waiting without discarding the hold identity or accepting a late reply
   const identity = vi.mocked(processOrder).mock.calls[0][0].conversation_id;
   await act(async () => { result.current.stopWaiting(); await pending; });
   expect(result.current.isLoading).toBe(false);
-  expect(result.current.error).toMatch(/may have been saved/);
+  expect(result.current.error).toBe(UNKNOWN_HOLD);
   await act(async () => { finish({ message: 'Late receipt.', order: held, activities: [] }); });
   expect(result.current.tripHolds).toEqual([]);
   vi.mocked(readHold).mockResolvedValue({ message: 'Recorded.', order: held, activities: [] });
@@ -205,7 +214,7 @@ const meridianHealth = {
 it('names the pending write and stays online when a confirmation is not received', async () => {
   let finish!: (value: Awaited<ReturnType<typeof processOrder>>) => void;
   vi.mocked(processOrder).mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
-  vi.mocked(confirmBooking).mockRejectedValueOnce(new Error('Refused by the gateway'));
+  vi.mocked(confirmBooking).mockRejectedValueOnce(new TypeError('Failed to fetch'));
   vi.mocked(fetchHealth).mockResolvedValue(meridianHealth);
   const { result } = renderHook(() => useMeridianShowcase());
   await waitFor(() => expect(result.current.backendStatus).toBe('online'));
@@ -216,9 +225,61 @@ it('names the pending write and stays online when a confirmation is not received
   await act(async () => { finish({ message: 'Held.', order: held, activities: [] }); await hold; });
   expect(result.current.pendingWrite).toBeNull();
   await act(async () => { await result.current.confirmTrip(tokyo); });
-  expect(result.current.error).toMatch(/confirmation response .* was not received/);
+  expect(result.current.error).toBe(UNKNOWN_BOOKING);
   expect(result.current.backendStatus).toBe('online');
   expect(result.current.pendingWrite).toBeNull();
+});
+
+it('shows the answer the server gave when a hold request fails after the hold was placed', async () => {
+  const placed = 'The hold was placed, but saving this conversation failed. Retry the hold to read its receipt.';
+  vi.mocked(processOrder).mockRejectedValueOnce(new ApiError(placed, 503));
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.travelersCount).toBe(2));
+  await act(async () => { await result.current.holdTrip(tokyo); });
+  expect(result.current.error).toBe(placed);
+});
+
+it('shows the answer the server gave when a confirmation fails with an unknown outcome', async () => {
+  const unknown = 'We could not confirm whether the booking was confirmed. Check your trips before trying again.';
+  vi.mocked(processOrder).mockResolvedValueOnce({ message: 'Held.', order: held, activities: [] });
+  vi.mocked(confirmBooking).mockRejectedValueOnce(new ApiError(unknown, 503));
+  vi.mocked(fetchHealth).mockResolvedValue(meridianHealth);
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.backendStatus).toBe('online'));
+  await act(async () => { await result.current.holdTrip(tokyo); });
+  await act(async () => { await result.current.confirmTrip(tokyo); });
+  expect(result.current.error).toBe(unknown);
+});
+
+it.each([
+  ['a proxy page', PROXY_PAGE],
+  ['a network failure after sending', NETWORK_FAILURE],
+  ['a 200 whose body is not JSON', NON_JSON_200],
+  ['a plain error after sending', PLAIN_ERROR],
+  ['a proxy JSON body with a string error', PROXY_JSON],
+])('says the hold outcome is unknown when the answer is %s', async (_name, failure) => {
+  vi.mocked(processOrder).mockRejectedValueOnce(failure);
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.travelersCount).toBe(2));
+  await act(async () => { await result.current.holdTrip(tokyo); });
+  expect(result.current.error).toBe(UNKNOWN_HOLD);
+});
+
+it.each([
+  ['a proxy page', PROXY_PAGE],
+  ['a network failure after sending', NETWORK_FAILURE],
+  ['a 200 whose body is not JSON', NON_JSON_200],
+  ['a plain error after sending', PLAIN_ERROR],
+  ['a proxy JSON body with a string error', PROXY_JSON],
+])('says the booking outcome is unknown when the answer is %s', async (_name, failure) => {
+  vi.mocked(processOrder).mockResolvedValueOnce({ message: 'Held.', order: held, activities: [] });
+  vi.mocked(confirmBooking).mockRejectedValueOnce(failure);
+  vi.mocked(fetchHealth).mockResolvedValue(meridianHealth);
+  const { result } = renderHook(() => useMeridianShowcase());
+  await waitFor(() => expect(result.current.backendStatus).toBe('online'));
+  await act(async () => { await result.current.holdTrip(tokyo); });
+  await act(async () => { await result.current.confirmTrip(tokyo); });
+  expect(result.current.error).toBe(UNKNOWN_BOOKING);
 });
 
 it('clears request progress when the phase changes during a chat request', async () => {

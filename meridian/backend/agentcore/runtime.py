@@ -31,16 +31,31 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import boto3
+import httpx
 from botocore.config import Config
-from botocore.exceptions import ClientError, ConnectionClosedError
+from botocore.exceptions import (
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    CredentialRetrievalError,
+    EndpointConnectionError,
+    NoCredentialsError,
+    PartialCredentialsError,
+)
 
 from backend.chat_stream import emit_chat_event
 from backend.concierge_voice import DirectReplyStream, direct_reply
 from backend.agentcore.auth_mode import jwt_mode
 from backend.agentcore.caller_credential import require_caller_token
 from backend.agentcore.cli_config import resolve_agentcore_config
-from backend.agentcore.errors import AgentCoreNotConfiguredError, CallerTokenExpired
+from backend.agentcore.errors import (
+    AgentCoreNotConfiguredError,
+    CallerCredentialError,
+    CallerTokenExpired,
+)
 from backend.agentcore.runtime_https import (
+    REFUSED_BEFORE_THE_TURN,
+    REFUSED_CODES,
     ConnectionDropped,
     RuntimeHttpClient,
     RuntimeHttpError,
@@ -76,6 +91,89 @@ class RuntimeDecision:
     # The Runtime's own measurement of the turn. None when it reports none.
     elapsed_ms: Optional[int] = None
     isolation: str = "microVM, session-scoped CPU/memory/filesystem"
+
+
+@dataclass
+class TurnProgress:
+    """How far one ``invoke_turn`` got, for a caller that must word its failure truthfully.
+
+    Attributes:
+        may_have_run: True once the Runtime may have acted on the turn: a response arrived, or
+            the invoke failed in a way that does not prove the request never reached it (a read
+            timeout, a connection closed after sending). False while nothing was sent, and when
+            the invoke request was rejected before the turn ran (a 4xx refusal, or a credential
+            error). Any other error status counts as possibly run.
+        decision: What the Runtime reported, filled in as its events arrive; None until a
+            response arrived.
+    """
+
+    may_have_run: bool = False
+    decision: Optional[RuntimeDecision] = None
+
+
+# Failures that prove an invoke never reached the Runtime: no connection was made, or no
+# credential or configuration existed to send it with.
+NOT_SENT = (
+    EndpointConnectionError,
+    ConnectTimeoutError,
+    NoCredentialsError,
+    PartialCredentialsError,
+    CredentialRetrievalError,
+    AgentCoreNotConfiguredError,
+    CallerCredentialError,
+)
+NOT_SENT_OVER_HTTPS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
+
+
+def _may_have_reached_the_runtime(error: BaseException) -> bool:
+    """Whether a failed invoke may still have been received, and run, by the Runtime.
+
+    Only a rejection of the invoke request itself proves the turn never ran: a 400, 401, 402,
+    403, 404, 409 or 429 (``REFUSED_CODES``), which the service answers before it hands the
+    request to the container. A 424 (``RuntimeClientError``, the container's own error), a 500, a
+    502 or 504 from the front door and any other status say nothing about whether the container
+    acted first. A ``RuntimeHttpError`` without a status says no answer arrived; it was sent
+    unless its cause is a connection that was never made.
+    """
+    if isinstance(error, ClientError):
+        return error.response.get("Error", {}).get("Code") not in REFUSED_CODES
+    if isinstance(error, NOT_SENT):
+        return False
+    if isinstance(error, RuntimeHttpError):
+        if error.status == 0:
+            return not isinstance(error.__cause__, NOT_SENT_OVER_HTTPS)
+        return error.status not in REFUSED_BEFORE_THE_TURN
+    return True
+
+
+# How the Runtime's error event names its exception's class: a Python class name of at most 64
+# characters. Anything else is not read as a class.
+ERROR_TYPE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
+
+
+class RuntimeTurnError(RuntimeError):
+    """The Runtime ended the turn with an ``error`` event.
+
+    ``decision`` holds what the Runtime reported before that event: its spans and any hold or
+    booking event. It has no message. A stream that breaks or times out raises its own error
+    instead, because calls may have run after the last span received.
+
+    Attributes:
+        decision: What the Runtime reported before the error.
+        error_type: The class of the exception that ended the Runtime's turn, from the event's
+            ``error_type``. None when the event names no class: a Runtime deployed before it
+            sent one, an error that had no exception, or a value that is not a class name.
+        event_message: The event's own message, without this error's prefix.
+    """
+
+    def __init__(
+        self, message: str, decision: RuntimeDecision, *, error_type: Optional[str] = None,
+        event_message: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.decision = decision
+        self.error_type = error_type
+        self.event_message = event_message
 
 
 def iter_sse(chunks):
@@ -291,6 +389,7 @@ class AgentCoreRuntimeAdapter:
         hold_target: Optional[dict[str, Any]] = None,
         booking_confirmed: bool = False,
         booking_target: Optional[dict[str, Any]] = None,
+        progress: Optional[TurnProgress] = None,
     ) -> RuntimeDecision:
         """Run one concierge turn inside AgentCore Runtime and collect its events.
 
@@ -306,12 +405,24 @@ class AgentCoreRuntimeAdapter:
             booking_confirmed: True only when the traveler clicked Confirm on a held trip.
             booking_target: The held booking's identity and total when
                 ``booking_confirmed`` is True.
+            progress: Filled in as the turn advances, so a caller can tell after a failure
+                whether the Runtime may have acted and what it reported before the failure.
 
         Returns:
             The decision with every span, package, hold outcome and usage the runtime reported.
 
         Raises:
-            RuntimeError: When the invoke fails or the runtime reports an error event.
+            RuntimeTurnError: The runtime reported an error event other than ``token_expired``;
+                it carries what the runtime reported before the error and the class it named.
+            CallerTokenExpired: In jwt mode the caller's token expired before the request was
+                sent or the Runtime refused it as expired, or the runtime reported a
+                ``token_expired`` error event.
+            CallerTokenMissing: In jwt mode no caller token is bound; nothing was sent.
+            AgentCoreNotConfiguredError: No Runtime ARN, region or invocation host is
+                configured; nothing was sent.
+            RuntimeError: The invoke failed with an error status, or the stream ended without
+                a concierge message. A transport error, a timeout or a broken stream
+                propagates as the transport raised it.
         """
         arn = self._require_arn()
         session_id = self._build_runtime_session_id(conversation_id, traveler_id)
@@ -340,12 +451,24 @@ class AgentCoreRuntimeAdapter:
             and not booking_confirmed
             and booking_target is None
         )
+        progress = progress if progress is not None else TurnProgress()
+        response = self._send(arn, session_id, payload, retry_allowed, progress)
+        progress.may_have_run = True
+        # Once a response exists, a broken stream or runtime error must surface.
+        # Replaying here could repeat work already performed by the runtime.
+        return self._decision(arn, session_id, _forward_runtime_events(response), progress)
+
+    def _send(
+        self, arn: str, session_id: str, payload: bytes, retry_allowed: bool,
+        progress: TurnProgress,
+    ) -> dict[str, Any]:
+        """Send the invoke, once more only when ``retry_allowed``; record a failure on progress."""
         for attempt in range(2 if retry_allowed else 1):
             try:
-                response = self._invoke(arn, session_id, payload)
-                break
+                return self._invoke(arn, session_id, payload)
             except (ConnectionClosedError, ConnectionDropped):
                 if not retry_allowed or attempt:
+                    progress.may_have_run = True
                     raise
                 logger.warning(
                     "AgentCore connection closed before response; retrying "
@@ -355,15 +478,18 @@ class AgentCoreRuntimeAdapter:
             except ClientError as exc:
                 code = exc.response.get("Error", {}).get("Code", "Unknown")
                 logger.error("invoke_agent_runtime failed: %s", code)
+                progress.may_have_run = _may_have_reached_the_runtime(exc)
                 raise RuntimeError(f"AgentCore Runtime invoke failed: {code}") from exc
-            except RuntimeHttpError as exc:
-                logger.error("Runtime invocation failed: %s", exc.code)
+            except Exception as exc:
+                if isinstance(exc, RuntimeHttpError):
+                    logger.error("Runtime invocation failed: %s", exc.code)
+                progress.may_have_run = _may_have_reached_the_runtime(exc)
                 raise
-        # Once a response exists, a broken stream or runtime error must surface.
-        # Replaying here could repeat work already performed by the runtime.
-        return self._decision(arn, session_id, _forward_runtime_events(response))
+        raise AssertionError("the retry loop always returns or raises")
 
-    def _decision(self, arn: str, session_id: str, events) -> RuntimeDecision:
+    def _decision(
+        self, arn: str, session_id: str, events, progress: Optional[TurnProgress] = None,
+    ) -> RuntimeDecision:
         decision = RuntimeDecision(
             runtime_arn=arn,
             runtime_session_id=session_id,
@@ -372,34 +498,52 @@ class AgentCoreRuntimeAdapter:
             recommended_package_ids=[],
             follow_ups=[],
         )
+        if progress is not None:
+            progress.decision = decision
         for event in events:
-            kind = event.get("type")
-            if kind == "activity":
-                decision.activities.append({k: v for k, v in event.items() if k != "type"})
-            elif kind == "packages":
-                decision.packages = list(event.get("packages") or [])
-            elif kind == "hold":
-                decision.hold = event.get("hold")
-                decision.hold_refused = event.get("refused")
-                decision.policy_decision = event.get("policyDecision")
-            elif kind == "booking":
-                decision.booking = event.get("booking")
-                decision.booking_refused = event.get("refused")
-                decision.policy_decision = event.get("policyDecision")
-            elif kind == "error":
-                _raise_runtime_error(event)
-            elif kind == "result":
-                _apply_result(decision, event)
+            _apply_event(decision, event)
         if not decision.message:
             raise RuntimeError("AgentCore Runtime returned no concierge message.")
         return decision
 
 
-def _raise_runtime_error(event: dict[str, Any]) -> None:
-    """Raise what a Runtime ``error`` event means: an expired token is its own error."""
+def _apply_event(decision: RuntimeDecision, event: dict[str, Any]) -> None:
+    """Record one Runtime event on ``decision``; an ``error`` event raises."""
+    kind = event.get("type")
+    if kind == "activity":
+        decision.activities.append({k: v for k, v in event.items() if k != "type"})
+    elif kind == "packages":
+        decision.packages = list(event.get("packages") or [])
+    elif kind == "hold":
+        decision.hold = event.get("hold")
+        decision.hold_refused = event.get("refused")
+        decision.policy_decision = event.get("policyDecision")
+    elif kind == "booking":
+        decision.booking = event.get("booking")
+        decision.booking_refused = event.get("refused")
+        decision.policy_decision = event.get("policyDecision")
+    elif kind == "error":
+        _raise_runtime_error(event, decision)
+    elif kind == "result":
+        _apply_result(decision, event)
+
+
+def _raise_runtime_error(event: dict[str, Any], decision: RuntimeDecision) -> None:
+    """Raise what a Runtime ``error`` event means: an expired token is its own error.
+
+    Any other error carries ``decision``, the turn as the Runtime reported it before the error,
+    and the class the event names in ``error_type`` when that is a class name.
+    """
     if event.get("code") == "token_expired":
         raise CallerTokenExpired(str(event.get("message") or "The access token expired."))
-    raise RuntimeError(f"AgentCore Runtime error: {event.get('message')}")
+    error_type = event.get("error_type")
+    named = isinstance(error_type, str) and ERROR_TYPE.fullmatch(error_type) is not None
+    raise RuntimeTurnError(
+        f"AgentCore Runtime error: {event.get('message')}",
+        decision,
+        error_type=error_type if named else None,
+        event_message=str(event.get("message") or ""),
+    )
 
 
 def _apply_result(decision: RuntimeDecision, event: dict[str, Any]) -> None:

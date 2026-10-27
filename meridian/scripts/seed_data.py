@@ -333,29 +333,13 @@ def _upsert_identity_binding(provider: str, subject_id: str, principal: str) -> 
 
 
 def seed_identity_bindings():
-    """Authorize the current IAM and configured AgentCore workloads for Jordan."""
+    """Authorize the current IAM workload for Jordan."""
     caller = boto3.client("sts").get_caller_identity()
     principal = caller.get("Arn", "unknown")
     subject_id = caller.get("UserId", "").split(":", 1)[0]
     if not subject_id:
         raise RuntimeError("STS GetCallerIdentity did not return a stable UserId")
-    bindings = [_upsert_identity_binding("aws_iam", subject_id, principal)]
-
-    try:
-        from backend.agentcore.cli_config import resolve_agentcore_config
-
-        workload_identity = resolve_agentcore_config().workload_identity
-    except Exception:
-        workload_identity = os.getenv("AGENTCORE_WORKLOAD_IDENTITY")
-    if workload_identity:
-        bindings.append(
-            _upsert_identity_binding(
-                "agentcore_workload",
-                workload_identity,
-                principal,
-            )
-        )
-    return bindings
+    return [_upsert_identity_binding("aws_iam", subject_id, principal)]
 
 
 def _embed_search_query(client, text: str) -> list[float]:

@@ -88,20 +88,7 @@ async def test_stream_disconnect_finishes_memory_work_without_replaying(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_stream_suppresses_overridden_workflow_prose(monkeypatch):
-    async def chat(request, principal):
-        emit_chat_event({"type": "delta", "text": "Must not appear"})
-        return route.ChatResponse(message="Switch to Workflow", activities=[])
-    monkeypatch.setattr(route, "chat", chat)
-    response = await route.stream_chat(route.ChatRequest(message="My flight was cancelled. Rework the trip, then check duration availability.", phase=4), PRINCIPAL)
-    events = [event async for event in response.body_iterator]
-    assert len(events) == 2
-    assert 'Must not appear' not in ''.join(events)
-    assert 'Switch to Workflow' in events[-1]
-
-
-@pytest.mark.asyncio
-async def test_stream_denies_wrong_traveler_before_headers():
+async def test_stream_denies_wrong_traveler_before_headers(access_writer):
     with pytest.raises(HTTPException) as error:
         await route.stream_chat(route.ChatRequest(message="Tokyo", phase=4, customer_id="someone-else"), PRINCIPAL)
     assert error.value.status_code == 403

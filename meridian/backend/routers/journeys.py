@@ -178,7 +178,7 @@ async def list_journeys(
     The shell needs a journey id before it can read a document, and a demo
     machine should not have to be told one by hand.
     """
-    owner = authorize_traveler(principal, traveler_id)
+    owner = await authorize_traveler(principal, traveler_id)
     client = get_rds_data_client()
     try:
         async with _scoped(client, owner) as tx:
@@ -216,7 +216,7 @@ async def read_journey(
         HTTPException: 404 when no such journey is visible to this traveler,
             403 when the journey is owned by someone else.
     """
-    owner = authorize_traveler(principal, traveler_id)
+    owner = await authorize_traveler(principal, traveler_id)
     try:
         return await assemble_journey_document(
             get_rds_data_client(), journey_id, owner
@@ -251,7 +251,7 @@ async def stop_session(
             paused or its session was already stopped, 503 when the Runtime is
             not configured or the stop failed.
     """
-    owner = authorize_traveler(principal, traveler_id)
+    owner = await authorize_traveler(principal, traveler_id)
     client = get_rds_data_client()
     try:
         thread_id = await _stop_target(client, journey_id, owner)

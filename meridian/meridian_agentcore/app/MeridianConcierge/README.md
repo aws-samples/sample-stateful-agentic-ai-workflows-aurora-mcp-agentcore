@@ -18,21 +18,27 @@ server-sent events.
 | `caller_identity.py` | Who is calling. In `iam` mode the traveler comes from the payload; in `jwt` mode it comes from the `traveler_id` claim of the access token in the `Authorization` header, and a token that is malformed, expired or without the claim is refused |
 | `gateway_auth.py` | How MCP requests reach the gateway. In `iam` mode they are signed with SigV4 using the runtime's execution role; in `jwt` mode they carry the caller's access token as received |
 | `prompts.py` | System, turn and narration prompts |
-| `model/load.py` | Shared Bedrock model factory (`BEDROCK_MODEL_ID`, default `us.openai.gpt-6-sol`) |
+| `model/load.py` | Bedrock model factory for Claude Sonnet 5.5 (`BEDROCK_MODEL_ID`, default `global.anthropic.claude-sonnet-5-5`); repeats `backend/bedrock_model.py` |
+| `tool_errors.py` | Ends the turn with the real error when a tool could not be set up; repeats `backend/agents/strands_hooks.py` |
 
 ## Model and latency
 
-The managed concierge defaults to GPT-6 Sol through Bedrock, with low reasoning
-effort and a 2,048-token output budget. Local teaching agents read their own
-`BEDROCK_MODEL_ID` from the backend `.env` (also GPT-6 Sol by default). The Runtime reuses its model client between turns while
-each agent loads the authorized conversation through AgentCore Memory.
-To change the managed model, edit `BEDROCK_MODEL_ID` in the AgentCore template,
-render the project configuration, then redeploy. Changing only the backend's
-`.env` does not change the managed Runtime. `BEDROCK_MAX_TOKENS` accepts 256 to 16,000;
-`BEDROCK_REASONING_EFFORT` applies only to hosted OpenAI models. GPT-OSS models
-are rejected by configuration. To restore the previous
-model, set `BEDROCK_MODEL_ID=global.anthropic.claude-haiku-4-5-20251001-v1:0` in the
-template, render and redeploy. There is no automatic replay of failed tool turns.
+The managed concierge calls Claude Sonnet 5.5 through Bedrock's global inference profile
+(`global.anthropic.claude-sonnet-5-5`) with a 16,000-token output budget.
+`model/load.py` sends none of the three settings Sonnet 5.5 rejects:
+no `temperature`, no forced tool choice and no disabled thinking, so tool choice stays
+automatic. While `REQUEST_FIELDS` is empty, no thinking field is sent. Local agents read their own `BEDROCK_MODEL_ID` from the backend
+`.env` (the same default). The Runtime reuses its model client between turns while each
+agent loads the authorized conversation through AgentCore Memory. To change the managed
+model, edit `BEDROCK_MODEL_ID` in the AgentCore template, render the project
+configuration, then redeploy; the CDK app accepts only a global inference profile id,
+because it grants the execution role that one model through its profile. Changing only
+the backend's `.env` does not change the managed Runtime. `BEDROCK_MAX_TOKENS` accepts 256
+to 16,000. GPT-OSS models are rejected by configuration. Throttling and transient errors
+are retried by botocore in adaptive mode; a persistent failure ends the turn with its
+error, and no other model answers. A tool that could not be set up (missing credentials,
+permissions or configuration) ends the turn with that error (`tool_errors.py`).
+There is no automatic replay of failed tool turns.
 
 Discovery uses one semantic search, recommends up to two trips, and defers
 availability checks until requested or needed to answer a missing fact. Follow-up
@@ -60,7 +66,7 @@ effect when the matching target is present.
 template. The CDK app sets `AGENTCORE_GATEWAY_MERIDIAN_AURORA_URL`, or
 `AGENTCORE_GATEWAY_MERIDIAN_AURORA_JWT_URL` for the `meridian-aurora-jwt`
 Gateway, and `MEMORY_MERIDIAN_SESSION_ID`. The template adds the observability settings,
-`BEDROCK_MODEL_ID`, `BEDROCK_MAX_TOKENS`, `BEDROCK_REASONING_EFFORT`,
+`BEDROCK_MODEL_ID`, `BEDROCK_MAX_TOKENS`,
 `MERIDIAN_POLICY_MODE`, and, once they exist,
 `MERIDIAN_GATEWAY_ID` and `MERIDIAN_POLICY_ENGINE_ID`, which label the trace.
 

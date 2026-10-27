@@ -14,10 +14,11 @@ Phase 4 platform story:
   Runtime  — session-isolated agent hosting; the agent owns the tool loop and
              its AgentCore Memory session (see meridian_agentcore/app/MeridianConcierge)
   Gateway  — managed MCP (tools/list + tools/call) with Cedar policy in ENFORCE mode
-  Identity — workload identity + resource credentials
+  Identity — inbound JWT authorizers on both Runtimes and the Gateway in jwt mode; the
+             backend itself acts as its IAM principal from AWS STS
 
 The backend keeps three adapters: the runtime client that streams the turn, the
-gateway client used only for laptop-side checks, and the identity envelope.
+gateway client used only for laptop-side checks, and the backend's IAM identity.
 
 AWS docs:
   - AgentCore overview:

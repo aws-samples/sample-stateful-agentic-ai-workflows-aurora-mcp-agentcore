@@ -52,23 +52,30 @@ def test_keyword_search_reads_the_same_ceiling():
     assert parse_search_query("Show me city trips under $3.5k per traveler.").price_filter == 3500.0
 
 
+def _row(package_id, price, places=3):
+    return {
+        "package_id": package_id, "name": package_id.title(), "price_per_person": price,
+        "operator": "Costa", "description": "d", "image_url": "", "trip_type": "Beach",
+        "destination": "Japan", "region": "Asia", "durations": ["7 nights"],
+        "availability": {"7 nights": places}, "highlights": [],
+    }
+
+
 class _Db:
     def __init__(self):
         self.lexical_params = None
 
     async def execute(self, sql, params=None, transaction_id=None):
         if "semantic_trip_search" in sql:
-            return [
-                {"package_id": "CHEAP", "name": "Kyoto", "price_per_person": 1900.0},
-                {"package_id": "MID", "name": "Tokyo", "price_per_person": 2400.0},
-                {"package_id": "DEAR", "name": "Osaka", "price_per_person": 2600.0},
-            ]
-        self.lexical_params = list(params or ())
-        return []
+            return [_row("CHEAP", 1900.0), _row("MID", 2400.0), _row("DEAR", 2600.0)]
+        if "ts_rank" in sql:
+            self.lexical_params = list(params or ())
+            return []
+        return [_row("CHEAP", 1900.0), _row("MID", 2400.0), _row("DEAR", 2600.0)]
 
 
 class _Embeddings:
-    def generate_text_embedding(self, text):
+    def generate_text_embedding(self, text, input_type="search_document"):
         return [0.0] * 1024
 
     def rerank_documents(self, query, docs, top_n=5):
@@ -79,6 +86,8 @@ async def test_hybrid_retrieval_keeps_trips_within_a_comma_formatted_budget(monk
     db = _Db()
     monkeypatch.setattr(hybrid, "get_rds_data_client", lambda: db)
     monkeypatch.setattr(hybrid, "get_embedding_service", _Embeddings)
-    products, _spans = await hybrid.retrieval_search("Japan trips under $2,500.00", limit=5)
+    products, spans = await hybrid.retrieval_search("Japan trips under $2,500.00", limit=5)
     assert [product.product_id for product in products] == ["CHEAP", "MID"]
-    assert 2500.0 in db.lexical_params
+    gate = next(span for span in spans if span.title == "Eligibility filter applied")
+    assert "over the $2,500 budget" in gate.details
+    assert db.lexical_params[-1] == 25

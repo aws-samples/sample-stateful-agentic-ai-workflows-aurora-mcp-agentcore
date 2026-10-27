@@ -3,7 +3,8 @@ Shared keyword search utilities for trip_packages (Phases 1 & 2).
 """
 
 import re
-from typing import Any, Dict, List, Optional, Tuple
+import textwrap
+from typing import Any, Dict, List, Optional, Sequence
 from dataclasses import dataclass
 
 from backend.config import config
@@ -49,7 +50,83 @@ class SearchParams:
     query_lower: str
     price_filter: Optional[float]
     matched_trip_type: Optional[str]
-    search_pattern: str
+
+
+_PERCENT_S = re.compile(r"%s")
+_NUMBERED = re.compile(r"\$(\d+)")
+_OTHER_CONTROL_CHARACTER = re.compile(r"[\x00-\x1f\x85]")
+MAX_SHOWN_CHARS = 60
+SHOWN_PREFIX_CHARS = 40
+
+
+def _tidy(sql: str) -> str:
+    """Collapse whitespace, except in text with ``--`` comments, which need their lines."""
+    return textwrap.dedent(sql).strip() if "--" in sql else " ".join(sql.split())
+
+
+def numbered_sql(sql: str) -> str:
+    """The statement with each ``%s`` replaced by ``$1``, ``$2`` in order of appearance."""
+    counter = iter(range(1, 10_000))
+    return _PERCENT_S.sub(lambda _match: f"${next(counter)}", _tidy(sql))
+
+
+def _shown(value: Any) -> str:
+    """One bound value as it reads in a trace: quoted text, bare numbers, no floods."""
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value)
+    if len(text) > MAX_SHOWN_CHARS:
+        text = f"{text[:SHOWN_PREFIX_CHARS]}... ({len(text)} characters)"
+    escaped = (
+        text.replace("\\", "\\\\")
+        .replace("'", "''")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+        .replace(" ", "\\u2028")
+        .replace(" ", "\\u2029")
+    )
+    escaped = _OTHER_CONTROL_CHARACTER.sub(lambda match: f"\\x{ord(match.group()):02x}", escaped)
+    return f"'{escaped}'"
+
+
+def display_sql(sql: str, params: Sequence[Any] = ()) -> str:
+    """Show a statement as it ran: ``$n`` placeholders, then the values bound to them.
+
+    Args:
+        sql: The statement, with ``%s`` placeholders (as executed) or ``$n`` ones.
+        params: The values bound to the placeholders, in order.
+
+    Returns:
+        The numbered statement, and when ``params`` is not empty a last line
+        ``-- Values: $1 = ..., $2 = ...``.
+
+    Raises:
+        ValueError: The number of placeholders and values disagree. A trace that
+            shows values the statement never bound would be a false record.
+    """
+    statement = numbered_sql(sql)
+    highest = max((int(number) for number in _NUMBERED.findall(statement)), default=0)
+    if highest != len(params):
+        raise ValueError(
+            f"display_sql: the statement binds {highest} parameter(s) but {len(params)} "
+            f"value(s) were given: {statement[:80]}"
+        )
+    if not params:
+        return statement
+    values = ", ".join(f"${index} = {_shown(value)}" for index, value in enumerate(params, 1))
+    return f"{statement}\n-- Values: {values}"
+
+
+def search_title(params: SearchParams) -> str:
+    """The span title for a keyword search: the trip type it filtered on, or the text."""
+    if params.matched_trip_type:
+        return f"Trip type filter: {params.matched_trip_type}"
+    return f"Filter search: {params.query}"
 
 
 def parse_search_query(query: str) -> SearchParams:
@@ -67,144 +144,7 @@ def parse_search_query(query: str) -> SearchParams:
         query_lower=query_lower,
         price_filter=price_filter,
         matched_trip_type=matched_trip_type,
-        search_pattern=f"%{query}%",
     )
-
-
-async def execute_keyword_search(
-    db: Any,
-    params: SearchParams,
-    limit: int = 5,
-) -> Tuple[List[Dict], str, str]:
-    results: List[Dict] = []
-    display_sql = ""
-    search_title = ""
-
-    if params.matched_trip_type:
-        if params.price_filter:
-            sql = f"""
-                SELECT {PACKAGE_COLUMNS}
-                FROM trip_packages
-                WHERE trip_type = %s AND price_per_person <= %s
-                ORDER BY price_per_person ASC
-                LIMIT %s
-            """
-            display_sql = (
-                f"SELECT … FROM trip_packages WHERE trip_type = '{params.matched_trip_type}' "
-                f"AND price_per_person <= {params.price_filter} LIMIT {limit}"
-            )
-            results = await db.execute(sql, (params.matched_trip_type, params.price_filter, limit))
-        else:
-            sql = f"""
-                SELECT {PACKAGE_COLUMNS}
-                FROM trip_packages
-                WHERE trip_type = %s
-                ORDER BY price_per_person ASC
-                LIMIT %s
-            """
-            display_sql = f"SELECT … FROM trip_packages WHERE trip_type = '{params.matched_trip_type}' LIMIT {limit}"
-            results = await db.execute(sql, (params.matched_trip_type, limit))
-        search_title = f"Trip type filter: {params.matched_trip_type}"
-
-    else:
-        if params.price_filter:
-            sql = f"""
-                SELECT {PACKAGE_COLUMNS}
-                FROM trip_packages
-                WHERE (name ILIKE %s OR description ILIKE %s OR operator ILIKE %s
-                       OR destination ILIKE %s OR trip_type ILIKE %s)
-                  AND price_per_person <= %s
-                ORDER BY price_per_person ASC
-                LIMIT %s
-            """
-            display_sql = f"SELECT … FROM trip_packages WHERE text ILIKE '%{params.query}%' AND price <= {params.price_filter}"
-            results = await db.execute(
-                sql,
-                (
-                    params.search_pattern,
-                    params.search_pattern,
-                    params.search_pattern,
-                    params.search_pattern,
-                    params.search_pattern,
-                    params.price_filter,
-                    limit,
-                ),
-            )
-        else:
-            sql = f"""
-                SELECT {PACKAGE_COLUMNS}
-                FROM trip_packages
-                WHERE name ILIKE %s OR description ILIKE %s OR operator ILIKE %s
-                   OR destination ILIKE %s OR trip_type ILIKE %s
-                ORDER BY price_per_person ASC
-                LIMIT %s
-            """
-            display_sql = f"SELECT … FROM trip_packages WHERE text ILIKE '%{params.query}%'"
-            results = await db.execute(
-                sql,
-                (
-                    params.search_pattern,
-                    params.search_pattern,
-                    params.search_pattern,
-                    params.search_pattern,
-                    params.search_pattern,
-                    limit,
-                ),
-            )
-        search_title = f"Filter search: {params.query}"
-
-    return results, display_sql, search_title
-
-
-def build_search_sql(params: SearchParams, limit: int = 5) -> Tuple[str, str, str]:
-    safe = params.query.replace("'", "''")
-    pattern = f"%{safe}%"
-
-    if params.matched_trip_type:
-        if params.price_filter:
-            sql = f"""
-                SELECT {PACKAGE_COLUMNS}
-                FROM trip_packages
-                WHERE trip_type = '{params.matched_trip_type}' AND price_per_person <= {params.price_filter}
-                ORDER BY price_per_person ASC
-                LIMIT {limit}
-            """
-            display_sql = f"trip_type = '{params.matched_trip_type}' AND price <= {params.price_filter}"
-        else:
-            sql = f"""
-                SELECT {PACKAGE_COLUMNS}
-                FROM trip_packages
-                WHERE trip_type = '{params.matched_trip_type}'
-                ORDER BY price_per_person ASC
-                LIMIT {limit}
-            """
-            display_sql = f"trip_type = '{params.matched_trip_type}'"
-        title = f"Trip type filter: {params.matched_trip_type}"
-    elif params.price_filter:
-        sql = f"""
-            SELECT {PACKAGE_COLUMNS}
-            FROM trip_packages
-            WHERE (name ILIKE '{pattern}' OR description ILIKE '{pattern}'
-                   OR operator ILIKE '{pattern}' OR destination ILIKE '{pattern}')
-              AND price_per_person <= {params.price_filter}
-            ORDER BY price_per_person ASC
-            LIMIT {limit}
-        """
-        display_sql = f"ILIKE '{pattern}' AND price <= {params.price_filter}"
-        title = f"Filter search: {params.query}"
-    else:
-        sql = f"""
-            SELECT {PACKAGE_COLUMNS}
-            FROM trip_packages
-            WHERE name ILIKE '{pattern}' OR description ILIKE '{pattern}'
-               OR operator ILIKE '{pattern}' OR destination ILIKE '{pattern}'
-            ORDER BY price_per_person ASC
-            LIMIT {limit}
-        """
-        display_sql = f"ILIKE '{pattern}'"
-        title = f"Filter search: {params.query}"
-
-    return sql.strip(), display_sql, title
 
 
 def results_to_packages(results: List[Dict]) -> List[Dict]:

@@ -6,6 +6,7 @@ span. The backend reads that row; it never substitutes the configured model.
 """
 
 import asyncio
+from unittest.mock import AsyncMock
 
 from backend.agents.phase_04_production.concierge import runtime_model_id
 from backend.http_auth import HttpPrincipal
@@ -105,6 +106,9 @@ def test_phase4_reply_badge_names_the_reported_gpt_model(monkeypatch):
 
 def test_phase4_workflow_handoff_has_no_badge(monkeypatch):
     # The handoff reply is fixed text, not the runtime model's reply.
+    monkeypatch.setattr(
+        "backend.routers.chat._catalog_destinations", AsyncMock(return_value=["Tokyo"])
+    )
     response = _run_phase4(
         monkeypatch, [_runtime_started([MODEL_ROW])],
         "My JFK-to-Tokyo flight was cancelled. Rework the trip, then check "

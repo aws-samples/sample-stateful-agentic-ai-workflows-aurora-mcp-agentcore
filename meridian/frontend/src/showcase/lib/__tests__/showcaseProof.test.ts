@@ -88,6 +88,21 @@ describe('showcase proof helpers', () => {
     expect(contracts[0].observed).toBe(true);
   });
 
+  it('reads the search_trips span as a typed meridian-concierge contract', () => {
+    const contracts = deriveMcpContracts([
+      span({
+        name: 'meridian-concierge: search_trips',
+        details: "args={'trip_type': 'City Breaks', 'limit': 5}, result: found 3 trips",
+        sql: "SELECT ... WHERE trip_type = $1 LIMIT $2\n-- Values: $1 = 'City Breaks', $2 = 5",
+        agent: 'MCPAgent',
+      }),
+    ]);
+    expect(contracts).toHaveLength(1);
+    expect(contracts[0]).toMatchObject({ server: 'meridian-concierge', tool: 'search_trips', observed: true });
+    expect(contracts[0].auroraOperation).toContain('parameter');
+    expect(contracts[0].result).toBe('found 3 trips');
+  });
+
   it('derives workflow path, intent, and checkpoint state', () => {
     const workflow = deriveWorkflowState([
       span({

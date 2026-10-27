@@ -75,21 +75,21 @@ class AgentConfig:
 class BedrockConfig:
     """Bedrock LLM configuration.
 
-    Local teaching agents read their model identifier from here. The managed
-    Concierge has a separate BEDROCK_MODEL_ID in its AgentCore deployment
-    template; changing the backend environment does not change that Runtime.
+    Every model call in Meridian (the Phase 3 supervisor, the reply polish and the managed
+    Concierge) uses Claude Sonnet 5.5 through its global inference profile,
+    ``global.anthropic.claude-sonnet-5-5``. ``BEDROCK_MODEL_ID`` selects another Bedrock model
+    for the local agents. The managed Concierge reads its own ``BEDROCK_MODEL_ID`` from the
+    AgentCore deployment template, so changing the backend environment does not change that
+    Runtime.
 
-    Default is GPT-6 Sol on Amazon Bedrock (``us.openai.gpt-6-sol``), the
-    fastest model that stayed accurate in Meridian's latency tests. Swap to
-    ``global.anthropic.claude-sonnet-5-5`` for more nuanced replies at a few
-    seconds more per turn. If you see::
+    Sonnet 5.5 rejects a ``temperature``, ``thinking: disabled`` and a forced tool choice, so
+    none is sent; ``backend/bedrock_model.py`` builds the model. If you see::
 
         ValidationException: The provided model identifier is invalid
 
-    that error comes from the Bedrock API itself — usually because the
-    profile isn't in your account's Model access list, or your region
-    doesn't route to it. Pick another profile from the Bedrock console
-    and set it in ``.env``::
+    that error comes from the Bedrock API itself, usually because the profile is not in your
+    account's model access list or your Region does not route to it. Pick another profile
+    from the Bedrock console and set it in ``.env``::
 
         BEDROCK_MODEL_ID=global.anthropic.claude-sonnet-5-5
 
@@ -107,7 +107,7 @@ class BedrockConfig:
             --query "inferenceProfileSummaries[?contains(inferenceProfileId, 'anthropic')].inferenceProfileId"
     """
 
-    DEFAULT_MODEL_ID: str = "us.openai.gpt-6-sol"
+    DEFAULT_MODEL_ID: str = "global.anthropic.claude-sonnet-5-5"
 
     model_id: str = field(
         default_factory=lambda: os.getenv(

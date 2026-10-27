@@ -132,7 +132,7 @@ export const SHOWCASE_PHASES: ShowcasePhaseOption[] = [
     takeaway: 'Expose Aurora through named tool contracts with explicit inputs and results.',
     proofPoint: 'MCP tool invoked',
     adds: 'Named MCP tools reuse the same Aurora catalog, with explicit inputs and results.',
-    tech: 'postgres-mcp + meridian-concierge',
+    tech: 'meridian-concierge MCP server',
   },
   {
     label: 'Retrieval',

@@ -58,8 +58,6 @@ class AgentCoreDeployedConfig:
     gateway_search_tool: Optional[str] = None
     memory_id: Optional[str] = None
     memory_name: Optional[str] = None
-    workload_identity: Optional[str] = None
-    resource_provider: Optional[str] = None
     cli_project_dir: Optional[str] = None
     sources: tuple[str, ...] = field(default_factory=tuple)
 
@@ -70,7 +68,6 @@ class AgentCoreDeployedConfig:
                 self.runtime_arn,
                 self.gateway_url,
                 self.memory_id,
-                self.workload_identity,
             ]
         )
 
@@ -149,8 +146,6 @@ def _parse_deployed_state(data: Dict[str, Any]) -> Dict[str, Optional[str]]:
         "gateway_name": None,
         "memory_id": None,
         "memory_name": None,
-        "workload_identity": None,
-        "resource_provider": None,
         "region": None,
     }
 
@@ -190,14 +185,6 @@ def _parse_deployed_state(data: Dict[str, Any]) -> Dict[str, Optional[str]]:
             node.get("memoryName"),
             node.get("name") if node.get("memoryId") else None,
         )
-        found["workload_identity"] = found["workload_identity"] or _first_str(
-            node.get("workloadIdentityArn"),
-            node.get("workloadIdentity"),
-        )
-        found["resource_provider"] = found["resource_provider"] or _first_str(
-            node.get("resourceCredentialProviderName"),
-            node.get("resourceProvider"),
-        )
         found["region"] = found["region"] or _first_str(node.get("region"))
 
     return found
@@ -211,8 +198,6 @@ def _parse_status_json(data: Dict[str, Any]) -> Dict[str, Optional[str]]:
         "gateway_name": None,
         "memory_id": None,
         "memory_name": None,
-        "workload_identity": None,
-        "resource_provider": None,
         "region": None,
     }
 
@@ -247,9 +232,6 @@ def _parse_status_json(data: Dict[str, Any]) -> Dict[str, Optional[str]]:
                     resource.get("memoryName"),
                     resource.get("name"),
                 )
-            elif rtype in ("identity", "credential"):
-                found["workload_identity"] = found["workload_identity"] or merged["workload_identity"]
-                found["resource_provider"] = found["resource_provider"] or merged["resource_provider"]
 
     for key in found:
         if not found[key]:
@@ -317,8 +299,6 @@ def resolve_agentcore_config() -> AgentCoreDeployedConfig:
         "gateway_name": None,
         "memory_id": None,
         "memory_name": None,
-        "workload_identity": None,
-        "resource_provider": None,
         "region": region,
     }
 
@@ -356,8 +336,6 @@ def resolve_agentcore_config() -> AgentCoreDeployedConfig:
         "gateway_name": "AGENTCORE_GATEWAY_NAME",
         "memory_id": "AGENTCORE_MEMORY_ID",
         "memory_name": "AGENTCORE_MEMORY_NAME",
-        "workload_identity": "AGENTCORE_WORKLOAD_IDENTITY",
-        "resource_provider": "AGENTCORE_RESOURCE_PROVIDER",
         "region": "AGENTCORE_REGION",
     }
     for field_name, env_key in env_map.items():
@@ -384,8 +362,6 @@ def resolve_agentcore_config() -> AgentCoreDeployedConfig:
         ),
         memory_id=merged["memory_id"],
         memory_name=merged["memory_name"],
-        workload_identity=merged["workload_identity"],
-        resource_provider=merged["resource_provider"],
         cli_project_dir=str(project_dir),
         sources=tuple(sources),
     )

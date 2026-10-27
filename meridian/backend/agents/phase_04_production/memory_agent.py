@@ -5,7 +5,8 @@ Walkthrough
 -----------
 This module shows Strands tool support for memory:
   • Each `@tool` maps 1:1 to an Aurora table or pgvector recall path
-  • Tools are registered on both this agent AND the concierge's Agent(...)
+  • The concierge calls these methods directly under its RLS transaction; the Agent
+    built below is never run as a model loop, and the Runtime's agent uses Gateway tools
   • `_transaction_id` pins RLS scope when called inside `scoped_session`
 
 Tables:
@@ -24,17 +25,17 @@ AWS docs:
     https://www.postgresql.org/docs/current/ddl-rowsecurity.html
 """
 
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from strands import Agent, tool
-from strands.models import BedrockModel
 from pydantic import BaseModel
 
-from backend.config import config
+from backend.bedrock_model import bedrock_model
 from backend.memory.store import get_memory_store
+from backend.search_utils import display_sql
+from backend.trace_names import MEMORY_CODE
 
 
 class ActivityEntry(BaseModel):
@@ -69,10 +70,7 @@ class MemoryAgent:
         self._prepared_query_vector: Optional[str] = None
         self._query_vector_prepared = False
         self._prepared_turn_vectors: Optional[Dict[str, Optional[str]]] = None
-        self.model = BedrockModel(
-            model_id=config.bedrock.model_id,
-            region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
-        )
+        self.model = bedrock_model()
         self.agent = Agent(
             model=self.model,
             tools=[
@@ -106,7 +104,7 @@ class MemoryAgent:
                 details=details or f"Invoked {tool_name} via strands-agents",
                 sql_query=sql_query,
                 execution_time_ms=execution_time_ms,
-                agent_name="MemoryAgent",
+                agent_name=MEMORY_CODE,
                 agent_file=self.AGENT_FILE,
                 telemetry=telemetry,
             )
@@ -133,9 +131,10 @@ class MemoryAgent:
         self._log_tool(
             "recall_session_context",
             "Load short-term memory",
-            sql_query=(
+            sql_query=display_sql(
                 "SELECT role, content, created_at FROM conversation_messages "
-                f"WHERE conversation_id = '{conversation_id}' ORDER BY created_at DESC LIMIT {limit}"
+                "WHERE conversation_id = %s ORDER BY created_at DESC LIMIT %s",
+                (conversation_id, limit),
             ),
             execution_time_ms=elapsed,
             telemetry={
@@ -167,10 +166,11 @@ class MemoryAgent:
         self._log_tool(
             "recall_traveler_preferences",
             "Recall traveler preferences",
-            sql_query=(
+            sql_query=display_sql(
                 "SELECT preference_type, preference_key, preference_value, confidence "
-                f"FROM traveler_preferences WHERE traveler_id = '{traveler_id}' "
-                f"ORDER BY confidence DESC LIMIT {limit}"
+                "FROM traveler_preferences WHERE traveler_id = %s "
+                "ORDER BY confidence DESC LIMIT %s",
+                (traveler_id, limit),
             ),
             execution_time_ms=elapsed,
             telemetry={
@@ -208,11 +208,12 @@ class MemoryAgent:
         self._log_tool(
             "recall_similar_interactions",
             "Semantic interaction recall",
-            sql_query=(
+            sql_query=display_sql(
                 "SELECT query_text, response_summary, "
-                "1 - (embedding <=> query_vector) AS similarity "
-                f"FROM trip_interactions WHERE traveler_id = '{traveler_id}' "
-                f"ORDER BY embedding <=> query_vector LIMIT {limit}"
+                "1 - (embedding <=> %s::vector) AS similarity "
+                "FROM trip_interactions WHERE traveler_id = %s "
+                "ORDER BY similarity DESC LIMIT %s",
+                ("[query embedding, 1024 dimensions]", traveler_id, limit),
             ),
             execution_time_ms=elapsed,
             telemetry={

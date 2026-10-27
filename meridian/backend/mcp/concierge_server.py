@@ -4,7 +4,7 @@ Custom MCP server: Meridian travel concierge tools.
 Why this exists
 ===============
 
-`awslabs.postgres-mcp-server` (used by Phase 2 alongside this file) is
+`awslabs.postgres-mcp-server` (used by the reference MCPAgent, not by this file) is
 a *generic* SQL transport - any agent can use it to talk to any
 PostgreSQL database. It exposes `run_query`, `connect_to_database`, and
 schema introspection. That's powerful, but it's also *only* SQL.
@@ -13,9 +13,11 @@ This server demonstrates the second half of the MCP story: custom,
 domain-shaped tools that no public MCP server could provide because
 they encode travel-specific business logic on top of Aurora.
 
-Tools exposed (none of these are runnable as a single SQL query - they
-require domain rules, secondary lookups, or external context):
+Tools exposed (search_trips is a typed, parameterised catalog filter; the
+others are not a single SQL query - they require domain rules, secondary
+lookups, or external context):
 
+    - search_trips(trip_type, max_price_per_person, limit, text) → typed catalog filter
     - compare_packages(package_ids[])     → side-by-side comparison block
     - price_range(destination)            → low/avg/high price for a destination
     - region_inventory(region, trip_type) → operational availability roll-up
@@ -48,6 +50,7 @@ from mcp.server.fastmcp import FastMCP
 from backend.agentcore.identity import get_agentcore_identity
 from backend.authorization import TravelerAuthorizationError
 from backend.db.rds_data_client import get_rds_data_client
+from backend.tools import catalog_tools
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +83,33 @@ def _authorization():
 # --------------------------------------------------------------------------- #
 # compare_packages: side-by-side comparison rows (price, durations, highlights)
 # --------------------------------------------------------------------------- #
+
+
+@mcp.tool()
+async def search_trips(
+    trip_type: Optional[str] = None,
+    max_price_per_person: Optional[float] = None,
+    limit: int = 5,
+    text: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Search the trip catalog by type, price ceiling and text, cheapest first.
+
+    Args:
+        trip_type: exact trip type, for example 'City Breaks'.
+        max_price_per_person: highest price per traveler to include.
+        limit: number of trips to return (1 to 20).
+        text: words to look for in a trip's name, description, operator, destination
+            or trip type; used when no trip type matched.
+
+    Every value is bound as a database parameter. The result carries the
+    statement with $1.. placeholders and the values bound to them.
+    """
+    return await catalog_tools.search_trips(
+        trip_type=trip_type,
+        max_price_per_person=max_price_per_person,
+        limit=limit,
+        text=text,
+    )
 
 
 @mcp.tool()

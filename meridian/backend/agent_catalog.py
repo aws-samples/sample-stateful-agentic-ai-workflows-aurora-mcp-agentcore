@@ -10,6 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional
 
+from backend.trace_names import (
+    AVAILABILITY_CODE, MCP_CODE, MEMORY_CODE, PRODUCTION_CODE, RETRIEVAL_CODE, SQL_CODE,
+)
+
 
 @dataclass(frozen=True)
 class SkillSpec:
@@ -33,24 +37,39 @@ class PhaseSpec:
 PHASE_CATALOG: Dict[int, PhaseSpec] = {
     1: PhaseSpec(
         phase=1,
-        label="SQL Agent",
-        primary_agent="SQLAgent",
-        agent_file="routers/chat.py",
-        method="Direct RDS Data API (SQL WHERE filters)",
+        label="SQL search",
+        primary_agent=SQL_CODE,
+        agent_file="tools/catalog_tools.py",
+        method="Direct RDS Data API: one parameterized search_trips statement",
         specialists=(),
         skills=(
-            SkillSpec("sql_filter", "SQLAgent", "sql_search(query)", "routers/chat.py"),
+            SkillSpec(
+                "search_trips", SQL_CODE,
+                "search_trips(trip_type, max_price_per_person, limit, text)",
+                "tools/catalog_tools.py",
+            ),
         ),
     ),
     2: PhaseSpec(
         phase=2,
-        label="MCP Agent",
-        primary_agent="MCPAgent",
+        label="MCP client",
+        primary_agent=MCP_CODE,
         agent_file="routers/chat.py",
-        method="MCP run_query → Aurora via postgres-mcp-server",
+        method=(
+            "Typed tools on the meridian-concierge MCP server: search_trips, "
+            "compare_packages, price_range, region_inventory, currency_convert, loyalty_balance"
+        ),
         specialists=(),
-        skills=(
-            SkillSpec("run_query", "postgres-mcp-server", "run_query(sql, params)", "mcp/mcp_client.py"),
+        skills=tuple(
+            SkillSpec(name, "meridian-concierge", signature, "mcp/concierge_server.py")
+            for name, signature in (
+                ("search_trips", "search_trips(trip_type, max_price_per_person, limit, text)"),
+                ("compare_packages", "compare_packages(package_ids)"),
+                ("price_range", "price_range(destination)"),
+                ("region_inventory", "region_inventory(region, trip_type)"),
+                ("currency_convert", "currency_convert(amount, from_ccy, to_ccy)"),
+                ("loyalty_balance", "loyalty_balance(traveler_id, program)"),
+            )
         ),
     ),
     3: PhaseSpec(
@@ -69,19 +88,35 @@ PHASE_CATALOG: Dict[int, PhaseSpec] = {
     4: PhaseSpec(
         phase=4,
         label="Production Agent",
-        primary_agent="ProductionAgent",
+        primary_agent=PRODUCTION_CODE,
         agent_file="agents/phase_04_production/concierge.py",
         method="Identity + RLS around AgentCore Runtime; the runtime agent calls Gateway tools under Cedar policy",
-        specialists=("MemoryAgent", "MeridianConcierge runtime"),
+        specialists=(MEMORY_CODE, "MeridianConcierge runtime"),
         skills=(
             SkillSpec("runtime_turn", "AgentCore Runtime", "invoke_agent_runtime(session_id, authorized context, hold contract) streamed over SSE", "agentcore/runtime.py"),
             SkillSpec("semantic_trip_search", "AgentCore Gateway", "SemanticTripSearchLambda___semantic_trip_search(query, limit)", "meridian_agentcore/app/MeridianConcierge/main.py"),
             SkillSpec("get_package_details", "AgentCore Gateway", "MeridianHolds___get_package_details(packageId)", "meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py"),
             SkillSpec("create_courtesy_hold", "AgentCore Gateway + Policy", "MeridianHolds___create_courtesy_hold(... travelerConfirmed, budgetCeilingCents) under Cedar ENFORCE", "meridian_agentcore/agentcore/gateway_targets/meridian_holds/lambda_function.py"),
-            SkillSpec("recall_session_context", "MemoryAgent", "recall_session_context(conversation_id, limit=6)", "agents/phase_04_production/memory_agent.py"),
-            SkillSpec("recall_traveler_preferences", "MemoryAgent", "recall_traveler_preferences(traveler_id, limit=8)", "agents/phase_04_production/memory_agent.py"),
-            SkillSpec("recall_similar_interactions", "MemoryAgent", "recall_similar_interactions(traveler_id, query, limit=3)", "agents/phase_04_production/memory_agent.py"),
-            SkillSpec("persist_turn", "MemoryAgent", "persist_turn(...)", "agents/phase_04_production/memory_agent.py"),
+            SkillSpec(
+                "recall_session_context", MEMORY_CODE,
+                "recall_session_context(conversation_id, limit=6)",
+                "agents/phase_04_production/memory_agent.py",
+            ),
+            SkillSpec(
+                "recall_traveler_preferences", MEMORY_CODE,
+                "recall_traveler_preferences(traveler_id, limit=8)",
+                "agents/phase_04_production/memory_agent.py",
+            ),
+            SkillSpec(
+                "recall_similar_interactions", MEMORY_CODE,
+                "recall_similar_interactions(traveler_id, query, limit=3)",
+                "agents/phase_04_production/memory_agent.py",
+            ),
+            SkillSpec(
+                "persist_turn", MEMORY_CODE,
+                "persist_turn(...)",
+                "agents/phase_04_production/memory_agent.py",
+            ),
         ),
     ),
     5: PhaseSpec(
@@ -90,7 +125,7 @@ PHASE_CATALOG: Dict[int, PhaseSpec] = {
         primary_agent="WorkflowRunner",
         agent_file="agents/phase_05_workflow/graph.py",
         method="Strands Graph (classify → branch → synthesize)",
-        specialists=("SearchAgent", "PackageAgent"),
+        specialists=(RETRIEVAL_CODE, AVAILABILITY_CODE),
         skills=(
             SkillSpec("classify", "WorkflowNodes", "classify(state)", "agents/phase_05_workflow/nodes.py"),
             SkillSpec("snapshot", "SnapshotSessionManager", "AuroraSnapshotStorage.write(key, data)", "agents/phase_05_workflow/snapshot_storage.py"),

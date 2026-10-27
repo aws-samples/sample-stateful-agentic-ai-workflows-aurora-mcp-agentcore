@@ -3,7 +3,7 @@
  *
  * The right rail is narrow, so this renders the executed route as large,
  * readable cards instead of a dense canvas. The route, facts, checkpoints, and
- * replay focus still come from real OrchestrationAgent trace spans.
+ * replay focus still come from real workflow trace spans.
  */
 import type { MeridianShowcaseState } from '../hooks/useMeridianShowcase';
 import { ServiceMark } from './ServiceMark';

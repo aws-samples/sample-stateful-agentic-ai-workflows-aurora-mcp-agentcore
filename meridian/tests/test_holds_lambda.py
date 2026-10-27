@@ -22,6 +22,8 @@ sys.path.insert(0, str(TARGET))
 
 import lambda_function as holds  # noqa: E402
 
+from backend.audit_vocabulary import CODE_CLASSES  # noqa: E402
+
 
 class FakeDataApi:
     def __init__(self, rows_by_marker):
@@ -120,6 +122,31 @@ def test_hold_refuses_when_the_workload_has_no_grant(config, monkeypatch):
     assert audits[-1]["decision"] == "deny"
     assert api.tx == ["begin", "rollback"]
     assert not any("create_courtesy_hold" in s for s in api.statements)
+
+
+@pytest.mark.parametrize(("tool", "args"), [
+    ("MeridianHolds___create_courtesy_hold", _hold_args()),
+    ("MeridianHolds___confirm_booking", None),
+])
+def test_a_grant_refusal_names_the_deny_row_it_kept(config, monkeypatch, tool, args):
+    """The audit id lets the Runtime span prove which layer refused."""
+    api = FakeDataApi({"FROM traveler_identity_bindings": []})
+    monkeypatch.setattr(holds, "RDS", api)
+    result = holds.lambda_handler(args or _booking_args(), _context(tool))
+
+    kept = [
+        p for s, p in zip(api.statements, api.parameters, strict=True)
+        if "traveler_access_audit" in s and p["decision"] == "deny"
+    ][-1]
+    assert result["error"] == "traveler_not_authorized"
+    assert result["governance"]["decision"] == "deny"
+    assert result["governance"]["access_audit_id"] == kept["audit_id"]
+    assert kept["audit_id"].startswith("authz_")
+
+
+def test_the_audit_vocabulary_classifies_exactly_the_codes_this_lambda_names():
+    assert set(CODE_CLASSES) == set(holds.BUSINESS_ERRORS)
+    assert len(holds.BUSINESS_ERRORS) == len(set(holds.BUSINESS_ERRORS))
 
 
 CATALOG_PRICE = {"FROM trip_packages": [{"unit_price_cents": 250000}]}

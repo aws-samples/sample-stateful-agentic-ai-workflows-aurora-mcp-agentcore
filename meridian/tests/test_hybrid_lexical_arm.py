@@ -1,58 +1,43 @@
-"""Guard the lexical arm of Phase 3 hybrid retrieval.
+"""Guard the lexical arm of hybrid retrieval.
 
-The demo claims "pgvector + PostgreSQL full-text search + Cohere rerank" and
-the trace panel prints the per-arm candidate counts on screen. A bare
-``websearch_to_tsquery`` joins terms with AND, so a conversational prompt
-requires every stemmed term in one row and the lexical arm silently returns
-zero candidates for every prompt in the demo script.
+The trace panel prints per-arm candidate counts, and the lexical arm is what catches a
+destination name or an operator that embeddings blur. A bare ``websearch_to_tsquery``
+joins terms with AND, so a conversational prompt requires every stemmed term in one row
+and the arm silently returns zero candidates.
 
-Broadening cannot be blanket, though: rewriting every operator turns
-"tokyo -luxury" into "tokyo OR NOT luxury", and ``!luxury`` then matches every
-non-luxury row. Against the seeded catalog that returned 30 of 35 packages
-instead of 5.
+Broadening cannot be blanket, though: rewriting every operator turns "tokyo -luxury"
+into "tokyo OR NOT luxury", and ``!luxury`` then matches every non-luxury row. Against
+the seeded catalog that returned 30 of 35 packages instead of 5.
 
-These tests pin the properties that keep the claim true, without needing a
-database: positive terms OR, negations stay ANDed, and the traveler's text
-stays a bound parameter.
+These tests pin the properties that keep the claim true without a database: positive
+terms OR, negations stay ANDed, and the traveler's text stays a bound parameter.
 """
 
 import re
-from pathlib import Path
 
 import pytest
 
-SEARCH_AGENT = (
-    Path(__file__).resolve().parents[1]
-    / "backend"
-    / "agents"
-    / "phase_03_retrieval"
-    / "search_agent.py"
-)
+from backend.retrieval.hybrid import LEXICAL_SQL
 
 
 @pytest.fixture(scope="module")
 def lexical_sql() -> str:
-    source = SEARCH_AGENT.read_text()
-    match = re.search(r'lexical_sql = """(.*?)"""', source, re.S)
-    assert match, "lexical_sql block not found in search_agent.py"
-    return match.group(1)
+    return LEXICAL_SQL
 
 
 def test_lexical_arm_broadens_positive_terms_to_or(lexical_sql: str) -> None:
     """Conversational prompts must not require every term to co-occur."""
     normalized = " ".join(lexical_sql.split())
     assert "string_agg(part, ' | ')" in normalized, (
-        "positive terms must be ORed; without it every multi-word demo "
-        "prompt yields lexical=0"
+        "positive terms must be ORed; without it every multi-word prompt yields lexical=0"
     )
 
 
 def test_lexical_arm_keeps_negations_anded(lexical_sql: str) -> None:
     """An exclusion must stay an exclusion.
 
-    "tokyo -luxury" has to mean Tokyo AND NOT luxury. Folding the negation
-    into the OR makes it "tokyo OR NOT luxury", which matches every row that
-    simply is not luxury and silently discards the exclusion.
+    "tokyo -luxury" has to mean Tokyo AND NOT luxury. Folding the negation into the OR
+    makes it "tokyo OR NOT luxury", which matches every row that simply is not luxury.
     """
     normalized = " ".join(lexical_sql.split())
     assert "left(part, 1) = '!'" in normalized, "negated lexemes must be split out"
@@ -69,19 +54,21 @@ def test_lexical_arm_still_ranks_by_ts_rank(lexical_sql: str) -> None:
     assert "ORDER BY lexical_score DESC" in normalized
 
 
+def test_lexical_arm_reads_places_left_not_the_raw_capacity(lexical_sql: str) -> None:
+    assert "package_places_left(package_id) AS availability" in lexical_sql
+
+
 def test_lexical_arm_is_parameterized(lexical_sql: str) -> None:
     """The traveler-supplied query must stay a bound parameter.
 
     The query concatenates while reassembling the tsquery, but only ever onto
-    PostgreSQL's own canonical ``websearch_to_tsquery(...)::text`` output.
-    Traveler text must never be an operand.
+    PostgreSQL's own canonical ``websearch_to_tsquery(...)::text`` output. Traveler text
+    must never be an operand.
     """
     normalized = " ".join(lexical_sql.split())
     assert "format(" not in lexical_sql
-    # Exactly two bound parameters: the traveler query, and the row limit.
-    assert normalized.count("%s") == 2
+    assert normalized.count("%s") == 2, "exactly the traveler query and the row limit"
     assert "websearch_to_tsquery('english', %s)" in normalized
     assert "LIMIT %s" in normalized
-    # Nothing is ever concatenated onto a bound parameter.
     assert not re.search(r"%s\s*\|\|", normalized), "no concat onto a parameter"
     assert not re.search(r"\|\|\s*%s", normalized), "no concat onto a parameter"

@@ -104,7 +104,7 @@ class Harness:
             ("POST", "/api/diagnostics/session-receipt"): (200, receipt_body()),
             **(replies or {}),
         }
-        self.chat = [(200, mcp_reply("postgres-mcp: run_query")),
+        self.chat = [(200, mcp_reply("meridian-concierge: search_trips")),
                      (200, mcp_reply("meridian-concierge: compare_packages"))]
         self.chat_bodies: list[dict] = []
         self.http_headers: list[dict] = []
@@ -536,13 +536,13 @@ def activity(kind="mcp", title="x", **extra) -> dict:
     return {"activity_type": kind, "title": title, **extra}
 
 
-SQL_TOOL = "postgres-mcp: run_query"
-CONCIERGE_TOOL = "meridian-concierge:"
+SQL_TOOL = "meridian-concierge: search_trips"
+CONCIERGE_TOOL = "meridian-concierge: compare_packages"
 
 
 def test_a_good_mcp_turn_passes_the_check():
     assert proof.check_mcp_turn(mcp_reply(SQL_TOOL), SQL_TOOL) is None
-    concierge = mcp_reply("meridian-concierge: price_range")
+    concierge = mcp_reply(CONCIERGE_TOOL)
     assert proof.check_mcp_turn(concierge, CONCIERGE_TOOL) is None
 
 

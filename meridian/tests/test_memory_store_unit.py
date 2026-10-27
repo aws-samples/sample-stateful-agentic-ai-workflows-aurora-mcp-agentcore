@@ -7,11 +7,13 @@ they record every call to the DB client and assert on shape + ordering.
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any, List, Optional, Tuple
 from unittest.mock import MagicMock
 
 import pytest
 
+from backend.audit_vocabulary import ToolCall
 from backend.memory.store import MemoryStore
 
 
@@ -197,3 +199,123 @@ class TestPreferenceMutation:
         assert "DELETE FROM traveler_preferences" in sql
         assert params == ("traveler-1", "home_airport")
         assert tx == "tx-pref"
+
+
+class TestWriteAudit:
+    AUDIT = dict(
+        agent_name="ProductionAgent", operation="production_hold", traveler_id="trv_1",
+        rls_traveler="trv_1", rls_agent_type="concierge_agent",
+        iam_identity="arn:aws:iam::123456789012:role/x", authorization_provider="cognito",
+        authorization_subject="sub-1", authorization_decision="deny", rows_returned=1,
+        transaction_id="tx",
+    )
+    CALLS = [
+        ToolCall("get_package_details", "allowed"),
+        ToolCall("create_courtesy_hold", "refused", "policy"),
+    ]
+
+    def test_records_every_call_in_order_as_one_json_array(self, store):
+        s, db = store
+        audit_id = _run(s.write_audit(**self.AUDIT, tool_calls=self.CALLS))
+
+        sql, params, tx = db.calls[0]
+        assert "rows_returned, tool_calls, turn_error" in " ".join(sql.split())
+        assert "%s::jsonb, %s)" in sql
+        assert params[4:7] == ("cognito", "sub-1", "deny")
+        assert params[-1] is None
+        assert json.loads(params[-2]) == [
+            {"tool": "get_package_details", "result": "allowed", "refused_by": None,
+             "refusal_code": None, "access_audit_id": None},
+            {"tool": "create_courtesy_hold", "result": "refused", "refused_by": "policy",
+             "refusal_code": None, "access_audit_id": None},
+        ]
+        assert tx == "tx" and audit_id.startswith("aud_")
+
+    def test_unknown_calls_are_null_and_no_calls_are_an_empty_array(self, store):
+        s, db = store
+        _run(s.write_audit(**self.AUDIT))
+        _run(s.write_audit(**{**self.AUDIT, "authorization_decision": "allow"}, tool_calls=[]))
+        assert db.calls[0][1][-2] is None
+        assert db.calls[1][1][-2] == "[]"
+
+    FAILED = "ClientError: An error occurred (AccessDeniedException)"
+
+    @pytest.mark.parametrize(("decision", "calls"), [
+        ("error", [ToolCall("get_package_details", "allowed")]),
+        ("error", []),
+        ("deny", CALLS),
+        ("error", None),
+        ("deny", None),
+    ])
+    def test_a_failed_turn_stores_its_error_beside_its_calls(self, store, decision, calls):
+        s, db = store
+        _run(s.write_audit(**{**self.AUDIT, "authorization_decision": decision},
+                           tool_calls=calls, turn_error=self.FAILED))
+        assert db.calls[0][1][-1] == self.FAILED
+
+    @pytest.mark.parametrize(("turn_error", "problem"), [
+        ("", "turn_error must be None or a non-empty text"),
+        ("x" * 401, "turn_error must be None or a non-empty text"),
+        (7, "turn_error must be None or a non-empty text"),
+    ])
+    def test_a_turn_error_outside_the_checks_is_refused_before_any_sql(
+            self, store, turn_error, problem):
+        s, db = store
+        with pytest.raises(ValueError, match=problem):
+            _run(s.write_audit(**{**self.AUDIT, "authorization_decision": "error"},
+                               turn_error=turn_error))
+        assert db.calls == []
+
+    @pytest.mark.parametrize(("decision", "calls", "problem"), [
+        ("allow", None, "turn_error cannot have authorization_decision 'allow'"),
+        ("allow", [ToolCall("get_package_details", "allowed")],
+         "turn_error cannot have authorization_decision 'allow'"),
+        ("error", CALLS, "authorization_decision must be 'deny'"),
+        ("deny", [ToolCall("get_package_details", "allowed")],
+         "authorization_decision must be 'error'"),
+    ])
+    def test_a_failed_turn_whose_decision_breaks_the_rule_is_refused(
+            self, store, decision, calls, problem):
+        s, db = store
+        with pytest.raises(ValueError, match=problem):
+            _run(s.write_audit(**{**self.AUDIT, "authorization_decision": decision},
+                               tool_calls=calls, turn_error=self.FAILED))
+        assert db.calls == []
+
+    @pytest.mark.parametrize(("call", "problem"), [
+        (ToolCall("create_courtesy_hold", "maybe"), "result"),
+        (ToolCall("create_courtesy_hold", "refused", "cedar"), "refused_by"),
+        (ToolCall("create_courtesy_hold", "refused"), "refused_by"),
+        (ToolCall("create_courtesy_hold", "allowed", "policy"), "refused_by"),
+        (ToolCall("create_courtesy_hold", "allowed", ""), "refused_by"),
+        ({"tool": "create_courtesy_hold", "result": "allowed"}, "ToolCall"),
+        # The rest mirror the migration 021 CHECKs on tool, refusal_code and access_audit_id.
+        (ToolCall("", "allowed"), "tool"),
+        (ToolCall(5, "allowed"), "tool"),
+        (ToolCall("create_courtesy_hold", "error", refusal_code=7), "refusal_code"),
+        (ToolCall("create_courtesy_hold", "allowed", access_audit_id=7), "access_audit_id"),
+        (ToolCall("create_courtesy_hold", "refused", "workload_grant", "traveler_not_authorized"),
+         "access_audit_id"),
+        (ToolCall("create_courtesy_hold", "error", refusal_code=""), "refusal_code"),
+        (ToolCall("create_courtesy_hold", "refused", "policy", access_audit_id="authz_1"),
+         "access_audit_id"),
+    ])
+    def test_a_call_outside_the_vocabulary_is_refused_before_any_sql(self, store, call, problem):
+        s, db = store
+        with pytest.raises(ValueError, match=problem):
+            _run(s.write_audit(**self.AUDIT, tool_calls=[call]))
+        assert db.calls == []
+
+    @pytest.mark.parametrize(("decision", "calls"), [
+        ("allow", CALLS),
+        ("deny", [ToolCall("create_courtesy_hold", "refused", "business_rule",
+                           "insufficient_inventory")]),
+        ("allow", [ToolCall("get_package_details", "error")]),
+        (None, []),
+    ])
+    def test_a_decision_the_calls_do_not_support_is_refused(self, store, decision, calls):
+        s, db = store
+        with pytest.raises(ValueError, match="authorization_decision"):
+            _run(s.write_audit(**{**self.AUDIT, "authorization_decision": decision},
+                               tool_calls=calls))
+        assert db.calls == []

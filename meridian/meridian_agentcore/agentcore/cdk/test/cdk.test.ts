@@ -116,7 +116,7 @@ type Spec = Record<string, any>;
 const synthesized = new Map<string, Record<string, any>>();
 
 // Synthesize a spec once per key, from a temporary project like the one the first test builds.
-function synthesize(key: string, spec: Spec): Record<string, any> {
+function synthesize(key: string, spec: Spec, env?: cdk.Environment): Record<string, any> {
   const cached = synthesized.get(key);
   if (cached) return cached;
   const projectRoot = mkdtempSync(join(tmpdir(), `meridian-agentcore-${key}-`));
@@ -126,7 +126,11 @@ function synthesize(key: string, spec: Spec): Record<string, any> {
   symlinkSync(join(PROJECT_ROOT, 'agentcore', 'gateway_targets'), join(projectRoot, 'agentcore', 'gateway_targets'));
   process.env.INIT_CWD = projectRoot;
   try {
-    const stack = new AgentCoreStack(new cdk.App(), `Stack${key}`, { spec: spec as never, mcpSpec: spec as never });
+    const stack = new AgentCoreStack(new cdk.App(), `Stack${key}`, {
+      spec: spec as never,
+      mcpSpec: spec as never,
+      env,
+    });
     const json = Template.fromStack(stack).toJSON();
     synthesized.set(key, json);
     return json;
@@ -255,4 +259,120 @@ test('the holds Lambda uses the same configured fallback budget as the workflow'
   for (const runtime of ofType(template, 'AWS::BedrockAgentCore::Runtime')) {
     expect(runtime.Properties.EnvironmentVariables[key]).toBe('123400');
   }
+});
+
+// The Amazon Bedrock grants follow the inventory in lib/model-access.ts and the policy in
+// https://docs.aws.amazon.com/bedrock/latest/userguide/global-cross-region-inference.html
+const ACTIONS = ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'];
+const REGION = 'us-east-1';
+const ACCOUNT = '123456789012';
+const ENV = { account: ACCOUNT, region: REGION };
+const PSEUDO: Record<string, string> = { 'AWS::Partition': 'aws', 'AWS::Region': REGION, 'AWS::AccountId': ACCOUNT };
+
+// CDK builds ARNs from the partition token; render them as the strings IAM evaluates.
+function render(value: any): any {
+  if (Array.isArray(value)) return value.map(render);
+  if (value === null || typeof value !== 'object') return value;
+  if ('Fn::Join' in value) return value['Fn::Join'][1].map(render).join(value['Fn::Join'][0]);
+  if ('Ref' in value && value.Ref in PSEUDO) return PSEUDO[value.Ref];
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, render(item)]));
+}
+
+const isBedrock = (s: Record<string, any>) => [s.Action].flat().some((action: string) => action.startsWith('bedrock:'));
+
+// Every statement on one Runtime's execution role, found through the Runtime resource itself.
+function runtimeStatements(template: Record<string, any>, runtime: string): Record<string, any>[] {
+  const [resource] = ofType(template, 'AWS::BedrockAgentCore::Runtime').filter(r =>
+    r.Properties.AgentRuntimeName.endsWith(`_${runtime}`)
+  );
+  const role = resource.Properties.RoleArn['Fn::GetAtt'][0];
+  return ofType(template, 'AWS::IAM::Policy')
+    .filter(policy => JSON.stringify(policy.Properties.Roles).includes(`"${role}"`))
+    .flatMap(policy => policy.Properties.PolicyDocument.Statement)
+    .map(render);
+}
+
+function globalProfileStatements(model: string): Record<string, any>[] {
+  const profile = `arn:aws:bedrock:${REGION}:${ACCOUNT}:inference-profile/global.${model}`;
+  const viaProfile = { 'bedrock:InferenceProfileArn': profile };
+  const allow = (Resource: string, StringEquals: Record<string, string>) => ({
+    Action: ACTIONS,
+    Effect: 'Allow',
+    Resource,
+    Condition: { StringEquals },
+  });
+  return [
+    allow(profile, { 'aws:RequestedRegion': REGION }),
+    allow(`arn:aws:bedrock:${REGION}::foundation-model/${model}`, { 'aws:RequestedRegion': REGION, ...viaProfile }),
+    allow(`arn:aws:bedrock:::foundation-model/${model}`, { 'aws:RequestedRegion': 'unspecified', ...viaProfile }),
+  ];
+}
+
+const inRegion = (...models: string[]) => ({
+  Action: 'bedrock:InvokeModel',
+  Effect: 'Allow',
+  Resource: models.map(m => `arn:aws:bedrock:${REGION}::foundation-model/${m}`),
+});
+
+function setEnv(spec: Spec, runtime: string, name: string, value: string): void {
+  const target = spec.runtimes.find((r: { name: string }) => r.name === runtime);
+  target.envVars = target.envVars.filter((v: { name: string }) => v.name !== name).concat({ name, value });
+}
+
+test('the Concierge Runtime reaches the global Sonnet 5.5 model only through its inference profile', () => {
+  const template = synthesize('model-access', renderTemplate(), ENV);
+  const bedrock = runtimeStatements(template, 'MeridianConcierge').filter(isBedrock);
+  expect(bedrock).toEqual(globalProfileStatements('anthropic.claude-sonnet-5-5'));
+});
+
+test('the Workflow Runtime may invoke only the embedding and rerank models its retrieval calls', () => {
+  const template = synthesize('model-access', renderTemplate(), ENV);
+  const bedrock = runtimeStatements(template, 'MeridianWorkflow').filter(isBedrock);
+  expect(bedrock).toEqual([inRegion('cohere.embed-v4:0', 'cohere.rerank-v3-5:0')]);
+});
+
+test('no Bedrock grant on either Runtime execution role ends in a wildcard', () => {
+  for (const key of ['model-access', 'model-access-agnostic']) {
+    const template = synthesize(key, renderTemplate(), key === 'model-access' ? ENV : undefined);
+    for (const runtime of ['MeridianConcierge', 'MeridianWorkflow']) {
+      const statements = runtimeStatements(template, runtime);
+      const wildcards = statements
+        .flatMap(s => [s.Resource].flat())
+        .map(r => JSON.stringify(r))
+        .filter(r => /:bedrock:.*\*"$/.test(r));
+      expect({ runtime, wildcards }).toEqual({ runtime, wildcards: [] });
+      expect(JSON.stringify(statements)).not.toContain('bedrock:CountTokens');
+    }
+  }
+});
+
+test('each Runtime is granted the models its own environment names', () => {
+  const spec = renderTemplate();
+  setEnv(spec, 'MeridianConcierge', 'BEDROCK_MODEL_ID', 'global.anthropic.claude-test-1');
+  setEnv(spec, 'MeridianWorkflow', 'BEDROCK_MODEL_ID', 'global.anthropic.claude-test-2');
+  setEnv(spec, 'MeridianWorkflow', 'EMBEDDING_MODEL', 'cohere.embed-test:0');
+  setEnv(spec, 'MeridianWorkflow', 'RERANK_MODEL', 'cohere.rerank-test:0');
+  const template = synthesize('model-per-runtime', spec, ENV);
+
+  expect(runtimeStatements(template, 'MeridianConcierge').filter(isBedrock)).toEqual(
+    globalProfileStatements('anthropic.claude-test-1')
+  );
+  expect(runtimeStatements(template, 'MeridianWorkflow').filter(isBedrock)).toEqual([
+    ...globalProfileStatements('anthropic.claude-test-2'),
+    inRegion('cohere.embed-test:0', 'cohere.rerank-test:0'),
+  ]);
+});
+
+test('a render without a Concierge model id is refused', () => {
+  const spec = renderTemplate();
+  for (const runtime of spec.runtimes) {
+    runtime.envVars = runtime.envVars.filter((v: { name: string }) => v.name !== 'BEDROCK_MODEL_ID');
+  }
+  expect(() => synthesize('no-model', spec)).toThrow(/MeridianConcierge.*BEDROCK_MODEL_ID/);
+});
+
+test('a Concierge model that is not a global inference profile is refused', () => {
+  const spec = renderTemplate();
+  setEnv(spec, 'MeridianConcierge', 'BEDROCK_MODEL_ID', 'us.openai.gpt-6-sol');
+  expect(() => synthesize('geo-model', spec)).toThrow(/BEDROCK_MODEL_ID.*global\./);
 });

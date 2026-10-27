@@ -76,7 +76,7 @@ def test_remote_caller_requires_configured_authentication(monkeypatch):
     assert exc.value.status_code == 503
 
 
-def test_bearer_token_authenticates_and_traveler_claim_cannot_change(monkeypatch):
+def test_bearer_token_authenticates_and_traveler_claim_cannot_change(monkeypatch, access_writer):
     monkeypatch.setenv("MERIDIAN_API_TOKEN", "test-secret")
     monkeypatch.setenv("MERIDIAN_API_TRAVELER_ID", "trv_meridian_demo")
 
@@ -84,11 +84,12 @@ def test_bearer_token_authenticates_and_traveler_claim_cannot_change(monkeypatch
         require_http_principal(_request("203.0.113.8"), "Bearer test-secret")
     )
     assert principal.authentication == "bearer"
-    assert authorize_traveler(principal, "trv_meridian_demo") == "trv_meridian_demo"
+    assert asyncio.run(authorize_traveler(principal, "trv_meridian_demo")) == "trv_meridian_demo"
 
     with pytest.raises(HTTPException) as exc:
-        authorize_traveler(principal, "trv_demo_decoy")
+        asyncio.run(authorize_traveler(principal, "trv_demo_decoy"))
     assert exc.value.status_code == 403
+    assert [row["traveler_id"] for row in access_writer.rows] == ["trv_demo_decoy"]
 
 
 def test_invalid_bearer_token_is_rejected(monkeypatch):
@@ -102,4 +103,4 @@ def test_invalid_bearer_token_is_rejected(monkeypatch):
 
 def test_authorize_traveler_uses_authenticated_default():
     principal = HttpPrincipal("subject", "trv_meridian_demo", "test")
-    assert authorize_traveler(principal, None) == "trv_meridian_demo"
+    assert asyncio.run(authorize_traveler(principal, None)) == "trv_meridian_demo"

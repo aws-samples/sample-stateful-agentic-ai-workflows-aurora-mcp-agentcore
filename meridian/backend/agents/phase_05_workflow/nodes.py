@@ -34,6 +34,8 @@ from backend.agents.phase_05_workflow.state import (
     utc_now,
 )
 from backend.db.journey_store import ExecutionLeaseLostError, ScopedDb, ensure_journey
+from backend.search_utils import numbered_sql
+from backend.trace_names import RETRIEVAL_CODE
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +164,7 @@ class WorkflowNodes:
     async def search(
         self, state: Dict[str, Any], config: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Worker node: run trip discovery (delegates to the Phase 3 search fn).
+        """Worker node: run trip discovery through the one hybrid search (retrieval/hybrid.py).
 
         Checkpoints state to Aurora after returning. On the 'plan' path this is
         step 1 of 2 — the conditional edge then routes to the availability node.
@@ -183,7 +185,7 @@ class WorkflowNodes:
                 execution_time_ms=elapsed,
                 telemetry={
                     "category": "orchestration",
-                    "component": "Strands Graph → SearchAgent",
+                    "component": f"Strands Graph → {RETRIEVAL_CODE}",
                     "status": "ok",
                     "fields": [
                         {"label": "node", "value": "search"},
@@ -529,7 +531,7 @@ class WorkflowNodes:
                 f"{terms['package_id']} ({terms['duration']}), {receipt['status']}, expires "
                 f"{receipt['expires_at']}. Nothing new was reserved."
             ),
-            sql_query=" ".join(COMMITTED_HOLD_SQL.split()),
+            sql_query=numbered_sql(COMMITTED_HOLD_SQL),
             telemetry={
                 "category": "database",
                 "component": "Aurora hold_requests",

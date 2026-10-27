@@ -78,9 +78,7 @@ class TestParseSearchQueryShape:
         params = parse_search_query("Tokyo")
         assert params.query == "Tokyo"
         assert params.query_lower == "tokyo"
-        assert params.search_pattern == "%Tokyo%"
 
     def test_handles_unicode_input_safely(self):
         params = parse_search_query("Côte d'Azur retreat")
         assert "côte" in params.query_lower
-        assert params.search_pattern == "%Côte d'Azur retreat%"

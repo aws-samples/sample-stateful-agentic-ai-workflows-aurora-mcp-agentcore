@@ -12,8 +12,10 @@ AWS docs:
 
 import json
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
+from backend.audit_vocabulary import ToolCall, tool_call_problem, turn_error_problem
+from backend.audit_vocabulary import authorization_decision as decision_for_calls
 from backend.db.rds_data_client import get_rds_data_client
 from backend.db.embedding_service import get_embedding_service
 
@@ -423,13 +425,69 @@ class MemoryStore:
         authorization_decision: Optional[str],
         rows_returned: int,
         transaction_id: Optional[str] = None,
+        *,
+        tool_calls: Optional[Sequence[ToolCall]] = None,
+        turn_error: Optional[str] = None,
     ) -> str:
-        """Write one row to ``agent_audit_log`` — the per-turn governance record.
+        """Write one row to ``agent_audit_log``: the per-turn governance record.
 
-        Captures who (IAM identity), in what scope (RLS traveler + agent type),
-        did what (operation), and how much they saw (rows_returned). This is the
-        concrete "every turn is audited" claim in the Phase 4 trust pitch.
+        Captures who (the verified Cognito subject for a signed-in caller, else the workload
+        subject), in what scope (RLS traveler and agent type), through which workload
+        (``iam_identity``), every tool call of the turn with how each one ended
+        (``tool_calls``), how the turn failed, if it did (``turn_error``), and how much it saw
+        (``rows_returned``).
+
+        Phase 4 writes one row for every turn that calls the Runtime, including a turn whose call
+        fails. That row names the error in ``turn_error`` and lists the calls the Runtime
+        reported before its error event, or None when the call failed without one or before any
+        span, and ``rows_returned`` is 0. A turn that fails after the Runtime returned and
+        before its row is written, such as in the trace forwarding or the catalog refresh,
+        names its error too, with the calls from the Runtime's decision. A failed turn whose
+        calls all succeeded is therefore ``error``, never ``allow``. ``turn_error`` stays NULL
+        only for a turn that completed, or one that failed after its row was committed (the
+        memory step and the trace entries that follow it).
+
+        With ``tool_calls`` given, ``authorization_decision`` must follow from them and
+        ``turn_error``: ``deny`` when any call was refused by ``identity_check``, ``policy``,
+        ``workload_grant`` or ``database_guard``; otherwise ``error`` when any call ended in
+        ``error`` or ``turn_error`` is set; otherwise ``allow``, which includes ``business_rule``
+        and ``runtime_guard`` refusals and a turn with no calls. ``error`` means no authorization
+        layer's decision is known for a failed call, or that the turn failed outside its calls
+        (the listed calls then still show each layer's decision); a turn whose model
+        recovered from a failed call is still ``error``. With ``turn_error`` set, the decision is
+        never ``allow``, whatever ``tool_calls`` holds.
+
+        Args:
+            tool_calls: One element per tool call, in the order the calls started; ``[]`` for
+                a turn without calls; None when the calls are not known, stored as NULL.
+            turn_error: None, stored as NULL. ``turn_error`` stays NULL only for a turn that
+                completed, or one that failed after its row was committed (the memory step
+                and the trace entries that follow it). Otherwise the error's class, then ": "
+                and its masked, shortened message, or the class alone when the message is
+                empty or cannot be read; at most 400 characters.
+
+        Raises:
+            ValueError: A call does not fit the vocabulary in ``backend.audit_vocabulary``,
+                ``turn_error`` is empty or too long, or ``authorization_decision`` does not
+                follow from the calls and ``turn_error``. Nothing is written.
         """
+        problem = turn_error_problem(turn_error, authorization_decision)
+        if problem:
+            raise ValueError(f"write_audit: {problem}")
+        calls_json = None
+        if tool_calls is not None:
+            calls = list(tool_calls)
+            for call in calls:
+                problem = tool_call_problem(call)
+                if problem:
+                    raise ValueError(f"write_audit: {problem}")
+            expected = decision_for_calls(calls, turn_error=turn_error)
+            if authorization_decision != expected:
+                raise ValueError(
+                    f"write_audit: authorization_decision must be {expected!r} for these calls "
+                    f"and turn_error, got {authorization_decision!r}"
+                )
+            calls_json = json.dumps([call.as_json() for call in calls])
         audit_id = f"aud_{uuid.uuid4().hex[:12]}"
         await self.db.execute(
             """
@@ -437,8 +495,8 @@ class MemoryStore:
                 audit_id, traveler_id, agent_name, operation,
                 authorization_provider, authorization_subject,
                 authorization_decision, rls_traveler, rls_agent_type,
-                iam_identity, rows_returned
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                iam_identity, rows_returned, tool_calls, turn_error
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s)
             """,
             (
                 audit_id,
@@ -452,6 +510,8 @@ class MemoryStore:
                 rls_agent_type,
                 iam_identity,
                 rows_returned,
+                calls_json,
+                turn_error,
             ),
             transaction_id=transaction_id,
         )

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from backend.db.embedding_service import EmbeddingUnavailable
 from backend.retrieval import availability, hybrid
 
 GOLDEN = Path(__file__).parent / "fixtures" / "retrieval_golden.json"
@@ -47,11 +48,13 @@ class RecordingDb:
             return [SECOND]
         if "WHERE package_id = %s" in sql:
             return list(self._exact_rows)
+        if "package_id IN" in sql:
+            return [ROW, SECOND]
         return list(self._named_rows)
 
 
 class FixedEmbeddings:
-    def generate_text_embedding(self, text):
+    def generate_text_embedding(self, text, input_type="search_document"):
         return [0.25] * 1024
 
     def rerank_documents(self, query, docs, top_n=5):
@@ -61,6 +64,11 @@ class FixedEmbeddings:
 class FailingRerank(FixedEmbeddings):
     def rerank_documents(self, query, docs, top_n=5):
         raise RuntimeError("rerank offline")
+
+
+class UnreachableEmbeddings(FixedEmbeddings):
+    def generate_text_embedding(self, text, input_type="search_document"):
+        raise EmbeddingUnavailable("cohere.embed-v4:0 did not answer after 2 attempts")
 
 
 def _stable(value):
@@ -85,6 +93,7 @@ CASES = {
     "hybrid_ranked": ("search", "Tokyo city trips under $2000", FixedEmbeddings, {}),
     "hybrid_price_filter": ("search", "Tokyo city trips under $1900", FixedEmbeddings, {}),
     "hybrid_rerank_down": ("search", "Kyoto rail", FailingRerank, {}),
+    "hybrid_semantic_down": ("search", "Kyoto rail", UnreachableEmbeddings, {}),
     "availability_by_id": ("availability", "Is it available?", "PKG-TYO-1", {}),
     "availability_by_name": (
         "availability", "Is Tokyo Executive Stopover available?", None, {}

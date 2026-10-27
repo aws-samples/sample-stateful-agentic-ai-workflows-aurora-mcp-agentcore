@@ -22,8 +22,10 @@ from backend.agentcore.runtime import RuntimeDecision, _apply_result
 from backend.agents.phase_04_production.concierge import ProductionAgent
 from backend.agents.phase_03_retrieval.search_agent import SearchAgent
 from backend.authorization import AuthorizationContext
+from backend.config import config
 from backend.db.rds_data_client import RDSDataClient, ScopeTimings
 from backend.llm_polish import PolishResult
+from backend.tools import catalog_tools
 
 
 class FakeClock:
@@ -64,14 +66,8 @@ def _ms(activity):
 
 # --------------------------------------------------------------- Bedrock polish
 
-def test_polish_times_only_the_call_of_the_model_that_wrote_the_reply(clock, monkeypatch):
-    calls = []
-
+def test_polish_times_its_one_bedrock_call(clock, monkeypatch):
     def converse(**kwargs):
-        calls.append(kwargs["modelId"])
-        if len(calls) == 1:
-            clock.spend(5000)
-            raise RuntimeError("throttled")
         clock.spend(1200)
         return {
             "stopReason": "end_turn",
@@ -81,14 +77,14 @@ def test_polish_times_only_the_call_of_the_model_that_wrote_the_reply(clock, mon
     monkeypatch.setattr(llm_polish, "_client", lambda: SimpleNamespace(converse=converse))
     result = llm_polish._polish_sync("Find a retreat", "facts")
 
-    assert result.model_id == calls[1]
+    assert result.model_id == config.bedrock.model_id
     assert result.elapsed_ms == 1200
 
 
 def test_polish_span_carries_the_measured_call_time(monkeypatch):
     async def polished(_query, _facts):
         return PolishResult(
-            text="Polished.", model_id="global.anthropic.claude-sonnet-5", note=None,
+            text="Polished.", model_id="global.anthropic.claude-sonnet-5-5", note=None,
             elapsed_ms=1400,
         )
 
@@ -105,24 +101,18 @@ def test_polish_span_carries_the_measured_call_time(monkeypatch):
 # ------------------------------------------------------------------------ MCP
 
 class FakeConcierge:
+    tools = [{"name": "search_trips"}, {"name": "price_range"}]
+    COST_MS = {"search_trips": 75}
+
     def __init__(self, clock: FakeClock) -> None:
         self.clock = clock
 
     async def call(self, name, args):
-        self.clock.spend(180)
+        self.clock.spend(self.COST_MS.get(name, 180))
+        if name == "search_trips":
+            return {"packages": [], "sql": "SELECT 1 WHERE a = $1", "parameters": ["x"]}
         return {"destination": args.get("destination"), "low": 1599.0, "average": 2607.0,
                 "high": 3899.0, "sample_size": 6, "note": "Not seasonal."}
-
-
-class FakePostgresMcp:
-    available_tools = [{"name": "run_query"}]
-
-    def __init__(self, clock: FakeClock) -> None:
-        self.clock = clock
-
-    async def run_query(self, _sql):
-        self.clock.spend(75)
-        return []
 
 
 def _fake_sessions(monkeypatch, clock):
@@ -130,12 +120,7 @@ def _fake_sessions(monkeypatch, clock):
     async def concierge():
         yield FakeConcierge(clock)
 
-    @asynccontextmanager
-    async def postgres():
-        yield FakePostgresMcp(clock)
-
     monkeypatch.setattr(chat_router, "concierge_mcp_session", concierge)
-    monkeypatch.setattr(chat_router, "mcp_session", postgres)
 
 
 def test_mcp_tool_span_carries_the_tool_call_time(clock, monkeypatch):
@@ -146,30 +131,28 @@ def test_mcp_tool_span_carries_the_tool_call_time(clock, monkeypatch):
     assert _ms(_span(activities, "meridian-concierge: price_range")) == 180
 
 
-def test_postgres_mcp_span_carries_the_query_time(clock, monkeypatch):
+def test_search_trips_span_carries_the_tool_call_time(clock, monkeypatch):
     _fake_sessions(monkeypatch, clock)
     _products, activities, _text = asyncio.run(chat_router.mcp_search(
         "Show me city trips under $2,000 per traveler.", traveler_id="trv_meridian_demo",
     ))
-    assert _ms(_span(activities, "postgres-mcp: run_query")) == 75
+    assert _ms(_span(activities, "meridian-concierge: search_trips")) == 75
 
 
-def test_postgres_mcp_discovery_span_carries_the_session_open_time(clock, monkeypatch):
-    _fake_sessions(monkeypatch, clock)
-
+def test_mcp_discovery_span_carries_the_session_open_time(clock, monkeypatch):
     @asynccontextmanager
-    async def postgres():
+    async def concierge():
         clock.spend(250)
-        yield FakePostgresMcp(clock)
+        yield FakeConcierge(clock)
 
-    monkeypatch.setattr(chat_router, "mcp_session", postgres)
+    monkeypatch.setattr(chat_router, "concierge_mcp_session", concierge)
     _products, activities, _text = asyncio.run(chat_router.mcp_search(
         "Show me city trips under $2,000 per traveler.", traveler_id="trv_meridian_demo",
     ))
-    discovered = _span(activities, "MCP server discovered: awslabs.postgres-mcp-server")
+    discovered = _span(activities, "MCP server discovered: meridian-concierge (custom)")
     # Opening the session starts the server and lists its tools; the query is its own span.
     assert _ms(discovered) == 250
-    assert _ms(_span(activities, "postgres-mcp: run_query")) == 75
+    assert _ms(_span(activities, "meridian-concierge: search_trips")) == 75
 
 
 def test_compare_hydration_span_carries_its_query_time(clock, monkeypatch):
@@ -238,7 +221,7 @@ def test_workflow_search_spans_time_each_call_directly(clock, monkeypatch):
 
 
 def test_sql_search_times_its_query_on_the_step_that_ran_it(clock, monkeypatch):
-    monkeypatch.setattr(chat_router, "get_rds_data_client", lambda: FakeDb(
+    monkeypatch.setattr(catalog_tools, "get_rds_data_client", lambda: FakeDb(
         clock, {"FROM trip_packages": 70},
     ))
     _products, activities = asyncio.run(chat_router.sql_search(
@@ -260,17 +243,18 @@ def test_package_agent_times_its_query_and_invents_nothing_for_in_memory_work(cl
     assert _ms(_span(activities, "PackageAgent: Duration inventory verified")) is None
 
 
-def test_search_agent_times_the_lexical_and_hydration_queries(clock, monkeypatch):
+def test_search_agent_times_the_arms_and_the_catalog_join(clock, monkeypatch):
+    monkeypatch.setattr(hybrid, "get_rds_data_client", lambda: FakeDb(
+        clock, {"semantic_trip_search": 120, "ts_rank": 30, "package_id IN": 25},
+    ))
+    monkeypatch.setattr(hybrid, "get_embedding_service", lambda: FakeEmbeddings(clock))
     agent = SearchAgent.__new__(SearchAgent)
     spans: list = []
     agent.activity_callback = spans.append
-    agent.db = FakeDb(
-        clock, {"semantic_trip_search": 120, "ts_rank": 30, "WHERE package_id IN": 25},
-    )
-    agent.embedding_service = FakeEmbeddings(clock)
+
     asyncio.run(agent.hybrid_search("quiet villa"))
 
-    assert _ms(_span(spans, "Lexical candidates merged")) == 30
+    assert _ms(_span(spans, "Hybrid candidates fetched")) == 150
     assert _ms(_span(spans, "Catalog card details hydrated")) == 25
 
 
@@ -381,7 +365,6 @@ def test_concierge_grant_and_rls_steps_each_carry_their_own_time(clock):
     agent.traveler_memory = FakeRecall()
     agent.identity = SimpleNamespace(scope_for_turn=lambda: SimpleNamespace(
         iam_identity="arn:aws:sts::123456789012:assumed-role/Meridian/session-a",
-        workload_identity=None, resource_provider=None, token_status="delegated",
         authorization=AUTHORIZATION,
     ))
     asyncio.run(agent._authorized_read("Tokyo in spring", "trv_meridian_demo", None))

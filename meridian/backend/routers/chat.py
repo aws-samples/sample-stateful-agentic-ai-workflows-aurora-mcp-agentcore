@@ -3,7 +3,7 @@ Chat API Router for Meridian.
 
 Handles chat interactions with the AI travel concierge across five phases:
 - Phase 1: Direct RDS Data API connection (SQL filters on trip_packages)
-- Phase 2: Via MCP (awslabs.postgres-mcp-server) abstraction
+- Phase 2: typed tools on the meridian-concierge MCP server
 - Phase 3: Hybrid retrieval (semantic + lexical) + Cohere rerank
 - Phase 4: Production concierge with AgentCore Runtime, Gateway, Memory
 - Phase 5: Strands Graph workflow orchestration
@@ -11,8 +11,6 @@ Handles chat interactions with the AI travel concierge across five phases:
 AWS docs (by phase):
   Phase 1/2/3/4 data plane — RDS Data API:
     https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.html
-  Phase 2 MCP transport — Aurora via postgres-mcp-server (awslabs):
-    https://github.com/awslabs/mcp/tree/main/src/postgres-mcp-server
   Phase 3 embeddings — Cohere Embed v4 on Bedrock:
     https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-embed-v4.html
   Phase 3 pgvector — Aurora PostgreSQL extension:
@@ -45,6 +43,9 @@ from backend.db.rds_data_client import get_rds_data_client
 from backend.config import bedrock_model_label
 from backend.demo_prompts import tee_up_prompt, working_prompts
 from backend.timing import clock, elapsed_ms
+from backend.trace_names import (
+    AVAILABILITY_CODE, BOUNDARY_CODE, MCP_CODE, PRODUCTION_CODE, SQL_CODE, WORKFLOW_CODE,
+)
 from backend.logging_config import log_exception, log_search, log_order, log_error, log_turn_start, log_turn_complete, log_activity_entry
 from backend.agentcore.errors import CallerCredentialError
 from backend.http_auth import (
@@ -57,23 +58,25 @@ from backend.token_expiry import credential_error, error_code
 from backend.search_utils import (
     PACKAGE_COLUMNS,
     parse_search_query,
-    execute_keyword_search,
-    build_search_sql,
     results_to_packages,
+    display_sql,
+    search_title,
 )
+from backend.tools import catalog_tools
 from backend.catalog_compat import row_to_api_product
 
-# MCP clients — Phase 2 demos two distinct MCP servers side-by-side:
-#   1. awslabs.postgres-mcp-server (generic SQL transport, public AWS server)
-#   2. backend.mcp.concierge_server (custom domain tools - compare,
-#      price range, region inventory, FX, loyalty)
-#
-# Memory tools live in Phase 4 by design (Aurora RLS + AgentCore) - the
-# Phase 2 narrative is "what does a CUSTOM MCP get you that the public
-# one can't?" so domain logic, not memory, is what we showcase here.
-from backend.mcp.mcp_client import mcp_session
+# MCP client - Phase 2 runs one MCP server, meridian-concierge
+# (backend.mcp.concierge_server), which exposes typed tools: search_trips,
+# compare, price range, region inventory, FX and loyalty. Memory tools live
+# in Phase 4 by design (Aurora RLS + AgentCore).
 from backend.mcp.concierge_mcp_client import concierge_mcp_session
 from backend.llm_polish import PolishResult, polish_concierge_reply
+from backend.agents.phase_04_production.write_outcome import (
+    STEP_WORDS,
+    GovernedWriteReply,
+    PlacedWriteUnfinished,
+    WriteOutcomeUnknown,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -146,10 +149,9 @@ class ChatResponse(BaseModel):
     # one. Kept apart from `products`, which stay in rank order.
     workflow_plan_package_id: Optional[str] = None
     recovery_request: Optional[str] = None
-    # The Bedrock model that actually wrote `message` (may be a fallback,
-    # not the configured primary). None when the reply is a pure tool
-    # result and no model wrote any part of it - the frontend must show
-    # no model badge in that case.
+    # The Bedrock model that wrote `message` (the configured one). None when the reply is a
+    # pure tool result and no model wrote any part of it - the frontend must show no model
+    # badge in that case.
     model_label: Optional[str] = None
 
 
@@ -359,74 +361,73 @@ def generate_follow_ups(query: str, products: List[Product], phase: int) -> List
 
 async def sql_search(query: str, limit: int = 5) -> tuple[List[Product], List[ActivityEntry]]:
     """
-    Phase 1: Direct database search using RDS Data API.
-    Simple trip_type matching and LIKE queries.
+    Phase 1: one parameterized statement over the RDS Data API.
+
+    Code parses the prompt (keywords and a price pattern) and calls ``search_trips``.
+    No model runs, and no value is written into the SQL text.
     """
     activities = []
     start_time = datetime.now(timezone.utc)
-
-    db = get_rds_data_client()
 
     activities.append(create_activity(
         activity_type="database",
         title="Direct RDS Data API connection",
         details="Executing SQL query via HTTP endpoint",
-        agent_name="SQLAgent",
+        agent_name=SQL_CODE,
         agent_file="backend/routers/chat.py"
     ))
 
-    # Use shared search utilities
     params = parse_search_query(query)
     query_started = clock()
-    results, display_sql, search_title = await execute_keyword_search(db, params, limit)
+    found = await catalog_tools.search_trips(
+        trip_type=params.matched_trip_type,
+        max_price_per_person=params.price_filter,
+        limit=limit,
+        text=None if params.matched_trip_type else params.query,
+    )
     query_ms = elapsed_ms(query_started)
+    packages = found["packages"]
 
     activities.append(create_activity(
         activity_type="search",
-        title=search_title,
-        sql_query=display_sql,
+        title=search_title(params),
+        sql_query=display_sql(found["sql"], found["parameters"]),
         execution_time_ms=query_ms,
-        agent_name="SQLAgent",
+        agent_name=SQL_CODE,
         agent_file="backend/routers/chat.py"
     ))
 
     execution_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
-    # Log for monitoring
-    log_search(phase=1, query=query, results_count=len(results),
+    log_search(phase=1, query=query, results_count=len(packages),
                execution_time_ms=execution_time, search_type="keyword")
 
     activities.append(create_activity(
         activity_type="result",
-        title=f"Found {len(results)} trips",
+        title=f"Found {len(packages)} trips",
         execution_time_ms=execution_time,
-        agent_name="SQLAgent",
+        agent_name=SQL_CODE,
         agent_file="backend/routers/chat.py"
     ))
 
-    # Convert results to Product models
-    product_dicts = results_to_packages(results)
-    products = [Product(**row_to_api_product(p)) for p in product_dicts]
-
+    products = [Product(**row_to_api_product(package)) for package in packages]
     return products, activities
 
 
 # =============================================================================
-# PHASE 2: MCP (Model Context Protocol) Abstraction
-# Uses awslabs.postgres-mcp-server for database operations
+# PHASE 2: MCP (Model Context Protocol) abstraction
+# Code routes by keyword to typed tools on the meridian-concierge MCP server:
+# search_trips for the filter, then compare, price range, inventory, FX and loyalty.
+# Every tool binds its values as database parameters. awslabs.postgres-mcp-server is
+# used only by the reference MCPAgent in agents/phase_02_mcp/, never on this path.
 #
 # AWS docs:
 #   RDS Data API: https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/data-api.html
-#   postgres-mcp-server: https://github.com/awslabs/mcp/tree/main/src/postgres-mcp-server
-#
-# Phase 2 requires MCP — no RDS Data API substitute.
 # =============================================================================
 
-# Keywords that trigger the CUSTOM meridian-concierge MCP server.
-# When the prompt asks for things you can't get from a generic SQL
-# transport (compare these / what's the price range / how many
-# trips do you sell in Europe / convert to EUR / loyalty status), we
-# layer the custom server on top so the trace shows both in action.
+# Keywords that route a prompt to a meridian-concierge MCP tool other than
+# search_trips (compare these / what's the price range / how many trips do
+# you sell in Europe / convert to EUR / loyalty status).
 _DOMAIN_INTENT_KEYWORDS = (
     "compare",
     "comparison",
@@ -643,55 +644,68 @@ async def _call_domain_tool(
     return {"tool": "multi", "calls": calls}
 
 
-async def _postgres_mcp_query(
+DISCOVERY_TITLE = "MCP server discovered: meridian-concierge (custom)"
+
+
+async def _search_trips_mcp(
     params: Any, limit: int, activities: List[ActivityEntry],
 ) -> List[Dict[str, Any]]:
-    """Run the search through the generic postgres-mcp server and trace it."""
-    sql, display_sql, search_title = build_search_sql(params, limit)
+    """Run the filter through the typed ``search_trips`` tool and trace it.
+
+    The traveler's words travel as typed arguments. The server binds them as Data API
+    parameters, and the span shows the statement with placeholders beside the values.
+    """
+    arguments: Dict[str, Any] = {"limit": limit}
+    if params.matched_trip_type:
+        arguments["trip_type"] = params.matched_trip_type
+    else:
+        arguments["text"] = params.query
+    if params.price_filter is not None:
+        arguments["max_price_per_person"] = params.price_filter
     session_started = clock()
-    async with mcp_session() as client:
+    async with concierge_mcp_session() as client:
         # Opening the session starts the server, connects it and lists its tools.
         session_ms = elapsed_ms(session_started)
         activities.append(create_activity(
             activity_type="mcp",
-            title="MCP server discovered: awslabs.postgres-mcp-server",
-            details="Generic SQL transport, tools/list returned " + ", ".join(
-                tool["name"] for tool in client.available_tools
+            title=DISCOVERY_TITLE,
+            details="Typed domain tools, tools/list returned " + ", ".join(
+                tool["name"] for tool in client.tools
             ),
             execution_time_ms=session_ms,
-            agent_name="MCPAgent", agent_file="backend/routers/chat.py",
+            agent_name=MCP_CODE, agent_file="backend/mcp/concierge_server.py",
         ))
-        activities.append(create_activity(
-            activity_type="mcp", title="postgres-mcp: session connected",
-            details="Aurora PostgreSQL via RDS Data API; connection configured at server startup",
-            agent_name="MCPAgent", agent_file="backend/routers/chat.py",
-        ))
-        query_started = clock()
-        results = await client.run_query(sql)
-        query_ms = elapsed_ms(query_started)
+        call = await _timed_tool_call(client, "search_trips", arguments)
+    found = call["result"]
+    if not isinstance(found, dict) or "packages" not in found:
+        raise RuntimeError(
+            "meridian-concierge search_trips returned an unexpected shape: "
+            f"{type(found).__name__}"
+        )
     activities.append(create_activity(
         activity_type="mcp",
-        title="postgres-mcp: run_query",
-        details=f"Generic SQL tool: {search_title}",
-        sql_query=display_sql,
-        execution_time_ms=query_ms,
-        agent_name="MCPAgent",
-        agent_file="backend/routers/chat.py",
+        title="meridian-concierge: search_trips",
+        details=f"args={arguments}, result: {_summarize_domain_result('search_trips', found)}",
+        sql_query=display_sql(found["sql"], found["parameters"]),
+        execution_time_ms=call["elapsed_ms"],
+        agent_name=MCP_CODE,
+        agent_file="backend/mcp/concierge_server.py",
     ))
-    return results
+    return found["packages"]
 
 
 def _record_domain_calls(
     domain_call: Dict[str, Any], activities: List[ActivityEntry],
 ) -> tuple[List[str], List[str]]:
     """Trace each custom-MCP call; return the reply parts and any compared package ids."""
-    activities.append(create_activity(
-        activity_type="mcp",
-        title="MCP server discovered: meridian-concierge (custom)",
-        details="Custom domain call completed; the executed tools and results follow.",
-        agent_name="MCPAgent",
-        agent_file="backend/mcp/concierge_server.py",
-    ))
+    if not any(a.title == DISCOVERY_TITLE for a in activities):
+        activities.append(create_activity(
+            activity_type="mcp",
+            title=DISCOVERY_TITLE,
+            details="Custom domain call completed; the executed tools and results follow.",
+            agent_name=MCP_CODE,
+            agent_file="backend/mcp/concierge_server.py",
+        ))
     # Normalize single-call and multi-call shapes into a list
     # so we can log + format both uniformly.
     if domain_call.get("tool") == "multi":
@@ -714,7 +728,7 @@ def _record_domain_calls(
             title=f"meridian-concierge: {tool_name}",
             details=f"args={tool_args}, result: {summary}",
             execution_time_ms=sub.get("elapsed_ms"),
-            agent_name="MCPAgent",
+            agent_name=MCP_CODE,
             agent_file="backend/mcp/concierge_server.py",
         ))
         reply = _format_domain_reply(tool_name, tool_result)
@@ -733,7 +747,7 @@ async def _hydrate_compared(
     Returns None when the catalog read itself failed, so the caller keeps
     what it had.
     """
-    placeholders = ",".join(["%s"] * len(compared_ids))
+    placeholders = ", ".join(["%s"] * len(compared_ids))
     hydrate_sql = f"""
         SELECT {PACKAGE_COLUMNS}
         FROM trip_packages
@@ -753,12 +767,9 @@ async def _hydrate_compared(
             activity_type="database",
             title="Hydrated compared packages into product cards",
             details=f"{len(results)} rows joined from trip_packages",
-            sql_query=(
-                f"SELECT … FROM trip_packages WHERE package_id IN "
-                f"({', '.join(repr(p) for p in compared_ids)})"
-            ),
+            sql_query=display_sql(hydrate_sql, tuple(compared_ids)),
             execution_time_ms=hydrate_ms,
-            agent_name="MCPAgent",
+            agent_name=MCP_CODE,
             agent_file="backend/routers/chat.py",
         ))
     except Exception as exc:
@@ -814,7 +825,7 @@ async def _concierge_mcp_turn(
             activity_type="error",
             title="meridian-concierge MCP error",
             details=f"The domain tool failed. Reference {error_ref}.",
-            agent_name="MCPAgent",
+            agent_name=MCP_CODE,
             agent_file="backend/mcp/concierge_server.py",
         ))
         # Surface the failure to the user instead of letting the
@@ -835,9 +846,8 @@ async def mcp_search(
     """
     Phase 2: Search via MCP abstraction layer.
 
-    Routes through TWO MCP servers in one agent turn:
-      - awslabs.postgres-mcp-server  → generic SQL transport
-      - meridian-concierge (custom)  → travel-domain tools
+    Routes through the meridian-concierge MCP server: the typed search_trips filter and,
+    for domain intents, its compare, FX, price range, inventory and loyalty tools.
 
     Returns (products, activities, domain_text). When the prompt is a
     pure domain query (compare/FX/price range/inventory/loyalty), the
@@ -859,16 +869,13 @@ async def mcp_search(
         and params.price_filter is None
     )
 
-    # ----- Generic MCP server (awslabs.postgres-mcp-server) -----
-    # Only traced when the turn actually opens a generic session.  A
-    # pure-domain turn (currency, loyalty) never enters mcp_session(), so
-    # emitting discovery and connect here would put a session in the trace
-    # that no code opened.
+    # ----- The filter search: typed search_trips on meridian-concierge -----
+    # A pure-domain turn (currency, loyalty) has no filter to run, so it does not search.
     results: List[Dict[str, Any]] = []
     if not pure_domain:
-        results = await _postgres_mcp_query(params, limit, activities)
+        results = await _search_trips_mcp(params, limit, activities)
 
-    # ----- Custom MCP server (meridian-concierge) -----
+    # ----- The domain tools on the same server -----
     domain_text: Optional[str] = None
     custom_answered = False
     if use_custom_mcp:
@@ -881,11 +888,9 @@ async def mcp_search(
     log_search(phase=2, query=query, results_count=len(results),
                execution_time_ms=execution_time, search_type="mcp")
 
-    # Count the servers that answered this turn, not the ones it meant to use.
-    # Detecting a domain intent is not the same as the concierge server
-    # returning: counting the intent let a call that raised, or came back
-    # empty, still appear in the proof as a server the turn had used.
-    servers_used = (0 if pure_domain else 1) + (1 if custom_answered else 0)
+    # One server answers this turn: meridian-concierge. It counts when its search ran or
+    # a domain call returned; a call that raised or came back empty is not claimed.
+    servers_used = 1 if (not pure_domain or custom_answered) else 0
     activities.append(create_activity(
         activity_type="mcp",
         title=(
@@ -894,7 +899,7 @@ async def mcp_search(
         ),
         details=f"Retrieved {len(results)} rows in {execution_time}ms",
         execution_time_ms=execution_time,
-        agent_name="MCPAgent",
+        agent_name=MCP_CODE,
         agent_file="backend/routers/chat.py",
     ))
 
@@ -1003,6 +1008,64 @@ def _format_domain_reply(tool: str, result: Any) -> str:
     return ""
 
 
+def _summarize_search_trips(result: Any) -> Optional[str]:
+    if isinstance(result, dict):
+        return f"found {len(result.get('packages') or [])} trips"
+    return None
+
+
+def _summarize_compare_packages(result: Any) -> Optional[str]:
+    if isinstance(result, list):
+        return f"compared {len(result)} packages"
+    return f"unexpected shape: {type(result).__name__}"
+
+
+def _summarize_currency_convert(result: Any) -> Optional[str]:
+    if not isinstance(result, dict):
+        return None
+    conversions = result.get("conversions")
+    if isinstance(conversions, list):
+        return f"converted {len(conversions)} package prices to {result.get('to')}"
+    return (
+        f"{result.get('amount')} {result.get('from')} = "
+        f"{result.get('converted')} {result.get('to')}"
+    )
+
+
+def _summarize_loyalty_balance(result: Any) -> Optional[str]:
+    if not isinstance(result, dict):
+        return None
+    if result.get("error"):
+        return f"refused, {result.get('error')}"
+    pts = result.get("points_balance", 0) or 0
+    return f"{pts:,} pts, tier={result.get('tier')}"
+
+
+def _summarize_price_range(result: Any) -> Optional[str]:
+    if isinstance(result, dict):
+        return f"range low={result.get('low')}, high={result.get('high')}"
+    return None
+
+
+def _summarize_region_inventory(result: Any) -> Optional[str]:
+    if isinstance(result, dict):
+        return (
+            f"{result.get('package_count')} packages, "
+            f"{result.get('total_departure_slots')} slots"
+        )
+    return None
+
+
+_DOMAIN_SUMMARIZERS = {
+    "search_trips": _summarize_search_trips,
+    "compare_packages": _summarize_compare_packages,
+    "currency_convert": _summarize_currency_convert,
+    "loyalty_balance": _summarize_loyalty_balance,
+    "price_range": _summarize_price_range,
+    "region_inventory": _summarize_region_inventory,
+}
+
+
 def _summarize_domain_result(tool: str, result: Any) -> str:
     """One-line summary of a custom MCP tool call for the trace span.
 
@@ -1010,28 +1073,12 @@ def _summarize_domain_result(tool: str, result: Any) -> str:
     the expected tool contract - that immediately surfaces decode bugs
     in the activity panel instead of silently saying 'ok'.
     """
+    summarizer = _DOMAIN_SUMMARIZERS.get(tool)
     try:
-        if tool == "compare_packages":
-            if isinstance(result, list):
-                return f"compared {len(result)} packages"
-            return f"unexpected shape: {type(result).__name__}"
-        if tool == "currency_convert" and isinstance(result, dict):
-            conversions = result.get("conversions")
-            if isinstance(conversions, list):
-                return f"converted {len(conversions)} package prices to {result.get('to')}"
-            return f"{result.get('amount')} {result.get('from')} = {result.get('converted')} {result.get('to')}"
-        if tool == "loyalty_balance" and isinstance(result, dict):
-            if result.get("error"):
-                return f"refused, {result.get('error')}"
-            pts = result.get("points_balance", 0) or 0
-            return f"{pts:,} pts, tier={result.get('tier')}"
-        if tool == "price_range" and isinstance(result, dict):
-            return f"range low={result.get('low')}, high={result.get('high')}"
-        if tool == "region_inventory" and isinstance(result, dict):
-            return f"{result.get('package_count')} packages, {result.get('total_departure_slots')} slots"
+        summary = summarizer(result) if summarizer else None
     except Exception as exc:
         return f"summarize failed: {exc.__class__.__name__}"
-    return f"shape={type(result).__name__}"
+    return summary if summary is not None else f"shape={type(result).__name__}"
 
 
 # =============================================================================
@@ -1054,12 +1101,13 @@ async def _polish_phase_reply(
     """Run the Bedrock polish over a search reply.
 
     Returns the polish result: the final message, the model that wrote it and
-    how long its call took, or no model and a note. On failure (no model
-    access, all fallbacks blocked) the raw_message is returned verbatim as a
-    graceful fallback.
+    how long its call took, or no model and a note. On failure the raw_message
+    is returned verbatim and the note says why; no other model is tried.
     """
     if not products and not raw_message:
-        return PolishResult(text=raw_message, model_id=None, note="no content to polish")
+        return PolishResult(
+            text=raw_message, model_id=None, note="no content to polish", skipped=True
+        )
 
     # Build a deterministic, fact-only context block. The system prompt
     # in llm_polish forbids inventing anything outside this block.
@@ -1161,11 +1209,9 @@ async def _polish_and_record(
     succeeded, and fall back to the deterministic reply if it did not.
 
     Returns:
-        (message, model_label). `model_label` names whichever model in the
-        Sonnet 5 -> Haiku 4.5 -> Opus 5 chain actually wrote `message` -
-        which may not be the configured primary - or None when polish did
-        not run or every model in the chain failed, so the raw tool result
-        is returned unpolished and no model wrote any part of it.
+        (message, model_label). `model_label` names the one configured model
+        that wrote `message`, or None when polish did not run or failed, so the
+        raw tool result is returned unpolished and no model wrote any part of it.
     """
     polish = await _polish_phase_reply(
         phase=phase,
@@ -1185,6 +1231,15 @@ async def _polish_and_record(
             agent_file="backend/llm_polish.py",
         ))
         return polish.text, bedrock_model_label(polish.model_id)
+    if polish.skipped:
+        activities.append(create_activity(
+            activity_type="reasoning",
+            title="Bedrock polish skipped",
+            details=f"No model was called: {polish.note}",
+            agent_name=agent_name,
+            agent_file="backend/llm_polish.py",
+        ))
+        return raw_message, None
     activities.append(create_activity(
         activity_type="error",
         title="Bedrock polish unavailable",
@@ -1254,12 +1309,47 @@ def _is_availability_query(query: str) -> bool:
     return bool(_AVAILABILITY_PATTERNS.search(query or ""))
 
 
-_PHASE4_WORKFLOW_TRANSITION_MESSAGE = (
-    "I can carry forward your Tokyo context, but this needs two dependent "
-    "steps: rework the itinerary, then check duration availability for the "
-    "best three options. "
-    "Switch to Workflow so each step is explicit, checkpointed, and resumable."
-)
+def _workflow_handoff_message(destination: Optional[str]) -> str:
+    """The reply that hands a multi-step prompt to Workflow, naming the traveler's trip."""
+    place = destination or "your trip"
+    return (
+        f"I can plan this for {place}, but it needs two dependent steps: rework the "
+        "itinerary, then check duration availability for the best three options. "
+        "Switch to Workflow so each step is explicit, saved and resumable."
+    )
+
+
+async def _catalog_destinations() -> List[str]:
+    """Every destination the catalog sells, so a prompt can be matched to one."""
+    rows = await get_rds_data_client().execute(
+        "SELECT DISTINCT destination FROM trip_packages WHERE destination IS NOT NULL"
+    )
+    return [str(row["destination"]) for row in rows]
+
+
+def _audit_subject(principal: HttpPrincipal) -> Optional[str]:
+    """The verified Cognito subject of a signed-in caller; None for any other credential."""
+    return principal.subject_id if principal.authentication == "cognito" else None
+
+
+def _named_destination(query: str, destinations: List[str]) -> Optional[str]:
+    """The catalog destination the traveler wrote: the first named, the longest on a tie."""
+    lowered = (query or "").lower()
+    found = []
+    for destination in destinations:
+        match = re.search(rf"(?<!\w){re.escape(destination.lower())}(?!\w)", lowered)
+        if match:
+            found.append((match.start(), -len(destination), destination))
+    return min(found)[2] if found else None
+
+
+async def _handoff_destination(query: str) -> Optional[str]:
+    """The destination in a handoff prompt, or None. A failed read must not block the handoff."""
+    try:
+        return _named_destination(query, await _catalog_destinations())
+    except Exception:
+        log_exception("handoff_destination")
+        return None
 
 
 def _needs_checkpointed_workflow(query: str) -> bool:
@@ -1356,15 +1446,15 @@ async def retrieval_supervisor_search(
                 "conversation_messages / trip_interactions). Returning "
                 "zero results so the concierge can explain the gap."
             ),
-            agent_name="RetrievalAgent",
-            agent_file="agents/phase_03_retrieval/supervisor.py",
+            agent_name=BOUNDARY_CODE,
+            agent_file="backend/routers/chat.py",
         ))
         activities.append(create_activity(
             activity_type="result",
             title="Retrieval mode cannot resolve memory-recall queries",
             details="Routed to honest-failure path; Production mode is the upgrade.",
-            agent_name="RetrievalAgent",
-            agent_file="agents/phase_03_retrieval/supervisor.py",
+            agent_name=BOUNDARY_CODE,
+            agent_file="backend/routers/chat.py",
         ))
         return [], activities
 
@@ -1497,40 +1587,6 @@ async def _load_workflow_memory_facts(traveler_id: str) -> List[MemoryFact]:
     ]
 
 
-def _append_recovery_memory_receipt(
-    message: str,
-    query: str,
-    memory_facts: List[MemoryFact],
-) -> str:
-    """Show which Aurora facts materially shaped a disruption recovery."""
-    is_disruption = re.search(
-        r"\b(cancelled|canceled|disrupt|rebook|stranded)\b",
-        query,
-        re.I,
-    )
-    is_trip = re.search(r"\b(flight|departure|itinerary|trip)\b", query, re.I)
-    if not (is_disruption and is_trip):
-        return message
-
-    by_key = {fact.key: fact.value for fact in memory_facts}
-    receipt: List[str] = []
-    home_airport = by_key.get("home_airport")
-    if home_airport:
-        receipt.append(f"- **Home airport:** {home_airport}")
-    shellfish = by_key.get("shellfish_allergy")
-    if shellfish:
-        receipt.append(
-            f"- **Dietary safety:** shellfish allergy — {shellfish}"
-        )
-    if not receipt:
-        return message
-    return (
-        f"{message.rstrip()}\n\n"
-        "**Traveler context applied from Aurora**\n"
-        + "\n".join(receipt)
-    )
-
-
 def _refuse_unusable_workflow_request(request: ChatRequest, resume: bool) -> None:
     """A review starts a plan and a package choice answers one; neither fits the other's turn."""
     if request.review_only and resume:
@@ -1655,9 +1711,13 @@ async def production_search(
     conversation_id: Optional[str] = None,
     limit: int = 5,
     travelers_count: int = 1,
+    *,
+    authorization_subject: Optional[str] = None,
 ) -> tuple[List[Product], List[ActivityEntry], str, str, List[MemoryFact]]:
     """
     Production mode: identity + RLS recall, then the AgentCore Runtime owns the tool loop.
+
+    ``authorization_subject`` is the verified Cognito subject the audit row names, or None.
 
     Requires deployed AgentCore Runtime, Gateway, and Memory — see ``agentcore/README.md``.
     """
@@ -1672,6 +1732,7 @@ async def production_search(
         conversation_id,
         limit,
         travelers_count=travelers_count,
+        authorization_subject=authorization_subject,
     )
     activities = [_memory_activity_to_entry(a) for a in raw_activities]
     for act in activities:
@@ -1753,13 +1814,12 @@ async def stream_chat(
     if request.phase != 4:
         raise HTTPException(status_code=422, detail="Streaming is available for the concierge.")
     # Authorize before sending headers, including when context is disabled.
-    authorize_traveler(principal, request.customer_id)
+    await authorize_traveler(principal, request.customer_id)
     queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
     connected = True
     started = clock()
     first_delta = False
-    handoff = _needs_checkpointed_workflow(request.message)
 
     def enqueue(event):
         nonlocal first_delta
@@ -1770,10 +1830,6 @@ async def stream_chat(
             queue.put_nowait(event)
 
     def publish(event):
-        # A workflow handoff intentionally replaces Runtime prose. Never briefly
-        # show an answer the ordinary chat route would withhold.
-        if handoff and event.get("type") == "delta":
-            return
         loop.call_soon_threadsafe(enqueue, event)
 
     async def produce():
@@ -1833,7 +1889,7 @@ async def chat(
     - Phase 3: Hybrid retrieval + Cohere rerank; PackageAgent for slot checks
     - Phase 4: Production concierge with AgentCore Runtime/Gateway/Memory
     """
-    traveler_id = authorize_traveler(principal, request.customer_id)
+    traveler_id = await authorize_traveler(principal, request.customer_id)
     request = request.model_copy(update={"customer_id": traveler_id})
 
     turn_started = log_turn_start(
@@ -1848,12 +1904,17 @@ async def chat(
     # instruction. Opening the plan is a separate explicit action; this reply
     # does not run a workflow or authorize an inventory write.
     if request.experience == "concierge" and request.phase == 4 and _needs_checkpointed_workflow(request.message):
+        destination = await _handoff_destination(request.message)
+        place = f"your {destination} trip" if destination else "your trip"
         return _complete_chat_turn(ChatResponse(
-            message="We can find alternatives and check their availability. Review a recovery plan before deciding whether to request a hold.",
+            message=(
+                f"We can find alternatives and check their availability for {place}. "
+                "Review a recovery plan before deciding whether to request a hold."
+            ),
             activities=[create_activity(
                 activity_type="reasoning", title="Recovery review offered",
                 details="The traveler can open a saved recovery plan. No recovery or hold has run.",
-                agent_name="Concierge", agent_file="backend/routers/chat.py",
+                agent_name=BOUNDARY_CODE, agent_file="backend/routers/chat.py",
             )], conversation_id=request.conversation_id,
             recovery_request=request.message,
         ), request.phase, turn_started)
@@ -1872,7 +1933,7 @@ async def chat(
             activity_type="reasoning",
             title="Processing with the package availability check",
             details=f"Query: {request.message[:80]}{'...' if len(request.message) > 80 else ''}",
-            agent_name="PackageAgent",
+            agent_name=AVAILABILITY_CODE,
             agent_file="retrieval/availability.py"
         ))
 
@@ -1903,7 +1964,7 @@ async def chat(
                 activity_type="error",
                 title="PackageAgent error",
                 details=f"The availability lookup failed. Reference {error_ref}.",
-                agent_name="PackageAgent",
+                agent_name=AVAILABILITY_CODE,
                 agent_file="agents/phase_03_retrieval/package_agent.py"
             ))
             # Fall through to regular search
@@ -1920,7 +1981,7 @@ async def chat(
                     "Production did not read Aurora traveler preferences, prior "
                     "conversations, or AgentCore Memory. No memory writeback occurred."
                 ),
-                agent_name="ProductionAgent",
+                agent_name=PRODUCTION_CODE,
                 agent_file="agents/phase_04_production/concierge.py",
             ))
             return _complete_chat_turn(
@@ -1944,11 +2005,44 @@ async def chat(
                 turn_started,
             )
 
+        if _needs_checkpointed_workflow(request.message):
+            # Decided before the Runtime is called: a multi-step prompt is not answered in
+            # one fluent paragraph, and no Runtime turn is spent on text that would be dropped.
+            destination = await _handoff_destination(request.message)
+            activities.append(create_activity(
+                activity_type="reasoning",
+                title="Saved-step workflow required",
+                details=(
+                    "This prompt has dependent planning steps, so Production did not call "
+                    "the Runtime. Workflow mode runs package search and duration availability "
+                    "as separate saved steps."
+                ),
+                agent_name=BOUNDARY_CODE,
+                agent_file="backend/routers/chat.py",
+            ))
+            return _complete_chat_turn(
+                ChatResponse(
+                    message=_workflow_handoff_message(destination),
+                    products=None,
+                    order=None,
+                    activities=activities,
+                    follow_ups=[
+                        "Run this in Workflow",
+                        "Rework the itinerary",
+                        "Check duration availability for the best three options",
+                    ],
+                    conversation_id=request.conversation_id,
+                    memory_facts=None,
+                ),
+                request.phase,
+                turn_started,
+            )
+
         activities.append(create_activity(
             activity_type="reasoning",
             title="Processing with Production concierge (Runtime + Gateway + Memory)",
             details=f"Query: {request.message[:80]}{'...' if len(request.message) > 80 else ''}",
-            agent_name="ProductionAgent",
+            agent_name=PRODUCTION_CODE,
             agent_file="agents/phase_04_production/concierge.py",
         ))
         try:
@@ -1958,58 +2052,16 @@ async def chat(
                 conversation_id=request.conversation_id,
                 limit=5,
                 travelers_count=request.travelers_count,
+                authorization_subject=_audit_subject(principal),
             )
             activities.extend(search_activities)
-            needs_workflow = _needs_checkpointed_workflow(request.message)
-            if needs_workflow:
-                if "tokyo" in request.message.lower():
-                    tokyo_products = [
-                        product
-                        for product in products
-                        if "tokyo" in " ".join(
-                            filter(
-                                None,
-                                (
-                                    product.name,
-                                    product.destination,
-                                    product.region,
-                                ),
-                            )
-                        ).lower()
-                    ]
-                    if tokyo_products:
-                        products = tokyo_products
-                activities.append(create_activity(
-                    activity_type="reasoning",
-                    title="Saved-step workflow required",
-                    details=(
-                        "Production mode recalled traveler context and found candidate "
-                        "trips, but this prompt has dependent planning steps. "
-                        "Hand off to Workflow mode so package search and duration "
-                        "availability can checkpoint separately."
-                    ),
-                    agent_name="ProductionAgent",
-                    agent_file="agents/phase_04_production/concierge.py",
-                ))
-                message = _PHASE4_WORKFLOW_TRANSITION_MESSAGE
-            else:
-                # ProductionAgent persists the managed Runtime decision. Return
-                # that same decision unchanged so the user-facing response
-                # is authored by AgentCore Runtime rather than a second local
-                # model pass.
-                message = raw_message
+            # ProductionAgent persists the managed Runtime decision. Return that same decision
+            # unchanged so the user-facing response is authored by AgentCore Runtime rather
+            # than a second local model pass.
+            message = raw_message
             # The badge names the model the Runtime reported for this turn.
-            # The workflow handoff is fixed text, so no model wrote it.
-            runtime_model = None if needs_workflow else runtime_model_id(search_activities)
-            follow_ups = (
-                [
-                    "Run this in Workflow",
-                    "Rework the itinerary",
-                    "Check duration availability for the best three options",
-                ]
-                if needs_workflow
-                else generate_follow_ups(request.message, products, request.phase)
-            )
+            runtime_model = runtime_model_id(search_activities)
+            follow_ups = generate_follow_ups(request.message, products, request.phase)
             return _complete_chat_turn(
                 ChatResponse(
                 message=message,
@@ -2046,7 +2098,7 @@ async def chat(
                     if is_agentcore_config_error
                     else "The Production concierge failed. "
                 ) + f"Reference {error_ref}.",
-                agent_name="ProductionAgent",
+                agent_name=PRODUCTION_CODE,
                 agent_file="agents/phase_04_production/concierge.py",
             ))
             return _complete_chat_turn(
@@ -2112,7 +2164,7 @@ async def chat(
                                 "Saved traveler preferences read under RLS "
                                 "for review alongside the recorded recovery"
                             ),
-                            agent_name="OrchestrationAgent",
+                            agent_name=WORKFLOW_CODE,
                             agent_file="backend/memory/store.py",
                         ))
                 except Exception as exc:
@@ -2175,8 +2227,8 @@ async def chat(
     phase3_method = "Hybrid (pgvector + tsvector) + Cohere Rerank via Strands Supervisor"
 
     phase_configs = {
-        1: ("SQLAgent", "Direct RDS Data API", sql_search, "backend/routers/chat.py"),
-        2: ("MCPAgent", "MCP tool routing", mcp_search, "backend/routers/chat.py"),
+        1: (SQL_CODE, "Direct RDS Data API", sql_search, "backend/routers/chat.py"),
+        2: (MCP_CODE, "MCP tool routing", mcp_search, "backend/routers/chat.py"),
         3: ("RetrievalAgent", phase3_method, phase3_fn, "agents/phase_03_retrieval/supervisor.py"),
     }
 
@@ -2456,6 +2508,47 @@ class OrderResponse(BaseModel):
     activities: List[ActivityEntry]
 
 
+def _governed_write_context(write: str, error: Exception) -> str:
+    """The log context for a failed hold or booking: which step failed, or that it is unknown."""
+    if isinstance(error, PlacedWriteUnfinished):
+        return f"production_{write}_{error.step}"
+    if isinstance(error, WriteOutcomeUnknown):
+        return f"production_{write}_outcome_unknown"
+    return f"production_{write}"
+
+
+def _governed_write_reply(write: str, error: Exception) -> GovernedWriteReply:
+    """The 503 for a failed hold or booking request, worded by what is known about the write.
+
+    A retry from the app reads the receipt back before it writes anything, and the traveler's
+    trips list shows a placed hold or booking.
+
+    Args:
+        write: ``"hold"`` or ``"booking"``.
+        error: What the request raised.
+
+    Returns:
+        A 503 that says the write was placed and which later step failed
+        (``PlacedWriteUnfinished``), or that whether it was placed is not known
+        (``WriteOutcomeUnknown``). Any other error means the write was refused or the request
+        never reached the Runtime, so the reply says it could not be completed.
+    """
+    done, retry = (
+        ("hold was placed", "the hold") if write == "hold"
+        else ("booking was confirmed", "the confirmation")
+    )
+    if isinstance(error, PlacedWriteUnfinished):
+        detail = (
+            f"The {done}, but {STEP_WORDS[error.step]} failed. "
+            f"Retry {retry} to read its receipt."
+        )
+    elif isinstance(error, WriteOutcomeUnknown):
+        detail = f"We could not confirm whether the {done}. Check your trips before trying again."
+    else:
+        detail = f"The governed {write} could not be completed. Check the AgentCore platform."
+    return GovernedWriteReply(detail)
+
+
 HOLD_PACKAGE_SQL = """
     SELECT package_id, name, operator, price_per_person, description,
            image_url, trip_type, durations, package_places_left(package_id) AS availability
@@ -2502,12 +2595,15 @@ def _order_from_hold(pkg: dict, request: "OrderRequest", duration: str, hold: di
     )
 
 
-async def production_hold(request: "OrderRequest") -> OrderResponse:
+async def production_hold(
+    request: "OrderRequest", *, authorization_subject: Optional[str] = None
+) -> OrderResponse:
     """Phase 4 hold: the runtime asks the gateway, Cedar decides, the Lambda writes.
 
     The traveler's click is the confirmation. The backend passes it to the runtime
     as ``hold_confirmed``; the runtime pins it onto the tool call; the gateway's
     Cedar policy permits the hold only with it. Nothing here writes to Aurora.
+    ``authorization_subject`` is the verified Cognito subject the audit row names, or None.
     """
     from backend.agents.phase_04_production.concierge import HoldTarget, create_production_agent
 
@@ -2521,7 +2617,8 @@ async def production_hold(request: "OrderRequest") -> OrderResponse:
     )
     try:
         outcome = await create_production_agent().process_hold(
-            request.traveler_id, request.conversation_id, target
+            request.traveler_id, request.conversation_id, target,
+            authorization_subject=authorization_subject,
         )
     except TravelerAuthorizationError as e:
         log_error(context="hold_authorization", error=str(e), phase=4)
@@ -2529,11 +2626,10 @@ async def production_hold(request: "OrderRequest") -> OrderResponse:
     except CallerCredentialError as e:
         raise credential_error(e) from e
     except Exception as e:
-        log_error(context="production_hold", error=str(e), phase=4)
-        raise HTTPException(
-            status_code=503,
-            detail="The governed hold could not be completed. Check the AgentCore platform.",
-        ) from e
+        log_error(
+            context=_governed_write_context("hold", e), error=str(e.__cause__ or e), phase=4
+        )
+        raise _governed_write_reply("hold", e) from e
     activities = [_memory_activity_to_entry(a) for a in outcome.activities]
     for act in activities:
         log_activity_entry(act)
@@ -2688,14 +2784,17 @@ async def read_hold(
     )
 
 
-async def production_booking(request: "BookingRequest") -> BookingResponse:
+async def production_booking(
+    request: "BookingRequest", *, authorization_subject: Optional[str] = None
+) -> BookingResponse:
     """Phase 4 confirmation: the runtime asks the gateway, Cedar decides, Aurora confirms.
 
     The traveler's click is the confirmation. The backend reads the held booking
     under RLS so the total the policy judges is the total Aurora holds, then
     passes the confirmation to the runtime as ``booking_confirmed``. Nothing
     here writes to Aurora: the SQL function behind the gateway tool flips the
-    booking from held to confirmed, or refuses by name.
+    booking from held to confirmed, or refuses by name. ``authorization_subject``
+    is the verified Cognito subject the audit row names, or None.
     """
     from backend.agents.phase_04_production.concierge import BookingTarget, create_production_agent
 
@@ -2710,7 +2809,8 @@ async def production_booking(request: "BookingRequest") -> BookingResponse:
     )
     try:
         outcome = await create_production_agent().process_booking(
-            request.traveler_id, request.conversation_id, target
+            request.traveler_id, request.conversation_id, target,
+            authorization_subject=authorization_subject,
         )
     except TravelerAuthorizationError as e:
         log_error(context="booking_authorization", error=str(e), phase=4)
@@ -2718,11 +2818,10 @@ async def production_booking(request: "BookingRequest") -> BookingResponse:
     except CallerCredentialError as e:
         raise credential_error(e) from e
     except Exception as e:
-        log_error(context="production_booking", error=str(e), phase=4)
-        raise HTTPException(
-            status_code=503,
-            detail="The governed booking could not be completed. Check the AgentCore platform.",
-        ) from e
+        log_error(
+            context=_governed_write_context("booking", e), error=str(e.__cause__ or e), phase=4
+        )
+        raise _governed_write_reply("booking", e) from e
     activities = [_memory_activity_to_entry(a) for a in outcome.activities]
     for act in activities:
         log_activity_entry(act)
@@ -2746,9 +2845,9 @@ async def confirm_booking(
     and no payment is authorized or captured. The gateway's Cedar policy decides
     on the traveler's confirmation and the saved budget before Aurora confirms.
     """
-    traveler_id = authorize_traveler(principal, request.traveler_id)
+    traveler_id = await authorize_traveler(principal, request.traveler_id)
     request = request.model_copy(update={"traveler_id": traveler_id})
-    return await production_booking(request)
+    return await production_booking(request, authorization_subject=_audit_subject(principal))
 
 
 @router.post("/order", response_model=OrderResponse)
@@ -2762,6 +2861,6 @@ async def process_order(
     Missing AgentCore configuration fails closed; no direct SQL write fallback.
     Phase 5 automatic holds still use their checkpointed workflow intent.
     """
-    traveler_id = authorize_traveler(principal, request.traveler_id)
+    traveler_id = await authorize_traveler(principal, request.traveler_id)
     request = request.model_copy(update={"traveler_id": traveler_id})
-    return await production_hold(request)
+    return await production_hold(request, authorization_subject=_audit_subject(principal))

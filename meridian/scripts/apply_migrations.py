@@ -89,13 +89,14 @@ def _pending_paths(applied: set[str]) -> list[Path]:
 
 
 def _apply_migration(client, path: Path) -> None:
+    statements = split_sql(path.read_text())
     transaction_id = client.begin_transaction(
         resourceArn=CLUSTER_ARN,
         secretArn=SECRET_ARN,
         database=DATABASE,
     )["transactionId"]
     try:
-        for statement in split_sql(path.read_text()):
+        for statement in statements:
             _execute(client, statement, transaction_id)
         _execute(
             client,
@@ -122,11 +123,52 @@ def _apply_migration(client, path: Path) -> None:
         raise
 
 
+def _dry_run_migration(client, path: Path) -> int:
+    """Run one migration's statements in a transaction, then roll it back.
+
+    Returns:
+        The number of statements that ran. Nothing is committed and the migration is not
+        recorded in ``schema_migrations``.
+    """
+    statements = split_sql(path.read_text())
+    transaction_id = client.begin_transaction(
+        resourceArn=CLUSTER_ARN,
+        secretArn=SECRET_ARN,
+        database=DATABASE,
+    )["transactionId"]
+    try:
+        for statement in statements:
+            _execute(client, statement, transaction_id)
+    finally:
+        client.rollback_transaction(
+            resourceArn=CLUSTER_ARN,
+            secretArn=SECRET_ARN,
+            transactionId=transaction_id,
+        )
+    return len(statements)
+
+
+def _dry_run_pending(client) -> int:
+    pending = _pending_paths(_applied_migrations_read_only(client))
+    if not pending:
+        print("No pending migrations.")
+        return 0
+    for path in pending:
+        count = _dry_run_migration(client, path)
+        print(f"Dry run: {path.name} ran {count} statement(s) and was rolled back.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--pending", action="store_true",
         help="print the pending migration names and exit; writes nothing",
+    )
+    mode.add_argument(
+        "--dry-run", action="store_true",
+        help="run each pending migration in a transaction and roll it back; changes nothing",
     )
     args = parser.parse_args(argv)
     if not CLUSTER_ARN or not SECRET_ARN:
@@ -143,6 +185,8 @@ def main(argv: list[str] | None = None) -> int:
         ]
         print("\n".join(pending_names) or "No pending migrations.")
         return 0
+    if args.dry_run:
+        return _dry_run_pending(client)
     _ensure_migration_table(client)
     pending = _pending_paths(_applied_migrations(client))
 

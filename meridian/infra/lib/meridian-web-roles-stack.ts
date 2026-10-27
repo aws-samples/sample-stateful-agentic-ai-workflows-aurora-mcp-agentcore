@@ -1,5 +1,6 @@
 import { ArnFormat, CfnOutput, Stack, type StackProps, aws_iam as iam } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
+import { backendModelStatements } from './bedrock-model-access';
 import { API_TOKEN_SECRET_NAME } from './meridian-web-stack';
 
 export interface MeridianWebRolesStackProps extends StackProps {
@@ -50,15 +51,9 @@ export class MeridianWebRolesStack extends Stack {
       assumedBy: new iam.ServicePrincipal('tasks.apprunner.amazonaws.com'),
       description: 'Meridian backend on App Runner: Bedrock, Aurora Data API, the MeridianConcierge and MeridianWorkflow AgentCore Runtimes',
     });
-    this.instanceRole.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream', 'bedrock:CountTokens'],
-        resources: [
-          'arn:aws:bedrock:*::foundation-model/*',
-          `arn:aws:bedrock:*:${this.account}:inference-profile/*`,
-        ],
-      }),
-    );
+    for (const statement of backendModelStatements(environment, this)) {
+      this.instanceRole.addToPolicy(statement);
+    }
     this.instanceRole.addToPolicy(
       new iam.PolicyStatement({
         actions: [

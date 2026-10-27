@@ -7,6 +7,12 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+from strands.types.exceptions import MCPClientInitializationError
+
+from backend.audit_vocabulary import ToolCall
+from tests.test_strands_hooks import Gateway, ScriptedModel, run_concierge, stored_after
+
 RUNTIME = Path(__file__).resolve().parents[1] / "meridian_agentcore" / "app" / "MeridianConcierge"
 sys.path.insert(0, str(RUNTIME))
 
@@ -17,6 +23,7 @@ from hold_execution import (  # noqa: E402
     execute_confirmed_booking,
     execute_confirmed_hold,
 )
+from tool_errors import ToolSetupError  # noqa: E402
 from turn_trace import TraceHooks, TurnContext  # noqa: E402
 
 TARGET = {"package_id": "CTY-002", "duration": "5 nights", "travelers": 2, "unit_price_cents": 249900}
@@ -114,7 +121,7 @@ def test_a_second_platform_call_in_the_same_turn_is_refused_by_the_hooks():
     hooks = TraceHooks(queue, _turn())
     hooks.hold_settled = True
     outcome = execute_confirmed_hold(hooks, lambda *_: (_ for _ in ()).throw(AssertionError("must not call")), TARGET)
-    assert "already decided" in outcome
+    assert "hold was already attempted on this turn" in outcome
 
 
 BOOKING = {"booking_id": "HLD-9", "total_cents": 499800, "package_id": "CTY-002",
@@ -184,3 +191,90 @@ def test_a_business_refusal_from_aurora_is_narrated_verbatim():
 
     assert execute_confirmed_booking(hooks, call_tool, BOOKING) == "hold_expired"
     assert hooks.booking is None and hooks.booking_settled is True
+
+
+# ------------------------------------------- a governed write that started is always traced
+
+FAILED_TO_START = "the client session is not running"
+WRITES = {
+    "hold": (execute_confirmed_hold, TARGET, HOLD_TOOL),
+    "booking": (execute_confirmed_booking, BOOKING, BOOKING_TOOL),
+}
+
+
+def _labels(span):
+    return {field["label"]: field["value"] for field in span["telemetry"]["fields"]}
+
+
+def _raised_by_a_platform_call(kind, failure):
+    """Run the confirmed write whose call raises ``failure``, and check what it reported.
+
+    Both spans of the call and the write's event carry ``failure``'s own text.
+
+    Returns:
+        The error that propagated.
+    """
+    execute, target, _tool = WRITES[kind]
+    queue = asyncio.Queue()
+    hooks = TraceHooks(queue, _turn(booking_confirmed=True))
+
+    def call_tool(*_args):
+        raise failure
+
+    with pytest.raises(Exception) as raised:
+        execute(hooks, call_tool, target)
+    items = _drain(queue)
+    started, failed = [item for item_kind, item in items if item_kind == "activity"]
+    assert _labels(started)["call_id"] == _labels(failed)["call_id"]
+    assert failed["title"] == "Tool call failed"
+    assert failed["telemetry"]["status"] == "error"
+    assert _labels(failed)["gateway_error"] == f"Error: {failure}"
+    assert [item for item_kind, item in items if item_kind == kind] == [{
+        kind: None, "refused": f"Error: {failure}", "error": f"Error: {failure}",
+        "policyDecision": None,
+    }]
+    return raised.value
+
+
+@pytest.mark.parametrize("kind", WRITES)
+def test_a_platform_call_that_could_not_be_set_up_reports_the_call_and_names_the_tool(kind):
+    failure = MCPClientInitializationError(FAILED_TO_START)
+
+    raised = _raised_by_a_platform_call(kind, failure)
+
+    assert type(raised) is ToolSetupError and raised.__cause__ is failure
+    assert str(raised) == (
+        f"Tool {WRITES[kind][2]} could not run (MCPClientInitializationError): {FAILED_TO_START}")
+
+
+@pytest.mark.parametrize("kind", WRITES)
+def test_a_platform_call_with_any_other_error_reports_the_call_and_raises_it_unchanged(kind):
+    failure = RuntimeError("the gateway closed the stream")
+
+    assert _raised_by_a_platform_call(kind, failure) is failure
+
+
+CONFIRMED_WRITES = {
+    "production_hold": ({"hold_confirmed": True, "hold_target": TARGET}, HOLD_TOOL),
+    "production_booking": ({"booking_confirmed": True, "booking_target": BOOKING}, BOOKING_TOOL),
+}
+
+
+@pytest.mark.parametrize("operation", CONFIRMED_WRITES)
+def test_a_confirmed_write_whose_call_raises_is_an_error_in_the_audit_row(monkeypatch, operation):
+    confirmed, tool = CONFIRMED_WRITES[operation]
+
+    def call(*_args):
+        raise MCPClientInitializationError(FAILED_TO_START)
+
+    payload = {"event": "concierge_turn", "traveler_id": "trv_hook_test",
+               "conversation_id": "conv-hook", "budget_ceiling_cents": 640000, **confirmed}
+    yielded, _seen = run_concierge(monkeypatch, ScriptedModel(), Gateway(call=call), payload)
+
+    row, raised = stored_after(monkeypatch, yielded, operation)
+
+    message = f"Tool {tool} could not run (MCPClientInitializationError): {FAILED_TO_START}"
+    assert row["tool_calls"] == [ToolCall(tool.split("___")[1], "error")]
+    assert row["authorization_decision"] == "error"
+    assert row["turn_error"] == f"ToolSetupError: {message}"
+    assert str(raised) == f"AgentCore Runtime error: {message}"

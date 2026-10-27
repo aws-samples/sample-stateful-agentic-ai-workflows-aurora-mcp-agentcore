@@ -4,8 +4,8 @@ Phase 1 — SQL Agent (Strands + direct Aurora access).
 Walkthrough
 -----------
 This module shows the Strands `@tool` pattern:
-  • `Agent(model=BedrockModel(...), tools=[...])` — Bedrock picks tools per turn
-  • Each `@tool` runs SQL via RDS Data API and logs queries for the trace
+  - `Agent(model=bedrock_model(), tools=[...])`: Bedrock picks tools per turn
+  - Each `@tool` runs SQL via RDS Data API and logs queries for the trace
 
 In the app, `chat.py` → `sql_search()` runs the same keyword SQL
 procedurally (no LLM loop) so Phase 1 replies stay deterministic. This file
@@ -21,17 +21,15 @@ AWS docs:
 
 """
 
-import os
 import uuid
 from datetime import datetime, timezone
 from typing import Callable, Any, Optional, List
 from decimal import Decimal
 
 from strands import Agent, tool
-from strands.models import BedrockModel
 from pydantic import BaseModel
 
-from backend.config import config
+from backend.bedrock_model import bedrock_model
 from backend.db.rds_data_client import get_rds_data_client
 
 
@@ -66,11 +64,7 @@ class SQLAgent:
         self.activity_callback = activity_callback or (lambda x: None)
         self.db = get_rds_data_client()
         
-        # Initialize Bedrock model - Sonnet 5 by default (cross-region inference)
-        self.model = BedrockModel(
-            model_id=config.bedrock.model_id,
-            region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-        )
+        self.model = bedrock_model()
         
         # Register tools with Strands — Bedrock receives JSON schemas from @tool docstrings.
         self.agent = Agent(

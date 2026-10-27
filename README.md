@@ -70,16 +70,17 @@ RLS limits each query to one traveler. Read
 state design and [meridian/README.md](meridian/README.md) for the API, schema
 and configuration.
 
-Models on Amazon Bedrock: GPT-6 Sol for the agents, Cohere Embed v4 for
-embeddings and Cohere Rerank 3.5 for reranking. `BEDROCK_MODEL_ID` changes the
-local Strands agents; the managed Concierge runtime's model is set in
+Models on Amazon Bedrock: Claude Sonnet 5.5 for the agents, through its global
+cross-Region inference profile, Cohere Embed v4 for embeddings and Cohere
+Rerank 3.5 for reranking. `BEDROCK_MODEL_ID` changes the backend's Strands
+agents and reply polish; the managed Concierge runtime's model is set in
 `meridian/meridian_agentcore/agentcore/agentcore.template.json`.
 
 ## Prerequisites
 
 - Python 3.13 and Node.js 22.12 or later
 - An AWS account with credentials (`aws login`, `aws sso login` or `aws configure`)
-- Amazon Bedrock access to GPT-6 Sol, Cohere Embed v4 and Cohere Rerank 3.5
+- Amazon Bedrock access to Claude Sonnet 5.5, Cohere Embed v4 and Cohere Rerank 3.5
 - An Aurora PostgreSQL cluster with the RDS Data API enabled and a Secrets Manager secret for the database user. [OPERATIONS.md](meridian/docs/OPERATIONS.md#provision-aurora) shows how to create one with the included CDK app.
 - For Phase 4, the Concierge chat and all holds: AgentCore resources, deployed with the [AgentCore CLI](https://github.com/aws/agentcore-cli) (`npm install -g @aws/agentcore`). See the [deployment runbook](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md).
 

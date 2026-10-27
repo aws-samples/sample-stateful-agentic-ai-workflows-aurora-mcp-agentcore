@@ -138,3 +138,114 @@ def test_pending_says_so_when_every_migration_is_applied(monkeypatch, tmp_path, 
     code, words = _pending_run(monkeypatch, tmp_path, client, capsys)
     assert (code, " ".join(words)) == (0, "No pending migrations.")
     assert client.commits == []
+
+
+def test_a_dry_run_runs_every_statement_then_rolls_back_without_marking_it_applied(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(migrations, "CLUSTER_ARN", "cluster-arn")
+    monkeypatch.setattr(migrations, "SECRET_ARN", "secret-arn")
+    monkeypatch.setattr(migrations, "DATABASE", "meridian")
+    path = tmp_path / "021_dry.sql"
+    path.write_text("ALTER TABLE t ADD COLUMN a INTEGER;\nCREATE VIEW v AS SELECT 1;\n")
+    client = FakeRdsDataClient()
+
+    count = migrations._dry_run_migration(client, path)
+
+    assert count == 2
+    assert [call["sql"] for call in client.executed] == [
+        "ALTER TABLE t ADD COLUMN a INTEGER;", "CREATE VIEW v AS SELECT 1;"]
+    assert all(call["transactionId"] == "tx-migration" for call in client.executed)
+    assert client.commits == []
+    assert client.rollbacks == [
+        {"resourceArn": "cluster-arn", "secretArn": "secret-arn", "transactionId": "tx-migration"}]
+    assert not any("schema_migrations" in call["sql"] for call in client.executed)
+
+
+def test_a_dry_run_that_fails_midway_still_rolls_back(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(migrations, "CLUSTER_ARN", "cluster-arn")
+    monkeypatch.setattr(migrations, "SECRET_ARN", "secret-arn")
+    path = tmp_path / "021_dry.sql"
+    path.write_text("ALTER TABLE t ADD COLUMN a INTEGER;\nCREATE VIEW v AS SELECT 1;\n")
+    client = FakeRdsDataClient(fail_on_sql="CREATE VIEW")
+
+    with pytest.raises(RuntimeError, match="migration statement failed"):
+        migrations._dry_run_migration(client, path)
+
+    assert client.commits == [] and len(client.rollbacks) == 1
+
+
+def test_the_dry_run_flag_lists_what_would_run_and_commits_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    monkeypatch.setattr(migrations, "CLUSTER_ARN", "cluster-arn")
+    monkeypatch.setattr(migrations, "SECRET_ARN", "secret-arn")
+    monkeypatch.setattr(migrations, "DATABASE", "meridian")
+    monkeypatch.setattr(migrations, "MIGRATIONS_DIR", tmp_path)
+    (tmp_path / "021_dry.sql").write_text("ALTER TABLE t ADD COLUMN a INTEGER;")
+    client = FakeRdsDataClient()
+    monkeypatch.setattr(migrations.boto3, "client", lambda *args, **kwargs: client)
+
+    assert migrations.main(["--dry-run"]) == 0
+
+    assert "Dry run: 021_dry.sql ran 1 statement(s) and was rolled back." in capsys.readouterr().out
+    assert client.commits == [] and len(client.rollbacks) == 1
+
+
+def test_dry_run_and_pending_cannot_be_combined() -> None:
+    with pytest.raises(SystemExit) as stopped:
+        migrations.main(["--dry-run", "--pending"])
+    assert stopped.value.code == 2
+
+
+def _spy_begin_calls(monkeypatch: pytest.MonkeyPatch, client: FakeRdsDataClient) -> list[dict]:
+    calls: list[dict] = []
+    begin = client.begin_transaction
+
+    def spy(**kwargs):
+        calls.append(kwargs)
+        return begin(**kwargs)
+
+    monkeypatch.setattr(client, "begin_transaction", spy)
+    return calls
+
+
+@pytest.mark.parametrize("runner", ["_apply_migration", "_dry_run_migration"])
+def test_an_unreadable_migration_never_opens_a_transaction(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, runner: str
+) -> None:
+    monkeypatch.setattr(migrations, "CLUSTER_ARN", "cluster-arn")
+    monkeypatch.setattr(migrations, "SECRET_ARN", "secret-arn")
+    monkeypatch.setattr(migrations, "DATABASE", "meridian")
+    client = FakeRdsDataClient()
+    begun = _spy_begin_calls(monkeypatch, client)
+
+    with pytest.raises(FileNotFoundError):
+        getattr(migrations, runner)(client, tmp_path / "099_missing.sql")
+
+    assert begun == [] and client.rollbacks == []
+
+
+@pytest.mark.parametrize("runner", ["_apply_migration", "_dry_run_migration"])
+def test_a_migration_that_fails_to_split_never_opens_a_transaction(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, runner: str
+) -> None:
+    monkeypatch.setattr(migrations, "CLUSTER_ARN", "cluster-arn")
+    monkeypatch.setattr(migrations, "SECRET_ARN", "secret-arn")
+    monkeypatch.setattr(migrations, "DATABASE", "meridian")
+    path = tmp_path / "099_unsplittable.sql"
+    path.write_text("SELECT 1;\n")
+
+    def refuse(sql: str) -> list[str]:
+        raise ValueError("unbalanced dollar quote")
+
+    monkeypatch.setattr(migrations, "split_sql", refuse)
+    client = FakeRdsDataClient()
+    begun = _spy_begin_calls(monkeypatch, client)
+
+    with pytest.raises(ValueError, match="unbalanced dollar quote"):
+        getattr(migrations, runner)(client, path)
+
+    assert begun == [] and client.rollbacks == []

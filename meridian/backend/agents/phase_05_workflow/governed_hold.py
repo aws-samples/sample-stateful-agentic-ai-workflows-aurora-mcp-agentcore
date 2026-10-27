@@ -15,15 +15,16 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
+# The Gateway's request interceptor answers a call whose caller has no usable traveler with a tool
+# error behind IDENTITY_REFUSAL's prefix. Nothing ran, so it is a refusal, not an unknown outcome.
+from backend.audit_vocabulary import IDENTITY_CHECK as REFUSED_BY_IDENTITY
+from backend.audit_vocabulary import IDENTITY_REFUSAL
+from backend.audit_vocabulary import POLICY as REFUSED_BY_POLICY
+
 HOLD_TOOL = "MeridianHolds___create_courtesy_hold"
 # Gateway Policy denial envelopes: tool-result errors and the observed JSON-RPC
 # -32002 response. IAM and target errors must not become Cedar decisions.
 DENIAL = re.compile(r"^(?:AuthorizeActionException\s*-\s*)?Tool Execution Denied:", re.I)
-# The Gateway's request interceptor answers a call whose caller has no usable traveler with a tool
-# error behind this prefix. Nothing ran, so it is a refusal, not an unknown outcome.
-IDENTITY_REFUSAL = re.compile(r"^Identity Check Failed:")
-REFUSED_BY_POLICY = "policy"
-REFUSED_BY_IDENTITY = "identity_check"
 
 
 # Lambda errors proving the calling worker no longer owns the run.

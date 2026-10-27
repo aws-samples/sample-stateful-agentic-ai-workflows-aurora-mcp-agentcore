@@ -1,19 +1,7 @@
 """
-MCP (Model Context Protocol) module for Meridian.
+MCP (Model Context Protocol) servers and clients for Meridian.
 
-Provides MCP client integration for database operations via awslabs.postgres-mcp-server.
+The custom ``meridian-concierge`` server serves Phase 2's typed tools; the custom
+``meridian-memory`` server serves traveler memory to external MCP hosts. The reference agent
+in ``backend/agents/phase_02_mcp/`` starts ``awslabs.postgres-mcp-server`` itself.
 """
-
-from backend.mcp.mcp_client import (
-    MCPPostgresClient,
-    MCPConnectionConfig,
-    get_mcp_client,
-    mcp_session,
-)
-
-__all__ = [
-    "MCPPostgresClient",
-    "MCPConnectionConfig",
-    "get_mcp_client",
-    "mcp_session",
-]

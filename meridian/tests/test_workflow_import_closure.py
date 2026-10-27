@@ -15,6 +15,8 @@ MERIDIAN = Path(__file__).resolve().parents[1]
 FORBIDDEN = ("fastapi", "backend.routers", "langgraph", "bedrock_agentcore")
 FRAMEWORK_FREE = [
     "backend.activity",
+    "backend.trace_names",
+    "backend.audit_vocabulary",
     "backend.agents.phase_05_workflow.hold_intent",
     "backend.agents.phase_05_workflow.governed_hold",
     "backend.agents.phase_05_workflow.packages",

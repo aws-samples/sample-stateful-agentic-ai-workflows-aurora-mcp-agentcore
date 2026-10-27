@@ -1,16 +1,13 @@
 """
 MCP client for the custom Meridian concierge server (`backend.mcp.concierge_server`).
 
-This is the symmetric counterpart to `mcp_client.py` (postgres-mcp-server)
-and `memory_mcp_client.py` (Phase 4 memory MCP). All three use the same
-stdio transport - the agent doesn't know or care which one is which,
-which is the whole point of MCP.
+This is the symmetric counterpart to `memory_mcp_client.py` (Phase 4 memory MCP). Both use
+the same stdio transport; the caller does not know or care which one is which, which is the
+whole point of MCP.
 
-Phase 2's `mcp_search` attaches both this server and postgres-mcp-server
-so the trace shows two distinct MCP servers feeding one agent turn:
-
-    awslabs.postgres-mcp-server  → generic SQL transport
-    meridian-concierge (custom)  → travel-specific domain tools
+Phase 2's `mcp_search` attaches only this server: the typed `search_trips` filter and
+the travel-specific domain tools. `awslabs.postgres-mcp-server` serves only the
+reference MCP agent in `backend/agents/phase_02_mcp/`.
 """
 
 from __future__ import annotations

@@ -6,7 +6,9 @@ from typing import Any, Dict, List, Optional
 from backend.activity import ActivityEntry, Product, create_activity
 from backend.catalog_compat import row_to_api_product
 from backend.db.rds_data_client import get_rds_data_client
+from backend.search_utils import display_sql
 from backend.timing import clock, elapsed_ms
+from backend.trace_names import AVAILABILITY_CODE
 
 
 def _rank_named_package_matches(
@@ -121,7 +123,7 @@ def _not_found(activities: List[ActivityEntry]) -> tuple[list, List[ActivityEntr
     activities.append(create_activity(
         activity_type="result",
         title="PackageAgent: Package not found",
-        agent_name="PackageAgent",
+        agent_name=AVAILABILITY_CODE,
         agent_file="agents/phase_03_retrieval/package_agent.py"
     ))
 
@@ -129,7 +131,7 @@ def _not_found(activities: List[ActivityEntry]) -> tuple[list, List[ActivityEntr
         activity_type="result",
         title="PackageAgent: availability check complete",
         details="No matching package found",
-        agent_name="PackageAgent",
+        agent_name=AVAILABILITY_CODE,
         agent_file="retrieval/availability.py"
     ))
 
@@ -156,11 +158,12 @@ def _availability_reply(
         activity_type="availability",
         title="PackageAgent: Checking duration inventory",
         details=f"Package: {product['name']}",
-        sql_query=(
+        sql_query=display_sql(
             "SELECT package_places_left(package_id) AS availability, durations "
-            "FROM trip_packages WHERE package_id = ?"
+            "FROM trip_packages WHERE package_id = %s",
+            (product["package_id"],),
         ),
-        agent_name="PackageAgent",
+        agent_name=AVAILABILITY_CODE,
         agent_file="agents/phase_03_retrieval/package_agent.py"
     ))
 
@@ -178,7 +181,7 @@ def _availability_reply(
         activity_type="result",
         title="PackageAgent: Duration inventory verified",
         details=f"Total: {total_stock} places left across durations",
-        agent_name="PackageAgent",
+        agent_name=AVAILABILITY_CODE,
         agent_file="agents/phase_03_retrieval/package_agent.py"
     ))
 
@@ -186,7 +189,7 @@ def _availability_reply(
         activity_type="result",
         title="PackageAgent: availability check complete",
         details=f"Availability check complete for {product['name']}",
-        agent_name="PackageAgent",
+        agent_name=AVAILABILITY_CODE,
         agent_file="retrieval/availability.py"
     ))
 
@@ -233,7 +236,7 @@ async def retrieval_availability_search(
         activity_type="reasoning",
         title="Availability check called directly",
         details="Code calls the package availability check. No model routes this call.",
-        agent_name="PackageAgent",
+        agent_name=AVAILABILITY_CODE,
         agent_file="retrieval/availability.py"
     ))
 
@@ -266,7 +269,7 @@ async def retrieval_availability_search(
             else "Searching for mentioned trip package"
         ),
         execution_time_ms=search_time,
-        agent_name="PackageAgent",
+        agent_name=AVAILABILITY_CODE,
         agent_file="agents/phase_03_retrieval/package_agent.py"
     ))
 

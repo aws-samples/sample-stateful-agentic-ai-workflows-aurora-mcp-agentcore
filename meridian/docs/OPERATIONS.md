@@ -67,8 +67,16 @@ python scripts/seed_data.py            # catalog with embeddings, the sample tra
 tables or data already exist. For an existing database, keep its journeys and
 bookings and run only `python scripts/apply_migrations.py`. A database created
 before traveler grants existed may also need
-`python scripts/bind_current_identity.py`, which grants your current IAM or
-AgentCore workload access to the sample traveler.
+`python scripts/bind_current_identity.py`, which grants your current IAM identity
+access to the sample traveler.
+
+Migration `021_audit_outcome.sql` adds `tool_calls` and `turn_error` to
+`agent_audit_log`, with the checks that tie `authorization_decision` to them, and
+recreates the `agent_iam_audit` view to show both. List the pending migrations first
+with `python scripts/apply_migrations.py --pending` and expect exactly that name, then
+run `python scripts/apply_migrations.py --dry-run`, which runs each pending migration in
+a transaction and rolls it back. Apply it before deploying the backend that writes those
+columns.
 
 Each workload that sets a traveler scope needs its own grant: the backend's
 identity (`seed_data.py` or `bind_current_identity.py`), the holds Lambda role
@@ -342,7 +350,10 @@ publishing the backend. Removing the setting also removes any old hosted overrid
    ```
 
    The deny tests add `traveler_access_audit` deny rows for the decoy on every
-   run. That is deliberate evidence, not residue.
+   run. That is deliberate evidence, not residue. The backend also writes a
+   `traveler_access_audit` deny row whenever it answers 403 to a request for
+   another traveler (`authorize_traveler` in `backend/http_auth.py`), so a deny
+   row does not always come from these tests.
 
 As `meridian_backend`, the Phase 1 to 3 search agents and the Phase 2 MCP server
 can read only `trip_packages` outside a traveler scope. A Phase 2 prompt that
@@ -360,8 +371,8 @@ backend login has not been exercised against the live cluster.
    127.0.0.1:8014 with the `meridian_backend` secret, refuses to start if that
    port is already bound, and checks that `/api/health` reports
    `database_user` as `meridian_backend`. It then runs the warm-up, two Phase 2
-   turns that must show successful MCP tool activity with rows (the generic
-   postgres-mcp server and the custom concierge server), the RLS probe, the
+   turns that must show successful MCP tool activity with rows (the typed
+   `search_trips` tool and `compare_packages`, both on the concierge server), the RLS probe, the
    session receipt and the Phase 5 stop-and-resume recovery, and writes
    `.local/release-b2/backend-login-proof.json`. An invalid receipt is written
    before anything starts, and a failed, crashed or interrupted (Ctrl-C or
@@ -1271,6 +1282,28 @@ python scripts/bind_web_backend_role.py            # dry run, writes nothing
 python scripts/bind_web_backend_role.py --apply
 python scripts/bind_web_backend_role.py --traveler trv_demo_decoy --apply   # Jordan Lee
 ```
+
+The backend and the `MeridianConcierge` Runtime call Claude Sonnet 5.5 through its
+global inference profile, `global.anthropic.claude-sonnet-5-5`. Each role is granted
+exactly the Amazon Bedrock models it calls. For Sonnet 5.5 that is the three-part policy
+AWS documents in
+[IAM policy requirements for global cross-Region inference](https://docs.aws.amazon.com/bedrock/latest/userguide/global-cross-region-inference.html):
+the inference profile in the stack's Region, the foundation model in that Region, and the
+Region-agnostic foundation model, the last two only through that profile, each for
+`bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`.
+`infra/lib/bedrock-model-access.ts` grants the App Runner instance role Sonnet 5.5 that
+way, plus `bedrock:InvokeModel` on `cohere.embed-v4:0` and `cohere.rerank-v3-5:0` in the
+stack's Region. `meridian_agentcore/agentcore/cdk/lib/model-access.ts` grants the
+`MeridianConcierge` role Sonnet 5.5 the same way and the `MeridianWorkflow` role only the
+two Cohere models, and removes the AgentCore construct's grant on every model. Both refuse
+a chat `BEDROCK_MODEL_ID` that is not a global inference profile id.
+
+Before a release, run `python scripts/smoke_bedrock_model.py`. It is a dry run unless
+given `--apply` and `--i-understand-this-changes-aws`; with them it sends one small
+Converse request for each thinking and effort setting and reports each as `USABLE`,
+`ACCEPTED`, `REJECTED` or `INCONCLUSIVE`. Until a run shows which setting to keep,
+`REQUEST_FIELDS` in `backend/bedrock_model.py` and in the Runtime's `model/load.py` stays
+empty, so no thinking field is sent.
 
 A Git push runs CI only; it does not deploy the hosted app or the AgentCore
 resources.

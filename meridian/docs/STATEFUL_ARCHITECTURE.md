@@ -25,8 +25,20 @@ The RDS Data API remains a connectionless, IAM-authorized HTTPS transport. It
 uses database credentials stored in Secrets Manager to read and write durable
 Aurora state. A Data API transaction ID keeps `SET LOCAL ROLE`, traveler GUCs,
 and one read or write unit together; it is not long-lived workflow state.
-Phase 4 commits its authorized read unit before calling AgentCore or Gateway,
-then reauthorizes in a separate short write-and-audit unit.
+Phase 4 commits its authorized read unit before calling AgentCore or Gateway.
+Once the Runtime returns, it reauthorizes for two short write units: an audit
+unit that commits the turn's `agent_audit_log` row, then a memory unit that
+stores the turn. A turn whose Runtime call fails still commits its audit row,
+listing the calls the Runtime reported before its error or recording them as
+unknown, and then reports the error. That row names the error in `turn_error`,
+so its `authorization_decision` is `deny` or `error`, never `allow`, even when
+every call it reported succeeded. A turn that fails after the Runtime returned
+and before its audit row, such as in the trace forwarding or the catalog
+refresh, names its error in the same way. `turn_error` stays NULL only for a
+turn that completed, or one that failed after its row was committed (the memory
+step and the trace entries that follow it). A turn that does not complete is not
+stored in Aurora conversation memory, and any streamed text stays provisional;
+the Runtime's AgentCore Memory session keeps its own copy.
 
 MCP is orthogonal to the database transport. It defines governed tool contracts;
 an MCP server can use the Data API or PostgreSQL wire protocol internally.

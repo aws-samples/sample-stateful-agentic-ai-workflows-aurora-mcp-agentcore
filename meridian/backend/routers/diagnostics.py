@@ -35,12 +35,13 @@ from backend.agentcore.identity import get_agentcore_identity
 from backend.authorization import TravelerAuthorizationError
 from backend.db.admin_counts import RLS_BASELINE_KINDS, admin_count
 from backend.db.rds_data_client import get_rds_data_client
-from backend.logging_config import log_exception
 from backend.http_auth import (
     HttpPrincipal,
     authorize_traveler,
     require_http_principal,
 )
+from backend.logging_config import log_exception
+from backend.security.redaction import mask_payload
 
 router = APIRouter(prefix="/api/diagnostics", tags=["diagnostics"])
 
@@ -127,7 +128,7 @@ async def rls_probe(
     principal: HttpPrincipal = Depends(require_http_principal),
 ) -> RlsProbeResponse:
     """Run scoped vs unscoped COUNT(*) per table + return the live policies."""
-    traveler_id = authorize_traveler(principal, request.traveler_id)
+    traveler_id = await authorize_traveler(principal, request.traveler_id)
     requested = request.tables or list(DEFAULT_TABLES)
     # Drop anything not on the allow-list (injection guard).
     tables = list(dict.fromkeys(t for t in requested if t in ALLOWED_TABLES))
@@ -215,7 +216,7 @@ async def rls_probe(
 
     return RlsProbeResponse(
         traveler_id=traveler_id,
-        authorization={
+        authorization=mask_payload({
             "provider": decision.provider,
             "subject_id": decision.subject_id,
             "principal": decision.principal,
@@ -223,11 +224,11 @@ async def rls_probe(
             "decision": decision.decision,
             "binding_id": decision.binding_id,
             "audit_id": decision.audit_id,
-        },
-        negative_control=negative,
+        }),
+        negative_control=mask_payload(negative),
         tables=results,
         policies=policies,
-        debug=debug,
+        debug=mask_payload(debug),
     )
 
 
@@ -401,7 +402,7 @@ async def session_receipt(
     principal: HttpPrincipal = Depends(require_http_principal),
 ) -> SessionReceiptResponse:
     """Count the durable state this session produced, table by table."""
-    traveler_id = authorize_traveler(principal, request.traveler_id)
+    traveler_id = await authorize_traveler(principal, request.traveler_id)
     db = get_rds_data_client()
     authorization = get_agentcore_identity().authorization_context()
     window = f"{request.window_minutes} minutes"

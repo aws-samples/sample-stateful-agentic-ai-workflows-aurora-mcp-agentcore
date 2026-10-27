@@ -12,17 +12,15 @@ AWS docs:
     https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html
 """
 
-import os
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Callable, Any, Optional, List
 
 from strands import Agent, tool
-from strands.models import BedrockModel
 from pydantic import BaseModel
 
-from backend.config import config
+from backend.bedrock_model import bedrock_model
 from backend.db.rds_data_client import get_rds_data_client
 
 
@@ -45,10 +43,7 @@ class BookingAgent:
         self.activity_callback = activity_callback or (lambda x: None)
         self.db = get_rds_data_client()
 
-        self.model = BedrockModel(
-            model_id=config.bedrock.model_id,
-            region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-        )
+        self.model = bedrock_model()
 
         self.agent = Agent(
             model=self.model,

@@ -57,7 +57,7 @@ async def get_memory_profile(
     traveler_id: str = DEMO_TRAVELER_ID,
     principal: HttpPrincipal = Depends(require_http_principal),
 ) -> MemoryProfileResponse:
-    traveler_id = authorize_traveler(principal, traveler_id)
+    traveler_id = await authorize_traveler(principal, traveler_id)
     store = get_memory_store()
     db = get_rds_data_client()
     # Pin RLS for the read so the API endpoint exercises the same isolation
@@ -100,7 +100,7 @@ async def update_memory_fact(
     update: MemoryFactUpdate,
     principal: HttpPrincipal = Depends(require_http_principal),
 ) -> MemoryFactResponse:
-    traveler_id = authorize_traveler(principal, traveler_id)
+    traveler_id = await authorize_traveler(principal, traveler_id)
     preference_key = preference_key.strip()
     value = update.value.strip()
     if not preference_key:
@@ -137,7 +137,7 @@ async def delete_memory_fact(
     preference_key: str,
     principal: HttpPrincipal = Depends(require_http_principal),
 ) -> dict:
-    traveler_id = authorize_traveler(principal, traveler_id)
+    traveler_id = await authorize_traveler(principal, traveler_id)
     preference_key = preference_key.strip()
     if not preference_key or len(preference_key) > 100:
         raise HTTPException(status_code=422, detail="Preference key is invalid")

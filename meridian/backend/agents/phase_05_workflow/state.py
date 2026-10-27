@@ -6,6 +6,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, TypedDict
 
+from backend.trace_names import WORKFLOW_CODE
+
 AGENT_FILE = "agents/phase_05_workflow/graph.py"
 HOLD_MINUTES = int(os.getenv("MERIDIAN_HOLD_MINUTES", "15"))
 SNAPSHOT_STORE = "Aurora workflow_snapshots"
@@ -58,7 +60,7 @@ def activity(
     title: str,
     *,
     details: Optional[str] = None,
-    agent_name: str = "OrchestrationAgent",
+    agent_name: str = WORKFLOW_CODE,
     telemetry: Optional[Dict[str, Any]] = None,
     sql_query: Optional[str] = None,
     execution_time_ms: Optional[int] = None,

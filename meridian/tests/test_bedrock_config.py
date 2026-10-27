@@ -21,16 +21,16 @@ class TestBedrockConfig:
         monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
         cfg = _reload_config_module()
         assert cfg.config.bedrock.model_id == cfg.BedrockConfig.DEFAULT_MODEL_ID
-        assert cfg.BedrockConfig.DEFAULT_MODEL_ID == "us.openai.gpt-6-sol"
+        assert cfg.BedrockConfig.DEFAULT_MODEL_ID == "global.anthropic.claude-sonnet-5-5"
         # Region falls back to us-east-1 when neither var is set.
         assert cfg.config.bedrock.region == "us-east-1"
 
     def test_bedrock_model_id_env_overrides_default(self, monkeypatch):
-        monkeypatch.setenv("BEDROCK_MODEL_ID", "global.anthropic.claude-sonnet-5")
+        monkeypatch.setenv("BEDROCK_MODEL_ID", "global.anthropic.claude-haiku-4-5-20251001-v1:0")
         monkeypatch.delenv("BEDROCK_REGION", raising=False)
         monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
         cfg = _reload_config_module()
-        assert cfg.config.bedrock.model_id == "global.anthropic.claude-sonnet-5"
+        assert cfg.config.bedrock.model_id == "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 
     def test_bedrock_region_takes_precedence_over_aws_default_region(self, monkeypatch):
         monkeypatch.setenv("BEDROCK_REGION", "us-west-2")

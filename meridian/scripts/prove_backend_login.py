@@ -6,8 +6,8 @@ machine with ``AURORA_SECRET_ARN`` set to the meridian_backend secret (for that 
 refuses to start if port 8014 is already bound, and checks through ``/api/health`` that the
 running process is connected as ``meridian_backend``. It then drives the backend through the paths
 nothing exercised as that login: the Phase 1 to 4 warm-up, two Phase 2 turns that must show
-successful MCP tool activity with rows (the generic postgres-mcp subprocess and the custom
-concierge server), the RLS probe and the session receipt, and a Phase 5 recovery that stops its
+successful MCP tool activity with rows (the typed search_trips tool and the custom
+domain tools), the RLS probe and the session receipt, and a Phase 5 recovery that stops its
 Runtime session and resumes it. The proof scripts keep the master login for their own reads and
 clean-up. The recovery runs on its own ``phase5-proof-`` thread; its rows are counted at zero in
 every table after the purge, and a sweep of every ``phase5-proof-`` thread follows the recovery
@@ -89,8 +89,8 @@ HTTP_SECONDS = 240
 RECEIPT_WINDOW_MINUTES = 30
 SQL_PROMPT = PROMPT_LADDER[1].works[0]
 CONCIERGE_PROMPT = PROMPT_LADDER[2].works[0]
-SQL_TOOL = "postgres-mcp: run_query"
-CONCIERGE_TOOL = "meridian-concierge:"
+SQL_TOOL = "meridian-concierge: search_trips"
+CONCIERGE_TOOL = "meridian-concierge: compare_packages"
 CHECKS = ("backend_login", "warm", "phase2_sql_mcp", "phase2_concierge_mcp", "rls_probe",
           "session_receipt", "recovery", "purge")
 STRIPPED = ("MERIDIAN_API_TOKEN", "MERIDIAN_COGNITO_REGION", "MERIDIAN_COGNITO_USER_POOL_ID",

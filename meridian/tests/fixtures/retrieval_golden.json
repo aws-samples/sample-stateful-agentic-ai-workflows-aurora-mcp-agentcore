@@ -4,7 +4,7 @@
       {
         "activity_type": "reasoning",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
@@ -13,7 +13,7 @@
       {
         "activity_type": "search",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Loading ranked package PKG-TYO-1",
         "sql_query": null,
         "telemetry": null,
@@ -22,16 +22,16 @@
       {
         "activity_type": "availability",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Package: Tokyo Executive Stopover",
-        "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = ?",
+        "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = $1\n-- Values: $1 = 'PKG-TYO-1'",
         "telemetry": null,
         "title": "PackageAgent: Checking duration inventory"
       },
       {
         "activity_type": "result",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Total: 3 places left across durations",
         "sql_query": null,
         "telemetry": null,
@@ -40,7 +40,7 @@
       {
         "activity_type": "result",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
@@ -90,7 +90,7 @@
       {
         "activity_type": "reasoning",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
@@ -99,7 +99,7 @@
       {
         "activity_type": "search",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Searching for mentioned trip package",
         "sql_query": null,
         "telemetry": null,
@@ -108,16 +108,16 @@
       {
         "activity_type": "availability",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Package: Tokyo Executive Stopover",
-        "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = ?",
+        "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = $1\n-- Values: $1 = 'PKG-TYO-1'",
         "telemetry": null,
         "title": "PackageAgent: Checking duration inventory"
       },
       {
         "activity_type": "result",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Total: 3 places left across durations",
         "sql_query": null,
         "telemetry": null,
@@ -126,7 +126,7 @@
       {
         "activity_type": "result",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
@@ -181,7 +181,7 @@
       {
         "activity_type": "reasoning",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
@@ -190,7 +190,7 @@
       {
         "activity_type": "search",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Loading ranked package PKG-TYO-1",
         "sql_query": null,
         "telemetry": null,
@@ -199,16 +199,16 @@
       {
         "activity_type": "availability",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Package: Tokyo Executive Stopover",
-        "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = ?",
+        "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = $1\n-- Values: $1 = 'PKG-TYO-1'",
         "telemetry": null,
         "title": "PackageAgent: Checking duration inventory"
       },
       {
         "activity_type": "result",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Total: 3 places left across durations",
         "sql_query": null,
         "telemetry": null,
@@ -217,7 +217,7 @@
       {
         "activity_type": "result",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
@@ -264,7 +264,7 @@
       {
         "activity_type": "reasoning",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
@@ -273,7 +273,7 @@
       {
         "activity_type": "search",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Searching for mentioned trip package",
         "sql_query": null,
         "telemetry": null,
@@ -282,7 +282,7 @@
       {
         "activity_type": "result",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": null,
         "sql_query": null,
         "telemetry": null,
@@ -291,7 +291,7 @@
       {
         "activity_type": "result",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "No matching package found",
         "sql_query": null,
         "telemetry": null,
@@ -307,7 +307,7 @@
       {
         "activity_type": "reasoning",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
@@ -316,7 +316,7 @@
       {
         "activity_type": "search",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Loading ranked package MISSING",
         "sql_query": null,
         "telemetry": null,
@@ -325,7 +325,7 @@
       {
         "activity_type": "result",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": null,
         "sql_query": null,
         "telemetry": null,
@@ -334,7 +334,7 @@
       {
         "activity_type": "result",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "No matching package found",
         "sql_query": null,
         "telemetry": null,
@@ -357,7 +357,7 @@
       {
         "activity_type": "reasoning",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
@@ -366,7 +366,7 @@
       {
         "activity_type": "search",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Searching for mentioned trip package",
         "sql_query": null,
         "telemetry": null,
@@ -375,7 +375,7 @@
       {
         "activity_type": "result",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": null,
         "sql_query": null,
         "telemetry": null,
@@ -384,7 +384,7 @@
       {
         "activity_type": "result",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "No matching package found",
         "sql_query": null,
         "telemetry": null,
@@ -410,7 +410,7 @@
       {
         "activity_type": "reasoning",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
@@ -419,7 +419,7 @@
       {
         "activity_type": "search",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Loading ranked package PKG-TYO-1",
         "sql_query": null,
         "telemetry": null,
@@ -428,16 +428,16 @@
       {
         "activity_type": "availability",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Package: Tokyo Executive Stopover",
-        "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = ?",
+        "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = $1\n-- Values: $1 = 'PKG-TYO-1'",
         "telemetry": null,
         "title": "PackageAgent: Checking duration inventory"
       },
       {
         "activity_type": "result",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Total: 7 places left across durations",
         "sql_query": null,
         "telemetry": null,
@@ -446,7 +446,7 @@
       {
         "activity_type": "result",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
@@ -492,7 +492,7 @@
       {
         "activity_type": "reasoning",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Code calls the package availability check. No model routes this call.",
         "sql_query": null,
         "telemetry": null,
@@ -501,7 +501,7 @@
       {
         "activity_type": "search",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Loading ranked package PKG-TYO-1",
         "sql_query": null,
         "telemetry": null,
@@ -510,16 +510,16 @@
       {
         "activity_type": "availability",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Package: Tokyo Executive Stopover",
-        "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = ?",
+        "sql_query": "SELECT package_places_left(package_id) AS availability, durations FROM trip_packages WHERE package_id = $1\n-- Values: $1 = 'PKG-TYO-1'",
         "telemetry": null,
         "title": "PackageAgent: Checking duration inventory"
       },
       {
         "activity_type": "result",
         "agent_file": "agents/phase_03_retrieval/package_agent.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Total: 0 places left across durations",
         "sql_query": null,
         "telemetry": null,
@@ -528,7 +528,7 @@
       {
         "activity_type": "result",
         "agent_file": "retrieval/availability.py",
-        "agent_name": "PackageAgent",
+        "agent_name": "Availability check (code)",
         "details": "Availability check complete for Tokyo Executive Stopover",
         "sql_query": null,
         "telemetry": null,
@@ -578,65 +578,74 @@
       {
         "activity_type": "reasoning",
         "agent_file": "retrieval/hybrid.py",
-        "agent_name": "SearchAgent",
-        "details": "Code calls hybrid retrieval: embed the query, fetch pgvector and full-text candidates, rerank with Cohere. No model routes this call.",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "Code embeds the query, fetches pgvector and full-text candidates, keeps the ones that fit the budget and have places left, and reranks them with Cohere. The calling step decides when to search; no model runs inside.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Hybrid retrieval called directly"
+        "title": "Hybrid retrieval started"
       },
       {
         "activity_type": "embedding",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
-        "details": "Cohere Embed v4 Embeddings (1024d)",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "Cohere Embed v4 (1024d), input_type search_query",
         "sql_query": null,
         "telemetry": null,
         "title": "Generating query embedding"
       },
       {
         "activity_type": "embedding",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
-        "details": null,
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "1024 dimensions",
         "sql_query": null,
         "telemetry": null,
         "title": "Embedding generated"
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
-        "details": "pgvector cosine + tsvector/ts_rank",
-        "sql_query": null,
-        "telemetry": null,
-        "title": "Hybrid candidate retrieval"
-      },
-      {
-        "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
-        "details": "1 unique candidates (semantic=0, lexical=1)",
-        "sql_query": "SELECT * FROM semantic_trip_search(query_vector, candidate_limit); SELECT ... ts_rank(search_vector, websearch_to_tsquery(...)) ...",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "2 unique candidates (semantic=2, lexical=1)",
+        "sql_query": "SELECT * FROM semantic_trip_search($1::vector, $2::integer)\n-- Values: $1 = '[0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25... (5121 characters)', $2 = 25\n\nWITH raw AS ( SELECT websearch_to_tsquery('english', $1)::text AS text_query ), parts AS ( SELECT (SELECT string_agg(part, ' | ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) <> '!') AS positives, (SELECT string_agg(part, ' & ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) = '!') AS negatives FROM raw ), q AS ( SELECT CASE WHEN positives IS NULL THEN negatives WHEN negatives IS NULL THEN '(' || positives || ')' ELSE '(' || positives || ') & ' || negatives END::tsquery AS tsq FROM parts ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq ORDER BY lexical_score DESC LIMIT $2\n-- Values: $1 = 'Tokyo city trips under $1900', $2 = 25",
         "telemetry": null,
         "title": "Hybrid candidates fetched"
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
-        "details": "Reranked to top 1 trips",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "2 candidates joined to durations, places left and highlights",
+        "sql_query": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights FROM trip_packages WHERE package_id IN ($1, $2)\n-- Values: $1 = 'PKG-TYO-1', $2 = 'PKG-TYO-2'",
+        "telemetry": null,
+        "title": "Catalog card details hydrated"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "Dropped 2 of 2 candidates: 2 over the $1,900 budget",
         "sql_query": null,
         "telemetry": null,
-        "title": "Cohere rerank applied"
+        "title": "Eligibility filter applied"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "No eligible candidates.",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Cohere rerank skipped"
       },
       {
         "activity_type": "result",
         "agent_file": "retrieval/hybrid.py",
-        "agent_name": "SearchAgent",
+        "agent_name": "Hybrid retrieval (code)",
         "details": "Ranked trips returned to the calling step",
         "sql_query": null,
         "telemetry": null,
-        "title": "SearchAgent returned 1 results"
+        "title": "Hybrid retrieval returned 0 results"
       }
     ],
     "calls": [
@@ -650,94 +659,73 @@
       {
         "params": [
           "Tokyo city trips under $1900",
-          1900.0,
           25
         ],
-        "sql": "WITH q AS ( SELECT replace( websearch_to_tsquery('english', %s)::text, '&', '|' )::tsquery AS tsq ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq AND price_per_person <= %s ORDER BY lexical_score DESC LIMIT %s"
+        "sql": "WITH raw AS ( SELECT websearch_to_tsquery('english', %s)::text AS text_query ), parts AS ( SELECT (SELECT string_agg(part, ' | ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) <> '!') AS positives, (SELECT string_agg(part, ' & ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) = '!') AS negatives FROM raw ), q AS ( SELECT CASE WHEN positives IS NULL THEN negatives WHEN negatives IS NULL THEN '(' || positives || ')' ELSE '(' || positives || ') & ' || negatives END::tsquery AS tsq FROM parts ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq ORDER BY lexical_score DESC LIMIT %s"
+      },
+      {
+        "params": [
+          "PKG-TYO-1",
+          "PKG-TYO-2"
+        ],
+        "sql": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights FROM trip_packages WHERE package_id IN (%s, %s)"
       }
     ],
     "message": null,
-    "products": [
-      {
-        "availability": {
-          "2 nights": 3,
-          "4 nights": 0
-        },
-        "available_sizes": [
-          "2 nights",
-          "4 nights"
-        ],
-        "brand": "JAL Premium",
-        "category": "city",
-        "description": "Marunouchi business hotel",
-        "destination": "Tokyo",
-        "highlights": [
-          "Haneda lounge"
-        ],
-        "image_url": "https://example.test/tokyo.jpg",
-        "name": "Kyoto Rail Extension",
-        "pre_rerank_position": null,
-        "pre_rerank_similarity": null,
-        "price": 1949.0,
-        "product_id": "PKG-TYO-2",
-        "rank_delta": null,
-        "region": "Asia",
-        "similarity": 0.84
-      }
-    ]
+    "products": []
   },
   "hybrid_ranked": {
     "activities": [
       {
         "activity_type": "reasoning",
         "agent_file": "retrieval/hybrid.py",
-        "agent_name": "SearchAgent",
-        "details": "Code calls hybrid retrieval: embed the query, fetch pgvector and full-text candidates, rerank with Cohere. No model routes this call.",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "Code embeds the query, fetches pgvector and full-text candidates, keeps the ones that fit the budget and have places left, and reranks them with Cohere. The calling step decides when to search; no model runs inside.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Hybrid retrieval called directly"
+        "title": "Hybrid retrieval started"
       },
       {
         "activity_type": "embedding",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
-        "details": "Cohere Embed v4 Embeddings (1024d)",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "Cohere Embed v4 (1024d), input_type search_query",
         "sql_query": null,
         "telemetry": null,
         "title": "Generating query embedding"
       },
       {
         "activity_type": "embedding",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
-        "details": null,
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "1024 dimensions",
         "sql_query": null,
         "telemetry": null,
         "title": "Embedding generated"
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
-        "details": "pgvector cosine + tsvector/ts_rank",
-        "sql_query": null,
-        "telemetry": null,
-        "title": "Hybrid candidate retrieval"
-      },
-      {
-        "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
         "details": "2 unique candidates (semantic=2, lexical=1)",
-        "sql_query": "SELECT * FROM semantic_trip_search(query_vector, candidate_limit); SELECT ... ts_rank(search_vector, websearch_to_tsquery(...)) ...",
+        "sql_query": "SELECT * FROM semantic_trip_search($1::vector, $2::integer)\n-- Values: $1 = '[0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25... (5121 characters)', $2 = 25\n\nWITH raw AS ( SELECT websearch_to_tsquery('english', $1)::text AS text_query ), parts AS ( SELECT (SELECT string_agg(part, ' | ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) <> '!') AS positives, (SELECT string_agg(part, ' & ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) = '!') AS negatives FROM raw ), q AS ( SELECT CASE WHEN positives IS NULL THEN negatives WHEN negatives IS NULL THEN '(' || positives || ')' ELSE '(' || positives || ') & ' || negatives END::tsquery AS tsq FROM parts ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq ORDER BY lexical_score DESC LIMIT $2\n-- Values: $1 = 'Tokyo city trips under $2000', $2 = 25",
         "telemetry": null,
         "title": "Hybrid candidates fetched"
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
-        "details": "Reranked to top 2 trips",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "2 candidates joined to durations, places left and highlights",
+        "sql_query": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights FROM trip_packages WHERE package_id IN ($1, $2)\n-- Values: $1 = 'PKG-TYO-1', $2 = 'PKG-TYO-2'",
+        "telemetry": null,
+        "title": "Catalog card details hydrated"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "Top 2 hybrid candidates reranked",
         "sql_query": null,
         "telemetry": null,
         "title": "Cohere rerank applied"
@@ -745,11 +733,11 @@
       {
         "activity_type": "result",
         "agent_file": "retrieval/hybrid.py",
-        "agent_name": "SearchAgent",
+        "agent_name": "Hybrid retrieval (code)",
         "details": "Ranked trips returned to the calling step",
         "sql_query": null,
         "telemetry": null,
-        "title": "SearchAgent returned 2 results"
+        "title": "Hybrid retrieval returned 2 results"
       }
     ],
     "calls": [
@@ -763,10 +751,16 @@
       {
         "params": [
           "Tokyo city trips under $2000",
-          2000.0,
           25
         ],
-        "sql": "WITH q AS ( SELECT replace( websearch_to_tsquery('english', %s)::text, '&', '|' )::tsquery AS tsq ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq AND price_per_person <= %s ORDER BY lexical_score DESC LIMIT %s"
+        "sql": "WITH raw AS ( SELECT websearch_to_tsquery('english', %s)::text AS text_query ), parts AS ( SELECT (SELECT string_agg(part, ' | ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) <> '!') AS positives, (SELECT string_agg(part, ' & ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) = '!') AS negatives FROM raw ), q AS ( SELECT CASE WHEN positives IS NULL THEN negatives WHEN negatives IS NULL THEN '(' || positives || ')' ELSE '(' || positives || ') & ' || negatives END::tsquery AS tsq FROM parts ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq ORDER BY lexical_score DESC LIMIT %s"
+      },
+      {
+        "params": [
+          "PKG-TYO-1",
+          "PKG-TYO-2"
+        ],
+        "sql": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights FROM trip_packages WHERE package_id IN (%s, %s)"
       }
     ],
     "message": null,
@@ -789,11 +783,11 @@
         ],
         "image_url": "https://example.test/tokyo.jpg",
         "name": "Kyoto Rail Extension",
-        "pre_rerank_position": null,
-        "pre_rerank_similarity": null,
+        "pre_rerank_position": 1,
+        "pre_rerank_similarity": 0.84,
         "price": 1949.0,
         "product_id": "PKG-TYO-2",
-        "rank_delta": null,
+        "rank_delta": 1,
         "region": "Asia",
         "similarity": 0.84
       },
@@ -815,11 +809,11 @@
         ],
         "image_url": "https://example.test/tokyo.jpg",
         "name": "Tokyo Executive Stopover",
-        "pre_rerank_position": null,
-        "pre_rerank_similarity": null,
+        "pre_rerank_position": 0,
+        "pre_rerank_similarity": 0.91,
         "price": 1949.0,
         "product_id": "PKG-TYO-1",
-        "rank_delta": null,
+        "rank_delta": -1,
         "region": "Asia",
         "similarity": 0.91
       }
@@ -830,65 +824,65 @@
       {
         "activity_type": "reasoning",
         "agent_file": "retrieval/hybrid.py",
-        "agent_name": "SearchAgent",
-        "details": "Code calls hybrid retrieval: embed the query, fetch pgvector and full-text candidates, rerank with Cohere. No model routes this call.",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "Code embeds the query, fetches pgvector and full-text candidates, keeps the ones that fit the budget and have places left, and reranks them with Cohere. The calling step decides when to search; no model runs inside.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Hybrid retrieval called directly"
+        "title": "Hybrid retrieval started"
       },
       {
         "activity_type": "embedding",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
-        "details": "Cohere Embed v4 Embeddings (1024d)",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "Cohere Embed v4 (1024d), input_type search_query",
         "sql_query": null,
         "telemetry": null,
         "title": "Generating query embedding"
       },
       {
         "activity_type": "embedding",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
-        "details": null,
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "1024 dimensions",
         "sql_query": null,
         "telemetry": null,
         "title": "Embedding generated"
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
-        "details": "pgvector cosine + tsvector/ts_rank",
-        "sql_query": null,
-        "telemetry": null,
-        "title": "Hybrid candidate retrieval"
-      },
-      {
-        "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
         "details": "2 unique candidates (semantic=2, lexical=1)",
-        "sql_query": "SELECT * FROM semantic_trip_search(query_vector, candidate_limit); SELECT ... ts_rank(search_vector, websearch_to_tsquery(...)) ...",
+        "sql_query": "SELECT * FROM semantic_trip_search($1::vector, $2::integer)\n-- Values: $1 = '[0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25... (5121 characters)', $2 = 25\n\nWITH raw AS ( SELECT websearch_to_tsquery('english', $1)::text AS text_query ), parts AS ( SELECT (SELECT string_agg(part, ' | ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) <> '!') AS positives, (SELECT string_agg(part, ' & ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) = '!') AS negatives FROM raw ), q AS ( SELECT CASE WHEN positives IS NULL THEN negatives WHEN negatives IS NULL THEN '(' || positives || ')' ELSE '(' || positives || ') & ' || negatives END::tsquery AS tsq FROM parts ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq ORDER BY lexical_score DESC LIMIT $2\n-- Values: $1 = 'Kyoto rail', $2 = 25",
         "telemetry": null,
         "title": "Hybrid candidates fetched"
       },
       {
         "activity_type": "search",
-        "agent_file": "agents/phase_03_retrieval/search_agent.py",
-        "agent_name": "SearchAgent",
-        "details": "Falling back to semantic rank order",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "2 candidates joined to durations, places left and highlights",
+        "sql_query": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights FROM trip_packages WHERE package_id IN ($1, $2)\n-- Values: $1 = 'PKG-TYO-1', $2 = 'PKG-TYO-2'",
+        "telemetry": null,
+        "title": "Catalog card details hydrated"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "RuntimeError: rerank offline. The candidates keep the order the two arms produced.",
         "sql_query": null,
         "telemetry": null,
-        "title": "Cohere rerank unavailable"
+        "title": "Cohere rerank unavailable, using candidate order"
       },
       {
         "activity_type": "result",
         "agent_file": "retrieval/hybrid.py",
-        "agent_name": "SearchAgent",
+        "agent_name": "Hybrid retrieval (code)",
         "details": "Ranked trips returned to the calling step",
         "sql_query": null,
         "telemetry": null,
-        "title": "SearchAgent returned 2 results"
+        "title": "Hybrid retrieval returned 2 results"
       }
     ],
     "calls": [
@@ -904,7 +898,14 @@
           "Kyoto rail",
           25
         ],
-        "sql": "WITH q AS ( SELECT replace( websearch_to_tsquery('english', %s)::text, '&', '|' )::tsquery AS tsq ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq ORDER BY lexical_score DESC LIMIT %s"
+        "sql": "WITH raw AS ( SELECT websearch_to_tsquery('english', %s)::text AS text_query ), parts AS ( SELECT (SELECT string_agg(part, ' | ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) <> '!') AS positives, (SELECT string_agg(part, ' & ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) = '!') AS negatives FROM raw ), q AS ( SELECT CASE WHEN positives IS NULL THEN negatives WHEN negatives IS NULL THEN '(' || positives || ')' ELSE '(' || positives || ') & ' || negatives END::tsquery AS tsq FROM parts ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq ORDER BY lexical_score DESC LIMIT %s"
+      },
+      {
+        "params": [
+          "PKG-TYO-1",
+          "PKG-TYO-2"
+        ],
+        "sql": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights FROM trip_packages WHERE package_id IN (%s, %s)"
       }
     ],
     "message": null,
@@ -927,11 +928,11 @@
         ],
         "image_url": "https://example.test/tokyo.jpg",
         "name": "Tokyo Executive Stopover",
-        "pre_rerank_position": null,
-        "pre_rerank_similarity": null,
+        "pre_rerank_position": 0,
+        "pre_rerank_similarity": 0.91,
         "price": 1949.0,
         "product_id": "PKG-TYO-1",
-        "rank_delta": null,
+        "rank_delta": 0,
         "region": "Asia",
         "similarity": 0.91
       },
@@ -953,11 +954,122 @@
         ],
         "image_url": "https://example.test/tokyo.jpg",
         "name": "Kyoto Rail Extension",
-        "pre_rerank_position": null,
-        "pre_rerank_similarity": null,
+        "pre_rerank_position": 1,
+        "pre_rerank_similarity": 0.84,
         "price": 1949.0,
         "product_id": "PKG-TYO-2",
-        "rank_delta": null,
+        "rank_delta": 0,
+        "region": "Asia",
+        "similarity": 0.84
+      }
+    ]
+  },
+  "hybrid_semantic_down": {
+    "activities": [
+      {
+        "activity_type": "reasoning",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "Code embeds the query, fetches pgvector and full-text candidates, keeps the ones that fit the budget and have places left, and reranks them with Cohere. The calling step decides when to search; no model runs inside.",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Hybrid retrieval started"
+      },
+      {
+        "activity_type": "embedding",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "Cohere Embed v4 (1024d), input_type search_query",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Generating query embedding"
+      },
+      {
+        "activity_type": "embedding",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "cohere.embed-v4:0 did not answer after 2 attempts",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Semantic arm unavailable, lexical only"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "1 unique candidates (semantic=0, lexical=1)",
+        "sql_query": "WITH raw AS ( SELECT websearch_to_tsquery('english', $1)::text AS text_query ), parts AS ( SELECT (SELECT string_agg(part, ' | ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) <> '!') AS positives, (SELECT string_agg(part, ' & ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) = '!') AS negatives FROM raw ), q AS ( SELECT CASE WHEN positives IS NULL THEN negatives WHEN negatives IS NULL THEN '(' || positives || ')' ELSE '(' || positives || ') & ' || negatives END::tsquery AS tsq FROM parts ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq ORDER BY lexical_score DESC LIMIT $2\n-- Values: $1 = 'Kyoto rail', $2 = 25",
+        "telemetry": null,
+        "title": "Hybrid candidates fetched"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "2 candidates joined to durations, places left and highlights",
+        "sql_query": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights FROM trip_packages WHERE package_id IN ($1)\n-- Values: $1 = 'PKG-TYO-2'",
+        "telemetry": null,
+        "title": "Catalog card details hydrated"
+      },
+      {
+        "activity_type": "search",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "Top 1 hybrid candidates reranked",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Cohere rerank applied"
+      },
+      {
+        "activity_type": "result",
+        "agent_file": "retrieval/hybrid.py",
+        "agent_name": "Hybrid retrieval (code)",
+        "details": "Ranked trips returned to the calling step",
+        "sql_query": null,
+        "telemetry": null,
+        "title": "Hybrid retrieval returned 1 results"
+      }
+    ],
+    "calls": [
+      {
+        "params": [
+          "Kyoto rail",
+          25
+        ],
+        "sql": "WITH raw AS ( SELECT websearch_to_tsquery('english', %s)::text AS text_query ), parts AS ( SELECT (SELECT string_agg(part, ' | ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) <> '!') AS positives, (SELECT string_agg(part, ' & ') FROM unnest(string_to_array(text_query, ' & ')) AS part WHERE left(part, 1) = '!') AS negatives FROM raw ), q AS ( SELECT CASE WHEN positives IS NULL THEN negatives WHEN negatives IS NULL THEN '(' || positives || ')' ELSE '(' || positives || ') & ' || negatives END::tsquery AS tsq FROM parts ) SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights, ts_rank(search_vector, q.tsq) AS lexical_score FROM trip_packages, q WHERE search_vector @@ q.tsq ORDER BY lexical_score DESC LIMIT %s"
+      },
+      {
+        "params": [
+          "PKG-TYO-2"
+        ],
+        "sql": "SELECT package_id, name, operator, price_per_person, description, image_url, trip_type, destination, region, durations, package_places_left(package_id) AS availability, highlights FROM trip_packages WHERE package_id IN (%s)"
+      }
+    ],
+    "message": null,
+    "products": [
+      {
+        "availability": {
+          "2 nights": 3,
+          "4 nights": 0
+        },
+        "available_sizes": [
+          "2 nights",
+          "4 nights"
+        ],
+        "brand": "JAL Premium",
+        "category": "city",
+        "description": "Marunouchi business hotel",
+        "destination": "Tokyo",
+        "highlights": [
+          "Haneda lounge"
+        ],
+        "image_url": "https://example.test/tokyo.jpg",
+        "name": "Kyoto Rail Extension",
+        "pre_rerank_position": 0,
+        "pre_rerank_similarity": 0.84,
+        "price": 1949.0,
+        "product_id": "PKG-TYO-2",
+        "rank_delta": 0,
         "region": "Asia",
         "similarity": 0.84
       }

@@ -40,6 +40,12 @@ STATUS_CODES = {
     500: "InternalServerException",
 }
 TOKEN_REJECTED = (401, 403)
+# Statuses the service answers before it hands a turn to the container: a rejection of the
+# invoke request itself (validation, authorization, quota, throttling, a session still being
+# provisioned). 424 (RuntimeClientError: the container's own error), 500 and any other status
+# are not here: the container may already have acted when they are returned.
+REFUSED_BEFORE_THE_TURN = (400, 401, 402, 403, 404, 409, 429)
+REFUSED_CODES = frozenset(STATUS_CODES[status] for status in REFUSED_BEFORE_THE_TURN)
 REGION_PATTERN = re.compile(r"[a-z]{2}(-[a-z]+)+-[0-9]")
 RUNTIME_ARN_PATTERN = re.compile(
     r"arn:aws:bedrock-agentcore:(?P<region>[a-z0-9-]+):[0-9]{12}:runtime/[A-Za-z0-9_-]+"

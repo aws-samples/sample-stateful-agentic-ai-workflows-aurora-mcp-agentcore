@@ -1,50 +1,29 @@
 """
-Bedrock AgentCore Identity adapter for Phase 4.
+The backend's workload identity for Phase 4 and Phase 5.
 
-Identity authenticates the workload that is asking to act for a traveler.
-When AgentCore credential exchange succeeds, that workload identity becomes
-the subject checked against Aurora ``traveler_identity_bindings``. Otherwise,
-the stable AWS IAM principal id from STS is the authorization subject.
-
-Configuration (preferred — @aws/agentcore CLI):
-
-    cd meridian/meridian_agentcore
-    agentcore validate --json
-    agentcore deploy -y
-
-Or override manually after deploy:
-
-    AGENTCORE_WORKLOAD_IDENTITY=arn:aws:bedrock-agentcore:...:workload-identity/meridian
-    AGENTCORE_RESOURCE_PROVIDER=meridian-aurora-rds-data
-    AGENTCORE_WORKLOAD_TOKEN=  # minted by Runtime — not set by hand in production
+The backend acts as its AWS IAM principal: the stable principal id from
+``sts:GetCallerIdentity`` is the subject checked against Aurora
+``traveler_identity_bindings``. The signed-in person is authenticated separately, by
+``backend/http_auth.py`` and, in ``jwt`` mode, by the inbound JWT authorizers of AgentCore
+Identity on both Runtimes and the Gateway. Meridian does not use AgentCore Identity's outbound
+side (the token vault, OAuth credential providers and on-behalf-of token exchange).
 
 AWS docs:
-  - AgentCore Identity:
-    https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/identity.html
-  - IAM GetCallerIdentity (fallback principal lookup):
+  - IAM GetCallerIdentity:
     https://docs.aws.amazon.com/STS/latest/APIReference/API_GetCallerIdentity.html
-
-API references (boto3):
-- create_workload_identity:
-  https://docs.aws.amazon.com/boto3/latest/reference/services/bedrock-agentcore-control/client/create_workload_identity.html
-- get_resource_oauth2_token:
-  https://docs.aws.amazon.com/boto3/latest/reference/services/bedrock-agentcore/client/get_resource_oauth2_token.html
-- get_resource_api_key:
-  https://docs.aws.amazon.com/boto3/latest/reference/services/bedrock-agentcore/client/get_resource_api_key.html
+  - AgentCore inbound JWT authorizer:
+    https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/inbound-jwt-authorizer.html
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from typing import Optional
 
-from backend.agentcore.cli_config import resolve_agentcore_config
-from backend.authorization import AuthorizationContext
-
 import boto3
-from botocore.exceptions import ClientError
+
+from backend.authorization import AuthorizationContext
 
 logger = logging.getLogger(__name__)
 
@@ -53,38 +32,21 @@ logger = logging.getLogger(__name__)
 class IdentityScope:
     """The identity used for one Phase 4 turn."""
 
-    iam_identity: str          # caller principal ARN from sts:GetCallerIdentity
-    workload_identity: Optional[str]  # AgentCore workload identity ARN, if any
-    resource_provider: Optional[str]  # AgentCore resource credential provider name
-    token_status: str          # 'live', 'unconfigured', or short error message
+    iam_identity: str  # caller principal ARN from sts:GetCallerIdentity
     authorization: AuthorizationContext  # stable AWS subject used for traveler grants
 
 
 class AgentCoreIdentityAdapter:
-    """Resolves the identity envelope for each Phase 4 turn.
+    """Resolves the backend's IAM identity for each Phase 4 turn.
 
-    Produces the ``IdentityScope`` used by the Security trace, traveler
-    authorization lookup, and per-turn audit row. A live AgentCore workload
-    identity is preferred; authenticated IAM is the fail-closed fallback.
+    Produces the ``IdentityScope`` used by the Security trace, the traveler
+    authorization lookup and the per-turn audit row.
     """
 
-    def __init__(
-        self,
-        workload_identity: Optional[str] = None,
-        resource_provider: Optional[str] = None,
-        region: Optional[str] = None,
-    ) -> None:
-        cli = resolve_agentcore_config()
-        self.workload_identity = workload_identity or cli.workload_identity
-        self.resource_provider = resource_provider or cli.resource_provider
-        self.region = region or cli.region
-        self.cli_sources = cli.sources
+    def __init__(self) -> None:
         self._sts = None
-        self._runtime = None
         self._iam_identity_cache: Optional[str] = None
         self._iam_subject_cache: Optional[str] = None
-
-    # ----------------------------------------------------------- IAM identity
 
     def _resolve_iam_caller(self) -> tuple[str, str]:
         """Return the caller ARN and stable IAM principal id."""
@@ -118,66 +80,10 @@ class AgentCoreIdentityAdapter:
             principal=arn,
         )
 
-    # ---------------------------------------------------------- per-turn scope
-
     def scope_for_turn(self) -> IdentityScope:
-        """Return the identity envelope to attach to one Phase 4 turn.
-
-        When AGENTCORE_WORKLOAD_IDENTITY + AGENTCORE_RESOURCE_PROVIDER are
-        configured we fetch a fresh resource API key per turn (M2M flow);
-        otherwise we surface only the IAM principal so the trace and audit
-        log still reflect reality.
-        """
-        iam_authorization = self.authorization_context()
-        iam = iam_authorization.principal
-
-        if not (self.workload_identity and self.resource_provider):
-            return IdentityScope(
-                iam_identity=iam,
-                workload_identity=None,
-                resource_provider=None,
-                token_status="unconfigured",
-                authorization=iam_authorization,
-            )
-
-        try:
-            if self._runtime is None:
-                self._runtime = boto3.client("bedrock-agentcore", region_name=self.region)
-            # The workload-identity JWT is normally minted by AgentCore Runtime
-            # before invoking the agent.  In our FastAPI process we don't have
-            # one, so we treat configured-but-no-token as "scoped"; the audit
-            # entry still records both identities.
-            response = self._runtime.get_resource_api_key(
-                workloadIdentityToken=os.getenv("AGENTCORE_WORKLOAD_TOKEN", ""),
-                resourceCredentialProviderName=self.resource_provider,
-            )
-            _ = response.get("apiKey")  # not stored; the call is what matters
-            status = "live"
-        except ClientError as exc:
-            code = exc.response.get("Error", {}).get("Code", "Unknown")
-            status = f"error:{code}"
-            logger.warning("AgentCore Identity get_resource_api_key failed: %s", code)
-        except Exception as exc:  # pragma: no cover
-            status = f"error:{type(exc).__name__}"
-            logger.warning("AgentCore Identity unavailable: %s", exc)
-
-        authorization = (
-            AuthorizationContext(
-                provider="agentcore_workload",
-                subject_id=self.workload_identity,
-                principal=iam,
-            )
-            if status == "live"
-            else iam_authorization
-        )
-
-        return IdentityScope(
-            iam_identity=iam,
-            workload_identity=self.workload_identity,
-            resource_provider=self.resource_provider,
-            token_status=status,
-            authorization=authorization,
-        )
+        """Return the identity to attach to one Phase 4 turn: the backend's IAM principal."""
+        authorization = self.authorization_context()
+        return IdentityScope(iam_identity=authorization.principal, authorization=authorization)
 
 
 _adapter: Optional[AgentCoreIdentityAdapter] = None
