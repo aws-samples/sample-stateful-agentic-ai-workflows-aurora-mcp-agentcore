@@ -1,10 +1,12 @@
 """search_trips binds every value as a Data API parameter and never writes one into the SQL."""
 
+import re
 from decimal import Decimal
 
 import pytest
 
 import backend.routers.chat as chat_router
+from backend.db.rds_data_client import RDSDataClient
 from backend.tools import catalog_tools
 
 ROW = {
@@ -106,10 +108,37 @@ async def test_phase_1_text_fallback_is_traced_with_its_patterns(db):
     assert "'%Tokyo culture trip%'" in span.sql_query
 
 
-async def test_like_wildcards_in_free_text_are_escaped_and_declared(db):
+async def test_like_wildcards_in_free_text_are_escaped(db):
     found = await catalog_tools.search_trips(text=r"100%_a\b", limit=3)
 
     sql, params = db.calls[0]
-    assert sql.count("ILIKE %s ESCAPE '\\'") == 5
+    assert sql.count("ILIKE %s") == 5
     assert params == (r"%100\%\_a\\b%",) * 5 + (3,)
     assert found["parameters"][:5] == [r"%100\%\_a\\b%"] * 5
+
+
+def _names_the_data_api_binds(sql: str) -> list[str]:
+    """The :pN names outside string literals, reading a backslash in a literal as an escape.
+
+    That is how the RDS Data API scans a statement for parameters: in ``ESCAPE '\\'`` it
+    reads ``\\'`` as an escaped quote, so the literal runs on and swallows the next name.
+    """
+    names, quoted, i = [], False, 0
+    while i < len(sql):
+        if quoted and sql[i] == "\\":
+            i += 2
+            continue
+        if sql[i] == "'":
+            quoted = not quoted
+        elif not quoted and (match := re.match(r":(p\d+)", sql[i:])):
+            names.append(match.group(1))
+        i += 1
+    return names
+
+
+async def test_every_free_text_parameter_is_bound_by_the_data_api(db):
+    await catalog_tools.search_trips(trip_type="Wine", max_price_per_person=900.0, text="cellar")
+
+    sql, params = db.calls[0]
+    converted = RDSDataClient(region="us-east-1")._convert_sql_placeholders(sql, len(params))
+    assert _names_the_data_api_binds(converted) == [f"p{i}" for i in range(len(params))]

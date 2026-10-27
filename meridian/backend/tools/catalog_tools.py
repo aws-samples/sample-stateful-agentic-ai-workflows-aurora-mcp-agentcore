@@ -15,7 +15,12 @@ TEXT_COLUMNS = ("name", "description", "operator", "destination", "trip_type")
 
 
 def _escape_like(text: str) -> str:
-    """The text with LIKE's own wildcards made literal, so ``100%`` means 100 and a percent sign."""
+    """The text with LIKE's own wildcards made literal, so ``100%`` means 100 and a percent sign.
+
+    The backslash is PostgreSQL's default LIKE escape, so the statement has no ESCAPE clause:
+    the RDS Data API reads the literal ``'\\'`` as an escaped quote and binds no parameter
+    after it.
+    """
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
@@ -32,7 +37,7 @@ def _where(
         clauses.append("price_per_person <= %s")
         params.append(max_price)
     if text:
-        like = " OR ".join(f"{column} ILIKE %s ESCAPE '\\'" for column in TEXT_COLUMNS)
+        like = " OR ".join(f"{column} ILIKE %s" for column in TEXT_COLUMNS)
         clauses.append(f"({like})")
         params.extend([f"%{_escape_like(text)}%"] * len(TEXT_COLUMNS))
     return (" WHERE " + " AND ".join(clauses)) if clauses else "", params
