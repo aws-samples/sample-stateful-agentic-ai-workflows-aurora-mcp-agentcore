@@ -1,30 +1,54 @@
-# Meridian: stateful agentic AI with Aurora, MCP and AgentCore
+# Meridian: stateful agentic AI on Amazon Aurora, MCP and AgentCore
 
 <p align="center">
-  <a href="https://github.com/aws-samples/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/actions/workflows/application-ci.yml"><img height="20" alt="Application CI status on main" src="https://img.shields.io/github/actions/workflow/status/aws-samples/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/application-ci.yml?branch=main&amp;style=flat-square&amp;label=CI&amp;labelColor=24354B"></a>
+  <a href="https://github.com/aws-samples/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/actions/workflows/application-ci.yml"><img height="20" alt="Application CI status on main" src="https://img.shields.io/github/actions/workflow/status/aws-samples/sample-stateful-agentic-ai-workflows-aurora-mcp-agentcore/application-ci.yml?branch=main&amp;style=flat-square&amp;labelColor=24354B&amp;label=CI"></a>
   <a href="LICENSE"><img height="20" alt="License: MIT-0" src="https://img.shields.io/badge/License-MIT--0-355E8C?style=flat-square&amp;labelColor=24354B"></a>
   <a href="#prerequisites"><img height="20" alt="Python 3.13" src="https://img.shields.io/badge/Python-3.13-355E8C?style=flat-square&amp;labelColor=24354B&amp;logo=python&amp;logoColor=white"></a>
-  <a href="#prerequisites"><img height="20" alt="Node.js 22.12 or later recommended" src="https://img.shields.io/badge/Node.js-22.12%2B-355E8C?style=flat-square&amp;labelColor=24354B&amp;logo=nodedotjs&amp;logoColor=white"></a>
+  <a href="#prerequisites"><img height="20" alt="Node.js 22" src="https://img.shields.io/badge/Node.js-22-355E8C?style=flat-square&amp;labelColor=24354B&amp;logo=nodedotjs&amp;logoColor=white"></a>
+  <br>
+  <a href="https://aws.amazon.com/rds/aurora/"><img height="20" alt="Database: Amazon Aurora PostgreSQL with pgvector" src="https://img.shields.io/badge/Database-Amazon%20Aurora%20PostgreSQL%20%2B%20pgvector-355E8C?style=flat-square&amp;labelColor=24354B&amp;logo=postgresql&amp;logoColor=white"></a>
+  <a href="https://aws.amazon.com/bedrock/agentcore/"><img height="20" alt="Runtime: Amazon Bedrock AgentCore" src="https://img.shields.io/badge/Runtime-Amazon%20Bedrock%20AgentCore-355E8C?style=flat-square&amp;labelColor=24354B"></a>
+  <a href="https://strandsagents.com"><img height="20" alt="Agents: Strands Agents" src="https://img.shields.io/badge/Agents-Strands%20Agents-355E8C?style=flat-square&amp;labelColor=24354B"></a>
+  <br>
+  <a href="https://modelcontextprotocol.io"><img height="20" alt="Tools: Model Context Protocol" src="https://img.shields.io/badge/Tools-Model%20Context%20Protocol-355E8C?style=flat-square&amp;labelColor=24354B&amp;logo=modelcontextprotocol&amp;logoColor=white"></a>
+  <a href="https://aws.amazon.com/cognito/"><img height="20" alt="Identity: Amazon Cognito" src="https://img.shields.io/badge/Identity-Amazon%20Cognito-355E8C?style=flat-square&amp;labelColor=24354B"></a>
+  <a href="https://react.dev"><img height="20" alt="Frontend: React and TypeScript" src="https://img.shields.io/badge/Frontend-React%20%2B%20TypeScript-355E8C?style=flat-square&amp;labelColor=24354B&amp;logo=react&amp;logoColor=white"></a>
+  <a href="https://aws.amazon.com/cdk/"><img height="20" alt="Infrastructure: AWS CDK" src="https://img.shields.io/badge/Infrastructure-AWS%20CDK-355E8C?style=flat-square&amp;labelColor=24354B"></a>
 </p>
 
-Meridian is a sample travel concierge that stores its state in Amazon Aurora
-PostgreSQL. You learn how an agent application grows in five phases: from SQL
-queries to Model Context Protocol (MCP) tools, hybrid retrieval, a governed
-agent on Amazon Bedrock AgentCore, and a Strands Graph workflow in its own
-AgentCore Runtime that resumes after its session stops. Every screen shows the SQL,
+Reference code for an agent application that keeps its state in Amazon Aurora PostgreSQL,
+reaches its tools through the Model Context Protocol (MCP), and runs as governed
+workloads on Amazon Bedrock AgentCore.
+
+<p align="center">
+  <img src="meridian/docs/meridian-showcase.jpg" width="900" alt="Meridian Concierge signed in as the sample traveler, showing destination photography, sample trip prices and the traveler's saved context">
+</p>
+
+Meridian is a sample travel concierge. It grows in five phases: from SQL queries to MCP
+tools, hybrid retrieval, a governed agent on AgentCore, and a Strands Graph workflow in its
+own AgentCore Runtime that resumes after its session stops. Every screen shows the SQL,
 tool calls, authorization decisions and stored records behind each answer.
 
-Two terms recur. Strands is the open-source agent SDK that runs the agents and the
-workflow graph. Cedar is the policy language that AgentCore Policy evaluates before a
-tool runs.
+The data is sample travel packages and one fictional traveler, Jordan Morgan. Holds and
+confirmations change rows in Meridian's own database only. There is no supplier, airline or
+payment integration.
 
-The data is sample travel packages and one fictional traveler, Jordan Morgan.
-Holds and confirmations change rows in Meridian's own database only. There is
-no supplier, airline or payment integration.
+## Contents
 
-![Meridian Concierge, signed in as the sample traveler: destination photography, sample trip prices and the traveler's saved context](meridian/docs/meridian-showcase.jpg)
+- [What you will see](#what-you-will-see)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Quick start](#quick-start)
+- [Try the reference app](#try-the-reference-app)
+- [Deploy to your account](#deploy-to-your-account)
+- [Tests](#tests)
+- [Repository layout](#repository-layout)
+- [Documentation](#documentation)
+- [Security](#security)
+- [Contributing](#contributing)
+- [License](#license)
 
-## What it demonstrates
+## What you will see
 
 Each phase adds one capability and keeps the earlier ones.
 
@@ -36,38 +60,61 @@ Each phase adds one capability and keeps the earlier ones.
 | 4. Production | [phase_04_production](meridian/backend/agents/phase_04_production/) | AgentCore Runtime, Gateway, Memory and Cedar policy, with traveler grants and row-level security (RLS) in Aurora |
 | 5. Workflow | [phase_05_workflow](meridian/backend/agents/phase_05_workflow/) | A Strands Graph in its own AgentCore Runtime that searches, holds and releases through the Gateway, with Aurora snapshots, worker leases, idempotent holds and one audit row per run |
 
-Each phase folder has a short guide with a sample prompt and the evidence to
-inspect. The sample keeps three kinds of state in Aurora or AgentCore:
+Each phase folder has a short guide with a sample prompt and the evidence to inspect.
 
-- **Traveler context:** profile, preferences and conversation history in Aurora. The agent session is in AgentCore Memory.
-- **Workflow progress:** Strands Graph snapshots in the Aurora table `workflow_snapshots`, appended after every node.
-- **Business results:** holds and bookings in Aurora. A SQL function or a guarded update handles each action, so a retried request returns the first result.
+Two terms recur. Strands is the open-source agent SDK that runs the agents and the workflow
+graph. Cedar is the policy language that AgentCore Policy evaluates before a tool runs.
+
+The sample keeps three kinds of state in Aurora or AgentCore:
+
+| State | Where it lives |
+| --- | --- |
+| **Traveler context** | Profile, preferences and conversation history in Aurora. The agent session is in AgentCore Memory. |
+| **Workflow progress** | Strands Graph snapshots in the Aurora table `workflow_snapshots`, appended after every node. |
+| **Business results** | Holds and bookings in Aurora. A SQL function or a guarded update handles each action, so a retried request returns the first result. |
 
 ## Architecture
 
-```text
-Browser (React, Vite)
-  └─ FastAPI backend ──────────────── Aurora PostgreSQL (RDS Data API)
-       │  Phases 1-3: SQL, MCP servers, Bedrock embeddings and rerank
-       │  Phase 5: invokes MeridianWorkflow, relays its result,
-       │           holds the stop-session control
-       │
-       ├─ AgentCore Runtime (MeridianConcierge, Strands agent)
-       │    ├─ AgentCore Memory
-       │    └─ AgentCore Gateway (MCP; Cognito access token in jwt mode)
-       │         ├─ request interceptor: pins travelerId to the token's claim
-       │         ├─ Cedar policy engine (ENFORCE)
-       │         ├─ MeridianCatalog Lambda ───── Aurora (hybrid search, catalog tools)
-       │         └─ MeridianHolds Lambda ─────── Aurora (hold and confirm functions)
-       │
-       └─ AgentCore Runtime (MeridianWorkflow, Strands Graph)
-            ├─ runs as the Aurora login meridian_workflow
-            ├─ saves workflow_snapshots after every node
-            └─ searches, holds and releases through the same Gateway and Cedar policies
+```mermaid
+flowchart TB
+    browser["Browser<br/>React, Vite"]
+    cognito["Amazon Cognito"]
+    backend["FastAPI backend<br/>Phases 1 to 3 run here"]
+    aurora[("Amazon Aurora PostgreSQL<br/>pgvector, RLS")]
+
+    browser -->|sign in| cognito
+    browser -->|API calls| backend
+    backend -->|RDS Data API| aurora
+
+    subgraph agentcore["Amazon Bedrock AgentCore"]
+        concierge["Runtime: MeridianConcierge<br/>Strands agent"]
+        workflow["Runtime: MeridianWorkflow<br/>Strands Graph"]
+        memory["AgentCore Memory"]
+        gateway["Gateway (MCP)"]
+        interceptor["Request interceptor<br/>pins travelerId to the token"]
+        cedar["Cedar policy engine<br/>ENFORCE"]
+        concierge --> memory
+        concierge -->|tool calls| gateway
+        workflow -->|search, hold, release| gateway
+        gateway --> interceptor --> cedar
+    end
+
+    backend -->|chat, holds| concierge
+    backend -->|run, resume, stop session| workflow
+    workflow -->|snapshots, as meridian_workflow| aurora
+
+    cedar --> catalog["Lambda: MeridianCatalog<br/>hybrid search, catalog tools"]
+    cedar --> holds["Lambda: MeridianHolds<br/>hold, confirm, release"]
+    catalog -->|Data API| aurora
+    holds -->|Data API| aurora
+
+    cognito -.->|access token verified| backend
+    cognito -.->|token verified by Runtimes and Gateway| agentcore
 ```
 
-On your machine run the backend and the frontend. In your AWS account run Aurora, the two
-AgentCore Runtimes, the Gateway, Memory and the two Lambda functions.
+On your machine you run the backend and the frontend. In your AWS account you run Aurora,
+the two AgentCore Runtimes, the Gateway, Memory and the two Lambda functions. Phases 1 to 3
+call Amazon Bedrock models from the backend for embeddings, reranking and the Phase 3 agent.
 
 Every hold, confirmation and release goes through the Gateway. Cedar checks each tool
 call before a Lambda runs: the traveler must confirm, a hold lasts at most 12
@@ -87,7 +134,7 @@ agent; the managed Concierge runtime's model is set in
 
 ## Prerequisites
 
-- Python 3.13 and Node.js 22.12 or later
+- Python 3.13 and Node.js 22.12 or later (CI runs Python 3.13 and Node.js 22)
 - An AWS account with credentials (`aws login`, `aws sso login` or `aws configure`)
 - Amazon Bedrock access to Claude Sonnet 5.5, Cohere Embed v4 and Cohere Rerank 3.5
 - An Aurora PostgreSQL cluster with the RDS Data API enabled and a Secrets Manager secret for the database user. [OPERATIONS.md](meridian/docs/OPERATIONS.md#provision-aurora) shows how to create one with the included CDK app.
@@ -198,7 +245,7 @@ The full prompt list for each phase is in [meridian/README.md](meridian/README.m
 [OPERATIONS.md](meridian/docs/OPERATIONS.md#exercise-recovery-failures) has
 scripts that stop a worker or discard a response on purpose.
 
-## Deploy
+## Deploy to your account
 
 | Component | How | Guide |
 | --- | --- | --- |
@@ -232,7 +279,7 @@ The unit tests block network access and ignore `meridian/.env`. Tests marked
 `python -m pytest -m database` only against a disposable database. See the
 [dependency notes](meridian/docs/DEPENDENCIES.md) for the open audit finding.
 
-## Repository map
+## Repository layout
 
 | Path | Contents |
 | --- | --- |
@@ -247,6 +294,18 @@ The unit tests block network access and ignore `meridian/.env`. Tests marked
 
 [meridian/STRUCTURE.md](meridian/STRUCTURE.md) traces a request through the code.
 
+## Documentation
+
+| Read | For |
+| --- | --- |
+| [meridian/README.md](meridian/README.md) | Screens, API, configuration, Aurora schema and governance boundary |
+| [meridian/docs/README.md](meridian/docs/README.md) | Index of all documents |
+| [meridian/backend/agents/README.md](meridian/backend/agents/README.md) | The five capability guides |
+| [meridian/docs/STATEFUL_ARCHITECTURE.md](meridian/docs/STATEFUL_ARCHITECTURE.md) | Snapshots, memory, transactions and recovery |
+| [meridian/docs/OPERATIONS.md](meridian/docs/OPERATIONS.md) | Provision Aurora, run locally, publish, recover, troubleshoot |
+| [meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md](meridian/docs/AGENTCORE_DEPLOY_RUNBOOK.md) | Runtime, Gateway, Memory and Cedar deployment |
+| [meridian/docs/CODE_WALKTHROUGH.md](meridian/docs/CODE_WALKTHROUGH.md) | The source, phase by phase |
+
 ## Security
 
 Callers sign in with Amazon Cognito. In `jwt` mode the backend, both Runtimes
@@ -257,8 +316,16 @@ mode: `jwt` carries the token through every hop, and `iam` (the default when
 the variable is unset) signs the AgentCore hops with AWS credentials. Local
 development keeps an open loopback mode and a shared API token path; a `jwt`
 release refuses both. Review networking, monitoring, availability and data
-protection before any production use. To report a security issue, see
+protection before any production use.
+
+To report a security issue, notify AWS/Amazon Security through the
+[vulnerability reporting page](http://aws.amazon.com/security/vulnerability-reporting/).
+Do not create a public GitHub issue. See
 [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
