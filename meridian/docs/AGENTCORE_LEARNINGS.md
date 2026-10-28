@@ -19,6 +19,7 @@ deployment steps. Each note names the code or step it explains.
 - **Cedar sees arguments, not rows.** `loyalty_balance` is bound to the token's traveler by the argument, and the holds Lambda checks the grant and reads under RLS.
 - **`agentcore deploy` of an existing Gateway cannot change its authorizer type.**
 - **Run the globally installed `agentcore`, not `npx agentcore`.** `npx` can resolve an older cached CLI whose bundled CDK toolkit cannot read the cloud assembly schema the project's `aws-cdk-lib` emits.
+- **Every synth leaves the Runtimes' code zips in the OS temp folder.** `@aws/agentcore-cdk` (`PythonBundledCodeZipAsset`, the same in 0.1.0-alpha.47 and 1.0.0) writes `<AgentName>-<uuid>.zip` there and never deletes it, about 80 MB for Meridian's two Runtimes and the holds target. `deploy_order.run_command` gives each `agentcore deploy` and `--diff` run its own temp folder and removes it, and the CDK app's Jest run does the same in `test/temp-folder.setup.js`. A hand-run `agentcore deploy` still leaves them; delete the `Meridian*.zip` files in `$TMPDIR` afterwards.
 
 ## Cedar policies
 

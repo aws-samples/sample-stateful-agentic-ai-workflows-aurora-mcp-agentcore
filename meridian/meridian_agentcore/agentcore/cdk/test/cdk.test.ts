@@ -60,6 +60,12 @@ afterAll(() => {
   rmSync(testProjectRoot, { recursive: true, force: true });
 });
 
+// The AgentCore CDK library leaves each Runtime's code zip in the OS temp folder on every synth.
+test('synthesis writes temporary files only to the test run folder that teardown removes', () => {
+  expect(process.env.MERIDIAN_TEST_TMPDIR).toBeDefined();
+  expect(tmpdir()).toBe(process.env.MERIDIAN_TEST_TMPDIR);
+});
+
 test('AgentCoreStack synthesizes the Meridian specification template', () => {
   const spec = renderTemplate();
   const app = new cdk.App();

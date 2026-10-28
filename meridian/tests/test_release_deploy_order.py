@@ -11,7 +11,9 @@ irreversible replacement needs is in place.
 from __future__ import annotations
 
 import json
+import sys
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 
@@ -730,6 +732,18 @@ def test_the_default_runner_reports_a_missing_program_and_a_timeout(tmp_path, mo
     monkeypatch.setattr(subprocess, "run", slow)
     with pytest.raises(deploy_order.DeployOrderError, match="did not finish"):
         deploy_order.run_command(["/slow"], tmp_path)
+
+
+def test_the_default_runner_removes_what_the_cli_leaves_in_its_temp_folder(tmp_path):
+    # The AgentCore CDK library writes each Runtime's code zip to the temp folder and never
+    # deletes it. The child stands in for the CLI: it leaves a zip where the library would.
+    child = ("import os, tempfile; zip_path = os.path.join(tempfile.gettempdir(), "
+             "'MeridianWorkflow-0.zip'); open(zip_path, 'w').close(); print(zip_path)")
+    code, output = deploy_order.run_command([sys.executable, "-c", child], tmp_path)
+    left_behind = Path(output.strip())
+    assert code == 0
+    assert left_behind.parent.name.startswith("meridian-agentcore-run-")
+    assert not left_behind.exists() and not left_behind.parent.exists()
 
 
 def test_the_stage_numbers_cover_the_four_stages():

@@ -38,7 +38,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -61,6 +63,7 @@ STATE_FILE = Path("agentcore") / ".cli" / "deployed-state.json"
 DEPLOY_ARGV = (settings.AGENTCORE_BIN, "deploy", "-y")
 DIFF_ARGV = (settings.AGENTCORE_BIN, "deploy", "--diff", "--json")
 DEPLOY_TIMEOUT_SECONDS = 3600
+RUN_TEMP_PREFIX = "meridian-agentcore-run-"
 TAIL_LINES = 30
 OK, DRIFT, COULD_NOT_RUN, EXIT_REFUSED = 0, 1, 2, 3
 OTHER_MODE = {IAM: JWT, JWT: IAM}
@@ -81,20 +84,26 @@ def stage_label(stage: str) -> str:
 def run_command(argv: Sequence[str], cwd: Path) -> tuple[int, str]:
     """Run ``argv`` in ``cwd``; return its exit status and its output (both streams).
 
+    The run gets its own temp folder (``TMPDIR``, ``TMP`` and ``TEMP``), removed when it ends.
+    The AgentCore CDK library writes each Runtime's code zip to the temp folder on every synth
+    and never deletes it, about 80 MB a run.
+
     Raises:
         DeployOrderError: When the program is missing or does not finish in time.
     """
-    try:
-        done = subprocess.run(list(argv), cwd=cwd, capture_output=True, text=True,
-                              timeout=DEPLOY_TIMEOUT_SECONDS, check=False)
-    except FileNotFoundError as error:
-        raise DeployOrderError(
-            f"could not run {argv[0]}: not found; install the AgentCore CLI there (the "
-            "nvm copy fails synth with a schema mismatch)") from error
-    except subprocess.TimeoutExpired as error:
-        raise DeployOrderError(
-            f"{argv[0]} did not finish within {DEPLOY_TIMEOUT_SECONDS} s; the stack may still be "
-            "updating, read it in CloudFormation before running anything else") from error
+    with tempfile.TemporaryDirectory(prefix=RUN_TEMP_PREFIX, ignore_cleanup_errors=True) as temp:
+        env = {**os.environ, "TMPDIR": temp, "TMP": temp, "TEMP": temp}
+        try:
+            done = subprocess.run(list(argv), cwd=cwd, capture_output=True, text=True,
+                                  timeout=DEPLOY_TIMEOUT_SECONDS, check=False, env=env)
+        except FileNotFoundError as error:
+            raise DeployOrderError(
+                f"could not run {argv[0]}: not found; install the AgentCore CLI there (the "
+                "nvm copy fails synth with a schema mismatch)") from error
+        except subprocess.TimeoutExpired as error:
+            raise DeployOrderError(
+                f"{argv[0]} did not finish within {DEPLOY_TIMEOUT_SECONDS} s; the stack may still "
+                "be updating, read it in CloudFormation before running anything else") from error
     return done.returncode, (done.stdout or "") + (done.stderr or "")
 
 
